@@ -4,11 +4,25 @@ START=99
 STOP=10
 
 start() {
-    echo "Starting YunBridge v2 daemon..."
-    start-stop-daemon -S -b -x /usr/bin/yunbridge
+        echo "Stopping any running YunBridge v2 daemons before starting..."
+        PIDS=$(ps | grep '[y]unbridge' | awk '{print $1}')
+        if [ -n "$PIDS" ]; then
+            echo "$PIDS" | xargs kill -9
+            echo "All running yunbridge processes killed."
+        else
+            echo "No yunbridge processes found."
+        fi
+        echo "Starting YunBridge v2 daemon..."
+        /usr/bin/yunbridge &
 }
 
 stop() {
-    echo "Stopping YunBridge v2 daemon..."
-    start-stop-daemon -K -x /usr/bin/yunbridge
+        echo "Stopping YunBridge v2 daemon..."
+        PIDS=$(ps | grep '[y]unbridge' | awk '{print $1}')
+        if [ -n "$PIDS" ]; then
+            echo "$PIDS" | xargs kill -9
+            echo "All running yunbridge processes killed."
+        else
+            echo "No yunbridge processes found."
+        fi
 }

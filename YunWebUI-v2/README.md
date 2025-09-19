@@ -1,47 +1,40 @@
 # YunWebUI v2
 
-Modern web interface for Arduino Yun, integrated with OpenWRT web server and compatible with Bridge v2 and YunBridge v2.
+Web interface para Arduino Yun, con soporte exclusivo para MQTT. El soporte para integración REST/CGI ha sido eliminado para avanzar en el roadmap MQTT.
 
 ## Features
-- HTML5/JS/CSS web UI
-- REST and WebSocket integration with YunBridge
-- Compatible with legacy and new features
+- Web UI HTML5/JS/CSS
+- Integración MQTT en tiempo real vía JavaScript
 
 ## Installation
-See `install.sh` for deployment steps to OpenWRT web server.
+Ver `install.sh` para pasos de despliegue en el web server de OpenWRT.
 
-## Hardware Test
-- Web UI includes LED 13 control and full API coverage
+## Prueba de hardware
+- Web UI incluye control MQTT de LED 13
 
-## REST Backend Integration
-To enable LED 13 REST control:
 
-The LED 13 CGI script is installed automatically by the openwrt-yun-v2 installer as `/www/cgi-bin/led13`.
-If you need to reinstall manually:
-```sh
-cp openwrt-yun-v2/scripts/led13_rest_cgi.py /www/cgi-bin/led13
-chmod +x /www/cgi-bin/led13
-```
 
 ## Documentation
 - [Official Arduino Yun Guide](https://docs.arduino.cc/retired/getting-started-guides/ArduinoYun/)
 
 ---
 
-# Hardware Test Instructions
 
-## Prerequisites
-- Arduino Yun with OpenWRT, YunWebUI-v2, YunBridge-v2, and Bridge-v2 installed
-- Web browser on same network
+# Pruebas de hardware
 
-## Step-by-Step Tests
-1. **LED 13 Web Control**
-	- Open the YunWebUI in your browser (e.g., `http://yun.local/arduino-webui-v2/`).
-	- Use the ON/OFF buttons for LED 13.
-	- LED 13 should turn ON/OFF and status should update.
+## Requisitos
+- Arduino Yun con OpenWRT, YunWebUI-v2, YunBridge-v2 y Bridge-v2 instalados
+- Navegador web en la misma red
+
+## Prueba principal
+1. **LED 13 MQTT Web Control**
+	- Abre YunWebUI en tu navegador (por ejemplo, `http://yun.local/arduino-webui-v2/`).
+	- Usa los botones ON/OFF de LED 13.
+	- El LED 13 debe responder y el estado actualizarse en tiempo real.
 
 ## Troubleshooting
-- Ensure `/cgi-bin/led13` CGI script is present and executable.
-- Check YunBridge daemon is running.
+- Verifica que el daemon YunBridge y el broker MQTT estén corriendo.
+
+---
 
 ---

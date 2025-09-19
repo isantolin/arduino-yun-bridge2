@@ -10,16 +10,35 @@
 </head>
 <body>
   <h1>YunWebUI v2</h1>
-  <h2>LED 13 Control</h2>
+  <h2>LED 13 Control (MQTT)</h2>
   <button onclick="led13('ON')">Turn ON</button>
   <button onclick="led13('OFF')">Turn OFF</button>
-  <div id="status"></div>
+  <div id="status">Connecting to MQTT...</div>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
+    // MQTT broker settings
+    const brokerUrl = 'ws://localhost:9001'; // Change to your broker's WebSocket URL
+    const topicSet = 'yun/pin/13/set';
+    const topicState = 'yun/pin/13/state';
+    const client = mqtt.connect(brokerUrl);
+
+    client.on('connect', function () {
+      document.getElementById('status').innerText = 'Connected to MQTT broker.';
+      client.subscribe(topicState);
+    });
+
+    client.on('message', function (topic, message) {
+      if (topic === topicState) {
+        document.getElementById('status').innerText = 'LED 13 State: ' + message.toString();
+      }
+    });
+
+    client.on('error', function (err) {
+      document.getElementById('status').innerText = 'MQTT Error: ' + err;
+    });
+
     function led13(state) {
-      fetch('/cgi-bin/led13?state=' + state, {method: 'GET'})
-        .then(r => r.text())
-        .then(txt => document.getElementById('status').innerText = txt)
-        .catch(e => document.getElementById('status').innerText = 'Error: ' + e);
+      client.publish(topicSet, state);
     }
   </script>
 </body>

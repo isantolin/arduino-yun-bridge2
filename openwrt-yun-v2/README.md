@@ -1,63 +1,48 @@
 # openwrt-yun-v2
 
-OpenWRT integration package for Bridge v2, YunBridge v2, and YunWebUI v2.
+OpenWRT integration package para Bridge v2, YunBridge v2 y YunWebUI v2, con soporte exclusivo para MQTT. El soporte para ejemplos y scripts legacy ha sido eliminado para avanzar en el roadmap MQTT.
 
 ## Features
-- Patches and scripts for modern OpenWRT
-- Ensures /dev/ttyATH0 @ 115200 baud
-- Systemd/init scripts for YunBridge
-- Web UI integration
+- Scripts y parches para OpenWRT moderno
+- Configuración automática de /dev/ttyATH0 @ 250000 baud (ajustar según hardware)
+- Scripts de instalación y arranque para YunBridge MQTT
+- Integración Web UI/MQTT
 
 
 ## Dependencies
-## Dependencies
-- Python 3 must be installed on OpenWRT:
+- Python 3 y pyserial deben estar instalados en OpenWRT:
 	```sh
 	opkg update
-	opkg install python3
-	```
-+- The pyserial module is required:
-	```sh
-	opkg install python3-pyserial
+	opkg install python3 python3-pyserial
 	```
 
 ## Installation
-See `install.sh` for OpenWRT package installation and patching steps.
+Ver `install.sh` para pasos de instalación y parches en OpenWRT.
 
-## Hardware Test
-- Includes instructions for verifying serial bridge and web UI
+## Prueba de hardware
+- Incluye instrucciones para verificar el bridge MQTT y la Web UI
 
 ## Documentation
 - [Official Arduino Yun Guide](https://docs.arduino.cc/retired/getting-started-guides/ArduinoYun/)
 
 ---
-# Hardware Test Instructions
 
-- Arduino Yun with OpenWRT and all v2 packages installed
+# Pruebas de hardware
 
-## Step-by-Step Tests
-1. **Serial Bridge Test**
-	- Run `echo 'LED13 ON' > /dev/ttyATH0` and verify LED 13 turns ON.
-	- Run `echo 'LED13 OFF' > /dev/ttyATH0` and verify LED 13 turns OFF.
+- Arduino Yun con OpenWRT y todos los paquetes v2 instalados
 
-2. **CGI REST Test**
-	- Access `http://yun.local/cgi-bin/led13?state=ON` in your browser.
-	- LED 13 should turn ON and response should confirm.
+## Prueba principal
+1. **LED 13 MQTT**
+	- Sube `Bridge-v2/LED13BridgeControl.ino` a tu Yun.
+	- Ejecuta `YunBridge-v2/examples/led13_mqtt_test.py` en el Yun (SSH):
+	  ```bash
+	  python3 /path/to/YunBridge-v2/examples/led13_mqtt_test.py
+	  ```
+	- Abre YunWebUI en tu navegador y usa los botones ON/OFF de LED 13.
+	- El LED 13 debe responder en todos los casos.
 
 ## Troubleshooting
-- Ensure `/dev/ttyATH0` is present and not used by other processes.
-- Check permissions and executable bit on CGI scripts.
+- Asegúrate de que `/dev/ttyATH0` está presente y libre.
+- Verifica que el daemon YunBridge y el broker MQTT estén corriendo.
 
-
-The install script will automatically:
-- Copy the YunBridge daemon, init script, and config files
-- Install the LED 13 CGI script as `/www/cgi-bin/led13` and set executable permissions
-- Enable and start the bridge-v2 service
-
-Manual steps (if needed):
-```sh
-chmod +x /etc/init.d/bridge-v2 /www/cgi-bin/led13
-/etc/init.d/bridge-v2 enable
-/etc/init.d/bridge-v2 start
-```
 ---

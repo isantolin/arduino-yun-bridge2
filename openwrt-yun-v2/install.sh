@@ -1,3 +1,9 @@
+# Deshabilitar login shell en consola serie (eliminar ::askconsole:/usr/libexec/login.sh de /etc/inittab)
+if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
+	echo "[INFO] Eliminando login shell de consola serie en /etc/inittab..."
+	sed -i '/::askconsole:\/usr\/libexec\/login.sh/d' /etc/inittab
+fi
+
 # Install CGI script for LED 13 control
 if [ -f scripts/led13_rest_cgi.py ]; then
 	mkdir -p /www/cgi-bin
@@ -57,10 +63,23 @@ else
 fi
 
 
-# Check for yunbridge binary
-if [ ! -f /usr/bin/yunbridge ]; then
-  echo "ERROR: /usr/bin/yunbridge not found. Please copy YunBridge-v2/src/bridge_daemon.py to /usr/bin/yunbridge and make it executable."
+
+# Stop any running yunbridge daemons before starting a new one
+echo "Stopping YunBridge v2 daemon..."
+PIDS=$(ps | grep '[y]unbridge' | awk '{print $1}')
+if [ -n "$PIDS" ]; then
+	echo "$PIDS" | xargs kill -9
+	echo "All running yunbridge processes killed."
+else
+	echo "No yunbridge processes found."
 fi
+
+
+# Instalar daemon Python yunbridge
+echo "Instalando YunBridge v2 daemon en /usr/bin/yunbridge..."
+cp ../YunBridge-v2/src/bridge_daemon.py /usr/bin/yunbridge
+chmod +x /usr/bin/yunbridge
+echo "YunBridge daemon instalado y marcado como ejecutable."
 
 
 # Web UI integration

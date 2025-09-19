@@ -1,35 +1,36 @@
 # Arduino Yun v2 Ecosystem Roadmap
 
 ## v2.0 (Initial Release)
-- Full compatibility with legacy Bridge library and examples
-- Modular Python3 YunBridge daemon
-- Modern web UI with REST/WebSocket
-- OpenWRT integration scripts and patches
-- Centralized documentation and install scripts
-- Hardware test coverage (LED 13, all APIs)
+- Compatibilidad total con Bridge library y ejemplos legacy
+- Daemon Python3 modular
+- Web UI moderna con REST/WebSocket
+- Scripts y parches de integración OpenWRT
+- Documentación centralizada e instalación
+- Pruebas de hardware (LED 13, APIs)
 
-## v2.1
-- MQTT and REST API extensions
-- Security improvements (auth, HTTPS)
-- Improved error handling and logging
+## v2.1 (Actual)
+- Soporte exclusivo para MQTT (legacy y REST eliminados)
+- Refactor de ejemplos y scripts: solo MQTT
+- Mejoras de seguridad (auth MQTT, TLS)
+- Mejoras de logging y manejo de errores
 
 ## v2.2
-- Dockerized development environment
-- Automated test suite for hardware and software
+- Entorno de desarrollo Dockerizado
+- Test suite automatizado para hardware/software (solo MQTT)
 
 ## v2.3
-- Advanced web UI dashboard
-- OTA firmware and package updates
+- Dashboard avanzado en Web UI (solo MQTT)
+- Actualizaciones OTA de firmware y paquetes
 
 ## v2.4
-- Support for new OpenWRT hardware targets
-- Community plugin system
+- Soporte para nuevos targets OpenWRT
+- Sistema de plugins comunitarios (MQTT)
 
 ## v2.5+
-- Community-contributed features
-- Performance optimizations
-- Documentation and tutorial expansion
+- Features aportadas por la comunidad
+- Optimización de performance
+- Expansión de documentación y tutoriales
 
 ---
 
-# Contributions and suggestions are welcome!
+# ¡Contribuciones y sugerencias bienvenidas!

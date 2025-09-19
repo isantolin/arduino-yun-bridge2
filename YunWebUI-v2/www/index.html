@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YunWebUI v2 - LED 13 Test</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    button { font-size: 1.2em; margin: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>YunWebUI v2</h1>
+  <h2>LED 13 Control</h2>
+  <button onclick="led13('ON')">Turn ON</button>
+  <button onclick="led13('OFF')">Turn OFF</button>
+  <div id="status"></div>
+  <script>
+    function led13(state) {
+      fetch('/cgi-bin/led13?state=' + state, {method: 'GET'})
+        .then(r => r.text())
+        .then(txt => document.getElementById('status').innerText = txt)
+        .catch(e => document.getElementById('status').innerText = 'Error: ' + e);
+    }
+  </script>
+</body>
+</html>

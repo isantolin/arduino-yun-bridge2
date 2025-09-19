@@ -1,0 +1,14 @@
+#!/bin/sh /etc/rc.common
+# Bridge-v2 OpenWRT init script
+START=99
+STOP=10
+
+start() {
+    echo "Starting YunBridge v2 daemon..."
+    start-stop-daemon -S -b -x /usr/bin/yunbridge
+}
+
+stop() {
+    echo "Stopping YunBridge v2 daemon..."
+    start-stop-daemon -K -x /usr/bin/yunbridge
+}

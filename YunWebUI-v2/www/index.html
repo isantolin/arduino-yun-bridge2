@@ -17,7 +17,7 @@
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <script>
     // MQTT broker settings
-    const brokerUrl = 'ws://localhost:9001'; // Change to your broker's WebSocket URL
+  const brokerUrl = 'ws://192.168.15.17:9001'; // Usar la IP/dominio del host MQTT
     const topicSet = 'yun/pin/13/set';
     const topicState = 'yun/pin/13/state';
     const client = mqtt.connect(brokerUrl);

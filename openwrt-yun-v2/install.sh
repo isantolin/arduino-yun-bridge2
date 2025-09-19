@@ -1,3 +1,20 @@
+#!/bin/bash
+# openwrt-yun-v2 install script
+# Aplica parches, instala scripts de integración y actualiza todos los paquetes
+
+# Actualizar todos los paquetes del sistema
+echo "[INFO] Actualizando lista de paquetes y actualizando todos los paquetes instalados..."
+opkg update
+opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
+
+# Configurar Mosquitto para WebSocket en el puerto 9001
+if ! grep -q 'protocol websockets' /etc/mosquitto/mosquitto.conf 2>/dev/null; then
+	echo "[INFO] Agregando soporte WebSocket a Mosquitto en /etc/mosquitto/mosquitto.conf..."
+	echo -e "\nlistener 9001\nprotocol websockets" >> /etc/mosquitto/mosquitto.conf
+	if [ -x /etc/init.d/mosquitto ]; then
+		/etc/init.d/mosquitto restart
+	fi
+fi
 # Deshabilitar login shell en consola serie (eliminar ::askconsole:/usr/libexec/login.sh de /etc/inittab)
 if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
 	echo "[INFO] Eliminando login shell de consola serie en /etc/inittab..."

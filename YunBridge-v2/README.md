@@ -62,4 +62,10 @@ Todos los ejemplos y scripts legacy han sido eliminados. Solo se soportan flujos
 
 ---
 
+## Pendientes
+
+- Soporte oficial de Mosquitto con Websockets en OpenWrt (compilación cruzada y/o integración en scripts)
+
+---
+
 ---

@@ -32,8 +32,15 @@ Ver `install.sh` para pasos de despliegue en el web server de OpenWRT.
 	- Usa los botones ON/OFF de LED 13.
 	- El LED 13 debe responder y el estado actualizarse en tiempo real.
 
+
 ## Troubleshooting
 - Verifica que el daemon YunBridge y el broker MQTT estén corriendo.
+
+---
+
+## Pendientes
+
+- Soporte oficial de Mosquitto con Websockets en OpenWrt (compilación cruzada y/o integración en scripts)
 
 ---
 

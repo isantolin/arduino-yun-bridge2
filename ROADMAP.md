@@ -34,3 +34,7 @@
 ---
 
 # ¡Contribuciones y sugerencias bienvenidas!
+
+## Pendientes
+
+- Soporte oficial de Mosquitto con Websockets en OpenWrt (compilación cruzada y/o integración en scripts)

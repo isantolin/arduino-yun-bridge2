@@ -5,11 +5,14 @@
 
 #include <Arduino.h>
 
+
 class BridgeClass {
 public:
     void begin();
     void led13On();
     void led13Off();
+    void pinOn(int pin);
+    void pinOff(int pin);
     // TODO: Add more API methods for full compatibility
 };
 

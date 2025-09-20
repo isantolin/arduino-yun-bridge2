@@ -7,14 +7,7 @@ echo "[INFO] Actualizando lista de paquetes y actualizando todos los paquetes in
 opkg update
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
-# Configurar Mosquitto para WebSocket en el puerto 9001
-if ! grep -q 'protocol websockets' /etc/mosquitto/mosquitto.conf 2>/dev/null; then
-	echo "[INFO] Agregando soporte WebSocket a Mosquitto en /etc/mosquitto/mosquitto.conf..."
-	echo -e "\nlistener 9001\nprotocol websockets" >> /etc/mosquitto/mosquitto.conf
-	if [ -x /etc/init.d/mosquitto ]; then
-		/etc/init.d/mosquitto restart
-	fi
-fi
+
 # Deshabilitar login shell en consola serie (eliminar ::askconsole:/usr/libexec/login.sh de /etc/inittab)
 if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
 	echo "[INFO] Eliminando login shell de consola serie en /etc/inittab..."
@@ -24,11 +17,12 @@ fi
 # Install CGI script for LED 13 control
 if [ -f scripts/led13_rest_cgi.py ]; then
 	mkdir -p /www/cgi-bin
-	cp scripts/led13_rest_cgi.py /www/cgi-bin/led13
-	chmod +x /www/cgi-bin/led13
-	echo "CGI script for LED 13 installed at /www/cgi-bin/led13"
+	cp scripts/pin_rest_cgi.py /www/cgi-bin/pin
+	chmod +x /www/cgi-bin/pin
+	echo "Installing REST CGI script (generic pin, requires pin parameter)..."
 else
 	echo "WARNING: scripts/led13_rest_cgi.py not found. CGI script not installed."
+	echo "WARNING: scripts/pin_rest_cgi.py not found. CGI script not installed."
 fi
 #!/bin/bash
 # openwrt-yun-v2 install script
@@ -99,27 +93,14 @@ chmod +x /usr/bin/yunbridge
 echo "YunBridge daemon instalado y marcado como ejecutable."
 
 
-# Web UI integration
-if [ -d ../YunWebUI-v2/www ]; then
-  mkdir -p /www/arduino-webui-v2
-  cp -r ../YunWebUI-v2/www/* /www/arduino-webui-v2/
-else
-  echo "WARNING: ../YunWebUI-v2/www not found. Skipping web UI copy."
-fi
-
-
-# Restart services (OpenWRT uses /etc/init.d/bridge-v2)
 
 # Restart services (OpenWRT uses /etc/init.d/bridge-v2)
 if [ -f /etc/init.d/bridge-v2 ]; then
-	/etc/init.d/bridge-v2 enable
-	/etc/init.d/bridge-v2 restart
+		/etc/init.d/bridge-v2 enable
+		/etc/init.d/bridge-v2 restart
 else
-	echo "ERROR: /etc/init.d/bridge-v2 not found. Service not started."
+		echo "ERROR: /etc/init.d/bridge-v2 not found. Service not started."
 fi
-
-# Web UI integration
-cp -r ../YunWebUI-v2/www/* /www/arduino-webui-v2/
 
 
 if [ -f /etc/init.d/uhttpd ]; then

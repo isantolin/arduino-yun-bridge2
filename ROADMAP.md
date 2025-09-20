@@ -1,3 +1,4 @@
+- REST CGI endpoint for generic pin control (was LED 13 only, now requires explicit pin parameter, no default)
 
 # Arduino Yun v2 Ecosystem Roadmap
 
@@ -8,6 +9,7 @@
 - OpenWRT integration scripts and patches
 - Centralized documentation and installation
 - Hardware tests (LED 13, APIs)
+- REST CGI endpoint for generic pin control (was LED 13 only)
 
 ## v2.1 (Current)
 - Exclusive support for MQTT (legacy and REST removed)

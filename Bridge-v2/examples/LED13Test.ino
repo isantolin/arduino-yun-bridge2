@@ -1,16 +1,23 @@
-// Bridge-v2 Example: LED 13 Test
+
+
+// Bridge-v2 Example: Generic Pin Test (default: 13)
 #include <Bridge.h>
+
+// Set testPin to any digital pin you want to test (default: 13)
+const int testPin = 13; // Change to test other pins
 
 void setup() {
   Bridge.begin();
-  pinMode(13, OUTPUT);
+  pinMode(testPin, OUTPUT);
 }
 
 void loop() {
-  Bridge.led13On();
-  digitalWrite(13, HIGH);
+  // Turn the pin ON using Bridge and digitalWrite
+  Bridge.pinOn(testPin);
+  digitalWrite(testPin, HIGH);
   delay(1000);
-  Bridge.led13Off();
-  digitalWrite(13, LOW);
+  // Turn the pin OFF using Bridge and digitalWrite
+  Bridge.pinOff(testPin);
+  digitalWrite(testPin, LOW);
   delay(1000);
 }

@@ -58,16 +58,9 @@ Then access LuCI: Services > YunBridge
 - `root/etc/config/yunbridge`: UCI config defaults
 - `root/www/yunbridge/index.html`: YunWebUI frontend (copy from YunWebUI-v2)
 
+
 ## MQTT Broker IP Automation
-To make the WebUI automatically use the router's IP as the MQTT broker, replace the line:
-```js
-const brokerUrl = 'ws://192.168.15.17:9001';
-```
-with:
-```js
-const brokerUrl = 'ws://' + window.location.hostname + ':9001';
-```
-This way, the WebUI will always connect to the MQTT broker on the device itself.
+// WebSocket support is not available in the default OpenWrt Mosquitto package. Use standard MQTT (port 1883) for now.
 
 ## Roadmap
 - [ ] Improve parameter validation

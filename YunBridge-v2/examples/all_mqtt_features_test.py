@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Example: Test all MQTT features of YunBridge v2
-- LED 13 control
+- Generic pin control (default: 13, can specify any pin)
 - Key-value store
 - File I/O
 - Mailbox
@@ -10,10 +10,19 @@ Example: Test all MQTT features of YunBridge v2
 import time
 import paho.mqtt.client as mqtt
 
+import sys
+
+
 BROKER = 'localhost'
 PORT = 1883
-TOPIC_SET = 'yun/bridge/led13/set'
-TOPIC_STATE = 'yun/bridge/led13/state'
+PIN = 13  # Default pin
+if len(sys.argv) > 1:
+    try:
+        PIN = int(sys.argv[1])
+    except Exception:
+        pass
+TOPIC_SET = f'yun/pin/{PIN}/set'
+TOPIC_STATE = f'yun/pin/{PIN}/state'
 TOPIC_CMD = 'yun/command'
 
 # Callback for all state updates
@@ -26,13 +35,14 @@ client.connect(BROKER, PORT, 60)
 client.loop_start()
 
 # Subscribe to all relevant topics
+
 client.subscribe(TOPIC_STATE)
 client.subscribe('yun/command/response')
 
-print("Turning LED 13 ON via MQTT...")
+print(f"Turning pin {PIN} ON via MQTT...")
 client.publish(TOPIC_SET, 'ON')
 time.sleep(1)
-print("Turning LED 13 OFF via MQTT...")
+print(f"Turning pin {PIN} OFF via MQTT...")
 client.publish(TOPIC_SET, 'OFF')
 time.sleep(1)
 

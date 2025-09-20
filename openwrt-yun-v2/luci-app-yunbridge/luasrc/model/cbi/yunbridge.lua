@@ -7,6 +7,7 @@ s:option(Value, "mqtt_port", "MQTT Port")
 s:option(Value, "mqtt_topic", "MQTT Topic Prefix")
 s:option(Value, "serial_port", "Serial Port")
 s:option(Value, "serial_baud", "Serial Baudrate")
-s:option(Flag, "debug", "Debug Mode")
+debug = s:option(Flag, "debug", "Debug Mode")
+debug.default = "1"
 
 return m

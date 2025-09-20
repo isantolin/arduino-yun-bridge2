@@ -41,7 +41,7 @@ def get_uci_config():
         except Exception as e:
             print(f'[WARN] Error reading UCI configuration: {e}')
     else:
-    print('[WARN] python3-uci is not installed, using default values')
+        print('[WARN] python3-uci is not installed, using default values')
     return cfg
 
 CFG = get_uci_config()
@@ -52,8 +52,10 @@ SERIAL_PORT = CFG['serial_port']
 SERIAL_BAUDRATE = CFG['serial_baud']
 DEBUG = CFG['debug']
 RECONNECT_DELAY = 5  # seconds
-PIN_TOPIC_SET = f'{MQTT_TOPIC_PREFIX}/13/set'
-PIN_TOPIC_STATE = f'{MQTT_TOPIC_PREFIX}/13/state'
+
+# Generalized topic patterns
+PIN_TOPIC_SET_WILDCARD = f'{MQTT_TOPIC_PREFIX}/+/set'
+PIN_TOPIC_STATE_FMT = f'{MQTT_TOPIC_PREFIX}/{{pin}}/state'
 
 class BridgeDaemon:
     def __init__(self):
@@ -63,58 +65,71 @@ class BridgeDaemon:
         self.mqtt_connected = False
         self.ser = None
         self.running = True
-        self.last_pin13_state = None
+        self.last_pin_state = {}
         self.kv_store = {}
         self.mailbox = []
 
     def on_mqtt_connect(self, client, userdata, flags, rc):
         print(f"[MQTT] Connected with result code {rc}")
         try:
-            client.subscribe(PIN_TOPIC_SET)
-            print(f"[MQTT] Subscribed to topic: {PIN_TOPIC_SET}")
+            client.subscribe(PIN_TOPIC_SET_WILDCARD)
+            print(f"[MQTT] Subscribed to topic: {PIN_TOPIC_SET_WILDCARD}")
         except Exception as e:
             print(f"[MQTT] Subscribe error: {e}")
         self.mqtt_connected = True
 
     def on_mqtt_message(self, client, userdata, msg):
         print(f"[MQTT] Message received: {msg.topic} {msg.payload}")
-        if msg.topic == PIN_TOPIC_SET:
+        # Parse pin number from topic: yun/pin/<N>/set
+        import re
+        m = re.match(rf"{MQTT_TOPIC_PREFIX}/(\d+)/set", msg.topic)
+        if m:
+            pin = m.group(1)
             payload = msg.payload.decode().strip().upper()
-            print(f"[DEBUG] MQTT payload for LED13: {payload}")
+            print(f"[DEBUG] MQTT payload for pin {pin}: {payload}")
             if payload in ('ON', '1'):
-                print("[DEBUG] Writing 'LED13 ON' to serial")
+                print(f"[DEBUG] Writing 'PIN{pin} ON' to serial")
                 if self.ser:
-                    self.ser.write(b'LED13 ON\n')
+                    self.ser.write(f'PIN{pin} ON\n'.encode())
             elif payload in ('OFF', '0'):
-                print("[DEBUG] Writing 'LED13 OFF' to serial")
+                print(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
                 if self.ser:
-                    self.ser.write(b'LED13 OFF\n')
+                    self.ser.write(f'PIN{pin} OFF\n'.encode())
 
-    def publish_pin13_state(self, state):
+    def publish_pin_state(self, pin, state):
         if self.mqtt_connected:
             payload = 'ON' if state else 'OFF'
-            self.mqtt_client.publish(PIN_TOPIC_STATE, payload)
-            print(f"[MQTT] Published {payload} to {PIN_TOPIC_STATE}")
+            topic = PIN_TOPIC_STATE_FMT.format(pin=pin)
+            self.mqtt_client.publish(topic, payload)
+            print(f"[MQTT] Published {payload} to {topic}")
 
     def handle_command(self, line):
         cmd = line.strip()
         print(f"[DEBUG] Received command: '{cmd}'")
-        if cmd == 'LED13 ON':
-            print("[DEBUG] Action: LED13 ON")
+        # Generalized pin ON/OFF/STATE commands
+        import re
+        m_on = re.match(r'PIN(\d+) ON', cmd)
+        m_off = re.match(r'PIN(\d+) OFF', cmd)
+        m_state = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
+        if m_on:
+            pin = m_on.group(1)
+            print(f"[DEBUG] Action: PIN{pin} ON")
             if self.ser:
-                self.ser.write(b'LED13:ON\n')
-            self.publish_pin13_state(True)
-            self.last_pin13_state = True
-        elif cmd == 'LED13 OFF':
-            print("[DEBUG] Action: LED13 OFF")
+                self.ser.write(f'PIN{pin}:ON\n'.encode())
+            self.publish_pin_state(pin, True)
+            self.last_pin_state[pin] = True
+        elif m_off:
+            pin = m_off.group(1)
+            print(f"[DEBUG] Action: PIN{pin} OFF")
             if self.ser:
-                self.ser.write(b'LED13:OFF\n')
-            self.publish_pin13_state(False)
-            self.last_pin13_state = False
-        elif cmd.startswith('LED13 STATE '):
-            state = cmd.split(' ', 2)[2]
-            print(f"[DEBUG] LED13 state reported by Arduino: {state}")
-            self.publish_pin13_state(state == 'ON')
+                self.ser.write(f'PIN{pin}:OFF\n'.encode())
+            self.publish_pin_state(pin, False)
+            self.last_pin_state[pin] = False
+        elif m_state:
+            pin = m_state.group(1)
+            state = m_state.group(2)
+            print(f"[DEBUG] PIN{pin} state reported by Arduino: {state}")
+            self.publish_pin_state(pin, state == 'ON')
         elif cmd.startswith('SET '):
             print(f"[DEBUG] Action: SET (key-value store)")
             try:
@@ -208,8 +223,8 @@ class BridgeDaemon:
                 self.ser.write(b'UNKNOWN COMMAND\n')
 
     def run(self):
-    print(f"[DEBUG] Starting BridgeDaemon run()")
-    print(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
+        print(f"[DEBUG] Starting BridgeDaemon run()")
+        print(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
         try:
             print("[DEBUG] Connecting to MQTT broker...")
             self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
@@ -239,7 +254,7 @@ class BridgeDaemon:
                                 time.sleep(RECONNECT_DELAY)
                                 break
                             except Exception as e:
-                                print(f'[ERROR] Error inesperado leyendo del puerto serie: {e}')
+                                print(f'[ERROR] Unexpected error reading from serial port: {e}')
                                 time.sleep(1)
                         print(f'[INFO] Serial port {SERIAL_PORT} closed')
                         self.ser = None

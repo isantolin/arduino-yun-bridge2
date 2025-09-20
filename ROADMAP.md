@@ -1,40 +1,41 @@
+
 # Arduino Yun v2 Ecosystem Roadmap
 
 ## v2.0 (Initial Release)
-- Compatibilidad total con Bridge library y ejemplos legacy
-- Daemon Python3 modular
-- Web UI moderna con REST/WebSocket
-- Scripts y parches de integración OpenWRT
-- Documentación centralizada e instalación
-- Pruebas de hardware (LED 13, APIs)
+- Full compatibility with Bridge library and legacy examples
+- Modular Python3 daemon
+- Modern Web UI with REST/WebSocket
+- OpenWRT integration scripts and patches
+- Centralized documentation and installation
+- Hardware tests (LED 13, APIs)
 
-## v2.1 (Actual)
-- Soporte exclusivo para MQTT (legacy y REST eliminados)
-- Refactor de ejemplos y scripts: solo MQTT
-- Mejoras de seguridad (auth MQTT, TLS)
-- Mejoras de logging y manejo de errores
+## v2.1 (Current)
+- Exclusive support for MQTT (legacy and REST removed)
+- Refactored examples and scripts: MQTT only
+- Security improvements (MQTT auth, TLS)
+- Improved logging and error handling
 
 ## v2.2
-- Entorno de desarrollo Dockerizado
-- Test suite automatizado para hardware/software (solo MQTT)
+- Dockerized development environment
+- Automated test suite for hardware/software (MQTT only)
 
 ## v2.3
-- Dashboard avanzado en Web UI (solo MQTT)
-- Actualizaciones OTA de firmware y paquetes
+- Advanced dashboard in Web UI (MQTT only)
+- OTA updates for firmware and packages
 
 ## v2.4
-- Soporte para nuevos targets OpenWRT
-- Sistema de plugins comunitarios (MQTT)
+- Support for new OpenWRT targets
+- Community plugin system (MQTT)
 
 ## v2.5+
-- Features aportadas por la comunidad
-- Optimización de performance
-- Expansión de documentación y tutoriales
+- Community-contributed features
+- Performance optimization
+- Expanded documentation and tutorials
 
 ---
 
-# ¡Contribuciones y sugerencias bienvenidas!
+# Contributions and suggestions welcome!
 
-## Pendientes
+## Pending
 
-- Soporte oficial de Mosquitto con Websockets en OpenWrt (compilación cruzada y/o integración en scripts)
+- Official Mosquitto support with WebSockets on OpenWrt (cross-compilation and/or integration in scripts)

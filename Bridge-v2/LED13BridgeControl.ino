@@ -6,7 +6,7 @@
 
 void setup() {
   Bridge.begin();
-  Serial.begin(9600);
+  Serial.begin(115200);
   pinMode(13, OUTPUT);
 }
 

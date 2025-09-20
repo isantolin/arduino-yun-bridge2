@@ -3,7 +3,7 @@
 
 void setup() {
   Bridge.begin();
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(1000);
   Serial1.println("WRITEFILE /tmp/bridge_test.txt hello_bridge");
   delay(200);

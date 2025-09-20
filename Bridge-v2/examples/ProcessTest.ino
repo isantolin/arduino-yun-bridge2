@@ -3,7 +3,7 @@
 
 void setup() {
   Bridge.begin();
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(1000);
   Serial1.println("RUN echo hello_from_yun");
   delay(200);

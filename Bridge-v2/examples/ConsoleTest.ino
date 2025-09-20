@@ -3,7 +3,7 @@
 
 void setup() {
   Bridge.begin();
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(1000);
   Serial1.println("CONSOLE hello_console");
   delay(200);

@@ -39,9 +39,9 @@ def get_uci_config():
                                 v = DEFAULTS[k]
                         cfg[k] = v
         except Exception as e:
-            print(f'[WARN] Error leyendo configuración UCI: {e}')
+            print(f'[WARN] Error reading UCI configuration: {e}')
     else:
-        print('[WARN] python3-uci no está instalado, usando valores por defecto')
+    print('[WARN] python3-uci is not installed, using default values')
     return cfg
 
 CFG = get_uci_config()
@@ -51,7 +51,7 @@ MQTT_TOPIC_PREFIX = CFG['mqtt_topic']
 SERIAL_PORT = CFG['serial_port']
 SERIAL_BAUDRATE = CFG['serial_baud']
 DEBUG = CFG['debug']
-RECONNECT_DELAY = 5  # segundos
+RECONNECT_DELAY = 5  # seconds
 PIN_TOPIC_SET = f'{MQTT_TOPIC_PREFIX}/13/set'
 PIN_TOPIC_STATE = f'{MQTT_TOPIC_PREFIX}/13/state'
 
@@ -208,20 +208,20 @@ class BridgeDaemon:
                 self.ser.write(b'UNKNOWN COMMAND\n')
 
     def run(self):
-        print(f"[DEBUG] Iniciando run() de BridgeDaemon")
-        print(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
+    print(f"[DEBUG] Starting BridgeDaemon run()")
+    print(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
         try:
-            print("[DEBUG] Conectando al broker MQTT...")
+            print("[DEBUG] Connecting to MQTT broker...")
             self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
             mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             mqtt_thread.start()
-            print("[DEBUG] MQTT thread iniciado")
+            print("[DEBUG] MQTT thread started")
             while self.running:
                 try:
-                    print(f"[DEBUG] Intentando abrir puerto serie {SERIAL_PORT}...")
+                    print(f"[DEBUG] Trying to open serial port {SERIAL_PORT}...")
                     with serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1) as ser:
                         self.ser = ser
-                        print(f'[INFO] Puerto serie {SERIAL_PORT} abierto')
+                        print(f'[INFO] Serial port {SERIAL_PORT} opened')
                         while self.running:
                             try:
                                 line = ser.readline().decode(errors='replace').strip()
@@ -229,8 +229,8 @@ class BridgeDaemon:
                                     print(f'[SERIAL] {line}')
                                     self.handle_command(line)
                             except serial.SerialException as e:
-                                print(f'[ERROR] Error de I/O en el puerto serie: {e}')
-                                print(f'[INFO] Cerrando puerto serie y reintentando en {RECONNECT_DELAY} segundos...')
+                                print(f'[ERROR] Serial port I/O error: {e}')
+                                print(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')
                                 self.ser = None
                                 try:
                                     ser.close()
@@ -241,28 +241,28 @@ class BridgeDaemon:
                             except Exception as e:
                                 print(f'[ERROR] Error inesperado leyendo del puerto serie: {e}')
                                 time.sleep(1)
-                        print(f'[INFO] Puerto serie {SERIAL_PORT} cerrado')
+                        print(f'[INFO] Serial port {SERIAL_PORT} closed')
                         self.ser = None
                 except serial.SerialException as e:
-                    print(f'[ERROR] No se pudo abrir el puerto serie: {e}')
+                    print(f'[ERROR] Could not open serial port: {e}')
                     self.ser = None
-                    print(f'[INFO] Reintentando en {RECONNECT_DELAY} segundos...')
+                    print(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
                     time.sleep(RECONNECT_DELAY)
                 except Exception as e:
-                    print(f'[ERROR] Error inesperado en el loop principal: {e}')
+                    print(f'[ERROR] Unexpected error in main loop: {e}')
                     self.ser = None
                     import traceback
                     traceback.print_exc()
-                    print(f'[INFO] Reintentando en {RECONNECT_DELAY} segundos...')
+                    print(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
                     time.sleep(RECONNECT_DELAY)
         except KeyboardInterrupt:
-            print("[INFO] Daemon detenido por el usuario.")
+            print("[INFO] Daemon stopped by user.")
             self.running = False
         except Exception as e:
-            print(f'[FATAL] Excepción no controlada en run(): {e}')
+            print(f'[FATAL] Unhandled exception in run(): {e}')
             import traceback
             traceback.print_exc()
-        print('[DEBUG] Saliendo de run() de BridgeDaemon')
+        print('[DEBUG] Exiting BridgeDaemon run()')
 
 if __name__ == '__main__':
     print('[YunBridge] Configuración utilizada:')

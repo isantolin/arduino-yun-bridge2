@@ -1,16 +1,17 @@
+
 # Bridge v2
 
-Arduino library for Yun, con soporte exclusivo para MQTT. El soporte para ejemplos y sketches legacy (Bridge clásico) ha sido eliminado para avanzar en el roadmap MQTT.
+Arduino library for Yun, with exclusive support for MQTT. Support for legacy examples and sketches (classic Bridge) has been removed to advance the MQTT roadmap.
 
 ## Features
-- Soporte MQTT para integración IoT
-- Ejemplo principal: control de LED 13 vía MQTT
+- MQTT support for IoT integration
+- Main example: control of LED 13 via MQTT
 
 ## Installation
-Ver `install.sh` para pasos de instalación de la librería Arduino.
+See `install.sh` for Arduino library installation steps.
 
-## Prueba de hardware
-- El ejemplo principal es el control MQTT de LED 13.
+## Hardware Test
+- The main example is MQTT control of LED 13.
 
 ## Documentation
 - [Official Arduino Yun Guide](https://docs.arduino.cc/retired/getting-started-guides/ArduinoYun/)
@@ -18,21 +19,20 @@ Ver `install.sh` para pasos de instalación de la librería Arduino.
 
 ---
 
+# Hardware Tests
 
-# Pruebas de hardware
+## Requirements
+- Arduino Yun with OpenWRT and all v2 packages installed
+- Arduino IDE to upload the sketch
 
-## Requisitos
-- Arduino Yun con OpenWRT y todos los paquetes v2 instalados
-- Arduino IDE para subir el sketch
-
-## Prueba principal
+## Main Test
 1. **LED 13 MQTT**
-	- Sube `Bridge-v2/LED13BridgeControl.ino` a tu Yun.
-	- Ejecuta el test MQTT desde el Yun o la WebUI.
-	- El LED 13 debe responder en todos los casos.
+    - Upload `Bridge-v2/LED13BridgeControl.ino` to your Yun.
+    - Run the MQTT test from the Yun or the WebUI.
+    - LED 13 should respond in all cases.
 
 ## Troubleshooting
-- Asegúrate de que el daemon YunBridge y el broker MQTT estén corriendo.
+- Ensure the YunBridge daemon and the MQTT broker are running.
 
 ---
 

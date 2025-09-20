@@ -1,10 +1,11 @@
+
 # Roadmap: luci-app-yunbridge
 
-- [x] Panel de configuración básica (MQTT, serial, debug)
-- [x] Integración de Web UI (iframe YunWebUI)
-- [x] Daemon YunBridge lee configuración UCI con python3-uci
-- [x] Eliminación de YunWebUI-v2 (todo migrado a LuCI)
-- [ ] Validación avanzada de parámetros
-- [ ] Estado y logs del daemon en panel
-- [ ] Soporte multi-idioma
-- [ ] Mejorar documentación y ejemplos
+- [x] Basic configuration panel (MQTT, serial, debug)
+- [x] Web UI integration (YunWebUI iframe)
+- [x] YunBridge daemon reads UCI config with python3-uci
+- [x] Removal of YunWebUI-v2 (everything migrated to LuCI)
+- [ ] Advanced parameter validation
+- [ ] Daemon status and logs in panel
+- [ ] Multi-language support
+- [ ] Improve documentation and examples

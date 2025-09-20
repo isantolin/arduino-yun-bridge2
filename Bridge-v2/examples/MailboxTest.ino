@@ -3,7 +3,7 @@
 
 void setup() {
   Bridge.begin();
-  Serial.begin(9600);
+  Serial.begin(115200);
   delay(1000);
   Serial1.println("MAILBOX SEND hello_mailbox");
   delay(200);

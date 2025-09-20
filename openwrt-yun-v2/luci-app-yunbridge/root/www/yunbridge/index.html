@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>YunWebUI v2 - LED 13 Test</title>
+	<style>
+		body { font-family: sans-serif; margin: 2em; }
+		button { font-size: 1.2em; margin: 0.5em; }
+	</style>
+</head>
+<body>
+	<h1>YunWebUI v2</h1>
+	<h2>LED 13 Control (MQTT)</h2>
+	<button onclick="led13('ON')">Turn ON</button>
+	<button onclick="led13('OFF')">Turn OFF</button>
+	<div id="status">Connecting to MQTT...</div>
+	<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+	<script>
+		// MQTT broker settings
+	const brokerUrl = 'ws://192.168.15.17:9001'; // Usar la IP/dominio del host MQTT
+		const topicSet = 'yun/pin/13/set';
+		const topicState = 'yun/pin/13/state';
+		const client = mqtt.connect(brokerUrl);
+
+		client.on('connect', function () {
+			document.getElementById('status').innerText = 'Connected to MQTT broker.';
+			client.subscribe(topicState);
+		});
+
+		client.on('message', function (topic, message) {
+			if (topic === topicState) {
+				document.getElementById('status').innerText = 'LED 13 State: ' + message.toString();
+			}
+		});
+
+		client.on('error', function (err) {
+			document.getElementById('status').innerText = 'MQTT Error: ' + err;
+		});
+
+		function led13(state) {
+			client.publish(topicSet, state);
+		}
+	</script>
+</body>
+</html>

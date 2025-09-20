@@ -1,20 +1,59 @@
 #!/usr/bin/env python3
+
 import serial
 import time
 import paho.mqtt.client as mqtt
 import threading
 import sys
+try:
+    import uci
+except ImportError:
+    uci = None
 
 
-# Configuración
-MQTT_BROKER = 'localhost'
-MQTT_PORT = 1883
-MQTT_TOPIC_PREFIX = 'yun/bridge'
-SERIAL_PORT = '/dev/ttyATH0'
-SERIAL_BAUDRATE = 115200
+
+# Defaults
+DEFAULTS = {
+    'mqtt_host': '127.0.0.1',
+    'mqtt_port': 1883,
+    'mqtt_topic': 'yun/pin',
+    'serial_port': '/dev/ttyATH0',
+    'serial_baud': 115200,
+    'debug': 0
+}
+
+def get_uci_config():
+    cfg = DEFAULTS.copy()
+    if uci is not None:
+        try:
+            c = uci.UCI()
+            section = c.get('yunbridge', 'main')
+            if section:
+                for k in DEFAULTS:
+                    v = section.get(k)
+                    if v is not None:
+                        if k == 'mqtt_port' or k == 'serial_baud' or k == 'debug':
+                            try:
+                                v = int(v)
+                            except Exception:
+                                v = DEFAULTS[k]
+                        cfg[k] = v
+        except Exception as e:
+            print(f'[WARN] Error leyendo configuración UCI: {e}')
+    else:
+        print('[WARN] python3-uci no está instalado, usando valores por defecto')
+    return cfg
+
+CFG = get_uci_config()
+MQTT_BROKER = CFG['mqtt_host']
+MQTT_PORT = CFG['mqtt_port']
+MQTT_TOPIC_PREFIX = CFG['mqtt_topic']
+SERIAL_PORT = CFG['serial_port']
+SERIAL_BAUDRATE = CFG['serial_baud']
+DEBUG = CFG['debug']
 RECONNECT_DELAY = 5  # segundos
-PIN_TOPIC_SET = f'{MQTT_TOPIC_PREFIX}/led13/set'
-PIN_TOPIC_STATE = f'{MQTT_TOPIC_PREFIX}/led13/state'
+PIN_TOPIC_SET = f'{MQTT_TOPIC_PREFIX}/13/set'
+PIN_TOPIC_STATE = f'{MQTT_TOPIC_PREFIX}/13/state'
 
 class BridgeDaemon:
     def __init__(self):
@@ -226,5 +265,8 @@ class BridgeDaemon:
         print('[DEBUG] Saliendo de run() de BridgeDaemon')
 
 if __name__ == '__main__':
+    print('[YunBridge] Configuración utilizada:')
+    for k, v in CFG.items():
+        print(f'  {k}: {v}')
     daemon = BridgeDaemon()
     daemon.run()

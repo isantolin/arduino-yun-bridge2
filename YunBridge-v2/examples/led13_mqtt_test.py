@@ -8,8 +8,8 @@ import paho.mqtt.client as mqtt
 
 BROKER = 'localhost'  # Change if needed
 PORT = 1883
-TOPIC_SET = 'yun/bridge/led13/set'
-TOPIC_STATE = 'yun/bridge/led13/state'
+TOPIC_SET = 'yun/pin/13/set'
+TOPIC_STATE = 'yun/pin/13/state'
 
 # Callback for state updates
 def on_message(client, userdata, msg):

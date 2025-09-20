@@ -1,95 +1,92 @@
+
 # Arduino Yun v2 Ecosystem
 
-This repository contains modernized, interoperable packages for Arduino Yun, now con soporte exclusivo para MQTT como protocolo de control y monitoreo en tiempo real. El soporte para ejemplos y scripts legacy (Bridge clásico, REST, CGI) ha sido eliminado para avanzar en el roadmap MQTT.
+This repository contains all the components for a modern MQTT-based solution for Arduino Yun v2, including the bridge daemon, OpenWrt scripts, LuCI web panel, and examples.
 
 ## Packages
-- **Bridge-v2**: Arduino library (C++) for Yun, con soporte MQTT y ejemplos para integración IoT.
-- **YunBridge-v2**: Daemon Python3 para OpenWRT, MQTT client, modular y extensible.
-- **YunWebUI-v2**: Web UI moderna, MQTT client vía JavaScript para control y monitoreo en tiempo real.
-- **openwrt-yun-v2**: Scripts de integración OpenWRT y automatización de instalación.
-
+- **Bridge-v2**: Arduino library (C++) for Yun, with MQTT support and IoT integration examples.
+- **YunBridge-v2**: Python3 daemon for OpenWRT, MQTT client, modular and extensible.
+- **openwrt-yun-v2**: OpenWRT integration scripts and automated installation.
+- **Web UI**: Now integrated into the LuCI panel (iframe). All configuration is managed via the LuCI panel and stored in UCI (`/etc/config/yunbridge`). The YunBridge daemon reads UCI configuration using python3-uci (with fallback to defaults). The YunWebUI-v2 package has been removed.
 
 ## Dependencies
-- Python 3 y pyserial deben estar instalados en OpenWRT:
-	```sh
-	opkg update
-	opkg install python3 python3-pyserial
-	```
+Python 3 and pyserial must be installed on OpenWRT:
+```sh
+opkg update
+opkg install python3 python3-pyserial
+```
 
-## Ejemplo recomendado
+## Recommended Example
+For MQTT integration, use:
 
-**Para integración MQTT, usa:**
+`Bridge-v2/LED13BridgeControl.ino` (control LED 13 via MQTT)
 
-`Bridge-v2/LED13BridgeControl.ino` (control de LED 13 vía MQTT)
-
-Todos los ejemplos y scripts legacy han sido eliminados. Solo se soportan flujos MQTT.
+All legacy examples and scripts have been removed. Only MQTT flows are supported.
 
 ## Installation Sequence
 1. Flash your Yun with a modern OpenWRT image.
-2. Instala **openwrt-yun-v2** (`/openwrt-yun-v2/install.sh`).
-3. Instala **YunBridge-v2** (`/YunBridge-v2/install.sh`).
-4. Instala **YunWebUI-v2** (`/YunWebUI-v2/install.sh`).
-5. Instala la librería **Bridge-v2** en Arduino (`/Bridge-v2/install.sh`).
-6. Sube el sketch MQTT de ejemplo y verifica operación vía MQTT/WebUI.
+2. Install **openwrt-yun-v2** (`/openwrt-yun-v2/install.sh`).
+3. Install **YunBridge-v2** (`/YunBridge-v2/install.sh`).
+4. Install the **Bridge-v2** library in Arduino (`/Bridge-v2/install.sh`).
+5. Upload the example MQTT sketch and verify operation via MQTT/WebUI.
 
 ## Hardware Test
-- El ejemplo principal es el control MQTT de LED 13.
-- Verifica funcionamiento usando los scripts y WebUI MQTT.
+- The main example is MQTT control of LED 13.
+- Verify operation using the scripts and WebUI MQTT.
 
 ## Documentation
 - [Official Arduino Yun Guide](https://docs.arduino.cc/retired/getting-started-guides/ArduinoYun/)
 
-
 ## MQTT Protocol Integration
 
-Desde la versión 2.1+ el ecosistema solo soporta MQTT como protocolo para comunicación en tiempo real, lectura/escritura de pines e integración IoT.
+From version 2.1+, the ecosystem only supports MQTT as the protocol for real-time communication, pin read/write, and IoT integration.
 
-### Arquitectura
-- **MQTT Broker:** Local (OpenWRT/Mosquitto) o externo.
-- **YunBridge-v2:** Cliente MQTT, suscribe/controla tópicos de pines, publica estados.
-- **Bridge-v2:** Recibe comandos MQTT desde Linux, reporta cambios de estado.
-- **YunWebUI-v2:** Cliente MQTT vía JavaScript para UI en tiempo real.
+### Architecture
+- **MQTT Broker:** Local (OpenWRT/Mosquitto) or external.
+- **YunBridge-v2:** MQTT client, subscribes/controls pin topics, publishes states.
+- **Bridge-v2:** Receives MQTT commands from Linux, reports state changes.
+- **Web UI:** MQTT client via JavaScript for real-time UI.
 
-### Estructura de tópicos MQTT
-- `yun/pin/<N>/set` — Payload: `ON`/`OFF` o `1`/`0` (set pin N)
-- `yun/pin/<N>/state` — Payload: `ON`/`OFF` o `1`/`0` (estado actual)
-- `yun/pin/<N>/get` — Solicita estado actual
-- `yun/command` — Comandos avanzados
+### MQTT Topic Structure
+- `yun/pin/<N>/set` — Payload: `ON`/`OFF` or `1`/`0` (set pin N)
+- `yun/pin/<N>/state` — Payload: `ON`/`OFF` or `1`/`0` (current state)
+- `yun/pin/<N>/get` — Request current state
+- `yun/command` — Advanced commands
 
-### Flujo de datos
-1. WebUI publica `ON` en `yun/pin/13/set`.
-2. Daemon recibe y envía comando MQTT al Arduino.
-3. Arduino cambia el pin y confirma.
-4. Daemon publica nuevo estado en `yun/pin/13/state`.
-5. WebUI/MQTT client recibe y actualiza UI.
+### Data Flow
+1. WebUI publishes `ON` to `yun/pin/13/set`.
+2. Daemon receives and sends MQTT command to Arduino.
+3. Arduino changes the pin and confirms.
+4. Daemon publishes new state to `yun/pin/13/state`.
+5. WebUI/MQTT client receives and updates the UI.
 
-### Seguridad
-- Soporte para autenticación MQTT (usuario/contraseña).
-- Opcionalmente, TLS.
+### Security
+- Support for MQTT authentication (username/password).
+- Optionally, TLS.
 
-Ver `ROADMAP.md` para mejoras futuras.
+See `ROADMAP.md` for future improvements.
 
 ---
 
+# Hardware Tests
 
-# Pruebas de hardware
+## Requirements
+- Arduino Yun with OpenWRT and all v2 packages installed
+- Arduino IDE, SSH, and web browser
 
-## Requisitos
-- Arduino Yun con OpenWRT y todos los paquetes v2 instalados
-- Arduino IDE, SSH y navegador web
-
-## Prueba principal
+## Main Test
 1. **LED 13 MQTT**
-		- Sube `Bridge-v2/LED13BridgeControl.ino` a tu Yun.
-		- Ejecuta `YunBridge-v2/examples/led13_mqtt_test.py` en el Yun (SSH):
-			```bash
-			python3 /path/to/YunBridge-v2/examples/led13_mqtt_test.py
-			```
-		- Abre YunWebUI en tu navegador y usa los botones ON/OFF de LED 13.
-		- El LED 13 debe responder en todos los casos.
+    - Upload `Bridge-v2/LED13BridgeControl.ino` to your Yun.
+    - Run `YunBridge-v2/examples/led13_mqtt_test.py` on the Yun (SSH):
+      ```bash
+      python3 /path/to/YunBridge-v2/examples/led13_mqtt_test.py
+      ```
+    - Open the WebUI in your browser and use the ON/OFF buttons for LED 13.
+    - LED 13 should respond in all cases.
 
 ## Troubleshooting
-- Asegúrate de que `/dev/ttyATH0` está presente y libre.
-- Verifica que el daemon YunBridge y el broker MQTT estén corriendo.
+- Ensure `/dev/ttyATH0` is present and free.
+- Verify that the YunBridge daemon and the MQTT broker are running.
 
+---
 ---

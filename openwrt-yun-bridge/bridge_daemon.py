@@ -1,10 +1,8 @@
-
 #!/usr/bin/env python3
 """
 YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
 Organizado y refactorizado para claridad, robustez y estilo PEP8.
 """
-
 
 # Standard library imports
 import time
@@ -29,7 +27,6 @@ try:
     import uci
 except ImportError:
     uci = None
-
 
 # Async logging globals
 _log_buffer = []

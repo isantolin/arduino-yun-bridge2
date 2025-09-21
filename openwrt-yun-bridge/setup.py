@@ -7,14 +7,14 @@ setup(
     author='isantolin',
     author_email='',
     packages=[],
-    py_modules=['src.bridge_daemon'],
+    py_modules=['bridge_daemon'],
     install_requires=[
         'pyserial',
         'paho-mqtt',
     ],
     entry_points={
         'console_scripts': [
-            'yunbridge=src.bridge_daemon:main',
+            'yunbridge=bridge_daemon:main',
         ],
     },
     classifiers=[

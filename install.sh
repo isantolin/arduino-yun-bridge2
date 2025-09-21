@@ -87,8 +87,8 @@ fi
 # 6. Copy config and package files
 for f in openwrt-yun-core/package/99-yunbridge-ttyath0.conf openwrt-yun-core/package/yunbridge.files; do
     if [ -f "$f" ]; then
-         cp -f "$f" /etc/yunbridge/
-
+        cp -f "$f" /etc/yunbridge/
+    else
         echo "WARNING: $f not found."
     fi
 done

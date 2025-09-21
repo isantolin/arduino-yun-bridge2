@@ -1,23 +1,27 @@
+
 # Arduino Yun v2 Ecosystem Roadmap
 
-The roadmap is divided into two parts: Core (openwrt-yun-core) and Web UI (luci-app-yunbridge).
+El roadmap se divide en dos partes: Core (openwrt-yun-core) y Web UI (luci-app-yunbridge).
 
-## Core Yun/OpenWRT (openwrt-yun-core)
 
-### Next Release (Planned)
-- Security improvements (MQTT auth, TLS)
-- Support for new OpenWRT targets
-- Community plugin system (MQTT)
-- OTA for firmware and packages
-- Community-contributed features
-- Expanded documentation and tutorials
-- Official Mosquitto support with WebSockets on OpenWrt
+## Core Yun/OpenWRT
+
+**Pendiente:**
+- Soporte para nuevos targets OpenWRT.
+- Actualización OTA de firmware y paquetes.
+- Integración de contribuciones de la comunidad.
+- Documentación y tutoriales ampliados.
+- Soporte oficial Mosquitto con WebSockets en OpenWRT.
 
 ---
 
 ## Web UI (luci-app-yunbridge)
-- Advanced dashboard (MQTT only)
+
+**Pendiente:**
+- Dashboard avanzado (solo MQTT).
+- Mejoras de usabilidad y visualización en tiempo real.
+- Integración de plugins y paneles personalizados.
 
 ---
 
-# Contributions and suggestions are welcome!
+# ¡Contribuciones y sugerencias bienvenidas!

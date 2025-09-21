@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
-Organizado y refactorizado para claridad, robustez y estilo PEP8.
+Organized and refactored for clarity, robustness, and PEP8 style.
 """
 
 # Standard library imports
@@ -90,10 +90,18 @@ def start_log_thread():
 start_log_thread()
 atexit.register(flush_log)
 
+
+ # Extended options for MQTT security
 DEFAULTS = {
     'mqtt_host': '127.0.0.1',
     'mqtt_port': 1883,
     'mqtt_topic': 'yun',
+    'mqtt_user': '',
+    'mqtt_pass': '',
+    'mqtt_tls': 0,  # 0: no TLS, 1: TLS
+    'mqtt_cafile': '',
+    'mqtt_certfile': '',
+    'mqtt_keyfile': '',
     'serial_port': '/dev/ttyATH0',
     'serial_baud': 115200,
     'debug': 0
@@ -122,7 +130,7 @@ def get_uci_config():
                 continue
             value = value.strip().strip("'\"")
             if option in DEFAULTS:
-                if option in ('mqtt_port', 'serial_baud', 'debug'):
+                if option in ('mqtt_port', 'serial_baud', 'debug', 'mqtt_tls'):
                     try:
                         value = int(value)
                     except Exception:
@@ -168,6 +176,20 @@ class BridgeDaemon:
             self.mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
         else:
             self.mqtt_client = mqtt.Client()
+        # Autenticación MQTT opcional
+        if CFG.get('mqtt_user'):
+            self.mqtt_client.username_pw_set(CFG['mqtt_user'], CFG.get('mqtt_pass', ''))
+        # TLS opcional
+        if CFG.get('mqtt_tls', 0):
+            tls_args = {}
+            if CFG.get('mqtt_cafile'):
+                tls_args['ca_certs'] = CFG['mqtt_cafile']
+            if CFG.get('mqtt_certfile'):
+                tls_args['certfile'] = CFG['mqtt_certfile']
+            if CFG.get('mqtt_keyfile'):
+                tls_args['keyfile'] = CFG['mqtt_keyfile']
+            if tls_args:
+                self.mqtt_client.tls_set(**tls_args)
         self.mqtt_client.on_connect = self.on_mqtt_connect
         self.mqtt_client.on_message = self.on_mqtt_message
         self.mqtt_connected = False
@@ -191,7 +213,7 @@ class BridgeDaemon:
     def on_mqtt_message(self, client, userdata, msg):
         """MQTT on_message callback."""
         debug_log(f"[MQTT] Message received: {msg.topic} {msg.payload}")
-        # Manejo de pin set
+    # Handle pin set
         m = re.match(rf"{PIN_TOPIC_PREFIX}/(\d+)/set", msg.topic)
         if m:
             pin = m.group(1)
@@ -206,7 +228,7 @@ class BridgeDaemon:
                 if self.ser:
                     self.ser.write(f'PIN{pin} OFF\n'.encode())
             return
-        # Manejo de mailbox MQTT
+    # Handle mailbox MQTT
         if msg.topic == f"{MAILBOX_TOPIC_PREFIX}/send":
             payload = msg.payload.decode(errors='replace').strip()
             debug_log(f"[MQTT] Mailbox message received: {payload}")
@@ -226,7 +248,7 @@ class BridgeDaemon:
         """Parse and execute a command received from serial."""
         cmd = line.strip()
         debug_log(f"[DEBUG] Received command: '{cmd}'")
-        # Generalized pin ON/OFF/STATE commands
+    # Generalized pin ON/OFF/STATE commands
         import re
         m_on = re.match(r'PIN(\d+) ON', cmd)
         m_off = re.match(r'PIN(\d+) OFF', cmd)
@@ -313,7 +335,7 @@ class BridgeDaemon:
                 debug_log(f"[DEBUG] WRITEFILE error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR WRITEFILE\n')
-        # MAILBOX eliminado, ahora se usa MQTT
+    # MAILBOX removed, now uses MQTT
         elif cmd.startswith('CONSOLE '):
             msg = cmd[len('CONSOLE '):]
             debug_log(f'[Console] {msg}')
@@ -321,7 +343,7 @@ class BridgeDaemon:
             if self.ser:
                 self.ser.write(b'OK CONSOLE\n')
         else:
-            # Si el comando es 'MAILBOX <msg>', publícalo en MQTT
+            # If the command is 'MAILBOX <msg>', publish it to MQTT
             if cmd.startswith('MAILBOX '):
                 msg = cmd[len('MAILBOX '):]
                 self.publish_mailbox_message(msg)

@@ -32,6 +32,36 @@ git clone https://github.com/isantolin/arduino-yun-bridge2.git
 cd arduino-yun-bridge2
 sh install.sh
 ## 1. Installation & Dependencies
+
+### MQTT Security: Authentication and TLS (Optional)
+
+The daemon supports optional MQTT authentication and TLS. You can set these options in UCI or as environment variables:
+
+**UCI Configuration Example:**
+```sh
+uci set yunbridge.main.mqtt_user='usuario'
+uci set yunbridge.main.mqtt_pass='contraseña'
+uci set yunbridge.main.mqtt_tls='1'  # 1 to enable TLS, 0 for no TLS
+uci set yunbridge.main.mqtt_cafile='/etc/ssl/certs/ca.crt'
+uci set yunbridge.main.mqtt_certfile='/etc/ssl/certs/client.crt'
+uci set yunbridge.main.mqtt_keyfile='/etc/ssl/private/client.key'
+uci commit yunbridge
+/etc/init.d/yunbridge restart
+```
+
+**Environment Variables (alternative):**
+You can also set `MQTT_USER`, `MQTT_PASS`, etc. before starting the daemon (if you adapt the code to read them).
+
+**Notes:**
+- If `mqtt_user` and `mqtt_pass` are set, the daemon will use them for MQTT authentication.
+- If `mqtt_tls` is set to 1 and certificate paths are provided, the daemon will connect using TLS/SSL.
+- All options are optional: if not set, the daemon connects without auth or TLS.
+
+**Example with mosquitto_pub:**
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/set -m ON -u usuario -P contraseña --cafile /etc/ssl/certs/ca.crt
+```
+
 To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
 ```sh
 git clone https://github.com/isantolin/arduino-yun-bridge2.git

@@ -4,8 +4,18 @@
 
 #include <Bridge.h>
 
-// Array para almacenar el estado de los pines (0-53 para Arduino Mega, 0-19 para Yun/Uno)
-#define MAX_PINS 20
+
+// Detect board type and set MAX_PINS accordingly
+#if defined(ARDUINO_AVR_YUN) || defined(ARDUINO_AVR_UNO)
+  #define MAX_PINS 20   // Yun/Uno: 0-19
+#elif defined(ARDUINO_AVR_MEGA2560)
+  #define MAX_PINS 54   // Mega: 0-53
+#elif defined(ARDUINO_AVR_LEONARDO)
+  #define MAX_PINS 20   // Leonardo: 0-19
+#else
+  #define MAX_PINS 20   // Default/fallback
+#endif
+
 int pinStates[MAX_PINS];
 
 void setPin(int pin, bool state) {

@@ -6,16 +6,16 @@ set -e
 
 # 1. Update and upgrade system
 opkg update
-# Actualizar solo los paquetes que tengan nueva versión disponible
+ # Upgrade only packages with new versions available
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
-echo "[INFO] Instalando/actualizando paho-mqtt para Python3..."
+echo "[INFO] Installing/updating paho-mqtt for Python3..."
 python3 -m pip install --upgrade paho-mqtt
 
 opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
 
-echo "[INFO] Instalación del core completada."
-echo "[INFO] Si deseas instalar la Web UI (LuCI), sigue las instrucciones en /luci-app-yunbridge/README.md."
+echo "[INFO] Core installation complete."
+echo "[INFO] To install the Web UI (LuCI), follow instructions in /luci-app-yunbridge/README.md."
 
 # 3. Remove serial console login if present
 if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
@@ -27,7 +27,7 @@ fi
 
 # 1. Update and upgrade system
 opkg update
-# Actualizar solo los paquetes que tengan nueva versión disponible
+ # Upgrade only packages with new versions available
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
 # 2. Install core dependencies
@@ -50,12 +50,12 @@ fi
 # 3. Install LuCI Web UI if present
 LUCI_IPK=$(ls luci-app-yunbridge/bin/packages/*/luci/luci-app-yunbridge_*.ipk 2>/dev/null | head -n1)
 if [ -n "$LUCI_IPK" ]; then
-    echo "[INFO] Instalando Web UI (luci-app-yunbridge) desde paquete .ipk..."
+    echo "[INFO] Installing Web UI (luci-app-yunbridge) from .ipk package..."
     opkg install "$LUCI_IPK"
-    echo "[INFO] Web UI (LuCI) instalada desde .ipk. Accede vía LuCI > Servicios > YunBridge."
+    echo "[INFO] Web UI (LuCI) installed from .ipk. Access via LuCI > Services > YunBridge."
 else
     if [ -d luci-app-yunbridge/luasrc ]; then
-        echo "[INFO] Instalando Web UI (luci-app-yunbridge) manualmente..."
+    echo "[INFO] Installing Web UI (luci-app-yunbridge) manually..."
         mkdir -p /usr/lib/lua/luci/controller
         mkdir -p /usr/lib/lua/luci/model/cbi
         mkdir -p /usr/lib/lua/luci/view
@@ -78,9 +78,9 @@ else
         if [ -f /etc/init.d/rpcd ]; then
             /etc/init.d/rpcd restart
         fi
-        echo "[INFO] Web UI (LuCI) instalada manualmente. Accede vía LuCI > Servicios > YunBridge."
+    echo "[INFO] Web UI (LuCI) installed manually. Access via LuCI > Services > YunBridge."
     else
-        echo "[INFO] Web UI (luci-app-yunbridge) no encontrada, solo se instala el core."
+    echo "[INFO] Web UI (luci-app-yunbridge) not found, only core installed."
     fi
 fi
 
@@ -118,11 +118,11 @@ fi
 
 # 9. Install YunBridge daemon (Python package)
 if [ -f openwrt-yun-bridge/setup.py ]; then
-    echo "[INFO] Instalando daemon Python openwrt-yun-bridge vía setup.py..."
+    echo "[INFO] Installing Python daemon openwrt-yun-bridge via setup.py..."
     cd openwrt-yun-bridge
     python3 -m pip install --force-reinstall --upgrade .
     cd ..
-    echo "[INFO] Daemon yunbridge instalado como paquete Python. Ejecuta 'yunbridge' para lanzarlo."
+    echo "[INFO] Daemon yunbridge installed as Python package. Run 'yunbridge' to launch."
 else
     echo "ERROR: openwrt-yun-bridge/setup.py not found."
 fi
@@ -136,11 +136,11 @@ fi
 
 # 11. Start YunBridge daemon
 if command -v python3 >/dev/null 2>&1; then
-    echo "[DEBUG] Lanzando YunBridge daemon en background y mostrando log en tiempo real..."
+    echo "[DEBUG] Launching YunBridge daemon in background and showing real-time log..."
     python3 /usr/bin/yunbridge > /tmp/yunbridge_debug.log 2>&1 &
     sleep 1
     tail -f /tmp/yunbridge_debug.log &
-    echo "YunBridge daemon started. El log se muestra arriba. Puedes cerrar el tail con Ctrl+C."
+    echo "YunBridge daemon started. Log is shown above. You can close the tail with Ctrl+C."
 else
     echo "ERROR: python3 not found. Daemon not started."
 fi

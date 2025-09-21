@@ -7,6 +7,7 @@ OpenWRT integration package for Bridge v2, YunBridge v2, and YunWebUI v2, with e
 
 ## Features
   . The `pin` parameter is now required (no default).
+- Serial communication is set to 250000 baud everywhere (daemon, CGI, Arduino sketches).
 
 ## Dependencies
 Python 3 and pyserial must be installed on OpenWRT:
@@ -16,7 +17,7 @@ opkg install python3 python3-pyserial
 ```
 
 ## Installation
-See `install.sh` for installation steps and OpenWRT patches.
+See the unified `install.sh` in the repository root for complete installation of all components.
 
 ## Hardware Test
 - Includes instructions to verify the MQTT bridge and Web UI

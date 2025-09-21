@@ -10,7 +10,7 @@ BROKER = 'localhost'
 PORT = 1883
 TOPIC_CMD = 'yun/command'
 
-client = mqtt.Client()
+client = mqtt.Client(protocol=mqtt.MQTTv311, callback_api_version=5)
 client.connect(BROKER, PORT, 60)
 client.loop_start()
 

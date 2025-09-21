@@ -5,25 +5,32 @@
 
 #include <Bridge.h>
 
-// Map to keep track of pin states (for reporting)
-#include <map>
-std::map<int, int> pinStates;
+
+// Array para almacenar el estado de los pines (0-53 para Arduino Mega, 0-19 para Yun/Uno)
+#define MAX_PINS 20
+int pinStates[MAX_PINS];
+
 
 void setPin(int pin, bool state) {
+  if (pin < 0 || pin >= MAX_PINS) return;
   pinMode(pin, OUTPUT);
   digitalWrite(pin, state ? HIGH : LOW);
   pinStates[pin] = state ? HIGH : LOW;
 }
 
+
 void reportPinState(int pin) {
+  if (pin < 0 || pin >= MAX_PINS) return;
   String msg = "PIN" + String(pin) + " STATE ";
   msg += (digitalRead(pin) == HIGH) ? "ON" : "OFF";
   Serial1.println(msg);
 }
 
+
 void setup() {
   Bridge.begin();
   Serial.begin(115200);
+  for (int i = 0; i < MAX_PINS; i++) pinStates[i] = LOW;
   pinMode(13, OUTPUT); // Default/test pin
   pinStates[13] = LOW;
 }
@@ -53,7 +60,8 @@ void loop() {
       if (pinStr.length() > 0) {
         pin = pinStr.toInt();
       }
-      String rest = raw.substring(idx).trim();
+  String rest = raw.substring(idx);
+  rest.trim();
       if (rest == "ON" || rest == ":ON") {
         setPin(pin, true);
         Serial.print("Pin "); Serial.print(pin); Serial.println(" ON");

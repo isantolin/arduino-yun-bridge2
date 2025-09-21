@@ -1,3 +1,20 @@
+# Unified Installation
+
+To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
+
+```sh
+git clone https://github.com/isantolin/arduino-yun-bridge2.git
+cd arduino-yun-bridge2
+sh install.sh
+```
+
+This script will:
+- Update and upgrade OpenWRT
+- Install all dependencies (python3, pyserial, mosquitto, luci)
+- Install daemon, scripts, configs, and Arduino library
+- Start the YunBridge daemon
+
+After running the script, upload the example sketch from Bridge-v2 to your Yun using the Arduino IDE, reboot if needed, and test MQTT/WebUI integration.
 
 # Arduino Yun v2 Ecosystem
 

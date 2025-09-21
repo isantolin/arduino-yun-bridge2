@@ -2,6 +2,8 @@
 
 # Arduino Yun v2 Ecosystem Roadmap
 
+**Note:** All serial communication (daemon, CGI, Arduino) now uses 250000 baud for maximum reliability and speed.
+
 ## v2.0 (Initial Release)
 - Full compatibility with Bridge library and legacy examples
 - Modular Python3 daemon

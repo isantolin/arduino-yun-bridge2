@@ -4,7 +4,7 @@
 Python3-based bridge daemon for Arduino Yun, with exclusive support for MQTT. Legacy examples and scripts (classic Bridge, REST, CGI) have been removed to advance the MQTT roadmap.
 
 ## Features
-- MQTT client on /dev/ttyATH0 @ 115200 baud (adjust as needed)
+- MQTT client on /dev/ttyATH0 @ 250000 baud (adjust as needed)
 - Modular, extensible, Python3 codebase
 - Direct integration with MQTT broker and WebUI
 
@@ -16,7 +16,7 @@ Python3-based bridge daemon for Arduino Yun, with exclusive support for MQTT. Le
 	```
 
 ## Installation
-See `install.sh` for step-by-step instructions.
+See the unified `install.sh` in the repository root for complete installation of all components.
 
 ## Hardware Test
 - The main example is generic pin control via MQTT (default: pin 13, but any pin can be used).

@@ -25,7 +25,7 @@ TOPIC_STATE = f'yun/pin/{PIN}/state'
 def on_message(client, userdata, msg):
     print(f"[MQTT] {msg.topic}: {msg.payload.decode()}")
 
-client = mqtt.Client()
+client = mqtt.Client(protocol=mqtt.MQTTv311, callback_api_version=5)
 client.on_message = on_message
 client.connect(BROKER, PORT, 60)
 client.loop_start()

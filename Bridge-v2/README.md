@@ -9,10 +9,11 @@ Arduino library for Yun, with exclusive support for MQTT. Support for legacy exa
 - Main example: generic pin control via MQTT (default: pin 13, but any pin can be used)
 
 ## Installation
-See `install.sh` for Arduino library installation steps.
+See the unified `install.sh` in the repository root for complete installation of all components.
 
 ## Hardware Test
 - The main example is MQTT control of any pin (default: 13).
+- Serial communication uses 250000 baud for all examples and sketches.
 
 ## Documentation
 - [Official Arduino Yun Guide](https://docs.arduino.cc/retired/getting-started-guides/ArduinoYun/)

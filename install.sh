@@ -9,8 +9,9 @@ opkg update
  # Upgrade only packages with new versions available
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
-echo "[INFO] Installing/updating paho-mqtt for Python3..."
-python3 -m pip install --upgrade paho-mqtt
+
+echo "[INFO] Installing/updating paho-mqtt and google-cloud-pubsub for Python3..."
+python3 -m pip install --upgrade paho-mqtt google-cloud-pubsub
 
 opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
 
@@ -159,3 +160,4 @@ echo "\n[INFO] Arduino Yun v2 ecosystem installation complete."
 echo "- Upload the example sketch from openwrt-library-arduino to your Yun using the Arduino IDE."
 echo "- Reboot the Yun if needed."
 echo "- Test MQTT, LuCI WebUI, and integration."
+echo "- For Google Pub/Sub support, ensure you have a valid service account .json file and configure Pub/Sub options in LuCI."

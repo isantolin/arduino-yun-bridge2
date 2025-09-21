@@ -1,3 +1,8 @@
+# Try to import boto3 (for Amazon SNS), else set to None
+try:
+    import boto3
+except ImportError:
+    boto3 = None
 #!/usr/bin/env python3
 """
 YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
@@ -115,7 +120,13 @@ DEFAULTS = {
     'pubsub_project': '',
     'pubsub_topic': '',
     'pubsub_subscription': '',
-    'pubsub_credentials': ''
+    'pubsub_credentials': '',
+    # Amazon SNS options
+    'sns_enabled': 0,
+    'sns_region': '',
+    'sns_topic_arn': '',
+    'sns_access_key': '',
+    'sns_secret_key': ''
 }
 
 
@@ -168,6 +179,32 @@ PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
 
 
 class BridgeDaemon:
+    def publish_sns(self, payload):
+        """Publish a message to Amazon SNS topic."""
+        if not self.sns_enabled or not self.sns_client or not self.sns_topic_arn:
+            return
+        try:
+            response = self.sns_client.publish(
+                TopicArn=self.sns_topic_arn,
+                Message=payload
+            )
+            debug_log(f"[SNS] Published: {payload}")
+        except Exception as e:
+            debug_log(f"[SNS] Publish error: {e}")
+        # Amazon SNS setup
+        self.sns_enabled = bool(int(CFG.get('sns_enabled', 0)))
+        self.sns_region = CFG.get('sns_region', '')
+        self.sns_topic_arn = CFG.get('sns_topic_arn', '')
+        self.sns_access_key = CFG.get('sns_access_key', '')
+        self.sns_secret_key = CFG.get('sns_secret_key', '')
+        self.sns_client = None
+        if self.sns_enabled and boto3:
+            self.sns_client = boto3.client(
+                'sns',
+                region_name=self.sns_region,
+                aws_access_key_id=self.sns_access_key,
+                aws_secret_access_key=self.sns_secret_key
+            )
     def start_pubsub(self):
         """Start Pub/Sub subscription listener in a background thread."""
         if not self.pubsub_enabled or not self.pubsub_subscriber or not self.pubsub_subscription:
@@ -280,13 +317,15 @@ class BridgeDaemon:
                 debug_log(f"[DEBUG] Writing 'PIN{pin} ON' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} ON\n'.encode())
-                    # Publish to Pub/Sub as well
-                    self.publish_pubsub(f'PIN{pin} ON')
+                # Publish to Pub/Sub and SNS as well
+                self.publish_pubsub(f'PIN{pin} ON')
+                self.publish_sns(f'PIN{pin} ON')
             elif payload in ('OFF', '0'):
                 debug_log(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} OFF\n'.encode())
-                    self.publish_pubsub(f'PIN{pin} OFF')
+                self.publish_pubsub(f'PIN{pin} OFF')
+                self.publish_sns(f'PIN{pin} OFF')
             return
     # Handle mailbox MQTT
         if msg.topic == f"{MAILBOX_TOPIC_PREFIX}/send":
@@ -294,7 +333,8 @@ class BridgeDaemon:
             debug_log(f"[MQTT] Mailbox message received: {payload}")
             if self.ser:
                 self.ser.write(f'MAILBOX {payload}\n'.encode())
-                self.publish_pubsub(f'MAILBOX {payload}')
+            self.publish_pubsub(f'MAILBOX {payload}')
+            self.publish_sns(f'MAILBOX {payload}')
             return
 
     def publish_pin_state(self, pin, state):
@@ -453,8 +493,9 @@ class BridgeDaemon:
                                 if line:
                                     debug_log(f'[SERIAL] {line}')
                                     self.handle_command(line)
-                                    # Publish serial commands to Pub/Sub for deduplication
+                                    # Publish serial commands to Pub/Sub and SNS for deduplication
                                     self.publish_pubsub(line)
+                                    self.publish_sns(line)
                             except serial.SerialException as e:
                                 debug_log(f'[ERROR] Serial port I/O error: {e}')
                                 debug_log(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')

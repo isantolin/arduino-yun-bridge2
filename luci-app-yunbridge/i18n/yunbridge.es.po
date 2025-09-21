@@ -1,4 +1,34 @@
 
+msgid "Enable Amazon SNS"
+msgstr "Habilitar Amazon SNS"
+
+msgid "AWS Region"
+msgstr "Región AWS"
+
+msgid "SNS Topic ARN"
+msgstr "ARN de Tópico SNS"
+
+msgid "AWS Access Key ID"
+msgstr "ID de Clave de Acceso AWS"
+
+msgid "AWS Secret Access Key"
+msgstr "Clave Secreta de Acceso AWS"
+
+msgid "Region is required when SNS is enabled."
+msgstr "La región es obligatoria cuando SNS está habilitado."
+
+msgid "Topic ARN is required when SNS is enabled."
+msgstr "El ARN de tópico es obligatorio cuando SNS está habilitado."
+
+msgid "Topic ARN must start with 'arn:aws:sns:'."
+msgstr "El ARN de tópico debe comenzar con 'arn:aws:sns:'."
+
+msgid "Access Key ID is required when SNS is enabled."
+msgstr "El ID de clave de acceso es obligatorio cuando SNS está habilitado."
+
+msgid "Secret Access Key is required when SNS is enabled."
+msgstr "La clave secreta de acceso es obligatoria cuando SNS está habilitado."
+
 msgid "Enable Google Pub/Sub"
 msgstr "Habilitar Google Pub/Sub"
 

@@ -1,3 +1,50 @@
+-- Amazon SNS Integration
+sns_enabled = s:option(Flag, "sns_enabled", translate("Enable Amazon SNS"))
+sns_enabled.default = "0"
+
+sns_region = s:option(Value, "sns_region", translate("AWS Region"))
+sns_region.placeholder = "us-east-1"
+sns_region.rmempty = false
+function sns_region.validate(self, value, section)
+	if sns_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Region is required when SNS is enabled.")
+	end
+	return value
+end
+
+sns_topic_arn = s:option(Value, "sns_topic_arn", translate("SNS Topic ARN"))
+sns_topic_arn.placeholder = "arn:aws:sns:us-east-1:123456789012:YourTopic"
+sns_topic_arn.rmempty = false
+function sns_topic_arn.validate(self, value, section)
+	if sns_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Topic ARN is required when SNS is enabled.")
+	end
+	if value and #value > 0 and not value:match("^arn:aws:sns:") then
+		return nil, translate("Topic ARN must start with 'arn:aws:sns:'.")
+	end
+	return value
+end
+
+sns_access_key = s:option(Value, "sns_access_key", translate("AWS Access Key ID"))
+sns_access_key.placeholder = "AKIA..."
+sns_access_key.rmempty = false
+function sns_access_key.validate(self, value, section)
+	if sns_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Access Key ID is required when SNS is enabled.")
+	end
+	return value
+end
+
+sns_secret_key = s:option(Value, "sns_secret_key", translate("AWS Secret Access Key"))
+sns_secret_key.placeholder = "..."
+sns_secret_key.password = true
+sns_secret_key.rmempty = false
+function sns_secret_key.validate(self, value, section)
+	if sns_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Secret Access Key is required when SNS is enabled.")
+	end
+	return value
+end
 m = Map("yunbridge", translate("YunBridge Configuration"))
 
 s = m:section(NamedSection, "main", "yunbridge", translate("Main Settings"))

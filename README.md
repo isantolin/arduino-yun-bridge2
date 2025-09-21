@@ -35,7 +35,50 @@ sh install.sh
 ## 1. Installation & Dependencies
 
 
-### Google Pub/Sub Support (Optional)
+
+### Amazon SNS Support (Optional)
+
+The daemon supports Amazon SNS in addition to MQTT and Pub/Sub. You can enable SNS messaging for cloud integration and hybrid workflows.
+
+**Requirements:**
+- Python package: `boto3` (installed by the installer)
+- AWS account with SNS topic
+- AWS credentials (Access Key ID and Secret Access Key)
+- SNS Topic ARN and AWS region
+
+**Configuration via LuCI Web UI:**
+You can configure all SNS options directly from the YunBridge LuCI interface:
+
+- Enable/disable SNS
+- AWS Region
+- SNS Topic ARN
+- AWS Access Key ID
+- AWS Secret Access Key
+
+All fields are validated and translated (English/Spanish). If SNS is enabled, all required fields must be set and the Topic ARN must start with `arn:aws:sns:`.
+
+**UCI Configuration Example (manual):**
+```sh
+uci set yunbridge.main.sns_enabled='1'  # 1 to enable SNS, 0 to disable
+uci set yunbridge.main.sns_region='us-east-1'
+uci set yunbridge.main.sns_topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic'
+uci set yunbridge.main.sns_access_key='AKIA...'
+uci set yunbridge.main.sns_secret_key='...'
+uci commit yunbridge
+/etc/init.d/yunbridge restart
+```
+
+**How it works:**
+- When enabled, the daemon will publish messages to the configured SNS topic in parallel with MQTT and Pub/Sub.
+- All pin control, mailbox, and command flows are supported via SNS.
+
+**Typical SNS Usage:**
+- Publish a message to the SNS topic to control a pin:
+  - Data: `PIN13 ON` or `PIN13 OFF`
+- Subscribe to the SNS topic (via SQS, Lambda, or other AWS service) to receive state updates and mailbox messages.
+
+**Hybrid Architecture:**
+You can use MQTT, Pub/Sub, and SNS at the same time. This enables local and cloud integration for IoT, automation, and remote control.
 
 The daemon supports Google Pub/Sub in addition to MQTT. You can enable Pub/Sub messaging for cloud integration and hybrid workflows.
 

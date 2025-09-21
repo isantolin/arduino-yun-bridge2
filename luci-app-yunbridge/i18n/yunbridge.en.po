@@ -1,4 +1,34 @@
 
+msgid "Enable Amazon SNS"
+msgstr "Enable Amazon SNS"
+
+msgid "AWS Region"
+msgstr "AWS Region"
+
+msgid "SNS Topic ARN"
+msgstr "SNS Topic ARN"
+
+msgid "AWS Access Key ID"
+msgstr "AWS Access Key ID"
+
+msgid "AWS Secret Access Key"
+msgstr "AWS Secret Access Key"
+
+msgid "Region is required when SNS is enabled."
+msgstr "Region is required when SNS is enabled."
+
+msgid "Topic ARN is required when SNS is enabled."
+msgstr "Topic ARN is required when SNS is enabled."
+
+msgid "Topic ARN must start with 'arn:aws:sns:'."
+msgstr "Topic ARN must start with 'arn:aws:sns:'."
+
+msgid "Access Key ID is required when SNS is enabled."
+msgstr "Access Key ID is required when SNS is enabled."
+
+msgid "Secret Access Key is required when SNS is enabled."
+msgstr "Secret Access Key is required when SNS is enabled."
+
 msgid "Enable Google Pub/Sub"
 msgstr "Enable Google Pub/Sub"
 

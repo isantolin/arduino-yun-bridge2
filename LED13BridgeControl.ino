@@ -1,15 +1,12 @@
-
 // LEDBridgeControl.ino
 // Generic sketch for controlling any pin via Bridge (Serial1)
 // Use this as a base for integration with YunBridge Python and WebUI
 
 #include <Bridge.h>
 
-
 // Array para almacenar el estado de los pines (0-53 para Arduino Mega, 0-19 para Yun/Uno)
 #define MAX_PINS 20
 int pinStates[MAX_PINS];
-
 
 void setPin(int pin, bool state) {
   if (pin < 0 || pin >= MAX_PINS) return;
@@ -18,14 +15,12 @@ void setPin(int pin, bool state) {
   pinStates[pin] = state ? HIGH : LOW;
 }
 
-
 void reportPinState(int pin) {
   if (pin < 0 || pin >= MAX_PINS) return;
   String msg = "PIN" + String(pin) + " STATE ";
   msg += (digitalRead(pin) == HIGH) ? "ON" : "OFF";
   Serial1.println(msg);
 }
-
 
 void setup() {
   Bridge.begin();

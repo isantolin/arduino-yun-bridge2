@@ -2,4 +2,4 @@
 /usr/bin/yunbridge
 /etc/init.d/bridge-v2
 /etc/config/bridge-ttyath0
-/www/cgi-bin/led13
+/www/cgi-bin/pin

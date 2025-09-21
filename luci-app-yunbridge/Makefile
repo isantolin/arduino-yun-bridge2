@@ -16,9 +16,11 @@ define Package/$(PKG_NAME)
   DEPENDS:=+luci +yunbridge
 endef
 
+
 define Package/$(PKG_NAME)/install
-	$(CP) ./luasrc $(1)/usr/lib/lua/
-	$(CP) ./root/etc/config/yunbridge $(1)/etc/config/
+  $(CP) -r ./luasrc/* $(1)/usr/lib/lua/
+  $(CP) -r ./root/etc/config/yunbridge $(1)/etc/config/
+  [ -d ./root/www/yunbridge ] && $(CP) -r ./root/www/yunbridge $(1)/www/ || true
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

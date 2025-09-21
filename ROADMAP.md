@@ -1,29 +1,38 @@
 
+
 # Arduino Yun v2 Ecosystem Roadmap
 
-## v2.3 (Next Release)
+El roadmap está dividido en dos partes: Core (openwrt-yun-core) y Web UI (luci-app-yunbridge).
+
+## Core Yun/OpenWRT (openwrt-yun-core)
+
+### v2.3 (Next Release)
 - Security improvements (MQTT auth, TLS)
-- Advanced dashboard in Web UI (MQTT only)
+- Mejoras de robustez en daemon y scripts
 
-## v2.4
-- Support for new OpenWRT targets
-- Community plugin system (MQTT)
-- OTA updates for firmware and packages
+### v2.4
+- Soporte para nuevos targets OpenWRT
+- Sistema de plugins comunitarios (MQTT)
+- OTA para firmware y paquetes
 
-## v2.5+
-- Community-contributed features
-- Performance optimization
-- Expanded documentation and tutorials
+### v2.5+
+- Features aportadas por la comunidad
+- Optimización de performance
+- Documentación y tutoriales expandidos
 
-## LuCI integration (luci-app-yunbridge)
-- Advanced parameter validation
-- Daemon status and logs in panel
-- Multi-language support
-- Improve documentation and examples
-
-## Pending / Backlog
-- Official Mosquitto support with WebSockets on OpenWrt (cross-compilation and/or integration in scripts)
+### Backlog
+- Soporte oficial Mosquitto con WebSockets en OpenWrt
 
 ---
 
-# Contributions and suggestions welcome!
+## Web UI (luci-app-yunbridge)
+
+- Validación avanzada de parámetros
+- Panel de estado del daemon y logs
+- Multi-idioma
+- Mejorar documentación y ejemplos
+- Dashboard avanzado (solo MQTT)
+
+---
+
+# ¡Contribuciones y sugerencias bienvenidas!

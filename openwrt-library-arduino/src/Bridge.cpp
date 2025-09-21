@@ -2,7 +2,7 @@
 #include "Bridge.h"
 
 void BridgeClass::begin() {
-    Serial1.begin(250000); // Yun internal serial
+    Serial1.begin(115200); // Yun internal serial
 }
 
 

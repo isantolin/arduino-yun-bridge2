@@ -50,9 +50,9 @@ baud:value("19200", "19200")
 baud:value("38400", "38400")
 baud:value("57600", "57600")
 baud:value("115200", "115200")
-baud:value("250000", "250000")
+baud:value("115200", "115200")
 function baud.validate(self, value, section)
-	local allowed = { ["9600"]=1, ["19200"]=1, ["38400"]=1, ["57600"]=1, ["115200"]=1, ["250000"]=1 }
+	local allowed = { ["9600"]=1, ["19200"]=1, ["38400"]=1, ["57600"]=1, ["115200"]=1 }
 	if not allowed[value] then
 		return nil, "Invalid baudrate. Choose a standard value."
 	end

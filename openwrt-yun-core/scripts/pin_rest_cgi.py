@@ -10,7 +10,7 @@ import serial
 import time
 
 SERIAL_PORT = '/dev/ttyATH0'
-BAUDRATE = 250000
+BAUDRATE = 115200
 
 def parse_query(query):
     params = {}

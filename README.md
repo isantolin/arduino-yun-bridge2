@@ -28,29 +28,21 @@
 
 ---
 
-# Arduino Yun v2 Ecosystem (Unified Documentation)
-
-## 1. Installation & Dependencies
-
+git clone https://github.com/isantolin/arduino-yun-bridge2.git
+cd arduino-yun-bridge2
+sh install.sh
 ## 1. Installation & Dependencies
 To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
-
-To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
-```sh
-
 ```sh
 git clone https://github.com/isantolin/arduino-yun-bridge2.git
 cd arduino-yun-bridge2
 sh install.sh
 ```
 This script will:
-
-This script will:
 - Update and upgrade OpenWRT
 - Install all dependencies (python3, pyserial, mosquitto, luci)
 - Install daemon, scripts, configs, and Arduino library
 - Start the YunBridge daemon
-**Dependencies:**
 
 **Dependencies:**
 - Python 3, pyserial, paho-mqtt, python3-uci must be installed on OpenWRT:
@@ -82,19 +74,13 @@ The YunBridge daemon now uses asynchronous logging with a configurable buffer si
 - The main loop is robust, with minimal CPU usage and no unnecessary polling.
 - Thread usage is minimal: only the main thread, MQTT thread, and log thread are used.
 - All code is PEP8-compliant and modular.
-### OpenWRT Integration Details
 
 ### OpenWRT Integration Details
 The `openwrt-yun-core/package` directory contains scripts and config files to ensure Bridge v2 and YunBridge v2 work on modern OpenWRT:
-
-The `openwrt-yun-core/package` directory contains scripts and config files to ensure Bridge v2 and YunBridge v2 work on modern OpenWRT:
-- `yunbridge.init`: Init script to start/stop YunBridge daemon
-
 - `yunbridge.init`: Init script to start/stop YunBridge daemon
 - `99-yunbridge-ttyath0.conf`: UCI config for serial port
 - `yunbridge.files`: List of files for package manager
 
-**Manual Installation Steps (if needed):**
 
 **Manual Installation Steps (if needed):**
 1. Copy all files to your OpenWRT device in the appropriate locations:
@@ -112,43 +98,32 @@ The `openwrt-yun-core/package` directory contains scripts and config files to en
   /etc/init.d/yunbridge start
   ```
 
-**Gestión de configuración UCI (ejemplos):**
 
 **UCI Configuration Management (examples):**
-Para ver la configuración actual del puerto serie:
-
 To view the current serial port configuration:
 ```sh
 uci show yunbridge-ttyath0
 ```
-
 To view the main daemon configuration:
 ```sh
 uci show yunbridge
 ```
-
 To change the baudrate (example to 57600):
 ```sh
 uci set yunbridge-ttyath0.bridge_serial.baudrate='57600'
 uci commit yunbridge-ttyath0
 ```
-
 To list all relevant UCI config files:
 ```sh
 ls /etc/config/yunbridge*
 ```
-
 Remember to restart the daemon after changing the configuration:
 ```sh
 /etc/init.d/yunbridge restart
 ```
--- Ensure `/dev/ttyATH0` exists and is not used by other processes.
-
 - Ensure `/dev/ttyATH0` exists and is not used by other processes.
 - Check `/etc/inittab` and `/etc/config/system` for serial port conflicts.
 - Use UCI config to adjust baudrate if needed.
-After running the script, upload the main sketch `LED13BridgeControl.ino` (at the project root) to your Yun using the Arduino IDE, reboot if needed, and test MQTT/WebUI integration.
-
 After running the script, upload the main sketch `LED13BridgeControl.ino` (at the project root) to your Yun using the Arduino IDE, reboot if needed, and test MQTT/WebUI integration.
 
 
@@ -156,7 +131,39 @@ After running the script, upload the main sketch `LED13BridgeControl.ino` (at th
 ## 2. Architecture & Components
 
 
+
 The repository is now organized into the following main components:
+
+
+### Data Flow Between Components
+
+```
+   [MQTT Client / Example Scripts]
+      |
+      v
+    [MQTT Broker (Mosquitto)]
+      |
+      v
+   [YunBridge Daemon (Python)]
+    |                    |
+    v                    v
+[Arduino Sketch/Library]   [Web UI (LuCI)]
+```
+
+**Explanation:**
+- **MQTT Client / Example Scripts:** Any MQTT client (e.g., Python scripts, mosquitto_pub/sub) can publish commands (e.g., pin control, mailbox, commands) to the MQTT broker.
+- **MQTT Broker:** Handles all message routing. Can be local (on Yun/OpenWRT) or external.
+- **YunBridge Daemon:** Subscribes to relevant MQTT topics, translates messages to serial commands for the Arduino, and publishes state or responses back to MQTT. Also reads/writes configuration via UCI.
+- **Arduino Sketch/Library:** Receives serial commands from the daemon, controls hardware pins, and sends state or mailbox messages back via serial. These are then published to MQTT by the daemon.
+- **Web UI (LuCI):** Provides a real-time interface for users. It interacts with the daemon (status, logs, config) and can also act as an MQTT client for live pin control and monitoring.
+
+**Typical Flow Example:**
+- User toggles a pin in the Web UI or via an MQTT client/script.
+- The command is published to the MQTT broker (e.g., `yun/pin/13/set`).
+- The daemon receives the MQTT message, sends the command over serial to the Arduino.
+- The Arduino sets the pin and sends the new state back over serial.
+- The daemon publishes the new state to MQTT (e.g., `yun/pin/13/state`).
+- The Web UI and any subscribed clients see the updated state in real time.
 
 
 - **Core Yun/OpenWRT (openwrt-yun-core):**

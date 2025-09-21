@@ -1,33 +1,27 @@
-import os
-def debug_log(msg):
-    ts = time.strftime('%Y-%m-%d %H:%M:%S')
-    line = f"[{ts}] {msg}\n"
-    try:
-        with open('/tmp/yunbridge_debug.log', 'a') as f:
-            f.write(line)
-    except Exception:
-        pass
-    if DEBUG:
-        print(line, end='')
-#!/usr/bin/env python3
 
-import serial
+#!/usr/bin/env python3
+"""
+YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
+Organizado y refactorizado para claridad, robustez y estilo PEP8.
+"""
+
+import os
+import sys
 import time
+import threading
+import serial
 import paho.mqtt.client as mqtt
+import re
+import subprocess
 try:
     from paho.mqtt.enums import CallbackAPIVersion
 except ImportError:
     CallbackAPIVersion = None
-import threading
-import sys
 try:
     import uci
 except ImportError:
     uci = None
 
-
-
-# Defaults
 DEFAULTS = {
     'mqtt_host': '127.0.0.1',
     'mqtt_port': 1883,
@@ -37,17 +31,38 @@ DEFAULTS = {
     'debug': 0
 }
 
+def debug_log(msg):
+    """Log to file and optionally to stdout if DEBUG is set."""
+    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+    line = f"[{ts}] {msg}\n"
+    try:
+        with open('/tmp/yunbridge_debug.log', 'a') as f:
+            f.write(line)
+    except Exception:
+        pass
+    if globals().get('DEBUG', 0):
+        print(line, end='')
+
 def get_uci_config():
+    """Read configuration from UCI or use defaults."""
     cfg = DEFAULTS.copy()
     if uci is not None:
         try:
             c = uci.UCI()
-            section = c.get('yunbridge', 'main')
+            section = None
+            # Try to find the section by introspection (API is inconsistent)
+            for attr in dir(c):
+                obj = getattr(c, attr)
+                if isinstance(obj, dict) and 'yunbridge' in obj:
+                    yb = obj['yunbridge']
+                    if isinstance(yb, dict) and 'main' in yb:
+                        section = yb['main']
+                        break
             if section:
                 for k in DEFAULTS:
                     v = section.get(k)
                     if v is not None:
-                        if k == 'mqtt_port' or k == 'serial_baud' or k == 'debug':
+                        if k in ('mqtt_port', 'serial_baud', 'debug'):
                             try:
                                 v = int(v)
                             except Exception:
@@ -74,7 +89,11 @@ RECONNECT_DELAY = 5  # seconds
 PIN_TOPIC_SET_WILDCARD = f'{PIN_TOPIC_PREFIX}/+/set'
 PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
 
+
 class BridgeDaemon:
+    """
+    Main daemon class: handles MQTT, serial, and command processing.
+    """
     def __init__(self):
         if CallbackAPIVersion is not None:
             self.mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
@@ -87,9 +106,9 @@ class BridgeDaemon:
         self.running = True
         self.last_pin_state = {}
         self.kv_store = {}
-    # MAILBOX queue eliminada; ahora se usa MQTT para mensajes arbitrarios
 
     def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
+        """MQTT on_connect callback."""
         debug_log(f"[MQTT] Connected with result code {rc}")
         try:
             client.subscribe(PIN_TOPIC_SET_WILDCARD)
@@ -101,8 +120,8 @@ class BridgeDaemon:
         self.mqtt_connected = True
 
     def on_mqtt_message(self, client, userdata, msg):
+        """MQTT on_message callback."""
         debug_log(f"[MQTT] Message received: {msg.topic} {msg.payload}")
-        import re
         # Manejo de pin set
         m = re.match(rf"{PIN_TOPIC_PREFIX}/(\d+)/set", msg.topic)
         if m:
@@ -127,6 +146,7 @@ class BridgeDaemon:
             return
 
     def publish_pin_state(self, pin, state):
+        """Publish pin state to MQTT."""
         if self.mqtt_connected:
             payload = 'ON' if state else 'OFF'
             topic = PIN_TOPIC_STATE_FMT.format(pin=pin)
@@ -134,6 +154,7 @@ class BridgeDaemon:
             debug_log(f"[MQTT] Published {payload} to {topic}")
 
     def handle_command(self, line):
+        """Parse and execute a command received from serial."""
         cmd = line.strip()
         debug_log(f"[DEBUG] Received command: '{cmd}'")
         # Generalized pin ON/OFF/STATE commands
@@ -242,12 +263,14 @@ class BridgeDaemon:
                     self.ser.write(b'UNKNOWN COMMAND\n')
 
     def publish_mailbox_message(self, msg):
+        """Publish a mailbox message to MQTT."""
         if self.mqtt_connected:
             topic = f"{MAILBOX_TOPIC_PREFIX}/recv"
             self.mqtt_client.publish(topic, msg)
             debug_log(f"[MQTT] Published mailbox message to {topic}: {msg}")
 
     def run(self):
+        """Main loop: handles MQTT and serial communication."""
         debug_log(f"[DEBUG] Starting BridgeDaemon run()")
         debug_log(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
         try:

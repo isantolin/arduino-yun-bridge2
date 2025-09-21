@@ -62,4 +62,53 @@ end
 debug = s:option(Flag, "debug", "Debug Mode")
 debug.default = "1"
 
+
+
+-- Google Pub/Sub Integration
+pubsub_enabled = s:option(Flag, "pubsub_enabled", translate("Enable Google Pub/Sub"))
+pubsub_enabled.default = "0"
+
+pubsub_project = s:option(Value, "pubsub_project", translate("Google Cloud Project ID"))
+pubsub_project.placeholder = "your-gcp-project-id"
+pubsub_project.rmempty = false
+function pubsub_project.validate(self, value, section)
+	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Project ID is required when Pub/Sub is enabled.")
+	end
+	return value
+end
+
+pubsub_topic = s:option(Value, "pubsub_topic", translate("Pub/Sub Topic Name"))
+pubsub_topic.placeholder = "your-topic-name"
+pubsub_topic.rmempty = false
+function pubsub_topic.validate(self, value, section)
+	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Topic name is required when Pub/Sub is enabled.")
+	end
+	return value
+end
+
+pubsub_subscription = s:option(Value, "pubsub_subscription", translate("Pub/Sub Subscription Name"))
+pubsub_subscription.placeholder = "your-subscription-name"
+pubsub_subscription.rmempty = false
+function pubsub_subscription.validate(self, value, section)
+	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Subscription name is required when Pub/Sub is enabled.")
+	end
+	return value
+end
+
+pubsub_credentials = s:option(Value, "pubsub_credentials", translate("Service Account Credentials Path"))
+pubsub_credentials.placeholder = "/etc/yunbridge/gcp-service-account.json"
+pubsub_credentials.rmempty = false
+function pubsub_credentials.validate(self, value, section)
+	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
+		return nil, translate("Credentials path is required when Pub/Sub is enabled.")
+	end
+	if value and #value > 0 and not value:match("%.json$") then
+		return nil, translate("Credentials file must be a .json file.")
+	end
+	return value
+end
+
 return m

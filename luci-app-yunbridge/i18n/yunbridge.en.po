@@ -1,3 +1,33 @@
+
+msgid "Enable Google Pub/Sub"
+msgstr "Enable Google Pub/Sub"
+
+msgid "Google Cloud Project ID"
+msgstr "Google Cloud Project ID"
+
+msgid "Pub/Sub Topic Name"
+msgstr "Pub/Sub Topic Name"
+
+msgid "Pub/Sub Subscription Name"
+msgstr "Pub/Sub Subscription Name"
+
+msgid "Service Account Credentials Path"
+msgstr "Service Account Credentials Path"
+
+msgid "Project ID is required when Pub/Sub is enabled."
+msgstr "Project ID is required when Pub/Sub is enabled."
+
+msgid "Topic name is required when Pub/Sub is enabled."
+msgstr "Topic name is required when Pub/Sub is enabled."
+
+msgid "Subscription name is required when Pub/Sub is enabled."
+msgstr "Subscription name is required when Pub/Sub is enabled."
+
+msgid "Credentials path is required when Pub/Sub is enabled."
+msgstr "Credentials path is required when Pub/Sub is enabled."
+
+msgid "Credentials file must be a .json file."
+msgstr "Credentials file must be a .json file."
 msgid "YunBridge Configuration"
 msgstr "YunBridge Configuration"
 

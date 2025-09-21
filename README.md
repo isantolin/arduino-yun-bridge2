@@ -31,7 +31,44 @@
 git clone https://github.com/isantolin/arduino-yun-bridge2.git
 cd arduino-yun-bridge2
 sh install.sh
+
 ## 1. Installation & Dependencies
+
+### Google Pub/Sub Support (Optional)
+
+The daemon now supports Google Pub/Sub in addition to MQTT. You can enable Pub/Sub messaging for cloud integration and hybrid workflows.
+
+**Requirements:**
+- Python package: `google-cloud-pubsub` (install with `pip install google-cloud-pubsub`)
+- Google Cloud project and Pub/Sub topics/subscriptions
+- Service account credentials JSON file
+
+**UCI Configuration Example:**
+```sh
+uci set yunbridge.main.pubsub_enabled='1'  # 1 to enable Pub/Sub, 0 to disable
+uci set yunbridge.main.pubsub_project='your-gcp-project-id'
+uci set yunbridge.main.pubsub_topic='your-topic-name'
+uci set yunbridge.main.pubsub_subscription='your-subscription-name'
+uci set yunbridge.main.pubsub_credentials='/etc/yunbridge/gcp-service-account.json'
+uci commit yunbridge
+/etc/init.d/yunbridge restart
+```
+
+**How it works:**
+- When enabled, the daemon will publish and subscribe to both MQTT and Pub/Sub topics.
+- Messages from either system are routed to the main handler (serial, Arduino, etc.).
+- All pin control, mailbox, and command flows are supported via Pub/Sub.
+- Message deduplication is handled automatically.
+
+**Typical Pub/Sub Usage:**
+- Publish a message to the Pub/Sub topic to control a pin:
+  - Data: `PIN13 ON` or `PIN13 OFF`
+- Subscribe to the Pub/Sub subscription to receive state updates and mailbox messages.
+
+**Hybrid Architecture:**
+You can use MQTT, Pub/Sub, or both at the same time. This enables local and cloud integration for IoT, automation, and remote control.
+
+See the code and comments in `bridge_daemon.py` for advanced usage and customization.
 
 ### MQTT Security: Authentication and TLS (Optional)
 

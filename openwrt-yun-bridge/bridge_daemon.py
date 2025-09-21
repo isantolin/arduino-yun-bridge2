@@ -12,9 +12,14 @@ import os
 import atexit
 import re
 
+
 # Third-party imports
 import serial
 import paho.mqtt.client as mqtt
+try:
+    from google.cloud import pubsub_v1
+except ImportError:
+    pubsub_v1 = None
 
 # Try to import CallbackAPIVersion (for newer paho-mqtt), else set to None
 try:
@@ -104,7 +109,13 @@ DEFAULTS = {
     'mqtt_keyfile': '',
     'serial_port': '/dev/ttyATH0',
     'serial_baud': 115200,
-    'debug': 0
+    'debug': 0,
+    # Pub/Sub options
+    'pubsub_enabled': 0,
+    'pubsub_project': '',
+    'pubsub_topic': '',
+    'pubsub_subscription': '',
+    'pubsub_credentials': ''
 }
 
 
@@ -157,6 +168,39 @@ PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
 
 
 class BridgeDaemon:
+    def start_pubsub(self):
+        """Start Pub/Sub subscription listener in a background thread."""
+        if not self.pubsub_enabled or not self.pubsub_subscriber or not self.pubsub_subscription:
+            return
+        import threading
+        def callback(message):
+            try:
+                payload = message.data.decode('utf-8')
+                debug_log(f"[PubSub] Message received: {payload}")
+                self.handle_pubsub_message(payload)
+                message.ack()
+            except Exception as e:
+                debug_log(f"[PubSub] Error handling message: {e}")
+        subscription_path = self.pubsub_subscriber.subscription_path(self.pubsub_project, self.pubsub_subscription)
+        thread = threading.Thread(target=self.pubsub_subscriber.subscribe, args=(subscription_path, callback), daemon=True)
+        thread.start()
+
+    def handle_pubsub_message(self, payload):
+        """Route incoming Pub/Sub message to main handler (same as MQTT)."""
+        # For simplicity, treat as MQTT topic 'yun/command' or pin set
+        # You can expand this logic to match your topic schema
+        if payload.startswith('PIN'):
+            self.handle_command(payload)
+        else:
+            self.handle_command(payload)
+
+    def publish_pubsub(self, payload):
+        """Publish a message to Pub/Sub topic."""
+        if not self.pubsub_enabled or not self.pubsub_publisher or not self.pubsub_topic:
+            return
+        topic_path = self.pubsub_publisher.topic_path(self.pubsub_project, self.pubsub_topic)
+        future = self.pubsub_publisher.publish(topic_path, payload.encode('utf-8'))
+        debug_log(f"[PubSub] Published: {payload}")
     def write_status(self, status, detail=None):
         """Write daemon status to a file for external monitoring."""
         try:
@@ -172,14 +216,13 @@ class BridgeDaemon:
     Main daemon class: handles MQTT, serial, and command processing.
     """
     def __init__(self):
+        # MQTT setup
         if CallbackAPIVersion is not None:
             self.mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
         else:
             self.mqtt_client = mqtt.Client()
-        # Autenticación MQTT opcional
         if CFG.get('mqtt_user'):
             self.mqtt_client.username_pw_set(CFG['mqtt_user'], CFG.get('mqtt_pass', ''))
-        # TLS opcional
         if CFG.get('mqtt_tls', 0):
             tls_args = {}
             if CFG.get('mqtt_cafile'):
@@ -197,6 +240,20 @@ class BridgeDaemon:
         self.running = True
         self.last_pin_state = {}
         self.kv_store = {}
+        # Pub/Sub setup
+        self.pubsub_enabled = bool(int(CFG.get('pubsub_enabled', 0)))
+        self.pubsub_project = CFG.get('pubsub_project', '')
+        self.pubsub_topic = CFG.get('pubsub_topic', '')
+        self.pubsub_subscription = CFG.get('pubsub_subscription', '')
+        self.pubsub_credentials = CFG.get('pubsub_credentials', '')
+        self.pubsub_publisher = None
+        self.pubsub_subscriber = None
+        if self.pubsub_enabled and pubsub_v1:
+            import os
+            if self.pubsub_credentials:
+                os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = self.pubsub_credentials
+            self.pubsub_publisher = pubsub_v1.PublisherClient()
+            self.pubsub_subscriber = pubsub_v1.SubscriberClient()
 
     def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
         """MQTT on_connect callback."""
@@ -223,10 +280,13 @@ class BridgeDaemon:
                 debug_log(f"[DEBUG] Writing 'PIN{pin} ON' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} ON\n'.encode())
+                    # Publish to Pub/Sub as well
+                    self.publish_pubsub(f'PIN{pin} ON')
             elif payload in ('OFF', '0'):
                 debug_log(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} OFF\n'.encode())
+                    self.publish_pubsub(f'PIN{pin} OFF')
             return
     # Handle mailbox MQTT
         if msg.topic == f"{MAILBOX_TOPIC_PREFIX}/send":
@@ -234,6 +294,7 @@ class BridgeDaemon:
             debug_log(f"[MQTT] Mailbox message received: {payload}")
             if self.ser:
                 self.ser.write(f'MAILBOX {payload}\n'.encode())
+                self.publish_pubsub(f'MAILBOX {payload}')
             return
 
     def publish_pin_state(self, pin, state):
@@ -375,6 +436,8 @@ class BridgeDaemon:
                 return
             mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             mqtt_thread.start()
+            # Start Pub/Sub listener if enabled
+            self.start_pubsub()
             debug_log("[DEBUG] MQTT thread started")
             self.write_status('running')
             while self.running:
@@ -390,6 +453,8 @@ class BridgeDaemon:
                                 if line:
                                     debug_log(f'[SERIAL] {line}')
                                     self.handle_command(line)
+                                    # Publish serial commands to Pub/Sub for deduplication
+                                    self.publish_pubsub(line)
                             except serial.SerialException as e:
                                 debug_log(f'[ERROR] Serial port I/O error: {e}')
                                 debug_log(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')

@@ -60,14 +60,13 @@ All legacy examples and scripts have been removed. Only MQTT flows are supported
     - `GET <key>`: Retrieve a value
     - `WRITEFILE <path> <data>`: Write data to file
     - `READFILE <path>`: Read file contents
-    - `MAILBOX SEND <msg>`: Send to mailbox
-    - `MAILBOX RECV`: Receive from mailbox
+  - `MAILBOX <msg>`: (legacy, ahora migrado a MQTT)
     - `RUN <cmd>`: Run a shell command
     - `CONSOLE <msg>`: Print to console
 
 #### Daemon Topic Subscriptions
-- Subscribes: `yun/pin/+/set`, `yun/pin/+/get`, `yun/command`
-- Publishes: `yun/pin/<N>/state`, responses to `yun/command` (future: `yun/command/response`)
+- Subscribes: `yun/pin/+/set`, `yun/pin/+/get`, `yun/command`, `yun/mailbox/send`
+- Publishes: `yun/pin/<N>/state`, responses to `yun/command`, `yun/mailbox/recv`
 
 #### Example Flows
 - **Turn pin 13 ON:**
@@ -80,16 +79,17 @@ All legacy examples and scripts have been removed. Only MQTT flows are supported
 - **Run process:**
   - Publish `RUN echo hello` to `yun/command`
 
-#### Example Scripts
-- `YunBridge-v2/examples/led13_mqtt_test.py`: Control and monitor any pin (default: 13)
-- `YunBridge-v2/examples/all_mqtt_features_test.py`: Test all MQTT features (pin, kv, file, mailbox, process)
-- `YunBridge-v2/examples/console_mqtt_test.py`: Send console commands
-- `YunBridge-v2/examples/fileio_mqtt_test.py`: Test file I/O
-- `YunBridge-v2/examples/kv_store_mqtt_test.py`: Test key-value store
-- `YunBridge-v2/examples/mailbox_mqtt_test.py`: Test mailbox
-- `YunBridge-v2/examples/process_mqtt_test.py`: Test process execution
 
-All scripts use the same topic schemas as the daemon and Arduino code. See each script for usage examples.
+#### Ejemplo de mensajes arbitrarios (nuevo flujo MQTT)
+- Para enviar un mensaje al Arduino desde cualquier cliente MQTT:
+- Publica el texto en el topic: `yun/mailbox/send`
+- El Arduino recibirá el mensaje como `MAILBOX <msg>` por Serial1 y lo mostrará por consola.
+- Para que el Arduino envíe un mensaje a otros clientes MQTT:
+- El sketch debe enviar por Serial1: `MAILBOX <msg>`
+- El daemon publicará ese mensaje en el topic: `yun/mailbox/recv`
+- Ejemplo actualizado: `YunBridge-v2/examples/mailbox_mqtt_test.py`
+
+Todos los scripts usan los mismos topics y lógica MQTT que el daemon y el código Arduino. Consulta cada script para ejemplos de uso.
 
 #### Architecture Overview
 - **MQTT Broker:** Local (OpenWRT/Mosquitto) or external.

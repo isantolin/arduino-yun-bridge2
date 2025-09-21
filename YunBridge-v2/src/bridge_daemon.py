@@ -31,7 +31,7 @@ except ImportError:
 DEFAULTS = {
     'mqtt_host': '127.0.0.1',
     'mqtt_port': 1883,
-    'mqtt_topic': 'yun/pin',
+    'mqtt_topic': 'yun',
     'serial_port': '/dev/ttyATH0',
     'serial_baud': 115200,
     'debug': 0
@@ -63,14 +63,16 @@ CFG = get_uci_config()
 MQTT_BROKER = CFG['mqtt_host']
 MQTT_PORT = CFG['mqtt_port']
 MQTT_TOPIC_PREFIX = CFG['mqtt_topic']
+PIN_TOPIC_PREFIX = f'{MQTT_TOPIC_PREFIX}/pin'
+MAILBOX_TOPIC_PREFIX = f'{MQTT_TOPIC_PREFIX}/mailbox'
 SERIAL_PORT = CFG['serial_port']
 SERIAL_BAUDRATE = CFG['serial_baud']
 DEBUG = CFG['debug']
 RECONNECT_DELAY = 5  # seconds
 
 # Generalized topic patterns
-PIN_TOPIC_SET_WILDCARD = f'{MQTT_TOPIC_PREFIX}/+/set'
-PIN_TOPIC_STATE_FMT = f'{MQTT_TOPIC_PREFIX}/{{pin}}/state'
+PIN_TOPIC_SET_WILDCARD = f'{PIN_TOPIC_PREFIX}/+/set'
+PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
 
 class BridgeDaemon:
     def __init__(self):
@@ -85,22 +87,24 @@ class BridgeDaemon:
         self.running = True
         self.last_pin_state = {}
         self.kv_store = {}
-        self.mailbox = []
+    # MAILBOX queue eliminada; ahora se usa MQTT para mensajes arbitrarios
 
     def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
         debug_log(f"[MQTT] Connected with result code {rc}")
         try:
             client.subscribe(PIN_TOPIC_SET_WILDCARD)
             debug_log(f"[MQTT] Subscribed to topic: {PIN_TOPIC_SET_WILDCARD}")
+            client.subscribe(f"{MAILBOX_TOPIC_PREFIX}/send")
+            debug_log(f"[MQTT] Subscribed to topic: {MAILBOX_TOPIC_PREFIX}/send")
         except Exception as e:
             debug_log(f"[MQTT] Subscribe error: {e}")
         self.mqtt_connected = True
 
     def on_mqtt_message(self, client, userdata, msg):
         debug_log(f"[MQTT] Message received: {msg.topic} {msg.payload}")
-        # Parse pin number from topic: yun/pin/<N>/set
         import re
-        m = re.match(rf"{MQTT_TOPIC_PREFIX}/(\d+)/set", msg.topic)
+        # Manejo de pin set
+        m = re.match(rf"{PIN_TOPIC_PREFIX}/(\d+)/set", msg.topic)
         if m:
             pin = m.group(1)
             payload = msg.payload.decode().strip().upper()
@@ -113,6 +117,14 @@ class BridgeDaemon:
                 debug_log(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} OFF\n'.encode())
+            return
+        # Manejo de mailbox MQTT
+        if msg.topic == f"{MAILBOX_TOPIC_PREFIX}/send":
+            payload = msg.payload.decode(errors='replace').strip()
+            debug_log(f"[MQTT] Mailbox message received: {payload}")
+            if self.ser:
+                self.ser.write(f'MAILBOX {payload}\n'.encode())
+            return
 
     def publish_pin_state(self, pin, state):
         if self.mqtt_connected:
@@ -211,24 +223,7 @@ class BridgeDaemon:
                 debug_log(f"[DEBUG] WRITEFILE error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR WRITEFILE\n')
-        elif cmd.startswith('MAILBOX SEND '):
-            debug_log(f"[DEBUG] Action: MAILBOX SEND")
-            msg = cmd[len('MAILBOX SEND '):]
-            self.mailbox.append(msg)
-            debug_log(f"[DEBUG] Mailbox appended: {msg}")
-            if self.ser:
-                self.ser.write(b'OK MAILBOX SEND\n')
-        elif cmd == 'MAILBOX RECV':
-            debug_log(f"[DEBUG] Action: MAILBOX RECV")
-            if self.mailbox:
-                msg = self.mailbox.pop(0)
-                debug_log(f"[DEBUG] Mailbox popped: {msg}")
-                if self.ser:
-                    self.ser.write(f'MAILBOX {msg}\n'.encode())
-            else:
-                debug_log(f"[DEBUG] Mailbox empty")
-                if self.ser:
-                    self.ser.write(b'MAILBOX EMPTY\n')
+        # MAILBOX eliminado, ahora se usa MQTT
         elif cmd.startswith('CONSOLE '):
             msg = cmd[len('CONSOLE '):]
             debug_log(f'[Console] {msg}')
@@ -236,9 +231,21 @@ class BridgeDaemon:
             if self.ser:
                 self.ser.write(b'OK CONSOLE\n')
         else:
-            debug_log(f"[DEBUG] Unknown command")
-            if self.ser:
-                self.ser.write(b'UNKNOWN COMMAND\n')
+            # Si el comando es 'MAILBOX <msg>', publícalo en MQTT
+            if cmd.startswith('MAILBOX '):
+                msg = cmd[len('MAILBOX '):]
+                self.publish_mailbox_message(msg)
+                debug_log(f"[DEBUG] Forwarded MAILBOX to MQTT: {msg}")
+            else:
+                debug_log(f"[DEBUG] Unknown command")
+                if self.ser:
+                    self.ser.write(b'UNKNOWN COMMAND\n')
+
+    def publish_mailbox_message(self, msg):
+        if self.mqtt_connected:
+            topic = f"{MAILBOX_TOPIC_PREFIX}/recv"
+            self.mqtt_client.publish(topic, msg)
+            debug_log(f"[MQTT] Published mailbox message to {topic}: {msg}")
 
     def run(self):
         debug_log(f"[DEBUG] Starting BridgeDaemon run()")

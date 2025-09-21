@@ -2,7 +2,8 @@
 
 # Arduino Yun v2 Ecosystem Roadmap
 
-**Note:** All serial communication (daemon, CGI, Arduino) now uses 250000 baud for maximum reliability and speed.
+
+**Nota:** Desde v2.2, la función MAILBOX fue migrada a MQTT: ahora los mensajes arbitrarios se envían y reciben usando los topics `yun/mailbox/send` y `yun/mailbox/recv`, eliminando la cola interna y mejorando la integración IoT.
 
 ## v2.0 (Initial Release)
 - Full compatibility with Bridge library and legacy examples
@@ -19,7 +20,9 @@
 - Security improvements (MQTT auth, TLS)
 - Improved logging and error handling
 
+
 ## v2.2
+- Migración completa de MAILBOX a MQTT (topics dedicados)
 - Dockerized development environment
 - Automated test suite for hardware/software (MQTT only)
 

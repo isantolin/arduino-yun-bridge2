@@ -7,7 +7,7 @@ Example: Test all MQTT features of YunBridge v2
 - Generic pin control (default: 13, can specify any pin)
 - Key-value store
 - File I/O
-- Mailbox
+- Mailbox (topics yun/mailbox/send y yun/mailbox/recv)
 - Process execution
 """
 import time
@@ -31,6 +31,9 @@ if len(sys.argv) > 1:
 TOPIC_SET = f'yun/pin/{PIN}/set'
 TOPIC_STATE = f'yun/pin/{PIN}/state'
 TOPIC_CMD = 'yun/command'
+TOPIC_MAILBOX_SEND = 'yun/mailbox/send'
+TOPIC_MAILBOX_RECV = 'yun/mailbox/recv'
+
 
 # Callback for all state updates
 def on_message(client, userdata, msg):
@@ -47,8 +50,10 @@ client.loop_start()
 
 # Subscribe to all relevant topics
 
+
 client.subscribe(TOPIC_STATE)
 client.subscribe('yun/command/response')
+client.subscribe(TOPIC_MAILBOX_RECV)
 
 print(f"Turning pin {PIN} ON via MQTT...")
 client.publish(TOPIC_SET, 'ON')
@@ -71,11 +76,11 @@ print("Reading file via MQTT...")
 client.publish(TOPIC_CMD, 'READFILE /tmp/bridge_test.txt')
 time.sleep(1)
 
-print("Sending to mailbox via MQTT...")
-client.publish(TOPIC_CMD, 'MAILBOX SEND hello_mailbox')
+
+print("Sending to mailbox via MQTT (nuevo flujo)...")
+client.publish(TOPIC_MAILBOX_SEND, 'hello_mailbox')
 time.sleep(1)
-print("Receiving from mailbox via MQTT...")
-client.publish(TOPIC_CMD, 'MAILBOX RECV')
+print("Waiting for mailbox response on yun/mailbox/recv...")
 time.sleep(1)
 
 print("Running process via MQTT...")

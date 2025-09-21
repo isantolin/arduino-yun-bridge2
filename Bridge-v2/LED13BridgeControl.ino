@@ -52,7 +52,7 @@ void loop() {
     Serial.print("[DEBUG] Command received (raw): ");
     Serial.println(raw);
 
-    // Match commands: PIN<N> ON, PIN<N> OFF, PIN<N>:ON, PIN<N>:OFF
+    // Match commands: PIN<N> ON, PIN<N> OFF, PIN<N>:ON, PIN<N>:OFF, MAILBOX <msg>
     int pin = 13; // Default
     bool matched = false;
     if (raw.startsWith("PIN")) {
@@ -65,8 +65,8 @@ void loop() {
       if (pinStr.length() > 0) {
         pin = pinStr.toInt();
       }
-  String rest = raw.substring(idx);
-  rest.trim();
+      String rest = raw.substring(idx);
+      rest.trim();
       if (rest == "ON" || rest == ":ON") {
         setPin(pin, true);
         Serial.print("Pin "); Serial.print(pin); Serial.println(" ON");
@@ -81,6 +81,11 @@ void loop() {
         reportPinState(pin);
         matched = true;
       }
+    } else if (raw.startsWith("MAILBOX ")) {
+      String msg = raw.substring(8);
+      Serial.print("[MAILBOX] Mensaje recibido: ");
+      Serial.println(msg);
+      matched = true;
     }
     if (!matched) {
       Serial.print("[DEBUG] Unrecognized command: ");

@@ -1,6 +1,7 @@
 
 # Arduino Yun v2 Ecosystem (Unified Documentation)
 
+
 ## 1. Installation & Dependencies
 
 To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
@@ -24,7 +25,37 @@ This script will:
   opkg install python3 python3-pyserial
   ```
 
+### OpenWRT Integration Details
+
+The `openwrt-yun-v2/package` directory contains scripts and config files to ensure Bridge v2 and YunBridge v2 work on modern OpenWRT:
+
+- `bridge-v2.init`: Init script to start/stop YunBridge daemon
+- `99-bridge-ttyath0.conf`: UCI config for serial port
+- `bridge-v2.files`: List of files for package manager
+
+**Manual Installation Steps (if needed):**
+1. Copy all files to your OpenWRT device in the appropriate locations:
+  - `/usr/bin/yunbridge` (daemon)
+  - `/etc/init.d/bridge-v2` (init script)
+  - `/etc/config/bridge-ttyath0` (serial config)
+  - `/www/cgi-bin/led13` (CGI script)
+2. Make scripts executable:
+  ```sh
+  chmod +x /etc/init.d/bridge-v2 /www/cgi-bin/led13
+  ```
+3. Enable and start the service:
+  ```sh
+  /etc/init.d/bridge-v2 enable
+  /etc/init.d/bridge-v2 start
+  ```
+
+**Notes:**
+- Ensure `/dev/ttyATH0` exists and is not used by other processes.
+- Check `/etc/inittab` and `/etc/config/system` for serial port conflicts.
+- Use UCI config to adjust baudrate if needed.
+
 After running the script, upload the example sketch from Bridge-v2 to your Yun using the Arduino IDE, reboot if needed, and test MQTT/WebUI integration.
+
 
 ## 2. Architecture & Components
 
@@ -33,8 +64,56 @@ This repository contains all the components for a modern MQTT-based solution for
 - **Bridge-v2**: Arduino library (C++) for Yun, with MQTT support and IoT integration examples. Main example: generic pin control via MQTT (default: pin 13, but any pin can be used).
 - **YunBridge-v2**: Python3 daemon for OpenWRT, MQTT client, modular and extensible. Integrates with the MQTT broker and WebUI.
 - **openwrt-yun-v2**: OpenWRT integration scripts and automated installation. Ensures all dependencies and configs are set up.
-- **Web UI**: Integrated into the LuCI panel (iframe). All configuration is managed via the LuCI panel and stored in UCI (`/etc/config/yunbridge`). The YunBridge daemon reads UCI configuration using python3-uci (with fallback to defaults).
+- **Web UI (luci-app-yunbridge)**: LuCI Web panel for configuring and monitoring YunBridge on OpenWrt. 
+  - Edit YunBridge configuration (MQTT, serial, debug, etc.)
+  - Integrated Web UI for real-time control/monitoring (from YunWebUI)
+  - UCI config: `/etc/config/yunbridge`
+  - Multi-language support (planned)
+  - Daemon status and logs in panel (planned)
+  - Advanced parameter validation (planned)
 
+### LuCI Panel Installation & Usage
+
+**Dependencies:**
+```sh
+opkg update
+opkg install luci luci-base lua luci-mod-admin-full luci-lib-nixio luci-lib-ipkg luci-compat python3-uci
+```
+
+**Manual Installation:**
+1. Run the automatic installation script:
+  ```sh
+  ./install.sh <ROUTER_IP> [user]
+  # Example:
+  ./install.sh 192.168.1.1 root
+  ```
+  This will copy all necessary files and restart LuCI.
+2. Alternativamente, instalación manual:
+  - `luasrc/controller/yunbridge.lua` → `/usr/lib/lua/luci/controller/`
+  - `luasrc/model/cbi/yunbridge.lua` → `/usr/lib/lua/luci/model/cbi/`
+  - `luasrc/view/yunbridge/` → `/usr/lib/lua/luci/view/`
+  - `root/etc/config/yunbridge` → `/etc/config/yunbridge`
+  - `root/www/yunbridge/index.html` → `/www/yunbridge/index.html`
+  - Reinicia LuCI: `/etc/init.d/uhttpd restart; /etc/init.d/rpcd restart`
+
+Luego accede a LuCI: Services > YunBridge
+
+**Uso:**
+- Instala el paquete o copia los archivos manualmente
+- Accede vía LuCI: Services > YunBridge
+- Configura parámetros y usa la pestaña Web UI
+
+**Archivos principales:**
+- `luasrc/controller/yunbridge.lua`: LuCI controller
+- `luasrc/model/cbi/yunbridge.lua`: Config form
+- `luasrc/view/yunbridge/webui.htm`: Embedded Web UI
+- `root/etc/config/yunbridge`: UCI config defaults
+- `root/www/yunbridge/index.html`: YunWebUI frontend (copy from YunWebUI-v2)
+
+**Notas:**
+- El daemon YunBridge lee la configuración desde UCI (`/etc/config/yunbridge`) usando `python3-uci`. Si una opción no existe, se usa el valor por defecto.
+- WebSocket support is not available in the default OpenWrt Mosquitto package. Use standard MQTT (port 1883) for now.
+ 
 All legacy examples and scripts have been removed. Only MQTT flows are supported.
 
 ## 3. MQTT Usage & Examples
@@ -105,8 +184,8 @@ Todos los scripts usan los mismos topics y lógica MQTT que el daemon y el códi
 5. WebUI/MQTT client receives and updates the UI.
 
 #### Security
-- Support for MQTT authentication (username/password).
-- Optionally, TLS.
+- MQTT authentication (username/password) is supported (see config options).
+- TLS support is planned (see roadmap).
 
 ## 4. Hardware Tests
 

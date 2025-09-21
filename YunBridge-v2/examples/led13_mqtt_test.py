@@ -1,3 +1,6 @@
+def on_connect(client, userdata, flags, rc, properties=None):
+    print("Connected with result code " + str(rc))
+
 #!/usr/bin/env python3
 """
 Example: Test generic pin control via MQTT
@@ -5,6 +8,10 @@ Sends MQTT messages to control and monitor any pin state (default: 13)
 """
 import time
 import paho.mqtt.client as mqtt
+try:
+    from paho.mqtt.enums import CallbackAPIVersion
+except ImportError:
+    CallbackAPIVersion = None
 
 
 import sys
@@ -25,7 +32,11 @@ TOPIC_STATE = f'yun/pin/{PIN}/state'
 def on_message(client, userdata, msg):
     print(f"[MQTT] {msg.topic}: {msg.payload.decode()}")
 
-client = mqtt.Client(protocol=mqtt.MQTTv311, callback_api_version=5)
+if CallbackAPIVersion is not None:
+    client = mqtt.Client(CallbackAPIVersion.VERSION2)
+else:
+    client = mqtt.Client()
+client.on_connect = on_connect
 client.on_message = on_message
 client.connect(BROKER, PORT, 60)
 client.loop_start()

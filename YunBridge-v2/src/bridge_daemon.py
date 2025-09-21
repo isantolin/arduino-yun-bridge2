@@ -1,8 +1,23 @@
+import os
+def debug_log(msg):
+    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+    line = f"[{ts}] {msg}\n"
+    try:
+        with open('/tmp/yunbridge_debug.log', 'a') as f:
+            f.write(line)
+    except Exception:
+        pass
+    if DEBUG:
+        print(line, end='')
 #!/usr/bin/env python3
 
 import serial
 import time
 import paho.mqtt.client as mqtt
+try:
+    from paho.mqtt.enums import CallbackAPIVersion
+except ImportError:
+    CallbackAPIVersion = None
 import threading
 import sys
 try:
@@ -59,7 +74,10 @@ PIN_TOPIC_STATE_FMT = f'{MQTT_TOPIC_PREFIX}/{{pin}}/state'
 
 class BridgeDaemon:
     def __init__(self):
-    self.mqtt_client = mqtt.Client(protocol=mqtt.MQTTv311, callback_api_version=5)
+        if CallbackAPIVersion is not None:
+            self.mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
+        else:
+            self.mqtt_client = mqtt.Client()
         self.mqtt_client.on_connect = self.on_mqtt_connect
         self.mqtt_client.on_message = self.on_mqtt_message
         self.mqtt_connected = False
@@ -69,30 +87,30 @@ class BridgeDaemon:
         self.kv_store = {}
         self.mailbox = []
 
-    def on_mqtt_connect(self, client, userdata, flags, rc):
-        print(f"[MQTT] Connected with result code {rc}")
+    def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
+        debug_log(f"[MQTT] Connected with result code {rc}")
         try:
             client.subscribe(PIN_TOPIC_SET_WILDCARD)
-            print(f"[MQTT] Subscribed to topic: {PIN_TOPIC_SET_WILDCARD}")
+            debug_log(f"[MQTT] Subscribed to topic: {PIN_TOPIC_SET_WILDCARD}")
         except Exception as e:
-            print(f"[MQTT] Subscribe error: {e}")
+            debug_log(f"[MQTT] Subscribe error: {e}")
         self.mqtt_connected = True
 
     def on_mqtt_message(self, client, userdata, msg):
-        print(f"[MQTT] Message received: {msg.topic} {msg.payload}")
+        debug_log(f"[MQTT] Message received: {msg.topic} {msg.payload}")
         # Parse pin number from topic: yun/pin/<N>/set
         import re
         m = re.match(rf"{MQTT_TOPIC_PREFIX}/(\d+)/set", msg.topic)
         if m:
             pin = m.group(1)
             payload = msg.payload.decode().strip().upper()
-            print(f"[DEBUG] MQTT payload for pin {pin}: {payload}")
+            debug_log(f"[DEBUG] MQTT payload for pin {pin}: {payload}")
             if payload in ('ON', '1'):
-                print(f"[DEBUG] Writing 'PIN{pin} ON' to serial")
+                debug_log(f"[DEBUG] Writing 'PIN{pin} ON' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} ON\n'.encode())
             elif payload in ('OFF', '0'):
-                print(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
+                debug_log(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
                 if self.ser:
                     self.ser.write(f'PIN{pin} OFF\n'.encode())
 
@@ -101,11 +119,11 @@ class BridgeDaemon:
             payload = 'ON' if state else 'OFF'
             topic = PIN_TOPIC_STATE_FMT.format(pin=pin)
             self.mqtt_client.publish(topic, payload)
-            print(f"[MQTT] Published {payload} to {topic}")
+            debug_log(f"[MQTT] Published {payload} to {topic}")
 
     def handle_command(self, line):
         cmd = line.strip()
-        print(f"[DEBUG] Received command: '{cmd}'")
+        debug_log(f"[DEBUG] Received command: '{cmd}'")
         # Generalized pin ON/OFF/STATE commands
         import re
         m_on = re.match(r'PIN(\d+) ON', cmd)
@@ -113,14 +131,14 @@ class BridgeDaemon:
         m_state = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
         if m_on:
             pin = m_on.group(1)
-            print(f"[DEBUG] Action: PIN{pin} ON")
+            debug_log(f"[DEBUG] Action: PIN{pin} ON")
             if self.ser:
                 self.ser.write(f'PIN{pin}:ON\n'.encode())
             self.publish_pin_state(pin, True)
             self.last_pin_state[pin] = True
         elif m_off:
             pin = m_off.group(1)
-            print(f"[DEBUG] Action: PIN{pin} OFF")
+            debug_log(f"[DEBUG] Action: PIN{pin} OFF")
             if self.ser:
                 self.ser.write(f'PIN{pin}:OFF\n'.encode())
             self.publish_pin_state(pin, False)
@@ -128,124 +146,124 @@ class BridgeDaemon:
         elif m_state:
             pin = m_state.group(1)
             state = m_state.group(2)
-            print(f"[DEBUG] PIN{pin} state reported by Arduino: {state}")
+            debug_log(f"[DEBUG] PIN{pin} state reported by Arduino: {state}")
             self.publish_pin_state(pin, state == 'ON')
         elif cmd.startswith('SET '):
-            print(f"[DEBUG] Action: SET (key-value store)")
+            debug_log(f"[DEBUG] Action: SET (key-value store)")
             try:
                 _, key, value = cmd.split(' ', 2)
                 self.kv_store[key] = value
-                print(f"[DEBUG] Stored: {key} = {value}")
+                debug_log(f"[DEBUG] Stored: {key} = {value}")
                 if self.ser:
                     self.ser.write(f'OK SET {key}\n'.encode())
             except Exception as e:
-                print(f"[DEBUG] SET error: {e}")
+                debug_log(f"[DEBUG] SET error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR SET\n')
         elif cmd.startswith('GET '):
-            print(f"[DEBUG] Action: GET (key-value store)")
+            debug_log(f"[DEBUG] Action: GET (key-value store)")
             try:
                 _, key = cmd.split(' ', 1)
                 value = self.kv_store.get(key, '')
-                print(f"[DEBUG] Retrieved: {key} = {value}")
+                debug_log(f"[DEBUG] Retrieved: {key} = {value}")
                 if self.ser:
                     self.ser.write(f'VALUE {key} {value}\n'.encode())
             except Exception as e:
-                print(f"[DEBUG] GET error: {e}")
+                debug_log(f"[DEBUG] GET error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR GET\n')
         elif cmd.startswith('RUN '):
-            print(f"[DEBUG] Action: RUN (process execution)")
+            debug_log(f"[DEBUG] Action: RUN (process execution)")
             import subprocess
             try:
                 _, command = cmd.split(' ', 1)
                 result = subprocess.getoutput(command)
-                print(f"[DEBUG] RUN result: {result}")
+                debug_log(f"[DEBUG] RUN result: {result}")
                 if self.ser:
                     self.ser.write(f'RUNOUT {result}\n'.encode())
             except Exception as e:
-                print(f"[DEBUG] RUN error: {e}")
+                debug_log(f"[DEBUG] RUN error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR RUN\n')
         elif cmd.startswith('READFILE '):
-            print(f"[DEBUG] Action: READFILE")
+            debug_log(f"[DEBUG] Action: READFILE")
             try:
                 _, path = cmd.split(' ', 1)
                 with open(path, 'r') as f:
                     data = f.read(256)
-                print(f"[DEBUG] Read from {path}: {data}")
+                debug_log(f"[DEBUG] Read from {path}: {data}")
                 if self.ser:
                     self.ser.write(f'FILEDATA {data}\n'.encode())
             except Exception as e:
-                print(f"[DEBUG] READFILE error: {e}")
+                debug_log(f"[DEBUG] READFILE error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR READFILE\n')
         elif cmd.startswith('WRITEFILE '):
-            print(f"[DEBUG] Action: WRITEFILE")
+            debug_log(f"[DEBUG] Action: WRITEFILE")
             try:
                 _, path, data = cmd.split(' ', 2)
                 with open(path, 'w') as f:
                     f.write(data)
-                print(f"[DEBUG] Wrote to {path}: {data}")
+                debug_log(f"[DEBUG] Wrote to {path}: {data}")
                 if self.ser:
                     self.ser.write(b'OK WRITEFILE\n')
             except Exception as e:
-                print(f"[DEBUG] WRITEFILE error: {e}")
+                debug_log(f"[DEBUG] WRITEFILE error: {e}")
                 if self.ser:
                     self.ser.write(b'ERR WRITEFILE\n')
         elif cmd.startswith('MAILBOX SEND '):
-            print(f"[DEBUG] Action: MAILBOX SEND")
+            debug_log(f"[DEBUG] Action: MAILBOX SEND")
             msg = cmd[len('MAILBOX SEND '):]
             self.mailbox.append(msg)
-            print(f"[DEBUG] Mailbox appended: {msg}")
+            debug_log(f"[DEBUG] Mailbox appended: {msg}")
             if self.ser:
                 self.ser.write(b'OK MAILBOX SEND\n')
         elif cmd == 'MAILBOX RECV':
-            print(f"[DEBUG] Action: MAILBOX RECV")
+            debug_log(f"[DEBUG] Action: MAILBOX RECV")
             if self.mailbox:
                 msg = self.mailbox.pop(0)
-                print(f"[DEBUG] Mailbox popped: {msg}")
+                debug_log(f"[DEBUG] Mailbox popped: {msg}")
                 if self.ser:
                     self.ser.write(f'MAILBOX {msg}\n'.encode())
             else:
-                print(f"[DEBUG] Mailbox empty")
+                debug_log(f"[DEBUG] Mailbox empty")
                 if self.ser:
                     self.ser.write(b'MAILBOX EMPTY\n')
         elif cmd.startswith('CONSOLE '):
             msg = cmd[len('CONSOLE '):]
-            print(f'[Console] {msg}')
-            print(f"[DEBUG] Action: CONSOLE")
+            debug_log(f'[Console] {msg}')
+            debug_log(f"[DEBUG] Action: CONSOLE")
             if self.ser:
                 self.ser.write(b'OK CONSOLE\n')
         else:
-            print(f"[DEBUG] Unknown command")
+            debug_log(f"[DEBUG] Unknown command")
             if self.ser:
                 self.ser.write(b'UNKNOWN COMMAND\n')
 
     def run(self):
-        print(f"[DEBUG] Starting BridgeDaemon run()")
-        print(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
+        debug_log(f"[DEBUG] Starting BridgeDaemon run()")
+        debug_log(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
         try:
-            print("[DEBUG] Connecting to MQTT broker...")
+            debug_log("[DEBUG] Connecting to MQTT broker...")
             self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
             mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             mqtt_thread.start()
-            print("[DEBUG] MQTT thread started")
+            debug_log("[DEBUG] MQTT thread started")
             while self.running:
                 try:
-                    print(f"[DEBUG] Trying to open serial port {SERIAL_PORT}...")
+                    debug_log(f"[DEBUG] Trying to open serial port {SERIAL_PORT}...")
                     with serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1) as ser:
                         self.ser = ser
-                        print(f'[INFO] Serial port {SERIAL_PORT} opened')
+                        debug_log(f'[INFO] Serial port {SERIAL_PORT} opened')
                         while self.running:
                             try:
                                 line = ser.readline().decode(errors='replace').strip()
                                 if line:
-                                    print(f'[SERIAL] {line}')
+                                    debug_log(f'[SERIAL] {line}')
                                     self.handle_command(line)
                             except serial.SerialException as e:
-                                print(f'[ERROR] Serial port I/O error: {e}')
-                                print(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')
+                                debug_log(f'[ERROR] Serial port I/O error: {e}')
+                                debug_log(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')
                                 self.ser = None
                                 try:
                                     ser.close()
@@ -254,34 +272,34 @@ class BridgeDaemon:
                                 time.sleep(RECONNECT_DELAY)
                                 break
                             except Exception as e:
-                                print(f'[ERROR] Unexpected error reading from serial port: {e}')
+                                debug_log(f'[ERROR] Unexpected error reading from serial port: {e}')
                                 time.sleep(1)
-                        print(f'[INFO] Serial port {SERIAL_PORT} closed')
+                        debug_log(f'[INFO] Serial port {SERIAL_PORT} closed')
                         self.ser = None
                 except serial.SerialException as e:
-                    print(f'[ERROR] Could not open serial port: {e}')
+                    debug_log(f'[ERROR] Could not open serial port: {e}')
                     self.ser = None
-                    print(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
+                    debug_log(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
                     time.sleep(RECONNECT_DELAY)
                 except Exception as e:
-                    print(f'[ERROR] Unexpected error in main loop: {e}')
+                    debug_log(f'[ERROR] Unexpected error in main loop: {e}')
                     self.ser = None
                     import traceback
-                    traceback.print_exc()
-                    print(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
+                    debug_log(traceback.format_exc())
+                    debug_log(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
                     time.sleep(RECONNECT_DELAY)
         except KeyboardInterrupt:
-            print("[INFO] Daemon stopped by user.")
+            debug_log("[INFO] Daemon stopped by user.")
             self.running = False
         except Exception as e:
-            print(f'[FATAL] Unhandled exception in run(): {e}')
+            debug_log(f'[FATAL] Unhandled exception in run(): {e}')
             import traceback
-            traceback.print_exc()
-        print('[DEBUG] Exiting BridgeDaemon run()')
+            debug_log(traceback.format_exc())
+        debug_log('[DEBUG] Exiting BridgeDaemon run()')
 
 if __name__ == '__main__':
-    print('[YunBridge] Configuración utilizada:')
+    debug_log('[YunBridge] Config used:')
     for k, v in CFG.items():
-        print(f'  {k}: {v}')
+        debug_log(f'  {k}: {v}')
     daemon = BridgeDaemon()
     daemon.run()

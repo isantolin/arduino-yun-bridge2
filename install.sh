@@ -96,7 +96,16 @@ fi
 # 9. Install YunBridge daemon
 if [ -f YunBridge-v2/src/bridge_daemon.py ]; then
     echo "Copying YunBridge daemon..."
-    cp -f YunBridge-v2/src/bridge_daemon.py /usr/bin/yunbridge
+    # Ensure correct shebang for direct execution
+    if ! grep -q '^#!/usr/bin/env python3' YunBridge-v2/src/bridge_daemon.py; then
+        echo "[INFO] Adding shebang to bridge_daemon.py for direct execution."
+        tmpfile=$(mktemp)
+        echo '#!/usr/bin/env python3' > "$tmpfile"
+        cat YunBridge-v2/src/bridge_daemon.py >> "$tmpfile"
+        mv "$tmpfile" /usr/bin/yunbridge
+    else
+        cp -f YunBridge-v2/src/bridge_daemon.py /usr/bin/yunbridge
+    fi
     chmod +x /usr/bin/yunbridge
 else
     echo "ERROR: YunBridge-v2/src/bridge_daemon.py not found."

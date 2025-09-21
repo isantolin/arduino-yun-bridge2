@@ -1,3 +1,6 @@
+def on_connect(client, userdata, flags, rc, properties=None):
+	print("Connected with result code " + str(rc))
+
 #!/usr/bin/env python3
 """
 Example: Test mailbox via MQTT
@@ -5,12 +8,20 @@ Sends MAILBOX SEND and MAILBOX RECV commands to the yun/command topic
 """
 import time
 import paho.mqtt.client as mqtt
+try:
+	from paho.mqtt.enums import CallbackAPIVersion
+except ImportError:
+	CallbackAPIVersion = None
 
 BROKER = 'localhost'
 PORT = 1883
 TOPIC_CMD = 'yun/command'
 
-client = mqtt.Client(protocol=mqtt.MQTTv311, callback_api_version=5)
+if CallbackAPIVersion is not None:
+	client = mqtt.Client(CallbackAPIVersion.VERSION2)
+else:
+	client = mqtt.Client()
+client.on_connect = on_connect
 client.connect(BROKER, PORT, 60)
 client.loop_start()
 

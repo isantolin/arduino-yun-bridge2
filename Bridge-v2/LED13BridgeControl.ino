@@ -38,11 +38,16 @@ void setup() {
 void loop() {
   if (Serial1.available()) {
     String raw = "";
+    Serial.print("[DEBUG] Serial1 buffer: ");
     while (Serial1.available()) {
       char c = Serial1.read();
+      Serial.print("["); Serial.print((int)c); Serial.print(":"); Serial.print(c); Serial.print("] ");
       raw += c;
       if (c == '\n') break;
     }
+    Serial.println();
+    Serial.print("[DEBUG] Full raw buffer before trim: ");
+    Serial.println(raw);
     raw.trim();
     Serial.print("[DEBUG] Command received (raw): ");
     Serial.println(raw);

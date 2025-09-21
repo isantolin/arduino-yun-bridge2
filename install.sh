@@ -85,13 +85,17 @@ else
 fi
 
 # 6. Copy config and package files
-for f in openwrt-yun-core/package/99-yunbridge-ttyath0.conf openwrt-yun-core/package/yunbridge.files; do
-    if [ -f "$f" ]; then
-        cp -f "$f" /etc/yunbridge/
-    else
-        echo "WARNING: $f not found."
-    fi
-done
+# Map and install config/package files to correct locations
+if [ -f openwrt-yun-core/package/99-yunbridge-ttyath0.conf ]; then
+    cp -f openwrt-yun-core/package/99-yunbridge-ttyath0.conf /etc/config/yunbridge-ttyath0
+else
+    echo "WARNING: openwrt-yun-core/package/99-yunbridge-ttyath0.conf not found."
+fi
+if [ -f openwrt-yun-core/package/yunbridge.files ]; then
+    cp -f openwrt-yun-core/package/yunbridge.files /etc/yunbridge/yunbridge.files
+else
+    echo "WARNING: openwrt-yun-core/package/yunbridge.files not found."
+fi
 
 # 7. Install init script
 if [ -f openwrt-yun-core/package/yunbridge.init ]; then

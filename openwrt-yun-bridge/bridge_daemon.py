@@ -99,33 +99,37 @@ DEFAULTS = {
     'debug': 0
 }
 
+
+
 def get_uci_config():
-    """Read configuration from UCI or use defaults."""
+    """Read configuration from UCI using subprocess (robust for OpenWRT)."""
+    import subprocess
     cfg = DEFAULTS.copy()
-    if uci is not None:
-        try:
-            c = uci.UCI('yunbridge')
-            section = None
-            # Try to find the section by introspection (API is inconsistent)
-            for attr in dir(c):
-                obj = getattr(c, attr)
-                if isinstance(obj, dict) and 'main' in obj:
-                    section = obj['main']
-                    break
-            if section:
-                for k in DEFAULTS:
-                    v = section.get(k)
-                    if v is not None:
-                        if k in ('mqtt_port', 'serial_baud', 'debug'):
-                            try:
-                                v = int(v)
-                            except Exception:
-                                v = DEFAULTS[k]
-                        cfg[k] = v
-        except Exception as e:
-            print(f'[WARN] Error reading UCI configuration: {e}')
-    else:
-        print('[WARN] python3-uci is not installed, using default values')
+    try:
+        # Get all options in the 'main' section of 'yunbridge'
+        result = subprocess.run(['uci', 'show', 'yunbridge'], capture_output=True, text=True, check=True)
+        for line in result.stdout.splitlines():
+            # Example: yunbridge.main.mqtt_host='127.0.0.1'
+            parts = line.strip().split('=', 1)
+            if len(parts) != 2:
+                continue
+            key, value = parts
+            key_parts = key.split('.')
+            if len(key_parts) != 3:
+                continue
+            _, section, option = key_parts
+            if section != 'main':
+                continue
+            value = value.strip().strip("'\"")
+            if option in DEFAULTS:
+                if option in ('mqtt_port', 'serial_baud', 'debug'):
+                    try:
+                        value = int(value)
+                    except Exception:
+                        value = DEFAULTS[option]
+                cfg[option] = value
+    except Exception as e:
+        print(f'[WARN] Error reading UCI configuration: {e}')
     return cfg
 
 CFG = get_uci_config()
@@ -408,7 +412,8 @@ class BridgeDaemon:
         debug_log('[DEBUG] Exiting BridgeDaemon run()')
         self.write_status('exited')
 
-if __name__ == '__main__':
+
+def main():
     debug_log('[YunBridge] Config used:')
     for k, v in CFG.items():
         debug_log(f'  {k}: {v}')
@@ -417,3 +422,6 @@ if __name__ == '__main__':
         daemon.run()
     finally:
         flush_log()
+
+if __name__ == '__main__':
+    main()

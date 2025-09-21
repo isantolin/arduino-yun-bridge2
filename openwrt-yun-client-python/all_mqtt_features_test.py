@@ -7,7 +7,7 @@ Example: Test all MQTT features of YunBridge v2
 - Generic pin control (default: 13, can specify any pin)
 - Key-value store
 - File I/O
-- Mailbox (topics yun/mailbox/send y yun/mailbox/recv)
+- Mailbox (topics yun/mailbox/send and yun/mailbox/recv)
 - Process execution
 """
 import time

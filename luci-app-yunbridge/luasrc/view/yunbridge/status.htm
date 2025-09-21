@@ -1,0 +1,26 @@
+<%+header%>
+<h2>YunBridge Daemon Status</h2>
+<div id="daemon-status">
+  <pre id="status-content">Loading status...</pre>
+</div>
+<h2>Recent Log Output</h2>
+<div id="daemon-log">
+  <pre id="log-content">Loading log...</pre>
+</div>
+<script type="text/javascript">
+function fetchStatus() {
+  XHR.get('/cgi-bin/luci/admin/services/yunbridge/status_raw', null, function(x, data) {
+    document.getElementById('status-content').textContent = data || 'No status available';
+  });
+}
+function fetchLog() {
+  XHR.get('/cgi-bin/luci/admin/services/yunbridge/log_raw', null, function(x, data) {
+    document.getElementById('log-content').textContent = data || 'No log available';
+  });
+}
+fetchStatus();
+fetchLog();
+setInterval(fetchStatus, 5000);
+setInterval(fetchLog, 5000);
+</script>
+<%+footer%>

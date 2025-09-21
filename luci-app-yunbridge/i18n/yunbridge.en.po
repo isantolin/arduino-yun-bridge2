@@ -1,0 +1,32 @@
+msgid "YunBridge Configuration"
+msgstr "YunBridge Configuration"
+
+msgid "Main Settings"
+msgstr "Main Settings"
+
+msgid "MQTT Host"
+msgstr "MQTT Host"
+
+msgid "MQTT Port"
+msgstr "MQTT Port"
+
+msgid "MQTT Topic Prefix"
+msgstr "MQTT Topic Prefix"
+
+msgid "Serial Port"
+msgstr "Serial Port"
+
+msgid "Serial Baudrate"
+msgstr "Serial Baudrate"
+
+msgid "Debug Mode"
+msgstr "Debug Mode"
+
+msgid "Daemon Status"
+msgstr "Daemon Status"
+
+msgid "Recent Log Output"
+msgstr "Recent Log Output"
+
+msgid "Web UI"
+msgstr "Web UI"

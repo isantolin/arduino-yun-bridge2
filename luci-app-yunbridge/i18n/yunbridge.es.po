@@ -1,0 +1,32 @@
+msgid "YunBridge Configuration"
+msgstr "Configuración de YunBridge"
+
+msgid "Main Settings"
+msgstr "Configuración Principal"
+
+msgid "MQTT Host"
+msgstr "Servidor MQTT"
+
+msgid "MQTT Port"
+msgstr "Puerto MQTT"
+
+msgid "MQTT Topic Prefix"
+msgstr "Prefijo de Tópico MQTT"
+
+msgid "Serial Port"
+msgstr "Puerto Serie"
+
+msgid "Serial Baudrate"
+msgstr "Baudios del Puerto Serie"
+
+msgid "Debug Mode"
+msgstr "Modo Depuración"
+
+msgid "Daemon Status"
+msgstr "Estado del Daemon"
+
+msgid "Recent Log Output"
+msgstr "Salida Reciente del Log"
+
+msgid "Web UI"
+msgstr "Interfaz Web"

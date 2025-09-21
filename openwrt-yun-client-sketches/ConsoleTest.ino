@@ -1,4 +1,4 @@
-// Bridge-v2 Example: Console Test
+// YunBridge Example: Console Test
 #include <Bridge.h>
 
 void setup() {

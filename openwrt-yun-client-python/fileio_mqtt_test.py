@@ -1,15 +1,15 @@
 def on_connect(client, userdata, flags, rc, properties=None):
-	print("Connected with result code " + str(rc))
-	# Subscribe to a topic or perform other actions here
+    print("Connected with result code " + str(rc))
+    # Subscribe to a topic or perform other actions here
 
-	# Example of subscribing to a topic
-	client.subscribe("some/topic")
+    # Example of subscribing to a topic
+    client.subscribe("some/topic")
 
-	# Additional logic can be added here
+    # Additional logic can be added here
 
-	# This is just a placeholder for the function's body
+    # This is just a placeholder for the function's body
 
-	pass  # Replace with actual logic as needed
+    pass  # Replace with actual logic as needed
 #!/usr/bin/env python3
 """
 Example: Test file I/O via MQTT

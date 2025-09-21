@@ -1,4 +1,4 @@
-// Bridge-v2 Example: File I/O Test
+// YunBridge Example: File I/O Test
 #include <Bridge.h>
 
 void setup() {

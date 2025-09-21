@@ -4,19 +4,94 @@
 YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
 Organizado y refactorizado para claridad, robustez y estilo PEP8.
 """
+
+
+# Standard library imports
 import time
 import threading
+import queue
+import os
+import atexit
+import re
+
+# Third-party imports
 import serial
 import paho.mqtt.client as mqtt
-import re
+
+# Try to import CallbackAPIVersion (for newer paho-mqtt), else set to None
 try:
     from paho.mqtt.enums import CallbackAPIVersion
 except ImportError:
     CallbackAPIVersion = None
+
+# Try to import uci (for OpenWRT config), else set to None
 try:
     import uci
 except ImportError:
     uci = None
+
+
+# Async logging globals
+_log_buffer = []
+_LOG_FILE = '/tmp/yunbridge_debug.log'
+# Buffer size: configurable via env, default 50
+_LOG_BUFFER_SIZE = int(os.environ.get('YUNBRIDGE_LOG_BUFFER_SIZE', '50'))
+
+# Async logging queue and thread
+_log_queue = queue.Queue()
+_log_thread = None
+_log_thread_running = False
+
+
+def _log_writer():
+    global _log_buffer, _log_thread_running
+    _log_thread_running = True
+    while _log_thread_running or not _log_queue.empty():
+        try:
+            line = _log_queue.get(timeout=0.5)
+            _log_buffer.append(line)
+            if len(_log_buffer) >= _LOG_BUFFER_SIZE:
+                with open(_LOG_FILE, 'a') as f:
+                    f.writelines(_log_buffer)
+                _log_buffer.clear()
+        except queue.Empty:
+            pass
+        except Exception:
+            pass
+    # Final flush
+    if _log_buffer:
+        try:
+            with open(_LOG_FILE, 'a') as f:
+                f.writelines(_log_buffer)
+            _log_buffer.clear()
+        except Exception:
+            pass
+
+def debug_log(msg):
+    """Async buffered log to file and optionally to stdout if DEBUG is set."""
+    ts = time.strftime('%Y-%m-%d %H:%M:%S')
+    line = f"[{ts}] {msg}\n"
+    _log_queue.put(line)
+    if globals().get('DEBUG', 0):
+        print(line, end='')
+
+
+def flush_log():
+    """Flush any remaining log buffer to disk and stop log thread."""
+    global _log_thread_running, _log_thread
+    _log_thread_running = False
+    if _log_thread:
+        _log_thread.join(timeout=2)
+    # Final flush handled in _log_writer
+def start_log_thread():
+    global _log_thread
+    if _log_thread is None:
+        _log_thread = threading.Thread(target=_log_writer, daemon=True)
+        _log_thread.start()
+
+# Start async log thread at import
+start_log_thread()
+atexit.register(flush_log)
 
 DEFAULTS = {
     'mqtt_host': '127.0.0.1',
@@ -27,33 +102,19 @@ DEFAULTS = {
     'debug': 0
 }
 
-def debug_log(msg):
-    """Log to file and optionally to stdout if DEBUG is set."""
-    ts = time.strftime('%Y-%m-%d %H:%M:%S')
-    line = f"[{ts}] {msg}\n"
-    try:
-        with open('/tmp/yunbridge_debug.log', 'a') as f:
-            f.write(line)
-    except Exception:
-        pass
-    if globals().get('DEBUG', 0):
-        print(line, end='')
-
 def get_uci_config():
     """Read configuration from UCI or use defaults."""
     cfg = DEFAULTS.copy()
     if uci is not None:
         try:
-            c = uci.UCI()
+            c = uci.UCI('yunbridge')
             section = None
             # Try to find the section by introspection (API is inconsistent)
             for attr in dir(c):
                 obj = getattr(c, attr)
-                if isinstance(obj, dict) and 'yunbridge' in obj:
-                    yb = obj['yunbridge']
-                    if isinstance(yb, dict) and 'main' in yb:
-                        section = yb['main']
-                        break
+                if isinstance(obj, dict) and 'main' in obj:
+                    section = obj['main']
+                    break
             if section:
                 for k in DEFAULTS:
                     v = section.get(k)
@@ -87,6 +148,17 @@ PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
 
 
 class BridgeDaemon:
+    def write_status(self, status, detail=None):
+        """Write daemon status to a file for external monitoring."""
+        try:
+            with open('/tmp/yunbridge_status.json', 'w') as f:
+                import json
+                data = {'status': status, 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')}
+                if detail:
+                    data['detail'] = detail
+                f.write(json.dumps(data))
+        except Exception as e:
+            debug_log(f'[WARN] Could not write status file: {e}')
     """
     Main daemon class: handles MQTT, serial, and command processing.
     """
@@ -270,17 +342,25 @@ class BridgeDaemon:
         debug_log(f"[DEBUG] Starting BridgeDaemon run()")
         debug_log(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
         try:
+            self.write_status('starting')
             debug_log("[DEBUG] Connecting to MQTT broker...")
-            self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+            try:
+                self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+            except Exception as e:
+                debug_log(f'[FATAL] Could not connect to MQTT broker: {e}')
+                self.write_status('error', f'MQTT connect failed: {e}')
+                return
             mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             mqtt_thread.start()
             debug_log("[DEBUG] MQTT thread started")
+            self.write_status('running')
             while self.running:
                 try:
                     debug_log(f"[DEBUG] Trying to open serial port {SERIAL_PORT}...")
                     with serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1) as ser:
                         self.ser = ser
                         debug_log(f'[INFO] Serial port {SERIAL_PORT} opened')
+                        self.write_status('running', 'serial open')
                         while self.running:
                             try:
                                 line = ser.readline().decode(errors='replace').strip()
@@ -291,6 +371,7 @@ class BridgeDaemon:
                                 debug_log(f'[ERROR] Serial port I/O error: {e}')
                                 debug_log(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')
                                 self.ser = None
+                                self.write_status('error', f'Serial I/O error: {e}')
                                 try:
                                     ser.close()
                                 except Exception:
@@ -299,17 +380,21 @@ class BridgeDaemon:
                                 break
                             except Exception as e:
                                 debug_log(f'[ERROR] Unexpected error reading from serial port: {e}')
+                                self.write_status('error', f'Unexpected serial error: {e}')
                                 time.sleep(1)
                         debug_log(f'[INFO] Serial port {SERIAL_PORT} closed')
                         self.ser = None
+                        self.write_status('running', 'serial closed')
                 except serial.SerialException as e:
                     debug_log(f'[ERROR] Could not open serial port: {e}')
                     self.ser = None
+                    self.write_status('error', f'Could not open serial: {e}')
                     debug_log(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
                     time.sleep(RECONNECT_DELAY)
                 except Exception as e:
                     debug_log(f'[ERROR] Unexpected error in main loop: {e}')
                     self.ser = None
+                    self.write_status('error', f'Unexpected main loop error: {e}')
                     import traceback
                     debug_log(traceback.format_exc())
                     debug_log(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
@@ -317,15 +402,21 @@ class BridgeDaemon:
         except KeyboardInterrupt:
             debug_log("[INFO] Daemon stopped by user.")
             self.running = False
+            self.write_status('stopped', 'KeyboardInterrupt')
         except Exception as e:
             debug_log(f'[FATAL] Unhandled exception in run(): {e}')
             import traceback
             debug_log(traceback.format_exc())
+            self.write_status('error', f'Fatal: {e}')
         debug_log('[DEBUG] Exiting BridgeDaemon run()')
+        self.write_status('exited')
 
 if __name__ == '__main__':
     debug_log('[YunBridge] Config used:')
     for k, v in CFG.items():
         debug_log(f'  {k}: {v}')
     daemon = BridgeDaemon()
-    daemon.run()
+    try:
+        daemon.run()
+    finally:
+        flush_log()

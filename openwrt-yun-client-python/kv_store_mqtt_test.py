@@ -1,16 +1,16 @@
 def on_connect(client, userdata, flags, rc, properties=None):
-	# This function is called when the client connects to the broker
-	print("Connected with result code " + str(rc))
-	# Subscribe to a topic or perform other actions here
+    # This function is called when the client connects to the broker
+    print("Connected with result code " + str(rc))
+    # Subscribe to a topic or perform other actions here
 
-	# Example of subscribing to a topic
-	client.subscribe("some/topic")
+    # Example of subscribing to a topic
+    client.subscribe("some/topic")
 
-	# You can handle properties if needed
+    # You can handle properties if needed
 
-	# Additional logic can be added here
+    # Additional logic can be added here
 
-	pass  # Placeholder for actual implementation
+    pass  # Placeholder for actual implementation
 #!/usr/bin/env python3
 """
 Example: Test key-value store via MQTT

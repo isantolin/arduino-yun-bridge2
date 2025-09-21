@@ -1,44 +1,107 @@
 
+
 # Arduino Yun v2 Ecosystem (Unified Documentation)
 
+## Quick Start
+
+1. Clone the repository and run the installer:
+  ```sh
+  git clone https://github.com/isantolin/arduino-yun-bridge2.git
+  cd arduino-yun-bridge2
+  sh install.sh
+  ```
+2. Upload the main sketch `LED13BridgeControl.ino` (at the project root) to your Yun using the Arduino IDE.
+3. Open the Web UI (LuCI) at `http://<yun-ip>/cgi-bin/luci/admin/services/yunbridge`.
+4. Test MQTT and Web UI control of your pins.
+
+---
+
+## Table of Contents
+
+1. [Quick Start](#quick-start)
+2. [Installation & Dependencies](#1-installation--dependencies)
+3. [Architecture & Components](#2-architecture--components)
+4. [MQTT Usage & Examples](#3-mqtt-usage--examples)
+5. [Hardware Tests](#4-hardware-tests)
+6. [Troubleshooting](#5-troubleshooting)
+7. [Roadmap & Links](#6-roadmap--links)
+
+---
+
+# Arduino Yun v2 Ecosystem (Unified Documentation)
 
 ## 1. Installation & Dependencies
 
+## 1. Installation & Dependencies
 To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
+
+To install the entire Arduino Yun v2 ecosystem (daemon, scripts, configs, Arduino library):
+```sh
 
 ```sh
 git clone https://github.com/isantolin/arduino-yun-bridge2.git
 cd arduino-yun-bridge2
 sh install.sh
 ```
+This script will:
 
 This script will:
 - Update and upgrade OpenWRT
 - Install all dependencies (python3, pyserial, mosquitto, luci)
 - Install daemon, scripts, configs, and Arduino library
 - Start the YunBridge daemon
+**Dependencies:**
 
 **Dependencies:**
-- Python 3 and pyserial must be installed on OpenWRT:
+- Python 3, pyserial, paho-mqtt, python3-uci must be installed on OpenWRT:
   ```sh
   opkg update
-  opkg install python3 python3-pyserial
+  opkg install python3 python3-pyserial mosquitto luci
+  pip3 install paho-mqtt python3-uci
   ```
+  Or use the provided `setup.py` in `openwrt-yun-bridge` for Python dependencies:
+  ```sh
+  cd openwrt-yun-bridge
+  python3 setup.py install
+  ```
+## Performance & Logging
 
+**Async Logging:**
+The YunBridge daemon now uses asynchronous logging with a configurable buffer size for high performance. Log writes are buffered and flushed in a background thread, minimizing I/O overhead.
+
+- Default log buffer size: 50 lines
+- Change buffer size by setting the environment variable `YUNBRIDGE_LOG_BUFFER_SIZE` before starting the daemon:
+  ```sh
+  export YUNBRIDGE_LOG_BUFFER_SIZE=100
+  /etc/init.d/yunbridge start
+  ```
+- Log file: `/tmp/yunbridge_debug.log`
+
+**Performance Improvements:**
+- All serial and MQTT operations are non-blocking and efficient.
+- The main loop is robust, with minimal CPU usage and no unnecessary polling.
+- Thread usage is minimal: only the main thread, MQTT thread, and log thread are used.
+- All code is PEP8-compliant and modular.
 ### OpenWRT Integration Details
 
+### OpenWRT Integration Details
 The `openwrt-yun-core/package` directory contains scripts and config files to ensure Bridge v2 and YunBridge v2 work on modern OpenWRT:
+
+The `openwrt-yun-core/package` directory contains scripts and config files to ensure Bridge v2 and YunBridge v2 work on modern OpenWRT:
+- `yunbridge.init`: Init script to start/stop YunBridge daemon
 
 - `yunbridge.init`: Init script to start/stop YunBridge daemon
 - `99-yunbridge-ttyath0.conf`: UCI config for serial port
 - `yunbridge.files`: List of files for package manager
 
 **Manual Installation Steps (if needed):**
+
+**Manual Installation Steps (if needed):**
 1. Copy all files to your OpenWRT device in the appropriate locations:
   - `/usr/bin/yunbridge` (daemon)
   - `/etc/init.d/yunbridge` (init script)
   - `/etc/config/yunbridge-ttyath0` (serial config)
-  - `/www/cgi-bin/pin` (CGI script, reemplaza al antiguo led13)
+  - `/www/cgi-bin/pin` (CGI script, replaces the old led13)
 2. Make scripts executable:
   ```sh
   chmod +x /etc/init.d/yunbridge /www/cgi-bin/pin
@@ -49,10 +112,42 @@ The `openwrt-yun-core/package` directory contains scripts and config files to en
   /etc/init.d/yunbridge start
   ```
 
-**Notes:**
+**Gestión de configuración UCI (ejemplos):**
+
+**UCI Configuration Management (examples):**
+Para ver la configuración actual del puerto serie:
+
+To view the current serial port configuration:
+```sh
+uci show yunbridge-ttyath0
+```
+
+To view the main daemon configuration:
+```sh
+uci show yunbridge
+```
+
+To change the baudrate (example to 57600):
+```sh
+uci set yunbridge-ttyath0.bridge_serial.baudrate='57600'
+uci commit yunbridge-ttyath0
+```
+
+To list all relevant UCI config files:
+```sh
+ls /etc/config/yunbridge*
+```
+
+Remember to restart the daemon after changing the configuration:
+```sh
+/etc/init.d/yunbridge restart
+```
+-- Ensure `/dev/ttyATH0` exists and is not used by other processes.
+
 - Ensure `/dev/ttyATH0` exists and is not used by other processes.
 - Check `/etc/inittab` and `/etc/config/system` for serial port conflicts.
 - Use UCI config to adjust baudrate if needed.
+After running the script, upload the main sketch `LED13BridgeControl.ino` (at the project root) to your Yun using the Arduino IDE, reboot if needed, and test MQTT/WebUI integration.
 
 After running the script, upload the main sketch `LED13BridgeControl.ino` (at the project root) to your Yun using the Arduino IDE, reboot if needed, and test MQTT/WebUI integration.
 
@@ -60,80 +155,111 @@ After running the script, upload the main sketch `LED13BridgeControl.ino` (at th
 
 ## 2. Architecture & Components
 
-El repositorio ahora está organizado en los siguientes componentes principales:
 
--- **Core Yun/OpenWRT (openwrt-yun-core):**
-  - Scripts, configuraciones e integración para el core de Arduino Yun/OpenWRT.
-  - Incluye daemon, scripts de arranque, configuración UCI, integración con el sistema.
-  - No incluye LuCI ni Web UI.
+The repository is now organized into the following main components:
+
+
+- **Core Yun/OpenWRT (openwrt-yun-core):**
+  - Scripts, configuration, and integration for the Arduino Yun/OpenWRT core.
+  - Includes daemon, startup scripts, UCI configuration, system integration.
+  - Does not include LuCI or Web UI.
 
 - **Arduino Library (openwrt-library-arduino):**
-  - Biblioteca Bridge v2 para Arduino Yun.
-  - Instala la librería en tu IDE usando `openwrt-library-arduino/install.sh`.
-  - Ejemplos de sketches en `openwrt-yun-client-sketches/examples/`.
+  - YunBridge library for Arduino Yun.
+  - Install the library in your IDE using `openwrt-library-arduino/install.sh`.
+  - Example sketches in `openwrt-yun-client-sketches/examples/`.
 
 - **Python MQTT Examples (openwrt-yun-client-python):**
-  - Scripts de ejemplo para controlar el Yun vía MQTT.
-  - Todos los ejemplos están en `openwrt-yun-client-python/`.
+  - Example scripts to control the Yun via MQTT.
+  - All examples are in `openwrt-yun-client-python/`.
 
 - **Arduino Sketch Examples (openwrt-yun-client-sketches/examples):**
-  - Ejemplos de sketches para pruebas y validación.
-  - Todos los sketches de ejemplo están en `openwrt-yun-client-sketches/examples/`.
+  - Example sketches for testing and validation.
+  - All example sketches are in `openwrt-yun-client-sketches/examples/`.
 
 - **LuCI App (luci-app-yunbridge):**
-  - Paquete independiente para LuCI (Web UI) y configuración avanzada.
-  - Todo el código y archivos de LuCI están en `/luci-app-yunbridge`.
-  - Instalación y mantenimiento por separado.
-
-### Instalación del Core (openwrt-yun-core)
-Sigue las instrucciones de `install.sh` para instalar el core, daemon y scripts.
+  - Standalone package for LuCI (Web UI) and advanced configuration.
+  - All LuCI code and files are in `/luci-app-yunbridge`.
+  - Installation and maintenance are separate.
 
 
-### Instalación de la Web UI (luci-app-yunbridge)
+### Core Installation (openwrt-yun-core)
+Follow the instructions in `install.sh` to install the core, daemon, and scripts.
 
-**Opción recomendada: instalar desde paquete .ipk**
 
-1. Compila el paquete `.ipk` de `luci-app-yunbridge` en un buildroot de OpenWRT:
-  - Copia la carpeta `luci-app-yunbridge` a `package/` dentro de tu árbol de OpenWRT.
-  - Ejecuta:
+
+### Web UI Installation (luci-app-yunbridge)
+
+
+**Recommended option: install from .ipk package**
+
+
+1. Build the `.ipk` package for `luci-app-yunbridge` in an OpenWRT buildroot:
+  - Copy the `luci-app-yunbridge` folder to `package/` inside your OpenWRT tree.
+  - Run:
     ```sh
     make package/luci-app-yunbridge/compile V=s
     ```
-  - El archivo `.ipk` aparecerá en `bin/packages/<arch>/luci/`.
-2. Copia el `.ipk` a tu Yun/OpenWRT y ejecuta:
+  - The `.ipk` file will appear in `bin/packages/<arch>/luci/`.
+2. Copy the `.ipk` to your Yun/OpenWRT and run:
   ```sh
   opkg install luci-app-yunbridge_*.ipk
   ```
 
-**Opción manual (solo si no tienes el .ipk):**
 
-Sigue las instrucciones en `/luci-app-yunbridge/README.md` para instalar la interfaz web y configuración avanzada copiando los archivos manualmente.
+**Manual option (only if you don't have the .ipk):**
 
 
-**Notas:**
-- El daemon YunBridge lee la configuración desde UCI (`/etc/config/yunbridge`) usando `python3-uci`. Si una opción no existe, se usa el valor por defecto.
-- El paquete LuCI es opcional y puede instalarse/desinstalarse de forma independiente.
-- Si el instalador detecta un `.ipk` de `luci-app-yunbridge`, lo instalará automáticamente con `opkg install`. Si no, intentará la instalación manual de archivos.
+Follow the instructions in `/luci-app-yunbridge/README.md` to install the web interface and advanced configuration by manually copying the files.
 
-Todos los ejemplos y scripts legacy han sido eliminados. Solo se soportan flujos MQTT.
+
+
+
+**Notes:**
+- The YunBridge daemon reads configuration from UCI (`/etc/config/yunbridge`) using `python3-uci`. If an option does not exist, the default value is used.
+- The LuCI package (Web UI) is optional and can be installed/uninstalled independently. Use the `.ipk` for easiest install, or copy files manually if needed.
+- If the installer detects a `.ipk` for `luci-app-yunbridge`, it will install it automatically with `opkg install`. If not, it will attempt manual file installation.
+
+
+All legacy examples and scripts have been removed. Only MQTT flows are supported.
+
 
 ## 3. MQTT Usage & Examples
+
+### Basic MQTT Pin Control Example
+
+To turn ON pin 13:
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/set -m ON
+```
+To turn OFF pin 13:
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/set -m OFF
+```
+To get the state of pin 13:
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/get -m ""
+mosquitto_sub -h <yun-ip> -t yun/pin/13/state
+```
+
+### Web UI Usage
+
+1. Open the LuCI Web UI at `http://<yun-ip>/cgi-bin/luci/admin/services/yunbridge`.
+2. Use the configuration panel to set MQTT and serial parameters.
+3. Use the "Daemon Status" panel to check daemon health and logs.
+4. Use the Web UI controls to toggle pins and monitor state in real time.
 
 ### MQTT Topic Schemas
 
 #### Pin Control
-- **Set pin state:**
   - Topic: `yun/pin/<N>/set`  (e.g. `yun/pin/13/set`)
   - Payload: `ON`/`OFF` or `1`/`0`
-- **Get pin state:**
   - Topic: `yun/pin/<N>/get`
   - Payload: (any, triggers state publish)
-- **Pin state update:**
   - Topic: `yun/pin/<N>/state`
   - Payload: `ON`/`OFF` or `1`/`0`
 
 #### Advanced Commands
-- **General command topic:**
   - Topic: `yun/command`
   - Payloads:
     - `SET <key> <value>`: Store a key-value pair
@@ -145,54 +271,42 @@ Todos los ejemplos y scripts legacy han sido eliminados. Solo se soportan flujos
     - `CONSOLE <msg>`: Print to console
 
 #### Daemon Topic Subscriptions
-- Subscribes: `yun/pin/+/set`, `yun/pin/+/get`, `yun/command`, `yun/mailbox/send`
-- Publishes: `yun/pin/<N>/state`, responses to `yun/command`, `yun/mailbox/recv`
 
 #### Example Flows
-- **Turn pin 13 ON:**
   - Publish `ON` to `yun/pin/13/set`
-- **Get pin 7 state:**
   - Publish any payload to `yun/pin/7/get`
   - Listen for state on `yun/pin/7/state`
-- **Set key-value:**
   - Publish `SET foo bar` to `yun/command`
-- **Run process:**
   - Publish `RUN echo hello` to `yun/command`
 
 
-#### Ejemplo de mensajes arbitrarios (nuevo flujo MQTT)
-- Para enviar un mensaje al Arduino desde cualquier cliente MQTT:
-- Publica el texto en el topic: `yun/mailbox/send`
-- El Arduino recibirá el mensaje como `MAILBOX <msg>` por Serial1 y lo mostrará por consola.
-- Para que el Arduino envíe un mensaje a otros clientes MQTT:
-- El sketch debe enviar por Serial1: `MAILBOX <msg>`
-- El daemon publicará ese mensaje en el topic: `yun/mailbox/recv`
-- Ejemplo actualizado: `openwrt-yun-client-python/mailbox_mqtt_test.py`
 
-Todos los scripts usan los mismos topics y lógica MQTT que el daemon y el código Arduino. Consulta cada script para ejemplos de uso.
+#### Example of arbitrary messages (new MQTT flow)
+- To send a message to the Arduino from any MQTT client:
+- Publish the text to the topic: `yun/mailbox/send`
+- The Arduino will receive the message as `MAILBOX <msg>` via Serial1 and display it on the console.
+- For the Arduino to send a message to other MQTT clients:
+- The sketch must send via Serial1: `MAILBOX <msg>`
+- The daemon will publish that message to the topic: `yun/mailbox/recv`
+- Updated example: `openwrt-yun-client-python/mailbox_mqtt_test.py`
+
+All scripts use the same topics and MQTT logic as the daemon and Arduino code. See each script for usage examples.
+
+#### Architecture Overview
 
 #### Architecture Overview
 - **MQTT Broker:** Local (OpenWRT/Mosquitto) or external.
 - **YunBridge Daemon:** MQTT client, subscribes/controls pin topics, publishes states.
-- **Arduino Library:** Recibe comandos MQTT desde Linux, reporta cambios de estado.
+- **Arduino Library:** Receives MQTT commands from Linux, reports state changes.
 - **Web UI:** MQTT client via JavaScript for real-time UI.
 
 #### Data Flow
-1. WebUI publishes `ON` to `yun/pin/13/set`.
-2. Daemon receives and sends MQTT command to Arduino.
-3. Arduino changes the pin and confirms.
-4. Daemon publishes new state to `yun/pin/13/state`.
-5. WebUI/MQTT client receives and updates the UI.
 
 #### Security
-- MQTT authentication (username/password) is supported (see config options).
-- TLS support is planned (see roadmap).
 
 ## 4. Hardware Tests
 
 ### Requirements
-- Arduino Yun with OpenWRT and all v2 packages installed
-- Arduino IDE, SSH, and web browser
 
 ### Main Test
 1. **Generic Pin MQTT**
@@ -205,17 +319,37 @@ Todos los scripts usan los mismos topics y lógica MQTT que el daemon y el códi
     - Open the WebUI in your browser and use the ON/OFF buttons for the pin.
     - The selected pin should respond in all cases.
 
+
 ## 5. Troubleshooting
 
-- Ensure `/dev/ttyATH0` is present and free.
-- Verify that the YunBridge daemon and the MQTT broker are running.
+### Common Issues
+
+- **Serial port not found:**
+  - Ensure `/dev/ttyATH0` exists and is not used by another process.
+  - Check `/etc/inittab` and `/etc/config/system` for serial port conflicts.
+  - Use UCI config to adjust baudrate if needed.
+- **MQTT not working:**
+  - Verify the broker is running (`ps | grep mosquitto`).
+  - Check MQTT host/port in the LuCI config.
+  - Use `mosquitto_sub` and `mosquitto_pub` to test topics manually.
+- **Web UI not loading:**
+  - Make sure the LuCI package is installed and enabled.
+  - Clear browser cache or try a different browser.
+- **Daemon not starting:**
+  - Check `/tmp/yunbridge_debug.log` for errors.
+  - Run `/etc/init.d/yunbridge restart` and check status panel in LuCI.
+- **Configuration changes not applied:**
+  - Always restart the daemon after changing UCI config: `/etc/init.d/yunbridge restart`
+
+For more help, see the log and status panels in the Web UI, or open an issue on GitHub.
+
 
 ## 6. Roadmap & Links
 
-See `ROADMAP.md` for future improvements and planned features.
+
+## 7. Roadmap & Links
+
+See `ROADMAP.md` for future improvements and planned features. All completed items have been removed from the roadmap.
 
 ### Documentation
-- [Official Arduino Yun Guide](https://docs.arduino.cc/retired/getting-started-guides/ArduinoYun/)
-- [YunBridge Library](https://docs.arduino.cc/retired/archived-libraries/YunBridgeLibrary/)
 
----

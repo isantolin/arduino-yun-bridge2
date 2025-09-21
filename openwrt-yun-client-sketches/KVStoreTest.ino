@@ -1,4 +1,4 @@
-// Bridge-v2 Example: Key-Value Store Test
+// YunBridge Example: Key-Value Store Test
 #include <Bridge.h>
 
 void setup() {

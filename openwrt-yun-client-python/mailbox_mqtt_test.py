@@ -1,8 +1,8 @@
 
 #!/usr/bin/env python3
 """
-Example: Test mailbox via MQTT (nuevo flujo)
-Publica mensajes arbitrarios en yun/mailbox/send y escucha respuestas en yun/mailbox/recv
+Example: Test mailbox via MQTT (new flow)
+Publishes arbitrary messages to yun/mailbox/send and listens for responses on yun/mailbox/recv
 """
 import time
 import paho.mqtt.client as mqtt
@@ -32,11 +32,11 @@ client.on_message = on_message
 client.connect(BROKER, PORT, 60)
 client.loop_start()
 
-print("Enviando mensaje a mailbox via MQTT...")
-client.publish(TOPIC_SEND, 'hola_desde_mqtt')
+print("Sending message to mailbox via MQTT...")
+client.publish(TOPIC_SEND, 'hello_from_mqtt')
 time.sleep(2)
-print("Listo. Esperando posibles respuestas en yun/mailbox/recv...")
+print("Done. Waiting for possible responses on yun/mailbox/recv...")
 time.sleep(3)
 client.loop_stop()
 client.disconnect()
-print("Fin.")
+print("Finished.")

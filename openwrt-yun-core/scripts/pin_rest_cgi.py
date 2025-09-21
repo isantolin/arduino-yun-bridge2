@@ -7,6 +7,7 @@ Controls any digital pin. The 'pin' parameter is required (no default).
 import os
 import sys
 import serial
+import time
 
 SERIAL_PORT = '/dev/ttyATH0'
 BAUDRATE = 250000
@@ -26,7 +27,14 @@ def main():
     pin = params.get('pin')
     state = params.get('state', 'OFF').upper()
     if not pin or not pin.isdigit():
+        LOGFILE = '/tmp/yunbridge_script.log'
         print('Error: pin parameter is required and must be a number.', file=sys.stderr)
+        def log_error(msg):
+            try:
+                with open(LOGFILE, 'a') as f:
+                    f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+            except Exception:
+                pass
         print('Failed: pin parameter missing or invalid.')
         return
     if state not in ('ON', 'OFF'):

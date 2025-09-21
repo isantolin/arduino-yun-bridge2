@@ -1,4 +1,4 @@
-// Bridge-v2 Example: Process Execution Test
+// YunBridge Example: Process Execution Test
 #include <Bridge.h>
 
 void setup() {

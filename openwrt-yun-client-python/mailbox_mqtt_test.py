@@ -1,4 +1,5 @@
 
+
 #!/usr/bin/env python3
 """
 Example: Test mailbox via MQTT (new flow)
@@ -11,9 +12,7 @@ try:
 except ImportError:
 	CallbackAPIVersion = None
 
-BROKER = 'localhost'
-PORT = 1883
-TOPIC_SEND = 'yun/mailbox/send'
+
 TOPIC_RECV = 'yun/mailbox/recv'
 
 def on_connect(client, userdata, flags, rc, properties=None):
@@ -23,20 +22,28 @@ def on_connect(client, userdata, flags, rc, properties=None):
 def on_message(client, userdata, msg):
 	print(f"[MQTT] Received on {msg.topic}: {msg.payload.decode(errors='replace')}")
 
-if CallbackAPIVersion is not None:
-	client = mqtt.Client(CallbackAPIVersion.VERSION2)
-else:
-	client = mqtt.Client()
-client.on_connect = on_connect
-client.on_message = on_message
-client.connect(BROKER, PORT, 60)
-client.loop_start()
+def main():
+	BROKER = 'localhost'
+	PORT = 1883
+	TOPIC_SEND = 'yun/mailbox/send'
 
-print("Sending message to mailbox via MQTT...")
-client.publish(TOPIC_SEND, 'hello_from_mqtt')
-time.sleep(2)
-print("Done. Waiting for possible responses on yun/mailbox/recv...")
-time.sleep(3)
-client.loop_stop()
-client.disconnect()
-print("Finished.")
+	if CallbackAPIVersion is not None:
+		client = mqtt.Client(CallbackAPIVersion.VERSION2)
+	else:
+		client = mqtt.Client()
+	client.on_connect = on_connect
+	client.on_message = on_message
+	client.connect(BROKER, PORT, 60)
+	client.loop_start()
+
+	print("Sending message to mailbox via MQTT...")
+	client.publish(TOPIC_SEND, 'hello_from_mqtt')
+	time.sleep(2)
+	print("Done. Waiting for possible responses on yun/mailbox/recv...")
+	time.sleep(3)
+	client.loop_stop()
+	client.disconnect()
+	print("Finished.")
+
+if __name__ == '__main__':
+	main()

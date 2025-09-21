@@ -1,5 +1,0 @@
-# List of files to install for Bridge v2 OpenWRT integration
-/usr/bin/yunbridge
-/etc/init.d/bridge-v2
-/etc/config/bridge-ttyath0
-/www/cgi-bin/pin

@@ -1,0 +1,5 @@
+# List of files to install for YunBridge OpenWRT integration
+/usr/bin/yunbridge
+/etc/init.d/yunbridge
+/etc/config/yunbridge-ttyath0
+/www/cgi-bin/pin

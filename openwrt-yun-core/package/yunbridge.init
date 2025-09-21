@@ -1,0 +1,28 @@
+#!/bin/sh /etc/rc.common
+# YunBridge Daemon Init Script
+# Adapted from bridge-v2.init
+
+START=99
+STOP=10
+
+USE_PROCD=1
+
+start_service() {
+    procd_open_instance
+    procd_set_param command /usr/bin/yunbridge
+    procd_set_param respawn
+    procd_close_instance
+}
+
+stop_service() {
+    killall yunbridge 2>/dev/null || true
+}
+
+restart_service() {
+    stop_service
+    start_service
+}
+
+reload_service() {
+    restart_service
+}

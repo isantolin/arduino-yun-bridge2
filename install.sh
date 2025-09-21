@@ -85,20 +85,20 @@ else
 fi
 
 # 6. Copy config and package files
-for f in openwrt-yun-core/package/99-bridge-ttyath0.conf openwrt-yun-core/package/bridge-v2.files; do
+for f in openwrt-yun-core/package/99-yunbridge-ttyath0.conf openwrt-yun-core/package/yunbridge.files; do
     if [ -f "$f" ]; then
-        cp -f "$f" /etc/yunbridge/
-    else
+         cp -f "$f" /etc/yunbridge/
+
         echo "WARNING: $f not found."
     fi
 done
 
 # 7. Install init script
-if [ -f openwrt-yun-core/package/bridge-v2.init ]; then
-    cp -f openwrt-yun-core/package/bridge-v2.init /etc/init.d/bridge-v2
-    chmod +x /etc/init.d/bridge-v2
+if [ -f openwrt-yun-core/package/yunbridge.init ]; then
+    cp -f openwrt-yun-core/package/yunbridge.init /etc/init.d/yunbridge
+    chmod +x /etc/init.d/yunbridge
 else
-    echo "ERROR: openwrt-yun-core/package/bridge-v2.init not found."
+    echo "ERROR: openwrt-yun-core/package/yunbridge.init not found."
 fi
 
 # 8. Copy scripts to /usr/bin

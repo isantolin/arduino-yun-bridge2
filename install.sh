@@ -116,7 +116,7 @@ fi
 if [ -f openwrt-yun-bridge/setup.py ]; then
     echo "[INFO] Instalando daemon Python openwrt-yun-bridge vía setup.py..."
     cd openwrt-yun-bridge
-    python3 -m pip install .
+    python3 -m pip install --force-reinstall --upgrade .
     cd ..
     echo "[INFO] Daemon yunbridge instalado como paquete Python. Ejecuta 'yunbridge' para lanzarlo."
 else
@@ -141,17 +141,17 @@ else
     echo "ERROR: python3 not found. Daemon not started."
 fi
 
-# 12. Install Arduino library (Bridge-v2)
-if [ -d Bridge-v2/src ]; then
-    LIB_DST="$HOME/Arduino/libraries/Bridge-v2"
+# 12. Install Arduino library (openwrt-library-arduino)
+if [ -d openwrt-library-arduino/src ]; then
+    LIB_DST="$HOME/Arduino/libraries/openwrt-library-arduino"
     mkdir -p "$LIB_DST"
-    cp -rf Bridge-v2/src/* "$LIB_DST/"
-    echo "Bridge v2 library installed to $LIB_DST."
+    cp -rf openwrt-library-arduino/src/* "$LIB_DST/"
+    echo "openwrt-library-arduino installed to $LIB_DST."
 else
-    echo "WARNING: Bridge-v2/src directory not found. Arduino library not installed."
+    echo "WARNING: openwrt-library-arduino/src directory not found. Arduino library not installed."
 fi
 
 echo "\n[INFO] Arduino Yun v2 ecosystem installation complete."
-echo "- Upload the example sketch from Bridge-v2 to your Yun using the Arduino IDE."
+echo "- Upload the example sketch from openwrt-library-arduino to your Yun using the Arduino IDE."
 echo "- Reboot the Yun if needed."
 echo "- Test MQTT, LuCI WebUI, and integration."

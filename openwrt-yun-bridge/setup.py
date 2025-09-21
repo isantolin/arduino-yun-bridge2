@@ -11,7 +11,6 @@ setup(
     install_requires=[
         'pyserial',
         'paho-mqtt',
-        'python3-uci',
     ],
     entry_points={
         'console_scripts': [

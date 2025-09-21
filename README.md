@@ -34,16 +34,28 @@ sh install.sh
 
 ## 1. Installation & Dependencies
 
+
 ### Google Pub/Sub Support (Optional)
 
-The daemon now supports Google Pub/Sub in addition to MQTT. You can enable Pub/Sub messaging for cloud integration and hybrid workflows.
+The daemon supports Google Pub/Sub in addition to MQTT. You can enable Pub/Sub messaging for cloud integration and hybrid workflows.
 
 **Requirements:**
 - Python package: `google-cloud-pubsub` (install with `pip install google-cloud-pubsub`)
 - Google Cloud project and Pub/Sub topics/subscriptions
 - Service account credentials JSON file
 
-**UCI Configuration Example:**
+**Configuration via LuCI Web UI:**
+You can configure all Pub/Sub options directly from the YunBridge LuCI interface:
+
+- Enable/disable Pub/Sub
+- Google Cloud Project ID
+- Pub/Sub Topic Name
+- Pub/Sub Subscription Name
+- Service Account Credentials Path (must be a `.json` file)
+
+All fields are validated and translated (English/Spanish). If Pub/Sub is enabled, all required fields must be set and the credentials file must end in `.json`.
+
+**UCI Configuration Example (manual):**
 ```sh
 uci set yunbridge.main.pubsub_enabled='1'  # 1 to enable Pub/Sub, 0 to disable
 uci set yunbridge.main.pubsub_project='your-gcp-project-id'

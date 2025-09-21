@@ -259,33 +259,38 @@ The repository is now organized into the following main components:
 
 ### Data Flow Between Components
 
+
 ```
-   [MQTT Client / Example Scripts]
-      |
-      v
-    [MQTT Broker (Mosquitto)]
-      |
-      v
-   [YunBridge Daemon (Python)]
-    |                    |
-    v                    v
-[Arduino Sketch/Library]   [Web UI (LuCI)]
+  [MQTT Client / Example Scripts]         [Pub/Sub Client]         [SNS Client]
+        |                                   |                     |
+        v                                   v                     v
+   [MQTT Broker (Mosquitto)]         [Google Pub/Sub]         [Amazon SNS]
+        |                                   |                     |
+        +-----------------------------------+---------------------+
+                      |
+                      v
+             [YunBridge Daemon (Python)]
+                |                |
+                v                v
+        [Arduino Sketch/Library]   [Web UI (LuCI)]
 ```
 
 **Explanation:**
 - **MQTT Client / Example Scripts:** Any MQTT client (e.g., Python scripts, mosquitto_pub/sub) can publish commands (e.g., pin control, mailbox, commands) to the MQTT broker.
-- **MQTT Broker:** Handles all message routing. Can be local (on Yun/OpenWRT) or external.
-- **YunBridge Daemon:** Subscribes to relevant MQTT topics, translates messages to serial commands for the Arduino, and publishes state or responses back to MQTT. Also reads/writes configuration via UCI.
-- **Arduino Sketch/Library:** Receives serial commands from the daemon, controls hardware pins, and sends state or mailbox messages back via serial. These are then published to MQTT by the daemon.
-- **Web UI (LuCI):** Provides a real-time interface for users. It interacts with the daemon (status, logs, config) and can also act as an MQTT client for live pin control and monitoring.
+- **Pub/Sub Client:** Any Google Pub/Sub client can publish/subscribe to YunBridge topics for cloud integration.
+- **SNS Client:** Any AWS SNS client/service (SQS, Lambda, etc.) can publish/subscribe to YunBridge topics for cloud integration.
+- **MQTT Broker / Pub/Sub / SNS:** All three messaging systems can be used in parallel. The daemon routes messages between them and the hardware/software components.
+- **YunBridge Daemon:** Subscribes to relevant topics on all enabled systems, translates messages to serial commands for the Arduino, and publishes state or responses back to all systems. Also reads/writes configuration via UCI.
+- **Arduino Sketch/Library:** Receives serial commands from the daemon, controls hardware pins, and sends state or mailbox messages back via serial. These are then published to all enabled messaging systems by the daemon.
+- **Web UI (LuCI):** Provides a real-time interface for users. It interacts with the daemon (status, logs, config) and can also act as a messaging client for live pin control and monitoring.
 
 **Typical Flow Example:**
-- User toggles a pin in the Web UI or via an MQTT client/script.
-- The command is published to the MQTT broker (e.g., `yun/pin/13/set`).
-- The daemon receives the MQTT message, sends the command over serial to the Arduino.
+- User toggles a pin in the Web UI, via an MQTT client/script, Pub/Sub client, or SNS client/service.
+- The command is published to the relevant broker/service (MQTT, Pub/Sub, or SNS).
+- The daemon receives the message, sends the command over serial to the Arduino.
 - The Arduino sets the pin and sends the new state back over serial.
-- The daemon publishes the new state to MQTT (e.g., `yun/pin/13/state`).
-- The Web UI and any subscribed clients see the updated state in real time.
+- The daemon publishes the new state to all enabled messaging systems (MQTT, Pub/Sub, SNS).
+- The Web UI and any subscribed clients/services see the updated state in real time.
 
 
 - **Core Yun/OpenWRT (openwrt-yun-core):**

@@ -4,15 +4,11 @@
 YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
 Organizado y refactorizado para claridad, robustez y estilo PEP8.
 """
-
-import os
-import sys
 import time
 import threading
 import serial
 import paho.mqtt.client as mqtt
 import re
-import subprocess
 try:
     from paho.mqtt.enums import CallbackAPIVersion
 except ImportError:

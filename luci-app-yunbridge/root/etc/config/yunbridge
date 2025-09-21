@@ -1,7 +1,7 @@
 config yunbridge 'main'
 	option mqtt_host '127.0.0.1'
 	option mqtt_port '1883'
-	option mqtt_topic 'yun/pin'
+	option mqtt_topic 'yun'
 	option serial_port '/dev/ttyATH0'
 	option serial_baud '115200'
 	 option debug '1'

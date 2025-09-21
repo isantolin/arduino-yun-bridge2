@@ -297,9 +297,8 @@ mosquitto_sub -h <yun-ip> -t yun/pin/13/state
 - The daemon will publish that message to the topic: `yun/mailbox/recv`
 - Updated example: `openwrt-yun-client-python/mailbox_mqtt_test.py`
 
-All scripts use the same topics and MQTT logic as the daemon and Arduino code. See each script for usage examples.
 
-#### Architecture Overview
+All scripts use the same topics and MQTT logic as the daemon and Arduino code. See each script for usage examples.
 
 #### Architecture Overview
 - **MQTT Broker:** Local (OpenWRT/Mosquitto) or external.
@@ -351,10 +350,8 @@ All scripts use the same topics and MQTT logic as the daemon and Arduino code. S
 For more help, see the log and status panels in the Web UI, or open an issue on GitHub.
 
 
+
 ## 6. Roadmap & Links
-
-
-## 7. Roadmap & Links
 
 See `ROADMAP.md` for future improvements and planned features. All completed items have been removed from the roadmap.
 

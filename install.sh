@@ -1,6 +1,6 @@
 #!/bin/bash
 # Unified install script for Arduino Yun v2 ecosystem
-# Installs all dependencies, daemon, scripts, configs, and Arduino library
+# Installs all dependencies, daemon, scripts, configs, Arduino library, and Python client plugin system
 
 set -e
 
@@ -31,9 +31,7 @@ opkg update
  # Upgrade only packages with new versions available
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
-# 2. Install core dependencies
-opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
-
+# (System update and core dependencies already handled above)
 if [ -f openwrt-yun-core/scripts/pin_rest_cgi.py ]; then
     mkdir -p /www/cgi-bin
     cp -f openwrt-yun-core/scripts/pin_rest_cgi.py /www/cgi-bin/pin

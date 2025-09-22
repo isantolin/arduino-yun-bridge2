@@ -1,33 +1,35 @@
-def on_connect(client, userdata, flags, rc, properties=None):
-	print("Connected with result code " + str(rc))
 
 #!/usr/bin/env python3
 """
-Example: Test console via MQTT
-Sends a message to a generic MQTT command topic
+Example: Test console command using the YunBridge plugin system (MQTT backend)
+Sends a message to the yun/command topic
+Usage:
+    python3 console_mqtt_test.py
+    # Or use led13_test.py for unified plugin support
 """
 import time
-import paho.mqtt.client as mqtt
-try:
-	from paho.mqtt.enums import CallbackAPIVersion
-except ImportError:
-	CallbackAPIVersion = None
+from yunbridge_client.plugin_loader import PluginLoader
 
-BROKER = 'localhost'
-PORT = 1883
 TOPIC_CMD = 'yun/command'
 
-if CallbackAPIVersion is not None:
-	client = mqtt.Client(CallbackAPIVersion.VERSION2)
-else:
-	client = mqtt.Client()
-client.on_connect = on_connect
-client.connect(BROKER, PORT, 60)
-client.loop_start()
+# Example: MQTT plugin (default)
+MQTT_CONFIG = dict(host='localhost', port=1883)
+PluginClass = PluginLoader.load_plugin('mqtt_plugin')
+plugin = PluginClass(**MQTT_CONFIG)
 
+# Example: SNS plugin (uncomment to use)
+# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
+# PluginClass = PluginLoader.load_plugin('sns_plugin')
+# plugin = PluginClass(**SNS_CONFIG)
+
+# Example: PubSub plugin (uncomment to use)
+# PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
+# PluginClass = PluginLoader.load_plugin('pubsub_plugin')
+# plugin = PluginClass(**PUBSUB_CONFIG)
+
+plugin.connect()
 print("Sending CONSOLE command via MQTT...")
-client.publish(TOPIC_CMD, 'CONSOLE hello_console')
+plugin.publish(TOPIC_CMD, 'CONSOLE hello_console')
 time.sleep(1)
-client.loop_stop()
-client.disconnect()
+plugin.disconnect()
 print("Done.")

@@ -1,42 +1,40 @@
 
+
 #!/usr/bin/env python3
 """
-Example: Test file I/O via MQTT
+Example: Test file I/O using the YunBridge plugin system (MQTT backend)
 Sends WRITEFILE and READFILE commands to the yun/command topic
+Usage:
+    python3 fileio_mqtt_test.py
+    # Or use led13_test.py for unified plugin support
 """
 import time
-import paho.mqtt.client as mqtt
-try:
-    from paho.mqtt.enums import CallbackAPIVersion
-except ImportError:
-    CallbackAPIVersion = None
+from yunbridge_client.plugin_loader import PluginLoader
 
-def on_connect(client, userdata, flags, rc, properties=None):
-    print("Connected with result code " + str(rc))
+TOPIC_CMD = 'yun/command'
+TEST_FILE = '/tmp/bridge_test.txt'
 
-def main():
-    BROKER = 'localhost'
-    PORT = 1883
-    TOPIC_CMD = 'yun/command'
-    TEST_FILE = '/tmp/bridge_test.txt'
+# Example: MQTT plugin (default)
+MQTT_CONFIG = dict(host='localhost', port=1883)
+PluginClass = PluginLoader.load_plugin('mqtt_plugin')
+plugin = PluginClass(**MQTT_CONFIG)
 
-    if CallbackAPIVersion is not None:
-        client = mqtt.Client(CallbackAPIVersion.VERSION2)
-    else:
-        client = mqtt.Client()
-    client.on_connect = on_connect
-    client.connect(BROKER, PORT, 60)
-    client.loop_start()
+# Example: SNS plugin (uncomment to use)
+# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
+# PluginClass = PluginLoader.load_plugin('sns_plugin')
+# plugin = PluginClass(**SNS_CONFIG)
 
-    print("Writing file via MQTT...")
-    client.publish(TOPIC_CMD, f'WRITEFILE {TEST_FILE} hello_bridge')
-    time.sleep(1)
-    print("Reading file via MQTT...")
-    client.publish(TOPIC_CMD, f'READFILE {TEST_FILE}')
-    time.sleep(1)
-    client.loop_stop()
-    client.disconnect()
-    print("Done.")
+# Example: PubSub plugin (uncomment to use)
+# PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
+# PluginClass = PluginLoader.load_plugin('pubsub_plugin')
+# plugin = PluginClass(**PUBSUB_CONFIG)
 
-if __name__ == '__main__':
-    main()
+plugin.connect()
+print("Writing file via MQTT...")
+plugin.publish(TOPIC_CMD, f'WRITEFILE {TEST_FILE} hello_bridge')
+time.sleep(1)
+print("Reading file via MQTT...")
+plugin.publish(TOPIC_CMD, f'READFILE {TEST_FILE}')
+time.sleep(1)
+plugin.disconnect()
+print("Done.")

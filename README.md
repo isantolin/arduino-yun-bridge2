@@ -16,17 +16,94 @@
 
 ---
 
-## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Installation & Dependencies](#1-installation--dependencies)
-3. [Architecture & Components](#2-architecture--components)
-4. [MQTT Usage & Examples](#3-mqtt-usage--examples)
-5. [Hardware Tests](#4-hardware-tests)
-6. [Troubleshooting](#5-troubleshooting)
-7. [Roadmap & Links](#6-roadmap--links)
 
----
+## Python Client Plugin System
+
+The `openwrt-yun-client-python` directory contains example scripts and a modular plugin system for interacting with the YunBridge ecosystem using different messaging backends (MQTT, Google Pub/Sub, Amazon SNS, etc.).
+
+### Plugin System Overview
+
+- All messaging systems are implemented as plugins in `openwrt-yun-client-python/yunbridge_client/`.
+- Each plugin implements a common interface (`plugin_base.py`):
+  - `connect()`
+  - `publish(topic, message)`
+  - `subscribe(topic, callback)`
+  - `disconnect()`
+- Plugins available:
+  - `mqtt_plugin.py` (MQTT via paho-mqtt)
+  - `pubsub_plugin.py` (Google Pub/Sub)
+  - `sns_plugin.py` (Amazon SNS)
+- New messaging systems can be added as plugins by following the same interface.
+
+### Example Scripts
+
+- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `pubsub_plugin`, `sns_plugin`).
+- `all_features_test.py`: Demonstrates all YunBridge features using the plugin system (MQTT backend by default).
+- `*_mqtt_test.py`: Legacy examples, now refactored to use the plugin system (MQTT only, but can be switched as shown below).
+
+### Usage
+
+#### Unified Example (Recommended)
+
+```sh
+python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
+python3 openwrt-yun-client-python/led13_test.py pubsub_plugin
+python3 openwrt-yun-client-python/led13_test.py sns_plugin
+```
+
+Edit the config dictionary in `led13_test.py` for your broker/service details.
+
+#### Using SNS and PubSub Plugins in Examples
+
+All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS or PubSub by uncommenting the relevant code blocks:
+
+```python
+# Example: SNS plugin (uncomment to use)
+# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
+# PluginClass = PluginLoader.load_plugin('sns_plugin')
+# plugin = PluginClass(**SNS_CONFIG)
+
+# Example: PubSub plugin (uncomment to use)
+# PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
+# PluginClass = PluginLoader.load_plugin('pubsub_plugin')
+# plugin = PluginClass(**PUBSUB_CONFIG)
+```
+
+Just comment out the MQTT section and uncomment the SNS or PubSub section as needed. Make sure to fill in your credentials and topic details.
+
+#### All Features Example
+
+```sh
+python3 openwrt-yun-client-python/all_features_test.py
+```
+
+#### Add a New Plugin
+
+1. Create a new file in `openwrt-yun-client-python/yunbridge_client/` (e.g., `mycloud_plugin.py`).
+2. Inherit from `MessagingPluginBase` and implement the required methods.
+3. Use `PluginLoader.load_plugin('mycloud_plugin')` in your script.
+
+#### Requirements
+
+- Python 3.7+
+- Install dependencies as needed:
+  - `pip install paho-mqtt google-cloud-pubsub boto3`
+
+#### Directory Structure
+
+```
+openwrt-yun-client-python/
+  led13_test.py
+  all_features_test.py
+  ...
+  yunbridge_client/
+    plugin_base.py
+    plugin_loader.py
+    mqtt_plugin.py
+    pubsub_plugin.py
+    sns_plugin.py
+```
 
 git clone https://github.com/isantolin/arduino-yun-bridge2.git
 cd arduino-yun-bridge2
@@ -257,35 +334,36 @@ After running the script, upload the main sketch `LED13BridgeControl.ino` (at th
 The repository is now organized into the following main components:
 
 
+
 ### Data Flow Between Components
 
-
 ```
-  [MQTT Client / Example Scripts]         [Pub/Sub Client]         [SNS Client]
-        |                                   |                     |
-        v                                   v                     v
-   [MQTT Broker (Mosquitto)]         [Google Pub/Sub]         [Amazon SNS]
-        |                                   |                     |
-        +-----------------------------------+---------------------+
-                      |
-                      v
-             [YunBridge Daemon (Python)]
-                |                |
-                v                v
-        [Arduino Sketch/Library]   [Web UI (LuCI)]
+  [Python Client Scripts (Plugin System)]
+     |         |         |
+   [MQTT Plugin] [PubSub Plugin] [SNS Plugin]
+     |         |         |
+     v         v         v
+  [MQTT Broker] [Google Pub/Sub] [Amazon SNS]
+     |         |         |
+     +---------+---------+
+       |
+       v
+     [YunBridge Daemon (Python)]
+      |                |
+      v                v
+    [Arduino Sketch/Library]   [Web UI (LuCI)]
 ```
 
 **Explanation:**
-- **MQTT Client / Example Scripts:** Any MQTT client (e.g., Python scripts, mosquitto_pub/sub) can publish commands (e.g., pin control, mailbox, commands) to the MQTT broker.
-- **Pub/Sub Client:** Any Google Pub/Sub client can publish/subscribe to YunBridge topics for cloud integration.
-- **SNS Client:** Any AWS SNS client/service (SQS, Lambda, etc.) can publish/subscribe to YunBridge topics for cloud integration.
+- **Python Client Scripts (Plugin System):** All example scripts use a modular plugin system. You can select MQTT, Pub/Sub, or SNS by changing a single line or argument. New plugins can be added for other messaging systems.
+- **MQTT/Google PubSub/Amazon SNS Plugins:** Each plugin implements a common interface and handles connection, publish, and subscribe logic for its backend.
 - **MQTT Broker / Pub/Sub / SNS:** All three messaging systems can be used in parallel. The daemon routes messages between them and the hardware/software components.
 - **YunBridge Daemon:** Subscribes to relevant topics on all enabled systems, translates messages to serial commands for the Arduino, and publishes state or responses back to all systems. Also reads/writes configuration via UCI.
 - **Arduino Sketch/Library:** Receives serial commands from the daemon, controls hardware pins, and sends state or mailbox messages back via serial. These are then published to all enabled messaging systems by the daemon.
 - **Web UI (LuCI):** Provides a real-time interface for users. It interacts with the daemon (status, logs, config) and can also act as a messaging client for live pin control and monitoring.
 
 **Typical Flow Example:**
-- User toggles a pin in the Web UI, via an MQTT client/script, Pub/Sub client, or SNS client/service.
+- User toggles a pin in the Web UI, or via a Python client script (using any plugin), or via any MQTT/PubSub/SNS client.
 - The command is published to the relevant broker/service (MQTT, Pub/Sub, or SNS).
 - The daemon receives the message, sends the command over serial to the Arduino.
 - The Arduino sets the pin and sends the new state back over serial.

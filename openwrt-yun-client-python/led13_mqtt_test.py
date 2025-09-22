@@ -1,56 +1,55 @@
 
+
 #!/usr/bin/env python3
 """
-Example: Test generic pin control via MQTT
-Sends MQTT messages to control and monitor any pin state (default: 13)
+Example: Test generic pin control using the YunBridge plugin system (MQTT backend)
+Sends messages to control and monitor any pin state (default: 13)
+Usage:
+    python3 led13_mqtt_test.py [PIN]
+    # Or use led13_test.py for unified plugin support
 """
-import time
-import paho.mqtt.client as mqtt
 import sys
-try:
-    from paho.mqtt.enums import CallbackAPIVersion
-except ImportError:
-    CallbackAPIVersion = None
+import time
+from yunbridge_client.plugin_loader import PluginLoader
 
-def on_connect(client, userdata, flags, rc, properties=None):
-    print("Connected with result code " + str(rc))
+PIN = 13
+if len(sys.argv) > 1:
+    try:
+        PIN = int(sys.argv[1])
+    except Exception:
+        pass
 
-def on_message(client, userdata, msg):
-    print(f"[MQTT] {msg.topic}: {msg.payload.decode()}")
+TOPIC_SET = f'yun/pin/{PIN}/set'
+TOPIC_STATE = f'yun/pin/{PIN}/state'
 
-def main():
-    BROKER = 'localhost'  # Change if needed
-    PORT = 1883
-    PIN = 13  # Default pin
-    # Pass pin number as first argument, e.g. python3 led13_mqtt_test.py 7
-    if len(sys.argv) > 1:
-        try:
-            PIN = int(sys.argv[1])
-        except Exception:
-            pass
-    TOPIC_SET = f'yun/pin/{PIN}/set'
-    TOPIC_STATE = f'yun/pin/{PIN}/state'
 
-    if CallbackAPIVersion is not None:
-        client = mqtt.Client(CallbackAPIVersion.VERSION2)
-    else:
-        client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.connect(BROKER, PORT, 60)
-    client.loop_start()
-    client.subscribe(TOPIC_STATE)
+# Example: MQTT plugin (default)
+MQTT_CONFIG = dict(host='localhost', port=1883)
+PluginClass = PluginLoader.load_plugin('mqtt_plugin')
+plugin = PluginClass(**MQTT_CONFIG)
 
-    print(f"Turning pin {PIN} ON via MQTT...")
-    client.publish(TOPIC_SET, 'ON')
-    time.sleep(2)
-    print(f"Turning pin {PIN} OFF via MQTT...")
-    client.publish(TOPIC_SET, 'OFF')
-    time.sleep(2)
-    print("Done. Waiting for state updates...")
-    time.sleep(2)
-    client.loop_stop()
-    client.disconnect()
+# Example: SNS plugin (uncomment to use)
+# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
+# PluginClass = PluginLoader.load_plugin('sns_plugin')
+# plugin = PluginClass(**SNS_CONFIG)
 
-if __name__ == '__main__':
-    main()
+# Example: PubSub plugin (uncomment to use)
+# PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
+# PluginClass = PluginLoader.load_plugin('pubsub_plugin')
+# plugin = PluginClass(**PUBSUB_CONFIG)
+
+def on_message(topic, message):
+    print(f"[MQTT] {topic}: {message}")
+
+plugin.connect()
+plugin.subscribe(TOPIC_STATE, on_message)
+
+print(f"Turning pin {PIN} ON via MQTT...")
+plugin.publish(TOPIC_SET, 'ON')
+time.sleep(2)
+print(f"Turning pin {PIN} OFF via MQTT...")
+plugin.publish(TOPIC_SET, 'OFF')
+time.sleep(2)
+print("Done. Waiting for state updates...")
+time.sleep(2)
+plugin.disconnect()

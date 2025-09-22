@@ -58,14 +58,16 @@ All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you 
 
 ```python
 # Example: SNS plugin (uncomment to use)
-# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
-# PluginClass = PluginLoader.load_plugin('sns_plugin')
-# plugin = PluginClass(**SNS_CONFIG)
+SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
+PluginClass = PluginLoader.load_plugin('sns_plugin')
+plugin = PluginClass(**SNS_CONFIG)
+```
 
+```python
 # Example: PubSub plugin (uncomment to use)
-# PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
-# PluginClass = PluginLoader.load_plugin('pubsub_plugin')
-# plugin = PluginClass(**PUBSUB_CONFIG)
+PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
+PluginClass = PluginLoader.load_plugin('pubsub_plugin')
+plugin = PluginClass(**PUBSUB_CONFIG)
 ```
 
 Just comment out the MQTT section and uncomment the SNS or PubSub section as needed. Make sure to fill in your credentials and topic details.

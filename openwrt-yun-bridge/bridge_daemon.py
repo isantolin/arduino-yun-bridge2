@@ -172,6 +172,16 @@ def validate_config(cfg):
             raise ValueError(f"Config error: '{key}' is required and missing or empty.")
     if cfg.get('mqtt_tls') and not cfg.get('mqtt_cafile'):
         raise ValueError("Config error: mqtt_tls enabled but mqtt_cafile not set.")
+    # Permitir solo un sistema de mensajería activo a la vez
+    enabled = [
+        bool(int(cfg.get('pubsub_enabled', 0))),
+        bool(int(cfg.get('sns_enabled', 0))),
+        True  # MQTT is always considered enabled if not disabled explicitly
+    ]
+    enabled_count = int(cfg.get('pubsub_enabled', 0)) + int(cfg.get('sns_enabled', 0))
+    # Si pubsub o sns están activos, MQTT debe estar deshabilitado (por convención mqtt_host = '')
+    if int(cfg.get('pubsub_enabled', 0)) + int(cfg.get('sns_enabled', 0)) + (1 if cfg.get('mqtt_host') else 0) > 1:
+        raise ValueError("Config error: Only one messaging backend can be enabled at a time (MQTT, Pub/Sub, or SNS). Please disable the others.")
     if cfg.get('pubsub_enabled'):
         for k in ['pubsub_project', 'pubsub_topic', 'pubsub_subscription', 'pubsub_credentials']:
             if not cfg.get(k):

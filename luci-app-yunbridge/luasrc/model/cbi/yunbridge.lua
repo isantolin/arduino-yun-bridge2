@@ -158,4 +158,63 @@ function pubsub_credentials.validate(self, value, section)
 	return value
 end
 
+-- Exclusividad de sistemas de mensajería
+function update_backend_exclusivity(section)
+	local pubsub = pubsub_enabled:formvalue(section) == "1"
+	local sns = sns_enabled:formvalue(section) == "1"
+	local mqtt = (host:formvalue(section) or "") ~= ""
+
+	-- Deshabilitar dinámicamente los otros backends si uno está activo
+	if pubsub then
+		sns_enabled.readonly = true
+		host.readonly = true
+		sns_enabled.description = translate("Disabled: Pub/Sub is active")
+		host.description = translate("Disabled: Pub/Sub is active")
+	elseif sns then
+		pubsub_enabled.readonly = true
+		host.readonly = true
+		pubsub_enabled.description = translate("Disabled: SNS is active")
+		host.description = translate("Disabled: SNS is active")
+	elseif mqtt then
+		pubsub_enabled.readonly = true
+		sns_enabled.readonly = true
+		pubsub_enabled.description = translate("Disabled: MQTT is active")
+		sns_enabled.description = translate("Disabled: MQTT is active")
+	else
+		pubsub_enabled.readonly = false
+		sns_enabled.readonly = false
+		host.readonly = false
+		pubsub_enabled.description = nil
+		sns_enabled.description = nil
+		host.description = nil
+	end
+end
+
+-- Hook para actualizar exclusividad en cada render
+m.on_parse = function(self)
+	local section = "main"
+	update_backend_exclusivity(section)
+end
+
+-- Validación cruzada al guardar
+function m.on_commit(self)
+	local section = "main"
+	local pubsub = pubsub_enabled:formvalue(section) == "1"
+	local sns = sns_enabled:formvalue(section) == "1"
+	local mqtt = (host:formvalue(section) or "") ~= ""
+	local count = 0
+	if pubsub then count = count + 1 end
+	if sns then count = count + 1 end
+	if mqtt then count = count + 1 end
+	if count > 1 then
+		error_msg = translate("Only one messaging backend can be enabled at a time (MQTT, Pub/Sub, or SNS). Please disable the others.")
+		self.message = error_msg
+		return false
+	end
+	return true
+end
+
+-- Mensaje informativo en la UI
+s:option(DummyValue, "backend_exclusivity_info").value = translate("Note: Only one messaging backend (MQTT, Pub/Sub, or SNS) can be enabled at a time. Selecting one will disable the others.")
+
 return m

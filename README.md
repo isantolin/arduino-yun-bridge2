@@ -1,5 +1,22 @@
 # Arduino Yun v2 Ecosystem (Unified Documentation)
 
+## Prerequisites (Mandatory)
+
+**You must complete these steps before installing or using this ecosystem:**
+
+1. **Update your Arduino Yun to the latest OpenWRT version:**
+   - Follow the official instructions here: https://openwrt.org/toh/arduino.cc/yun
+   - _This is a mandatory requirement. The bridge and all scripts expect a modern, up-to-date OpenWRT system._
+
+2. **Expand storage using a microSD card (extroot):**
+   - Insert a microSD card and follow the official OpenWRT extroot guide: https://openwrt.org/docs/guide-user/additional-software/extroot_configuration
+   - _This is also mandatory. The Yun's internal storage is insufficient for Python, pip, and cloud libraries._
+
+3. **(Recommended) Enable swap:**
+   - During the extroot process, it is highly recommended to activate swap on the SD card. This improves stability when installing packages and running Python/cloud services.
+
+---
+
 ## Quick Start
 
 1. Clone the repository and run the installer:
@@ -594,4 +611,15 @@ If you encounter issues, check the following log files for details:
 
 **Forcing a rollback:**
 To test the installer's rollback, add a line with `false` after any checkpoint in `install.sh`. The script should abort, clean up, and log the error.
+
+## Messaging Backend Exclusivity in LuCI
+
+The LuCI web interface enforces that only one messaging backend (MQTT, Google Pub/Sub, or Amazon SNS) can be enabled at a time:
+
+- When you enable one backend, the other options are automatically disabled in the UI.
+- A visual warning is shown, indicating which options are disabled and why.
+- If you attempt to enable more than one backend (e.g., by editing the config file directly), the interface will block saving and display an error message.
+- This exclusivity ensures the bridge daemon operates safely and avoids configuration conflicts.
+
+_You will see an informational note in the LuCI UI reminding you of this rule._
 

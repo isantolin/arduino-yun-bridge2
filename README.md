@@ -1,5 +1,3 @@
-
-
 # Arduino Yun v2 Ecosystem (Unified Documentation)
 
 ## Quick Start
@@ -110,6 +108,21 @@ cd arduino-yun-bridge2
 sh install.sh
 
 ## 1. Installation & Dependencies
+
+### Robust Installer, Logging, and Validation
+
+- The installer (`install.sh`) now features atomic checkpoints and rollback: if any step fails, all changes are reverted and a clear error is logged in `/tmp/yunbridge_install.log`.
+- All Python plugins and the main daemon use rotating log files for robust, persistent logging. Log levels are configurable in code.
+- All scripts and plugins validate critical configuration parameters before running, and will fail fast with a clear error if any required value is missing.
+
+**Testing rollback:** You can force a failure in `install.sh` (e.g., by adding `false` after a checkpoint) to verify that rollback and cleanup work as expected.
+
+**Log files:**
+- `/tmp/yunbridge_daemon.log` (daemon)
+- `/tmp/yunbridge_mqtt_plugin.log`, `/tmp/yunbridge_pubsub_plugin.log`, `/tmp/yunbridge_sns_plugin.log` (plugins)
+
+**Configuration validation:**
+- The daemon and plugins will not start if required config values are missing or invalid. Errors are logged and shown in the console.
 
 
 
@@ -554,11 +567,29 @@ All scripts use the same topics and MQTT logic as the daemon and Arduino code. S
 
 For more help, see the log and status panels in the Web UI, or open an issue on GitHub.
 
+## Troubleshooting & Log Examples
 
+If you encounter issues, check the following log files for details:
 
-## 6. Roadmap & Links
+- `/tmp/yunbridge_daemon.log` (main daemon)
+- `/tmp/yunbridge_mqtt_plugin.log` (MQTT plugin)
+- `/tmp/yunbridge_pubsub_plugin.log` (Pub/Sub plugin)
+- `/tmp/yunbridge_sns_plugin.log` (SNS plugin)
+- `/tmp/yunbridge_install.log` (installer)
 
-See `ROADMAP.md` for future improvements and planned features. All completed items have been removed from the roadmap.
+**Example log entries:**
 
-### Documentation
+```
+2025-09-21 12:34:56,789 INFO yunbridge.daemon: [MQTT] Connected with result code 0
+2025-09-21 12:34:57,123 ERROR yunbridge.mqtt_plugin: MQTT connect error: [Errno 111] Connection refused
+2025-09-21 12:35:01,456 WARNING yunbridge.sns_plugin: SNS subscribe not supported in client. Use SQS or Lambda.
+```
+
+**Common issues:**
+- Missing or invalid configuration: check for `Config error:` lines in the logs.
+- Permission errors: ensure the user running the scripts has access to serial ports and config files.
+- Network errors: verify broker/service addresses and credentials.
+
+**Forcing a rollback:**
+To test the installer's rollback, add a line with `false` after any checkpoint in `install.sh`. The script should abort, clean up, and log the error.
 

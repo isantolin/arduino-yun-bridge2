@@ -6,12 +6,19 @@ The roadmap is divided into two parts: Core (openwrt-yun-core) and Web UI (luci-
 
 ## Core Yun/OpenWRT
 
+
 **Pending:**
 - Support for new OpenWRT targets.
 - OTA (Over-The-Air) updates for firmware and packages.
 - Integration of community contributions.
 - Expanded documentation and tutorials.
 - Official Mosquitto support with WebSockets on OpenWRT.
+
+**Completed (2025):**
+- Robust atomic installer with rollback and checkpoints
+- Rotating log files and configurable log levels in all Python components
+- Strict configuration validation in daemon and plugins
+- Error handling and reporting improvements across all scripts
 
 ---
 

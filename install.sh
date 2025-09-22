@@ -1,14 +1,37 @@
 #!/bin/bash
 # Unified install script for Arduino Yun v2 ecosystem
 # Installs all dependencies, daemon, scripts, configs, Arduino library, and Python client plugin system
+#
+# Para probar el rollback, puedes forzar un error agregando: false
+# después de cualquier checkpoint.
+# Ejemplo: después de 'echo "[CHECKPOINT] Copying config and package files..."', agrega una línea: false
+# El script debe limpiar los archivos creados y mostrar el mensaje de rollback.
 
 set -e
 
-# 1. Update and upgrade system
-opkg update
- # Upgrade only packages with new versions available
-opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
+LOGFILE="/tmp/yunbridge_install.log"
+exec > >(tee -a "$LOGFILE") 2>&1
 
+function rollback {
+    echo "[ROLLBACK] Rolling back partial installation..."
+    # Remove files/directories that may have been created
+    [ -d /etc/yunbridge ] && rm -rf /etc/yunbridge
+    [ -f /etc/config/yunbridge-ttyath0 ] && rm -f /etc/config/yunbridge-ttyath0
+    [ -f /etc/yunbridge/yunbridge.files ] && rm -f /etc/yunbridge/yunbridge.files
+    [ -f /etc/init.d/yunbridge ] && rm -f /etc/init.d/yunbridge
+    [ -d /www/cgi-bin ] && rm -rf /www/cgi-bin
+    [ -d /www/yunbridge ] && rm -rf /www/yunbridge
+    [ -d "$HOME/Arduino/libraries/openwrt-library-arduino" ] && rm -rf "$HOME/Arduino/libraries/openwrt-library-arduino"
+    echo "[ROLLBACK] Done."
+}
+
+trap 'echo "[ERROR] Installation failed at line $LINENO. See $LOGFILE for details."; rollback; exit 1' ERR
+
+# 1. Update and upgrade system
+echo "[CHECKPOINT] Updating package lists..."
+opkg update
+echo "[CHECKPOINT] Upgrading upgradable packages..."
+opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
 echo "[INFO] Installing/updating paho-mqtt, google-cloud-pubsub, and boto3 for Python3..."
 python3 -m pip install --upgrade paho-mqtt google-cloud-pubsub boto3
@@ -25,13 +48,7 @@ if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
 fi
 
 # 4. Install CGI REST script
-
-# 1. Update and upgrade system
-opkg update
- # Upgrade only packages with new versions available
-opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
-
-# (System update and core dependencies already handled above)
+echo "[CHECKPOINT] Installing CGI REST script..."
 if [ -f openwrt-yun-core/scripts/pin_rest_cgi.py ]; then
     mkdir -p /www/cgi-bin
     cp -f openwrt-yun-core/scripts/pin_rest_cgi.py /www/cgi-bin/pin
@@ -42,11 +59,13 @@ else
 fi
 
 # 5. Ensure /etc/yunbridge exists
+echo "[CHECKPOINT] Ensuring /etc/yunbridge exists..."
 if [ ! -d /etc/yunbridge ]; then
     mkdir -p /etc/yunbridge || { echo "ERROR: Could not create /etc/yunbridge"; exit 1; }
 fi
 
 # 3. Install LuCI Web UI if present
+echo "[CHECKPOINT] Installing LuCI Web UI if present..."
 LUCI_IPK=$(ls luci-app-yunbridge/bin/packages/*/luci/luci-app-yunbridge_*.ipk 2>/dev/null | head -n1)
 if [ -n "$LUCI_IPK" ]; then
     echo "[INFO] Installing Web UI (luci-app-yunbridge) from .ipk package..."
@@ -54,7 +73,7 @@ if [ -n "$LUCI_IPK" ]; then
     echo "[INFO] Web UI (LuCI) installed from .ipk. Access via LuCI > Services > YunBridge."
 else
     if [ -d luci-app-yunbridge/luasrc ]; then
-    echo "[INFO] Installing Web UI (luci-app-yunbridge) manually..."
+        echo "[INFO] Installing Web UI (luci-app-yunbridge) manually..."
         mkdir -p /usr/lib/lua/luci/controller
         mkdir -p /usr/lib/lua/luci/model/cbi
         mkdir -p /usr/lib/lua/luci/view
@@ -77,14 +96,14 @@ else
         if [ -f /etc/init.d/rpcd ]; then
             /etc/init.d/rpcd restart
         fi
-    echo "[INFO] Web UI (LuCI) installed manually. Access via LuCI > Services > YunBridge."
+        echo "[INFO] Web UI (LuCI) installed manually. Access via LuCI > Services > YunBridge."
     else
-    echo "[INFO] Web UI (luci-app-yunbridge) not found, only core installed."
+        echo "[INFO] Web UI (luci-app-yunbridge) not found, only core installed."
     fi
 fi
 
 # 6. Copy config and package files
-# Map and install config/package files to correct locations
+echo "[CHECKPOINT] Copying config and package files..."
 if [ -f openwrt-yun-core/package/99-yunbridge-ttyath0.conf ]; then
     cp -f openwrt-yun-core/package/99-yunbridge-ttyath0.conf /etc/config/yunbridge-ttyath0
 else
@@ -97,6 +116,7 @@ else
 fi
 
 # 7. Install init script
+echo "[CHECKPOINT] Installing init script..."
 if [ -f openwrt-yun-core/package/yunbridge.init ]; then
     cp -f openwrt-yun-core/package/yunbridge.init /etc/init.d/yunbridge
     chmod +x /etc/init.d/yunbridge
@@ -105,6 +125,7 @@ else
 fi
 
 # 8. Copy scripts to /usr/bin
+echo "[CHECKPOINT] Copying scripts to /usr/bin..."
 if [ -d openwrt-yun-core/scripts ]; then
     for f in openwrt-yun-core/scripts/*; do
         if [ -f "$f" ]; then
@@ -116,6 +137,7 @@ else
 fi
 
 # 9. Install YunBridge daemon (Python package)
+echo "[CHECKPOINT] Installing YunBridge daemon..."
 if [ -f openwrt-yun-bridge/setup.py ]; then
     echo "[INFO] Installing Python daemon openwrt-yun-bridge via setup.py..."
     cd openwrt-yun-bridge
@@ -127,6 +149,7 @@ else
 fi
 
 # 10. Stop any running yunbridge daemons before starting a new one
+echo "[CHECKPOINT] Stopping any running yunbridge daemons..."
 PIDS=$(ps | grep '[y]unbridge' | awk '{print $1}')
 if [ -n "$PIDS" ]; then
     echo "Stopping YunBridge v2 daemon..."
@@ -134,6 +157,7 @@ if [ -n "$PIDS" ]; then
 fi
 
 # 11. Start YunBridge daemon
+echo "[CHECKPOINT] Starting YunBridge daemon..."
 if command -v python3 >/dev/null 2>&1; then
     echo "[DEBUG] Launching YunBridge daemon in background and showing real-time log..."
     python3 /usr/bin/yunbridge > /tmp/yunbridge_debug.log 2>&1 &
@@ -145,6 +169,7 @@ else
 fi
 
 # 12. Install Arduino library (openwrt-library-arduino)
+echo "[CHECKPOINT] Installing Arduino library..."
 if [ -d openwrt-library-arduino/src ]; then
     LIB_DST="$HOME/Arduino/libraries/openwrt-library-arduino"
     mkdir -p "$LIB_DST"

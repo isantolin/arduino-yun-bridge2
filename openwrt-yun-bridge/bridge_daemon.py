@@ -16,7 +16,8 @@ import queue
 import os
 import atexit
 import re
-
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Third-party imports
 import serial
@@ -162,7 +163,26 @@ def get_uci_config():
         print(f'[WARN] Error reading UCI configuration: {e}')
     return cfg
 
+def validate_config(cfg):
+    required = [
+        'mqtt_host', 'mqtt_port', 'mqtt_topic', 'serial_port', 'serial_baud'
+    ]
+    for key in required:
+        if not cfg.get(key):
+            raise ValueError(f"Config error: '{key}' is required and missing or empty.")
+    if cfg.get('mqtt_tls') and not cfg.get('mqtt_cafile'):
+        raise ValueError("Config error: mqtt_tls enabled but mqtt_cafile not set.")
+    if cfg.get('pubsub_enabled'):
+        for k in ['pubsub_project', 'pubsub_topic', 'pubsub_subscription', 'pubsub_credentials']:
+            if not cfg.get(k):
+                raise ValueError(f"Config error: PubSub enabled but '{k}' is missing.")
+    if cfg.get('sns_enabled'):
+        for k in ['sns_region', 'sns_topic_arn', 'sns_access_key', 'sns_secret_key']:
+            if not cfg.get(k):
+                raise ValueError(f"Config error: SNS enabled but '{k}' is missing.")
+
 CFG = get_uci_config()
+validate_config(CFG)
 MQTT_BROKER = CFG['mqtt_host']
 MQTT_PORT = CFG['mqtt_port']
 MQTT_TOPIC_PREFIX = CFG['mqtt_topic']
@@ -176,6 +196,17 @@ RECONNECT_DELAY = 5  # seconds
 # Generalized topic patterns
 PIN_TOPIC_SET_WILDCARD = f'{PIN_TOPIC_PREFIX}/+/set'
 PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
+
+
+# Configuración de logging rotativo global para el daemon
+LOG_PATH = '/tmp/yunbridge_daemon.log'
+handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
+formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
+handler.setFormatter(formatter)
+logger = logging.getLogger("yunbridge.daemon")
+logger.setLevel(logging.INFO)  # Cambia a DEBUG para más detalle
+if not logger.hasHandlers():
+    logger.addHandler(handler)
 
 
 class BridgeDaemon:

@@ -39,11 +39,11 @@ This project now uses a modular, package-centric build and install system. All b
 
 ## Build System Details
 
-- **`compile.sh`**: Runs `make` or `python3 -m build` in each subproject, producing .ipk/.whl artifacts in `bin/`.
-- **Each package** (e.g., `openwrt-yun-core`, `openwrt-yun-bridge`, `openwrt-yun-client-python`, `luci-app-yunbridge`) has its own Makefile or setup.py declaring all dependencies and install logic.
-- **No global install logic**: All install/copy steps are local to each package.
-- **System-level setup** (Python venv creation, pip upgrade) is handled by the OpenWRT package's `postinst` script (see `openwrt-yun-core/package/postinst`).
-- **`install.sh`**: Only installs pre-built packages and activates the venv. No system setup or dependency installation is performed here.
+  - **`compile.sh`**: Instala dependencias de compilación necesarias en la PC de desarrollo (Ubuntu/Debian/Fedora) y luego compila todos los paquetes, dejando los artefactos en `bin/`.
+  - **`install.sh`**: Solo debe ejecutarse en el dispositivo Yun/OpenWRT. Instala los paquetes precompilados (.ipk, .whl) y activa el entorno Python, sin instalar dependencias de compilación ni paquetes de desarrollo.
+  - **Cada paquete** (e.g., `openwrt-yun-core`, `openwrt-yun-bridge`, `openwrt-yun-client-python`, `luci-app-yunbridge`) tiene su propio Makefile o setup.py con todas las dependencias y lógica de instalación.
+  - **No hay lógica global de instalación**: Todo se maneja localmente en cada paquete.
+  - **La configuración de sistema (creación de venv, upgrade de pip, etc.) se realiza en el script postinst del paquete OpenWRT (`openwrt-yun-core/package/postinst`).
 
 ---
 

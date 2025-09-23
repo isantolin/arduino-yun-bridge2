@@ -12,23 +12,23 @@ SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
 
 
-echo "[INFO] Instalando dependencias de compilación necesarias para OpenWRT SDK (solo en PC de desarrollo)"
+echo "[INFO] Installing build dependencies required for OpenWRT SDK (development PC only)"
 if [ "$(uname -s)" = "Linux" ]; then
     if [ -f /etc/debian_version ]; then
-        echo "[INFO] Instalando paquetes para Ubuntu/Debian..."
+    echo "[INFO] Installing packages for Ubuntu/Debian..."
         sudo apt-get update
         sudo apt-get install -y build-essential python3 python3-pip python3-venv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev zstd wget
     elif [ -f /etc/fedora-release ]; then
-        echo "[INFO] Instalando paquetes para Fedora..."
+    echo "[INFO] Installing packages for Fedora..."
         sudo dnf install -y @development-tools python3 python3-pip python3-virtualenv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
     else
-        echo "[WARN] Distro Linux no reconocida. Instala manualmente: build-essential, ncurses-dev, zstd, wget, etc."
+    echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
     fi
 else
-    echo "[WARN] Sistema operativo no soportado para instalación automática de dependencias."
+    echo "[WARN] Operating system not supported for automatic dependency installation."
 fi
 
-echo "[INFO] Preparando entorno de build..."
+echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
 # 1. Descargar y extraer el buildroot/SDK si no existe
@@ -43,14 +43,14 @@ fi
 # 2. Copiar los paquetes OpenWRT al buildroot/SDK
 for pkg in luci-app-yunbridge openwrt-yun-core; do
     if [ -d "$pkg" ]; then
-        echo "[INFO] Copiando $pkg al SDK..."
+    echo "[INFO] Copying $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
         # Solo copiar el directorio raíz del paquete, no subdirectorios internos como package/
         cp -r "$pkg" "$SDK_DIR/package/$pkg"
         # Eliminar si accidentalmente se copió package/package
         rm -rf "$SDK_DIR/package/$pkg/package"
     else
-        echo "[WARN] Paquete $pkg no encontrado."
+    echo "[WARN] Package $pkg not found."
     fi
 done
 
@@ -58,7 +58,7 @@ done
 pushd "$SDK_DIR"
 for pkg in luci-app-yunbridge openwrt-yun-core; do
     if [ -d "package/$pkg" ]; then
-        echo "[BUILD] Compilando $pkg (.ipk) en SDK..."
+    echo "[BUILD] Building $pkg (.ipk) in SDK..."
         make package/$pkg/clean V=s || true
         make package/$pkg/compile V=s
         # Copiar artefactos .ipk al bin local
@@ -70,12 +70,12 @@ popd
 # 4. Compilar los paquetes Python localmente
 for pkg in openwrt-yun-bridge openwrt-yun-client-python; do
     if [ -d "$pkg" ]; then
-        echo "[BUILD] Compilando $pkg (.whl) localmente..."
+    echo "[BUILD] Building $pkg (.whl) locally..."
         (cd "$pkg" && make clean && make wheel)
         cp "$pkg"/bin/*.whl "$BIN_DIR/" 2>/dev/null || true
     else
-        echo "[WARN] Paquete $pkg no encontrado."
+    echo "[WARN] Package $pkg not found."
     fi
 done
 
-echo "\n[OK] Build finalizado. Busca los artefactos .ipk y .whl en el directorio bin/"
+echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."

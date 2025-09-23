@@ -7,7 +7,27 @@
 # Ejemplo: después de 'echo "[CHECKPOINT] Copying config and package files..."', agrega una línea: false
 # El script debe limpiar los archivos creados y mostrar el mensaje de rollback.
 
+
 set -e
+
+# --- SD/Extroot Python venv setup ---
+SD_MOUNT="/mnt/sda1"  # Cambia esto si tu SD está montada en otro lugar
+VENV_PATH="$SD_MOUNT/pyenv"
+PYTHON="$VENV_PATH/bin/python3"
+PIP="$VENV_PATH/bin/pip"
+
+echo "[CHECKPOINT] Verificando entorno virtual Python en la SD..."
+if [ ! -d "$VENV_PATH" ]; then
+    echo "[INFO] Creando entorno virtual Python en $VENV_PATH"
+    python3 -m venv "$VENV_PATH" || { echo "ERROR: No se pudo crear el entorno virtual en la SD"; exit 1; }
+fi
+
+echo "[INFO] Activando entorno virtual y actualizando pip..."
+source "$VENV_PATH/bin/activate"
+$PIP install --upgrade pip
+
+echo "[INFO] Instalando dependencias Python en la SD..."
+$PIP install --upgrade paho-mqtt google-cloud-pubsub boto3
 
 LOGFILE="/tmp/yunbridge_install.log"
 exec > >(tee -a "$LOGFILE") 2>&1
@@ -33,8 +53,7 @@ opkg update
 echo "[CHECKPOINT] Upgrading upgradable packages..."
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
-echo "[INFO] Installing/updating paho-mqtt, google-cloud-pubsub, and boto3 for Python3..."
-python3 -m pip install --upgrade paho-mqtt google-cloud-pubsub boto3
+opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
 
 opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
 
@@ -139,11 +158,11 @@ fi
 # 9. Install YunBridge daemon (Python package)
 echo "[CHECKPOINT] Installing YunBridge daemon..."
 if [ -f openwrt-yun-bridge/setup.py ]; then
-    echo "[INFO] Installing Python daemon openwrt-yun-bridge via setup.py..."
+    echo "[INFO] Installing Python daemon openwrt-yun-bridge via setup.py en entorno virtual de la SD..."
     cd openwrt-yun-bridge
-    python3 -m pip install --force-reinstall --upgrade .
+    $PIP install --force-reinstall --upgrade .
     cd ..
-    echo "[INFO] Daemon yunbridge installed as Python package. Run 'yunbridge' to launch."
+    echo "[INFO] Daemon yunbridge installed as Python package in SD venv. Run with: $PYTHON -m yunbridge or activate venv."
 else
     echo "ERROR: openwrt-yun-bridge/setup.py not found."
 fi
@@ -158,14 +177,14 @@ fi
 
 # 11. Start YunBridge daemon
 echo "[CHECKPOINT] Starting YunBridge daemon..."
-if command -v python3 >/dev/null 2>&1; then
-    echo "[DEBUG] Launching YunBridge daemon in background and showing real-time log..."
-    python3 /usr/bin/yunbridge > /tmp/yunbridge_debug.log 2>&1 &
+if [ -x "$PYTHON" ]; then
+    echo "[DEBUG] Launching YunBridge daemon desde entorno virtual en la SD y mostrando log en tiempo real..."
+    $PYTHON /usr/bin/yunbridge > /tmp/yunbridge_debug.log 2>&1 &
     sleep 1
     tail -f /tmp/yunbridge_debug.log &
-    echo "YunBridge daemon started. Log is shown above. You can close the tail with Ctrl+C."
+    echo "YunBridge daemon started from SD venv. Log is shown above. You can close the tail with Ctrl+C."
 else
-    echo "ERROR: python3 not found. Daemon not started."
+    echo "ERROR: $PYTHON not found. Daemon not started."
 fi
 
 # 12. Install Arduino library (openwrt-library-arduino)

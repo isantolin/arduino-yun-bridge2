@@ -20,7 +20,7 @@ define Package/$(PKG_NAME)
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
   TITLE:=LuCI Support for YunBridge
-  DEPENDS:=+luci +openwrt-yun-core
+	DEPENDS:=+luci-base +openwrt-yun-core
 endef
 
 

@@ -1,0 +1,36 @@
+# OpenWRT package Makefile for openwrt-yun-bridge
+# This Makefile declares openwrt-yun-core as a dependency
+
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=openwrt-yun-bridge
+PKG_VERSION:=1.0.0
+PKG_RELEASE:=1
+
+PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+
+include $(INCLUDE_DIR)/package.mk
+
+define Package/$(PKG_NAME)
+  SECTION:=utils
+  CATEGORY:=Utilities
+  TITLE:=Yun Bridge Python Daemon
+  DEPENDS:=+openwrt-yun-core
+endef
+
+define Package/$(PKG_NAME)/description
+  Python daemon for YunBridge ecosystem. Requires openwrt-yun-core.
+endef
+
+
+# Build/Compile: Build the Python wheel and copy it to the build directory
+define Build/Compile
+  $(MAKE) -C $(PKG_BUILD_DIR) wheel
+endef
+
+define Package/$(PKG_NAME)/install
+  $(INSTALL_DIR) $(1)/usr/bin
+  cp $(PKG_BUILD_DIR)/bin/*.whl $(1)/usr/bin/
+endef
+
+$(eval $(call BuildPackage,$(PKG_NAME)))

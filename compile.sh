@@ -31,26 +31,60 @@ fi
 echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
-# 1. Descargar y extraer el buildroot/SDK si no existe
+LUCIFEED_LINE="src-git luci https://github.com/openwrt/luci.git"
+# 1. Download and extract the buildroot/SDK if it does not exist, with retry logic for data corruption
 if [ ! -d "$SDK_DIR" ]; then
-    echo "[INFO] Descargando OpenWRT SDK..."
-    wget -O sdk.tar.zst "$OPENWRT_URL"
-    tar --use-compress-program=unzstd -xf sdk.tar.zst
-    rm sdk.tar.zst
-    mv openwrt-sdk-* "$SDK_DIR"
+    MAX_RETRIES=5
+    RETRY=0
+    SUCCESS=0
+    while [ $RETRY -lt $MAX_RETRIES ]; do
+        echo "[INFO] Downloading OpenWRT SDK (attempt $((RETRY+1))/$MAX_RETRIES)..."
+        wget -O sdk.tar.zst "$OPENWRT_URL"
+        echo "[INFO] Extracting SDK..."
+        if tar --use-compress-program=unzstd -xf sdk.tar.zst; then
+            rm sdk.tar.zst
+            mv openwrt-sdk-* "$SDK_DIR"
+            SUCCESS=1
+            break
+        else
+            echo "[WARN] SDK extraction failed (possible data corruption). Retrying..."
+            rm -f sdk.tar.zst
+            # Clean up any partial extraction
+            rm -rf openwrt-sdk-*
+            RETRY=$((RETRY+1))
+            sleep 2
+        fi
+    done
+    if [ $SUCCESS -ne 1 ]; then
+        echo "[ERROR] Failed to download and extract OpenWRT SDK after $MAX_RETRIES attempts. Exiting."
+        exit 1
+    fi
+    # Add LuCI feed to feeds.conf.default if not present
+    FEEDS_CONF="$SDK_DIR/feeds.conf.default"
+    if ! grep -q "^src-git luci" "$FEEDS_CONF"; then
+        echo "[INFO] Adding LuCI feed to feeds.conf.default..."
+        echo "$LUCIFEED_LINE" >> "$FEEDS_CONF"
+    fi
+    # Update and install luci-base feed BEFORE copying any packages
+    pushd "$SDK_DIR"
+    echo "[INFO] Updating all feeds..."
+    ./scripts/feeds update -a
+    echo "[INFO] Installing luci-base feed..."
+    ./scripts/feeds install luci-base
+    popd
 fi
 
-# 2. Copiar los paquetes OpenWRT al buildroot/SDK
+# 2. Copy OpenWRT packages to buildroot/SDK (after feeds are updated and luci-base is installed)
 for pkg in luci-app-yunbridge openwrt-yun-core; do
     if [ -d "$pkg" ]; then
-    echo "[INFO] Copying $pkg to SDK..."
+        echo "[INFO] Copying $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
-        # Solo copiar el directorio raíz del paquete, no subdirectorios internos como package/
+        # Only copy the root package directory, not internal subdirectories like package/
         cp -r "$pkg" "$SDK_DIR/package/$pkg"
-        # Eliminar si accidentalmente se copió package/package
+        # Remove if package/package was accidentally copied
         rm -rf "$SDK_DIR/package/$pkg/package"
     else
-    echo "[WARN] Package $pkg not found."
+        echo "[WARN] Package $pkg not found."
     fi
 done
 
@@ -79,3 +113,9 @@ for pkg in openwrt-yun-bridge openwrt-yun-client-python; do
 done
 
 echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."
+
+# Cleanup: remove all 'build' directories from package folders
+echo "[CLEANUP] Removing leftover build directories from packages..."
+find openwrt-yun-bridge openwrt-yun-client-python -type d -name build -exec rm -rf {} +
+find luci-app-yunbridge openwrt-yun-core -type d -name build -exec rm -rf {} +
+echo "[CLEANUP] Done."

@@ -31,7 +31,7 @@ fi
 echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
-LUCIFEED_LINE="src-git luci https://github.com/openwrt/luci.git"
+LUCIFEED_LINE="src-git luci git://github.com/openwrt/luci.git"
 # 1. Download and extract the buildroot/SDK if it does not exist, with retry logic for data corruption
 if [ ! -d "$SDK_DIR" ]; then
     MAX_RETRIES=5
@@ -59,19 +59,6 @@ if [ ! -d "$SDK_DIR" ]; then
         echo "[ERROR] Failed to download and extract OpenWRT SDK after $MAX_RETRIES attempts. Exiting."
         exit 1
     fi
-    # Add LuCI feed to feeds.conf.default if not present
-    FEEDS_CONF="$SDK_DIR/feeds.conf.default"
-    if ! grep -q "^src-git luci" "$FEEDS_CONF"; then
-        echo "[INFO] Adding LuCI feed to feeds.conf.default..."
-        echo "$LUCIFEED_LINE" >> "$FEEDS_CONF"
-    fi
-    # Update and install luci-base feed BEFORE copying any packages
-    pushd "$SDK_DIR"
-    echo "[INFO] Updating all feeds..."
-    ./scripts/feeds update -a
-    echo "[INFO] Installing luci-base feed..."
-    ./scripts/feeds install luci-base
-    popd
 fi
 
 # 2. Copy OpenWRT packages to buildroot/SDK (after feeds are updated and luci-base is installed)
@@ -114,8 +101,12 @@ done
 
 echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."
 
-# Cleanup: remove all 'build' directories from package folders
-echo "[CLEANUP] Removing leftover build directories from packages..."
-find openwrt-yun-bridge openwrt-yun-client-python -type d -name build -exec rm -rf {} +
-find luci-app-yunbridge openwrt-yun-core -type d -name build -exec rm -rf {} +
+# Cleanup: remove all 'build', 'bin', 'dist', and '*.egg-info' directories from package folders
+echo "[CLEANUP] Removing leftover build, bin, dist, and egg-info directories from packages..."
+for pkg in openwrt-yun-bridge openwrt-yun-client-python luci-app-yunbridge openwrt-yun-core; do
+    find "$pkg" -type d -name build -exec rm -rf {} +
+    find "$pkg" -type d -name bin -exec rm -rf {} +
+    find "$pkg" -type d -name dist -exec rm -rf {} +
+    find "$pkg" -type d -name '*.egg-info' -exec rm -rf {} +
+done
 echo "[CLEANUP] Done."

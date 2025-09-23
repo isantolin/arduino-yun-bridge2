@@ -648,3 +648,42 @@ If you see that `/tmp` points to the SD card, the optimization is active.
 > - The YunBridge daemon always runs inside this SD-based virtual environment, so all Python dependencies and temporary/log files are stored on the SD, not in internal flash or RAM.
 > - This ensures maximum reliability and prevents storage issues, but requires the SD card to always be present and mounted at boot.
 
+## Using an External MQTT Broker
+
+> **Important:**
+> The MQTT broker does not need to be installed on the Yun/OpenWRT device. It is recommended to use an external MQTT broker (just like Pub/Sub and SNS), either on another computer, a server, or a cloud service.
+
+### How to install Mosquitto MQTT broker on another computer (Linux example)
+
+1. **On your PC, server, or Raspberry Pi:**
+   ```sh
+   sudo apt update
+   sudo apt install mosquitto mosquitto-clients
+   sudo systemctl enable mosquitto
+   sudo systemctl start mosquitto
+   ```
+
+2. **Check that the broker is running:**
+   ```sh
+   sudo systemctl status mosquitto
+   # or
+   netstat -tuln | grep 1883
+   ```
+
+3. **Configure YunBridge to use the external broker:**
+   - In the LuCI Web UI or UCI config, set the `MQTT Host` to the IP address of your external broker (e.g., your PC or server).
+   - Example: `192.168.1.100` (replace with your broker's IP).
+
+4. **Test from any client:**
+   ```sh
+   mosquitto_pub -h <broker-ip> -t yun/pin/13/set -m ON
+   mosquitto_sub -h <broker-ip> -t yun/pin/13/state
+   ```
+
+**You can also use cloud MQTT services (e.g., HiveMQ, CloudMQTT, AWS IoT Core) as your broker.**
+
+> The YunBridge daemon will connect to the broker you specify, just like with Pub/Sub and SNS. You do not need to run a broker on the Yun itself.
+
+> **Warning:**
+> The install script no longer installs the Mosquitto MQTT broker locally on the Yun. You must use an external MQTT broker (on another computer, server, or cloud). See the section "Using an External MQTT Broker" for setup instructions.
+

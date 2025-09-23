@@ -41,7 +41,7 @@ opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
 # Centralizar instalación de paquetes opkg requeridos
 echo "[CHECKPOINT] Installing required opkg packages..."
-opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
+opkg install python3-uci python3 python3-pyserial python3-pip || true
 
 # --- SD/Extroot Python venv setup ---
 SD_MOUNT="/mnt/sda1"  # Cambia esto si tu SD está montada en otro lugar

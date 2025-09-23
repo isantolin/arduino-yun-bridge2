@@ -1,4 +1,247 @@
+
 # Arduino Yun v2 Ecosystem (Unified Documentation)
+
+## New Modular Build & Install Workflow (2024)
+
+This project now uses a modular, package-centric build and install system. All build and installation logic is handled by package-local Makefiles and setup.py files. Device-side installation is minimal and only installs pre-built artifacts. Python virtual environments and system setup are handled automatically by package post-install scripts.
+
+### Key Changes
+
+- **All build logic is in each package's Makefile or setup.py** (no duplication, no global install logic)
+- **`compile.sh`** automates local build of all packages and outputs .ipk/.whl artifacts to `bin/`
+- **`install.sh`** is now minimal: it only installs pre-built .ipk/.whl files and performs no system setup
+- **System-level setup (Python venv, pip upgrade, etc.) is handled by the OpenWRT package postinst**
+- **All dependencies are declared in the relevant Makefile or setup.py** (system and Python deps)
+- **All logs and /tmp are stored on the SD card** (via bind mount and venv on `/mnt/sda1`)
+
+---
+
+## Quick Start (2024+)
+
+1. **Clone and build all packages locally:**
+   ```sh
+   git clone https://github.com/isantolin/arduino-yun-bridge2.git
+   cd arduino-yun-bridge2
+   ./compile.sh
+   # All .ipk and .whl files will be in bin/
+   ```
+2. **Copy the `bin/` directory to your Yun/OpenWRT device.**
+3. **Run the installer on the device:**
+   ```sh
+   sh install.sh
+   ```
+   - This will install only the pre-built .ipk/.whl files and activate the Python venv on the SD card.
+4. **Upload the main sketch `LED13BridgeControl.ino` to your Yun using the Arduino IDE.**
+5. **Open the Web UI (LuCI) at `http://<yun-ip>/cgi-bin/luci/admin/services/yunbridge`.**
+6. **Test MQTT and Web UI control of your pins.**
+
+---
+
+## Build System Details
+
+- **`compile.sh`**: Runs `make` or `python3 -m build` in each subproject, producing .ipk/.whl artifacts in `bin/`.
+- **Each package** (e.g., `openwrt-yun-core`, `openwrt-yun-bridge`, `openwrt-yun-client-python`, `luci-app-yunbridge`) has its own Makefile or setup.py declaring all dependencies and install logic.
+- **No global install logic**: All install/copy steps are local to each package.
+- **System-level setup** (Python venv creation, pip upgrade) is handled by the OpenWRT package's `postinst` script (see `openwrt-yun-core/package/postinst`).
+- **`install.sh`**: Only installs pre-built packages and activates the venv. No system setup or dependency installation is performed here.
+
+---
+
+## Directory Structure (2024+)
+
+```
+arduino-yun-bridge2/
+  compile.sh           # Build all packages locally
+  install.sh           # Minimal installer (device-side)
+  bin/                 # All .ipk/.whl artifacts after build
+  openwrt-yun-core/    # OpenWRT system integration package
+    Makefile
+    package/
+      postinst         # Handles venv creation and pip upgrade
+  openwrt-yun-bridge/  # Python daemon (MQTT <-> Serial)
+    Makefile
+    setup.py
+  openwrt-yun-client-python/ # Python client and plugin system
+    Makefile
+    setup.py
+    yunbridge_client/
+  luci-app-yunbridge/  # LuCI Web UI package
+    Makefile
+    root/
+      etc/config/yunbridge
+      www/yunbridge/index.html
+  openwrt-library-arduino/   # Arduino library and install script
+    install.sh
+    src/
+  plugins/             # Community plugins (MQTT-based)
+```
+
+---
+
+## Installation & Upgrade Flow
+
+1. **Build all packages locally with `compile.sh`.**
+2. **Copy the `bin/` directory to your Yun/OpenWRT device.**
+3. **Run `install.sh` on the device:**
+   - Installs only pre-built .ipk/.whl files
+   - Activates the Python venv on the SD card (created by postinst)
+   - No system-level setup or dependency installation is performed here
+4. **All system and Python dependencies are handled by the relevant Makefile/setup.py and postinst.**
+5. **All logs and /tmp are stored on the SD card.**
+
+---
+
+## Developer Notes
+
+- **To add a new dependency:**
+  - For system packages: add to the relevant OpenWRT package Makefile (`DEPENDS:=...`)
+  - For Python packages: add to the relevant `setup.py` (`install_requires=[...]`)
+- **To add a new package:**
+  - Create a Makefile or setup.py in the new subdirectory
+  - Ensure it outputs artifacts to `bin/` on build
+- **To update the Python venv logic:**
+  - Edit `openwrt-yun-core/package/postinst`
+- **To update the installer:**
+  - Edit `install.sh` (should remain minimal)
+
+---
+
+## Python Client Plugin System
+
+The `openwrt-yun-client-python` directory contains example scripts and a modular plugin system for interacting with the YunBridge ecosystem using different messaging backends (MQTT, Google Pub/Sub, Amazon SNS, etc.).
+
+### Plugin System Overview
+
+- All messaging systems are implemented as plugins in `openwrt-yun-client-python/yunbridge_client/`.
+- Each plugin implements a common interface (`plugin_base.py`):
+  - `connect()`
+  - `publish(topic, message)`
+  - `subscribe(topic, callback)`
+  - `disconnect()`
+- Plugins available:
+  - `mqtt_plugin.py` (MQTT via paho-mqtt)
+  - `pubsub_plugin.py` (Google Pub/Sub)
+  - `sns_plugin.py` (Amazon SNS)
+- New messaging systems can be added as plugins by following the same interface.
+
+### Example Scripts
+
+- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `pubsub_plugin`, `sns_plugin`).
+- `all_features_test.py`: Demonstrates all YunBridge features using the plugin system (MQTT backend by default).
+- `*_mqtt_test.py`: Legacy examples, now refactored to use the plugin system (MQTT only, but can be switched as shown below).
+
+### Usage
+
+#### Unified Example (Recommended)
+
+```sh
+python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
+python3 openwrt-yun-client-python/led13_test.py pubsub_plugin
+python3 openwrt-yun-client-python/led13_test.py sns_plugin
+```
+
+Edit the config dictionary in `led13_test.py` for your broker/service details.
+
+#### Using SNS and PubSub Plugins in Examples
+
+All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS or PubSub by uncommenting the relevant code blocks:
+
+```python
+# Example: SNS plugin (uncomment to use)
+SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
+PluginClass = PluginLoader.load_plugin('sns_plugin')
+plugin = PluginClass(**SNS_CONFIG)
+```
+
+```python
+# Example: PubSub plugin (uncomment to use)
+PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
+PluginClass = PluginLoader.load_plugin('pubsub_plugin')
+plugin = PluginClass(**PUBSUB_CONFIG)
+```
+
+Just comment out the MQTT section and uncomment the SNS or PubSub section as needed. Make sure to fill in your credentials and topic details.
+
+#### All Features Example
+
+```sh
+python3 openwrt-yun-client-python/all_features_test.py
+```
+
+#### Add a New Plugin
+
+1. Create a new file in `openwrt-yun-client-python/yunbridge_client/` (e.g., `mycloud_plugin.py`).
+2. Inherit from `MessagingPluginBase` and implement the required methods.
+3. Use `PluginLoader.load_plugin('mycloud_plugin')` in your script.
+
+#### Requirements
+
+- Python 3.7+
+- Install dependencies as needed:
+  - `pip install paho-mqtt google-cloud-pubsub boto3`
+
+#### Directory Structure
+
+```
+openwrt-yun-client-python/
+  led13_test.py
+  all_features_test.py
+  ...
+  yunbridge_client/
+    plugin_base.py
+    plugin_loader.py
+    mqtt_plugin.py
+    pubsub_plugin.py
+    sns_plugin.py
+```
+
+---
+
+## Community Plugins via MQTT
+
+The `plugins/` directory contains example community plugins. These are independent scripts/services that interact with YunBridge using MQTT topics. See `plugins/README.md` and `auto_toggle_pin13.py` for examples.
+
+---
+
+## System & Hardware Requirements
+
+- **OpenWRT 24.x** (latest, mandatory)
+- **Arduino Yun v2**
+- **microSD card (extroot, swap enabled)**
+- **Python 3.11+** (runs in venv on SD card)
+- **External MQTT broker recommended** (see below)
+
+---
+
+## FAQ & Troubleshooting
+
+- All logs and /tmp are stored on the SD card (see `/mnt/sda1/tmp` and `/mnt/sda1/pyenv`)
+- The Python venv is created and managed by the OpenWRT package postinst
+- The installer (`install.sh`) only installs pre-built packages; all build logic is local to each package
+- For rollback testing, add `false` after a checkpoint in `install.sh` and verify cleanup
+- For MQTT, use an external broker (not installed on Yun by default)
+
+---
+
+## For more details, see the README in each subdirectory and the comments in each Makefile/setup.py.
+
+## Development/Build Environment Setup (Fedora & Debian/Ubuntu)
+
+Before building or compiling any package on your local computer, you must install the following packages:
+
+**Debian/Ubuntu:**
+```sh
+sudo apt update
+sudo apt install build-essential python3 python3-pip python3-venv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils
+```
+
+**Fedora:**
+```sh
+sudo dnf install @development-tools python3 python3-pip python3-virtualenv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils
+```
+
+These packages are required to build .ipk and .whl artifacts, run the compile.sh script, and use the Python virtual environment locally.
+
 
 ## Prerequisites (Mandatory)
 

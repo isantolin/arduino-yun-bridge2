@@ -1,0 +1,44 @@
+# OpenWRT SDK and build artifacts
+openwrt-sdk/
+bin/
+build/
+*.ipk
+*.o
+*.so
+*.pyc
+*.pyo
+__pycache__/
+*.egg-info/
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+*.zip
+*.log
+*.swp
+*.swo
+# Python venvs
+pyenv/
+.venv/
+venv/
+# Editor/OS files
+.DS_Store
+*.bak
+*~
+# Exclude OpenWRT build output
+openwrt-yun-core/bin/
+luci-app-yunbridge/bin/
+YunBridge-v2/bin/
+Bridge-v2/bin/
+openwrt-yun-core/build/
+luci-app-yunbridge/build/
+YunBridge-v2/build/
+Bridge-v2/build/
+# Python dist folders
+openwrt-yun-client-python/dist/
+YunBridge-v2/dist/
+Bridge-v2/dist/
+luci-app-yunbridge/dist/
+# Exclude any .ipk or .deb anywhere
+**/*.ipk
+**/*.deb

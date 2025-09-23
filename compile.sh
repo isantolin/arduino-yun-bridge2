@@ -7,7 +7,7 @@
 set -e
 
 OPENWRT_VERSION="24.10.3"
-OPENWRT_URL="https://downloads.openwrt.org/releases/24.10.3/targets/ath79/generic/openwrt-sdk-24.10.3-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_URL="https://downloads.openwrt.org/releases/"$OPENWRT_VERSION"/targets/ath79/generic/openwrt-sdk-"$OPENWRT_VERSION"-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
 SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
 

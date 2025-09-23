@@ -39,6 +39,8 @@ openwrt-yun-client-python/dist/
 YunBridge-v2/dist/
 Bridge-v2/dist/
 luci-app-yunbridge/dist/
+**/dist/
 # Exclude any .ipk or .deb anywhere
 **/*.ipk
 **/*.deb
+**/*.whl

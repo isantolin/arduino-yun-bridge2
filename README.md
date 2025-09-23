@@ -623,3 +623,28 @@ The LuCI web interface enforces that only one messaging backend (MQTT, Google Pu
 
 _You will see an informational note in the LuCI UI reminding you of this rule._
 
+## Recommended optimization: Move /tmp to the SD card
+
+To avoid space issues and ensure that temporary files and large logs do not fill up RAM or internal flash, you can move the `/tmp` directory to the SD card using a bind mount.
+
+**Automatic steps:**
+- The `install.sh` script already performs this operation automatically if the SD card is mounted (default: `/mnt/sda1`).
+- It creates the directory `/mnt/sda1/tmp` and mounts it over `/tmp`.
+- The change is made persistent in `/etc/rc.local` so it is applied after every reboot.
+
+**Why is this useful?**
+- System and YunBridge logs and temporary files will be stored on the SD card, preventing RAM or flash from filling up.
+- This is especially important if you use Pub/Sub, SNS, or generate a lot of logs.
+
+**Verify with:**
+```sh
+df -h /tmp
+```
+
+If you see that `/tmp` points to the SD card, the optimization is active.
+
+> **Note:**
+> - Both the `/tmp` directory and the Python virtual environment are automatically set up to use the SD card on every boot.
+> - The YunBridge daemon always runs inside this SD-based virtual environment, so all Python dependencies and temporary/log files are stored on the SD, not in internal flash or RAM.
+> - This ensures maximum reliability and prevents storage issues, but requires the SD card to always be present and mounted at boot.
+

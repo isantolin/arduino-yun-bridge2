@@ -1,3 +1,25 @@
+# --- Opcional: Mover /tmp a la SD (bind mount) ---
+echo "[CHECKPOINT] Configurando /tmp para usar la SD (bind mount)..."
+SD_TMP="$SD_MOUNT/tmp"
+if [ ! -d "$SD_TMP" ]; then
+    mkdir -p "$SD_TMP"
+    chmod 1777 "$SD_TMP"
+    echo "[INFO] Directorio $SD_TMP creado."
+fi
+# Copiar archivos actuales de /tmp si existen (opcional, seguro)
+if [ "$(ls -A /tmp 2>/dev/null | wc -l)" -gt 0 ]; then
+    cp -a /tmp/* "$SD_TMP/" 2>/dev/null || true
+fi
+# Realizar bind mount
+mount --bind "$SD_TMP" /tmp
+echo "[INFO] /tmp ahora apunta a $SD_TMP en la SD."
+# Hacer persistente en /etc/rc.local
+if ! grep -q 'mount --bind.*/tmp' /etc/rc.local; then
+    echo "[INFO] Agregando bind mount de /tmp a /etc/rc.local para persistencia tras reinicio."
+    sed -i '/^exit 0/i \
+mkdir -p '$SD_TMP'\nchmod 1777 '$SD_TMP'\nmount --bind '$SD_TMP' /tmp\n' /etc/rc.local
+fi
+df -h /tmp
 #!/bin/bash
 # Unified install script for Arduino Yun v2 ecosystem
 # Installs all dependencies, daemon, scripts, configs, Arduino library, and Python client plugin system
@@ -9,6 +31,17 @@
 
 
 set -e
+
+
+# 1. Update and upgrade system
+echo "[CHECKPOINT] Updating package lists..."
+opkg update
+echo "[CHECKPOINT] Upgrading upgradable packages..."
+opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
+
+# Centralizar instalación de paquetes opkg requeridos
+echo "[CHECKPOINT] Installing required opkg packages..."
+opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
 
 # --- SD/Extroot Python venv setup ---
 SD_MOUNT="/mnt/sda1"  # Cambia esto si tu SD está montada en otro lugar
@@ -54,9 +87,6 @@ echo "[CHECKPOINT] Upgrading upgradable packages..."
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
 opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
-
-opkg install python3-uci python3 python3-pyserial mosquitto python3-pip || true
-
 echo "[INFO] Core installation complete."
 echo "[INFO] To install the Web UI (LuCI), follow instructions in /luci-app-yunbridge/README.md."
 

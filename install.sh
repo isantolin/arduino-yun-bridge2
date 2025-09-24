@@ -4,45 +4,20 @@
 
 set -e
 
+SWAPFILE="/overlay/swapfile"
+SWAPSIZE_MB=512
+CORE_IPK="bin/openwrt-yun-core_*.ipk"
+
 echo "[CHECKPOINT] Updating package lists..."
 opkg update
 echo "[CHECKPOINT] Upgrading upgradable packages..."
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 echo "[CHECKPOINT] Installing required opkg packages..."
 # Only minimal system dependencies; all others are declared in each package's Makefile/setup.py
-opkg install python3 python3-pip python3-venv || true
+opkg install python3 python3-pip || true
 echo "[INFO] System Python packages installed."
-
-# --- Instalar paquetes precompilados ---
-echo "[CHECKPOINT] Instalando paquetes .ipk precompilados..."
-echo "[CHECKPOINT] Installing openwrt-yun-core .ipk first..."
-CORE_IPK="bin/openwrt-yun-core_*.ipk"
-for ipk in $CORE_IPK; do
-    if [ -f "$ipk" ]; then
-        echo "[INFO] Installing $ipk ..."
-        opkg install --force-reinstall "$ipk"
-    fi
-done
-
-echo "[CHECKPOINT] Installing remaining .ipk packages..."
-for ipk in bin/*.ipk; do
-    case "$ipk" in
-        bin/openwrt-yun-core_*.ipk) continue;;
-    esac
-    if [ -f "$ipk" ]; then
-        echo "[INFO] Installing $ipk ..."
-        opkg install --force-reinstall "$ipk"
-    fi
-done
-
-
-
-echo "[INFO] Instalación de paquetes precompilados completa."
-echo "[CHECKPOINT] Running system conditioning steps (swap, daemon, Python packages)..."
-
 # --- Swap Setup ---
-SWAPFILE="/overlay/swapfile"
-SWAPSIZE_MB=512
+
 if [ ! -f "$SWAPFILE" ]; then
     echo "[openwrt-yun-core] Creating swap file at $SWAPFILE (${SWAPSIZE_MB}MB) ..."
     if ! dd if=/dev/zero of="$SWAPFILE" bs=1M count=$SWAPSIZE_MB; then
@@ -66,6 +41,32 @@ fi
 if ! grep -q "$SWAPFILE" /etc/fstab; then
     echo "$SWAPFILE none swap sw 0 0" >> /etc/fstab
 fi
+
+# --- Instalar paquetes precompilados ---
+echo "[CHECKPOINT] Instalando paquetes .ipk precompilados..."
+echo "[CHECKPOINT] Installing openwrt-yun-core .ipk first..."
+for ipk in $CORE_IPK; do
+    if [ -f "$ipk" ]; then
+        echo "[INFO] Installing $ipk ..."
+        opkg install --force-reinstall "$ipk"
+    fi
+done
+
+echo "[CHECKPOINT] Installing remaining .ipk packages..."
+for ipk in bin/*.ipk; do
+    case "$ipk" in
+        bin/openwrt-yun-core_*.ipk) continue;;
+    esac
+    if [ -f "$ipk" ]; then
+        echo "[INFO] Installing $ipk ..."
+        opkg install --force-reinstall "$ipk"
+    fi
+done
+
+
+
+echo "[INFO] Instalación de paquetes precompilados completa."
+echo "[CHECKPOINT] Running system conditioning steps (swap, daemon, Python packages)..."
 
 ## Python wheel installation (system Python)
 echo "[openwrt-yun-core] Installing Python .whl packages using system Python..."

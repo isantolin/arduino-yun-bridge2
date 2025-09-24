@@ -17,10 +17,10 @@ if [ "$(uname -s)" = "Linux" ]; then
     if [ -f /etc/debian_version ]; then
     echo "[INFO] Installing packages for Ubuntu/Debian..."
         sudo apt-get update
-        sudo apt-get install -y build-essential python3 python3-pip python3-venv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev zstd wget
+    sudo apt-get install -y build-essential python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev zstd wget
     elif [ -f /etc/fedora-release ]; then
     echo "[INFO] Installing packages for Fedora..."
-        sudo dnf install -y @development-tools python3 python3-pip python3-virtualenv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
+    sudo dnf install -y @development-tools python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
     else
     echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
     fi

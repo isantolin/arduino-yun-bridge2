@@ -1,4 +1,4 @@
-# Makefile para openwrt-yun-bridge (Python daemon)
+# Makefile para openwrt-yun-bridge (Python daemon, system Python only)
 .PHONY: all clean wheel
 
 all: wheel

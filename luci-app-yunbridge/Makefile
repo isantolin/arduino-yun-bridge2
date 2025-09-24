@@ -19,8 +19,8 @@ define Package/$(PKG_NAME)
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
-  TITLE:=LuCI Support for YunBridge
-	DEPENDS:=+luci-base +openwrt-yun-core
+	TITLE:=LuCI Support for YunBridge (system Python only)
+		DEPENDS:=+luci-base +openwrt-yun-core
 endef
 
 

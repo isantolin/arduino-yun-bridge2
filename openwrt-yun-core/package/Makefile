@@ -25,6 +25,8 @@ define Package/$(PKG_NAME)/install
 	[ -f ../scripts/pin_rest_cgi.py ] && $(INSTALL_BIN) ../scripts/pin_rest_cgi.py $(1)/www/cgi-bin/pin || true
 	$(INSTALL_DIR) $(1)/usr/bin
 	[ -d ../scripts ] && for f in ../scripts/*; do $(INSTALL_BIN) $$f $(1)/usr/bin/; done || true
+	$(INSTALL_DIR) $(1)/CONTROL
+	$(INSTALL_BIN) ./postinst $(1)/CONTROL/postinst
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

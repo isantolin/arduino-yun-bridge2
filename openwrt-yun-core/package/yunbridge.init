@@ -11,9 +11,29 @@ STOP=10
 USE_PROCD=1
 
 start_service() {
+    # Check SD mount
+    if ! mountpoint -q /mnt/sda1; then
+        echo "[yunbridge.init] ERROR: SD card not mounted at /mnt/sda1" >&2
+        return 1
+    fi
+    # Check venv directory
+    if [ ! -d /mnt/sda1/pyenv ]; then
+        echo "[yunbridge.init] ERROR: Python venv directory /mnt/sda1/pyenv not found" >&2
+        return 1
+    fi
+    # Check python binary
+    if [ ! -x /mnt/sda1/pyenv/bin/python3 ]; then
+        echo "[yunbridge.init] ERROR: Python binary /mnt/sda1/pyenv/bin/python3 not found or not executable" >&2
+        return 1
+    fi
+    # Check yunbridge entry point
+    if [ ! -x /mnt/sda1/pyenv/bin/yunbridge ]; then
+        echo "[yunbridge.init] ERROR: /mnt/sda1/pyenv/bin/yunbridge not found or not executable" >&2
+        return 1
+    fi
     procd_open_instance
-    # Always use the Python virtual environment on the SD card
-    procd_set_param command /mnt/sda1/pyenv/bin/python3 /usr/bin/yunbridge
+    # Use the setuptools entry point installed in the venv
+    procd_set_param command /mnt/sda1/pyenv/bin/yunbridge
     procd_set_param respawn
     procd_close_instance
 }

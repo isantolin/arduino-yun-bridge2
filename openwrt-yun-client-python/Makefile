@@ -1,4 +1,4 @@
-# Makefile para openwrt-yun-client-python (Python client)
+# Makefile para openwrt-yun-client-python (Python client, system Python only)
 .PHONY: all clean wheel
 
 all: wheel

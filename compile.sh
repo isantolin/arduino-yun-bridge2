@@ -88,7 +88,7 @@ for pkg in luci-app-yunbridge openwrt-yun-core; do
 done
 popd
 
-# 4. Compilar los paquetes Python localmente
+# 4. Compilar los paquetes Python localmente (system Python only)
 for pkg in openwrt-yun-bridge openwrt-yun-client-python; do
     if [ -d "$pkg" ]; then
     echo "[BUILD] Building $pkg (.whl) locally..."

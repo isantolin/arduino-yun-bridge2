@@ -38,7 +38,7 @@ done
 
 
 echo "[INFO] Instalación de paquetes precompilados completa."
-echo "[CHECKPOINT] Running system conditioning steps (swap, venv, daemon)..."
+echo "[CHECKPOINT] Running system conditioning steps (swap, daemon, Python packages)..."
 
 # --- Swap Setup ---
 SWAPFILE="/overlay/swapfile"
@@ -67,8 +67,7 @@ if ! grep -q "$SWAPFILE" /etc/fstab; then
     echo "$SWAPFILE none swap sw 0 0" >> /etc/fstab
 fi
 
-# --- Python venv Setup ---
-# --- Python wheel installation (system Python) ---
+## Python wheel installation (system Python)
 echo "[openwrt-yun-core] Installing Python .whl packages using system Python..."
 for whl in ./*.whl; do
     if [ -f "$whl" ]; then
@@ -88,17 +87,7 @@ else
     echo "[WARNING] yunbridge init script not found at /etc/init.d/yunbridge." >&2
 fi
 
-# --- Install Python wheels into venv ---
-echo "[openwrt-yun-core] Installing Python .whl packages into SD venv..."
-for whl in ./*.whl; do
-    if [ -f "$whl" ]; then
-        echo "[openwrt-yun-core] Installing $whl ..."
-        if ! "$PIP" install --no-cache-dir --force-reinstall "$whl"; then
-            echo "[ERROR] Failed to install $whl in venv." >&2
-            exit 1
-        fi
-    fi
-done
+
 
 echo "- Reboot the Yun if needed."
 echo "- Test MQTT, LuCI WebUI, and integration."

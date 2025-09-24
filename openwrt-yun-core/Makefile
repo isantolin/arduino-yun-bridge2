@@ -33,7 +33,5 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	[ -d ./scripts ] && for f in ./scripts/*; do $(INSTALL_BIN) $$f $(1)/usr/bin/$$f; done || true
 	# Dummy file to force OpenWRT to use custom postinst
-	$(INSTALL_DIR) $(1)/etc
-	echo "yun-core" > $(1)/etc/yun-core-dummy
 endef
 

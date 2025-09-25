@@ -1,3 +1,8 @@
+sns_region = s:option(Value, "sns_region", translate("AWS Region"))
+
+m = Map("yunbridge", translate("YunBridge Configuration"))
+s = m:section(NamedSection, "main", "yunbridge", translate("Main Settings"))
+
 -- Amazon SNS Integration
 sns_enabled = s:option(Flag, "sns_enabled", translate("Enable Amazon SNS"))
 sns_enabled.default = "0"
@@ -111,80 +116,20 @@ debug.default = "1"
 
 
 
--- Google Pub/Sub Integration
-pubsub_enabled = s:option(Flag, "pubsub_enabled", translate("Enable Google Pub/Sub"))
-pubsub_enabled.default = "0"
-
-pubsub_project = s:option(Value, "pubsub_project", translate("Google Cloud Project ID"))
-pubsub_project.placeholder = "your-gcp-project-id"
-pubsub_project.rmempty = false
-function pubsub_project.validate(self, value, section)
-	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
-		return nil, translate("Project ID is required when Pub/Sub is enabled.")
-	end
-	return value
-end
-
-pubsub_topic = s:option(Value, "pubsub_topic", translate("Pub/Sub Topic Name"))
-pubsub_topic.placeholder = "your-topic-name"
-pubsub_topic.rmempty = false
-function pubsub_topic.validate(self, value, section)
-	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
-		return nil, translate("Topic name is required when Pub/Sub is enabled.")
-	end
-	return value
-end
-
-pubsub_subscription = s:option(Value, "pubsub_subscription", translate("Pub/Sub Subscription Name"))
-pubsub_subscription.placeholder = "your-subscription-name"
-pubsub_subscription.rmempty = false
-function pubsub_subscription.validate(self, value, section)
-	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
-		return nil, translate("Subscription name is required when Pub/Sub is enabled.")
-	end
-	return value
-end
-
-pubsub_credentials = s:option(Value, "pubsub_credentials", translate("Service Account Credentials Path"))
-pubsub_credentials.placeholder = "/etc/yunbridge/gcp-service-account.json"
-pubsub_credentials.rmempty = false
-function pubsub_credentials.validate(self, value, section)
-	if pubsub_enabled:formvalue(section) == "1" and (not value or #value == 0) then
-		return nil, translate("Credentials path is required when Pub/Sub is enabled.")
-	end
-	if value and #value > 0 and not value:match("%.json$") then
-		return nil, translate("Credentials file must be a .json file.")
-	end
-	return value
-end
-
 -- Exclusividad de sistemas de mensajería
 function update_backend_exclusivity(section)
-	local pubsub = pubsub_enabled:formvalue(section) == "1"
 	local sns = sns_enabled:formvalue(section) == "1"
 	local mqtt = (host:formvalue(section) or "") ~= ""
 
 	-- Deshabilitar dinámicamente los otros backends si uno está activo
-	if pubsub then
-		sns_enabled.readonly = true
+	if sns then
 		host.readonly = true
-		sns_enabled.description = translate("Disabled: Pub/Sub is active")
-		host.description = translate("Disabled: Pub/Sub is active")
-	elseif sns then
-		pubsub_enabled.readonly = true
-		host.readonly = true
-		pubsub_enabled.description = translate("Disabled: SNS is active")
 		host.description = translate("Disabled: SNS is active")
 	elseif mqtt then
-		pubsub_enabled.readonly = true
 		sns_enabled.readonly = true
-		pubsub_enabled.description = translate("Disabled: MQTT is active")
 		sns_enabled.description = translate("Disabled: MQTT is active")
 	else
-		pubsub_enabled.readonly = false
-		sns_enabled.readonly = false
 		host.readonly = false
-		pubsub_enabled.description = nil
 		sns_enabled.description = nil
 		host.description = nil
 	end
@@ -199,11 +144,9 @@ end
 -- Validación cruzada al guardar
 function m.on_commit(self)
 	local section = "main"
-	local pubsub = pubsub_enabled:formvalue(section) == "1"
 	local sns = sns_enabled:formvalue(section) == "1"
 	local mqtt = (host:formvalue(section) or "") ~= ""
 	local count = 0
-	if pubsub then count = count + 1 end
 	if sns then count = count + 1 end
 	if mqtt then count = count + 1 end
 	if count > 1 then

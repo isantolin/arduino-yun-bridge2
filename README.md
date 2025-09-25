@@ -118,7 +118,6 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
   - `disconnect()`
 - Plugins available:
   - `mqtt_plugin.py` (MQTT via paho-mqtt)
-  # - `pubsub_plugin.py` (Google Pub/Sub) [REMOVED]
   - `sns_plugin.py` (Amazon SNS)
 - New messaging systems can be added as plugins by following the same interface.
 
@@ -134,7 +133,6 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
 
 ```sh
 python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
-# python3 openwrt-yun-client-python/led13_test.py pubsub_plugin  # (Pub/Sub is not supported)
 python3 openwrt-yun-client-python/led13_test.py sns_plugin
 ```
 
@@ -186,7 +184,6 @@ openwrt-yun-client-python/
     plugin_base.py
     plugin_loader.py
     mqtt_plugin.py
-    pubsub_plugin.py
     sns_plugin.py
 ```
 
@@ -259,10 +256,6 @@ You can use MQTT and SNS al mismo tiempo. Esto permite integración local y en l
 
 The daemon supports Google Pub/Sub in addition to MQTT. You can enable Pub/Sub messaging for cloud integration and hybrid workflows.
 
-**Requirements:**
-- Python package: `google-cloud-pubsub` (install with `pip install google-cloud-pubsub`)
-- Google Cloud project and Pub/Sub topics/subscriptions
-- Service account credentials JSON file
 
 **Configuration via LuCI Web UI:**
 You can configure all Pub/Sub options directly from the YunBridge LuCI interface:
@@ -276,15 +269,7 @@ You can configure all Pub/Sub options directly from the YunBridge LuCI interface
 All fields are validated and translated (English/Spanish). If Pub/Sub is enabled, all required fields must be set and the credentials file must end in `.json`.
 
 **UCI Configuration Example (manual):**
-```sh
-uci set yunbridge.main.pubsub_enabled='1'  # 1 to enable Pub/Sub, 0 to disable
-uci set yunbridge.main.pubsub_project='your-gcp-project-id'
-uci set yunbridge.main.pubsub_topic='your-topic-name'
-uci set yunbridge.main.pubsub_subscription='your-subscription-name'
-uci set yunbridge.main.pubsub_credentials='/etc/yunbridge/gcp-service-account.json'
-uci commit yunbridge
-/etc/init.d/yunbridge restart
-```
+
 
 **How it works:**
 - When enabled, the daemon will publish and subscribe to both MQTT and Pub/Sub topics.
@@ -456,8 +441,8 @@ The repository is now organized into the following main components:
 
 **Explanation:**
 - **Python Client Scripts (Plugin System):** All example scripts use a modular plugin system. You can select MQTT, Pub/Sub, or SNS by changing a single line or argument. New plugins can be added for other messaging systems.
-- **MQTT/Google PubSub/Amazon SNS Plugins:** Each plugin implements a common interface and handles connection, publish, and subscribe logic for its backend.
-- **MQTT Broker / Pub/Sub / SNS:** All three messaging systems can be used in parallel. The daemon routes messages between them and the hardware/software components.
+- **MQTT/Amazon SNS Plugins:** Each plugin implements a common interface and handles connection, publish, and subscribe logic for its backend.
+- **MQTT Broker / SNS:** All three messaging systems can be used in parallel. The daemon routes messages between them and the hardware/software components.
 - **YunBridge Daemon:** Subscribes to relevant topics on all enabled systems, translates messages to serial commands for the Arduino, and publishes state or responses back to all systems. Also reads/writes configuration via UCI.
 - **Arduino Sketch/Library:** Receives serial commands from the daemon, controls hardware pins, and sends state or mailbox messages back via serial. These are then published to all enabled messaging systems by the daemon.
 - **Web UI (LuCI):** Provides a real-time interface for users. It interacts with the daemon (status, logs, config) and can also act as a messaging client for live pin control and monitoring.

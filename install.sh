@@ -14,7 +14,7 @@ echo "[CHECKPOINT] Upgrading upgradable packages..."
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 echo "[CHECKPOINT] Installing required opkg packages..."
 # Only minimal system dependencies; all others are declared in each package's Makefile/setup.py
-opkg install python3 python3-pip || true
+opkg install python3 python3-pip luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json|| true
 echo "[INFO] System Python packages installed."
 # --- Swap Setup ---
 

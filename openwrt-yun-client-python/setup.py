@@ -11,7 +11,6 @@ setup(
     install_requires=[
         'paho-mqtt',
         'boto3',
-    # Pub/Sub (google-cloud-pubsub) and grpcio are not supported on OpenWRT Yun. All related code has been removed.
     ],
     entry_points={
         'console_scripts': [

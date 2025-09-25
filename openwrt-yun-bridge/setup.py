@@ -12,7 +12,7 @@ setup(
         'pyserial',
         'paho-mqtt',
         'boto3',
-        # 'google-cloud-pubsub' and 'grpcio' removed: Pub/Sub not supported on OpenWRT Yun
+    # Pub/Sub (google-cloud-pubsub) and grpcio are not supported on OpenWRT Yun. All related code has been removed.
     ],
     entry_points={
         'console_scripts': [

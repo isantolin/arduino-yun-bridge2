@@ -1,19 +1,19 @@
 """
 MQTT Messaging Plugin for YunBridge Client
-Mejoras: logging rotativo, validación de configuración, manejo robusto de errores.
+Improvements: rotating logging, configuration validation, robust error handling.
 """
 import paho.mqtt.client as mqtt
 from .plugin_base import MessagingPluginBase
 import logging
 from logging.handlers import RotatingFileHandler
 
-# Configuración de logging rotativo global para el plugin
+ # Global rotating logging configuration for the plugin
 LOG_PATH = '/tmp/yunbridge_mqtt_plugin.log'
 handler = RotatingFileHandler(LOG_PATH, maxBytes=1000000, backupCount=3)
 formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
 handler.setFormatter(formatter)
 logger = logging.getLogger("yunbridge.mqtt_plugin")
-logger.setLevel(logging.INFO)  # Cambia a DEBUG para más detalle
+logger.setLevel(logging.INFO)  # Change to DEBUG for more detail
 if not logger.hasHandlers():
     logger.addHandler(handler)
 
@@ -57,8 +57,8 @@ class MQTTPlugin(MessagingPluginBase):
 
     def subscribe(self, topic, callback):
         if not topic or not callable(callback):
-            logger.error("MQTT subscribe: topic y callback válidos requeridos")
-            raise ValueError("MQTT subscribe: topic y callback válidos requeridos")
+            logger.error("MQTT subscribe: valid topic and callback required")
+            raise ValueError("MQTT subscribe: valid topic and callback required")
         def on_message(client, userdata, msg):
             try:
                 callback(msg.topic, msg.payload.decode())

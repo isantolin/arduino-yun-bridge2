@@ -1,6 +1,3 @@
-
-
-
 # Arduino Yun v2 Ecosystem Roadmap
 
 The roadmap is divided into two parts: Core (openwrt-yun-core) and Web UI (luci-app-yunbridge).
@@ -20,7 +17,7 @@ The roadmap is divided into two parts: Core (openwrt-yun-core) and Web UI (luci-
 - Rotating log files and configurable log levels in all Python components
 - Strict configuration validation in daemon and plugins
 - Error handling and reporting improvements across all scripts
-- Python dependencies installed system-wide (no venv)
+- Python dependencies installed system-wide
 
 ---
 

@@ -1,6 +1,6 @@
 """
 Amazon SNS Messaging Plugin for YunBridge Client
-Mejoras: logging rotativo, validación de configuración, manejo robusto de errores.
+Improvements: rotating logging, configuration validation, robust error handling.
 """
 from .plugin_base import MessagingPluginBase
 import logging
@@ -11,7 +11,7 @@ handler = RotatingFileHandler(LOG_PATH, maxBytes=1000000, backupCount=3)
 formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
 handler.setFormatter(formatter)
 logger = logging.getLogger("yunbridge.sns_plugin")
-logger.setLevel(logging.INFO)  # Cambia a DEBUG para más detalle
+logger.setLevel(logging.INFO)  # Change to DEBUG for more detail
 if not logger.hasHandlers():
     logger.addHandler(handler)
 
@@ -41,8 +41,8 @@ class SNSPlugin(MessagingPluginBase):
 
     def publish(self, topic, message):
         if not (topic or self.topic_arn) or message is None:
-            logger.error("SNS publish: topic/arn y message requeridos")
-            raise ValueError("SNS publish: topic/arn y message requeridos")
+            logger.error("SNS publish: topic/arn and message required")
+            raise ValueError("SNS publish: topic/arn and message required")
         if self.client is None:
             raise RuntimeError("SNS client is not connected. Call connect() before publish().")
         try:
@@ -57,8 +57,8 @@ class SNSPlugin(MessagingPluginBase):
 
     def subscribe(self, topic, callback):
         if not topic or not callable(callback):
-            logger.error("SNS subscribe: topic y callback válidos requeridos")
-            raise ValueError("SNS subscribe: topic y callback válidos requeridos")
+            logger.error("SNS subscribe: valid topic and callback required")
+            raise ValueError("SNS subscribe: valid topic and callback required")
         # SNS does not support direct subscribe/receive in client; use SQS or Lambda integration
         logger.warning("SNS subscribe not supported in client. Use SQS or Lambda.")
         raise NotImplementedError("SNS subscribe not supported in client. Use SQS or Lambda.")

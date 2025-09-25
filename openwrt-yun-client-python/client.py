@@ -1,9 +1,11 @@
 """
-Módulo principal para openwrt-yun-client-python.
+Main module for openwrt-yun-client-python.
 """
 
 def main():
-    print("openwrt-yun-client-python instalado correctamente.")
+    print("openwrt-yun-client-python installed successfully.")
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()

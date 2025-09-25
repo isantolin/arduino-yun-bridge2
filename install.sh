@@ -58,8 +58,8 @@ if ! grep -q "$SWAPFILE" /etc/fstab; then
     echo "$SWAPFILE none swap sw 0 0" >> /etc/fstab
 fi
 
-# --- Instalar paquetes precompilados ---
-echo "[CHECKPOINT] Instalando paquetes .ipk precompilados..."
+# --- Install prebuilt packages ---
+echo "[CHECKPOINT] Installing prebuilt .ipk packages..."
 echo "[CHECKPOINT] Installing openwrt-yun-core .ipk first..."
 for ipk in $CORE_IPK; do
     if [ -f "$ipk" ]; then
@@ -80,12 +80,11 @@ for ipk in bin/*.ipk; do
 done
 
 
-
-echo "[INFO] Instalación de paquetes precompilados completa."
+echo "[INFO] Prebuilt package installation complete."
 echo "[CHECKPOINT] Running system conditioning steps (swap, daemon, Python packages)..."
 
 ## Python wheel installation (system Python)
-# NOTA: Solo se deben instalar .whl precompilados. Nunca intentes compilar paquetes Python en OpenWRT.
+# NOTE: Only prebuilt .whl files should be installed. Never attempt to build Python packages on OpenWRT.
 echo "[openwrt-yun-core] Installing Python .whl packages using system Python..."
 # Ensure a large enough temp dir for pip
 export TMPDIR=/overlay/upper/tmp
@@ -112,5 +111,4 @@ fi
 
 echo "- Reboot the Yun if needed."
 echo "- Test MQTT, LuCI WebUI, and integration."
-echo "- For Google Pub/Sub support, ensure you have a valid service account .json file and configure Pub/Sub options in LuCI."
 echo "- For Amazon SNS support, ensure you have your AWS credentials and SNS topic ARN, and configure SNS options in LuCI."

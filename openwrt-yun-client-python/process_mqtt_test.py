@@ -21,10 +21,7 @@ plugin = PluginClass(**MQTT_CONFIG)
 # PluginClass = PluginLoader.load_plugin('sns_plugin')
 # plugin = PluginClass(**SNS_CONFIG)
 
-# Example: PubSub plugin (uncomment to use)
-# PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
-# PluginClass = PluginLoader.load_plugin('pubsub_plugin')
-# plugin = PluginClass(**PUBSUB_CONFIG)
+
 
 plugin.connect()
 print("Running process via MQTT...")

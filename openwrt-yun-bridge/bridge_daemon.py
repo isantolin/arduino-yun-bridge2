@@ -22,7 +22,7 @@ from logging.handlers import RotatingFileHandler
 # Third-party imports
 import serial
 import paho.mqtt.client as mqtt
-pubsub_v1 = None  # Pub/Sub support removed for OpenWRT Yun
+# Pub/Sub support fully removed for OpenWRT Yun
 
 # Try to import CallbackAPIVersion (for newer paho-mqtt), else set to None
 try:
@@ -113,8 +113,7 @@ DEFAULTS = {
     'serial_port': '/dev/ttyATH0',
     'serial_baud': 115200,
     'debug': 0,
-    # Pub/Sub options
-    # Pub/Sub options removed: not supported on OpenWRT Yun
+    # Pub/Sub options fully removed: not supported on OpenWRT Yun
     # Amazon SNS options
     'sns_enabled': 0,
     'sns_region': '',
@@ -165,17 +164,13 @@ def validate_config(cfg):
             raise ValueError(f"Config error: '{key}' is required and missing or empty.")
     if cfg.get('mqtt_tls') and not cfg.get('mqtt_cafile'):
         raise ValueError("Config error: mqtt_tls enabled but mqtt_cafile not set.")
-    # Permitir solo un sistema de mensajería activo a la vez
+    # Only one messaging backend can be enabled at a time (MQTT or SNS)
     enabled = [
-    # Pub/Sub not supported
         bool(int(cfg.get('sns_enabled', 0))),
         True  # MQTT is always considered enabled if not disabled explicitly
     ]
-    enabled_count = int(cfg.get('sns_enabled', 0))
-    # Si pubsub o sns están activos, MQTT debe estar deshabilitado (por convención mqtt_host = '')
     if int(cfg.get('sns_enabled', 0)) + (1 if cfg.get('mqtt_host') else 0) > 1:
         raise ValueError("Config error: Only one messaging backend can be enabled at a time (MQTT or SNS). Please disable the other.")
-    # Pub/Sub config check removed
     if cfg.get('sns_enabled'):
         for k in ['sns_region', 'sns_topic_arn', 'sns_access_key', 'sns_secret_key']:
             if not cfg.get(k):
@@ -454,13 +449,12 @@ class BridgeDaemon:
             try:
                 self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
             except Exception as e:
-                debug_log(f'[FATAL] Could not connect to MQTT broker: {e}')
+                debug_log(f'[FATAL] Could not connect to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}: {e}')
                 self.write_status('error', f'MQTT connect failed: {e}')
                 return
             mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             mqtt_thread.start()
-            # Start Pub/Sub listener if enabled
-            self.start_pubsub()
+            # Pub/Sub support fully removed
             debug_log("[DEBUG] MQTT thread started")
             self.write_status('running')
             while self.running:

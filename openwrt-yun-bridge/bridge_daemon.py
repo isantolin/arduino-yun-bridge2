@@ -39,8 +39,10 @@ except ImportError:
 # Async logging globals
 _log_buffer = []
 _LOG_FILE = '/tmp/yunbridge_debug.log'
-# Buffer size: configurable via env, default 50
+# Buffer size: configurable via env, default 50. If debug is enabled, force buffer size 1 for immediate log flush.
 _LOG_BUFFER_SIZE = int(os.environ.get('YUNBRIDGE_LOG_BUFFER_SIZE', '50'))
+if os.environ.get('YUNBRIDGE_DEBUG', '0') == '1' or os.environ.get('DEBUG', '0') == '1':
+    _LOG_BUFFER_SIZE = 1
 
 # Async logging queue and thread
 _log_queue = queue.Queue()
@@ -125,12 +127,12 @@ DEFAULTS = {
 
 
 def get_uci_config():
-    """Read configuration from UCI using subprocess (robust for OpenWRT)."""
     import subprocess
     cfg = DEFAULTS.copy()
     try:
-        # Get all options in the 'main' section of 'yunbridge'
+        debug_log('[AUDIT] get_uci_config() called')
         result = subprocess.run(['uci', 'show', 'yunbridge'], capture_output=True, text=True, check=True)
+        debug_log(f'[AUDIT] uci show yunbridge output: {result.stdout}')
         for line in result.stdout.splitlines():
             # Example: yunbridge.main.mqtt_host='127.0.0.1'
             parts = line.strip().split('=', 1)
@@ -151,8 +153,9 @@ def get_uci_config():
                     except Exception:
                         value = DEFAULTS[option]
                 cfg[option] = value
+        debug_log(f'[AUDIT] get_uci_config() loaded: {cfg}')
     except Exception as e:
-        print(f'[WARN] Error reading UCI configuration: {e}')
+        debug_log(f'[AUDIT] Error reading UCI configuration: {e}')
     return cfg
 
 def validate_config(cfg):

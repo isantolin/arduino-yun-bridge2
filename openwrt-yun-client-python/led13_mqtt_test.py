@@ -24,7 +24,7 @@ TOPIC_STATE = f'yun/pin/{PIN}/state'
 
 
 # Example: MQTT plugin (default)
-MQTT_CONFIG = dict(host='localhost', port=1883)
+MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 PluginClass = PluginLoader.load_plugin('mqtt_plugin')
 plugin = PluginClass(**MQTT_CONFIG)
 

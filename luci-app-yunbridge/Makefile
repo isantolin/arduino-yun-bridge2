@@ -26,10 +26,16 @@ endef
 
 
 define Package/$(PKG_NAME)/install
-	$(INSTALL_DIR) $(1)/usr/lib/lua
+	# LuCI controller, model, and view files to correct subdirs
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/controller
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/model/cbi
+	$(INSTALL_DIR) $(1)/usr/lib/lua/luci/view/yunbridge
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_DIR) $(1)/www
-	$(CP) -r ./luasrc/* $(1)/usr/lib/lua/
+	$(CP) ./luasrc/controller/yunbridge.lua $(1)/usr/lib/lua/luci/controller/
+	$(CP) ./luasrc/model/cbi/yunbridge.lua $(1)/usr/lib/lua/luci/model/cbi/
+	$(CP) ./luasrc/view/yunbridge/status.htm $(1)/usr/lib/lua/luci/view/yunbridge/
+	$(CP) ./luasrc/view/yunbridge/webui.htm $(1)/usr/lib/lua/luci/view/yunbridge/
 	$(CP) -r ./root/etc/config/yunbridge $(1)/etc/config/
 	[ -d ./root/www/yunbridge ] && $(CP) -r ./root/www/yunbridge $(1)/www/ || true
 endef

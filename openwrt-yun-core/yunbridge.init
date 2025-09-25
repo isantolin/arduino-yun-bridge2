@@ -17,8 +17,10 @@ start_service() {
     procd_close_instance
 }
 
+
 stop_service() {
-    killall yunbridge 2>/dev/null || true
+    # Kill all running yunbridge daemons (even if started manually)
+    pkill -f '/usr/bin/python3 /usr/bin/yunbridge' 2>/dev/null || true
 }
 
 restart_service() {

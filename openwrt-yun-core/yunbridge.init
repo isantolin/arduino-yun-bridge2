@@ -2,8 +2,7 @@
 # YunBridge Daemon Init Script
 # Adapted from bridge-v2.init
 #
-# NOTE: The daemon is always started using the Python virtual environment on the SD card (/mnt/sda1/pyenv).
-#       If the SD card is missing or the venv is not present, the daemon will not start.
+# NOTE: The daemon is started using the system Python. No virtual environment is required.
 
 START=99
 STOP=10
@@ -12,8 +11,8 @@ USE_PROCD=1
 
 start_service() {
     procd_open_instance
-    # Always use the Python virtual environment on the SD card
-    procd_set_param command /usr/bin/python /usr/bin/yunbridge
+    # Use system Python
+    procd_set_param command /usr/bin/python3 /usr/bin/yunbridge
     procd_set_param respawn
     procd_close_instance
 }

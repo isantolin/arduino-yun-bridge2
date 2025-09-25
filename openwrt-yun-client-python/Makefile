@@ -3,8 +3,9 @@
 
 all: wheel
 
+
 clean:
-	rm -rf dist build *.egg-info bin
+	rm -rf dist build *.egg-info bin yunbridge_client/pubsub_plugin.py
 
 wheel:
 	@echo "[WHEEL] Compilando openwrt-yun-client-python (.whl)"

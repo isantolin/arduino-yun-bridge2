@@ -15,14 +15,16 @@ BIN_DIR="bin"
 echo "[INFO] Installing build dependencies required for OpenWRT SDK (development PC only)"
 if [ "$(uname -s)" = "Linux" ]; then
     if [ -f /etc/debian_version ]; then
-    echo "[INFO] Installing packages for Ubuntu/Debian..."
+        echo "[INFO] Installing packages for Ubuntu/Debian..."
         sudo apt-get update
-    sudo apt-get install -y build-essential python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev zstd wget
+        sudo apt-get install -y build-essential python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev zstd wget
     elif [ -f /etc/fedora-release ]; then
-    echo "[INFO] Installing packages for Fedora..."
-    sudo dnf install -y @development-tools python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
+        echo "[INFO] Installing packages for Fedora..."
+        sudo dnf clean all
+        sudo dnf update
+        sudo dnf install -y @development-tools python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
     else
-    echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
+        echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
     fi
 else
     echo "[WARN] Operating system not supported for automatic dependency installation."
@@ -62,18 +64,25 @@ if [ ! -d "$SDK_DIR" ]; then
 fi
 
 # 2. Copy OpenWRT packages to buildroot/SDK (after feeds are updated and luci-base is installed)
+
+# Always copy latest package sources into SDK/package (prevents stale/missing package errors)
+
+# Always copy latest package sources into SDK/package (prevents stale/missing package errors)
 for pkg in luci-app-yunbridge openwrt-yun-core; do
     if [ -d "$pkg" ]; then
-        echo "[INFO] Copying $pkg to SDK..."
+        echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
-        # Only copy the root package directory, not internal subdirectories like package/
-        cp -r "$pkg" "$SDK_DIR/package/$pkg"
-        # Remove if package/package was accidentally copied
-        rm -rf "$SDK_DIR/package/$pkg/package"
+        cp -r "$pkg" "$SDK_DIR/package/"
     else
         echo "[WARN] Package $pkg not found."
     fi
 done
+
+# Ensure OpenWRT SDK detects new packages (refresh package index)
+pushd "$SDK_DIR"
+echo "[INFO] Running make defconfig to refresh package index..."
+make defconfig
+popd
 
 # 3. Compilar los paquetes OpenWRT en el SDK
 pushd "$SDK_DIR"
@@ -88,16 +97,21 @@ for pkg in luci-app-yunbridge openwrt-yun-core; do
 done
 popd
 
+
+
 # 4. Compilar los paquetes Python localmente (system Python only)
+# IMPORTANTE: Todos los .whl deben ser generados en la PC de desarrollo, nunca en el dispositivo OpenWRT.
+# Si una dependencia no tiene .whl precompilado para tu arquitectura, pip intentará compilarla en el dispositivo y fallará.
 for pkg in openwrt-yun-bridge openwrt-yun-client-python; do
     if [ -d "$pkg" ]; then
-    echo "[BUILD] Building $pkg (.whl) locally..."
+        echo "[BUILD] Building $pkg (.whl) locally..."
         (cd "$pkg" && make clean && make wheel)
         cp "$pkg"/bin/*.whl "$BIN_DIR/" 2>/dev/null || true
     else
-    echo "[WARN] Package $pkg not found."
+        echo "[WARN] Package $pkg not found."
     fi
 done
+
 
 echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."
 

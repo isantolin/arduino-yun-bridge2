@@ -9,7 +9,9 @@ setup(
     packages=['yunbridge_client'],
     py_modules=['client'],
     install_requires=[
-        # Ejemplo: 'paho-mqtt', 'google-cloud-pubsub', 'boto3'
+        'paho-mqtt',
+        'boto3',
+        # 'google-cloud-pubsub' and 'grpcio' removed: Pub/Sub not supported on OpenWRT Yun
     ],
     entry_points={
         'console_scripts': [

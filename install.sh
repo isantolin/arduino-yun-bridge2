@@ -5,7 +5,7 @@
 set -e
 
 SWAPFILE="/overlay/swapfile"
-SWAPSIZE_MB=512
+SWAPSIZE_MB=1024
 CORE_IPK="bin/openwrt-yun-core_*.ipk"
 
 echo "[CHECKPOINT] Updating package lists..."
@@ -18,6 +18,7 @@ opkg install python3 python3-pip || true
 echo "[INFO] System Python packages installed."
 # --- Swap Setup ---
 
+# Swap logic: only create if not present, never delete if exists
 if [ ! -f "$SWAPFILE" ]; then
     echo "[openwrt-yun-core] Creating swap file at $SWAPFILE (${SWAPSIZE_MB}MB) ..."
     if ! dd if=/dev/zero of="$SWAPFILE" bs=1M count=$SWAPSIZE_MB; then
@@ -33,8 +34,23 @@ fi
 if ! swapon -s | grep -q "$SWAPFILE"; then
     echo "[openwrt-yun-core] Activating swap file $SWAPFILE ..."
     if ! swapon "$SWAPFILE"; then
-        echo "[ERROR] Failed to activate swap file." >&2
-        exit 1
+        echo "[WARN] Failed to activate swap file. Attempting to recreate..."
+        swapoff "$SWAPFILE" 2>/dev/null || true
+        rm -f "$SWAPFILE"
+        echo "[openwrt-yun-core] Recreating swap file at $SWAPFILE (${SWAPSIZE_MB}MB) ..."
+        if ! dd if=/dev/zero of="$SWAPFILE" bs=1M count=$SWAPSIZE_MB; then
+            echo "[ERROR] Failed to create swap file." >&2
+            exit 1
+        fi
+        if ! mkswap "$SWAPFILE"; then
+            echo "[ERROR] Failed to format swap file." >&2
+            exit 1
+        fi
+        chmod 600 "$SWAPFILE"
+        if ! swapon "$SWAPFILE"; then
+            echo "[ERROR] Failed to activate swap file after recreation." >&2
+            exit 1
+        fi
     fi
 fi
 # Ensure swap is enabled on boot
@@ -69,11 +85,15 @@ echo "[INFO] Instalación de paquetes precompilados completa."
 echo "[CHECKPOINT] Running system conditioning steps (swap, daemon, Python packages)..."
 
 ## Python wheel installation (system Python)
+# NOTA: Solo se deben instalar .whl precompilados. Nunca intentes compilar paquetes Python en OpenWRT.
 echo "[openwrt-yun-core] Installing Python .whl packages using system Python..."
-for whl in ./*.whl; do
+# Ensure a large enough temp dir for pip
+export TMPDIR=/overlay/upper/tmp
+mkdir -p "$TMPDIR"
+for whl in bin/*.whl; do
     if [ -f "$whl" ]; then
         echo "[openwrt-yun-core] Installing $whl ..."
-        if ! pip3 install --upgrade "$whl"; then
+        if ! pip3 install --upgrade --force-reinstall "$whl"; then
             echo "[ERROR] Failed to install $whl" >&2
             exit 1
         fi

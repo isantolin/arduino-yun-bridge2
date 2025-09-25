@@ -120,13 +120,13 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
   - `disconnect()`
 - Plugins available:
   - `mqtt_plugin.py` (MQTT via paho-mqtt)
-  - `pubsub_plugin.py` (Google Pub/Sub)
+  # - `pubsub_plugin.py` (Google Pub/Sub) [REMOVED: Pub/Sub not supported on OpenWRT Yun]
   - `sns_plugin.py` (Amazon SNS)
 - New messaging systems can be added as plugins by following the same interface.
 
 ### Example Scripts
 
-- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `pubsub_plugin`, `sns_plugin`).
+- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `sns_plugin`).
 - `all_features_test.py`: Demonstrates all YunBridge features using the plugin system (MQTT backend by default).
 - `*_mqtt_test.py`: Legacy examples, now refactored to use the plugin system (MQTT only, but can be switched as shown below).
 
@@ -136,15 +136,15 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
 
 ```sh
 python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
-python3 openwrt-yun-client-python/led13_test.py pubsub_plugin
+# python3 openwrt-yun-client-python/led13_test.py pubsub_plugin  # [REMOVED: Pub/Sub not supported]
 python3 openwrt-yun-client-python/led13_test.py sns_plugin
 ```
 
 Edit the config dictionary in `led13_test.py` for your broker/service details.
 
-#### Using SNS and PubSub Plugins in Examples
+#### Using SNS Plugin in Examples
 
-All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS or PubSub by uncommenting the relevant code blocks:
+All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS by uncommenting the relevant code blocks:
 
 ```python
 # Example: SNS plugin (uncomment to use)
@@ -154,13 +154,10 @@ plugin = PluginClass(**SNS_CONFIG)
 ```
 
 ```python
-# Example: PubSub plugin (uncomment to use)
-PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
-PluginClass = PluginLoader.load_plugin('pubsub_plugin')
-plugin = PluginClass(**PUBSUB_CONFIG)
+# Pub/Sub plugin example removed: not supported on OpenWRT Yun
 ```
 
-Just comment out the MQTT section and uncomment the SNS or PubSub section as needed. Make sure to fill in your credentials and topic details.
+Just comment out the MQTT section and uncomment the SNS section as needed. Make sure to fill in your credentials and topic details.
 
 #### All Features Example
 
@@ -178,7 +175,7 @@ python3 openwrt-yun-client-python/all_features_test.py
 
 - Python 3.7+
 - Install dependencies as needed:
-  - `pip install paho-mqtt google-cloud-pubsub boto3`
+  - `pip install paho-mqtt boto3`  # Pub/Sub dependencies removed
 
 #### Directory Structure
 
@@ -191,7 +188,7 @@ openwrt-yun-client-python/
     plugin_base.py
     plugin_loader.py
     mqtt_plugin.py
-    pubsub_plugin.py
+  # pubsub_plugin.py [REMOVED]
     sns_plugin.py
 ```
 
@@ -208,7 +205,7 @@ The `plugins/` directory contains example community plugins. These are independe
 - **OpenWRT 24.x** (latest, mandatory)
 - **Arduino Yun v2**
 - **microSD card (extroot, swap enabled)**
-- **Python 3.11+** (runs in venv on SD card)
+- **Python 3.11+** (system Python)
 - **External MQTT broker recommended** (see below)
 
 ---
@@ -216,7 +213,7 @@ The `plugins/` directory contains example community plugins. These are independe
 ## FAQ & Troubleshooting
 
 - All logs and /tmp are stored on the SD card (see `/mnt/sda1/tmp` and `/mnt/sda1/pyenv`)
-- The Python venv is created and managed by the OpenWRT package postinst
+- Python packages are installed system-wide using pip
 - The installer (`install.sh`) only installs pre-built packages; all build logic is local to each package
 - For rollback testing, add `false` after a checkpoint in `install.sh` and verify cleanup
 - For MQTT, use an external broker (not installed on Yun by default)
@@ -232,12 +229,12 @@ Before building or compiling any package on your local computer, you must instal
 **Debian/Ubuntu:**
 ```sh
 sudo apt update
-sudo apt install build-essential python3 python3-pip python3-venv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils
+sudo apt install build-essential python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils
 ```
 
 **Fedora:**
 ```sh
-sudo dnf install @development-tools python3 python3-pip python3-virtualenv python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils
+sudo dnf install @development-tools python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils
 ```
 
 These packages are required to build .ipk and .whl artifacts, run the compile.sh script, and use the Python virtual environment locally.
@@ -290,13 +287,13 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
   - `disconnect()`
 - Plugins available:
   - `mqtt_plugin.py` (MQTT via paho-mqtt)
-  - `pubsub_plugin.py` (Google Pub/Sub)
+  # - `pubsub_plugin.py` (Google Pub/Sub) [REMOVED]
   - `sns_plugin.py` (Amazon SNS)
 - New messaging systems can be added as plugins by following the same interface.
 
 ### Example Scripts
 
-- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `pubsub_plugin`, `sns_plugin`).
+- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `sns_plugin`).
 - `all_features_test.py`: Demonstrates all YunBridge features using the plugin system (MQTT backend by default).
 - `*_mqtt_test.py`: Legacy examples, now refactored to use the plugin system (MQTT only, but can be switched as shown below).
 
@@ -306,15 +303,15 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
 
 ```sh
 python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
-python3 openwrt-yun-client-python/led13_test.py pubsub_plugin
+# python3 openwrt-yun-client-python/led13_test.py pubsub_plugin  # [REMOVED: Pub/Sub not supported]
 python3 openwrt-yun-client-python/led13_test.py sns_plugin
 ```
 
 Edit the config dictionary in `led13_test.py` for your broker/service details.
 
-#### Using SNS and PubSub Plugins in Examples
+#### Using SNS Plugin in Examples
 
-All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS or PubSub by uncommenting the relevant code blocks:
+All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS by uncommenting the relevant code blocks:
 
 ```python
 # Example: SNS plugin (uncomment to use)
@@ -324,13 +321,10 @@ plugin = PluginClass(**SNS_CONFIG)
 ```
 
 ```python
-# Example: PubSub plugin (uncomment to use)
-PUBSUB_CONFIG = dict(project_id='your-gcp-project', topic_name='your-topic', subscription_name='your-sub', credentials_path='/path/to/creds.json')
-PluginClass = PluginLoader.load_plugin('pubsub_plugin')
-plugin = PluginClass(**PUBSUB_CONFIG)
+# Pub/Sub plugin example removed: not supported on OpenWRT Yun
 ```
 
-Just comment out the MQTT section and uncomment the SNS or PubSub section as needed. Make sure to fill in your credentials and topic details.
+Just comment out the MQTT section and uncomment the SNS section as needed. Make sure to fill in your credentials and topic details.
 
 #### All Features Example
 
@@ -887,8 +881,8 @@ df -h /tmp
 If you see that `/tmp` points to the SD card, the optimization is active.
 
 > **Note:**
-> - Both the `/tmp` directory and the Python virtual environment are automatically set up to use the SD card on every boot.
-> - The YunBridge daemon always runs inside this SD-based virtual environment, so all Python dependencies and temporary/log files are stored on the SD, not in internal flash or RAM.
+> - The `/tmp` directory is automatically set up to use the SD card on every boot.
+> - The YunBridge daemon and all Python dependencies are installed system-wide, with logs and temporary files stored on the SD card.
 > - This ensures maximum reliability and prevents storage issues, but requires the SD card to always be present and mounted at boot.
 
 ## Using an External MQTT Broker

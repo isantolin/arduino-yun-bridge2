@@ -32,7 +32,6 @@ fi
 echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
-LUCIFEED_LINE="src-git luci git://github.com/openwrt/luci.git"
 # 1. Download and extract the buildroot/SDK if it does not exist, with retry logic for data corruption
 if [ ! -d "$SDK_DIR" ]; then
     MAX_RETRIES=5

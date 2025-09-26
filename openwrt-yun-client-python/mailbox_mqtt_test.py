@@ -1,42 +1,42 @@
 
-
-
 #!/usr/bin/env python3
 """
-Example: Test mailbox using the YunBridge plugin system (MQTT backend)
-Publishes messages to yun/mailbox/send and listens for responses on yun/mailbox/recv
-Usage:
-    python3 mailbox_mqtt_test.py
-    # Or use led13_test.py for unified plugin support
+Example: Test mailbox via MQTT (nuevo flujo)
+Publica mensajes arbitrarios en yun/mailbox/send y escucha respuestas en yun/mailbox/recv
 """
 import time
-from yunbridge_client.plugin_loader import PluginLoader
+import paho.mqtt.client as mqtt
+try:
+	from paho.mqtt.enums import CallbackAPIVersion
+except ImportError:
+	CallbackAPIVersion = None
 
+BROKER = 'localhost'
+PORT = 1883
 TOPIC_SEND = 'yun/mailbox/send'
 TOPIC_RECV = 'yun/mailbox/recv'
 
-# Example: MQTT plugin (default)
-MQTT_CONFIG = dict(host='localhost', port=1883)
-PluginClass = PluginLoader.load_plugin('mqtt_plugin')
-plugin = PluginClass(**MQTT_CONFIG)
+def on_connect(client, userdata, flags, rc, properties=None):
+	print("Connected with result code " + str(rc))
+	client.subscribe(TOPIC_RECV)
 
-# Example: SNS plugin (uncomment to use)
-# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
-# PluginClass = PluginLoader.load_plugin('sns_plugin')
-# plugin = PluginClass(**SNS_CONFIG)
+def on_message(client, userdata, msg):
+	print(f"[MQTT] Received on {msg.topic}: {msg.payload.decode(errors='replace')}")
 
+if CallbackAPIVersion is not None:
+	client = mqtt.Client(CallbackAPIVersion.VERSION2)
+else:
+	client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+client.connect(BROKER, PORT, 60)
+client.loop_start()
 
-
-def on_message(topic, message):
-    print(f"[MQTT] Received on {topic}: {message}")
-
-if __name__ == '__main__':
-    plugin.connect()
-    plugin.subscribe(TOPIC_RECV, on_message)
-    print("Sending message to mailbox via MQTT...")
-    plugin.publish(TOPIC_SEND, 'hello_from_mqtt')
-    time.sleep(2)
-    print("Done. Waiting for possible responses on yun/mailbox/recv...")
-    time.sleep(3)
-    plugin.disconnect()
-    print("Finished.")
+print("Enviando mensaje a mailbox via MQTT...")
+client.publish(TOPIC_SEND, 'hola_desde_mqtt')
+time.sleep(2)
+print("Listo. Esperando posibles respuestas en yun/mailbox/recv...")
+time.sleep(3)
+client.loop_stop()
+client.disconnect()
+print("Fin.")

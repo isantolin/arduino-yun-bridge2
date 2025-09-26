@@ -27,6 +27,7 @@ TOPIC_CMD = 'yun/command'
 TOPIC_MAILBOX_SEND = 'yun/mailbox/send'
 TOPIC_MAILBOX_RECV = 'yun/mailbox/recv'
 MQTT_CONFIG = dict(host='localhost', port=1883)
+
 PluginClass = PluginLoader.load_plugin('mqtt_plugin')
 plugin = PluginClass(**MQTT_CONFIG)
 

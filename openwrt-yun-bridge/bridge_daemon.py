@@ -1,534 +1,422 @@
-# Try to import boto3 (for Amazon SNS), else set to None
-try:
-    import boto3
-except ImportError:
-    boto3 = None
 #!/usr/bin/env python3
 """
 YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
-Organized and refactored for clarity, robustness, and PEP8 style.
+Refactored to remove redundancy, improve logging, and enhance maintainability.
 """
 
 # Standard library imports
 import time
 import threading
-import queue
 import os
 import atexit
 import re
 import logging
+import json
+import subprocess
 from logging.handlers import RotatingFileHandler
 
 # Third-party imports
 import serial
 import paho.mqtt.client as mqtt
-# Pub/Sub support fully removed for OpenWRT Yun
 
-# Try to import CallbackAPIVersion (for newer paho-mqtt), else set to None
+# Try to import CallbackAPIVersion (for newer paho-mqtt)
 try:
     from paho.mqtt.enums import CallbackAPIVersion
 except ImportError:
     CallbackAPIVersion = None
 
-# Try to import uci (for OpenWRT config), else set to None
-try:
-    import uci
-except ImportError:
-    uci = None
-
-# Async logging globals
-_log_buffer = []
-_LOG_FILE = '/tmp/yunbridge_debug.log'
-# Buffer size: configurable via env, default 50. If debug is enabled, force buffer size 1 for immediate log flush.
-_LOG_BUFFER_SIZE = int(os.environ.get('YUNBRIDGE_LOG_BUFFER_SIZE', '50'))
-if os.environ.get('YUNBRIDGE_DEBUG', '0') == '1' or os.environ.get('DEBUG', '0') == '1':
-    _LOG_BUFFER_SIZE = 1
-
-# Async logging queue and thread
-_log_queue = queue.Queue()
-_log_thread = None
-_log_thread_running = False
-
-
-def _log_writer():
-    global _log_buffer, _log_thread_running
-    _log_thread_running = True
-    while _log_thread_running or not _log_queue.empty():
-        try:
-            line = _log_queue.get(timeout=0.5)
-            _log_buffer.append(line)
-            if len(_log_buffer) >= _LOG_BUFFER_SIZE:
-                with open(_LOG_FILE, 'a') as f:
-                    f.writelines(_log_buffer)
-                _log_buffer.clear()
-        except queue.Empty:
-            pass
-        except Exception:
-            pass
-    # Final flush
-    if _log_buffer:
-        try:
-            with open(_LOG_FILE, 'a') as f:
-                f.writelines(_log_buffer)
-            _log_buffer.clear()
-        except Exception:
-            pass
-
-def debug_log(msg):
-    """Async buffered log to file and optionally to stdout if DEBUG is set."""
-    ts = time.strftime('%Y-%m-%d %H:%M:%S')
-    line = f"[{ts}] {msg}\n"
-    _log_queue.put(line)
-    if globals().get('DEBUG', 0):
-        print(line, end='')
-
-
-def flush_log():
-    """Flush any remaining log buffer to disk and stop log thread."""
-    global _log_thread_running, _log_thread
-    _log_thread_running = False
-    if _log_thread:
-        _log_thread.join(timeout=2)
-    # Final flush handled in _log_writer
-def start_log_thread():
-    global _log_thread
-    if _log_thread is None:
-        _log_thread = threading.Thread(target=_log_writer, daemon=True)
-        _log_thread.start()
-
-# Start async log thread at import
-start_log_thread()
-atexit.register(flush_log)
-
-
- # Extended options for MQTT security
+# --- Configuration ---
 DEFAULTS = {
     'mqtt_host': '127.0.0.1',
     'mqtt_port': 1883,
     'mqtt_topic': 'yun',
     'mqtt_user': '',
     'mqtt_pass': '',
-    'mqtt_tls': 0,  # 0: no TLS, 1: TLS
+    'mqtt_tls': 0,
     'mqtt_cafile': '',
     'mqtt_certfile': '',
     'mqtt_keyfile': '',
     'serial_port': '/dev/ttyATH0',
     'serial_baud': 115200,
     'debug': 0,
-    # Pub/Sub options fully removed: not supported on OpenWRT Yun
-    # Amazon SNS options
-    'sns_enabled': 0,
-    'sns_region': '',
-    'sns_topic_arn': '',
-    'sns_access_key': '',
-    'sns_secret_key': ''
 }
 
+# --- Global Logger Setup (Single Source of Logging) ---
+LOG_PATH = '/tmp/yunbridge_daemon.log'
+logger = logging.getLogger("yunbridge")
+logger.setLevel(logging.INFO)
 
+# Create a rotating file handler (for file logging)
+file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
 
+# Create a stream handler (for console logging)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+
+# Add handlers to the logger (avoid duplicates)
+if not logger.hasHandlers():
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+
+# --- Configuration Loading ---
 def get_uci_config():
-    import subprocess
+    """Loads configuration from OpenWRT's UCI system."""
     cfg = DEFAULTS.copy()
     try:
-        debug_log('[AUDIT] get_uci_config() called')
+        logger.debug('Reading UCI configuration for yunbridge.')
         result = subprocess.run(['uci', 'show', 'yunbridge'], capture_output=True, text=True, check=True)
-        debug_log(f'[AUDIT] uci show yunbridge output: {result.stdout}')
         for line in result.stdout.splitlines():
-            # Example: yunbridge.main.mqtt_host='127.0.0.1'
-            parts = line.strip().split('=', 1)
-            if len(parts) != 2:
-                continue
-            key, value = parts
-            key_parts = key.split('.')
-            if len(key_parts) != 3:
-                continue
-            _, section, option = key_parts
-            if section != 'main':
-                continue
-            value = value.strip().strip("'\"")
-            if option in DEFAULTS:
-                if option in ('mqtt_port', 'serial_baud', 'debug', 'mqtt_tls'):
-                    try:
-                        value = int(value)
-                    except Exception:
-                        value = DEFAULTS[option]
-                cfg[option] = value
-        debug_log(f'[AUDIT] get_uci_config() loaded: {cfg}')
+            match = re.match(r"yunbridge\.main\.(\w+)='?([^']*)'?", line.strip())
+            if match:
+                key, value = match.groups()
+                if key in DEFAULTS:
+                    # Type conversion for specific keys
+                    if key in ('mqtt_port', 'serial_baud', 'debug', 'mqtt_tls'):
+                        try:
+                            cfg[key] = int(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Invalid integer value for UCI key '{key}': '{value}'. Using default.")
+                    else:
+                        cfg[key] = value
+        logger.info('UCI configuration loaded successfully.')
+    except FileNotFoundError:
+        logger.warning('`uci` command not found. Using default configuration.')
+    except subprocess.CalledProcessError:
+        logger.warning('No UCI configuration found for `yunbridge`. Using default configuration.')
     except Exception as e:
-        debug_log(f'[AUDIT] Error reading UCI configuration: {e}')
+        logger.error(f'Error reading UCI configuration: {e}')
     return cfg
 
 def validate_config(cfg):
-    required = [
-        'mqtt_host', 'mqtt_port', 'mqtt_topic', 'serial_port', 'serial_baud'
-    ]
+    """Validates that essential configuration keys are present."""
+    required = ['mqtt_host', 'mqtt_port', 'mqtt_topic', 'serial_port', 'serial_baud']
     for key in required:
         if not cfg.get(key):
             raise ValueError(f"Config error: '{key}' is required and missing or empty.")
     if cfg.get('mqtt_tls') and not cfg.get('mqtt_cafile'):
         raise ValueError("Config error: mqtt_tls enabled but mqtt_cafile not set.")
-    # Only one messaging backend can be enabled at a time (MQTT or SNS)
-    enabled = [
-        bool(int(cfg.get('sns_enabled', 0))),
-        True  # MQTT is always considered enabled if not disabled explicitly
-    ]
-    if int(cfg.get('sns_enabled', 0)) + (1 if cfg.get('mqtt_host') else 0) > 1:
-        raise ValueError("Config error: Only one messaging backend can be enabled at a time (MQTT or SNS). Please disable the other.")
-    if cfg.get('sns_enabled'):
-        for k in ['sns_region', 'sns_topic_arn', 'sns_access_key', 'sns_secret_key']:
-            if not cfg.get(k):
-                raise ValueError(f"Config error: SNS enabled but '{k}' is missing.")
 
+# Load and validate config at startup
 CFG = get_uci_config()
 validate_config(CFG)
-MQTT_BROKER = CFG['mqtt_host']
-MQTT_PORT = CFG['mqtt_port']
-MQTT_TOPIC_PREFIX = CFG['mqtt_topic']
-PIN_TOPIC_PREFIX = f'{MQTT_TOPIC_PREFIX}/pin'
-MAILBOX_TOPIC_PREFIX = f'{MQTT_TOPIC_PREFIX}/mailbox'
-SERIAL_PORT = CFG['serial_port']
-SERIAL_BAUDRATE = CFG['serial_baud']
-DEBUG = CFG['debug']
-RECONNECT_DELAY = 5  # seconds
+if CFG['debug']:
+    logger.setLevel(logging.DEBUG)
 
-# Generalized topic patterns
-PIN_TOPIC_SET_WILDCARD = f'{PIN_TOPIC_PREFIX}/+/set'
-PIN_TOPIC_STATE_FMT = f'{PIN_TOPIC_PREFIX}/{{pin}}/state'
-
-
-# Configuración de logging rotativo global para el daemon
-LOG_PATH = '/tmp/yunbridge_daemon.log'
-handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
-formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
-handler.setFormatter(formatter)
-logger = logging.getLogger("yunbridge.daemon")
-logger.setLevel(logging.INFO)  # Cambia a DEBUG para más detalle
-if not logger.hasHandlers():
-    logger.addHandler(handler)
-
-
+# --- Main Daemon Class ---
 class BridgeDaemon:
-    def publish_sns(self, payload):
-        """Publish a message to Amazon SNS topic."""
-        if not self.sns_enabled or not self.sns_client or not self.sns_topic_arn:
-            return
-        try:
-            response = self.sns_client.publish(
-                TopicArn=self.sns_topic_arn,
-                Message=payload
-            )
-            debug_log(f"[SNS] Published: {payload}")
-        except Exception as e:
-            debug_log(f"[SNS] Publish error: {e}")
-        # Amazon SNS setup
-        self.sns_enabled = bool(int(CFG.get('sns_enabled', 0)))
-        self.sns_region = CFG.get('sns_region', '')
-        self.sns_topic_arn = CFG.get('sns_topic_arn', '')
-        self.sns_access_key = CFG.get('sns_access_key', '')
-        self.sns_secret_key = CFG.get('sns_secret_key', '')
-        self.sns_client = None
-        if self.sns_enabled and boto3:
-            self.sns_client = boto3.client(
-                'sns',
-                region_name=self.sns_region,
-                aws_access_key_id=self.sns_access_key,
-                aws_secret_access_key=self.sns_secret_key
-            )
-    # Pub/Sub methods removed
+    """
+    Main daemon class: handles MQTT, serial, and command processing.
+    """
+    def __init__(self, config):
+        self.cfg = config
+        self.ser = None
+        self.running = True
+        self.mqtt_connected = False
+        self.kv_store = {}
+        self.reconnect_delay = 5  # seconds
+
+        # Setup command dispatcher
+        self.command_handlers = {
+            "PIN_ON": self._handle_pin_on,
+            "PIN_OFF": self._handle_pin_off,
+            "PIN_STATE": self._handle_pin_state,
+            "SET": self._handle_set,
+            "GET": self._handle_get,
+            "RUN": self._handle_run,
+            "READFILE": self._handle_readfile,
+            "WRITEFILE": self._handle_writefile,
+            "CONSOLE": self._handle_console,
+            "MAILBOX": self._handle_mailbox_from_serial,
+        }
+
+        # Setup MQTT client
+        self._setup_mqtt_client()
+        
+        # Topic prefixes
+        self.topic_prefix = self.cfg['mqtt_topic']
+        self.pin_topic_prefix = f'{self.topic_prefix}/pin'
+        self.mailbox_topic_prefix = f'{self.topic_prefix}/mailbox'
+
+    def _setup_mqtt_client(self):
+        """Initializes and configures the MQTT client."""
+        client_args = {}
+        if CallbackAPIVersion is not None:
+            client_args['callback_api_version'] = CallbackAPIVersion.VERSION2
+        
+        self.mqtt_client = mqtt.Client(**client_args)
+        
+        if self.cfg.get('mqtt_user'):
+            self.mqtt_client.username_pw_set(self.cfg['mqtt_user'], self.cfg.get('mqtt_pass', ''))
+        
+        if self.cfg.get('mqtt_tls'):
+            try:
+                self.mqtt_client.tls_set(
+                    ca_certs=self.cfg.get('mqtt_cafile'),
+                    certfile=self.cfg.get('mqtt_certfile'),
+                    keyfile=self.cfg.get('mqtt_keyfile')
+                )
+            except Exception as e:
+                logger.error(f"Failed to set up MQTT TLS: {e}")
+
+        self.mqtt_client.on_connect = self.on_mqtt_connect
+        self.mqtt_client.on_message = self.on_mqtt_message
+
+    # --- Helper Methods ---
+    def _write_to_serial(self, data):
+        """Safely writes data to the serial port if it's open."""
+        if self.ser and self.ser.is_open:
+            try:
+                if isinstance(data, str):
+                    data = data.encode('utf-8')
+                self.ser.write(data)
+                logger.debug(f"Wrote to serial: {data.strip()}")
+            except serial.SerialException as e:
+                self._handle_serial_error("Failed to write to serial port", e)
+        else:
+            logger.warning(f"Serial port not open. Could not write: {data.strip()}")
+
+    def _handle_serial_error(self, message, exception):
+        """Centralized handler for serial connection errors."""
+        logger.error(f"{message}: {exception}")
+        if self.ser:
+            try:
+                self.ser.close()
+            except Exception as e:
+                logger.error(f"Error while closing serial port: {e}")
+        self.ser = None
+        self.write_status('error', f'Serial error: {exception}')
+
     def write_status(self, status, detail=None):
         """Write daemon status to a file for external monitoring."""
         try:
             with open('/tmp/yunbridge_status.json', 'w') as f:
-                import json
                 data = {'status': status, 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')}
                 if detail:
                     data['detail'] = detail
                 f.write(json.dumps(data))
         except Exception as e:
-            debug_log(f'[WARN] Could not write status file: {e}')
-    """
-    Main daemon class: handles MQTT, serial, and command processing.
-    """
-    def __init__(self):
-        # MQTT setup
-        if CallbackAPIVersion is not None:
-            self.mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
-        else:
-            self.mqtt_client = mqtt.Client()
-        if CFG.get('mqtt_user'):
-            self.mqtt_client.username_pw_set(CFG['mqtt_user'], CFG.get('mqtt_pass', ''))
-        if CFG.get('mqtt_tls', 0):
-            tls_args = {}
-            if CFG.get('mqtt_cafile'):
-                tls_args['ca_certs'] = CFG['mqtt_cafile']
-            if CFG.get('mqtt_certfile'):
-                tls_args['certfile'] = CFG['mqtt_certfile']
-            if CFG.get('mqtt_keyfile'):
-                tls_args['keyfile'] = CFG['mqtt_keyfile']
-            if tls_args:
-                self.mqtt_client.tls_set(**tls_args)
-        self.mqtt_client.on_connect = self.on_mqtt_connect
-        self.mqtt_client.on_message = self.on_mqtt_message
-        self.mqtt_connected = False
-        self.ser = None
-        self.running = True
-        self.last_pin_state = {}
-        self.kv_store = {}
-        # Pub/Sub setup removed
+            logger.warning(f'Could not write status file: {e}')
 
+    # --- MQTT Callbacks and Methods ---
     def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
-        """MQTT on_connect callback."""
-        debug_log(f"[MQTT] Connected with result code {rc}")
-        try:
-            client.subscribe(PIN_TOPIC_SET_WILDCARD)
-            debug_log(f"[MQTT] Subscribed to topic: {PIN_TOPIC_SET_WILDCARD}")
-            client.subscribe(f"{MAILBOX_TOPIC_PREFIX}/send")
-            debug_log(f"[MQTT] Subscribed to topic: {MAILBOX_TOPIC_PREFIX}/send")
-        except Exception as e:
-            debug_log(f"[MQTT] Subscribe error: {e}")
-        self.mqtt_connected = True
+        """Callback for when the client connects to the MQTT broker."""
+        if rc == 0:
+            logger.info("Successfully connected to MQTT broker.")
+            self.mqtt_connected = True
+            try:
+                # Subscribe to topics
+                pin_topic = f'{self.pin_topic_prefix}/+/set'
+                mailbox_topic = f'{self.mailbox_topic_prefix}/send'
+                client.subscribe([(pin_topic, 0), (mailbox_topic, 0)])
+                logger.info(f"Subscribed to: {pin_topic}")
+                logger.info(f"Subscribed to: {mailbox_topic}")
+            except Exception as e:
+                logger.error(f"Failed to subscribe to topics: {e}")
+        else:
+            logger.error(f"Failed to connect to MQTT broker, return code: {rc}")
+            self.mqtt_connected = False
 
     def on_mqtt_message(self, client, userdata, msg):
-        """MQTT on_message callback."""
-        debug_log(f"[MQTT] Message received: {msg.topic} {msg.payload}")
-    # Handle pin set
-        m = re.match(rf"{PIN_TOPIC_PREFIX}/(\d+)/set", msg.topic)
-        if m:
-            pin = m.group(1)
-            payload = msg.payload.decode().strip().upper()
-            debug_log(f"[DEBUG] MQTT payload for pin {pin}: {payload}")
-            if payload in ('ON', '1'):
-                debug_log(f"[DEBUG] Writing 'PIN{pin} ON' to serial")
-                if self.ser:
-                    self.ser.write(f'PIN{pin} ON\n'.encode())
-                # Publish to SNS as well
-                self.publish_sns(f'PIN{pin} ON')
-            elif payload in ('OFF', '0'):
-                debug_log(f"[DEBUG] Writing 'PIN{pin} OFF' to serial")
-                if self.ser:
-                    self.ser.write(f'PIN{pin} OFF\n'.encode())
-                self.publish_sns(f'PIN{pin} OFF')
-            return
-    # Handle mailbox MQTT
-        if msg.topic == f"{MAILBOX_TOPIC_PREFIX}/send":
-            payload = msg.payload.decode(errors='replace').strip()
-            debug_log(f"[MQTT] Mailbox message received: {payload}")
-            if self.ser:
-                self.ser.write(f'MAILBOX {payload}\n'.encode())
-            self.publish_sns(f'MAILBOX {payload}')
-            return
+        """Callback for when a message is received from the MQTT broker."""
+        logger.debug(f"MQTT message received: Topic='{msg.topic}', Payload='{msg.payload.decode()}'")
+        try:
+            # Handle pin set commands
+            pin_match = re.match(rf"{self.pin_topic_prefix}/(\d+)/set", msg.topic)
+            if pin_match:
+                pin = pin_match.group(1)
+                payload = msg.payload.decode().strip().upper()
+                if payload in ('ON', '1'):
+                    self._write_to_serial(f'PIN{pin} ON\n')
+                elif payload in ('OFF', '0'):
+                    self._write_to_serial(f'PIN{pin} OFF\n')
+                return
 
-    def publish_pin_state(self, pin, state):
-        """Publish pin state to MQTT."""
+            # Handle mailbox messages
+            if msg.topic == f"{self.mailbox_topic_prefix}/send":
+                payload = msg.payload.decode(errors='replace').strip()
+                self._write_to_serial(f'MAILBOX {payload}\n')
+                return
+        except Exception as e:
+            logger.error(f"Error processing MQTT message on topic {msg.topic}: {e}")
+
+    def publish_mqtt(self, topic, payload, retain=False):
+        """Publishes a message to an MQTT topic."""
         if self.mqtt_connected:
-            payload = 'ON' if state else 'OFF'
-            topic = PIN_TOPIC_STATE_FMT.format(pin=pin)
-            self.mqtt_client.publish(topic, payload)
-            debug_log(f"[MQTT] Published {payload} to {topic}")
-
-    def handle_command(self, line):
-        """Parse and execute a command received from serial."""
-        cmd = line.strip()
-        debug_log(f"[DEBUG] Received command: '{cmd}'")
-    # Generalized pin ON/OFF/STATE commands
-        import re
-        m_on = re.match(r'PIN(\d+) ON', cmd)
-        m_off = re.match(r'PIN(\d+) OFF', cmd)
-        m_state = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
-        if m_on:
-            pin = m_on.group(1)
-            debug_log(f"[DEBUG] Action: PIN{pin} ON")
-            if self.ser:
-                self.ser.write(f'PIN{pin}:ON\n'.encode())
-            self.publish_pin_state(pin, True)
-            self.last_pin_state[pin] = True
-        elif m_off:
-            pin = m_off.group(1)
-            debug_log(f"[DEBUG] Action: PIN{pin} OFF")
-            if self.ser:
-                self.ser.write(f'PIN{pin}:OFF\n'.encode())
-            self.publish_pin_state(pin, False)
-            self.last_pin_state[pin] = False
-        elif m_state:
-            pin = m_state.group(1)
-            state = m_state.group(2)
-            debug_log(f"[DEBUG] PIN{pin} state reported by Arduino: {state}")
-            self.publish_pin_state(pin, state == 'ON')
-        elif cmd.startswith('SET '):
-            debug_log(f"[DEBUG] Action: SET (key-value store)")
-            try:
-                _, key, value = cmd.split(' ', 2)
-                self.kv_store[key] = value
-                debug_log(f"[DEBUG] Stored: {key} = {value}")
-                if self.ser:
-                    self.ser.write(f'OK SET {key}\n'.encode())
-            except Exception as e:
-                debug_log(f"[DEBUG] SET error: {e}")
-                if self.ser:
-                    self.ser.write(b'ERR SET\n')
-        elif cmd.startswith('GET '):
-            debug_log(f"[DEBUG] Action: GET (key-value store)")
-            try:
-                _, key = cmd.split(' ', 1)
-                value = self.kv_store.get(key, '')
-                debug_log(f"[DEBUG] Retrieved: {key} = {value}")
-                if self.ser:
-                    self.ser.write(f'VALUE {key} {value}\n'.encode())
-            except Exception as e:
-                debug_log(f"[DEBUG] GET error: {e}")
-                if self.ser:
-                    self.ser.write(b'ERR GET\n')
-        elif cmd.startswith('RUN '):
-            debug_log(f"[DEBUG] Action: RUN (process execution)")
-            import subprocess
-            try:
-                _, command = cmd.split(' ', 1)
-                result = subprocess.getoutput(command)
-                debug_log(f"[DEBUG] RUN result: {result}")
-                if self.ser:
-                    self.ser.write(f'RUNOUT {result}\n'.encode())
-            except Exception as e:
-                debug_log(f"[DEBUG] RUN error: {e}")
-                if self.ser:
-                    self.ser.write(b'ERR RUN\n')
-        elif cmd.startswith('READFILE '):
-            debug_log(f"[DEBUG] Action: READFILE")
-            try:
-                _, path = cmd.split(' ', 1)
-                with open(path, 'r') as f:
-                    data = f.read(256)
-                debug_log(f"[DEBUG] Read from {path}: {data}")
-                if self.ser:
-                    self.ser.write(f'FILEDATA {data}\n'.encode())
-            except Exception as e:
-                debug_log(f"[DEBUG] READFILE error: {e}")
-                if self.ser:
-                    self.ser.write(b'ERR READFILE\n')
-        elif cmd.startswith('WRITEFILE '):
-            debug_log(f"[DEBUG] Action: WRITEFILE")
-            try:
-                _, path, data = cmd.split(' ', 2)
-                with open(path, 'w') as f:
-                    f.write(data)
-                debug_log(f"[DEBUG] Wrote to {path}: {data}")
-                if self.ser:
-                    self.ser.write(b'OK WRITEFILE\n')
-            except Exception as e:
-                debug_log(f"[DEBUG] WRITEFILE error: {e}")
-                if self.ser:
-                    self.ser.write(b'ERR WRITEFILE\n')
-    # MAILBOX removed, now uses MQTT
-        elif cmd.startswith('CONSOLE '):
-            msg = cmd[len('CONSOLE '):]
-            debug_log(f'[Console] {msg}')
-            debug_log(f"[DEBUG] Action: CONSOLE")
-            if self.ser:
-                self.ser.write(b'OK CONSOLE\n')
+            self.mqtt_client.publish(topic, payload, retain=retain)
+            logger.debug(f"Published to MQTT: Topic='{topic}', Payload='{payload}'")
         else:
-            # If the command is 'MAILBOX <msg>', publish it to MQTT
-            if cmd.startswith('MAILBOX '):
-                msg = cmd[len('MAILBOX '):]
-                self.publish_mailbox_message(msg)
-                debug_log(f"[DEBUG] Forwarded MAILBOX to MQTT: {msg}")
+            logger.warning("MQTT not connected. Cannot publish message.")
+
+    # --- Command Handlers (from Serial) ---
+    def handle_command(self, line):
+        """Parses and dispatches a command received from serial."""
+        cmd = line.strip()
+        logger.debug(f"Received from serial: '{cmd}'")
+        
+        # Regex-based matching for PIN commands for flexibility
+        pin_on_match = re.match(r'PIN(\d+) ON', cmd)
+        pin_off_match = re.match(r'PIN(\d+) OFF', cmd)
+        pin_state_match = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
+
+        if pin_on_match:
+            self.command_handlers["PIN_ON"](pin_on_match.group(1))
+        elif pin_off_match:
+            self.command_handlers["PIN_OFF"](pin_off_match.group(1))
+        elif pin_state_match:
+            self.command_handlers["PIN_STATE"](pin_state_match.group(1), pin_state_match.group(2))
+        else:
+            # Space-separated command for others
+            parts = cmd.split(' ', 1)
+            command_key = parts[0]
+            args = parts[1] if len(parts) > 1 else ""
+            
+            handler = self.command_handlers.get(command_key)
+            if handler:
+                try:
+                    handler(args)
+                except Exception as e:
+                    logger.error(f"Error executing command '{command_key}': {e}")
+                    self._write_to_serial(f'ERR {command_key}\n')
             else:
-                debug_log(f"[DEBUG] Unknown command")
-                if self.ser:
-                    self.ser.write(b'UNKNOWN COMMAND\n')
+                logger.warning(f"Unknown command received from serial: '{cmd}'")
+                self._write_to_serial('UNKNOWN COMMAND\n')
+    
+    def _publish_pin_state(self, pin, state):
+        """Helper to publish pin state to MQTT."""
+        topic = f"{self.pin_topic_prefix}/{pin}/state"
+        payload = 'ON' if state else 'OFF'
+        self.publish_mqtt(topic, payload)
 
-    def publish_mailbox_message(self, msg):
-        """Publish a mailbox message to MQTT."""
-        if self.mqtt_connected:
-            topic = f"{MAILBOX_TOPIC_PREFIX}/recv"
-            self.mqtt_client.publish(topic, msg)
-            debug_log(f"[MQTT] Published mailbox message to {topic}: {msg}")
+    def _handle_pin_on(self, pin):
+        self._write_to_serial(f'PIN{pin}:ON\n')
+        self._publish_pin_state(pin, True)
+    
+    def _handle_pin_off(self, pin):
+        self._write_to_serial(f'PIN{pin}:OFF\n')
+        self._publish_pin_state(pin, False)
 
+    def _handle_pin_state(self, pin, state):
+        self._publish_pin_state(pin, state == 'ON')
+
+    def _handle_set(self, args):
+        key, value = args.split(' ', 1)
+        self.kv_store[key] = value
+        logger.debug(f"Stored in KV: {key} = {value}")
+        self._write_to_serial(f'OK SET {key}\n')
+        
+    def _handle_get(self, key):
+        value = self.kv_store.get(key, '')
+        logger.debug(f"Retrieved from KV: {key} = {value}")
+        self._write_to_serial(f'VALUE {key} {value}\n')
+        
+    def _handle_run(self, command):
+        result = subprocess.getoutput(command)
+        logger.debug(f"RUN '{command}' result: {result}")
+        self._write_to_serial(f'RUNOUT {result}\n')
+        
+    def _handle_readfile(self, path):
+        with open(path, 'r') as f:
+            data = f.read(256)
+        logger.debug(f"Read from {path}: {data}")
+        self._write_to_serial(f'FILEDATA {data}\n')
+
+    def _handle_writefile(self, args):
+        path, data = args.split(' ', 1)
+        with open(path, 'w') as f:
+            f.write(data)
+        logger.debug(f"Wrote to {path}: {data}")
+        self._write_to_serial('OK WRITEFILE\n')
+
+    def _handle_console(self, msg):
+        logger.info(f'[Console from Arduino] {msg}')
+        self._write_to_serial('OK CONSOLE\n')
+
+    def _handle_mailbox_from_serial(self, msg):
+        topic = f"{self.mailbox_topic_prefix}/recv"
+        self.publish_mqtt(topic, msg)
+
+    # --- Main Execution Loop ---
     def run(self):
         """Main loop: handles MQTT and serial communication."""
-        debug_log(f"[DEBUG] Starting BridgeDaemon run()")
-        debug_log(f"[YunBridge v2] Listening on {SERIAL_PORT} @ {SERIAL_BAUDRATE} baud...")
+        logger.info(f"Starting YunBridge v2 Daemon...")
+        logger.info(f"Listening on {self.cfg['serial_port']} @ {self.cfg['serial_baud']} baud.")
+        self.write_status('starting')
+
         try:
-            self.write_status('starting')
-            debug_log("[DEBUG] Connecting to MQTT broker...")
-            try:
-                self.mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
-            except Exception as e:
-                debug_log(f'[FATAL] Could not connect to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}: {e}')
-                self.write_status('error', f'MQTT connect failed: {e}')
-                return
+            logger.info(f"Connecting to MQTT broker at {self.cfg['mqtt_host']}:{self.cfg['mqtt_port']}")
+            self.mqtt_client.connect(self.cfg['mqtt_host'], self.cfg['mqtt_port'], 60)
             mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
             mqtt_thread.start()
-            # Pub/Sub support fully removed
-            debug_log("[DEBUG] MQTT thread started")
-            self.write_status('running')
-            while self.running:
-                try:
-                    debug_log(f"[DEBUG] Trying to open serial port {SERIAL_PORT}...")
-                    with serial.Serial(SERIAL_PORT, SERIAL_BAUDRATE, timeout=1) as ser:
-                        self.ser = ser
-                        debug_log(f'[INFO] Serial port {SERIAL_PORT} opened')
-                        self.write_status('running', 'serial open')
-                        while self.running:
-                            try:
-                                line = ser.readline().decode(errors='replace').strip()
-                                if line:
-                                    debug_log(f'[SERIAL] {line}')
-                                    self.handle_command(line)
-                                    # Publish serial commands to SNS for deduplication
-                                    self.publish_sns(line)
-                            except serial.SerialException as e:
-                                debug_log(f'[ERROR] Serial port I/O error: {e}')
-                                debug_log(f'[INFO] Closing serial port and retrying in {RECONNECT_DELAY} seconds...')
-                                self.ser = None
-                                self.write_status('error', f'Serial I/O error: {e}')
-                                try:
-                                    ser.close()
-                                except Exception:
-                                    pass
-                                time.sleep(RECONNECT_DELAY)
-                                break
-                            except Exception as e:
-                                debug_log(f'[ERROR] Unexpected error reading from serial port: {e}')
-                                self.write_status('error', f'Unexpected serial error: {e}')
-                                time.sleep(1)
-                        debug_log(f'[INFO] Serial port {SERIAL_PORT} closed')
-                        self.ser = None
-                        self.write_status('running', 'serial closed')
-                except serial.SerialException as e:
-                    debug_log(f'[ERROR] Could not open serial port: {e}')
-                    self.ser = None
-                    self.write_status('error', f'Could not open serial: {e}')
-                    debug_log(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
-                    time.sleep(RECONNECT_DELAY)
-                except Exception as e:
-                    debug_log(f'[ERROR] Unexpected error in main loop: {e}')
-                    self.ser = None
-                    self.write_status('error', f'Unexpected main loop error: {e}')
-                    import traceback
-                    debug_log(traceback.format_exc())
-                    debug_log(f'[INFO] Retrying in {RECONNECT_DELAY} seconds...')
-                    time.sleep(RECONNECT_DELAY)
-        except KeyboardInterrupt:
-            debug_log("[INFO] Daemon stopped by user.")
-            self.running = False
-            self.write_status('stopped', 'KeyboardInterrupt')
         except Exception as e:
-            debug_log(f'[FATAL] Unhandled exception in run(): {e}')
-            import traceback
-            debug_log(traceback.format_exc())
-            self.write_status('error', f'Fatal: {e}')
-        debug_log('[DEBUG] Exiting BridgeDaemon run()')
-        self.write_status('exited')
+            logger.critical(f'Could not connect to MQTT broker: {e}')
+            self.write_status('error', f'MQTT connect failed: {e}')
+            return
 
+        while self.running:
+            try:
+                logger.info(f"Attempting to open serial port {self.cfg['serial_port']}...")
+                with serial.Serial(self.cfg['serial_port'], self.cfg['serial_baud'], timeout=1) as ser:
+                    self.ser = ser
+                    logger.info(f'Serial port {self.cfg["serial_port"]} opened successfully.')
+                    self.write_status('running', 'serial open')
+                    while self.running:
+                        try:
+                            line = ser.readline().decode(errors='replace').strip()
+                            if line:
+                                self.handle_command(line)
+                        except serial.SerialException as e:
+                            self._handle_serial_error("Serial port I/O error", e)
+                            break # Break inner loop to retry opening the port
+                        except Exception as e:
+                            logger.error(f"Unexpected error reading from serial: {e}")
+                            time.sleep(1)
+                
+                # This block runs if serial port closes gracefully or after an error
+                logger.warning("Serial port closed.")
+                self.write_status('running', 'serial closed')
+                self.ser = None
+                
+            except serial.SerialException as e:
+                self._handle_serial_error("Could not open serial port", e)
+            except Exception as e:
+                logger.critical(f"Unexpected critical error in main loop: {e}", exc_info=True)
+                self.write_status('error', 'critical main loop error')
+            
+            if self.running:
+                logger.info(f"Retrying serial connection in {self.reconnect_delay} seconds...")
+                time.sleep(self.reconnect_delay)
+
+    def stop(self):
+        """Stops the daemon gracefully."""
+        logger.info("Stopping daemon...")
+        self.running = False
+        if self.ser and self.ser.is_open:
+            self.ser.close()
+        self.mqtt_client.disconnect()
+        self.write_status('stopped')
 
 def main():
-    debug_log('[YunBridge] Config used:')
+    logger.debug('Configuration being used:')
     for k, v in CFG.items():
-        debug_log(f'  {k}: {v}')
-    daemon = BridgeDaemon()
+        logger.debug(f'  {k}: {v}')
+        
+    daemon = BridgeDaemon(CFG)
+    
+    def shutdown_handler():
+        daemon.stop()
+
+    atexit.register(shutdown_handler)
+
     try:
         daemon.run()
+    except KeyboardInterrupt:
+        logger.info("Daemon stopped by user (KeyboardInterrupt).")
+    except Exception as e:
+        logger.critical(f"Unhandled fatal exception in main: {e}", exc_info=True)
     finally:
-        flush_log()
+        daemon.stop()
 
 if __name__ == '__main__':
     main()

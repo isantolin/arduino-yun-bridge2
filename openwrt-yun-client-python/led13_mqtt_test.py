@@ -1,5 +1,3 @@
-
-
 #!/usr/bin/env python3
 """
 Example: Test generic pin control using the YunBridge plugin system (MQTT backend)
@@ -22,16 +20,11 @@ if len(sys.argv) > 1:
 TOPIC_SET = f'yun/pin/{PIN}/set'
 TOPIC_STATE = f'yun/pin/{PIN}/state'
 
-
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
+
 PluginClass = PluginLoader.load_plugin('mqtt_plugin')
 plugin = PluginClass(**MQTT_CONFIG)
-
-# Example: SNS plugin (uncomment to use)
-# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
-# PluginClass = PluginLoader.load_plugin('sns_plugin')
-# plugin = PluginClass(**SNS_CONFIG)
 
 
 def on_message(topic, message):

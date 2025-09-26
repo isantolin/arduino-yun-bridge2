@@ -1,31 +1,33 @@
+def on_connect(client, userdata, flags, rc, properties=None):
+	print("Connected with result code " + str(rc))
+
 #!/usr/bin/env python3
 """
-Example: Test process execution using the YunBridge plugin system (MQTT backend)
+Example: Test process execution via MQTT
 Sends RUN command to the yun/command topic
-Usage:
-    python3 process_mqtt_test.py
-    # Or use led13_test.py for unified plugin support
 """
 import time
-from yunbridge_client.plugin_loader import PluginLoader
+import paho.mqtt.client as mqtt
+try:
+	from paho.mqtt.enums import CallbackAPIVersion
+except ImportError:
+	CallbackAPIVersion = None
 
+BROKER = 'localhost'
+PORT = 1883
 TOPIC_CMD = 'yun/command'
 
-# Example: MQTT plugin (default)
-MQTT_CONFIG = dict(host='localhost', port=1883)
-PluginClass = PluginLoader.load_plugin('mqtt_plugin')
-plugin = PluginClass(**MQTT_CONFIG)
+if CallbackAPIVersion is not None:
+	client = mqtt.Client(CallbackAPIVersion.VERSION2)
+else:
+	client = mqtt.Client()
+client.on_connect = on_connect
+client.connect(BROKER, PORT, 60)
+client.loop_start()
 
-# Example: SNS plugin (uncomment to use)
-# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
-# PluginClass = PluginLoader.load_plugin('sns_plugin')
-# plugin = PluginClass(**SNS_CONFIG)
-
-
-
-plugin.connect()
 print("Running process via MQTT...")
-plugin.publish(TOPIC_CMD, 'RUN echo hello_from_yun')
+client.publish(TOPIC_CMD, 'RUN echo hello_from_yun')
 time.sleep(1)
-plugin.disconnect()
+client.loop_stop()
+client.disconnect()
 print("Done.")

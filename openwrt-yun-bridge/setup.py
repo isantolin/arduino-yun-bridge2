@@ -11,7 +11,6 @@ setup(
     install_requires=[
         'pyserial',
         'paho-mqtt',
-        'boto3',
     ],
     entry_points={
         'console_scripts': [

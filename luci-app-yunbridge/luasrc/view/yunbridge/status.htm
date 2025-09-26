@@ -10,7 +10,12 @@
 <script type="text/javascript">
 function fetchStatus() {
   XHR.get('/cgi-bin/luci/admin/services/yunbridge/status_raw', null, function(x, data) {
-    document.getElementById('status-content').textContent = data || 'No status available';
+    try {
+      var obj = JSON.parse(data);
+      document.getElementById('status-content').textContent = JSON.stringify(obj, null, 2);
+    } catch (e) {
+      document.getElementById('status-content').textContent = data || 'No status available';
+    }
   });
 }
 function fetchLog() {

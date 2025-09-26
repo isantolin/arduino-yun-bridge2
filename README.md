@@ -106,7 +106,7 @@ arduino-yun-bridge2/
 
 ## Python Client Plugin System
 
-The `openwrt-yun-client-python` directory contains example scripts and a modular plugin system for interacting with the YunBridge ecosystem using different messaging backends (MQTT, Amazon SNS, etc.).
+The `openwrt-yun-client-python` directory contains example scripts and a modular plugin system for interacting with the YunBridge ecosystem using different messaging backends (MQTT).
 
 ### Plugin System Overview
 
@@ -116,44 +116,25 @@ The `openwrt-yun-client-python` directory contains example scripts and a modular
   - `publish(topic, message)`
   - `subscribe(topic, callback)`
   - `disconnect()`
-- Plugins available:
   - `mqtt_plugin.py` (MQTT via paho-mqtt)
-  - `sns_plugin.py` (Amazon SNS)
 - New messaging systems can be added as plugins by following the same interface.
 
 ### Example Scripts
 
-- `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`, `sns_plugin`).
+  - `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`).
 - `all_features_test.py`: Demonstrates all YunBridge features using the plugin system (MQTT backend by default).
 - `*_mqtt_test.py`: Legacy examples, now refactored to use the plugin system (MQTT only, but can be switched as shown below).
 
 ### Usage
 
+
 #### Unified Example (Recommended)
 
 ```sh
 python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
-python3 openwrt-yun-client-python/led13_test.py sns_plugin
 ```
 
 Edit the config dictionary in `led13_test.py` for your broker/service details.
-
-#### Using SNS Plugin in Examples
-
-All example scripts (`*_mqtt_test.py`) are written for MQTT by default, but you can easily switch to SNS by uncommenting the relevant code blocks:
-
-```python
-# Example: SNS plugin (uncomment to use)
-SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
-PluginClass = PluginLoader.load_plugin('sns_plugin')
-plugin = PluginClass(**SNS_CONFIG)
-```
-
-```python
-# Pub/Sub plugin example removed: not supported on OpenWRT Yun
-```
-
-Just comment out the MQTT section and uncomment the SNS section as needed. Make sure to fill in your credentials and topic details.
 
 #### All Features Example
 
@@ -167,11 +148,12 @@ python3 openwrt-yun-client-python/all_features_test.py
 2. Inherit from `MessagingPluginBase` and implement the required methods.
 3. Use `PluginLoader.load_plugin('mycloud_plugin')` in your script.
 
+
 #### Requirements
 
 - Python 3.7+
 - Install dependencies as needed:
-  - `pip install paho-mqtt boto3`
+  - `pip install paho-mqtt`
 
 #### Directory Structure
 
@@ -184,7 +166,7 @@ openwrt-yun-client-python/
     plugin_base.py
     plugin_loader.py
     mqtt_plugin.py
-    sns_plugin.py
+
 ```
 
 git clone https://github.com/isantolin/arduino-yun-bridge2.git
@@ -203,7 +185,7 @@ sh install.sh
 
 **Log files:**
 - `/tmp/yunbridge_daemon.log` (daemon)
-- `/tmp/yunbridge_mqtt_plugin.log`, `/tmp/yunbridge_sns_plugin.log` (plugins)
+- `/tmp/yunbridge_mqtt_plugin.log` (plugin)
 
 **Configuration validation:**
 - The daemon and plugins will not start if required config values are missing or invalid. Errors are logged and shown in the console.
@@ -653,7 +635,6 @@ If you encounter issues, check the following log files for details:
 ```
 2025-09-21 12:34:56,789 INFO yunbridge.daemon: [MQTT] Connected with result code 0
 2025-09-21 12:34:57,123 ERROR yunbridge.mqtt_plugin: MQTT connect error: [Errno 111] Connection refused
-2025-09-21 12:35:01,456 WARNING yunbridge.sns_plugin: SNS subscribe not supported in client. Use SQS or Lambda.
 ```
 
 **Common issues:**
@@ -686,7 +667,6 @@ To avoid space issues and ensure that temporary files and large logs do not fill
 
 **Why is this useful?**
 - System and YunBridge logs and temporary files will be stored on the SD card, preventing RAM or flash from filling up.
-- This is especially important if you use SNS or generate a lot of logs.
 
 **Verify with:**
 ```sh

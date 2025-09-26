@@ -10,7 +10,6 @@ setup(
     py_modules=['client'],
     install_requires=[
         'paho-mqtt',
-        'boto3',
     ],
     entry_points={
         'console_scripts': [

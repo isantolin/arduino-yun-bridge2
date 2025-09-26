@@ -18,9 +18,10 @@ start_service() {
 }
 
 
+
 stop_service() {
-    # Kill all running yunbridge daemons (even if started manually)
-    pkill -f '/usr/bin/python3 /usr/bin/yunbridge' 2>/dev/null || true
+    # Kill all running yunbridge daemons (any Python path, any invocation)
+    pkill -f 'python.*yunbridge' 2>/dev/null || true
 }
 
 restart_service() {

@@ -15,15 +15,9 @@ TOPIC_CMD = 'yun/command'
 
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='localhost', port=1883)
+
 PluginClass = PluginLoader.load_plugin('mqtt_plugin')
 plugin = PluginClass(**MQTT_CONFIG)
-
-# Example: SNS plugin (uncomment to use)
-# SNS_CONFIG = dict(region='us-east-1', topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic', access_key='AKIA...', secret_key='...')
-# PluginClass = PluginLoader.load_plugin('sns_plugin')
-# plugin = PluginClass(**SNS_CONFIG)
-
-
 
 plugin.connect()
 print("Setting key via MQTT...")

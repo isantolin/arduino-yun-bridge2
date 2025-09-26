@@ -1,4 +1,180 @@
-# Arduino Yun v2 Ecosystem (Unified Documentation)
+
+
+# Arduino Yun v2 Bridge (Unified Documentation)
+
+## Overview
+
+Bridge2 is a robust, modern, and fully open-source bridge for the Arduino Yun v2 ecosystem. It enables communication between the OpenWRT (Linux) side and the ATmega32U4 (Arduino) side using MQTT as the only supported backend. All configuration is handled via UCI, and all logs are written to `/tmp` or the SD card. The system is designed for reliability, maintainability, and ease of use, focusing on modern Python 3 and OpenWRT best practices.
+
+### Key Features
+
+- MQTT-only (no gRPC)
+- All configuration via UCI (no config files or environment variables)
+- Robust logging to `/tmp` or SD, with immediate log file creation in debug mode
+- No virtualenv: all Python runs system-wide with Python 3.11+
+- Modular build/install scripts for OpenWRT and Python
+- Persistent swap for reliable installs on low-memory devices
+- LuCI Web UI for configuration, status, and logs
+- Code and documentation in English
+
+---
+
+## Quick Start
+
+1. Clone and build all packages locally:
+  ```sh
+  git clone https://github.com/isantolin/arduino-yun-bridge2.git
+  cd arduino-yun-bridge2
+  ./compile.sh
+  # All .ipk and .whl files will be in bin/
+  ```
+2. Copy the `bin/` directory to your Yun/OpenWRT device.
+3. Run the installer on the device:
+  ```sh
+  sh install.sh
+  ```
+  - This will install only the precompiled artifacts. No virtualenv is used; all Python is global.
+4. Upload the main sketch `LED13BridgeControl.ino` to your Yun using the Arduino IDE.
+5. Open the Web UI (LuCI) at `http://<yun-ip>/cgi-bin/luci/admin/services/yunbridge`.
+6. Test pin control via MQTT and Web UI.
+
+---
+
+## Repository Structure
+
+```
+Bridge-v2/                # Arduino sketch and C++ bridge library
+  install.sh              # Arduino-side install script
+  LED13BridgeControl.ino  # Example sketch
+  src/                    # C++ source code
+  examples/               # Arduino examples
+
+openwrt-yun-v2/           # OpenWRT-side system integration
+  install.sh              # System install script
+  package/                # OpenWRT package files
+  scripts/                # System scripts
+
+YunBridge-v2/             # Python client and daemon
+  install.sh              # Python-side install script
+  src/                    # Python source code (bridge_daemon.py)
+  examples/               # Python example scripts
+
+YunWebUI-v2/              # Web UI (LuCI)
+  install.sh              # Web UI install script
+  www/                    # Web assets
+```
+
+---
+
+## Data Flow & Architecture
+
+```
+  [Python Client Scripts (MQTT Plugin)]
+    |
+    v
+  [MQTT Broker]
+    |
+    v
+  [YunBridge Daemon (Python)]
+    |
+    v
+  [Arduino Sketch/Library]
+    |
+    v
+  [Web UI (LuCI)]
+```
+
+**Typical flow:**
+1. The user toggles a pin from the Web UI, a Python script, or any MQTT client.
+2. The command is published to the MQTT broker.
+3. The daemon receives the message and sends it over serial to the Arduino.
+4. The Arduino changes the pin and reports the new state over serial.
+5. The daemon publishes the new state to MQTT.
+6. The Web UI and any subscribed client see the updated state in real time.
+
+---
+
+## UCI Configuration
+
+Example:
+```sh
+uci set yunbridge.@bridge[0].serial_port='/dev/ttyATH0'
+uci set yunbridge.@bridge[0].mqtt_host='192.168.1.100'
+uci set yunbridge.@bridge[0].mqtt_user='user'
+uci set yunbridge.@bridge[0].mqtt_pass='password'
+uci set yunbridge.@bridge[0].debug='1'  # Debug mode
+uci commit yunbridge
+/etc/init.d/yunbridge restart
+```
+
+---
+
+## MQTT Usage Example
+
+Turn ON pin 13:
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/set -m ON
+```
+Turn OFF pin 13:
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/set -m OFF
+```
+Get state of pin 13:
+```sh
+mosquitto_pub -h <yun-ip> -t yun/pin/13/get -m ""
+mosquitto_sub -h <yun-ip> -t yun/pin/13/state
+```
+
+---
+
+## MQTT Security (auth and TLS optional)
+
+The daemon supports optional authentication and TLS for MQTT. Configure via UCI:
+```sh
+uci set yunbridge.main.mqtt_user='user'
+uci set yunbridge.main.mqtt_pass='password'
+uci set yunbridge.main.mqtt_tls='1'  # 1 for TLS, 0 for no TLS
+uci set yunbridge.main.mqtt_cafile='/etc/ssl/certs/ca.crt'
+uci set yunbridge.main.mqtt_certfile='/etc/ssl/certs/client.crt'
+uci set yunbridge.main.mqtt_keyfile='/etc/ssl/private/client.key'
+uci commit yunbridge
+/etc/init.d/yunbridge restart
+```
+
+---
+
+## Logs & Troubleshooting
+
+Main log files:
+- `/tmp/yunbridge_daemon.log` (main daemon)
+- `/tmp/yunbridge_mqtt_plugin.log` (MQTT plugin)
+- `/tmp/yunbridge_script.log` (REST/CGI scripts)
+- `/tmp/yunbridge_debug.log` (debug, immediate in debug mode)
+- `/tmp/yunbridge_status.json` (status)
+
+**Common issues:**
+- Serial not found: check `/dev/ttyATH0` and conflicts in `/etc/inittab`.
+- MQTT not connecting: check host/user/password and test with `mosquitto_sub`/`mosquitto_pub`.
+- Web UI not loading: ensure LuCI and dependencies are installed.
+- Config changes not applied: always restart the daemon after changing UCI.
+
+---
+
+## Recommended Optimization: Move /tmp to SD
+
+To avoid filling RAM/flash, `/tmp` is mounted on the SD card if present (`/mnt/sda1`). This is automatic via `install.sh` and persistent in `/etc/rc.local`.
+
+Check with:
+```sh
+df -h /tmp
+```
+If it points to the SD card, the optimization is active.
+
+---
+
+## License
+
+MIT License.
 
 ## New Modular Build & Install Workflow (2024)
 
@@ -59,7 +235,7 @@ arduino-yun-bridge2/
   Bridge2 is a robust, modern, and fully open-source bridge for the Arduino Yun v2 ecosystem. It enables seamless communication between the OpenWRT (Linux) side and the ATmega32U4 (Arduino) side, using MQTT as the only supported backend. All configuration is handled via UCI, and all logs are written to `/tmp` or SD card. The system is designed for reliability, maintainability, and ease of use, with a focus on modern Python 3 and OpenWRT best practices.
 
   **Key Features:**
-  - MQTT-only backend (no Google Pub/Sub, no AWS SNS, no gRPC)
+  - MQTT-only backend (no gRPC)
   - All configuration via UCI (no config files, no environment variables required)
   - Robust logging to `/tmp` or SD card, with immediate log file creation in debug mode
   - No Python virtualenvs: all Python code runs system-wide with Python 3.11+
@@ -134,7 +310,7 @@ arduino-yun-bridge2/
   ## Features & Architecture
 
   - **MQTT-Only Backend:**
-    - All communication between the Linux and Arduino side is via MQTT. No support for Google Pub/Sub, AWS SNS, or gRPC.
+  - All communication between the Linux and Arduino side is via MQTT. No support for gRPC.
   - **UCI-Based Configuration:**
     - All options (serial port, MQTT host, username, password, debug) are set via UCI. No config files or environment variables required.
   - **Robust Logging:**
@@ -154,7 +330,7 @@ arduino-yun-bridge2/
   - **Modular Build/Install:**
     - All build and install logic is handled by `compile.sh` and `install.sh`. No manual steps required.
   - **Clean Codebase:**
-    - All legacy code and documentation for Pub/Sub, SNS, and gRPC have been removed. All code and comments are in English.
+  - All legacy code and documentation for cloud backends have been removed. All code and comments are in English.
 
   ## Troubleshooting
 
@@ -193,82 +369,6 @@ arduino-yun-bridge2/
 
 
 
-### Amazon SNS Support (Optional)
-
-The daemon supports Amazon SNS in addition to MQTT. You can enable SNS messaging for cloud integration and hybrid workflows.
-
-**Requirements:**
-- Python package: `boto3` (installed by the installer)
-- AWS account with SNS topic
-- AWS credentials (Access Key ID and Secret Access Key)
-- SNS Topic ARN and AWS region
-
-**Configuration via LuCI Web UI:**
-You can configure all SNS options directly from the YunBridge LuCI interface:
-
-- Enable/disable SNS
-- AWS Region
-- SNS Topic ARN
-- AWS Access Key ID
-- AWS Secret Access Key
-
-All fields are validated and translated (English/Spanish). If SNS is enabled, all required fields must be set and the Topic ARN must start with `arn:aws:sns:`.
-
-**UCI Configuration Example (manual):**
-```sh
-uci set yunbridge.main.sns_enabled='1'  # 1 to enable SNS, 0 to disable
-uci set yunbridge.main.sns_region='us-east-1'
-uci set yunbridge.main.sns_topic_arn='arn:aws:sns:us-east-1:123456789012:YourTopic'
-uci set yunbridge.main.sns_access_key='AKIA...'
-uci set yunbridge.main.sns_secret_key='...'
-uci commit yunbridge
-/etc/init.d/yunbridge restart
-```
-
-**How it works:**
-- When enabled, the daemon will publish messages to the configured SNS topic in parallel with MQTT.
-- All pin control, mailbox, and command flows are supported via SNS.
-
-**Typical SNS Usage:**
-- Publish a message to the SNS topic to control a pin:
-  - Data: `PIN13 ON` or `PIN13 OFF`
-- Subscribe to the SNS topic (via SQS, Lambda, or other AWS service) to receive state updates and mailbox messages.
-
-**Hybrid Architecture:**
-You can use MQTT and SNS al mismo tiempo. Esto permite integración local y en la nube para IoT, automatización y control remoto.
-
-The daemon supports Google Pub/Sub in addition to MQTT. You can enable Pub/Sub messaging for cloud integration and hybrid workflows.
-
-
-**Configuration via LuCI Web UI:**
-You can configure all Pub/Sub options directly from the YunBridge LuCI interface:
-
-- Enable/disable Pub/Sub
-- Google Cloud Project ID
-- Pub/Sub Topic Name
-- Pub/Sub Subscription Name
-- Service Account Credentials Path (must be a `.json` file)
-
-All fields are validated and translated (English/Spanish). If Pub/Sub is enabled, all required fields must be set and the credentials file must end in `.json`.
-
-**UCI Configuration Example (manual):**
-
-
-**How it works:**
-- When enabled, the daemon will publish and subscribe to both MQTT and Pub/Sub topics.
-- Messages from either system are routed to the main handler (serial, Arduino, etc.).
-- All pin control, mailbox, and command flows are supported via Pub/Sub.
-- Message deduplication is handled automatically.
-
-**Typical Pub/Sub Usage:**
-- Publish a message to the Pub/Sub topic to control a pin:
-  - Data: `PIN13 ON` or `PIN13 OFF`
-- Subscribe to the Pub/Sub subscription to receive state updates and mailbox messages.
-
-**Hybrid Architecture:**
-You can use MQTT, Pub/Sub, or both at the same time. This enables local and cloud integration for IoT, automation, and remote control.
-
-See the code and comments in `bridge_daemon.py` for advanced usage and customization.
 
 ### MQTT Security: Authentication and TLS (Optional)
 
@@ -408,10 +508,10 @@ The repository is now organized into the following main components:
 ```
   [Python Client Scripts (Plugin System)]
      |         |         |
-   [MQTT Plugin] [SNS Plugin]
+  [MQTT Plugin]
      |         |         |
      v         v         v
-  [MQTT Broker] [Amazon SNS]
+  [MQTT Broker]
      |         |         |
      +---------+---------+
        |
@@ -423,19 +523,19 @@ The repository is now organized into the following main components:
 ```
 
 **Explanation:**
-- **Python Client Scripts (Plugin System):** All example scripts use a modular plugin system. You can select MQTT, Pub/Sub, or SNS by changing a single line or argument. New plugins can be added for other messaging systems.
-- **MQTT/Amazon SNS Plugins:** Each plugin implements a common interface and handles connection, publish, and subscribe logic for its backend.
-- **MQTT Broker / SNS:** All three messaging systems can be used in parallel. The daemon routes messages between them and the hardware/software components.
+-- **Python Client Scripts (Plugin System):** All example scripts use a modular plugin system. You can select MQTT by changing a single line or argument. New plugins can be added for other messaging systems if needed.
+-- **MQTT Plugin:** Handles connection, publish, and subscribe logic for MQTT.
+-- **MQTT Broker:** The daemon routes messages between the broker and the hardware/software components.
 - **YunBridge Daemon:** Subscribes to relevant topics on all enabled systems, translates messages to serial commands for the Arduino, and publishes state or responses back to all systems. Also reads/writes configuration via UCI.
 - **Arduino Sketch/Library:** Receives serial commands from the daemon, controls hardware pins, and sends state or mailbox messages back via serial. These are then published to all enabled messaging systems by the daemon.
 - **Web UI (LuCI):** Provides a real-time interface for users. It interacts with the daemon (status, logs, config) and can also act as a messaging client for live pin control and monitoring.
 
 **Typical Flow Example:**
-- User toggles a pin in the Web UI, or via a Python client script (using any plugin), or via any MQTT/PubSub/SNS client.
-- The command is published to the relevant broker/service (MQTT, Pub/Sub, or SNS).
+-- User toggles a pin in the Web UI, or via a Python client script (using the MQTT plugin), or via any MQTT client.
+-- The command is published to the MQTT broker.
 - The daemon receives the message, sends the command over serial to the Arduino.
 - The Arduino sets the pin and sends the new state back over serial.
-- The daemon publishes the new state to all enabled messaging systems (MQTT, Pub/Sub, SNS).
+-- The daemon publishes the new state to MQTT.
 - The Web UI and any subscribed clients/services see the updated state in real time.
 
 
@@ -628,7 +728,6 @@ If you encounter issues, check the following log files for details:
 
 - `/tmp/yunbridge_daemon.log` (main daemon)
 - `/tmp/yunbridge_mqtt_plugin.log` (MQTT plugin)
-- `/tmp/yunbridge_sns_plugin.log` (SNS plugin)
 - `/tmp/yunbridge_install.log` (installer)
 
 **Example log entries:**
@@ -648,14 +747,6 @@ To test the installer's rollback, add a line with `false` after any checkpoint i
 
 ## Messaging Backend Exclusivity in LuCI
 
-The LuCI web interface enforces that only one messaging backend (MQTT or Amazon SNS) can be enabled at a time:
-
-- When you enable one backend, the other option is automatically disabled in the UI.
-- A visual warning is shown, indicating which option is disabled and why.
-- If you attempt to enable more than one backend (e.g., by editing the config file directly), the interface will block saving and display an error message.
-- This exclusivity ensures the bridge daemon operates safely and avoids configuration conflicts.
-
-_You will see an informational note in the LuCI UI reminding you of this rule._
 
 ## Recommended optimization: Move /tmp to the SD card
 
@@ -684,7 +775,7 @@ If you see that `/tmp` points to the SD card, the optimization is active.
 ## Using an External MQTT Broker
 
 > **Important:**
-> The MQTT broker does not need to be installed on the Yun/OpenWRT device. It is recommended to use an external MQTT broker (just like Pub/Sub and SNS), either on another computer, a server, or a cloud service.
+> The MQTT broker does not need to be installed on the Yun/OpenWRT device. It is recommended to use an external MQTT broker, either on another computer, a server, or a cloud service.
 
 ### How to install Mosquitto MQTT broker on another computer (Linux example)
 
@@ -715,7 +806,7 @@ If you see that `/tmp` points to the SD card, the optimization is active.
 
 **You can also use cloud MQTT services (e.g., HiveMQ, CloudMQTT, AWS IoT Core) as your broker.**
 
-> The YunBridge daemon will connect to the broker you specify, just like with SNS. You do not need to run a broker on the Yun itself.
+> The YunBridge daemon will connect to the broker you specify. You do not need to run a broker on the Yun itself.
 
 ## Running the Daemon Manually
 

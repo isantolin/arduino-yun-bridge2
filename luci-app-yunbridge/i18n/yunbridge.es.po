@@ -30,3 +30,6 @@ msgstr "Salida Reciente del Log"
 
 msgid "Web UI"
 msgstr "Interfaz Web"
+
+msgid "MQTT WebSocket Port"
+msgstr "Puerto WebSocket MQTT"

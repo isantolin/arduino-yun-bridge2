@@ -84,6 +84,12 @@ function baud.validate(self, value, section)
     return value
 end
 
+-- Opción para el puerto WebSocket MQTT
+mqtt_ws_port = s:option(Value, "mqtt_ws_port", "MQTT WebSocket Port")
+mqtt_ws_port.datatype = "port"
+mqtt_ws_port.placeholder = "9001"
+mqtt_ws_port.rmempty = true
+
 -- Opción para habilitar el modo de depuración (Debug)
 debug = s:option(Flag, "debug", "Debug Mode")
 debug.default = "1"

@@ -31,14 +31,14 @@ function action_mqtt_ws_auth()
 end
 
 function action_mqtt_ws_url()
-    -- Read UCI config for mqtt_host and mqtt_port
+    -- Read UCI config for mqtt_host and mqtt_ws_port (default 9001)
     local host = "127.0.0.1"
-    local port = "9001" -- default WebSocket port, can be changed if needed
+    local port = "9001" -- default WebSocket port
     local uci = require "luci.model.uci".cursor()
     local h = uci:get("yunbridge", "main", "mqtt_host")
-    local p = uci:get("yunbridge", "main", "mqtt_port")
+    local ws_port = uci:get("yunbridge", "main", "mqtt_ws_port")
     if h and #h > 0 then host = h end
-    if p and #p > 0 then port = tostring(tonumber(p) + 800) end -- assume ws port = mqtt_port + 800
+    if ws_port and #ws_port > 0 then port = tostring(ws_port) end
     local url = string.format("ws://%s:%s", host, port)
     luci.http.prepare_content("text/plain")
     luci.http.write(url)

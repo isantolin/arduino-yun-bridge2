@@ -51,141 +51,142 @@ This project now uses a modular, package-centric build and install system. All b
 ```
 arduino-yun-bridge2/
   compile.sh           # Build all packages locally
-  install.sh           # Minimal installer (device-side)
-  bin/                 # All .ipk/.whl artifacts after build
-  openwrt-yun-core/    # OpenWRT system integration package
-    Makefile
-    package/
-      postinst         # Handles pip upgrade
-  openwrt-yun-bridge/  # Python daemon (MQTT <-> Serial)
-    Makefile
-    setup.py
-  openwrt-yun-client-python/ # Python client and plugin system
-    Makefile
-    setup.py
-    yunbridge_client/
-  luci-app-yunbridge/  # LuCI Web UI package
-    Makefile
-    root/
-      etc/config/yunbridge
-      www/yunbridge/index.html
-  openwrt-library-arduino/   # Arduino library and install script
-    install.sh
-    src/
-  plugins/             # Community plugins (MQTT-based)
-```
 
----
+  # Arduino Yun v2 Bridge (Bridge2)
 
-## Installation & Upgrade Flow
+  ## Overview
 
-1. **Build all packages locally with `compile.sh`.**
-2. **Copy the `bin/` directory to your Yun/OpenWRT device.**
-3. **Run `install.sh` on the device:**
-   - Installs only pre-built .ipk/.whl files
-   - No system-level setup or dependency installation is performed here
-4. **All system and Python dependencies are handled by the relevant Makefile/setup.py and postinst.**
-5. **All logs and /tmp are stored on the SD card.**
+  Bridge2 is a robust, modern, and fully open-source bridge for the Arduino Yun v2 ecosystem. It enables seamless communication between the OpenWRT (Linux) side and the ATmega32U4 (Arduino) side, using MQTT as the only supported backend. All configuration is handled via UCI, and all logs are written to `/tmp` or SD card. The system is designed for reliability, maintainability, and ease of use, with a focus on modern Python 3 and OpenWRT best practices.
 
----
+  **Key Features:**
+  - MQTT-only backend (no Google Pub/Sub, no AWS SNS, no gRPC)
+  - All configuration via UCI (no config files, no environment variables required)
+  - Robust logging to `/tmp` or SD card, with immediate log file creation in debug mode
+  - No Python virtualenvs: all Python code runs system-wide with Python 3.11+
+  - Fully modular build/install scripts for OpenWRT and Python packages
+  - Persistent swap file for reliable package installation on low-memory devices
+  - LuCI web UI for configuration, status, and log viewing
+  - All code and documentation in English
 
-## Developer Notes
+  ## Repository Structure
 
-- **To add a new dependency:**
-  - For system packages: add to the relevant OpenWRT package Makefile (`DEPENDS:=...`)
-  - For Python packages: add to the relevant `setup.py` (`install_requires=[...]`)
-- **To add a new package:**
-  - Create a Makefile or setup.py in the new subdirectory
-  - Ensure it outputs artifacts to `bin/` on build
-- **To update the Python install logic:**
-  - Edit `openwrt-yun-core/package/postinst`
-- **To update the installer:**
-  - Edit `install.sh` (should remain minimal)
+  ```
+  Bridge-v2/                # Arduino sketch and C++ bridge library
+    install.sh              # Arduino-side install script
+    LED13BridgeControl.ino  # Example sketch
+    src/                    # C++ source code
+    examples/               # Arduino examples
 
----
+  openwrt-yun-v2/           # OpenWRT-side system integration
+    install.sh              # System install script
+    package/                # OpenWRT package files (init, config, etc)
+    scripts/                # System scripts (LED control, REST CGI, etc)
 
-## Python Client Plugin System
+  YunBridge-v2/             # Python client and daemon
+    install.sh              # Python-side install script
+    src/                    # Python source code (bridge_daemon.py)
+    examples/               # Python example scripts
 
-The `openwrt-yun-client-python` directory contains example scripts and a modular plugin system for interacting with the YunBridge ecosystem using different messaging backends (MQTT).
+  YunWebUI-v2/              # Web UI (LuCI)
+    install.sh              # Web UI install script
+    www/                    # Web assets (index.html, etc)
+  ```
 
-### Plugin System Overview
+  ## Quick Start
 
-- All messaging systems are implemented as plugins in `openwrt-yun-client-python/yunbridge_client/`.
-- Each plugin implements a common interface (`plugin_base.py`):
-  - `connect()`
-  - `publish(topic, message)`
-  - `subscribe(topic, callback)`
-  - `disconnect()`
-  - `mqtt_plugin.py` (MQTT via paho-mqtt)
-- New messaging systems can be added as plugins by following the same interface.
+  ### 1. Build Packages
 
-### Example Scripts
+  Use the provided `compile.sh` script to build all required packages and artifacts. This will generate:
+  - OpenWRT .ipk packages (for system and daemon)
+  - Python .whl package (for client)
 
-  - `led13_test.py`: Unified example, select backend via argument (`mqtt_plugin`).
-- `all_features_test.py`: Demonstrates all YunBridge features using the plugin system (MQTT backend by default).
-- `*_mqtt_test.py`: Legacy examples, now refactored to use the plugin system (MQTT only, but can be switched as shown below).
+  ```
+  ./compile.sh
+  ```
 
-### Usage
+  ### 2. Install on OpenWRT
 
+  Use the provided `install.sh` script to install all .ipk and .whl artifacts, configure the system, and set up swap if needed. This script is idempotent and safe to run multiple times.
 
-#### Unified Example (Recommended)
+  ```
+  cd openwrt-yun-v2
+  sudo ./install.sh
+  ```
 
-```sh
-python3 openwrt-yun-client-python/led13_test.py mqtt_plugin
-```
+  ### 3. Configure via UCI
 
-Edit the config dictionary in `led13_test.py` for your broker/service details.
+  All runtime configuration is handled via UCI. Example:
 
-#### All Features Example
+  ```
+  uci set yunbridge.@bridge[0].serial_port='/dev/ttyATH0'
+  uci set yunbridge.@bridge[0].mqtt_host='192.168.1.100'
+  uci set yunbridge.@bridge[0].mqtt_user='myuser'
+  uci set yunbridge.@bridge[0].mqtt_pass='mypassword'
+  uci set yunbridge.@bridge[0].debug='1'  # Enable debug mode
+  uci commit yunbridge
+  /etc/init.d/yunbridge restart
+  ```
 
-```sh
-python3 openwrt-yun-client-python/all_features_test.py
-```
+  ### 4. Access the Web UI
 
-#### Add a New Plugin
+  The LuCI web UI is available at `http://<device-ip>/cgi-bin/luci/admin/services/yunbridge`.
 
-1. Create a new file in `openwrt-yun-client-python/yunbridge_client/` (e.g., `mycloud_plugin.py`).
-2. Inherit from `MessagingPluginBase` and implement the required methods.
-3. Use `PluginLoader.load_plugin('mycloud_plugin')` in your script.
+  ## Features & Architecture
 
+  - **MQTT-Only Backend:**
+    - All communication between the Linux and Arduino side is via MQTT. No support for Google Pub/Sub, AWS SNS, or gRPC.
+  - **UCI-Based Configuration:**
+    - All options (serial port, MQTT host, username, password, debug) are set via UCI. No config files or environment variables required.
+  - **Robust Logging:**
+    - All logs are written to `/tmp` or SD card. In debug mode, logs are flushed immediately for real-time debugging.
+    - Log files:
+      - `/tmp/yunbridge_daemon.log` (main daemon)
+      - `/tmp/yunbridge_mqtt_plugin.log` (MQTT plugin)
+      - `/tmp/yunbridge_script.log` (REST/CGI scripts)
+      - `/tmp/yunbridge_debug.log` (debug log, immediate in debug mode)
+      - `/tmp/yunbridge_status.json` (status file)
+  - **No Virtualenvs:**
+    - All Python code runs system-wide with Python 3.11+ and pip. No virtualenvs are used or required.
+  - **Persistent Swap:**
+    - A swap file is created at `/overlay/swapfile` and activated before any resource-intensive installs. Swap is made persistent via `/etc/fstab` and `/etc/rc.local`.
+  - **LuCI Web UI:**
+    - Provides configuration, status, and log viewing. All dependencies are installed automatically.
+  - **Modular Build/Install:**
+    - All build and install logic is handled by `compile.sh` and `install.sh`. No manual steps required.
+  - **Clean Codebase:**
+    - All legacy code and documentation for Pub/Sub, SNS, and gRPC have been removed. All code and comments are in English.
 
-#### Requirements
+  ## Troubleshooting
 
-- Python 3.7+
-- Install dependencies as needed:
-  - `pip install paho-mqtt`
+  - **Logs not appearing?**
+    - Ensure debug mode is enabled via UCI (`uci set yunbridge.@bridge[0].debug='1'`).
+    - Check that `/tmp` is writable and has free space.
+    - Restart the daemon: `/etc/init.d/yunbridge restart`
+  - **MQTT connection issues?**
+    - Check your MQTT broker address, username, and password in UCI.
+    - Ensure the broker allows connections from the device IP.
+    - Use `mosquitto_sub` and `mosquitto_pub` to test connectivity.
+  - **Daemon not starting?**
+    - Check `/tmp/yunbridge_daemon.log` for errors.
+    - Ensure all dependencies are installed (`python3`, `pyserial`, `paho-mqtt`).
+    - Run `opkg update && opkg install python3 python3-pip python3-pyserial python3-paho-mqtt` if needed.
+  - **Web UI not loading?**
+    - Ensure LuCI and all dependencies are installed (`luci-base`, `luci-compat`, `luci-mod-admin-full`, `lua`, `luci-lib-nixio`, `luci-lib-json`).
+    - Re-run `install.sh` to fix missing dependencies.
 
-#### Directory Structure
+  ## Development Notes
 
-```
-openwrt-yun-client-python/
-  led13_test.py
-  all_features_test.py
-  ...
-  yunbridge_client/
-    plugin_base.py
-    plugin_loader.py
-    mqtt_plugin.py
+  - All build logic is in package-local Makefiles and `setup.py`.
+  - All .ipk and .whl files are built locally and installed via `install.sh`.
+  - No wheels are built on the device.
+  - All configuration is via UCI; no config files or environment variables are used at runtime.
+  - All logs are written to `/tmp` or SD card.
+  - Only MQTT is supported as a backend.
+  - All code and documentation is in English.
 
-```
+  ## License
 
-git clone https://github.com/isantolin/arduino-yun-bridge2.git
-cd arduino-yun-bridge2
-sh install.sh
-
-## 1. Installation & Dependencies
-
-### Robust Installer, Logging, and Validation
-
-- The installer (`install.sh`) now features atomic checkpoints and rollback: if any step fails, all changes are reverted and a clear error is logged in `/tmp/yunbridge_install.log`.
-- All Python plugins and the main daemon use rotating log files for robust, persistent logging. Log levels are configurable in code.
-- All scripts and plugins validate critical configuration parameters before running, and will fail fast with a clear error if any required value is missing.
-
-**Testing rollback:** You can force a failure in `install.sh` (e.g., by adding `false` after a checkpoint) to verify that rollback and cleanup work as expected.
-
-**Log files:**
-- `/tmp/yunbridge_daemon.log` (daemon)
-- `/tmp/yunbridge_mqtt_plugin.log` (plugin)
+  This project is licensed under the MIT License.
 
 **Configuration validation:**
 - The daemon and plugins will not start if required config values are missing or invalid. Errors are logged and shown in the console.

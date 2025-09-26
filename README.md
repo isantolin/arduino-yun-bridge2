@@ -716,3 +716,17 @@ If you see that `/tmp` points to the SD card, the optimization is active.
 
 > The YunBridge daemon will connect to the broker you specify, just like with SNS. You do not need to run a broker on the Yun itself.
 
+## Running the Daemon Manually
+
+You can start the daemon manually with:
+
+```sh
+/usr/bin/python3 /usr/libexec/yunbridge/bridge_daemon.py
+```
+
+Or use the wrapper script (recommended):
+
+```sh
+/usr/bin/yunbridge
+```
+

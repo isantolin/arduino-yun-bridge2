@@ -21,20 +21,23 @@ def parse_query(query):
     return params
 
 def main():
+    LOGFILE = '/tmp/yunbridge_script.log'
+    def log_event(msg):
+        try:
+            with open(LOGFILE, 'a') as f:
+                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
+        except Exception:
+            pass
+
     print('Content-Type: text/plain\n')
     query = os.environ.get('QUERY_STRING', '')
     params = parse_query(query)
     pin = params.get('pin')
     state = params.get('state', 'OFF').upper()
+    log_event(f"CGI call: pin={pin}, state={state}, query='{query}'")
     if not pin or not pin.isdigit():
-        LOGFILE = '/tmp/yunbridge_script.log'
         print('Error: pin parameter is required and must be a number.', file=sys.stderr)
-        def log_error(msg):
-            try:
-                with open(LOGFILE, 'a') as f:
-                    f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
-            except Exception:
-                pass
+        log_event('Failed: pin parameter missing or invalid.')
         print('Failed: pin parameter missing or invalid.')
         return
     if state not in ('ON', 'OFF'):
@@ -43,9 +46,11 @@ def main():
         with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=1) as ser:
             ser.write(f'PIN{pin} {state}\n'.encode())
         print(f'Pin {pin} turned {state}')
+        log_event(f'Success: Pin {pin} turned {state}')
     except Exception as e:
         print(f'Error: {e}', file=sys.stderr)
         print(f'Failed to control pin {pin}')
+        log_event(f'Error: {e} (pin {pin})')
 
 if __name__ == '__main__':
     main()

@@ -13,7 +13,7 @@ handler = RotatingFileHandler(LOG_PATH, maxBytes=1000000, backupCount=3)
 formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
 handler.setFormatter(formatter)
 logger = logging.getLogger("yunbridge.mqtt_plugin")
-logger.setLevel(logging.INFO)  # Change to DEBUG for more detail
+logger.setLevel(logging.DEBUG)  # Always log debug info for troubleshooting
 if not logger.hasHandlers():
     logger.addHandler(handler)
 

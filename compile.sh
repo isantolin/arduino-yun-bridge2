@@ -67,11 +67,26 @@ fi
 
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
+
+# Robust sync for openwrt-yun-bridge: ensure bridge_daemon.py and yunbridge.init are present
 for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     if [ -d "$pkg" ]; then
         echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
         cp -r "$pkg" "$SDK_DIR/package/"
+        # For openwrt-yun-bridge, verify critical files
+        if [ "$pkg" = "openwrt-yun-bridge" ]; then
+            for f in bridge_daemon.py yunbridge.init; do
+                if [ ! -f "$pkg/$f" ]; then
+                    echo "[ERROR] $f missing in $pkg. Aborting build."
+                    exit 1
+                fi
+                if [ ! -f "$SDK_DIR/package/$pkg/$f" ]; then
+                    echo "[ERROR] $f failed to copy to SDK/package/$pkg. Aborting build."
+                    exit 1
+                fi
+            done
+        fi
     else
         echo "[WARN] Package $pkg not found."
     fi
@@ -79,15 +94,42 @@ done
 
 # Ensure OpenWRT SDK detects new packages (refresh package index)
 pushd "$SDK_DIR"
-echo "[INFO] Running make defconfig to refresh package index..."
-make defconfig
+# Enable required Yun packages and dependencies automatically
+REQUIRED_PKGS=(openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge)
+REQUIRED_DEPS=(python3 python3-pyserial python3-paho-mqtt luci-base luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json)
+CONFIG_CHANGED=0
+for pkg in "${REQUIRED_PKGS[@]}"; do
+    if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
+        echo "CONFIG_PACKAGE_${pkg}=y" >> ".config"
+        CONFIG_CHANGED=1
+        echo "[INFO] Enabled $pkg in SDK .config."
+    fi
+done
+for dep in "${REQUIRED_DEPS[@]}"; do
+    if ! grep -q "CONFIG_PACKAGE_${dep}=y" ".config"; then
+        echo "CONFIG_PACKAGE_${dep}=y" >> ".config"
+        CONFIG_CHANGED=1
+        echo "[INFO] Enabled dependency $dep in SDK .config."
+    fi
+done
+if [ $CONFIG_CHANGED -eq 1 ]; then
+    echo "[INFO] Running make defconfig to update package selection..."
+    make defconfig
+else
+    echo "[INFO] Required packages and dependencies already enabled in SDK .config."
+fi
 popd
 
+
 # 3. Compilar los paquetes OpenWRT en el SDK
+# Limpiar .ipk viejos de openwrt-yun-bridge antes de copiar los nuevos
+echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
+find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
+
 pushd "$SDK_DIR"
-for pkg in luci-app-yunbridge openwrt-yun-core; do
+for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     if [ -d "package/$pkg" ]; then
-    echo "[BUILD] Building $pkg (.ipk) in SDK..."
+        echo "[BUILD] Building $pkg (.ipk) in SDK..."
         make package/$pkg/clean V=s || true
         make package/$pkg/compile V=s
         # Copiar artefactos .ipk al bin local
@@ -100,10 +142,10 @@ popd
 
 
 # 4. Compilar openwrt-yun-bridge como .ipk (no .whl)
+
+# openwrt-yun-bridge .ipk is built in the SDK, not locally. Do not run make in the package directory.
 if [ -d "openwrt-yun-bridge" ]; then
-    echo "[BUILD] Building openwrt-yun-bridge (.ipk) locally..."
-    (cd openwrt-yun-bridge && make clean)
-    # El .ipk se genera en el SDK, no localmente
+    echo "[INFO] openwrt-yun-bridge .ipk is built in the SDK. Skipping local make."
 else
     echo "[WARN] Package openwrt-yun-bridge not found."
 fi

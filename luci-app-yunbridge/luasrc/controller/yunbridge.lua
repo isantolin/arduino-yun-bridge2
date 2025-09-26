@@ -51,20 +51,32 @@ function action_status()
 end
 
 
+local function tail_file(path, n)
+    local f = io.open(path, "r")
+    if not f then return nil end
+    local lines = {}
+    for line in f:lines() do
+        table.insert(lines, line)
+        if #lines > n then table.remove(lines, 1) end
+    end
+    f:close()
+    return table.concat(lines, "\n")
+end
+
 function action_log_daemon()
-    local content = fs.readfile("/tmp/yunbridge_daemon.log") or "No daemon log file found."
+    local content = tail_file("/tmp/yunbridge_daemon.log", 50) or "No daemon log file found."
     luci.http.prepare_content("text/plain")
     luci.http.write(content)
 end
 
 function action_log_mqtt()
-    local content = fs.readfile("/tmp/yunbridge_mqtt_plugin.log") or "No MQTT log file found."
+    local content = tail_file("/tmp/yunbridge_mqtt_plugin.log", 50) or "No MQTT log file found."
     luci.http.prepare_content("text/plain")
     luci.http.write(content)
 end
 
 function action_log_script()
-    local content = fs.readfile("/tmp/yunbridge_script.log") or "No script log file found."
+    local content = tail_file("/tmp/yunbridge_script.log", 50) or "No script log file found."
     luci.http.prepare_content("text/plain")
     luci.http.write(content)
 end

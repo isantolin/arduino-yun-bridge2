@@ -8,9 +8,10 @@ set -e
 SWAPFILE="/overlay/swapfile"
 SWAPSIZE_MB=1024
 INIT_SCRIPT="/etc/init.d/yunbridge"
+export TMPDIR=/overlay/upper/tmp
 
 # --- Helper Functions ---
-
+mkdir -p "$TMPDIR"
 # Function to stop the yunbridge daemon robustly
 stop_daemon() {
     if [ ! -x "$INIT_SCRIPT" ]; then
@@ -108,17 +109,15 @@ fi
 
 
 # Instalar solo los .whl de openwrt_yun_client_python si existen
-export TMPDIR=/overlay/upper/tmp
-mkdir -p "$TMPDIR"
-for whl in bin/openwrt_yun_client_python-*.whl; do
-    if [ -e "$whl" ]; then
-        echo "[INFO] Installing Python package: $whl"
-        if ! pip3 install --upgrade --force-reinstall --no-deps "$whl"; then
-            echo "[ERROR] Failed to install $whl" >&2
-            exit 1
-        fi
-    fi
-done
+#for whl in bin/openwrt_yun_client_python-*.whl; do
+#    if [ -e "$whl" ]; then
+#        echo "[INFO] Installing Python package: $whl"
+#        if ! pip3 install --upgrade --force-reinstall --no-deps "$whl"; then
+#            echo "[ERROR] Failed to install $whl" >&2
+#            exit 1
+#        fi
+#    fi
+#done
 
 # --- System & LuCI Configuration ---
 echo "[STEP 5/6] Finalizing system configuration..."

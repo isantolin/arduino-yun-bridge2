@@ -41,24 +41,32 @@ DEFAULTS = {
     'debug': 0,
 }
 
+print("[DEBUG] Starting bridge_daemon.py")
 # --- Global Logger Setup (Single Source of Logging) ---
 LOG_PATH = '/tmp/yunbridge_daemon.log'
 logger = logging.getLogger("yunbridge")
 logger.setLevel(logging.INFO)
 
-# Create a rotating file handler (for file logging)
-file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
+try:
+    print(f"[DEBUG] Attempting to create RotatingFileHandler at {LOG_PATH}")
+    file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    print("[DEBUG] RotatingFileHandler created successfully")
+except Exception as e:
+    print(f"[ERROR] Failed to create RotatingFileHandler: {e}")
+    file_handler = None
 
 # Create a stream handler (for console logging)
 stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(formatter)
+stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
 # Add handlers to the logger (avoid duplicates)
 if not logger.hasHandlers():
-    logger.addHandler(file_handler)
+    if file_handler:
+        logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
+print("[DEBUG] Logger setup complete")
 
 # --- Configuration Loading ---
 def get_uci_config():
@@ -424,3 +432,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

@@ -17,8 +17,6 @@ start_service() {
     procd_close_instance
 }
 
-
-
 stop_service() {
     # Kill all running yunbridge daemons (any Python path, any invocation)
     pkill -f 'python.*yunbridge' 2>/dev/null || true

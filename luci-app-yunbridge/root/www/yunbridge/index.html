@@ -13,33 +13,63 @@
 	<h2>LED 13 Control (MQTT)</h2>
 	<button onclick="led13('ON')">Turn ON</button>
 	<button onclick="led13('OFF')">Turn OFF</button>
+	<div>
+		<label>MQTT User: <input type="text" id="mqtt-user" autocomplete="username"></label>
+		<label>MQTT Pass: <input type="password" id="mqtt-pass" autocomplete="current-password"></label>
+		<button onclick="saveAuth()">Use Credentials</button>
+	</div>
 	<div id="status">Connecting to MQTT...</div>
 	<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 	<script>
-		// MQTT broker settings
-	const brokerUrl = 'ws://192.168.15.17:9001'; // Usar la IP/dominio del host MQTT
-		const topicSet = 'yun/pin/13/set';
-		const topicState = 'yun/pin/13/state';
-		const client = mqtt.connect(brokerUrl);
+			// MQTT topics
+			const topicSet = 'yun/pin/13/set';
+			const topicState = 'yun/pin/13/state';
+			let client = null;
+			let brokerUrl = null;
+			let auth = {user: '', pass: ''};
 
-		client.on('connect', function () {
-			document.getElementById('status').innerText = 'Connected to MQTT broker.';
-			client.subscribe(topicState);
-		});
+			// Fetch broker WebSocket URL and credentials from LuCI endpoint
+			Promise.all([
+				fetch('/cgi-bin/luci/admin/services/yunbridge/mqtt_ws_url').then(r => r.text()),
+				fetch('/cgi-bin/luci/admin/services/yunbridge/mqtt_ws_auth').then(r => r.json())
+			]).then(([url, creds]) => {
+				brokerUrl = url;
+				auth = creds;
+				document.getElementById('mqtt-user').value = auth.user || '';
+				document.getElementById('mqtt-pass').value = auth.pass || '';
+				connectMQTT();
+			});
 
-		client.on('message', function (topic, message) {
-			if (topic === topicState) {
-				document.getElementById('status').innerText = 'LED 13 State: ' + message.toString();
+			function connectMQTT() {
+				if (client) client.end(true);
+				const opts = {};
+				const user = document.getElementById('mqtt-user').value;
+				const pass = document.getElementById('mqtt-pass').value;
+				if (user) opts.username = user;
+				if (pass) opts.password = pass;
+				document.getElementById('status').innerText = 'Connecting to MQTT at ' + brokerUrl + ' ...';
+				client = mqtt.connect(brokerUrl, opts);
+				client.on('connect', function () {
+					document.getElementById('status').innerText = 'Connected to MQTT broker.';
+					client.subscribe(topicState);
+				});
+				client.on('message', function (topic, message) {
+					if (topic === topicState) {
+						document.getElementById('status').innerText = 'LED 13 State: ' + message.toString();
+					}
+				});
+				client.on('error', function (err) {
+					document.getElementById('status').innerText = 'MQTT Error: ' + err;
+				});
 			}
-		});
 
-		client.on('error', function (err) {
-			document.getElementById('status').innerText = 'MQTT Error: ' + err;
-		});
+			function saveAuth() {
+				connectMQTT();
+			}
 
-		function led13(state) {
-			client.publish(topicSet, state);
-		}
+			function led13(state) {
+				if (client) client.publish(topicSet, state);
+			}
 	</script>
 </body>
 </html>

@@ -10,11 +10,23 @@ s = m:section(NamedSection, "main", "yunbridge", translate("Main Settings"))
 -- Opciones de configuración
 --------------------------------------------------------------------------
 
--- Opción para el Host MQTT
 host = s:option(Value, "mqtt_host", translate("MQTT Host"))
 host.datatype = "host"
 host.placeholder = "localhost"
 host.rmempty = false
+
+-- Opción para el usuario MQTT
+mqtt_user = s:option(Value, "mqtt_user", translate("MQTT Username"))
+mqtt_user.datatype = "string"
+mqtt_user.placeholder = ""
+mqtt_user.rmempty = true
+
+-- Opción para la contraseña MQTT
+mqtt_pass = s:option(Value, "mqtt_pass", translate("MQTT Password"))
+mqtt_pass.datatype = "string"
+mqtt_pass.placeholder = ""
+mqtt_pass.rmempty = true
+mqtt_pass.password = true
 
 -- Opción para el prefijo del Topic MQTT
 topic = s:option(Value, "mqtt_topic", "MQTT Topic Prefix")
@@ -77,5 +89,10 @@ debug = s:option(Flag, "debug", "Debug Mode")
 debug.default = "1"
 debug.rmempty = false
 
--- Retorna el mapa completo para que LuCI lo procese
+
+-- Callback para reiniciar el proceso yunbridge al aplicar cambios
+function m.on_commit(map)
+    os.execute("/etc/init.d/yunbridge restart >/dev/null 2>&1")
+end
+
 return m

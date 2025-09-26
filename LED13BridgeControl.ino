@@ -29,7 +29,8 @@ void reportPinState(int pin) {
   if (pin < 0 || pin >= MAX_PINS) return;
   String msg = "PIN" + String(pin) + " STATE ";
   msg += (digitalRead(pin) == HIGH) ? "ON" : "OFF";
-  Serial1.println(msg);
+  Serial1.print(msg); Serial1.print('\n');
+  delay(2); // Pequeño delay para evitar pegado de mensajes
 }
 
 void setup() {
@@ -75,12 +76,14 @@ void loop() {
       if (rest == "ON" || rest == ":ON") {
         setPin(pin, true);
         Serial.print("Pin "); Serial.print(pin); Serial.println(" ON");
-        Serial1.println("PIN" + String(pin) + " STATE ON");
+        Serial1.print("PIN" + String(pin) + " STATE ON\n");
+        delay(2);
         matched = true;
       } else if (rest == "OFF" || rest == ":OFF") {
         setPin(pin, false);
         Serial.print("Pin "); Serial.print(pin); Serial.println(" OFF");
-        Serial1.println("PIN" + String(pin) + " STATE OFF");
+        Serial1.print("PIN" + String(pin) + " STATE OFF\n");
+        delay(2);
         matched = true;
       } else if (rest.startsWith("STATE")) {
         reportPinState(pin);

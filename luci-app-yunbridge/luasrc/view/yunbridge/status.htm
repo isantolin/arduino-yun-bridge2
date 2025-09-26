@@ -1,31 +1,108 @@
 <%+header%>
+
+<script type="text/javascript">//<![CDATA[
+    
+    // Función de utilidad para generar la URL del controlador
+    function buildControllerUrl(action) {
+        return '<%=luci.dispatcher.build_url("admin", "services", "yunbridge")%>/' + action;
+    }
+
+    function fetchStatus() {
+        var status_url = buildControllerUrl('status_raw');
+        XHR.get(status_url, null, function(x, data) {
+            var status_content_element = document.getElementById('status-content');
+            
+            // Variable para almacenar el contenido final a mostrar
+            var display_content = 'No status available';
+
+            // --- MANEJO DE JSON DE ESTADO ---
+            try {
+                if (typeof data === 'object' && data !== null) {
+                    // Caso 1: LuCI/XHR ya devolvió el objeto parseado (Tu caso actual)
+                    display_content = JSON.stringify(data, null, 2);
+                
+                } else if (typeof data === 'string' && data.trim().startsWith('{')) {
+                    // Caso 2: Es una cadena de texto, pero parece JSON (Intentamos parsear)
+                    var obj = JSON.parse(data);
+                    display_content = JSON.stringify(obj, null, 2);
+                    
+                } else {
+                    // Caso 3: Es una cadena de texto simple (ej: "No status file found.")
+                    display_content = data || 'No status available';
+                }
+
+            } catch (e) {
+                // Si el parseo o stringify falla por cualquier motivo, mostramos el dato crudo.
+                console.error("Error parsing or stringifying status data:", e);
+                display_content = String(data) || 'Error processing data.';
+            }
+
+            // Asignamos el contenido final al elemento <pre>
+            status_content_element.textContent = display_content;
+        });
+    }
+
+    function fetchLogDaemon() {
+        var log_url = buildControllerUrl('log_daemon');
+        XHR.get(log_url, null, function(x, data) {
+            // **CORRECCIÓN:** Usamos 'data' si tiene contenido, o 'x.responseText' (el contenido HTTP crudo) si 'data' está vacío.
+            var content = data || x.responseText;
+            document.getElementById('log-daemon-content').textContent = content || 'No daemon log file found.';
+        });
+    }
+
+    function fetchLogMQTT() {
+        var log_url = buildControllerUrl('log_mqtt');
+        XHR.get(log_url, null, function(x, data) {
+            var content = data || x.responseText;
+            document.getElementById('log-mqtt-content').textContent = content || 'No MQTT log file found.';
+        });
+    }
+
+    function fetchLogScript() {
+        var log_url = buildControllerUrl('log_script');
+        XHR.get(log_url, null, function(x, data) {
+            var content = data || x.responseText;
+            document.getElementById('log-script-content').textContent = content || 'No script log file found.';
+        });
+    }
+    
+    // Función para iniciar todas las llamadas
+    function startFetching() {
+        fetchStatus();
+        fetchLogDaemon();
+        fetchLogMQTT();
+        fetchLogScript();
+        
+        // Configurar los intervalos de actualización (5 segundos)
+        setInterval(fetchStatus, 5000);
+        setInterval(fetchLogDaemon, 5000);
+        setInterval(fetchLogMQTT, 5000);
+        setInterval(fetchLogScript, 5000);
+    }
+
+    // Iniciar cuando la ventana esté completamente cargada
+    window.addEventListener('load', startFetching);
+//]]></script>
+
 <h2>YunBridge Daemon Status</h2>
 <div id="daemon-status">
   <pre id="status-content">Loading status...</pre>
 </div>
-<h2>Recent Log Output</h2>
+---
+<h2>Daemon Log</h2>
 <div id="daemon-log">
-  <pre id="log-content">Loading log...</pre>
+  <pre id="log-daemon-content">Loading daemon log...</pre>
 </div>
-<script type="text/javascript">
-function fetchStatus() {
-  XHR.get('/cgi-bin/luci/admin/services/yunbridge/status_raw', null, function(x, data) {
-    try {
-      var obj = JSON.parse(data);
-      document.getElementById('status-content').textContent = JSON.stringify(obj, null, 2);
-    } catch (e) {
-      document.getElementById('status-content').textContent = data || 'No status available';
-    }
-  });
-}
-function fetchLog() {
-  XHR.get('/cgi-bin/luci/admin/services/yunbridge/log_raw', null, function(x, data) {
-    document.getElementById('log-content').textContent = data || 'No log available';
-  });
-}
-fetchStatus();
-fetchLog();
-setInterval(fetchStatus, 5000);
-setInterval(fetchLog, 5000);
-</script>
+---
+<h2>MQTT Plugin Log</h2>
+<div id="mqtt-log">
+  <pre id="log-mqtt-content">Loading MQTT log...</pre>
+</div>
+---
+<h2>Script Log</h2>
+<div id="script-log">
+  <pre id="log-script-content">Loading script log...</pre>
+</div>
+
 <%+footer%>

@@ -251,37 +251,41 @@ class BridgeDaemon:
 
     # --- Command Handlers (from Serial) ---
     def handle_command(self, line):
-        """Parses and dispatches a command received from serial."""
-        cmd = line.strip()
-        logger.debug(f"Received from serial: '{cmd}'")
-        
-        # Regex-based matching for PIN commands for flexibility
-        pin_on_match = re.match(r'PIN(\d+) ON', cmd)
-        pin_off_match = re.match(r'PIN(\d+) OFF', cmd)
-        pin_state_match = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
-
-        if pin_on_match:
-            self.command_handlers["PIN_ON"](pin_on_match.group(1))
-        elif pin_off_match:
-            self.command_handlers["PIN_OFF"](pin_off_match.group(1))
-        elif pin_state_match:
-            self.command_handlers["PIN_STATE"](pin_state_match.group(1), pin_state_match.group(2))
-        else:
-            # Space-separated command for others
-            parts = cmd.split(' ', 1)
-            command_key = parts[0]
-            args = parts[1] if len(parts) > 1 else ""
-            
-            handler = self.command_handlers.get(command_key)
-            if handler:
-                try:
-                    handler(args)
-                except Exception as e:
-                    logger.error(f"Error executing command '{command_key}': {e}")
-                    self._write_to_serial(f'ERR {command_key}\n')
+        """Parses and dispatches one or more commands received from serial (tolerant to glued/concatenated commands)."""
+        raw = line.strip()
+        logger.debug(f"Received from serial: '{raw}'")
+        # Split on 'PIN' but keep the delimiter (for glued commands)
+        # Also handle possible 'MAILBOX', 'SET', etc. at start
+        tokens = re.split(r'(?=PIN\d+ )', raw)
+        for token in tokens:
+            cmd = token.strip()
+            if not cmd:
+                continue
+            # Regex-based matching for PIN commands for flexibility
+            pin_on_match = re.match(r'PIN(\d+) ON', cmd)
+            pin_off_match = re.match(r'PIN(\d+) OFF', cmd)
+            pin_state_match = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
+            if pin_on_match:
+                self.command_handlers["PIN_ON"](pin_on_match.group(1))
+            elif pin_off_match:
+                self.command_handlers["PIN_OFF"](pin_off_match.group(1))
+            elif pin_state_match:
+                self.command_handlers["PIN_STATE"](pin_state_match.group(1), pin_state_match.group(2))
             else:
-                logger.warning(f"Unknown command received from serial: '{cmd}'")
-                self._write_to_serial('UNKNOWN COMMAND\n')
+                # Space-separated command for others
+                parts = cmd.split(' ', 1)
+                command_key = parts[0]
+                args = parts[1] if len(parts) > 1 else ""
+                handler = self.command_handlers.get(command_key)
+                if handler:
+                    try:
+                        handler(args)
+                    except Exception as e:
+                        logger.error(f"Error executing command '{command_key}': {e}")
+                        self._write_to_serial(f'ERR {command_key}\n')
+                else:
+                    logger.warning(f"Unknown command received from serial: '{cmd}'")
+                    self._write_to_serial('UNKNOWN COMMAND\n')
     
     def _publish_pin_state(self, pin, state):
         """Helper to publish pin state to MQTT."""

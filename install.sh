@@ -106,10 +106,11 @@ if ls bin/*.ipk 1>/dev/null 2>&1; then
     opkg install --force-reinstall bin/*.ipk
 fi
 
-# Install all .whl packages using system's pip3
+
+# Instalar solo los .whl de openwrt_yun_client_python si existen
 export TMPDIR=/overlay/upper/tmp
 mkdir -p "$TMPDIR"
-for whl in bin/*.whl; do
+for whl in bin/openwrt_yun_client_python-*.whl; do
     if [ -e "$whl" ]; then
         echo "[INFO] Installing Python package: $whl"
         if ! pip3 install --upgrade --force-reinstall --no-deps "$whl"; then

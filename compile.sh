@@ -65,8 +65,9 @@ fi
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
 
+
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
-for pkg in luci-app-yunbridge openwrt-yun-core; do
+for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     if [ -d "$pkg" ]; then
         echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
@@ -97,18 +98,25 @@ popd
 
 
 
-# 4. Compilar los paquetes Python localmente (system Python only)
-# IMPORTANTE: Todos los .whl deben ser generados en la PC de desarrollo, nunca en el dispositivo OpenWRT.
-# Si una dependencia no tiene .whl precompilado para tu arquitectura, pip intentará compilarla en el dispositivo y fallará.
-for pkg in openwrt-yun-bridge openwrt-yun-client-python; do
-    if [ -d "$pkg" ]; then
-        echo "[BUILD] Building $pkg (.whl) locally..."
-        (cd "$pkg" && make clean && make wheel)
-        cp "$pkg"/bin/*.whl "$BIN_DIR/" 2>/dev/null || true
-    else
-        echo "[WARN] Package $pkg not found."
-    fi
-done
+
+# 4. Compilar openwrt-yun-bridge como .ipk (no .whl)
+if [ -d "openwrt-yun-bridge" ]; then
+    echo "[BUILD] Building openwrt-yun-bridge (.ipk) locally..."
+    (cd openwrt-yun-bridge && make clean)
+    # El .ipk se genera en el SDK, no localmente
+else
+    echo "[WARN] Package openwrt-yun-bridge not found."
+fi
+
+
+# 5. Compilar openwrt-yun-client-python como .whl
+if [ -d "openwrt-yun-client-python" ]; then
+    echo "[BUILD] Building openwrt-yun-client-python (.whl) locally..."
+    (cd openwrt-yun-client-python && make clean && make wheel)
+    cp openwrt-yun-client-python/bin/*.whl "$BIN_DIR/" 2>/dev/null || true
+else
+    echo "[WARN] Package openwrt-yun-client-python not found."
+fi
 
 
 echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."

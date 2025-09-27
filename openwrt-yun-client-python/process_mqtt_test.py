@@ -26,7 +26,7 @@ client.connect(BROKER, PORT, 60)
 client.loop_start()
 
 print("Running process via MQTT...")
-client.publish(TOPIC_CMD, 'RUN echo hello_from_yun')
+client.publish(TOPIC_CMD, 'RUN echo hello_from_yun', qos=2)
 time.sleep(1)
 client.loop_stop()
 client.disconnect()

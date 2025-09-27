@@ -22,7 +22,7 @@ plugin = PluginClass(**MQTT_CONFIG)
 
 plugin.connect()
 print("Sending CONSOLE command via MQTT...")
-plugin.publish(TOPIC_CMD, 'CONSOLE hello_console')
+plugin.publish(TOPIC_CMD, 'CONSOLE hello_console')  # plugin uses QoS 2
 time.sleep(1)
 plugin.disconnect()
 print("Done.")

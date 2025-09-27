@@ -22,10 +22,10 @@ plugin = PluginClass(**MQTT_CONFIG)
 
 plugin.connect()
 print("Writing file via MQTT...")
-plugin.publish(TOPIC_CMD, f'WRITEFILE {TEST_FILE} hello_bridge')
+plugin.publish(TOPIC_CMD, f'WRITEFILE {TEST_FILE} hello_bridge')  # plugin uses QoS 2
 time.sleep(1)
 print("Reading file via MQTT...")
-plugin.publish(TOPIC_CMD, f'READFILE {TEST_FILE}')
+plugin.publish(TOPIC_CMD, f'READFILE {TEST_FILE}')  # plugin uses QoS 2
 time.sleep(1)
 plugin.disconnect()
 print("Done.")

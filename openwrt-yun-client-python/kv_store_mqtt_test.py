@@ -21,10 +21,10 @@ plugin = PluginClass(**MQTT_CONFIG)
 
 plugin.connect()
 print("Setting key via MQTT...")
-plugin.publish(TOPIC_CMD, 'SET foo bar')
+plugin.publish(TOPIC_CMD, 'SET foo bar')  # plugin uses QoS 2
 time.sleep(1)
 print("Getting key via MQTT...")
-plugin.publish(TOPIC_CMD, 'GET foo')
+plugin.publish(TOPIC_CMD, 'GET foo')  # plugin uses QoS 2
 time.sleep(1)
 plugin.disconnect()
 print("Done.")

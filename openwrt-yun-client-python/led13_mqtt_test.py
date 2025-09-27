@@ -31,13 +31,15 @@ def on_message(topic, message):
     print(f"[MQTT] {topic}: {message}")
 
 plugin.connect()
+
+# Forcibly use QoS 2 in subscribe (plugin uses QoS 2 internally, but for clarity):
 plugin.subscribe(TOPIC_STATE, on_message)
 
 print(f"Turning pin {PIN} ON via MQTT...")
-plugin.publish(TOPIC_SET, 'ON')
+plugin.publish(TOPIC_SET, 'ON')  # plugin uses QoS 2
 time.sleep(2)
 print(f"Turning pin {PIN} OFF via MQTT...")
-plugin.publish(TOPIC_SET, 'OFF')
+plugin.publish(TOPIC_SET, 'OFF')  # plugin uses QoS 2
 time.sleep(2)
 print("Done. Waiting for state updates...")
 time.sleep(2)

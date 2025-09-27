@@ -49,8 +49,8 @@ class MQTTPlugin(MessagingPluginBase):
             logger.error("MQTT publish: topic and message are required")
             raise ValueError("MQTT publish: topic and message are required")
         try:
-            self.client.publish(topic, message)
-            logger.debug(f"Published to {topic}: {message}")
+            self.client.publish(topic, message, qos=2)
+            logger.debug(f"Published to {topic}: {message} (QoS 2)")
         except Exception as e:
             logger.error(f"MQTT publish error: {e}")
             raise
@@ -65,9 +65,9 @@ class MQTTPlugin(MessagingPluginBase):
             except Exception as e:
                 logger.error(f"MQTT callback error: {e}")
         try:
-            self.client.subscribe(topic)
+            self.client.subscribe(topic, qos=2)
             self.client.on_message = on_message
-            logger.info(f"Subscribed to {topic}")
+            logger.debug(f"Subscribed to {topic} (QoS 2)")
         except Exception as e:
             logger.error(f"MQTT subscribe error: {e}")
             raise

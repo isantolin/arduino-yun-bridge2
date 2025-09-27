@@ -21,6 +21,15 @@ It provides robust, extensible communication between the microcontroller (via se
 - **Communication Protocol:**
   - Serial protocol: Commands like `PIN<N> ON/OFF`, `MAILBOX <msg>`, `SET <key> <val>`, `GET <key>`, `RUN <cmd>`, `WRITEFILE <path> <data>`, `READFILE <path>`.
   - MQTT topics: `yun/pin/<N>/set`, `yun/pin/<N>/state`, `yun/command`, `yun/mailbox/send`, `yun/mailbox/recv`.
+  - **All MQTT publish and subscribe operations use QoS 2 (exactly once delivery) for maximum reliability.**
+### MQTT Quality of Service (QoS)
+
+All MQTT communication in this ecosystem (daemon, Python client, and test examples) uses **QoS 2** (exactly once delivery) for both publish and subscribe operations. This ensures:
+
+- No message loss or duplication, even in the case of network interruptions.
+- Maximum reliability for all device control and monitoring actions.
+
+If you use your own MQTT client, make sure to set `qos=2` in both `publish` and `subscribe` calls for full compatibility.
   - Web REST API for pin control and status (JSON responses).
   - WebSocket support for browser-based MQTT control.
 - **Web UI:**

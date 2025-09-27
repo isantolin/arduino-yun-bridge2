@@ -214,12 +214,12 @@ class BridgeDaemon:
             logger.info("Successfully connected to MQTT broker.")
             self.mqtt_connected = True
             try:
-                # Subscribe to topics
+                # Subscribe to topics with QoS 2
                 pin_topic = f'{self.pin_topic_prefix}/+/set'
                 mailbox_topic = f'{self.mailbox_topic_prefix}/send'
-                client.subscribe([(pin_topic, 0), (mailbox_topic, 0)])
-                logger.info(f"Subscribed to: {pin_topic}")
-                logger.info(f"Subscribed to: {mailbox_topic}")
+                client.subscribe([(pin_topic, 2), (mailbox_topic, 2)])
+                logger.info(f"Subscribed to: {pin_topic} (QoS 2)")
+                logger.info(f"Subscribed to: {mailbox_topic} (QoS 2)")
             except Exception as e:
                 logger.error(f"Failed to subscribe to topics: {e}")
         else:
@@ -250,10 +250,10 @@ class BridgeDaemon:
             logger.error(f"Error processing MQTT message on topic {msg.topic}: {e}")
 
     def publish_mqtt(self, topic, payload, retain=False):
-        """Publishes a message to an MQTT topic."""
+        """Publishes a message to an MQTT topic with QoS 2."""
         if self.mqtt_connected:
-            self.mqtt_client.publish(topic, payload, retain=retain)
-            logger.debug(f"Published to MQTT: Topic='{topic}', Payload='{payload}'")
+            self.mqtt_client.publish(topic, payload, qos=2, retain=retain)
+            logger.debug(f"Published to MQTT: Topic='{topic}', Payload='{payload}', QoS=2")
         else:
             logger.warning("MQTT not connected. Cannot publish message.")
 

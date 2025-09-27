@@ -18,7 +18,7 @@ TOPIC_RECV = 'yun/mailbox/recv'
 
 def on_connect(client, userdata, flags, rc, properties=None):
 	print("Connected with result code " + str(rc))
-	client.subscribe(TOPIC_RECV)
+	client.subscribe(TOPIC_RECV, qos=2)
 
 def on_message(client, userdata, msg):
 	print(f"[MQTT] Received on {msg.topic}: {msg.payload.decode(errors='replace')}")
@@ -33,7 +33,7 @@ client.connect(BROKER, PORT, 60)
 client.loop_start()
 
 print("Enviando mensaje a mailbox via MQTT...")
-client.publish(TOPIC_SEND, 'hola_desde_mqtt')
+client.publish(TOPIC_SEND, 'hola_desde_mqtt', qos=2)
 time.sleep(2)
 print("Listo. Esperando posibles respuestas en yun/mailbox/recv...")
 time.sleep(3)

@@ -129,17 +129,6 @@ It provides robust, extensible communication between the microcontroller (via se
 
 ---
 
-
-## Minimum Requirements
-
-- OpenWRT device with at least 16MB flash, 64MB RAM (swap recommended)
-- Micro SD card (at least 2 GB)
-- Python 3.7+
-- MQTT broker (local or remote)
-- Arduino board with Serial1 (Yun, Uno, Mega, Leonardo, etc)
-
----
-
 ## Usage Examples
 
 ### Arduino Sketch: Pin Control
@@ -172,7 +161,31 @@ plugin.disconnect()
 
 ---
 
+
 ## Roadmap
+
+### MQTT
+- Advanced control features
+- Certificate support for secure connections
+- WebSockets support (outside Arduino)
+
+### Communication Protocols
+- Implementation of COBS (Consistent Overhead Byte Stuffing) between OpenWRT and the microcontroller
+
+### Core Yun/OpenWRT
+- Support for new OpenWRT targets
+- OTA (Over-The-Air) updates for firmware and packages
+- Integration of community contributions
+- Expanded documentation and tutorials
+- Official Mosquitto support with WebSockets on OpenWRT
+
+### Web UI (luci-app-yunbridge)
+- Advanced dashboard (MQTT only)
+- Usability and real-time visualization improvements
+- Integration of plugins and custom panels
+
+---
+
 See `ROADMAP.md` for planned features and contributions.
 
 ---

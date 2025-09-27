@@ -48,13 +48,39 @@ It provides robust, extensible communication between the microcontroller (via se
 
 ## Communication Protocol
 
+
+### Web REST API (CGI) for Pin Control
+
+The system provides a CGI endpoint for pin control and status via HTTP:
+
+- **Set pin state:**
+  - `POST /arduino-webui-v2/pin?pin=N&state=ON|OFF`
+  - Example: `/arduino-webui-v2/pin?pin=13&state=ON`
+  - Response (JSON):
+    ```json
+    { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 turned ON" }
+    ```
+
+- **Get pin status:**
+  - `GET /arduino-webui-v2/pin?pin=N&get_status=1`
+  - Example: `/arduino-webui-v2/pin?pin=13&get_status=1`
+  - Response (JSON):
+    ```json
+    { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 is ON" }
+    ```
+
+All responses are JSON. On error, the response will include `status: "error"` and a `message` field.
+
+---
+
 ### Serial Commands (from Linux to Arduino)
-- `PIN<N> ON` / `PIN<N> OFF`: Set digital pin state.
-- `MAILBOX <msg>`: Send message to Arduino mailbox.
-- `SET <key> <val>` / `GET <key>`: Key-value store operations.
-- `RUN <cmd>`: Execute Linux command, return output.
-- `WRITEFILE <path> <data>` / `READFILE <path>`: File I/O.
-- `CONSOLE <msg>`: Console message.
+* `PIN<N> ON` / `PIN<N> OFF`: Set digital pin state.
+* `PIN<N> STATUS`: Query digital pin state (used by CGI endpoint).
+* `MAILBOX <msg>`: Send message to Arduino mailbox.
+* `SET <key> <val>` / `GET <key>`: Key-value store operations.
+* `RUN <cmd>`: Execute Linux command, return output.
+* `WRITEFILE <path> <data>` / `READFILE <path>`: File I/O.
+* `CONSOLE <msg>`: Console message.
 
 ### Serial Responses (from Arduino to Linux)
 - `PIN<N> STATE ON/OFF`: Pin state report.

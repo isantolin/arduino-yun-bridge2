@@ -8,9 +8,58 @@ import os
 import sys
 import serial
 import time
+import subprocess
+import logging
+import re
+import json
+from logging.handlers import RotatingFileHandler
 
-SERIAL_PORT = '/dev/ttyATH0'
-BAUDRATE = 115200
+# --- Logger Setup (reuse yunbridge global logger style) ---
+LOG_PATH = '/tmp/yunbridge_daemon.log'
+logger = logging.getLogger("yunbridge")
+logger.setLevel(logging.INFO)
+file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(formatter)
+if not logger.hasHandlers():
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+
+# --- UCI Config Loader (reuse from bridge_daemon.py) ---
+DEFAULTS = {
+    'serial_port': '/dev/ttyATH0',
+    'serial_baud': 115200,
+}
+def get_uci_config():
+    cfg = DEFAULTS.copy()
+    try:
+        result = subprocess.run(['uci', 'show', 'yunbridge'], capture_output=True, text=True, check=True)
+        for line in result.stdout.splitlines():
+            match = re.match(r"yunbridge\.main\.(\w+)='?([^']*)'?", line.strip())
+            if match:
+                key, value = match.groups()
+                if key in DEFAULTS:
+                    if key == 'serial_baud':
+                        try:
+                            cfg[key] = int(value)
+                        except (ValueError, TypeError):
+                            logger.warning(f"Invalid integer value for UCI key '{key}': '{value}'. Using default.")
+                    else:
+                        cfg[key] = value
+        logger.info('UCI configuration loaded successfully (CGI).')
+    except FileNotFoundError:
+        logger.warning('`uci` command not found. Using default configuration (CGI).')
+    except subprocess.CalledProcessError:
+        logger.warning('No UCI configuration found for `yunbridge`. Using default configuration (CGI).')
+    except Exception as e:
+        logger.error(f'Error reading UCI configuration (CGI): {e}')
+    return cfg
+
+CFG = get_uci_config()
+SERIAL_PORT = CFG['serial_port']
+BAUDRATE = CFG['serial_baud']
 
 def parse_query(query):
     params = {}
@@ -20,37 +69,77 @@ def parse_query(query):
             params[k] = v
     return params
 
-def main():
-    LOGFILE = '/tmp/yunbridge_script.log'
-    def log_event(msg):
-        try:
-            with open(LOGFILE, 'a') as f:
-                f.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n")
-        except Exception:
-            pass
 
-    print('Content-Type: text/plain\n')
+def main():
+    print('Content-Type: application/json\n')
     query = os.environ.get('QUERY_STRING', '')
     params = parse_query(query)
     pin = params.get('pin')
+    get_status = params.get('get_status', '0') == '1'
     state = params.get('state', 'OFF').upper()
-    log_event(f"CGI call: pin={pin}, state={state}, query='{query}'")
+    logger.info(f"CGI call: pin={pin}, state={state}, get_status={get_status}, query='{query}'")
+    response = {}
     if not pin or not pin.isdigit():
-        print('Error: pin parameter is required and must be a number.', file=sys.stderr)
-        log_event('Failed: pin parameter missing or invalid.')
-        print('Failed: pin parameter missing or invalid.')
+        logger.error('Failed: pin parameter missing or invalid.')
+        response = {
+            'status': 'error',
+            'message': 'pin parameter is required and must be a number.'
+        }
+        print(json.dumps(response))
         return
+
+    if get_status:
+        # GET pin status: send 'PIN{pin} STATUS' and read response
+        try:
+            with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=2) as ser:
+                ser.reset_input_buffer()
+                ser.write(f'PIN{pin} STATUS\n'.encode())
+                time.sleep(0.1)
+                raw = ser.readline().decode(errors='ignore').strip()
+            logger.info(f'Pin {pin} status response: {raw}')
+            # Try to parse response, e.g. 'PIN13=ON' or 'PIN13=OFF'
+            m = re.match(r'PIN(\d+)=([A-Z]+)', raw)
+            if m:
+                pin_num, pin_state = m.groups()
+                response = {
+                    'status': 'ok',
+                    'pin': int(pin_num),
+                    'state': pin_state,
+                    'message': f'Pin {pin_num} is {pin_state}'
+                }
+            else:
+                response = {
+                    'status': 'error',
+                    'message': f'Unexpected response: {raw}'
+                }
+        except Exception as e:
+            logger.error(f'Error getting status: {e} (pin {pin})')
+            response = {
+                'status': 'error',
+                'message': f'Failed to get status for pin {pin}: {e}'
+            }
+        print(json.dumps(response))
+        return
+
     if state not in ('ON', 'OFF'):
         state = 'OFF'
     try:
         with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=1) as ser:
             ser.write(f'PIN{pin} {state}\n'.encode())
-        print(f'Pin {pin} turned {state}')
-        log_event(f'Success: Pin {pin} turned {state}')
+        logger.info(f'Success: Pin {pin} turned {state}')
+        response = {
+            'status': 'ok',
+            'pin': int(pin),
+            'state': state,
+            'message': f'Pin {pin} turned {state}'
+        }
     except Exception as e:
-        print(f'Error: {e}', file=sys.stderr)
-        print(f'Failed to control pin {pin}')
-        log_event(f'Error: {e} (pin {pin})')
+        logger.error(f'Error: {e} (pin {pin})')
+        response = {
+            'status': 'error',
+            'message': f'Failed to control pin {pin}: {e}'
+        }
+    print(json.dumps(response))
 
 if __name__ == '__main__':
     main()

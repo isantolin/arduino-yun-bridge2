@@ -3,9 +3,10 @@
 
 ## Overview
 
+
 **Arduino Yun Ecosystem v2** is a modular, open-source platform for bridging Arduino microcontrollers with OpenWRT-based Linux systems. The main goal of this project is to provide a fully functional, modern software stack for the Arduino Yun board in 2025, ensuring its usability with up-to-date tools and protocols. The project is also designed with the intention to extend support in the future to other boards that integrate a microcontroller and Linux system (e.g., ATmega32U4 + Atheros AR9331 in the case of Arduino Yun).
 
-It provides robust, extensible communication between the microcontroller (via serial) and Linux (via MQTT, Python, and web interfaces), enabling advanced IoT, automation, and device management scenarios.
+It provides robust, extensible communication between the microcontroller (via serial) and Linux (via MQTT, Python, web interfaces, and a REST API), enabling advanced IoT, automation, and device management scenarios.
 
 ---
 
@@ -15,10 +16,12 @@ It provides robust, extensible communication between the microcontroller (via se
   - Core Python daemon bridges MQTT and serial communication.
   - Arduino C++ library for seamless integration with sketches.
   - LuCI web interface for configuration and real-time control.
+  - REST Web API (CGI) for pin control and status via HTTP.
   - Plugin system for messaging backends (MQTT, extensible).
 - **Communication Protocol:**
   - Serial protocol: Commands like `PIN<N> ON/OFF`, `MAILBOX <msg>`, `SET <key> <val>`, `GET <key>`, `RUN <cmd>`, `WRITEFILE <path> <data>`, `READFILE <path>`.
   - MQTT topics: `yun/pin/<N>/set`, `yun/pin/<N>/state`, `yun/command`, `yun/mailbox/send`, `yun/mailbox/recv`.
+  - Web REST API for pin control and status (JSON responses).
   - WebSocket support for browser-based MQTT control.
 - **Web UI:**
   - Real-time pin control and status monitoring.
@@ -49,27 +52,44 @@ It provides robust, extensible communication between the microcontroller (via se
 ## Communication Protocol
 
 
-### Web REST API (CGI) for Pin Control
 
-The system provides a CGI endpoint for pin control and status via HTTP:
+### Web REST API for Pin Control (RESTful)
 
-- **Set pin state:**
-  - `POST /arduino-webui-v2/pin?pin=N&state=ON|OFF`
-  - Example: `/arduino-webui-v2/pin?pin=13&state=ON`
-  - Response (JSON):
-    ```json
-    { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 turned ON" }
-    ```
+The system provides a RESTful HTTP API for pin control and status:
 
 - **Get pin status:**
-  - `GET /arduino-webui-v2/pin?pin=N&get_status=1`
-  - Example: `/arduino-webui-v2/pin?pin=13&get_status=1`
+  - `GET /arduino-webui-v2/pin/<N>`
+  - Example:
+    ```sh
+    curl -X GET http://<yun_ip>/arduino-webui-v2/pin/13
+    ```
   - Response (JSON):
     ```json
     { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 is ON" }
     ```
 
-All responses are JSON. On error, the response will include `status: "error"` and a `message` field.
+- **Set pin state:**
+  - `POST /arduino-webui-v2/pin/<N>`
+  - Body (JSON): `{ "state": "ON" }` o `{ "state": "OFF" }`
+  - Example:
+    ```sh
+    curl -X POST -H "Content-Type: application/json" -d '{"state": "ON"}' http://<yun_ip>/arduino-webui-v2/pin/13
+    ```
+  - Response (JSON):
+    ```json
+    { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 turned ON" }
+    ```
+
+
+- **Errors:**
+  - Error responses use the field `status: "error"` and a message, and the appropriate HTTP status code (400, 405, 500, etc).
+
+**Notes:**
+- The pin number is specified in the URL (`/pin/<N>`).
+- Only HTTP GET and POST methods are accepted.
+- The POST body must be valid JSON.
+
+---
 
 ---
 

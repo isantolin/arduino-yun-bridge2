@@ -61,6 +61,7 @@ CFG = get_uci_config()
 SERIAL_PORT = CFG['serial_port']
 BAUDRATE = CFG['serial_baud']
 
+
 def parse_query(query):
     params = {}
     for part in query.split('&'):
@@ -69,27 +70,35 @@ def parse_query(query):
             params[k] = v
     return params
 
+def get_pin_from_path():
+    # Expect PATH_INFO like /pin/13
+    path = os.environ.get('PATH_INFO', '')
+    m = re.match(r"/pin/(\d+)$", path)
+    if m:
+        return m.group(1)
+    return None
+
+
+
+def send_response(status_code, data):
+    print(f'Status: {status_code}')
+    print('Content-Type: application/json\n')
+    print(json.dumps(data))
 
 def main():
-    print('Content-Type: application/json\n')
-    query = os.environ.get('QUERY_STRING', '')
-    params = parse_query(query)
-    pin = params.get('pin')
-    get_status = params.get('get_status', '0') == '1'
-    state = params.get('state', 'OFF').upper()
-    logger.info(f"CGI call: pin={pin}, state={state}, get_status={get_status}, query='{query}'")
-    response = {}
+    method = os.environ.get('REQUEST_METHOD', 'GET').upper()
+    pin = get_pin_from_path()
+    logger.info(f"REST call: method={method}, pin={pin}")
     if not pin or not pin.isdigit():
         logger.error('Failed: pin parameter missing or invalid.')
-        response = {
+        send_response(400, {
             'status': 'error',
-            'message': 'pin parameter is required and must be a number.'
-        }
-        print(json.dumps(response))
+            'message': 'Pin must be specified in the URL as /pin/<N>.'
+        })
         return
 
-    if get_status:
-        # GET pin status: send 'PIN{pin} STATUS' and read response
+    if method == 'GET':
+        # GET pin status
         try:
             with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=2) as ser:
                 ser.reset_input_buffer()
@@ -97,49 +106,71 @@ def main():
                 time.sleep(0.1)
                 raw = ser.readline().decode(errors='ignore').strip()
             logger.info(f'Pin {pin} status response: {raw}')
-            # Try to parse response, e.g. 'PIN13=ON' or 'PIN13=OFF'
             m = re.match(r'PIN(\d+)=([A-Z]+)', raw)
             if m:
                 pin_num, pin_state = m.groups()
-                response = {
+                send_response(200, {
                     'status': 'ok',
                     'pin': int(pin_num),
                     'state': pin_state,
                     'message': f'Pin {pin_num} is {pin_state}'
-                }
+                })
             else:
-                response = {
+                send_response(502, {
                     'status': 'error',
                     'message': f'Unexpected response: {raw}'
-                }
+                })
         except Exception as e:
             logger.error(f'Error getting status: {e} (pin {pin})')
-            response = {
+            send_response(500, {
                 'status': 'error',
                 'message': f'Failed to get status for pin {pin}: {e}'
-            }
-        print(json.dumps(response))
+            })
         return
 
-    if state not in ('ON', 'OFF'):
-        state = 'OFF'
-    try:
-        with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=1) as ser:
-            ser.write(f'PIN{pin} {state}\n'.encode())
-        logger.info(f'Success: Pin {pin} turned {state}')
-        response = {
-            'status': 'ok',
-            'pin': int(pin),
-            'state': state,
-            'message': f'Pin {pin} turned {state}'
-        }
-    except Exception as e:
-        logger.error(f'Error: {e} (pin {pin})')
-        response = {
+    elif method == 'POST':
+        # POST: set pin state, expect JSON body {"state": "ON"}
+        try:
+            content_length = int(os.environ.get('CONTENT_LENGTH', 0))
+            body = sys.stdin.read(content_length) if content_length > 0 else ''
+            data = json.loads(body) if body else {}
+            state = data.get('state', '').upper()
+        except Exception as e:
+            logger.error(f'POST body parse error: {e}')
+            send_response(400, {
+                'status': 'error',
+                'message': 'Invalid JSON body.'
+            })
+            return
+        if state not in ('ON', 'OFF'):
+            send_response(400, {
+                'status': 'error',
+                'message': 'State must be "ON" or "OFF".'
+            })
+            return
+        try:
+            with serial.Serial(SERIAL_PORT, BAUDRATE, timeout=1) as ser:
+                ser.write(f'PIN{pin} {state}\n'.encode())
+            logger.info(f'Success: Pin {pin} turned {state}')
+            send_response(200, {
+                'status': 'ok',
+                'pin': int(pin),
+                'state': state,
+                'message': f'Pin {pin} turned {state}'
+            })
+        except Exception as e:
+            logger.error(f'Error: {e} (pin {pin})')
+            send_response(500, {
+                'status': 'error',
+                'message': f'Failed to control pin {pin}: {e}'
+            })
+        return
+
+    else:
+        send_response(405, {
             'status': 'error',
-            'message': f'Failed to control pin {pin}: {e}'
-        }
-    print(json.dumps(response))
+            'message': f'Method {method} not allowed.'
+        })
 
 if __name__ == '__main__':
     main()

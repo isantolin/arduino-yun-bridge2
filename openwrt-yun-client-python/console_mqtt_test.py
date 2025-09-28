@@ -16,36 +16,31 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-def on_connect(client, userdata, flags, rc, properties=None):
-	print("Connected with result code " + str(rc))
 
 #!/usr/bin/env python3
 """
-Example: Test process execution via MQTT
-Sends RUN command to the yun/command topic
+Example: Test console command using the YunBridge plugin system (MQTT backend)
+Sends a message to the yun/command topic
+Usage:
+    python3 console_mqtt_test.py
+    # Or use led13_test.py for unified plugin support
 """
 import time
-import paho.mqtt.client as mqtt
-try:
-	from paho.mqtt.enums import CallbackAPIVersion
-except ImportError:
-	CallbackAPIVersion = None
+from yunbridge_client.plugin_loader import PluginLoader
 
-BROKER = 'localhost'
-PORT = 1883
 TOPIC_CMD = 'yun/command'
 
-if CallbackAPIVersion is not None:
-	client = mqtt.Client(CallbackAPIVersion.VERSION2)
-else:
-	client = mqtt.Client()
-client.on_connect = on_connect
-client.connect(BROKER, PORT, 60)
-client.loop_start()
+# Example: MQTT plugin (default)
+MQTT_CONFIG = dict(host='localhost', port=1883)
 
-print("Running process via MQTT...")
-client.publish(TOPIC_CMD, 'RUN echo hello_from_yun', qos=2)
+PluginClass = PluginLoader.load_plugin('mqtt_plugin')
+plugin = PluginClass(**MQTT_CONFIG)
+
+
+
+plugin.connect()
+print("Sending CONSOLE command via MQTT...")
+plugin.publish(TOPIC_CMD, 'CONSOLE hello_console')  # plugin uses QoS 2
 time.sleep(1)
-client.loop_stop()
-client.disconnect()
+plugin.disconnect()
 print("Done.")

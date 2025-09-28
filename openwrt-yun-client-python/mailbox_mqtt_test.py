@@ -16,13 +16,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-def on_connect(client, userdata, flags, rc, properties=None):
-	print("Connected with result code " + str(rc))
 
 #!/usr/bin/env python3
 """
-Example: Test process execution via MQTT
-Sends RUN command to the yun/command topic
+Example: Test mailbox via MQTT (nuevo flujo)
+Publica mensajes arbitrarios en yun/mailbox/send y escucha respuestas en yun/mailbox/recv
 """
 import time
 import paho.mqtt.client as mqtt
@@ -33,19 +31,30 @@ except ImportError:
 
 BROKER = 'localhost'
 PORT = 1883
-TOPIC_CMD = 'yun/command'
+TOPIC_SEND = 'yun/mailbox/send'
+TOPIC_RECV = 'yun/mailbox/recv'
+
+def on_connect(client, userdata, flags, rc, properties=None):
+	print("Connected with result code " + str(rc))
+	client.subscribe(TOPIC_RECV, qos=2)
+
+def on_message(client, userdata, msg):
+	print(f"[MQTT] Received on {msg.topic}: {msg.payload.decode(errors='replace')}")
 
 if CallbackAPIVersion is not None:
 	client = mqtt.Client(CallbackAPIVersion.VERSION2)
 else:
 	client = mqtt.Client()
 client.on_connect = on_connect
+client.on_message = on_message
 client.connect(BROKER, PORT, 60)
 client.loop_start()
 
-print("Running process via MQTT...")
-client.publish(TOPIC_CMD, 'RUN echo hello_from_yun', qos=2)
-time.sleep(1)
+print("Enviando mensaje a mailbox via MQTT...")
+client.publish(TOPIC_SEND, 'hola_desde_mqtt', qos=2)
+time.sleep(2)
+print("Listo. Esperando posibles respuestas en yun/mailbox/recv...")
+time.sleep(3)
 client.loop_stop()
 client.disconnect()
-print("Done.")
+print("Fin.")

@@ -73,13 +73,13 @@ void loop() {
       }
       String rest = raw.substring(idx);
       rest.trim();
-      if (rest == "ON" || rest == ":ON") {
+      if (rest == "ON") {
         setPin(pin, true);
         Serial.print("Pin "); Serial.print(pin); Serial.println(" ON");
         Serial1.print("PIN" + String(pin) + " STATE ON\n");
         delay(2);
         matched = true;
-      } else if (rest == "OFF" || rest == ":OFF") {
+      } else if (rest == "OFF") {
         setPin(pin, false);
         Serial.print("Pin "); Serial.print(pin); Serial.println(" OFF");
         Serial1.print("PIN" + String(pin) + " STATE OFF\n");

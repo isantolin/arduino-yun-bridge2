@@ -37,11 +37,6 @@ from logging.handlers import RotatingFileHandler
 import serial
 import paho.mqtt.client as mqtt
 
-# Try to import CallbackAPIVersion (for newer paho-mqtt)
-try:
-    from paho.mqtt.enums import CallbackAPIVersion
-except ImportError:
-    CallbackAPIVersion = None
 
 # --- Configuration ---
 DEFAULTS = {
@@ -164,16 +159,10 @@ class BridgeDaemon:
         self.mailbox_topic_prefix = f'{self.topic_prefix}/mailbox'
 
     def _setup_mqtt_client(self):
-        """Initializes and configures the MQTT client."""
-        client_args = {}
-        if CallbackAPIVersion is not None:
-            client_args['callback_api_version'] = CallbackAPIVersion.VERSION2
-        
-        self.mqtt_client = mqtt.Client(**client_args)
-        
+        """Initializes and configures the MQTT client (modern paho-mqtt)."""
+        self.mqtt_client = mqtt.Client()
         if self.cfg.get('mqtt_user'):
             self.mqtt_client.username_pw_set(self.cfg['mqtt_user'], self.cfg.get('mqtt_pass', ''))
-        
         if self.cfg.get('mqtt_tls'):
             try:
                 self.mqtt_client.tls_set(
@@ -183,7 +172,6 @@ class BridgeDaemon:
                 )
             except Exception as e:
                 logger.error(f"Failed to set up MQTT TLS: {e}")
-
         self.mqtt_client.on_connect = self.on_mqtt_connect
         self.mqtt_client.on_message = self.on_mqtt_message
 
@@ -318,8 +306,8 @@ class BridgeDaemon:
         self.publish_mqtt(topic, payload)
 
     def _handle_pin_set(self, pin, state):
-        """Handles setting a pin ON or OFF."""
-        self._write_to_serial(f'PIN{pin}:{state}\n')
+        """Handles setting a pin ON or OFF (uses space, not colon)."""
+        self._write_to_serial(f'PIN{pin} {state}\n')
         self._publish_pin_state(pin, state == 'ON')
     
     def _handle_pin_state(self, pin, state):

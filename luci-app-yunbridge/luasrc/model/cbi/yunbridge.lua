@@ -33,6 +33,11 @@ host.datatype = "host"
 host.placeholder = "localhost"
 host.rmempty = false
 
+port = s:option(Value, "mqtt_port", translate("MQTT Port"))
+port.datatype = "port"
+port.placeholder = "1883"
+port.rmempty = false
+
 -- Opción para el usuario MQTT
 mqtt_user = s:option(Value, "mqtt_user", translate("MQTT Username"))
 mqtt_user.datatype = "string"
@@ -45,6 +50,30 @@ mqtt_pass.datatype = "string"
 mqtt_pass.placeholder = ""
 mqtt_pass.rmempty = true
 mqtt_pass.password = true
+
+-- Opción para habilitar TLS
+tls = s:option(Flag, "mqtt_tls", translate("Enable TLS"))
+tls.default = "0"
+tls.rmempty = false
+
+-- Opciones para los archivos de TLS
+cafile = s:option(Value, "mqtt_cafile", translate("CA File"))
+cafile.datatype = "string"
+cafile.placeholder = "/etc/yunbridge/ca.crt"
+cafile.rmempty = true
+cafile:depends("mqtt_tls", "1")
+
+certfile = s:option(Value, "mqtt_certfile", translate("Certificate File"))
+certfile.datatype = "string"
+certfile.placeholder = "/etc/yunbridge/client.crt"
+certfile.rmempty = true
+certfile:depends("mqtt_tls", "1")
+
+keyfile = s:option(Value, "mqtt_keyfile", translate("Key File"))
+keyfile.datatype = "string"
+keyfile.placeholder = "/etc/yunbridge/client.key"
+keyfile.rmempty = true
+keyfile:depends("mqtt_tls", "1")
 
 -- Opción para el prefijo del Topic MQTT
 topic = s:option(Value, "mqtt_topic", "MQTT Topic Prefix")

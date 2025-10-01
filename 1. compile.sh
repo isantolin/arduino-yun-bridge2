@@ -174,7 +174,7 @@ fi
 if [ -d "openwrt-yun-client-python" ]; then
     echo "[BUILD] Building openwrt-yun-client-python (.whl) locally..."
     (cd openwrt-yun-client-python && make clean && make wheel)
-    cp openwrt-yun-client-python/bin/*.whl "$BIN_DIR/" 2>/dev/null || true
+    cp openwrt-yun-client-python/dist/*.whl "$BIN_DIR/" 2>/dev/null || true
 else
     echo "[WARN] Package openwrt-yun-client-python not found."
 fi

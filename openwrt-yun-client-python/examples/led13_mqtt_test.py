@@ -28,15 +28,17 @@ import sys
 import time
 from yunbridge_client.plugin_loader import PluginLoader
 
-PIN = 13
+PIN = '13'
 if len(sys.argv) > 1:
-    try:
-        PIN = int(sys.argv[1])
-    except Exception:
-        pass
+    # No validation, just take the argument. Allows for 'A5', '13', etc.
+    PIN = sys.argv[1]
 
-TOPIC_SET = f'yun/pin/{PIN}/set'
-TOPIC_STATE = f'yun/pin/{PIN}/state'
+# Determine if the pin is analog or digital for topic construction
+# This is a simple check, assuming pins starting with 'A' are analog.
+pin_function = "analog" if PIN.upper().startswith('A') else "digital"
+
+TOPIC_SET = f'yun/pin/{pin_function}/{PIN}/set'
+TOPIC_STATE = f'yun/pin/{pin_function}/{PIN}/state'
 
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)

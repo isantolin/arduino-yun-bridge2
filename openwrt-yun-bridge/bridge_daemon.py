@@ -136,7 +136,7 @@ class BridgeDaemon:
 
         # Setup command dispatcher
         self.command_handlers = {
-            "PIN_STATE": self._handle_pin_state,
+            "PIN": self._publish_pin_state,
             "SET": self._handle_set,
             "GET": self._handle_get,
             "RUN": self._handle_run,
@@ -216,7 +216,7 @@ class BridgeDaemon:
             self.mqtt_connected = True
             try:
                 # Subscribe to topics with QoS 2
-                pin_topic = f'{self.pin_topic_prefix}/+/set'
+                pin_topic = f'{self.pin_topic_prefix}/+/+/set' # New: yun/pin/{func}/{pin}/set
                 mailbox_topic = f'{self.mailbox_topic_prefix}/send'
                 command_topic = f'{self.topic_prefix}/command'
                 client.subscribe([(pin_topic, 2), (mailbox_topic, 2), (command_topic, 2)])
@@ -236,36 +236,51 @@ class BridgeDaemon:
             if not topic.startswith(self.topic_prefix):
                 return
 
-            self.logger.debug(f"Received message on topic {topic}: {message.payload}")
+            logger.debug(f"Received message on topic {topic}: {message.payload}")
 
             # Handle mailbox messages from MQTT clients
             if topic == f"{self.mailbox_topic_prefix}/send":
                 message_str = message.payload.decode('utf-8')
-                self.logger.info(f"Forwarding mailbox message from MQTT to MQTT and Serial: {message_str}")
+                logger.info(f"Forwarding mailbox message from MQTT to MQTT and Serial: {message_str}")
                 self.mqtt_client.publish(f"{self.mailbox_topic_prefix}/recv", message_str)
                 self._write_to_serial(f"MAILBOX {message_str}\n")
 
             # Handle pin mode and digital/analog write commands from MQTT
+            # New taxonomy: yun/pin/{funcion}/{numero_pin}/{accion}
             elif topic.startswith(f"{self.pin_topic_prefix}/"):
-                parts = topic.split('/')
-                pin_number = parts[2]
-                command_type = parts[3] if len(parts) > 3 else None
+                topic_parts = topic.split('/')
+                # topic_parts[0] = 'yun'
+                # topic_parts[1] = 'pin'
+                # topic_parts[2] = 'digital' or 'analog'
+                # topic_parts[3] = '13', 'A5', etc.
+                # topic_parts[4] = 'set'
+                function = topic_parts[2]
+                pin_number = topic_parts[3]
+                value = message.payload.decode('utf-8').upper()
 
-                if command_type == "mode":
-                    mode = message.payload.decode('utf-8').strip().upper()
-                    if mode in ["INPUT", "OUTPUT", "PWM"]:
-                        self._write_to_serial(f"PIN {pin_number} MODE {mode}\n")
-                    else:
-                        logger.warning(f"Invalid mode received for PIN {pin_number}: {mode}")
-                
-                elif command_type in ["digital", "analog"]:
-                    value = message.payload.decode('utf-8').strip()
-                    self._write_to_serial(f"PIN {pin_number} {command_type.upper()} {value}\n")
+                # The Arduino sketch expects "PIN <pin_number> <ON|OFF>"
+                if function == 'digital':
+                    if value not in ['ON', 'OFF']:
+                        logger.warning(f"Invalid value for digital pin: {value}")
+                        return
+                    
+                    command = f"PIN {pin_number} {value}\n"
+                    self._write_to_serial(command)
 
-            # Add more topic handlers here as needed
+                elif function == 'analog':
+                    # The current BridgeControl.ino does not handle analog writes from serial.
+                    # This is a placeholder for future implementation.
+                    logger.warning("Analog write from MQTT not yet supported by the sketch.")
+                else:
+                    logger.warning(f"Unknown pin function: {function}")
+                    return
+
+            # Handle generic commands (SET, GET, RUN, etc.)
+            elif topic == f"{self.topic_prefix}/command":
+                self.handle_command(message.payload.decode('utf-8'))
 
         except Exception as e:
-            logger.error(f"Error processing MQTT message on topic {topic}: {e}")
+            logger.error(f"Error processing MQTT message on topic {topic}: {e}", exc_info=True)
 
     def publish_mqtt(self, topic, payload, retain=False):
         """Publishes a message to an MQTT topic with QoS 2."""
@@ -285,10 +300,11 @@ class BridgeDaemon:
         logger.debug(f"Handling command: '{cmd}'")
 
         # Regex-based matching for PIN STATE commands from Arduino
-        pin_state_match = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
+        # Captures formats like "PIN D13 STATE ON" or "PIN A5 STATE 1023"
+        pin_state_match = re.match(r'PIN ([DA]?\d+) STATE (.+)', cmd)
         if pin_state_match:
-            pin, state = pin_state_match.groups()
-            self.command_handlers["PIN_STATE"](pin, state)
+            pin_id, state = pin_state_match.groups()
+            self.command_handlers["PIN"](pin_id, state)
             return
 
         # Space-separated command for all others
@@ -307,15 +323,32 @@ class BridgeDaemon:
             logger.warning(f"Unknown command: '{cmd}'")
             # We don't reply to unknown commands to prevent feedback loops.
     
-    def _publish_pin_state(self, pin, state_bool):
-        """Helper to publish pin state to MQTT."""
-        topic = f"{self.pin_topic_prefix}/{pin}/state"
-        payload = 'ON' if state_bool else 'OFF'
-        self.publish_mqtt(topic, payload)
+    def _publish_pin_state(self, pin_id, state):
+        """Helper to publish pin state to MQTT using the new taxonomy."""
+        # Normalize pin_id: D13 -> 13, A5 -> A5
+        numeric_pin_id = pin_id.lstrip('DA')
+
+        # Determine function based on pin prefix
+        if pin_id.startswith('A'):
+            function = "analog"
+        else:
+            function = "digital"
+
+        topic = f"{self.pin_topic_prefix}/{function}/{numeric_pin_id}/state"
+        
+        # Normalize payload: ON -> 1, OFF -> 0
+        if state.upper() == 'ON':
+            payload = '1'
+        elif state.upper() == 'OFF':
+            payload = '0'
+        else:
+            payload = state
+
+        self.publish_mqtt(topic, payload, retain=True)
 
     def _handle_pin_state(self, pin, state):
         """Handles receiving a pin state and publishing it."""
-        self._publish_pin_state(pin, state == 'ON')
+        self._publish_pin_state(pin, state)
 
     def _handle_set(self, args):
         key, value = args.split(' ', 1)
@@ -371,10 +404,9 @@ class BridgeDaemon:
         self._write_to_serial(f'{response}\n')
 
     def _handle_mailbox_from_serial(self, msg):
-        topic = f"{self.mailbox_topic_prefix}/recv"
-        self.publish_mqtt(topic, msg)
-        logger.info(f"Forwarded mailbox message from Serial to MQTT topic '{topic}'")
-        # Send confirmation back to the MCU
+        # The message has already been broadcast to all MQTT clients by the sender.
+        # We just need to confirm receipt to the MCU.
+        logger.info(f"Acknowledging mailbox message from Serial: {msg}")
         response = f'OK MAILBOX {msg}'
         self._write_to_serial(f'{response}\n')
 

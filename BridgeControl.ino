@@ -37,13 +37,17 @@ void setPin(int pin, bool state) {
 
 void reportPinState(int pin) {
   if (pin < 0 || pin >= MAX_PINS) {
-    Serial1.println("ERR Invalid pin");
+    const char* msg = "ERR Invalid pin";
+    Serial1.println(msg);
+    Serial.println(msg);
     return;
   }
-  Serial1.print("PIN");
-  Serial1.print(pin);
-  Serial1.print(" STATE ");
-  Serial1.println(digitalRead(pin) == HIGH ? "ON" : "OFF");
+  
+  char buffer[20];
+  sprintf(buffer, "PIN%d STATE %s", pin, digitalRead(pin) == HIGH ? "ON" : "OFF");
+  
+  Serial1.println(buffer); // Report to Linux
+  Serial.println(buffer);  // Report to USB Serial Monitor
 }
 
 // --- Command Handlers ---

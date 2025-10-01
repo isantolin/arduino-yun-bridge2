@@ -244,10 +244,12 @@ class BridgeDaemon:
                     self._write_to_serial(f'PIN {pin} OFF\n')
                 return
 
-            # Handle mailbox messages
+            # Handle mailbox messages: forward from 'send' topic to 'recv' topic
             if msg.topic == f"{self.mailbox_topic_prefix}/send":
-                payload = msg.payload.decode(errors='replace').strip()
-                self._write_to_serial(f'MAILBOX {payload}\n')
+                recv_topic = f"{self.mailbox_topic_prefix}/recv"
+                # Forward the original payload
+                self.publish_mqtt(recv_topic, msg.payload)
+                logger.info(f"Forwarded mailbox message to '{recv_topic}'")
                 return
 
             # Handle generic commands from MQTT

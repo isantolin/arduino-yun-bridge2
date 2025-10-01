@@ -19,6 +19,14 @@ const byte CMD_BUFFER_SIZE = 64;
 char command_buffer[CMD_BUFFER_SIZE];
 bool new_data = false;
 
+char serial1_cmd_buffer[CMD_BUFFER_SIZE]; // Buffer for commands from Linux (Serial1)
+byte serial1_cmd_pos = 0;
+
+char serial_cmd_buffer[CMD_BUFFER_SIZE];  // Buffer for commands from USB (Serial)
+byte serial_cmd_pos = 0;
+
+unsigned long last_loop_time = 0;
+
 // --- Core Pin Functions ---
 void setPin(int pin, bool state) {
   if (pin < 0 || pin >= MAX_PINS) return;
@@ -77,9 +85,11 @@ void handleConsoleCommand(char* args) {
   }
 }
 
-// --- Command Parser ---
-void parseCommand(char* command) {
-  Serial.print("[DEBUG] Parsing command: ");
+// --- Command Parsers ---
+
+// Handles commands coming from the USB Serial Monitor
+void parseCommandFromUSB(char* command) {
+  Serial.print("[USB CMD] ");
   Serial.println(command);
 
   // Create a mutable copy for strtok_r, as it modifies the string
@@ -87,57 +97,79 @@ void parseCommand(char* command) {
   strncpy(command_copy, command, CMD_BUFFER_SIZE);
   command_copy[CMD_BUFFER_SIZE - 1] = '\0';
 
-  char* context; // For strtok_r
-  char* commandToken = strtok_r(command_copy, " ", &context);
+  char* context = command_copy;
+  char* commandToken = strtok_r(context, " ", &context);
 
   if (!commandToken) return;
 
-  // --- Local Commands (Executed on Arduino) ---
+  // Local commands are executed directly
   if (strcmp(commandToken, "PIN") == 0) {
     handlePinCommand(context);
   } 
   else if (strcmp(commandToken, "CONSOLE") == 0) {
     handleConsoleCommand(context);
   }
-  // --- All other commands are ignored by the Arduino ---
-  // They are responses/confirmations from the daemon (e.g., "OK SET", "VALUE ...")
-  // or unknown commands. We just print them for debugging but don't respond,
-  // which prevents feedback loops.
+  // All other commands are forwarded to the Linux side for execution
   else {
-    Serial.print("[DEBUG] Ignoring command/response from Linux: ");
+    Serial.println("[DEBUG] Forwarding command to Linux...");
+    Serial1.println(command);
+  }
+}
+
+// Handles commands coming from the Linux processor (daemon)
+void parseCommandFromLinux(char* command) {
+  // Create a mutable copy for strtok_r
+  char command_copy[CMD_BUFFER_SIZE];
+  strncpy(command_copy, command, CMD_BUFFER_SIZE);
+  command_copy[CMD_BUFFER_SIZE - 1] = '\0';
+
+  char* context = command_copy;
+  char* commandToken = strtok_r(context, " ", &context);
+
+  if (!commandToken) return;
+
+  // The daemon may ask us to execute these commands
+  if (strcmp(commandToken, "PIN") == 0) {
+    handlePinCommand(context);
+  } 
+  else if (strcmp(commandToken, "CONSOLE") == 0) {
+    handleConsoleCommand(context);
+  }
+  // Everything else is a response or status update from the daemon.
+  // We just print it to the USB Serial for debugging/feedback.
+  else {
+    Serial.print("[FROM LINUX] ");
     Serial.println(command);
   }
 }
 
-// --- Serial Communication ---
-void readSerialCommand() {
-  static byte ndx = 0;
-  char endMarker = '\n';
-  char rc;
 
-  while (Serial1.available() > 0 && !new_data) {
-    rc = Serial1.read();
+// --- Serial Communication & Main Loop ---
 
-    if (rc != endMarker) {
-      if (ndx < CMD_BUFFER_SIZE - 1) {
-        command_buffer[ndx] = rc;
-        ndx++;
+// Reusable command reader: reads a line from a stream and calls the correct parser
+void readFromStream(Stream &stream, char* buffer, byte &pos, void (*parser)(char*)) {
+  while (stream.available() > 0) {
+    char c = stream.read();
+    if (c == '\n' || c == '\r') {
+      if (pos > 0) {
+        buffer[pos] = '\0'; // Null-terminate the string
+        parser(buffer);
+        pos = 0; // Reset for the next command
       }
-    } else {
-      command_buffer[ndx] = '\0'; // Null-terminate the string
-      ndx = 0;
-      new_data = true;
+    } else if (pos < CMD_BUFFER_SIZE - 1) {
+      buffer[pos++] = c;
     }
   }
 }
 
-// --- Arduino Setup and Loop ---
 void setup() {
-  Bridge.begin();
+  // Bridge.begin(); // Bridge library is not needed for direct Serial1 usage
   Serial.begin(115200);
+  Serial1.begin(115200); // Ensure Serial1 is started for communication with Linux
+  
   while (!Serial); // Wait for Serial Monitor to connect
   
-  Serial.println("BridgeControl Sketch Ready.");
+  Serial.println("BridgeControl sketch started. Ready for commands.");
   
   for (int i = 0; i < MAX_PINS; i++) {
     pinStates[i] = LOW;
@@ -147,17 +179,9 @@ void setup() {
 }
 
 void loop() {
-  readSerialCommand();
+  // Read from Linux processor via Serial1 and parse accordingly
+  readFromStream(Serial1, serial1_cmd_buffer, serial1_cmd_pos, parseCommandFromLinux);
 
-  if (new_data) {
-    parseCommand(command_buffer);
-    new_data = false;
-  }
-
-  // Non-blocking debug message to show the loop is active
-  static unsigned long lastPrint = 0;
-  if (millis() - lastPrint > 5000) {
-    Serial.println("[DEBUG] Loop active");
-    lastPrint = millis();
-  }
+  // Read from USB Serial Monitor via Serial and parse accordingly
+  readFromStream(Serial, serial_cmd_buffer, serial_cmd_pos, parseCommandFromUSB);
 }

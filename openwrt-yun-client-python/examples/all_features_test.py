@@ -28,8 +28,8 @@ TOPIC_MAILBOX_SEND = 'yun/mailbox/send'
 TOPIC_MAILBOX_RECV = 'yun/mailbox/recv'
 MQTT_CONFIG = dict(host='localhost', port=1883)
 
-PluginClass = PluginLoader.load_plugin('mqtt_plugin')
-plugin = PluginClass(**MQTT_CONFIG)
+plugin_class = PluginLoader.load_plugin('mqtt_plugin')
+plugin = plugin_class(**MQTT_CONFIG)
 
 def on_message(topic, message):
     print(f"[MQTT] {topic}: {message}")

@@ -19,22 +19,29 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 YunBridge Client Plugin Loader
 
-Dynamically loads messaging plugins from the yunbridge_client directory.
+Loads the specified messaging plugin.
 """
-import importlib
-import os
-import sys
-
-PLUGIN_DIR = os.path.dirname(__file__)
+from .mqtt_plugin import MqttPlugin
 
 class PluginLoader:
+    """
+    A simplified plugin loader that provides a specific, known plugin.
+    This maintains the plugin architecture for future expansion while removing
+    unnecessary dynamic loading complexity for a single-plugin scenario.
+    """
     @staticmethod
     def load_plugin(plugin_name):
-        sys.path.insert(0, PLUGIN_DIR)
-        module = importlib.import_module(f"yunbridge_client.{plugin_name}")
-        # Special case for mqtt_plugin: class is named MQTTPlugin
-        if plugin_name == 'mqtt_plugin':
-            class_name = 'MQTTPlugin'
+        """
+        Loads and returns the specified plugin class.
+        
+        Args:
+            plugin_name (str): The name of the plugin to load. Currently only
+                             'mqtt' is supported.
+        
+        Returns:
+            The plugin class if found, otherwise raises ValueError.
+        """
+        if plugin_name == 'mqtt':
+            return MqttPlugin
         else:
-            class_name = ''.join([part.capitalize() for part in plugin_name.split('_')]) + 'Plugin'
-        return getattr(module, class_name)
+            raise ValueError(f"Unsupported plugin: {plugin_name}")

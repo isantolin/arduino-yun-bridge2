@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # This file is part of Arduino Yun Ecosystem v2.
 #
@@ -17,21 +17,36 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-#!/bin/bash
-# YunBridge Arduino library install script
+# YunBridge Arduino library install script - Robust version
 
 set -e
 
-LIB_DST="$HOME/Arduino/libraries/YunBridge"
+# Determine the Arduino libraries directory, creating it if necessary
+if [ -d "$HOME/Documents/Arduino/libraries" ]; then
+  LIB_DIR="$HOME/Documents/Arduino/libraries"
+  echo "[INFO] Found Arduino libraries at: $LIB_DIR"
+elif [ -d "$HOME/Arduino/libraries" ]; then
+  LIB_DIR="$HOME/Arduino/libraries"
+  echo "[INFO] Found Arduino libraries at: $LIB_DIR"
+else
+  # Default to creating the standard Arduino libraries directory
+  LIB_DIR="$HOME/Arduino/libraries"
+  echo "[WARN] Arduino libraries directory not found. Creating it at: $LIB_DIR"
+  mkdir -p "$LIB_DIR"
+fi
+
+LIB_DST="$LIB_DIR/YunBridge"
+
 if [ ! -d src ]; then
-	echo "ERROR: src directory not found."
+	echo "ERROR: 'src' directory not found. Run this script from the 'openwrt-library-arduino' directory." >&2
 	exit 1
 fi
-if [ ! -d "$HOME/Arduino/libraries" ]; then
-	echo "WARNING: $HOME/Arduino/libraries does not exist. Creating it."
-	mkdir -p "$HOME/Arduino/libraries"
-fi
+
+echo "[INFO] Installing YunBridge library to: $LIB_DST"
+# Create the destination directory if it doesn't exist
 mkdir -p "$LIB_DST"
+
+# Copy the source files, overwriting existing ones
 cp -r src/* "$LIB_DST/"
 
-echo "YunBridge library installed to $LIB_DST."
+echo "[OK] YunBridge library installed successfully."

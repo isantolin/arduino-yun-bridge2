@@ -35,7 +35,7 @@ logger.setLevel(logging.DEBUG)  # Always log debug info for troubleshooting
 if not logger.hasHandlers():
     logger.addHandler(handler)
 
-class MQTTPlugin(MessagingPluginBase):
+class MqttPlugin(MessagingPluginBase):
     def __init__(self, host, port=1883, username=None, password=None, tls=False, cafile=None):
         if not host:
             raise ValueError("MQTT host is required")

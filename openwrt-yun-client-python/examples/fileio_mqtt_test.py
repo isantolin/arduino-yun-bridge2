@@ -17,8 +17,8 @@ TEST_FILE = '/tmp/bridge_test.txt'
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='localhost', port=1883)
 
-PluginClass = PluginLoader.load_plugin('mqtt_plugin')
-plugin = PluginClass(**MQTT_CONFIG)
+plugin_class = PluginLoader.load_plugin('mqtt_plugin')
+plugin = plugin_class(**MQTT_CONFIG)
 
 plugin.connect()
 print("Writing file via MQTT...")

@@ -17,7 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-#!/bin/bash
 # Refactored install script for Arduino Yun v2 ecosystem
 # Uses functions to remove redundancy and improves process handling.
 

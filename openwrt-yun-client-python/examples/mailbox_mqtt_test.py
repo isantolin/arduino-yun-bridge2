@@ -1,42 +1,53 @@
 
 #!/usr/bin/env python3
 """
-Example: Test mailbox via MQTT (nuevo flujo)
-Publica mensajes arbitrarios en yun/mailbox/send y escucha respuestas en yun/mailbox/recv
+Example: Test mailbox feature using the YunBridge plugin system (MQTT backend).
+Publishes a message to yun/mailbox/send and listens for responses on yun/mailbox/recv.
 """
+import sys
 import time
-import paho.mqtt.client as mqtt
-try:
-	from paho.mqtt.enums import CallbackAPIVersion
-except ImportError:
-	CallbackAPIVersion = None
+from yunbridge_client.plugin_loader import PluginLoader
 
-BROKER = 'localhost'
-PORT = 1883
+# Configuration
 TOPIC_SEND = 'yun/mailbox/send'
 TOPIC_RECV = 'yun/mailbox/recv'
+MQTT_CONFIG = dict(host='localhost', port=1883)
 
-def on_connect(client, userdata, flags, rc, properties=None):
-	print("Connected with result code " + str(rc))
-	client.subscribe(TOPIC_RECV, qos=2)
+# Load and instantiate the plugin
+try:
+    plugin_class = PluginLoader.load_plugin('mqtt_plugin')
+    plugin = plugin_class(**MQTT_CONFIG)
+except ValueError as e:
+    print(f"Error loading plugin: {e}")
+    sys.exit(1)
 
-def on_message(client, userdata, msg):
-	print(f"[MQTT] Received on {msg.topic}: {msg.payload.decode(errors='replace')}")
+def on_message_received(topic, message):
+    """Callback function to handle incoming messages."""
+    print(f"[MQTT] Received on {topic}: {message}")
 
-if CallbackAPIVersion is not None:
-	client = mqtt.Client(CallbackAPIVersion.VERSION2)
-else:
-	client = mqtt.Client()
-client.on_connect = on_connect
-client.on_message = on_message
-client.connect(BROKER, PORT, 60)
-client.loop_start()
+if __name__ == '__main__':
+    try:
+        # Connect to the broker
+        plugin.connect()
 
-print("Enviando mensaje a mailbox via MQTT...")
-client.publish(TOPIC_SEND, 'hola_desde_mqtt', qos=2)
-time.sleep(2)
-print("Listo. Esperando posibles respuestas en yun/mailbox/recv...")
-time.sleep(3)
-client.loop_stop()
-client.disconnect()
-print("Fin.")
+        # Subscribe to the receive topic
+        plugin.subscribe(TOPIC_RECV, on_message_received)
+        print(f"Subscribed to {TOPIC_RECV} to listen for responses.")
+        time.sleep(1) # Give time for subscription to be acknowledged
+
+        # Publish a message to the send topic
+        message_to_send = 'hello_from_plugin'
+        print(f"Sending message to {TOPIC_SEND}: '{message_to_send}'")
+        plugin.publish(TOPIC_SEND, message_to_send)
+
+        # Wait for a few seconds to receive potential responses
+        print("Waiting for responses...")
+        time.sleep(3)
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Disconnect gracefully
+        if 'plugin' in locals() and plugin:
+            plugin.disconnect()
+        print("Done.")

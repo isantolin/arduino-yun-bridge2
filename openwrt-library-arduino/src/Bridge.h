@@ -23,15 +23,29 @@
 
 #include <Arduino.h>
 
-
 class BridgeClass {
 public:
     void begin();
-    void led13On();
-    void led13Off();
+
+    // --- Pin Control ---
     void pinOn(int pin);
     void pinOff(int pin);
-    // TODO: Add more API methods for full compatibility
+    void pinState(int pin);
+
+    // --- Process Execution ---
+    void run(const char* command);
+
+    // --- Key-Value Store ---
+    void get(const char* key);
+    void set(const char* key, const char* value);
+
+    // --- File I/O ---
+    void writeFile(const char* path, const char* data);
+    void readFile(const char* path);
+
+    // --- Console & Mailbox ---
+    void console(const char* message);
+    void mailbox(const char* message);
 };
 
 extern BridgeClass Bridge;

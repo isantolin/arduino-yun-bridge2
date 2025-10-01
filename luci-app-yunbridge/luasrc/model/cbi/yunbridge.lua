@@ -87,8 +87,6 @@ baud:value("38400", "38400")
 baud:value("57600", "57600")
 baud:value("115200", "115200")
 function baud.validate(self, value, section)
-    -- CORRECCIÓN: Validar contra una tabla local.
-    -- El método 'get_values' no existe en el objeto 'self' de una opción.
     local allowed_baudrates = {
         ["9600"] = true,
         ["19200"] = true,

@@ -17,7 +17,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-#!/bin/bash
 # compile.sh - Compila todos los paquetes del ecosistema Arduino Yun v2
 # Descarga y prepara el buildroot de OpenWRT si es necesario, compila los paquetes OpenWRT y Python, y deja los artefactos listos en bin/
 #
@@ -40,7 +39,7 @@ if [ "$(uname -s)" = "Linux" ]; then
         echo "[INFO] Installing packages for Fedora..."
         sudo dnf clean all
         sudo dnf update
-        sudo dnf install -y @development-tools python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
+        sudo dnf install -y make automake gcc gcc-c++ kernel-devel python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
     else
         echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
     fi
@@ -57,7 +56,8 @@ if [ ! -d "$SDK_DIR" ]; then
     RETRY=0
     SUCCESS=0
     while [ $RETRY -lt $MAX_RETRIES ]; do
-        echo "[INFO] Downloading OpenWRT SDK (attempt $((RETRY+1))/$MAX_RETRIES)..."
+        RETRY_COUNT=$(expr $RETRY + 1)
+        echo "[INFO] Downloading OpenWRT SDK (attempt $RETRY_COUNT/$MAX_RETRIES)..."
         wget -O sdk.tar.zst "$OPENWRT_URL"
         echo "[INFO] Extracting SDK..."
         if tar --use-compress-program=unzstd -xf sdk.tar.zst; then
@@ -70,7 +70,7 @@ if [ ! -d "$SDK_DIR" ]; then
             rm -f sdk.tar.zst
             # Clean up any partial extraction
             rm -rf openwrt-sdk-*
-            RETRY=$((RETRY+1))
+            RETRY=$(expr $RETRY + 1)
             sleep 2
         fi
     done
@@ -114,17 +114,17 @@ done
 # Ensure OpenWRT SDK detects new packages (refresh package index)
 pushd "$SDK_DIR"
 # Enable required Yun packages and dependencies automatically
-REQUIRED_PKGS=(openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge)
-REQUIRED_DEPS=(python3 python3-pyserial python3-paho-mqtt luci-base luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json)
+REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
+REQUIRED_DEPS="python3 python3-pyserial python3-paho-mqtt luci-base luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json"
 CONFIG_CHANGED=0
-for pkg in "${REQUIRED_PKGS[@]}"; do
+for pkg in $REQUIRED_PKGS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
         echo "CONFIG_PACKAGE_${pkg}=y" >> ".config"
         CONFIG_CHANGED=1
         echo "[INFO] Enabled $pkg in SDK .config."
     fi
 done
-for dep in "${REQUIRED_DEPS[@]}"; do
+for dep in $REQUIRED_DEPS; do
     if ! grep -q "CONFIG_PACKAGE_${dep}=y" ".config"; then
         echo "CONFIG_PACKAGE_${dep}=y" >> ".config"
         CONFIG_CHANGED=1

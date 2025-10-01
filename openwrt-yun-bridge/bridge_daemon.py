@@ -25,7 +25,6 @@ Refactored to remove redundancy, improve logging, and enhance maintainability.
 # Standard library imports
 import time
 import threading
-import os
 import atexit
 import re
 import logging
@@ -51,35 +50,32 @@ DEFAULTS = {
     'mqtt_keyfile': '',
     'serial_port': '/dev/ttyATH0',
     'serial_baud': 115200,
-    'debug': 0,
+    'debug': 1,
 }
 
-print("[DEBUG] Starting bridge_daemon.py")
 # --- Global Logger Setup (Single Source of Logging) ---
 LOG_PATH = '/tmp/yunbridge_daemon.log'
 logger = logging.getLogger("yunbridge")
 logger.setLevel(logging.INFO)
 
+# Create a stream handler (for console logging) first to capture all messages
+stream_handler = logging.StreamHandler()
+stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+logger.addHandler(stream_handler)
+
+logger.debug("Starting bridge_daemon.py")
+
 try:
-    print(f"[DEBUG] Attempting to create RotatingFileHandler at {LOG_PATH}")
+    logger.debug(f"Attempting to create RotatingFileHandler at {LOG_PATH}")
     file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
-    print("[DEBUG] RotatingFileHandler created successfully")
+    logger.addHandler(file_handler)
+    logger.debug("RotatingFileHandler created and added successfully")
 except Exception as e:
-    print(f"[ERROR] Failed to create RotatingFileHandler: {e}")
-    file_handler = None
+    logger.error(f"Failed to create RotatingFileHandler: {e}")
 
-# Create a stream handler (for console logging)
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-
-# Add handlers to the logger (avoid duplicates)
-if not logger.hasHandlers():
-    if file_handler:
-        logger.addHandler(file_handler)
-    logger.addHandler(stream_handler)
-print("[DEBUG] Logger setup complete")
+logger.debug("Logger setup complete")
 
 # --- Configuration Loading ---
 def get_uci_config():
@@ -221,9 +217,11 @@ class BridgeDaemon:
                 # Subscribe to topics with QoS 2
                 pin_topic = f'{self.pin_topic_prefix}/+/set'
                 mailbox_topic = f'{self.mailbox_topic_prefix}/send'
-                client.subscribe([(pin_topic, 2), (mailbox_topic, 2)])
+                command_topic = f'{self.topic_prefix}/command'
+                client.subscribe([(pin_topic, 2), (mailbox_topic, 2), (command_topic, 2)])
                 logger.info(f"Subscribed to: {pin_topic} (QoS 2)")
                 logger.info(f"Subscribed to: {mailbox_topic} (QoS 2)")
+                logger.info(f"Subscribed to: {command_topic} (QoS 2)")
             except Exception as e:
                 logger.error(f"Failed to subscribe to topics: {e}")
         else:
@@ -240,15 +238,22 @@ class BridgeDaemon:
                 pin = pin_match.group(1)
                 payload = msg.payload.decode().strip().upper()
                 if payload in ('ON', '1'):
-                    self._write_to_serial(f'PIN{pin} ON\n')
+                    self._write_to_serial(f'PIN {pin} ON\n')
                 elif payload in ('OFF', '0'):
-                    self._write_to_serial(f'PIN{pin} OFF\n')
+                    self._write_to_serial(f'PIN {pin} OFF\n')
                 return
 
             # Handle mailbox messages
             if msg.topic == f"{self.mailbox_topic_prefix}/send":
                 payload = msg.payload.decode(errors='replace').strip()
                 self._write_to_serial(f'MAILBOX {payload}\n')
+                return
+
+            # Handle generic commands from MQTT
+            if msg.topic == f"{self.topic_prefix}/command":
+                payload = msg.payload.decode(errors='replace').strip()
+                # The daemon executes the command itself, then sends a confirmation/result to Arduino
+                self.handle_command(payload)
                 return
         except Exception as e:
             logger.error(f"Error processing MQTT message on topic {msg.topic}: {e}")
@@ -263,41 +268,35 @@ class BridgeDaemon:
 
     # --- Command Handlers (from Serial) ---
     def handle_command(self, line):
-        """Parses and dispatches one or more commands received from serial (tolerant to glued/concatenated commands)."""
-        raw = line.strip()
-        logger.debug(f"Received from serial: '{raw}'")
-        # Split on 'PIN' but keep the delimiter (for glued commands)
-        tokens = re.split(r'(?=PIN\d+ )', raw)
-        for token in tokens:
-            cmd = token.strip()
-            if not cmd:
-                continue
+        """Parses and dispatches a single command."""
+        cmd = line.strip()
+        if not cmd:
+            return
             
-            # Regex-based matching for PIN commands for flexibility
-            pin_set_match = re.match(r'PIN(\d+) (ON|OFF)', cmd)
-            pin_state_match = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
+        logger.debug(f"Handling command: '{cmd}'")
 
-            if pin_set_match:
-                pin, state = pin_set_match.groups()
-                self._handle_pin_set(pin, state)
-            elif pin_state_match:
-                pin, state = pin_state_match.groups()
-                self.command_handlers["PIN_STATE"](pin, state)
-            else:
-                # Space-separated command for others
-                parts = cmd.split(' ', 1)
-                command_key = parts[0]
-                args = parts[1] if len(parts) > 1 else ""
-                handler = self.command_handlers.get(command_key)
-                if handler:
-                    try:
-                        handler(args)
-                    except Exception as e:
-                        logger.error(f"Error executing command '{command_key}': {e}")
-                        self._write_to_serial(f'ERR {command_key}\n')
-                else:
-                    logger.warning(f"Unknown command received from serial: '{cmd}'")
-                    self._write_to_serial('UNKNOWN COMMAND\n')
+        # Regex-based matching for PIN STATE commands from Arduino
+        pin_state_match = re.match(r'PIN(\d+) STATE (ON|OFF)', cmd)
+        if pin_state_match:
+            pin, state = pin_state_match.groups()
+            self.command_handlers["PIN_STATE"](pin, state)
+            return
+
+        # Space-separated command for all others
+        parts = cmd.split(' ', 1)
+        command_key = parts[0]
+        args = parts[1] if len(parts) > 1 else ""
+        handler = self.command_handlers.get(command_key)
+        
+        if handler:
+            try:
+                handler(args)
+            except Exception as e:
+                logger.error(f"Error executing command '{command_key}': {e}")
+                self._write_to_serial(f'ERR {command_key}\n')
+        else:
+            logger.warning(f"Unknown command: '{cmd}'")
+            # We don't reply to unknown commands to prevent feedback loops.
     
     def _publish_pin_state(self, pin, state_bool):
         """Helper to publish pin state to MQTT."""
@@ -305,11 +304,6 @@ class BridgeDaemon:
         payload = 'ON' if state_bool else 'OFF'
         self.publish_mqtt(topic, payload)
 
-    def _handle_pin_set(self, pin, state):
-        """Handles setting a pin ON or OFF (uses space, not colon)."""
-        self._write_to_serial(f'PIN{pin} {state}\n')
-        self._publish_pin_state(pin, state == 'ON')
-    
     def _handle_pin_state(self, pin, state):
         """Handles receiving a pin state and publishing it."""
         self._publish_pin_state(pin, state == 'ON')

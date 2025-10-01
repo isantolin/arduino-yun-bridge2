@@ -25,15 +25,9 @@ setup(
     author='isantolin',
     author_email='',
     packages=['yunbridge_client'],
-    py_modules=['client'],
     install_requires=[
         'paho-mqtt',
     ],
-    entry_points={
-        'console_scripts': [
-            'yunbridge-client=client:main',
-        ],
-    },
     classifiers=[
         'Programming Language :: Python :: 3',
         'Operating System :: POSIX :: Linux',

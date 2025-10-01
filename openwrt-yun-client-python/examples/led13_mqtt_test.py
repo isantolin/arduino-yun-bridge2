@@ -41,24 +41,25 @@ TOPIC_STATE = f'yun/pin/{PIN}/state'
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 
-PluginClass = PluginLoader.load_plugin('mqtt_plugin')
-plugin = PluginClass(**MQTT_CONFIG)
+plugin_class = PluginLoader.load_plugin('mqtt_plugin')
+plugin = plugin_class(**MQTT_CONFIG)
 
 
 def on_message(topic, message):
-    print(f"[MQTT] {topic}: {message}")
+    print(f"[MQTT] Received on {topic}: {message}")
 
 plugin.connect()
 
-# Forcibly use QoS 2 in subscribe (plugin uses QoS 2 internally, but for clarity):
+# Subscribe to the state topic to receive feedback
 plugin.subscribe(TOPIC_STATE, on_message)
 
 print(f"Turning pin {PIN} ON via MQTT...")
-plugin.publish(TOPIC_SET, 'ON')  # plugin uses QoS 2
+plugin.publish(TOPIC_SET, 'ON')
 time.sleep(2)
+
 print(f"Turning pin {PIN} OFF via MQTT...")
-plugin.publish(TOPIC_SET, 'OFF')  # plugin uses QoS 2
+plugin.publish(TOPIC_SET, 'OFF')
 time.sleep(2)
-print("Done. Waiting for state updates...")
-time.sleep(2)
+
+print("Done. Disconnecting...")
 plugin.disconnect()

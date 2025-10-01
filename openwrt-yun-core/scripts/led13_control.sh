@@ -17,9 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-echo "LED13 $1" > /dev/ttyATH0
 
-#!/bin/sh
 # Simple script to control LED 13 from OpenWRT
 # Usage: led13_control.sh on|off
 

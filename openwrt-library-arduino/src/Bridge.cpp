@@ -23,25 +23,66 @@ void BridgeClass::begin() {
     Serial1.begin(115200); // Yun internal serial
 }
 
-
-void BridgeClass::led13On() {
-    pinOn(13);
-}
-
-void BridgeClass::led13Off() {
-    pinOff(13);
-}
-
+// --- Pin Control ---
 void BridgeClass::pinOn(int pin) {
-    Serial1.print("PIN");
+    Serial1.print("PIN ");
     Serial1.print(pin);
     Serial1.println(" ON");
 }
 
 void BridgeClass::pinOff(int pin) {
-    Serial1.print("PIN");
+    Serial1.print("PIN ");
     Serial1.print(pin);
     Serial1.println(" OFF");
+}
+
+void BridgeClass::pinState(int pin) {
+    Serial1.print("PIN ");
+    Serial1.print(pin);
+    Serial1.println(" STATE");
+}
+
+// --- Process Execution ---
+void BridgeClass::run(const char* command) {
+    Serial1.print("RUN ");
+    Serial1.println(command);
+}
+
+// --- Key-Value Store ---
+void BridgeClass::get(const char* key) {
+    Serial1.print("GET ");
+    Serial1.println(key);
+}
+
+void BridgeClass::set(const char* key, const char* value) {
+    Serial1.print("SET ");
+    Serial1.print(key);
+    Serial1.print(" ");
+    Serial1.println(value);
+}
+
+// --- File I/O ---
+void BridgeClass::writeFile(const char* path, const char* data) {
+    Serial1.print("WRITEFILE ");
+    Serial1.print(path);
+    Serial1.print(" ");
+    Serial1.println(data);
+}
+
+void BridgeClass::readFile(const char* path) {
+    Serial1.print("READFILE ");
+    Serial1.println(path);
+}
+
+// --- Console & Mailbox ---
+void BridgeClass::console(const char* message) {
+    Serial1.print("CONSOLE ");
+    Serial1.println(message);
+}
+
+void BridgeClass::mailbox(const char* message) {
+    Serial1.print("MAILBOX ");
+    Serial1.println(message);
 }
 
 BridgeClass Bridge;

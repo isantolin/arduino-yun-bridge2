@@ -229,37 +229,43 @@ class BridgeDaemon:
             logger.error(f"Failed to connect to MQTT broker, return code: {rc}")
             self.mqtt_connected = False
 
-    def on_mqtt_message(self, client, userdata, msg):
-        """Callback for when a message is received from the MQTT broker."""
-        logger.debug(f"MQTT message received: Topic='{msg.topic}', Payload='{msg.payload.decode()}'")
+    def on_mqtt_message(self, client, userdata, message):
+        topic = message.topic
         try:
-            # Handle pin set commands
-            pin_match = re.match(rf"{self.pin_topic_prefix}/(\d+)/set", msg.topic)
-            if pin_match:
-                pin = pin_match.group(1)
-                payload = msg.payload.decode().strip().upper()
-                if payload in ('ON', '1'):
-                    self._write_to_serial(f'PIN {pin} ON\n')
-                elif payload in ('OFF', '0'):
-                    self._write_to_serial(f'PIN {pin} OFF\n')
+            # Ignore messages that are not in our topic prefix
+            if not topic.startswith(self.topic_prefix):
                 return
 
-            # Handle mailbox messages: forward from 'send' topic to 'recv' topic
-            if msg.topic == f"{self.mailbox_topic_prefix}/send":
-                recv_topic = f"{self.mailbox_topic_prefix}/recv"
-                # Forward the original payload
-                self.publish_mqtt(recv_topic, msg.payload)
-                logger.info(f"Forwarded mailbox message to '{recv_topic}'")
-                return
+            self.logger.debug(f"Received message on topic {topic}: {message.payload}")
 
-            # Handle generic commands from MQTT
-            if msg.topic == f"{self.topic_prefix}/command":
-                payload = msg.payload.decode(errors='replace').strip()
-                # The daemon executes the command itself, then sends a confirmation/result to Arduino
-                self.handle_command(payload)
-                return
+            # Handle mailbox messages from MQTT clients
+            if topic == f"{self.mailbox_topic_prefix}/send":
+                message_str = message.payload.decode('utf-8')
+                self.logger.info(f"Forwarding mailbox message from MQTT to MQTT and Serial: {message_str}")
+                self.mqtt_client.publish(f"{self.mailbox_topic_prefix}/recv", message_str)
+                self._write_to_serial(f"MAILBOX {message_str}\n")
+
+            # Handle pin mode and digital/analog write commands from MQTT
+            elif topic.startswith(f"{self.pin_topic_prefix}/"):
+                parts = topic.split('/')
+                pin_number = parts[2]
+                command_type = parts[3] if len(parts) > 3 else None
+
+                if command_type == "mode":
+                    mode = message.payload.decode('utf-8').strip().upper()
+                    if mode in ["INPUT", "OUTPUT", "PWM"]:
+                        self._write_to_serial(f"PIN {pin_number} MODE {mode}\n")
+                    else:
+                        logger.warning(f"Invalid mode received for PIN {pin_number}: {mode}")
+                
+                elif command_type in ["digital", "analog"]:
+                    value = message.payload.decode('utf-8').strip()
+                    self._write_to_serial(f"PIN {pin_number} {command_type.upper()} {value}\n")
+
+            # Add more topic handlers here as needed
+
         except Exception as e:
-            logger.error(f"Error processing MQTT message on topic {msg.topic}: {e}")
+            logger.error(f"Error processing MQTT message on topic {topic}: {e}")
 
     def publish_mqtt(self, topic, payload, retain=False):
         """Publishes a message to an MQTT topic with QoS 2."""
@@ -367,6 +373,10 @@ class BridgeDaemon:
     def _handle_mailbox_from_serial(self, msg):
         topic = f"{self.mailbox_topic_prefix}/recv"
         self.publish_mqtt(topic, msg)
+        logger.info(f"Forwarded mailbox message from Serial to MQTT topic '{topic}'")
+        # Send confirmation back to the MCU
+        response = f'OK MAILBOX {msg}'
+        self._write_to_serial(f'{response}\n')
 
     # --- Main Execution Loop ---
     def run(self):

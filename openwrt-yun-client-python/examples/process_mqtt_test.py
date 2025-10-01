@@ -9,7 +9,8 @@ from yunbridge_client.plugin_loader import PluginLoader
 
 # Configuration
 TOPIC_CMD = 'yun/command'
-MQTT_CONFIG = dict(host='localhost', port=1883)
+TOPIC_CMD_RESPONSE = 'yun/command/response'
+MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 
 # Load and instantiate the plugin
 try:
@@ -28,7 +29,7 @@ if __name__ == '__main__':
         plugin.connect()
 
         # Subscribe to a potential response topic
-        plugin.subscribe('yun/command/response', on_response)
+        plugin.subscribe(TOPIC_CMD_RESPONSE, on_response)
         time.sleep(1) # Allow time for subscription
 
         command_to_run = 'RUN echo hello_from_yun'

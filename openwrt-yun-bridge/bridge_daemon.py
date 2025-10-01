@@ -153,6 +153,7 @@ class BridgeDaemon:
         self.topic_prefix = self.cfg['mqtt_topic']
         self.pin_topic_prefix = f'{self.topic_prefix}/pin'
         self.mailbox_topic_prefix = f'{self.topic_prefix}/mailbox'
+        self.command_response_topic = f'{self.topic_prefix}/command/response'
 
     def _setup_mqtt_client(self):
         """Initializes and configures the MQTT client (modern paho-mqtt)."""
@@ -312,34 +313,54 @@ class BridgeDaemon:
         key, value = args.split(' ', 1)
         self.kv_store[key] = value
         logger.debug(f"Stored in KV: {key} = {value}")
-        self._write_to_serial(f'OK SET {key}\n')
+        response = f'OK SET {key}'
+        self.publish_mqtt(self.command_response_topic, response)
+        self._write_to_serial(f'{response}\n')
         
     def _handle_get(self, key):
         value = self.kv_store.get(key, '')
         logger.debug(f"Retrieved from KV: {key} = {value}")
-        self._write_to_serial(f'VALUE {key} {value}\n')
+        response = f'VALUE {key} {value}'
+        self.publish_mqtt(self.command_response_topic, response)
+        self._write_to_serial(f'{response}\n')
         
     def _handle_run(self, command):
         result = subprocess.getoutput(command)
         logger.debug(f"RUN '{command}' result: {result}")
-        self._write_to_serial(f'RUNOUT {result}\n')
+        response = f'RUNOUT {result}'
+        self.publish_mqtt(self.command_response_topic, response)
+        self._write_to_serial(f'{response}\n')
         
     def _handle_readfile(self, path):
-        with open(path, 'r') as f:
-            data = f.read(256)
-        logger.debug(f"Read from {path}: {data}")
-        self._write_to_serial(f'FILEDATA {data}\n')
+        try:
+            with open(path, 'r') as f:
+                data = f.read(256)
+            logger.debug(f"Read from {path}: {data}")
+            response = f'FILEDATA {data}'
+        except Exception as e:
+            logger.error(f"Error reading file {path}: {e}")
+            response = f'ERR READFILE {e}'
+        self.publish_mqtt(self.command_response_topic, response)
+        self._write_to_serial(f'{response}\n')
 
     def _handle_writefile(self, args):
-        path, data = args.split(' ', 1)
-        with open(path, 'w') as f:
-            f.write(data)
-        logger.debug(f"Wrote to {path}: {data}")
-        self._write_to_serial('OK WRITEFILE\n')
+        try:
+            path, data = args.split(' ', 1)
+            with open(path, 'w') as f:
+                f.write(data)
+            logger.debug(f"Wrote to {path}: {data}")
+            response = 'OK WRITEFILE'
+        except Exception as e:
+            logger.error(f"Error writing file: {e}")
+            response = f'ERR WRITEFILE {e}'
+        self.publish_mqtt(self.command_response_topic, response)
+        self._write_to_serial(f'{response}\n')
 
     def _handle_console(self, msg):
         logger.info(f'[Console from Arduino] {msg}')
-        self._write_to_serial('OK CONSOLE\n')
+        response = 'OK CONSOLE'
+        self.publish_mqtt(self.command_response_topic, response)
+        self._write_to_serial(f'{response}\n')
 
     def _handle_mailbox_from_serial(self, msg):
         topic = f"{self.mailbox_topic_prefix}/recv"

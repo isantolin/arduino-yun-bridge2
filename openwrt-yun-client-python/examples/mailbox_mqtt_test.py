@@ -11,7 +11,7 @@ from yunbridge_client.plugin_loader import PluginLoader
 # Configuration
 TOPIC_SEND = 'yun/mailbox/send'
 TOPIC_RECV = 'yun/mailbox/recv'
-MQTT_CONFIG = dict(host='localhost', port=1883)
+MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 
 # Load and instantiate the plugin
 try:

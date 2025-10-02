@@ -32,9 +32,9 @@ if __name__ == '__main__':
         plugin.subscribe(TOPIC_CMD_RESPONSE, on_response)
         time.sleep(1) # Allow time for subscription
 
-        command_to_run = 'RUN echo hello_from_yun'
-        print(f"Sending command to '{TOPIC_CMD}': '{command_to_run}'")
-        plugin.publish(TOPIC_CMD, command_to_run)
+    command_to_run = 'echo hello_from_yun'
+    print(f"Sending command to 'br/sh/run': '{command_to_run}'")
+    plugin.publish('br/sh/run', command_to_run)
         
         print("Waiting for responses...")
         time.sleep(2) # Give a moment for the command to be processed and response sent

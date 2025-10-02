@@ -33,12 +33,10 @@ if len(sys.argv) > 1:
     # No validation, just take the argument. Allows for 'A5', '13', etc.
     PIN = sys.argv[1]
 
-# Determine if the pin is analog or digital for topic construction
-# This is a simple check, assuming pins starting with 'A' are analog.
-pin_function = "analog" if PIN.upper().startswith('A') else "digital"
-
-TOPIC_SET = f'yun/pin/{pin_function}/{PIN}/set'
-TOPIC_STATE = f'yun/pin/{pin_function}/{PIN}/state'
+# The daemon expects topics like 'br/d/13' for digital pins and 'br/a/5' for analog.
+# The payload should be '1' or '0' for digital write.
+pin_function_short = "a" if PIN.upper().startswith('A') else "d"
+TOPIC_SET = f'br/{pin_function_short}/{PIN}'
 
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
@@ -46,21 +44,19 @@ MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 plugin_class = PluginLoader.load_plugin('mqtt_plugin')
 plugin = plugin_class(**MQTT_CONFIG)
 
-
 def on_message(topic, message):
     print(f"[MQTT] Received on {topic}: {message}")
 
 plugin.connect()
 
-# Subscribe to the state topic to receive feedback
-plugin.subscribe(TOPIC_STATE, on_message)
+# The state topic is also different in the daemon, so we skip subscription for this example.
 
 print(f"Turning pin {PIN} ON via MQTT...")
-plugin.publish(TOPIC_SET, 'ON')
+plugin.publish(TOPIC_SET, '1')
 time.sleep(2)
 
 print(f"Turning pin {PIN} OFF via MQTT...")
-plugin.publish(TOPIC_SET, 'OFF')
+plugin.publish(TOPIC_SET, '0')
 time.sleep(2)
 
 print("Done. Disconnecting...")

@@ -30,11 +30,11 @@ plugin.subscribe(TOPIC_CMD_RESPONSE, on_message)
 time.sleep(1) # Allow time for subscription
 
 print("Setting key 'foo' to 'bar' via MQTT...")
-plugin.publish(TOPIC_CMD, 'SET foo bar')
+plugin.publish('br/datastore/put/foo', 'bar')
 time.sleep(1) # Wait for response
 
 print("Getting key 'foo' via MQTT...")
-plugin.publish(TOPIC_CMD, 'GET foo')
+plugin.subscribe('br/datastore/get/foo', on_message)
 time.sleep(1) # Wait for response
 
 plugin.disconnect()

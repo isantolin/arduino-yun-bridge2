@@ -71,7 +71,7 @@ if opkg list-installed | grep -q "block-mount"; then
     echo "   Extroot packages already installed." | tee -a $LOG_FILE
 else
     opkg update 2>&1 | tee -a $LOG_FILE
-    opkg install block-mount kmod-fs-ext4 e2fsprogs 2>&1 | tee -a $LOG_FILE
+    opkg install block-mount kmod-fs-ext4 e2fsprogs util-linux-mountpoint 2>&1 | tee -a $LOG_FILE
 
     if [ $? -ne 0 ]; then
         echo "ERROR! Package installation failed. Aborting." | tee -a $LOG_FILE
@@ -146,7 +146,7 @@ else
     echo "3.1 SWAP requires configuration. Proceeding to create the ${SWAP_SIZE_MB}MB file..." | tee -a $LOG_FILE
 
     # Mount the partition if /overlay is not mounted (unlikely if Extroot passed, but safe)
-    if ! mountpoint -q "/overlay"; then
+    if ! grep -q ' /overlay ' /proc/mounts; then
         echo "   Temporarily mounting $DEVICE to /mnt/swap_temp to create SWAP file." | tee -a $LOG_FILE
         mkdir -p /mnt/swap_temp 2>&1
         mount $DEVICE /mnt/swap_temp 2>&1 | tee -a $LOG_FILE

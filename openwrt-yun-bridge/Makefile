@@ -49,8 +49,10 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	# Always copy sources from package dir to build dir (robust to clean)
 	cp $(CURDIR)/bridge_daemon.py $(PKG_BUILD_DIR)/
+	cp -r $(CURDIR)/yunrpc $(PKG_BUILD_DIR)/
 	cp $(CURDIR)/yunbridge.init $(PKG_BUILD_DIR)/
 	cp $(PKG_BUILD_DIR)/bridge_daemon.py $(1)/usr/libexec/yunbridge/
+	cp -r $(PKG_BUILD_DIR)/yunrpc $(1)/usr/libexec/yunbridge/
 	echo -e '#!/bin/sh\nexec python3 /usr/libexec/yunbridge/bridge_daemon.py' > $(1)/usr/bin/yunbridge
 	chmod 755 $(1)/usr/bin/yunbridge
 	cp $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge

@@ -17,479 +17,463 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 #!/usr/bin/env python3
-"""
-YunBridge v2 Daemon: MQTT <-> Serial bridge for Arduino Yun v2
-Refactored to remove redundancy, improve logging, and enhance maintainability.
-"""
+#
+# Copyright (c) 2024, Ignacio Santolin
+#
+# Based on the original work by the Arduino team
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+#
 
-# Standard library imports
-import time
-import threading
-import atexit
-import re
+import sys
+import os
+import fcntl
+import signal
+import struct
 import logging
-import json
+import logging.handlers
+import argparse
+import threading
+import time
+import collections
 import subprocess
-from logging.handlers import RotatingFileHandler
-
-# Third-party imports
 import serial
 import paho.mqtt.client as mqtt
+from yunrpc.frame import Frame
+from collections import deque
 
+from yunrpc.protocol import Command, Status, PROTOCOL_VERSION, RPC_BUFFER_SIZE
 
-# --- Configuration ---
-DEFAULTS = {
-    'mqtt_host': '127.0.0.1',
-    'mqtt_port': 1883,
-    'mqtt_topic': 'yun',
-    'mqtt_user': '',
-    'mqtt_pass': '',
-    'mqtt_tls': 0,
-    'mqtt_cafile': '',
-    'mqtt_certfile': '',
-    'mqtt_keyfile': '',
-    'serial_port': '/dev/ttyATH0',
-    'serial_baud': 115200,
-    'debug': 1,
-}
+# Define the constants for the topics
+TOPIC_BRIDGE = "br"
+TOPIC_DIGITAL = "d"
+TOPIC_ANALOG = "a"
+TOPIC_CONSOLE = "console"
+TOPIC_SH = "sh"
 
-# --- Global Logger Setup (Single Source of Logging) ---
-LOG_PATH = '/tmp/yunbridge_daemon.log'
-logger = logging.getLogger("yunbridge")
-logger.setLevel(logging.INFO)
+# Global variables
+ser = None
+client = None
 
-# Create a stream handler (for console logging) first to capture all messages
-stream_handler = logging.StreamHandler()
-stream_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logger.addHandler(stream_handler)
+# In-memory dictionary to act as the DataStore
+datastore = {}
 
-logger.debug("Starting bridge_daemon.py")
+# In-memory queue for the Mailbox
+mailbox_queue = collections.deque()
 
-try:
-    logger.debug(f"Attempting to create RotatingFileHandler at {LOG_PATH}")
-    file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    logger.debug("RotatingFileHandler created and added successfully")
-except Exception as e:
-    logger.error(f"Failed to create RotatingFileHandler: {e}")
+# Lock for safely accessing the serial port
+serial_lock = threading.Lock()
 
-logger.debug("Logger setup complete")
+# For Process feature
+running_processes = {}
+process_lock = threading.Lock()
+next_pid = 1
 
-# --- Configuration Loading ---
-def get_uci_config():
-    """Loads configuration from OpenWRT's UCI system."""
-    cfg = DEFAULTS.copy()
+def send_frame(command_id: int, payload: bytes = b'') -> bool:
+    """
+    Builds and sends a frame to the MCU.
+    Returns True if successful, False on error.
+    """
+    if not ser or not ser.is_open:
+        logging.error("Serial port not available for sending.")
+        return False
+
     try:
-        logger.debug('Reading UCI configuration for yunbridge.')
-        result = subprocess.run(['uci', 'show', 'yunbridge'], capture_output=True, text=True, check=True)
-        for line in result.stdout.splitlines():
-            match = re.match(r"yunbridge\.main\.(\w+)='?([^']*)'?", line.strip())
-            if match:
-                key, value = match.groups()
-                if key in DEFAULTS:
-                    # Type conversion for specific keys
-                    if key in ('mqtt_port', 'serial_baud', 'debug', 'mqtt_tls'):
-                        try:
-                            cfg[key] = int(value)
-                        except (ValueError, TypeError):
-                            logger.warning(f"Invalid integer value for UCI key '{key}': '{value}'. Using default.")
-                    else:
-                        cfg[key] = value
-        logger.info('UCI configuration loaded successfully.')
-    except FileNotFoundError:
-        logger.warning('`uci` command not found. Using default configuration.')
-    except subprocess.CalledProcessError:
-        logger.warning('No UCI configuration found for `yunbridge`. Using default configuration.')
+        frame_bytes = Frame.build(command_id, payload)
+        logging.info(f"Enviando frame HEX: {' '.join(f'{b:02X}' for b in frame_bytes)}")
+        with serial_lock:
+            ser.write(frame_bytes)
+        logging.debug(f"LINUX > {Command(command_id).name} PAYLOAD: {payload.hex()}")
+        return True
+    except serial.SerialException as e:
+        logging.error(f"Failed to write to serial port: {e}")
+        return False
     except Exception as e:
-        logger.error(f'Error reading UCI configuration: {e}')
-    return cfg
+        logging.error(f"An unexpected error occurred during send: {e}")
+        return False
 
-def validate_config(cfg):
-    """Validates that essential configuration keys are present."""
-    required = ['mqtt_host', 'mqtt_port', 'mqtt_topic', 'serial_port', 'serial_baud']
-    for key in required:
-        if not cfg.get(key):
-            raise ValueError(f"Config error: '{key}' is required and missing or empty.")
-    if cfg.get('mqtt_tls') and not cfg.get('mqtt_cafile'):
-        raise ValueError("Config error: mqtt_tls enabled but mqtt_cafile not set.")
+def on_connect(client, userdata, flags, rc, properties=None):
+    """The callback for when the client receives a CONNACK response from the server."""
+    if rc == 0:
+        logging.info("Connected to MQTT Broker!")
+        # Subscribe to specific topics to avoid receiving our own messages
+        subscriptions = [
+            (f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/#", 0),
+            (f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/#", 0),
+            (f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/in", 0),
+            (f"{TOPIC_BRIDGE}/datastore/put/#", 0),
+            (f"{TOPIC_BRIDGE}/mailbox/write", 0)
+        ]
+        client.subscribe(subscriptions)
+        for sub in subscriptions:
+            logging.info(f"Subscribed to topic: {sub[0]}")
+    else:
+        logging.error(f"Failed to connect, return code {rc}")
 
-# Load and validate config at startup
-CFG = get_uci_config()
-validate_config(CFG)
-if CFG['debug']:
-    logger.setLevel(logging.DEBUG)
 
-# --- Main Daemon Class ---
-class BridgeDaemon:
-    """
-    Main daemon class: handles MQTT, serial, and command processing.
-    """
-    def __init__(self, config):
-        self.cfg = config
-        self.ser = None
-        self.running = True
-        self.mqtt_connected = False
-        self.kv_store = {}
-        self.reconnect_delay = 5  # seconds
+def on_message(client, userdata, msg):
+    """The callback for when a PUBLISH message is received from the server."""
+    if not ser or not ser.is_open:
+        logging.warning("Serial port not ready, skipping MQTT message.")
+        return
 
-        # Setup command dispatcher
-        self.command_handlers = {
-            "PIN": self._publish_pin_state,
-            "SET": self._handle_set,
-            "GET": self._handle_get,
-            "RUN": self._handle_run,
-            "READFILE": self._handle_readfile,
-            "WRITEFILE": self._handle_writefile,
-            "CONSOLE": self._handle_console,
-            "MAILBOX": self._handle_mailbox_from_serial,
-        }
-
-        # Setup MQTT client
-        self._setup_mqtt_client()
-        
-        # Topic prefixes
-        self.topic_prefix = self.cfg['mqtt_topic']
-        self.pin_topic_prefix = f'{self.topic_prefix}/pin'
-        self.mailbox_topic_prefix = f'{self.topic_prefix}/mailbox'
-        self.command_response_topic = f'{self.topic_prefix}/command/response'
-
-    def _setup_mqtt_client(self):
-        """Initializes and configures the MQTT client (modern paho-mqtt)."""
-        self.mqtt_client = mqtt.Client()
-        if self.cfg.get('mqtt_user'):
-            self.mqtt_client.username_pw_set(self.cfg['mqtt_user'], self.cfg.get('mqtt_pass', ''))
-        if self.cfg.get('mqtt_tls'):
-            try:
-                self.mqtt_client.tls_set(
-                    ca_certs=self.cfg.get('mqtt_cafile'),
-                    certfile=self.cfg.get('mqtt_certfile'),
-                    keyfile=self.cfg.get('mqtt_keyfile')
-                )
-            except Exception as e:
-                logger.error(f"Failed to set up MQTT TLS: {e}")
-        self.mqtt_client.on_connect = self.on_mqtt_connect
-        self.mqtt_client.on_message = self.on_mqtt_message
-
-    # --- Helper Methods ---
-    def _write_to_serial(self, data):
-        """Safely writes data to the serial port if it's open."""
-        if self.ser and self.ser.is_open:
-            try:
-                if isinstance(data, str):
-                    data = data.encode('utf-8')
-                self.ser.write(data)
-                logger.debug(f"Wrote to serial: {data.strip()}")
-            except serial.SerialException as e:
-                self._handle_serial_error("Failed to write to serial port", e)
-        else:
-            logger.warning(f"Serial port not open. Could not write: {data.strip()}")
-
-    def _handle_serial_error(self, message, exception):
-        """Centralized handler for serial connection errors."""
-        logger.error(f"{message}: {exception}")
-        if self.ser:
-            try:
-                self.ser.close()
-            except Exception as e:
-                logger.error(f"Error while closing serial port: {e}")
-        self.ser = None
-        self.write_status('error', f'Serial error: {exception}')
-
-    def write_status(self, status, detail=None):
-        """Write daemon status to a file for external monitoring."""
-        try:
-            with open('/tmp/yunbridge_status.json', 'w') as f:
-                data = {'status': status, 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')}
-                if detail:
-                    data['detail'] = detail
-                f.write(json.dumps(data))
-        except Exception as e:
-            logger.warning(f'Could not write status file: {e}')
-
-    # --- MQTT Callbacks and Methods ---
-    def on_mqtt_connect(self, client, userdata, flags, rc, properties=None):
-        """Callback for when the client connects to the MQTT broker."""
-        if rc == 0:
-            logger.info("Successfully connected to MQTT broker.")
-            self.mqtt_connected = True
-            try:
-                # Subscribe to topics with QoS 2
-                pin_topic = f'{self.pin_topic_prefix}/+/+/set' # New: yun/pin/{func}/{pin}/set
-                mailbox_topic = f'{self.mailbox_topic_prefix}/send'
-                command_topic = f'{self.topic_prefix}/command'
-                client.subscribe([(pin_topic, 2), (mailbox_topic, 2), (command_topic, 2)])
-                logger.info(f"Subscribed to: {pin_topic} (QoS 2)")
-                logger.info(f"Subscribed to: {mailbox_topic} (QoS 2)")
-                logger.info(f"Subscribed to: {command_topic} (QoS 2)")
-            except Exception as e:
-                logger.error(f"Failed to subscribe to topics: {e}")
-        else:
-            logger.error(f"Failed to connect to MQTT broker, return code: {rc}")
-            self.mqtt_connected = False
-
-    def on_mqtt_message(self, client, userdata, message):
-        topic = message.topic
-        try:
-            # Ignore messages that are not in our topic prefix
-            if not topic.startswith(self.topic_prefix):
-                return
-
-            logger.debug(f"Received message on topic {topic}: {message.payload}")
-
-            # Handle mailbox messages from MQTT clients
-            if topic == f"{self.mailbox_topic_prefix}/send":
-                message_str = message.payload.decode('utf-8')
-                logger.info(f"Forwarding mailbox message from MQTT to MQTT and Serial: {message_str}")
-                self.mqtt_client.publish(f"{self.mailbox_topic_prefix}/recv", message_str)
-                self._write_to_serial(f"MAILBOX {message_str}\n")
-
-            # Handle pin mode and digital/analog write commands from MQTT
-            # New taxonomy: yun/pin/{funcion}/{numero_pin}/{accion}
-            elif topic.startswith(f"{self.pin_topic_prefix}/"):
-                topic_parts = topic.split('/')
-                # topic_parts[0] = 'yun'
-                # topic_parts[1] = 'pin'
-                # topic_parts[2] = 'digital' or 'analog'
-                # topic_parts[3] = '13', 'A5', etc.
-                # topic_parts[4] = 'set'
-                function = topic_parts[2]
-                pin_number = topic_parts[3]
-                value = message.payload.decode('utf-8').upper()
-
-                # The Arduino sketch expects "PIN <pin_number> <ON|OFF>"
-                if function == 'digital':
-                    if value not in ['ON', 'OFF']:
-                        logger.warning(f"Invalid value for digital pin: {value}")
-                        return
-                    
-                    command = f"PIN {pin_number} {value}\n"
-                    self._write_to_serial(command)
-
-                elif function == 'analog':
-                    # The current BridgeControl.ino does not handle analog writes from serial.
-                    # This is a placeholder for future implementation.
-                    logger.warning("Analog write from MQTT not yet supported by the sketch.")
-                else:
-                    logger.warning(f"Unknown pin function: {function}")
-                    return
-
-            # Handle generic commands (SET, GET, RUN, etc.)
-            elif topic == f"{self.topic_prefix}/command":
-                self.handle_command(message.payload.decode('utf-8'))
-
-        except Exception as e:
-            logger.error(f"Error processing MQTT message on topic {topic}: {e}", exc_info=True)
-
-    def publish_mqtt(self, topic, payload, retain=False):
-        """Publishes a message to an MQTT topic with QoS 2."""
-        if self.mqtt_connected:
-            self.mqtt_client.publish(topic, payload, qos=2, retain=retain)
-            logger.debug(f"Published to MQTT: Topic='{topic}', Payload='{payload}', QoS=2")
-        else:
-            logger.warning("MQTT not connected. Cannot publish message.")
-
-    # --- Command Handlers (from Serial) ---
-    def handle_command(self, line):
-        """Parses and dispatches a single command."""
-        cmd = line.strip()
-        if not cmd:
-            return
-            
-        logger.debug(f"Handling command: '{cmd}'")
-
-        # Regex-based matching for PIN STATE commands from Arduino
-        # Captures formats like "PIN D13 STATE ON" or "PIN A5 STATE 1023"
-        pin_state_match = re.match(r'PIN ([DA]?\d+) STATE (.+)', cmd)
-        if pin_state_match:
-            pin_id, state = pin_state_match.groups()
-            self.command_handlers["PIN"](pin_id, state)
-            return
-
-        # Space-separated command for all others
-        parts = cmd.split(' ', 1)
-        command_key = parts[0]
-        args = parts[1] if len(parts) > 1 else ""
-        handler = self.command_handlers.get(command_key)
-        
-        if handler:
-            try:
-                handler(args)
-            except Exception as e:
-                logger.error(f"Error executing command '{command_key}': {e}")
-                self._write_to_serial(f'ERR {command_key}\n')
-        else:
-            logger.warning(f"Unknown command: '{cmd}'")
-            # We don't reply to unknown commands to prevent feedback loops.
+    logging.info(f"MQTT < {msg.topic} {str(msg.payload)}")
     
-    def _publish_pin_state(self, pin_id, state):
-        """Helper to publish pin state to MQTT using the new taxonomy."""
-        # Normalize pin_id: D13 -> 13, A5 -> A5
-        numeric_pin_id = pin_id.lstrip('DA')
-
-        # Determine function based on pin prefix
-        if pin_id.startswith('A'):
-            function = "analog"
-        else:
-            function = "digital"
-
-        topic = f"{self.pin_topic_prefix}/{function}/{numeric_pin_id}/state"
-        
-        # Normalize payload: ON -> 1, OFF -> 0
-        if state.upper() == 'ON':
-            payload = '1'
-        elif state.upper() == 'OFF':
-            payload = '0'
-        else:
-            payload = state
-
-        self.publish_mqtt(topic, payload, retain=True)
-
-    def _handle_pin_state(self, pin, state):
-        """Handles receiving a pin state and publishing it."""
-        self._publish_pin_state(pin, state)
-
-    def _handle_set(self, args):
-        key, value = args.split(' ', 1)
-        self.kv_store[key] = value
-        logger.debug(f"Stored in KV: {key} = {value}")
-        response = f'OK SET {key}'
-        self.publish_mqtt(self.command_response_topic, response)
-        self._write_to_serial(f'{response}\n')
-        
-    def _handle_get(self, key):
-        value = self.kv_store.get(key, '')
-        logger.debug(f"Retrieved from KV: {key} = {value}")
-        response = f'VALUE {key} {value}'
-        self.publish_mqtt(self.command_response_topic, response)
-        self._write_to_serial(f'{response}\n')
-        
-    def _handle_run(self, command):
-        result = subprocess.getoutput(command)
-        logger.debug(f"RUN '{command}' result: {result}")
-        response = f'RUNOUT {result}'
-        self.publish_mqtt(self.command_response_topic, response)
-        self._write_to_serial(f'{response}\n')
-        
-    def _handle_readfile(self, path):
-        try:
-            with open(path, 'r') as f:
-                data = f.read(256)
-            logger.debug(f"Read from {path}: {data}")
-            response = f'FILEDATA {data}'
-        except Exception as e:
-            logger.error(f"Error reading file {path}: {e}")
-            response = f'ERR READFILE {e}'
-        self.publish_mqtt(self.command_response_topic, response)
-        self._write_to_serial(f'{response}\n')
-
-    def _handle_writefile(self, args):
-        try:
-            path, data = args.split(' ', 1)
-            with open(path, 'w') as f:
-                f.write(data)
-            logger.debug(f"Wrote to {path}: {data}")
-            response = 'OK WRITEFILE'
-        except Exception as e:
-            logger.error(f"Error writing file: {e}")
-            response = f'ERR WRITEFILE {e}'
-        self.publish_mqtt(self.command_response_topic, response)
-        self._write_to_serial(f'{response}\n')
-
-    def _handle_console(self, msg):
-        logger.info(f'[Console from Arduino] {msg}')
-        response = 'OK CONSOLE'
-        self.publish_mqtt(self.command_response_topic, response)
-        self._write_to_serial(f'{response}\n')
-
-    def _handle_mailbox_from_serial(self, msg):
-        # The message has already been broadcast to all MQTT clients by the sender.
-        # We just need to confirm receipt to the MCU.
-        logger.info(f"Acknowledging mailbox message from Serial: {msg}")
-        response = f'OK MAILBOX {msg}'
-        self._write_to_serial(f'{response}\n')
-
-    # --- Main Execution Loop ---
-    def run(self):
-        """Main loop: handles MQTT and serial communication."""
-        logger.info(f"Starting YunBridge v2 Daemon...")
-        logger.info(f"Listening on {self.cfg['serial_port']} @ {self.cfg['serial_baud']} baud.")
-        self.write_status('starting')
-
-        try:
-            logger.info(f"Connecting to MQTT broker at {self.cfg['mqtt_host']}:{self.cfg['mqtt_port']}")
-            self.mqtt_client.connect(self.cfg['mqtt_host'], self.cfg['mqtt_port'], 60)
-            mqtt_thread = threading.Thread(target=self.mqtt_client.loop_forever, daemon=True)
-            mqtt_thread.start()
-        except Exception as e:
-            logger.critical(f'Could not connect to MQTT broker: {e}')
-            self.write_status('error', f'MQTT connect failed: {e}')
+    try:
+        parts = msg.topic.split('/')
+        if len(parts) < 3 or parts[0] != TOPIC_BRIDGE:
             return
 
-        while self.running:
-            try:
-                logger.info(f"Attempting to open serial port {self.cfg['serial_port']}...")
-                with serial.Serial(self.cfg['serial_port'], self.cfg['serial_baud'], timeout=1) as ser:
-                    self.ser = ser
-                    logger.info(f'Serial port {self.cfg["serial_port"]} opened successfully.')
-                    self.write_status('running', 'serial open')
-                    while self.running:
-                        try:
-                            line = ser.readline().decode(errors='replace').strip()
-                            if line:
-                                self.handle_command(line)
-                        except serial.SerialException as e:
-                            self._handle_serial_error("Serial port I/O error", e)
-                            break # Break inner loop to retry opening the port
-                        except Exception as e:
-                            logger.error(f"Unexpected error reading from serial: {e}")
-                            time.sleep(1)
-                
-                # This block runs if serial port closes gracefully or after an error
-                logger.warning("Serial port closed.")
-                self.write_status('running', 'serial closed')
-                self.ser = None
-                
-            except serial.SerialException as e:
-                self._handle_serial_error("Could not open serial port", e)
-            except Exception as e:
-                logger.critical(f"Unexpected critical error in main loop: {e}", exc_info=True)
-                self.write_status('error', 'critical main loop error')
-            
-            if self.running:
-                logger.info(f"Retrying serial connection in {self.reconnect_delay} seconds...")
-                time.sleep(self.reconnect_delay)
+        topic_type = parts[1]
+        
+        if topic_type == TOPIC_CONSOLE and parts[2] == "in":
+            send_frame(Command.CMD_CONSOLE_WRITE.value, msg.payload)
+            return
+        
+        # DataStore 'put' from MQTT
+        if topic_type == "datastore" and parts[2] == "put":
+            if len(parts) > 3:
+                key = "/".join(parts[3:])
+                value = msg.payload.decode()
+                datastore[key] = value
+                logging.info(f"DataStore: MQTT set '{key}' to '{value}'")
+                # Publish to the 'get' topic for confirmation and state synchronization
+                get_topic = f"{TOPIC_BRIDGE}/datastore/get/{key}"
+                client.publish(get_topic, value, retain=True)
+            return
 
-    def stop(self):
-        """Stops the daemon gracefully."""
-        logger.info("Stopping daemon...")
-        self.running = False
-        if self.ser and self.ser.is_open:
-            self.ser.close()
-        self.mqtt_client.disconnect()
-        self.write_status('stopped')
+        # Mailbox 'write' from MQTT
+        if topic_type == "mailbox" and parts[2] == "write":
+            mailbox_queue.append(msg.payload)
+            logging.info(f"Mailbox: Queued message from MQTT ({len(msg.payload)} bytes)")
+            # Publish the new count of available messages
+            client.publish(f"{TOPIC_BRIDGE}/mailbox/available", str(len(mailbox_queue)), retain=True)
+            return
+
+        pin_str = parts[2]
+        
+        # Digital/Analog Write
+        if (topic_type == TOPIC_DIGITAL or topic_type == TOPIC_ANALOG) and len(parts) == 3:
+            pin = int(pin_str)
+            value = int(msg.payload.decode('utf-8'))
+            command = Command.CMD_DIGITAL_WRITE if topic_type == TOPIC_DIGITAL else Command.CMD_ANALOG_WRITE
+            payload = struct.pack('<BB', pin, value)
+            send_frame(command.value, payload)
+
+        # Pin Mode
+        elif topic_type == TOPIC_DIGITAL and len(parts) == 4 and parts[3] == "mode":
+            pin = int(pin_str)
+            mode = int(msg.payload.decode('utf-8'))
+            payload = struct.pack('<BB', pin, mode)
+            send_frame(Command.CMD_SET_PIN_MODE.value, payload)
+
+        # Digital/Analog Read Request
+        elif (topic_type == TOPIC_DIGITAL or topic_type == TOPIC_ANALOG) and len(parts) == 4 and parts[3] == "read":
+            # An MQTT message to this topic triggers a read request to the MCU.
+            pin = int(pin_str)
+            command = Command.CMD_DIGITAL_READ if topic_type == TOPIC_DIGITAL else Command.CMD_ANALOG_READ
+            payload = struct.pack('<B', pin)
+            send_frame(command.value, payload)
+
+
+    except (ValueError, IndexError) as e:
+        logging.error(f"Error processing MQTT message: {e}", exc_info=True)
+    except Exception as e:
+        logging.error(f"An unexpected error occurred in on_message: {e}", exc_info=True)
+
+
+def handle_mcu_frame(command_id, payload):
+    """Handles a command frame received from the MCU."""
+    logging.debug(f"MCU > CMD: {Command(command_id).name} PAYLOAD: {payload.hex()}")
+
+
+    try:
+        command = Command(command_id)
+
+        # Handle pin operations by publishing to MQTT
+        if command in [Command.CMD_DIGITAL_READ_RESP, Command.CMD_ANALOG_READ_RESP]:
+            pin = payload[0]
+            value = int.from_bytes(payload[1:], 'little')
+            topic_type = TOPIC_DIGITAL if command == Command.CMD_DIGITAL_READ_RESP else TOPIC_ANALOG
+            topic = f"{TOPIC_BRIDGE}/{topic_type}/{pin}/value"
+            if client:
+                client.publish(topic, str(value))
+                logging.info(f"Published to {topic}: {value}")
+            else:
+                logging.warning(f"MQTT client not initialized, cannot publish to {topic}")
+
+        elif command_id == 0x41:
+            # MAILBOX_PROCESSED: publish processed message to MQTT
+            topic = f"{TOPIC_BRIDGE}/mailbox/processed"
+            if client:
+                client.publish(topic, payload)
+                logging.info(f"Published to {topic}: {payload}")
+            else:
+                logging.warning(f"MQTT client not initialized, cannot publish to {topic}")
+
+        elif command == Command.CMD_CONSOLE_WRITE:
+            logging.info(f"CONSOLE: {payload.decode('utf-8', errors='ignore')}")
+
+        elif command == Command.CMD_DATASTORE_PUT:
+            key, value = payload.split(b'\0', 1)
+            logging.info(f"Received DATASTORE_PUT for key '{key.decode()}'")
+            datastore[key.decode()] = value.decode('utf-8')
+
+        elif command == Command.CMD_DATASTORE_GET:
+            key = payload.decode('utf-8')
+            logging.info(f"Received DATASTORE_GET for key '{key}'")
+            value = datastore.get(key, "")
+            send_frame(Command.CMD_DATASTORE_GET_RESP.value, value.encode('utf-8'))
+
+        elif command == Command.CMD_MAILBOX_READ:
+            logging.info("Received MAILBOX_READ")
+            message = b""
+            if mailbox_queue:
+                message = mailbox_queue.popleft()
+            send_frame(Command.CMD_MAILBOX_READ_RESP.value, message)
+
+        elif command == Command.CMD_MAILBOX_AVAILABLE:
+            logging.info("Received MAILBOX_AVAILABLE")
+            available_count = len(mailbox_queue)
+            logging.info(f"Mailbox queue has {available_count} messages.")
+            available_payload = str(available_count).encode('utf-8')
+            send_frame(Command.CMD_MAILBOX_AVAILABLE_RESP.value, available_payload)
+
+        elif command == Command.CMD_FILE_WRITE:
+            logging.warning(f"FILE_WRITE command is not fully implemented.")
+
+        elif command == Command.CMD_PROCESS_RUN:
+            cmd_str = payload.decode('utf-8')
+            logging.info(f"Received PROCESS_RUN for command: '{cmd_str}'")
+            try:
+                result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=10)
+                response = result.stdout
+                logging.info(f"Command stdout: {response}")
+                send_frame(Command.CMD_PROCESS_RUN_RESP.value, response.encode('utf-8'))
+            except Exception as e:
+                logging.error(f"Error running process '{cmd_str}': {e}")
+                send_frame(Command.CMD_PROCESS_RUN_RESP.value, str(e).encode('utf-8'))
+
+        elif command == Command.CMD_PROCESS_RUN_ASYNC:
+            global next_pid
+            cmd_str = payload.decode('utf-8')
+            logging.info(f"Received PROCESS_RUN_ASYNC for command: '{cmd_str}'")
+            try:
+                process = subprocess.Popen(cmd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                with process_lock:
+                    pid = next_pid
+                    running_processes[pid] = process
+                    next_pid += 1
+                logging.info(f"Started process '{cmd_str}' with internal PID {pid} (OS PID {process.pid})")
+                send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, str(pid).encode('utf-8'))
+            except Exception as e:
+                logging.error(f"Error running async process '{cmd_str}': {e}")
+                send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"0")
+
+        elif command == Command.CMD_PROCESS_POLL:
+            pid_str = payload.decode('utf-8')
+            pid = int(pid_str)
+            logging.info(f"Received PROCESS_POLL for PID {pid}")
+            output = ""
+            with process_lock:
+                if pid in running_processes:
+                    process = running_processes[pid]
+                    try:
+                        output = process.stdout.read()
+                    except Exception as e:
+                        output = f"Error reading stdout for PID {pid}: {e}"
+                    if process.poll() is not None:
+                        logging.info(f"Process with PID {pid} has finished. Cleaning up.")
+                        del running_processes[pid]
+                else:
+                    output = f"No process found with PID {pid}"
+            logging.info(f"Polling PID {pid}, output: '{output}'")
+            send_frame(Command.CMD_PROCESS_POLL_RESP.value, output.encode('utf-8'))
+
+        elif command == Command.CMD_PROCESS_KILL:
+            pid_str = payload.decode('utf-8')
+            pid = int(pid_str)
+            logging.info(f"Received PROCESS_KILL for PID {pid}")
+            with process_lock:
+                if pid in running_processes:
+                    try:
+                        running_processes[pid].kill()
+                        logging.info(f"Killed process with PID {pid}")
+                        del running_processes[pid]
+                    except Exception as e:
+                        logging.error(f"Error killing process PID {pid}: {e}")
+                else:
+                    logging.warning(f"Attempted to kill non-existent PID {pid}")
+        else:
+            logging.warning(f"Unknown command received: {command}")
+            send_frame(Status.CMD_UNKNOWN.value, b'')
+
+    except (ValueError, IndexError, UnicodeDecodeError, struct.error) as e:
+        logging.error(f"Error processing frame: {e}")
+        try:
+            send_frame(Status.ERROR.value, str(e).encode('utf-8'))
+        except Exception as e2:
+            logging.error(f"Could not even send error response: {e2}")
+
 
 def main():
-    logger.debug('Configuration being used:')
-    for k, v in CFG.items():
-        logger.debug(f'  {k}: {v}')
-        
-    daemon = BridgeDaemon(CFG)
-    
-    def shutdown_handler():
-        daemon.stop()
+    """Main function."""
+    global ser, client
 
-    atexit.register(shutdown_handler)
+    parser = argparse.ArgumentParser(description="Arduino Yun Bridge Daemon")
+    parser.add_argument('--verbose', action='store_true', help="Print logs to console instead of syslog")
+    parser.add_argument('--ip', type=str, default='192.168.15.28', help='MQTT broker IP address')
+    parser.add_argument('--serial-port', type=str, default='/dev/ttyATH0', help='Serial port for MCU communication')
+    args = parser.parse_args()
 
+    # Setup logging
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+    log_format = '%(asctime)s - %(levelname)s - %(message)s'
+    if args.verbose:
+        logging.basicConfig(level=log_level, format=log_format)
+    else:
+        logging.basicConfig(level=log_level, filename='/var/log/yun-bridge.log', filemode='a', format=log_format)
+
+    logging.info("Starting yun-bridge daemon.")
+
+    # Ensure the script runs as a single instance
+    pid_file_path = "/var/run/yun-bridge.pid"
+    pid_file = None
     try:
-        daemon.run()
-    except KeyboardInterrupt:
-        logger.info("Daemon stopped by user (KeyboardInterrupt).")
-    except Exception as e:
-        logger.critical(f"Unhandled fatal exception in main: {e}", exc_info=True)
-    finally:
-        daemon.stop()
+        pid_file = open(pid_file_path, "w")
+        fcntl.lockf(pid_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        pid_file.write(str(os.getpid()))
+        pid_file.flush()
+    except IOError:
+        logging.error("Another instance of yun-bridge is running. Exiting.")
+        sys.exit(1)
 
-if __name__ == '__main__':
+    # Setup MQTT client
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.on_message = on_message
+    try:
+        client.connect(args.ip, 1883, 60)
+    except Exception as e:
+        logging.error(f"Can't connect to MQTT broker at {args.ip}: {e}")
+        sys.exit(1)
+    client.loop_start()
+
+    serial_buffer = b''
+    from yunrpc import protocol
+
+    # Main loop
+    while True:
+        try:
+            if not ser or not ser.is_open:
+                logging.info(f"Attempting to connect to serial port {args.serial_port}...")
+                try:
+                    ser = serial.Serial(args.serial_port, 115200, timeout=1)
+                    ser.reset_input_buffer()
+                    logging.info("Serial port connected successfully.")
+                except serial.SerialException as e:
+                    logging.warning(f"Serial port not ready: {e}. Retrying in 5 seconds...")
+                    ser = None
+                    time.sleep(5)
+                    continue
+
+            if ser.in_waiting > 0:
+                with serial_lock:
+                    serial_buffer += ser.read(ser.in_waiting)
+            
+            # Process the buffer to find and parse frames
+            buffer_modified = True
+            while buffer_modified:
+                buffer_modified = False
+                start_index = serial_buffer.find(protocol.START_BYTE)
+
+                if start_index == -1:
+                    if len(serial_buffer) > 0:
+                        logging.warning(f"Discarding {len(serial_buffer)} bytes of junk data: {serial_buffer.hex()}")
+                        serial_buffer = b''
+                    break
+
+                if start_index > 0:
+                    logging.warning(f"Discarding {start_index} bytes of junk data before frame: {serial_buffer[:start_index].hex()}")
+                    serial_buffer = serial_buffer[start_index:]
+                    buffer_modified = True
+                    continue
+
+                if len(serial_buffer) < protocol.MIN_FRAME_SIZE:
+                    break
+
+                try:
+                    _, payload_len, _ = struct.unpack(protocol.CRC_COVERED_HEADER_FORMAT, serial_buffer[1:1+protocol.CRC_COVERED_HEADER_SIZE])
+                except struct.error:
+                    logging.warning("Could not unpack header, discarding start byte.")
+                    serial_buffer = serial_buffer[1:]
+                    buffer_modified = True
+                    continue
+
+                full_frame_len = 1 + protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
+                
+                if len(serial_buffer) < full_frame_len:
+                    break
+
+                frame_bytes = serial_buffer[:full_frame_len]
+                
+                try:
+                    command_id, payload = Frame.parse(frame_bytes)
+                    handle_mcu_frame(command_id, payload)
+                    serial_buffer = serial_buffer[full_frame_len:]
+                    buffer_modified = True
+
+                except ValueError as e:
+                    logging.warning(f"Frame parsing error: {e}. Discarding start byte and rescanning.")
+                    serial_buffer = serial_buffer[1:]
+                    buffer_modified = True
+            
+            time.sleep(0.01)
+
+        except (serial.SerialException, IOError) as e:
+            logging.error(f"Serial communication error: {e}")
+            if ser:
+                ser.close()
+            ser = None
+            time.sleep(5)
+        
+        except Exception as e:
+            logging.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
+            break
+
+    # Cleanup
+    logging.info("Shutting down yun-bridge.")
+    if client:
+        client.loop_stop()
+    if ser and ser.is_open:
+        ser.close()
+    
+    if pid_file:
+        fcntl.lockf(pid_file, fcntl.LOCK_UN)
+        pid_file.close()
+        try:
+            os.remove(pid_file_path)
+        except OSError as e:
+            logging.error(f"Error removing pid file: {e}")
+
+    sys.exit(0)
+
+
+if __name__ == "__main__":
     main()

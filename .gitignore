@@ -44,3 +44,4 @@ luci-app-yunbridge/dist/
 **/*.ipk
 **/*.deb
 **/*.whl
+.vscode

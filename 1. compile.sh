@@ -37,8 +37,8 @@ if [ "$(uname -s)" = "Linux" ]; then
         sudo apt-get install -y build-essential python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev zstd wget
     elif [ -f /etc/fedora-release ]; then
         echo "[INFO] Installing packages for Fedora..."
-        sudo dnf clean all
-        sudo dnf update
+        # sudo dnf clean all
+        # sudo dnf update
         sudo dnf install -y make automake gcc gcc-c++ kernel-devel python3 python3-pip python3-setuptools python3-wheel python3-build git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget
     else
         echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."

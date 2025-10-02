@@ -11,8 +11,8 @@ import sys
 import time
 from yunbridge_client.plugin_loader import PluginLoader
 
-TOPIC_CMD = 'yun/command'
-TOPIC_CMD_RESPONSE = 'yun/command/response'
+# The daemon expects console messages on this specific topic
+TOPIC_CONSOLE_IN = 'br/console/in'
 
 # Example: MQTT plugin (default)
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
@@ -20,17 +20,15 @@ MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 plugin_class = PluginLoader.load_plugin('mqtt_plugin')
 plugin = plugin_class(**MQTT_CONFIG)
 
-def on_message(topic, message):
-    """Callback to print responses from the bridge."""
-    print(f"[MQTT] Response on {topic}: {message}")
+# The daemon does not publish a response for console messages,
+# so a callback is not necessary for this test.
 
 plugin.connect()
-plugin.subscribe(TOPIC_CMD_RESPONSE, on_message)
-time.sleep(1) # Allow time for subscription
 
-print("Sending CONSOLE command via MQTT...")
-plugin.publish(TOPIC_CMD, 'CONSOLE hello_console')
-time.sleep(1) # Wait for response
+message_to_send = 'hello from console test'
+print(f"Sending CONSOLE command via MQTT to {TOPIC_CONSOLE_IN}...")
+plugin.publish(TOPIC_CONSOLE_IN, message_to_send)
+time.sleep(1) # Wait for message to be sent
 
 plugin.disconnect()
 print("Done.")

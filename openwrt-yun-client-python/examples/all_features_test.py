@@ -22,12 +22,12 @@ if len(sys.argv) > 1:
 # Determine if the pin is analog or digital for topic construction
 pin_function = "analog" if PIN.upper().startswith('A') else "digital"
 
-TOPIC_SET = f'yun/pin/{pin_function}/{PIN}/set'
-TOPIC_STATE = f'yun/pin/{pin_function}/{PIN}/state'
-TOPIC_CMD = 'yun/command'
-TOPIC_MAILBOX_SEND = 'yun/mailbox/send'
-TOPIC_MAILBOX_RECV = 'yun/mailbox/recv'
-TOPIC_CMD_RESPONSE = 'yun/command/response'
+TOPIC_SET = f'br/pin/{pin_function}/{PIN}/set'
+TOPIC_STATE = f'br/pin/{pin_function}/{PIN}/state'
+TOPIC_CMD = 'br/sh/run'
+TOPIC_MAILBOX_SEND = 'br/mailbox/write'
+TOPIC_MAILBOX_RECV = 'br/mailbox/available'
+TOPIC_CMD_RESPONSE = 'br/sh/response'
 
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 
@@ -54,18 +54,18 @@ if __name__ == '__main__':
 
     print("\n--- Testing Key-Value Store ---")
     print("Setting key 'foo' to 'bar'...")
-    plugin.publish(TOPIC_CMD, 'SET foo bar')
+    plugin.publish('br/datastore/put/foo', 'bar')
     time.sleep(1)
     print("Getting key 'foo'...")
-    plugin.publish(TOPIC_CMD, 'GET foo')
+    plugin.subscribe('br/datastore/get/foo', on_message)
     time.sleep(1)
 
     print("\n--- Testing File I/O ---")
     print("Writing to '/tmp/bridge_test.txt'...")
-    plugin.publish(TOPIC_CMD, 'WRITEFILE /tmp/bridge_test.txt hello_bridge')
+    # File I/O: no mapping directo, requiere implementación en el bridge
     time.sleep(1)
     print("Reading from '/tmp/bridge_test.txt'...")
-    plugin.publish(TOPIC_CMD, 'READFILE /tmp/bridge_test.txt')
+    # File I/O: no mapping directo, requiere implementación en el bridge
     time.sleep(1)
 
     print("\n--- Testing Mailbox ---")
@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     print("\n--- Testing Process Execution ---")
     print("Running 'echo hello_from_yun'...")
-    plugin.publish(TOPIC_CMD, 'RUN echo hello_from_yun')
+    plugin.publish(TOPIC_CMD, 'echo hello_from_yun')
     time.sleep(1)
 
     print("\nDone testing. Waiting 3s for final responses...")

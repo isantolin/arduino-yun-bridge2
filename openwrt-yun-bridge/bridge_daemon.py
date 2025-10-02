@@ -408,25 +408,45 @@ def handle_mcu_frame(command_id, payload):
             logging.error(f"Could not even send error response: {e2}")
 
 
+def get_uci_config(option, default=None):
+    """
+    Gets a configuration value from OpenWrt's UCI system.
+    Returns the value, or a default if not found.
+    """
+    try:
+        cmd = ["uci", "get", f"yunbridge.main.{option}"]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return default
+
+
 def main():
     """Main function."""
     global ser, client
 
-    parser = argparse.ArgumentParser(description="Arduino Yun Bridge Daemon")
-    parser.add_argument('--verbose', action='store_true', help="Print logs to console instead of syslog")
-    parser.add_argument('--ip', type=str, default='192.168.15.28', help='MQTT broker IP address')
-    parser.add_argument('--serial-port', type=str, default='/dev/ttyATH0', help='Serial port for MCU communication')
-    args = parser.parse_args()
+    # Get configuration from UCI, with sane defaults
+    is_debug = get_uci_config('debug', '0') == '1'
+    mqtt_host = get_uci_config('mqtt_host', '127.0.0.1')
+    mqtt_port = int(get_uci_config('mqtt_port', '1883'))
+    serial_port = get_uci_config('serial_port', '/dev/ttyATH0')
+    serial_baud = int(get_uci_config('serial_baud', '115200'))
 
     # Setup logging
-    log_level = logging.DEBUG if args.verbose else logging.INFO
+    log_level = logging.DEBUG if is_debug else logging.INFO
     log_format = '%(asctime)s - %(levelname)s - %(message)s'
-    if args.verbose:
-        logging.basicConfig(level=log_level, format=log_format)
+    # Remove existing handlers before adding a new one
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    if is_debug:
+        logging.basicConfig(level=log_level, format=log_format)  # Log to console
     else:
         logging.basicConfig(level=log_level, filename='/var/log/yun-bridge.log', filemode='a', format=log_format)
 
     logging.info("Starting yun-bridge daemon.")
+    logging.info(f"Config - MQTT Host: {mqtt_host}:{mqtt_port}")
+    logging.info(f"Config - Serial: {serial_port} @ {serial_baud} baud")
+    logging.info(f"Config - Debug: {is_debug}")
 
     # Ensure the script runs as a single instance
     pid_file_path = "/var/run/yun-bridge.pid"
@@ -445,9 +465,9 @@ def main():
     client.on_connect = on_connect
     client.on_message = on_message
     try:
-        client.connect(args.ip, 1883, 60)
+        client.connect(mqtt_host, mqtt_port, 60)
     except Exception as e:
-        logging.error(f"Can't connect to MQTT broker at {args.ip}: {e}")
+        logging.error(f"Can't connect to MQTT broker at {mqtt_host}:{mqtt_port}: {e}")
         sys.exit(1)
     client.loop_start()
 
@@ -458,9 +478,9 @@ def main():
     while True:
         try:
             if not ser or not ser.is_open:
-                logging.info(f"Attempting to connect to serial port {args.serial_port}...")
+                logging.info(f"Attempting to connect to serial port {serial_port}...")
                 try:
-                    ser = serial.Serial(args.serial_port, 115200, timeout=1)
+                    ser = serial.Serial(serial_port, serial_baud, timeout=1)
                     ser.reset_input_buffer()
                     logging.info("Serial port connected successfully.")
                 except serial.SerialException as e:

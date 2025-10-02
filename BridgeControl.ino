@@ -54,6 +54,18 @@ void handle_incoming_command(const rpc::Frame& frame) {
       }
       break;
 
+    case rpc::CMD_CONSOLE_WRITE:
+      // Mensaje recibido desde Linux para ser impreso en la consola del Arduino.
+      if (frame.header.payload_length > 0) {
+        // Copiamos el payload a un buffer con terminación NULL para seguridad
+        char buf[frame.header.payload_length + 1];
+        memcpy(buf, frame.payload, frame.header.payload_length);
+        buf[frame.header.payload_length] = '\0';
+        Serial.print("(From Linux): ");
+        Serial.println(buf);
+      }
+      break;
+
     default:
       // El resto de comandos (como las respuestas del Mailbox) son gestionados
       // internamente por la librería Bridge, por lo que no necesitan un case aquí.
@@ -101,8 +113,75 @@ void loop() {
         digitalWrite(13, LOW);
         Serial.println("LED 13 apagado por Mailbox");
       }
-    }
-  }
+      // --- NUEVO: Ejemplo para DataStore ---
+      else if (msg.startsWith("put ")) { // Formato: "put clave=valor"
+        String cmd = msg.substring(4);
+        int separator = cmd.indexOf('=');
+        if (separator > 0) {
+          String key = cmd.substring(0, separator);
+          String value = cmd.substring(separator + 1);
+          Bridge.put(key, value);
+          Serial.print("DataStore PUT: '");
+          Serial.print(key);
+          Serial.print("' = '");
+          Serial.print(value);
+          Serial.println("'");
+        }
+                } else if (msg.startsWith("get ")) { // Formato: "get clave"
+                  String key = msg.substring(4);
+                  String value = Bridge.get(key);
+                  Serial.print("DataStore GET: '");
+                  Serial.print(key);
+                  Serial.print("' devolvió '");
+                  Serial.print(value);
+                  Serial.println("'");
+                }
+                // --- NUEVO: Ejemplo para FileIO ---
+                else if (msg.startsWith("fwrite ")) { // Formato: "fwrite /tmp/filename.txt=content"
+                  String cmd = msg.substring(7);
+                  int separator = cmd.indexOf('=');
+                  if (separator > 0) {
+                    String filename = cmd.substring(0, separator);
+                    String content = cmd.substring(separator + 1);
+
+                    // Para escribir en un archivo en el lado de Linux, usamos el objeto FileSystem.
+                    File dataFile = FileSystem.open(filename, FILE_WRITE);
+                    if (dataFile) {
+                      dataFile.print(content);
+                      dataFile.close();
+                      Serial.print("FileIO WRITE: Se escribio '");
+                      Serial.print(content);
+                      Serial.print("' en el archivo '");
+                      Serial.print(filename);
+                      Serial.println("'");
+                    } else {
+                      Serial.print("FileIO WRITE Error: No se pudo abrir el archivo ");
+                      Serial.println(filename);
+                    }
+                  }
+                } else if (msg.startsWith("fread ")) { // Formato: "fread /tmp/filename.txt"
+                  String filename = msg.substring(6);
+
+                  // Para leer un archivo del lado de Linux, usamos el objeto FileSystem.
+                  File dataFile = FileSystem.open(filename, FILE_READ);
+                  if (dataFile) {
+                    // Leemos el contenido del archivo caracter por caracter
+                    String content = "";
+                    while (dataFile.available()) {
+                      content += (char)dataFile.read();
+                    }
+                    dataFile.close();
+
+                    Serial.print("FileIO READ: Se leyo del archivo '");
+                    Serial.print(filename);
+                    Serial.print("': ");
+                    Serial.println(content);
+                  } else {
+                    Serial.print("FileIO READ Error: No se pudo abrir el archivo ");
+                    Serial.println(filename);
+                  }
+                }
+              }  }
   
   // Esperamos un segundo antes de volver a comprobar para no saturar la comunicación.
   delay(1000);

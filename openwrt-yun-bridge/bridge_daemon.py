@@ -44,10 +44,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import sys
 import os
 import fcntl
-import signal
 import struct
 import logging
-import logging.handlers
 import argparse
 import threading
 import time
@@ -56,9 +54,8 @@ import subprocess
 import serial
 import paho.mqtt.client as mqtt
 from yunrpc.frame import Frame
-from collections import deque
 
-from yunrpc.protocol import Command, Status, PROTOCOL_VERSION, RPC_BUFFER_SIZE
+from yunrpc.protocol import Command, Status
 
 # Define the constants for the topics
 TOPIC_BRIDGE = "br"
@@ -166,6 +163,35 @@ def on_message(client, userdata, msg):
             client.publish(f"{TOPIC_BRIDGE}/mailbox/available", str(len(mailbox_queue)), retain=True)
             return
 
+        # Shell command execution from MQTT
+        if topic_type == TOPIC_SH and parts[2] == "run":
+            cmd_str = msg.payload.decode('utf-8')
+            logging.info(f"Executing shell command from MQTT: '{cmd_str}'")
+            response = ""
+            try:
+                # Execute the command, capture output, timeout after 15 seconds
+                result = subprocess.run(
+                    cmd_str,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                # Combine stdout and stderr for the response
+                response = f"Exit Code: {result.returncode}\n-- STDOUT --\n{result.stdout}\n-- STDERR --\n{result.stderr}"
+                logging.info(f"Command finished. Exit code: {result.returncode}")
+            except subprocess.TimeoutExpired:
+                response = "Error: Command timed out after 15 seconds."
+                logging.warning(response)
+            except Exception as e:
+                response = f"Error: Failed to execute command: {e}"
+                logging.error(response, exc_info=True)
+            
+            # Publish the response
+            if client:
+                client.publish(f"{TOPIC_BRIDGE}/{TOPIC_SH}/response", response)
+            return
+
         pin_str = parts[2]
         
         # Digital/Analog Write
@@ -228,7 +254,10 @@ def handle_mcu_frame(command_id, payload):
                 logging.warning(f"MQTT client not initialized, cannot publish to {topic}")
 
         elif command == Command.CMD_CONSOLE_WRITE:
-            logging.info(f"CONSOLE: {payload.decode('utf-8', errors='ignore')}")
+            console_output = payload.decode('utf-8', errors='ignore')
+            logging.info(f"CONSOLE: {console_output}")
+            if client:
+                client.publish(f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/out", console_output)
 
         elif command == Command.CMD_DATASTORE_PUT:
             key, value = payload.split(b'\0', 1)
@@ -256,7 +285,54 @@ def handle_mcu_frame(command_id, payload):
             send_frame(Command.CMD_MAILBOX_AVAILABLE_RESP.value, available_payload)
 
         elif command == Command.CMD_FILE_WRITE:
-            logging.warning(f"FILE_WRITE command is not fully implemented.")
+            filename = "" # Initialize filename to prevent UnboundLocalError
+            try:
+                filename, data = payload.split(b'\0', 1)
+                filename = filename.decode('utf-8')
+                
+                # Security: only allow writes to /tmp/
+                if not filename.startswith('/tmp/'):
+                    logging.error(f"SECURITY: Denied FILE_WRITE outside of /tmp/: {filename}")
+                    send_frame(Status.ERROR.value, b"Permission denied: can only write to /tmp/")
+                    return
+
+                logging.info(f"Writing {len(data)} bytes to file: {filename}")
+                with open(filename, 'wb') as f:
+                    f.write(data)
+                
+                # No specific response for FILE_WRITE, send generic OK
+                send_frame(Status.OK.value, b'Write successful')
+
+            except ValueError:
+                logging.error("Malformed FILE_WRITE payload. Expected 'filename\0data'.")
+                send_frame(Status.MALFORMED.value, b"Malformed payload")
+            except Exception as e:
+                logging.error(f"Error writing to file {filename}: {e}")
+                send_frame(Status.ERROR.value, str(e).encode('utf-8'))
+
+        elif command == Command.CMD_FILE_READ:
+            filename = "" # Initialize filename to prevent UnboundLocalError
+            try:
+                filename = payload.decode('utf-8')
+                
+                # Security: only allow reads from /tmp/
+                if not filename.startswith('/tmp/'):
+                    logging.error(f"SECURITY: Denied FILE_READ outside of /tmp/: {filename}")
+                    send_frame(Status.ERROR.value, b"Permission denied: can only read from /tmp/")
+                    return
+
+                logging.info(f"Reading file: {filename}")
+                with open(filename, 'rb') as f:
+                    data = f.read()
+                
+                send_frame(Command.CMD_FILE_READ_RESP.value, data)
+
+            except FileNotFoundError:
+                logging.error(f"File not found: {filename}")
+                send_frame(Status.ERROR.value, b"File not found")
+            except Exception as e:
+                logging.error(f"Error reading file {filename}: {e}")
+                send_frame(Status.ERROR.value, str(e).encode('utf-8'))
 
         elif command == Command.CMD_PROCESS_RUN:
             cmd_str = payload.decode('utf-8')

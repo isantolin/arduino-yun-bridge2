@@ -16,8 +16,8 @@ READ_INTERVAL = 2
 REQUEST_TOPIC = f"br/{PIN_TO_READ[0]}/{PIN_TO_READ[1:]}/read"
 
 # Topic to subscribe to for receiving the pin's value
-# The daemon publishes responses to br/d/{pin} or br/a/{pin}
-VALUE_TOPIC = f"br/{PIN_TO_READ[0]}/{PIN_TO_READ[1:]}"
+# The daemon publishes responses to br/d/{pin}/value or br/a/{pin}/value
+VALUE_TOPIC = f"br/{PIN_TO_READ[0]}/{PIN_TO_READ[1:]}/value"
 
 def on_connect(client, userdata, flags, rc, properties=None):
     """Callback for when the client connects to the broker."""

@@ -120,7 +120,7 @@ void loop() {
         if (separator > 0) {
           String key = cmd.substring(0, separator);
           String value = cmd.substring(separator + 1);
-          Bridge.put(key, value);
+          DataStore.put(key, value);
           Serial.print("DataStore PUT: '");
           Serial.print(key);
           Serial.print("' = '");
@@ -129,7 +129,7 @@ void loop() {
         }
                 } else if (msg.startsWith("get ")) { // Formato: "get clave"
                   String key = msg.substring(4);
-                  String value = Bridge.get(key);
+                  String value = DataStore.get(key);
                   Serial.print("DataStore GET: '");
                   Serial.print(key);
                   Serial.print("' devolvió '");
@@ -145,41 +145,23 @@ void loop() {
                     String content = cmd.substring(separator + 1);
 
                     // Para escribir en un archivo en el lado de Linux, usamos el objeto FileSystem.
-                    File dataFile = FileSystem.open(filename, FILE_WRITE);
-                    if (dataFile) {
-                      dataFile.print(content);
-                      dataFile.close();
-                      Serial.print("FileIO WRITE: Se escribio '");
-                      Serial.print(content);
-                      Serial.print("' en el archivo '");
-                      Serial.print(filename);
-                      Serial.println("'");
-                    } else {
-                      Serial.print("FileIO WRITE Error: No se pudo abrir el archivo ");
-                      Serial.println(filename);
-                    }
+                    FileSystem.write(filename, content);
+                    Serial.print("FileIO WRITE: Se escribio '");
+                    Serial.print(content);
+                    Serial.print("' en el archivo '");
+                    Serial.print(filename);
+                    Serial.println("'");
                   }
                 } else if (msg.startsWith("fread ")) { // Formato: "fread /tmp/filename.txt"
                   String filename = msg.substring(6);
 
                   // Para leer un archivo del lado de Linux, usamos el objeto FileSystem.
-                  File dataFile = FileSystem.open(filename, FILE_READ);
-                  if (dataFile) {
-                    // Leemos el contenido del archivo caracter por caracter
-                    String content = "";
-                    while (dataFile.available()) {
-                      content += (char)dataFile.read();
-                    }
-                    dataFile.close();
+                  String content = FileSystem.read(filename);
 
-                    Serial.print("FileIO READ: Se leyo del archivo '");
-                    Serial.print(filename);
-                    Serial.print("': ");
-                    Serial.println(content);
-                  } else {
-                    Serial.print("FileIO READ Error: No se pudo abrir el archivo ");
-                    Serial.println(filename);
-                  }
+                  Serial.print("FileIO READ: Se leyo del archivo '");
+                  Serial.print(filename);
+                  Serial.print("': ");
+                  Serial.println(content);
                 }
               }  }
   

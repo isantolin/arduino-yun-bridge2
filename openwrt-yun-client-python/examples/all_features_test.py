@@ -4,7 +4,7 @@ Example: Test all features of YunBridge v2 using the plugin system (MQTT backend
 - Generic pin control (default: 13, can specify any pin)
 - Key-value store
 - File I/O
-- Mailbox (topics yun/mailbox/send and yun/mailbox/recv)
+- Mailbox (topic br/mailbox/write)
 - Process execution
 Usage:
     python3 all_features_test.py [PIN]
@@ -20,10 +20,12 @@ if len(sys.argv) > 1:
     PIN = sys.argv[1]
 
 # Determine if the pin is analog or digital for topic construction
-pin_function = "analog" if PIN.upper().startswith('A') else "digital"
+is_analog = PIN.upper().startswith('A')
+pin_function_short = "a" if is_analog else "d"
+pin_number = PIN[1:] if is_analog else PIN
 
-TOPIC_SET = f'br/pin/{pin_function}/{PIN}/set'
-TOPIC_STATE = f'br/pin/{pin_function}/{PIN}/state'
+TOPIC_SET = f'br/{pin_function_short}/{pin_number}'
+TOPIC_STATE = f'br/{pin_function_short}/{pin_number}/value'
 TOPIC_CMD = 'br/sh/run'
 TOPIC_MAILBOX_SEND = 'br/mailbox/write'
 TOPIC_MAILBOX_RECV = 'br/mailbox/available'
@@ -46,10 +48,10 @@ if __name__ == '__main__':
 
     print(f"\n--- Testing Pin {PIN} ---")
     print(f"Turning pin {PIN} ON via MQTT...")
-    plugin.publish(TOPIC_SET, 'ON')
+    plugin.publish(TOPIC_SET, '1')
     time.sleep(1)
     print(f"Turning pin {PIN} OFF via MQTT...")
-    plugin.publish(TOPIC_SET, 'OFF')
+    plugin.publish(TOPIC_SET, '0')
     time.sleep(1)
 
     print("\n--- Testing Key-Value Store ---")

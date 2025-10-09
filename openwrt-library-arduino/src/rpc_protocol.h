@@ -27,6 +27,7 @@ enum Command : uint16_t {
 
     // Mailbox commands
     CMD_MAILBOX_READ = 0x40,
+    CMD_MAILBOX_PROCESSED = 0x41,
     CMD_MAILBOX_AVAILABLE = 0x42,
     CMD_MAILBOX_READ_RESP = 0x90,
     CMD_MAILBOX_AVAILABLE_RESP = 0x92,

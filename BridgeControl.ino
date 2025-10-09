@@ -14,8 +14,7 @@ void handle_incoming_command(const rpc::Frame& frame) {
         uint8_t value = frame.payload[1];
         pinMode(pin, OUTPUT); // Asegurarse de que el pin es de salida
         digitalWrite(pin, value);
-        Serial.print("digitalWrite en pin "); Serial.print(pin);
-        Serial.print(" valor "); Serial.println(value);
+        // Se han eliminado las impresiones en Serial para evitar posibles cuelgues.
       }
       break;
 
@@ -24,8 +23,7 @@ void handle_incoming_command(const rpc::Frame& frame) {
         uint8_t pin = frame.payload[0];
         uint8_t value = frame.payload[1];
         analogWrite(pin, value);
-        Serial.print("analogWrite en pin "); Serial.print(pin);
-        Serial.print(" valor "); Serial.println(value);
+        // Se han eliminado las impresiones en Serial para evitar posibles cuelgues.
       }
       break;
 
@@ -73,6 +71,28 @@ void handle_incoming_command(const rpc::Frame& frame) {
   }
 }
 
+// --- AÑADIDO: Funciones de ayuda para imprimir en ambas consolas ---
+void printToBoth(const String& s) {
+  Serial.print(s);
+  Console.print(s);
+}
+
+void printlnToBoth(const String& s) {
+  Serial.println(s);
+  Console.println(s);
+}
+
+void printToBoth(const char* s) {
+  Serial.print(s);
+  Console.print(s);
+}
+
+void printlnToBoth(const char* s) {
+  Serial.println(s);
+  Console.println(s);
+}
+// --- FIN AÑADIDO ---
+
 void setup() {
   Serial.begin(115200); // Para debugging
   Bridge.begin(); // Inicia la librería Bridge (y el Serial1 a 115200)
@@ -102,16 +122,16 @@ void loop() {
     String msg = Mailbox.readString();
 
     if (msg.length() > 0) {
-      Serial.print("Mensaje de Mailbox recibido: ");
-      Serial.println(msg);
+      printToBoth("Mensaje de Mailbox recibido: ");
+      printlnToBoth(msg);
 
       // Ejemplo de uso: controlar el LED con mensajes "ON" / "OFF"
       if (msg == "ON") {
         digitalWrite(13, HIGH);
-        Serial.println("LED 13 encendido por Mailbox");
+        printlnToBoth("LED 13 encendido por Mailbox");
       } else if (msg == "OFF") {
         digitalWrite(13, LOW);
-        Serial.println("LED 13 apagado por Mailbox");
+        printlnToBoth("LED 13 apagado por Mailbox");
       }
       // --- NUEVO: Ejemplo para DataStore ---
       else if (msg.startsWith("put ")) { // Formato: "put clave=valor"
@@ -121,50 +141,50 @@ void loop() {
           String key = cmd.substring(0, separator);
           String value = cmd.substring(separator + 1);
           DataStore.put(key, value);
-          Serial.print("DataStore PUT: '");
-          Serial.print(key);
-          Serial.print("' = '");
-          Serial.print(value);
-          Serial.println("'");
+          printToBoth("DataStore PUT: '");
+          printToBoth(key);
+          printToBoth("' = '");
+          printToBoth(value);
+          printlnToBoth("'");
         }
-                } else if (msg.startsWith("get ")) { // Formato: "get clave"
-                  String key = msg.substring(4);
-                  String value = DataStore.get(key);
-                  Serial.print("DataStore GET: '");
-                  Serial.print(key);
-                  Serial.print("' devolvió '");
-                  Serial.print(value);
-                  Serial.println("'");
-                }
-                // --- NUEVO: Ejemplo para FileIO ---
-                else if (msg.startsWith("fwrite ")) { // Formato: "fwrite /tmp/filename.txt=content"
-                  String cmd = msg.substring(7);
-                  int separator = cmd.indexOf('=');
-                  if (separator > 0) {
-                    String filename = cmd.substring(0, separator);
-                    String content = cmd.substring(separator + 1);
+      } else if (msg.startsWith("get ")) { // Formato: "get clave"
+        String key = msg.substring(4);
+        String value = DataStore.get(key);
+        printToBoth("DataStore GET: '");
+        printToBoth(key);
+        printToBoth("' devolvió '");
+        printToBoth(value);
+        printlnToBoth("'");
+      }
+      // --- NUEVO: Ejemplo para FileIO ---
+      else if (msg.startsWith("fwrite ")) { // Formato: "fwrite /tmp/filename.txt=content"
+        String cmd = msg.substring(7);
+        int separator = cmd.indexOf('=');
+        if (separator > 0) {
+          String filename = cmd.substring(0, separator);
+          String content = cmd.substring(separator + 1);
 
-                    // Para escribir en un archivo en el lado de Linux, usamos el objeto FileSystem.
-                    FileSystem.write(filename, content);
-                    Serial.print("FileIO WRITE: Se escribio '");
-                    Serial.print(content);
-                    Serial.print("' en el archivo '");
-                    Serial.print(filename);
-                    Serial.println("'");
-                  }
-                } else if (msg.startsWith("fread ")) { // Formato: "fread /tmp/filename.txt"
-                  String filename = msg.substring(6);
+          // Para escribir en un archivo en el lado de Linux, usamos el objeto FileSystem.
+          FileSystem.write(filename, content);
+          printToBoth("FileIO WRITE: Se escribio '");
+          printToBoth(content);
+          printToBoth("' en el archivo '");
+          printToBoth(filename);
+          printlnToBoth("'");
+        }
+      } else if (msg.startsWith("fread ")) { // Formato: "fread /tmp/filename.txt"
+        String filename = msg.substring(6);
 
-                  // Para leer un archivo del lado de Linux, usamos el objeto FileSystem.
-                  String content = FileSystem.read(filename);
+        // Para leer un archivo del lado de Linux, usamos el objeto FileSystem.
+        String content = FileSystem.read(filename);
 
-                  Serial.print("FileIO READ: Se leyo del archivo '");
-                  Serial.print(filename);
-                  Serial.print("': ");
-                  Serial.println(content);
-                }
-              }  }
+        printToBoth("FileIO READ: Se leyo del archivo '");
+        printToBoth(filename);
+        printToBoth("': ");
+        printlnToBoth(content);
+      }
+    }  }
   
-  // Esperamos un segundo antes de volver a comprobar para no saturar la comunicación.
-  delay(1000);
+  // Esperamos un breve momento antes de volver a comprobar para no saturar la comunicación.
+  delay(50);
 }

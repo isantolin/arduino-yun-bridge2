@@ -10,7 +10,7 @@ from yunbridge_client.plugin_loader import PluginLoader
 
 # Configuration
 TOPIC_SEND = 'br/mailbox/write'
-TOPIC_RECV = 'br/mailbox/available'
+TOPIC_RECV = 'br/mailbox/processed'
 MQTT_CONFIG = dict(host='192.168.15.28', port=1883)
 
 # Load and instantiate the plugin

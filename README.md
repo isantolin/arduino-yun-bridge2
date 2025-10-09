@@ -1,273 +1,188 @@
-<!--
-This file is part of Arduino Yun Ecosystem v2.
+# Arduino Yun Bridge v2
 
-Copyright (C) 2025 Ignacio Santolin and contributors
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
--->
-# Arduino Yun Ecosystem v2
-
+A complete, modern, and open-source software ecosystem to revitalize the Arduino Yun in 2025 and beyond. This project replaces the original software stack with a robust, modular, and extensible platform for bridging Arduino microcontrollers with OpenWRT-based Linux systems.
 
 ## Overview
 
-
-**Arduino Yun Ecosystem v2** is a modular, open-source platform for bridging Arduino microcontrollers with OpenWRT-based Linux systems. The main goal of this project is to provide a fully functional, modern software stack for the Arduino Yun board in 2025, ensuring its usability with up-to-date tools and protocols. The project is also designed with the intention to extend support in the future to other boards that integrate a microcontroller and Linux system (e.g., ATmega32U4 + Atheros AR9331 in the case of Arduino Yun).
-
-It provides robust, extensible communication between the microcontroller (via serial) and Linux (via MQTT, Python, web interfaces, and a REST API), enabling advanced IoT, automation, and device management scenarios.
-
----
+The Arduino Yun Bridge v2 is designed to provide a fully functional and up-to-date software stack for the Arduino Yun. It enables seamless communication between the Arduino microcontroller and the onboard Linux system using modern protocols like MQTT. The entire system is modular, allowing for easy extension and maintenance.
 
 ## Features
 
+- **Modern Communication:** Uses MQTT as the primary communication protocol between the Linux side and any client, with a robust serial protocol for the microcontroller.
 - **Modular Architecture:**
-  - Core Python daemon bridges MQTT and serial communication.
-  - Arduino C++ library for seamless integration with sketches.
-  - LuCI web interface for configuration and real-time control.
-  - REST Web API (CGI) for pin control and status via HTTP.
-  - Plugin system for messaging backends (MQTT, extensible).
-- **Communication Protocol:**
-  - Serial protocol: Commands like `PIN<N> ON/OFF`, `MAILBOX <msg>`, `SET <key> <val>`, `GET <key>`, `RUN <cmd>`, `WRITEFILE <path> <data>`, `READFILE <path>`.
-  - MQTT topics: `yun/pin/<N>/set`, `yun/pin/<N>/state`, `yun/command`, `yun/mailbox/send`, `yun/mailbox/recv`.
-  - **All MQTT publish and subscribe operations use QoS 2 (exactly once delivery) for maximum reliability.**
-### MQTT Quality of Service (QoS)
-
-All MQTT communication in this ecosystem (daemon, Python client, and test examples) uses **QoS 2** (exactly once delivery) for both publish and subscribe operations. This ensures:
-
-- No message loss or duplication, even in the case of network interruptions.
-- Maximum reliability for all device control and monitoring actions.
-
-If you use your own MQTT client, make sure to set `qos=2` in both `publish` and `subscribe` calls for full compatibility.
-  - Web REST API for pin control and status (JSON responses).
-  - WebSocket support for browser-based MQTT control.
-- **Web UI:**
-  - Real-time pin control and status monitoring.
-  - Log and status visualization.
-  - User authentication for MQTT.
-- **Extensive Logging:**
-  - Rotating logs for daemon, MQTT plugin, and scripts.
-  - Status file for external monitoring.
-- **Robust Installer:**
-  - Atomic install with rollback, swap file management, and dependency checks.
-- **Examples and Tests:**
-  - Arduino sketches for pin, file, KV store, process, and mailbox features.
-  - Python tests for all features using MQTT backend.
-
----
+    - A core Python daemon (`bridge_daemon.py`) that bridges MQTT and serial communication.
+    - A C++ library for Arduino sketches.
+    - A LuCI web interface for configuration and real-time control.
+    - A RESTful API for pin control.
+- **Extensible Python Client:** A Python library with a plugin system to easily interact with the bridge.
+- **Easy Installation:** A set of scripts to automate the compilation, device setup, and installation process.
+- **Web UI:** A simple web UI for real-time pin control and status monitoring.
+- **Comprehensive Examples:** Includes example Arduino sketches and Python scripts for all major features.
 
 ## Project Structure
 
-- `openwrt-yun-core/`: Core scripts, configs, and serial helpers for OpenWRT.
-- `openwrt-yun-bridge/`: Python daemon (`bridge_daemon.py`) for MQTT <-> Serial bridging.
-- `openwrt-yun-client-python/`: Python client library and plugin system.
-- `openwrt-library-arduino/`: Arduino C++ Bridge library.
-- `luci-app-yunbridge/`: LuCI web interface (config, status, web UI).
-- `openwrt-yun-client-sketches/`: Example Arduino sketches.
+The project is divided into several components:
 
----
+- `openwrt-yun-bridge/`: The core Python daemon that runs on the Yun.
+- `openwrt-library-arduino/`: The C++ library for Arduino sketches.
+- `openwrt-yun-client-python/`: The Python client library and examples.
+- `luci-app-yunbridge/`: The LuCI web interface for OpenWRT.
+- `openwrt-yun-core/`: Core scripts and configuration files for OpenWRT.
+- `1. compile.sh`: Script to compile all the necessary packages.
+- `2. expand.sh`: Script to prepare the SD card on the Yun.
+- `3. install.sh`: Script to install the ecosystem on the Yun.
 
-## Communication Protocol
+## Getting Started: Installation
 
+Follow these steps to get the Arduino Yun Bridge v2 ecosystem up and running.
 
+### Prerequisites
 
-### Web REST API for Pin Control (RESTful)
+- An Arduino Yun.
+- A microSD card (at least 2GB, 4GB or more recommended).
+- A working OpenWRT installation on the Yun.
+- A Linux-based development machine to compile the packages.
 
-The system provides a RESTful HTTP API for pin control and status:
+### Step 1: Compile the Packages (on your Development Machine)
 
-- **Get pin status:**
-  - `GET /arduino-webui-v2/pin/<N>`
-  - Example:
+First, you need to compile the OpenWRT packages (`.ipk` files) and the Python client library (`.whl` file).
+
+1.  Clone this repository on your development machine.
+2.  Run the compilation script:
     ```sh
-    curl -X GET http://<yun_ip>/arduino-webui-v2/pin/13
+    ./1. compile.sh
     ```
-  - Response (JSON):
-    ```json
-    { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 is ON" }
-    ```
+    This script will download the OpenWRT SDK, all necessary dependencies, and compile the packages. The final artifacts will be placed in the `bin/` directory.
 
-- **Set pin state:**
-  - `POST /arduino-webui-v2/pin/<N>`
-  - Body (JSON): `{ "state": "ON" }` o `{ "state": "OFF" }`
-  - Example:
+### Step 2: Prepare the Arduino Yun (on the Yun)
+
+For the ecosystem to work correctly, you need to expand the Yun's storage using a microSD card.
+
+1.  Insert the microSD card into the Yun.
+2.  Copy the `2. expand.sh` script to your Yun:
     ```sh
-    curl -X POST -H "Content-Type: application/json" -d '{"state": "ON"}' http://<yun_ip>/arduino-webui-v2/pin/13
+    scp ./2. expand.sh root@<your_yun_ip>:/root/
     ```
-  - Response (JSON):
-    ```json
-    { "status": "ok", "pin": 13, "state": "ON", "message": "Pin 13 turned ON" }
+3.  SSH into your Yun and run the script. This will format the SD card, set it up as the new root filesystem (`extroot`), and create a swap file.
+    ```sh
+    ssh root@<your_yun_ip>
+    chmod +x /root/2. expand.sh
+    /root/2. expand.sh
     ```
+    The Yun will reboot after the process is complete.
 
+### Step 3: Install the Ecosystem (on the Yun)
 
-- **Errors:**
-  - Error responses use the field `status: "error"` and a message, and the appropriate HTTP status code (400, 405, 500, etc).
+After the Yun has rebooted and is running from the SD card, you can install the ecosystem.
 
-**Notes:**
-- The pin number is specified in the URL (`/pin/<N>`).
-- Only HTTP GET and POST methods are accepted.
-- The POST body must be valid JSON.
+1.  Copy the compiled packages from your development machine to the Yun. The `3. install.sh` script and the `bin/` directory are needed.
+    ```sh
+    scp ./3. install.sh root@<your_yun_ip>:/root/
+    scp -r ./bin root@<your_yun_ip>:/root/
+    ```
+2.  SSH into your Yun and run the installation script:
+    ```sh
+    ssh root@<your_yun_ip>
+    chmod +x /root/3. install.sh
+    /root/3. install.sh
+    ```
+    This script will install all `.ipk` packages, Python dependencies, configure the system, and start the `yunbridge` daemon.
 
----
+### Step 4: Arduino Setup
 
----
+1.  Install the Arduino library. On your development machine, run the `install.sh` script inside the `openwrt-library-arduino` directory. This will copy the library to your Arduino IDE's libraries folder.
+    ```sh
+    cd openwrt-library-arduino
+    ./install.sh
+    ```
+2.  Open the Arduino IDE, and you will find the library in the examples menu.
+3.  Upload a sketch from the examples to your Arduino Yun.
 
-### Serial Commands (from Linux to Arduino)
-* `PIN<N> ON` / `PIN<N> OFF`: Set digital pin state.
-* `PIN<N> STATUS`: Query digital pin state (used by CGI endpoint).
-* `MAILBOX <msg>`: Send message to Arduino mailbox.
-* `SET <key> <val>` / `GET <key>`: Key-value store operations.
-* `RUN <cmd>`: Execute Linux command, return output.
-* `WRITEFILE <path> <data>` / `READFILE <path>`: File I/O.
-* `CONSOLE <msg>`: Console message.
+## Usage
 
-### Serial Responses (from Arduino to Linux)
-- `PIN<N> STATE ON/OFF`: Pin state report.
-- `VALUE <key> <val>`: KV store response.
-- `RUNOUT <output>`: Command output.
-- `FILEDATA <data>`: File read result.
-- `OK <cmd>` / `ERR <cmd>`: Operation status.
+Once everything is installed, you can start interacting with your Yun.
 
-### MQTT Topics
-- `yun/pin/<N>/set`: Set pin state (payload: `ON`/`OFF`).
-- `yun/pin/<N>/state`: Pin state report.
-- `yun/command`: Generic commands (SET, GET, RUN, etc).
-- `yun/mailbox/send` / `yun/mailbox/recv`: Mailbox messaging.
+### LuCI Web Interface
 
----
+Open your browser and navigate to your Yun's IP address. You will find the YunBridge configuration under `Services > YunBridge`. From there, you can configure the MQTT broker, serial port, and other settings.
 
-## Installation
+### Python Client Example
 
+Here is a simple example of how to control pin 13 using the Python client library:
 
-
-### Requirements
-- OpenWRT 22.x or newer (tested on ath79/generic)
-- Python 3.7+
-- `python3-pyserial`, `python3-paho-mqtt`
-- LuCI web interface (for web UI)
-- MQTT broker (e.g., Mosquitto)
-- **Arduino Yun** (currently only works with Arduino Yun)
-- Micro SD card (at least 2 GB)
-
-### Pre-compilation Steps
-1. **Update OpenWRT image to the latest version.**
-  - Download and flash the latest OpenWRT firmware for your device from https://openwrt.org/.
-2. **Expand storage using extroot (recommended for space-constrained devices):**
-  - Follow the official OpenWRT guide: https://openwrt.org/docs/guide-user/additional-software/extroot_configuration
-  - This allows you to use the Micro SD card as root filesystem, providing more space for packages and logs.
-
-### Steps
-1. **Compile all packages:**
-   ```sh
-   ./compile.sh
-   ```
-   - Produces `.ipk` (OpenWRT) and `.whl` (Python) in `bin/`.
-2. **Install on OpenWRT device:**
-   ```sh
-   scp bin/*.ipk root@<yun_ip>:/tmp/
-   ssh root@<yun_ip>
-   ./install.sh
-   ```
-   - Installs all dependencies, configures swap, and starts the daemon.
-3. **Install Arduino library:**
-   ```sh
-   cd openwrt-library-arduino
-   ./install.sh
-   ```
-   - Installs Bridge library to Arduino IDE.
-4. **Upload example sketches:**
-   - Use Arduino IDE to upload from `openwrt-yun-client-sketches/`.
-5. **Configure via LuCI:**
-   - Access LuCI at `http://<yun_ip>/cgi-bin/luci/admin/services/yunbridge`.
-   - Set MQTT broker, serial port, and debug options.
-
----
-
-## Compilation
-
-- **OpenWRT SDK:**
-  - The `compile.sh` script downloads and configures the OpenWRT SDK, builds all packages, and copies artifacts to `bin/`.
-- **Python Client:**
-  - Built as a wheel (`.whl`) using `make wheel` in `openwrt-yun-client-python/`.
-- **Arduino Library:**
-  - Simple copy to Arduino libraries folder.
-
----
-
-## Usage Examples
-
-### Arduino Sketch: Pin Control
-```cpp
-#include <Bridge.h>
-void setup() {
-  Bridge.begin();
-  Bridge.pinOn(13);
-}
-void loop() {}
-```
-
-### Python: Pin Control via MQTT
 ```python
 from yunbridge_client.plugin_loader import PluginLoader
+
+# Load the MQTT plugin
 plugin = PluginLoader.load_plugin('mqtt_plugin')('localhost', 1883)
+
 plugin.connect()
 plugin.publish('yun/pin/13/set', 'ON')
 plugin.disconnect()
 ```
 
----
+### REST API
 
-## Technical Notes
-- All configuration is managed via UCI and LuCI for OpenWRT.
-- Daemon and plugins use rotating logs in `/tmp/` for diagnostics.
-- Web UI uses MQTT over WebSockets for real-time control.
-- Serial protocol is tolerant to glued/concatenated commands.
-- Swap file is managed automatically for low-memory devices.
+You can also control pins via the REST API.
 
----
+**Turn a pin ON:**
+```sh
+curl -X POST -H "Content-Type: application/json" -d '{"state": "ON"}' http://<your_yun_ip>/arduino-webui-v2/pin/13
+```
 
+**Check pin status:**
+```sh
+curl -X GET http://<your_yun_ip>/arduino-webui-v2/pin/13
+```
+
+## MQTT Topics and Data Flow
+
+The bridge uses MQTT to expose the Arduino's functionalities and to control the Linux environment on the Yun. All topics are prefixed with `br/`.
+
+### Arduino Interaction Topics
+
+These topics are for direct interaction with the Arduino microcontroller.
+
+| Topic | Direction | Description | Data Flow |
+| --- | --- | --- | --- |
+| `br/d/{pin}` | MQTT -> Arduino | **Digital Write:** Sets a digital pin to HIGH (1) or LOW (0). | An MQTT client publishes `1` or `0`. The daemon sends a `CMD_DIGITAL_WRITE` command to the Arduino via serial. |
+| `br/a/{pin}` | MQTT -> Arduino | **Analog Write:** Sets an analog pin to a specific value (0-255). | An MQTT client publishes a value. The daemon sends a `CMD_ANALOG_WRITE` command to the Arduino. |
+| `br/d/{pin}/mode` | MQTT -> Arduino | **Set Pin Mode:** Configures a pin as INPUT, OUTPUT, or INPUT_PULLUP. | An MQTT client publishes `0` (INPUT), `1` (OUTPUT), or `2` (INPUT_PULLUP). The daemon sends a `CMD_SET_PIN_MODE` command. |
+| `br/d/{pin}/read` | MQTT -> Arduino | **Digital Read:** Triggers a read from a digital pin. | An MQTT client publishes an empty message. The daemon sends a `CMD_DIGITAL_READ` command. The Arduino responds with the value. |
+| `br/a/{pin}/read` | MQTT -> Arduino | **Analog Read:** Triggers a read from an analog pin. | An MQTT client publishes an empty message. The daemon sends a `CMD_ANALOG_READ` command. The Arduino responds with the value. |
+| `br/d/{pin}/value` | Arduino -> MQTT | **Digital Value:** Publishes the value of a digital pin. | The Arduino sends a `CMD_DIGITAL_READ_RESP` frame. The daemon receives it and publishes the value to this topic. |
+| `br/a/{pin}/value` | Arduino -> MQTT | **Analog Value:** Publishes the value of an analog pin. | The Arduino sends a `CMD_ANALOG_READ_RESP` frame. The daemon receives it and publishes the value to this topic. |
+| `br/console/in` | MQTT -> Arduino | **Console Input:** Sends a string to the Arduino's console. | An MQTT client publishes a message. The daemon sends a `CMD_CONSOLE_WRITE` command to the Arduino. |
+| `br/console/out` | Arduino -> MQTT | **Console Output:** Publishes messages from the Arduino's console. | The Arduino sends a `CMD_CONSOLE_WRITE` frame. The daemon receives it and publishes the payload to this topic. |
+| `br/mailbox/write` | MQTT -> Mailbox | **Write to Mailbox:** Queues a message on the Linux side for the Arduino to read. | An MQTT client publishes a message. The daemon adds it to a queue. |
+| `br/mailbox/available`| Mailbox -> MQTT | **Mailbox Messages:** Publishes the number of messages waiting in the mailbox. | Published by the daemon whenever a message is added via `br/mailbox/write`. |
+| `br/mailbox/processed`| Arduino -> MQTT | **Mailbox Processed:** Publishes a message that the Arduino has processed and sent back. | The Arduino sends a `CMD_MAILBOX_PROCESSED` frame. The daemon publishes the payload to this topic. |
+
+### MQTT-Only Interaction Topics
+
+These topics are handled entirely by the `bridge_daemon.py` on the Linux side and do not involve the Arduino.
+
+| Topic | Direction | Description | Data Flow |
+| --- | --- | --- | --- |
+| `br/sh/run` | MQTT -> Linux | **Run Shell Command:** Executes a shell command on the Yun's Linux system. | An MQTT client publishes a command string. The daemon executes it using `subprocess.run`. |
+| `br/sh/response` | Linux -> MQTT | **Shell Command Response:** Publishes the `stdout` and `stderr` of the executed command. | After the command from `br/sh/run` completes, the daemon publishes its output to this topic. |
+| `br/datastore/put/{key}` | MQTT -> Linux | **DataStore Put:** Stores a value in the daemon's in-memory key-value store. | An MQTT client publishes a value to a specific key sub-topic. The daemon stores it in a Python dictionary. |
+| `br/datastore/get/{key}` | Linux -> MQTT | **DataStore Get:** Publishes the value of a key for state synchronization. | When a key is updated via `br/datastore/put`, the daemon immediately publishes the new value here. |
 
 ## Roadmap
 
-### MQTT
-- Advanced control features
-- Certificate support for secure connections
-- WebSockets support (outside Arduino)
-
-### Communication Protocols
-- Implementation of COBS (Consistent Overhead Byte Stuffing) between OpenWRT and the microcontroller
-
-### Core Yun/OpenWRT
-- Support for new OpenWRT targets
-- OTA (Over-The-Air) updates for firmware and packages
-- Integration of community contributions
-- Expanded documentation and tutorials
-- Official Mosquitto support with WebSockets on OpenWRT
-
-### Web UI (luci-app-yunbridge)
-- Advanced dashboard (MQTT only)
-- Usability and real-time visualization improvements
-- Integration of plugins and custom panels
-
----
-
-See `ROADMAP.md` for planned features and contributions.
-
----
-
+- **MQTT:**
+    - Advanced control features.
+    - Certificate support for secure connections.
+    - WebSockets support.
+- **Communication Protocols:**
+    - Implementation of COBS (Consistent Overhead Byte Stuffing) for more reliable serial communication.
+- **Core System:**
+    - Support for new OpenWRT targets.
+    - Expanded documentation and tutorials.
+- **Web UI:**
+    - Advanced dashboard with real-time visualizations.
 
 ## License
 
-This project is licensed under the GNU General Public License v3.0 (GPLv3).
-
-You are free to use, modify, and redistribute this software under the terms of the GPLv3. See the LICENSE file or <https://www.gnu.org/licenses/gpl-3.0.html> for details.
-
-Contributions are welcome.
+This project is licensed under the GNU General Public License v3.0 (GPLv3). See the `LICENSE` file for details.

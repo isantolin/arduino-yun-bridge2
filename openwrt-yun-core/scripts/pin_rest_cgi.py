@@ -33,7 +33,7 @@ import json
 from logging.handlers import RotatingFileHandler
 
 # --- Logger Setup (reuse yunbridge global logger style) ---
-LOG_PATH = '/tmp/yunbridge_daemon.log'
+LOG_PATH = '/var/log/yun-bridge.log'
 logger = logging.getLogger("yunbridge")
 logger.setLevel(logging.INFO)
 file_handler = RotatingFileHandler(LOG_PATH, maxBytes=2000000, backupCount=5)

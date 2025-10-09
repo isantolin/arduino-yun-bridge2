@@ -97,13 +97,13 @@ DataStoreClass::DataStoreClass() {}
 void DataStoreClass::put(const String& key, const String& value) {
     size_t key_len = key.length();
     size_t value_len = value.length();
-    size_t payload_len = key_len + value_len + 1;
+    size_t payload_len = key_len + 1 + value_len; // key + null + value
     if (payload_len > MAX_PAYLOAD_SIZE) return;
 
     uint8_t payload[payload_len];
-    payload[0] = (uint8_t)key_len;
-    memcpy(payload + 1, key.c_str(), key_len);
-    memcpy(payload + 1 + key_len, value.c_str(), value_len);
+    memcpy(payload, key.c_str(), key_len);
+    payload[key_len] = '\0';
+    memcpy(payload + key_len + 1, value.c_str(), value_len);
 
     Bridge.sendFrame(CMD_DATASTORE_PUT, payload, payload_len);
 }
@@ -139,17 +139,17 @@ void FileSystemClass::write(const String& filePath, const String& data) {
 }
 
 void FileSystemClass::write(const String& filePath, const uint8_t* data, size_t length) {
-  if (filePath.length() == 0 || filePath.length() > 127) return;
+  if (filePath.length() == 0) return;
 
-  size_t payload_len = 1 + filePath.length() + length;
+  size_t payload_len = filePath.length() + 1 + length;
   if (payload_len > MAX_PAYLOAD_SIZE) return;
 
   uint8_t* payload = (uint8_t*)malloc(payload_len);
   if (!payload) return;
 
-  payload[0] = (uint8_t)filePath.length();
-  memcpy(payload + 1, filePath.c_str(), filePath.length());
-  memcpy(payload + 1 + filePath.length(), data, length);
+  memcpy(payload, filePath.c_str(), filePath.length());
+  payload[filePath.length()] = '\0';
+  memcpy(payload + filePath.length() + 1, data, length);
 
   Bridge.sendFrame(CMD_FILE_WRITE, payload, payload_len);
   free(payload);
@@ -227,6 +227,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         _response_payload[copy_len] = '\0'; // Null-terminate
         _response_len = copy_len;
         _response_received = true;
+        return;
+    }
+
+    // If it's a response command (ID >= 0x80) but we weren't waiting for it,
+    // it's a late/unexpected response. Ignore it and don't bother the user sketch.
+    if (frame.header.command_id >= 0x80) {
         return;
     }
 

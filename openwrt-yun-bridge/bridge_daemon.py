@@ -115,7 +115,8 @@ def on_connect(client, userdata, flags, rc, properties=None):
             (f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/#", 0),
             (f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/in", 0),
             (f"{TOPIC_BRIDGE}/datastore/put/#", 0),
-            (f"{TOPIC_BRIDGE}/mailbox/write", 0)
+            (f"{TOPIC_BRIDGE}/mailbox/write", 0),
+            (f"{TOPIC_BRIDGE}/{TOPIC_SH}/run", 0)
         ]
         client.subscribe(subscriptions)
         for sub in subscriptions:
@@ -224,14 +225,26 @@ def on_message(client, userdata, msg):
         logging.error(f"An unexpected error occurred in on_message: {e}", exc_info=True)
 
 
+def _is_safe_path(filename: str) -> bool:
+    """Checks if a file path is within the allowed /tmp/ directory."""
+    if not filename.startswith('/tmp/'):
+        logging.error(f"SECURITY: Denied file access outside of /tmp/: {filename}")
+        send_frame(Status.ERROR.value, b"Permission denied: can only access /tmp/")
+        return False
+    return True
+
+
 def handle_mcu_frame(command_id, payload):
     """Handles a command frame received from the MCU."""
-    logging.debug(f"MCU > CMD: {Command(command_id).name} PAYLOAD: {payload.hex()}")
-
-
     try:
         command = Command(command_id)
+        logging.debug(f"MCU > CMD: {command.name} PAYLOAD: {payload.hex()}")
+    except ValueError:
+        logging.warning(f"MCU > Unknown CMD ID: {hex(command_id)} PAYLOAD: {payload.hex()}")
+        send_frame(Status.CMD_UNKNOWN.value, b'')
+        return
 
+    try:
         # Handle pin operations by publishing to MQTT
         if command in [Command.CMD_DIGITAL_READ_RESP, Command.CMD_ANALOG_READ_RESP]:
             pin = payload[0]
@@ -244,7 +257,7 @@ def handle_mcu_frame(command_id, payload):
             else:
                 logging.warning(f"MQTT client not initialized, cannot publish to {topic}")
 
-        elif command_id == 0x41:
+        elif command == Command.CMD_MAILBOX_PROCESSED:
             # MAILBOX_PROCESSED: publish processed message to MQTT
             topic = f"{TOPIC_BRIDGE}/mailbox/processed"
             if client:
@@ -287,13 +300,10 @@ def handle_mcu_frame(command_id, payload):
         elif command == Command.CMD_FILE_WRITE:
             filename = "" # Initialize filename to prevent UnboundLocalError
             try:
-                filename, data = payload.split(b'\0', 1)
-                filename = filename.decode('utf-8')
+                filename_bytes, data = payload.split(b'\0', 1)
+                filename = filename_bytes.decode('utf-8')
                 
-                # Security: only allow writes to /tmp/
-                if not filename.startswith('/tmp/'):
-                    logging.error(f"SECURITY: Denied FILE_WRITE outside of /tmp/: {filename}")
-                    send_frame(Status.ERROR.value, b"Permission denied: can only write to /tmp/")
+                if not _is_safe_path(filename):
                     return
 
                 logging.info(f"Writing {len(data)} bytes to file: {filename}")
@@ -314,11 +324,7 @@ def handle_mcu_frame(command_id, payload):
             filename = "" # Initialize filename to prevent UnboundLocalError
             try:
                 filename = payload.decode('utf-8')
-                
-                # Security: only allow reads from /tmp/
-                if not filename.startswith('/tmp/'):
-                    logging.error(f"SECURITY: Denied FILE_READ outside of /tmp/: {filename}")
-                    send_frame(Status.ERROR.value, b"Permission denied: can only read from /tmp/")
+                if not _is_safe_path(filename):
                     return
 
                 logging.info(f"Reading file: {filename}")
@@ -332,6 +338,25 @@ def handle_mcu_frame(command_id, payload):
                 send_frame(Status.ERROR.value, b"File not found")
             except Exception as e:
                 logging.error(f"Error reading file {filename}: {e}")
+                send_frame(Status.ERROR.value, str(e).encode('utf-8'))
+
+        elif command == Command.CMD_FILE_REMOVE:
+            filename = "" # Initialize filename
+            try:
+                filename = payload.decode('utf-8')
+                if not _is_safe_path(filename):
+                    return
+
+                logging.info(f"Removing file: {filename}")
+                os.remove(filename)
+                
+                send_frame(Status.OK.value, b'File removed')
+
+            except FileNotFoundError:
+                logging.error(f"File not found for remove: {filename}")
+                send_frame(Status.ERROR.value, b"File not found")
+            except Exception as e:
+                logging.error(f"Error removing file {filename}: {e}")
                 send_frame(Status.ERROR.value, str(e).encode('utf-8'))
 
         elif command == Command.CMD_PROCESS_RUN:
@@ -475,83 +500,86 @@ def main():
     from yunrpc import protocol
 
     # Main loop
-    while True:
-        try:
-            if not ser or not ser.is_open:
-                logging.info(f"Attempting to connect to serial port {serial_port}...")
-                try:
-                    ser = serial.Serial(serial_port, serial_baud, timeout=1)
-                    ser.reset_input_buffer()
-                    logging.info("Serial port connected successfully.")
-                except serial.SerialException as e:
-                    logging.warning(f"Serial port not ready: {e}. Retrying in 5 seconds...")
-                    ser = None
-                    time.sleep(5)
-                    continue
+    try:
+        while True:
+            try:
+                if not ser or not ser.is_open:
+                    logging.info(f"Attempting to connect to serial port {serial_port}...")
+                    try:
+                        ser = serial.Serial(serial_port, serial_baud, timeout=1)
+                        ser.reset_input_buffer()
+                        logging.info("Serial port connected successfully.")
+                    except serial.SerialException as e:
+                        logging.warning(f"Serial port not ready: {e}. Retrying in 5 seconds...")
+                        ser = None
+                        time.sleep(5)
+                        continue
 
-            if ser.in_waiting > 0:
-                with serial_lock:
-                    serial_buffer += ser.read(ser.in_waiting)
-            
-            # Process the buffer to find and parse frames
-            buffer_modified = True
-            while buffer_modified:
-                buffer_modified = False
-                start_index = serial_buffer.find(protocol.START_BYTE)
-
-                if start_index == -1:
-                    if len(serial_buffer) > 0:
-                        logging.warning(f"Discarding {len(serial_buffer)} bytes of junk data: {serial_buffer.hex()}")
-                        serial_buffer = b''
-                    break
-
-                if start_index > 0:
-                    logging.warning(f"Discarding {start_index} bytes of junk data before frame: {serial_buffer[:start_index].hex()}")
-                    serial_buffer = serial_buffer[start_index:]
-                    buffer_modified = True
-                    continue
-
-                if len(serial_buffer) < protocol.MIN_FRAME_SIZE:
-                    break
-
-                try:
-                    _, payload_len, _ = struct.unpack(protocol.CRC_COVERED_HEADER_FORMAT, serial_buffer[1:1+protocol.CRC_COVERED_HEADER_SIZE])
-                except struct.error:
-                    logging.warning("Could not unpack header, discarding start byte.")
-                    serial_buffer = serial_buffer[1:]
-                    buffer_modified = True
-                    continue
-
-                full_frame_len = 1 + protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
+                if ser.in_waiting > 0:
+                    with serial_lock:
+                        serial_buffer += ser.read(ser.in_waiting)
                 
-                if len(serial_buffer) < full_frame_len:
-                    break
+                # Process the buffer to find and parse frames
+                buffer_modified = True
+                while buffer_modified:
+                    buffer_modified = False
+                    start_index = serial_buffer.find(protocol.START_BYTE)
 
-                frame_bytes = serial_buffer[:full_frame_len]
+                    if start_index == -1:
+                        if len(serial_buffer) > 0:
+                            logging.warning(f"Discarding {len(serial_buffer)} bytes of junk data: {serial_buffer.hex()}")
+                            serial_buffer = b''
+                        break
+
+                    if start_index > 0:
+                        logging.warning(f"Discarding {start_index} bytes of junk data before frame: {serial_buffer[:start_index].hex()}")
+                        serial_buffer = serial_buffer[start_index:]
+                        buffer_modified = True
+                        continue
+
+                    if len(serial_buffer) < protocol.MIN_FRAME_SIZE:
+                        break
+
+                    try:
+                        _, payload_len, _ = struct.unpack(protocol.CRC_COVERED_HEADER_FORMAT, serial_buffer[1:1+protocol.CRC_COVERED_HEADER_SIZE])
+                    except struct.error:
+                        logging.warning("Could not unpack header, discarding start byte.")
+                        serial_buffer = serial_buffer[1:]
+                        buffer_modified = True
+                        continue
+
+                    full_frame_len = 1 + protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
+                    
+                    if len(serial_buffer) < full_frame_len:
+                        break
+
+                    frame_bytes = serial_buffer[:full_frame_len]
+                    
+                    try:
+                        command_id, payload = Frame.parse(frame_bytes)
+                        handle_mcu_frame(command_id, payload)
+                        serial_buffer = serial_buffer[full_frame_len:]
+                        buffer_modified = True
+
+                    except ValueError as e:
+                        logging.warning(f"Frame parsing error: {e}. Discarding start byte and rescanning.")
+                        serial_buffer = serial_buffer[1:]
+                        buffer_modified = True
                 
-                try:
-                    command_id, payload = Frame.parse(frame_bytes)
-                    handle_mcu_frame(command_id, payload)
-                    serial_buffer = serial_buffer[full_frame_len:]
-                    buffer_modified = True
+                time.sleep(0.01)
 
-                except ValueError as e:
-                    logging.warning(f"Frame parsing error: {e}. Discarding start byte and rescanning.")
-                    serial_buffer = serial_buffer[1:]
-                    buffer_modified = True
+            except (serial.SerialException, IOError) as e:
+                logging.error(f"Serial communication error: {e}")
+                if ser:
+                    ser.close()
+                ser = None
+                time.sleep(5)
             
-            time.sleep(0.01)
-
-        except (serial.SerialException, IOError) as e:
-            logging.error(f"Serial communication error: {e}")
-            if ser:
-                ser.close()
-            ser = None
-            time.sleep(5)
-        
-        except Exception as e:
-            logging.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
-            break
+            except Exception as e:
+                logging.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
+                break
+    except KeyboardInterrupt:
+        logging.info("KeyboardInterrupt received, shutting down.")
 
     # Cleanup
     logging.info("Shutting down yun-bridge.")

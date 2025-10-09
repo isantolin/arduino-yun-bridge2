@@ -82,7 +82,7 @@ local function tail_file(path, n)
 end
 
 function action_log_daemon()
-    local content = tail_file("/tmp/yunbridge_daemon.log", 50) or "No daemon log file found."
+    local content = tail_file("/var/log/yun-bridge.log", 50) or "No daemon log file found."
     luci.http.prepare_content("text/plain")
     luci.http.write(content)
 end

@@ -1,34 +1,15 @@
 #!/bin/sh
-#
 # This file is part of Arduino Yun Ecosystem v2.
-#
 # Copyright (C) 2025 Ignacio Santolin and contributors
-#
 # This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-# Refactored install script for Arduino Yun v2 ecosystem
-# Uses functions to remove redundancy and improves process handling.
 
 set -e
-
-# --- Configuration Variables ---
+#  --- Configuration Variables ---
 SWAPFILE="/overlay/swapfile"
 SWAPSIZE_MB=1024
 INIT_SCRIPT="/etc/init.d/yunbridge"
 export TMPDIR=/overlay/upper/tmp
-
-# --- Helper Functions ---
+#  --- Helper Functions ---
 mkdir -p "$TMPDIR"
 # Function to stop the yunbridge daemon robustly
 stop_daemon() {
@@ -60,58 +41,38 @@ stop_daemon() {
         echo "[INFO] No running yunbridge daemon process found."
     fi
 }
-
-# --- Main Script Execution ---
+#  --- Main Script Execution ---
 
 echo "[STEP 1/6] Updating system packages..."
 opkg update
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
 echo "[STEP 2/6] Installing essential dependencies..."
-# Minimal system dependencies. || true prevents script exit on non-fatal errors.
-opkg install python3 python3-pip luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json python3-pyserial python3-paho-mqtt || true
+#  Minimal system dependencies. || true prevents script exit on non-fatal errors.
+opkg install python3 python3-pip python3-decimal luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json python3-pyserial python3-paho-mqtt python3-aio-mqtt-mod || true
 
-# --- Stop Existing Daemon ---
+#  --- Stop Existing Daemon ---
 stop_daemon
-
 # --- Install Prebuilt Packages ---
 echo "[STEP 4/6] Installing .ipk and .whl packages..."
-
-# Install all .ipk packages from the bin/ directory
+#  Install all .ipk packages from the bin/ directory
 if ls bin/*.ipk 1>/dev/null 2>&1; then
     opkg install --force-reinstall bin/*.ipk
 fi
-
-
-# Instalar solo los .whl de openwrt_yun_client_python si existen
-#for whl in bin/openwrt_yun_client_python-*.whl; do
-#    if [ -e "$whl" ]; then
-#        echo "[INFO] Installing Python package: $whl"
-#        if ! pip3 install --upgrade --force-reinstall --no-deps "$whl"; then
-#            echo "[ERROR] Failed to install $whl" >&2
-#            exit 1
-#        fi
-#    fi
-#done
-
 # --- System & LuCI Configuration ---
 echo "[STEP 5/6] Finalizing system configuration..."
-
-# Remove serial console login to free up the port for the bridge
+#  Remove serial console login to free up the port for the bridge
 if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
     echo "[INFO] Removing serial console login from /etc/inittab."
     sed -i '/::askconsole:\/usr\/libexec\/login.sh/d' /etc/inittab
 fi
-
-# Restart services to apply changes and load the new LuCI app
+#  Restart services to apply changes and load the new LuCI app
 echo "[INFO] Restarting uhttpd and rpcd for LuCI..."
 [ -f /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart
 [ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
-
-# --- User Configuration & Daemon Start ---
+#  --- User Configuration & Daemon Start ---
 echo "[STEP 6/6] Finalizing setup..."
-
-# Ask user if they want to enable debug mode by default
+#  Ask user if they want to enable debug mode by default
 read -p "Do you want to enable YUNBRIDGE_DEBUG=1 by default for all users? [Y/n]: " yn
 case $yn in
     [Nn])
@@ -125,8 +86,7 @@ case $yn in
         export YUNBRIDGE_DEBUG=1 # Export for current session
         ;;
 esac
-
-# Enable and start the daemon
+#  Enable and start the daemon
 if [ -x "$INIT_SCRIPT" ]; then
     echo "[INFO] Enabling and starting yunbridge daemon..."
     $INIT_SCRIPT enable

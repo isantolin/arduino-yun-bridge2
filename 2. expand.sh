@@ -10,7 +10,7 @@
 # --- CONFIGURATION VARIABLES ---
 DEVICE="/dev/sda1"
 MOUNT_POINT="/mnt/extroot_temp"
-LOG_FILE="/tmp/extroot_script.log"
+LOG_FILE="/var/log/extroot_script.log"
 # Expected Sizes
 MIN_OVERLAY_KB=102400     # Minimum 100 MB to confirm external SD
 SWAP_EXPECTED_KB=1048576  # 1 GB (1024 * 1024 KB)

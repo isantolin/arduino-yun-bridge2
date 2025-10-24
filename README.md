@@ -135,6 +135,66 @@ curl -X POST -H "Content-Type: application/json" -d '{"state": "ON"}' http://<yo
 curl -X GET http://<your_yun_ip>/arduino-webui-v2/pin/13
 ```
 
+## Architecture and Data Flow
+
+To understand how the ecosystem works, it's helpful to trace the path of a command from start to finish. The `bridge_daemon.py` running on the Linux side acts as the central hub, translating messages between the network (MQTT) and the microcontroller (serial).
+
+### Example 1: Control Flow (Turning an LED ON)
+
+This example shows how an external command reaches the Arduino.
+
+1.  **Initiator (External Client):** A user sends a REST API request to the Yun.
+    ```sh
+    curl -X POST ... -d '{"state": "ON"}' http://<yun_ip>/cgi-bin/pin_rest_cgi.py/pin/13
+    ```
+2.  **Web Server (uhttpd on OpenWRT):** The web server receives the request and executes the CGI script `pin_rest_cgi.py`.
+3.  **CGI Script (`pin_rest_cgi.py`):** The Python script parses the request. Instead of talking to the serial port directly, it connects to the MQTT broker and publishes a message.
+    -   **Topic:** `br/d/13`
+    -   **Payload:** `1`
+4.  **MQTT Broker:** The broker receives the message and forwards it to all subscribed clients.
+5.  **Bridge Daemon (`bridge_daemon.py`):** The daemon is subscribed to `br/d/#`. It receives the message on `br/d/13`.
+6.  **Serial Protocol Translation:** The daemon translates the MQTT message into a binary RPC frame.
+    -   **Command:** `CMD_DIGITAL_WRITE` (0x11)
+    -   **Payload:** `[pin=13, value=1]`
+    -   It then wraps this in a frame with a header and CRC, encodes it using COBS, and sends it over the serial port (`/dev/ttyATH0`).
+7.  **Arduino Microcontroller (`BridgeControl.ino`):**
+    -   The `Bridge.process()` function in the main `loop()` reads the serial data.
+    -   The `Bridge` library decodes the COBS packet, verifies the CRC, and parses the frame.
+    -   The library identifies the `CMD_DIGITAL_WRITE` command and automatically calls the standard Arduino function `digitalWrite(13, HIGH)`.
+
+### Example 2: Data Reading Flow (Reading a Sensor)
+
+This example shows how data from the Arduino is sent to an external client.
+
+1.  **Initiator (External Client):** A Python script wants to read the value of pin 13.
+2.  **MQTT Publication:** The script publishes an empty message to a specific MQTT topic to trigger a read.
+    -   **Topic:** `br/d/13/read`
+    -   **Payload:** (empty)
+3.  **Bridge Daemon (`bridge_daemon.py`):** The daemon receives this message.
+4.  **Serial Protocol Translation:** The daemon creates and sends a `CMD_DIGITAL_READ` (0x13) frame to the Arduino with the pin number in the payload.
+5.  **Arduino Microcontroller (`BridgeControl.ino`):**
+    -   The `Bridge` library receives the `CMD_DIGITAL_READ` frame.
+    -   It automatically calls the standard Arduino function `digitalRead(13)` to get the value.
+    -   The library then constructs a **response frame**, `CMD_DIGITAL_READ_RESP` (0x15), containing the pin number and its value.
+    -   This response frame is encoded and sent back over the serial port to the Linux side.
+6.  **Bridge Daemon (`bridge_daemon.py`):** The daemon's serial reader task receives the response frame, decodes it, and verifies it.
+7.  **MQTT Translation:** The daemon parses the response and publishes the value to a different MQTT topic.
+    -   **Topic:** `br/d/13/value`
+    -   **Payload:** `0` or `1`
+8.  **Final Client (External Script):** The Python script, which was subscribed to `br/d/13/value`, receives the message with the pin's current state.
+
+This decoupled architecture using MQTT as an intermediary makes the system extremely flexible and robust.
+
+## Low-Level Communication Protocol
+
+While MQTT is used for external communication, the core bridge between the Linux processor and the Arduino microcontroller relies on a custom, high-performance binary RPC protocol over the serial port. This protocol is designed for reliability and efficiency, incorporating:
+
+-   **Binary Framing:** A well-defined frame structure with a header, payload, and checksum.
+-   **COBS Encoding:** Consistent Overhead Byte Stuffing ensures that packet boundaries are reliably detected using `0x00` bytes.
+-   **CRC Checksum:** A CRC-16-CCITT checksum is used to guarantee data integrity and detect corruption.
+
+For a complete technical specification of the serial protocol, including frame structure, command IDs, and payload definitions, please see [**PROTOCOL.md**](./PROTOCOL.md).
+
 ## MQTT Topics and Data Flow
 
 The bridge uses MQTT to expose the Arduino's functionalities and to control the Linux environment on the Yun. All topics are prefixed with `br/`.
@@ -175,8 +235,6 @@ These topics are handled entirely by the `bridge_daemon.py` on the Linux side an
     - Advanced control features.
     - Certificate support for secure connections.
     - WebSockets support.
-- **Communication Protocols:**
-    - Implementation of COBS (Consistent Overhead Byte Stuffing) for more reliable serial communication.
 - **Core System:**
     - Support for new OpenWRT targets.
     - Expanded documentation and tutorials.

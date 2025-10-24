@@ -81,20 +81,20 @@ local function tail_file(path, n)
     return table.concat(lines, "\n")
 end
 
-function action_log_daemon()
-    local content = tail_file("/var/log/yun-bridge.log", 50) or "No daemon log file found."
+local function serve_log_file(path, error_msg)
+    local content = tail_file(path, 50) or error_msg
     luci.http.prepare_content("text/plain")
     luci.http.write(content)
+end
+
+function action_log_daemon()
+    serve_log_file("/var/log/yun-bridge.log", "No daemon log file found.")
 end
 
 function action_log_mqtt()
-    local content = tail_file("/tmp/yunbridge_mqtt_plugin.log", 50) or "No MQTT log file found."
-    luci.http.prepare_content("text/plain")
-    luci.http.write(content)
+    serve_log_file("/var/log/yunbridge_mqtt_plugin.log", "No MQTT log file found.")
 end
 
 function action_log_script()
-    local content = tail_file("/tmp/yunbridge_script.log", 50) or "No script log file found."
-    luci.http.prepare_content("text/plain")
-    luci.http.write(content)
+    serve_log_file("/var/log/yunbridge_script.log", "No script log file found.")
 end

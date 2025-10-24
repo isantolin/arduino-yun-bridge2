@@ -1,603 +1,606 @@
-"""
-This file is part of Arduino Yun Ecosystem v2.
-
-Copyright (C) 2025 Ignacio Santolin and contributors
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <https://www.gnu.org/licenses/>.
-"""
 #!/usr/bin/env python3
-#
-# Copyright (c) 2024, Ignacio Santolin
-#
-# Based on the original work by the Arduino team
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-# THE SOFTWARE.
-#
+"""Daemon for the Arduino Yun Bridge v2.
 
-import sys
-import os
-import fcntl
-import struct
-import logging
-import argparse
-import threading
-import time
+This daemon bridges communication between the Arduino Yun's microcontroller and
+the Linux-based OpenWRT system, using MQTT as the primary protocol for
+external communication.
+"""
+from __future__ import annotations
+
+import asyncio
 import collections
-import subprocess
+import logging
+import os
+import ssl
+import struct
+from typing import Any
+
+import aiomqtt
 import serial
-import paho.mqtt.client as mqtt
+import serial_asyncio
+from yunrpc import cobs
 from yunrpc.frame import Frame
-
 from yunrpc.protocol import Command, Status
+from yunrpc.utils import get_uci_config
 
-# Define the constants for the topics
-TOPIC_BRIDGE = "br"
-TOPIC_DIGITAL = "d"
-TOPIC_ANALOG = "a"
-TOPIC_CONSOLE = "console"
-TOPIC_SH = "sh"
+# --- Logger ---
+logger = logging.getLogger("yunbridge")
 
-# Global variables
-ser = None
-client = None
+# --- Topic Constants ---
+TOPIC_BRIDGE: str = "br"
+TOPIC_DIGITAL: str = "d"
+TOPIC_ANALOG: str = "a"
+TOPIC_CONSOLE: str = "console"
+TOPIC_SH: str = "sh"
+TOPIC_MAILBOX: str = "mailbox"
+TOPIC_DATASTORE: str = "datastore"
+TOPIC_FILE: str = "file"
 
-# In-memory dictionary to act as the DataStore
-datastore = {}
 
-# In-memory queue for the Mailbox
-mailbox_queue = collections.deque()
+class State:
+    """A class to hold the shared state of the bridge daemon."""
 
-# Lock for safely accessing the serial port
-serial_lock = threading.Lock()
+    def __init__(self) -> None:
+        """Initialize the state."""
+        self.serial_writer: asyncio.StreamWriter | None = None
+        self.mqtt_publish_queue: asyncio.Queue[tuple[str, bytes]] = asyncio.Queue()
+        self.datastore: dict[str, str] = {}
+        self.mailbox_queue: collections.deque[bytes] = collections.deque()
+        self.mcu_is_paused: bool = False
+        self.console_to_mcu_queue: collections.deque[bytes] = collections.deque()
+        self.running_processes: dict[int, asyncio.subprocess.Process] = {}
+        self.process_lock: asyncio.Lock = asyncio.Lock()
+        self.next_pid: int = 1
+        self.allowed_commands: list[str] = []
 
-# For Process feature
-running_processes = {}
-process_lock = threading.Lock()
-next_pid = 1
 
-def send_frame(command_id: int, payload: bytes = b'') -> bool:
-    """
-    Builds and sends a frame to the MCU.
-    Returns True if successful, False on error.
-    """
-    if not ser or not ser.is_open:
-        logging.error("Serial port not available for sending.")
+async def send_frame(state: State, command_id: int, payload: bytes = b"") -> bool:
+    """Build and send a frame to the MCU asynchronously."""
+    if not state.serial_writer:
+        logger.error("Serial writer not available for sending.")
         return False
-
     try:
-        frame_bytes = Frame.build(command_id, payload)
-        logging.info(f"Enviando frame HEX: {' '.join(f'{b:02X}' for b in frame_bytes)}")
-        with serial_lock:
-            ser.write(frame_bytes)
-        logging.debug(f"LINUX > {Command(command_id).name} PAYLOAD: {payload.hex()}")
+        raw_frame = Frame.build(command_id, payload)
+        encoded_frame = cobs.encode(raw_frame)
+        packet_to_send = encoded_frame + b"\x00"
+        state.serial_writer.write(packet_to_send)
+        await state.serial_writer.drain()
+        try:
+            log_name = Command(command_id).name
+        except ValueError:
+            log_name = Status(command_id).name
+        logger.debug("LINUX > %s PAYLOAD: %s", log_name, payload.hex())
         return True
-    except serial.SerialException as e:
-        logging.error(f"Failed to write to serial port: {e}")
-        return False
-    except Exception as e:
-        logging.error(f"An unexpected error occurred during send: {e}")
+    except Exception:
+        logger.exception("An unexpected error occurred during send")
         return False
 
-def on_connect(client, userdata, flags, rc, properties=None):
-    """The callback for when the client receives a CONNACK response from the server."""
-    if rc == 0:
-        logging.info("Connected to MQTT Broker!")
-        # Subscribe to specific topics to avoid receiving our own messages
-        subscriptions = [
-            (f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/#", 0),
-            (f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/#", 0),
-            (f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/in", 0),
-            (f"{TOPIC_BRIDGE}/datastore/put/#", 0),
-            (f"{TOPIC_BRIDGE}/mailbox/write", 0),
-            (f"{TOPIC_BRIDGE}/{TOPIC_SH}/run", 0)
-        ]
-        client.subscribe(subscriptions)
-        for sub in subscriptions:
-            logging.info(f"Subscribed to topic: {sub[0]}")
-    else:
-        logging.error(f"Failed to connect, return code {rc}")
+
+# --- MCU Command Handlers ---
 
 
-def on_message(client, userdata, msg):
-    """The callback for when a PUBLISH message is received from the server."""
-    if not ser or not ser.is_open:
-        logging.warning("Serial port not ready, skipping MQTT message.")
+async def _handle_digital_read_resp(state: State, payload: bytes) -> None:
+    pin = payload[0]
+    value = int.from_bytes(payload[1:], "little")
+    topic = f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/{pin}/value"
+    await state.mqtt_publish_queue.put((topic, str(value).encode("utf-8")))
+
+
+async def _handle_analog_read_resp(state: State, payload: bytes) -> None:
+    pin = payload[0]
+    value = int.from_bytes(payload[1:], "little")
+    topic = f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/{pin}/value"
+    await state.mqtt_publish_queue.put((topic, str(value).encode("utf-8")))
+
+
+async def _handle_ack(state: State, _: bytes) -> None:
+    logger.info("MCU > ACK received, command confirmed.")
+
+
+async def _handle_xoff(state: State, payload: bytes) -> None:
+    logger.warning("MCU > XOFF received, pausing console output.")
+    state.mcu_is_paused = True
+
+
+async def _handle_xon(state: State, payload: bytes) -> None:
+    logger.info("MCU > XON received, resuming console output.")
+    state.mcu_is_paused = False
+    while state.console_to_mcu_queue and not state.mcu_is_paused:
+        data = state.console_to_mcu_queue.popleft()
+        await send_frame(state, Command.CMD_CONSOLE_WRITE.value, data)
+
+
+async def _handle_console_write(state: State, payload: bytes) -> None:
+    await state.mqtt_publish_queue.put((f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/out", payload))
+
+
+async def _handle_datastore_get_resp(state: State, payload: bytes) -> None:
+    key, value = payload.split(b"\0", 1)
+    key_str = key.decode("utf-8")
+    value_str = value.decode("utf-8")
+    await state.mqtt_publish_queue.put(
+        (f"{TOPIC_BRIDGE}/datastore/get/{key_str}", value_str.encode("utf-8"))
+    )
+
+
+async def _handle_mailbox_processed(state: State, payload: bytes) -> None:
+    await state.mqtt_publish_queue.put(
+        (f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/processed", payload)
+    )
+
+
+async def _handle_process_run(state: State, payload: bytes) -> None:
+    cmd_str = payload.decode("utf-8")
+    if cmd_str not in state.allowed_commands:
+        logger.warning("Command not allowed: %s", cmd_str)
+        await send_frame(state, Command.CMD_PROCESS_RUN_RESP.value, b"Error: Command not allowed")
         return
-
-    logging.info(f"MQTT < {msg.topic} {str(msg.payload)}")
-    
+    logger.info("Received sync PROCESS_RUN: '%s'", cmd_str)
     try:
-        parts = msg.topic.split('/')
-        if len(parts) < 3 or parts[0] != TOPIC_BRIDGE:
+        proc = await asyncio.create_subprocess_shell(
+            cmd_str, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
+        await send_frame(state, Command.CMD_PROCESS_RUN_RESP.value, stdout)
+    except asyncio.TimeoutError:
+        await send_frame(state, Command.CMD_PROCESS_RUN_RESP.value, b"Error: Timeout")
+    except OSError as e:
+        await send_frame(state, Command.CMD_PROCESS_RUN_RESP.value, str(e).encode("utf-8"))
+
+
+async def _handle_process_run_async(state: State, payload: bytes) -> None:
+    cmd_str = payload.decode("utf-8")
+    if cmd_str not in state.allowed_commands:
+        logger.warning("Command not allowed: %s", cmd_str)
+        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"-1")
+        return
+    logger.info("Received async PROCESS_RUN: '%s'", cmd_str)
+    async with state.process_lock:
+        pid = state.next_pid
+        state.next_pid += 1
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            cmd_str, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        async with state.process_lock:
+            state.running_processes[pid] = proc
+        await send_frame(
+            state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, str(pid).encode("utf-8")
+        )
+    except OSError:
+        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"-1")
+
+
+async def _handle_process_poll(state: State, payload: bytes) -> None:
+    pid = int(payload.decode("utf-8"))
+    output = b""
+    finished = False
+
+    async with state.process_lock:
+        if pid not in state.running_processes:
+            await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, b"Error: No such process")
             return
 
-        topic_type = parts[1]
-        
-        if topic_type == TOPIC_CONSOLE and parts[2] == "in":
-            send_frame(Command.CMD_CONSOLE_WRITE.value, msg.payload)
-            return
-        
-        # DataStore 'put' from MQTT
-        if topic_type == "datastore" and parts[2] == "put":
-            if len(parts) > 3:
-                key = "/".join(parts[3:])
-                value = msg.payload.decode()
-                datastore[key] = value
-                logging.info(f"DataStore: MQTT set '{key}' to '{value}'")
-                # Publish to the 'get' topic for confirmation and state synchronization
-                get_topic = f"{TOPIC_BRIDGE}/datastore/get/{key}"
-                client.publish(get_topic, value, retain=True)
-            return
+        proc = state.running_processes[pid]
 
-        # Mailbox 'write' from MQTT
-        if topic_type == "mailbox" and parts[2] == "write":
-            mailbox_queue.append(msg.payload)
-            logging.info(f"Mailbox: Queued message from MQTT ({len(msg.payload)} bytes)")
-            # Publish the new count of available messages
-            client.publish(f"{TOPIC_BRIDGE}/mailbox/available", str(len(mailbox_queue)), retain=True)
-            return
+        # 1. Perform a non-blocking read for immediate output
+        try:
+            stdout = await proc.stdout.read(1024)
+            stderr = await proc.stderr.read(1024)
+            output += stdout + stderr
+        except (OSError, BrokenPipeError):
+            # This can happen if the process ends between the check and the read
+            pass
 
-        # Shell command execution from MQTT
-        if topic_type == TOPIC_SH and parts[2] == "run":
-            cmd_str = msg.payload.decode('utf-8')
-            logging.info(f"Executing shell command from MQTT: '{cmd_str}'")
-            response = ""
+        # 2. Check if the process has terminated
+        if proc.returncode is not None:
+            # 3. Drain any remaining data from the pipes
             try:
-                # Execute the command, capture output, timeout after 15 seconds
-                result = subprocess.run(
-                    cmd_str,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=15
-                )
-                # Combine stdout and stderr for the response
-                response = f"Exit Code: {result.returncode}\n-- STDOUT --\n{result.stdout}\n-- STDERR --\n{result.stderr}"
-                logging.info(f"Command finished. Exit code: {result.returncode}")
-            except subprocess.TimeoutExpired:
-                response = "Error: Command timed out after 15 seconds."
-                logging.warning(response)
-            except Exception as e:
-                response = f"Error: Failed to execute command: {e}"
-                logging.error(response, exc_info=True)
-            
-            # Publish the response
-            if client:
-                client.publish(f"{TOPIC_BRIDGE}/{TOPIC_SH}/response", response)
+                stdout_rem, stderr_rem = await proc.communicate()
+                output += stdout_rem + stderr_rem
+            except (OSError, BrokenPipeError, ValueError):
+                # ValueError can be raised if transport is closed
+                pass  # Ignore errors on final communication
+            # 4. Remove the process from the dictionary
+            del state.running_processes[pid]
+            logger.info("Process %d finished with code %d and was cleaned up.", pid, proc.returncode)
+
+    await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, output)
+
+
+async def _handle_process_kill(state: State, payload: bytes) -> None:
+    pid = int(payload.decode("utf-8"))
+    async with state.process_lock:
+        if pid in state.running_processes:
+            try:
+                state.running_processes[pid].kill()
+                del state.running_processes[pid]
+                logger.info("Killed process with PID %d", pid)
+            except ProcessLookupError:
+                # Process already finished
+                del state.running_processes[pid]
+
+
+# --- File I/O Helpers (Async Wrappers) ---
+
+def _write_file_sync(path: str, data: bytes) -> None:
+    """Synchronous file write."""
+    with open(path, "wb") as f:
+        f.write(data)
+
+def _read_file_sync(path: str) -> bytes:
+    """Synchronous file read."""
+    with open(path, "rb") as f:
+        return f.read()
+
+def _get_safe_path(state: State, filename: str) -> str | None:
+    """Get a safe path, ensuring it's within the configured root directory."""
+    base_dir = state.file_system_root
+    os.makedirs(base_dir, exist_ok=True)
+
+    safe_path = os.path.abspath(os.path.join(base_dir, filename))
+    if os.path.commonpath([safe_path, base_dir]) != base_dir:
+        logger.warning("Path traversal attempt blocked: %s", filename)
+        return None
+    return safe_path
+
+async def _handle_file_write(state: State, payload: bytes) -> None:
+    """Handle file write requests from the MCU asynchronously."""
+    try:
+        filename, data = payload.split(b"\0", 1)
+        safe_path = _get_safe_path(state, filename.decode("utf-8"))
+        if not safe_path:
             return
-
-        pin_str = parts[2]
-        
-        # Digital/Analog Write
-        if (topic_type == TOPIC_DIGITAL or topic_type == TOPIC_ANALOG) and len(parts) == 3:
-            pin = int(pin_str)
-            value = int(msg.payload.decode('utf-8'))
-            command = Command.CMD_DIGITAL_WRITE if topic_type == TOPIC_DIGITAL else Command.CMD_ANALOG_WRITE
-            payload = struct.pack('<BB', pin, value)
-            send_frame(command.value, payload)
-
-        # Pin Mode
-        elif topic_type == TOPIC_DIGITAL and len(parts) == 4 and parts[3] == "mode":
-            pin = int(pin_str)
-            mode = int(msg.payload.decode('utf-8'))
-            payload = struct.pack('<BB', pin, mode)
-            send_frame(Command.CMD_SET_PIN_MODE.value, payload)
-
-        # Digital/Analog Read Request
-        elif (topic_type == TOPIC_DIGITAL or topic_type == TOPIC_ANALOG) and len(parts) == 4 and parts[3] == "read":
-            # An MQTT message to this topic triggers a read request to the MCU.
-            pin = int(pin_str)
-            command = Command.CMD_DIGITAL_READ if topic_type == TOPIC_DIGITAL else Command.CMD_ANALOG_READ
-            payload = struct.pack('<B', pin)
-            send_frame(command.value, payload)
+        await asyncio.to_thread(_write_file_sync, safe_path, data)
+        logger.info("Wrote %d bytes to %s from MCU", len(data), safe_path)
+    except (ValueError, OSError) as e:
+        logger.exception("File write error from MCU: %s", e)
 
 
-    except (ValueError, IndexError) as e:
-        logging.error(f"Error processing MQTT message: {e}", exc_info=True)
-    except Exception as e:
-        logging.error(f"An unexpected error occurred in on_message: {e}", exc_info=True)
+async def _handle_file_read(state: State, payload: bytes) -> None:
+    """Handle file read requests from the MCU asynchronously."""
+    content = b""
+    try:
+        filename = payload.decode("utf-8")
+        safe_path = _get_safe_path(state, filename)
+        if safe_path and await asyncio.to_thread(os.path.exists, safe_path):
+            content = await asyncio.to_thread(_read_file_sync, safe_path)
+        else:
+            logger.warning("File read from MCU: file not found %s", safe_path)
+    except (ValueError, OSError) as e:
+        logger.exception("File read error from MCU: %s", e)
+    finally:
+        await send_frame(state, Command.CMD_FILE_READ_RESP.value, content)
 
 
-def _is_safe_path(filename: str) -> bool:
-    """Checks if a file path is within the allowed /tmp/ directory."""
-    if not filename.startswith('/tmp/'):
-        logging.error(f"SECURITY: Denied file access outside of /tmp/: {filename}")
-        send_frame(Status.ERROR.value, b"Permission denied: can only access /tmp/")
-        return False
-    return True
+async def _handle_file_remove(state: State, payload: bytes) -> None:
+    """Handle file remove requests from the MCU asynchronously."""
+    try:
+        filename = payload.decode("utf-8")
+        safe_path = _get_safe_path(state, filename)
+        if safe_path and await asyncio.to_thread(os.path.exists, safe_path):
+            await asyncio.to_thread(os.remove, safe_path)
+            logger.info("Removed file %s from MCU", safe_path)
+        else:
+            logger.warning("File remove from MCU: file not found %s", safe_path)
+    except (ValueError, OSError) as e:
+        logger.exception("File remove error from MCU: %s", e)
 
 
-def handle_mcu_frame(command_id, payload):
-    """Handles a command frame received from the MCU."""
+MCU_COMMAND_HANDLERS = {
+    Command.CMD_DIGITAL_READ_RESP: _handle_digital_read_resp,
+    Command.CMD_ANALOG_READ_RESP: _handle_analog_read_resp,
+    Status.ACK: _handle_ack,
+    Status.XOFF: _handle_xoff,
+    Status.XON: _handle_xon,
+    Command.CMD_CONSOLE_WRITE: _handle_console_write,
+    Command.CMD_DATASTORE_GET_RESP: _handle_datastore_get_resp,
+    Command.CMD_MAILBOX_PROCESSED: _handle_mailbox_processed,
+    Command.CMD_PROCESS_RUN: _handle_process_run,
+    Command.CMD_PROCESS_RUN_ASYNC: _handle_process_run_async,
+    Command.CMD_PROCESS_POLL: _handle_process_poll,
+    Command.CMD_PROCESS_KILL: _handle_process_kill,
+    Command.CMD_FILE_WRITE: _handle_file_write,
+    Command.CMD_FILE_READ: _handle_file_read,
+    Command.CMD_FILE_REMOVE: _handle_file_remove,
+}
+
+
+async def handle_mcu_frame(state: State, command_id: int, payload: bytes) -> None:
+    """Handle a command frame received from the MCU."""
     try:
         command = Command(command_id)
-        logging.debug(f"MCU > CMD: {command.name} PAYLOAD: {payload.hex()}")
+        logger.debug("MCU > CMD: %s PAYLOAD: %s", command.name, payload.hex())
     except ValueError:
-        logging.warning(f"MCU > Unknown CMD ID: {hex(command_id)} PAYLOAD: {payload.hex()}")
-        send_frame(Status.CMD_UNKNOWN.value, b'')
-        return
+        try:
+            command = Status(command_id)
+            logger.debug("MCU > STATUS: %s PAYLOAD: %s", command.name, payload.hex())
+        except ValueError:
+            logger.warning(
+                "MCU > Unknown CMD/STATUS ID: %s PAYLOAD: %s",
+                hex(command_id),
+                payload.hex(),
+            )
+            await send_frame(state, Status.CMD_UNKNOWN.value, b"")
+            return
 
-    try:
-        # Handle pin operations by publishing to MQTT
-        if command in [Command.CMD_DIGITAL_READ_RESP, Command.CMD_ANALOG_READ_RESP]:
-            pin = payload[0]
-            value = int.from_bytes(payload[1:], 'little')
-            topic_type = TOPIC_DIGITAL if command == Command.CMD_DIGITAL_READ_RESP else TOPIC_ANALOG
-            topic = f"{TOPIC_BRIDGE}/{topic_type}/{pin}/value"
-            if client:
-                client.publish(topic, str(value))
-                logging.info(f"Published to {topic}: {value}")
+    handler = MCU_COMMAND_HANDLERS.get(command)
+    if handler:
+        await handler(state, payload)
+
+
+async def serial_reader_task(serial_port: str, serial_baud: int, state: State) -> None:
+    """Connect to, read from, and handle the serial port."""
+    while True:
+        try:
+            logger.info("Attempting to connect to serial port %s...", serial_port)
+            reader, writer = await serial_asyncio.open_serial_connection(
+                url=serial_port, baudrate=serial_baud
+            )
+            state.serial_writer = writer
+            logger.info("Serial port connected successfully.")
+            while True:
+                encoded_packet = await reader.readuntil(separator=b"\x00")
+                if not encoded_packet:
+                    continue
+                try:
+                    raw_frame = cobs.decode(encoded_packet[:-1])
+                    command_id, payload = Frame.parse(raw_frame)
+                    await handle_mcu_frame(state, command_id, payload)
+                except ValueError as e:
+                    logger.warning(
+                        "Frame processing error: %s. Packet: %s",
+                        e,
+                        encoded_packet.hex(),
+                    )
+        except (OSError, serial.SerialException):
+            logger.exception("Serial communication error")
+        except Exception:
+            logger.critical("Unhandled exception in serial_reader_task", exc_info=True)
+        finally:
+            state.serial_writer = None
+            logger.warning("Serial port disconnected. Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+
+
+async def mqtt_task(
+    mqtt_host: str, mqtt_port: int, state: State, tls_params: dict[str, Any] | None = None
+) -> None:
+    """Handle all MQTT communication (in and out)."""
+    while True:
+        try:
+            async with aiomqtt.Client(
+                hostname=mqtt_host, port=mqtt_port, **(tls_params or {})
+            ) as client:
+                logger.info("Connected to MQTT Broker at %s:%s", mqtt_host, mqtt_port)
+
+                subscriptions = [
+                    f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/#",
+                    f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/#",
+                    f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/in",
+                    f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/put/#",
+                    f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/get/#",
+                    f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/write",
+                    f"{TOPIC_BRIDGE}/{TOPIC_SH}/run",
+                    f"{TOPIC_BRIDGE}/file/#",
+                ]
+                for topic in subscriptions:
+                    await client.subscribe(topic)
+                    logger.info("Subscribed to topic: %s", topic)
+
+                publisher_task = asyncio.create_task(_mqtt_publisher_loop(client, state))
+                subscriber_task = asyncio.create_task(_mqtt_subscriber_loop(client, state))
+                await asyncio.gather(publisher_task, subscriber_task)
+
+        except aiomqtt.MqttError:
+            logger.exception("MQTT Error. Reconnecting in 5 seconds...")
+            await asyncio.sleep(5)
+        except Exception:
+            logger.critical("Unhandled exception in mqtt_task", exc_info=True)
+            await asyncio.sleep(5)
+
+
+async def _mqtt_publisher_loop(client: aiomqtt.Client, state: State) -> None:
+    """Wait for messages on the publish queue and send them to MQTT."""
+    while True:
+        topic, payload = await state.mqtt_publish_queue.get()
+        logger.info("MQTT > %s %s", topic, payload.decode("utf-8", errors="ignore"))
+        await client.publish(topic, payload)
+        state.mqtt_publish_queue.task_done()
+
+
+async def _mqtt_subscriber_loop(client: aiomqtt.Client, state: State) -> None:
+    """Wait for messages from MQTT and process them."""
+    async for message in client.messages:
+        topic: str = message.topic.value
+        payload: bytes = message.payload
+        logger.info("MQTT < %s %s", topic, payload.decode("utf-8", errors="ignore"))
+
+        parts = topic.split("/")
+        if len(parts) < 3 or parts[0] != TOPIC_BRIDGE:
+            continue
+
+        topic_type = parts[1]
+
+        if topic_type == TOPIC_FILE and len(parts) >= 4:
+            action = parts[2]
+            filename = "/".join(parts[3:])
+            safe_path = _get_safe_path(state, filename)
+
+            if not safe_path:
+                return
+
+            if action == "write":
+                try:
+                    await asyncio.to_thread(_write_file_sync, safe_path, payload)
+                    logger.info("Wrote %d bytes to %s via MQTT", len(payload), safe_path)
+                except OSError as e:
+                    logger.exception("MQTT file write error: %s", e)
+
+            elif action == "read":
+                content = b""
+                try:
+                    if await asyncio.to_thread(os.path.exists, safe_path):
+                        content = await asyncio.to_thread(_read_file_sync, safe_path)
+                    else:
+                        logger.warning("MQTT file read: file not found %s", safe_path)
+                except OSError as e:
+                    logger.exception("MQTT file read error: %s", e)
+                finally:
+                    response_topic = f"{TOPIC_BRIDGE}/{TOPIC_FILE}/read/response/{filename}"
+                    await state.mqtt_publish_queue.put((response_topic, content))
+
+            elif action == "remove":
+                try:
+                    if await asyncio.to_thread(os.path.exists, safe_path):
+                        await asyncio.to_thread(os.remove, safe_path)
+                        logger.info("Removed file %s via MQTT", safe_path)
+                    else:
+                        logger.warning("MQTT file remove: file not found %s", safe_path)
+                except OSError as e:
+                    logger.exception("MQTT file remove error: %s", e)
+
+        elif topic_type == TOPIC_CONSOLE and parts[2] == "in":
+            if state.mcu_is_paused:
+                logger.warning("MCU is paused, queueing console message.")
+                state.console_to_mcu_queue.append(payload)
             else:
-                logging.warning(f"MQTT client not initialized, cannot publish to {topic}")
+                await send_frame(state, Command.CMD_CONSOLE_WRITE.value, payload)
 
-        elif command == Command.CMD_MAILBOX_PROCESSED:
-            # MAILBOX_PROCESSED: publish processed message to MQTT
-            topic = f"{TOPIC_BRIDGE}/mailbox/processed"
-            if client:
-                client.publish(topic, payload)
-                logging.info(f"Published to {topic}: {payload}")
-            else:
-                logging.warning(f"MQTT client not initialized, cannot publish to {topic}")
+        elif topic_type == TOPIC_DATASTORE and parts[2] == "put":
+            if len(parts) > 3:
+                key = "/".join(parts[3:])
+                value = payload.decode("utf-8", errors="ignore")
+                rpc_payload = f"{key}\0{value}".encode()
+                await send_frame(state, Command.CMD_DATASTORE_PUT.value, rpc_payload)
+                state.datastore[key] = value
+                await state.mqtt_publish_queue.put(
+                    (
+                        f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/get/{key}",
+                        value.encode("utf-8"),
+                    )
+                )
 
-        elif command == Command.CMD_CONSOLE_WRITE:
-            console_output = payload.decode('utf-8', errors='ignore')
-            logging.info(f"CONSOLE: {console_output}")
-            if client:
-                client.publish(f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/out", console_output)
+        elif topic_type == TOPIC_DATASTORE and parts[2] == "get":
+            if len(parts) > 3:
+                key = "/".join(parts[3:])
+                await send_frame(state, Command.CMD_DATASTORE_GET.value, key.encode("utf-8"))
 
-        elif command == Command.CMD_DATASTORE_PUT:
-            key, value = payload.split(b'\0', 1)
-            logging.info(f"Received DATASTORE_PUT for key '{key.decode()}'")
-            datastore[key.decode()] = value.decode('utf-8')
+        elif topic_type == TOPIC_MAILBOX and parts[2] == "write":
+            state.mailbox_queue.append(payload)
+            logger.info(
+                "Added message to mailbox queue. Size: %d", len(state.mailbox_queue)
+            )
+            await state.mqtt_publish_queue.put(
+                (
+                    f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/available",
+                    str(len(state.mailbox_queue)).encode("utf-8"),
+                )
+            )
 
-        elif command == Command.CMD_DATASTORE_GET:
-            key = payload.decode('utf-8')
-            logging.info(f"Received DATASTORE_GET for key '{key}'")
-            value = datastore.get(key, "")
-            send_frame(Command.CMD_DATASTORE_GET_RESP.value, value.encode('utf-8'))
-
-        elif command == Command.CMD_MAILBOX_READ:
-            logging.info("Received MAILBOX_READ")
-            message = b""
-            if mailbox_queue:
-                message = mailbox_queue.popleft()
-            send_frame(Command.CMD_MAILBOX_READ_RESP.value, message)
-
-        elif command == Command.CMD_MAILBOX_AVAILABLE:
-            logging.info("Received MAILBOX_AVAILABLE")
-            available_count = len(mailbox_queue)
-            logging.info(f"Mailbox queue has {available_count} messages.")
-            available_payload = str(available_count).encode('utf-8')
-            send_frame(Command.CMD_MAILBOX_AVAILABLE_RESP.value, available_payload)
-
-        elif command == Command.CMD_FILE_WRITE:
-            filename = "" # Initialize filename to prevent UnboundLocalError
+        elif topic_type == TOPIC_SH and parts[2] == "run":
+            cmd_str = payload.decode("utf-8", errors="ignore")
+            logger.info("Executing shell command from MQTT: '%s'", cmd_str)
             try:
-                filename_bytes, data = payload.split(b'\0', 1)
-                filename = filename_bytes.decode('utf-8')
-                
-                if not _is_safe_path(filename):
-                    return
+                proc = await asyncio.create_subprocess_shell(
+                    cmd_str, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+                response = f"""Exit Code: {proc.returncode}
+-- STDOUT --
+{stdout.decode()}
+-- STDERR --
+{stderr.decode()}"""
+            except asyncio.TimeoutError:
+                response = "Error: Command timed out after 15 seconds."
+            except OSError as e:
+                response = f"Error: Failed to execute command: {e}"
+            await state.mqtt_publish_queue.put(
+                (f"{TOPIC_BRIDGE}/{TOPIC_SH}/response", response.encode("utf-8"))
+            )
 
-                logging.info(f"Writing {len(data)} bytes to file: {filename}")
-                with open(filename, 'wb') as f:
-                    f.write(data)
-                
-                # No specific response for FILE_WRITE, send generic OK
-                send_frame(Status.OK.value, b'Write successful')
+        elif topic_type == TOPIC_DIGITAL and len(parts) == 4 and parts[3] == "mode":
+            pin = int(parts[2])
+            mode = int(payload.decode("utf-8", errors="ignore"))
+            await send_frame(state, Command.CMD_SET_PIN_MODE.value, struct.pack("<BB", pin, mode))
 
-            except ValueError:
-                logging.error("Malformed FILE_WRITE payload. Expected 'filename\0data'.")
-                send_frame(Status.MALFORMED.value, b"Malformed payload")
-            except Exception as e:
-                logging.error(f"Error writing to file {filename}: {e}")
-                send_frame(Status.ERROR.value, str(e).encode('utf-8'))
+        elif (
+            topic_type in (TOPIC_DIGITAL, TOPIC_ANALOG)
+            and len(parts) == 4
+            and parts[3] == "read"
+        ):
+            pin = int(parts[2])
+            command = (
+                Command.CMD_DIGITAL_READ
+                if topic_type == TOPIC_DIGITAL
+                else Command.CMD_ANALOG_READ
+            )
+            await send_frame(state, command.value, struct.pack("<B", pin))
 
-        elif command == Command.CMD_FILE_READ:
-            filename = "" # Initialize filename to prevent UnboundLocalError
-            try:
-                filename = payload.decode('utf-8')
-                if not _is_safe_path(filename):
-                    return
+        elif topic_type in (TOPIC_DIGITAL, TOPIC_ANALOG) and len(parts) == 3:
+            pin = int(parts[2])
+            value = int(payload.decode("utf-8", errors="ignore"))
+            command = (
+                Command.CMD_DIGITAL_WRITE
+                if topic_type == TOPIC_DIGITAL
+                else Command.CMD_ANALOG_WRITE
+            )
+            await send_frame(state, command.value, struct.pack("<BB", pin, value))
 
-                logging.info(f"Reading file: {filename}")
-                with open(filename, 'rb') as f:
-                    data = f.read()
-                
-                send_frame(Command.CMD_FILE_READ_RESP.value, data)
 
-            except FileNotFoundError:
-                logging.error(f"File not found: {filename}")
-                send_frame(Status.ERROR.value, b"File not found")
-            except Exception as e:
-                logging.error(f"Error reading file {filename}: {e}")
-                send_frame(Status.ERROR.value, str(e).encode('utf-8'))
+async def main_async() -> None:
+    """Run the main asynchronous application."""
+    config = get_uci_config()
+    serial_port = config.get("serial_port", "/dev/ttyATH0")
+    serial_baud = int(config.get("serial_baud", 115200))
+    mqtt_host = config.get("mqtt_host", "127.0.0.1")
+    mqtt_port = int(config.get("mqtt_port", 1883))
+    log_level = logging.DEBUG if config.get("debug", "0") == "1" else logging.INFO
+    log_format = "%(asctime)s - %(levelname)s - %(message)s"
+    logging.basicConfig(level=log_level, format=log_format)
 
-        elif command == Command.CMD_FILE_REMOVE:
-            filename = "" # Initialize filename
-            try:
-                filename = payload.decode('utf-8')
-                if not _is_safe_path(filename):
-                    return
+    state = State()
+    state.allowed_commands = config.get("allowed_commands", "").split()
+    state.file_system_root = config.get("file_system_root", "/root/yun_files")
 
-                logging.info(f"Removing file: {filename}")
-                os.remove(filename)
-                
-                send_frame(Status.OK.value, b'File removed')
+    tls_params: dict[str, Any] | None = None
+    if config.get("mqtt_tls", "0") == "1":
+        logger.info("TLS for MQTT is enabled.")
+        ca_file = config.get("mqtt_cafile")
+        cert_file = config.get("mqtt_certfile")
+        key_file = config.get("mqtt_keyfile")
 
-            except FileNotFoundError:
-                logging.error(f"File not found for remove: {filename}")
-                send_frame(Status.ERROR.value, b"File not found")
-            except Exception as e:
-                logging.error(f"Error removing file {filename}: {e}")
-                send_frame(Status.ERROR.value, str(e).encode('utf-8'))
-
-        elif command == Command.CMD_PROCESS_RUN:
-            cmd_str = payload.decode('utf-8')
-            logging.info(f"Received PROCESS_RUN for command: '{cmd_str}'")
-            try:
-                result = subprocess.run(cmd_str, shell=True, capture_output=True, text=True, timeout=10)
-                response = result.stdout
-                logging.info(f"Command stdout: {response}")
-                send_frame(Command.CMD_PROCESS_RUN_RESP.value, response.encode('utf-8'))
-            except Exception as e:
-                logging.error(f"Error running process '{cmd_str}': {e}")
-                send_frame(Command.CMD_PROCESS_RUN_RESP.value, str(e).encode('utf-8'))
-
-        elif command == Command.CMD_PROCESS_RUN_ASYNC:
-            global next_pid
-            cmd_str = payload.decode('utf-8')
-            logging.info(f"Received PROCESS_RUN_ASYNC for command: '{cmd_str}'")
-            try:
-                process = subprocess.Popen(cmd_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                with process_lock:
-                    pid = next_pid
-                    running_processes[pid] = process
-                    next_pid += 1
-                logging.info(f"Started process '{cmd_str}' with internal PID {pid} (OS PID {process.pid})")
-                send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, str(pid).encode('utf-8'))
-            except Exception as e:
-                logging.error(f"Error running async process '{cmd_str}': {e}")
-                send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"0")
-
-        elif command == Command.CMD_PROCESS_POLL:
-            pid_str = payload.decode('utf-8')
-            pid = int(pid_str)
-            logging.info(f"Received PROCESS_POLL for PID {pid}")
-            output = ""
-            with process_lock:
-                if pid in running_processes:
-                    process = running_processes[pid]
-                    try:
-                        output = process.stdout.read()
-                    except Exception as e:
-                        output = f"Error reading stdout for PID {pid}: {e}"
-                    if process.poll() is not None:
-                        logging.info(f"Process with PID {pid} has finished. Cleaning up.")
-                        del running_processes[pid]
-                else:
-                    output = f"No process found with PID {pid}"
-            logging.info(f"Polling PID {pid}, output: '{output}'")
-            send_frame(Command.CMD_PROCESS_POLL_RESP.value, output.encode('utf-8'))
-
-        elif command == Command.CMD_PROCESS_KILL:
-            pid_str = payload.decode('utf-8')
-            pid = int(pid_str)
-            logging.info(f"Received PROCESS_KILL for PID {pid}")
-            with process_lock:
-                if pid in running_processes:
-                    try:
-                        running_processes[pid].kill()
-                        logging.info(f"Killed process with PID {pid}")
-                        del running_processes[pid]
-                    except Exception as e:
-                        logging.error(f"Error killing process PID {pid}: {e}")
-                else:
-                    logging.warning(f"Attempted to kill non-existent PID {pid}")
+        if ca_file and cert_file and key_file:
+            tls_context = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH, cafile=ca_file
+            )
+            tls_context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+            tls_params = {"tls_context": tls_context, "tls_insecure": False}
+            logger.info(
+                "Using TLS with: CA='%s', Cert='%s', Key='%s'",
+                ca_file,
+                cert_file,
+                key_file,
+            )
         else:
-            logging.warning(f"Unknown command received: {command}")
-            send_frame(Status.CMD_UNKNOWN.value, b'')
+            logger.warning(
+                "TLS is enabled, but some certificate files are missing. Proceeding without TLS."
+            )
 
-    except (ValueError, IndexError, UnicodeDecodeError, struct.error) as e:
-        logging.error(f"Error processing frame: {e}")
-        try:
-            send_frame(Status.ERROR.value, str(e).encode('utf-8'))
-        except Exception as e2:
-            logging.error(f"Could not even send error response: {e2}")
+    logger.info("Starting async yun-bridge daemon.")
 
-
-def get_uci_config(option, default=None):
-    """
-    Gets a configuration value from OpenWrt's UCI system.
-    Returns the value, or a default if not found.
-    """
     try:
-        cmd = ["uci", "get", f"yunbridge.main.{option}"]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return result.stdout.strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return default
-
-
-def main():
-    """Main function."""
-    global ser, client
-
-    # Get configuration from UCI, with sane defaults
-    is_debug = get_uci_config('debug', '0') == '1'
-    mqtt_host = get_uci_config('mqtt_host', '127.0.0.1')
-    mqtt_port = int(get_uci_config('mqtt_port', '1883'))
-    serial_port = get_uci_config('serial_port', '/dev/ttyATH0')
-    serial_baud = int(get_uci_config('serial_baud', '115200'))
-
-    # Setup logging
-    log_level = logging.DEBUG if is_debug else logging.INFO
-    log_format = '%(asctime)s - %(levelname)s - %(message)s'
-    # Remove existing handlers before adding a new one
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-    if is_debug:
-        logging.basicConfig(level=log_level, format=log_format)  # Log to console
-    else:
-        logging.basicConfig(level=log_level, filename='/var/log/yun-bridge.log', filemode='a', format=log_format)
-
-    logging.info("Starting yun-bridge daemon.")
-    logging.info(f"Config - MQTT Host: {mqtt_host}:{mqtt_port}")
-    logging.info(f"Config - Serial: {serial_port} @ {serial_baud} baud")
-    logging.info(f"Config - Debug: {is_debug}")
-
-    # Ensure the script runs as a single instance
-    pid_file_path = "/var/run/yun-bridge.pid"
-    pid_file = None
-    try:
-        pid_file = open(pid_file_path, "w")
-        fcntl.lockf(pid_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        pid_file.write(str(os.getpid()))
-        pid_file.flush()
-    except IOError:
-        logging.error("Another instance of yun-bridge is running. Exiting.")
-        sys.exit(1)
-
-    # Setup MQTT client
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
-    try:
-        client.connect(mqtt_host, mqtt_port, 60)
-    except Exception as e:
-        logging.error(f"Can't connect to MQTT broker at {mqtt_host}:{mqtt_port}: {e}")
-        sys.exit(1)
-    client.loop_start()
-
-    serial_buffer = b''
-    from yunrpc import protocol
-
-    # Main loop
-    try:
-        while True:
-            try:
-                if not ser or not ser.is_open:
-                    logging.info(f"Attempting to connect to serial port {serial_port}...")
-                    try:
-                        ser = serial.Serial(serial_port, serial_baud, timeout=1)
-                        ser.reset_input_buffer()
-                        logging.info("Serial port connected successfully.")
-                    except serial.SerialException as e:
-                        logging.warning(f"Serial port not ready: {e}. Retrying in 5 seconds...")
-                        ser = None
-                        time.sleep(5)
-                        continue
-
-                if ser.in_waiting > 0:
-                    with serial_lock:
-                        serial_buffer += ser.read(ser.in_waiting)
-                
-                # Process the buffer to find and parse frames
-                buffer_modified = True
-                while buffer_modified:
-                    buffer_modified = False
-                    start_index = serial_buffer.find(protocol.START_BYTE)
-
-                    if start_index == -1:
-                        if len(serial_buffer) > 0:
-                            logging.warning(f"Discarding {len(serial_buffer)} bytes of junk data: {serial_buffer.hex()}")
-                            serial_buffer = b''
-                        break
-
-                    if start_index > 0:
-                        logging.warning(f"Discarding {start_index} bytes of junk data before frame: {serial_buffer[:start_index].hex()}")
-                        serial_buffer = serial_buffer[start_index:]
-                        buffer_modified = True
-                        continue
-
-                    if len(serial_buffer) < protocol.MIN_FRAME_SIZE:
-                        break
-
-                    try:
-                        _, payload_len, _ = struct.unpack(protocol.CRC_COVERED_HEADER_FORMAT, serial_buffer[1:1+protocol.CRC_COVERED_HEADER_SIZE])
-                    except struct.error:
-                        logging.warning("Could not unpack header, discarding start byte.")
-                        serial_buffer = serial_buffer[1:]
-                        buffer_modified = True
-                        continue
-
-                    full_frame_len = 1 + protocol.CRC_COVERED_HEADER_SIZE + payload_len + protocol.CRC_SIZE
-                    
-                    if len(serial_buffer) < full_frame_len:
-                        break
-
-                    frame_bytes = serial_buffer[:full_frame_len]
-                    
-                    try:
-                        command_id, payload = Frame.parse(frame_bytes)
-                        handle_mcu_frame(command_id, payload)
-                        serial_buffer = serial_buffer[full_frame_len:]
-                        buffer_modified = True
-
-                    except ValueError as e:
-                        logging.warning(f"Frame parsing error: {e}. Discarding start byte and rescanning.")
-                        serial_buffer = serial_buffer[1:]
-                        buffer_modified = True
-                
-                time.sleep(0.01)
-
-            except (serial.SerialException, IOError) as e:
-                logging.error(f"Serial communication error: {e}")
-                if ser:
-                    ser.close()
-                ser = None
-                time.sleep(5)
-            
-            except Exception as e:
-                logging.critical(f"Unhandled exception in main loop: {e}", exc_info=True)
-                break
-    except KeyboardInterrupt:
-        logging.info("KeyboardInterrupt received, shutting down.")
-
-    # Cleanup
-    logging.info("Shutting down yun-bridge.")
-    if client:
-        client.loop_stop()
-    if ser and ser.is_open:
-        ser.close()
-    
-    if pid_file:
-        fcntl.lockf(pid_file, fcntl.LOCK_UN)
-        pid_file.close()
-        try:
-            os.remove(pid_file_path)
-        except OSError as e:
-            logging.error(f"Error removing pid file: {e}")
-
-    sys.exit(0)
+        s_task = asyncio.create_task(serial_reader_task(serial_port, serial_baud, state))
+        m_task = asyncio.create_task(
+            mqtt_task(mqtt_host, mqtt_port, state, tls_params=tls_params)
+        )
+        await asyncio.gather(s_task, m_task)
+    finally:
+        logger.info("Shutting down yun-bridge.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logger.info("Daemon shut down by user.")

@@ -1,53 +1,76 @@
-// rpc_protocol.h
+/*
+ * This file is part of Arduino Yun Ecosystem v2.
+ *
+ * Copyright (C) 2025 Ignacio Santolin and contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
 #ifndef RPC_PROTOCOL_H
 #define RPC_PROTOCOL_H
 
-#include <stdint.h>
+#include "rpc_frame.h"
 
-namespace rpc {
+// Protocol constants (PROTOCOL_VERSION, MAX_PAYLOAD_SIZE) are defined in
+// rpc_frame.h
 
-// Core Commands (Microcontroller <-> Linux)
-enum Command : uint16_t {
-    // Pin Operations
-    CMD_SET_PIN_MODE = 0x10,
-    CMD_DIGITAL_WRITE = 0x11,
-    CMD_ANALOG_WRITE = 0x12,
-    CMD_DIGITAL_READ = 0x13,
-    CMD_ANALOG_READ = 0x14,
-    CMD_DIGITAL_READ_RESP = 0x15,
-    CMD_ANALOG_READ_RESP = 0x16,
+// Status Codes
+#define STATUS_OK 0x00
+#define STATUS_ERROR 0x01
+#define STATUS_CMD_UNKNOWN 0x02
+#define STATUS_MALFORMED 0x03
+#define STATUS_CRC_MISMATCH 0x04
+#define STATUS_TIMEOUT 0x05
+#define STATUS_NOT_IMPLEMENTED 0x06
+#define STATUS_ACK 0x07
 
-    // Console commands
-    CMD_CONSOLE_WRITE = 0x20,
+// Flow Control & System Commands
+#define CMD_XOFF 0x08
+#define CMD_XON 0x09
+#define CMD_SET_BAUD_RATE 0x0A
 
-    // DataStore commands
-    CMD_DATASTORE_PUT = 0x30,
-    CMD_DATASTORE_GET = 0x31,
-    CMD_DATASTORE_GET_RESP = 0x81,
+// Command Identifiers
+#define CMD_SET_PIN_MODE 0x10
+#define CMD_DIGITAL_WRITE 0x11
+#define CMD_ANALOG_WRITE 0x12
+#define CMD_DIGITAL_READ 0x13
+#define CMD_ANALOG_READ 0x14
+#define CMD_DIGITAL_READ_RESP 0x15
+#define CMD_ANALOG_READ_RESP 0x16
 
-    // Mailbox commands
-    CMD_MAILBOX_READ = 0x40,
-    CMD_MAILBOX_PROCESSED = 0x41,
-    CMD_MAILBOX_AVAILABLE = 0x42,
-    CMD_MAILBOX_READ_RESP = 0x90,
-    CMD_MAILBOX_AVAILABLE_RESP = 0x92,
+#define CMD_CONSOLE_WRITE 0x20
 
-    // FileIO commands
-    CMD_FILE_WRITE = 0x50,
-    CMD_FILE_READ = 0x51,
-    CMD_FILE_REMOVE = 0x52,
-    CMD_FILE_READ_RESP = 0xA1,
+#define CMD_DATASTORE_PUT 0x30
+#define CMD_DATASTORE_GET 0x31
+#define CMD_DATASTORE_GET_RESP 0x81
 
-    // Process commands
-    CMD_PROCESS_RUN = 0x60,
-    CMD_PROCESS_RUN_ASYNC = 0x61,
-    CMD_PROCESS_POLL = 0x62,
-    CMD_PROCESS_KILL = 0x63,
-    CMD_PROCESS_RUN_RESP = 0xB0,
-    CMD_PROCESS_RUN_ASYNC_RESP = 0xB1,
-    CMD_PROCESS_POLL_RESP = 0xB2
-};
+#define CMD_MAILBOX_READ 0x40
+#define CMD_MAILBOX_PROCESSED 0x41
+#define CMD_MAILBOX_AVAILABLE 0x42
+#define CMD_MAILBOX_READ_RESP 0x90
+#define CMD_MAILBOX_AVAILABLE_RESP 0x92
 
-} // namespace rpc
+#define CMD_FILE_WRITE 0x50
+#define CMD_FILE_READ 0x51
+#define CMD_FILE_REMOVE 0x52
+#define CMD_FILE_READ_RESP 0xA1
 
-#endif // RPC_PROTOCOL_H
+#define CMD_PROCESS_RUN 0x60
+#define CMD_PROCESS_RUN_ASYNC 0x61
+#define CMD_PROCESS_POLL 0x62
+#define CMD_PROCESS_KILL 0x63
+#define CMD_PROCESS_RUN_RESP 0xB0
+#define CMD_PROCESS_RUN_ASYNC_RESP 0xB1
+#define CMD_PROCESS_POLL_RESP 0xB2
+
+#endif  // RPC_PROTOCOL_H

@@ -1,5 +1,4 @@
-"""
-This file is part of Arduino Yun Ecosystem v2.
+"""This file is part of Arduino Yun Ecosystem v2.
 
 Copyright (C) 2025 Ignacio Santolin and contributors
 
@@ -19,17 +18,18 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from setuptools import setup
 
 setup(
-    name='openwrt-yun-client-python',
-    version='1.0.0',
-    description='Python client for Arduino Yun v2 Bridge',
-    author='isantolin',
-    author_email='',
-    packages=['yunbridge_client'],
+    name="openwrt-yun-client-python",
+    version="1.0.0",
+    description="Python client for Arduino Yun v2 Bridge",
+    author="isantolin",
+    author_email="",
+    packages=["yunbridge_client"],
     install_requires=[
-        'paho-mqtt',
+        "paho-mqtt",
+        "aiomqtt",
     ],
     classifiers=[
-        'Programming Language :: Python :: 3',
-        'Operating System :: POSIX :: Linux',
+        "Programming Language :: Python :: 3",
+        "Operating System :: POSIX :: Linux",
     ],
 )

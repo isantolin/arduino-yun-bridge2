@@ -1,5 +1,5 @@
 #include "rpc_frame.h"
-#include "crc.h"
+
 #include <string.h>
 
 namespace rpc {
@@ -7,115 +7,108 @@ namespace rpc {
 // --- FrameParser ---
 
 FrameParser::FrameParser() {
-    reset();
+  reset();
+  memset(_rx_buffer, 0, sizeof(_rx_buffer));
 }
 
-void FrameParser::reset() {
-    _state = State::WAIT_FOR_START;
-    _bytes_received = 0;
-}
+void FrameParser::reset() { _rx_buffer_ptr = 0; }
 
 bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
-    switch (_state) {
-        case State::WAIT_FOR_START:
-            if (byte == START_BYTE) {
-                _state = State::READ_HEADER;
-                _bytes_received = 0;
-            }
-            break;
-
-        case State::READ_HEADER:
-            _header_buffer[_bytes_received++] = byte;
-            if (_bytes_received >= sizeof(FrameHeader)) {
-                // Safely parse the header from the buffer
-                _current_frame.header.version = _header_buffer[0];
-                _current_frame.header.payload_length = (uint16_t)_header_buffer[1] | ((uint16_t)_header_buffer[2] << 8);
-                _current_frame.header.command_id = (uint16_t)_header_buffer[3] | ((uint16_t)_header_buffer[4] << 8);
-
-                if (_current_frame.header.version != PROTOCOL_VERSION || _current_frame.header.payload_length > MAX_PAYLOAD_SIZE) {
-                    reset(); // Invalid header, reset and wait for a new frame
-                    break;
-                }
-
-                _bytes_received = 0;
-                if (_current_frame.header.payload_length == 0) {
-                    _state = State::READ_CRC;
-                } else {
-                    _state = State::READ_PAYLOAD;
-                }
-            }
-            break;
-
-        case State::READ_PAYLOAD:
-            _current_frame.payload[_bytes_received++] = byte;
-            if (_bytes_received >= _current_frame.header.payload_length) {
-                _bytes_received = 0;
-                _state = State::READ_CRC;
-            }
-            break;
-
-        case State::READ_CRC:
-            _crc_buffer[_bytes_received++] = byte;
-            if (_bytes_received >= sizeof(uint16_t)) {
-                uint16_t received_crc = (uint16_t)_crc_buffer[0] | ((uint16_t)_crc_buffer[1] << 8);
-
-                // Calculate CRC on header and payload
-                uint16_t calculated_crc = crc16_ccitt_init();
-                calculated_crc = crc16_ccitt_update(calculated_crc, _header_buffer, sizeof(FrameHeader));
-                calculated_crc = crc16_ccitt_update(calculated_crc, _current_frame.payload, _current_frame.header.payload_length);
-
-                bool crc_ok = (calculated_crc == received_crc);
-
-                reset(); // Reset for the next frame regardless of CRC outcome
-
-                if (crc_ok) {
-                    out_frame = _current_frame;
-                    return true;
-                }
-            }
-            break;
+  // If we receive a zero byte, the packet is complete.
+  if (byte == 0) {
+    if (_rx_buffer_ptr == 0) {
+      return false;  // Empty packet, ignore.
     }
-    return false;
-}
 
+    // We have a complete COBS-encoded packet in _rx_buffer.
+    uint8_t decoded_buffer[MAX_RAW_FRAME_SIZE];
+    size_t decoded_len =
+        cobs::decode(_rx_buffer, _rx_buffer_ptr, decoded_buffer);
+
+    reset();  // Reset for the next packet.
+
+    if (decoded_len == 0) {
+      return false;  // COBS decoding failed.
+    }
+
+    // --- Validate CRC ---
+    // The last 2 bytes of the decoded buffer are the CRC.
+    if (decoded_len < sizeof(uint16_t)) {
+      return false;  // Not even enough data for a CRC.
+    }
+    size_t crc_start = decoded_len - sizeof(uint16_t);
+    uint16_t received_crc = (uint16_t)decoded_buffer[crc_start] |
+                            ((uint16_t)decoded_buffer[crc_start + 1] << 8);
+    uint16_t calculated_crc = crc16_ccitt(decoded_buffer, crc_start);
+
+    if (received_crc != calculated_crc) {
+      return false;  // CRC mismatch.
+    }
+
+    // --- Extract Header ---
+    size_t data_len = crc_start;  // Length of data part (header + payload)
+    if (data_len < sizeof(FrameHeader)) {
+      return false;  // Not enough data for a header.
+    }
+    memcpy(&out_frame.header, decoded_buffer, sizeof(FrameHeader));
+
+    // --- Validate Header ---
+    if (out_frame.header.version != PROTOCOL_VERSION ||
+        out_frame.header.payload_length > MAX_PAYLOAD_SIZE ||
+        (sizeof(FrameHeader) + out_frame.header.payload_length) != data_len) {
+      return false;  // Invalid version, payload length, or overall size.
+    }
+
+    // --- Extract Payload ---
+    if (out_frame.header.payload_length > 0) {
+      memcpy(out_frame.payload, decoded_buffer + sizeof(FrameHeader),
+             out_frame.header.payload_length);
+    }
+
+    return true;  // Successfully parsed a frame.
+
+  } else {
+    // Not a zero byte, so add it to the buffer if there's space.
+    if (_rx_buffer_ptr < COBS_BUFFER_SIZE) {
+      _rx_buffer[_rx_buffer_ptr++] = byte;
+    }
+    // If the buffer overflows, the packet will be corrupt and fail COBS/CRC
+    // check later.
+  }
+
+  return false;
+}
 
 // --- FrameBuilder ---
 
 FrameBuilder::FrameBuilder() {}
 
-bool FrameBuilder::build(Stream& stream, uint16_t command_id, const uint8_t* payload, uint16_t payload_len) {
-    if (payload_len > MAX_PAYLOAD_SIZE) {
-        return false;
-    }
+size_t FrameBuilder::build(uint8_t* buffer, uint16_t command_id,
+                           const uint8_t* payload, uint16_t payload_len) {
+  if (payload_len > MAX_PAYLOAD_SIZE) {
+    return 0;
+  }
 
-    stream.write(START_BYTE);
+  // --- Header ---
+  FrameHeader header;
+  header.version = PROTOCOL_VERSION;
+  header.payload_length = payload_len;
+  header.command_id = command_id;
 
-    // --- Header ---
-    uint8_t header[sizeof(FrameHeader)];
-    header[0] = PROTOCOL_VERSION;
-    header[1] = payload_len & 0xFF;
-    header[2] = (payload_len >> 8) & 0xFF;
-    header[3] = command_id & 0xFF;
-    header[4] = (command_id >> 8) & 0xFF;
-    stream.write(header, sizeof(FrameHeader));
+  // Copy header and payload into the buffer
+  memcpy(buffer, &header, sizeof(FrameHeader));
+  if (payload && payload_len > 0) {
+    memcpy(buffer + sizeof(FrameHeader), payload, payload_len);
+  }
 
-    // --- Payload ---
-    if (payload && payload_len > 0) {
-        stream.write(payload, payload_len);
-    }
+  size_t data_len = sizeof(FrameHeader) + payload_len;
 
-    // --- CRC ---
-    uint16_t crc = crc16_ccitt_init();
-    crc = crc16_ccitt_update(crc, header, sizeof(FrameHeader));
-    if (payload && payload_len > 0) {
-        crc = crc16_ccitt_update(crc, payload, payload_len);
-    }
+  // --- CRC ---
+  uint16_t crc = crc16_ccitt(buffer, data_len);
+  buffer[data_len] = crc & 0xFF;
+  buffer[data_len + 1] = (crc >> 8) & 0xFF;
 
-    // Write CRC in little-endian format
-    stream.write((uint8_t)(crc & 0xFF));
-    stream.write((uint8_t)((crc >> 8) & 0xFF));
-
-    return true;
+  return data_len + sizeof(uint16_t);  // Return total raw frame length
 }
 
-} // namespace rpc
+}  // namespace rpc

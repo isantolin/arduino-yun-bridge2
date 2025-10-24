@@ -1,6 +1,4 @@
-# yunrpc/protocol.py
-"""
-This file is part of Arduino Yun Ecosystem v2.
+"""This file is part of Arduino Yun Ecosystem v2.
 
 Copyright (C) 2025 Ignacio Santolin and contributors
 
@@ -20,35 +18,31 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 This module defines the constants for the Yun v2 RPC protocol.
 It is the Python counterpart to `rpc_protocol.h`.
 """
-from enum import Enum, IntEnum
 import struct
+from enum import IntEnum
 
-# Frame constants
-START_BYTE = 0x7E
+# --- Protocol Version ---
+PROTOCOL_VERSION: int = 0x02
 
-# < is for little-endian
-# H is for unsigned short (2 bytes) -> PAYLOAD_LEN
-# H is for unsigned short (2 bytes) -> COMMAND_ID
-CRC_COVERED_HEADER_FORMAT = '<BHH'
-CRC_COVERED_HEADER_SIZE = struct.calcsize(CRC_COVERED_HEADER_FORMAT)
+# --- Frame Structure ---
+# The header format is: 1-byte version, 2-byte payload length, 2-byte command ID
+# < denotes little-endian byte order.
+CRC_COVERED_HEADER_FORMAT: str = "<BHH"
+CRC_COVERED_HEADER_SIZE: int = struct.calcsize(CRC_COVERED_HEADER_FORMAT)
 
-# CRC format
-# < is for little-endian
-CRC_FORMAT = '<H'
-CRC_SIZE = struct.calcsize(CRC_FORMAT)
+# The CRC format is: 2-byte unsigned short (little-endian)
+CRC_FORMAT: str = "<H"
+CRC_SIZE: int = struct.calcsize(CRC_FORMAT)
 
-# Minimum frame size is a frame with zero payload
-MIN_FRAME_SIZE = CRC_COVERED_HEADER_SIZE + CRC_SIZE
+# A frame's minimum size is the header plus the CRC, for a zero-payload frame.
+MIN_FRAME_SIZE: int = CRC_COVERED_HEADER_SIZE + CRC_SIZE
+MAX_PAYLOAD_SIZE: int = 256
+RPC_BUFFER_SIZE: int = 256
 
-# Frame types
-class FrameType(Enum):
-    COMMAND = 0x01
-    RESPONSE = 0x02
-    NOTIFICATION = 0x03 # Unsolicited message from MCU to Linux
-    SYSTEM = 0x04
 
-# Status codes for responses
-class Status(Enum):
+# --- Status Codes ---
+# These are sent from the MCU to Linux to indicate the result of an operation.
+class Status(IntEnum):
     OK = 0x00
     ERROR = 0x01
     CMD_UNKNOWN = 0x02
@@ -56,9 +50,18 @@ class Status(Enum):
     CRC_MISMATCH = 0x04
     TIMEOUT = 0x05
     NOT_IMPLEMENTED = 0x06
+    ACK = 0x07  # Generic acknowledgment for fire-and-forget commands
 
-# Command identifiers
+
+# --- Command Identifiers ---
+# Commands are sent from Linux to MCU, and responses are sent from MCU to Linux.
+# By convention, response IDs are often related to the command ID.
 class Command(IntEnum):
+    # System Level & Flow Control
+    CMD_XOFF = 0x08  # MCU -> Linux: Pause transmission
+    CMD_XON = 0x09   # MCU -> Linux: Resume transmission
+    CMD_SET_BAUD_RATE = 0x0A # Linux -> MCU: Set new baud rate
+
     # Pin Operations
     CMD_SET_PIN_MODE = 0x10
     CMD_DIGITAL_WRITE = 0x11
@@ -68,28 +71,28 @@ class Command(IntEnum):
     CMD_DIGITAL_READ_RESP = 0x15
     CMD_ANALOG_READ_RESP = 0x16
 
-    # Console commands
-    CMD_CONSOLE_WRITE = 0x20
+    # Console I/O
+    CMD_CONSOLE_WRITE = 0x20  # Can be Linux -> MCU or MCU -> Linux
 
-    # DataStore commands
+    # DataStore (Key-Value Store)
     CMD_DATASTORE_PUT = 0x30
     CMD_DATASTORE_GET = 0x31
     CMD_DATASTORE_GET_RESP = 0x81
 
-    # Mailbox commands
+    # Mailbox
     CMD_MAILBOX_READ = 0x40
-    CMD_MAILBOX_PROCESSED = 0x41
+    CMD_MAILBOX_PROCESSED = 0x41 # MCU -> Linux: A message was processed
     CMD_MAILBOX_AVAILABLE = 0x42
     CMD_MAILBOX_READ_RESP = 0x90
     CMD_MAILBOX_AVAILABLE_RESP = 0x92
 
-    # FileIO commands
+    # File I/O
     CMD_FILE_WRITE = 0x50
     CMD_FILE_READ = 0x51
     CMD_FILE_REMOVE = 0x52
     CMD_FILE_READ_RESP = 0xA1
 
-    # Process commands
+    # Process Management
     CMD_PROCESS_RUN = 0x60
     CMD_PROCESS_RUN_ASYNC = 0x61
     CMD_PROCESS_POLL = 0x62
@@ -97,7 +100,3 @@ class Command(IntEnum):
     CMD_PROCESS_RUN_RESP = 0xB0
     CMD_PROCESS_RUN_ASYNC_RESP = 0xB1
     CMD_PROCESS_POLL_RESP = 0xB2
-
-PROTOCOL_VERSION = 2
-RPC_BUFFER_SIZE = 256
-

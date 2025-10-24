@@ -115,7 +115,7 @@ done
 pushd "$SDK_DIR"
 # Enable required Yun packages and dependencies automatically
 REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
-REQUIRED_DEPS="python3 python3-pyserial python3-paho-mqtt luci-base luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json"
+REQUIRED_DEPS="python3 python3-pyserial python3-paho-mqtt luci-base luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json python3-aio-mqtt-mod"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then

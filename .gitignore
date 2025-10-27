@@ -1,5 +1,6 @@
 # OpenWRT SDK and build artifacts
 openwrt-sdk/
+aio-mqtt-master/
 bin/
 build/
 *.ipk

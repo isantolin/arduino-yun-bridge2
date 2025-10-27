@@ -8,7 +8,7 @@
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# This program is distributed in the hope that it will be useful,
+# This program is distributed in the hope that it is useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
@@ -33,7 +33,9 @@ define Package/$(PKG_NAME)
 	SECTION:=utils
 	CATEGORY:=Utilities
 	TITLE:=Yun Bridge Python Daemon
-	DEPENDS:=+openwrt-yun-core +python3 +python3-pyserial +python3-paho-mqtt
+	# ANÁLISIS: Añadido +python3-asyncio, que es una dependencia de runtime
+	# faltante para el demonio (bridge_daemon.py).
+	DEPENDS:=+openwrt-yun-core +python3 +python3-asyncio +python3-pyserial +python3-aio-mqtt-mod
 endef
 
 define Package/$(PKG_NAME)/description
@@ -43,20 +45,26 @@ endef
 define Build/Compile
 endef
 
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./bridge_daemon.py $(PKG_BUILD_DIR)/
+	$(CP) -r ./yunrpc $(PKG_BUILD_DIR)/
+	$(CP) ./yunbridge.init $(PKG_BUILD_DIR)/
+endef
+
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/yunbridge
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/etc/init.d
-	# Always copy sources from package dir to build dir (robust to clean)
-	cp $(CURDIR)/bridge_daemon.py $(PKG_BUILD_DIR)/
-	cp -r $(CURDIR)/yunrpc $(PKG_BUILD_DIR)/
-	cp $(CURDIR)/yunbridge.init $(PKG_BUILD_DIR)/
-	cp $(PKG_BUILD_DIR)/bridge_daemon.py $(1)/usr/libexec/yunbridge/
-	cp -r $(PKG_BUILD_DIR)/yunrpc $(1)/usr/libexec/yunbridge/
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bridge_daemon.py $(1)/usr/libexec/yunbridge/
+	$(CP) $(PKG_BUILD_DIR)/yunrpc $(1)/usr/libexec/yunbridge/
 	echo -e '#!/bin/sh\nexec python3 /usr/libexec/yunbridge/bridge_daemon.py' > $(1)/usr/bin/yunbridge
 	chmod 755 $(1)/usr/bin/yunbridge
-	cp $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge
-	chmod 755 $(1)/etc/init.d/yunbridge
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge
+endef
+
+define Package/$(PKG_NAME)/clean
+	rm -rf $(PKG_BUILD_DIR)
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

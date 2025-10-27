@@ -23,7 +23,9 @@
 # Uso: ./compile.sh
 set -e
 
-OPENWRT_VERSION="24.10.3"
+# Default OpenWRT version, can be overridden by the first argument
+OPENWRT_VERSION=${1:-"24.10.4"}
+
 OPENWRT_URL="https://downloads.openwrt.org/releases/"$OPENWRT_VERSION"/targets/ath79/generic/openwrt-sdk-"$OPENWRT_VERSION"-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
 SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"

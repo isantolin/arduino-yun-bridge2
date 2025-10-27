@@ -5,7 +5,7 @@ PKG_NAME:=luci-app-yunbridge
 PKG_VERSION:=1.0
 PKG_RELEASE:=1
 
-PKG_MAINTAINER:=Your Name <you@example.com>
+PKG_MAINTAINER:=Ignacio Santolin and contributors
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -20,7 +20,7 @@ define Package/$(PKG_NAME)
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
 	TITLE:=LuCI Support for YunBridge (system Python only)
-		DEPENDS:=+luci-base +openwrt-yun-core +python3-aio-mqtt-mod
+		DEPENDS:=+luci-base +openwrt-yun-core +python3-aio-mqtt-mod +mosquitto-client
 endef
 
 

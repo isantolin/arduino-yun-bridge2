@@ -21,19 +21,26 @@
 
 set -e
 
-# Determine the Arduino libraries directory, creating it if necessary
-if [ -d "$HOME/Documents/Arduino/libraries" ]; then
-  LIB_DIR="$HOME/Documents/Arduino/libraries"
-  echo "[INFO] Found Arduino libraries at: $LIB_DIR"
-elif [ -d "$HOME/Arduino/libraries" ]; then
-  LIB_DIR="$HOME/Arduino/libraries"
-  echo "[INFO] Found Arduino libraries at: $LIB_DIR"
+# Allow user to override the Arduino libraries directory
+if [ -n "$1" ]; then
+  LIB_DIR="$1"
+  echo "[INFO] Using user-provided Arduino libraries directory: $LIB_DIR"
 else
-  # Default to creating the standard Arduino libraries directory
-  LIB_DIR="$HOME/Arduino/libraries"
-  echo "[WARN] Arduino libraries directory not found. Creating it at: $LIB_DIR"
-  mkdir -p "$LIB_DIR"
+  # Determine the Arduino libraries directory automatically
+  if [ -d "$HOME/Documents/Arduino/libraries" ]; then
+    LIB_DIR="$HOME/Documents/Arduino/libraries"
+    echo "[INFO] Found Arduino libraries at: $LIB_DIR"
+  elif [ -d "$HOME/Arduino/libraries" ]; then
+    LIB_DIR="$HOME/Arduino/libraries"
+    echo "[INFO] Found Arduino libraries at: $LIB_DIR"
+  else
+    # Default to creating the standard Arduino libraries directory
+    LIB_DIR="$HOME/Arduino/libraries"
+    echo "[WARN] Arduino libraries directory not found. Creating it at: $LIB_DIR"
+  fi
 fi
+
+mkdir -p "$LIB_DIR"
 
 LIB_DST="$LIB_DIR/YunBridge"
 

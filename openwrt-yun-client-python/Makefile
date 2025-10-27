@@ -21,10 +21,10 @@
 
 all: wheel
 
-
 clean:
+	@echo "[CLEAN] Removing build artifacts for openwrt-yun-client-python"
 	rm -rf dist build *.egg-info
 
 wheel:
-	@echo "[WHEEL] Compilando openwrt-yun-client-python (.whl)"
+	@echo "[WHEEL] Building openwrt-yun-client-python (.whl)"
 	python3 -m build --wheel

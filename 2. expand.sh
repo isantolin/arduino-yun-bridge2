@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 #
 # OpenWrt Extroot and SWAP Automation Script (Robust Mode)
 # *** ROBUST: Verifies both Extroot and SWAP configuration and size. ***
@@ -8,18 +9,33 @@
 #
 
 # --- CONFIGURATION VARIABLES ---
-DEVICE="/dev/sda1"
+# DEVICE="<detected_sd_device>" # This will be determined dynamically
 MOUNT_POINT="/mnt/extroot_temp"
 LOG_FILE="/var/log/extroot_script.log"
 # Expected Sizes
 MIN_OVERLAY_KB=102400     # Minimum 100 MB to confirm external SD
-SWAP_EXPECTED_KB=1048576  # 1 GB (1024 * 1024 KB)
-SWAP_SIZE_MB=1024         # Size to create
+SWAP_SIZE_MB=${1:-1024}         # Size to create, default 1024 MB
+SWAP_EXPECTED_KB=$((SWAP_SIZE_MB * 1024))
 SWAP_FILE_PATH="/swapfile"
 # ----------------------------------
 
+# 1. Find the SD card device dynamically
 echo "--- Starting Extroot and SWAP Script (Robust Mode) ---" | tee -a $LOG_FILE
-echo "Target Device: $DEVICE" | tee -a $LOG_FILE
+echo "Attempting to find SD card device..." | tee -a $LOG_FILE
+
+# List all block devices, filter out internal flash (mmcblk0) and loop devices
+# Prioritize devices that are not mmcblk0 and have at least one partition
+# This heuristic tries to find common SD card names like mmcblk1 or sda
+DETECTED_DEVICE=$(ls -l /sys/block/ | grep -E 'mmcblk[0-9]|sd[a-z]' | awk '{print $9}' | grep -v 'mmcblk0' | grep -v 'loop' | head -n 1)
+
+if [ -z "$DETECTED_DEVICE" ]; then
+    echo "ERROR! Could not automatically find SD card device. Please ensure it's inserted." | tee -a $LOG_FILE
+    echo "You may need to manually edit this script to set the 'DEVICE' variable, e.g., DEVICE="/dev/mmcblk1" or DEVICE="/dev/sda"." | tee -a $LOG_FILE
+    exit 1
+fi
+
+DEVICE="/dev/$DETECTED_DEVICE"
+echo "Identified potential SD card device: $DEVICE" | tee -a $LOG_FILE
 
 # --- VERIFICATION FUNCTIONS ---
 
@@ -67,9 +83,10 @@ check_swap_size() {
 
 # 1. INSTALL REQUIRED PACKAGES
 echo "1. Checking and installing required packages..." | tee -a $LOG_FILE
-if opkg list-installed | grep -q "block-mount"; then
-    echo "   Extroot packages already installed." | tee -a $LOG_FILE
-else
+
+# Revisión corregida: Comprueba la herramienta más importante (mkfs.ext4)
+if ! command -v mkfs.ext4 > /dev/null; then
+    echo "   [FAIL] mkfs.ext4 not found. Installing e2fsprogs and dependencies..." | tee -a $LOG_FILE
     opkg update 2>&1 | tee -a $LOG_FILE
     opkg install block-mount kmod-fs-ext4 e2fsprogs util-linux-mountpoint 2>&1 | tee -a $LOG_FILE
 
@@ -77,6 +94,8 @@ else
         echo "ERROR! Package installation failed. Aborting." | tee -a $LOG_FILE
         exit 1
     fi
+else
+    echo "   [OK] Required packages (e2fsprogs) are already installed." | tee -a $LOG_FILE
 fi
 
 # 2. EXTROOT CONFIGURATION (Steps 2.1 to 2.6)
@@ -177,6 +196,11 @@ fi
 # 4. SAVE AND REBOOT
 echo "4. Saving final configuration and rebooting..." | tee -a $LOG_FILE
 uci commit fstab
+
+if [ $? -ne 0 ]; then
+    echo "ERROR! Failed to commit fstab changes. Aborting." | tee -a $LOG_FILE
+    exit 1
+fi
 
 echo "   Configurations verified/updated. System will reboot in 5 seconds." | tee -a $LOG_FILE
 echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE

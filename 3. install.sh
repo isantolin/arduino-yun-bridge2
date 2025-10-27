@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 # This file is part of Arduino Yun Ecosystem v2.
 # Copyright (C) 2025 Ignacio Santolin and contributors
 # This program is free software: you can redistribute it and/or modify
@@ -48,8 +49,21 @@ opkg update
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
 echo "[STEP 2/6] Installing essential dependencies..."
-#  Minimal system dependencies. || true prevents script exit on non-fatal errors.
-opkg install python3 python3-pip python3-decimal luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json python3-pyserial python3-paho-mqtt python3-aio-mqtt-mod || true
+#  Install essential packages one by one, checking first.
+opkg install python3 python3-pip python3-pyserial python3-asyncio python3-aio-mqtt-mod \
+    coreutils-stty mosquitto-client-ssl luci
+
+echo "Installing pyserial-asyncio via pip..."
+if ! pip3 show pyserial-asyncio > /dev/null 2>&1; then
+    echo "[INFO] pyserial-asyncio not found. Installing..."
+    pip3 install pyserial-asyncio
+else
+    echo "[INFO] pyserial-asyncio is already installed."
+fi
+
+# ANÁLISIS: Se eliminó el bucle 'for pkg in $PACKAGES'
+# Era código muerto: $PACKAGES no estaba definido y los paquetes
+# ya se instalaron en el comando 'opkg install' anterior.
 
 #  --- Stop Existing Daemon ---
 stop_daemon

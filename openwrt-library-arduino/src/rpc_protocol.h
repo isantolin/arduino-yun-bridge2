@@ -28,6 +28,7 @@
 #define STATUS_OK 0x00
 #define STATUS_ERROR 0x01
 #define STATUS_CMD_UNKNOWN 0x02
+// The following status codes are defined for future use but are not yet sent by the MCU.
 #define STATUS_MALFORMED 0x03
 #define STATUS_CRC_MISMATCH 0x04
 #define STATUS_TIMEOUT 0x05
@@ -37,7 +38,7 @@
 // Flow Control & System Commands
 #define CMD_XOFF 0x08
 #define CMD_XON 0x09
-#define CMD_SET_BAUD_RATE 0x0A
+
 
 // Command Identifiers
 #define CMD_SET_PIN_MODE 0x10

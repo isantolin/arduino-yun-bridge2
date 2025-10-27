@@ -27,7 +27,6 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./99-yunbridge-ttyath0.conf $(1)/etc/config/yunbridge-ttyath0
 	$(INSTALL_DIR) $(1)/www/cgi-bin
-	[ -f ./scripts/pin_rest_cgi.py ] && $(INSTALL_BIN) ./scripts/pin_rest_cgi.py $(1)/www/cgi-bin/pin || true
 	$(INSTALL_DIR) $(1)/usr/bin
 	[ -d ./scripts ] && find ./scripts -type f -print0 | xargs -0 -I {} $(INSTALL_BIN) "{}" $(1)/usr/bin/ || true
 

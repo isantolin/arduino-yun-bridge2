@@ -109,7 +109,10 @@ async def main() -> None:
             await asyncio.sleep(3)
 
             listener.cancel()
-            await asyncio.gather(listener, return_exceptions=True)
+            try:
+                await listener
+            except asyncio.CancelledError:
+                logging.info("Message listener task cancelled successfully.")
 
     except Exception as e:
         logging.error("An error occurred: %s", e)

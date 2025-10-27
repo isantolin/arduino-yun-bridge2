@@ -20,9 +20,10 @@ It is the Python counterpart to `rpc_protocol.h`.
 """
 import struct
 from enum import IntEnum
+from typing import Final
 
 # --- Protocol Version ---
-PROTOCOL_VERSION: int = 0x02
+PROTOCOL_VERSION: Final[int] = 0x02
 
 # --- Frame Structure ---
 # The header format is: 1-byte version, 2-byte payload length, 2-byte command ID
@@ -60,7 +61,7 @@ class Command(IntEnum):
     # System Level & Flow Control
     CMD_XOFF = 0x08  # MCU -> Linux: Pause transmission
     CMD_XON = 0x09   # MCU -> Linux: Resume transmission
-    CMD_SET_BAUD_RATE = 0x0A # Linux -> MCU: Set new baud rate
+
 
     # Pin Operations
     CMD_SET_PIN_MODE = 0x10

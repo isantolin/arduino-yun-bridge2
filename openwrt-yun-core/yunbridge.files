@@ -2,4 +2,3 @@
 /usr/bin/yunbridge
 /etc/init.d/yunbridge
 /etc/config/yunbridge-ttyath0
-/www/cgi-bin/pin

@@ -6,7 +6,7 @@
 - WebSockets support (outside Arduino)
 
 ## Communication Protocols
-- Implementation of COBS (Consistent Overhead Byte Stuffing) between OpenWRT and the microcontroller
+
 
 ## Core Yun/OpenWRT
 - Support for new OpenWRT targets

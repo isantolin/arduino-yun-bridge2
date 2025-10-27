@@ -19,15 +19,7 @@
 // Define el pin del LED para facilitar su referencia
 const int ledPin = 13;
 
-// --- Funciones de ayuda para imprimir en ambas consolas ---
-void printToBoth(const char* s) {
-  Console.print(s);
-}
 
-void printlnToBoth(const char* s) {
-  Console.println(s);
-}
-// --- FIN ---
 
 // --- Manejador de Respuesta Asíncrono ---
 // Esta función será llamada por la librería Bridge cuando llegue una respuesta
@@ -39,20 +31,32 @@ void handleDigitalReadResponse(uint8_t pin, int value) {
   Console.println(value);
 }
 
+// --- Manejador de Comandos Genérico ---
+// Esta función será llamada por la librería Bridge para comandos que no tienen
+// un manejador específico registrado.
+void handleCommand(const rpc::Frame& frame) {
+  Console.print("Comando RPC no manejado: ID=0x");
+  Console.print(frame.header.command_id, HEX);
+  Console.print(", Payload Len=");
+  Console.println(frame.header.payload_length);
+}
+
 void setup() {
   // Bridge.begin() inicializa la comunicación serial con Linux a 115200 baudios.
   Bridge.begin();
-  
+
   // Registrar el manejador para las respuestas de lectura digital.
   Bridge.onDigitalReadResponse(handleDigitalReadResponse);
+  // Registrar el manejador genérico para comandos no manejados.
+  Bridge.onCommand(handleCommand);
   
   pinMode(ledPin, OUTPUT);
 
   // Un delay para dar tiempo al lado Linux a arrancar completamente.
   delay(2000);
   
-  printlnToBoth("BridgeControl sketch refactorizado y asíncrono iniciado.");
-  printlnToBoth("Envíe 'READ_D13' por Mailbox para probar la lectura asíncrona.");
+  Console.println("BridgeControl sketch refactorizado y asíncrono iniciado.");
+  Console.println("Envíe 'READ_D13' por Mailbox para probar la lectura asíncrona.");
 }
 
 // Variables para el temporizador no bloqueante del Mailbox
@@ -76,24 +80,24 @@ void loop() {
       Mailbox.read((uint8_t*)msg_buf, msg_len);
       msg_buf[msg_len] = '\0';  // Asegurar la terminación NULL
 
-      printToBoth("Mensaje de Mailbox recibido: ");
-      printlnToBoth(msg_buf);
+      Console.print("Mensaje de Mailbox recibido: ");
+      Console.println(msg_buf);
 
       // Funcionalidad original: controlar LED con "ON" / "OFF"
       if (strcmp(msg_buf, "ON") == 0) {
         digitalWrite(ledPin, HIGH);
-        printlnToBoth("LED 13 encendido por Mailbox");
+        Console.println("LED 13 encendido por Mailbox");
       } else if (strcmp(msg_buf, "OFF") == 0) {
         digitalWrite(ledPin, LOW);
-        printlnToBoth("LED 13 apagado por Mailbox");
+        Console.println("LED 13 apagado por Mailbox");
       } else if (strcmp(msg_buf, "READ_D13") == 0) {
-        printlnToBoth("Solicitando lectura del pin 13 de forma asíncrona...");
+        Console.println("Solicitando lectura del pin 13 de forma asíncrona...");
         Bridge.requestDigitalRead(13);
       } else {
         // --- MEJORA: Feedback de error hacia Linux ---
         char error_msg[100];
         snprintf(error_msg, sizeof(error_msg), "Error: Comando de Mailbox desconocido: '%s'", msg_buf);
-        printlnToBoth(error_msg); // Imprime en la consola de Linux para debugging
+        Console.println(error_msg); // Imprime en la consola de Linux para debugging
       }
     }
   }

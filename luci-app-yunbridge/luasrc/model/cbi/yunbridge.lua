@@ -36,6 +36,17 @@ host.placeholder = "localhost"
 host.rmempty = false
 host.description = translate("Hostname or IP address of the MQTT broker.")
 
+function host.validate(self, value, section)
+    if not value or #value == 0 then
+        return nil, "MQTT host cannot be empty."
+    end
+    -- Basic regex for hostname or IP address
+    if not value:match("^[a-zA-Z0-9][a-zA-Z0-9-.]*[a-zA-Z0-9]$") and not value:match("^[0-9]+%.[0-9]+%.[0-9]+%.[0-9]+$") then
+        return nil, "Invalid MQTT host format."
+    end
+    return value
+end
+
 port = s:option(Value, "mqtt_port", translate("MQTT Port"))
 port.datatype = "port"
 port.placeholder = "1883"
@@ -86,7 +97,7 @@ keyfile:depends("mqtt_tls", "1")
 keyfile.description = translate("Path to the client private key file for mutual TLS authentication.")
 
 -- Opción para el prefijo del Topic MQTT
-topic = s:option(Value, "mqtt_topic", "MQTT Topic Prefix")
+topic = s:option(Value, "mqtt_topic", translate("MQTT Topic Prefix"))
 topic.datatype = "string"
 topic.placeholder = "yun"
 topic.rmempty = false
@@ -102,7 +113,7 @@ function topic.validate(self, value, section)
 end
 
 -- Opción para el puerto serie
-serial = s:option(Value, "serial_port", "Serial Port")
+serial = s:option(Value, "serial_port", translate("Serial Port"))
 serial.datatype = "string"
 serial.placeholder = "/dev/ttyATH0"
 serial.rmempty = false
@@ -118,7 +129,7 @@ function serial.validate(self, value, section)
 end
 
 -- Opción para la velocidad del puerto serie (Baudrate)
-baud = s:option(Value, "serial_baud", "Serial Baudrate")
+baud = s:option(Value, "serial_baud", translate("Serial Baudrate"))
 baud.datatype = "uinteger"
 baud.placeholder = "115200"
 baud.rmempty = false
@@ -130,7 +141,7 @@ baud:value("115200", "115200")
 baud.description = translate("Baud rate for the serial communication. Must match the rate set in the Arduino sketch.")
 
 -- Opción para el puerto WebSocket MQTT
-mqtt_ws_port = s:option(Value, "mqtt_ws_port", "MQTT WebSocket Port")
+mqtt_ws_port = s:option(Value, "mqtt_ws_port", translate("MQTT WebSocket Port"))
 mqtt_ws_port.datatype = "port"
 mqtt_ws_port.placeholder = "9001"
 mqtt_ws_port.rmempty = true
@@ -144,7 +155,7 @@ fs_root.rmempty = false
 fs_root.description = translate("The base directory for file operations requested by the MCU or MQTT.")
 
 -- Opción para habilitar el modo de depuración (Debug)
-debug = s:option(Flag, "debug", "Debug Mode")
+debug = s:option(Flag, "debug", translate("Debug Mode"))
 debug.default = "1"
 debug.rmempty = false
 debug.description = translate("Enable verbose logging for the bridge daemon. Logs are sent to the system log.")

@@ -15,21 +15,25 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
-    name="openwrt-yun-client-python",
-    version="1.0.0",
-    description="Python client for Arduino Yun v2 Bridge",
-    author="isantolin",
-    author_email="",
-    packages=["yunbridge_client"],
+    name='yunbridge-client',
+    version='0.1.0',
+    packages=find_packages(),
     install_requires=[
-        "paho-mqtt",
-        "aiomqtt",
+        'pyserial-asyncio',
     ],
+    description='A Python client for the Arduino Yun Bridge v2',
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    author='Your Name',
+    author_email='your.email@example.com',
+    url='https://github.com/yourusername/arduino-yun-bridge2',
     classifiers=[
-        "Programming Language :: Python :: 3",
-        "Operating System :: POSIX :: Linux",
+        'Programming Language :: Python :: 3',
+        'License :: OSI Approved :: MIT License',
+        'Operating System :: OS Independent',
     ],
+    python_requires='>=3.7',
 )

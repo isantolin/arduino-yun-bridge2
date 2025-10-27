@@ -25,13 +25,14 @@ def encode(data: bytes) -> bytes:
             final[code_ptr] = len(final) - code_ptr
             code_ptr = len(final)
             final.append(0)  # Placeholder for the next code
-        else:
-            final.append(byte)
-            if len(final) - code_ptr == 255:
-                final[code_ptr] = 255
-                if idx + 1 < len(data):
-                    code_ptr = len(final)
-                    final.append(0)  # Placeholder
+            continue
+
+        final.append(byte)
+        if len(final) - code_ptr == 255:
+            final[code_ptr] = 255
+            if idx + 1 < len(data):
+                code_ptr = len(final)
+                final.append(0)  # Placeholder
         idx += 1
 
     final[code_ptr] = len(final) - code_ptr

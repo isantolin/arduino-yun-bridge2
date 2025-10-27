@@ -98,6 +98,8 @@ After the Yun has rebooted and is running from the SD card, you can install the 
 2.  Open the Arduino IDE, and you will find the library in the examples menu.
 3.  Upload a sketch from the examples to your Arduino Yun.
 
+**Important Note:** The `Bridge` library has been updated to be purely asynchronous. It no longer contains blocking functions. All interactions that expect a response from the Linux side must be done using callbacks (e.g., `requestDigitalRead()` and `onDigitalReadResponse()`).
+
 ## Usage
 
 Once everything is installed, you can start interacting with your Yun.
@@ -108,18 +110,25 @@ Open your browser and navigate to your Yun's IP address. You will find the YunBr
 
 ### Python Client Example
 
-Here is a simple example of how to control pin 13 using the Python client library:
+The Python client is a set of conventions on top of MQTT. You can use any MQTT client library to interact with the Yun. Here is an example using `aiomqtt`:
 
 ```python
-from yunbridge_client.plugin_loader import PluginLoader
+import asyncio
+import aiomqtt
 
-# Load the MQTT plugin
-plugin = PluginLoader.load_plugin('mqtt_plugin')('localhost', 1883)
+async def main():
+    async with aiomqtt.Client("your_yun_ip") as client:
+        # Turn pin 13 ON
+        await client.publish("br/d/13", "1")
+        await asyncio.sleep(1)
+        # Turn pin 13 OFF
+        await client.publish("br/d/13", "0")
 
-plugin.connect()
-plugin.publish('yun/pin/13/set', 'ON')
-plugin.disconnect()
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
+For a more detailed example, see `openwrt-yun-client-python/examples/all_features_test.py`.
 
 ### REST API
 
@@ -127,13 +136,38 @@ You can also control pins via the REST API.
 
 **Turn a pin ON:**
 ```sh
-curl -X POST -H "Content-Type: application/json" -d '{"state": "ON"}' http://<your_yun_ip>/arduino-webui-v2/pin/13
+curl -X POST -H "Content-Type: application/json" -d '{"state": "ON"}' http://<your_yun_ip>/cgi-bin/luci/admin/services/yunbridge/api/pin/13
 ```
 
 **Check pin status:**
-```sh
-curl -X GET http://<your_yun_ip>/arduino-webui-v2/pin/13
-```
+The REST API is write-only for simplicity. Pin status should be monitored by subscribing to the appropriate MQTT topic (e.g., `br/d/13/value`).
+
+## Troubleshooting
+
+Here are some common issues and how to resolve them:
+
+### Cannot connect to the Yun via SSH
+
+- **Check the IP address:** Make sure you are using the correct IP address for your Yun. You can find it in your router's DHCP client list.
+- **Check the network connection:** Ensure that your computer and the Yun are on the same network.
+- **Check the Yun's power:** Make sure the Yun is properly powered.
+
+### The `yunbridge` daemon is not running
+
+- **Check the logs:** SSH into the Yun and check the daemon's log file for errors:
+  ```sh
+  logread -e yunbridge
+  ```
+- **Restart the daemon:**
+  ```sh
+  /etc/init.d/yunbridge restart
+  ```
+
+### Serial communication issues
+
+- **Check the baud rate:** The Arduino sketch uses a fixed baud rate of `115200`. Ensure the baud rate configured in the LuCI web interface (`Services > YunBridge`) matches this value.
+- **Check the serial port:** The serial port configured in LuCI must be `/dev/ttyATH0`.
+- **Check the Arduino sketch:** Make sure you have uploaded a sketch that uses the `Bridge` library and calls `Bridge.begin()` and `Bridge.process()`.
 
 ## Architecture and Data Flow
 
@@ -143,12 +177,12 @@ To understand how the ecosystem works, it's helpful to trace the path of a comma
 
 This example shows how an external command reaches the Arduino.
 
-1.  **Initiator (External Client):** A user sends a REST API request to the Yun.
+1.  **Initiator (External Client):** A user sends a REST API request to the Yun's LuCI endpoint.
     ```sh
-    curl -X POST ... -d '{"state": "ON"}' http://<yun_ip>/cgi-bin/pin_rest_cgi.py/pin/13
+    curl -X POST ... -d '{"state": "ON"}' http://<your_yun_ip>/cgi-bin/luci/admin/services/yunbridge/api/pin/13
     ```
-2.  **Web Server (uhttpd on OpenWRT):** The web server receives the request and executes the CGI script `pin_rest_cgi.py`.
-3.  **CGI Script (`pin_rest_cgi.py`):** The Python script parses the request. Instead of talking to the serial port directly, it connects to the MQTT broker and publishes a message.
+2.  **Web Server (uhttpd on OpenWRT):** The web server receives the request and forwards it to the LuCI framework.
+3.  **LuCI Controller (`yunbridge.lua`):** The Lua controller script handles the API request. It parses the pin and state, and then executes the `mosquitto_pub` command-line tool to publish an MQTT message.
     -   **Topic:** `br/d/13`
     -   **Payload:** `1`
 4.  **MQTT Broker:** The broker receives the message and forwards it to all subscribed clients.

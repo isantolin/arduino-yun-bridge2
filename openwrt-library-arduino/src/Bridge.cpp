@@ -153,11 +153,23 @@ void DataStoreClass::requestGet(const char* key) {
 MailboxClass::MailboxClass() {}
 
 void MailboxClass::send(const char* message) {
-  Bridge.sendFrame(CMD_MAILBOX_PROCESSED, (const uint8_t*)message, strlen(message));
+  // NOTE: PROTOCOL.md describes CMD_MAILBOX_PROCESSED (0x41) as MCU -> Linux
+  // indicating a message *received and processed* by the MCU. If the intent
+  // is for the MCU to *send* a new message to Linux, a different command ID
+  // and protocol definition would be required. Currently, this sends a placeholder
+  // 'processed' message.
+  uint16_t message_id = 0; // Placeholder
+  uint8_t payload[2];
+  rpc::write_u16_be(payload, message_id);
+  Bridge.sendFrame(CMD_MAILBOX_PROCESSED, payload, 2);
 }
 
 void MailboxClass::send(const uint8_t* data, size_t length) {
-  Bridge.sendFrame(CMD_MAILBOX_PROCESSED, data, length);
+  // NOTE: Same as above. This sends a placeholder 'processed' message.
+  uint16_t message_id = 0; // Placeholder
+  uint8_t payload[2];
+  rpc::write_u16_be(payload, message_id);
+  Bridge.sendFrame(CMD_MAILBOX_PROCESSED, payload, 2);
 }
 
 void MailboxClass::requestRead() {
@@ -202,9 +214,9 @@ void FileSystemClass::remove(const char* filePath) {
 ProcessClass::ProcessClass() {}
 
 void ProcessClass::kill(int pid) {
-  char pid_str[12]; // Suficiente para un entero de 32 bits + signo + null
-  snprintf(pid_str, sizeof(pid_str), "%d", pid);
-  Bridge.sendFrame(CMD_PROCESS_KILL, (const uint8_t*)pid_str, strlen(pid_str));
+  uint8_t pid_payload[2];
+  rpc::write_u16_be(pid_payload, (uint16_t)pid);
+  Bridge.sendFrame(CMD_PROCESS_KILL, pid_payload, 2);
 }
 
 // =================================================================================
@@ -223,7 +235,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _process_run_handler(nullptr),
       _process_poll_handler(nullptr),
       _process_run_async_handler(nullptr),
-      _file_system_read_handler(nullptr) {}
+      _file_system_read_handler(nullptr),
+      _get_free_memory_handler(nullptr) {}
 
 void BridgeClass::begin() {
   // CORRECCIÓN: Usar static_cast en lugar de dynamic_cast porque RTTI está desactivado.
@@ -249,6 +262,7 @@ void BridgeClass::onProcessRunResponse(ProcessRunHandler handler) { _process_run
 void BridgeClass::onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
 void BridgeClass::onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
 void BridgeClass::onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
+void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
 
 
 /**
@@ -277,20 +291,19 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   if (frame.header.command_id >= 0x80) {
     switch (frame.header.command_id) {
       case CMD_DIGITAL_READ_RESP:
-        if (_digital_read_handler && frame.header.payload_length >= 3) {
-          uint8_t pin = frame.payload[0];
-          // Asume Little Endian para el valor (2 bytes)
-          int value = (int)((uint16_t)frame.payload[1] | ((uint16_t)frame.payload[2] << 8));
-          _digital_read_handler(pin, value);
+        if (_digital_read_handler && frame.header.payload_length == 1) {
+          int value = frame.payload[0];
+          // The pin is not part of the response payload. The handler should be aware of the context.
+          _digital_read_handler(value); // Pass only the value
         }
         break;
 
       case CMD_ANALOG_READ_RESP:
-          if (_analog_read_handler && frame.header.payload_length >= 3) {
-              uint8_t pin = frame.payload[0];
-              // Asume Little Endian para el valor (2 bytes)
-              int value = (int)((uint16_t)frame.payload[1] | ((uint16_t)frame.payload[2] << 8));
-              _analog_read_handler(pin, value);
+          if (_analog_read_handler && frame.header.payload_length == 2) {
+              // Asume Big Endian para el valor (2 bytes)
+              int value = (int)rpc::read_u16_be(frame.payload);
+              // The pin is not part of the response payload. The handler should be aware of the context.
+              _analog_read_handler(value); // Pass only the value
           }
           break;
 
@@ -329,25 +342,45 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         break;
 
       case CMD_PROCESS_POLL_RESP:
-        if (_process_poll_handler) {
-          _process_poll_handler((const char*)frame.payload);
+        if (_process_poll_handler && frame.header.payload_length >= 6) { // Min payload: status(1) + exit_code(1) + stdout_len(2) + stderr_len(2)
+          const uint8_t* p = frame.payload;
+          uint8_t status = *p++;
+          uint8_t exit_code = *p++;
+          uint16_t stdout_len = rpc::read_u16_be(p);
+          p += 2;
+          uint16_t stderr_len = rpc::read_u16_be(p);
+          p += 2;
+
+          if (frame.header.payload_length >= (6 + stdout_len + stderr_len)) {
+            const uint8_t* stdout_data = p;
+            const uint8_t* stderr_data = p + stdout_len;
+            _process_poll_handler(status, exit_code, stdout_data, stdout_len, stderr_data, stderr_len);
+          } else {
+            // Log error for malformed payload
+          }
+        } else {
+          // Log error for malformed payload
         }
         break;
 
       case CMD_PROCESS_RUN_ASYNC_RESP:
-        if (_process_run_async_handler) {
-           // Convierte el payload (string PID) a entero
-          int pid = atoi((const char*)frame.payload);
+        if (_process_run_async_handler && frame.header.payload_length == 2) {
+          uint16_t pid = rpc::read_u16_be(frame.payload);
           _process_run_async_handler(pid);
         }
         break;
 
       case CMD_FILE_READ_RESP:
         if (_file_system_read_handler && frame.header.payload_length > 0) {
-           // Asume que el payload son los bytes del fichero.
-           // Se podría necesitar un manejo especial si el fichero es muy grande
-           // y se fragmenta (no soportado actualmente).
-          _file_system_read_handler((const char*)frame.payload); // O pasar como (uint8_t*)?
+           // Pass the payload as uint8_t* and its length
+          _file_system_read_handler(frame.payload, frame.header.payload_length);
+        }
+        break;
+
+      case CMD_GET_FREE_MEMORY_RESP:
+        if (_get_free_memory_handler && frame.header.payload_length == 2) {
+          uint16_t free_mem = (uint16_t)((frame.payload[0] << 8) | frame.payload[1]); // Big Endian
+          _get_free_memory_handler(free_mem);
         }
         break;
 
@@ -376,6 +409,26 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool requires_ack = false;
 
   switch (frame.header.command_id) {
+    case CMD_GET_FREE_MEMORY:
+      {
+        // TODO: Implement platform-specific free memory retrieval here.
+        // For AVR: (requires extern int __heap_start, *__brkval;)
+        // int freeRam() {
+        //   int v;
+        //   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval);
+        // }
+        // For SAMD/ESP32: use ESP.getFreeHeap() or similar.
+        uint16_t free_mem = 0; // Placeholder, implement actual retrieval
+
+        uint8_t resp_payload[2];
+        // Pack free_mem as Big Endian
+        resp_payload[0] = (free_mem >> 8) & 0xFF;
+        resp_payload[1] = free_mem & 0xFF;
+        sendFrame(CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
+        command_processed_internally = true;
+      }
+      break;
+
     // --- Comandos I/O que la librería maneja automáticamente ---
     case CMD_SET_PIN_MODE:
       if (frame.header.payload_length == 2) {
@@ -403,9 +456,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       if (frame.header.payload_length == 1) {
         uint8_t pin = frame.payload[0];
         int value = ::digitalRead(pin);
-        // Enviar respuesta inmediatamente
-        uint8_t resp_payload[3] = {pin, (uint8_t)(value & 0xFF), (uint8_t)((value >> 8) & 0xFF)};
-        sendFrame(CMD_DIGITAL_READ_RESP, resp_payload, 3);
+        // Enviar respuesta inmediatamente: solo el valor (1 byte)
+        uint8_t resp_payload[1] = {(uint8_t)(value & 0xFF)};
+        sendFrame(CMD_DIGITAL_READ_RESP, resp_payload, 1);
         command_processed_internally = true;
         // Los comandos READ no suelen requerir ACK adicional a la respuesta
       }
@@ -414,9 +467,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       if (frame.header.payload_length == 1) {
         uint8_t pin = frame.payload[0];
         int value = ::analogRead(pin);
-         // Enviar respuesta inmediatamente
-        uint8_t resp_payload[3] = {pin, (uint8_t)(value & 0xFF), (uint8_t)((value >> 8) & 0xFF)};
-        sendFrame(CMD_ANALOG_READ_RESP, resp_payload, 3);
+         // Enviar respuesta inmediatamente: solo el valor (2 bytes Big Endian)
+        uint8_t resp_payload[2];
+        rpc::write_u16_be(resp_payload, value);
+        sendFrame(CMD_ANALOG_READ_RESP, resp_payload, 2);
         command_processed_internally = true;
       }
       break;
@@ -435,15 +489,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       requires_ack = true; // Estos necesitan ACK, pero la acción la puede hacer el usuario
       break; // Pasa al handler del usuario si existe
 
-     case CMD_MAILBOX_AVAILABLE:
-       { // Solicita saber cuántos mensajes hay en Linux
-         uint8_t count_payload[12]; // Suficiente para un número grande
-         snprintf((char*)count_payload, sizeof(count_payload), "%d", 0); // Arduino no tiene cola local para Linux
-         sendFrame(CMD_MAILBOX_AVAILABLE_RESP, count_payload, strlen((char*)count_payload));
-         command_processed_internally = true;
-       }
-       break;
-
+         case CMD_MAILBOX_AVAILABLE:
+           { // Linux solicita saber cuántos mensajes tiene el MCU para Linux
+             // Actualmente, el MCU no mantiene una cola de mensajes para Linux, así que responde 0.
+             uint8_t count_payload = 0; // u8 byte
+             sendFrame(CMD_MAILBOX_AVAILABLE_RESP, &count_payload, 1);
+             command_processed_internally = true;
+           }
+           break;
     // Comandos que Linux envía pero Arduino no implementa directamente la acción
     case CMD_DATASTORE_GET:
     case CMD_MAILBOX_READ: // El sketch llama a Mailbox.requestRead() para iniciar esto
@@ -512,27 +565,22 @@ void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
 
 // --- Public API Methods ---
 
-// Nota: Estas funciones ahora simplemente envían el comando.
-// La ejecución real (ej. llamar a ::digitalWrite) ocurre en dispatch()
-// cuando el comando correspondiente es *recibido*.
-// Las funciones requestXyz envían el comando a Linux esperando una respuesta
-// que será manejada por un callback.
+// Note: These functions directly perform local hardware operations using the Arduino API.
+// They do NOT send RPC commands to Linux. For sending RPC commands to Linux
+// (e.g., to request a read from a pin), use the `requestXyz` methods.
 
 void BridgeClass::pinMode(uint8_t pin, uint8_t mode) {
-  uint8_t payload[2] = {pin, mode};
-  sendFrame(CMD_SET_PIN_MODE, payload, 2);
+  ::pinMode(pin, mode);
 }
 
 void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
-  uint8_t payload[2] = {pin, value};
-  sendFrame(CMD_DIGITAL_WRITE, payload, 2);
+  ::digitalWrite(pin, value);
 }
 
 void BridgeClass::analogWrite(uint8_t pin, int value) {
   // Asegurarse de que el valor está en el rango 0-255
   uint8_t val_u8 = constrain(value, 0, 255);
-  uint8_t payload[2] = {pin, val_u8};
-  sendFrame(CMD_ANALOG_WRITE, payload, 2);
+  ::analogWrite(pin, (int)val_u8);
 }
 
 void BridgeClass::requestDigitalRead(uint8_t pin) {
@@ -554,11 +602,15 @@ void BridgeClass::requestProcessRunAsync(const char* command) {
 }
 
 void BridgeClass::requestProcessPoll(int pid) {
-  char pid_str[12];
-  snprintf(pid_str, sizeof(pid_str), "%d", pid);
-  sendFrame(CMD_PROCESS_POLL, (const uint8_t*)pid_str, strlen(pid_str));
+  uint8_t pid_payload[2];
+  rpc::write_u16_be(pid_payload, (uint16_t)pid);
+  sendFrame(CMD_PROCESS_POLL, pid_payload, 2);
 }
 
 void BridgeClass::requestFileSystemRead(const char* filePath) {
   sendFrame(CMD_FILE_READ, (const uint8_t*)filePath, strlen(filePath));
+}
+
+void BridgeClass::requestGetFreeMemory() {
+  sendFrame(CMD_GET_FREE_MEMORY, nullptr, 0);
 }

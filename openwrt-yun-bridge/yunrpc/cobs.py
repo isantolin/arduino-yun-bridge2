@@ -4,68 +4,84 @@ This implementation is adapted from a public domain version by
 Craig McQueen.
 """
 
+from typing import Generator
+
+
 def encode(data: bytes) -> bytes:
-    """Encode a byte string using COBS.
-    Does NOT add the trailing zero byte delimiter.
+    """COBS encode data.
+
+    Args:
+        data: Data to encode.
+
+    Returns:
+        Encoded data.
     """
-    if not isinstance(data, bytes):
-        raise TypeError("Input must be bytes")
-
-    final = bytearray()
-    if not data:
-        final.append(0x01)
-        return bytes(final)
-
-    code_ptr = 0
-    final.append(0)  # Placeholder for the first code byte
-    idx = 0
-
+    encoded = bytearray()
+    # Add a zero to the end of the data
+    data = bytearray(data)
+    data.append(0)
+    #
+    code_index = 0
+    code = 1
     for byte in data:
         if byte == 0:
-            final[code_ptr] = len(final) - code_ptr
-            code_ptr = len(final)
-            final.append(0)  # Placeholder for the next code
-            continue
-
-        final.append(byte)
-        if len(final) - code_ptr == 255:
-            final[code_ptr] = 255
-            if idx + 1 < len(data):
-                code_ptr = len(final)
-                final.append(0)  # Placeholder
-        idx += 1
-
-    final[code_ptr] = len(final) - code_ptr
-    return bytes(final)
+            encoded.append(code)
+            code = 1
+        else:
+            encoded.append(byte)
+            code += 1
+            if code == 255:
+                encoded.insert(code_index, code)
+                code = 1
+                code_index = len(encoded)
+    encoded.insert(code_index, code)
+    return bytes(encoded)
 
 
-def decode(data: bytes) -> bytes:
-    """Decode a COBS-encoded byte string.
-    Assumes the trailing zero byte delimiter has already been removed.
+def decode(encoded: bytes) -> bytes:
+    """COBS decode data.
+
+    Args:
+        encoded: COBS-encoded data (without the trailing zero delimiter).
+
+    Returns:
+        Decoded data.
     """
-    if not isinstance(data, bytes):
-        raise TypeError("Input must be bytes")
+    decoded = bytearray()
+    code = 255
+    copy = False
+    for byte in encoded:
+        if copy:
+            decoded.append(byte)
+            copy -= 1
+        else:
+            copy = byte - 1
+            code = byte
+            if code != 255:
+                decoded.append(0)
+    # The COBS decoding process often prepends an implicit zero.
+    # This slice removes that prepended zero to yield the original data.
+    decoded = decoded[1:]
+    return bytes(decoded)
 
-    final = bytearray()
-    ptr = 0
-    while ptr < len(data):
-        code = data[ptr]
-        if code == 0:
-            raise ValueError("Invalid COBS: Zero byte found in encoded data")
 
-        ptr += 1
+def iter_decode(encoded: bytes) -> Generator[bytes, None, None]:
+    """COBS decode data, and yield each packet.
 
-        end = ptr + code - 1
-        if end > len(data):
-            raise ValueError("Invalid COBS: Not enough data for block")
+    Args:
+        encoded: Data to decode.
 
-        final.extend(data[ptr:end])
-        ptr = end
+    Returns:
+        A generator that yields decoded packets.
+    """
+    packet = bytearray()
+    for byte in encoded:
+        if byte == 0:
+            yield bytes(packet)
+            packet = bytearray()
+        else:
+            packet.append(byte)
 
-        if code < 255 and ptr < len(data):
-            final.append(0)
-
-    return bytes(final)
 
 if __name__ == "__main__":
     test_cases = [

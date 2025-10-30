@@ -19,8 +19,6 @@
 // Define el pin del LED para facilitar su referencia
 const int ledPin = 13;
 
-
-
 // --- Manejador de Respuesta Asíncrono ---
 // Esta función será llamada por la librería Bridge cuando llegue una respuesta
 // de una lectura digital, sin bloquear el loop principal.
@@ -41,14 +39,48 @@ void handleCommand(const rpc::Frame& frame) {
   Console.println(frame.header.payload_length);
 }
 
+// --- Manejador de Mensajes de Mailbox ---
+// Esta función será llamada por la librería Bridge cuando llegue un mensaje
+// del Mailbox de Linux.
+void handleMailboxMessage(const uint8_t* buffer, size_t size) {
+  char msg_buf[256]; // Asumiendo que el tamaño máximo del mensaje cabe en el buffer
+  if (size < sizeof(msg_buf)) {
+    memcpy(msg_buf, buffer, size);
+    msg_buf[size] = '\0';  // Asegurar la terminación NULL
+
+    Console.print("Mensaje de Mailbox recibido: ");
+    Console.println(msg_buf);
+
+    // Funcionalidad original: controlar LED con "ON" / "OFF"
+    if (strcmp(msg_buf, "ON") == 0) {
+      digitalWrite(ledPin, HIGH);
+      Console.println("LED 13 encendido por Mailbox");
+    } else if (strcmp(msg_buf, "OFF") == 0) {
+      digitalWrite(ledPin, LOW);
+      Console.println("LED 13 apagado por Mailbox");
+    } else if (strcmp(msg_buf, "READ_D13") == 0) {
+      Console.println("Solicitando lectura del pin 13 de forma asíncrona...");
+      Bridge.requestDigitalRead(13);
+    } else {
+      char error_msg[100];
+      snprintf(error_msg, sizeof(error_msg), "Error: Comando de Mailbox desconocido: '%s'", msg_buf);
+      Console.println(error_msg);
+    }
+  } else {
+    Console.println("Error: Mensaje de Mailbox demasiado largo.");
+  }
+  // Después de procesar el mensaje, solicitar el siguiente para mantener el flujo.
+  Mailbox.requestRead();
+}
+
 void setup() {
   // Bridge.begin() inicializa la comunicación serial con Linux a 115200 baudios.
   Bridge.begin();
 
-  // Registrar el manejador para las respuestas de lectura digital.
+  // Registrar los manejadores de respuesta.
   Bridge.onDigitalReadResponse(handleDigitalReadResponse);
-  // Registrar el manejador genérico para comandos no manejados.
   Bridge.onCommand(handleCommand);
+  Bridge.onMailboxMessage(handleMailboxMessage);
   
   pinMode(ledPin, OUTPUT);
 
@@ -57,48 +89,17 @@ void setup() {
   
   Console.println("BridgeControl sketch refactorizado y asíncrono iniciado.");
   Console.println("Envíe 'READ_D13' por Mailbox para probar la lectura asíncrona.");
-}
 
-// Variables para el temporizador no bloqueante del Mailbox
-unsigned long last_check_time = 0;
-const unsigned long check_interval_ms = 50;
+  // Iniciar la solicitud de mensajes del Mailbox
+  Mailbox.requestRead();
+}
 
 void loop() {
   // Bridge.process() es esencial. Procesa los comandos de I/O (pinMode, etc.)
   // que llegan desde Linux, y también maneja las respuestas para los callbacks.
   Bridge.process();
 
-  // --- Lógica de la aplicación: Procesamiento de mensajes del Mailbox ---
-  // Se mantiene la funcionalidad original de procesar comandos personalizados.
-  if (millis() - last_check_time >= check_interval_ms) {
-    last_check_time = millis();
-
-    int msg_len = Mailbox.available();
-    if (msg_len > 0 && msg_len < 255) {
-      // Optimización: Leer directamente en un buffer para evitar usar String
-      char msg_buf[256];
-      Mailbox.read((uint8_t*)msg_buf, msg_len);
-      msg_buf[msg_len] = '\0';  // Asegurar la terminación NULL
-
-      Console.print("Mensaje de Mailbox recibido: ");
-      Console.println(msg_buf);
-
-      // Funcionalidad original: controlar LED con "ON" / "OFF"
-      if (strcmp(msg_buf, "ON") == 0) {
-        digitalWrite(ledPin, HIGH);
-        Console.println("LED 13 encendido por Mailbox");
-      } else if (strcmp(msg_buf, "OFF") == 0) {
-        digitalWrite(ledPin, LOW);
-        Console.println("LED 13 apagado por Mailbox");
-      } else if (strcmp(msg_buf, "READ_D13") == 0) {
-        Console.println("Solicitando lectura del pin 13 de forma asíncrona...");
-        Bridge.requestDigitalRead(13);
-      } else {
-        // --- MEJORA: Feedback de error hacia Linux ---
-        char error_msg[100];
-        snprintf(error_msg, sizeof(error_msg), "Error: Comando de Mailbox desconocido: '%s'", msg_buf);
-        Console.println(error_msg); // Imprime en la consola de Linux para debugging
-      }
-    }
-  }
+  // La lógica de procesamiento de Mailbox ahora se maneja en el callback handleMailboxMessage.
+  // No se necesita un temporizador no bloqueante aquí para el Mailbox.
 }
+

@@ -109,23 +109,26 @@ class BridgeClass {
   typedef void (*DataStoreGetHandler)(const char* key, const char* value);
   void onDataStoreGetResponse(DataStoreGetHandler handler);
 
-  typedef void (*DigitalReadHandler)(uint8_t pin, int value);
+  typedef void (*DigitalReadHandler)(int value);
   void onDigitalReadResponse(DigitalReadHandler handler);
 
-  typedef void (*AnalogReadHandler)(uint8_t pin, int value);
+  typedef void (*AnalogReadHandler)(int value);
   void onAnalogReadResponse(AnalogReadHandler handler);
 
   typedef void (*ProcessRunHandler)(const char* response);
   void onProcessRunResponse(ProcessRunHandler handler);
 
-  typedef void (*ProcessPollHandler)(const char* response);
+  typedef void (*ProcessPollHandler)(uint8_t status, uint8_t exit_code, const uint8_t* stdout_data, uint16_t stdout_len, const uint8_t* stderr_data, uint16_t stderr_len);
   void onProcessPollResponse(ProcessPollHandler handler);
 
   typedef void (*ProcessRunAsyncHandler)(int pid);
   void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
 
-  typedef void (*FileSystemReadHandler)(const char* content);
+  typedef void (*FileSystemReadHandler)(const uint8_t* content, uint16_t length);
   void onFileSystemReadResponse(FileSystemReadHandler handler);
+
+  typedef void (*GetFreeMemoryHandler)(uint16_t free_memory);
+  void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
 
   // --- API de Control de Pines (No Bloqueante) ---
   void pinMode(uint8_t pin, uint8_t mode);
@@ -141,6 +144,7 @@ class BridgeClass {
 
   // --- API de Sistema de Ficheros (No Bloqueante) ---
   void requestFileSystemRead(const char* filePath);
+  void requestGetFreeMemory();
 
   // --- Métodos de Bajo Nivel ---
   void sendFrame(uint16_t command_id, const uint8_t* payload,
@@ -161,6 +165,7 @@ class BridgeClass {
   ProcessPollHandler _process_poll_handler;
   ProcessRunAsyncHandler _process_run_async_handler;
   FileSystemReadHandler _file_system_read_handler;
+  GetFreeMemoryHandler _get_free_memory_handler;
 
   void dispatch(const rpc::Frame& frame);
 };

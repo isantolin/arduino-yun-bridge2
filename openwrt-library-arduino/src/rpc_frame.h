@@ -8,6 +8,19 @@
 
 namespace rpc {
 
+// --- Endianness-safe helpers for Big Endian (Network Byte Order) ---
+
+// Reads a uint16_t from a Big Endian buffer.
+inline uint16_t read_u16_be(const uint8_t* buffer) {
+  return ((uint16_t)buffer[0] << 8) | (uint16_t)buffer[1];
+}
+
+// Writes a uint16_t to a Big Endian buffer.
+inline void write_u16_be(uint8_t* buffer, uint16_t value) {
+  buffer[0] = (value >> 8) & 0xFF;
+  buffer[1] = value & 0xFF;
+}
+
 constexpr uint8_t PROTOCOL_VERSION = 0x02;
 constexpr size_t MAX_PAYLOAD_SIZE = 256;
 

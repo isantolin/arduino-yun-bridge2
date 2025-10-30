@@ -5,6 +5,10 @@ set -e
 # This program is free software: you can redistribute it and/or modify
 
 set -e
+
+echo "[STEP 1/6] Removing conflicting packages..."
+opkg remove ppp ppp-mod-pppoe pppoe odhcp6c odhcpd --force-depends || true
+
 #  --- Configuration Variables ---
 SWAPFILE="/overlay/swapfile"
 SWAPSIZE_MB=1024
@@ -44,22 +48,14 @@ stop_daemon() {
 }
 #  --- Main Script Execution ---
 
-echo "[STEP 1/6] Updating system packages..."
+echo "[STEP 2/6] Updating system packages..."
 opkg update
 opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
 
-echo "[STEP 2/6] Installing essential dependencies..."
+echo "[STEP 3/6] Installing essential dependencies..."
 #  Install essential packages one by one, checking first.
-opkg install python3 python3-pip python3-pyserial python3-asyncio python3-aio-mqtt-mod \
+opkg install python3-pyserial-asyncio python3-aio-mqtt python3-asyncio python3-aio-mqtt-mod \
     coreutils-stty mosquitto-client-ssl luci
-
-echo "Installing pyserial-asyncio via pip..."
-if ! pip3 show pyserial-asyncio > /dev/null 2>&1; then
-    echo "[INFO] pyserial-asyncio not found. Installing..."
-    pip3 install pyserial-asyncio
-else
-    echo "[INFO] pyserial-asyncio is already installed."
-fi
 
 # ANÁLISIS: Se eliminó el bucle 'for pkg in $PACKAGES'
 # Era código muerto: $PACKAGES no estaba definido y los paquetes
@@ -68,11 +64,12 @@ fi
 #  --- Stop Existing Daemon ---
 stop_daemon
 # --- Install Prebuilt Packages ---
-echo "[STEP 4/6] Installing .ipk and .whl packages..."
+echo "[STEP 4/6] Installing .ipk packages..."
 #  Install all .ipk packages from the bin/ directory
 if ls bin/*.ipk 1>/dev/null 2>&1; then
     opkg install --force-reinstall bin/*.ipk
 fi
+
 # --- System & LuCI Configuration ---
 echo "[STEP 5/6] Finalizing system configuration..."
 #  Remove serial console login to free up the port for the bridge

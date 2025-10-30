@@ -24,7 +24,30 @@ m = Map("yunbridge",
     translate("Configuration for the YunBridge daemon, which bridges MQTT messages to the serial port."))
 
 -- Define la sección principal dentro del mapa
-s = m:section(NamedSection, "main", "yunbridge", translate("Main Settings"))
+s.tab_options = {"general"}
+
+o = s:option(Flag, "enabled", translate("Enable"))
+o.rmempty = false
+
+o = s:option(Flag, "debug", translate("Enable debug logging"))
+o.rmempty = false
+
+o = s:option(Value, "tty_path", translate("Serial Port Path"))
+o.description = translate("The path to the serial device for communicating with the MCU. Default is /dev/ttyATH0.")
+o.placeholder = "/dev/ttyATH0"
+o.rmempty = false
+
+o = s:option(Value, "mqtt_host", translate("MQTT Broker Host"))
+o.description = translate("The hostname or IP address of the MQTT broker.")
+o.placeholder = "127.0.0.1"
+o.datatype = "host"
+o.rmempty = false
+
+o = s:option(Value, "mqtt_port", translate("MQTT Broker Port"))
+o.description = translate("The port number of the MQTT broker.")
+o.placeholder = "1883"
+o.datatype = "port"
+o.rmempty = false
 
 --------------------------------------------------------------------------
 -- Opciones de configuración
@@ -145,7 +168,7 @@ mqtt_ws_port = s:option(Value, "mqtt_ws_port", translate("MQTT WebSocket Port"))
 mqtt_ws_port.datatype = "port"
 mqtt_ws_port.placeholder = "9001"
 mqtt_ws_port.rmempty = true
-mqtt_ws_port.description = translate("Optional. If set, enables a WebSocket bridge for direct browser-based MQTT clients.")
+mqtt_ws_port.description = translate("Optional. If set, enables a WebSocket bridge for direct browser-based MQTT clients. This port is typically for an external MQTT broker's WebSocket listener (e.g., Mosquitto).")
 
 -- Opción para la ruta del sistema de archivos
 fs_root = s:option(Value, "file_system_root", translate("File System Root"))

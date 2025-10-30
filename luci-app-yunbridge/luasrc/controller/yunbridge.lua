@@ -90,12 +90,12 @@ function action_api(...)
     local payload = (state == "ON") and "1" or "0"
     local topic = string.format("%s/d/%s", topic_prefix, pin_number)
     -- Use -i for a unique client ID to avoid conflicts, and -r to prevent retained messages
-    local command = string.format("mosquitto_pub -h %s -p %s -t '%s' -m '%s' -i 'luci-api-%s' -r &",
-                                  host, port, topic, payload, pin_number)
+    local command = string.format("mosquitto_pub -h %s -p %s -t '%s' -m '%s' -i 'luci-api-%s-%s' -r &",
+                                  host, port, topic, payload, pin_number, os.time())
 
     -- Execute command
     local result = os.execute(command)
-    if result == 0 or result == true then
+    if result == 0 then -- 0 indicates success for os.execute on Unix-like systems
         send_json(200, {
             status = "ok",
             pin = tonumber(pin_number),
@@ -106,7 +106,8 @@ function action_api(...)
         send_json(500, {
             status = "error",
             message = "Failed to execute mosquitto_pub. Is mosquitto-client installed?",
-            command_for_debug = command
+            command_for_debug = command,
+            os_execute_result = result -- Include the raw result for debugging
         })
     end
 end

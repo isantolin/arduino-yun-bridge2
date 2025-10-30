@@ -35,6 +35,12 @@
 #define STATUS_NOT_IMPLEMENTED 0x06
 #define STATUS_ACK 0x07
 
+// System Commands
+#define CMD_GET_VERSION 0x00
+#define CMD_GET_VERSION_RESP 0x80
+#define CMD_GET_FREE_MEMORY 0x01
+#define CMD_GET_FREE_MEMORY_RESP 0x82
+
 // Flow Control & System Commands
 #define CMD_XOFF 0x08
 #define CMD_XON 0x09

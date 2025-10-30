@@ -27,18 +27,28 @@ PROTOCOL_VERSION: Final[int] = 0x02
 
 # --- Frame Structure ---
 # The header format is: 1-byte version, 2-byte payload length, 2-byte command ID
-# < denotes little-endian byte order.
-CRC_COVERED_HEADER_FORMAT: str = "<BHH"
+# < denotes big-endian byte order.
+CRC_COVERED_HEADER_FORMAT: str = ">BHH"
 CRC_COVERED_HEADER_SIZE: int = struct.calcsize(CRC_COVERED_HEADER_FORMAT)
 
-# The CRC format is: 2-byte unsigned short (little-endian)
-CRC_FORMAT: str = "<H"
+# The CRC format is: 2-byte unsigned short (big-endian)
+CRC_FORMAT: str = ">H"
 CRC_SIZE: int = struct.calcsize(CRC_FORMAT)
 
 # A frame's minimum size is the header plus the CRC, for a zero-payload frame.
 MIN_FRAME_SIZE: int = CRC_COVERED_HEADER_SIZE + CRC_SIZE
 MAX_PAYLOAD_SIZE: int = 256
 RPC_BUFFER_SIZE: int = 256
+
+
+# --- DataStore Formats ---
+# 1-byte key length (unsigned char, Big Endian)
+DATASTORE_KEY_LEN_FORMAT: str = ">B"
+DATASTORE_KEY_LEN_SIZE: int = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)
+
+# 1-byte value length (unsigned char, Big Endian)
+DATASTORE_VALUE_LEN_FORMAT: str = ">B"
+DATASTORE_VALUE_LEN_SIZE: int = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)
 
 
 # --- Status Codes ---
@@ -58,7 +68,13 @@ class Status(IntEnum):
 # Commands are sent from Linux to MCU, and responses are sent from MCU to Linux.
 # By convention, response IDs are often related to the command ID.
 class Command(IntEnum):
-    # System Level & Flow Control
+    # System Level
+    CMD_GET_VERSION = 0x00
+    CMD_GET_VERSION_RESP = 0x80
+    CMD_GET_FREE_MEMORY = 0x01
+    CMD_GET_FREE_MEMORY_RESP = 0x82
+
+    # Flow Control
     CMD_XOFF = 0x08  # MCU -> Linux: Pause transmission
     CMD_XON = 0x09   # MCU -> Linux: Resume transmission
 

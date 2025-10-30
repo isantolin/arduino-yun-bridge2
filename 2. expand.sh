@@ -14,7 +14,7 @@ MOUNT_POINT="/mnt/extroot_temp"
 LOG_FILE="/var/log/extroot_script.log"
 # Expected Sizes
 MIN_OVERLAY_KB=102400     # Minimum 100 MB to confirm external SD
-SWAP_SIZE_MB=${1:-1024}         # Size to create, default 1024 MB
+SWAP_SIZE_MB=${1:-100}         # Size to create, default 100 MB
 SWAP_EXPECTED_KB=$((SWAP_SIZE_MB * 1024))
 SWAP_FILE_PATH="/swapfile"
 # ----------------------------------
@@ -34,8 +34,16 @@ if [ -z "$DETECTED_DEVICE" ]; then
     exit 1
 fi
 
-DEVICE="/dev/$DETECTED_DEVICE"
-echo "Identified potential SD card device: $DEVICE" | tee -a $LOG_FILE
+# Try to find the first partition of the detected device
+PARTITION=$(ls /sys/block/$DETECTED_DEVICE/ | grep -E "^${DETECTED_DEVICE}p?[0-9]" | head -n 1)
+
+if [ -n "$PARTITION" ]; then
+    DEVICE="/dev/$PARTITION"
+    echo "Identified SD card partition: $DEVICE" | tee -a $LOG_FILE
+else
+    DEVICE="/dev/$DETECTED_DEVICE"
+    echo "Identified potential SD card device: $DEVICE. No partition found, using raw device." | tee -a $LOG_FILE
+fi
 
 # --- VERIFICATION FUNCTIONS ---
 
@@ -88,7 +96,7 @@ echo "1. Checking and installing required packages..." | tee -a $LOG_FILE
 if ! command -v mkfs.ext4 > /dev/null; then
     echo "   [FAIL] mkfs.ext4 not found. Installing e2fsprogs and dependencies..." | tee -a $LOG_FILE
     opkg update 2>&1 | tee -a $LOG_FILE
-    opkg install block-mount kmod-fs-ext4 e2fsprogs util-linux-mountpoint 2>&1 | tee -a $LOG_FILE
+    opkg install block-mount kmod-fs-ext4 e2fsprogs mount-utils parted kmod-usb-storage 2>&1 | tee -a $LOG_FILE
 
     if [ $? -ne 0 ]; then
         echo "ERROR! Package installation failed. Aborting." | tee -a $LOG_FILE
@@ -108,7 +116,9 @@ else
 
     # 2.2 DEVICE PREPARATION AND FORMATTING
     echo "   2.2 Unmounting and formatting $DEVICE to ext4..." | tee -a $LOG_FILE
-    umount $DEVICE 2>/dev/null
+    echo "   Attempting to unmount $DEVICE (errors will be displayed)..." | tee -a $LOG_FILE
+    umount $DEVICE 2>&1 | tee -a $LOG_FILE || echo "   (Ignoring unmount error, proceeding with format)" | tee -a $LOG_FILE
+    echo "   Running mkfs.ext4..." | tee -a $LOG_FILE
     mkfs.ext4 -F -L extroot $DEVICE 2>&1 | tee -a $LOG_FILE
 
     if [ $? -ne 0 ]; then
@@ -118,23 +128,42 @@ else
 
     # 2.3 EXTROOT CONFIGURATION (FSTAB)
     echo "   2.3 Configuring /etc/config/fstab for the new overlay..." | tee -a $LOG_FILE
+    echo "   Running 'block info $DEVICE' to get UUID..." | tee -a $LOG_FILE
+    block info $DEVICE 2>&1 | tee -a $LOG_FILE
     UUID=$(block info $DEVICE | grep -o -e 'UUID="[^\"]*"' | sed 's/UUID="//;s/"//')
+    echo "   Extracted UUID: '$UUID'" | tee -a $LOG_FILE
+
+    if [ -z "$UUID" ]; then
+        echo "ERROR: Could not extract UUID from $DEVICE after formatting. Aborting." | tee -a $LOG_FILE
+        exit 1
+    fi
+
     TARGET_MOUNT="/overlay"
 
-    uci -q delete fstab.extroot
-    uci set fstab.extroot="mount"
-    uci set fstab.extroot.uuid="${UUID}"
-    uci set fstab.extroot.target="${TARGET_MOUNT}"
-    uci set fstab.extroot.enabled='1'
+    echo "   Updating fstab with uci..." | tee -a $LOG_FILE
+    uci delete fstab.extroot 2>&1 | tee -a $LOG_FILE || echo "   (Could not delete fstab.extroot, probably did not exist)" | tee -a $LOG_FILE
+    uci set fstab.extroot="mount" 2>&1 | tee -a $LOG_FILE
+    uci set fstab.extroot.uuid="${UUID}" 2>&1 | tee -a $LOG_FILE
+    uci set fstab.extroot.target="${TARGET_MOUNT}" 2>&1 | tee -a $LOG_FILE
+    uci set fstab.extroot.enabled='1' 2>&1 | tee -a $LOG_FILE
+    uci set fstab.extroot.check_fs='1' 2>&1 | tee -a $LOG_FILE
+    echo "   fstab update with uci finished." | tee -a $LOG_FILE
 
     # 2.4 ORIGINAL OVERLAY CONFIGURATION (FALLBACK)
     echo "   2.4 Configuring the original overlay for fallback at /rwm..." | tee -a $LOG_FILE
+    echo "   Getting original overlay device..." | tee -a $LOG_FILE
+    block info 2>&1 | tee -a $LOG_FILE
     ORIG_DEVICE=$(block info | sed -n -e '/MOUNT=".*\/overlay"/s/:.*$//p')
+    echo "   Original overlay device: '$ORIG_DEVICE'" | tee -a $LOG_FILE
 
-    uci -q delete fstab.rwm
-    uci set fstab.rwm="mount"
-    uci set fstab.rwm.device="${ORIG_DEVICE}"
-    uci set fstab.rwm.target="/rwm"
+    if [ -z "$ORIG_DEVICE" ]; then
+        echo "WARNING: Could not determine original overlay device. Skipping fallback configuration." | tee -a $LOG_FILE
+    else
+        uci -q delete fstab.rwm || true
+        uci set fstab.rwm="mount"
+        uci set fstab.rwm.device="${ORIG_DEVICE}"
+        uci set fstab.rwm.target="/rwm"
+    fi
 
     # 2.5 DATA TRANSFER
     echo "   2.5 Creating temporary mount point and copying data..." | tee -a $LOG_FILE
@@ -153,6 +182,13 @@ else
     sync
     umount $MOUNT_POINT
     rmdir $MOUNT_POINT 2>/dev/null
+fi
+
+echo "   2.7 Saving Extroot configuration..." | tee -a $LOG_FILE
+uci commit fstab
+if [ $? -ne 0 ]; then
+    echo "ERROR! Failed to commit Extroot fstab changes. Aborting." | tee -a $LOG_FILE
+    exit 1
 fi
 
 
@@ -193,16 +229,15 @@ else
     fi
 fi
 
-# 4. SAVE AND REBOOT
-echo "4. Saving final configuration and rebooting..." | tee -a $LOG_FILE
+echo "   3.4 Saving SWAP configuration..." | tee -a $LOG_FILE
 uci commit fstab
-
 if [ $? -ne 0 ]; then
-    echo "ERROR! Failed to commit fstab changes. Aborting." | tee -a $LOG_FILE
+    echo "ERROR! Failed to commit SWAP fstab changes. Aborting." | tee -a $LOG_FILE
     exit 1
 fi
 
-echo "   Configurations verified/updated. System will reboot in 5 seconds." | tee -a $LOG_FILE
+# 4. REBOOT
+echo "4. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
 echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE
 sleep 5
 reboot

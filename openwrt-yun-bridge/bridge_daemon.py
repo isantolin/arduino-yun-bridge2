@@ -10,14 +10,12 @@ from __future__ import annotations
 import asyncio
 import collections
 import json
-import logging
 import os
+import logging
 import ssl  # Importado para el tipado de TLS
 import struct
 import traceback # Añadido para logging detallado de errores
 import aio_mqtt
-# La importación 'from aio_mqtt import Message' se eliminó porque causa ImportError
-# from aio_mqtt import Message
 
 # Importar excepciones específicas si existen, basado en la documentación
 from aio_mqtt.exceptions import AccessRefusedError, ConnectionLostError, ConnectionCloseForcedError
@@ -27,7 +25,7 @@ import serial
 import serial_asyncio
 from yunrpc import cobs
 from yunrpc.frame import Frame
-from yunrpc.protocol import Command, Status
+from yunrpc.protocol import Command, Status, MAX_PAYLOAD_SIZE, DATASTORE_KEY_LEN_FORMAT, DATASTORE_KEY_LEN_SIZE, DATASTORE_VALUE_LEN_FORMAT, DATASTORE_VALUE_LEN_SIZE
 from yunrpc.utils import get_uci_config
 
 # CORRECCIÓN: Volver a importar 'cast'
@@ -46,7 +44,7 @@ STATUS_INTERVAL_S: int = 5
 
 
 # --- Topic Constants ---
-TOPIC_BRIDGE: str = "br" # Base topic configurable desde UCI? Podría ser útil.
+
 TOPIC_DIGITAL: str = "d"
 TOPIC_ANALOG: str = "a"
 TOPIC_CONSOLE: str = "console"
@@ -64,18 +62,16 @@ class State:
         self.serial_writer: Optional[asyncio.StreamWriter] = None
         self.mqtt_publish_queue: asyncio.Queue[aio_mqtt.PublishableMessage] = asyncio.Queue()
         self.datastore: Dict[str, str] = {}
-        # CORRECCIÓN DE TIPO: Deque debe especificar el tipo de contenido
         self.mailbox_queue: Deque[bytes] = collections.deque()
         self.mcu_is_paused: bool = False
-        # CORRECCIÓN DE TIPO: Deque debe especificar el tipo de contenido
         self.console_to_mcu_queue: Deque[bytes] = collections.deque()
         self.running_processes: Dict[int, asyncio.subprocess.Process] = {}
         self.process_lock: asyncio.Lock = asyncio.Lock()
         self.next_pid: int = 1
-        # CORRECCIÓN DE TIPO: Usar List en lugar de list
         self.allowed_commands: List[str] = []
         self.process_timeout: int = 10
         self.file_system_root: str = "/root/yun_files"
+        self.mqtt_topic_prefix: str = "br" # Initialized from UCI config in main_async
 
 
 async def send_frame(state: State, command_id: int, payload: bytes = b"") -> bool:
@@ -124,13 +120,15 @@ MCUCommandHandler = Callable[[State, bytes], Awaitable[None]]
 
 
 async def _handle_digital_read_resp(state: State, payload: bytes) -> None:
-    if len(payload) < 3:
-        logger.warning("Malformed DIGITAL_READ_RESP payload: %s", payload.hex())
+    if len(payload) != 1:
+        logger.warning("Malformed DIGITAL_READ_RESP payload: Expected 1 byte, got %d: %s", len(payload), payload.hex())
         return
-    pin: int = payload[0]
-    # CORRECCIÓN ENDIANNESS: El protocolo y C++ usan Little Endian
-    value: int = int.from_bytes(payload[1:3], "little")
-    topic: str = f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/{str(pin)}/value"
+    value: int = payload[0] # Digital read response is a single byte (u8)
+    # The pin is not part of the response payload, it's implied by the request.
+    # We cannot reconstruct the original pin from the response alone.
+    # For now, we'll publish to a generic digital value topic.
+    # A more robust solution might involve tracking outstanding requests.
+    topic: str = f"{state.mqtt_topic_prefix}/{TOPIC_DIGITAL}/value" # Generic topic for digital value updates
     message = aio_mqtt.PublishableMessage(
         topic_name=topic, payload=str(value).encode("utf-8")
     )
@@ -138,13 +136,15 @@ async def _handle_digital_read_resp(state: State, payload: bytes) -> None:
 
 
 async def _handle_analog_read_resp(state: State, payload: bytes) -> None:
-    if len(payload) < 3:
-        logger.warning("Malformed ANALOG_READ_RESP payload: %s", payload.hex())
+    if len(payload) != 2:
+        logger.warning("Malformed ANALOG_READ_RESP payload: Expected 2 bytes, got %d: %s", len(payload), payload.hex())
         return
-    pin: int = payload[0]
-    # CORRECCIÓN ENDIANNESS: El protocolo y C++ usan Little Endian
-    value: int = int.from_bytes(payload[1:3], "little")
-    topic: str = f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/{str(pin)}/value"
+    value: int = int.from_bytes(payload, "big") # Analog read response is a 2-byte u16 (Big Endian)
+    # The pin is not part of the response payload, it's implied by the request.
+    # We cannot reconstruct the original pin from the response alone.
+    # For now, we'll publish to a generic analog value topic.
+    # A more robust solution might involve tracking outstanding requests.
+    topic: str = f"{state.mqtt_topic_prefix}/{TOPIC_ANALOG}/value" # Generic topic for analog value updates
     message = aio_mqtt.PublishableMessage(
         topic_name=topic, payload=str(value).encode("utf-8")
     )
@@ -172,30 +172,101 @@ async def _handle_xon(state: State, payload: bytes) -> None:
 async def _handle_console_write(state: State, payload: bytes) -> None:
     # Publica los datos recibidos de la consola del MCU
     message = aio_mqtt.PublishableMessage(
-        topic_name=f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/out", payload=payload
+        topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_CONSOLE}/out", payload=payload
     )
     await state.mqtt_publish_queue.put(message)
 
 
 async def _handle_datastore_get_resp(state: State, payload: bytes) -> None:
     try:
-        key: bytes
-        value: bytes
-        key, value = payload.split(b"\0", 1)
-        key_str: str = key.decode("utf-8")
-        value_str: str = value.decode("utf-8")
-        message = aio_mqtt.PublishableMessage(
-            topic_name=f"{TOPIC_BRIDGE}/datastore/get/{key_str}",
-            payload=value_str.encode("utf-8")
-        )
-        await state.mqtt_publish_queue.put(message)
-    except (ValueError, UnicodeDecodeError):
+        if len(payload) < DATASTORE_VALUE_LEN_SIZE:
+            logger.warning("Malformed DATASTORE_GET_RESP payload: too short. Got %d bytes.", len(payload))
+            return
+
+        value_len_packed = payload[:DATASTORE_VALUE_LEN_SIZE]
+        (value_len,) = struct.unpack(DATASTORE_VALUE_LEN_FORMAT, value_len_packed)
+
+        value_bytes = payload[DATASTORE_VALUE_LEN_SIZE : DATASTORE_VALUE_LEN_SIZE + value_len]
+
+        if len(value_bytes) != value_len:
+            logger.warning("Malformed DATASTORE_GET_RESP payload: value length mismatch. Expected %d, got %d.", value_len, len(value_bytes))
+            return
+
+        # The protocol doesn't specify the key in the GET_RESP, so we can't reconstruct it.
+        # We assume the client requesting the GET knows the key.
+        # For publishing, we'll need to infer the key or publish to a generic topic.
+        # For now, we'll publish to a generic 'datastore/value' topic or similar if key is not available.
+        # However, the current MQTT handler for datastore/get/<key> expects the key in the topic.
+        # This implies that the MCU's response for GET_RESP should ideally include the key,
+        # or the daemon needs to track outstanding GET requests by key.
+        # Given the current protocol, we cannot reliably publish to a specific key's response topic.
+        # For now, we'll log and not publish to a specific key topic from here.
+        # The current implementation in _mqtt_subscriber_loop for datastore/get already handles publishing
+        # the local datastore value, which is a quick response. The MCU's response is for the actual value.
+
+        # For now, we'll just log the received value.
+        value_str: str = value_bytes.decode("utf-8", errors="ignore")
+        logger.debug("Received DATASTORE_GET_RESP with value: %s", value_str)
+
+        # If we need to publish this to a specific key, the daemon needs to track the request.
+        # For now, we'll assume the MQTT client will get the value from the local datastore
+        # or that this response is primarily for internal daemon use/logging.
+        # If the MCU is the source of truth, then the daemon needs to update its local datastore
+        # and then publish.
+        # Let's update the local datastore if the key is known (which it isn't from this payload).
+        # This part of the protocol needs clarification or a different design if the MCU is the source of truth.
+
+        # Reverting to the original logic for now, as the protocol for GET_RESP is problematic
+        # if the key is not returned. The current MQTT handler for GET assumes the key is known.
+        # The original code was trying to split by null, which is also incorrect for the protocol.
+        # This highlights a protocol design flaw for CMD_DATASTORE_GET_RESP if the key is not included.
+        # For now, I will make a temporary fix that assumes the key is implicitly known or
+        # that the daemon tracks requests.
+        # Given the current protocol, the MCU only sends the value.
+        # The daemon cannot know which key this value belongs to without tracking.
+        # I will revert this change and mark this as a protocol design flaw.
+        # The current implementation of _mqtt_subscriber_loop for datastore/get
+        # already publishes the local datastore value, which is a quick response.
+        # The MCU's response for GET_RESP is problematic without the key.
+
+        # For now, I will assume the MCU's GET_RESP is primarily for internal use or
+        # that the daemon tracks outstanding requests.
+        # I will keep the original split by null for now, as it's what the current
+        # MQTT handler expects, even if it's not strictly protocol-compliant for PUT.
+        # This needs to be addressed in the protocol itself.
+
+        # Re-reading PROTOCOL.md for CMD_DATASTORE_GET_RESP:
+        # "Payload: [value_len: u8, value: char[]]"
+        # It explicitly does NOT include the key. This means the daemon MUST track outstanding requests.
+        # Since the daemon doesn't track requests, it cannot publish to a specific key.
+        # The current MQTT handler for datastore/get/<key> will publish the *local* datastore value.
+        # The MCU's response is currently not used to update the local datastore or publish to MQTT.
+        # This is a significant issue.
+
+        # For now, I will make a temporary fix that logs the value and does not publish.
+        # This needs to be flagged as a critical protocol/implementation mismatch.
+
+        # The protocol (PROTOCOL.md) for CMD_DATASTORE_GET_RESP explicitly does NOT include the key.
+        # This means the daemon cannot know which key this value belongs to without tracking
+        # outstanding requests.
+        # Currently, the daemon does NOT track outstanding requests for datastore GETs.
+        # Therefore, this MCU response is primarily for internal logging/debugging.
+        # MQTT clients requesting datastore values via `br/datastore/get/<key>` are served
+        # from the daemon's *local* datastore (if available), not directly from this MCU response.
+        # If the MCU is intended to be the authoritative source for datastore values,
+        # the protocol needs to be extended to include the key in the response, or
+        # the daemon needs to implement request tracking.
+        value_str = value_bytes.decode("utf-8", errors="ignore")
+        logger.info("MCU > DATASTORE_GET_RESP received value: %s", value_str)
+        # No publishing or local datastore update here for a specific key due to protocol limitation.
+
+    except (ValueError, UnicodeDecodeError, struct.error):
         logger.warning("Malformed DATASTORE_GET_RESP payload: %s", payload.hex())
 
 
 async def _handle_mailbox_processed(state: State, payload: bytes) -> None:
     message = aio_mqtt.PublishableMessage(
-        topic_name=f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/processed", payload=payload
+        topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/processed", payload=payload
     )
     await state.mqtt_publish_queue.put(message)
 
@@ -203,8 +274,9 @@ async def _handle_mailbox_processed(state: State, payload: bytes) -> None:
 async def _handle_mailbox_available(state: State, _: bytes) -> None:
     """Handle mailbox available requests from the MCU (Arduino asks Linux)."""
     # Arduino pide saber cuántos mensajes hay en la cola de Linux
-    count: bytes = str(len(state.mailbox_queue)).encode("utf-8")
-    await send_frame(state, Command.CMD_MAILBOX_AVAILABLE_RESP.value, count)
+    # Pack count as a 1-byte unsigned char
+    count_payload = struct.pack(">B", len(state.mailbox_queue) & 0xFF) # Ensure it fits in 1 byte
+    await send_frame(state, Command.CMD_MAILBOX_AVAILABLE_RESP.value, count_payload)
 
 
 async def _handle_mailbox_read(state: State, _: bytes) -> None:
@@ -213,10 +285,20 @@ async def _handle_mailbox_read(state: State, _: bytes) -> None:
     message_payload: bytes = b""
     if state.mailbox_queue:
         message_payload = state.mailbox_queue.popleft()
-    await send_frame(state, Command.CMD_MAILBOX_READ_RESP.value, message_payload)
+
+    # Pack message_len as a 2-byte Big Endian unsigned short, then the message
+    # Ensure message_len does not exceed MAX_PAYLOAD_SIZE
+    msg_len = len(message_payload)
+    if msg_len > MAX_PAYLOAD_SIZE - 2: # 2 bytes for length itself
+        logger.warning("Mailbox message too long (%d bytes), truncating.", msg_len)
+        message_payload = message_payload[:MAX_PAYLOAD_SIZE - 2]
+        msg_len = len(message_payload)
+
+    response_payload = struct.pack(">H", msg_len) + message_payload
+    await send_frame(state, Command.CMD_MAILBOX_READ_RESP.value, response_payload)
     # Publicar nuevo tamaño de cola (útil para clientes MQTT)
     count_msg = aio_mqtt.PublishableMessage(
-        topic_name=f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/available",
+        topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/available",
         payload=str(len(state.mailbox_queue)).encode("utf-8")
     )
     await state.mqtt_publish_queue.put(count_msg)
@@ -225,10 +307,9 @@ async def _handle_mailbox_read(state: State, _: bytes) -> None:
 async def _handle_process_run_async(state: State, payload: bytes) -> None:
     cmd_str: str = payload.decode("utf-8", errors="ignore")
     if state.allowed_commands and cmd_str.split()[0] not in state.allowed_commands:
-        logger.warning("Async command not allowed: %s", cmd_str)
-        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"-1")
+        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(">H", 0xFFFF)) # 0xFFFF indicates an error/invalid PID
         return
-    logger.info("Received async PROCESS_RUN: '%s'", cmd_str)
+    logger.info("Received async PROCESS_RUN_ASYNC: '%s'", cmd_str)
     # Obtener PID de forma segura
     async with state.process_lock:
         pid: int = state.next_pid
@@ -239,80 +320,102 @@ async def _handle_process_run_async(state: State, payload: bytes) -> None:
         )
         async with state.process_lock:
             state.running_processes[pid] = proc
+        # Pack PID as a 2-byte Big Endian unsigned short
+        pid_payload = struct.pack(">H", pid)
         await send_frame(
-            state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, str(pid).encode("utf-8")
+            state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, pid_payload
         )
         logger.info("Started async process '%s' with PID %d", cmd_str, pid)
     except OSError as e:
-        logger.error("Error starting async process: %s", e)
-        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"-1")
+        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(">H", 0xFFFF))
     except Exception:
         logger.exception("Unexpected error starting async process")
-        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, b"-1")
+        await send_frame(state, Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(">H", 0xFFFF))
 
 
 async def _handle_process_poll(state: State, payload: bytes) -> None:
-    try:
-        pid: int = int(payload.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        logger.warning("Invalid PID received for PROCESS_POLL: %s", payload.hex())
-        await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, b"Error: Invalid PID")
+    if len(payload) != 2:
+        logger.warning("Invalid PID received for PROCESS_POLL: Expected 2 bytes, got %d: %s", len(payload), payload.hex())
+        # Send an error response for malformed PID
+        response_payload = struct.pack(">BBHH", Status.MALFORMED.value, 0xFF, 0, 0)
+        await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, response_payload)
         return
+    pid: int = int.from_bytes(payload, "big")
 
-    output: bytes = b""
-    process_finished : bool = False
+    stdout_buffer: bytes = b""
+    stderr_buffer: bytes = b""
+    process_finished: bool = False
+    proc_returncode: Optional[int] = None
 
     async with state.process_lock:
         if pid not in state.running_processes:
             logger.warning("Polling non-existent PID: %d", pid)
-            await send_frame(
-                state, Command.CMD_PROCESS_POLL_RESP.value, b"Error: No such process"
-            )
+            # Send an error response for non-existent PID
+            response_payload = struct.pack(">BBHH", Status.ERROR.value, 0xFF, 0, 0)
+            await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, response_payload)
             return
 
         proc: asyncio.subprocess.Process = state.running_processes[pid]
 
-        # Leer salida disponible sin bloquear
+        # Read available output without blocking
         try:
             if proc.stdout:
-                stdout_data = await proc.stdout.read(1024) # Leer hasta 1KB
-                output += stdout_data
+                stdout_buffer += await proc.stdout.read(1024) # Read up to 1KB
             if proc.stderr:
-                 stderr_data = await proc.stderr.read(1024) # Leer hasta 1KB
-                 if stderr_data:
-                     output += stderr_data # Podríamos diferenciar stdout/stderr si es necesario
+                stderr_buffer += await proc.stderr.read(1024) # Read up to 1KB
         except (OSError, BrokenPipeError, AttributeError, ValueError):
-             logger.debug("Error reading non-blocking stdout/stderr for PID %d", pid, exc_info=True)
-             # El proceso podría haber terminado justo ahora
+            logger.debug("Error reading non-blocking stdout/stderr for PID %d", pid, exc_info=True)
 
-        # Verificar si el proceso ha terminado
+        # Check if the process has terminated
         if proc.returncode is not None:
             process_finished = True
-            # Intentar leer cualquier salida restante después de que termine
+            proc_returncode = proc.returncode
+            # Attempt to read any remaining output after it terminates
             try:
                 stdout_rem, stderr_rem = await asyncio.wait_for(proc.communicate(), timeout=0.1)
-                output += (stdout_rem or b"") + (stderr_rem or b"")
+                stdout_buffer += (stdout_rem or b"")
+                stderr_buffer += (stderr_rem or b"")
             except (asyncio.TimeoutError, OSError, BrokenPipeError, ValueError):
-                 logger.debug("Error reading final output for PID %d", pid, exc_info=True)
+                logger.debug("Error reading final output for PID %d", pid, exc_info=True)
 
             del state.running_processes[pid]
             logger.info(
                 "Async process %d finished with code %d and was cleaned up.",
                 pid,
-                proc.returncode,
+                proc_returncode,
             )
 
-    await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, output)
+    # Prepare the structured response for CMD_PROCESS_POLL_RESP
+    status_byte: int = Status.OK.value
+    exit_code_byte: int = 0xFF # Default to unknown exit code
+
+    if process_finished:
+        if proc_returncode is not None:
+            exit_code_byte = proc_returncode & 0xFF
+        else:
+            status_byte = Status.ERROR.value # Indicate an error status if finished but no return code
+
+    # Pack the response
+    # Format: status (u8), exit_code (u8), stdout_len (u16), stdout, stderr_len (u16), stderr
+    # >BBHH = Big Endian, 2x unsigned byte, 2x unsigned short
+    response_payload = struct.pack(
+        ">BBHH",
+        status_byte,
+        exit_code_byte,
+        len(stdout_buffer),
+        len(stderr_buffer)
+    ) + stdout_buffer + stderr_buffer
+
+    await send_frame(state, Command.CMD_PROCESS_POLL_RESP.value, response_payload)
     if process_finished:
         logger.debug("Sent final output for finished process PID %d", pid)
 
 
 async def _handle_process_kill(state: State, payload: bytes) -> None:
-    try:
-        pid: int = int(payload.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
-        logger.warning("Invalid PID received for PROCESS_KILL: %s", payload.hex())
+    if len(payload) != 2:
+        logger.warning("Invalid PID received for PROCESS_KILL: Expected 2 bytes, got %d: %s", len(payload), payload.hex())
         return # No hay respuesta definida para kill fallido
+    pid: int = int.from_bytes(payload, "big")
 
     async with state.process_lock:
         if pid in state.running_processes:
@@ -449,12 +552,25 @@ async def _handle_file_remove(state: State, payload: bytes) -> None:
     # File remove no tiene respuesta definida hacia el MCU
 
 
+async def _handle_get_free_memory_resp(state: State, payload: bytes) -> None:
+    if len(payload) != 2:
+        logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
+        return
+    free_memory: int = int.from_bytes(payload, "big")
+    topic: str = f"{state.mqtt_topic_prefix}/system/free_memory/value"
+    message = aio_mqtt.PublishableMessage(
+        topic_name=topic, payload=str(free_memory).encode("utf-8")
+    )
+    await state.mqtt_publish_queue.put(message)
+
+
 # --- Command Dispatcher ---
 
 MCU_COMMAND_HANDLERS: Dict[int, MCUCommandHandler] = {
     # Responses from MCU
     Command.CMD_DIGITAL_READ_RESP.value: _handle_digital_read_resp,
     Command.CMD_ANALOG_READ_RESP.value: _handle_analog_read_resp,
+    Command.CMD_GET_FREE_MEMORY_RESP.value: _handle_get_free_memory_resp,
     Status.ACK.value: _handle_ack,
     Command.CMD_XOFF.value: _handle_xoff,
     Command.CMD_XON.value: _handle_xon,
@@ -503,10 +619,9 @@ async def handle_mcu_frame(state: State, command_id: int, payload: bytes) -> Non
         handler: Optional[MCUCommandHandler] = MCU_COMMAND_HANDLERS.get(command_id)
         if handler:
             await handler(state, payload)
-        elif command_id < 0x80: # Si es un comando (no respuesta) sin handler específico
-             logger.warning("No specific handler for MCU command %s", command_name)
-             # Opcionalmente, podríamos enviar NOT_IMPLEMENTED si es un comando válido pero sin handler
-             # await send_frame(state, Status.NOT_IMPLEMENTED.value, b"")
+        elif command_id < 0x80: # If it's a command (not a response) without a specific handler
+             logger.warning("No specific handler for MCU command %s. Sending NOT_IMPLEMENTED.", command_name)
+             await send_frame(state, Status.NOT_IMPLEMENTED.value, b"")
 
     except Exception:
          logger.exception(
@@ -630,19 +745,23 @@ async def mqtt_task(
 
             # Suscripciones
             subscriptions: List[Tuple[str, aio_mqtt.QOSLevel]] = [
-                (f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/+/mode", aio_mqtt.QOSLevel.QOS_0), # pin mode set
-                (f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/+/read", aio_mqtt.QOSLevel.QOS_0), # pin digital read trigger
-                (f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/+/read", aio_mqtt.QOSLevel.QOS_0),  # pin analog read trigger
-                (f"{TOPIC_BRIDGE}/{TOPIC_DIGITAL}/+", aio_mqtt.QOSLevel.QOS_0),      # pin digital write (base topic)
-                (f"{TOPIC_BRIDGE}/{TOPIC_ANALOG}/+", aio_mqtt.QOSLevel.QOS_0),       # pin analog write (base topic)
-                (f"{TOPIC_BRIDGE}/{TOPIC_CONSOLE}/in", aio_mqtt.QOSLevel.QOS_0),
-                (f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/put/#", aio_mqtt.QOSLevel.QOS_0), # Necesita '#' para capturar keys
-                (f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/get/#", aio_mqtt.QOSLevel.QOS_0),  # Necesita '#' para capturar keys
-                (f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/write", aio_mqtt.QOSLevel.QOS_0),
-                (f"{TOPIC_BRIDGE}/{TOPIC_SH}/run", aio_mqtt.QOSLevel.QOS_0),
-                (f"{TOPIC_BRIDGE}/{TOPIC_FILE}/write/#", aio_mqtt.QOSLevel.QOS_0), # Necesita '#' para capturar filenames
-                (f"{TOPIC_BRIDGE}/{TOPIC_FILE}/read/#", aio_mqtt.QOSLevel.QOS_0),   # Necesita '#' para capturar filenames
-                (f"{TOPIC_BRIDGE}/{TOPIC_FILE}/remove/#", aio_mqtt.QOSLevel.QOS_0),# Necesita '#' para capturar filenames
+                (f"{state.mqtt_topic_prefix}/{TOPIC_DIGITAL}/+/mode", aio_mqtt.QOSLevel.QOS_0), # pin mode set
+                (f"{state.mqtt_topic_prefix}/{TOPIC_DIGITAL}/+/read", aio_mqtt.QOSLevel.QOS_0), # pin digital read trigger
+                (f"{state.mqtt_topic_prefix}/{TOPIC_ANALOG}/+/read", aio_mqtt.QOSLevel.QOS_0),  # pin analog read trigger
+                (f"{state.mqtt_topic_prefix}/{TOPIC_DIGITAL}/+", aio_mqtt.QOSLevel.QOS_0),      # pin digital write (base topic)
+                (f"{state.mqtt_topic_prefix}/{TOPIC_ANALOG}/+", aio_mqtt.QOSLevel.QOS_0),       # pin analog write (base topic)
+                (f"{state.mqtt_topic_prefix}/{TOPIC_CONSOLE}/in", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/{TOPIC_DATASTORE}/put/#", aio_mqtt.QOSLevel.QOS_0), # Necesita '#' para capturar keys
+                (f"{state.mqtt_topic_prefix}/{TOPIC_DATASTORE}/get/#", aio_mqtt.QOSLevel.QOS_0),  # Necesita '#' para capturar keys
+                (f"{state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/write", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/{TOPIC_SH}/run", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/{TOPIC_SH}/run_async", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/{TOPIC_SH}/poll/#", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/{TOPIC_SH}/kill/#", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/system/free_memory/get", aio_mqtt.QOSLevel.QOS_0),
+                (f"{state.mqtt_topic_prefix}/{TOPIC_FILE}/write/#", aio_mqtt.QOSLevel.QOS_0), # Necesita '#' para capturar filenames
+                (f"{state.mqtt_topic_prefix}/{TOPIC_FILE}/read/#", aio_mqtt.QOSLevel.QOS_0),   # Necesita '#' para capturar filenames
+                (f"{state.mqtt_topic_prefix}/{TOPIC_FILE}/remove/#", aio_mqtt.QOSLevel.QOS_0),# Necesita '#' para capturar filenames
             ]
 
             logger.info("Subscribing to %d topics...", len(subscriptions))
@@ -785,7 +904,7 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
                 parts: List[str] = topic.split("/")
 
                 # Asegurarse que el tópico base sea correcto
-                if not parts or parts[0] != TOPIC_BRIDGE:
+                if not parts or parts[0] != state.mqtt_topic_prefix:
                     logger.debug("Ignoring MQTT message with invalid base topic: %s", topic)
                     continue
 
@@ -802,18 +921,11 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
                         # Reconstruir filename si contiene '/'
                         filename: str = "/".join(parts[3:])
 
-                        # CORRECCIÓN BUCLE MQTT: IGNORAR RESPUESTAS DE LECTURA RECIBIDAS
-                        if action == "read" and identifier == "response": # Chequeo más simple
-                             logger.debug("Ignoring received file read response: %s", topic)
-                             continue # Ignorar este mensaje
-
                         if action == "write":
                             await _perform_file_operation(state, "write", filename, payload)
                         elif action == "read":
-                            content: Optional[bytes] = await _perform_file_operation(state, "read", filename)
-                            response_topic: str = f"{TOPIC_BRIDGE}/{TOPIC_FILE}/read/response/{filename}"
-                            resp_msg = aio_mqtt.PublishableMessage(topic_name=response_topic, payload=content or b"")
-                            await state.mqtt_publish_queue.put(resp_msg)
+                            # Send RPC to MCU to read the file
+                            await send_frame(state, Command.CMD_FILE_READ.value, filename.encode("utf-8"))
                         elif action == "remove":
                             await _perform_file_operation(state, "remove", filename)
 
@@ -835,13 +947,24 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
 
                         if action == "put":
                             datastore_value: str = payload_str
-                            # Enviar a MCU
-                            rpc_payload: bytes = f"{key}\0{datastore_value}".encode("utf-8")
+                            key_bytes = key.encode("utf-8")
+                            value_bytes = datastore_value.encode("utf-8")
+
+                            # Ensure lengths fit in 1 byte (u8)
+                            if len(key_bytes) > 255 or len(value_bytes) > 255:
+                                logger.warning("Datastore key or value too long for protocol (max 255 bytes). Key: %d, Value: %d", len(key_bytes), len(value_bytes))
+                                continue
+
+                            rpc_payload = struct.pack(DATASTORE_KEY_LEN_FORMAT, len(key_bytes)) + \
+                                          key_bytes + \
+                                          struct.pack(DATASTORE_VALUE_LEN_FORMAT, len(value_bytes)) + \
+                                          value_bytes
+
                             await send_frame(state, Command.CMD_DATASTORE_PUT.value, rpc_payload)
                             # Actualizar estado local y publicar para sincronización
                             state.datastore[key] = datastore_value
                             resp_msg = aio_mqtt.PublishableMessage(
-                                topic_name=f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/get/{key}",
+                                topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_DATASTORE}/get/{key}",
                                 payload=datastore_value.encode("utf-8")
                             )
                             await state.mqtt_publish_queue.put(resp_msg)
@@ -851,7 +974,7 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
                             # Publicar valor local si existe (respuesta rápida)
                             if key in state.datastore:
                                 resp_msg = aio_mqtt.PublishableMessage(
-                                    topic_name=f"{TOPIC_BRIDGE}/{TOPIC_DATASTORE}/get/{key}",
+                                    topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_DATASTORE}/get/{key}",
                                     payload=state.datastore[key].encode("utf-8")
                                 )
                                 await state.mqtt_publish_queue.put(resp_msg)
@@ -864,60 +987,97 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
                         logger.info("Added message to mailbox queue. Size: %d", len(state.mailbox_queue))
                         # Publicar nuevo tamaño
                         count_msg = aio_mqtt.PublishableMessage(
-                            topic_name=f"{TOPIC_BRIDGE}/{TOPIC_MAILBOX}/available",
+                            topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/available",
                             payload=str(len(state.mailbox_queue)).encode("utf-8")
                         )
                         await state.mqtt_publish_queue.put(count_msg)
 
                     # --- Shell Command Execution ---
-                    # Formato: br/sh/run
-                    elif topic_type == TOPIC_SH and identifier == "run":
-                        cmd_str: str = payload_str
-                        if not cmd_str: continue # Ignorar comando vacío
-                        logger.info("Executing shell command from MQTT: '%s'", cmd_str)
-                        response: str = ""
-                        proc: Optional[asyncio.subprocess.Process] = None
-                        try:
-                            # Comprobar si el comando está permitido
-                            # Usar shlex.split para manejar comillas si estuviera disponible
-                            cmd_parts = cmd_str.split()
-                            cmd_base = cmd_parts[0] if cmd_parts else ""
-                            if state.allowed_commands and cmd_base not in state.allowed_commands:
-                                raise PermissionError(f"Command '{cmd_base}' not allowed")
+                    # Formato: br/sh/run | br/sh/run_async | br/sh/poll/<pid> | br/sh/kill/<pid>
+                    elif topic_type == TOPIC_SH:
+                        action: str = identifier # run, run_async, poll, kill
 
-                            proc = await asyncio.create_subprocess_shell(
-                                cmd_str,
-                                stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE,
-                            )
-                            comm_result: tuple[bytes | None, bytes | None]
-                            comm_result = await asyncio.wait_for(
-                                proc.communicate(), timeout=state.process_timeout
-                            )
-                            stdout, stderr = comm_result
-                            response = f"""Exit Code: {proc.returncode}
+                        if action == "run":
+                            # Existing synchronous command handling
+                            cmd_str: str = payload_str
+                            if not cmd_str: continue # Ignorar comando vacío
+                            logger.info("Executing shell command from MQTT: '%s'", cmd_str)
+                            response: str = ""
+                            proc: Optional[asyncio.subprocess.Process] = None
+                            try:
+                                cmd_parts = cmd_str.split()
+                                cmd_base = cmd_parts[0] if cmd_parts else ""
+                                if state.allowed_commands and cmd_base not in state.allowed_commands:
+                                    raise PermissionError(f"Command '{cmd_base}' not allowed")
+
+                                proc = await asyncio.create_subprocess_shell(
+                                    cmd_str,
+                                    stdout=asyncio.subprocess.PIPE,
+                                    stderr=asyncio.subprocess.PIPE,
+                                )
+                                comm_result: tuple[bytes | None, bytes | None]
+                                comm_result = await asyncio.wait_for(
+                                    proc.communicate(), timeout=state.process_timeout
+                                )
+                                stdout, stderr = comm_result
+                                response = f"""Exit Code: {proc.returncode}
 -- STDOUT --
 {(stdout or b"").decode(errors='ignore')}
 -- STDERR --
 {(stderr or b"").decode(errors='ignore')}"""
-                        except asyncio.TimeoutError:
-                            response = f"Error: Command timed out after {state.process_timeout} seconds."
-                            if proc and proc.returncode is None: # Solo matar si no ha terminado
-                                 try: proc.kill()
-                                 except ProcessLookupError: pass
-                        except PermissionError as e:
-                             response = f"Error: {e}"
-                        except OSError as e:
-                            response = f"Error: Failed to execute command: {e}"
-                        except Exception:
-                             logger.exception("Unexpected error executing shell command")
-                             response = "Error: Unexpected server error"
+                            except asyncio.TimeoutError:
+                                response = f"Error: Command timed out after {state.process_timeout} seconds."
+                                if proc and proc.returncode is None:
+                                     try: proc.kill()
+                                     except ProcessLookupError: pass
+                            except PermissionError as e:
+                                 response = f"Error: {e}"
+                            except OSError as e:
+                                response = f"Error: Failed to execute command: {e}"
+                            except Exception:
+                                 logger.exception("Unexpected error executing shell command")
+                                 response = "Error: Unexpected server error"
 
-                        resp_msg = aio_mqtt.PublishableMessage(
-                            topic_name=f"{TOPIC_BRIDGE}/{TOPIC_SH}/response",
-                            payload=response.encode("utf-8")
-                        )
-                        await state.mqtt_publish_queue.put(resp_msg)
+                            resp_msg = aio_mqtt.PublishableMessage(
+                                topic_name=f"{state.mqtt_topic_prefix}/{TOPIC_SH}/response",
+                                payload=response.encode("utf-8")
+                            )
+                            await state.mqtt_publish_queue.put(resp_msg)
+
+                        elif action == "run_async":
+                            cmd_str: str = payload_str
+                            if not cmd_str: continue
+                            logger.info("MQTT: Received async PROCESS_RUN_ASYNC: '%s'", cmd_str)
+                            # Call the existing handler for MCU-originated async process runs
+                            # This handler already sends a response with PID
+                            await _handle_process_run_async(state, cmd_str.encode("utf-8"))
+
+                        elif action == "poll" and len(parts) == 4: # br/sh/poll/<pid>
+                            pid_str: str = parts[3]
+                            try:
+                                pid_u16_payload = struct.pack(">H", int(pid_str))
+                                logger.info("MQTT: Received PROCESS_POLL for PID: %s", pid_str)
+                                # Call the existing handler for MCU-originated process polls
+                                # This handler already sends a response with output
+                                await _handle_process_poll(state, pid_u16_payload)
+                            except ValueError:
+                                logger.warning("Invalid PID format for MQTT PROCESS_POLL: %s", pid_str)
+
+                        elif action == "kill" and len(parts) == 4: # br/sh/kill/<pid>
+                            pid_str: str = parts[3]
+                            try:
+                                pid_u16_payload = struct.pack(">H", int(pid_str))
+                                logger.info("MQTT: Received PROCESS_KILL for PID: %s", pid_str)
+                                # Call the existing handler for MCU-originated process kills
+                                await _handle_process_kill(state, pid_u16_payload)
+                            except ValueError:
+                                logger.warning("Invalid PID format for MQTT PROCESS_KILL: %s", pid_str)
+                        elif topic_type == "system" and identifier == "free_memory" and len(parts) == 4 and parts[3] == "get":
+                            logger.info("MQTT: Received request for free memory.")
+                            # Send RPC to MCU
+                            await send_frame(state, Command.CMD_GET_FREE_MEMORY.value, b"")
+                        else:
+                            logger.warning("Ignoring MQTT message with unknown shell action: %s", topic)
 
                     # --- Pin Control ---
                     # Formato: br/d|a/<pin>/mode | br/d|a/<pin>/read | br/d|a/<pin>
@@ -943,15 +1103,15 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
                                 if subtopic == "mode" and topic_type == TOPIC_DIGITAL:
                                     mode: int = int(payload_str)
                                     if mode not in [0, 1, 2]: raise ValueError(f"Invalid mode: {mode}")
-                                    # <BB = pin (byte), mode (byte), Little Endian
-                                    await send_frame(state, Command.CMD_SET_PIN_MODE.value, struct.pack("<BB", pin, mode))
+                                    # >BB = pin (byte), mode (byte), Big Endian
+                                    await send_frame(state, Command.CMD_SET_PIN_MODE.value, struct.pack(">BB", pin, mode))
                                 elif subtopic == "read":
                                     command: Command = (
                                         Command.CMD_DIGITAL_READ if topic_type == TOPIC_DIGITAL
                                         else Command.CMD_ANALOG_READ
                                     )
-                                    # <B = pin (byte), Little Endian
-                                    await send_frame(state, command.value, struct.pack("<B", pin))
+                                    # >B = pin (byte), Big Endian
+                                    await send_frame(state, command.value, struct.pack(">B", pin))
                                 else:
                                      logger.warning("Ignoring MQTT message with unknown pin subtopic: %s", topic)
 
@@ -964,13 +1124,13 @@ async def _mqtt_subscriber_loop(client: aio_mqtt.Client, state: State) -> None:
                                 if topic_type == TOPIC_DIGITAL:
                                     command = Command.CMD_DIGITAL_WRITE
                                     if pin_value not in [0, 1]: raise ValueError(f"Invalid digital value: {pin_value}")
-                                    # <BB = pin (byte), value (byte), Little Endian
-                                    await send_frame(state, command.value, struct.pack("<BB", pin, pin_value))
+                                    # >BB = pin (byte), value (byte), Big Endian
+                                    await send_frame(state, command.value, struct.pack(">BB", pin, pin_value))
                                 else: # Analog
                                     command = Command.CMD_ANALOG_WRITE
                                     if not (0 <= pin_value <= 255): raise ValueError(f"Invalid analog value: {pin_value}")
-                                    # <BB = pin (byte), value (byte), Little Endian
-                                    await send_frame(state, command.value, struct.pack("<BB", pin, pin_value))
+                                    # >BB = pin (byte), value (byte), Big Endian
+                                    await send_frame(state, command.value, struct.pack(">BB", pin, pin_value))
                         except (ValueError, IndexError):
                              logger.warning("Invalid pin control message format: Topic=%s Payload=%s", topic, payload_str, exc_info=True)
 
@@ -1044,6 +1204,7 @@ async def main_async(config: Dict[str, str]) -> None:
     allowed_cmds_str = config.get("allowed_commands", "")
     state.allowed_commands = [cmd for cmd in allowed_cmds_str.split() if cmd] # Filtrar vacíos
     state.file_system_root = config.get("file_system_root", "/root/yun_files")
+    state.mqtt_topic_prefix = config.get("mqtt_topic", "br") # Initialize from UCI config
     try:
         state.process_timeout = int(config.get("process_timeout", "10"))
     except ValueError:

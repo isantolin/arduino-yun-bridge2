@@ -37,8 +37,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
       return false;  // Not even enough data for a CRC.
     }
     size_t crc_start = decoded_len - sizeof(uint16_t);
-    uint16_t received_crc = (uint16_t)decoded_buffer[crc_start] |
-                            ((uint16_t)decoded_buffer[crc_start + 1] << 8);
+    uint16_t received_crc = read_u16_be(&decoded_buffer[crc_start]);
     uint16_t calculated_crc = crc16_ccitt(decoded_buffer, crc_start);
 
     if (received_crc != calculated_crc) {
@@ -50,7 +49,15 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     if (data_len < sizeof(FrameHeader)) {
       return false;  // Not enough data for a header.
     }
-    memcpy(&out_frame.header, decoded_buffer, sizeof(FrameHeader));
+    
+    // Read header fields manually to ensure correct endianness
+    const uint8_t* p = decoded_buffer;
+    out_frame.header.version = *p++;
+    out_frame.header.payload_length = read_u16_be(p);
+    p += 2;
+    out_frame.header.command_id = read_u16_be(p);
+    p += 2;
+
 
     // --- Validate Header ---
     if (out_frame.header.version != PROTOCOL_VERSION ||
@@ -90,23 +97,24 @@ size_t FrameBuilder::build(uint8_t* buffer, uint16_t command_id,
   }
 
   // --- Header ---
-  FrameHeader header;
-  header.version = PROTOCOL_VERSION;
-  header.payload_length = payload_len;
-  header.command_id = command_id;
+  // Write header fields manually to ensure correct Big Endian byte order
+  uint8_t* p = buffer;
+  *p++ = PROTOCOL_VERSION;
+  write_u16_be(p, payload_len);
+  p += 2;
+  write_u16_be(p, command_id);
+  p += 2;
 
-  // Copy header and payload into the buffer
-  memcpy(buffer, &header, sizeof(FrameHeader));
+  // Copy payload into the buffer
   if (payload && payload_len > 0) {
-    memcpy(buffer + sizeof(FrameHeader), payload, payload_len);
+    memcpy(p, payload, payload_len);
   }
 
   size_t data_len = sizeof(FrameHeader) + payload_len;
 
   // --- CRC ---
   uint16_t crc = crc16_ccitt(buffer, data_len);
-  buffer[data_len] = crc & 0xFF;
-  buffer[data_len + 1] = (crc >> 8) & 0xFF;
+  write_u16_be(buffer + data_len, crc);
 
   return data_len + sizeof(uint16_t);  // Return total raw frame length
 }

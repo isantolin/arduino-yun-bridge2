@@ -1,10 +1,11 @@
-#!/bin/sh
+#!/bin/bash
+set -e
 #
 # This file is part of Arduino Yun Ecosystem v2.
 #
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
-# This program is free software: you can redistribute it and/or modify
+# This program is free software: you can redistribute and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
@@ -23,12 +24,14 @@
 # Uso: ./compile.sh
 set -e
 
-# Default OpenWRT version, can be overridden by the first argument
+# Default OpenWRT version and target, can be overridden by the first and second arguments
 OPENWRT_VERSION=${1:-"24.10.4"}
+OPENWRT_TARGET=${2:-"ath79/generic"}
 
-OPENWRT_URL="https://downloads.openwrt.org/releases/"$OPENWRT_VERSION"/targets/ath79/generic/openwrt-sdk-"$OPENWRT_VERSION"-ath79-generic_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_URL="https://downloads.openwrt.org/releases/"$OPENWRT_VERSION"/targets/"$OPENWRT_TARGET"/openwrt-sdk-"$OPENWRT_VERSION"-"$(echo $OPENWRT_TARGET | tr '/' '-')"_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
 SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
+
 
 
 echo "[INFO] Installing build dependencies required for OpenWRT SDK (development PC only)"
@@ -53,6 +56,11 @@ echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
 # 1. Download and extract the buildroot/SDK if it does not exist, with retry logic for data corruption
+if [ -d "$SDK_DIR" ] && [ ! -f "$SDK_DIR/scripts/feeds" ]; then
+    echo "[WARN] Incomplete SDK detected. Removing and re-downloading."
+    rm -rf "$SDK_DIR"
+fi
+
 if [ ! -d "$SDK_DIR" ]; then
     MAX_RETRIES=5
     RETRY=0
@@ -65,8 +73,16 @@ if [ ! -d "$SDK_DIR" ]; then
         if tar --use-compress-program=unzstd -xf sdk.tar.zst; then
             rm sdk.tar.zst
             mv openwrt-sdk-* "$SDK_DIR"
-            SUCCESS=1
-            break
+            # Add a check for a critical file after extraction
+            if [ -f "$SDK_DIR/include/python3.mk" ]; then
+                SUCCESS=1
+                break
+            else
+                echo "[WARN] SDK extraction successful, but python3.mk not found. Retrying..."
+                rm -rf "$SDK_DIR" # Remove incomplete SDK
+                RETRY=$(expr $RETRY + 1)
+                sleep 2
+            fi
         else
             echo "[WARN] SDK extraction failed (possible data corruption). Retrying..."
             rm -f sdk.tar.zst
@@ -89,8 +105,7 @@ fi
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
 
-# Robust sync for openwrt-yun-bridge: ensure bridge_daemon.py and yunbridge.init are present
-for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge python3-pyserial-asyncio; do
     if [ -d "$pkg" ]; then
         echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
@@ -115,9 +130,32 @@ done
 
 # Ensure OpenWRT SDK detects new packages (refresh package index)
 pushd "$SDK_DIR"
+echo "[INFO] Updating feeds..."
+MAX_RETRIES=5
+RETRY=0
+SUCCESS=0
+while [ $RETRY -lt $MAX_RETRIES ]; do
+    RETRY_COUNT=$(expr $RETRY + 1)
+    echo "[INFO] Updating feeds (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+    if ./scripts/feeds update -a; then
+        SUCCESS=1
+        break
+    else
+        echo "[WARN] Feeds update failed. Retrying..."
+        RETRY=$(expr $RETRY + 1)
+        sleep 2
+    fi
+done
+if [ $SUCCESS -ne 1 ]; then
+    echo "[ERROR] Failed to update feeds after $MAX_RETRIES attempts. Exiting."
+    exit 1
+fi
+echo "[INFO] Installing feeds..."
+./scripts/feeds install -a
+
 # Enable required Yun packages and dependencies automatically
 REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
-REQUIRED_DEPS="python3 python3-pyserial python3-paho-mqtt luci-base luci-compat luci-mod-admin-full lua luci-lib-nixio luci-lib-json python3-aio-mqtt-mod"
+REQUIRED_DEPS="python3 python3-pyserial python3-aio-mqtt-mod python3-pyserial-asyncio"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
@@ -148,14 +186,12 @@ echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
 find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
 
 pushd "$SDK_DIR"
-for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
-    if [ -d "package/$pkg" ]; then
-        echo "[BUILD] Building $pkg (.ipk) in SDK..."
-        make package/$pkg/clean V=s || true
-        make package/$pkg/compile V=s
-        # Copiar artefactos .ipk al bin local
-        find bin/packages/ -name "$pkg*_*.ipk" -exec cp {} ../$BIN_DIR/ \;
-    fi
+for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge python3-pyserial-asyncio; do
+    echo "[BUILD] Building $pkg (.ipk) in SDK..."
+    make package/$pkg/clean V=s || true
+    make package/$pkg/compile V=s
+    # Copiar artefactos .ipk al bin local
+    find bin/packages/ -name "$pkg*_*.ipk" -exec cp {} ../$BIN_DIR/ \;
 done
 popd
 
@@ -172,21 +208,15 @@ else
 fi
 
 
-# 5. Compilar openwrt-yun-client-python como .whl
-if [ -d "openwrt-yun-client-python" ]; then
-    echo "[BUILD] Building openwrt-yun-client-python (.whl) locally..."
-    (cd openwrt-yun-client-python && make clean && make wheel)
-    cp openwrt-yun-client-python/dist/*.whl "$BIN_DIR/" 2>/dev/null || true
-else
-    echo "[WARN] Package openwrt-yun-client-python not found."
-fi
+
 
 
 echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."
 
 # Cleanup: remove all 'build', 'bin', 'dist', and '*.egg-info' directories from package folders
 echo "[CLEANUP] Removing leftover build, bin, dist, and egg-info directories from packages..."
-for pkg in openwrt-yun-bridge openwrt-yun-client-python luci-app-yunbridge openwrt-yun-core; do
+for pkg in openwrt-yun-bridge luci-app-yunbridge openwrt-yun-core;
+ do
     find "$pkg" -type d -name build -exec rm -rf {} +
     find "$pkg" -type d -name bin -exec rm -rf {} +
     find "$pkg" -type d -name dist -exec rm -rf {} +

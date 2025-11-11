@@ -16,8 +16,20 @@
 #include "Print.h"
 #include "rpc_frame.h"
 
+#ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
+#define BRIDGE_FIRMWARE_VERSION_MAJOR 2
+#endif
+
+#ifndef BRIDGE_FIRMWARE_VERSION_MINOR
+#define BRIDGE_FIRMWARE_VERSION_MINOR 0
+#endif
+
+#ifndef BRIDGE_DEBUG_IO
+#define BRIDGE_DEBUG_IO 1
+#endif
+
 // --- Constantes de la Consola ---
-#define CONSOLE_RX_BUFFER_SIZE 64
+#define CONSOLE_RX_BUFFER_SIZE 32
 #define CONSOLE_BUFFER_HIGH_WATER 50
 #define CONSOLE_BUFFER_LOW_WATER 10
 
@@ -130,6 +142,10 @@ class BridgeClass {
   typedef void (*GetFreeMemoryHandler)(uint16_t free_memory);
   void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
 
+  typedef void (*StatusHandler)(uint8_t status_code, const uint8_t* payload,
+                                uint16_t length);
+  void onStatus(StatusHandler handler);
+
   // --- API de Control de Pines (No Bloqueante) ---
   void pinMode(uint8_t pin, uint8_t mode);
   void digitalWrite(uint8_t pin, uint8_t value);
@@ -166,6 +182,7 @@ class BridgeClass {
   ProcessRunAsyncHandler _process_run_async_handler;
   FileSystemReadHandler _file_system_read_handler;
   GetFreeMemoryHandler _get_free_memory_handler;
+  StatusHandler _status_handler;
 
   void dispatch(const rpc::Frame& frame);
 };

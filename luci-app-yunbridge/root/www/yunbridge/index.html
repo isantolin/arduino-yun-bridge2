@@ -39,9 +39,10 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 	<div id="status">Connecting to MQTT...</div>
 	<script src="mqtt.min.js"></script>
 	<script>
-			// MQTT topics
-			const topicSet = 'yun/pin/13/set';
-			const topicState = 'yun/pin/13/state';
+			// MQTT topics (overridden once the LuCI endpoints respond)
+			let topicPrefix = 'br';
+			let topicSet = `${topicPrefix}/d/13`;
+			let topicState = `${topicPrefix}/d/13/value`;
 			let client = null;
 			let brokerUrl = null;
 			let auth = {user: '', pass: ''};
@@ -51,8 +52,11 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 				fetch('/cgi-bin/luci/admin/services/yunbridge/mqtt_ws_url').then(r => r.text()),
 				fetch('/cgi-bin/luci/admin/services/yunbridge/mqtt_ws_auth').then(r => r.json())
 			]).then(([url, creds]) => {
-				brokerUrl = url;
+				brokerUrl = url.trim();
 				auth = creds;
+				topicPrefix = (creds.topic_prefix || topicPrefix).replace(/\/+$/, '');
+				topicSet = `${topicPrefix}/d/13`;
+				topicState = `${topicPrefix}/d/13/value`;
 				document.getElementById('mqtt-user').value = auth.user || '';
 				document.getElementById('mqtt-pass').value = auth.pass || '';
 				connectMQTT();
@@ -73,7 +77,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 				});
 				client.on('message', function (topic, message) {
 					if (topic === topicState) {
-						document.getElementById('status').innerText = 'LED 13 State: ' + message.toString();
+						const value = message.toString();
+						const pretty = value === '1' ? 'ON' : (value === '0' ? 'OFF' : value);
+						document.getElementById('status').innerText = 'LED 13 State: ' + pretty;
 					}
 				});
 				client.on('error', function (err) {
@@ -86,7 +92,9 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 			}
 
 			function led13(state) {
-				if (client) client.publish(topicSet, state);
+				if (!client) return;
+				const payload = state === 'ON' ? '1' : '0';
+				client.publish(topicSet, payload);
 			}
 	</script>
 </body>

@@ -26,7 +26,8 @@ from typing import Final
 PROTOCOL_VERSION: Final[int] = 0x02
 
 # --- Frame Structure ---
-# The header format is: 1-byte version, 2-byte payload length, 2-byte command ID
+# The header format is: 1-byte version,
+# 2-byte payload length, 2-byte command ID
 # < denotes big-endian byte order.
 CRC_COVERED_HEADER_FORMAT: str = ">BHH"
 CRC_COVERED_HEADER_SIZE: int = struct.calcsize(CRC_COVERED_HEADER_FORMAT)
@@ -65,7 +66,8 @@ class Status(IntEnum):
 
 
 # --- Command Identifiers ---
-# Commands are sent from Linux to MCU, and responses are sent from MCU to Linux.
+# Commands are sent from Linux to MCU, and responses
+# are sent from MCU to Linux.
 # By convention, response IDs are often related to the command ID.
 class Command(IntEnum):
     # System Level
@@ -77,7 +79,6 @@ class Command(IntEnum):
     # Flow Control
     CMD_XOFF = 0x08  # MCU -> Linux: Pause transmission
     CMD_XON = 0x09   # MCU -> Linux: Resume transmission
-
 
     # Pin Operations
     CMD_SET_PIN_MODE = 0x10
@@ -98,8 +99,9 @@ class Command(IntEnum):
 
     # Mailbox
     CMD_MAILBOX_READ = 0x40
-    CMD_MAILBOX_PROCESSED = 0x41 # MCU -> Linux: A message was processed
+    CMD_MAILBOX_PROCESSED = 0x41  # MCU -> Linux: A message was processed
     CMD_MAILBOX_AVAILABLE = 0x42
+    CMD_MAILBOX_PUSH = 0x43
     CMD_MAILBOX_READ_RESP = 0x90
     CMD_MAILBOX_AVAILABLE_RESP = 0x92
 

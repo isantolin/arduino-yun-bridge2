@@ -38,6 +38,18 @@ MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
 
+#if BRIDGE_DEBUG_IO
+static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
+  if (!Console) return;
+  Console.print(F("[GPIO] "));
+  Console.print(action);
+  Console.print(F(" D"));
+  Console.print(pin);
+  Console.print(F(" = "));
+  Console.println(value);
+}
+#endif
+
 // =================================================================================
 // ConsoleClass
 // =================================================================================
@@ -236,7 +248,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _process_poll_handler(nullptr),
       _process_run_async_handler(nullptr),
       _file_system_read_handler(nullptr),
-      _get_free_memory_handler(nullptr) {}
+      _get_free_memory_handler(nullptr),
+      _status_handler(nullptr) {}
 
 void BridgeClass::begin() {
   // CORRECCIÓN: Usar static_cast en lugar de dynamic_cast porque RTTI está desactivado.
@@ -263,6 +276,7 @@ void BridgeClass::onProcessPollResponse(ProcessPollHandler handler) { _process_p
 void BridgeClass::onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
 void BridgeClass::onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
 void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
+void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 
 /**
@@ -385,13 +399,18 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         break;
 
       // Otros casos de respuesta...
-       case STATUS_ACK:
-         // Podríamos tener un callback genérico para ACKs si fuese útil.
-         break;
-       case STATUS_ERROR:
-       case STATUS_CMD_UNKNOWN:
-         // Podríamos tener un callback genérico para errores.
-         break;
+      case STATUS_ACK:
+      case STATUS_ERROR:
+      case STATUS_CMD_UNKNOWN:
+      case STATUS_MALFORMED:
+      case STATUS_CRC_MISMATCH:
+      case STATUS_TIMEOUT:
+      case STATUS_NOT_IMPLEMENTED:
+        if (_status_handler) {
+          _status_handler((uint8_t)frame.header.command_id, frame.payload,
+                          frame.header.payload_length);
+        }
+        break;
 
        default:
          // Respuesta desconocida o no manejada explícitamente.
@@ -409,6 +428,27 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool requires_ack = false;
 
   switch (frame.header.command_id) {
+    case CMD_GET_VERSION:
+      {
+        uint8_t version_payload[2] = {
+            (uint8_t)BRIDGE_FIRMWARE_VERSION_MAJOR,
+            (uint8_t)BRIDGE_FIRMWARE_VERSION_MINOR};
+        sendFrame(CMD_GET_VERSION_RESP, version_payload, sizeof(version_payload));
+        command_processed_internally = true;
+      }
+      break;
+    case STATUS_ACK:
+    case STATUS_CMD_UNKNOWN:
+    case STATUS_MALFORMED:
+    case STATUS_CRC_MISMATCH:
+    case STATUS_TIMEOUT:
+    case STATUS_NOT_IMPLEMENTED:
+      if (_status_handler) {
+        _status_handler((uint8_t)frame.header.command_id, frame.payload,
+                        frame.header.payload_length);
+      }
+      command_processed_internally = true;
+      break;
     case CMD_GET_FREE_MEMORY:
       {
         // TODO: Implement platform-specific free memory retrieval here.
@@ -432,14 +472,24 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     // --- Comandos I/O que la librería maneja automáticamente ---
     case CMD_SET_PIN_MODE:
       if (frame.header.payload_length == 2) {
-        ::pinMode(frame.payload[0], frame.payload[1]);
+      uint8_t pin = frame.payload[0];
+      uint8_t mode = frame.payload[1];
+      ::pinMode(pin, mode);
+    #if BRIDGE_DEBUG_IO
+      bridge_debug_log_gpio("pinMode", pin, mode);
+    #endif
         command_processed_internally = true;
         requires_ack = true;
       }
       break;
     case CMD_DIGITAL_WRITE:
       if (frame.header.payload_length == 2) {
-        ::digitalWrite(frame.payload[0], frame.payload[1]);
+      uint8_t pin = frame.payload[0];
+      uint8_t value = frame.payload[1] ? HIGH : LOW;
+      ::digitalWrite(pin, value);
+    #if BRIDGE_DEBUG_IO
+      bridge_debug_log_gpio("digitalWrite", pin, value == HIGH ? 1 : 0);
+    #endif
         command_processed_internally = true;
         requires_ack = true;
       }

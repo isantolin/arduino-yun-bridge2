@@ -16,11 +16,11 @@ endef
 
 
 define Package/$(PKG_NAME)
-  SECTION:=luci
-  CATEGORY:=LuCI
-  SUBMENU:=3. Applications
+	SECTION:=luci
+	CATEGORY:=LuCI
+	SUBMENU:=3. Applications
 	TITLE:=LuCI Support for YunBridge (system Python only)
-		DEPENDS:=+luci-base +openwrt-yun-core +python3-aio-mqtt-mod +mosquitto-client
+		DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +openwrt-yun-core +mosquitto-client +lua
 endef
 
 

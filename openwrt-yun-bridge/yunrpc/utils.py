@@ -31,7 +31,8 @@ def get_uci_config() -> Dict[str, str]:
     """
     config: Dict[str, str] = {}
     try:
-        # Use the 'uci show' command to get all values for the 'yunbridge' section
+        # Use the 'uci show' command to get all values
+        # for the 'yunbridge' section
         result = subprocess.run(
             ["uci", "show", "yunbridge"],
             capture_output=True,
@@ -58,7 +59,8 @@ def get_uci_config() -> Dict[str, str]:
     except subprocess.CalledProcessError as e:
         logger.warning(
             "Failed to execute 'uci show yunbridge': %s. "
-            "This may happen if the yunbridge package is not installed correctly. "
+            "This may happen if the yunbridge package "
+            "is not installed correctly. "
             "Falling back to default configuration.",
             e,
         )
@@ -77,5 +79,7 @@ def get_default_config() -> Dict[str, str]:
         "allowed_commands": "",
         "file_system_root": "/root/yun_files",
         "process_timeout": "10",
+        "console_queue_limit_bytes": "16384",
+        "mailbox_queue_limit": "64",
+        "mailbox_queue_bytes_limit": "65536",
     }
-

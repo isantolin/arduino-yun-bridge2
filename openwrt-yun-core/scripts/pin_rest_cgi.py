@@ -30,6 +30,7 @@ import logging
 import os
 import re
 import sys
+from typing import Any, Dict
 
 import paho.mqtt.client as mqtt
 from yunrpc.utils import get_uci_config
@@ -50,23 +51,23 @@ MQTT_PORT = int(CFG.get("mqtt_port", 1883))
 TOPIC_PREFIX = CFG.get("mqtt_topic", "br")  # Default topic prefix
 
 
-def get_pin_from_path():
-    """Extracts pin number from URL path like /pin/13."""
+def get_pin_from_path() -> str | None:
+    """Extract the pin number from the PATH_INFO value."""
+
     path = os.environ.get("PATH_INFO", "")
-    m = re.match(r"/pin/(\d+)", path)
-    if m:
-        return m.group(1)
-    return None
+    match = re.match(r"/pin/(\d+)", path)
+    return match.group(1) if match else None
 
 
-def send_response(status_code, data):
-    """Prints a standard JSON response for the CGI."""
+def send_response(status_code: int, data: Dict[str, Any]) -> None:
+    """Emit a JSON response suitable for CGI scripts."""
+
     print(f"Status: {status_code}")
     print("Content-Type: application/json\n")
     print(json.dumps(data))
 
 
-def main():
+def main() -> None:
     """Main CGI script logic."""
     method = os.environ.get("REQUEST_METHOD", "GET").upper()
     pin = get_pin_from_path()
@@ -75,7 +76,11 @@ def main():
     if not pin or not pin.isdigit():
         logger.error("Failed: pin parameter missing or invalid.")
         send_response(
-            400, {"status": "error", "message": "Pin must be specified in the URL as /pin/<N>."},
+            400,
+            {
+                "status": "error",
+                "message": "Pin must be specified in the URL as /pin/<N>.",
+            },
         )
         return
 
@@ -84,7 +89,10 @@ def main():
             405,
             {
                 "status": "error",
-                "message": "GET method not supported. Pin status is available via MQTT subscription.",
+                "message": (
+                    "GET method not supported. Pin status is available via "
+                    "MQTT subscription."
+                ),
             },
         )
         return
@@ -93,15 +101,24 @@ def main():
         try:
             content_length = int(os.environ.get("CONTENT_LENGTH", 0))
             body = sys.stdin.read(content_length) if content_length > 0 else ""
-            data = json.loads(body) if body else {}
-            state = data.get("state", "").upper()
+            data: Dict[str, Any] = json.loads(body) if body else {}
+            state = str(data.get("state", "")).upper()
         except (ValueError, json.JSONDecodeError):
             logger.exception("POST body parse error")
-            send_response(400, {"status": "error", "message": "Invalid JSON body."})
+            send_response(
+                400,
+                {"status": "error", "message": "Invalid JSON body."},
+            )
             return
 
         if state not in ("ON", "OFF"):
-            send_response(400, {"status": "error", "message": 'State must be "ON" or "OFF".'})
+            send_response(
+                400,
+                {
+                    "status": "error",
+                    "message": 'State must be "ON" or "OFF".',
+                },
+            )
             return
 
         payload = "1" if state == "ON" else "0"
@@ -113,28 +130,40 @@ def main():
             client.publish(topic, payload)
             client.disconnect()
 
-            logger.info(f"Success: Published to {topic} with payload {payload}")
+            logger.info(
+                "Success: Published to %s with payload %s", topic, payload
+            )
             send_response(
                 200,
                 {
                     "status": "ok",
                     "pin": int(pin),
                     "state": state,
-                    "message": f"Command to turn pin {pin} {state} sent via MQTT.",
+                    "message": (
+                        f"Command to turn pin {pin} {state} sent via MQTT."
+                    ),
                 },
             )
-        except (OSError, mqtt.MQTTException) as e:
-            logger.exception(f"MQTT Error: {e} (pin {pin})")
+        except Exception as exc:
+            logger.exception("MQTT Error for pin %s: %s", pin, exc)
             send_response(
                 500,
                 {
                     "status": "error",
-                    "message": f"Failed to send command for pin {pin} via MQTT: {e}",
+                    "message": (
+                        f"Failed to send command for pin {pin} via MQTT: {exc}"
+                    ),
                 },
             )
         return
 
-    send_response(405, {"status": "error", "message": f"Method {method} not allowed."} )
+    send_response(
+        405,
+        {
+            "status": "error",
+            "message": f"Method {method} not allowed.",
+        },
+    )
 
 
 if __name__ == "__main__":

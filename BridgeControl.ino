@@ -14,18 +14,26 @@
  *   mejorando la gestión de la memoria.
  * - El código es más limpio y se alinea con el uso previsto de la arquitectura.
  */
+#define BRIDGE_ENABLE_DATASTORE 0
+#define BRIDGE_ENABLE_FILESYSTEM 0
+#define BRIDGE_ENABLE_PROCESS 0
+
 #include <Bridge.h>
+#include <string.h>
 
 // Define el pin del LED para facilitar su referencia
-const int ledPin = 13;
 
+#include <YunBridge.h>
+#include <Console.h>
+#include <Mailbox.h>
+#include <FileSystem.h>
+#include <Process.h>
+const int ledPin = 13;
 // --- Manejador de Respuesta Asíncrono ---
 // Esta función será llamada por la librería Bridge cuando llegue una respuesta
 // de una lectura digital, sin bloquear el loop principal.
-void handleDigitalReadResponse(uint8_t pin, int value) {
-  Console.print("Respuesta asíncrona para pin D");
-  Console.print(pin);
-  Console.print(": ");
+void handleDigitalReadResponse(int value) {
+  Console.print(F("Respuesta asíncrona de lectura digital: "));
   Console.println(value);
 }
 
@@ -33,9 +41,9 @@ void handleDigitalReadResponse(uint8_t pin, int value) {
 // Esta función será llamada por la librería Bridge para comandos que no tienen
 // un manejador específico registrado.
 void handleCommand(const rpc::Frame& frame) {
-  Console.print("Comando RPC no manejado: ID=0x");
+  Console.print(F("Comando RPC no manejado: ID=0x"));
   Console.print(frame.header.command_id, HEX);
-  Console.print(", Payload Len=");
+  Console.print(F(", Payload Len="));
   Console.println(frame.header.payload_length);
 }
 
@@ -48,18 +56,18 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
     memcpy(msg_buf, buffer, size);
     msg_buf[size] = '\0';  // Asegurar la terminación NULL
 
-    Console.print("Mensaje de Mailbox recibido: ");
+    Console.print(F("Mensaje de Mailbox recibido: "));
     Console.println(msg_buf);
 
     // Funcionalidad original: controlar LED con "ON" / "OFF"
     if (strcmp(msg_buf, "ON") == 0) {
       digitalWrite(ledPin, HIGH);
-      Console.println("LED 13 encendido por Mailbox");
+      Console.println(F("LED 13 encendido por Mailbox"));
     } else if (strcmp(msg_buf, "OFF") == 0) {
       digitalWrite(ledPin, LOW);
-      Console.println("LED 13 apagado por Mailbox");
+      Console.println(F("LED 13 apagado por Mailbox"));
     } else if (strcmp(msg_buf, "READ_D13") == 0) {
-      Console.println("Solicitando lectura del pin 13 de forma asíncrona...");
+      Console.println(F("Solicitando lectura del pin 13 de forma asíncrona..."));
       Bridge.requestDigitalRead(13);
     } else {
       char error_msg[100];
@@ -67,10 +75,25 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
       Console.println(error_msg);
     }
   } else {
-    Console.println("Error: Mensaje de Mailbox demasiado largo.");
+    Console.println(F("Error: Mensaje de Mailbox demasiado largo."));
   }
   // Después de procesar el mensaje, solicitar el siguiente para mantener el flujo.
   Mailbox.requestRead();
+}
+
+// Se notifica cuando el daemon en Linux envía un STATUS_* (ACK, ERROR, etc.).
+void handleStatusFrame(uint8_t status_code, const uint8_t* payload, uint16_t length) {
+  Console.print(F("Estado del daemon: 0x"));
+  Console.print(status_code, HEX);
+  if (length > 0) {
+    char tmp[65];
+    uint16_t to_copy = length < sizeof(tmp) ? length : sizeof(tmp) - 1;
+    memcpy(tmp, payload, to_copy);
+    tmp[to_copy] = '\0';
+    Console.print(F(" -> "));
+    Console.print(tmp);
+  }
+  Console.println();
 }
 
 void setup() {
@@ -81,14 +104,15 @@ void setup() {
   Bridge.onDigitalReadResponse(handleDigitalReadResponse);
   Bridge.onCommand(handleCommand);
   Bridge.onMailboxMessage(handleMailboxMessage);
+  Bridge.onStatus(handleStatusFrame);
   
   pinMode(ledPin, OUTPUT);
 
   // Un delay para dar tiempo al lado Linux a arrancar completamente.
   delay(2000);
   
-  Console.println("BridgeControl sketch refactorizado y asíncrono iniciado.");
-  Console.println("Envíe 'READ_D13' por Mailbox para probar la lectura asíncrona.");
+  Console.println(F("BridgeControl sketch refactorizado y asíncrono iniciado."));
+  Console.println(F("Envíe 'READ_D13' por Mailbox para probar la lectura asíncrona."));
 
   // Iniciar la solicitud de mensajes del Mailbox
   Mailbox.requestRead();

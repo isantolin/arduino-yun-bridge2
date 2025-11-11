@@ -39,6 +39,7 @@ CRC16_TABLE: List[int] = [
     0x6E17, 0x7E36, 0x4E55, 0x5E74, 0x2E93, 0x3EB2, 0x0ED1, 0x1EF0,
 ]
 
+
 def crc16_ccitt(data: bytes, initial: int = 0xFFFF) -> int:
     """Calculates the CRC-16-CCITT checksum for a byte string.
 
@@ -61,6 +62,7 @@ def crc16_ccitt(data: bytes, initial: int = 0xFFFF) -> int:
         # Ensure CRC remains a 16-bit value
         crc &= 0xFFFF
     return crc
+
 
 if __name__ == "__main__":
     # --- Test Cases ---
@@ -88,7 +90,7 @@ if __name__ == "__main__":
 
     # Test with an empty byte string
     test_data_3 = b""
-    expected_crc_3 = 0xFFFF # Initial value
+    expected_crc_3 = 0xFFFF  # Initial value
     calculated_crc_3 = crc16_ccitt(test_data_3)
     print("Test Case 3: Empty Data")
     print(f"  - Expected CRC: {expected_crc_3:04X}")

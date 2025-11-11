@@ -1,0 +1,10 @@
+{
+    "typeCheckingMode": "strict",
+    "extraPaths": [
+        "typings",
+        "openwrt-yun-bridge"
+    ],
+    "exclude": [
+        "openwrt-yun-examples-python"
+    ]
+}

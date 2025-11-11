@@ -6,7 +6,10 @@ import sys
 
 from yunbridge_client import Bridge
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 
 async def main() -> None:

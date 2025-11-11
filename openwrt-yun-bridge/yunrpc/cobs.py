@@ -1,86 +1,94 @@
-"""Consistent Overhead Byte Stuffing (COBS)
+"""Consistent Overhead Byte Stuffing (COBS) helpers.
 
-This implementation is adapted from a public domain version by
-Craig McQueen.
+This module keeps the Python implementation aligned with the firmware logic
+so frame encoding/decoding behaves exactly the same on both sides of the
+serial link.
 """
+
+from __future__ import annotations
 
 from typing import Generator
 
+_MAX_CODE: int = 0xFF
+
 
 def encode(data: bytes) -> bytes:
-    """COBS encode data.
+    """COBS-encode *data*.
 
-    Args:
-        data: Data to encode.
-
-    Returns:
-        Encoded data.
+    The returned buffer does **not** include the trailing ``0x00`` delimiter;
+    callers must append it when framing the stream, matching the behaviour of
+    the MCU implementation in ``cobs.h``.
     """
+
+    if not data:
+        return b"\x01"
+
     encoded = bytearray()
-    # Add a zero to the end of the data
-    data = bytearray(data)
-    data.append(0)
-    #
     code_index = 0
+    encoded.append(0)  # placeholder for the code byte
     code = 1
+
     for byte in data:
         if byte == 0:
-            encoded.append(code)
+            encoded[code_index] = code
+            code_index = len(encoded)
+            encoded.append(0)  # new placeholder
             code = 1
-        else:
-            encoded.append(byte)
-            code += 1
-            if code == 255:
-                encoded.insert(code_index, code)
-                code = 1
-                code_index = len(encoded)
-    encoded.insert(code_index, code)
+            continue
+
+        encoded.append(byte)
+        code += 1
+        if code == _MAX_CODE:
+            encoded[code_index] = code
+            code_index = len(encoded)
+            encoded.append(0)
+            code = 1
+
+    encoded[code_index] = code
     return bytes(encoded)
 
 
 def decode(encoded: bytes) -> bytes:
-    """COBS decode data.
+    """Decode a COBS frame that excludes the delimiter byte."""
 
-    Args:
-        encoded: COBS-encoded data (without the trailing zero delimiter).
-
-    Returns:
-        Decoded data.
-    """
     decoded = bytearray()
-    code = 255
-    copy = False
-    for byte in encoded:
-        if copy:
-            decoded.append(byte)
-            copy -= 1
-        else:
-            copy = byte - 1
-            code = byte
-            if code != 255:
-                decoded.append(0)
-    # The COBS decoding process often prepends an implicit zero.
-    # This slice removes that prepended zero to yield the original data.
-    decoded = decoded[1:]
+    index = 0
+    length = len(encoded)
+
+    while index < length:
+        code = encoded[index]
+        index += 1
+
+        if code == 0:
+            raise ValueError("COBS encoded data may not contain zero bytes")
+
+        read_length = code - 1
+        if index + read_length > length:
+            raise ValueError("COBS encoded data is truncated")
+
+        decoded.extend(encoded[index:index + read_length])
+        index += read_length
+
+        if code < _MAX_CODE and index < length:
+            decoded.append(0)
+
     return bytes(decoded)
 
 
 def iter_decode(encoded: bytes) -> Generator[bytes, None, None]:
-    """COBS decode data, and yield each packet.
+    """Yield decoded packets from a stream with zero-delimited frames."""
 
-    Args:
-        encoded: Data to decode.
-
-    Returns:
-        A generator that yields decoded packets.
-    """
     packet = bytearray()
     for byte in encoded:
         if byte == 0:
-            yield bytes(packet)
-            packet = bytearray()
+            if packet:
+                yield decode(bytes(packet))
+                packet.clear()
         else:
             packet.append(byte)
+
+    if packet:
+        yield decode(bytes(packet))
 
 
 if __name__ == "__main__":

@@ -15,3 +15,9 @@ El ecosistema utiliza MQTT como el mecanismo principal de comunicación para int
 Versiones anteriores del diseño consideraban un sistema de plugins para extender la funcionalidad del cliente. Sin embargo, la arquitectura actual centraliza la lógica de puente en `bridge_daemon.py` y utiliza MQTT como la interfaz unificada. Esto simplifica el diseño y mejora la interoperabilidad.
 
 En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que proporciona una solución robusta, modular y adaptable a casi cualquier caso de uso de IoT.
+
+## Dependencias empaquetadas
+
+Los scripts se distribuyen con las mismas dependencias vendorizadas que el daemon (`serial_asyncio` y stubs de `aio-mqtt`). Durante la instalación de los IPK no es necesario usar `pip`; todo el código requerido se copia desde este repositorio al dispositivo.
+
+Antes de modificar los ejemplos, ejecuta `pyright` en la raíz del proyecto para asegurarte de que el tipado estático siga consistente con el daemon.

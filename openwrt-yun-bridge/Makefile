@@ -23,9 +23,11 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-yun-bridge
 PKG_VERSION:=2.0.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
+HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
+PYTHON3 := $(if $(wildcard $(HOST_PYTHON3)),$(HOST_PYTHON3),python3)
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -33,9 +35,7 @@ define Package/$(PKG_NAME)
 	SECTION:=utils
 	CATEGORY:=Utilities
 	TITLE:=Yun Bridge Python Daemon
-	# ANÁLISIS: Añadido +python3-asyncio, que es una dependencia de runtime
-	# faltante para el demonio (bridge_daemon.py).
-	DEPENDS:=+openwrt-yun-core +python3 +python3-asyncio +python3-pyserial +python3-aio-mqtt-mod
+	DEPENDS:=+openwrt-yun-core +python3 +python3-asyncio +python3-aio-mqtt-mod +python3-pyserial
 endef
 
 define Package/$(PKG_NAME)/description
@@ -43,12 +43,16 @@ define Package/$(PKG_NAME)/description
 endef
 
 define Build/Compile
+	$(PYTHON3) -m compileall -q $(PKG_BUILD_DIR)
+	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
 endef
 
 define Build/Prepare
+	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./bridge_daemon.py $(PKG_BUILD_DIR)/
 	$(CP) -r ./yunrpc $(PKG_BUILD_DIR)/
+	$(CP) -r ./yunbridge $(PKG_BUILD_DIR)/
 	$(CP) ./yunbridge.init $(PKG_BUILD_DIR)/
 endef
 
@@ -58,6 +62,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bridge_daemon.py $(1)/usr/libexec/yunbridge/
 	$(CP) $(PKG_BUILD_DIR)/yunrpc $(1)/usr/libexec/yunbridge/
+	$(CP) $(PKG_BUILD_DIR)/yunbridge $(1)/usr/libexec/yunbridge/
 	echo -e '#!/bin/sh\nexec python3 /usr/libexec/yunbridge/bridge_daemon.py' > $(1)/usr/bin/yunbridge
 	chmod 755 $(1)/usr/bin/yunbridge
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge

@@ -82,9 +82,9 @@ function action_api(...)
     end
 
     -- Get MQTT config from UCI
-    local host = uci:get("yunbridge", "main", "mqtt_host") or "127.0.0.1"
-    local port = uci:get("yunbridge", "main", "mqtt_port") or "1883"
-    local topic_prefix = uci:get("yunbridge", "main", "mqtt_topic") or "br"
+    local host = uci:get("yunbridge", "general", "mqtt_host") or "127.0.0.1"
+    local port = uci:get("yunbridge", "general", "mqtt_port") or "1883"
+    local topic_prefix = uci:get("yunbridge", "general", "mqtt_topic") or "br"
 
     -- Construct mosquitto_pub command
     local payload = (state == "ON") and "1" or "0"
@@ -114,14 +114,15 @@ end
 
 
 function action_mqtt_ws_auth()
-    local user = uci:get("yunbridge", "main", "mqtt_user") or ""
-    local pass = uci:get("yunbridge", "main", "mqtt_pass") or ""
-    send_json(200, {user = user, pass = pass})
+    local user = uci:get("yunbridge", "general", "mqtt_user") or ""
+    local pass = uci:get("yunbridge", "general", "mqtt_pass") or ""
+    local topic_prefix = uci:get("yunbridge", "general", "mqtt_topic") or "br"
+    send_json(200, {user = user, pass = pass, topic_prefix = topic_prefix})
 end
 
 function action_mqtt_ws_url()
-    local host = uci:get("yunbridge", "main", "mqtt_host") or "127.0.0.1"
-    local ws_port = uci:get("yunbridge", "main", "mqtt_ws_port") or "9001"
+    local host = uci:get("yunbridge", "general", "mqtt_host") or "127.0.0.1"
+    local ws_port = uci:get("yunbridge", "general", "mqtt_ws_port") or "9001"
     local url = string.format("ws://%s:%s", host, ws_port)
     luci.http.prepare_content("text/plain")
     luci.http.write(url)

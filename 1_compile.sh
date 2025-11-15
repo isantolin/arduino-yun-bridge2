@@ -45,7 +45,7 @@ if [ "$(uname -s)" = "Linux" ]; then
             zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
             libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
             libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
-            uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev
+            uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor
     elif [ -f /etc/fedora-release ]; then
         echo "[INFO] Installing packages for Fedora..."
         # sudo dnf clean all
@@ -58,7 +58,7 @@ if [ "$(uname -s)" = "Linux" ]; then
             libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
             libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
             tk-devel tcl-devel libuuid-devel sqlite-devel xz-devel \
-            bluez-libs-devel libbsd-devel
+            bluez-libs-devel libbsd-devel binutils-devel
     else
         echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
     fi
@@ -159,9 +159,19 @@ fi
 echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 
+# The SDK for ath79 omits bcm53xx PHY modules, strip the dangling deps to avoid warnings.
+USB_MODULES_MK="package/kernel/linux/modules/usb.mk"
+if [ -f "$USB_MODULES_MK" ]; then
+    if grep -q "kmod-phy-bcm-ns-usb" "$USB_MODULES_MK"; then
+        echo "[INFO] Removing references to missing BCM Northstar USB PHY kmods..."
+        sed -i '/kmod-phy-bcm-ns-usb2/d' "$USB_MODULES_MK"
+        sed -i '/kmod-phy-bcm-ns-usb3/d' "$USB_MODULES_MK"
+    fi
+fi
+
 # Enable required Yun packages and dependencies automatically
 REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
-REQUIRED_DEPS="python3 python3-pyserial"
+REQUIRED_DEPS="python3 python3-pyserial python3-paho-mqtt mosquitto-client luaposix"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then

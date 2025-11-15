@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 import asyncio
 import logging
-import os
-import sys
 
 # Add parent directory to Python path
-from yunbridge_client import Bridge
+from yunbridge_client import Bridge, dump_client_env
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -13,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
+    dump_client_env(logger)
     bridge = Bridge()
     await bridge.connect() # Explicitly connect
 

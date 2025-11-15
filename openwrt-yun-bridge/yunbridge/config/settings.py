@@ -31,6 +31,7 @@ class RuntimeConfig:
     allowed_commands: List[str]
     file_system_root: str
     process_timeout: int
+    mqtt_queue_limit: int = 256
     reconnect_delay: int = 5
     status_interval: int = 5
     debug_logging: bool = False
@@ -110,6 +111,9 @@ def load_runtime_config() -> RuntimeConfig:
     mailbox_queue_bytes_limit = _coerce_int(
         raw.get("mailbox_queue_bytes_limit"), 65536
     )
+    mqtt_queue_limit = _coerce_int(raw.get("mqtt_queue_limit"), 256)
+    if mqtt_queue_limit < 1:
+        mqtt_queue_limit = 1
 
     debug_logging = _to_bool(raw.get("debug"))
     if os.environ.get("YUNBRIDGE_DEBUG") == "1":
@@ -130,6 +134,7 @@ def load_runtime_config() -> RuntimeConfig:
         allowed_commands=allowed_commands,
         file_system_root=raw.get("file_system_root", "/root/yun_files"),
         process_timeout=process_timeout,
+        mqtt_queue_limit=mqtt_queue_limit,
         reconnect_delay=5,
         status_interval=5,
         debug_logging=debug_logging,

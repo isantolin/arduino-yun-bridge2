@@ -1,7 +1,9 @@
 import asyncio
-from yunbridge_client import Bridge
+
+from yunbridge_client import Bridge, dump_client_env
 
 async def main():
+    dump_client_env()
     bridge = Bridge()
     await bridge.connect()
     print("Bridge connected")

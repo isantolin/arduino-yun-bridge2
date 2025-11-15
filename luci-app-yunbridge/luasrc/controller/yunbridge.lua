@@ -20,6 +20,10 @@ module("luci.controller.yunbridge", package.seeall)
 
 local fs = require "nixio.fs"
 local uci = require "luci.model.uci".cursor()
+local posix = require "posix"
+local unistd = require "posix.unistd"
+local sys_wait = require "posix.sys.wait"
+local errno = require "posix.errno"
 
 function index()
     -- Configuration and status pages
@@ -61,10 +65,11 @@ function action_api(...)
     end
 
     -- Only POST is supported for pin control
-    if luci.http.request.method ~= "POST" then
+    local method = luci.http.getenv("REQUEST_METHOD") or "GET"
+    if method ~= "POST" then
         return send_json(405, {
             status = "error",
-            message = "Method " .. luci.http.request.method .. " not allowed."
+            message = "Method " .. method .. " not allowed."
         })
     end
 
@@ -86,16 +91,52 @@ function action_api(...)
     local port = uci:get("yunbridge", "general", "mqtt_port") or "1883"
     local topic_prefix = uci:get("yunbridge", "general", "mqtt_topic") or "br"
 
-    -- Construct mosquitto_pub command
+    -- Prepare mosquitto_pub arguments without relying on a shell
     local payload = (state == "ON") and "1" or "0"
     local topic = string.format("%s/d/%s", topic_prefix, pin_number)
-    -- Use -i for a unique client ID to avoid conflicts, and -r to prevent retained messages
-    local command = string.format("mosquitto_pub -h %s -p %s -t '%s' -m '%s' -i 'luci-api-%s-%s' -r &",
-                                  host, port, topic, payload, pin_number, os.time())
+    local client_id = string.format("luci-api-%s-%s", pin_number, os.time())
+    local args = {
+        "mosquitto_pub",
+        "-h", host,
+        "-p", tostring(port),
+        "-t", topic,
+        "-m", payload,
+        "-i", client_id,
+        "-r"
+    }
 
-    -- Execute command
-    local result = os.execute(command)
-    if result == 0 then -- 0 indicates success for os.execute on Unix-like systems
+    local pid, fork_err = unistd.fork()
+    if pid == 0 then
+        posix.setenv("PATH", os.getenv("PATH") or "")
+        local _, _, exec_errno = unistd.execp("mosquitto_pub", args)
+        unistd._exit(exec_errno or 127)
+    elseif not pid then
+        return send_json(500, {
+            status = "error",
+            message = "Failed to fork mosquitto_pub process",
+            detail = fork_err or errno.strerror(errno.errno() or 0),
+            argv = args
+        })
+    end
+
+    local wait_pid, reason, status
+    repeat
+        wait_pid, reason, status = sys_wait.wait(pid)
+        if wait_pid or (errno.errno() or 0) ~= (errno.EINTR or 4) then
+            break
+        end
+    until false
+    if wait_pid ~= pid then
+        return send_json(500, {
+            status = "error",
+            message = "Failed to reap mosquitto_pub process",
+            wait_reason = reason,
+            wait_status = status,
+            argv = args
+        })
+    end
+
+    if reason == "exited" and status == 0 then
         send_json(200, {
             status = "ok",
             pin = tonumber(pin_number),
@@ -106,8 +147,9 @@ function action_api(...)
         send_json(500, {
             status = "error",
             message = "Failed to execute mosquitto_pub. Is mosquitto-client installed?",
-            command_for_debug = command,
-            os_execute_result = result -- Include the raw result for debugging
+            wait_reason = reason,
+            exit_status = status,
+            argv = args
         })
     end
 end

@@ -24,6 +24,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
             payload: Dict[str, Any] = {
                 "serial_connected": serial_connected,
                 "mqtt_queue_size": state.mqtt_publish_queue.qsize(),
+                "mqtt_queue_limit": state.mqtt_queue_limit,
                 "datastore_keys": list(state.datastore.keys()),
                 "mailbox_size": len(state.mailbox_queue),
                 "mailbox_bytes": state.mailbox_queue_bytes,

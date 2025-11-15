@@ -5,17 +5,31 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Dict, List, Optional, Union
+from typing import (
+    AsyncGenerator,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Union,
+)
 
-from aio_mqtt import Client, PublishableMessage, QOSLevel
+try:
+    from yunbridge.mqtt import Client, MQTTError, PublishableMessage, QOSLevel
+except ModuleNotFoundError:
+    from ._mqtt import Client, MQTTError, PublishableMessage, QOSLevel
 
-try:  # aio-mqtt <=0.5
-    from aio_mqtt import MqttError  # type: ignore
-except ImportError:  # pragma: no cover - compatibility shim for >=0.6
-    try:
-        from aio_mqtt import Error as MqttError  # type: ignore
-    except ImportError:  # pragma: no cover - fallback for future refactors
-        from aio_mqtt.error import Error as MqttError  # type: ignore
+from .env import dump_client_env
+
+__all__ = [
+    "Bridge",
+    "dump_client_env",
+    "Client",
+    "MQTTError",
+    "PublishableMessage",
+    "QOSLevel",
+]
 
 MQTT_HOST = os.environ.get("YUN_BROKER_IP", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("YUN_BROKER_PORT", 1883))
@@ -54,13 +68,13 @@ async def get_mqtt_client(
             password=password,
         )
         yield client
-    except MqttError as error:  # pragma: no cover - connection issues
+    except MQTTError as error:  # pragma: no cover - connection issues
         logging.error("Error connecting to MQTT broker: %s", error)
         raise
     finally:
         try:
             await client.disconnect()
-        except MqttError:
+        except MQTTError:
             pass
         finally:
             logging.info("Disconnected from MQTT broker.")
@@ -126,7 +140,7 @@ class Bridge:
         client = self._ensure_client()
         async with client.messages as messages:
             async for message in messages:
-                topic = message.topic.value
+                topic = message.topic_name
                 payload = message.payload or b""
 
                 handled = False
@@ -155,22 +169,35 @@ class Bridge:
         pub_topic: str,
         pub_payload: bytes,
         *,
-        resp_topic: str,
+        resp_topic: Union[str, Sequence[str], Iterable[str]],
         timeout: float = 10,
     ) -> bytes:
         client = self._ensure_client()
+        if isinstance(resp_topic, str):
+            topics: tuple[str, ...] = (resp_topic,)
+        else:
+            topics = tuple(resp_topic)
+        if not topics:
+            raise ValueError("resp_topic must contain at least one topic")
+
         response_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=1)
-        self._response_queues[resp_topic] = response_queue
+        for topic in topics:
+            self._response_queues[topic] = response_queue
 
         try:
-            await client.subscribe((resp_topic, QOSLevel.QOS_0))
+            subscriptions = tuple((topic, QOSLevel.QOS_0) for topic in topics)
+            await client.subscribe(*subscriptions)
             await client.publish(_message(pub_topic, pub_payload))
             return await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
         finally:
-            await client.unsubscribe(resp_topic)
-            self._response_queues.pop(resp_topic, None)
+            try:
+                await client.unsubscribe(*topics)
+            except MQTTError:
+                pass
+            for topic in topics:
+                self._response_queues.pop(topic, None)
 
     async def digital_write(self, pin: int, value: int) -> None:
         # Ensure the pin is configured as output before writing high/low.
@@ -185,7 +212,10 @@ class Bridge:
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/d/{pin}/read",
             b"",
-            resp_topic=f"{self.topic_prefix}/d/{pin}/value",
+            resp_topic=(
+                f"{self.topic_prefix}/d/{pin}/value",
+                f"{self.topic_prefix}/d/value",
+            ),
             timeout=timeout,
         )
         return int(response.decode("utf-8"))
@@ -194,7 +224,10 @@ class Bridge:
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/a/{pin}/read",
             b"",
-            resp_topic=f"{self.topic_prefix}/a/{pin}/value",
+            resp_topic=(
+                f"{self.topic_prefix}/a/{pin}/value",
+                f"{self.topic_prefix}/a/value",
+            ),
             timeout=timeout,
         )
         return int(response.decode("utf-8"))
@@ -237,7 +270,7 @@ class Bridge:
 
     async def get(self, key: str, timeout: float = 10) -> str:
         response = await self._publish_and_wait(
-            f"{self.topic_prefix}/datastore/get/{key}",
+            f"{self.topic_prefix}/datastore/get/{key}/request",
             b"",
             resp_topic=f"{self.topic_prefix}/datastore/get/{key}",
             timeout=timeout,
@@ -306,6 +339,31 @@ class Bridge:
             return None
 
         return payload.decode("utf-8", errors="ignore")
+
+    async def mailbox_read(self, timeout: float = 5.0) -> Optional[bytes]:
+        """Request the next queued mailbox message via MQTT.
+
+        Returns None when the queue is empty or a timeout occurs.
+        """
+
+        incoming_topic = f"{self.topic_prefix}/mailbox/incoming"
+        try:
+            payload = await self._publish_and_wait(
+                f"{self.topic_prefix}/mailbox/read",
+                b"",
+                resp_topic=incoming_topic,
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            return None
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception("Error waiting for mailbox message")
+            return None
+
+        if not payload:
+            return None
+
+        return payload
 
     async def file_write(
         self, filename: str, content: Union[str, bytes]

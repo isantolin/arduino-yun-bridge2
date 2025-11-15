@@ -20,7 +20,7 @@ define Package/$(PKG_NAME)
 	CATEGORY:=LuCI
 	SUBMENU:=3. Applications
 	TITLE:=LuCI Support for YunBridge (system Python only)
-		DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +openwrt-yun-core +mosquitto-client +lua
+		DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +openwrt-yun-core +mosquitto-client +lua +luaposix
 endef
 
 

@@ -2,13 +2,14 @@
 import asyncio
 import logging
 
-from yunbridge_client import Bridge
+from yunbridge_client import Bridge, dump_client_env
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 async def main() -> None:
     """Run main test logic."""
+    dump_client_env(logging.getLogger(__name__))
     bridge = Bridge()
     await bridge.connect()
 

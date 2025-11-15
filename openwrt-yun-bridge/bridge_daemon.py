@@ -8,19 +8,20 @@ import os
 import ssl
 from typing import Optional, Tuple
 
-import aio_mqtt
 import serial
-from aio_mqtt.exceptions import (
-    AccessRefusedError,
-    ConnectionCloseForcedError,
-    ConnectionLostError,
-)
 from yunrpc import cobs
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
+from yunbridge.mqtt import (
+    AccessRefusedError,
+    Client as MQTTClient,
+    ConnectionCloseForcedError,
+    ConnectionLostError,
+    QOSLevel,
+)
 from yunbridge.services.runtime import (
     BridgeService,
     TOPIC_ANALOG,
@@ -127,7 +128,9 @@ async def serial_reader_task(
             try:
                 await service.on_serial_connected()
             except Exception:
-                logger.exception("Error running post-connect hooks for serial link")
+                logger.exception(
+                    "Error running post-connect hooks for serial link"
+                )
 
             buffer = bytearray()
             while True:
@@ -179,6 +182,12 @@ async def serial_reader_task(
                         "Error closing serial writer during cleanup."
                     )
             state.serial_writer = None
+            try:
+                await service.on_serial_disconnected()
+            except Exception:
+                logger.exception(
+                    "Error resetting service state after serial disconnect"
+                )
             service.register_serial_sender(_serial_sender_not_ready)
             logger.warning(
                 "Serial port disconnected. Retrying in %d seconds...",
@@ -188,7 +197,7 @@ async def serial_reader_task(
 
 
 async def _mqtt_publisher_loop(
-    client: aio_mqtt.Client,
+    client: MQTTClient,
     state: RuntimeState,
 ) -> None:
     while True:
@@ -217,7 +226,7 @@ async def _mqtt_publisher_loop(
 
 
 async def _mqtt_subscriber_loop(
-    client: aio_mqtt.Client,
+    client: MQTTClient,
     service: BridgeService,
 ) -> None:
     async for message in client.delivered_messages():
@@ -273,7 +282,7 @@ async def mqtt_task(
     prefix = state.mqtt_topic_prefix
 
     while True:
-        client = aio_mqtt.Client(loop=asyncio.get_running_loop())
+        client = MQTTClient(loop=asyncio.get_running_loop())
         publisher_task: Optional[asyncio.Task[None]] = None
         subscriber_task: Optional[asyncio.Task[None]] = None
         disconnect_future: Optional[asyncio.Future[Exception | None]] = None
@@ -293,25 +302,26 @@ async def mqtt_task(
             disconnect_future = connect_result.disconnect_reason
             logger.info("Connected to MQTT broker.")
 
-            subscriptions: Tuple[Tuple[str, aio_mqtt.QOSLevel], ...] = (
-                (f"{prefix}/{TOPIC_DIGITAL}/+/mode", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DIGITAL}/+/read", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_ANALOG}/+/read", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DIGITAL}/+", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_ANALOG}/+", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_CONSOLE}/in", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DATASTORE}/put/#", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DATASTORE}/get/#", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_MAILBOX}/write", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SH}/run", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SH}/run_async", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SH}/poll/#", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SH}/kill/#", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/system/free_memory/get", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/system/version/get", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_FILE}/write/#", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_FILE}/read/#", aio_mqtt.QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_FILE}/remove/#", aio_mqtt.QOSLevel.QOS_0),
+            subscriptions: Tuple[Tuple[str, QOSLevel], ...] = (
+                (f"{prefix}/{TOPIC_DIGITAL}/+/mode", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_DIGITAL}/+/read", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_DIGITAL}/+", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_ANALOG}/+/read", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_ANALOG}/+", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_CONSOLE}/in", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_DATASTORE}/put/#", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_DATASTORE}/get/#", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_MAILBOX}/write", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_MAILBOX}/read", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_SH}/run", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_SH}/run_async", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_SH}/poll/#", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_SH}/kill/#", QOSLevel.QOS_0),
+                (f"{prefix}/system/free_memory/get", QOSLevel.QOS_0),
+                (f"{prefix}/system/version/get", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_FILE}/write/#", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_FILE}/read/#", QOSLevel.QOS_0),
+                (f"{prefix}/{TOPIC_FILE}/remove/#", QOSLevel.QOS_0),
             )
             await client.subscribe(*subscriptions)
             logger.info("Subscribed to %d MQTT topics.", len(subscriptions))
@@ -323,13 +333,10 @@ async def mqtt_task(
                 _mqtt_subscriber_loop(client, service)
             )
 
-            if disconnect_future is not None:
-                await disconnect_future
-            else:
-                await asyncio.wait(
-                    [publisher_task, subscriber_task],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
+            await asyncio.wait(
+                [disconnect_future, publisher_task, subscriber_task],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
         except AccessRefusedError:
             logger.critical("MQTT access refused; check credentials.")
         except ConnectionLostError:
@@ -371,29 +378,27 @@ async def main_async(config: RuntimeConfig) -> None:
 
     tls_context = _build_mqtt_tls_context(config)
 
-    tasks: list[asyncio.Task[None]] = []
     try:
-        tasks.append(
-            asyncio.create_task(serial_reader_task(config, state, service))
-        )
-        tasks.append(
-            asyncio.create_task(
+        async with asyncio.TaskGroup() as task_group:
+            task_group.create_task(
+                serial_reader_task(config, state, service)
+            )
+            task_group.create_task(
                 mqtt_task(config, state, service, tls_context)
             )
-        )
-        tasks.append(
-            asyncio.create_task(status_writer(state, config.status_interval))
-        )
-
-        await asyncio.gather(*tasks)
-    except asyncio.CancelledError:
+            task_group.create_task(
+                status_writer(state, config.status_interval)
+            )
+    except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")
+    except* Exception as exc_group:
+        for exc in exc_group.exceptions:
+            logger.critical(
+                "Unhandled exception in main task group",
+                exc_info=exc,
+            )
+        raise
     finally:
-        for task in tasks:
-            if not task.done():
-                task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
         cleanup_status_file()
         logger.info("Yun Bridge daemon stopped.")
 
@@ -414,6 +419,9 @@ def main() -> None:
         asyncio.run(main_async(config))
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
+    except ExceptionGroup as exc_group:
+        for exc in exc_group.exceptions:
+            logger.critical("Fatal error in main execution", exc_info=exc)
     except Exception:
         logger.critical("Fatal error in main execution", exc_info=True)
 

@@ -14,7 +14,7 @@
 #include <Arduino.h>
 
 #include "Print.h"
-#include "rpc_frame.h"
+#include "protocol/rpc_frame.h"
 
 #ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
 #define BRIDGE_FIRMWARE_VERSION_MAJOR 2
@@ -25,7 +25,7 @@
 #endif
 
 #ifndef BRIDGE_DEBUG_IO
-#define BRIDGE_DEBUG_IO 1
+#define BRIDGE_DEBUG_IO 0
 #endif
 
 // --- Constantes de la Consola ---
@@ -118,7 +118,9 @@ class BridgeClass {
   typedef void (*CommandHandler)(const rpc::Frame& frame);
   void onCommand(CommandHandler handler);
 
-  typedef void (*DataStoreGetHandler)(const char* key, const char* value);
+  typedef void (*DataStoreGetHandler)(const char* key,
+                                     const uint8_t* value,
+                                     uint8_t length);
   void onDataStoreGetResponse(DataStoreGetHandler handler);
 
   typedef void (*DigitalReadHandler)(int value);
@@ -127,7 +129,11 @@ class BridgeClass {
   typedef void (*AnalogReadHandler)(int value);
   void onAnalogReadResponse(AnalogReadHandler handler);
 
-  typedef void (*ProcessRunHandler)(const char* response);
+  typedef void (*ProcessRunHandler)(uint8_t status,
+                                   const uint8_t* stdout_data,
+                                   uint16_t stdout_len,
+                                   const uint8_t* stderr_data,
+                                   uint16_t stderr_len);
   void onProcessRunResponse(ProcessRunHandler handler);
 
   typedef void (*ProcessPollHandler)(uint8_t status, uint8_t exit_code, const uint8_t* stdout_data, uint16_t stdout_len, const uint8_t* stderr_data, uint16_t stderr_len);
@@ -183,6 +189,22 @@ class BridgeClass {
   FileSystemReadHandler _file_system_read_handler;
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
+
+  static constexpr uint8_t kMaxPendingDatastore = 8;
+  const char* _pending_datastore_keys[kMaxPendingDatastore];
+  uint8_t _pending_datastore_head;
+  uint8_t _pending_datastore_count;
+
+  static constexpr uint8_t kMaxPendingProcessPolls = 16;
+  uint16_t _pending_process_pids[kMaxPendingProcessPolls];
+  uint8_t _pending_process_poll_head;
+  uint8_t _pending_process_poll_count;
+
+  void _trackPendingDatastoreKey(const char* key);
+  const char* _popPendingDatastoreKey();
+  bool _pushPendingProcessPid(uint16_t pid);
+  uint16_t _popPendingProcessPid();
+  friend class DataStoreClass;
 
   void dispatch(const rpc::Frame& frame);
 };

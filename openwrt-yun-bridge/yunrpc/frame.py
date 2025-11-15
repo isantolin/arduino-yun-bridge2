@@ -96,7 +96,9 @@ class Frame:
             )
 
         # 4. Validate payload length against actual data length
-        actual_payload_len = len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
+        actual_payload_len = (
+            len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
+        )
         if payload_len != actual_payload_len:
             raise ValueError(
                 (

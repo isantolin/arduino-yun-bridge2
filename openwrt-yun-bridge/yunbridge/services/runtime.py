@@ -16,8 +16,7 @@ import logging
 import os
 import struct
 from typing import Awaitable, Callable, Dict, Optional, Tuple
-
-import aio_mqtt
+from ..mqtt import PublishableMessage
 from yunrpc.protocol import (
     DATASTORE_KEY_LEN_FORMAT,
     DATASTORE_VALUE_LEN_FORMAT,
@@ -39,8 +38,11 @@ TOPIC_ANALOG = "a"
 TOPIC_CONSOLE = "console"
 TOPIC_SH = "sh"
 TOPIC_MAILBOX = "mailbox"
+TOPIC_MAILBOX_INCOMING_AVAILABLE = "mailbox/incoming_available"
+TOPIC_MAILBOX_OUTGOING_AVAILABLE = "mailbox/outgoing_available"
 TOPIC_DATASTORE = "datastore"
 TOPIC_FILE = "file"
+TOPIC_STATUS = "status"
 
 
 class BridgeService:
@@ -60,6 +62,16 @@ class BridgeService:
             Command.CMD_GET_FREE_MEMORY_RESP.value:
                 self._handle_get_free_memory_resp,
             Status.ACK.value: self._handle_ack,
+            Status.ERROR.value: self._status_handler(Status.ERROR),
+            Status.CMD_UNKNOWN.value: self._status_handler(Status.CMD_UNKNOWN),
+            Status.MALFORMED.value: self._status_handler(Status.MALFORMED),
+            Status.CRC_MISMATCH.value: self._status_handler(
+                Status.CRC_MISMATCH
+            ),
+            Status.TIMEOUT.value: self._status_handler(Status.TIMEOUT),
+            Status.NOT_IMPLEMENTED.value: self._status_handler(
+                Status.NOT_IMPLEMENTED
+            ),
             Command.CMD_XOFF.value: self._handle_xoff,
             Command.CMD_XON.value: self._handle_xon,
             Command.CMD_CONSOLE_WRITE.value: self._handle_console_write,
@@ -104,6 +116,38 @@ class BridgeService:
         except Exception:
             logger.exception("Failed to request MCU version after reconnect")
 
+        try:
+            await self._flush_console_queue()
+        except Exception:
+            logger.exception(
+                "Failed to flush console backlog after reconnect"
+            )
+
+    async def on_serial_disconnected(self) -> None:
+        """Reset transient MCU tracking when the serial link drops."""
+
+        pending_digital = len(self.state.pending_digital_reads)
+        pending_analog = len(self.state.pending_analog_reads)
+        pending_datastore = len(self.state.pending_datastore_gets)
+
+        total_pending = pending_digital + pending_analog + pending_datastore
+        if total_pending:
+            logger.warning(
+                "Serial link lost; clearing %d pending request(s) "
+                "(digital=%d analog=%d datastore=%d)",
+                total_pending,
+                pending_digital,
+                pending_analog,
+                pending_datastore,
+            )
+
+        self.state.pending_digital_reads.clear()
+        self.state.pending_analog_reads.clear()
+        self.state.pending_datastore_gets.clear()
+
+        # Ensure we do not keep the console in a paused state between links.
+        self.state.mcu_is_paused = False
+
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
 
@@ -124,8 +168,14 @@ class BridgeService:
                 "Error processing MQTT message on topic %s", topic
             )
 
-    async def enqueue_mqtt(self, message: aio_mqtt.PublishableMessage) -> None:
-        await self.state.mqtt_publish_queue.put(message)
+    async def enqueue_mqtt(self, message: PublishableMessage) -> None:
+        queue = self.state.mqtt_publish_queue
+        if queue.full():
+            logger.warning(
+                "MQTT publish queue full (%d items); applying backpressure.",
+                queue.qsize(),
+            )
+        await queue.put(message)
 
     async def request_mcu_version(self) -> None:
         send_ok = await self.send_frame(Command.CMD_GET_VERSION.value, b"")
@@ -185,7 +235,7 @@ class BridgeService:
             if pin is not None
             else f"{self.state.mqtt_topic_prefix}/{TOPIC_DIGITAL}/value"
         )
-        message = aio_mqtt.PublishableMessage(
+        message = PublishableMessage(
             topic_name=topic,
             payload=str(value).encode("utf-8"),
         )
@@ -213,7 +263,7 @@ class BridgeService:
             if pin is not None
             else f"{self.state.mqtt_topic_prefix}/{TOPIC_ANALOG}/value"
         )
-        message = aio_mqtt.PublishableMessage(
+        message = PublishableMessage(
             topic_name=topic,
             payload=str(value).encode("utf-8"),
         )
@@ -221,6 +271,35 @@ class BridgeService:
 
     async def _handle_ack(self, _: bytes) -> None:
         logger.debug("MCU > ACK received")
+
+    def _status_handler(
+        self, status: Status
+    ) -> Callable[[bytes], Awaitable[None]]:
+        async def _handler(payload: bytes) -> None:
+            await self._handle_status(status, payload)
+
+        return _handler
+
+    async def _handle_status(self, status: Status, payload: bytes) -> None:
+        text = payload.decode("utf-8", errors="ignore") if payload else ""
+        log_method = logger.warning if status != Status.ACK else logger.debug
+        log_method("MCU > %s %s", status.name, text)
+
+        report = json.dumps(
+            {
+                "status": status.value,
+                "name": status.name,
+                "message": text,
+            }
+        ).encode("utf-8")
+        await self.enqueue_mqtt(
+            PublishableMessage(
+                topic_name=(
+                    f"{self.state.mqtt_topic_prefix}/system/{TOPIC_STATUS}"
+                ),
+                payload=report,
+            )
+        )
 
     async def _handle_xoff(self, _: bytes) -> None:
         logger.warning("MCU > XOFF received, pausing console output.")
@@ -233,7 +312,7 @@ class BridgeService:
 
     async def _handle_console_write(self, payload: bytes) -> None:
         topic = f"{self.state.mqtt_topic_prefix}/{TOPIC_CONSOLE}/out"
-        message = aio_mqtt.PublishableMessage(
+        message = PublishableMessage(
             topic_name=topic,
             payload=payload,
         )
@@ -271,7 +350,7 @@ class BridgeService:
             topic = (
                 f"{self.state.mqtt_topic_prefix}/{TOPIC_DATASTORE}/get/{key}"
             )
-            message = aio_mqtt.PublishableMessage(
+            message = PublishableMessage(
                 topic_name=topic,
                 payload=value_bytes,
             )
@@ -315,7 +394,7 @@ class BridgeService:
         value = value_bytes.decode("utf-8", errors="ignore")
         self.state.datastore[key] = value
         topic = f"{self.state.mqtt_topic_prefix}/{TOPIC_DATASTORE}/get/{key}"
-        message = aio_mqtt.PublishableMessage(
+        message = PublishableMessage(
             topic_name=topic,
             payload=value_bytes,
         )
@@ -335,7 +414,7 @@ class BridgeService:
             body = payload
 
         await self.enqueue_mqtt(
-            aio_mqtt.PublishableMessage(topic_name=topic_name, payload=body)
+            PublishableMessage(topic_name=topic_name, payload=body)
         )
 
     async def _handle_mailbox_push(self, payload: bytes) -> None:
@@ -353,12 +432,33 @@ class BridgeService:
             )
             return
 
+        stored = self.state.enqueue_mailbox_incoming(data, logger)
+        if not stored:
+            logger.error(
+                "Dropping incoming mailbox message (%d bytes) due to "
+                "queue limits.",
+                len(data),
+            )
+
         topic = self.state.mailbox_incoming_topic or (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
         )
         await self.enqueue_mqtt(
-            aio_mqtt.PublishableMessage(topic_name=topic, payload=data)
+            PublishableMessage(topic_name=topic, payload=data)
         )
+
+        if stored:
+            await self.enqueue_mqtt(
+                PublishableMessage(
+                    topic_name=(
+                        f"{self.state.mqtt_topic_prefix}/"
+                        f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
+                    ),
+                    payload=str(
+                        len(self.state.mailbox_incoming_queue)
+                    ).encode("utf-8"),
+                )
+            )
         await self.send_frame(Status.ACK.value, b"")
 
     async def _handle_mailbox_available(self, _: bytes) -> None:
@@ -385,13 +485,15 @@ class BridgeService:
             response_payload,
         )
 
-        count_msg = aio_mqtt.PublishableMessage(
-            topic_name=(
-                f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/available"
-            ),
-            payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
+        await self.enqueue_mqtt(
+            PublishableMessage(
+                topic_name=(
+                    f"{self.state.mqtt_topic_prefix}/"
+                    f"{TOPIC_MAILBOX_OUTGOING_AVAILABLE}"
+                ),
+                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
+            )
         )
-        await self.enqueue_mqtt(count_msg)
 
     async def _handle_file_write(self, payload: bytes) -> None:
         if len(payload) < 3:
@@ -501,7 +603,7 @@ class BridgeService:
 
         free_memory = int.from_bytes(payload, "big")
         topic = f"{self.state.mqtt_topic_prefix}/system/free_memory/value"
-        message = aio_mqtt.PublishableMessage(
+        message = PublishableMessage(
             topic_name=topic, payload=str(free_memory).encode("utf-8")
         )
         await self.enqueue_mqtt(message)
@@ -516,7 +618,7 @@ class BridgeService:
         major, minor = payload[0], payload[1]
         self.state.mcu_version = (major, minor)
         topic = f"{self.state.mqtt_topic_prefix}/system/version/value"
-        message = aio_mqtt.PublishableMessage(
+        message = PublishableMessage(
             topic_name=topic,
             payload=f"{major}.{minor}".encode("utf-8"),
         )
@@ -565,7 +667,7 @@ class BridgeService:
         )
         response_payload = str(pid).encode("utf-8")
         await self.enqueue_mqtt(
-            aio_mqtt.PublishableMessage(
+            PublishableMessage(
                 topic_name=response_topic,
                 payload=response_payload,
             )
@@ -593,25 +695,20 @@ class BridgeService:
             stdout_buffer,
             stderr_buffer,
             finished,
-        ) = await self._collect_process_output(pid)
-
-        (
-            stdout_trim,
-            stderr_trim,
             stdout_truncated,
             stderr_truncated,
-        ) = self._trim_process_buffers(stdout_buffer, stderr_buffer)
+        ) = await self._collect_process_output(pid)
 
         response_payload = (
             struct.pack(
                 ">BBHH",
                 status_byte,
                 exit_code,
-                len(stdout_trim),
-                len(stderr_trim),
+                len(stdout_buffer),
+                len(stderr_buffer),
             )
-            + stdout_trim
-            + stderr_trim
+            + stdout_buffer
+            + stderr_buffer
         )
 
         await self.send_frame(
@@ -622,8 +719,8 @@ class BridgeService:
             pid,
             status_byte,
             exit_code,
-            stdout_trim,
-            stderr_trim,
+            stdout_buffer,
+            stderr_buffer,
             stdout_truncated,
             stderr_truncated,
             finished,
@@ -648,7 +745,8 @@ class BridgeService:
                 proc_to_kill = self.state.running_processes[pid]
                 try:
                     proc_to_kill.kill()
-                    await asyncio.wait_for(proc_to_kill.wait(), timeout=0.5)
+                    async with asyncio.timeout(0.5):
+                        await proc_to_kill.wait()
                     logger.info("Killed process with PID %d", pid)
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -719,18 +817,19 @@ class BridgeService:
             )
 
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                proc.communicate(), timeout=self.state.process_timeout
-            )
+            async with asyncio.timeout(self.state.process_timeout):
+                stdout_bytes, stderr_bytes = await proc.communicate()
             status = Status.OK.value
         except asyncio.TimeoutError:
             proc.kill()
             try:
-                stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    proc.communicate(), timeout=1
-                )
+                async with asyncio.timeout(1):
+                    stdout_bytes, stderr_bytes = await proc.communicate()
             except asyncio.TimeoutError:
-                stdout_bytes, stderr_bytes = b"", b"Timeout waiting after kill"
+                stdout_bytes, stderr_bytes = (
+                    b"",
+                    b"Timeout waiting after kill",
+                )
             status = Status.TIMEOUT.value
         except Exception:
             logger.exception(
@@ -772,83 +871,198 @@ class BridgeService:
 
         async with self.state.process_lock:
             self.state.running_processes[pid] = proc
+            self.state.process_stdout_buffer[pid] = bytearray()
+            self.state.process_stderr_buffer[pid] = bytearray()
+            self.state.process_exit_codes.pop(pid, None)
 
         logger.info("Started async process '%s' with PID %d", command, pid)
         return pid
 
     async def _collect_process_output(
         self, pid: int
-    ) -> Tuple[int, int, bytes, bytes, bool]:
-        async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-            if not proc:
-                return (Status.ERROR.value, 0xFF, b"", b"", False)
-
-        async def _read_chunk(reader: Optional[asyncio.StreamReader]) -> bytes:
+    ) -> Tuple[int, int, bytes, bytes, bool, bool, bool]:
+        async def _read_chunk(
+            reader: Optional[asyncio.StreamReader],
+            *,
+            chunk_size: int = 1024,
+        ) -> bytes:
             if reader is None:
                 return b""
             try:
-                return await asyncio.wait_for(reader.read(1024), timeout=0.05)
+                async with asyncio.timeout(0.05):
+                    return await reader.read(chunk_size)
             except asyncio.TimeoutError:
                 return b""
             except (OSError, ValueError, BrokenPipeError):
                 logger.debug(
-                    "Error reading process pipe for PID %d", pid, exc_info=True
-                )
-                return b""
-
-        stdout_buffer = await _read_chunk(proc.stdout)
-        stderr_buffer = await _read_chunk(proc.stderr)
-
-        process_finished = proc.returncode is not None
-        exit_code = (
-            proc.returncode
-            if process_finished and proc.returncode is not None
-            else 0xFF
-        )
-
-        if process_finished:
-            try:
-                stdout_rem, stderr_rem = await asyncio.wait_for(
-                    proc.communicate(), timeout=0.2
-                )
-                stdout_buffer += stdout_rem or b""
-                stderr_buffer += stderr_rem or b""
-            except asyncio.TimeoutError:
-                pass
-            except Exception:
-                logger.debug(
-                    "Error collecting final output for PID %d",
+                    "Error reading process pipe for PID %d",
                     pid,
                     exc_info=True,
                 )
+                return b""
 
-            async with self.state.process_lock:
-                self.state.running_processes.pop(pid, None)
-                logger.info(
-                    "Async process %d finished with exit code %d",
-                    pid,
-                    exit_code,
+        async def _drain_reader(
+            reader: Optional[asyncio.StreamReader],
+        ) -> bytes:
+            if reader is None:
+                return b""
+            drained = bytearray()
+            while True:
+                chunk = await _read_chunk(reader)
+                if not chunk:
+                    break
+                drained.extend(chunk)
+                if len(chunk) < 1024:
+                    break
+            return bytes(drained)
+
+        async with self.state.process_lock:
+            proc = self.state.running_processes.get(pid)
+            stdout_buffer = self.state.process_stdout_buffer.setdefault(
+                pid, bytearray()
+            )
+            stderr_buffer = self.state.process_stderr_buffer.setdefault(
+                pid, bytearray()
+            )
+            cached_exit_code = self.state.process_exit_codes.get(pid)
+
+        if not proc:
+            if cached_exit_code is None:
+                logger.debug("PROCESS_POLL received for unknown PID %d", pid)
+                return (
+                    Status.ERROR.value,
+                    0xFF,
+                    b"",
+                    b"",
+                    False,
+                    False,
+                    False,
                 )
 
-        status = Status.OK.value
+            async with self.state.process_lock:
+                stdout_buffer = self.state.process_stdout_buffer.setdefault(
+                    pid, bytearray()
+                )
+                stderr_buffer = self.state.process_stderr_buffer.setdefault(
+                    pid, bytearray()
+                )
+                (
+                    stdout_trim,
+                    stderr_trim,
+                    stdout_truncated,
+                    stderr_truncated,
+                ) = self._trim_process_buffers(stdout_buffer, stderr_buffer)
+
+                buffers_empty = not stdout_buffer and not stderr_buffer
+                exit_code_value = self.state.process_exit_codes.get(pid, 0xFF)
+                if buffers_empty:
+                    self.state.process_stdout_buffer.pop(pid, None)
+                    self.state.process_stderr_buffer.pop(pid, None)
+                    self.state.process_exit_codes.pop(pid, None)
+
+            return (
+                Status.OK.value,
+                exit_code_value & 0xFF,
+                stdout_trim,
+                stderr_trim,
+                True,
+                stdout_truncated,
+                stderr_truncated,
+            )
+
+        stdout_collected = bytearray()
+        stderr_collected = bytearray()
+
+        stdout_chunk = await _read_chunk(proc.stdout)
+        if stdout_chunk:
+            stdout_collected.extend(stdout_chunk)
+
+        stderr_chunk = await _read_chunk(proc.stderr)
+        if stderr_chunk:
+            stderr_collected.extend(stderr_chunk)
+
+        process_finished = proc.returncode is not None
+
+        if process_finished:
+            stdout_remaining = await _drain_reader(proc.stdout)
+            if stdout_remaining:
+                stdout_collected.extend(stdout_remaining)
+            stderr_remaining = await _drain_reader(proc.stderr)
+            if stderr_remaining:
+                stderr_collected.extend(stderr_remaining)
+
+        exit_code_value = 0xFF
+        log_process_finished = False
+
+        async with self.state.process_lock:
+            stdout_buffer = self.state.process_stdout_buffer.setdefault(
+                pid, bytearray()
+            )
+            stderr_buffer = self.state.process_stderr_buffer.setdefault(
+                pid, bytearray()
+            )
+
+            if stdout_collected:
+                stdout_buffer.extend(stdout_collected)
+            if stderr_collected:
+                stderr_buffer.extend(stderr_collected)
+
+            if process_finished:
+                exit_code_value = (
+                    proc.returncode if proc.returncode is not None else 0
+                )
+                if pid in self.state.running_processes:
+                    self.state.running_processes.pop(pid, None)
+                    log_process_finished = True
+                self.state.process_exit_codes[pid] = exit_code_value
+            else:
+                exit_code_value = 0xFF
+
+            (
+                stdout_trim,
+                stderr_trim,
+                stdout_truncated,
+                stderr_truncated,
+            ) = self._trim_process_buffers(stdout_buffer, stderr_buffer)
+
+            buffers_empty = not stdout_buffer and not stderr_buffer
+            if process_finished and buffers_empty:
+                self.state.process_stdout_buffer.pop(pid, None)
+                self.state.process_stderr_buffer.pop(pid, None)
+                self.state.process_exit_codes.pop(pid, None)
+
+        if log_process_finished:
+            logger.info(
+                "Async process %d finished with exit code %d",
+                pid,
+                exit_code_value,
+            )
+
         return (
-            status,
-            exit_code & 0xFF,
-            stdout_buffer,
-            stderr_buffer,
+            Status.OK.value,
+            exit_code_value & 0xFF,
+            stdout_trim,
+            stderr_trim,
             process_finished,
+            stdout_truncated,
+            stderr_truncated,
         )
 
     def _trim_process_buffers(
-        self, stdout_buffer: bytes, stderr_buffer: bytes
+        self, stdout_buffer: bytearray, stderr_buffer: bytearray
     ) -> Tuple[bytes, bytes, bool, bool]:
         max_payload = MAX_PAYLOAD_SIZE - 6
-        stdout_trim = stdout_buffer[:max_payload]
+        stdout_len = min(len(stdout_buffer), max_payload)
+        stdout_trim = bytes(stdout_buffer[:stdout_len])
+        del stdout_buffer[:stdout_len]
+
         remaining = max_payload - len(stdout_trim)
-        stderr_trim = stderr_buffer[:remaining]
-        stdout_truncated = len(stdout_buffer) > len(stdout_trim)
-        stderr_truncated = len(stderr_buffer) > len(stderr_trim)
+        stderr_len = min(len(stderr_buffer), remaining)
+        stderr_trim = bytes(stderr_buffer[:stderr_len])
+        del stderr_buffer[:stderr_len]
+
+        stdout_truncated = len(stdout_buffer) > 0
+        stderr_truncated = len(stderr_buffer) > 0
         return stdout_trim, stderr_trim, stdout_truncated, stderr_truncated
 
     async def _publish_process_poll_result(
@@ -877,7 +1091,7 @@ class BridgeService:
             }
         ).encode("utf-8")
         await self.enqueue_mqtt(
-            aio_mqtt.PublishableMessage(
+            PublishableMessage(
                 topic_name=mqtt_topic,
                 payload=mqtt_payload,
             )
@@ -914,6 +1128,8 @@ class BridgeService:
                 )
             elif topic_type == TOPIC_MAILBOX and identifier == "write":
                 await self._handle_mqtt_mailbox_write(payload)
+            elif topic_type == TOPIC_MAILBOX and identifier == "read":
+                await self._handle_mqtt_mailbox_read()
             elif topic_type == TOPIC_SH:
                 await self._handle_mqtt_shell(parts, payload_str)
             elif topic_type in (TOPIC_DIGITAL, TOPIC_ANALOG):
@@ -936,9 +1152,10 @@ class BridgeService:
                 if cached_version is not None:
                     major, minor = cached_version
                     await self.enqueue_mqtt(
-                        aio_mqtt.PublishableMessage(
+                        PublishableMessage(
                             topic_name=(
-                                f"{self.state.mqtt_topic_prefix}/system/version/value"
+                                f"{self.state.mqtt_topic_prefix}"
+                                "/system/version/value"
                             ),
                             payload=f"{major}.{minor}".encode("utf-8"),
                         )
@@ -983,7 +1200,7 @@ class BridgeService:
                 f"{filename}"
             )
             await self.enqueue_mqtt(
-                aio_mqtt.PublishableMessage(
+                PublishableMessage(
                     topic_name=response_topic,
                     payload=data,
                 )
@@ -1013,10 +1230,24 @@ class BridgeService:
     async def _flush_console_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buffered = self.state.pop_console_chunk()
-            for chunk in self._iter_console_chunks(buffered):
+            chunks = self._iter_console_chunks(buffered)
+            for index, chunk in enumerate(chunks):
                 if not chunk:
                     continue
-                await self.send_frame(Command.CMD_CONSOLE_WRITE.value, chunk)
+                send_ok = await self.send_frame(
+                    Command.CMD_CONSOLE_WRITE.value, chunk
+                )
+                if not send_ok:
+                    unsent = b"".join(chunks[index:])
+                    if unsent:
+                        self.state.requeue_console_chunk_front(unsent)
+                    logger.warning(
+                        "Serial send failed while flushing console; "
+                        "chunk requeued"
+                    )
+                    # Abort flushing until the serial link recovers to avoid
+                    # tight retry loops.
+                    return
 
     async def _handle_mqtt_console_input(self, payload: bytes) -> None:
         chunks = self._iter_console_chunks(payload)
@@ -1031,14 +1262,30 @@ class BridgeService:
                     self.state.enqueue_console_chunk(chunk, logger)
             return
 
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
             if not chunk:
                 continue
-            await self.send_frame(Command.CMD_CONSOLE_WRITE.value, chunk)
+            send_ok = await self.send_frame(
+                Command.CMD_CONSOLE_WRITE.value, chunk
+            )
+            if not send_ok:
+                remaining = b"".join(chunks[index:])
+                if remaining:
+                    self.state.enqueue_console_chunk(remaining, logger)
+                logger.warning(
+                    "Serial send failed for console input; "
+                    "payload queued for retry"
+                )
+                break
 
     async def _handle_mqtt_datastore(
         self, action: str, key_parts: list[str], value_text: str
     ) -> None:
+        is_request = False
+        if action == "get" and key_parts and key_parts[-1] == "request":
+            key_parts = key_parts[:-1]
+            is_request = True
+
         key = "/".join(key_parts)
         if not key:
             logger.debug("Ignoring datastore action '%s' without key", action)
@@ -1069,7 +1316,7 @@ class BridgeService:
                 [self.state.mqtt_topic_prefix, TOPIC_DATASTORE, "get", key]
             )
             await self.enqueue_mqtt(
-                aio_mqtt.PublishableMessage(
+                PublishableMessage(
                     topic_name=topic_name,
                     payload=value_bytes,
                 )
@@ -1101,9 +1348,19 @@ class BridgeService:
                     [self.state.mqtt_topic_prefix, TOPIC_DATASTORE, "get", key]
                 )
                 await self.enqueue_mqtt(
-                    aio_mqtt.PublishableMessage(
+                    PublishableMessage(
                         topic_name=topic_name,
                         payload=cached_value.encode("utf-8"),
+                    )
+                )
+            elif is_request:
+                topic_name = "/".join(
+                    [self.state.mqtt_topic_prefix, TOPIC_DATASTORE, "get", key]
+                )
+                await self.enqueue_mqtt(
+                    PublishableMessage(
+                        topic_name=topic_name,
+                        payload=b"",
                     )
                 )
         else:
@@ -1122,9 +1379,72 @@ class BridgeService:
             len(self.state.mailbox_queue),
         )
         await self.enqueue_mqtt(
-            aio_mqtt.PublishableMessage(
+            PublishableMessage(
                 topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/available"
+                    f"{self.state.mqtt_topic_prefix}/"
+                    f"{TOPIC_MAILBOX_OUTGOING_AVAILABLE}"
+                ),
+                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
+            )
+        )
+
+    async def _handle_mqtt_mailbox_read(self) -> None:
+        topic = self.state.mailbox_incoming_topic or (
+            f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
+        )
+
+        if self.state.mailbox_incoming_queue:
+            message_payload = self.state.pop_mailbox_incoming()
+            if not message_payload:
+                await self.enqueue_mqtt(
+                    PublishableMessage(
+                        topic_name=(
+                            f"{self.state.mqtt_topic_prefix}/"
+                            f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
+                        ),
+                        payload=str(
+                            len(self.state.mailbox_incoming_queue)
+                        ).encode("utf-8"),
+                    )
+                )
+                return
+
+            await self.enqueue_mqtt(
+                PublishableMessage(
+                    topic_name=topic,
+                    payload=message_payload,
+                )
+            )
+
+            await self.enqueue_mqtt(
+                PublishableMessage(
+                    topic_name=(
+                        f"{self.state.mqtt_topic_prefix}/"
+                        f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
+                    ),
+                    payload=str(
+                        len(self.state.mailbox_incoming_queue)
+                    ).encode("utf-8"),
+                )
+            )
+            return
+
+        message_payload = self.state.pop_mailbox_message()
+        if not message_payload:
+            return
+
+        await self.enqueue_mqtt(
+            PublishableMessage(
+                topic_name=topic,
+                payload=message_payload,
+            )
+        )
+
+        await self.enqueue_mqtt(
+            PublishableMessage(
+                topic_name=(
+                    f"{self.state.mqtt_topic_prefix}/"
+                    f"{TOPIC_MAILBOX_OUTGOING_AVAILABLE}"
                 ),
                 payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
@@ -1148,7 +1468,7 @@ class BridgeService:
                 f"{self.state.mqtt_topic_prefix}/{TOPIC_SH}/run_async/response"
             )
             await self.enqueue_mqtt(
-                aio_mqtt.PublishableMessage(
+                PublishableMessage(
                     topic_name=response_topic,
                     payload=str(pid).encode("utf-8"),
                 )
@@ -1167,21 +1487,16 @@ class BridgeService:
                 stdout_buffer,
                 stderr_buffer,
                 finished,
-            ) = await self._collect_process_output(pid)
-
-            (
-                stdout_trim,
-                stderr_trim,
                 stdout_truncated,
                 stderr_truncated,
-            ) = self._trim_process_buffers(stdout_buffer, stderr_buffer)
+            ) = await self._collect_process_output(pid)
 
             await self._publish_process_poll_result(
                 pid,
                 status_byte,
                 exit_code,
-                stdout_trim,
-                stderr_trim,
+                stdout_buffer,
+                stderr_buffer,
                 stdout_truncated,
                 stderr_truncated,
                 finished,
@@ -1215,9 +1530,8 @@ class BridgeService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self.state.process_timeout
-            )
+            async with asyncio.timeout(self.state.process_timeout):
+                stdout, stderr = await proc.communicate()
             stdout = stdout or b""
             stderr = stderr or b""
             response = (
@@ -1244,7 +1558,7 @@ class BridgeService:
             response = "Error: Unexpected server error"
 
         await self.enqueue_mqtt(
-            aio_mqtt.PublishableMessage(
+            PublishableMessage(
                 topic_name=(
                     f"{self.state.mqtt_topic_prefix}/{TOPIC_SH}/response"
                 ),

@@ -158,9 +158,9 @@ else
 fi
 
 #  Install essential packages one by one, checking first.
-opkg install python3-aio-mqtt-mod python3-asyncio \
+opkg install python3-paho-mqtt python3-asyncio \
     coreutils-stty mosquitto-client-ssl uhttpd-mod-lua \
-    luci-base luci-compat luci-lua-runtime luci "$LUA_RUNTIME"
+    luci-base luci-compat luci-lua-runtime luaposix luci "$LUA_RUNTIME"
 
 # ANÁLISIS: Se eliminó el bucle 'for pkg in $PACKAGES'
 # Era código muerto: $PACKAGES no estaba definido y los paquetes
@@ -215,7 +215,8 @@ echo "[INFO] Restarting uhttpd and rpcd for LuCI..."
 #  --- User Configuration & Daemon Start ---
 echo "[FINAL] Finalizing setup..."
 #  Ask user if they want to enable debug mode by default
-read -p "Do you want to enable YUNBRIDGE_DEBUG=1 by default for all users? [Y/n]: " yn
+printf "Do you want to enable YUNBRIDGE_DEBUG=1 by default for all users? [Y/n]: "
+read yn || yn=""
 case $yn in
     [Nn])
         echo "[INFO] YUNBRIDGE_DEBUG will not be set by default."

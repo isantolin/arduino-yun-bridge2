@@ -82,4 +82,5 @@ def get_default_config() -> Dict[str, str]:
         "console_queue_limit_bytes": "16384",
         "mailbox_queue_limit": "64",
         "mailbox_queue_bytes_limit": "65536",
+        "mqtt_queue_limit": "256",
     }

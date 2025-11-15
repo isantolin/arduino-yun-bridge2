@@ -10,12 +10,12 @@ def configure_logging(config: RuntimeConfig) -> None:
     """Configure root logging based on runtime settings."""
 
     level = logging.DEBUG if config.debug_logging else logging.INFO
-    fmt = (
-        "%(asctime)s - %(name)s - %(levelname)s "
-        "[%(filename)s:%(lineno)d] - %(message)s"
-        if level == logging.DEBUG
-        else "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
+    # Match OpenWrt syslog style by keeping formatter minimal; syslog adds
+    # timestamp, severity and process automatically.
+    if level == logging.DEBUG:
+        fmt = "%(name)s %(levelname)s: %(message)s"
+    else:
+        fmt = "%(name)s: %(message)s"
 
     logging.basicConfig(level=level, format=fmt)
 

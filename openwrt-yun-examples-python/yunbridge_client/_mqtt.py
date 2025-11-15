@@ -166,7 +166,8 @@ class Client:
             self._client.loop_stop()
             raise ConnectionLostError(
                 f"Timed out connecting to MQTT broker at {host}:{port}. "
-                "Verify that the broker is reachable and accepting TCP connections."
+                "Verify that the broker is reachable and accepting "
+                "TCP connections."
             ) from exc
         except Exception:
             self._client.loop_stop()

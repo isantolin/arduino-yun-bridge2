@@ -12,6 +12,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Backpressure en MQTT:** El tamaño de la cola de publicación hacia el broker se controla con `mqtt_queue_limit`, evitando consumos de memoria descontrolados cuando el broker no está disponible.
 - **Handshake automático MCU ↔ Linux:** Tras cada reconexión, el daemon solicita `CMD_GET_VERSION` y publica la versión del firmware del sketch en `br/system/version/value`, de modo que los clientes pueden validar compatibilidad antes de ejecutar comandos.
 - **Procesos asíncronos robustos:** Los polls sucesivos ahora entregan todo el `stdout`/`stderr` generado, incluso cuando los procesos producen más datos que un frame. El daemon mantiene buffers circulares por PID y conserva el `exit_code` hasta que el MCU confirma la lectura completa, mientras que la librería Arduino reenvía automáticamente `CMD_PROCESS_POLL` cuando recibe fragmentos parciales.
+- **Estado inmediato de buzón:** Los sketches pueden invocar `Mailbox.requestAvailable()` y recibir el conteo pendiente en `Bridge.onMailboxAvailableResponse`, lo que evita lecturas vacías y mantiene sincronizado al MCU con la cola de Linux.
 
 ### Novedades (noviembre 2025)
 
@@ -28,7 +29,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 4.  **`openwrt-yun-examples-python`**: Paquete cliente con ejemplos de uso.
 5.  **`openwrt-yun-core`**: Ficheros de configuración base del sistema.
 
-> **Nota:** Todo el código Python empacado para OpenWRT se instala desde este repositorio. No es necesario, ni recomendable, ejecutar `pip install` en la Yún; las dependencias en tiempo de ejecución (`serial_asyncio`, stubs y utilidades) ya están incluidas bajo `openwrt-yun-bridge/yunbridge/vendor/` mientras que los paquetes nativos `python3-paho-mqtt` y `luaposix` se obtienen directamente de los feeds oficiales mediante `opkg`.
+> **Nota:** Todas las dependencias del daemon se distribuyen como paquetes oficiales de OpenWrt. No es necesario, ni recomendable, ejecutar `pip install` en la Yún; `python3-paho-mqtt`, `python3-pyserial`, `python3-pyserial-asyncio`, `python3-cobs` y el resto de utilidades se instalan vía `opkg` durante el despliegue.
 
 ## Primeros Pasos
 

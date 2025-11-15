@@ -79,6 +79,7 @@ class MailboxClass {
   void send(const char* message);
   void send(const uint8_t* data, size_t length);
   void requestRead();
+  void requestAvailable();
 };
 
 /**
@@ -114,6 +115,9 @@ class BridgeClass {
   // --- Manejadores de Respuestas (Callbacks) ---
   typedef void (*MailboxHandler)(const uint8_t* buffer, size_t size);
   void onMailboxMessage(MailboxHandler handler);
+
+  typedef void (*MailboxAvailableHandler)(uint8_t available_count);
+  void onMailboxAvailableResponse(MailboxAvailableHandler handler);
 
   typedef void (*CommandHandler)(const rpc::Frame& frame);
   void onCommand(CommandHandler handler);
@@ -181,6 +185,7 @@ class BridgeClass {
   CommandHandler _command_handler;
   DataStoreGetHandler _datastore_get_handler;
   MailboxHandler _mailbox_handler;
+  MailboxAvailableHandler _mailbox_available_handler;
   DigitalReadHandler _digital_read_handler;
   AnalogReadHandler _analog_read_handler;
   ProcessRunHandler _process_run_handler;

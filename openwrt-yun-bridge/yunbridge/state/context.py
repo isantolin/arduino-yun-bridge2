@@ -237,6 +237,11 @@ class RuntimeState:
         self.mailbox_queue_bytes -= len(message)
         return message
 
+    def requeue_mailbox_message_front(self, payload: bytes) -> None:
+        data = bytes(payload)
+        self.mailbox_queue.appendleft(data)
+        self.mailbox_queue_bytes += len(data)
+
     def enqueue_mailbox_incoming(
         self, payload: bytes, logger: logging.Logger
     ) -> bool:

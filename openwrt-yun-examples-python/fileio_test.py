@@ -5,7 +5,9 @@ import logging
 
 from yunbridge_client import Bridge, dump_client_env
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s -"
+                                               "%(levelname)s -"
+                                               " %(message)s")
 
 
 async def main() -> None:
@@ -30,7 +32,8 @@ async def main() -> None:
         if content.decode() == test_content:
             logging.info("SUCCESS: Read content matches written content.")
         else:
-            logging.error("FAILURE: Read content does not match written content.")
+            logging.error("FAILURE: Read content does not match written "
+                          "content.")
 
     except Exception as e:
         logging.error(f"An error occurred: {e}")

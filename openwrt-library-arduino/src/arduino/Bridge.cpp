@@ -229,6 +229,11 @@ void MailboxClass::requestRead() {
   Bridge.sendFrame(CMD_MAILBOX_READ, nullptr, 0);
 }
 
+void MailboxClass::requestAvailable() {
+  // Solicita a Linux la cantidad de mensajes pendientes para el MCU.
+  Bridge.sendFrame(CMD_MAILBOX_AVAILABLE, nullptr, 0);
+}
+
 // ANÁLISIS: Eliminados available() y read() que no forman parte de la API V2 asíncrona.
 
 // =================================================================================
@@ -293,6 +298,7 @@ BridgeClass::BridgeClass(Stream& stream)
       _command_handler(nullptr),
       _datastore_get_handler(nullptr),
       _mailbox_handler(nullptr),
+      _mailbox_available_handler(nullptr),
       _digital_read_handler(nullptr),
       _analog_read_handler(nullptr),
       _process_run_handler(nullptr),
@@ -372,6 +378,9 @@ void BridgeClass::begin() {
 
 // --- Register Callbacks ---
 void BridgeClass::onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
+void BridgeClass::onMailboxAvailableResponse(MailboxAvailableHandler handler) {
+  _mailbox_available_handler = handler;
+}
 void BridgeClass::onCommand(CommandHandler handler) { _command_handler = handler; }
 void BridgeClass::onDataStoreGetResponse(DataStoreGetHandler handler) { _datastore_get_handler = handler; }
 void BridgeClass::onDigitalReadResponse(DigitalReadHandler handler) { _digital_read_handler = handler; }
@@ -447,10 +456,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         break;
 
        case CMD_MAILBOX_AVAILABLE_RESP:
-         // Este caso podría manejarse si el sketch necesita saber cuántos
-         // mensajes hay pendientes en Linux, aunque no es lo habitual.
-         // Podríamos añadir un callback si fuese necesario.
-         // Por ahora, lo ignoramos ya que el flujo normal es requestRead -> onMailboxMessage.
+        if (_mailbox_available_handler && frame.header.payload_length == 1) {
+          uint8_t count = frame.payload[0];
+          _mailbox_available_handler(count);
+        }
          break;
 
       case CMD_PROCESS_RUN_RESP:
@@ -665,14 +674,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       requires_ack = true; // Estos necesitan ACK, pero la acción la puede hacer el usuario
       break; // Pasa al handler del usuario si existe
 
-         case CMD_MAILBOX_AVAILABLE:
-           { // Linux solicita saber cuántos mensajes tiene el MCU para Linux
-             // Actualmente, el MCU no mantiene una cola de mensajes para Linux, así que responde 0.
-             uint8_t count_payload = 0; // u8 byte
-             sendFrame(CMD_MAILBOX_AVAILABLE_RESP, &count_payload, 1);
-             command_processed_internally = true;
-           }
-           break;
+        case CMD_MAILBOX_AVAILABLE:
+          // Este comando debería originarse en el MCU hacia Linux; si llega
+          // desde Linux se delega al manejador de usuario.
+          break;
     // Comandos que Linux envía pero Arduino no implementa directamente la acción
     case CMD_DATASTORE_GET:
     case CMD_MAILBOX_READ: // El sketch llama a Mailbox.requestRead() para iniciar esto

@@ -93,6 +93,7 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
 - **`0x41` CMD_MAILBOX_PROCESSED (MCU → Linux)**: payload opcional.
   - `[message_id: u16]` si se dispone de identificador; puede enviarse vacío y el demonio lo interpreta como confirmación genérica.
 - **`0x42` CMD_MAILBOX_AVAILABLE (MCU → Linux)**: sin payload. Respuesta `0x92 CMD_MAILBOX_AVAILABLE_RESP (Linux → MCU)` con `[count: u8]`.
+  - La librería Arduino expone esta consulta mediante `Mailbox.requestAvailable()` y entrega el resultado en `Bridge.onMailboxAvailableResponse`.
 - **`0x43` CMD_MAILBOX_PUSH (MCU → Linux)**: `[message_len: u16, message: byte[]]`. El MCU publica datos hacia Linux; el demonio responde con `STATUS_ACK` independiente (frame `0x07`).
 
 #### MQTT relacionado con Mailbox

@@ -6,10 +6,10 @@ import asyncio
 import logging
 import os
 import ssl
-from typing import Optional, Tuple
+from typing import Any, Awaitable, Callable, Optional, Tuple, cast
 
 import serial
-from yunrpc import cobs
+from cobs import cobs as _cobs  # type: ignore[import]
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
 
@@ -34,7 +34,29 @@ from yunbridge.services.runtime import (
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
-from yunbridge.vendor import serial_asyncio
+import serial_asyncio  # type: ignore[import]
+
+OPEN_SERIAL_CONNECTION = cast(
+    Callable[
+        ...,  # type: ignore[misc]
+        Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]],
+    ],
+    cast(Any, serial_asyncio.open_serial_connection),  # type: ignore[misc]
+)
+
+
+COBS_MODULE = cast(Any, _cobs)
+
+
+def cobs_encode(data: bytes) -> bytes:
+    """Encode *data* using the upstream cobs package."""
+    return cast(bytes, COBS_MODULE.encode(data))
+
+
+def cobs_decode(data: bytes) -> bytes:
+    """Decode *data* using the upstream cobs package."""
+    return cast(bytes, COBS_MODULE.decode(data))
+
 
 logger = logging.getLogger("yunbridge")
 
@@ -61,7 +83,7 @@ async def _send_serial_frame(
 
     try:
         raw_frame = Frame.build(command_id, payload)
-        encoded_frame = cobs.encode(raw_frame) + SERIAL_TERMINATOR
+        encoded_frame = cobs_encode(raw_frame) + SERIAL_TERMINATOR
         writer.write(encoded_frame)
         await writer.drain()
 
@@ -108,7 +130,7 @@ async def serial_reader_task(
                 config.serial_port,
                 config.serial_baud,
             )
-            reader, writer = await serial_asyncio.open_serial_connection(
+            reader, writer = await OPEN_SERIAL_CONNECTION(
                 url=config.serial_port,
                 baudrate=config.serial_baud,
             )
@@ -145,7 +167,7 @@ async def serial_reader_task(
                     encoded_packet = bytes(buffer)
                     buffer.clear()
                     try:
-                        raw_frame = cobs.decode(encoded_packet)
+                        raw_frame = cobs_decode(encoded_packet)
                         command_id, payload = Frame.parse(raw_frame)
                         await service.handle_mcu_frame(command_id, payload)
                     except ValueError as exc:
@@ -282,10 +304,7 @@ async def mqtt_task(
     prefix = state.mqtt_topic_prefix
 
     while True:
-        client = MQTTClient(loop=asyncio.get_running_loop())
-        publisher_task: Optional[asyncio.Task[None]] = None
-        subscriber_task: Optional[asyncio.Task[None]] = None
-        disconnect_future: Optional[asyncio.Future[Exception | None]] = None
+        client = MQTTClient()
         try:
             logger.info(
                 "Connecting to MQTT broker at %s:%d...",
@@ -326,39 +345,57 @@ async def mqtt_task(
             await client.subscribe(*subscriptions)
             logger.info("Subscribed to %d MQTT topics.", len(subscriptions))
 
-            publisher_task = asyncio.create_task(
-                _mqtt_publisher_loop(client, state)
-            )
-            subscriber_task = asyncio.create_task(
-                _mqtt_subscriber_loop(client, service)
-            )
+            async with asyncio.TaskGroup() as tg:
+                publisher_task = tg.create_task(
+                    _mqtt_publisher_loop(client, state)
+                )
+                subscriber_task = tg.create_task(
+                    _mqtt_subscriber_loop(client, service)
+                )
+                # Wait for the broker to disconnect us, or for one of the
+                # child tasks to fail.
+                await disconnect_future
 
-            await asyncio.wait(
-                [disconnect_future, publisher_task, subscriber_task],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-        except AccessRefusedError:
-            logger.critical("MQTT access refused; check credentials.")
-        except ConnectionLostError:
-            logger.error("MQTT connection lost; will retry.")
-        except ConnectionCloseForcedError:
-            logger.warning(
-                "MQTT connection closed by broker; retrying."
-            )
-        except (OSError, asyncio.TimeoutError) as exc:
-            logger.error("MQTT connection error: %s", exc)
-        except asyncio.CancelledError:
+            # This part is reached if disconnect_future completes.
+            # The TaskGroup will wait for publisher/subscriber to finish.
+            if publisher_task.done() and publisher_task.exception():
+                logger.warning(
+                    "MQTT publisher task exited with an error",
+                    exc_info=publisher_task.exception(),
+                )
+            if subscriber_task.done() and subscriber_task.exception():
+                logger.warning(
+                    "MQTT subscriber task exited with an error",
+                    exc_info=subscriber_task.exception(),
+                )
+
+        except* (
+            AccessRefusedError,
+            ConnectionLostError,
+            ConnectionCloseForcedError,
+        ) as exc_group:
+            for exc in exc_group.exceptions:
+                if isinstance(exc, AccessRefusedError):
+                    logger.critical("MQTT access refused; check credentials.")
+                elif isinstance(exc, ConnectionLostError):
+                    logger.error("MQTT connection lost; will retry.")
+                else:
+                    logger.warning(
+                        "MQTT connection closed by broker; retrying."
+                    )
+        except* (OSError, asyncio.TimeoutError) as exc_group:
+            for exc in exc_group.exceptions:
+                logger.error("MQTT connection error: %s", exc)
+        except* asyncio.CancelledError:
             logger.info("MQTT task cancelled.")
             raise
-        except Exception:
-            logger.critical("Unhandled exception in mqtt_task", exc_info=True)
+        except* Exception as exc_group:
+            for exc in exc_group.exceptions:
+                logger.critical(
+                    "Unhandled exception in mqtt_task",
+                    exc_info=exc,
+                )
         finally:
-            for task in (publisher_task, subscriber_task):
-                if task and not task.done():
-                    task.cancel()
-            pending = [t for t in (publisher_task, subscriber_task) if t]
-            if pending:
-                await asyncio.gather(*pending, return_exceptions=True)
             try:
                 await client.disconnect()
             except Exception:

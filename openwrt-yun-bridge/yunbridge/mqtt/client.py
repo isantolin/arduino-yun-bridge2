@@ -4,7 +4,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Self, Sequence, Tuple
 
 import paho.mqtt.client as mqtt
 
@@ -91,10 +91,8 @@ class Client:
     def __init__(
         self,
         *,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
         client_id: Optional[str] = None,
     ) -> None:
-        self._loop = loop
         self._client = mqtt.Client(client_id=client_id or "")
         self._client.enable_logger(logger)
 
@@ -104,25 +102,16 @@ class Client:
         self._client.on_subscribe = self._on_subscribe
         self._client.on_unsubscribe = self._on_unsubscribe
 
-        self._message_queue: "asyncio.Queue[DeliveredMessage]" = (
-            asyncio.Queue()
-        )
+        self._message_queue: "asyncio.Queue[DeliveredMessage]" = asyncio.Queue()
         self._connected = False
         self._connect_future: Optional[asyncio.Future[None]] = None
-        self._disconnect_future: Optional[
-            asyncio.Future[Optional[Exception]]
-        ] = None
+        self._disconnect_future: Optional[asyncio.Future[Optional[Exception]]] = None
         self._pending_subscriptions: Dict[int, asyncio.Future[List[int]]] = {}
         self._pending_unsubscriptions: Dict[int, asyncio.Future[None]] = {}
 
     @property
     def messages(self) -> _MessageContext:
         return _MessageContext(self._message_queue)
-
-    def _ensure_loop(self) -> asyncio.AbstractEventLoop:
-        if self._loop is None:
-            self._loop = asyncio.get_running_loop()
-        return self._loop
 
     async def connect(
         self,
@@ -134,10 +123,10 @@ class Client:
         ssl: Optional[object] = None,
         keepalive: int = 60,
     ) -> ConnectResult:
-        loop = self._ensure_loop()
         if self._connected:
             raise MQTTError("Client already connected")
 
+        loop = asyncio.get_running_loop()
         self._connect_future = loop.create_future()
         self._disconnect_future = loop.create_future()
 
@@ -166,7 +155,6 @@ class Client:
         )  # type: ignore[arg-type]
 
     async def disconnect(self) -> None:
-        loop = self._ensure_loop()
         disconnect_future = self._disconnect_future
 
         def _do_disconnect() -> None:
@@ -177,7 +165,7 @@ class Client:
                 pass
 
         if self._connected:
-            await loop.run_in_executor(None, _do_disconnect)
+            await asyncio.get_running_loop().run_in_executor(None, _do_disconnect)
             if disconnect_future is not None and not disconnect_future.done():
                 try:
                     await asyncio.wait_for(
@@ -209,8 +197,7 @@ class Client:
         if info.rc != mqtt.MQTT_ERR_SUCCESS:
             raise ConnectionLostError(f"MQTT publish failed (rc={info.rc})")
 
-        loop = self._ensure_loop()
-        await loop.run_in_executor(None, info.wait_for_publish)
+        await asyncio.get_running_loop().run_in_executor(None, info.wait_for_publish)
 
     async def subscribe(
         self, *subscriptions: Tuple[str, QOSLevel | int]
@@ -225,7 +212,7 @@ class Client:
             qos_value = int(qos)
             normalized.append((topic, qos_value))
 
-        loop = self._ensure_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
 
         result, mid = self._client.subscribe(normalized)
@@ -249,7 +236,7 @@ class Client:
         if not self._connected:
             raise ConnectionLostError("MQTT client not connected")
 
-        loop = self._ensure_loop()
+        loop = asyncio.get_running_loop()
         future = loop.create_future()
 
         result, mid = self._client.unsubscribe(list(topics))
@@ -284,9 +271,10 @@ class Client:
         rc: int,
         properties: Any = None,
     ) -> None:
-        loop = self._loop
-        if loop is None or self._connect_future is None:
-            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return  # Loop not running
 
         def _resolve() -> None:
             connect_future = self._connect_future
@@ -316,8 +304,9 @@ class Client:
         rc: int,
         properties: Any = None,
     ) -> None:
-        loop = self._loop
-        if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
             return
 
         def _resolve() -> None:
@@ -340,8 +329,9 @@ class Client:
         userdata: Any,
         message: mqtt.MQTTMessage,
     ) -> None:
-        loop = self._loop
-        if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
             return
 
         try:
@@ -369,8 +359,9 @@ class Client:
         granted_qos: Sequence[int],
         properties: Any = None,
     ) -> None:
-        loop = self._loop
-        if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
             return
 
         def _resolve() -> None:
@@ -387,8 +378,9 @@ class Client:
         mid: int,
         properties: Any = None,
     ) -> None:
-        loop = self._loop
-        if loop is None:
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
             return
 
         def _resolve() -> None:

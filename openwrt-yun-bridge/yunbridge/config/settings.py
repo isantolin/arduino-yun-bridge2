@@ -82,48 +82,21 @@ def load_runtime_config() -> RuntimeConfig:
 
     raw = _load_raw_config()
 
-    serial_port = raw.get("serial_port", "/dev/ttyATH0")
-    baud_raw = raw.get("serial_baud", "115200")
-    try:
-        serial_baud = int(baud_raw)
-    except (TypeError, ValueError):
-        serial_baud = 115200
-
-    mqtt_host = raw.get("mqtt_host", "127.0.0.1")
-    try:
-        mqtt_port = int(raw.get("mqtt_port", "1883"))
-    except (TypeError, ValueError):
-        mqtt_port = 1883
-
-    allowed_commands_raw = raw.get("allowed_commands", "")
-    allowed_commands = [cmd for cmd in allowed_commands_raw.split() if cmd]
-
-    process_timeout_raw = raw.get("process_timeout", "10")
-    try:
-        process_timeout = int(process_timeout_raw)
-    except (TypeError, ValueError):
-        process_timeout = 10
-
-    console_queue_limit_bytes = _coerce_int(
-        raw.get("console_queue_limit_bytes"), 16384
-    )
-    mailbox_queue_limit = _coerce_int(raw.get("mailbox_queue_limit"), 64)
-    mailbox_queue_bytes_limit = _coerce_int(
-        raw.get("mailbox_queue_bytes_limit"), 65536
-    )
-    mqtt_queue_limit = _coerce_int(raw.get("mqtt_queue_limit"), 256)
-    if mqtt_queue_limit < 1:
-        mqtt_queue_limit = 1
+    def _get_int(key: str, default: int) -> int:
+        return _coerce_int(raw.get(key), default)
 
     debug_logging = _to_bool(raw.get("debug"))
     if os.environ.get("YUNBRIDGE_DEBUG") == "1":
         debug_logging = True
 
+    allowed_commands_raw = raw.get("allowed_commands", "")
+    allowed_commands = [cmd for cmd in allowed_commands_raw.split() if cmd]
+
     return RuntimeConfig(
-        serial_port=serial_port,
-        serial_baud=serial_baud,
-        mqtt_host=mqtt_host,
-        mqtt_port=mqtt_port,
+        serial_port=raw.get("serial_port", "/dev/ttyATH0"),
+        serial_baud=_get_int("serial_baud", 115200),
+        mqtt_host=raw.get("mqtt_host", "127.0.0.1"),
+        mqtt_port=_get_int("mqtt_port", 1883),
         mqtt_user=_optional_path(raw.get("mqtt_user")),
         mqtt_pass=_optional_path(raw.get("mqtt_pass")),
         mqtt_tls=_to_bool(raw.get("mqtt_tls")),
@@ -133,13 +106,16 @@ def load_runtime_config() -> RuntimeConfig:
         mqtt_topic=raw.get("mqtt_topic", "br"),
         allowed_commands=allowed_commands,
         file_system_root=raw.get("file_system_root", "/root/yun_files"),
-        process_timeout=process_timeout,
-        mqtt_queue_limit=mqtt_queue_limit,
-        reconnect_delay=5,
-        status_interval=5,
+        process_timeout=_get_int("process_timeout", 10),
+        mqtt_queue_limit=max(1, _get_int("mqtt_queue_limit", 256)),
+        reconnect_delay=_get_int("reconnect_delay", 5),
+        status_interval=_get_int("status_interval", 5),
         debug_logging=debug_logging,
-        console_queue_limit_bytes=console_queue_limit_bytes,
-        mailbox_queue_limit=mailbox_queue_limit,
-        mailbox_queue_bytes_limit=mailbox_queue_bytes_limit,
+        console_queue_limit_bytes=_get_int(
+            "console_queue_limit_bytes", 16384
+        ),
+        mailbox_queue_limit=_get_int("mailbox_queue_limit", 64),
+        mailbox_queue_bytes_limit=_get_int(
+            "mailbox_queue_bytes_limit", 65536
+        ),
     )
-

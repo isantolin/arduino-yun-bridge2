@@ -439,6 +439,11 @@ class BridgeService:
                 "queue limits.",
                 len(data),
             )
+            await self.send_frame(
+                Status.ERROR.value,
+                self._encode_status_reason("mailbox_incoming_overflow"),
+            )
+            return
 
         topic = self.state.mailbox_incoming_topic or (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
@@ -447,18 +452,17 @@ class BridgeService:
             PublishableMessage(topic_name=topic, payload=data)
         )
 
-        if stored:
-            await self.enqueue_mqtt(
-                PublishableMessage(
-                    topic_name=(
-                        f"{self.state.mqtt_topic_prefix}/"
-                        f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
-                    ),
-                    payload=str(
-                        len(self.state.mailbox_incoming_queue)
-                    ).encode("utf-8"),
-                )
+        await self.enqueue_mqtt(
+            PublishableMessage(
+                topic_name=(
+                    f"{self.state.mqtt_topic_prefix}/"
+                    f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
+                ),
+                payload=str(
+                    len(self.state.mailbox_incoming_queue)
+                ).encode("utf-8"),
             )
+        )
         await self.send_frame(Status.ACK.value, b"")
 
     async def _handle_mailbox_available(self, _: bytes) -> None:
@@ -469,7 +473,8 @@ class BridgeService:
         )
 
     async def _handle_mailbox_read(self, _: bytes) -> None:
-        message_payload = self.state.pop_mailbox_message()
+        original_payload = self.state.pop_mailbox_message()
+        message_payload = original_payload
 
         msg_len = len(message_payload)
         if msg_len > MAX_PAYLOAD_SIZE - 2:
@@ -480,10 +485,15 @@ class BridgeService:
             msg_len = len(message_payload)
 
         response_payload = struct.pack(">H", msg_len) + message_payload
-        await self.send_frame(
+        send_ok = await self.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,
         )
+
+        if not send_ok:
+            if original_payload:
+                self.state.requeue_mailbox_message_front(original_payload)
+            return
 
         await self.enqueue_mqtt(
             PublishableMessage(
@@ -729,7 +739,12 @@ class BridgeService:
         if finished:
             logger.debug("Sent final output for finished process PID %d", pid)
 
-    async def _handle_process_kill(self, payload: bytes) -> None:
+    async def _handle_process_kill(
+        self,
+        payload: bytes,
+        *,
+        send_ack: bool = True,
+    ) -> None:
         if len(payload) != 2:
             logger.warning(
                 "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
@@ -765,7 +780,8 @@ class BridgeService:
             else:
                 logger.warning("Attempted to kill non-existent PID: %d", pid)
 
-        await self.send_frame(Status.ACK.value, b"")
+        if send_ack:
+            await self.send_frame(Status.ACK.value, b"")
 
     async def _allocate_pid(self) -> int:
         async with self.state.process_lock:
@@ -794,13 +810,13 @@ class BridgeService:
         self, command: str
     ) -> Tuple[int, bytes, bytes, Optional[int]]:
         if not command.strip():
-            return (Status.MALFORMED.value, b"", b"Empty command", None)
+            return Status.MALFORMED.value, b"", b"Empty command", None
 
         if not self._is_command_allowed(command):
             error_msg = (
                 f"Command '{command.split()[0]}' not allowed".encode("utf-8")
             )
-            return (Status.ERROR.value, b"", error_msg, None)
+            return Status.ERROR.value, b"", error_msg, None
 
         try:
             proc = await asyncio.create_subprocess_shell(
@@ -817,30 +833,48 @@ class BridgeService:
             )
 
         try:
-            async with asyncio.timeout(self.state.process_timeout):
-                stdout_bytes, stderr_bytes = await proc.communicate()
+            async with asyncio.TaskGroup() as tg:
+                comm_task = tg.create_task(proc.communicate())
+                try:
+                    async with asyncio.timeout(self.state.process_timeout):
+                        await comm_task
+                except asyncio.TimeoutError:
+                    proc.kill()
+                    # Allow communicate() to finish after kill (brief grace).
+                    async with asyncio.timeout(1):
+                        await comm_task
+                    # If it's still not done, it's a hard timeout
+                    if not comm_task.done():
+                        return (
+                            Status.TIMEOUT.value,
+                            b"",
+                            b"Timeout after kill",
+                            None,
+                        )
+                    # If it finished, retrieve results but still report timeout
+                    stdout_bytes, stderr_bytes = comm_task.result()
+                    return (
+                        Status.TIMEOUT.value,
+                        stdout_bytes,
+                        stderr_bytes,
+                        proc.returncode,
+                    )
+
+            stdout_bytes, stderr_bytes = comm_task.result()
             status = Status.OK.value
-        except asyncio.TimeoutError:
-            proc.kill()
-            try:
-                async with asyncio.timeout(1):
-                    stdout_bytes, stderr_bytes = await proc.communicate()
-            except asyncio.TimeoutError:
-                stdout_bytes, stderr_bytes = (
-                    b"",
-                    b"Timeout waiting after kill",
-                )
-            status = Status.TIMEOUT.value
+
         except Exception:
             logger.exception(
                 "Unexpected error executing command '%s'", command
             )
-            return (Status.ERROR.value, b"", b"Internal error", None)
+            return Status.ERROR.value, b"", b"Internal error", None
 
-        stdout_bytes = stdout_bytes or b""
-        stderr_bytes = stderr_bytes or b""
-        exit_code = proc.returncode
-        return (status, stdout_bytes, stderr_bytes, exit_code)
+        return (
+            status,
+            stdout_bytes or b"",
+            stderr_bytes or b"",
+            proc.returncode,
+        )
 
     async def _start_async_process(self, command: str) -> int:
         if not command.strip():
@@ -1428,6 +1462,7 @@ class BridgeService:
                 )
             )
             return
+            return
 
         message_payload = self.state.pop_mailbox_message()
         if not message_payload:
@@ -1508,7 +1543,7 @@ class BridgeService:
             except ValueError:
                 logger.warning("Invalid MQTT PROCESS_KILL PID: %s", pid_str)
                 return
-            await self._handle_process_kill(pid_bytes)
+            await self._handle_process_kill(pid_bytes, send_ack=False)
         else:
             logger.debug("Ignoring shell topic action: %s", "/".join(parts))
 
@@ -1575,7 +1610,6 @@ class BridgeService:
         pin_str = parts[2]
         pin = self._parse_pin_identifier(pin_str)
         if pin < 0:
-            logger.warning("Invalid pin identifier in topic: %s", pin_str)
             return
 
         if len(parts) == 4:
@@ -1615,7 +1649,9 @@ class BridgeService:
             value = self._parse_pin_value(topic_type, payload_str)
             if value is None:
                 logger.warning(
-                    "Invalid pin value topic=%s payload=%s", parts, payload_str
+                    "Invalid pin value topic=%s payload=%s",
+                    "/".join(parts),
+                    payload_str,
                 )
                 return
             command = (
@@ -1652,50 +1688,43 @@ class BridgeService:
 
     async def _perform_file_operation(
         self, operation: str, filename: str, data: Optional[bytes] = None
-    ) -> tuple[bool, Optional[bytes], Optional[str]]:
-        safe_path = await self._get_safe_path(filename)
-        if not safe_path:
-            logger.warning(
-                "File operation blocked for unsafe path: %s", filename
-            )
-            return False, None, "unsafe_path"
-
+    ) -> tuple[bool, Optional[bytes], str]:
         try:
+            safe_path = await self._get_safe_path(filename)
+            if not safe_path:
+                return False, None, "unsafe_path"
+
             if operation == "write":
                 if data is None:
-                    logger.error(
-                        "File write requested without data for %s", filename
-                    )
                     return False, None, "missing_data"
                 await asyncio.to_thread(self._write_file_sync, safe_path, data)
                 logger.info("Wrote %d bytes to %s", len(data), safe_path)
-                return True, None, None
+                return True, None, "ok"
 
-            exists = await asyncio.to_thread(os.path.exists, safe_path)
-            if not exists:
-                logger.warning(
-                    "File operation on non-existent file: %s", safe_path
-                )
+            if not await asyncio.to_thread(os.path.exists, safe_path):
                 return False, None, "not_found"
 
             if operation == "read":
                 content = await asyncio.to_thread(
-                    self._read_file_sync, safe_path
+                    self._read_file_sync,
+                    safe_path,
                 )
                 logger.info("Read %d bytes from %s", len(content), safe_path)
-                return True, content, None
+                return True, content, "ok"
 
             if operation == "remove":
                 await asyncio.to_thread(os.remove, safe_path)
                 logger.info("Removed file %s", safe_path)
-                return True, None, None
+                return True, None, "ok"
 
-        except (ValueError, OSError):
+        except OSError as e:
             logger.exception(
-                "File operation failed for %s (%s)", safe_path, operation
+                "File operation %s failed for %s",
+                operation,
+                filename,
             )
-
-        return False, None, "operation_failed"
+            return False, None, str(e)
+        return False, None, "unknown_operation"
 
     def _encode_status_reason(self, reason: Optional[str]) -> bytes:
         if not reason:
@@ -1741,4 +1770,3 @@ class BridgeService:
     def _read_file_sync(path: str) -> bytes:
         with open(path, "rb") as handle:
             return handle.read()
-

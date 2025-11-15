@@ -2,9 +2,8 @@
 # Provides classes for building and parsing RPC frames.
 
 import struct
+from binascii import crc_hqx
 from typing import Tuple
-
-from . import crc as Crc
 from . import protocol
 
 
@@ -35,7 +34,7 @@ class Frame:
 
         # Calculate CRC over the header and payload
         data_to_crc = crc_covered_header + payload
-        crc = Crc.crc16_ccitt(data_to_crc)
+        crc = crc_hqx(data_to_crc, 0xFFFF)
 
         # Pack the CRC
         crc_packed = struct.pack(
@@ -68,7 +67,7 @@ class Frame:
             received_crc_packed,
         )
 
-        calculated_crc = Crc.crc16_ccitt(data_to_check)
+        calculated_crc = crc_hqx(data_to_check, 0xFFFF)
 
         if received_crc != calculated_crc:
             raise ValueError(

@@ -21,7 +21,8 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    logging.info(f"Requesting a reading from pin {PIN_TO_READ} every {READ_INTERVAL} seconds.")
+    logging.info(f"Requesting a reading from pin {PIN_TO_READ} "
+                 "every {READ_INTERVAL} seconds.")
     logging.info("Press Ctrl+C to exit.")
 
     is_analog = PIN_TO_READ.lower().startswith('a')

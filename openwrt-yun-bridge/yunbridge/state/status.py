@@ -65,4 +65,3 @@ def _write_status_file(payload: Dict[str, Any]) -> None:
     with open(temp_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
     os.replace(temp_path, STATUS_FILE_PATH)
-

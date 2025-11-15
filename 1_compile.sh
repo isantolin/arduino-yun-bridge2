@@ -34,36 +34,46 @@ BIN_DIR="bin"
 
 
 
-echo "[INFO] Installing build dependencies required for OpenWRT SDK (development PC only)"
-if [ "$(uname -s)" = "Linux" ]; then
-    if [ -f /etc/debian_version ]; then
-        echo "[INFO] Installing packages for Ubuntu/Debian..."
-        sudo apt-get update
-        sudo apt-get install -y \
-            build-essential python3 python3-pip python3-setuptools python3-wheel python3-build \
-            git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev \
-            zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
-            libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
-            libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
-            uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor
-    elif [ -f /etc/fedora-release ]; then
-        echo "[INFO] Installing packages for Fedora..."
-        # sudo dnf clean all
-        # sudo dnf update
-        sudo dnf install -y \
-            make automake gcc gcc-c++ kernel-devel \
-            python3 python3-pip python3-setuptools python3-wheel python3-build \
-            git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget \
-            python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
-            libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
-            libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
-            tk-devel tcl-devel libuuid-devel sqlite-devel xz-devel \
-            bluez-libs-devel libbsd-devel binutils-devel
-    else
-        echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
-    fi
+if [ "${YUNBRIDGE_SKIP_HOST_DEPS:-0}" = "1" ]; then
+    echo "[INFO] Skipping host dependency installation (YUNBRIDGE_SKIP_HOST_DEPS=1)."
 else
-    echo "[WARN] Operating system not supported for automatic dependency installation."
+    echo "[INFO] Installing build dependencies required for OpenWRT SDK (development PC only)"
+    if [ "$(uname -s)" = "Linux" ]; then
+        if [ -f /etc/debian_version ]; then
+            if ! command -v sudo >/dev/null 2>&1; then
+                echo "[WARN] sudo not found; skipping automatic apt-get install."
+            else
+                echo "[INFO] Installing packages for Ubuntu/Debian..."
+                sudo apt-get update
+                sudo apt-get install -y \
+                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build \
+                    git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev \
+                    zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
+                    libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
+                    libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
+                    uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor
+            fi
+        elif [ -f /etc/fedora-release ]; then
+            if ! command -v sudo >/dev/null 2>&1; then
+                echo "[WARN] sudo not found; skipping automatic dnf install."
+            else
+                echo "[INFO] Installing packages for Fedora..."
+                sudo dnf install -y \
+                    make automake gcc gcc-c++ kernel-devel \
+                    python3 python3-pip python3-setuptools python3-wheel python3-build \
+                    git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget \
+                    python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
+                    libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
+                    libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
+                    tk-devel tcl-devel libuuid-devel sqlite-devel xz-devel \
+                    bluez-libs-devel libbsd-devel binutils-devel
+            fi
+        else
+            echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
+        fi
+    else
+        echo "[WARN] Operating system not supported for automatic dependency installation."
+    fi
 fi
 
 echo "[INFO] Preparing build environment..."

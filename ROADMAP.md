@@ -2,7 +2,7 @@
 
 ## Estado global
 
-- ✅ `serial_asyncio` y el wrapper `yunbridge.mqtt` (sobre `paho-mqtt`) integrados dentro de `openwrt-yun-bridge`, eliminando dependencias de `pip` en OpenWRT.
+- ✅ Dependencias Python migradas a los paquetes oficiales (`python3-paho-mqtt`, `python3-pyserial`, `python3-pyserial-asyncio`, `python3-cobs`), sin módulos vendorizados ni instalación vía `pip` en OpenWrt.
 - ✅ Documentación de protocolo, instalación y QA actualizada (ver `README.md` y `openwrt-library-arduino/docs/PROTOCOL.md`).
 - ✅ Procesos asíncronos con buffering persistente y publicación de flags de truncamiento en MQTT.
 - ⏳ Automatizar pruebas end-to-end sobre hardware real.

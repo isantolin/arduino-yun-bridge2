@@ -46,3 +46,4 @@ luci-app-yunbridge/dist/
 **/*.deb
 **/*.whl
 .vscode
+packages_dump_tab_separated.csv

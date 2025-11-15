@@ -29,7 +29,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 4.  **`openwrt-yun-examples-python`**: Paquete cliente con ejemplos de uso.
 5.  **`openwrt-yun-core`**: Ficheros de configuración base del sistema.
 
-> **Nota:** Todas las dependencias del daemon se distribuyen como paquetes oficiales de OpenWrt. No es necesario, ni recomendable, ejecutar `pip install` en la Yún; `python3-paho-mqtt`, `python3-pyserial`, `python3-pyserial-asyncio`, `python3-cobs` y el resto de utilidades se instalan vía `opkg` durante el despliegue.
+> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`. `python3-paho-mqtt` y `python3-pyserial` provienen de los feeds oficiales de OpenWrt, mientras que `python3-pyserial-asyncio` y `python3-cobs` se empaquetan desde PyPI dentro de este repositorio y se distribuyen como `.ipk` junto al daemon.
 
 ## Primeros Pasos
 

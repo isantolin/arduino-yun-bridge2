@@ -18,7 +18,7 @@ En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún vía `opkg` (`python3-paho-mqtt`, `python3-pyserial`, `python3-pyserial-asyncio`, `python3-cobs`). Durante la instalación de los IPK no es necesario usar `pip`; todos los paquetes provienen de los feeds oficiales de OpenWrt.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún vía `opkg`. `python3-paho-mqtt` y `python3-pyserial` provienen de los feeds oficiales, mientras que `python3-pyserial-asyncio` y `python3-cobs` se construyen desde PyPI y se distribuyen como `.ipk` junto con el resto de artefactos.
 
 Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala `paho-mqtt` en tu entorno de desarrollo:
 

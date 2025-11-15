@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportUnknownParameterType=false
-
+"""Asyncio-mqtt backed MQTT client for Yun Bridge examples."""
 from __future__ import annotations
 
 import asyncio
@@ -14,41 +14,65 @@ from typing import (
     Protocol,
     Sequence,
     Tuple,
-    TYPE_CHECKING,
     cast,
 )
 
-import paho.mqtt.client as mqtt
-
-if TYPE_CHECKING:
+try:
     from asyncio_mqtt import (  # type: ignore[import]
         Client as AsyncioMqttClient,
     )
-    from asyncio_mqtt.error import (  # type: ignore[import]
-        MqttConnectError,
-        MqttError,
-    )
-else:  # pragma: no cover - import at runtime with graceful fallback
-    try:
-        from asyncio_mqtt import (  # type: ignore[import]
-            Client as AsyncioMqttClient,
-        )
-    except ImportError:  # pragma: no cover - optional dependency
-        AsyncioMqttClient = None  # type: ignore[assignment]
+except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
+    raise ModuleNotFoundError(
+        "asyncio-mqtt is required to run the Yun Bridge client examples. "
+        "Install it with `pip install asyncio-mqtt`."
+    ) from exc
 
-    try:
-        from asyncio_mqtt.error import (  # type: ignore[import]
-            MqttConnectError,
-            MqttError,
-        )
-    except ImportError:  # pragma: no cover - fallback shims for type checking
-        class MqttError(Exception):
-            pass
+import paho.mqtt.client as mqtt
 
-        class MqttConnectError(MqttError):
-            def __init__(self, rc: int = 0, *args: object) -> None:
-                super().__init__(*args)
-                self.rc = rc
+logger = logging.getLogger("yunbridge_client.mqtt")
+
+
+class MQTTError(Exception):
+    """Base error for MQTT operations."""
+
+
+class AccessRefusedError(MQTTError):
+    """Raised when the broker refuses access (bad credentials)."""
+
+
+class ConnectionLostError(MQTTError):
+    """Raised when the network connection is interrupted."""
+
+
+class ConnectionCloseForcedError(MQTTError):
+    """Raised when the broker closes the connection prematurely."""
+
+
+class QOSLevel(IntEnum):
+    QOS_0 = 0
+    QOS_1 = 1
+    QOS_2 = 2
+
+
+@dataclass(slots=True)
+class PublishableMessage:
+    topic_name: str
+    payload: bytes
+    qos: QOSLevel = QOSLevel.QOS_0
+    retain: bool = False
+
+
+@dataclass(slots=True)
+class DeliveredMessage:
+    topic_name: str
+    payload: bytes
+    qos: QOSLevel
+    retain: bool
+
+
+@dataclass(slots=True)
+class ConnectResult:
+    disconnect_reason: asyncio.Future[Optional[Exception]]
 
 
 class _MQTTAsyncClient(Protocol):
@@ -80,52 +104,6 @@ class _MQTTAsyncClient(Protocol):
     def unfiltered_messages(
         self,
     ) -> AsyncContextManager[AsyncIterator[mqtt.MQTTMessage]]: ...
-
-
-logger = logging.getLogger("yunbridge.mqtt")
-
-
-class MQTTError(Exception):
-    """Base error for MQTT operations."""
-
-
-class AccessRefusedError(MQTTError):
-    """Raised when the broker refuses access (bad credentials)."""
-
-
-class ConnectionLostError(MQTTError):
-    """Raised when the network connection is interrupted."""
-
-
-class ConnectionCloseForcedError(MQTTError):
-    """Raised when the broker closes the connection before establishment."""
-
-
-class QOSLevel(IntEnum):
-    QOS_0 = 0
-    QOS_1 = 1
-    QOS_2 = 2
-
-
-@dataclass(slots=True)
-class PublishableMessage:
-    topic_name: str
-    payload: bytes
-    qos: QOSLevel = QOSLevel.QOS_0
-    retain: bool = False
-
-
-@dataclass(slots=True)
-class DeliveredMessage:
-    topic_name: str
-    payload: bytes
-    qos: QOSLevel
-    retain: bool
-
-
-@dataclass(slots=True)
-class ConnectResult:
-    disconnect_reason: asyncio.Future[Optional[Exception]]
 
 
 class Client:
@@ -175,9 +153,9 @@ class Client:
 
         try:
             await self._client.connect(timeout=self._CONNECT_TIMEOUT)
-        except MqttConnectError as exc:
-            raise self._map_connect_error(cast(object, exc)) from exc
         except Exception as exc:
+            if hasattr(exc, "rc"):
+                raise self._map_connect_error(exc) from exc
             raise ConnectionLostError(str(exc)) from exc
 
         loop = asyncio.get_running_loop()
@@ -233,7 +211,9 @@ class Client:
         client = self._ensure_client()
         topics = [(topic, int(qos)) for topic, qos in subscriptions]
         try:
-            await client.subscribe(topics, timeout=self._SUBSCRIPTION_TIMEOUT)
+            await client.subscribe(
+                topics, timeout=self._SUBSCRIPTION_TIMEOUT
+            )
         except Exception as exc:
             raise ConnectionLostError(str(exc)) from exc
 
@@ -276,7 +256,9 @@ class Client:
             try:
                 await self._message_cm.__aexit__(None, None, None)
             except Exception:
-                logger.debug("Ignoring error when closing MQTT message stream")
+                logger.debug(
+                    "Ignoring error when closing MQTT message stream"
+                )
         self._message_cm = None
         self._message_gen = None
 
@@ -284,7 +266,9 @@ class Client:
         client = self._ensure_client()
         disconnect_future = self._disconnect_future
         try:
-            raw_future = getattr(cast(object, client), "_disconnected", None)
+            raw_future = getattr(
+                cast(object, client), "_disconnected", None
+            )
             if raw_future is None:
                 await asyncio.Future()
                 return
@@ -322,4 +306,3 @@ __all__ = [
     "ConnectionLostError",
     "ConnectionCloseForcedError",
 ]
-

@@ -138,8 +138,8 @@ class Bridge:
 
     async def _message_listener(self) -> None:
         client = self._ensure_client()
-        async with client.messages as messages:
-            async for message in messages:
+        try:
+            async for message in client.delivered_messages():
                 topic = message.topic_name
                 payload = message.payload or b""
 
@@ -163,6 +163,10 @@ class Bridge:
                         topic,
                         text,
                     )
+        except asyncio.CancelledError:
+            raise
+        except MQTTError as exc:  # pragma: no cover - defensive guard
+            logger.debug("MQTT listener stopped: %s", exc)
 
     async def _publish_and_wait(
         self,

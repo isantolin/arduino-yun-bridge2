@@ -19,6 +19,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - Alineación total del protocolo binario con la librería de Arduino (prefijos de longitud y códigos de estado consistentes en datastore, mailbox y filesystem).
 - Nuevo sistema de buffering persistente para `CMD_PROCESS_POLL_RESP`, evitando pérdidas cuando el proceso supera `MAX_PAYLOAD_SIZE` en una sola lectura.
 - Se añadieron colas de estado en `RuntimeState` para reportar con precisión la finalización de procesos y los flags de truncamiento vía MQTT.
+- Los endpoints REST (`pin_rest_cgi.py`) y la API de LuCI vuelven a publicar comandos MQTT con reintentos exponenciales y límites de tiempo configurables, entregando mejor UX ante brokers lentos.
 
 ## Arquitectura
 

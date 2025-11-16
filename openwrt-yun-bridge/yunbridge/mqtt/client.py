@@ -1,6 +1,3 @@
-# pyright: reportMissingImports=false, reportUnknownMemberType=false
-# pyright: reportUnknownVariableType=false, reportUnknownParameterType=false
-
 from __future__ import annotations
 
 import asyncio
@@ -21,31 +18,24 @@ from typing import (
 import paho.mqtt.client as mqtt
 
 if TYPE_CHECKING:
-    from asyncio_mqtt import (  # type: ignore[import]
-        Client as AsyncioMqttClient,
-    )
-    from asyncio_mqtt.error import (  # type: ignore[import]
-        MqttConnectError,
-        MqttError,
-    )
+    from asyncio_mqtt import Client as AsyncioMqttClient
+    from asyncio_mqtt.error import MqttConnectError, MqttError
 else:  # pragma: no cover - import at runtime with graceful fallback
     try:
         from asyncio_mqtt import (  # type: ignore[import]
             Client as AsyncioMqttClient,
         )
-    except ImportError:  # pragma: no cover - optional dependency
-        AsyncioMqttClient = None  # type: ignore[assignment]
-
-    try:
         from asyncio_mqtt.error import (  # type: ignore[import]
             MqttConnectError,
             MqttError,
         )
-    except ImportError:  # pragma: no cover - fallback shims for type checking
-        class MqttError(Exception):
+    except ImportError:  # pragma: no cover - optional dependency missing
+        AsyncioMqttClient = None  # type: ignore[assignment]
+
+        class MqttError(Exception):  # type: ignore[override]
             pass
 
-        class MqttConnectError(MqttError):
+        class MqttConnectError(MqttError):  # type: ignore[override]
             def __init__(self, rc: int = 0, *args: object) -> None:
                 super().__init__(*args)
                 self.rc = rc
@@ -156,6 +146,11 @@ class Client:
         ssl: Optional[object] = None,
         keepalive: int = 60,
     ) -> ConnectResult:
+        if AsyncioMqttClient is None:
+            raise MQTTError(
+                "asyncio-mqtt dependency not available. Install "
+                "python3-asyncio-mqtt or include it in the firmware image."
+            )
         if self._client is not None:
             raise MQTTError("Client already connected")
 

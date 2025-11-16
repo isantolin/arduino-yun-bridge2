@@ -712,6 +712,22 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 }
 
+void BridgeClass::_emitStatus(uint8_t status_code, const char* message) {
+  const uint8_t* payload = nullptr;
+  uint16_t length = 0;
+  if (message && *message) {
+    length = static_cast<uint16_t>(strlen(message));
+    if (length > rpc::MAX_PAYLOAD_SIZE) {
+      length = rpc::MAX_PAYLOAD_SIZE;
+    }
+    payload = reinterpret_cast<const uint8_t*>(message);
+  }
+  sendFrame(status_code, payload, length);
+  if (_status_handler) {
+    _status_handler(status_code, payload, length);
+  }
+}
+
 
 /**
  * @brief Construye y envía una trama RPC a través del stream serial.
@@ -775,11 +791,39 @@ void BridgeClass::requestAnalogRead(uint8_t pin) {
 }
 
 void BridgeClass::requestProcessRun(const char* command) {
-  sendFrame(CMD_PROCESS_RUN, (const uint8_t*)command, strlen(command));
+  if (!command) {
+    return;
+  }
+  size_t cmd_len = strlen(command);
+  if (cmd_len == 0) {
+    return;
+  }
+  if (cmd_len > rpc::MAX_PAYLOAD_SIZE) {
+    _emitStatus(STATUS_ERROR, "process_run_payload_too_large");
+    return;
+  }
+  sendFrame(
+      CMD_PROCESS_RUN,
+      reinterpret_cast<const uint8_t*>(command),
+      static_cast<uint16_t>(cmd_len));
 }
 
 void BridgeClass::requestProcessRunAsync(const char* command) {
-  sendFrame(CMD_PROCESS_RUN_ASYNC, (const uint8_t*)command, strlen(command));
+  if (!command) {
+    return;
+  }
+  size_t cmd_len = strlen(command);
+  if (cmd_len == 0) {
+    return;
+  }
+  if (cmd_len > rpc::MAX_PAYLOAD_SIZE) {
+    _emitStatus(STATUS_ERROR, "process_run_async_payload_too_large");
+    return;
+  }
+  sendFrame(
+      CMD_PROCESS_RUN_ASYNC,
+      reinterpret_cast<const uint8_t*>(command),
+      static_cast<uint16_t>(cmd_len));
 }
 
 void BridgeClass::requestProcessPoll(int pid) {
@@ -789,11 +833,7 @@ void BridgeClass::requestProcessPoll(int pid) {
 
   const uint16_t pid_u16 = static_cast<uint16_t>(pid);
   if (!_pushPendingProcessPid(pid_u16)) {
-    static const char kOverflowMsg[] = "process_poll_queue_full";
-    sendFrame(STATUS_ERROR, reinterpret_cast<const uint8_t*>(kOverflowMsg), sizeof(kOverflowMsg) - 1);
-    if (_status_handler) {
-      _status_handler(STATUS_ERROR, reinterpret_cast<const uint8_t*>(kOverflowMsg), sizeof(kOverflowMsg) - 1);
-    }
+    _emitStatus(STATUS_ERROR, "process_poll_queue_full");
     return;
   }
 

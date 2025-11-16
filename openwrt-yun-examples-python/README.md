@@ -77,6 +77,10 @@ export YUN_BROKER_IP='192.168.1.50'
 export YUN_BROKER_PORT='1883'
 export YUN_BROKER_USER='mi_usuario'
 export YUN_BROKER_PASS='mi_password'
+# Ajusta la resiliencia de los clientes REST/LuCI frente a brokers lentos
+export YUNBRIDGE_MQTT_RETRIES='5'
+export YUNBRIDGE_MQTT_TIMEOUT='6.0'
+export YUNBRIDGE_MQTT_BACKOFF='0.75'
 ```
 
 Puedes definirlas en tu shell de desarrollo o añadirlas a `/etc/profile.d/` si quieres que queden persistentes en la Yún. El prefijo MQTT (`br` por defecto) puede modificarse al instanciar `Bridge(topic_prefix="otro_prefijo")`.

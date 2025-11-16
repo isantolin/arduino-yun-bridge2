@@ -474,7 +474,7 @@ class BridgeService:
 
     async def _handle_mailbox_read(self, _: bytes) -> None:
         original_payload = self.state.pop_mailbox_message()
-        message_payload = original_payload
+        message_payload = original_payload if original_payload is not None else b""
 
         msg_len = len(message_payload)
         if msg_len > MAX_PAYLOAD_SIZE - 2:
@@ -491,7 +491,7 @@ class BridgeService:
         )
 
         if not send_ok:
-            if original_payload:
+            if original_payload is not None:
                 self.state.requeue_mailbox_message_front(original_payload)
             return
 
@@ -1429,7 +1429,7 @@ class BridgeService:
 
         if self.state.mailbox_incoming_queue:
             message_payload = self.state.pop_mailbox_incoming()
-            if not message_payload:
+            if message_payload is None:
                 await self.enqueue_mqtt(
                     PublishableMessage(
                         topic_name=(
@@ -1462,10 +1462,9 @@ class BridgeService:
                 )
             )
             return
-            return
 
         message_payload = self.state.pop_mailbox_message()
-        if not message_payload:
+        if message_payload is None:
             return
 
         await self.enqueue_mqtt(

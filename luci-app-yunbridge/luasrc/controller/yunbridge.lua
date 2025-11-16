@@ -25,6 +25,74 @@ local unistd = require "posix.unistd"
 local sys_wait = require "posix.sys.wait"
 local errno = require "posix.errno"
 
+local function nanosleep(seconds)
+    if seconds <= 0 then
+        return
+    end
+    local whole = math.floor(seconds)
+    local fraction = seconds - whole
+    if whole > 0 then
+        unistd.sleep(whole)
+    end
+    if fraction > 0 then
+        unistd.usleep(math.floor(fraction * 1e6))
+    end
+end
+
+local function spawn_mosquitto(argv)
+    local pid, fork_err = unistd.fork()
+    if pid == 0 then
+        posix.setenv("PATH", os.getenv("PATH") or "")
+        local _, _, exec_errno = unistd.execp("mosquitto_pub", argv)
+        unistd._exit(exec_errno or 127)
+    elseif not pid then
+        return nil, {
+            fork_error = fork_err,
+            errno = errno.errno() or 0,
+        }
+    end
+
+    while true do
+        local wait_pid, reason, status = sys_wait.wait(pid)
+        if wait_pid == pid then
+            return {
+                reason = reason,
+                status = status,
+            }
+        end
+        local err = errno.errno() or 0
+        if err ~= errno.EINTR then
+            return {
+                reason = reason,
+                status = status,
+                errno = err,
+            }
+        end
+    end
+end
+
+local function mosquitto_publish_with_retries(argv, attempts, base_delay)
+    attempts = attempts or 3
+    base_delay = base_delay or 0.5
+    local delay = base_delay
+    local last_error
+
+    for attempt = 1, attempts do
+        local result, err = spawn_mosquitto(argv)
+        if result and result.reason == "exited" and result.status == 0 then
+            return true
+        end
+
+        last_error = result or err
+        if attempt < attempts then
+            nanosleep(delay)
+            delay = math.min(delay * 2, 4.0)
+        end
+    end
+
+    return false, last_error
+end
+
 function index()
     -- Configuration and status pages
     entry({"admin", "services", "yunbridge"}, cbi("yunbridge"), "YunBridge", 90).dependent = true
@@ -105,38 +173,9 @@ function action_api(...)
         "-r"
     }
 
-    local pid, fork_err = unistd.fork()
-    if pid == 0 then
-        posix.setenv("PATH", os.getenv("PATH") or "")
-        local _, _, exec_errno = unistd.execp("mosquitto_pub", args)
-        unistd._exit(exec_errno or 127)
-    elseif not pid then
-        return send_json(500, {
-            status = "error",
-            message = "Failed to fork mosquitto_pub process",
-            detail = fork_err or errno.strerror(errno.errno() or 0),
-            argv = args
-        })
-    end
+    local ok, last_error = mosquitto_publish_with_retries(args, 3, 0.5)
 
-    local wait_pid, reason, status
-    repeat
-        wait_pid, reason, status = sys_wait.wait(pid)
-        if wait_pid or (errno.errno() or 0) ~= (errno.EINTR or 4) then
-            break
-        end
-    until false
-    if wait_pid ~= pid then
-        return send_json(500, {
-            status = "error",
-            message = "Failed to reap mosquitto_pub process",
-            wait_reason = reason,
-            wait_status = status,
-            argv = args
-        })
-    end
-
-    if reason == "exited" and status == 0 then
+    if ok then
         send_json(200, {
             status = "ok",
             pin = tonumber(pin_number),
@@ -147,8 +186,7 @@ function action_api(...)
         send_json(500, {
             status = "error",
             message = "Failed to execute mosquitto_pub. Is mosquitto-client installed?",
-            wait_reason = reason,
-            exit_status = status,
+            detail = last_error,
             argv = args
         })
     end

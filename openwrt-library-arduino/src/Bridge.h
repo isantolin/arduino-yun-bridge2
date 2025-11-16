@@ -212,6 +212,7 @@ class BridgeClass {
   friend class DataStoreClass;
 
   void dispatch(const rpc::Frame& frame);
+  void _emitStatus(uint8_t status_code, const char* message);
 };
 
 // --- Instancias Globales ---

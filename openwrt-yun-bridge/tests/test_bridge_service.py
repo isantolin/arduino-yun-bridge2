@@ -174,3 +174,35 @@ def test_on_serial_disconnected_clears_pending(
         assert any("clearing" in record.message for record in caplog.records)
 
     asyncio.run(_run())
+
+
+def test_mqtt_mailbox_read_preserves_empty_payload(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        logger = logging.getLogger("test.mailbox.empty")
+        stored = runtime_state.enqueue_mailbox_incoming(b"", logger)
+        assert stored
+
+        await service.handle_mqtt_message(
+            f"{runtime_state.mqtt_topic_prefix}/mailbox/read", b""
+        )
+
+        assert runtime_state.mqtt_publish_queue.qsize() == 2
+        topic_payloads = [
+            runtime_state.mqtt_publish_queue.get_nowait()
+            for _ in range(2)
+        ]
+        # First message is the payload, second is the availability update.
+        assert topic_payloads[0].topic_name.endswith("/mailbox/incoming")
+        assert topic_payloads[0].payload == b""
+        assert topic_payloads[1].topic_name.endswith(
+            "/mailbox/incoming_available"
+        )
+        for _ in topic_payloads:
+            runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())

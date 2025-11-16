@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest asyncio-mqtt paho-mqtt pyserial
+
+      - name: Run unit tests
+        run: |
+          pytest openwrt-yun-bridge/tests -q
+
+      - name: Type check with Pyright
+        run: |
+          pip install pyright
+          pyright

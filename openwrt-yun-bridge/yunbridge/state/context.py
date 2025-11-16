@@ -230,9 +230,9 @@ class RuntimeState:
         self.mailbox_queue_bytes += length
         return True
 
-    def pop_mailbox_message(self) -> bytes:
+    def pop_mailbox_message(self) -> Optional[bytes]:
         if not self.mailbox_queue:
-            return b""
+            return None
         message = self.mailbox_queue.popleft()
         self.mailbox_queue_bytes -= len(message)
         return message
@@ -293,9 +293,9 @@ class RuntimeState:
         self.mailbox_incoming_queue_bytes += length
         return True
 
-    def pop_mailbox_incoming(self) -> bytes:
+    def pop_mailbox_incoming(self) -> Optional[bytes]:
         if not self.mailbox_incoming_queue:
-            return b""
+            return None
         message = self.mailbox_incoming_queue.popleft()
         self.mailbox_incoming_queue_bytes -= len(message)
         return message

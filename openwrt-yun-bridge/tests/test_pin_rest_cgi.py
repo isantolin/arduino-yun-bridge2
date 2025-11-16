@@ -4,7 +4,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, cast
+from typing import Any, Callable, Dict, Protocol, cast
 
 import pytest
 
@@ -24,11 +24,29 @@ def _load_pin_rest_cgi() -> ModuleType:
     return module
 
 
+class _PinRestModule(Protocol):
+    DEFAULT_RETRIES: int
+    DEFAULT_PUBLISH_TIMEOUT: float
+    DEFAULT_BACKOFF_BASE: float
+    mqtt: ModuleType
+
+    def publish_with_retries(
+        self,
+        topic: str,
+        payload: str,
+        retries: int,
+        publish_timeout: float,
+        base_delay: float,
+        sleep_fn: Callable[[float], None],
+    ) -> None:
+        ...
+
+
 @pytest.fixture()
 def pin_rest_module() -> ModuleType:
     module = _load_pin_rest_cgi()
     # Isolate retries to make tests deterministic
-    typed_module = cast(Any, module)
+    typed_module = cast(_PinRestModule, module)
     typed_module.DEFAULT_RETRIES = 3
     typed_module.DEFAULT_PUBLISH_TIMEOUT = 0.5
     typed_module.DEFAULT_BACKOFF_BASE = 0.01
@@ -53,7 +71,7 @@ class _FlakyClient:
     def loop_start(self) -> None:
         self._loop_started = True
 
-    def publish(self, *_: Any, **__: Any) -> "_Result":
+    def publish(self, *_: Any, **__: Any) -> _Result:
         self._published = True
         return _Result()
 
@@ -85,7 +103,7 @@ class _HangingClient(_FlakyClient):
     def connect(self, *_: Any, **__: Any) -> None:
         self._connected = True
 
-    def publish(self, *_: Any, **__: Any) -> _HangingResult:
+    def publish(self, *_: Any, **__: Any) -> _Result:
         return _HangingResult()
 
 

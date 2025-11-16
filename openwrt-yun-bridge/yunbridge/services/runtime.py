@@ -175,7 +175,6 @@ class BridgeService:
                 queue.put_nowait(message)
                 return
             except asyncio.QueueFull:
-                dropped: Optional[PublishableMessage] = None
                 try:
                     dropped = queue.get_nowait()
                 except asyncio.QueueEmpty:
@@ -183,9 +182,7 @@ class BridgeService:
                     continue
 
                 queue.task_done()
-                drop_topic = (
-                    dropped.topic_name if dropped is not None else "<unknown>"
-                )
+                drop_topic = dropped.topic_name
                 self.state.record_mqtt_drop(drop_topic)
                 logger.warning(
                     "MQTT publish queue saturated (%d/%d); dropping oldest "

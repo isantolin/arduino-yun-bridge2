@@ -5,6 +5,7 @@
         "openwrt-yun-bridge"
     ],
     "exclude": [
-        "openwrt-yun-examples-python"
+        "openwrt-yun-examples-python",
+        "openwrt-sdk"
     ]
 }

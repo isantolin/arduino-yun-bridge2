@@ -36,6 +36,10 @@ def _command_list_factory() -> List[str]:
     return []
 
 
+def _str_int_dict_factory() -> Dict[str, int]:
+    return {}
+
+
 def _process_dict_factory() -> Dict[int, asyncio.subprocess.Process]:
     return {}
 
@@ -61,7 +65,9 @@ class RuntimeState:
     )
     mqtt_queue_limit: int = 256
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: Dict[str, int] = field(default_factory=dict)
+    mqtt_drop_counts: Dict[str, int] = field(
+        default_factory=_str_int_dict_factory
+    )
     datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: Deque[bytes] = field(default_factory=_bytes_deque_factory)
     mcu_is_paused: bool = False

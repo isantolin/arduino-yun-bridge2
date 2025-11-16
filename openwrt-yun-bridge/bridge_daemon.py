@@ -6,12 +6,20 @@ import asyncio
 import logging
 import os
 import ssl
-from typing import Any, Awaitable, Callable, Optional, Tuple, cast
+from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
 import serial
 from cobs import cobs as _cobs  # type: ignore[import]
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
+
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_never,
+    wait_exponential,
+)
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
@@ -62,10 +70,126 @@ logger = logging.getLogger("yunbridge")
 
 SERIAL_TERMINATOR = b"\x00"
 
+T = TypeVar("T")
+
 
 async def _serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     logger.warning("Serial disconnected; dropping frame 0x%02X", command_id)
     return False
+
+
+def _make_before_sleep_log(action: str) -> Callable[[RetryCallState], None]:
+    def _log(retry_state: RetryCallState) -> None:
+        delay = (
+            retry_state.next_action.sleep
+            if retry_state.next_action is not None
+            else None
+        )
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        if delay is None:
+            logger.warning("%s failed (%s); retrying soon.", action, exc)
+        else:
+            logger.warning(
+                "%s failed (%s); retrying in %.1fs.",
+                action,
+                exc,
+                delay,
+            )
+
+    return _log
+
+
+async def _run_with_retry(
+    action: str,
+    handler: Callable[[], Awaitable[T]],
+    *,
+    base_delay: float,
+    retry_exceptions: Tuple[type[BaseException], ...],
+    announce_attempt: Optional[Callable[[], None]] = None,
+) -> T:
+    max_delay = max(base_delay, base_delay * 8)
+    retryer = AsyncRetrying(
+        reraise=True,
+        stop=stop_never,
+        retry=retry_if_exception_type(retry_exceptions),
+        wait=wait_exponential(
+            multiplier=base_delay,
+            min=base_delay,
+            max=max_delay,
+        ),
+        before_sleep=_make_before_sleep_log(action),
+    )
+
+    async for attempt in retryer:
+        with attempt:
+            if announce_attempt:
+                announce_attempt()
+            return await handler()
+
+    raise RuntimeError(f"Retry loop exhausted for {action}")
+
+
+async def _open_serial_connection_with_retry(
+    config: RuntimeConfig,
+) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    base_delay = float(max(1, config.reconnect_delay))
+
+    async def _connect() -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        return await OPEN_SERIAL_CONNECTION(
+            url=config.serial_port,
+            baudrate=config.serial_baud,
+        )
+
+    return await _run_with_retry(
+        f"Serial connection to {config.serial_port}",
+        _connect,
+        base_delay=base_delay,
+        retry_exceptions=(
+            serial.SerialException,
+            ConnectionResetError,
+            OSError,
+        ),
+        announce_attempt=lambda: logger.info(
+            "Connecting to serial port %s at %d baud...",
+            config.serial_port,
+            config.serial_baud,
+        ),
+    )
+
+
+async def _connect_mqtt_with_retry(
+    config: RuntimeConfig,
+    client: MQTTClient,
+    tls_context: Optional[ssl.SSLContext],
+):
+    base_delay = float(max(1, config.reconnect_delay))
+
+    async def _connect() -> Any:
+        return await client.connect(
+            host=config.mqtt_host,
+            port=config.mqtt_port,
+            username=config.mqtt_user,
+            password=config.mqtt_pass,
+            ssl=tls_context,
+        )
+
+    return await _run_with_retry(
+        f"MQTT connection to {config.mqtt_host}:{config.mqtt_port}",
+        _connect,
+        base_delay=base_delay,
+        retry_exceptions=(
+            AccessRefusedError,
+            ConnectionLostError,
+            ConnectionCloseForcedError,
+            asyncio.TimeoutError,
+            OSError,
+        ),
+        announce_attempt=lambda: logger.info(
+            "Connecting to MQTT broker at %s:%d...",
+            config.mqtt_host,
+            config.mqtt_port,
+        ),
+    )
 
 
 async def _send_serial_frame(
@@ -125,15 +249,7 @@ async def serial_reader_task(
         reader: Optional[asyncio.StreamReader] = None
         writer: Optional[asyncio.StreamWriter] = None
         try:
-            logger.info(
-                "Connecting to serial port %s at %d baud...",
-                config.serial_port,
-                config.serial_baud,
-            )
-            reader, writer = await OPEN_SERIAL_CONNECTION(
-                url=config.serial_port,
-                baudrate=config.serial_baud,
-            )
+            reader, writer = await _open_serial_connection_with_retry(config)
 
             state.serial_writer = writer
 
@@ -306,17 +422,10 @@ async def mqtt_task(
     while True:
         client = MQTTClient()
         try:
-            logger.info(
-                "Connecting to MQTT broker at %s:%d...",
-                config.mqtt_host,
-                config.mqtt_port,
-            )
-            connect_result = await client.connect(
-                host=config.mqtt_host,
-                port=config.mqtt_port,
-                username=config.mqtt_user,
-                password=config.mqtt_pass,
-                ssl=tls_context,
+            connect_result = await _connect_mqtt_with_retry(
+                config,
+                client,
+                tls_context,
             )
             disconnect_future = connect_result.disconnect_reason
             logger.info("Connected to MQTT broker.")

@@ -14,6 +14,7 @@ PKG_LICENSE_FILES:=LICENSE.txt
 PKG_MAINTAINER:=Ignacio Santolin <ignaciosantolin@example.com>
 
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PYPI_NAME)-$(PKG_VERSION)
+PYTHON3_PKG_WHEEL_NAME:=pyserial_asyncio
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk

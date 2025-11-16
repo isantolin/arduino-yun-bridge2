@@ -5,7 +5,7 @@ PKG_VERSION:=0.12.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=asyncio-mqtt
-PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
+PKG_SOURCE:=asyncio_mqtt-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://files.pythonhosted.org/packages/source/a/$(PYPI_NAME)/
 PKG_HASH:=6dbf85a45f94d26e7465411680ada3947b50546e98208d5d52e7a0a7ed7a7c38
 
@@ -13,7 +13,8 @@ PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=README.md
 PKG_MAINTAINER:=Ignacio Santolin <ignaciosantolin@example.com>
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PYPI_NAME)-$(PKG_VERSION)
+PKG_BUILD_DIR:=$(BUILD_DIR)/asyncio_mqtt-$(PKG_VERSION)
+PYTHON3_PKG_WHEEL_NAME:=asyncio_mqtt
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk

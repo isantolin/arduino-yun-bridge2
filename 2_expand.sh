@@ -286,8 +286,30 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 4. REBOOT
-echo "4. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
+# 4. Ensure fstab init script persists swap/overlay on boot
+if [ -x /etc/init.d/fstab ]; then
+    echo "4. Ensuring fstab init script is enabled for future boots..." | tee -a $LOG_FILE
+    if /etc/init.d/fstab enabled >/dev/null 2>&1; then
+        echo "   [OK] fstab service already enabled." | tee -a $LOG_FILE
+    else
+        if /etc/init.d/fstab enable >> $LOG_FILE 2>&1; then
+            echo "   [OK] Enabled fstab service for autostart." | tee -a $LOG_FILE
+        else
+            echo "   [WARN] Could not enable fstab service automatically. Enable manually if needed." | tee -a $LOG_FILE
+        fi
+    fi
+
+    if /etc/init.d/fstab start >> $LOG_FILE 2>&1; then
+        echo "   [OK] fstab service started to validate configuration." | tee -a $LOG_FILE
+    else
+        echo "   [WARN] Failed to start fstab service. SWAP might need manual 'swapon' after reboot." | tee -a $LOG_FILE
+    fi
+else
+    echo "4. [WARN] /etc/init.d/fstab not found; cannot ensure persistence via init script." | tee -a $LOG_FILE
+fi
+
+# 5. REBOOT
+echo "5. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
 echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE
 sleep 5
 reboot

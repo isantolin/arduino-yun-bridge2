@@ -466,7 +466,8 @@ class BridgeService:
         await self.send_frame(Status.ACK.value, b"")
 
     async def _handle_mailbox_available(self, _: bytes) -> None:
-        count_payload = struct.pack(">B", len(self.state.mailbox_queue) & 0xFF)
+        queue_len = len(self.state.mailbox_queue) & 0xFF
+        count_payload = struct.pack(">B", queue_len)
         await self.send_frame(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             count_payload,
@@ -474,7 +475,9 @@ class BridgeService:
 
     async def _handle_mailbox_read(self, _: bytes) -> None:
         original_payload = self.state.pop_mailbox_message()
-        message_payload = original_payload if original_payload is not None else b""
+        message_payload = (
+            original_payload if original_payload is not None else b""
+        )
 
         msg_len = len(message_payload)
         if msg_len > MAX_PAYLOAD_SIZE - 2:

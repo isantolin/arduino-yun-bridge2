@@ -28,4 +28,3 @@ def configure_logging(config: RuntimeConfig) -> None:
     logging.getLogger("yunbridge").info(
         "Logging configured at level %s", logging.getLevelName(level)
     )
-

@@ -159,7 +159,7 @@ fi
 
 #  Install essential packages one by one, checking first.
 opkg install python3-paho-mqtt python3-asyncio python3-asyncio-mqtt python3-pyserial \
-    python3-pyserial-asyncio python3-cobs \
+    python3-pyserial-asyncio python3-cobs python3-uci \
     coreutils-stty mosquitto-client-ssl uhttpd-mod-lua \
     luci-base luci-compat luci-lua-runtime luaposix luci "$LUA_RUNTIME"
 

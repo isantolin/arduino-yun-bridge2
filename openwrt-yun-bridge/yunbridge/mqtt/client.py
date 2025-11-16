@@ -11,34 +11,23 @@ from typing import (
     Protocol,
     Sequence,
     Tuple,
-    TYPE_CHECKING,
     cast,
 )
 
 import paho.mqtt.client as mqtt
 
-if TYPE_CHECKING:
-    from asyncio_mqtt import Client as AsyncioMqttClient
-    from asyncio_mqtt.error import MqttConnectError, MqttError
-else:  # pragma: no cover - import at runtime with graceful fallback
-    try:
-        from asyncio_mqtt import (  # type: ignore[import]
-            Client as AsyncioMqttClient,
-        )
-        from asyncio_mqtt.error import (  # type: ignore[import]
-            MqttConnectError,
-            MqttError,
-        )
-    except ImportError:  # pragma: no cover - optional dependency missing
-        AsyncioMqttClient = None  # type: ignore[assignment]
+try:
+    import asyncio_mqtt as _asyncio_mqtt  # type: ignore[import]
+except ImportError:  # pragma: no cover - optional dependency missing
+    AsyncioMqttClient = None  # type: ignore[assignment]
 
-        class MqttError(Exception):  # type: ignore[override]
-            pass
-
-        class MqttConnectError(MqttError):  # type: ignore[override]
-            def __init__(self, rc: int = 0, *args: object) -> None:
-                super().__init__(*args)
-                self.rc = rc
+    class MqttConnectError(Exception):
+        def __init__(self, rc: int = 0, *args: object) -> None:
+            super().__init__(*args)
+            self.rc = rc
+else:
+    AsyncioMqttClient = _asyncio_mqtt.Client
+    from asyncio_mqtt.error import MqttConnectError  # type: ignore[import]
 
 
 class _MQTTAsyncClient(Protocol):
@@ -317,4 +306,3 @@ __all__ = [
     "ConnectionLostError",
     "ConnectionCloseForcedError",
 ]
-

@@ -15,7 +15,8 @@ define Package/$(PKG_NAME)
   SECTION:=utils
   CATEGORY:=Utilities
 	TITLE:=Yun Core Scripts and Configs (system Python only)
-	DEPENDS:=+python3 +python3-paho-mqtt +python3-tenacity +mosquitto-client
+	DEPENDS:=+python3 +python3-paho-mqtt +python3-tenacity +python3-uci \
+		+mosquitto-client
 endef
 
 define Package/$(PKG_NAME)/description

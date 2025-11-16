@@ -1,16 +1,27 @@
 #!/usr/bin/env python3
-"""CGI helper that toggles digital pins via MQTT using mosquitto_pub."""
+"""CGI helper that toggles digital pins via MQTT using paho-mqtt."""
 from __future__ import annotations
 
 import json
 import logging
 import os
 import re
-import shutil
-import subprocess
 import sys
 import time
-from typing import Any, Dict, Optional
+from types import SimpleNamespace
+from typing import Any, Callable, Dict, Optional
+
+try:  # pragma: no cover - replaced with test doubles when needed
+    from paho.mqtt import client as mqtt  # type: ignore[import]
+except ImportError:  # pragma: no cover - ensures attribute for monkeypatching
+    class _MissingClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            raise RuntimeError(
+                "paho-mqtt package not available; "
+                "install it to use pin_rest_cgi"
+            )
+
+    mqtt = SimpleNamespace(Client=_MissingClient)  # type: ignore[assignment]
 
 from yunrpc.utils import get_uci_config
 
@@ -30,75 +41,94 @@ MQTT_USER = CFG.get("mqtt_user")
 MQTT_PASS = CFG.get("mqtt_pass")
 TOPIC_PREFIX = CFG.get("mqtt_topic", "br")
 
-MOSQUITTO_PUB = os.environ.get("MOSQUITTO_PUB", "mosquitto_pub")
-PUBLISH_RETRIES = max(1, int(os.environ.get("YUNBRIDGE_MQTT_RETRIES", "3")))
-PUBLISH_TIMEOUT = max(
-    1.0,
-    float(os.environ.get("YUNBRIDGE_MQTT_TIMEOUT", "4.0")),
-)
-RETRY_DELAY = max(0.1, float(os.environ.get("YUNBRIDGE_MQTT_BACKOFF", "0.5")))
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        return max(minimum, int(os.environ.get(name, str(default))))
+    except (TypeError, ValueError):
+        return default
 
 
-def _command_args(topic: str, payload: str) -> list[str]:
-    args = [
-        MOSQUITTO_PUB,
-        "-h",
-        MQTT_HOST,
-        "-p",
-        str(MQTT_PORT),
-        "-t",
-        topic,
-        "-m",
-        payload,
-        "-q",
-        "1",
-    ]
-    if MQTT_USER:
-        args.extend(["-u", MQTT_USER])
-    if MQTT_PASS:
-        args.extend(["-P", MQTT_PASS])
-    return args
+def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        return max(minimum, float(os.environ.get(name, str(default))))
+    except (TypeError, ValueError):
+        return default
 
 
-def publish_with_retries(topic: str, payload: str) -> None:
-    if shutil.which(MOSQUITTO_PUB) is None:
-        raise FileNotFoundError(
-            f"Executable '{MOSQUITTO_PUB}' not found in PATH"
-        )
+DEFAULT_RETRIES = _env_int("YUNBRIDGE_MQTT_RETRIES", 3)
+DEFAULT_PUBLISH_TIMEOUT = _env_float("YUNBRIDGE_MQTT_TIMEOUT", 4.0, 0.0)
+DEFAULT_BACKOFF_BASE = _env_float("YUNBRIDGE_MQTT_BACKOFF", 0.5, 0.0)
+DEFAULT_POLL_INTERVAL = _env_float("YUNBRIDGE_MQTT_POLL_INTERVAL", 0.05, 0.001)
+
+
+def publish_with_retries(
+    topic: str,
+    payload: str,
+    retries: int = DEFAULT_RETRIES,
+    publish_timeout: float = DEFAULT_PUBLISH_TIMEOUT,
+    base_delay: float = DEFAULT_BACKOFF_BASE,
+    sleep_fn: Callable[[float], None] = time.sleep,
+    poll_interval: float = DEFAULT_POLL_INTERVAL,
+) -> None:
+    """Publish an MQTT message with retry and timeout semantics."""
+
+    if retries <= 0:
+        raise ValueError("retries must be a positive integer")
+    if poll_interval <= 0:
+        poll_interval = DEFAULT_POLL_INTERVAL
 
     last_error: Optional[Exception] = None
-    for attempt in range(1, PUBLISH_RETRIES + 1):
+
+    for attempt in range(1, retries + 1):
+        client = mqtt.Client()
+        if MQTT_USER:
+            client.username_pw_set(MQTT_USER, MQTT_PASS)
+
         try:
-            logger.debug(
-                "mosquitto_pub attempt %d: %s -> %s",
-                attempt,
-                topic,
-                payload,
-            )
-            subprocess.run(
-                _command_args(topic, payload),
-                check=True,
-                timeout=PUBLISH_TIMEOUT,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
+            client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+            loop_start = getattr(client, "loop_start", None)
+            if callable(loop_start):
+                loop_start()
+
+            result = client.publish(topic, payload, qos=1, retain=False)
+
+            if publish_timeout <= 0:
+                raise TimeoutError("MQTT publish timed out before completion")
+
+            deadline = time.monotonic() + publish_timeout
+            while not result.is_published():
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        (
+                            "MQTT publish timed out after "
+                            f"{publish_timeout} seconds"
+                        )
+                    )
+                sleep_fn(poll_interval)
+
             logger.info("Published to %s with payload %s", topic, payload)
             return
-        except (
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-        ) as exc:
+        except Exception as exc:  # pragma: no cover - exercised via tests
             last_error = exc
-            logger.warning(
-                "mosquitto_pub attempt %d failed: %s",
-                attempt,
-                getattr(exc, "stderr", exc),
-            )
-            if attempt < PUBLISH_RETRIES:
-                time.sleep(RETRY_DELAY * attempt)
+            logger.warning("MQTT publish attempt %d failed: %s", attempt, exc)
+        finally:
+            for cleanup in ("loop_stop", "disconnect"):
+                method = getattr(client, cleanup, None)
+                if callable(method):
+                    try:
+                        method()
+                    except Exception:  # pragma: no cover - defensive cleanup
+                        logger.debug(
+                            "Cleanup %s failed", cleanup, exc_info=True
+                        )
+
+        if attempt < retries:
+            sleep_fn(base_delay * attempt)
+
     if last_error:
         raise last_error
+    raise TimeoutError("MQTT publish failed without explicit error detail")
 
 
 def get_pin_from_path() -> str | None:

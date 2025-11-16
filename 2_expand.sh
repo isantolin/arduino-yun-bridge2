@@ -20,6 +20,13 @@ SWAP_EXPECTED_KB=$((SWAP_SIZE_MB * 1024))
 SWAP_FILE_PATH="/swapfile"
 # ----------------------------------
 
+ensure_swap_uci_entry() {
+    uci -q delete fstab.swap_file || true
+    uci set fstab.swap_file="swap"
+    uci set fstab.swap_file.device="/overlay${SWAP_FILE_PATH}"
+    uci set fstab.swap_file.enabled='1'
+}
+
 # Exigir privilegios de root.
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: este script debe ejecutarse como root." >&2
@@ -232,8 +239,7 @@ fi
 # 3. SWAP CONFIGURATION (Verification and Creation)
 echo "3. Verifying SWAP configuration..." | tee -a $LOG_FILE
 if check_swap_size; then
-    # SWAP already configured correctly
-    :
+    ensure_swap_uci_entry
 else
     echo "3.1 SWAP requires configuration. Proceeding to create the ${SWAP_SIZE_MB}MB file..." | tee -a $LOG_FILE
 
@@ -266,10 +272,7 @@ else
     fi
 
     # 3.3 Configure the SWAP file in /etc/config/fstab
-    uci -q delete fstab.swap_file
-    uci set fstab.swap_file="swap"
-    uci set fstab.swap_file.device="/overlay${SWAP_FILE_PATH}"
-    uci set fstab.swap_file.enabled='1'
+    ensure_swap_uci_entry
 
     # Unmount if temporarily mounted
     if [ "$SWAP_TEMP_DIR" = "/mnt/swap_temp" ]; then

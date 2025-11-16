@@ -34,4 +34,3 @@ endef
 
 $(eval $(call Py3Package,python3-pyserial-asyncio))
 $(eval $(call BuildPackage,python3-pyserial-asyncio))
-$(eval $(call BuildPackage,python3-pyserial-asyncio-src))

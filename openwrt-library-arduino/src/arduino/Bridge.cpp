@@ -39,6 +39,11 @@ MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
 
+#if defined(ARDUINO_ARCH_AVR)
+extern "C" char __heap_start;
+extern "C" char* __brkval;
+#endif
+
 #if BRIDGE_DEBUG_IO
 static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
   if (!Console) return;
@@ -54,9 +59,6 @@ static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
 namespace {
 
 #if defined(ARDUINO_ARCH_AVR)
-extern char __heap_start;
-extern char* __brkval;
-
 uint16_t calculateFreeMemoryBytes() {
   char stack_top;
   char* heap_end = __brkval ? __brkval : &__heap_start;
@@ -170,9 +172,13 @@ DataStoreClass::DataStoreClass() {}
 void DataStoreClass::put(const char* key, const char* value) {
   if (!key || !value) return;
 
-  size_t key_len = strlen(key);
-  size_t value_len = strlen(value);
-  if (key_len == 0 || key_len > 255 || value_len > 255) return;
+    size_t key_len = strlen(key);
+    size_t value_len = strlen(value);
+    if (key_len == 0 ||
+        key_len > BridgeClass::kMaxDatastoreKeyLength ||
+        value_len > BridgeClass::kMaxDatastoreKeyLength) {
+      return;
+    }
 
   const size_t payload_len = 2 + key_len + value_len;
   if (payload_len > rpc::MAX_PAYLOAD_SIZE) return;
@@ -188,8 +194,8 @@ void DataStoreClass::put(const char* key, const char* value) {
 
 void DataStoreClass::requestGet(const char* key) {
   if (!key) return;
-  size_t key_len = strlen(key);
-  if (key_len == 0 || key_len > 255) return;
+    size_t key_len = strlen(key);
+    if (key_len == 0 || key_len > BridgeClass::kMaxDatastoreKeyLength) return;
 
   uint8_t payload[1 + 255];
   payload[0] = static_cast<uint8_t>(key_len);
@@ -354,14 +360,14 @@ const char* BridgeClass::_popPendingDatastoreKey() {
   if (_pending_datastore_count == 0) {
     return nullptr;
   }
-  const char* key = nullptr;
-  if (_pending_datastore_key_lengths[_pending_datastore_head] != 0) {
-    key = _pending_datastore_keys[_pending_datastore_head];
-  }
-  _pending_datastore_key_lengths[_pending_datastore_head] = 0;
-  _pending_datastore_head = (_pending_datastore_head + 1) % kMaxPendingDatastore;
-  _pending_datastore_count--;
-  return key;
+    const char* key = nullptr;
+    if (_pending_datastore_key_lengths[_pending_datastore_head] != 0) {
+      key = _pending_datastore_keys[_pending_datastore_head];
+    }
+    _pending_datastore_key_lengths[_pending_datastore_head] = 0;
+    _pending_datastore_head = (_pending_datastore_head + 1) % kMaxPendingDatastore;
+    _pending_datastore_count--;
+    return key;
 }
 
 bool BridgeClass::_pushPendingProcessPid(uint16_t pid) {
@@ -425,10 +431,9 @@ void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 void BridgeClass::process() {
   while (_stream.available()) {
     uint8_t byte = _stream.read();
-    rpc::Frame frame;
     // consume() decodifica COBS, verifica CRC y parsea el header/payload
-    if (_parser.consume(byte, frame)) {
-      dispatch(frame); // Si se recibe una trama válida, se procesa
+    if (_parser.consume(byte, _rx_frame)) {
+      dispatch(_rx_frame); // Si se recibe una trama válida, se procesa
     }
     // Si consume devuelve false, o no era fin de paquete (0x00) o hubo error
   }
@@ -764,7 +769,7 @@ void BridgeClass::_emitStatus(uint8_t status_code, const char* message) {
  */
 void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
                             uint16_t payload_len) {
-  uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
+  static uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
 
   // build() crea Header + Payload + CRC en raw_frame_buf
   size_t raw_len =
@@ -775,7 +780,7 @@ void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
     return;
   }
 
-  uint8_t cobs_buf[rpc::COBS_BUFFER_SIZE];
+  static uint8_t cobs_buf[rpc::COBS_BUFFER_SIZE];
   // encode() aplica COBS a la trama raw
   size_t cobs_len = cobs::encode(raw_frame_buf, raw_len, cobs_buf);
 

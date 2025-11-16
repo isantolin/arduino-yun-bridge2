@@ -10,8 +10,6 @@ from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
 import serial
 from cobs import cobs as _cobs  # type: ignore[import]
-from asyncio_mqtt import Client as MQTTClient
-from asyncio_mqtt.error import MqttError
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
 
@@ -25,7 +23,7 @@ from tenacity import (
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.mqtt import QOSLevel
+from yunbridge.mqtt import Client as MQTTClient, MQTTError, QOSLevel
 from yunbridge.services.runtime import (
     BridgeService,
     TOPIC_ANALOG,
@@ -167,7 +165,7 @@ async def _connect_mqtt_with_retry(
         _connect,
         base_delay=base_delay,
         retry_exceptions=(
-            MqttError,
+            MQTTError,
             asyncio.TimeoutError,
             OSError,
         ),
@@ -345,7 +343,7 @@ async def _mqtt_publisher_loop(
                     topic_name,
                 )
             raise
-        except MqttError as exc:
+        except MQTTError as exc:
             logger.warning(
                 "MQTT publish failed for %s; broker unavailable (%s)",
                 topic_name,
@@ -390,7 +388,7 @@ async def _mqtt_subscriber_loop(
     except asyncio.CancelledError:
         logger.info("MQTT subscriber loop cancelled.")
         raise
-    except MqttError as exc:
+    except MQTTError as exc:
         logger.warning("MQTT subscriber loop stopped: %s", exc)
         raise
 
@@ -482,7 +480,7 @@ async def mqtt_task(
                 task_group.create_task(_mqtt_publisher_loop(client, state))
                 task_group.create_task(_mqtt_subscriber_loop(client, service))
 
-        except* MqttError as exc_group:
+        except* MQTTError as exc_group:
             for exc in exc_group.exceptions:
                 logger.error("MQTT error: %s", exc)
         except* (OSError, asyncio.TimeoutError) as exc_group:
@@ -501,7 +499,7 @@ async def mqtt_task(
         finally:
             try:
                 await client.disconnect()
-            except MqttError:
+            except MQTTError:
                 logger.debug("MQTT disconnect raised broker error; ignoring.")
             except Exception:
                 logger.debug("Ignoring error while disconnecting MQTT client.")

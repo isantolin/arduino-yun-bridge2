@@ -7,7 +7,10 @@ import os
 from contextlib import asynccontextmanager
 from typing import (
     TYPE_CHECKING,
+    Any,
+    AsyncContextManager,
     AsyncGenerator,
+    AsyncIterator,
     Dict,
     Iterable,
     List,
@@ -15,10 +18,16 @@ from typing import (
     Sequence,
     TypeVar,
     Union,
+    cast,
 )
 
+# Importing paho_compat ensures the Paho compatibility shim runs first.
+from . import paho_compat
 from asyncio_mqtt import Client, MqttError
 from .env import dump_client_env
+
+# Touch the module so static analyzers acknowledge its side effects.
+paho_compat.ensure_compat()
 
 if TYPE_CHECKING:
     from yunbridge.mqtt import QOSLevel
@@ -176,10 +185,33 @@ class Bridge:
 
     async def _message_listener(self) -> None:
         client = self._ensure_client()
+        # Prefer the non-deprecated messages() API but keep a fallback for
+        # older asyncio-mqtt versions shipped with the Yun firmware.
+        messages_attr = getattr(client, "messages", None)
+        if messages_attr is not None:
+            message_context = cast(
+                AsyncContextManager[Any], messages_attr()
+            )
+        else:
+            message_context = cast(
+                AsyncContextManager[Any], client.unfiltered_messages()
+            )
+
         try:
-            async with client.unfiltered_messages() as messages:
-                async for message in messages:
-                    topic = message.topic or ""
+            async with message_context as raw_messages:
+                messages_iter = cast(AsyncIterator[Any], raw_messages)
+                async for message in messages_iter:
+                    raw_topic = message.topic
+                    topic = (
+                        str(raw_topic)
+                        if raw_topic is not None
+                        else ""
+                    )
+                    logger.debug(
+                        "MQTT message observed topic=%s size=%d",
+                        topic,
+                        len(message.payload or b""),
+                    )
                     if not topic:
                         continue
                     payload = message.payload or b""
@@ -187,6 +219,11 @@ class Bridge:
                     handled = False
                     for prefix, queue in list(self._response_queues.items()):
                         if topic.startswith(prefix):
+                            logger.debug(
+                                "Matched response prefix %s for topic %s",
+                                prefix,
+                                topic,
+                            )
                             await queue.put(payload)
                             handled = True
                             break

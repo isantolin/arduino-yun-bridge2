@@ -21,6 +21,12 @@
 
 set -e
 
+# Always work relative to the repository root so the script can be invoked
+# from any directory.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
 # Allow user to override the Arduino libraries directory
 if [ -n "$1" ]; then
   LIB_DIR="$1"

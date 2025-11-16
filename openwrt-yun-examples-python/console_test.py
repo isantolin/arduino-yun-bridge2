@@ -43,7 +43,7 @@ async def main() -> None:
                 await bridge.console_write(user_input)
             except EOFError:
                 break
-        
+
         # Clean up the listener task
         listener_task.cancel()
         await asyncio.gather(listener_task, return_exceptions=True)

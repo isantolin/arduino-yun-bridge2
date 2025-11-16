@@ -44,7 +44,7 @@ async def main() -> None:
         # --- Test 2: Get a non-existent key ---
         logging.info("\n[Test 2: Get a non-existent key]")
         key2: str = "non_existent/key"
-        
+
         retrieved_value_2: str = await bridge.get(key2)
         # Expecting an empty payload for a non-existent key
         if retrieved_value_2 == "":

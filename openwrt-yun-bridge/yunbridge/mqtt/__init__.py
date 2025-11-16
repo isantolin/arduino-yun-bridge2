@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import Optional
 
-from asyncio_mqtt import Client
 from asyncio_mqtt.error import MqttError
+
+from .client import Client
 
 
 class QOSLevel(IntEnum):

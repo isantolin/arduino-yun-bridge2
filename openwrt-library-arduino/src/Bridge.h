@@ -18,6 +18,11 @@
 
 class HardwareSerial;
 
+// Adjusted resource limits to keep SRAM usage below 2.5 KB on ATmega32u4.
+constexpr uint8_t BRIDGE_DATASTORE_PENDING_MAX = 4;
+constexpr size_t BRIDGE_DATASTORE_KEY_MAX_LEN = 96;
+constexpr uint8_t BRIDGE_PROCESS_PENDING_MAX = 8;
+
 #ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
 #define BRIDGE_FIRMWARE_VERSION_MAJOR 2
 #endif
@@ -187,6 +192,7 @@ class BridgeClass {
   HardwareSerial* _hardware_serial;
   rpc::FrameParser _parser;
   rpc::FrameBuilder _builder;
+  rpc::Frame _rx_frame;  // Reuse a single frame buffer to save stack space.
 
   // Punteros a las funciones de callback
   CommandHandler _command_handler;
@@ -202,14 +208,14 @@ class BridgeClass {
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
-  static constexpr uint8_t kMaxPendingDatastore = 8;
-  static constexpr size_t kMaxDatastoreKeyLength = 255;
+  static constexpr uint8_t kMaxPendingDatastore = BRIDGE_DATASTORE_PENDING_MAX;
+  static constexpr size_t kMaxDatastoreKeyLength = BRIDGE_DATASTORE_KEY_MAX_LEN;
   char _pending_datastore_keys[kMaxPendingDatastore][kMaxDatastoreKeyLength + 1];
   uint8_t _pending_datastore_key_lengths[kMaxPendingDatastore];
   uint8_t _pending_datastore_head;
   uint8_t _pending_datastore_count;
 
-  static constexpr uint8_t kMaxPendingProcessPolls = 16;
+  static constexpr uint8_t kMaxPendingProcessPolls = BRIDGE_PROCESS_PENDING_MAX;
   uint16_t _pending_process_pids[kMaxPendingProcessPolls];
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;

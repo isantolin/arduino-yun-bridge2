@@ -157,9 +157,8 @@ else
     exit 1
 fi
 
-#  Install essential packages one by one, checking first.
-opkg install python3-asyncio python3-asyncio-mqtt python3-pyserial \
-    python3-pyserial-asyncio python3-cobs python3-uci \
+#  Install essential packages available from public feeds.
+opkg install python3-asyncio python3-pyserial python3-uci \
     coreutils-stty mosquitto-client-ssl uhttpd-mod-lua \
     luci-base luci-compat luci-lua-runtime luaposix luci "$LUA_RUNTIME"
 
@@ -171,12 +170,26 @@ opkg install python3-asyncio python3-asyncio-mqtt python3-pyserial \
 stop_daemon
 # --- Install Prebuilt Packages ---
 echo "[STEP 5/6] Installing .ipk packages..."
-#  Install all .ipk packages from the bin/ directory
-if ls bin/*.ipk 1>/dev/null 2>&1; then
-    if ! opkg install --force-reinstall bin/*.ipk; then
-        echo "[ERROR] La instalación de los paquetes .ipk falló." >&2
-        exit 1
+#  Ensure custom YunBridge packages are present before attempting install
+CUSTOM_IPKS="python3-asyncio-mqtt python3-pyserial-asyncio python3-cobs \
+python3-tenacity openwrt-yun-core openwrt-yun-bridge luci-app-yunbridge"
+missing_ipks=""
+for ipk in $CUSTOM_IPKS; do
+    if ! ls bin/${ipk}_* 1>/dev/null 2>&1; then
+        missing_ipks="$missing_ipks $ipk"
     fi
+done
+
+if [ -n "$missing_ipks" ]; then
+    echo "[ERROR] Missing expected YunBridge .ipk artifacts:$missing_ipks" >&2
+    echo "[HINT] Run './1_compile.sh' on your build host and copy the bin/ directory to this device." >&2
+    exit 1
+fi
+
+#  Install all .ipk packages from the bin/ directory
+if ! opkg install --force-reinstall bin/*.ipk; then
+    echo "[ERROR] La instalación de los paquetes .ipk falló." >&2
+    exit 1
 fi
 
 # --- System & LuCI Configuration ---

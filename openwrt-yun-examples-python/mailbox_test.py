@@ -5,7 +5,10 @@ import logging
 
 from yunbridge_client import Bridge, dump_client_env
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 
 async def main() -> None:
@@ -14,12 +17,14 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    message_to_send = "hello_from_async_client"
+    message_to_send: str = "hello_from_async_client"
 
     try:
-        logging.info(f"Sending message to mailbox: '{message_to_send}'")
+        logging.info("Sending message to mailbox: '%s'", message_to_send)
         await bridge.mailbox_write(message_to_send)
-        logging.info("Message sent. A listener would be needed to confirm processing.")
+        logging.info(
+            "Message sent. A listener would be needed to confirm processing."
+        )
 
         await asyncio.sleep(3)
 

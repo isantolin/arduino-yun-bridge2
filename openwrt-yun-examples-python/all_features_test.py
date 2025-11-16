@@ -6,9 +6,10 @@ import logging
 from yunbridge_client import Bridge, dump_client_env
 
 # Configure basic logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - "
-                                               "%(levelname)s - "
-                                               "%(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +20,7 @@ async def main() -> None:
 
     try:
         logger.info('Testing digital port 13 (builtin led)')
-        for i in range(2):
+        for _ in range(2):
             await bridge.digital_write(13, 1)
             logger.info('LED 13 ON')
             await asyncio.sleep(1)
@@ -40,24 +41,22 @@ async def main() -> None:
         retrieved_value: str = await bridge.get('mykey', timeout=10)
         logger.info(f'Get value {retrieved_value}')
 
-        logger.info('Testing RAM memory free (simulated)')  # This is simulated 
+        logger.info('Testing RAM memory free (simulated)')  # This is simulated
         free_memory: int = await bridge.get_free_memory()  # in the client
         logger.info(f'Free memory {free_memory}')
 
-        logger.info('Testing run_sketch_command (mapped to sync shell command,'
-                    ' returns full output)')
-        command_output: bytes = await bridge.run_sketch_command(['/bin/ls',
-                                                                 '-l',
-                                                                 '/'])  # This will return the full output
-        logger.info(f'Process output: {command_output.decode("utf-8",
-                                                             errors="ignore")}')
+        logger.info(
+            "Testing run_sketch_command (mapped to sync shell command)"
+        )
+        command_output: bytes = await bridge.run_sketch_command(
+            ["/bin/ls", "-l", "/"]
+        )
+        decoded_output = command_output.decode("utf-8", errors="ignore")
+        logger.info("Process output: %s", decoded_output)
 
         logger.info('Testing run_shell_command_async')
-        async_pid: int = await bridge.run_shell_command_async(['sleep',
-                                                               '5',
-                                                               '&&',
-                                                               'echo',
-                                                               'Async command done'])  # This will return the actual PID
+        async_command = ["sleep", "5", "&&", "echo", "Async command done"]
+        async_pid: int = await bridge.run_shell_command_async(async_command)
         logger.info(f'Async process started with PID {async_pid}')
         # In a real scenario, you'd poll for status or wait for a notification
         await asyncio.sleep(1)  # Give it a moment to start
@@ -66,9 +65,11 @@ async def main() -> None:
         await bridge.console_write('Hello world from client')
 
         logger.info('Testing fileio')
-        await bridge.file_write('/tmp/test_client.txt', 'Hello world from client file')
-        file_content: bytes = await bridge.file_read('/tmp/test_client.txt')
-        logger.info(f'File content: {file_content.decode("utf-8")}')
+        test_path = "/tmp/test_client.txt"
+        payload = "Hello world from client file"
+        await bridge.file_write(test_path, payload)
+        file_content: bytes = await bridge.file_read(test_path)
+        logger.info("File content: %s", file_content.decode("utf-8"))
 
     finally:
         await bridge.disconnect()  # Explicitly disconnect
@@ -79,5 +80,5 @@ if __name__ == '__main__':
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Exiting due to KeyboardInterrupt.")
-    except Exception as e:
+    except Exception:
         logger.exception("An error occurred in main execution.")

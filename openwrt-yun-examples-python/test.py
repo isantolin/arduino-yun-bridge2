@@ -1,13 +1,17 @@
+"""Minimal connectivity smoke test for the bridge client."""
+
 import asyncio
 
 from yunbridge_client import Bridge, dump_client_env
 
-async def main():
+
+async def main() -> None:
     dump_client_env()
     bridge = Bridge()
     await bridge.connect()
     print("Bridge connected")
     await bridge.disconnect()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -16,6 +16,8 @@
 #include "Print.h"
 #include "protocol/rpc_frame.h"
 
+class HardwareSerial;
+
 #ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
 #define BRIDGE_FIRMWARE_VERSION_MAJOR 2
 #endif
@@ -29,9 +31,12 @@
 #endif
 
 // --- Constantes de la Consola ---
-#define CONSOLE_RX_BUFFER_SIZE 32
-#define CONSOLE_BUFFER_HIGH_WATER 50
-#define CONSOLE_BUFFER_LOW_WATER 10
+// Ajustar los límites de agua para que respiren sobre un buffer real.
+// El cabezal circular necesita al menos un byte libre, por lo que un
+// tamaño de 64 bytes permite aplicar backpressure antes de saturar.
+#define CONSOLE_RX_BUFFER_SIZE 64
+#define CONSOLE_BUFFER_HIGH_WATER 48
+#define CONSOLE_BUFFER_LOW_WATER 16
 
 /**
  * @class ConsoleClass
@@ -108,6 +113,7 @@ class ProcessClass {
  */
 class BridgeClass {
  public:
+  explicit BridgeClass(HardwareSerial& serial);
   BridgeClass(Stream& stream);
   void begin();
   void process();
@@ -178,6 +184,7 @@ class BridgeClass {
 
  private:
   Stream& _stream;
+  HardwareSerial* _hardware_serial;
   rpc::FrameParser _parser;
   rpc::FrameBuilder _builder;
 

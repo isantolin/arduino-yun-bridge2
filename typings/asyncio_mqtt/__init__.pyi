@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from typing import AsyncContextManager, AsyncIterator, Optional, Sequence, Tuple
+from typing import (
+    AsyncContextManager,
+    AsyncIterator,
+    Optional,
+    Sequence,
+    Tuple,
+    overload,
+)
 
 import paho.mqtt.client as mqtt
 
@@ -36,6 +43,16 @@ class Client:
         timeout: Optional[float] = ...,
     ) -> None: ...
 
+    @overload
+    async def subscribe(
+        self,
+        topic: str,
+        qos: int = ...,
+        *,
+        timeout: Optional[float] = ...,
+    ) -> None: ...
+
+    @overload
     async def subscribe(
         self,
         topics: Sequence[Tuple[str, int]],
@@ -43,6 +60,23 @@ class Client:
         timeout: Optional[float] = ...,
     ) -> None: ...
 
+    async def subscribe(
+        self,
+        topics: object,
+        qos: int = ...,
+        *,
+        timeout: Optional[float] = ...,
+    ) -> None: ...
+
+    @overload
+    async def unsubscribe(
+        self,
+        topic: str,
+        *,
+        timeout: Optional[float] = ...,
+    ) -> None: ...
+
+    @overload
     async def unsubscribe(
         self,
         topics: Sequence[str],
@@ -50,6 +84,17 @@ class Client:
         timeout: Optional[float] = ...,
     ) -> None: ...
 
+    async def unsubscribe(
+        self,
+        topics: object,
+        *,
+        timeout: Optional[float] = ...,
+    ) -> None: ...
+
     def unfiltered_messages(
         self,
     ) -> AsyncContextManager[AsyncIterator[mqtt.MQTTMessage]]: ...
+
+
+class MqttError(Exception):
+    ...

@@ -18,7 +18,7 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    pin = 13
+    pin: int = 13
     if len(sys.argv) > 1:
         try:
             pin = int(sys.argv[1])

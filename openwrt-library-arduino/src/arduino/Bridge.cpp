@@ -291,8 +291,14 @@ void ProcessClass::kill(int pid) {
 // BridgeClass
 // =================================================================================
 
+BridgeClass::BridgeClass(HardwareSerial& serial)
+    : BridgeClass(static_cast<Stream&>(serial)) {
+  _hardware_serial = &serial;
+}
+
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
+      _hardware_serial(nullptr),
       _parser(),
       _builder(),
       _command_handler(nullptr),
@@ -379,11 +385,8 @@ uint16_t BridgeClass::_popPendingProcessPid() {
 }
 
 void BridgeClass::begin() {
-  // CORRECCIÓN: Usar static_cast en lugar de dynamic_cast porque RTTI está desactivado.
-  // Es seguro aquí porque sabemos que Bridge siempre se instancia con Serial1 (HardwareSerial).
-  HardwareSerial* hwSerial = static_cast<HardwareSerial*>(&_stream);
-  if (hwSerial) {
-    hwSerial->begin(BRIDGE_BAUDRATE);
+  if (_hardware_serial != nullptr) {
+    _hardware_serial->begin(BRIDGE_BAUDRATE);
   }
   // Añadir un pequeño delay o flush para asegurar que el puerto serie esté listo
   delay(10);

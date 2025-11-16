@@ -1,10 +1,13 @@
-"""Interactive console to send and receive messages from the Arduino console."""
+"""Interactive console helper for the Arduino bridge."""
 import asyncio
 import logging
 
 from yunbridge_client import Bridge, dump_client_env
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 
 async def main() -> None:
@@ -13,27 +16,31 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
+    logging.info(
+        "Enter text to send to the Arduino console. Type 'exit' to quit."
+    )
 
     try:
         # Start a task to listen for console messages
-        async def console_listener():
+        async def console_listener() -> None:
             while True:
                 message = await bridge.console_read_async()
-                if message:
-                    logging.info(f"Received from Arduino: {message}")
+                if message is not None:
+                    logging.info("Received from Arduino: %s", message)
                 else:
                     await asyncio.sleep(0.1)
-        
-        listener_task = asyncio.create_task(console_listener())
+
+        listener_task: asyncio.Task[None] = asyncio.create_task(
+            console_listener()
+        )
 
         while True:
             try:
                 # Run blocking input in a separate thread
-                message = await asyncio.to_thread(input)
-                if message.lower() == "exit":
+                user_input = await asyncio.to_thread(input)
+                if user_input.lower() == "exit":
                     break
-                await bridge.console_write(message)
+                await bridge.console_write(user_input)
             except EOFError:
                 break
         

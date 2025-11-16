@@ -6,7 +6,10 @@ import logging
 
 from yunbridge_client import Bridge, dump_client_env
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 
@@ -18,9 +21,11 @@ async def main() -> None:
     try:
         logger.info("Waiting for mailbox messages. Press Ctrl+C to stop.")
         while True:
-            message = await bridge.mailbox_read(timeout=10)
+            message: bytes | None = await bridge.mailbox_read(timeout=10)
             if message is None:
-                logger.info("No mailbox message within timeout; still listening...")
+                logger.info(
+                    "No mailbox message within timeout; still listening..."
+                )
                 continue
 
             preview = message.decode("utf-8", errors="ignore")

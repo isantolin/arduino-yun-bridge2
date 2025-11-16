@@ -5,23 +5,35 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator, Dict, Iterable, List, Optional, Sequence, Union
+from typing import (
+    TYPE_CHECKING,
+    AsyncGenerator,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    TypeVar,
+    Union,
+)
 
 from asyncio_mqtt import Client, MqttError
-
-try:  # pragma: no cover - fallback when package import unavailable
-    from yunbridge.mqtt import QOSLevel
-except ModuleNotFoundError:  # pragma: no cover - tooling fallback
-    from enum import IntEnum
-
-    class QOSLevel(IntEnum):  # type: ignore[redeclaration]
-        """Minimal QoS enum used when yunbridge.mqtt is unavailable."""
-
-        QOS_0 = 0
-        QOS_1 = 1
-        QOS_2 = 2
-
 from .env import dump_client_env
+
+if TYPE_CHECKING:
+    from yunbridge.mqtt import QOSLevel
+else:  # pragma: no cover - runtime fallback when package unavailable
+    try:
+        from yunbridge.mqtt import QOSLevel
+    except ModuleNotFoundError:  # pragma: no cover - tooling fallback
+        from enum import IntEnum
+
+        class QOSLevel(IntEnum):  # type: ignore[redeclaration]
+            """Minimal QoS enum used when yunbridge.mqtt is unavailable."""
+
+            QOS_0 = 0
+            QOS_1 = 1
+            QOS_2 = 2
 
 __all__ = [
     "Bridge",
@@ -41,6 +53,8 @@ MQTT_PASS = os.environ.get("YUN_BROKER_PASS")
 
 logger = logging.getLogger(__name__)
 
+_PublishPayload = TypeVar("_PublishPayload", str, bytes)
+
 
 async def _subscribe_many(client: Client, topics: Sequence[str]) -> None:
     for topic in topics:
@@ -55,7 +69,7 @@ async def _unsubscribe_many(client: Client, topics: Sequence[str]) -> None:
 async def _publish_simple(
     client: Client,
     topic: str,
-    payload: Union[str, bytes],
+    payload: _PublishPayload,
     *,
     retain: bool = False,
 ) -> None:
@@ -177,7 +191,9 @@ class Bridge:
                             handled = True
                             break
 
-                    if not handled and topic == f"{self.topic_prefix}/console/out":
+                    if not handled and (
+                        topic == f"{self.topic_prefix}/console/out"
+                    ):
                         queue = self._response_queues.get(topic)
                         if queue is not None:
                             await queue.put(payload)
@@ -321,7 +337,8 @@ class Bridge:
         self, command_parts: List[str], timeout: float = 10
     ) -> bytes:
         logger.warning(
-            "run_sketch_command falls back to a synchronous shell command via MQTT."
+            "run_sketch_command falls back to a synchronous shell "
+            "command via MQTT."
         )
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run",

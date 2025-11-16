@@ -1,10 +1,13 @@
-"""Example: Periodically read a sensor value from a pin using an async client."""
+"""Poll sensor values via the async bridge client."""
 import asyncio
 import logging
 
 from yunbridge_client import Bridge, dump_client_env
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 # --- Configuration ---
 # The pin to read. Use a format like 'd13' for digital or 'a0' for analog.
@@ -21,22 +24,33 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    logging.info(f"Requesting a reading from pin {PIN_TO_READ} "
-                 "every {READ_INTERVAL} seconds.")
+    logging.info(
+        "Requesting a reading from pin %s every %d seconds.",
+        PIN_TO_READ,
+        READ_INTERVAL,
+    )
     logging.info("Press Ctrl+C to exit.")
 
-    is_analog = PIN_TO_READ.lower().startswith('a')
+    is_analog = PIN_TO_READ.lower().startswith("a")
     pin_number = int(PIN_TO_READ[1:])
 
     try:
         while True:
             if is_analog:
-                value = await bridge.analog_read(pin_number)
-                logging.info(f"Received analog value for pin {PIN_TO_READ}: {value}")
+                value: int = await bridge.analog_read(pin_number)
+                logging.info(
+                    "Received analog value for pin %s: %d",
+                    PIN_TO_READ,
+                    value,
+                )
             else:
                 value = await bridge.digital_read(pin_number)
-                logging.info(f"Received digital value for pin {PIN_TO_READ}: {value}")
-            
+                logging.info(
+                    "Received digital value for pin %s: %d",
+                    PIN_TO_READ,
+                    value,
+                )
+
             await asyncio.sleep(READ_INTERVAL)
 
     except asyncio.CancelledError:

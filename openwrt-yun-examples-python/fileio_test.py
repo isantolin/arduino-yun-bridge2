@@ -5,9 +5,10 @@ import logging
 
 from yunbridge_client import Bridge, dump_client_env
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s -"
-                                               "%(levelname)s -"
-                                               " %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 
 
 async def main() -> None:
@@ -16,8 +17,8 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    test_filename = "/tmp/test_file.txt"
-    test_content = "hello from async fileio_test"
+    test_filename: str = "/tmp/test_file.txt"
+    test_content: str = "hello from async fileio_test"
 
     try:
         # --- Test File Write ---
@@ -26,10 +27,11 @@ async def main() -> None:
 
         # --- Test File Read ---
         logging.info(f"Reading from {test_filename}")
-        content = await bridge.file_read(test_filename)
-        logging.info(f"Read content: {content.decode()}")
+        content: bytes = await bridge.file_read(test_filename)
+        decoded = content.decode()
+        logging.info("Read content: %s", decoded)
 
-        if content.decode() == test_content:
+        if decoded == test_content:
             logging.info("SUCCESS: Read content matches written content.")
         else:
             logging.error("FAILURE: Read content does not match written "
@@ -39,7 +41,7 @@ async def main() -> None:
         logging.error(f"An error occurred: {e}")
     finally:
         # --- Test File Remove ---
-        logging.info(f"Removing {test_filename}")
+        logging.info("Removing %s", test_filename)
         await bridge.file_remove(test_filename)
         await bridge.disconnect()
 

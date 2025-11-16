@@ -278,7 +278,7 @@ fi
 
 # Enable required Yun packages and dependencies automatically
 REQUIRED_PKGS="python3-cobs python3-pyserial-asyncio python3-asyncio-mqtt python3-tenacity openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
-REQUIRED_DEPS="python3 python3-asyncio python3-pyserial python3-pyserial-asyncio python3-paho-mqtt python3-cobs python3-tenacity mosquitto-client luaposix"
+REQUIRED_DEPS="python3 python3-asyncio python3-pyserial python3-pyserial-asyncio python3-cobs python3-tenacity mosquitto-client luaposix"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then

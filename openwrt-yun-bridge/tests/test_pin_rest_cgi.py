@@ -4,7 +4,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict
+from typing import Any, Dict, cast
 
 import pytest
 
@@ -28,9 +28,10 @@ def _load_pin_rest_cgi() -> ModuleType:
 def pin_rest_module() -> ModuleType:
     module = _load_pin_rest_cgi()
     # Isolate retries to make tests deterministic
-    module.DEFAULT_RETRIES = 3
-    module.DEFAULT_PUBLISH_TIMEOUT = 0.5
-    module.DEFAULT_BACKOFF_BASE = 0.01
+    typed_module = cast(Any, module)
+    typed_module.DEFAULT_RETRIES = 3
+    typed_module.DEFAULT_PUBLISH_TIMEOUT = 0.5
+    typed_module.DEFAULT_BACKOFF_BASE = 0.01
     return module
 
 
@@ -71,8 +72,9 @@ class _Result:
         return self._published
 
 
-class _HangingResult:
+class _HangingResult(_Result):
     def __init__(self) -> None:
+        super().__init__()
         self._published = False
 
     def is_published(self) -> bool:

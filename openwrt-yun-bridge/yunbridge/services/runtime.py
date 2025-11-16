@@ -170,12 +170,30 @@ class BridgeService:
 
     async def enqueue_mqtt(self, message: PublishableMessage) -> None:
         queue = self.state.mqtt_publish_queue
-        if queue.full():
-            logger.warning(
-                "MQTT publish queue full (%d items); applying backpressure.",
-                queue.qsize(),
-            )
-        await queue.put(message)
+        while True:
+            try:
+                queue.put_nowait(message)
+                return
+            except asyncio.QueueFull:
+                dropped: Optional[PublishableMessage] = None
+                try:
+                    dropped = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    await asyncio.sleep(0)
+                    continue
+
+                queue.task_done()
+                drop_topic = (
+                    dropped.topic_name if dropped is not None else "<unknown>"
+                )
+                self.state.record_mqtt_drop(drop_topic)
+                logger.warning(
+                    "MQTT publish queue saturated (%d/%d); dropping oldest "
+                    "topic=%s",
+                    queue.qsize(),
+                    self.state.mqtt_queue_limit,
+                    drop_topic,
+                )
 
     async def request_mcu_version(self) -> None:
         send_ok = await self.send_frame(Command.CMD_GET_VERSION.value, b"")

@@ -10,6 +10,7 @@ import pytest
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
+from yunbridge.mqtt import PublishableMessage
 from yunrpc.protocol import Command, Status
 
 
@@ -204,5 +205,31 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
         )
         for _ in topic_payloads:
             runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_enqueue_mqtt_drops_oldest_when_full(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
+        runtime_state.mqtt_queue_limit = 1
+        service = BridgeService(runtime_config, runtime_state)
+
+        first = PublishableMessage("br/test/one", b"1")
+        second = PublishableMessage("br/test/two", b"2")
+
+        await service.enqueue_mqtt(first)
+        await service.enqueue_mqtt(second)
+
+        assert runtime_state.mqtt_dropped_messages == 1
+        assert runtime_state.mqtt_drop_counts.get("br/test/one") == 1
+        assert runtime_state.mqtt_publish_queue.qsize() == 1
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name == "br/test/two"
+        runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())

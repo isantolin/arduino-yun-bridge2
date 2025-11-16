@@ -45,7 +45,7 @@ define Package/$(PKG_NAME)/description
 endef
 
 define Build/Compile
-	$(PYTHON3) -m compileall -q $(PKG_BUILD_DIR)
+	$(PYTHON3) -m compileall -q -b $(PKG_BUILD_DIR)
 	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
 endef
 

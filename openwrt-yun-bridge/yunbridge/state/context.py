@@ -60,6 +60,8 @@ class RuntimeState:
         default_factory=_mqtt_queue_factory
     )
     mqtt_queue_limit: int = 256
+    mqtt_dropped_messages: int = 0
+    mqtt_drop_counts: Dict[str, int] = field(default_factory=dict)
     datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: Deque[bytes] = field(default_factory=_bytes_deque_factory)
     mcu_is_paused: bool = False
@@ -299,6 +301,10 @@ class RuntimeState:
         message = self.mailbox_incoming_queue.popleft()
         self.mailbox_incoming_queue_bytes -= len(message)
         return message
+
+    def record_mqtt_drop(self, topic: str) -> None:
+        self.mqtt_dropped_messages += 1
+        self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
 
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:

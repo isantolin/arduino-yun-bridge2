@@ -21,31 +21,100 @@ set -e
 # compile.sh - Compila todos los paquetes del ecosistema Arduino Yun v2
 # Descarga y prepara el buildroot de OpenWRT si es necesario, compila los paquetes OpenWRT y Python, y deja los artefactos listos en bin/
 #
-# Uso: ./compile.sh
-set -e
+# Uso: ./compile.sh [--install-host-deps] [--skip-host-deps] [VERSION] [TARGET]
+#
+# Flags (optional):
+#   --install-host-deps   Ejecuta la instalación automática de dependencias
+#                         del host mediante apt/dnf si es posible.
+#   --skip-host-deps      Fuerza la omisión de instalación automática incluso
+#                         si YUNBRIDGE_INSTALL_HOST_DEPS=1.
+#   -h, --help            Muestra esta ayuda y termina.
+
+usage() {
+    cat <<'EOF'
+Usage: ./1_compile.sh [OPTIONS] [OPENWRT_VERSION] [OPENWRT_TARGET]
+
+Options:
+  --install-host-deps   Attempt to install missing host dependencies using
+                        the system package manager (requires sudo/root).
+  --skip-host-deps      Skip dependency installation (default behaviour).
+  -h, --help            Show this message and exit.
+
+Environment variables:
+  YUNBRIDGE_INSTALL_HOST_DEPS=1  enables host dependency installation.
+  YUNBRIDGE_SKIP_HOST_DEPS=1     forces skip regardless of other flags.
+EOF
+}
+
+INSTALL_HOST_DEPS=${YUNBRIDGE_INSTALL_HOST_DEPS:-0}
+if [ "${YUNBRIDGE_SKIP_HOST_DEPS:-0}" = "1" ]; then
+    INSTALL_HOST_DEPS=0
+fi
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --install-host-deps)
+            INSTALL_HOST_DEPS=1
+            shift
+            ;;
+        --skip-host-deps)
+            INSTALL_HOST_DEPS=0
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            while [[ $# -gt 0 ]]; do
+                POSITIONAL+=("$1")
+                shift
+            done
+            break
+            ;;
+        -* )
+            echo "[ERROR] Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+        * )
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+set -- "${POSITIONAL[@]}"
 
 # Default OpenWRT version and target, can be overridden by the first and second arguments
 OPENWRT_VERSION=${1:-"24.10.4"}
 OPENWRT_TARGET=${2:-"ath79/generic"}
 
-OPENWRT_URL="https://downloads.openwrt.org/releases/"$OPENWRT_VERSION"/targets/"$OPENWRT_TARGET"/openwrt-sdk-"$OPENWRT_VERSION"-"$(echo $OPENWRT_TARGET | tr '/' '-')"_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
 SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
 
-
-
-if [ "${YUNBRIDGE_SKIP_HOST_DEPS:-0}" = "1" ]; then
-    echo "[INFO] Skipping host dependency installation (YUNBRIDGE_SKIP_HOST_DEPS=1)."
-else
-    echo "[INFO] Installing build dependencies required for OpenWRT SDK (development PC only)"
+if [ "$INSTALL_HOST_DEPS" = "1" ]; then
+    echo "[INFO] Host dependency auto-install enabled."
     if [ "$(uname -s)" = "Linux" ]; then
         if [ -f /etc/debian_version ]; then
-            if ! command -v sudo >/dev/null 2>&1; then
-                echo "[WARN] sudo not found; skipping automatic apt-get install."
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1; then
+                    PKG_PREFIX=(sudo)
+                else
+                    echo "[WARN] sudo not found and not running as root; skipping automatic apt-get install."
+                    PKG_PREFIX=()
+                fi
             else
+                PKG_PREFIX=()
+            fi
+
+            if [ ${#PKG_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
                 echo "[INFO] Installing packages for Ubuntu/Debian..."
-                sudo apt-get update
-                sudo apt-get install -y \
+                "${PKG_PREFIX[@]}" apt-get update
+                "${PKG_PREFIX[@]}" apt-get install -y \
                     build-essential python3 python3-pip python3-setuptools python3-wheel python3-build \
                     git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev \
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
@@ -54,11 +123,20 @@ else
                     uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor
             fi
         elif [ -f /etc/fedora-release ]; then
-            if ! command -v sudo >/dev/null 2>&1; then
-                echo "[WARN] sudo not found; skipping automatic dnf install."
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1; then
+                    PKG_PREFIX=(sudo)
+                else
+                    echo "[WARN] sudo not found and not running as root; skipping automatic dnf install."
+                    PKG_PREFIX=()
+                fi
             else
+                PKG_PREFIX=()
+            fi
+
+            if [ ${#PKG_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
                 echo "[INFO] Installing packages for Fedora..."
-                sudo dnf install -y \
+                "${PKG_PREFIX[@]}" dnf install -y \
                     make automake gcc gcc-c++ kernel-devel \
                     python3 python3-pip python3-setuptools python3-wheel python3-build \
                     git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget \
@@ -69,11 +147,30 @@ else
                     bluez-libs-devel libbsd-devel binutils-devel
             fi
         else
-            echo "[WARN] Unrecognized Linux distro. Please install manually: build-essential, ncurses-dev, zstd, wget, etc."
+            echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."
         fi
     else
         echo "[WARN] Operating system not supported for automatic dependency installation."
     fi
+else
+    echo "[INFO] Host dependency auto-install disabled. Ensure prerequisites are installed or rerun with --install-host-deps."
+fi
+
+REQUIRED_COMMANDS=(wget tar python3 git)
+for cmd in "${REQUIRED_COMMANDS[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "[ERROR] Required command '$cmd' not found in PATH. Install it or rerun with --install-host-deps." >&2
+        exit 1
+    fi
+done
+
+if command -v unzstd >/dev/null 2>&1; then
+    ZSTD_DECOMPRESSOR="unzstd"
+elif command -v zstd >/dev/null 2>&1; then
+    ZSTD_DECOMPRESSOR="zstd -d"
+else
+    echo "[ERROR] Neither 'unzstd' nor 'zstd' is available. Install zstd package." >&2
+    exit 1
 fi
 
 echo "[INFO] Preparing build environment..."
@@ -94,7 +191,7 @@ if [ ! -d "$SDK_DIR" ]; then
         echo "[INFO] Downloading OpenWRT SDK (attempt $RETRY_COUNT/$MAX_RETRIES)..."
         wget -O sdk.tar.zst "$OPENWRT_URL"
         echo "[INFO] Extracting SDK..."
-        if tar --use-compress-program=unzstd -xf sdk.tar.zst; then
+        if tar --use-compress-program="${ZSTD_DECOMPRESSOR}" -xf sdk.tar.zst; then
             rm sdk.tar.zst
             mv openwrt-sdk-* "$SDK_DIR"
             SUCCESS=1
@@ -241,8 +338,7 @@ echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ direct
 
 # Cleanup: remove all 'build', 'bin', 'dist', and '*.egg-info' directories from package folders
 echo "[CLEANUP] Removing leftover build, bin, dist, and egg-info directories from packages..."
-for pkg in openwrt-yun-bridge luci-app-yunbridge openwrt-yun-core;
- do
+for pkg in openwrt-yun-bridge luci-app-yunbridge openwrt-yun-core; do
     find "$pkg" -type d -name build -exec rm -rf {} +
     find "$pkg" -type d -name bin -exec rm -rf {} +
     find "$pkg" -type d -name dist -exec rm -rf {} +

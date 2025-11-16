@@ -18,12 +18,12 @@ En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún vía `opkg`. `python3-paho-mqtt` y `python3-pyserial` provienen de los feeds oficiales, mientras que `python3-pyserial-asyncio` y `python3-cobs` se construyen desde PyPI y se distribuyen como `.ipk` junto con el resto de artefactos.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún vía `opkg`. `python3-asyncio-mqtt` (que ya incluye `paho-mqtt`) y `python3-pyserial` provienen de los feeds oficiales, mientras que `python3-pyserial-asyncio` y `python3-cobs` se construyen desde PyPI y se distribuyen como `.ipk` junto con el resto de artefactos.
 
-Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala `paho-mqtt` en tu entorno de desarrollo:
+Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala `asyncio-mqtt` en tu entorno de desarrollo:
 
 ```sh
-pip install paho-mqtt
+pip install asyncio-mqtt
 ```
 
 Antes de modificar los ejemplos, ejecuta `pyright` en la raíz del proyecto para asegurarte de que el tipado estático siga consistente con el daemon.

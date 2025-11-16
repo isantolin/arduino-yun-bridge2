@@ -312,7 +312,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _pending_process_poll_head(0),
       _pending_process_poll_count(0) {
   for (uint8_t i = 0; i < kMaxPendingDatastore; ++i) {
-    _pending_datastore_keys[i] = nullptr;
+    _pending_datastore_keys[i][0] = '\0';
+    _pending_datastore_key_lengths[i] = 0;
   }
   for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
     _pending_process_pids[i] = 0;
@@ -323,12 +324,23 @@ void BridgeClass::_trackPendingDatastoreKey(const char* key) {
   if (!key || !*key) {
     return;
   }
+  size_t key_len = strlen(key);
+  if (key_len == 0) {
+    return;
+  }
+  if (key_len > kMaxDatastoreKeyLength) {
+    key_len = kMaxDatastoreKeyLength;
+  }
+
   if (_pending_datastore_count == kMaxPendingDatastore) {
     _pending_datastore_head = (_pending_datastore_head + 1) % kMaxPendingDatastore;
     _pending_datastore_count--;
   }
+
   uint8_t index = (_pending_datastore_head + _pending_datastore_count) % kMaxPendingDatastore;
-  _pending_datastore_keys[index] = key;
+  memcpy(_pending_datastore_keys[index], key, key_len);
+  _pending_datastore_keys[index][key_len] = '\0';
+  _pending_datastore_key_lengths[index] = static_cast<uint8_t>(key_len);
   _pending_datastore_count++;
 }
 
@@ -336,7 +348,11 @@ const char* BridgeClass::_popPendingDatastoreKey() {
   if (_pending_datastore_count == 0) {
     return nullptr;
   }
-  const char* key = _pending_datastore_keys[_pending_datastore_head];
+  const char* key = nullptr;
+  if (_pending_datastore_key_lengths[_pending_datastore_head] != 0) {
+    key = _pending_datastore_keys[_pending_datastore_head];
+  }
+  _pending_datastore_key_lengths[_pending_datastore_head] = 0;
   _pending_datastore_head = (_pending_datastore_head + 1) % kMaxPendingDatastore;
   _pending_datastore_count--;
   return key;
@@ -372,6 +388,12 @@ void BridgeClass::begin() {
   // Añadir un pequeño delay o flush para asegurar que el puerto serie esté listo
   delay(10);
   _stream.flush(); // Asegura que cualquier dato pendiente en el buffer TX se envíe
+  for (uint8_t i = 0; i < kMaxPendingDatastore; ++i) {
+    _pending_datastore_key_lengths[i] = 0;
+    _pending_datastore_keys[i][0] = '\0';
+  }
+  _pending_datastore_head = 0;
+  _pending_datastore_count = 0;
   _parser.reset();
   Console.begin(); // Inicializa la instancia global de Console
 }
@@ -436,12 +458,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
 
       case CMD_DATASTORE_GET_RESP:
-        if (_datastore_get_handler && frame.header.payload_length >= 1) {
+        if (frame.header.payload_length >= 1) {
           uint8_t value_len = frame.payload[0];
           if (frame.header.payload_length >= static_cast<uint16_t>(1 + value_len)) {
             const uint8_t* value_ptr = frame.payload + 1;
             const char* key = _popPendingDatastoreKey();
-            _datastore_get_handler(key, value_ptr, value_len);
+            if (_datastore_get_handler) {
+              _datastore_get_handler(key, value_ptr, value_len);
+            }
           }
         }
         break;

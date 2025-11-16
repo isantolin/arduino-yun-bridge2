@@ -10,6 +10,8 @@ from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
 import serial
 from cobs import cobs as _cobs  # type: ignore[import]
+from asyncio_mqtt import Client as MQTTClient
+from asyncio_mqtt.error import MqttError
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
 
@@ -23,13 +25,7 @@ from tenacity import (
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.mqtt import (
-    AccessRefusedError,
-    Client as MQTTClient,
-    ConnectionCloseForcedError,
-    ConnectionLostError,
-    QOSLevel,
-)
+from yunbridge.mqtt import QOSLevel
 from yunbridge.services.runtime import (
     BridgeService,
     TOPIC_ANALOG,
@@ -160,27 +156,18 @@ async def _open_serial_connection_with_retry(
 async def _connect_mqtt_with_retry(
     config: RuntimeConfig,
     client: MQTTClient,
-    tls_context: Optional[ssl.SSLContext],
 ):
     base_delay = float(max(1, config.reconnect_delay))
 
-    async def _connect() -> Any:
-        return await client.connect(
-            host=config.mqtt_host,
-            port=config.mqtt_port,
-            username=config.mqtt_user,
-            password=config.mqtt_pass,
-            ssl=tls_context,
-        )
+    async def _connect() -> None:
+        await client.connect()
 
     return await _run_with_retry(
         f"MQTT connection to {config.mqtt_host}:{config.mqtt_port}",
         _connect,
         base_delay=base_delay,
         retry_exceptions=(
-            AccessRefusedError,
-            ConnectionLostError,
-            ConnectionCloseForcedError,
+            MqttError,
             asyncio.TimeoutError,
             OSError,
         ),
@@ -339,45 +326,73 @@ async def _mqtt_publisher_loop(
     state: RuntimeState,
 ) -> None:
     while True:
-        topic_name = "<unknown>"
+        message_to_publish = await state.mqtt_publish_queue.get()
+        topic_name = message_to_publish.topic_name
         try:
-            message_to_publish = await state.mqtt_publish_queue.get()
-            topic_name = message_to_publish.topic_name
-            try:
-                await client.publish(message_to_publish)
-            finally:
-                state.mqtt_publish_queue.task_done()
+            await client.publish(
+                topic_name,
+                message_to_publish.payload,
+                qos=int(message_to_publish.qos),
+                retain=message_to_publish.retain,
+            )
         except asyncio.CancelledError:
             logger.info("MQTT publisher loop cancelled.")
+            try:
+                state.mqtt_publish_queue.put_nowait(message_to_publish)
+            except asyncio.QueueFull:
+                logger.debug(
+                    "MQTT publish queue full while cancelling; dropping %s",
+                    topic_name,
+                )
             raise
-        except (ConnectionLostError, ConnectionCloseForcedError):
+        except MqttError as exc:
             logger.warning(
-                "MQTT publish failed; broker disconnected (topic=%s)",
+                "MQTT publish failed for %s; broker unavailable (%s)",
                 topic_name,
+                exc,
             )
-            await asyncio.sleep(1)
+            try:
+                state.mqtt_publish_queue.put_nowait(message_to_publish)
+            except asyncio.QueueFull:
+                logger.error(
+                    "MQTT publish queue full; dropping message for %s",
+                    topic_name,
+                )
+            raise
         except Exception:
             logger.exception(
                 "Failed to publish MQTT message for topic %s",
                 topic_name,
             )
+            raise
+        finally:
+            state.mqtt_publish_queue.task_done()
 
 
 async def _mqtt_subscriber_loop(
     client: MQTTClient,
     service: BridgeService,
 ) -> None:
-    async for message in client.delivered_messages():
-        if not message.topic_name:
-            continue
-        try:
-            payload = message.payload or b""
-            await service.handle_mqtt_message(message.topic_name, payload)
-        except Exception:
-            logger.exception(
-                "Error processing MQTT topic %s",
-                message.topic_name,
-            )
+    try:
+        async with client.unfiltered_messages() as messages:
+            async for message in messages:
+                topic = message.topic or ""
+                if not topic:
+                    continue
+                try:
+                    payload = message.payload or b""
+                    await service.handle_mqtt_message(topic, payload)
+                except Exception:
+                    logger.exception(
+                        "Error processing MQTT topic %s",
+                        topic,
+                    )
+    except asyncio.CancelledError:
+        logger.info("MQTT subscriber loop cancelled.")
+        raise
+    except MqttError as exc:
+        logger.warning("MQTT subscriber loop stopped: %s", exc)
+        raise
 
 
 def _build_mqtt_tls_context(config: RuntimeConfig) -> Optional[ssl.SSLContext]:
@@ -420,14 +435,21 @@ async def mqtt_task(
     prefix = state.mqtt_topic_prefix
 
     while True:
-        client = MQTTClient()
+        client_logger = logging.getLogger("yunbridge.mqtt.client")
+        client = MQTTClient(
+            hostname=config.mqtt_host,
+            port=config.mqtt_port,
+            username=config.mqtt_user or None,
+            password=config.mqtt_pass or None,
+            tls_context=tls_context,
+            logger=client_logger,
+        )
+        should_retry = True
         try:
-            connect_result = await _connect_mqtt_with_retry(
+            await _connect_mqtt_with_retry(
                 config,
                 client,
-                tls_context,
             )
-            disconnect_future = connect_result.disconnect_reason
             logger.info("Connected to MQTT broker.")
 
             subscriptions: Tuple[Tuple[str, QOSLevel], ...] = (
@@ -451,52 +473,24 @@ async def mqtt_task(
                 (f"{prefix}/{TOPIC_FILE}/read/#", QOSLevel.QOS_0),
                 (f"{prefix}/{TOPIC_FILE}/remove/#", QOSLevel.QOS_0),
             )
-            await client.subscribe(*subscriptions)
+
+            for topic, qos in subscriptions:
+                await client.subscribe(topic, qos=int(qos))
             logger.info("Subscribed to %d MQTT topics.", len(subscriptions))
 
-            async with asyncio.TaskGroup() as tg:
-                publisher_task = tg.create_task(
-                    _mqtt_publisher_loop(client, state)
-                )
-                subscriber_task = tg.create_task(
-                    _mqtt_subscriber_loop(client, service)
-                )
-                # Wait for the broker to disconnect us, or for one of the
-                # child tasks to fail.
-                await disconnect_future
+            async with asyncio.TaskGroup() as task_group:
+                task_group.create_task(_mqtt_publisher_loop(client, state))
+                task_group.create_task(_mqtt_subscriber_loop(client, service))
 
-            # This part is reached if disconnect_future completes.
-            # The TaskGroup will wait for publisher/subscriber to finish.
-            if publisher_task.done() and publisher_task.exception():
-                logger.warning(
-                    "MQTT publisher task exited with an error",
-                    exc_info=publisher_task.exception(),
-                )
-            if subscriber_task.done() and subscriber_task.exception():
-                logger.warning(
-                    "MQTT subscriber task exited with an error",
-                    exc_info=subscriber_task.exception(),
-                )
-
-        except* (
-            AccessRefusedError,
-            ConnectionLostError,
-            ConnectionCloseForcedError,
-        ) as exc_group:
+        except* MqttError as exc_group:
             for exc in exc_group.exceptions:
-                if isinstance(exc, AccessRefusedError):
-                    logger.critical("MQTT access refused; check credentials.")
-                elif isinstance(exc, ConnectionLostError):
-                    logger.error("MQTT connection lost; will retry.")
-                else:
-                    logger.warning(
-                        "MQTT connection closed by broker; retrying."
-                    )
+                logger.error("MQTT error: %s", exc)
         except* (OSError, asyncio.TimeoutError) as exc_group:
             for exc in exc_group.exceptions:
                 logger.error("MQTT connection error: %s", exc)
         except* asyncio.CancelledError:
             logger.info("MQTT task cancelled.")
+            should_retry = False
             raise
         except* Exception as exc_group:
             for exc in exc_group.exceptions:
@@ -507,14 +501,17 @@ async def mqtt_task(
         finally:
             try:
                 await client.disconnect()
+            except MqttError:
+                logger.debug("MQTT disconnect raised broker error; ignoring.")
             except Exception:
                 logger.debug("Ignoring error while disconnecting MQTT client.")
 
-            logger.warning(
-                "Waiting %d seconds before MQTT reconnect...",
-                reconnect_delay,
-            )
-            await asyncio.sleep(reconnect_delay)
+            if should_retry:
+                logger.warning(
+                    "Waiting %d seconds before MQTT reconnect...",
+                    reconnect_delay,
+                )
+                await asyncio.sleep(reconnect_delay)
 
 
 async def main_async(config: RuntimeConfig) -> None:

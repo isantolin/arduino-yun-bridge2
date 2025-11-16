@@ -2,9 +2,6 @@
 
 ## Estado global
 
-- ✅ Dependencias Python migradas a paquetes mantenidos (`python3-paho-mqtt`, `python3-pyserial`) y a IPK construidos desde PyPI (`python3-pyserial-asyncio`, `python3-cobs`), eliminando módulos vendorizados y la necesidad de `pip` en OpenWrt.
-- ✅ Documentación de protocolo, instalación y QA actualizada (ver `README.md` y `openwrt-library-arduino/docs/PROTOCOL.md`).
-- ✅ Procesos asíncronos con buffering persistente y publicación de flags de truncamiento en MQTT.
 - ⏳ Automatizar pruebas end-to-end sobre hardware real.
 
 ## Prioridades 2026
@@ -16,7 +13,6 @@
 
 ### Comunicación MCU ↔️ MPU
 - Documentar y versionar el protocolo en un paquete independiente.
-- ✅ Implementar reintentos segmentados para payloads mayores a 256 bytes (Bridge.cpp re-pregunta automáticamente hasta vaciar stdout/stderr en polls sucesivos).
 
 ### Core Yun / OpenWRT
 - Añadir targets recientes (ex. ramips/mt7621) a la canalización de CI.

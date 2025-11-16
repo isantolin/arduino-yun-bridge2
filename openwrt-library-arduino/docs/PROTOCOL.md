@@ -124,7 +124,7 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
   - Respuesta `0xB2 CMD_PROCESS_POLL_RESP (Linux → MCU)`: `[status: u8, exit_code: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`.
     - `exit_code = 0xFF` cuando el proceso sigue en ejecución.
     - El daemon mantiene buffers persistentes por PID, por lo que lecturas consecutivas entregan datos sin duplicados hasta que ambos buffers quedan vacíos. El `exit_code` real se conserva y se sigue enviando hasta que el MCU confirma la lectura total (ambos `len = 0`).
-    - En paralelo, se publica un mensaje MQTT con flags `stdout_truncated`/`stderr_truncated` que indican si aún quedan bytes pendientes en los buffers internos.
+    - En paralelo, se publica un mensaje MQTT con campos `stdout`/`stderr` en UTF-8 (caracteres inválidos se reemplazan) y `stdout_base64`/`stderr_base64` con la salida codificada sin pérdidas, además de los flags `stdout_truncated`/`stderr_truncated` que indican si aún quedan bytes pendientes en los buffers internos.
     - La librería Arduino reenvía automáticamente `CMD_PROCESS_POLL` cuando un fragmento contiene datos (`stdout_len > 0` o `stderr_len > 0`), garantizando que el sketch reciba toda la salida sin intervención manual.
      - El firmware del MCU acepta hasta 16 consultas pendientes simultáneas; si la cola está llena responde con `STATUS_ERROR` y el payload ASCII `process_poll_queue_full`.
 

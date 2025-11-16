@@ -11,6 +11,7 @@ this service operates on validated payloads.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -1131,12 +1132,18 @@ class BridgeService:
         mqtt_topic = (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_SH}/poll/{pid}/response"
         )
+        stdout_text = stdout_trim.decode("utf-8", errors="replace")
+        stderr_text = stderr_trim.decode("utf-8", errors="replace")
+        stdout_b64 = base64.b64encode(stdout_trim).decode("ascii")
+        stderr_b64 = base64.b64encode(stderr_trim).decode("ascii")
         mqtt_payload = json.dumps(
             {
                 "status": status_byte,
                 "exit_code": exit_code,
-                "stdout": stdout_trim.decode("utf-8", errors="ignore"),
-                "stderr": stderr_trim.decode("utf-8", errors="ignore"),
+                "stdout": stdout_text,
+                "stderr": stderr_text,
+                "stdout_base64": stdout_b64,
+                "stderr_base64": stderr_b64,
                 "stdout_truncated": stdout_truncated,
                 "stderr_truncated": stderr_truncated,
                 "finished": finished,

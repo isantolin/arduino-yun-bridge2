@@ -196,7 +196,9 @@ class BridgeClass {
   StatusHandler _status_handler;
 
   static constexpr uint8_t kMaxPendingDatastore = 8;
-  const char* _pending_datastore_keys[kMaxPendingDatastore];
+  static constexpr size_t kMaxDatastoreKeyLength = 255;
+  char _pending_datastore_keys[kMaxPendingDatastore][kMaxDatastoreKeyLength + 1];
+  uint8_t _pending_datastore_key_lengths[kMaxPendingDatastore];
   uint8_t _pending_datastore_head;
   uint8_t _pending_datastore_count;
 

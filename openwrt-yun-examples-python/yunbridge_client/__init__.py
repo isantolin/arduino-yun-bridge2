@@ -5,20 +5,21 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import (
-    AsyncGenerator,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Union,
-)
+from typing import AsyncGenerator, Dict, Iterable, List, Optional, Sequence, Union
 
-try:
-    from yunbridge.mqtt import Client, MQTTError, PublishableMessage, QOSLevel
-except ModuleNotFoundError:
-    from ._mqtt import Client, MQTTError, PublishableMessage, QOSLevel
+from asyncio_mqtt import Client, MqttError
+
+try:  # pragma: no cover - fallback when package import unavailable
+    from yunbridge.mqtt import QOSLevel
+except ModuleNotFoundError:  # pragma: no cover - tooling fallback
+    from enum import IntEnum
+
+    class QOSLevel(IntEnum):  # type: ignore[redeclaration]
+        """Minimal QoS enum used when yunbridge.mqtt is unavailable."""
+
+        QOS_0 = 0
+        QOS_1 = 1
+        QOS_2 = 2
 
 from .env import dump_client_env
 
@@ -27,9 +28,10 @@ __all__ = [
     "dump_client_env",
     "Client",
     "MQTTError",
-    "PublishableMessage",
     "QOSLevel",
 ]
+
+MQTTError = MqttError
 
 MQTT_HOST = os.environ.get("YUN_BROKER_IP", "127.0.0.1")
 MQTT_PORT = int(os.environ.get("YUN_BROKER_PORT", 1883))
@@ -40,12 +42,29 @@ MQTT_PASS = os.environ.get("YUN_BROKER_PASS")
 logger = logging.getLogger(__name__)
 
 
-def _message(topic: str, payload: bytes) -> PublishableMessage:
-    return PublishableMessage(
-        topic_name=topic,
-        payload=payload,
-        qos=QOSLevel.QOS_0,
-        retain=False,
+async def _subscribe_many(client: Client, topics: Sequence[str]) -> None:
+    for topic in topics:
+        await client.subscribe(topic, qos=int(QOSLevel.QOS_0))
+
+
+async def _unsubscribe_many(client: Client, topics: Sequence[str]) -> None:
+    for topic in topics:
+        await client.unsubscribe(topic)
+
+
+async def _publish_simple(
+    client: Client,
+    topic: str,
+    payload: Union[str, bytes],
+    *,
+    retain: bool = False,
+) -> None:
+    data = payload.encode("utf-8") if isinstance(payload, str) else payload
+    await client.publish(
+        topic,
+        data,
+        qos=int(QOSLevel.QOS_0),
+        retain=retain,
     )
 
 
@@ -59,25 +78,26 @@ async def get_mqtt_client(
 ) -> AsyncGenerator[Client, None]:
     """Provide a connected MQTT client and clean up reliably."""
 
-    client = Client()
+    client = Client(
+        hostname=host,
+        port=port,
+        username=username,
+        password=password,
+        logger=logging.getLogger("yunbridge.examples.client"),
+    )
     try:
-        await client.connect(
-            host=host,
-            port=port,
-            username=username,
-            password=password,
-        )
+        await client.connect()
         yield client
-    except MQTTError as error:  # pragma: no cover - connection issues
-        logging.error("Error connecting to MQTT broker: %s", error)
+    except MqttError as error:  # pragma: no cover - connection issues
+        logger.error("Error connecting to MQTT broker: %s", error)
         raise
     finally:
         try:
             await client.disconnect()
-        except MQTTError:
-            pass
+        except MqttError:
+            logger.debug("Ignoring MQTT disconnect error during cleanup")
         finally:
-            logging.info("Disconnected from MQTT broker.")
+            logger.info("Disconnected from MQTT broker.")
 
 
 class Bridge:
@@ -105,13 +125,14 @@ class Bridge:
         if self._client is not None:
             await self._client.disconnect()
 
-        client = Client()
-        await client.connect(
-            host=self.host,
+        client = Client(
+            hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
+            logger=logging.getLogger("yunbridge.examples.bridge"),
         )
+        await client.connect()
         self._client = client
         logger.info("Connected to MQTT broker at %s:%d", self.host, self.port)
         self._digital_modes.clear()
@@ -123,10 +144,13 @@ class Bridge:
             await asyncio.gather(self._listener_task, return_exceptions=True)
             self._listener_task = None
 
-        if self._client is not None:
-            await self._client.disconnect()
-            self._client = None
-            logger.info("Disconnected from MQTT broker.")
+        client = self._client
+        if client is not None:
+            try:
+                await client.disconnect()
+            finally:
+                self._client = None
+                logger.info("Disconnected from MQTT broker.")
 
     def _ensure_client(self) -> Client:
         client = self._client
@@ -139,33 +163,36 @@ class Bridge:
     async def _message_listener(self) -> None:
         client = self._ensure_client()
         try:
-            async for message in client.delivered_messages():
-                topic = message.topic_name
-                payload = message.payload or b""
+            async with client.unfiltered_messages() as messages:
+                async for message in messages:
+                    topic = message.topic or ""
+                    if not topic:
+                        continue
+                    payload = message.payload or b""
 
-                handled = False
-                for prefix, queue in list(self._response_queues.items()):
-                    if topic.startswith(prefix):
-                        await queue.put(payload)
-                        handled = True
-                        break
+                    handled = False
+                    for prefix, queue in list(self._response_queues.items()):
+                        if topic.startswith(prefix):
+                            await queue.put(payload)
+                            handled = True
+                            break
 
-                if not handled and topic == f"{self.topic_prefix}/console/out":
-                    queue = self._response_queues.get(topic)
-                    if queue is not None:
-                        await queue.put(payload)
-                        handled = True
+                    if not handled and topic == f"{self.topic_prefix}/console/out":
+                        queue = self._response_queues.get(topic)
+                        if queue is not None:
+                            await queue.put(payload)
+                            handled = True
 
-                if not handled:
-                    text = payload.decode("utf-8", errors="ignore")
-                    logger.debug(
-                        "Received unhandled MQTT message: %s -> %s",
-                        topic,
-                        text,
-                    )
+                    if not handled:
+                        text = payload.decode("utf-8", errors="ignore")
+                        logger.debug(
+                            "Received unhandled MQTT message: %s -> %s",
+                            topic,
+                            text,
+                        )
         except asyncio.CancelledError:
             raise
-        except MQTTError as exc:  # pragma: no cover - defensive guard
+        except MqttError as exc:  # pragma: no cover - defensive guard
             logger.debug("MQTT listener stopped: %s", exc)
 
     async def _publish_and_wait(
@@ -189,27 +216,29 @@ class Bridge:
             self._response_queues[topic] = response_queue
 
         try:
-            subscriptions = tuple((topic, QOSLevel.QOS_0) for topic in topics)
-            await client.subscribe(*subscriptions)
-            await client.publish(_message(pub_topic, pub_payload))
+            await _subscribe_many(client, topics)
+            await client.publish(
+                pub_topic,
+                pub_payload,
+                qos=int(QOSLevel.QOS_0),
+                retain=False,
+            )
             return await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
         finally:
             try:
-                await client.unsubscribe(*topics)
-            except MQTTError:
-                pass
+                await _unsubscribe_many(client, topics)
+            except MqttError:
+                logger.debug("Ignoring MQTT unsubscribe error")
             for topic in topics:
                 self._response_queues.pop(topic, None)
 
     async def digital_write(self, pin: int, value: int) -> None:
-        # Ensure the pin is configured as output before writing high/low.
         if self._digital_modes.get(pin) != 1:
             await self.set_digital_mode(pin, 1)
         topic = f"{self.topic_prefix}/d/{pin}"
-        payload = str(value).encode("utf-8")
-        await self._ensure_client().publish(_message(topic, payload))
+        await _publish_simple(self._ensure_client(), topic, str(value))
         logger.debug("digital_write(%d, %d) -> %s", pin, value, topic)
 
     async def digital_read(self, pin: int, timeout: float = 10) -> int:
@@ -257,9 +286,7 @@ class Bridge:
             raise ValueError(f"Invalid digital mode value: {mode}")
 
         topic = f"{self.topic_prefix}/d/{pin}/mode"
-        await self._ensure_client().publish(
-            _message(topic, str(mode_value).encode("utf-8"))
-        )
+        await _publish_simple(self._ensure_client(), topic, str(mode_value))
         self._digital_modes[pin] = mode_value
         logger.debug("set_digital_mode(%d, %d)", pin, mode_value)
 
@@ -294,8 +321,7 @@ class Bridge:
         self, command_parts: List[str], timeout: float = 10
     ) -> bytes:
         logger.warning(
-            "run_sketch_command falls back to a synchronous shell command via "
-            "MQTT."
+            "run_sketch_command falls back to a synchronous shell command via MQTT."
         )
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run",
@@ -318,9 +344,7 @@ class Bridge:
 
     async def console_write(self, message: str) -> None:
         topic = f"{self.topic_prefix}/console/in"
-        await self._ensure_client().publish(
-            _message(topic, message.encode("utf-8"))
-        )
+        await _publish_simple(self._ensure_client(), topic, message)
         logger.debug("console_write('%s')", message)
 
     async def console_read_async(self) -> Optional[str]:
@@ -329,7 +353,9 @@ class Bridge:
         if topic not in self._response_queues:
             queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
             self._response_queues[topic] = queue
-            await self._ensure_client().subscribe((topic, QOSLevel.QOS_0))
+            await self._ensure_client().subscribe(
+                topic, qos=int(QOSLevel.QOS_0)
+            )
             logger.debug("Subscribed to console output topic: %s", topic)
 
         try:
@@ -345,11 +371,6 @@ class Bridge:
         return payload.decode("utf-8", errors="ignore")
 
     async def mailbox_read(self, timeout: float = 5.0) -> Optional[bytes]:
-        """Request the next queued mailbox message via MQTT.
-
-        Returns None when the queue is empty or a timeout occurs.
-        """
-
         incoming_topic = f"{self.topic_prefix}/mailbox/incoming"
         try:
             payload = await self._publish_and_wait(
@@ -376,7 +397,7 @@ class Bridge:
             content.encode("utf-8") if isinstance(content, str) else content
         )
         topic = f"{self.topic_prefix}/file/write/{filename}"
-        await self._ensure_client().publish(_message(topic, payload))
+        await _publish_simple(self._ensure_client(), topic, payload)
         logger.debug("file_write('%s', %d bytes)", filename, len(payload))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
@@ -389,7 +410,7 @@ class Bridge:
 
     async def file_remove(self, filename: str) -> None:
         topic = f"{self.topic_prefix}/file/remove/{filename}"
-        await self._ensure_client().publish(_message(topic, b""))
+        await _publish_simple(self._ensure_client(), topic, b"")
         logger.debug("file_remove('%s')", filename)
 
     async def mailbox_write(self, message: Union[str, bytes]) -> None:
@@ -397,5 +418,5 @@ class Bridge:
             message.encode("utf-8") if isinstance(message, str) else message
         )
         topic = f"{self.topic_prefix}/mailbox/write"
-        await self._ensure_client().publish(_message(topic, payload))
+        await _publish_simple(self._ensure_client(), topic, payload)
         logger.debug("mailbox_write(%d bytes)", len(payload))

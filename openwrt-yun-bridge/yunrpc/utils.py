@@ -43,89 +43,34 @@ def get_uci_config() -> Dict[str, str]:
         return get_default_config()
 
     uci_exception = getattr(uci, "UciException", Exception)
-    uci_not_found = getattr(uci, "UciExceptionNotFound", uci_exception)
 
     try:
         with uci.Uci() as cursor:  # type: ignore[attr-defined]
             cursor = cast(Any, cursor)
-            sections: Any = cursor.get("yunbridge")
-    except uci_not_found as exc:  # type: ignore[misc]
-        logger.warning(
-            "UCI section 'yunbridge' not found via python3-uci: %s", exc
-        )
-        return get_default_config()
+            section: Any = cursor.get_all("yunbridge", "general")
     except uci_exception as exc:  # type: ignore[misc]
         logger.warning(
-            "Failed to load UCI configuration via python3-uci: %s", exc
+            "Failed to load UCI configuration via python3-uci: %s",
+            exc,
         )
         return get_default_config()
     except Exception as exc:  # pragma: no cover - defensive catch-all
         logger.exception(
-            "Unexpected error while reading UCI configuration: %s", exc
+            "Unexpected error while reading UCI configuration: %s",
+            exc,
         )
         return get_default_config()
 
-    config = _flatten_uci_sections(sections)
-    if not config:
+    if not isinstance(section, dict) or not section:
         logger.warning(
             "python3-uci returned no options for 'yunbridge'; using defaults."
         )
         return get_default_config()
-    return config
 
-
-def _flatten_uci_sections(sections: Any) -> Dict[str, str]:
-    """Convert python3-uci return structure into a flat key/value mapping."""
-
-    if not isinstance(sections, dict):
-        return {}
-
-    typed_sections: Dict[str, Any] = cast(Dict[str, Any], sections)
-    config: Dict[str, str] = {}
-
-    # Prioritise the common 'general' section; fall back to the first
-    # dictionary payload if it does not exist.
-    ordered_sections: Iterable[str]
-    if "general" in typed_sections and isinstance(
-        typed_sections["general"], dict
-    ):
-        ordered_sections = ("general",)
-    else:
-        ordered_sections = tuple(typed_sections.keys())
-
-    for section_name in ordered_sections:
-        section = typed_sections.get(section_name)
-        if not isinstance(section, dict):
-            continue
-        _merge_section(config, cast(Dict[str, Any], section))
-
-    # Include any remaining sections (if 'general' was processed first).
-    for section_name, section_obj in typed_sections.items():
-        if section_name in ordered_sections:
-            continue
-        if not isinstance(section_obj, dict):
-            continue
-        _merge_section(
-            config,
-            cast(Dict[str, Any], section_obj),
-            overwrite=False,
-        )
-
-    return config
-
-
-def _merge_section(
-    config: Dict[str, str],
-    section: Dict[str, Any],
-    *,
-    overwrite: bool = True,
-) -> None:
-    """Merge a section dictionary into the flat config map."""
-
-    for key, value in section.items():
-        if not overwrite and key in config:
-            continue
-        config[key] = _stringify_value(value)
+    return {
+        str(key): _stringify_value(value)
+        for key, value in cast(Dict[Any, Any], section).items()
+    }
 
 
 def _stringify_value(value: Any) -> str:

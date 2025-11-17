@@ -1,0 +1,237 @@
+# Auto-generated protocol specification source for Yun Bridge v2.
+# Any modifications here should be reflected by re-running tools/protocol/generate.py.
+
+[constants]
+protocol_version = 0x02
+max_payload_size = 256
+rpc_buffer_size = 256
+
+[data_formats]
+datastore_key_len_format = ">B"
+datastore_value_len_format = ">B"
+crc_covered_header_format = ">BHH"
+crc_format = ">H"
+
+[[statuses]]
+name = "OK"
+value = 0x00
+description = "Operation completed successfully."
+[[statuses]]
+name = "ERROR"
+value = 0x01
+description = "Generic failure."
+[[statuses]]
+name = "CMD_UNKNOWN"
+value = 0x02
+description = "Command not recognized."
+[[statuses]]
+name = "MALFORMED"
+value = 0x03
+description = "Payload had invalid structure."
+[[statuses]]
+name = "CRC_MISMATCH"
+value = 0x04
+description = "CRC check failed."
+[[statuses]]
+name = "TIMEOUT"
+value = 0x05
+description = "Operation timed out."
+[[statuses]]
+name = "NOT_IMPLEMENTED"
+value = 0x06
+description = "Command defined but not supported."
+[[statuses]]
+name = "ACK"
+value = 0x07
+description = "Generic acknowledgement for fire-and-forget commands."
+
+[[commands]]
+name = "CMD_GET_VERSION"
+value = 0x00
+category = "system"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_GET_VERSION_RESP"
+value = 0x80
+category = "system"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_GET_FREE_MEMORY"
+value = 0x01
+category = "system"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_GET_FREE_MEMORY_RESP"
+value = 0x82
+category = "system"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_LINK_SYNC"
+value = 0x02
+category = "system"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_LINK_SYNC_RESP"
+value = 0x83
+category = "system"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_LINK_RESET"
+value = 0x03
+category = "system"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_LINK_RESET_RESP"
+value = 0x84
+category = "system"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_XOFF"
+value = 0x08
+category = "flow_control"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_XON"
+value = 0x09
+category = "flow_control"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_SET_PIN_MODE"
+value = 0x10
+category = "gpio"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_DIGITAL_WRITE"
+value = 0x11
+category = "gpio"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_ANALOG_WRITE"
+value = 0x12
+category = "gpio"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_DIGITAL_READ"
+value = 0x13
+category = "gpio"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_ANALOG_READ"
+value = 0x14
+category = "gpio"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_DIGITAL_READ_RESP"
+value = 0x15
+category = "gpio"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_ANALOG_READ_RESP"
+value = 0x16
+category = "gpio"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_CONSOLE_WRITE"
+value = 0x20
+category = "console"
+direction = "bidirectional"
+[[commands]]
+name = "CMD_DATASTORE_PUT"
+value = 0x30
+category = "datastore"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_DATASTORE_GET"
+value = 0x31
+category = "datastore"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_DATASTORE_GET_RESP"
+value = 0x81
+category = "datastore"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_MAILBOX_READ"
+value = 0x40
+category = "mailbox"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_MAILBOX_PROCESSED"
+value = 0x41
+category = "mailbox"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_MAILBOX_AVAILABLE"
+value = 0x42
+category = "mailbox"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_MAILBOX_PUSH"
+value = 0x43
+category = "mailbox"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_MAILBOX_READ_RESP"
+value = 0x90
+category = "mailbox"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_MAILBOX_AVAILABLE_RESP"
+value = 0x92
+category = "mailbox"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_FILE_WRITE"
+value = 0x50
+category = "filesystem"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_FILE_READ"
+value = 0x51
+category = "filesystem"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_FILE_REMOVE"
+value = 0x52
+category = "filesystem"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_FILE_READ_RESP"
+value = 0xA1
+category = "filesystem"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_PROCESS_RUN"
+value = 0x60
+category = "process"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_PROCESS_RUN_ASYNC"
+value = 0x61
+category = "process"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_PROCESS_POLL"
+value = 0x62
+category = "process"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_PROCESS_KILL"
+value = 0x63
+category = "process"
+direction = "mcu_to_linux"
+[[commands]]
+name = "CMD_PROCESS_RUN_RESP"
+value = 0xB0
+category = "process"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_PROCESS_RUN_ASYNC_RESP"
+value = 0xB1
+category = "process"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_PROCESS_POLL_RESP"
+value = 0xB2
+category = "process"
+direction = "linux_to_mcu"

@@ -112,6 +112,8 @@ class RuntimeState:
     )
     mailbox_incoming_queue_bytes: int = 0
     mcu_version: Optional[tuple[int, int]] = None
+    link_handshake_nonce: Optional[bytes] = None
+    link_is_synchronized: bool = False
 
     def configure(self, config: RuntimeConfig) -> None:
         self.allowed_commands = list(config.allowed_commands)

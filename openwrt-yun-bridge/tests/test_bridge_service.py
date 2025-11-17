@@ -36,7 +36,12 @@ def test_on_serial_connected_flushes_console_queue(
         await service.on_serial_connected()
 
         assert sent_frames
-        assert sent_frames[0][0] == Command.CMD_GET_VERSION.value
+        frame_ids = [frame_id for frame_id, _ in sent_frames]
+        assert frame_ids[:2] == [
+            Command.CMD_LINK_RESET.value,
+            Command.CMD_LINK_SYNC.value,
+        ]
+        assert Command.CMD_GET_VERSION.value in frame_ids
         assert any(
             frame_id == Command.CMD_CONSOLE_WRITE.value
             for frame_id, _ in sent_frames
@@ -71,9 +76,14 @@ def test_mailbox_available_flow(
         )
 
         assert sent_frames
-        frame_id, payload = sent_frames[-1]
-        assert frame_id == Command.CMD_MAILBOX_AVAILABLE_RESP.value
-        assert payload == b"\x02"
+        frame_ids = [frame_id for frame_id, _ in sent_frames]
+        assert frame_ids[-2] == Command.CMD_MAILBOX_AVAILABLE_RESP.value
+        assert sent_frames[-2][1] == b"\x02"
+        # Final frame should be ACK referencing the original command.
+        assert frame_ids[-1] == Status.ACK.value
+        assert sent_frames[-1][1] == struct.pack(
+            ">H", Command.CMD_MAILBOX_AVAILABLE.value
+        )
 
     asyncio.run(_run())
 
@@ -139,9 +149,14 @@ def test_mailbox_read_requeues_on_send_failure(
         assert not runtime_state.mailbox_queue
         assert runtime_state.mailbox_queue_bytes == 0
         assert runtime_state.mqtt_publish_queue.qsize() == 1
-        assert len(send_attempts) == 2
+        assert len(send_attempts) == 3
         assert send_attempts[0][0] == Command.CMD_MAILBOX_READ_RESP.value
         assert send_attempts[1][0] == Command.CMD_MAILBOX_READ_RESP.value
+        # Final send is the ACK covering the MCU command.
+        assert send_attempts[2][0] == Status.ACK.value
+        assert send_attempts[2][1] == struct.pack(
+            ">H", Command.CMD_MAILBOX_READ.value
+        )
 
     asyncio.run(_run())
 

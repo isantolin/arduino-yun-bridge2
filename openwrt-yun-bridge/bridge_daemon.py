@@ -6,10 +6,12 @@ import asyncio
 import logging
 import os
 import ssl
+import struct
 from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
 import serial
 from cobs import cobs as _cobs  # type: ignore[import]
+from yunrpc import protocol
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
 
@@ -49,6 +51,11 @@ OPEN_SERIAL_CONNECTION = cast(
 
 COBS_MODULE = cast(Any, _cobs)
 
+try:  # python-cobs exposes DecodeError on the cobs module
+    DecodeError = cast(type[Exception], getattr(COBS_MODULE, "DecodeError"))
+except AttributeError:  # pragma: no cover - defensive fallback
+    DecodeError = ValueError
+
 
 def cobs_encode(data: bytes) -> bytes:
     """Encode *data* using the upstream cobs package."""
@@ -65,6 +72,47 @@ logger = logging.getLogger("yunbridge")
 SERIAL_TERMINATOR = b"\x00"
 
 T = TypeVar("T")
+
+
+def _assert_serial_exclusive(device: str) -> None:
+    device_real = os.path.realpath(device)
+    offenders: list[str] = []
+    try:
+        proc_entries = os.listdir("/proc")
+    except FileNotFoundError:
+        return
+
+    for entry in proc_entries:
+        if not entry.isdigit():
+            continue
+        fd_dir = os.path.join("/proc", entry, "fd")
+        try:
+            fds = os.listdir(fd_dir)
+        except OSError:
+            continue
+        for fd_name in fds:
+            fd_path = os.path.join(fd_dir, fd_name)
+            try:
+                target = os.readlink(fd_path)
+            except OSError:
+                continue
+            if not target:
+                continue
+            if not target.startswith("/"):
+                target = os.path.join(fd_dir, target)
+            try:
+                target_real = os.path.realpath(target)
+            except OSError:
+                continue
+            if target_real == device_real:
+                offenders.append(entry)
+                break
+
+    if offenders:
+        raise serial.SerialException(
+            "Serial port %s is already in use by PID(s): %s"
+            % (device, ", ".join(offenders))
+        )
 
 
 async def _serial_sender_not_ready(command_id: int, _: bytes) -> bool:
@@ -129,6 +177,7 @@ async def _open_serial_connection_with_retry(
     base_delay = float(max(1, config.reconnect_delay))
 
     async def _connect() -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+        _assert_serial_exclusive(config.serial_port)
         return await OPEN_SERIAL_CONNECTION(
             url=config.serial_port,
             baudrate=config.serial_baud,
@@ -269,14 +318,80 @@ async def serial_reader_task(
                     buffer.clear()
                     try:
                         raw_frame = cobs_decode(encoded_packet)
+                    except DecodeError as exc:
+                        packet_hex = encoded_packet.hex()
+                        logger.warning(
+                            "COBS decode error %s for packet %s (len=%d)",
+                            exc,
+                            packet_hex,
+                            len(encoded_packet),
+                        )
+                        if logger.isEnabledFor(logging.DEBUG):
+                            appended = encoded_packet + SERIAL_TERMINATOR
+                            human_hex = " ".join(
+                                f"{byte:02x}" for byte in appended
+                            )
+                            logger.debug(
+                                "Decode error raw bytes (len=%d): %s",
+                                len(appended),
+                                human_hex,
+                            )
+                        truncated = encoded_packet[:32]
+                        payload = struct.pack(
+                            ">H", 0xFFFF
+                        ) + truncated
+                        try:
+                            await service.send_frame(
+                                Status.MALFORMED.value, payload
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to request MCU retransmission after "
+                                "decode error"
+                            )
+                        continue
+
+                    try:
                         command_id, payload = Frame.parse(raw_frame)
                         await service.handle_mcu_frame(command_id, payload)
                     except ValueError as exc:
+                        header_hex = raw_frame[
+                            : protocol.CRC_COVERED_HEADER_SIZE
+                        ].hex()
                         logger.warning(
-                            "COBS/frame parsing error %s for packet %s",
+                            (
+                                "Frame parse error %s for raw %s "
+                                "(len=%d header=%s)"
+                            ),
                             exc,
-                            encoded_packet.hex(),
+                            raw_frame.hex(),
+                            len(raw_frame),
+                            header_hex,
                         )
+                        status = Status.MALFORMED
+                        if "crc mismatch" in str(exc).lower():
+                            status = Status.CRC_MISMATCH
+                        command_hint = 0xFFFF
+                        if (
+                            len(raw_frame)
+                            >= protocol.CRC_COVERED_HEADER_SIZE
+                        ):
+                            _, _, command_hint = struct.unpack(
+                                protocol.CRC_COVERED_HEADER_FORMAT,
+                                raw_frame[
+                                    : protocol.CRC_COVERED_HEADER_SIZE
+                                ],
+                            )
+                        truncated = raw_frame[:32]
+                        payload = (
+                            struct.pack(">H", command_hint) + truncated
+                        )
+                        try:
+                            await service.send_frame(status.value, payload)
+                        except Exception:
+                            logger.exception(
+                                "Failed to notify MCU about frame parse error"
+                            )
                     except Exception:
                         logger.exception(
                             "Unhandled error processing MCU frame"

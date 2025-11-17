@@ -35,6 +35,10 @@ constexpr uint8_t BRIDGE_PROCESS_PENDING_MAX = 8;
 #define BRIDGE_DEBUG_IO 0
 #endif
 
+#ifndef BRIDGE_DEBUG_FRAMES
+#define BRIDGE_DEBUG_FRAMES 1
+#endif
+
 // --- Constantes de la Consola ---
 // Ajustar los límites de agua para que respiren sobre un buffer real.
 // El cabezal circular necesita al menos un byte libre, por lo que un
@@ -122,6 +126,7 @@ class BridgeClass {
   BridgeClass(Stream& stream);
   void begin();
   void process();
+  void flushStream();
 
   // --- Manejadores de Respuestas (Callbacks) ---
   typedef void (*MailboxHandler)(const uint8_t* buffer, size_t size);
@@ -187,6 +192,25 @@ class BridgeClass {
   void sendFrame(uint16_t command_id, const uint8_t* payload,
                  uint16_t payload_len);
 
+  struct FrameDebugSnapshot {
+    uint16_t command_id;
+    uint16_t payload_length;
+    uint16_t crc;
+    uint16_t raw_length;
+    uint16_t cobs_length;
+    uint16_t expected_serial_bytes;
+    uint16_t last_write_return;
+    uint16_t last_shortfall;
+    uint32_t tx_count;
+    uint32_t write_shortfall_events;
+    uint32_t build_failures;
+  };
+
+#if BRIDGE_DEBUG_FRAMES
+  FrameDebugSnapshot getTxDebugSnapshot() const;
+  void resetTxDebugStats();
+#endif
+
  private:
   Stream& _stream;
   HardwareSerial* _hardware_serial;
@@ -219,6 +243,33 @@ class BridgeClass {
   uint16_t _pending_process_pids[kMaxPendingProcessPolls];
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
+
+#if BRIDGE_DEBUG_FRAMES
+  FrameDebugSnapshot _tx_debug;
+#endif
+
+  bool _awaiting_ack;
+  uint16_t _last_command_id;
+  uint8_t _last_raw_frame[rpc::MAX_RAW_FRAME_SIZE];
+  uint16_t _last_raw_length;
+  uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
+  uint16_t _last_cobs_length;
+  uint8_t _retry_count;
+  unsigned long _last_send_millis;
+
+  static constexpr uint8_t kMaxAckRetries = 3;
+  static constexpr unsigned long kAckTimeoutMs = 75;
+
+  bool _requiresAck(uint16_t command_id) const;
+  void _recordLastFrame(uint16_t command_id, const uint8_t* raw_frame,
+                        size_t raw_len, const uint8_t* cobs_frame,
+                        size_t cobs_len);
+  void _clearAckState();
+  void _handleAck(uint16_t command_id);
+  void _handleMalformed(uint16_t command_id);
+  void _retransmitLastFrame();
+  void _processAckTimeout();
+  void _resetLinkState();
 
   void _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();

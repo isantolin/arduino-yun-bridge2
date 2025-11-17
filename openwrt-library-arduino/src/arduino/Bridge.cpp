@@ -140,9 +140,10 @@ int ConsoleClass::read() {
 }
 
 void ConsoleClass::flush() {
-    // Para HardwareSerial, flush() espera a que se complete la transmisión saliente.
-    // No hay buffer de recepción que limpiar explícitamente aquí.
-    Serial1.flush();
+  if (!_begun) {
+    return;
+  }
+  Bridge.flushStream();
 }
 
 void ConsoleClass::_push(const uint8_t* buffer, size_t size) {
@@ -330,6 +331,15 @@ BridgeClass::BridgeClass(Stream& stream)
   for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
     _pending_process_pids[i] = 0;
   }
+#if BRIDGE_DEBUG_FRAMES
+  _tx_debug = {};
+#endif
+  _awaiting_ack = false;
+  _last_command_id = 0;
+  _last_raw_length = 0;
+  _last_cobs_length = 0;
+  _retry_count = 0;
+  _last_send_millis = 0;
 }
 
 void BridgeClass::_trackPendingDatastoreKey(const char* key) {
@@ -405,6 +415,7 @@ void BridgeClass::begin() {
   _pending_datastore_count = 0;
   _parser.reset();
   Console.begin(); // Inicializa la instancia global de Console
+  _resetLinkState();
 }
 
 // --- Register Callbacks ---
@@ -437,6 +448,15 @@ void BridgeClass::process() {
     }
     // Si consume devuelve false, o no era fin de paquete (0x00) o hubo error
   }
+  _processAckTimeout();
+}
+
+void BridgeClass::flushStream() {
+  if (_hardware_serial != nullptr) {
+    _hardware_serial->flush();
+    return;
+  }
+  _stream.flush();
 }
 
 /**
@@ -569,10 +589,32 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         break;
 
       // Otros casos de respuesta...
-      case STATUS_ACK:
+      case STATUS_ACK: {
+        uint16_t ack_id = 0xFFFF;
+        if (frame.header.payload_length >= 2) {
+          ack_id = rpc::read_u16_be(frame.payload);
+        }
+        _handleAck(ack_id);
+        if (_status_handler) {
+          _status_handler((uint8_t)frame.header.command_id, frame.payload,
+                          frame.header.payload_length);
+        }
+        break;
+      }
+      case STATUS_MALFORMED: {
+        uint16_t malformed_id = 0xFFFF;
+        if (frame.header.payload_length >= 2) {
+          malformed_id = rpc::read_u16_be(frame.payload);
+        }
+        _handleMalformed(malformed_id);
+        if (_status_handler) {
+          _status_handler((uint8_t)frame.header.command_id, frame.payload,
+                          frame.header.payload_length);
+        }
+        break;
+      }
       case STATUS_ERROR:
       case STATUS_CMD_UNKNOWN:
-      case STATUS_MALFORMED:
       case STATUS_CRC_MISMATCH:
       case STATUS_TIMEOUT:
       case STATUS_NOT_IMPLEMENTED:
@@ -608,8 +650,34 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
     case STATUS_ACK:
-    case STATUS_CMD_UNKNOWN:
+      {
+        uint16_t ack_id = 0xFFFF;
+        if (frame.header.payload_length >= 2) {
+          ack_id = rpc::read_u16_be(frame.payload);
+        }
+        _handleAck(ack_id);
+        if (_status_handler) {
+          _status_handler((uint8_t)frame.header.command_id, frame.payload,
+                          frame.header.payload_length);
+        }
+      }
+      command_processed_internally = true;
+      break;
     case STATUS_MALFORMED:
+      {
+        uint16_t malformed_id = 0xFFFF;
+        if (frame.header.payload_length >= 2) {
+          malformed_id = rpc::read_u16_be(frame.payload);
+        }
+        _handleMalformed(malformed_id);
+        if (_status_handler) {
+          _status_handler((uint8_t)frame.header.command_id, frame.payload,
+                          frame.header.payload_length);
+        }
+      }
+      command_processed_internally = true;
+      break;
+    case STATUS_CMD_UNKNOWN:
     case STATUS_CRC_MISMATCH:
     case STATUS_TIMEOUT:
     case STATUS_NOT_IMPLEMENTED:
@@ -629,6 +697,26 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         resp_payload[1] = free_mem & 0xFF;
         sendFrame(CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
         command_processed_internally = true;
+      }
+      break;
+
+    case CMD_LINK_SYNC:
+      {
+        _resetLinkState();
+        Console.begin();
+        sendFrame(CMD_LINK_SYNC_RESP, frame.payload,
+                  frame.header.payload_length);
+        command_processed_internally = true;
+        requires_ack = true;
+      }
+      break;
+    case CMD_LINK_RESET:
+      {
+        _resetLinkState();
+        Console.begin();
+        sendFrame(CMD_LINK_RESET_RESP, nullptr, 0);
+        command_processed_internally = true;
+        requires_ack = true;
       }
       break;
 
@@ -698,6 +786,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       Console._push(frame.payload, frame.header.payload_length);
       // No necesita ACK explícito aquí, XON/XOFF maneja el flujo.
       command_processed_internally = true; // Se considera manejado internamente por Console
+      requires_ack = true;
       break;
     case CMD_DATASTORE_PUT: // Podría ser manejado por el usuario también
     case CMD_FILE_WRITE:
@@ -728,8 +817,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 
   // Enviar ACK si es necesario y fue procesado (interna o externamente)
-  if (requires_ack) {
-      sendFrame(STATUS_ACK, nullptr, 0);
+    if (requires_ack) {
+      uint8_t ack_payload[2];
+      rpc::write_u16_be(ack_payload, frame.header.command_id);
+      sendFrame(STATUS_ACK, ack_payload, sizeof(ack_payload));
   }
 
   // --- Llamar al Manejador de Comandos del Usuario ---
@@ -777,8 +868,17 @@ void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
 
   if (raw_len == 0) {
     // Error en la construcción (ej. payload demasiado grande)
+#if BRIDGE_DEBUG_FRAMES
+    _tx_debug.build_failures++;
+#endif
     return;
   }
+
+#if BRIDGE_DEBUG_FRAMES
+  _tx_debug.command_id = command_id;
+  _tx_debug.payload_length = payload_len;
+  _tx_debug.raw_length = static_cast<uint16_t>(raw_len);
+#endif
 
   static uint8_t cobs_buf[rpc::COBS_BUFFER_SIZE];
   // encode() aplica COBS a la trama raw
@@ -788,8 +888,154 @@ void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
   size_t written = _stream.write(cobs_buf, cobs_len);
   written += _stream.write((uint8_t)0x00);
 
+#if BRIDGE_DEBUG_FRAMES
+  _tx_debug.cobs_length = static_cast<uint16_t>(cobs_len);
+  _tx_debug.expected_serial_bytes =
+      static_cast<uint16_t>(cobs_len + 1);
+  _tx_debug.last_write_return = static_cast<uint16_t>(written);
+  if (raw_len >= sizeof(uint16_t)) {
+    uint16_t crc = rpc::read_u16_be(
+        raw_frame_buf + raw_len - sizeof(uint16_t));
+    _tx_debug.crc = crc;
+  } else {
+    _tx_debug.crc = 0;
+  }
+  _tx_debug.tx_count++;
+  if (written != static_cast<size_t>(cobs_len + 1)) {
+    _tx_debug.write_shortfall_events++;
+    uint16_t expected = static_cast<uint16_t>(cobs_len + 1);
+    _tx_debug.last_shortfall =
+        expected > _tx_debug.last_write_return
+            ? expected - _tx_debug.last_write_return
+            : 0;
+  } else {
+    _tx_debug.last_shortfall = 0;
+  }
+#endif
+
+  if (_requiresAck(command_id)) {
+    _recordLastFrame(command_id, raw_frame_buf, raw_len, cobs_buf, cobs_len);
+    _awaiting_ack = true;
+    _retry_count = 0;
+    _last_send_millis = millis();
+  }
+
   // Podríamos añadir verificación de 'written' si _stream.write devuelve algo útil
   // y manejar errores de escritura si es necesario.
+}
+
+#if BRIDGE_DEBUG_FRAMES
+BridgeClass::FrameDebugSnapshot BridgeClass::getTxDebugSnapshot() const {
+  return _tx_debug;
+}
+
+void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
+#endif
+
+bool BridgeClass::_requiresAck(uint16_t command_id) const {
+  return command_id > STATUS_ACK;
+}
+
+void BridgeClass::_recordLastFrame(uint16_t command_id,
+                                   const uint8_t* raw_frame,
+                                   size_t raw_len,
+                                   const uint8_t* cobs_frame,
+                                   size_t cobs_len) {
+  if (raw_len > sizeof(_last_raw_frame)) {
+    raw_len = sizeof(_last_raw_frame);
+  }
+  if (cobs_len > sizeof(_last_cobs_frame)) {
+    cobs_len = sizeof(_last_cobs_frame);
+  }
+  memcpy(_last_raw_frame, raw_frame, raw_len);
+  memcpy(_last_cobs_frame, cobs_frame, cobs_len);
+  _last_raw_length = static_cast<uint16_t>(raw_len);
+  _last_cobs_length = static_cast<uint16_t>(cobs_len);
+  _last_command_id = command_id;
+}
+
+void BridgeClass::_clearAckState() {
+  _awaiting_ack = false;
+  _retry_count = 0;
+  _last_raw_length = 0;
+  _last_cobs_length = 0;
+}
+
+void BridgeClass::_handleAck(uint16_t command_id) {
+  if (!_awaiting_ack) {
+    return;
+  }
+  if (command_id == 0xFFFF || command_id == _last_command_id) {
+    _clearAckState();
+  }
+}
+
+void BridgeClass::_handleMalformed(uint16_t command_id) {
+  if (!_last_cobs_length) {
+    return;
+  }
+  if (command_id == 0xFFFF || command_id == _last_command_id) {
+    _retransmitLastFrame();
+  }
+}
+
+void BridgeClass::_retransmitLastFrame() {
+  if (!_awaiting_ack || !_last_cobs_length) {
+    return;
+  }
+  size_t written = _stream.write(_last_cobs_frame, _last_cobs_length);
+  written += _stream.write((uint8_t)0x00);
+#if BRIDGE_DEBUG_FRAMES
+  _tx_debug.tx_count++;
+  _tx_debug.last_write_return = static_cast<uint16_t>(written);
+  uint16_t expected = static_cast<uint16_t>(_last_cobs_length + 1);
+  _tx_debug.expected_serial_bytes = expected;
+  if (written != expected) {
+    _tx_debug.write_shortfall_events++;
+    _tx_debug.last_shortfall =
+        expected > _tx_debug.last_write_return
+            ? expected - _tx_debug.last_write_return
+            : 0;
+  } else {
+    _tx_debug.last_shortfall = 0;
+  }
+#endif
+  _retry_count++;
+  _last_send_millis = millis();
+}
+
+void BridgeClass::_processAckTimeout() {
+  if (!_awaiting_ack) {
+    return;
+  }
+  unsigned long now = millis();
+  if ((now - _last_send_millis) < kAckTimeoutMs) {
+    return;
+  }
+  if (_retry_count >= kMaxAckRetries) {
+    _awaiting_ack = false;
+    if (_status_handler) {
+      _status_handler(STATUS_TIMEOUT, nullptr, 0);
+    }
+    return;
+  }
+  _retransmitLastFrame();
+}
+
+void BridgeClass::_resetLinkState() {
+  _clearAckState();
+  _parser.reset();
+  _pending_datastore_head = 0;
+  _pending_datastore_count = 0;
+  for (uint8_t i = 0; i < kMaxPendingDatastore; ++i) {
+    _pending_datastore_key_lengths[i] = 0;
+    _pending_datastore_keys[i][0] = '\0';
+  }
+  _pending_process_poll_head = 0;
+  _pending_process_poll_count = 0;
+  for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
+    _pending_process_pids[i] = 0;
+  }
 }
 
 // --- Public API Methods ---

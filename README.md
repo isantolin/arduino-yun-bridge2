@@ -16,7 +16,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (noviembre 2025)
 
-- Alineación total del protocolo binario con la librería de Arduino (prefijos de longitud y códigos de estado consistentes en datastore, mailbox y filesystem).
+- Especificación única del protocolo en `tools/protocol/spec.toml` con generador (`tools/protocol/generate.py`) que emite `openwrt-yun-bridge/yunrpc/protocol.py` y `openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
+- Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `openwrt-yun-examples-python`, confirmando compatibilidad funcional.
+- Instrumentación de logging en `bridge_daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
+- La librería Arduino (con `BRIDGE_DEBUG_FRAMES` activado) ahora mantiene estadísticas de transmisión (`Bridge.getTxDebugSnapshot()`, `Bridge.resetTxDebugStats()`), incluyendo tamaños raw/COBS, CRC y diferencias entre bytes esperados y escritos en serie, lo que ayuda a detectar truncamientos.
+- Se mantiene la alineación del protocolo binario con la librería Arduino (prefijos de longitud y códigos de estado consistentes en datastore, mailbox y filesystem).
 - Nuevo sistema de buffering persistente para `CMD_PROCESS_POLL_RESP`, evitando pérdidas cuando el proceso supera `MAX_PAYLOAD_SIZE` en una sola lectura.
 - Se añadieron colas de estado en `RuntimeState` para reportar con precisión la finalización de procesos y los flags de truncamiento vía MQTT.
 - Los endpoints REST (`pin_rest_cgi.py`) y la API de LuCI vuelven a publicar comandos MQTT con reintentos exponenciales y límites de tiempo configurables, entregando mejor UX ante brokers lentos.
@@ -44,4 +48,5 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 - **Tipado estático:** Ejecuta `pyright` en la raíz del repositorio antes de enviar parches; la configuración (`pyrightconfig.json`) está preparada para ignorar los ejemplos legacy y validar el daemon y sus utilidades.
 - **Pruebas manuales:** Tras instalar los paquetes IPK en tu Yún, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-yun-examples-python` y revisa el nuevo log del daemon (`/var/log/yunbridge.log`).
+- **Diagnóstico en el MCU:** Carga el sketch `openwrt-library-arduino/examples/FrameDebug/FrameDebug.ino` para imprimir cada 5 s el snapshot de transmisión y confirmar que `expected_serial_bytes` coincide con `last_write_return`.
 - **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/yunbridge_status.json` junto al límite configurado.

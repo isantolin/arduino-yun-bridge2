@@ -34,6 +34,8 @@ SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 logger = logging.getLogger("yunbridge.service")
 
+STATUS_VALUES = {status.value for status in Status}
+
 TOPIC_DIGITAL = "d"
 TOPIC_ANALOG = "a"
 TOPIC_CONSOLE = "console"
@@ -53,7 +55,9 @@ class BridgeService:
         self.config = config
         self.state = state
         self._serial_sender: Optional[SendFrameCallable] = None
-        self._mcu_handlers: Dict[int, Callable[[bytes], Awaitable[None]]] = {
+        self._mcu_handlers: Dict[
+            int, Callable[[bytes], Awaitable[Optional[bool]]]
+        ] = {
             Command.CMD_DIGITAL_READ_RESP.value:
                 self._handle_digital_read_resp,
             Command.CMD_ANALOG_READ_RESP.value:
@@ -62,6 +66,8 @@ class BridgeService:
                 self._handle_get_version_resp,
             Command.CMD_GET_FREE_MEMORY_RESP.value:
                 self._handle_get_free_memory_resp,
+            Command.CMD_LINK_SYNC_RESP.value: self._handle_link_sync_resp,
+            Command.CMD_LINK_RESET_RESP.value: self._handle_link_reset_resp,
             Status.ACK.value: self._handle_ack,
             Status.ERROR.value: self._status_handler(Status.ERROR),
             Status.CMD_UNKNOWN.value: self._status_handler(Status.CMD_UNKNOWN),
@@ -111,6 +117,11 @@ class BridgeService:
 
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""
+
+        try:
+            await self.sync_link()
+        except Exception:
+            logger.exception("Failed to synchronise MCU link after reconnect")
 
         try:
             await self.request_mcu_version()
@@ -198,6 +209,31 @@ class BridgeService:
         if send_ok:
             self.state.mcu_version = None
 
+    async def sync_link(self) -> None:
+        nonce = os.urandom(4)
+        self.state.link_handshake_nonce = nonce
+        self.state.link_is_synchronized = False
+        await self.send_frame(Command.CMD_LINK_RESET.value, b"")
+        await asyncio.sleep(0.05)
+        await self.send_frame(Command.CMD_LINK_SYNC.value, nonce)
+
+    def _should_acknowledge_mcu_frame(self, command_id: int) -> bool:
+        return command_id not in STATUS_VALUES
+
+    async def _acknowledge_mcu_frame(
+        self,
+        command_id: int,
+        *,
+        status: Status = Status.ACK,
+        extra: bytes = b"",
+    ) -> None:
+        payload = struct.pack(">H", command_id)
+        if extra:
+            remaining = MAX_PAYLOAD_SIZE - len(payload)
+            if remaining > 0:
+                payload += extra[:remaining]
+        await self.send_frame(status.value, payload)
+
     # --- MCU command handlers ---
 
     async def _dispatch_mcu_frame(
@@ -213,14 +249,22 @@ class BridgeService:
             except ValueError:
                 command_name = f"UNKNOWN_CMD_ID(0x{command_id:02X})"
 
+        handled_successfully = False
+
         if handler:
             logger.debug("MCU > %s payload=%s", command_name, payload.hex())
-            await handler(payload)
+            result = await handler(payload)
+            handled_successfully = result is not False
         elif command_id < 0x80:
             logger.warning("Unhandled MCU command %s", command_name)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:
             logger.debug("Ignoring MCU response %s", command_name)
+
+        if handled_successfully and self._should_acknowledge_mcu_frame(
+            command_id
+        ):
+            await self._acknowledge_mcu_frame(command_id)
 
     async def _dispatch_mqtt_message(self, topic: str, payload: bytes) -> None:
         await self._handle_mqtt_topic(topic, payload)
@@ -285,8 +329,12 @@ class BridgeService:
         )
         await self.enqueue_mqtt(message)
 
-    async def _handle_ack(self, _: bytes) -> None:
-        logger.debug("MCU > ACK received")
+    async def _handle_ack(self, payload: bytes) -> None:
+        if len(payload) >= 2:
+            command_id = int.from_bytes(payload[:2], "big")
+            logger.debug("MCU > ACK received for 0x%02X", command_id)
+        else:
+            logger.debug("MCU > ACK received")
 
     def _status_handler(
         self, status: Status
@@ -416,7 +464,7 @@ class BridgeService:
         )
         await self.enqueue_mqtt(message)
 
-    async def _handle_mailbox_processed(self, payload: bytes) -> None:
+    async def _handle_mailbox_processed(self, payload: bytes) -> bool:
         topic_name = (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/processed"
         )
@@ -432,11 +480,12 @@ class BridgeService:
         await self.enqueue_mqtt(
             PublishableMessage(topic_name=topic_name, payload=body)
         )
+        return True
 
-    async def _handle_mailbox_push(self, payload: bytes) -> None:
+    async def _handle_mailbox_push(self, payload: bytes) -> bool:
         if len(payload) < 2:
             logger.warning("Malformed MAILBOX_PUSH payload: %s", payload.hex())
-            return
+            return False
 
         (msg_len,) = struct.unpack(">H", payload[:2])
         data = payload[2:2 + msg_len]
@@ -446,7 +495,7 @@ class BridgeService:
                 msg_len,
                 len(data),
             )
-            return
+            return False
 
         stored = self.state.enqueue_mailbox_incoming(data, logger)
         if not stored:
@@ -459,7 +508,7 @@ class BridgeService:
                 Status.ERROR.value,
                 self._encode_status_reason("mailbox_incoming_overflow"),
             )
-            return
+            return False
 
         topic = self.state.mailbox_incoming_topic or (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
@@ -479,7 +528,7 @@ class BridgeService:
                 ).encode("utf-8"),
             )
         )
-        await self.send_frame(Status.ACK.value, b"")
+        return True
 
     async def _handle_mailbox_available(self, _: bytes) -> None:
         queue_len = len(self.state.mailbox_queue) & 0xFF
@@ -489,7 +538,7 @@ class BridgeService:
             count_payload,
         )
 
-    async def _handle_mailbox_read(self, _: bytes) -> None:
+    async def _handle_mailbox_read(self, _: bytes) -> bool:
         original_payload = self.state.pop_mailbox_message()
         message_payload = (
             original_payload if original_payload is not None else b""
@@ -512,7 +561,7 @@ class BridgeService:
         if not send_ok:
             if original_payload is not None:
                 self.state.requeue_mailbox_message_front(original_payload)
-            return
+            return False
 
         await self.enqueue_mqtt(
             PublishableMessage(
@@ -523,19 +572,20 @@ class BridgeService:
                 payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
         )
+        return True
 
-    async def _handle_file_write(self, payload: bytes) -> None:
+    async def _handle_file_write(self, payload: bytes) -> bool:
         if len(payload) < 3:
             logger.warning(
                 "Invalid file write payload length: %d", len(payload)
             )
-            return
+            return False
 
         path_len = payload[0]
         cursor = 1
         if len(payload) < cursor + path_len + 2:
             logger.warning("Invalid file write payload: missing data section")
-            return
+            return False
 
         path = payload[cursor:cursor + path_len].decode(
             "utf-8", errors="ignore"
@@ -549,18 +599,19 @@ class BridgeService:
             logger.warning(
                 "File write payload truncated. Expected %d bytes.", data_len
             )
-            return
+            return False
 
         success, _, reason = await self._perform_file_operation(
             "write", path, file_data
         )
         if success:
-            await self.send_frame(Status.ACK.value, b"")
-        else:
-            await self.send_frame(
-                Status.ERROR.value,
-                self._encode_status_reason(reason or "write_failed"),
-            )
+            return True
+
+        await self.send_frame(
+            Status.ERROR.value,
+            self._encode_status_reason(reason or "write_failed"),
+        )
+        return False
 
     async def _handle_file_read(self, payload: bytes) -> None:
         if len(payload) < 1:
@@ -599,29 +650,30 @@ class BridgeService:
         response = struct.pack(">H", len(data)) + data
         await self.send_frame(Command.CMD_FILE_READ_RESP.value, response)
 
-    async def _handle_file_remove(self, payload: bytes) -> None:
+    async def _handle_file_remove(self, payload: bytes) -> bool:
         if len(payload) < 1:
             logger.warning(
                 "Invalid file remove payload length: %d", len(payload)
             )
-            return
+            return False
 
         path_len = payload[0]
         if len(payload) < 1 + path_len:
             logger.warning("Invalid file remove payload: missing path bytes")
-            return
+            return False
 
         filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
         success, _, reason = await self._perform_file_operation(
             "remove", filename
         )
         if success:
-            await self.send_frame(Status.ACK.value, b"")
-        else:
-            await self.send_frame(
-                Status.ERROR.value,
-                self._encode_status_reason(reason or "remove_failed"),
-            )
+            return True
+
+        await self.send_frame(
+            Status.ERROR.value,
+            self._encode_status_reason(reason or "remove_failed"),
+        )
+        return False
 
     async def _handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
@@ -636,6 +688,40 @@ class BridgeService:
             topic_name=topic, payload=str(free_memory).encode("utf-8")
         )
         await self.enqueue_mqtt(message)
+
+    async def _handle_link_sync_resp(self, payload: bytes) -> bool:
+        expected = self.state.link_handshake_nonce
+        if expected is None:
+            logger.warning("Unexpected LINK_SYNC_RESP without pending nonce")
+            await self._acknowledge_mcu_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            return False
+
+        if payload != expected:
+            logger.warning(
+                "LINK_SYNC_RESP nonce mismatch (expected %s got %s)",
+                expected.hex(),
+                payload.hex(),
+            )
+            await self._acknowledge_mcu_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            self.state.link_is_synchronized = False
+            return False
+
+        self.state.link_is_synchronized = True
+        logger.info("MCU link synchronised (nonce=%s)", payload.hex())
+        return True
+
+    async def _handle_link_reset_resp(self, payload: bytes) -> bool:
+        logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
+        self.state.link_is_synchronized = False
+        return True
 
     async def _handle_get_version_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
@@ -702,7 +788,7 @@ class BridgeService:
             )
         )
 
-    async def _handle_process_poll(self, payload: bytes) -> None:
+    async def _handle_process_poll(self, payload: bytes) -> bool:
         if len(payload) != 2:
             logger.warning(
                 "Invalid PROCESS_POLL payload. Expected 2 bytes, got %d: %s",
@@ -715,7 +801,7 @@ class BridgeService:
             await self.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value, response_payload
             )
-            return
+            return False
 
         pid = int.from_bytes(payload, "big")
         (
@@ -757,20 +843,21 @@ class BridgeService:
 
         if finished:
             logger.debug("Sent final output for finished process PID %d", pid)
+        return True
 
     async def _handle_process_kill(
         self,
         payload: bytes,
         *,
         send_ack: bool = True,
-    ) -> None:
+    ) -> bool:
         if len(payload) != 2:
             logger.warning(
                 "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
                 len(payload),
                 payload.hex(),
             )
-            return
+            return False
 
         pid = int.from_bytes(payload, "big")
 
@@ -799,8 +886,7 @@ class BridgeService:
             else:
                 logger.warning("Attempted to kill non-existent PID: %d", pid)
 
-        if send_ack:
-            await self.send_frame(Status.ACK.value, b"")
+        return send_ack
 
     async def _allocate_pid(self) -> int:
         async with self.state.process_lock:

@@ -2,6 +2,10 @@
 
 ## Estado global
 
+- ✅ Protocolo RPC centralizado en `tools/protocol/spec.toml` con generador que sincroniza bindings C++/Python.
+- ✅ Regeneración de `rpc_protocol.h` y `yunrpc/protocol.py` + validación manual vía `console_test.py`, `led13_test.py` y `datastore_test.py`.
+- ✅ Logging del daemon enriquecido para distinguir fallos de COBS vs parsing de frame.
+- ✅ Instrumentación MCU (`BRIDGE_DEBUG_FRAMES`) para snapshots de longitudes/raw/CRC enviados.
 - ⏳ Automatizar pruebas end-to-end sobre hardware real.
 
 ## Prioridades 2026
@@ -12,6 +16,7 @@
 - Reglas avanzadas de autorización por tópico.
 
 ### Comunicación MCU ↔️ MPU
+- Investigar pérdidas parciales en frames MCU→Linux (errores COBS decode) aprovechando las nuevas métricas `Bridge.getTxDebugSnapshot()`.
 - Documentar y versionar el protocolo en un paquete independiente.
 
 ### Core Yun / OpenWRT

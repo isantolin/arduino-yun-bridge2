@@ -43,6 +43,10 @@ Options:
 Environment variables:
   YUNBRIDGE_INSTALL_HOST_DEPS=1  enables host dependency installation.
   YUNBRIDGE_SKIP_HOST_DEPS=1     forces skip regardless of other flags.
+    YUNBRIDGE_SERIAL_RETRY_TIMEOUT overrides the default serial ACK timeout
+                                                                 picked up later by 3_install.sh.
+    YUNBRIDGE_SERIAL_RETRY_ATTEMPTS overrides retry attempts consumed by
+                                                                    3_install.sh when initialising UCI.
 EOF
 }
 
@@ -335,6 +339,9 @@ fi
 
 
 echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."
+echo "[HINT] Antes de ejecutar 3_install.sh puedes exportar"
+echo "       YUNBRIDGE_SERIAL_RETRY_TIMEOUT / YUNBRIDGE_SERIAL_RETRY_ATTEMPTS"
+echo "       para personalizar el control de flujo serie por defecto."
 
 # Cleanup: remove all 'build', 'bin', 'dist', and '*.egg-info' directories from package folders
 echo "[CLEANUP] Removing leftover build, bin, dist, and egg-info directories from packages..."

@@ -314,5 +314,8 @@ fi
 # 5. REBOOT
 echo "5. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
 echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE
+echo "   Antes de ejecutar ./3_install.sh puedes exportar" | tee -a $LOG_FILE
+echo "     YUNBRIDGE_SERIAL_RETRY_TIMEOUT / YUNBRIDGE_SERIAL_RETRY_ATTEMPTS" | tee -a $LOG_FILE
+echo "   para ajustar el control de flujo serie que el instalador aplicará." | tee -a $LOG_FILE
 sleep 5
 reboot

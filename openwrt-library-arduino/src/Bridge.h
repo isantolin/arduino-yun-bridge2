@@ -22,6 +22,7 @@ class HardwareSerial;
 constexpr uint8_t BRIDGE_DATASTORE_PENDING_MAX = 4;
 constexpr size_t BRIDGE_DATASTORE_KEY_MAX_LEN = 96;
 constexpr uint8_t BRIDGE_PROCESS_PENDING_MAX = 8;
+constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 3;
 
 #ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
 #define BRIDGE_FIRMWARE_VERSION_MAJOR 2
@@ -244,6 +245,17 @@ class BridgeClass {
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
 
+  struct PendingTxFrame {
+    uint16_t command_id;
+    uint16_t payload_length;
+    uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
+  };
+
+  static constexpr uint8_t kMaxPendingTxFrames = BRIDGE_TX_QUEUE_MAX;
+  PendingTxFrame _pending_tx_frames[kMaxPendingTxFrames];
+  uint8_t _pending_tx_head;
+  uint8_t _pending_tx_count;
+
 #if BRIDGE_DEBUG_FRAMES
   FrameDebugSnapshot _tx_debug;
 #endif
@@ -270,6 +282,13 @@ class BridgeClass {
   void _retransmitLastFrame();
   void _processAckTimeout();
   void _resetLinkState();
+  void _flushPendingTxQueue();
+  void _clearPendingTxQueue();
+  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
+                         uint16_t payload_len);
+  bool _dequeuePendingTx(PendingTxFrame& frame);
+  void _sendFrameImmediate(uint16_t command_id, const uint8_t* payload,
+                           uint16_t payload_len);
 
   void _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();

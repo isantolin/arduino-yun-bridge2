@@ -7,10 +7,10 @@ import logging
 import os
 import ssl
 import struct
+import sys
 from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
 import serial
-from cobs import cobs as _cobs  # type: ignore[import]
 from yunrpc import protocol
 from yunrpc.frame import Frame
 from yunrpc.protocol import Command, Status
@@ -23,8 +23,14 @@ from tenacity import (
     wait_exponential,
 )
 
+from yunbridge.common import (
+    DecodeError,
+    cobs_decode,
+    cobs_encode,
+)
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
+from yunbridge.const import MQTT_TLS_MIN_VERSION, SERIAL_TERMINATOR
 from yunbridge.mqtt import Client as MQTTClient, MQTTError, QOSLevel
 from yunbridge.services.runtime import (
     BridgeService,
@@ -49,27 +55,7 @@ OPEN_SERIAL_CONNECTION = cast(
 )
 
 
-COBS_MODULE = cast(Any, _cobs)
-
-try:  # python-cobs exposes DecodeError on the cobs module
-    DecodeError = cast(type[Exception], getattr(COBS_MODULE, "DecodeError"))
-except AttributeError:  # pragma: no cover - defensive fallback
-    DecodeError = ValueError
-
-
-def cobs_encode(data: bytes) -> bytes:
-    """Encode *data* using the upstream cobs package."""
-    return cast(bytes, COBS_MODULE.encode(data))
-
-
-def cobs_decode(data: bytes) -> bytes:
-    """Decode *data* using the upstream cobs package."""
-    return cast(bytes, COBS_MODULE.decode(data))
-
-
 logger = logging.getLogger("yunbridge")
-
-SERIAL_TERMINATOR = b"\x00"
 
 T = TypeVar("T")
 
@@ -240,7 +226,7 @@ async def _send_serial_frame(
         return False
 
     try:
-        raw_frame = Frame.build(command_id, payload)
+        raw_frame = Frame(command_id, payload).to_bytes()
         encoded_frame = cobs_encode(raw_frame) + SERIAL_TERMINATOR
         writer.write(encoded_frame)
         await writer.drain()
@@ -352,8 +338,11 @@ async def serial_reader_task(
                         continue
 
                     try:
-                        command_id, payload = Frame.parse(raw_frame)
-                        await service.handle_mcu_frame(command_id, payload)
+                        frame = Frame.from_bytes(raw_frame)
+                        await service.handle_mcu_frame(
+                            frame.command_id,
+                            frame.payload,
+                        )
                     except ValueError as exc:
                         header_hex = raw_frame[
                             : protocol.CRC_COVERED_HEADER_SIZE
@@ -513,15 +502,19 @@ def _build_mqtt_tls_context(config: RuntimeConfig) -> Optional[ssl.SSLContext]:
         return None
 
     cafile = config.mqtt_cafile
-    if not cafile or not os.path.exists(cafile):
-        logger.warning("TLS enabled but CA file is missing: %s", cafile)
-        return None
+    if not cafile:
+        raise RuntimeError(
+            "MQTT TLS is enabled but 'mqtt_cafile' is not configured."
+        )
+    if not os.path.exists(cafile):
+        raise FileNotFoundError(f"TLS CA file does not exist: {cafile}")
 
     try:
         context = ssl.create_default_context(
             ssl.Purpose.SERVER_AUTH,
             cafile=cafile,
         )
+        context.minimum_version = MQTT_TLS_MIN_VERSION
         if config.mqtt_certfile and config.mqtt_keyfile:
             context.load_cert_chain(
                 certfile=config.mqtt_certfile,
@@ -534,8 +527,7 @@ def _build_mqtt_tls_context(config: RuntimeConfig) -> Optional[ssl.SSLContext]:
             logger.info("Using MQTT TLS with CA verification only.")
         return context
     except (ssl.SSLError, FileNotFoundError) as exc:
-        logger.error("Failed to create TLS context: %s", exc)
-        return None
+        raise RuntimeError(f"Failed to create TLS context: {exc}") from exc
 
 
 async def mqtt_task(
@@ -632,7 +624,10 @@ async def main_async(config: RuntimeConfig) -> None:
     service = BridgeService(config, state)
     service.register_serial_sender(_serial_sender_not_ready)
 
-    tls_context = _build_mqtt_tls_context(config)
+    try:
+        tls_context = _build_mqtt_tls_context(config)
+    except Exception as exc:
+        raise RuntimeError(f"TLS configuration invalid: {exc}") from exc
 
     try:
         async with asyncio.TaskGroup() as task_group:
@@ -675,6 +670,9 @@ def main() -> None:
         asyncio.run(main_async(config))
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
+    except RuntimeError as exc:
+        logger.critical("Startup aborted: %s", exc)
+        sys.exit(1)
     except ExceptionGroup as exc_group:
         for exc in exc_group.exceptions:
             logger.critical("Fatal error in main execution", exc_info=exc)

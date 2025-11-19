@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Deque, Dict, List, Optional
 
+from ..common import normalise_allowed_commands
 from ..mqtt import PublishableMessage
 
 from ..config.settings import RuntimeConfig
@@ -50,9 +51,6 @@ def _buffer_dict_factory() -> Dict[int, bytearray]:
 
 def _exit_code_dict_factory() -> Dict[int, int]:
     return {}
-
-
-STATUS_FILE_PATH: str = "/tmp/yunbridge_status.json"
 
 
 @dataclass
@@ -116,7 +114,9 @@ class RuntimeState:
     link_is_synchronized: bool = False
 
     def configure(self, config: RuntimeConfig) -> None:
-        self.allowed_commands = list(config.allowed_commands)
+        self.allowed_commands = list(
+            normalise_allowed_commands(config.allowed_commands)
+        )
         self.process_timeout = config.process_timeout
         self.file_system_root = config.file_system_root
         self.mqtt_topic_prefix = config.mqtt_topic

@@ -228,6 +228,31 @@ echo "[INFO] Restarting uhttpd and rpcd for LuCI..."
 [ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
 #  --- User Configuration & Daemon Start ---
 echo "[FINAL] Finalizing setup..."
+
+# Ensure new serial flow control defaults exist without overriding user values
+SERIAL_TIMEOUT_DEFAULT="${YUNBRIDGE_SERIAL_RETRY_TIMEOUT:-0.75}"
+SERIAL_ATTEMPTS_DEFAULT="${YUNBRIDGE_SERIAL_RETRY_ATTEMPTS:-3}"
+uci_needs_commit=0
+
+current_timeout=$(uci -q get yunbridge.general.serial_retry_timeout || true)
+if [ -z "${current_timeout}" ]; then
+    echo "[INFO] Setting default serial_retry_timeout=${SERIAL_TIMEOUT_DEFAULT}."
+    uci set yunbridge.general.serial_retry_timeout="${SERIAL_TIMEOUT_DEFAULT}"
+    uci_needs_commit=1
+fi
+
+current_attempts=$(uci -q get yunbridge.general.serial_retry_attempts || true)
+if [ -z "${current_attempts}" ]; then
+    echo "[INFO] Setting default serial_retry_attempts=${SERIAL_ATTEMPTS_DEFAULT}."
+    uci set yunbridge.general.serial_retry_attempts="${SERIAL_ATTEMPTS_DEFAULT}"
+    uci_needs_commit=1
+fi
+
+if [ "$uci_needs_commit" -eq 1 ]; then
+    echo "[INFO] Persisting serial retry defaults via uci commit."
+    uci commit yunbridge
+fi
+#  --- Prompt for debug mode ---
 #  Ask user if they want to enable debug mode by default
 printf "Do you want to enable YUNBRIDGE_DEBUG=1 by default for all users? [Y/n]: "
 read yn || yn=""

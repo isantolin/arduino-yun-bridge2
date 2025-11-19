@@ -3,11 +3,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Optional
+from typing import Optional, Self
 
-from asyncio_mqtt.error import MqttError
-
-from .client import Client
+from .client import Client, MQTTError
 
 
 class QOSLevel(IntEnum):
@@ -26,6 +24,22 @@ class PublishableMessage:
     payload: bytes
     qos: QOSLevel = QOSLevel.QOS_0
     retain: bool = False
+
+    def with_payload(
+        self,
+        payload: bytes,
+        *,
+        qos: Optional[QOSLevel] = None,
+        retain: Optional[bool] = None,
+    ) -> Self:
+        """Return a copy with updated payload/QoS/retain flags."""
+
+        return PublishableMessage(
+            topic_name=self.topic_name,
+            payload=payload,
+            qos=qos if qos is not None else self.qos,
+            retain=retain if retain is not None else self.retain,
+        )
 
 
 @dataclass(slots=True)
@@ -55,8 +69,6 @@ def as_delivered_message(
         retain=retain,
     )
 
-
-MQTTError = MqttError
 
 __all__ = [
     "Client",

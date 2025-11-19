@@ -340,6 +340,8 @@ BridgeClass::BridgeClass(Stream& stream)
   _last_cobs_length = 0;
   _retry_count = 0;
   _last_send_millis = 0;
+  _pending_tx_head = 0;
+  _pending_tx_count = 0;
 }
 
 void BridgeClass::_trackPendingDatastoreKey(const char* key) {
@@ -860,6 +862,27 @@ void BridgeClass::_emitStatus(uint8_t status_code, const char* message) {
  */
 void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
                             uint16_t payload_len) {
+  if (!_requiresAck(command_id)) {
+    _sendFrameImmediate(command_id, payload, payload_len);
+    return;
+  }
+
+  if (_awaiting_ack) {
+    if (!_enqueuePendingTx(command_id, payload, payload_len)) {
+      _processAckTimeout();
+      if (_awaiting_ack || !_enqueuePendingTx(command_id, payload, payload_len)) {
+        _emitStatus(STATUS_ERROR, "tx_queue_full");
+      }
+    }
+    return;
+  }
+
+  _sendFrameImmediate(command_id, payload, payload_len);
+}
+
+void BridgeClass::_sendFrameImmediate(uint16_t command_id,
+                                      const uint8_t* payload,
+                                      uint16_t payload_len) {
   static uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
 
   // build() crea Header + Payload + CRC en raw_frame_buf
@@ -967,6 +990,7 @@ void BridgeClass::_handleAck(uint16_t command_id) {
   }
   if (command_id == 0xFFFF || command_id == _last_command_id) {
     _clearAckState();
+    _flushPendingTxQueue();
   }
 }
 
@@ -1017,6 +1041,7 @@ void BridgeClass::_processAckTimeout() {
     if (_status_handler) {
       _status_handler(STATUS_TIMEOUT, nullptr, 0);
     }
+    _flushPendingTxQueue();
     return;
   }
   _retransmitLastFrame();
@@ -1024,6 +1049,7 @@ void BridgeClass::_processAckTimeout() {
 
 void BridgeClass::_resetLinkState() {
   _clearAckState();
+  _clearPendingTxQueue();
   _parser.reset();
   _pending_datastore_head = 0;
   _pending_datastore_count = 0;
@@ -1036,6 +1062,50 @@ void BridgeClass::_resetLinkState() {
   for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
     _pending_process_pids[i] = 0;
   }
+}
+
+void BridgeClass::_flushPendingTxQueue() {
+  if (_awaiting_ack || _pending_tx_count == 0) {
+    return;
+  }
+  PendingTxFrame frame;
+  if (!_dequeuePendingTx(frame)) {
+    return;
+  }
+  _sendFrameImmediate(frame.command_id, frame.payload, frame.payload_length);
+}
+
+void BridgeClass::_clearPendingTxQueue() {
+  _pending_tx_head = 0;
+  _pending_tx_count = 0;
+}
+
+bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
+                                    uint16_t payload_len) {
+  if (_pending_tx_count >= kMaxPendingTxFrames) {
+    return false;
+  }
+  if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
+    return false;
+  }
+  uint8_t tail = (_pending_tx_head + _pending_tx_count) % kMaxPendingTxFrames;
+  _pending_tx_frames[tail].command_id = command_id;
+  _pending_tx_frames[tail].payload_length = payload_len;
+  if (payload_len > 0 && payload != nullptr) {
+    memcpy(_pending_tx_frames[tail].payload, payload, payload_len);
+  }
+  _pending_tx_count++;
+  return true;
+}
+
+bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
+  if (_pending_tx_count == 0) {
+    return false;
+  }
+  frame = _pending_tx_frames[_pending_tx_head];
+  _pending_tx_head = (_pending_tx_head + 1) % kMaxPendingTxFrames;
+  _pending_tx_count--;
+  return true;
 }
 
 // --- Public API Methods ---

@@ -64,6 +64,8 @@ export EXTROOT_FORCE=1
 
 # Ajusta la cola MQTT (vía UCI) antes de reiniciar el daemon
 uci set yunbridge.general.mqtt_queue_limit=256
+uci set yunbridge.general.serial_retry_timeout='0.75'
+uci set yunbridge.general.serial_retry_attempts='3'
 uci commit yunbridge
 /etc/init.d/yunbridge restart
 ```

@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python-asyncio-mqtt
-PKG_VERSION:=0.12.1
+PKG_VERSION:=0.16.2
 PKG_RELEASE:=1
 
 PYPI_NAME:=asyncio-mqtt

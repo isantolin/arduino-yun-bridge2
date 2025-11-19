@@ -11,6 +11,7 @@ import os
 from typing import Dict, List, Optional
 
 from yunrpc.utils import get_default_config, get_uci_config
+from ..common import normalise_allowed_commands
 
 
 @dataclass(slots=True)
@@ -38,6 +39,8 @@ class RuntimeConfig:
     console_queue_limit_bytes: int = 16384
     mailbox_queue_limit: int = 64
     mailbox_queue_bytes_limit: int = 65536
+    serial_retry_timeout: float = 0.75
+    serial_retry_attempts: int = 3
 
     @property
     def tls_enabled(self) -> bool:
@@ -77,6 +80,15 @@ def _coerce_int(value: Optional[str], default: int) -> int:
         return default
 
 
+def _coerce_float(value: Optional[str], default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults and environment variables."""
 
@@ -90,7 +102,9 @@ def load_runtime_config() -> RuntimeConfig:
         debug_logging = True
 
     allowed_commands_raw = raw.get("allowed_commands", "")
-    allowed_commands = [cmd for cmd in allowed_commands_raw.split() if cmd]
+    allowed_commands = list(
+        normalise_allowed_commands(allowed_commands_raw.split())
+    )
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", "/dev/ttyATH0"),
@@ -117,5 +131,11 @@ def load_runtime_config() -> RuntimeConfig:
         mailbox_queue_limit=_get_int("mailbox_queue_limit", 64),
         mailbox_queue_bytes_limit=_get_int(
             "mailbox_queue_bytes_limit", 65536
+        ),
+        serial_retry_timeout=_coerce_float(
+            raw.get("serial_retry_timeout"), 0.75
+        ),
+        serial_retry_attempts=max(
+            1, _get_int("serial_retry_attempts", 3)
         ),
     )

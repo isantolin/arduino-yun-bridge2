@@ -3,11 +3,16 @@
 
 import struct
 from binascii import crc_hqx
-from typing import Tuple
+from typing import Self, Tuple
+
 from . import protocol
 
 
 class Frame:
+    def __init__(self, command_id: int, payload: bytes = b"") -> None:
+        self.command_id = command_id
+        self.payload = payload
+
     @staticmethod
     def build(command_id: int, payload: bytes = b"") -> bytes:
         """Build a raw frame (header + payload + CRC) for COBS encoding."""
@@ -110,3 +115,15 @@ class Frame:
         payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE:]
 
         return command_id, payload
+
+    def to_bytes(self) -> bytes:
+        """Serialize the instance using :meth:`build`."""
+
+        return self.build(self.command_id, self.payload)
+
+    @classmethod
+    def from_bytes(cls, raw_frame_buffer: bytes) -> Self:
+        """Parse *raw_frame_buffer* and create a :class:`Frame`."""
+
+        command_id, payload = cls.parse(raw_frame_buffer)
+        return cls(command_id, payload)

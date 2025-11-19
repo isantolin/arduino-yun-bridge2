@@ -38,6 +38,8 @@ def runtime_config() -> RuntimeConfig:
         console_queue_limit_bytes=64,
         mailbox_queue_limit=2,
         mailbox_queue_bytes_limit=32,
+        serial_retry_timeout=0.01,
+        serial_retry_attempts=1,
     )
 
 

@@ -5,9 +5,11 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any, Dict
 
-from .context import RuntimeState, STATUS_FILE_PATH
+from ..const import STATUS_FILE_PATH
+from .context import RuntimeState
 
 logger = logging.getLogger("yunbridge.status")
 
@@ -34,6 +36,9 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "console_queue_size": len(state.console_to_mcu_queue),
                 "console_queue_bytes": state.console_queue_bytes,
                 "running_processes": list(state.running_processes.keys()),
+                "allowed_commands": list(state.allowed_commands),
+                "link_synchronised": state.link_is_synchronized,
+                "heartbeat_unix": time.time(),
                 "mcu_version": (
                     {
                         "major": state.mcu_version[0],

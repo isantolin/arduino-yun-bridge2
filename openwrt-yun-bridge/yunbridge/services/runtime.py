@@ -17,7 +17,10 @@ import logging
 import os
 import struct
 from typing import Awaitable, Callable, Dict, Optional, Tuple
+
+from ..const import ALLOWED_COMMAND_WILDCARD
 from ..mqtt import PublishableMessage
+from .serial_flow import SerialFlowController
 from yunrpc.protocol import (
     DATASTORE_KEY_LEN_FORMAT,
     DATASTORE_VALUE_LEN_FORMAT,
@@ -55,6 +58,14 @@ class BridgeService:
         self.config = config
         self.state = state
         self._serial_sender: Optional[SendFrameCallable] = None
+        self._allowed_command_set = {
+            command for command in state.allowed_commands
+        }
+        self._allow_all_commands = (
+            ALLOWED_COMMAND_WILDCARD in self._allowed_command_set
+        )
+        if self._allow_all_commands:
+            self._allowed_command_set = {ALLOWED_COMMAND_WILDCARD}
         self._mcu_handlers: Dict[
             int, Callable[[bytes], Awaitable[Optional[bool]]]
         ] = {
@@ -100,11 +111,17 @@ class BridgeService:
             Command.CMD_PROCESS_POLL.value: self._handle_process_poll,
             Command.CMD_PROCESS_KILL.value: self._handle_process_kill,
         }
+        self._serial_flow = SerialFlowController(
+            ack_timeout=config.serial_retry_timeout,
+            max_attempts=config.serial_retry_attempts,
+            logger=logger,
+        )
 
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
 
         self._serial_sender = sender
+        self._serial_flow.set_sender(sender)
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
         if not self._serial_sender:
@@ -113,7 +130,7 @@ class BridgeService:
                 command_id,
             )
             return False
-        return await self._serial_sender(command_id, payload)
+        return await self._serial_flow.send(command_id, payload)
 
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""
@@ -159,10 +176,12 @@ class BridgeService:
 
         # Ensure we do not keep the console in a paused state between links.
         self.state.mcu_is_paused = False
+        await self._serial_flow.reset()
 
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
 
+        self._serial_flow.on_frame_received(command_id, payload)
         try:
             await self._dispatch_mcu_frame(command_id, payload)
         except Exception:
@@ -907,9 +926,11 @@ class BridgeService:
         parts = command.strip().split()
         if not parts:
             return False
-        if not self.state.allowed_commands:
+        if self._allow_all_commands:
             return True
-        return parts[0] in self.state.allowed_commands
+        if not self._allowed_command_set:
+            return False
+        return parts[0].lower() in self._allowed_command_set
 
     async def _run_command_sync(
         self, command: str
@@ -918,6 +939,7 @@ class BridgeService:
             return Status.MALFORMED.value, b"", b"Empty command", None
 
         if not self._is_command_allowed(command):
+            logger.warning("Rejected blocked command: '%s'", command)
             error_msg = (
                 f"Command '{command.split()[0]}' not allowed".encode("utf-8")
             )
@@ -985,6 +1007,10 @@ class BridgeService:
         if not command.strip():
             return 0xFFFF
         if not self._is_command_allowed(command):
+            logger.warning(
+                "Rejected async command due to policy: '%s'",
+                command,
+            )
             return 0xFFFF
 
         pid = await self._allocate_pid()
@@ -1235,11 +1261,12 @@ class BridgeService:
                 "finished": finished,
             }
         ).encode("utf-8")
+        base_message = PublishableMessage(
+            topic_name=mqtt_topic,
+            payload=b"",
+        )
         await self.enqueue_mqtt(
-            PublishableMessage(
-                topic_name=mqtt_topic,
-                payload=mqtt_payload,
-            )
+            base_message.with_payload(mqtt_payload)
         )
 
     # ------------------------------------------------------------------
@@ -1612,11 +1639,17 @@ class BridgeService:
             response_topic = (
                 f"{self.state.mqtt_topic_prefix}/{TOPIC_SH}/run_async/response"
             )
-            await self.enqueue_mqtt(
-                PublishableMessage(
-                    topic_name=response_topic,
-                    payload=str(pid).encode("utf-8"),
+            base_message = PublishableMessage(
+                topic_name=response_topic,
+                payload=b"",
+            )
+            if pid == 0xFFFF:
+                await self.enqueue_mqtt(
+                    base_message.with_payload(b"error:not_allowed")
                 )
+                return
+            await self.enqueue_mqtt(
+                base_message.with_payload(str(pid).encode("utf-8"))
             )
         elif action == "poll" and len(parts) == 4:
             pid_str = parts[3]
@@ -1664,10 +1697,7 @@ class BridgeService:
         try:
             cmd_parts = command.split()
             cmd_base = cmd_parts[0] if cmd_parts else ""
-            if (
-                self.state.allowed_commands
-                and cmd_base not in self.state.allowed_commands
-            ):
+            if not self._is_command_allowed(command):
                 raise PermissionError(f"Command '{cmd_base}' not allowed")
 
             proc = await asyncio.create_subprocess_shell(
@@ -1702,13 +1732,15 @@ class BridgeService:
             logger.exception("Unexpected error executing shell command")
             response = "Error: Unexpected server error"
 
+        response_topic = (
+            f"{self.state.mqtt_topic_prefix}/{TOPIC_SH}/response"
+        )
+        base_message = PublishableMessage(
+            topic_name=response_topic,
+            payload=b"",
+        )
         await self.enqueue_mqtt(
-            PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/{TOPIC_SH}/response"
-                ),
-                payload=response.encode("utf-8"),
-            )
+            base_message.with_payload(response.encode("utf-8"))
         )
 
     async def _handle_mqtt_pin(

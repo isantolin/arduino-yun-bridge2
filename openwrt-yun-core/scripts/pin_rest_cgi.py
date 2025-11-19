@@ -13,12 +13,15 @@ from typing import Any, Callable, Dict, Optional
 
 try:  # pragma: no cover - replaced with test doubles when needed
     from paho.mqtt import client as mqtt  # type: ignore[import]
-except ImportError:  # pragma: no cover - ensures attribute for monkeypatching
+except (ImportError, Exception) as exc:  # pragma: no cover
+    _missing_reason = repr(exc)
+
     class _MissingClient:
         def __init__(self, *_: Any, **__: Any) -> None:
             raise RuntimeError(
-                "paho-mqtt package not available; "
-                "install it to use pin_rest_cgi"
+                "paho-mqtt dependencies are unavailable; "
+                "install the package to use pin_rest_cgi"
+                f" ({_missing_reason})."
             )
 
     mqtt = SimpleNamespace(Client=_MissingClient)  # type: ignore[assignment]

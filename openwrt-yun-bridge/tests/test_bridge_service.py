@@ -23,8 +23,25 @@ def test_on_serial_connected_flushes_console_queue(
 
         sent_frames: list[tuple[int, bytes]] = []
 
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
+            if command_id == Command.CMD_LINK_RESET.value:
+                flow.on_frame_received(Command.CMD_LINK_RESET_RESP.value, b"")
+            elif command_id == Command.CMD_LINK_SYNC.value:
+                nonce = service.state.link_handshake_nonce or b""
+                flow.on_frame_received(Command.CMD_LINK_SYNC_RESP.value, nonce)
+            elif command_id == Command.CMD_GET_VERSION.value:
+                flow.on_frame_received(
+                    Command.CMD_GET_VERSION_RESP.value,
+                    b"\x01\x02",
+                )
+            elif command_id == Command.CMD_CONSOLE_WRITE.value:
+                flow.on_frame_received(
+                    Status.ACK.value,
+                    struct.pack(">H", Command.CMD_CONSOLE_WRITE.value),
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -246,5 +263,29 @@ def test_enqueue_mqtt_drops_oldest_when_full(
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         assert queued.topic_name == "br/test/two"
         runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_run_command_respects_allow_list(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        status, _, stderr, _ = await service._run_command_sync("/bin/true")
+
+        assert status == Status.ERROR.value
+        assert b"not allowed" in stderr
+
+        runtime_state.allowed_commands = ["*"]
+        service_with_wildcard = BridgeService(runtime_config, runtime_state)
+
+        run_command = service_with_wildcard._run_command_sync
+        status_ok, _, stderr_ok, _ = await run_command("/bin/true")
+
+        assert status_ok == Status.OK.value
+        assert stderr_ok == b""
 
     asyncio.run(_run())

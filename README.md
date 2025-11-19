@@ -19,6 +19,25 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - Especificación única del protocolo en `tools/protocol/spec.toml` con generador (`tools/protocol/generate.py`) que emite `openwrt-yun-bridge/yunrpc/protocol.py` y `openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
 - Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `openwrt-yun-examples-python`, confirmando compatibilidad funcional.
 - Instrumentación de logging en `bridge_daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
+- El daemon ahora **falla en seguro** cuando `mqtt_tls=1`: si falta el CA o el certificado cliente, el arranque se aborta con error explícito.
+- La ejecución remota de comandos MQTT requiere una lista blanca explícita (`yunbridge.general.allowed_commands`). Un valor vacío significa *ningún comando permitido*; use `*` para habilitar todos de forma consciente.
+- **Guía rápida de UCI**:
+	```sh
+	export YUNBRIDGE_SERIAL_RETRY_TIMEOUT='0.75'
+	export YUNBRIDGE_SERIAL_RETRY_ATTEMPTS='3'
+	uci set yunbridge.general.mqtt_tls='1'
+	uci set yunbridge.general.mqtt_cafile='/etc/ssl/certs/bridge-ca.pem'
+	uci set yunbridge.general.mqtt_certfile='/etc/ssl/certs/bridge.crt'
+	uci set yunbridge.general.mqtt_keyfile='/etc/ssl/private/bridge.key'
+	uci set yunbridge.general.allowed_commands='ls cat uptime'
+	uci set yunbridge.general.serial_retry_timeout='0.75'
+	uci set yunbridge.general.serial_retry_attempts='3'
+	uci commit yunbridge
+	```
+	- Usa `allowed_commands='*'` solo en entornos controlados; cualquier otro valor se normaliza a minúsculas y se interpreta como lista explícita.
+	- Las rutas de certificados deben existir; de lo contrario, el daemon abortará el arranque.
+- **Control explícito del flujo serie:** cada comando MCU se envía de uno en uno y se reintenta automáticamente si no llega `ACK` o la respuesta esperada. Ajusta `serial_retry_timeout` (segundos) y `serial_retry_attempts` para equilibrar latencia y resiliencia.
+	- El instalador (`3_install.sh`) inicializa estos valores si aún no existen; personalízalos antes de ejecutar el daemon exportando `YUNBRIDGE_SERIAL_RETRY_TIMEOUT` o `YUNBRIDGE_SERIAL_RETRY_ATTEMPTS`.
 - La librería Arduino (con `BRIDGE_DEBUG_FRAMES` activado) ahora mantiene estadísticas de transmisión (`Bridge.getTxDebugSnapshot()`, `Bridge.resetTxDebugStats()`), incluyendo tamaños raw/COBS, CRC y diferencias entre bytes esperados y escritos en serie, lo que ayuda a detectar truncamientos.
 - Se mantiene la alineación del protocolo binario con la librería Arduino (prefijos de longitud y códigos de estado consistentes en datastore, mailbox y filesystem).
 - Nuevo sistema de buffering persistente para `CMD_PROCESS_POLL_RESP`, evitando pérdidas cuando el proceso supera `MAX_PAYLOAD_SIZE` en una sola lectura.

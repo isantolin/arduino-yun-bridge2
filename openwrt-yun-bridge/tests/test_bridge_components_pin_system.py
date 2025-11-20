@@ -1,0 +1,344 @@
+"""Pin/system component integration tests for BridgeService."""
+from __future__ import annotations
+
+import asyncio
+import struct
+from unittest.mock import patch
+
+from yunbridge.rpc.protocol import Command, Status
+
+from yunbridge.const import TOPIC_SHELL
+
+from yunbridge.config.settings import RuntimeConfig
+from yunbridge.services.runtime import BridgeService
+from yunbridge.state.context import RuntimeState
+
+
+def test_mcu_digital_read_response_publishes_to_mqtt(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        runtime_state.pending_digital_reads.append(7)
+
+        await service.handle_mcu_frame(
+            Command.CMD_DIGITAL_READ_RESP.value,
+            bytes([1]),
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name.endswith("/d/7/value")
+        assert queued.payload == b"1"
+        runtime_state.mqtt_publish_queue.task_done()
+
+        assert sent_frames
+        ack_id, ack_payload = sent_frames[-1]
+        assert ack_id == Status.ACK.value
+        assert ack_payload == struct.pack(
+            ">H", Command.CMD_DIGITAL_READ_RESP.value
+        )
+
+    asyncio.run(_run())
+
+
+def test_mcu_analog_read_response_publishes_to_mqtt(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        runtime_state.pending_analog_reads.append(3)
+
+        await service.handle_mcu_frame(
+            Command.CMD_ANALOG_READ_RESP.value,
+            bytes([0, 0x7F]),
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name.endswith("/a/3/value")
+        assert queued.payload == b"127"
+        runtime_state.mqtt_publish_queue.task_done()
+
+        assert sent_frames
+        ack_id, ack_payload = sent_frames[-1]
+        assert ack_id == Status.ACK.value
+        assert ack_payload == struct.pack(
+            ">H", Command.CMD_ANALOG_READ_RESP.value
+        )
+
+    asyncio.run(_run())
+
+
+def test_mqtt_digital_write_sends_frame(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            flow.on_frame_received(
+                Status.ACK.value,
+                struct.pack(">H", command_id),
+            )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mqtt_message(
+            f"{runtime_state.mqtt_topic_prefix}/d/5",
+            b"1",
+        )
+
+        assert sent_frames
+        command_id, payload = sent_frames[0]
+        assert command_id == Command.CMD_DIGITAL_WRITE.value
+        assert payload == struct.pack(">BB", 5, 1)
+
+    asyncio.run(_run())
+
+
+def test_mqtt_analog_read_tracks_pending_queue(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            flow.on_frame_received(
+                Command.CMD_ANALOG_READ_RESP.value,
+                bytes([0, 0]),
+            )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mqtt_message(
+            f"{runtime_state.mqtt_topic_prefix}/a/2/read",
+            b"",
+        )
+
+        assert sent_frames
+        command_id, payload = sent_frames[0]
+        assert command_id == Command.CMD_ANALOG_READ.value
+        assert payload == struct.pack(">B", 2)
+        assert runtime_state.pending_analog_reads[-1] == 2
+
+    asyncio.run(_run())
+
+
+def test_mcu_free_memory_response_enqueues_value(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mcu_frame(
+            Command.CMD_GET_FREE_MEMORY_RESP.value,
+            bytes([0, 100]),
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name.endswith("/system/free_memory/value")
+        assert queued.payload == b"100"
+        runtime_state.mqtt_publish_queue.task_done()
+
+        assert sent_frames
+        ack_id, ack_payload = sent_frames[-1]
+        assert ack_id == Status.ACK.value
+        assert ack_payload == struct.pack(
+            ">H", Command.CMD_GET_FREE_MEMORY_RESP.value
+        )
+
+    asyncio.run(_run())
+
+
+def test_mqtt_system_version_get_requests_and_publishes_cached(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        runtime_state.mcu_version = (1, 2)
+
+        sent_frames: list[tuple[int, bytes]] = []
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            flow.on_frame_received(
+                Command.CMD_GET_VERSION_RESP.value,
+                bytes([1, 2]),
+            )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mqtt_message(
+            f"{runtime_state.mqtt_topic_prefix}/system/version/get",
+            b"",
+        )
+
+        assert sent_frames
+        assert sent_frames[0][0] == Command.CMD_GET_VERSION.value
+        assert runtime_state.mcu_version is None
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name.endswith("/system/version/value")
+        assert queued.payload == b"1.2"
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_shell_run_publishes_response(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        calls: list[tuple[object, str]] = []
+
+        async def fake_run(
+            self: object, command: str
+        ) -> tuple[int, bytes, bytes, int | None]:
+            calls.append((self, command))
+            return Status.OK.value, b"ok\n", b"", 0
+
+        with patch(
+            "yunbridge.services.components.process.ProcessComponent.run_sync",
+            new=fake_run,
+        ):
+            await service.handle_mqtt_message(
+                f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/run",
+                b"echo test",
+            )
+            assert calls == [
+                (
+                    service._process,  # pyright: ignore[reportPrivateUsage]
+                    "echo test",
+                )
+            ]
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name.endswith(f"/{TOPIC_SHELL}/response")
+        assert b"Exit Code: 0" in queued.payload
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_shell_run_async_handles_not_allowed(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        calls: list[tuple[object, str]] = []
+
+        async def fake_start(self: object, command: str) -> int:
+            calls.append((self, command))
+            return 0xFFFF
+
+        with patch(
+            "yunbridge.services.components.process."
+            "ProcessComponent.start_async",
+            new=fake_start,
+        ):
+            await service.handle_mqtt_message(
+                f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/run_async",
+                b"blocked",
+            )
+            assert calls == [
+                (
+                    service._process,  # pyright: ignore[reportPrivateUsage]
+                    "blocked",
+                )
+            ]
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name.endswith(
+            f"/{TOPIC_SHELL}/run_async/response"
+        )
+        assert queued.payload == b"error:not_allowed"
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_shell_kill_invokes_process_component(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        calls: list[tuple[object, bytes, bool]] = []
+
+        async def fake_kill(
+            self: object,
+            payload: bytes,
+            *,
+            send_ack: bool,
+        ) -> bool:
+            calls.append((self, payload, send_ack))
+            return True
+
+        with patch(
+            "yunbridge.services.components.process."
+            "ProcessComponent.handle_kill",
+            new=fake_kill,
+        ):
+            await service.handle_mqtt_message(
+                f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/kill/21",
+                b"",
+            )
+            assert calls == [
+                (
+                    service._process,  # pyright: ignore[reportPrivateUsage]
+                    struct.pack(">H", 21),
+                    False,
+                )
+            ]
+
+    asyncio.run(_run())

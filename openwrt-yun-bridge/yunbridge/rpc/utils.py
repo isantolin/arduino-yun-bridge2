@@ -18,6 +18,23 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 import logging
 from typing import Any, Dict, Iterable, cast
 
+from yunbridge.const import (
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+    DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_TOPIC,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_SERIAL_BAUD,
+    DEFAULT_SERIAL_PORT,
+    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+    DEFAULT_SERIAL_RETRY_ATTEMPTS,
+    DEFAULT_SERIAL_RETRY_TIMEOUT,
+)
+
 # --- Logger ---
 logger = logging.getLogger(__name__)
 
@@ -85,16 +102,24 @@ def _stringify_value(value: Any) -> str:
 def get_default_config() -> Dict[str, str]:
     """Provides a default configuration."""
     return {
-        "mqtt_host": "127.0.0.1",
-        "mqtt_port": "1883",
-        "serial_port": "/dev/ttyATH0",
-        "serial_baud": "115200",
+        "mqtt_host": DEFAULT_MQTT_HOST,
+        "mqtt_port": str(DEFAULT_MQTT_PORT),
+        "serial_port": DEFAULT_SERIAL_PORT,
+        "serial_baud": str(DEFAULT_SERIAL_BAUD),
         "debug": "0",
         "allowed_commands": "",
-        "file_system_root": "/root/yun_files",
-        "process_timeout": "10",
-        "console_queue_limit_bytes": "16384",
-        "mailbox_queue_limit": "64",
-        "mailbox_queue_bytes_limit": "65536",
-        "mqtt_queue_limit": "256",
+        "mqtt_topic": DEFAULT_MQTT_TOPIC,
+        "file_system_root": DEFAULT_FILE_SYSTEM_ROOT,
+        "process_timeout": str(DEFAULT_PROCESS_TIMEOUT),
+        "console_queue_limit_bytes": str(
+            DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+        ),
+        "mailbox_queue_limit": str(DEFAULT_MAILBOX_QUEUE_LIMIT),
+        "mailbox_queue_bytes_limit": str(
+            DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+        ),
+        "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
+        "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
+        "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
+        "serial_retry_attempts": str(DEFAULT_SERIAL_RETRY_ATTEMPTS),
     }

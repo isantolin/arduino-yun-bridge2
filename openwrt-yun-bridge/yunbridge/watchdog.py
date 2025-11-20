@@ -1,0 +1,66 @@
+"""Watchdog keepalive utilities for YunBridge."""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import time
+from typing import Callable, Optional
+
+from .const import DEFAULT_WATCHDOG_INTERVAL, WATCHDOG_TRIGGER_TOKEN
+from .state.context import RuntimeState
+
+WatchdogWrite = Callable[[bytes], None]
+
+
+def _default_write(payload: bytes) -> None:
+    os.write(1, payload)
+
+
+class WatchdogKeepalive:
+    """Emit keepalive pulses for the OpenWrt procd watchdog."""
+
+    def __init__(
+        self,
+        *,
+        interval: float = DEFAULT_WATCHDOG_INTERVAL,
+        state: Optional[RuntimeState] = None,
+        token: bytes = WATCHDOG_TRIGGER_TOKEN,
+        write: Optional[WatchdogWrite] = None,
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        self._interval = max(0.5, interval)
+        self._state = state
+        self._token = token
+        self._write = write or _default_write
+        self._logger = logger or logging.getLogger("yunbridge.watchdog")
+
+    @property
+    def interval(self) -> float:
+        return self._interval
+
+    def update_interval(self, interval: float) -> None:
+        self._interval = max(0.5, interval)
+
+    def kick(self) -> None:
+        """Send a single watchdog pulse immediately."""
+        try:
+            self._write(self._token)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            self._logger.warning("Failed to emit watchdog trigger: %s", exc)
+        else:
+            if self._state is not None:
+                self._state.record_watchdog_beat(time.monotonic())
+
+    async def run(self) -> None:
+        """Continuously emit watchdog pulses until cancelled."""
+        try:
+            while True:
+                self.kick()
+                await asyncio.sleep(self._interval)
+        except asyncio.CancelledError:
+            self._logger.debug("Watchdog keepalive cancelled")
+            raise
+
+
+__all__ = ["WatchdogKeepalive"]

@@ -9,22 +9,27 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ## Características Principales
 
 - **Límites configurables:** Los buffers interno de consola y mailbox se pueden ajustar vía UCI (`console_queue_limit_bytes`, `mailbox_queue_limit`, `mailbox_queue_bytes_limit`) para prevenir desbordes en escenarios con alto tráfico.
-- **Backpressure en MQTT:** El tamaño de la cola de publicación hacia el broker se controla con `mqtt_queue_limit`, evitando consumos de memoria descontrolados cuando el broker no está disponible.
+	- Todos los valores por defecto consumidos por el daemon viven ahora en `openwrt-yun-bridge/yunbridge/const.py` (`DEFAULT_MQTT_PORT`, `DEFAULT_SERIAL_RETRY_TIMEOUT`, etc.), lo que evita duplicar literales entre módulos y pruebas.
+- **Backpressure en MQTT con MQTT v5:** El tamaño de la cola de publicación hacia el broker se controla con `mqtt_queue_limit`, mientras que las conexiones salientes usan propiedades MQTT v5 (session expiry = 0, request/response info) para que los clientes sepan cuándo reiniciar suscripciones y puedan negociar flujos de respuesta.
 - **Handshake automático MCU ↔ Linux:** Tras cada reconexión, el daemon solicita `CMD_GET_VERSION` y publica la versión del firmware del sketch en `br/system/version/value`, de modo que los clientes pueden validar compatibilidad antes de ejecutar comandos.
 - **Procesos asíncronos robustos:** Los polls sucesivos ahora entregan todo el `stdout`/`stderr` generado, incluso cuando los procesos producen más datos que un frame. El daemon mantiene buffers circulares por PID y conserva el `exit_code` hasta que el MCU confirma la lectura completa, mientras que la librería Arduino reenvía automáticamente `CMD_PROCESS_POLL` cuando recibe fragmentos parciales.
 - **Estado inmediato de buzón:** Los sketches pueden invocar `Mailbox.requestAvailable()` y recibir el conteo pendiente en `Bridge.onMailboxAvailableResponse`, lo que evita lecturas vacías y mantiene sincronizado al MCU con la cola de Linux.
 
 ### Novedades (noviembre 2025)
 
-- Especificación única del protocolo en `tools/protocol/spec.toml` con generador (`tools/protocol/generate.py`) que emite `openwrt-yun-bridge/yunrpc/protocol.py` y `openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
+- Especificación única del protocolo en `tools/protocol/spec.toml` con generador (`tools/protocol/generate.py`) que emite `openwrt-yun-bridge/yunbridge/rpc/protocol.py` y `openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
+- Migración del stack MQTT a **aiomqtt 2.4** + `paho-mqtt` 2.1: el daemon y los ejemplos usan un shim asíncrono compatible con la API previa de `asyncio-mqtt`, con soporte completo de MQTT v5 (propiedades de respuesta, clean start first-only, códigos de motivo enriquecidos) y reconexiones más predecibles en brokers modernos.
 - Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `openwrt-yun-examples-python`, confirmando compatibilidad funcional.
 - Instrumentación de logging en `bridge_daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
 - El daemon ahora **falla en seguro** cuando `mqtt_tls=1`: si falta el CA o el certificado cliente, el arranque se aborta con error explícito.
 - La ejecución remota de comandos MQTT requiere una lista blanca explícita (`yunbridge.general.allowed_commands`). Un valor vacío significa *ningún comando permitido*; use `*` para habilitar todos de forma consciente.
+- **Keepalive de watchdog integrado:** cuando `procd` expone `PROCD_WATCHDOG` o exportas `YUNBRIDGE_WATCHDOG_INTERVAL`, el daemon lanza un `WatchdogKeepalive` asíncrono que pulsa `WATCHDOG=trigger` en `stdout` a intervalos seguros y reporta los latidos en `RuntimeState`. Ajusta `procd_set_param watchdog` en `yunbridge.init` si necesitas ventanas más estrictas.
+- **Watchdog de firmware opcional:** la librería Arduino habilita el WDT hardware (2 s por defecto) al inicializarse en AVR, con `wdt_reset()` aplicado en cada ciclo de `Bridge.process()`. Define `BRIDGE_ENABLE_WATCHDOG 0` o personaliza `BRIDGE_WATCHDOG_TIMEOUT` antes de incluir `Bridge.h` si necesitas desactivarlo o ajustar el intervalo.
 - **Guía rápida de UCI**:
 	```sh
 	export YUNBRIDGE_SERIAL_RETRY_TIMEOUT='0.75'
 	export YUNBRIDGE_SERIAL_RETRY_ATTEMPTS='3'
+	export YUNBRIDGE_SERIAL_RESPONSE_TIMEOUT='3.0'
 	uci set yunbridge.general.mqtt_tls='1'
 	uci set yunbridge.general.mqtt_cafile='/etc/ssl/certs/bridge-ca.pem'
 	uci set yunbridge.general.mqtt_certfile='/etc/ssl/certs/bridge.crt'
@@ -32,11 +37,12 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	uci set yunbridge.general.allowed_commands='ls cat uptime'
 	uci set yunbridge.general.serial_retry_timeout='0.75'
 	uci set yunbridge.general.serial_retry_attempts='3'
+	uci set yunbridge.general.serial_response_timeout='3.0'
 	uci commit yunbridge
 	```
 	- Usa `allowed_commands='*'` solo en entornos controlados; cualquier otro valor se normaliza a minúsculas y se interpreta como lista explícita.
 	- Las rutas de certificados deben existir; de lo contrario, el daemon abortará el arranque.
-- **Control explícito del flujo serie:** cada comando MCU se envía de uno en uno y se reintenta automáticamente si no llega `ACK` o la respuesta esperada. Ajusta `serial_retry_timeout` (segundos) y `serial_retry_attempts` para equilibrar latencia y resiliencia.
+- **Control explícito del flujo serie:** cada comando MCU se envía de uno en uno y se reintenta automáticamente si no llega `ACK` o la respuesta esperada. Ajusta `serial_retry_timeout` (segundos), `serial_response_timeout` y `serial_retry_attempts` para equilibrar latencia y resiliencia.
 	- El instalador (`3_install.sh`) inicializa estos valores si aún no existen; personalízalos antes de ejecutar el daemon exportando `YUNBRIDGE_SERIAL_RETRY_TIMEOUT` o `YUNBRIDGE_SERIAL_RETRY_ATTEMPTS`.
 - La librería Arduino (con `BRIDGE_DEBUG_FRAMES` activado) ahora mantiene estadísticas de transmisión (`Bridge.getTxDebugSnapshot()`, `Bridge.resetTxDebugStats()`), incluyendo tamaños raw/COBS, CRC y diferencias entre bytes esperados y escritos en serie, lo que ayuda a detectar truncamientos.
 - Se mantiene la alineación del protocolo binario con la librería Arduino (prefijos de longitud y códigos de estado consistentes en datastore, mailbox y filesystem).
@@ -53,7 +59,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 4.  **`openwrt-yun-examples-python`**: Paquete cliente con ejemplos de uso.
 5.  **`openwrt-yun-core`**: Ficheros de configuración base del sistema.
 
-> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`. `python3-asyncio-mqtt` (que arrastra `paho-mqtt`) y `python3-pyserial` provienen de los feeds oficiales de OpenWrt, mientras que `python3-pyserial-asyncio` y `python3-cobs` se empaquetan desde PyPI dentro de este repositorio y se distribuyen como `.ipk` junto al daemon.
+> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`. `python3-aiomqtt` y `python3-paho-mqtt` traen el stack MQTT v5 actualizado, mientras que `python3-pyserial` llega desde los feeds oficiales de OpenWrt. `python3-pyserial-asyncio` y `python3-cobs` se empaquetan desde PyPI dentro de este repositorio y se distribuyen como `.ipk` junto al daemon.
 
 ## Primeros Pasos
 

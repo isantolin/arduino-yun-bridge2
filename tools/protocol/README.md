@@ -10,7 +10,7 @@ python3 tools/protocol/generate.py
 
 The command refreshes:
 
-- `openwrt-yun-bridge/yunrpc/protocol.py`
+- `openwrt-yun-bridge/yunbridge/rpc/protocol.py`
 - `openwrt-library-arduino/src/protocol/rpc_protocol.h`
 
 The Python module is consumed by the Yun bridge daemon, while the Arduino

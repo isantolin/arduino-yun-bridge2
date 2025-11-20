@@ -7,6 +7,14 @@ from pathlib import Path
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.const import (
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_TOPIC,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_RECONNECT_DELAY,
+    DEFAULT_SERIAL_BAUD,
+    DEFAULT_STATUS_INTERVAL,
+)
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -18,22 +26,22 @@ if str(PACKAGE_ROOT) not in sys.path:
 def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
-        serial_baud=115200,
+        serial_baud=DEFAULT_SERIAL_BAUD,
         mqtt_host="localhost",
-        mqtt_port=1883,
+        mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,
         mqtt_pass=None,
         mqtt_tls=False,
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic="br",
-        allowed_commands=[],
+        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        allowed_commands=(),
         file_system_root="/tmp",
-        process_timeout=10,
+        process_timeout=DEFAULT_PROCESS_TIMEOUT,
         mqtt_queue_limit=8,
-        reconnect_delay=5,
-        status_interval=5,
+        reconnect_delay=DEFAULT_RECONNECT_DELAY,
+        status_interval=DEFAULT_STATUS_INTERVAL,
         debug_logging=False,
         console_queue_limit_bytes=64,
         mailbox_queue_limit=2,

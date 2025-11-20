@@ -4,13 +4,24 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+import time
 from dataclasses import dataclass, field
-from typing import Deque, Dict, List, Optional
+from typing import Deque, Dict, Optional
 
-from ..common import normalise_allowed_commands
+from ..const import (
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+    DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_TOPIC,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_WATCHDOG_INTERVAL,
+)
 from ..mqtt import PublishableMessage
 
 from ..config.settings import RuntimeConfig
+from ..policy import AllowedCommandPolicy
 
 
 def _mqtt_queue_factory() -> asyncio.Queue[PublishableMessage]:
@@ -33,8 +44,8 @@ def _str_dict_factory() -> Dict[str, str]:
     return {}
 
 
-def _command_list_factory() -> List[str]:
-    return []
+def _policy_factory() -> AllowedCommandPolicy:
+    return AllowedCommandPolicy.from_iterable(())
 
 
 def _str_int_dict_factory() -> Dict[str, int]:
@@ -61,7 +72,7 @@ class RuntimeState:
     mqtt_publish_queue: asyncio.Queue[PublishableMessage] = field(
         default_factory=_mqtt_queue_factory
     )
-    mqtt_queue_limit: int = 256
+    mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
     mqtt_drop_counts: Dict[str, int] = field(
         default_factory=_str_int_dict_factory
@@ -72,7 +83,7 @@ class RuntimeState:
     console_to_mcu_queue: Deque[bytes] = field(
         default_factory=_bytes_deque_factory
     )
-    console_queue_limit_bytes: int = 16384
+    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
     running_processes: Dict[int, asyncio.subprocess.Process] = field(
         default_factory=_process_dict_factory
@@ -88,10 +99,16 @@ class RuntimeState:
     )
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_pid: int = 1
-    allowed_commands: list[str] = field(default_factory=_command_list_factory)
-    process_timeout: int = 10
-    file_system_root: str = "/root/yun_files"
-    mqtt_topic_prefix: str = "br"
+    allowed_policy: AllowedCommandPolicy = field(
+        default_factory=_policy_factory
+    )
+    process_timeout: int = DEFAULT_PROCESS_TIMEOUT
+    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
+    mqtt_topic_prefix: str = DEFAULT_MQTT_TOPIC
+    watchdog_enabled: bool = False
+    watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
+    watchdog_beats: int = 0
+    last_watchdog_beat: float = 0.0
     pending_digital_reads: Deque[int] = field(
         default_factory=_int_deque_factory
     )
@@ -102,8 +119,8 @@ class RuntimeState:
         default_factory=_str_deque_factory
     )
     mailbox_incoming_topic: str = ""
-    mailbox_queue_limit: int = 64
-    mailbox_queue_bytes_limit: int = 65536
+    mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     mailbox_queue_bytes: int = 0
     mailbox_incoming_queue: Deque[bytes] = field(
         default_factory=_bytes_deque_factory
@@ -114,9 +131,7 @@ class RuntimeState:
     link_is_synchronized: bool = False
 
     def configure(self, config: RuntimeConfig) -> None:
-        self.allowed_commands = list(
-            normalise_allowed_commands(config.allowed_commands)
-        )
+        self.allowed_policy = config.allowed_policy
         self.process_timeout = config.process_timeout
         self.file_system_root = config.file_system_root
         self.mqtt_topic_prefix = config.mqtt_topic
@@ -124,6 +139,12 @@ class RuntimeState:
         self.mailbox_queue_limit = config.mailbox_queue_limit
         self.mailbox_queue_bytes_limit = config.mailbox_queue_bytes_limit
         self.mqtt_queue_limit = config.mqtt_queue_limit
+        self.watchdog_enabled = config.watchdog_enabled
+        self.watchdog_interval = config.watchdog_interval
+
+    @property
+    def allowed_commands(self) -> tuple[str, ...]:
+        return self.allowed_policy.as_tuple()
 
     def enqueue_console_chunk(
         self, chunk: bytes, logger: logging.Logger
@@ -313,6 +334,12 @@ class RuntimeState:
     def record_mqtt_drop(self, topic: str) -> None:
         self.mqtt_dropped_messages += 1
         self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
+
+    def record_watchdog_beat(self, timestamp: Optional[float] = None) -> None:
+        self.watchdog_beats += 1
+        self.last_watchdog_beat = (
+            timestamp if timestamp is not None else time.monotonic()
+        )
 
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:

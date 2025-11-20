@@ -190,7 +190,7 @@ class BridgeClass {
   void requestGetFreeMemory();
 
   // --- Métodos de Bajo Nivel ---
-  void sendFrame(uint16_t command_id, const uint8_t* payload,
+  bool sendFrame(uint16_t command_id, const uint8_t* payload,
                  uint16_t payload_len);
 
   struct FrameDebugSnapshot {
@@ -287,7 +287,7 @@ class BridgeClass {
   bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
                          uint16_t payload_len);
   bool _dequeuePendingTx(PendingTxFrame& frame);
-  void _sendFrameImmediate(uint16_t command_id, const uint8_t* payload,
+  bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload,
                            uint16_t payload_len);
 
   void _trackPendingDatastoreKey(const char* key);

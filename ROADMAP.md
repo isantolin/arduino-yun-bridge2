@@ -3,7 +3,7 @@
 ## Estado global
 
 - ✅ Protocolo RPC centralizado en `tools/protocol/spec.toml` con generador que sincroniza bindings C++/Python.
-- ✅ Regeneración de `rpc_protocol.h` y `yunrpc/protocol.py` + validación manual vía `console_test.py`, `led13_test.py` y `datastore_test.py`.
+- ✅ Regeneración de `rpc_protocol.h` y `yunbridge/rpc/protocol.py` + validación manual vía `console_test.py`, `led13_test.py` y `datastore_test.py`.
 - ✅ Logging del daemon enriquecido para distinguir fallos de COBS vs parsing de frame.
 - ✅ Instrumentación MCU (`BRIDGE_DEBUG_FRAMES`) para snapshots de longitudes/raw/CRC enviados.
 - ⏳ Automatizar pruebas end-to-end sobre hardware real.

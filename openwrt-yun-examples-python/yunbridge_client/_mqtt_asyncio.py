@@ -1,6 +1,6 @@
 # pyright: reportMissingImports=false, reportUnknownMemberType=false
 # pyright: reportUnknownVariableType=false, reportUnknownParameterType=false
-"""Asyncio-mqtt backed MQTT client for Yun Bridge examples."""
+"""Aiomqtt-backed MQTT client with MQTT v5 defaults for Yun Bridge examples."""
 from __future__ import annotations
 
 import asyncio
@@ -8,26 +8,29 @@ import logging
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import (
+    Any,
     AsyncContextManager,
     AsyncIterator,
+    Dict,
     Optional,
-    Protocol,
     Sequence,
     Tuple,
+    Union,
     cast,
 )
 
 try:
-    from asyncio_mqtt import (  # type: ignore[import]
-        Client as AsyncioMqttClient,
-    )
+    from aiomqtt import Client as BaseMQTTClient  # type: ignore[import]
+    from aiomqtt.client import ProtocolVersion  # type: ignore[import]
 except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
     raise ModuleNotFoundError(
-        "asyncio-mqtt is required to run the Yun Bridge client examples. "
-        "Install it with `pip install asyncio-mqtt`."
+        "aiomqtt is required to run the Yun Bridge client examples. "
+        "Install it with `pip install aiomqtt`."
     ) from exc
 
 import paho.mqtt.client as mqtt
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 logger = logging.getLogger("yunbridge_client.mqtt")
 
@@ -75,84 +78,104 @@ class ConnectResult:
     disconnect_reason: asyncio.Future[Optional[Exception]]
 
 
-class _MQTTAsyncClient(Protocol):
-    async def connect(self, timeout: Optional[float] = ...) -> None: ...
-
-    async def disconnect(self, timeout: Optional[float] = ...) -> None: ...
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        qos: int,
-        retain: bool,
-        timeout: Optional[float] = ...,
-    ) -> None: ...
-
-    async def subscribe(
-        self,
-        topics: Sequence[Tuple[str, int]],
-        timeout: Optional[float] = ...,
-    ) -> None: ...
-
-    async def unsubscribe(
-        self,
-        topics: Sequence[str],
-        timeout: Optional[float] = ...,
-    ) -> None: ...
-
-    def unfiltered_messages(
-        self,
-    ) -> AsyncContextManager[AsyncIterator[mqtt.MQTTMessage]]: ...
-
-
 class Client:
     _CONNECT_TIMEOUT = 15
     _SUBSCRIPTION_TIMEOUT = 10
     _UNSUBSCRIBE_TIMEOUT = 10
     _DISCONNECT_TIMEOUT = 5
 
-    def __init__(self, *, client_id: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        *,
+        client_id: Optional[str] = None,
+        hostname: str = "127.0.0.1",
+        port: int = 1883,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        tls_context: Optional[Any] = None,
+        keepalive: int = 60,
+        logger_obj: Optional[logging.Logger] = None,
+        **extra: Any,
+    ) -> None:
         self._client_id = client_id
-        self._client: Optional[_MQTTAsyncClient] = None
+        self._client: Optional[Any] = None
         self._message_cm: Optional[
-            AsyncContextManager[AsyncIterator[mqtt.MQTTMessage]]
+            AsyncContextManager[AsyncIterator[Any]]
         ] = None
-        self._message_gen: Optional[AsyncIterator[mqtt.MQTTMessage]] = None
+        self._message_gen: Optional[AsyncIterator[Any]] = None
         self._disconnect_future: Optional[
             asyncio.Future[Optional[Exception]]
         ] = None
         self._disconnect_task: Optional[asyncio.Task[None]] = None
+        base_kwargs: Dict[str, Any] = {
+            "hostname": hostname,
+            "port": port,
+            "username": username,
+            "password": password,
+            "tls_context": tls_context,
+            "keepalive": keepalive,
+            "logger": logger_obj,
+        }
+        base_kwargs.update(extra)
+        self._client_kwargs: Dict[str, Any] = {}
+        self._store_client_kwargs(**base_kwargs)
+
+    def _store_client_kwargs(self, **kwargs: Any) -> None:
+        merged = {k: v for k, v in kwargs.items() if v is not None}
+        if self._client_id is not None:
+            merged.setdefault("client_id", self._client_id)
+        merged.setdefault("protocol", ProtocolVersion.V5)
+        merged.setdefault(
+            "clean_start", mqtt.MQTT_CLEAN_START_FIRST_ONLY
+        )
+        if merged.get("logger") is None:
+            merged["logger"] = logger
+        self._client_kwargs = merged
 
     async def connect(
         self,
         *,
-        host: str,
-        port: int,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
         ssl: Optional[object] = None,
-        keepalive: int = 60,
+        keepalive: Optional[int] = None,
+        timeout: Optional[float] = None,
+        **overrides: Any,
     ) -> ConnectResult:
         if self._client is not None:
             raise MQTTError("Client already connected")
 
-        self._client = cast(
-            _MQTTAsyncClient,
-            AsyncioMqttClient(
-                hostname=host,
-                port=port,
-                username=username,
-                password=password,
-                tls_context=ssl,  # type: ignore[arg-type]
-                client_id=self._client_id,
-                keepalive=keepalive,
-                logger=logger,
-            ),
-        )
+        kwargs = dict(self._client_kwargs)
+        if host is not None:
+            kwargs["hostname"] = host
+        if port is not None:
+            kwargs["port"] = port
+        if username is not None:
+            kwargs["username"] = username
+        if password is not None:
+            kwargs["password"] = password
+        if ssl is not None:
+            kwargs["tls_context"] = ssl
+        if keepalive is not None:
+            kwargs["keepalive"] = keepalive
+        kwargs.update(overrides)
+
+        properties = kwargs.pop("properties", None)
+        if properties is None:
+            properties = _build_mqtt_connect_properties()
+
+        client_kwargs: Dict[str, Any] = dict(kwargs)
+        client_kwargs["properties"] = properties
+        self._client = BaseMQTTClient(**client_kwargs)
+        self._store_client_kwargs(**kwargs)
 
         try:
-            await self._client.connect(timeout=self._CONNECT_TIMEOUT)
+            connect_timeout = (
+                timeout if timeout is not None else self._CONNECT_TIMEOUT
+            )
+            await self._client.connect(timeout=connect_timeout)
         except Exception as exc:
             if hasattr(exc, "rc"):
                 raise self._map_connect_error(exc) from exc
@@ -162,19 +185,32 @@ class Client:
         self._disconnect_future = loop.create_future()
         self._disconnect_task = loop.create_task(self._watch_disconnect())
 
-        self._message_cm = self._client.unfiltered_messages()
+        messages_factory = getattr(self._client, "messages", None)
+        if messages_factory is not None:
+            self._message_cm = cast(
+                AsyncContextManager[AsyncIterator[Any]],
+                messages_factory(),
+            )
+        else:
+            self._message_cm = cast(
+                AsyncContextManager[AsyncIterator[Any]],
+                self._client.unfiltered_messages(),
+            )
         self._message_gen = await self._message_cm.__aenter__()
 
         return ConnectResult(disconnect_reason=self._disconnect_future)
 
-    async def disconnect(self) -> None:
+    async def disconnect(self, *, timeout: Optional[float] = None) -> None:
         disconnect_future = self._disconnect_future
         client = self._client
         if client is None:
             return
 
         try:
-            await client.disconnect(timeout=self._DISCONNECT_TIMEOUT)
+            disconnect_timeout = (
+                timeout if timeout is not None else self._DISCONNECT_TIMEOUT
+            )
+            await client.disconnect(timeout=disconnect_timeout)
         except Exception as exc:
             logger.debug("Ignoring MQTT disconnect error: %s", exc)
         finally:
@@ -190,29 +226,68 @@ class Client:
             self._client = None
             self._disconnect_future = None
 
-    async def publish(self, message: PublishableMessage) -> None:
+    async def publish(
+        self,
+        topic: Union[str, PublishableMessage],
+        payload: Union[bytes, bytearray, memoryview, str, None] = None,
+        qos: int = 0,
+        retain: bool = False,
+        *,
+        timeout: Optional[float] = None,
+        properties: Optional[Properties] = None,
+        **kwargs: Any,
+    ) -> None:
         client = self._ensure_client()
         try:
-            await client.publish(
-                message.topic_name,
-                payload=message.payload or b"",
-                qos=int(message.qos),
-                retain=message.retain,
-                timeout=self._CONNECT_TIMEOUT,
+            publish_timeout = (
+                timeout if timeout is not None else self._CONNECT_TIMEOUT
             )
+            if isinstance(topic, PublishableMessage):
+                message = topic
+                await client.publish(
+                    message.topic_name,
+                    payload=message.payload,
+                    qos=int(message.qos),
+                    retain=message.retain,
+                    properties=properties,
+                    timeout=publish_timeout,
+                    **kwargs,
+                )
+            else:
+                await client.publish(
+                    topic,
+                    payload=_coerce_payload_bytes(payload),
+                    qos=qos,
+                    retain=retain,
+                    properties=properties,
+                    timeout=publish_timeout,
+                    **kwargs,
+                )
         except Exception as exc:
             raise ConnectionLostError(str(exc)) from exc
 
     async def subscribe(
-        self, *subscriptions: Tuple[str, QOSLevel | int]
+        self,
+        topic: Union[str, Sequence[Tuple[str, int]]],
+        qos: int = 0,
+        *,
+        timeout: Optional[float] = None,
+        options: Any = None,
+        properties: Optional[Properties] = None,
+        **kwargs: Any,
     ) -> None:
-        if not subscriptions:
-            return
         client = self._ensure_client()
-        topics = [(topic, int(qos)) for topic, qos in subscriptions]
         try:
+            subscribe_timeout = (
+                timeout if timeout is not None else self._SUBSCRIPTION_TIMEOUT
+            )
             await client.subscribe(
-                topics, timeout=self._SUBSCRIPTION_TIMEOUT
+                topic,
+                qos=qos,
+                options=options,
+                properties=properties,
+                timeout=subscribe_timeout,
+                **kwargs,
             )
         except Exception as exc:
             raise ConnectionLostError(str(exc)) from exc
@@ -233,20 +308,33 @@ class Client:
             raise MQTTError("Client not connected")
         try:
             async for message in self._message_gen:
+                topic_obj = getattr(message, "topic", None)
+                topic = str(topic_obj) if topic_obj is not None else ""
+                payload_bytes = _coerce_payload_bytes(
+                    getattr(message, "payload", None)
+                )
+                qos_value = getattr(message, "qos", 0)
                 try:
-                    qos = QOSLevel(message.qos)
-                except ValueError:
+                    qos = QOSLevel(int(qos_value))
+                except (ValueError, TypeError):
                     qos = QOSLevel.QOS_0
                 yield DeliveredMessage(
-                    topic_name=message.topic or "",
-                    payload=message.payload or b"",
+                    topic_name=topic,
+                    payload=payload_bytes,
                     qos=qos,
-                    retain=bool(message.retain),
+                    retain=bool(getattr(message, "retain", False)),
                 )
         except Exception as exc:
             raise ConnectionLostError(str(exc)) from exc
 
-    def _ensure_client(self) -> _MQTTAsyncClient:
+    def unfiltered_messages(self) -> AsyncContextManager[AsyncIterator[Any]]:
+        client = self._ensure_client()
+        return cast(
+            AsyncContextManager[AsyncIterator[Any]],
+            client.unfiltered_messages(),
+        )
+
+    def _ensure_client(self) -> Any:
         if self._client is None:
             raise MQTTError("MQTT client not connected")
         return self._client
@@ -266,9 +354,7 @@ class Client:
         client = self._ensure_client()
         disconnect_future = self._disconnect_future
         try:
-            raw_future = getattr(
-                cast(object, client), "_disconnected", None
-            )
+            raw_future = getattr(cast(object, client), "_disconnected", None)
             if raw_future is None:
                 await asyncio.Future()
                 return
@@ -285,6 +371,9 @@ class Client:
     @staticmethod
     def _map_connect_error(exc: object) -> MQTTError:
         rc = getattr(exc, "rc", None)
+        reason = getattr(exc, "reason_code", None)
+        if reason is not None and hasattr(reason, "value"):
+            rc = getattr(reason, "value", rc)
         if rc in (
             mqtt.CONNACK_REFUSED_BAD_USERNAME_PASSWORD,
             mqtt.CONNACK_REFUSED_NOT_AUTHORIZED,
@@ -293,6 +382,31 @@ class Client:
         if rc == mqtt.CONNACK_REFUSED_SERVER_UNAVAILABLE:
             return ConnectionCloseForcedError("MQTT server unavailable")
         return ConnectionLostError(f"MQTT connection failed (rc={rc})")
+
+
+def _build_mqtt_connect_properties() -> Properties:
+    props = Properties(PacketTypes.CONNECT)
+    props.session_expiry_interval = 0
+    props.request_response_information = 1
+    props.request_problem_information = 1
+    return props
+
+
+def _coerce_payload_bytes(value: Any) -> bytes:
+    if value is None:
+        return b""
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    try:
+        return bytes(value)
+    except Exception:  # pragma: no cover - defensive fallback
+        return str(value).encode("utf-8", errors="ignore")
 
 
 __all__ = [

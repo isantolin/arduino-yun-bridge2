@@ -6,12 +6,32 @@ RuntimeConfig instance.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Optional, Tuple
 
-from yunrpc.utils import get_default_config, get_uci_config
+from yunbridge.rpc.utils import get_default_config, get_uci_config
 from ..common import normalise_allowed_commands
+from ..const import (
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+    DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_TOPIC,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_RECONNECT_DELAY,
+    DEFAULT_SERIAL_BAUD,
+    DEFAULT_SERIAL_PORT,
+    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+    DEFAULT_SERIAL_RETRY_ATTEMPTS,
+    DEFAULT_SERIAL_RETRY_TIMEOUT,
+    DEFAULT_STATUS_INTERVAL,
+    DEFAULT_WATCHDOG_INTERVAL,
+)
+from ..policy import AllowedCommandPolicy
 
 
 @dataclass(slots=True)
@@ -29,22 +49,38 @@ class RuntimeConfig:
     mqtt_certfile: Optional[str]
     mqtt_keyfile: Optional[str]
     mqtt_topic: str
-    allowed_commands: List[str]
+    allowed_commands: Tuple[str, ...]
     file_system_root: str
     process_timeout: int
-    mqtt_queue_limit: int = 256
-    reconnect_delay: int = 5
-    status_interval: int = 5
+    mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
+    reconnect_delay: int = DEFAULT_RECONNECT_DELAY
+    status_interval: int = DEFAULT_STATUS_INTERVAL
     debug_logging: bool = False
-    console_queue_limit_bytes: int = 16384
-    mailbox_queue_limit: int = 64
-    mailbox_queue_bytes_limit: int = 65536
-    serial_retry_timeout: float = 0.75
-    serial_retry_attempts: int = 3
+    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    serial_retry_attempts: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
+    watchdog_enabled: bool = False
+    watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
+    allowed_policy: AllowedCommandPolicy = field(init=False)
 
     @property
     def tls_enabled(self) -> bool:
         return self.mqtt_tls and bool(self.mqtt_cafile)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "allowed_policy",
+            AllowedCommandPolicy.from_iterable(self.allowed_commands),
+        )
+        object.__setattr__(
+            self,
+            "serial_response_timeout",
+            max(self.serial_response_timeout, self.serial_retry_timeout * 2),
+        )
 
 
 def _load_raw_config() -> Dict[str, str]:
@@ -89,6 +125,28 @@ def _coerce_float(value: Optional[str], default: float) -> float:
         return default
 
 
+def _resolve_watchdog_settings() -> Tuple[bool, float]:
+    env_interval = os.environ.get("YUNBRIDGE_WATCHDOG_INTERVAL")
+    if env_interval:
+        try:
+            interval = max(0.5, float(env_interval))
+        except ValueError:
+            interval = DEFAULT_WATCHDOG_INTERVAL
+        return True, interval
+
+    procd_raw = os.environ.get("PROCD_WATCHDOG")
+    if procd_raw:
+        try:
+            procd_ms = max(0, int(procd_raw))
+        except ValueError:
+            procd_ms = 0
+        if procd_ms > 0:
+            heartbeat = max(1.0, procd_ms / 2000.0)
+            return True, heartbeat
+
+    return False, DEFAULT_WATCHDOG_INTERVAL
+
+
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults and environment variables."""
 
@@ -102,40 +160,51 @@ def load_runtime_config() -> RuntimeConfig:
         debug_logging = True
 
     allowed_commands_raw = raw.get("allowed_commands", "")
-    allowed_commands = list(
-        normalise_allowed_commands(allowed_commands_raw.split())
+    allowed_commands = normalise_allowed_commands(
+        allowed_commands_raw.split()
     )
 
+    watchdog_enabled, watchdog_interval = _resolve_watchdog_settings()
+
     return RuntimeConfig(
-        serial_port=raw.get("serial_port", "/dev/ttyATH0"),
-        serial_baud=_get_int("serial_baud", 115200),
-        mqtt_host=raw.get("mqtt_host", "127.0.0.1"),
-        mqtt_port=_get_int("mqtt_port", 1883),
+        serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
+        serial_baud=_get_int("serial_baud", DEFAULT_SERIAL_BAUD),
+        mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
+        mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
         mqtt_user=_optional_path(raw.get("mqtt_user")),
         mqtt_pass=_optional_path(raw.get("mqtt_pass")),
         mqtt_tls=_to_bool(raw.get("mqtt_tls")),
         mqtt_cafile=_optional_path(raw.get("mqtt_cafile")),
         mqtt_certfile=_optional_path(raw.get("mqtt_certfile")),
         mqtt_keyfile=_optional_path(raw.get("mqtt_keyfile")),
-        mqtt_topic=raw.get("mqtt_topic", "br"),
+        mqtt_topic=raw.get("mqtt_topic", DEFAULT_MQTT_TOPIC),
         allowed_commands=allowed_commands,
-        file_system_root=raw.get("file_system_root", "/root/yun_files"),
-        process_timeout=_get_int("process_timeout", 10),
-        mqtt_queue_limit=max(1, _get_int("mqtt_queue_limit", 256)),
-        reconnect_delay=_get_int("reconnect_delay", 5),
-        status_interval=_get_int("status_interval", 5),
+        file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
+        process_timeout=_get_int("process_timeout", DEFAULT_PROCESS_TIMEOUT),
+        mqtt_queue_limit=max(
+            1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
+        ),
+        reconnect_delay=_get_int("reconnect_delay", DEFAULT_RECONNECT_DELAY),
+        status_interval=_get_int("status_interval", DEFAULT_STATUS_INTERVAL),
         debug_logging=debug_logging,
         console_queue_limit_bytes=_get_int(
-            "console_queue_limit_bytes", 16384
+            "console_queue_limit_bytes", DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
         ),
-        mailbox_queue_limit=_get_int("mailbox_queue_limit", 64),
+        mailbox_queue_limit=_get_int(
+            "mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT
+        ),
         mailbox_queue_bytes_limit=_get_int(
-            "mailbox_queue_bytes_limit", 65536
+            "mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
         ),
         serial_retry_timeout=_coerce_float(
-            raw.get("serial_retry_timeout"), 0.75
+            raw.get("serial_retry_timeout"), DEFAULT_SERIAL_RETRY_TIMEOUT
+        ),
+        serial_response_timeout=_coerce_float(
+            raw.get("serial_response_timeout"), DEFAULT_SERIAL_RESPONSE_TIMEOUT
         ),
         serial_retry_attempts=max(
-            1, _get_int("serial_retry_attempts", 3)
+            1, _get_int("serial_retry_attempts", DEFAULT_SERIAL_RETRY_ATTEMPTS)
         ),
+        watchdog_enabled=watchdog_enabled,
+        watchdog_interval=watchdog_interval,
     )

@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Dict, Optional, Set
 
-from yunrpc.protocol import Command, Status
+from yunbridge.rpc.protocol import Command, Status
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
@@ -14,7 +14,9 @@ REQUEST_RESPONSE_MAP: Dict[int, Set[int]] = {
     Command.CMD_LINK_RESET.value: {Command.CMD_LINK_RESET_RESP.value},
     Command.CMD_LINK_SYNC.value: {Command.CMD_LINK_SYNC_RESP.value},
     Command.CMD_GET_VERSION.value: {Command.CMD_GET_VERSION_RESP.value},
-    Command.CMD_GET_FREE_MEMORY.value: {Command.CMD_GET_FREE_MEMORY_RESP.value},
+    Command.CMD_GET_FREE_MEMORY.value: {
+        Command.CMD_GET_FREE_MEMORY_RESP.value
+    },
     Command.CMD_DIGITAL_READ.value: {Command.CMD_DIGITAL_READ_RESP.value},
     Command.CMD_ANALOG_READ.value: {Command.CMD_ANALOG_READ_RESP.value},
     Command.CMD_DATASTORE_GET.value: {Command.CMD_DATASTORE_GET_RESP.value},
@@ -48,9 +50,15 @@ SUCCESS_STATUS_CODES: Set[int] = {Status.OK.value}
 MIN_ACK_TIMEOUT = 0.05
 
 
+def _empty_int_set() -> Set[int]:
+    return set()
+
+
 def _expected_responses_for(command_id: int) -> Set[int]:
     responses = REQUEST_RESPONSE_MAP.get(command_id)
-    return set(responses) if responses else set()
+    if responses is None:
+        return _empty_int_set()
+    return set(responses)
 
 
 def _status_name(code: Optional[int]) -> str:
@@ -67,7 +75,7 @@ class PendingCommand:
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_responses: Set[int] = field(default_factory=set)
+    expected_responses: Set[int] = field(default_factory=_empty_int_set)
     completion: asyncio.Event = field(default_factory=asyncio.Event)
     attempts: int = 0
     success: Optional[bool] = None
@@ -93,10 +101,12 @@ class SerialFlowController:
         self,
         *,
         ack_timeout: float,
+        response_timeout: float,
         max_attempts: int,
         logger: logging.Logger,
     ) -> None:
         self._ack_timeout = max(ack_timeout, MIN_ACK_TIMEOUT)
+        self._response_timeout = max(response_timeout, self._ack_timeout)
         self._max_attempts = max(1, max_attempts)
         self._logger = logger
         self._sender: Optional[SendFrameCallable] = None
@@ -202,31 +212,50 @@ class SerialFlowController:
                 pending.mark_failure(None)
                 break
 
-            try:
-                await asyncio.wait_for(
-                    pending.completion.wait(),
-                    timeout=self._ack_timeout,
+            timeout_requires_retry = False
+            ack_phase = True
+            while True:
+                timeout = (
+                    self._ack_timeout
+                    if ack_phase
+                    else self._response_timeout
                 )
-            except asyncio.TimeoutError:
-                if pending.completion.is_set():
-                    break
-                if pending.attempts >= self._max_attempts:
-                    self._logger.error(
-                        "Timeout waiting for MCU response to 0x%02X",
-                        pending.command_id,
+                try:
+                    await asyncio.wait_for(
+                        pending.completion.wait(),
+                        timeout=timeout,
                     )
-                    pending.mark_failure(Status.TIMEOUT.value)
                     break
-                self._logger.warning(
-                    "Timeout waiting for MCU response to 0x%02X (attempt %d/%d)",
-                    pending.command_id,
-                    pending.attempts,
-                    self._max_attempts,
-                )
-                continue
+                except asyncio.TimeoutError:
+                    if pending.completion.is_set():
+                        break
+                    if ack_phase and pending.ack_received:
+                        ack_phase = False
+                        continue
+                    if pending.attempts >= self._max_attempts:
+                        self._logger.error(
+                            "Timeout waiting for MCU response to 0x%02X",
+                            pending.command_id,
+                        )
+                        pending.mark_failure(Status.TIMEOUT.value)
+                        break
+                    self._logger.warning(
+                        "Timeout waiting for MCU response to 0x%02X "
+                        "(attempt %d/%d)",
+                        pending.command_id,
+                        pending.attempts,
+                        self._max_attempts,
+                    )
+                    timeout_requires_retry = True
+                    break
 
             if pending.success:
                 return True
+
+            if timeout_requires_retry:
+                pending.ack_received = False
+                pending.completion.clear()
+                continue
 
             status_name = _status_name(pending.failure_status)
             self._logger.warning(

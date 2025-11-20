@@ -222,7 +222,7 @@ fi
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
 
-for pkg in python3-cobs python3-pyserial-asyncio python3-asyncio-mqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     if [ -d "$pkg" ]; then
         echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
@@ -281,7 +281,7 @@ if [ -f "$USB_MODULES_MK" ]; then
 fi
 
 # Enable required Yun packages and dependencies automatically
-REQUIRED_PKGS="python3-cobs python3-pyserial-asyncio python3-asyncio-mqtt python3-tenacity openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
+REQUIRED_PKGS="python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
 REQUIRED_DEPS="python3 python3-asyncio python3-pyserial python3-pyserial-asyncio python3-cobs python3-tenacity mosquitto-client luaposix"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
@@ -313,7 +313,7 @@ echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
 find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
 
 pushd "$SDK_DIR"
-for pkg in python3-cobs python3-pyserial-asyncio python3-asyncio-mqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     echo "[BUILD] Building $pkg (.ipk) in SDK..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s

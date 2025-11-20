@@ -9,7 +9,7 @@ import re
 import sys
 import time
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict
 
 try:  # pragma: no cover - replaced with test doubles when needed
     from paho.mqtt import client as mqtt  # type: ignore[import]
@@ -26,7 +26,19 @@ except (ImportError, Exception) as exc:  # pragma: no cover
 
     mqtt = SimpleNamespace(Client=_MissingClient)  # type: ignore[assignment]
 
-from yunrpc.utils import get_uci_config
+from yunbridge.rpc.utils import get_uci_config
+from yunbridge.const import (
+    DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_TOPIC,
+)
+from tenacity import (
+    Retrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger("yunbridge.pin_rest")
 if not logger.hasHandlers():
@@ -38,11 +50,11 @@ if not logger.hasHandlers():
 logger.setLevel(logging.INFO)
 
 CFG = get_uci_config()
-MQTT_HOST = CFG.get("mqtt_host", "127.0.0.1")
-MQTT_PORT = int(CFG.get("mqtt_port", 1883))
+MQTT_HOST = CFG.get("mqtt_host", DEFAULT_MQTT_HOST)
+MQTT_PORT = int(CFG.get("mqtt_port", DEFAULT_MQTT_PORT))
 MQTT_USER = CFG.get("mqtt_user")
 MQTT_PASS = CFG.get("mqtt_pass")
-TOPIC_PREFIX = CFG.get("mqtt_topic", "br")
+TOPIC_PREFIX = CFG.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -81,9 +93,15 @@ def publish_with_retries(
     if poll_interval <= 0:
         poll_interval = DEFAULT_POLL_INTERVAL
 
-    last_error: Optional[Exception] = None
+    def _log_retry(state: RetryCallState) -> None:
+        exc = state.outcome.exception() if state.outcome else None
+        logger.warning(
+            "MQTT publish attempt %d failed: %s",
+            state.attempt_number,
+            exc,
+        )
 
-    for attempt in range(1, retries + 1):
+    def _attempt() -> None:
         client = mqtt.Client()
         if MQTT_USER:
             client.username_pw_set(MQTT_USER, MQTT_PASS)
@@ -111,10 +129,6 @@ def publish_with_retries(
                 sleep_fn(poll_interval)
 
             logger.info("Published to %s with payload %s", topic, payload)
-            return
-        except Exception as exc:  # pragma: no cover - exercised via tests
-            last_error = exc
-            logger.warning("MQTT publish attempt %d failed: %s", attempt, exc)
         finally:
             for cleanup in ("loop_stop", "disconnect"):
                 method = getattr(client, cleanup, None)
@@ -126,12 +140,26 @@ def publish_with_retries(
                             "Cleanup %s failed", cleanup, exc_info=True
                         )
 
-        if attempt < retries:
-            sleep_fn(base_delay * attempt)
+    adjusted_base = max(base_delay, 0.0)
+    wait_kwargs: Dict[str, float] = {
+        "multiplier": adjusted_base or 0.0,
+        "min": adjusted_base or 0.0,
+    }
+    if adjusted_base > 0:
+        wait_kwargs["max"] = adjusted_base * 8
 
-    if last_error:
-        raise last_error
-    raise TimeoutError("MQTT publish failed without explicit error detail")
+    wait = wait_exponential(**wait_kwargs)
+
+    retryer = Retrying(
+        reraise=True,
+        stop=stop_after_attempt(retries),
+        wait=wait,
+        retry=retry_if_exception_type(Exception),
+        before_sleep=_log_retry,
+        sleep=sleep_fn,
+    )
+
+    retryer(_attempt)
 
 
 def get_pin_from_path() -> str | None:

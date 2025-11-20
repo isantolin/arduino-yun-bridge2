@@ -3,27 +3,41 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Future
-from typing import Any, Callable, Optional, Type, cast
+from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
-try:  # pragma: no cover - exercised in integration/packaging tests
-    from asyncio_mqtt import Client as BaseClient  # type: ignore[import]
-    from asyncio_mqtt.error import MqttError  # type: ignore[import]
-except Exception as exc:  # pragma: no cover - allows unit tests without deps
-    _missing_reason = repr(exc)
+if TYPE_CHECKING:  # pragma: no cover - import only for type checking
+    from aiomqtt import Client as _AiomqttClient  # type: ignore[import]
+    from aiomqtt import MqttError as _AiomqttError  # type: ignore[import]
+else:  # pragma: no cover - exercised in integration/packaging tests
+    try:
+        import aiomqtt  # type: ignore[import]
+    except Exception as exc:  # pragma: no cover
+        # Allow unit tests to run without aiomqtt installed.
+        _missing_reason = repr(exc)
 
-    class _MissingMQTTClient:  # pylint: disable=too-few-public-methods
-        def __init__(self, *_: Any, **__: Any) -> None:
-            raise RuntimeError(
-                "asyncio-mqtt is required to use YunBridge MQTT features "
-                f"({_missing_reason})."
-            )
+        class _AiomqttClient:  # pylint: disable=too-few-public-methods
+            def __init__(self, *_: Any, **__: Any) -> None:
+                raise RuntimeError(
+                    "aiomqtt is required to use YunBridge MQTT "
+                    f"features ({_missing_reason})."
+                )
 
-    BaseClient = cast(Type[Any], _MissingMQTTClient)
+        class _AiomqttError(RuntimeError):
+            """Fallback error when aiomqtt is unavailable."""
 
-    class MqttError(RuntimeError):
-        """Fallback error when asyncio-mqtt is unavailable."""
+            pass
+    else:
+        _AiomqttClient = aiomqtt.Client
+        _AiomqttError = getattr(aiomqtt, "MqttError", None)
+        if _AiomqttError is None:  # pragma: no cover
+            # aiomqtt layout may expose MqttError in a submodule.
+            from aiomqtt import error as _aiomqtt_error  # type: ignore[import]
 
-        pass
+            _AiomqttError = _aiomqtt_error.MqttError
+
+
+BaseClient = _AiomqttClient
+MqttError = _AiomqttError
 
 
 class Client(BaseClient):
@@ -33,8 +47,8 @@ class Client(BaseClient):
         self,
         client: Any,
         userdata: Any,
-        rc: int,
-        properties: Optional[Any] = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         connected_future = cast(
             Optional[Future[Any]], getattr(self, "_connected", None)
@@ -46,15 +60,16 @@ class Client(BaseClient):
             if disconnected_future and not disconnected_future.done():
                 disconnected_future.cancel()
             return
+        base_proxy: Any = super()
         base_disconnect = cast(
-            Optional[Callable[[Any, Any, int, Optional[Any]], None]],
-            getattr(super(), "_on_disconnect", None),
+            Optional[Callable[..., None]],
+            getattr(base_proxy, "_on_disconnect", None),
         )
         if base_disconnect is None:
             return
 
         try:
-            base_disconnect(client, userdata, rc, properties)
+            base_disconnect(client, userdata, *args, **kwargs)
         except asyncio.CancelledError:
             disconnected_future = cast(
                 Optional[Future[Any]], getattr(self, "_disconnected", None)

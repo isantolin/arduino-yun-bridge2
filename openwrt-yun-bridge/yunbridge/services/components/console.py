@@ -1,0 +1,112 @@
+"""Console component handling console bridging logic."""
+from __future__ import annotations
+
+import logging
+
+from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
+
+from ...const import TOPIC_CONSOLE
+from ...mqtt import PublishableMessage
+from ...config.settings import RuntimeConfig
+from ...state.context import RuntimeState
+from .base import BridgeContext
+
+logger = logging.getLogger("yunbridge.console")
+
+
+class ConsoleComponent:
+    """Encapsulate console handling for BridgeService."""
+
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        ctx: BridgeContext,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.ctx = ctx
+
+    async def handle_write(self, payload: bytes) -> None:
+        topic = f"{self.state.mqtt_topic_prefix}/{TOPIC_CONSOLE}/out"
+        message = PublishableMessage(
+            topic_name=topic,
+            payload=payload,
+        )
+        await self.ctx.enqueue_mqtt(message)
+
+    async def handle_xoff(self, _: bytes) -> None:
+        logger.warning("MCU > XOFF received, pausing console output.")
+        self.state.mcu_is_paused = True
+
+    async def handle_xon(self, _: bytes) -> None:
+        logger.info("MCU > XON received, resuming console output.")
+        self.state.mcu_is_paused = False
+        await self.flush_queue()
+
+    async def handle_mqtt_input(self, payload: bytes) -> None:
+        chunks = self._iter_console_chunks(payload)
+        if self.state.mcu_is_paused:
+            logger.warning(
+                "MCU paused, queueing %d console chunk(s) (%d bytes)",
+                len(chunks),
+                len(payload),
+            )
+            for chunk in chunks:
+                if chunk:
+                    self.state.enqueue_console_chunk(chunk, logger)
+            return
+
+        for index, chunk in enumerate(chunks):
+            if not chunk:
+                continue
+            send_ok = await self.ctx.send_frame(
+                Command.CMD_CONSOLE_WRITE.value,
+                chunk,
+            )
+            if not send_ok:
+                remaining = b"".join(chunks[index:])
+                if remaining:
+                    self.state.enqueue_console_chunk(remaining, logger)
+                logger.warning(
+                    "Serial send failed for console input; payload queued for "
+                    "retry",
+                )
+                break
+
+    async def flush_queue(self) -> None:
+        while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
+            buffered = self.state.pop_console_chunk()
+            chunks = self._iter_console_chunks(buffered)
+            for index, chunk in enumerate(chunks):
+                if not chunk:
+                    continue
+                send_ok = await self.ctx.send_frame(
+                    Command.CMD_CONSOLE_WRITE.value,
+                    chunk,
+                )
+                if send_ok:
+                    continue
+                unsent = b"".join(chunks[index:])
+                if unsent:
+                    self.state.requeue_console_chunk_front(unsent)
+                logger.warning(
+                    "Serial send failed while flushing console; chunk "
+                    "requeued",
+                )
+                return
+
+    def on_serial_disconnected(self) -> None:
+        self.state.mcu_is_paused = False
+
+    def _iter_console_chunks(self, payload: bytes) -> list[bytes]:
+        if not payload:
+            return []
+        chunk_size = MAX_PAYLOAD_SIZE
+        return [
+            payload[index:index + chunk_size]
+            for index in range(0, len(payload), chunk_size)
+        ]
+
+
+__all__ = ["ConsoleComponent"]

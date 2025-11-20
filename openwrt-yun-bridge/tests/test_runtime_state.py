@@ -129,3 +129,10 @@ def test_mqtt_queue_respects_config(
         == runtime_config.mqtt_queue_limit
     )
     assert runtime_state.mqtt_queue_limit == runtime_config.mqtt_queue_limit
+
+
+def test_watchdog_tracking(runtime_state: RuntimeState) -> None:
+    assert runtime_state.watchdog_beats == 0
+    runtime_state.record_watchdog_beat(123.0)
+    assert runtime_state.watchdog_beats == 1
+    assert runtime_state.last_watchdog_beat == 123.0

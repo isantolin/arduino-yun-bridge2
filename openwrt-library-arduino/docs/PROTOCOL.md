@@ -4,6 +4,8 @@
 
 Este documento describe el protocolo binario utilizado entre el microcontrolador (MCU) y el procesador Linux (MPU) en el ecosistema Arduino Yun Bridge v2. El protocolo expuesto aquí refleja el comportamiento real del firmware y del demonio publicados en este repositorio.
 
+La **fuente de verdad** del protocolo reside en `tools/protocol/spec.toml`. Al ejecutar `python3 tools/protocol/generate.py` se regeneran tanto el módulo Python (`openwrt-yun-bridge/yunbridge/rpc/protocol.py`) como el encabezado de Arduino (`openwrt-library-arduino/src/protocol/rpc_protocol.h`). Este documento se mantiene sincronizado con esa especificación y debe revisarse si se añade o modifica un comando en el archivo TOML.
+
 La comunicación sigue un modelo de RPC: normalmente el MPU inicia las peticiones y el MCU responde, aunque existen comandos simétricos (por ejemplo, para consola y mailbox).
 
 ## 2. Transporte

@@ -18,6 +18,9 @@ start_service() {
     procd_set_param command /usr/bin/python3 /usr/libexec/yunbridge/bridge_daemon.py
 
     procd_set_param respawn 5 30 5
+    # procd will export PROCD_WATCHDOG (ms) for the daemon. The Python
+    # keepalive loop consumes this value to emit WATCHDOG=trigger pulses on
+    # stdout at half the negotiated window.
     procd_set_param watchdog 1000
     procd_set_param stdout 1
     procd_set_param stderr 1

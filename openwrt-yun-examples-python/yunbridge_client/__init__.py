@@ -6,7 +6,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import (
-    TYPE_CHECKING,
     Any,
     AsyncContextManager,
     AsyncGenerator,
@@ -23,26 +22,16 @@ from typing import (
 
 # Importing paho_compat ensures the Paho compatibility shim runs first.
 from . import paho_compat
-from asyncio_mqtt import Client, MqttError
+from ._mqtt import Client, MQTTError, QOSLevel
 from .env import dump_client_env
+from yunbridge.const import (
+    DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_TOPIC,
+)
 
 # Touch the module so static analyzers acknowledge its side effects.
 paho_compat.ensure_compat()
-
-if TYPE_CHECKING:
-    from yunbridge.mqtt import QOSLevel
-else:  # pragma: no cover - runtime fallback when package unavailable
-    try:
-        from yunbridge.mqtt import QOSLevel
-    except ModuleNotFoundError:  # pragma: no cover - tooling fallback
-        from enum import IntEnum
-
-        class QOSLevel(IntEnum):  # type: ignore[redeclaration]
-            """Minimal QoS enum used when yunbridge.mqtt is unavailable."""
-
-            QOS_0 = 0
-            QOS_1 = 1
-            QOS_2 = 2
 
 __all__ = [
     "Bridge",
@@ -52,11 +41,9 @@ __all__ = [
     "QOSLevel",
 ]
 
-MQTTError = MqttError
-
-MQTT_HOST = os.environ.get("YUN_BROKER_IP", "127.0.0.1")
-MQTT_PORT = int(os.environ.get("YUN_BROKER_PORT", 1883))
-MQTT_TOPIC_PREFIX = "br"
+MQTT_HOST = os.environ.get("YUN_BROKER_IP", DEFAULT_MQTT_HOST)
+MQTT_PORT = int(os.environ.get("YUN_BROKER_PORT", DEFAULT_MQTT_PORT))
+MQTT_TOPIC_PREFIX = DEFAULT_MQTT_TOPIC
 MQTT_USER = os.environ.get("YUN_BROKER_USER")
 MQTT_PASS = os.environ.get("YUN_BROKER_PASS")
 
@@ -111,13 +98,13 @@ async def get_mqtt_client(
     try:
         await client.connect()
         yield client
-    except MqttError as error:  # pragma: no cover - connection issues
+    except MQTTError as error:  # pragma: no cover - connection issues
         logger.error("Error connecting to MQTT broker: %s", error)
         raise
     finally:
         try:
             await client.disconnect()
-        except MqttError:
+        except MQTTError:
             logger.debug("Ignoring MQTT disconnect error during cleanup")
         finally:
             logger.info("Disconnected from MQTT broker.")
@@ -186,7 +173,7 @@ class Bridge:
     async def _message_listener(self) -> None:
         client = self._ensure_client()
         # Prefer the non-deprecated messages() API but keep a fallback for
-        # older asyncio-mqtt versions shipped with the Yun firmware.
+        # older aiomqtt builds that may still ship with the Yun firmware.
         messages_attr = getattr(client, "messages", None)
         if messages_attr is not None:
             message_context = cast(
@@ -245,7 +232,7 @@ class Bridge:
                         )
         except asyncio.CancelledError:
             raise
-        except MqttError as exc:  # pragma: no cover - defensive guard
+        except MQTTError as exc:  # pragma: no cover - defensive guard
             logger.debug("MQTT listener stopped: %s", exc)
 
     async def _publish_and_wait(
@@ -282,7 +269,7 @@ class Bridge:
         finally:
             try:
                 await _unsubscribe_many(client, topics)
-            except MqttError:
+            except MQTTError:
                 logger.debug("Ignoring MQTT unsubscribe error")
             for topic in topics:
                 self._response_queues.pop(topic, None)

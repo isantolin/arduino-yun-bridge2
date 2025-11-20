@@ -12,7 +12,7 @@ import tomllib
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "tools/protocol/spec.toml"
-PYTHON_OUTPUT = REPO_ROOT / "openwrt-yun-bridge/yunrpc/protocol.py"
+PYTHON_OUTPUT = REPO_ROOT / "openwrt-yun-bridge/yunbridge/rpc/protocol.py"
 CPP_OUTPUT = REPO_ROOT / "openwrt-library-arduino/src/protocol/rpc_protocol.h"
 
 LICENSE_HEADER = textwrap.dedent(

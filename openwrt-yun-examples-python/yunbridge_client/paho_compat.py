@@ -25,10 +25,11 @@ else:
 
         setattr(mqtt.Client, "message_retry_set", _message_retry_set)
 
-    # Provide a friendlier attribute for older asyncio-mqtt releases so they
+    # Provide a friendlier attribute for older aiomqtt releases so they
     # don't warn repeatedly when running on newer Paho. Log only once.
     if getattr(mqtt.Client, "message_retry_set", _noop) is _noop:
         _LOGGER.debug("message_retry_set shim already present")
+
 
 def ensure_compat() -> None:
     """Explicit no-op to make the module usage visible to type checkers."""

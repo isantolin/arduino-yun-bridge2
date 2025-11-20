@@ -1,6 +1,6 @@
 # Arquitectura del Cliente del Puente de Yun v2
 
-Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través del `bridge_daemon.py`.
+Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través del `bridge_daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.4** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, reutilizando el mismo shim asíncrono que usa el daemon para conservar compatibilidad con la antigua API de `asyncio-mqtt`.
 
 ## API de Comunicación: MQTT
 
@@ -18,19 +18,21 @@ En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún vía `opkg`. `python3-asyncio-mqtt` (que ya incluye `paho-mqtt`) y `python3-pyserial` provienen de los feeds oficiales, mientras que `python3-pyserial-asyncio` y `python3-cobs` se construyen desde PyPI y se distribuyen como `.ipk` junto con el resto de artefactos.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún vía `opkg`. `python3-aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1) y `python3-pyserial` provienen de los feeds oficiales, mientras que `python3-pyserial-asyncio` y `python3-cobs` se construyen desde PyPI y se distribuyen como `.ipk` junto con el resto de artefactos. No necesitas instalar `asyncio-mqtt`: el módulo `yunbridge_client._mqtt_asyncio` implementa la API equivalente sobre aiomqtt, habilitando propiedades MQTT v5 como `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
 
-Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala `asyncio-mqtt` en tu entorno de desarrollo:
+Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala las dependencias mínimas en tu entorno de desarrollo:
 
 ```sh
-pip install asyncio-mqtt
+pip install "aiomqtt>=2.4,<3" "paho-mqtt>=2.1,<3"
 ```
 
 Antes de modificar los ejemplos, ejecuta `pyright` en la raíz del proyecto para asegurarte de que el tipado estático siga consistente con el daemon.
 
+> **Nota:** Si trabajas en un entorno virtual fuera de OpenWrt, instala también `python3-tenacity` o añade `tenacity>=9.1` a tu entorno para que los ejemplos puedan aprovechar los mismos helpers de reconexión que usa el daemon.
+
 ### Puesta en marcha del broker MQTT
 
-Los ejemplos asumen que existe un broker accesible en la IP y puerto configurados (por defecto `127.0.0.1:1883`). En una Yún real, ese broker lo expone el `bridge_daemon.py` cuando está en ejecución:
+Los ejemplos asumen que existe un broker accesible en la IP y puerto configurados (por defecto `127.0.0.1:1883`). En una Yún real, ese broker lo expone el `bridge_daemon.py` cuando está en ejecución. Las conexiones se negocian con MQTT v5 (`clean_start=FIRST_ONLY`, `session_expiry_interval=0`) y publican los motivos de desconexión, por lo que conviene revisar el log del daemon si observas `ConnectionCloseForcedError` o códigos de error adicionales.
 
 ```sh
 # En el dispositivo o en tu máquina de desarrollo

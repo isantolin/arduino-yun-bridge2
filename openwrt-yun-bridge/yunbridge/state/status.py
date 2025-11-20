@@ -4,14 +4,16 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict
 
 from ..const import STATUS_FILE_PATH
 from .context import RuntimeState
 
 logger = logging.getLogger("yunbridge.status")
+STATUS_FILE = Path(STATUS_FILE_PATH)
 
 
 async def status_writer(state: RuntimeState, interval: int) -> None:
@@ -61,14 +63,19 @@ def cleanup_status_file() -> None:
     """Remove the status file if it exists."""
 
     try:
-        if os.path.exists(STATUS_FILE_PATH):
-            os.remove(STATUS_FILE_PATH)
+        STATUS_FILE.unlink(missing_ok=True)
     except OSError:
         logger.debug("Ignoring error while removing status file.")
 
 
 def _write_status_file(payload: Dict[str, Any]) -> None:
-    temp_path = f"{STATUS_FILE_PATH}.tmp"
-    with open(temp_path, "w", encoding="utf-8") as handle:
+    STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=STATUS_FILE.parent,
+        delete=False,
+    ) as handle:
         json.dump(payload, handle, indent=2)
-    os.replace(temp_path, STATUS_FILE_PATH)
+        temp_name = handle.name
+    Path(temp_name).replace(STATUS_FILE)

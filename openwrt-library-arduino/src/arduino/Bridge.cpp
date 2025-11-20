@@ -18,6 +18,10 @@
  */
 #include "Bridge.h"
 
+#if defined(ARDUINO_ARCH_AVR)
+#include <avr/wdt.h>
+#endif
+
 #include <string.h> // Para strcmp, strlen, memcpy
 #include <stdlib.h> // Para atoi
 #include <stdint.h>
@@ -27,6 +31,16 @@
 #define BRIDGE_BAUDRATE 115200
 
 using namespace rpc;
+
+#ifndef BRIDGE_ENABLE_WATCHDOG
+#define BRIDGE_ENABLE_WATCHDOG 1
+#endif
+
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+#ifndef BRIDGE_WATCHDOG_TIMEOUT
+#define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
+#endif
+#endif
 
 // =================================================================================
 // Global Instances
@@ -104,15 +118,20 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   // Limitar el tamaño del payload para evitar fragmentación excesiva
   size_t remaining = size;
   size_t offset = 0;
+  size_t transmitted = 0;
   while (remaining > 0) {
-      size_t chunk_size = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
-      Bridge.sendFrame(CMD_CONSOLE_WRITE, buffer + offset, chunk_size);
-      offset += chunk_size;
-      remaining -= chunk_size;
-      // Añadir un pequeño delay puede ayudar si hay problemas de buffer
-      // delayMicroseconds(100);
+    size_t chunk_size =
+        remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
+    if (!Bridge.sendFrame(CMD_CONSOLE_WRITE, buffer + offset, chunk_size)) {
+      break;
+    }
+    offset += chunk_size;
+    remaining -= chunk_size;
+    transmitted += chunk_size;
+    // Añadir un pequeño delay puede ayudar si hay problemas de buffer
+    // delayMicroseconds(100);
   }
-  return size;
+  return transmitted;
 }
 
 int ConsoleClass::available() {
@@ -417,6 +436,9 @@ void BridgeClass::begin() {
   _pending_datastore_count = 0;
   _parser.reset();
   Console.begin(); // Inicializa la instancia global de Console
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+  wdt_enable(BRIDGE_WATCHDOG_TIMEOUT);
+#endif
   _resetLinkState();
 }
 
@@ -442,6 +464,9 @@ void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
  * Debe llamarse repetidamente en el loop principal del sketch.
  */
 void BridgeClass::process() {
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+  wdt_reset();
+#endif
   while (_stream.available()) {
     uint8_t byte = _stream.read();
     // consume() decodifica COBS, verifica CRC y parsea el header/payload
@@ -860,27 +885,27 @@ void BridgeClass::_emitStatus(uint8_t status_code, const char* message) {
  * @param payload Puntero al buffer de datos del payload.
  * @param payload_len Longitud del payload en bytes.
  */
-void BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
+bool BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
                             uint16_t payload_len) {
   if (!_requiresAck(command_id)) {
-    _sendFrameImmediate(command_id, payload, payload_len);
-    return;
+    return _sendFrameImmediate(command_id, payload, payload_len);
   }
 
   if (_awaiting_ack) {
-    if (!_enqueuePendingTx(command_id, payload, payload_len)) {
-      _processAckTimeout();
-      if (_awaiting_ack || !_enqueuePendingTx(command_id, payload, payload_len)) {
-        _emitStatus(STATUS_ERROR, "tx_queue_full");
-      }
+    if (_enqueuePendingTx(command_id, payload, payload_len)) {
+      return true;
     }
-    return;
+    _processAckTimeout();
+    if (!_awaiting_ack && _enqueuePendingTx(command_id, payload, payload_len)) {
+      return true;
+    }
+    return false;
   }
 
-  _sendFrameImmediate(command_id, payload, payload_len);
+  return _sendFrameImmediate(command_id, payload, payload_len);
 }
 
-void BridgeClass::_sendFrameImmediate(uint16_t command_id,
+bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
                                       const uint8_t* payload,
                                       uint16_t payload_len) {
   static uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
@@ -894,7 +919,7 @@ void BridgeClass::_sendFrameImmediate(uint16_t command_id,
 #if BRIDGE_DEBUG_FRAMES
     _tx_debug.build_failures++;
 #endif
-    return;
+    return false;
   }
 
 #if BRIDGE_DEBUG_FRAMES
@@ -936,6 +961,11 @@ void BridgeClass::_sendFrameImmediate(uint16_t command_id,
   }
 #endif
 
+  const bool success = written == (cobs_len + 1);
+  if (!success) {
+    return false;
+  }
+
   if (_requiresAck(command_id)) {
     _recordLastFrame(command_id, raw_frame_buf, raw_len, cobs_buf, cobs_len);
     _awaiting_ack = true;
@@ -945,6 +975,7 @@ void BridgeClass::_sendFrameImmediate(uint16_t command_id,
 
   // Podríamos añadir verificación de 'written' si _stream.write devuelve algo útil
   // y manejar errores de escritura si es necesario.
+  return true;
 }
 
 #if BRIDGE_DEBUG_FRAMES
@@ -1072,7 +1103,14 @@ void BridgeClass::_flushPendingTxQueue() {
   if (!_dequeuePendingTx(frame)) {
     return;
   }
-  _sendFrameImmediate(frame.command_id, frame.payload, frame.payload_length);
+  if (!_sendFrameImmediate(
+          frame.command_id, frame.payload, frame.payload_length)) {
+    uint8_t previous_head =
+        (_pending_tx_head + kMaxPendingTxFrames - 1) % kMaxPendingTxFrames;
+    _pending_tx_head = previous_head;
+    _pending_tx_frames[_pending_tx_head] = frame;
+    _pending_tx_count++;
+  }
 }
 
 void BridgeClass::_clearPendingTxQueue() {

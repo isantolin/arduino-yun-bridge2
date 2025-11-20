@@ -14,6 +14,7 @@ This library provides the MCU-side runtime for the Arduino Yun Bridge v2 project
   - Additional documentation and diagrams describing the protocol and library design (`docs/PROTOCOL.md`).
 - `tools/`
   - Maintenance scripts such as `install.sh` to deploy the library into an Arduino environment.
+  - The protocol generator lives in `tools/protocol/spec.toml` (see repository root); running `python3 tools/protocol/generate.py` refreshes the shared headers in `src/protocol/` alongside the Python daemon bindings.
 
 ## Installation
 
@@ -24,7 +25,7 @@ This library provides the MCU-side runtime for the Arduino Yun Bridge v2 project
 ## Building From Source
 
 - The library targets AVR-based Arduino Yun boards. Ensure the Arduino AVR core is installed.
-- The shared protocol headers are kept aligned with the Python daemon under `openwrt-yun-bridge/yunrpc`.
+- The shared protocol headers are kept aligned with the Python daemon under `openwrt-yun-bridge/yunbridge/rpc`.
 - Recent updates align the datastore, mailbox, and filesystem payloads with the binary protocol specification (length-prefixed values and `STATUS_*` propagation). The async process helpers now queue partial outputs so repeated `Bridge.processPoll()` calls deliver the full stream, and the library automatically issues additional polls when partial chunks arrive.
 
 ## Contributing

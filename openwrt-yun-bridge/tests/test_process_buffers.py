@@ -2,53 +2,75 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Awaitable, Callable, cast
 
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.const import (
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+    DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_TOPIC,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_RECONNECT_DELAY,
+    DEFAULT_SERIAL_BAUD,
+    DEFAULT_STATUS_INTERVAL,
+)
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import create_runtime_state
-from yunrpc.protocol import MAX_PAYLOAD_SIZE, Status
+from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE, Status
 
 
 @pytest.fixture()
 def runtime_service() -> BridgeService:
     config = RuntimeConfig(
         serial_port="/dev/null",
-        serial_baud=115200,
+        serial_baud=DEFAULT_SERIAL_BAUD,
         mqtt_host="localhost",
-        mqtt_port=1883,
+        mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,
         mqtt_pass=None,
         mqtt_tls=False,
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic="br",
-        allowed_commands=[],
+        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        allowed_commands=(),
         file_system_root="/tmp",
-        process_timeout=10,
-        reconnect_delay=5,
-        status_interval=5,
+        process_timeout=DEFAULT_PROCESS_TIMEOUT,
+        reconnect_delay=DEFAULT_RECONNECT_DELAY,
+        status_interval=DEFAULT_STATUS_INTERVAL,
         debug_logging=False,
-        console_queue_limit_bytes=16384,
-        mailbox_queue_limit=64,
-        mailbox_queue_bytes_limit=65536,
+        console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+        mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
+        mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     )
     state = create_runtime_state(config)
     return BridgeService(config, state)
 
 
-def test_trim_process_buffers_mutates_in_place(runtime_service: BridgeService) -> None:
+def test_trim_process_buffers_mutates_in_place(
+    runtime_service: BridgeService,
+) -> None:
     stdout = bytearray(b"a" * MAX_PAYLOAD_SIZE)
     stderr = bytearray(b"b" * 10)
+
+    trim = cast(
+        Callable[[bytearray, bytearray], tuple[bytes, bytes, bool, bool]],
+        getattr(runtime_service, "_trim_process_buffers"),
+    )
 
     (
         trimmed_stdout,
         trimmed_stderr,
         stdout_truncated,
         stderr_truncated,
-    ) = runtime_service._trim_process_buffers(stdout, stderr)  # pyright: ignore[reportPrivateUsage]
+    ) = trim(
+        stdout,
+        stderr,
+    )
 
     # MAX payload reserves 6 bytes for status/length metadata
     assert len(trimmed_stdout) == MAX_PAYLOAD_SIZE - 6
@@ -73,6 +95,13 @@ def test_collect_process_output_flushes_stored_buffers(
         state.process_stdout_buffer[pid] = bytearray(b"hello")
         state.process_stderr_buffer[pid] = bytearray(b"world")
 
+        collect = cast(
+            Callable[[int], Awaitable[
+                tuple[int, int, bytes, bytes, bool, bool, bool]
+            ]],
+            getattr(runtime_service, "_collect_process_output"),
+        )
+
         (
             status,
             exit_code,
@@ -81,9 +110,7 @@ def test_collect_process_output_flushes_stored_buffers(
             finished,
             stdout_truncated,
             stderr_truncated,
-        ) = await runtime_service._collect_process_output(  # pyright: ignore[reportPrivateUsage]
-            pid
-        )
+        ) = await collect(pid)
 
         assert status == Status.OK.value
         assert exit_code == 3

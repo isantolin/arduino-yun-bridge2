@@ -10,8 +10,27 @@ from yunbridge.rpc.protocol import Command, Status
 from yunbridge.const import TOPIC_SHELL
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.mqtt import InboundMessage, QOSLevel
 from yunbridge.services.runtime import BridgeService
-from yunbridge.state.context import RuntimeState
+from yunbridge.state.context import (
+    PendingPinRequest,
+    RuntimeState,
+)
+
+
+def _make_inbound(
+    topic: str,
+    payload: bytes = b"",
+    *,
+    qos: QOSLevel = QOSLevel.QOS_0,
+    retain: bool = False,
+) -> InboundMessage:
+    return InboundMessage(
+        topic_name=topic,
+        payload=payload,
+        qos=qos,
+        retain=retain,
+    )
 
 
 def test_mcu_digital_read_response_publishes_to_mqtt(
@@ -29,7 +48,9 @@ def test_mcu_digital_read_response_publishes_to_mqtt(
 
         service.register_serial_sender(fake_sender)
 
-        runtime_state.pending_digital_reads.append(7)
+        runtime_state.pending_digital_reads.append(
+            PendingPinRequest(pin=7, reply_context=None)
+        )
 
         await service.handle_mcu_frame(
             Command.CMD_DIGITAL_READ_RESP.value,
@@ -66,7 +87,9 @@ def test_mcu_analog_read_response_publishes_to_mqtt(
 
         service.register_serial_sender(fake_sender)
 
-        runtime_state.pending_analog_reads.append(3)
+        runtime_state.pending_analog_reads.append(
+            PendingPinRequest(pin=3, reply_context=None)
+        )
 
         await service.handle_mcu_frame(
             Command.CMD_ANALOG_READ_RESP.value,
@@ -109,8 +132,10 @@ def test_mqtt_digital_write_sends_frame(
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/d/5",
-            b"1",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/d/5",
+                b"1",
+            )
         )
 
         assert sent_frames
@@ -142,15 +167,18 @@ def test_mqtt_analog_read_tracks_pending_queue(
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/a/2/read",
-            b"",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/a/2/read",
+                b"",
+            )
         )
 
         assert sent_frames
         command_id, payload = sent_frames[0]
         assert command_id == Command.CMD_ANALOG_READ.value
         assert payload == struct.pack(">B", 2)
-        assert runtime_state.pending_analog_reads[-1] == 2
+        pending = runtime_state.pending_analog_reads[-1]
+        assert pending.pin == 2
 
     asyncio.run(_run())
 
@@ -213,8 +241,10 @@ def test_mqtt_system_version_get_requests_and_publishes_cached(
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/system/version/get",
-            b"",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/system/version/get",
+                b"",
+            )
         )
 
         assert sent_frames
@@ -249,8 +279,10 @@ def test_mqtt_shell_run_publishes_response(
             new=fake_run,
         ):
             await service.handle_mqtt_message(
-                f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/run",
-                b"echo test",
+                _make_inbound(
+                    f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/run",
+                    b"echo test",
+                )
             )
             assert calls == [
                 (
@@ -286,8 +318,13 @@ def test_mqtt_shell_run_async_handles_not_allowed(
             new=fake_start,
         ):
             await service.handle_mqtt_message(
-                f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/run_async",
-                b"blocked",
+                _make_inbound(
+                    (
+                        f"{runtime_state.mqtt_topic_prefix}/"
+                        f"{TOPIC_SHELL}/run_async"
+                    ),
+                    b"blocked",
+                )
             )
             assert calls == [
                 (
@@ -330,8 +367,10 @@ def test_mqtt_shell_kill_invokes_process_component(
             new=fake_kill,
         ):
             await service.handle_mqtt_message(
-                f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/kill/21",
-                b"",
+                _make_inbound(
+                    f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/kill/21",
+                    b"",
+                )
             )
             assert calls == [
                 (

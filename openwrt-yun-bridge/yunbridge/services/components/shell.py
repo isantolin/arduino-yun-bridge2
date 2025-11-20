@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import logging
 import struct
+from typing import Optional
 
 from yunbridge.rpc.protocol import Status
 
 from ...const import TOPIC_SHELL
-from ...mqtt import PublishableMessage
+from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from .base import BridgeContext
@@ -31,19 +32,24 @@ class ShellComponent:
         self.ctx = ctx
         self.process = process
 
-    async def handle_mqtt(self, parts: list[str], payload_str: str) -> None:
+    async def handle_mqtt(
+        self,
+        parts: list[str],
+        payload_str: str,
+        inbound: Optional[InboundMessage] = None,
+    ) -> None:
         action = parts[2] if len(parts) >= 3 else ""
 
         if action == "run":
             if not payload_str:
                 return
-            await self._handle_shell_run(payload_str)
+            await self._handle_shell_run(payload_str, inbound)
             return
 
         if action == "run_async":
             if not payload_str:
                 return
-            await self._handle_run_async(payload_str)
+            await self._handle_run_async(payload_str, inbound)
             return
 
         if action == "poll" and len(parts) == 4:
@@ -56,7 +62,11 @@ class ShellComponent:
 
         logger.debug("Ignoring shell topic action: %s", "/".join(parts))
 
-    async def _handle_shell_run(self, command: str) -> None:
+    async def _handle_shell_run(
+        self,
+        command: str,
+        inbound: Optional[InboundMessage],
+    ) -> None:
         logger.info("Executing shell command from MQTT: '%s'", command)
         (
             status,
@@ -88,15 +98,24 @@ class ShellComponent:
         response_topic = (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/response"
         )
-        base_message = PublishableMessage(
-            topic_name=response_topic,
-            payload=b"",
+        base_message = (
+            PublishableMessage(
+                topic_name=response_topic,
+                payload=response.encode("utf-8"),
+            )
+            .with_content_type("text/plain; charset=utf-8")
+            .with_message_expiry(30)
         )
         await self.ctx.enqueue_mqtt(
-            base_message.with_payload(response.encode("utf-8"))
+            base_message,
+            reply_context=inbound,
         )
 
-    async def _handle_run_async(self, command: str) -> None:
+    async def _handle_run_async(
+        self,
+        command: str,
+        inbound: Optional[InboundMessage],
+    ) -> None:
         logger.info("MQTT async shell command: '%s'", command)
         pid = await self.process.start_async(command)
         response_topic = (
@@ -108,11 +127,13 @@ class ShellComponent:
         )
         if pid == 0xFFFF:
             await self.ctx.enqueue_mqtt(
-                base_message.with_payload(b"error:not_allowed")
+                base_message.with_payload(b"error:not_allowed"),
+                reply_context=inbound,
             )
             return
         await self.ctx.enqueue_mqtt(
-            base_message.with_payload(str(pid).encode("utf-8"))
+            base_message.with_payload(str(pid).encode("utf-8")),
+            reply_context=inbound,
         )
 
     async def _handle_poll(self, pid_str: str) -> None:

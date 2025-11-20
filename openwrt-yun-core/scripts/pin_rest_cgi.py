@@ -26,7 +26,7 @@ except (ImportError, Exception) as exc:  # pragma: no cover
 
     mqtt = SimpleNamespace(Client=_MissingClient)  # type: ignore[assignment]
 
-from yunbridge.rpc.utils import get_uci_config
+from yunbridge.common import get_uci_config
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,

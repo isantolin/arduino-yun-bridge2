@@ -18,7 +18,7 @@ from ..const import (
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
-from ..mqtt import PublishableMessage
+from ..mqtt import InboundMessage, PublishableMessage
 
 from ..config.settings import RuntimeConfig
 from ..policy import AllowedCommandPolicy
@@ -32,11 +32,23 @@ def _bytes_deque_factory() -> Deque[bytes]:
     return collections.deque()
 
 
-def _int_deque_factory() -> Deque[int]:
+@dataclass(slots=True)
+class PendingPinRequest:
+    pin: int
+    reply_context: Optional[InboundMessage]
+
+
+@dataclass(slots=True)
+class PendingDatastoreRequest:
+    key: str
+    reply_context: Optional[InboundMessage]
+
+
+def _pending_pin_deque_factory() -> Deque[PendingPinRequest]:
     return collections.deque()
 
 
-def _str_deque_factory() -> Deque[str]:
+def _pending_datastore_deque_factory() -> Deque[PendingDatastoreRequest]:
     return collections.deque()
 
 
@@ -85,6 +97,10 @@ class RuntimeState:
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
+    console_dropped_chunks: int = 0
+    console_truncated_chunks: int = 0
+    console_truncated_bytes: int = 0
+    console_dropped_bytes: int = 0
     running_processes: Dict[int, asyncio.subprocess.Process] = field(
         default_factory=_process_dict_factory
     )
@@ -109,23 +125,31 @@ class RuntimeState:
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     watchdog_beats: int = 0
     last_watchdog_beat: float = 0.0
-    pending_digital_reads: Deque[int] = field(
-        default_factory=_int_deque_factory
+    pending_digital_reads: Deque[PendingPinRequest] = field(
+        default_factory=_pending_pin_deque_factory
     )
-    pending_analog_reads: Deque[int] = field(
-        default_factory=_int_deque_factory
+    pending_analog_reads: Deque[PendingPinRequest] = field(
+        default_factory=_pending_pin_deque_factory
     )
-    pending_datastore_gets: Deque[str] = field(
-        default_factory=_str_deque_factory
+    pending_datastore_gets: Deque[PendingDatastoreRequest] = field(
+        default_factory=_pending_datastore_deque_factory
     )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     mailbox_queue_bytes: int = 0
+    mailbox_dropped_messages: int = 0
+    mailbox_truncated_messages: int = 0
+    mailbox_truncated_bytes: int = 0
+    mailbox_dropped_bytes: int = 0
     mailbox_incoming_queue: Deque[bytes] = field(
         default_factory=_bytes_deque_factory
     )
     mailbox_incoming_queue_bytes: int = 0
+    mailbox_incoming_dropped_messages: int = 0
+    mailbox_incoming_truncated_messages: int = 0
+    mailbox_incoming_truncated_bytes: int = 0
+    mailbox_incoming_dropped_bytes: int = 0
     mcu_version: Optional[tuple[int, int]] = None
     link_handshake_nonce: Optional[bytes] = None
     link_is_synchronized: bool = False
@@ -161,7 +185,10 @@ class RuntimeState:
                 self.console_queue_limit_bytes,
             )
             data = data[-self.console_queue_limit_bytes:]
+            truncated = chunk_len - len(data)
             chunk_len = len(data)
+            self.console_truncated_chunks += 1
+            self.console_truncated_bytes += truncated
 
         while (
             self.console_queue_bytes + chunk_len
@@ -175,6 +202,8 @@ class RuntimeState:
                 "limit.",
                 len(removed),
             )
+            self.console_dropped_chunks += 1
+            self.console_dropped_bytes += len(removed)
 
         if (
             self.console_queue_bytes + chunk_len
@@ -185,6 +214,8 @@ class RuntimeState:
                 "trimming.",
                 chunk_len,
             )
+            self.console_dropped_chunks += 1
+            self.console_dropped_bytes += chunk_len
             return
 
         self.console_to_mcu_queue.append(data)
@@ -225,7 +256,10 @@ class RuntimeState:
                 self.mailbox_queue_bytes_limit,
             )
             data = data[: self.mailbox_queue_bytes_limit]
+            truncated = length - len(data)
             length = len(data)
+            self.mailbox_truncated_messages += 1
+            self.mailbox_truncated_bytes += truncated
 
         while (
             (
@@ -242,6 +276,8 @@ class RuntimeState:
                 "Dropping oldest mailbox message (%d bytes) to honor limits.",
                 len(removed),
             )
+            self.mailbox_dropped_messages += 1
+            self.mailbox_dropped_bytes += len(removed)
 
         if (
             len(self.mailbox_queue) >= self.mailbox_queue_limit
@@ -255,6 +291,8 @@ class RuntimeState:
                 "bytes).",
                 length,
             )
+            self.mailbox_dropped_messages += 1
+            self.mailbox_dropped_bytes += length
             return False
 
         self.mailbox_queue.append(data)
@@ -286,7 +324,10 @@ class RuntimeState:
                 self.mailbox_queue_bytes_limit,
             )
             data = data[: self.mailbox_queue_bytes_limit]
+            truncated = length - len(data)
             length = len(data)
+            self.mailbox_incoming_truncated_messages += 1
+            self.mailbox_incoming_truncated_bytes += truncated
 
         while (
             (
@@ -305,6 +346,8 @@ class RuntimeState:
                 "honor limits.",
                 len(removed),
             )
+            self.mailbox_incoming_dropped_messages += 1
+            self.mailbox_incoming_dropped_bytes += len(removed)
 
         if (
             len(self.mailbox_incoming_queue) >= self.mailbox_queue_limit
@@ -318,6 +361,8 @@ class RuntimeState:
                 "bytes).",
                 length,
             )
+            self.mailbox_incoming_dropped_messages += 1
+            self.mailbox_incoming_dropped_bytes += length
             return False
 
         self.mailbox_incoming_queue.append(data)

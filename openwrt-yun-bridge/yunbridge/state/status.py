@@ -34,9 +34,29 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "datastore_keys": list(state.datastore.keys()),
                 "mailbox_size": len(state.mailbox_queue),
                 "mailbox_bytes": state.mailbox_queue_bytes,
+                "mailbox_dropped_messages": state.mailbox_dropped_messages,
+                "mailbox_dropped_bytes": state.mailbox_dropped_bytes,
+                "mailbox_truncated_messages": state.mailbox_truncated_messages,
+                "mailbox_truncated_bytes": state.mailbox_truncated_bytes,
+                "mailbox_incoming_dropped_messages": (
+                    state.mailbox_incoming_dropped_messages
+                ),
+                "mailbox_incoming_dropped_bytes": (
+                    state.mailbox_incoming_dropped_bytes
+                ),
+                "mailbox_incoming_truncated_messages": (
+                    state.mailbox_incoming_truncated_messages
+                ),
+                "mailbox_incoming_truncated_bytes": (
+                    state.mailbox_incoming_truncated_bytes
+                ),
                 "mcu_paused": state.mcu_is_paused,
                 "console_queue_size": len(state.console_to_mcu_queue),
                 "console_queue_bytes": state.console_queue_bytes,
+                "console_dropped_chunks": state.console_dropped_chunks,
+                "console_dropped_bytes": state.console_dropped_bytes,
+                "console_truncated_chunks": state.console_truncated_chunks,
+                "console_truncated_bytes": state.console_truncated_bytes,
                 "running_processes": list(state.running_processes.keys()),
                 "allowed_commands": list(state.allowed_commands),
                 "link_synchronised": state.link_is_synchronized,

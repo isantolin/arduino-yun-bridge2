@@ -67,6 +67,14 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
   - Petición: sin payload.
   - Respuesta (`0x82 GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
 
+- **`0x02` CMD_LINK_SYNC (Linux → MCU)**
+  - Petición: `[nonce_len: u8, nonce: byte[]]`. Se utiliza durante la fase de handshake para confirmar que ambos extremos están alineados y sincronizados.
+  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `[nonce_len: u8, nonce: byte[]]`. El MCU devuelve el nonce recibido para confirmar la sincronía del enlace.
+
+- **`0x03` CMD_LINK_RESET (Linux → MCU)**
+  - Petición: sin payload. Restablece cualquier estado interno asociado al enlace serie (colas pendientes, buffers de procesos, etc.).
+  - Respuesta (`0x84 CMD_LINK_RESET_RESP`, MCU → Linux): sin payload. El MCU confirma que restableció el estado local y está listo para un nuevo handshake.
+
 - **`0x08` CMD_XOFF (MCU → Linux)** / **`0x09` CMD_XON (MCU → Linux)**
   - Sin payload. Controlan el flujo de datos de consola.
 
@@ -141,3 +149,4 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
 - Las cadenas se intercambian en UTF-8 y pueden contener bytes nulos solo si la semántica del comando lo permite (por ejemplo, binarios en mailbox o archivos).
 - El demonio publica en MQTT cualquier respuesta asíncrona relevante (por ejemplo, resultado de `CMD_PROCESS_POLL_RESP`) para que los clientes externos reciban el mismo estado que el MCU sin requerir frames adicionales.
 - El daemon persiste los buffers `stdout`/`stderr` de cada proceso hasta que se consumen por completo. Los clientes deben seguir invocando `CMD_PROCESS_POLL` hasta recibir ambos tamaños en cero, momento en el que el PID se recicla.
+- Las publicaciones MQTT resultantes admiten las extensiones de MQTT v5: si la petición original especifica `response_topic` y `correlation_data`, el daemon los reenvía intactos para correlacionar respuestas. Además, cada servicio adjunta `user_properties` (por ejemplo `bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`) y un `message_expiry_interval` apropiado para que los consumidores filtren información obsoleta.

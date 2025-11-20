@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LIB_ROOT="${ROOT_DIR}/openwrt-library-arduino"
+SRC_ROOT="${LIB_ROOT}/src"
+TEST_ROOT="${LIB_ROOT}/tests"
+STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
+BUILD_DIR="${BUILD_DIR:-${LIB_ROOT}/build-coverage}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/coverage/arduino}"
+
+COMPILE_FLAGS=(
+  -std=c++17
+  -Wall
+  -Wextra
+  -pedantic
+  -fprofile-arcs
+  -ftest-coverage
+  -I"${SRC_ROOT}"
+  -I"${STUB_INCLUDE}"
+)
+
+if ! command -v gcovr >/dev/null 2>&1; then
+  echo "[coverage_arduino] Instala gcovr (pip install gcovr) antes de ejecutar este script." >&2
+  exit 1
+fi
+
+if ! command -v g++ >/dev/null 2>&1; then
+  echo "[coverage_arduino] Se requiere g++ para compilar los tests host." >&2
+  exit 1
+fi
+
+mkdir -p "${BUILD_DIR}"
+
+RUN_BUILD=0
+if [[ "${FORCE_REBUILD:-0}" -eq 1 ]]; then
+  RUN_BUILD=1
+fi
+
+if [[ ! -x "${BUILD_DIR}/test_protocol" ]]; then
+  RUN_BUILD=1
+fi
+
+if [[ ${RUN_BUILD} -eq 1 ]]; then
+  echo "[coverage_arduino] Compilando harness de protocolo con flags de cobertura..." >&2
+  find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
+  find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
+
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/protocol/crc.cpp" -o "${BUILD_DIR}/crc.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/protocol/rpc_frame.cpp" -o "${BUILD_DIR}/rpc_frame.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${TEST_ROOT}/test_protocol.cpp" -o "${BUILD_DIR}/test_protocol.o"
+
+  g++ "${COMPILE_FLAGS[@]}" \
+    "${BUILD_DIR}/crc.o" \
+    "${BUILD_DIR}/rpc_frame.o" \
+    "${BUILD_DIR}/test_protocol.o" \
+    -o "${BUILD_DIR}/test_protocol"
+fi
+
+echo "[coverage_arduino] Ejecutando tests host..." >&2
+"${BUILD_DIR}/test_protocol"
+
+shopt -s nullglob globstar
+GCDA_FILES=(${BUILD_DIR}/**/*.gcda)
+shopt -u nullglob globstar
+
+if [[ ${#GCDA_FILES[@]} -eq 0 ]]; then
+  echo "[coverage_arduino] No se encontraron archivos .gcda en '${BUILD_DIR}'." >&2
+  echo "  Asegúrate de que el harness se ejecutó correctamente y que se compilaron fuentes con flags de cobertura." >&2
+  exit 3
+fi
+
+mkdir -p "${OUTPUT_ROOT}"
+
+SUMMARY_PATH="${OUTPUT_ROOT}/summary.txt"
+HTML_PATH="${OUTPUT_ROOT}/index.html"
+XML_PATH="${OUTPUT_ROOT}/coverage.xml"
+
+gcovr \
+  --root "${SRC_ROOT}" \
+  --object-directory "${BUILD_DIR}" \
+  --filter "${SRC_ROOT}" \
+  --print-summary >"${SUMMARY_PATH}"
+
+gcovr \
+  --root "${SRC_ROOT}" \
+  --object-directory "${BUILD_DIR}" \
+  --filter "${SRC_ROOT}" \
+  --xml "${XML_PATH}"
+
+gcovr \
+  --root "${SRC_ROOT}" \
+  --object-directory "${BUILD_DIR}" \
+  --filter "${SRC_ROOT}" \
+  --html-details "${HTML_PATH}"
+
+echo "[coverage_arduino] Reporte generado en:" >&2
+echo "  - ${SUMMARY_PATH}" >&2
+echo "  - ${XML_PATH}" >&2
+echo "  - ${HTML_PATH}" >&2

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import struct
+from typing import Optional
 
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
@@ -13,7 +14,7 @@ from ...const import (
     TOPIC_MAILBOX_INCOMING_AVAILABLE,
     TOPIC_MAILBOX_OUTGOING_AVAILABLE,
 )
-from ...mqtt import PublishableMessage
+from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from .base import BridgeContext
@@ -148,7 +149,11 @@ class MailboxComponent:
         )
         return True
 
-    async def handle_mqtt_write(self, payload: bytes) -> None:
+    async def handle_mqtt_write(
+        self,
+        payload: bytes,
+        inbound: Optional[InboundMessage] = None,
+    ) -> None:
         if not self.state.enqueue_mailbox_message(payload, logger):
             logger.error(
                 "Failed to enqueue MQTT mailbox payload (%d bytes); "
@@ -170,7 +175,10 @@ class MailboxComponent:
             )
         )
 
-    async def handle_mqtt_read(self) -> None:
+    async def handle_mqtt_read(
+        self,
+        inbound: Optional[InboundMessage] = None,
+    ) -> None:
         topic = self.state.mailbox_incoming_topic or (
             f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
         )
@@ -181,11 +189,14 @@ class MailboxComponent:
                 await self._publish_incoming_available()
                 return
 
+            message = PublishableMessage(
+                topic_name=topic,
+                payload=message_payload,
+            )
+
             await self.ctx.enqueue_mqtt(
-                PublishableMessage(
-                    topic_name=topic,
-                    payload=message_payload,
-                )
+                message,
+                reply_context=inbound,
             )
 
             await self._publish_incoming_available()
@@ -195,11 +206,13 @@ class MailboxComponent:
         if message_payload is None:
             return
 
+        message = PublishableMessage(
+            topic_name=topic,
+            payload=message_payload,
+        )
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(
-                topic_name=topic,
-                payload=message_payload,
-            )
+            message,
+            reply_context=inbound,
         )
 
         await self.ctx.enqueue_mqtt(

@@ -10,8 +10,11 @@ from dataclasses import dataclass, field
 import os
 from typing import Dict, Optional, Tuple
 
-from yunbridge.rpc.utils import get_default_config, get_uci_config
-from ..common import normalise_allowed_commands
+from ..common import (
+    get_default_config,
+    get_uci_config,
+    normalise_allowed_commands,
+)
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,

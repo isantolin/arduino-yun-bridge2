@@ -4,25 +4,30 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
+import uuid
 from contextlib import asynccontextmanager
 from typing import (
-    Any,
-    AsyncContextManager,
     AsyncGenerator,
-    AsyncIterator,
     Dict,
     Iterable,
     List,
     Optional,
     Sequence,
+    Tuple,
     TypeVar,
     Union,
-    cast,
 )
 
 # Importing paho_compat ensures the Paho compatibility shim runs first.
 from . import paho_compat
-from ._mqtt import Client, MQTTError, QOSLevel
+from ._mqtt import (
+    Client,
+    DeliveredMessage,
+    MQTTError,
+    PublishableMessage,
+    QOSLevel,
+)
 from .env import dump_client_env
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
@@ -127,7 +132,14 @@ class Bridge:
         self.username = username
         self.password = password
         self._client: Optional[Client] = None
-        self._response_queues: Dict[str, asyncio.Queue[bytes]] = {}
+        self._response_routes: Dict[
+            str,
+            List[Tuple[asyncio.Queue[DeliveredMessage], bool]],
+        ] = {}
+        self._correlation_routes: Dict[
+            bytes, asyncio.Queue[DeliveredMessage]
+        ] = {}
+        self._reply_topic: Optional[str] = None
         self._listener_task: Optional[asyncio.Task[None]] = None
         self._digital_modes: Dict[int, int] = {}
 
@@ -146,6 +158,22 @@ class Bridge:
         self._client = client
         logger.info("Connected to MQTT broker at %s:%d", self.host, self.port)
         self._digital_modes.clear()
+        self._response_routes.clear()
+        self._correlation_routes.clear()
+        self._reply_topic = (
+            f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
+        )
+        try:
+            await client.subscribe(
+                self._reply_topic,
+                qos=int(QOSLevel.QOS_0),
+            )
+            logger.debug("Subscribed to reply topic %s", self._reply_topic)
+        except MQTTError:
+            logger.warning(
+                "Failed to subscribe to reply topic %s",
+                self._reply_topic,
+            )
         self._listener_task = asyncio.create_task(self._message_listener())
 
     async def disconnect(self) -> None:
@@ -159,6 +187,9 @@ class Bridge:
             try:
                 await client.disconnect()
             finally:
+                self._response_routes.clear()
+                self._correlation_routes.clear()
+                self._reply_topic = None
                 self._client = None
                 logger.info("Disconnected from MQTT broker.")
 
@@ -172,68 +203,103 @@ class Bridge:
 
     async def _message_listener(self) -> None:
         client = self._ensure_client()
-        # Prefer the non-deprecated messages() API but keep a fallback for
-        # older aiomqtt builds that may still ship with the Yun firmware.
-        messages_attr = getattr(client, "messages", None)
-        if messages_attr is not None:
-            message_context = cast(
-                AsyncContextManager[Any], messages_attr()
-            )
-        else:
-            message_context = cast(
-                AsyncContextManager[Any], client.unfiltered_messages()
-            )
 
         try:
-            async with message_context as raw_messages:
-                messages_iter = cast(AsyncIterator[Any], raw_messages)
-                async for message in messages_iter:
-                    raw_topic = message.topic
-                    topic = (
-                        str(raw_topic)
-                        if raw_topic is not None
-                        else ""
-                    )
-                    logger.debug(
-                        "MQTT message observed topic=%s size=%d",
-                        topic,
-                        len(message.payload or b""),
-                    )
-                    if not topic:
-                        continue
-                    payload = message.payload or b""
-
-                    handled = False
-                    for prefix, queue in list(self._response_queues.items()):
-                        if topic.startswith(prefix):
-                            logger.debug(
-                                "Matched response prefix %s for topic %s",
-                                prefix,
-                                topic,
-                            )
-                            await queue.put(payload)
-                            handled = True
-                            break
-
-                    if not handled and (
-                        topic == f"{self.topic_prefix}/console/out"
-                    ):
-                        queue = self._response_queues.get(topic)
-                        if queue is not None:
-                            await queue.put(payload)
-                            handled = True
-
-                    if not handled:
-                        text = payload.decode("utf-8", errors="ignore")
-                        logger.debug(
-                            "Received unhandled MQTT message: %s -> %s",
-                            topic,
-                            text,
-                        )
+            async for message in client.delivered_messages():
+                await self._handle_delivered_message(message)
         except asyncio.CancelledError:
             raise
         except MQTTError as exc:  # pragma: no cover - defensive guard
             logger.debug("MQTT listener stopped: %s", exc)
+        except Exception:  # pragma: no cover - unexpected failure
+            logger.exception("Unexpected error in MQTT listener")
+
+    async def _handle_delivered_message(
+        self, message: DeliveredMessage
+    ) -> None:
+        topic = message.topic_name
+        if not topic:
+            return
+
+        logger.debug(
+            "MQTT message observed topic=%s size=%d qos=%d",
+            topic,
+            len(message.payload),
+            int(message.qos),
+        )
+
+        handled = False
+        correlation = message.correlation_data
+        if correlation is not None:
+            queue = self._correlation_routes.pop(correlation, None)
+            if queue is not None:
+                self._safe_queue_put(queue, message, drop_oldest=False)
+                handled = True
+
+        for prefix, queues in list(self._response_routes.items()):
+            if not topic.startswith(prefix):
+                continue
+            handled = True
+            for queue, drop_oldest in list(queues):
+                self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
+
+        if not handled:
+            preview = message.payload[:128]
+            text = preview.decode("utf-8", errors="ignore")
+            logger.debug(
+                "Received unhandled MQTT message: %s -> %s",
+                topic,
+                text,
+            )
+
+    def _safe_queue_put(
+        self,
+        queue: asyncio.Queue[DeliveredMessage],
+        message: DeliveredMessage,
+        *,
+        drop_oldest: bool,
+    ) -> None:
+        try:
+            queue.put_nowait(message)
+            return
+        except asyncio.QueueFull:
+            if not drop_oldest:
+                logger.debug("Queue full; overwriting oldest entry")
+            try:
+                queue.get_nowait()
+            except asyncio.QueueEmpty:
+                if drop_oldest:
+                    logger.debug("Queue empty despite full state; skipping")
+                    return
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                logger.warning("Failed to enqueue MQTT message for consumer")
+
+    def _register_route(
+        self,
+        prefix: str,
+        queue: asyncio.Queue[DeliveredMessage],
+        *,
+        drop_oldest: bool = False,
+    ) -> None:
+        routes = self._response_routes.setdefault(prefix, [])
+        routes.append((queue, drop_oldest))
+
+    def _unregister_route(
+        self,
+        prefix: str,
+        queue: asyncio.Queue[DeliveredMessage],
+    ) -> None:
+        routes = self._response_routes.get(prefix)
+        if not routes:
+            return
+        for entry in list(routes):
+            if entry[0] is queue:
+                routes.remove(entry)
+                break
+        if not routes:
+            self._response_routes.pop(prefix, None)
 
     async def _publish_and_wait(
         self,
@@ -244,6 +310,9 @@ class Bridge:
         timeout: float = 10,
     ) -> bytes:
         client = self._ensure_client()
+        reply_topic = self._reply_topic
+        if reply_topic is None:
+            raise RuntimeError("Reply topic not initialised; call connect()")
         if isinstance(resp_topic, str):
             topics: tuple[str, ...] = (resp_topic,)
         else:
@@ -251,28 +320,48 @@ class Bridge:
         if not topics:
             raise ValueError("resp_topic must contain at least one topic")
 
-        response_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=1)
-        for topic in topics:
-            self._response_queues[topic] = response_queue
-
+        response_queue: asyncio.Queue[DeliveredMessage] = asyncio.Queue(
+            maxsize=1
+        )
+        correlation = secrets.token_bytes(12)
+        subscribed = False
         try:
-            await _subscribe_many(client, topics)
-            await client.publish(
-                pub_topic,
-                pub_payload,
-                qos=int(QOSLevel.QOS_0),
+            for topic in topics:
+                self._register_route(topic, response_queue)
+            self._correlation_routes[correlation] = response_queue
+
+            try:
+                await _subscribe_many(client, topics)
+                subscribed = True
+            except MQTTError:
+                logger.debug(
+                    "Subscription to response topics %s failed; "
+                    "relying on reply topic",
+                    topics,
+                )
+
+            message = PublishableMessage(
+                topic_name=pub_topic,
+                payload=pub_payload,
+                qos=QOSLevel.QOS_0,
                 retain=False,
             )
-            return await asyncio.wait_for(
+            message = message.with_response_topic(reply_topic)
+            message = message.with_correlation_data(correlation)
+            await client.publish(message)
+            delivered = await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
+            return delivered.payload
         finally:
+            self._correlation_routes.pop(correlation, None)
+            for topic in topics:
+                self._unregister_route(topic, response_queue)
             try:
-                await _unsubscribe_many(client, topics)
+                if subscribed:
+                    await _unsubscribe_many(client, topics)
             except MQTTError:
                 logger.debug("Ignoring MQTT unsubscribe error")
-            for topic in topics:
-                self._response_queues.pop(topic, None)
 
     async def digital_write(self, pin: int, value: int) -> None:
         if self._digital_modes.get(pin) != 1:
@@ -390,26 +479,27 @@ class Bridge:
 
     async def console_read_async(self) -> Optional[str]:
         topic = f"{self.topic_prefix}/console/out"
+        client = self._ensure_client()
+        queue: Optional[asyncio.Queue[DeliveredMessage]] = None
+        routes = self._response_routes.get(topic)
+        if routes:
+            queue = routes[0][0]
 
-        if topic not in self._response_queues:
-            queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=100)
-            self._response_queues[topic] = queue
-            await self._ensure_client().subscribe(
-                topic, qos=int(QOSLevel.QOS_0)
-            )
+        if queue is None:
+            queue = asyncio.Queue(maxsize=100)
+            self._register_route(topic, queue, drop_oldest=True)
+            await client.subscribe(topic, qos=int(QOSLevel.QOS_0))
             logger.debug("Subscribed to console output topic: %s", topic)
 
         try:
-            payload = await asyncio.wait_for(
-                self._response_queues[topic].get(), timeout=0.1
-            )
+            message = await asyncio.wait_for(queue.get(), timeout=0.1)
         except asyncio.TimeoutError:
             return None
         except Exception:  # pragma: no cover - defensive logging
             logger.exception("Error reading from console queue")
             return None
 
-        return payload.decode("utf-8", errors="ignore")
+        return message.payload.decode("utf-8", errors="ignore")
 
     async def mailbox_read(self, timeout: float = 5.0) -> Optional[bytes]:
         incoming_topic = f"{self.topic_prefix}/mailbox/incoming"

@@ -488,7 +488,12 @@ class ProcessComponent:
             f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/"
             f"poll/{pid}/response"
         )
-        message = PublishableMessage(topic_name=topic, payload=b"")
+        message = (
+            PublishableMessage(topic_name=topic, payload=b"")
+            .with_content_type("application/json")
+            .with_message_expiry(30)
+            .with_user_property("bridge-process-pid", str(pid))
+        )
         payload = json.dumps(
             {
                 "status": status_byte,

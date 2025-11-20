@@ -4,9 +4,13 @@ from __future__ import annotations
 import logging
 import struct
 from typing import Optional
+
 from ...const import TOPIC_DATASTORE
-from ...mqtt import PublishableMessage
-from ...state.context import RuntimeState
+from ...mqtt import InboundMessage, PublishableMessage
+from ...state.context import (
+    PendingDatastoreRequest,
+    RuntimeState,
+)
 from ...config.settings import RuntimeConfig
 from .base import BridgeContext
 from yunbridge.rpc.protocol import (
@@ -91,16 +95,21 @@ class DatastoreComponent:
             return False
 
         value_bytes = payload[DATASTORE_VALUE_LEN_SIZE:expected_length]
-        key: Optional[str] = None
+        pending: Optional[PendingDatastoreRequest] = None
         if self.state.pending_datastore_gets:
-            key = self.state.pending_datastore_gets.popleft()
+            pending = self.state.pending_datastore_gets.popleft()
         else:
             logger.warning("DATASTORE_GET_RESP without pending key tracking.")
 
-        if key:
+        if pending:
+            key = pending.key
             value_text = value_bytes.decode("utf-8", errors="ignore")
             self.state.datastore[key] = value_text
-            await self._publish_value(key, value_bytes)
+            await self._publish_value(
+                key,
+                value_bytes,
+                reply_context=pending.reply_context,
+            )
         else:
             logger.debug(
                 "DATASTORE_GET_RESP value=%s",
@@ -160,6 +169,7 @@ class DatastoreComponent:
         remainder: list[str],
         payload: bytes,
         payload_str: str,
+        inbound: Optional[InboundMessage] = None,
     ) -> None:
         is_request = False
         parts = remainder.copy()
@@ -172,19 +182,24 @@ class DatastoreComponent:
             if not parts:
                 logger.debug("Ignoring datastore put without key")
                 return
-            await self._handle_mqtt_put(key, payload_str)
+            await self._handle_mqtt_put(key, payload_str, inbound)
             return
 
         if identifier == "get":
             if not key:
                 logger.debug("Ignoring datastore get without key")
                 return
-            await self._handle_mqtt_get(key, is_request)
+            await self._handle_mqtt_get(key, is_request, inbound)
             return
 
         logger.debug("Unknown datastore action '%s'", identifier)
 
-    async def _handle_mqtt_put(self, key: str, value_text: str) -> None:
+    async def _handle_mqtt_put(
+        self,
+        key: str,
+        value_text: str,
+        inbound: Optional[InboundMessage],
+    ) -> None:
         key_bytes = key.encode("utf-8")
         value_bytes = value_text.encode("utf-8")
 
@@ -196,17 +211,19 @@ class DatastoreComponent:
             )
             return
 
-        rpc_payload = (
-            struct.pack(DATASTORE_KEY_LEN_FORMAT, len(key_bytes))
-            + key_bytes
-            + struct.pack(DATASTORE_VALUE_LEN_FORMAT, len(value_bytes))
-            + value_bytes
-        )
-        await self.ctx.send_frame(Command.CMD_DATASTORE_PUT.value, rpc_payload)
         self.state.datastore[key] = value_text
-        await self._publish_value(key, value_bytes)
+        await self._publish_value(
+            key,
+            value_bytes,
+            reply_context=inbound,
+        )
 
-    async def _handle_mqtt_get(self, key: str, is_request: bool) -> None:
+    async def _handle_mqtt_get(
+        self,
+        key: str,
+        is_request: bool,
+        inbound: Optional[InboundMessage],
+    ) -> None:
         key_bytes = key.encode("utf-8")
         if len(key_bytes) > 255:
             logger.warning(
@@ -220,7 +237,11 @@ class DatastoreComponent:
             + key_bytes
         )
 
-        self.state.pending_datastore_gets.append(key)
+        pending = PendingDatastoreRequest(
+            key=key,
+            reply_context=inbound,
+        )
+        self.state.pending_datastore_gets.append(pending)
         send_ok = False
         try:
             send_ok = await self.ctx.send_frame(
@@ -230,22 +251,43 @@ class DatastoreComponent:
         finally:
             if not send_ok:
                 try:
-                    self.state.pending_datastore_gets.remove(key)
+                    self.state.pending_datastore_gets.remove(pending)
                 except ValueError:
                     pass
 
         cached_value = self.state.datastore.get(key)
         if cached_value is not None:
-            await self._publish_value(key, cached_value.encode("utf-8"))
+            await self._publish_value(
+                key,
+                cached_value.encode("utf-8"),
+                reply_context=inbound,
+            )
         elif is_request:
-            await self._publish_value(key, b"")
+            await self._publish_value(
+                key,
+                b"",
+                reply_context=inbound,
+            )
 
-    async def _publish_value(self, key: str, value: bytes) -> None:
+    async def _publish_value(
+        self,
+        key: str,
+        value: bytes,
+        *,
+        reply_context: Optional[InboundMessage] = None,
+    ) -> None:
         topic_name = "/".join(
             [self.state.mqtt_topic_prefix, TOPIC_DATASTORE, "get", key]
         )
-        await self.ctx.enqueue_mqtt(
+        message = (
             PublishableMessage(topic_name=topic_name, payload=value)
+            .with_message_expiry(60)
+            .with_content_type("text/plain; charset=utf-8")
+            .with_user_property("bridge-datastore-key", key)
+        )
+        await self.ctx.enqueue_mqtt(
+            message,
+            reply_context=reply_context,
         )
 
 

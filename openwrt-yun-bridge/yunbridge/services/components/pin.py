@@ -8,9 +8,9 @@ from typing import Optional
 from yunbridge.rpc.protocol import Command
 
 from ...const import TOPIC_ANALOG, TOPIC_DIGITAL
-from ...mqtt import PublishableMessage
+from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
-from ...state.context import RuntimeState
+from ...state.context import PendingPinRequest, RuntimeState
 from .base import BridgeContext
 
 logger = logging.getLogger("yunbridge.pin")
@@ -38,20 +38,31 @@ class PinComponent:
             return
 
         value = payload[0]
-        pin: Optional[int] = None
+        request: Optional[PendingPinRequest] = None
         if self.state.pending_digital_reads:
-            pin = self.state.pending_digital_reads.popleft()
+            request = self.state.pending_digital_reads.popleft()
         else:
             logger.warning(
                 "Received DIGITAL_READ_RESP without pending request."
             )
 
-        topic = self._build_pin_topic(TOPIC_DIGITAL, pin)
-        message = PublishableMessage(
-            topic_name=topic,
-            payload=str(value).encode("utf-8"),
+        pin_value = request.pin if request else None
+        topic = self._build_pin_topic(TOPIC_DIGITAL, pin_value)
+        message = (
+            PublishableMessage(
+                topic_name=topic,
+                payload=str(value).encode("utf-8"),
+            )
+            .with_message_expiry(5)
+            .with_user_property(
+                "bridge-pin",
+                str(pin_value) if pin_value is not None else "unknown",
+            )
         )
-        await self.ctx.enqueue_mqtt(message)
+        await self.ctx.enqueue_mqtt(
+            message,
+            reply_context=request.reply_context if request else None,
+        )
 
     async def handle_analog_read_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
@@ -62,23 +73,38 @@ class PinComponent:
             return
 
         value = int.from_bytes(payload, "big")
-        pin: Optional[int] = None
+        request: Optional[PendingPinRequest] = None
         if self.state.pending_analog_reads:
-            pin = self.state.pending_analog_reads.popleft()
+            request = self.state.pending_analog_reads.popleft()
         else:
             logger.warning(
                 "Received ANALOG_READ_RESP without pending request."
             )
 
-        topic = self._build_pin_topic(TOPIC_ANALOG, pin)
-        message = PublishableMessage(
-            topic_name=topic,
-            payload=str(value).encode("utf-8"),
+        pin_value = request.pin if request else None
+        topic = self._build_pin_topic(TOPIC_ANALOG, pin_value)
+        message = (
+            PublishableMessage(
+                topic_name=topic,
+                payload=str(value).encode("utf-8"),
+            )
+            .with_message_expiry(5)
+            .with_user_property(
+                "bridge-pin",
+                str(pin_value) if pin_value is not None else "unknown",
+            )
         )
-        await self.ctx.enqueue_mqtt(message)
+        await self.ctx.enqueue_mqtt(
+            message,
+            reply_context=request.reply_context if request else None,
+        )
 
     async def handle_mqtt(
-        self, topic_type: str, parts: list[str], payload_str: str
+        self,
+        topic_type: str,
+        parts: list[str],
+        payload_str: str,
+        inbound: Optional[InboundMessage] = None,
     ) -> None:
         if len(parts) < 3:
             return
@@ -93,7 +119,7 @@ class PinComponent:
             if subtopic == "mode" and topic_type == TOPIC_DIGITAL:
                 await self._handle_mode_command(pin, pin_str, payload_str)
             elif subtopic == "read":
-                await self._handle_read_command(topic_type, pin)
+                await self._handle_read_command(topic_type, pin, inbound)
             else:
                 logger.debug(
                     "Unknown pin subtopic for %s: %s", pin_str, subtopic
@@ -126,7 +152,12 @@ class PinComponent:
             struct.pack(">BB", pin, mode),
         )
 
-    async def _handle_read_command(self, topic_type: str, pin: int) -> None:
+    async def _handle_read_command(
+        self,
+        topic_type: str,
+        pin: int,
+        inbound: Optional[InboundMessage] = None,
+    ) -> None:
         command = (
             Command.CMD_DIGITAL_READ
             if topic_type == TOPIC_DIGITAL
@@ -138,9 +169,13 @@ class PinComponent:
         )
         if send_ok:
             if command == Command.CMD_DIGITAL_READ:
-                self.state.pending_digital_reads.append(pin)
+                self.state.pending_digital_reads.append(
+                    PendingPinRequest(pin=pin, reply_context=inbound)
+                )
             else:
-                self.state.pending_analog_reads.append(pin)
+                self.state.pending_analog_reads.append(
+                    PendingPinRequest(pin=pin, reply_context=inbound)
+                )
 
     async def _handle_write_command(
         self, topic_type: str, pin: int, parts: list[str], payload_str: str

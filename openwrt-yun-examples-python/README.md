@@ -10,6 +10,28 @@ El ecosistema utiliza MQTT como el mecanismo principal de comunicación para int
 -   **Mecanismo:** El `bridge_daemon.py` expone la funcionalidad del microcontrolador a través de un broker MQTT. Los clientes (como los ejemplos en este directorio) se conectan a este broker para enviar comandos y recibir datos.
 -   **Caso de uso:** Un script de Python en el Yun que monitoriza el uso de CPU y quiere mostrar el resultado en una pantalla LCD conectada al microcontrolador, o un panel de control web (Dashboard) que se ejecuta en un servidor en la nube y muestra la temperatura leída por un sensor en el Arduino, y permite encender un LED desde el navegador.
 
+### Flujo request/response con MQTT v5
+
+El shim `yunbridge_client._mqtt_asyncio` y el daemon utilizan las capacidades de **MQTT v5** para correlacionar peticiones y respuestas sin depender de nombres de tópicos rígidos:
+
+- Al invocar métodos como `Bridge._publish_and_wait(...)`, el cliente genera un `correlation_data` aleatorio y fija su propio `response_topic` privado (`br/client/<uuid>/reply`). El daemon reutiliza ambos campos en cada respuesta para que la correlación sea inequívoca incluso frente a múltiples consumidores.
+- Cuando una petición incluye un tópico de respuesta explícito (por compatibilidad hacia atrás), el daemon se suscribe temporalmente y publica allí la respuesta; si no, envía el payload al `response_topic` privado.
+- Cada servicio añade metadatos en `user_properties` para que puedas inspeccionar rápidamente el contexto original sin parsear el payload:
+
+	| Propiedad                    | Servicio(s)                                      | Descripción                                                          |
+	| --------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
+	| `bridge-request-topic`      | Todos                                            | Tópico original que originó la petición MQTT.                        |
+	| `bridge-pin`                | GPIO digital/analógico                           | Identificador del pin asociado a la lectura/respuesta.               |
+	| `bridge-datastore-key`      | Datastore                                        | Clave afectada por la operación `put/get`.                           |
+	| `bridge-file-path`          | Sistema de archivos                              | Ruta absoluta (normalizada) del fichero leído desde Linux.           |
+	| `bridge-process-pid`        | Procesos (poll/pipeline)                         | PID interno utilizado por el daemon para rastrear la ejecución.      |
+	| `bridge-status` (+ mensaje) | `system/status`                                  | Código de estado publicado junto con la descripción humana legible.  |
+
+- Los servicios asignan `message_expiry_interval` acordes a la semántica (p. ej. lecturas de pines = 5 s, memoria libre = 10 s, versión MCU = 60 s) para evitar respuestas obsoletas en brokers congestivos.
+- El cliente expone directamente las propiedades de usuario y la correlación en los `DeliveredMessage`, por lo que puedes construir flujos “fire & forget” o pipelines reactivos en tiempo real sin desincronizarte.
+
+> **Consejo:** Si tu aplicación necesita remontar la respuesta a la petición originaria (por ejemplo, en un dashboard web multiusuario), guarda el `correlation_data` que devuelve `Bridge._publish_and_wait` y compara el binario devuelto por la respuesta antes de aplicar cambios en UI.
+
 ## El Sistema de Plugins (Nota Histórica)
 
 Versiones anteriores del diseño consideraban un sistema de plugins para extender la funcionalidad del cliente. Sin embargo, la arquitectura actual centraliza la lógica de puente en `bridge_daemon.py` y utiliza MQTT como la interfaz unificada. Esto simplifica el diseño y mejora la interoperabilidad.

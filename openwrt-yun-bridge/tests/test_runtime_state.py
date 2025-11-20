@@ -42,10 +42,14 @@ def test_enqueue_console_chunk_trims_and_drops(
     runtime_state.enqueue_console_chunk(b"a" * 128, logger)
     assert runtime_state.console_queue_bytes == 64
     assert runtime_state.console_to_mcu_queue[-1] == b"a" * 64
+    assert runtime_state.console_truncated_chunks == 1
+    assert runtime_state.console_truncated_bytes == 64
 
     runtime_state.enqueue_console_chunk(b"b" * 64, logger)
     assert runtime_state.console_queue_bytes == 64
     assert runtime_state.console_to_mcu_queue[-1] == b"b" * 64
+    assert runtime_state.console_dropped_chunks == 1
+    assert runtime_state.console_dropped_bytes == 64
 
     warnings = [record.getMessage() for record in handler.records]
     assert any(
@@ -71,6 +75,10 @@ def test_enqueue_mailbox_message_respects_limits(
     assert runtime_state.mailbox_queue_bytes == 32
     assert len(runtime_state.mailbox_queue) == 1
     assert runtime_state.mailbox_queue[-1] == b"c" * 32
+    assert runtime_state.mailbox_truncated_messages == 1
+    assert runtime_state.mailbox_truncated_bytes == 8
+    assert runtime_state.mailbox_dropped_messages == 2
+    assert runtime_state.mailbox_dropped_bytes == 32
 
     warnings = [record.getMessage() for record in handler.records]
     assert any(
@@ -95,6 +103,10 @@ def test_enqueue_mailbox_incoming_respects_limits(
     assert runtime_state.mailbox_incoming_queue_bytes == 32
     assert len(runtime_state.mailbox_incoming_queue) == 1
     assert runtime_state.mailbox_incoming_queue[-1] == b"z" * 32
+    assert runtime_state.mailbox_incoming_truncated_messages == 1
+    assert runtime_state.mailbox_incoming_truncated_bytes == 8
+    assert runtime_state.mailbox_incoming_dropped_messages == 2
+    assert runtime_state.mailbox_incoming_dropped_bytes == 32
 
     warnings = [record.getMessage() for record in handler.records]
     assert any(

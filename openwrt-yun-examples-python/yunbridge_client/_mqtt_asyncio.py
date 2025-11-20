@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import (
     Any,
     AsyncContextManager,
     AsyncIterator,
     Dict,
+    Iterable,
+    Mapping,
     Optional,
     Sequence,
     Tuple,
@@ -63,6 +65,88 @@ class PublishableMessage:
     payload: bytes
     qos: QOSLevel = QOSLevel.QOS_0
     retain: bool = False
+    content_type: Optional[str] = None
+    payload_format_indicator: Optional[int] = None
+    message_expiry_interval: Optional[int] = None
+    response_topic: Optional[str] = None
+    correlation_data: Optional[bytes] = None
+    user_properties: Tuple[Tuple[str, str], ...] = ()
+
+    def with_payload(
+        self,
+        payload: bytes,
+        *,
+        qos: Optional[QOSLevel] = None,
+        retain: Optional[bool] = None,
+    ) -> "PublishableMessage":
+        return replace(
+            self,
+            payload=payload,
+            qos=qos if qos is not None else self.qos,
+            retain=retain if retain is not None else self.retain,
+        )
+
+    def with_user_property(self, key: str, value: str) -> "PublishableMessage":
+        return replace(
+            self,
+            user_properties=self.user_properties + ((key, value),),
+        )
+
+    def with_user_properties(
+        self,
+        properties: Mapping[Any, Any] | Iterable[Tuple[Any, Any]],
+    ) -> "PublishableMessage":
+        if isinstance(properties, Mapping):
+            props_iter: Iterable[Tuple[Any, Any]] = properties.items()
+        else:
+            props_iter = properties
+        combined = tuple((str(key), str(value)) for key, value in props_iter)
+        return replace(
+            self,
+            user_properties=self.user_properties + combined,
+        )
+
+    def with_response_topic(
+        self, topic: Optional[str]
+    ) -> "PublishableMessage":
+        return replace(self, response_topic=topic)
+
+    def with_correlation_data(
+        self, data: Optional[bytes]
+    ) -> "PublishableMessage":
+        return replace(self, correlation_data=data)
+
+    def build_properties(self) -> Optional[Properties]:
+        if not any(
+            [
+                self.content_type,
+                self.payload_format_indicator is not None,
+                self.message_expiry_interval is not None,
+                self.response_topic,
+                self.correlation_data is not None,
+                self.user_properties,
+            ]
+        ):
+            return None
+
+        props = Properties(PacketTypes.PUBLISH)
+        if self.content_type is not None:
+            props.content_type = self.content_type
+        if self.payload_format_indicator is not None:
+            props.payload_format_indicator = (
+                self.payload_format_indicator
+            )
+        if self.message_expiry_interval is not None:
+            props.message_expiry_interval = int(
+                self.message_expiry_interval
+            )
+        if self.response_topic is not None:
+            props.response_topic = self.response_topic
+        if self.correlation_data is not None:
+            props.correlation_data = self.correlation_data
+        if self.user_properties:
+            props.user_property = list(self.user_properties)
+        return props
 
 
 @dataclass(slots=True)
@@ -71,6 +155,10 @@ class DeliveredMessage:
     payload: bytes
     qos: QOSLevel
     retain: bool
+    correlation_data: Optional[bytes] = None
+    user_properties: Tuple[Tuple[str, str], ...] = ()
+    content_type: Optional[str] = None
+    message_expiry_interval: Optional[int] = None
 
 
 @dataclass(slots=True)
@@ -244,6 +332,7 @@ class Client:
             )
             if isinstance(topic, PublishableMessage):
                 message = topic
+                properties = message.build_properties()
                 await client.publish(
                     message.topic_name,
                     payload=message.payload,
@@ -318,11 +407,52 @@ class Client:
                     qos = QOSLevel(int(qos_value))
                 except (ValueError, TypeError):
                     qos = QOSLevel.QOS_0
+                properties_obj = getattr(message, "properties", None)
+                correlation_data: Optional[bytes] = None
+                user_props: Tuple[Tuple[str, str], ...] = ()
+                content_type = None
+                expiry: Optional[int] = None
+                if properties_obj is not None:
+                    raw_corr = getattr(
+                        properties_obj,
+                        "CorrelationData",
+                        None,
+                    )
+                    if raw_corr is not None:
+                        correlation_data = (
+                            bytes(raw_corr)
+                            if not isinstance(raw_corr, bytes)
+                            else raw_corr
+                        )
+                    raw_user = getattr(
+                        properties_obj,
+                        "UserProperty",
+                        None,
+                    )
+                    if raw_user:
+                        user_props = tuple(
+                            (str(key), str(value))
+                            for key, value in raw_user
+                        )
+                    content_type = getattr(
+                        properties_obj,
+                        "ContentType",
+                        None,
+                    )
+                    expiry = getattr(
+                        properties_obj,
+                        "MessageExpiryInterval",
+                        None,
+                    )
                 yield DeliveredMessage(
                     topic_name=topic,
                     payload=payload_bytes,
                     qos=qos,
                     retain=bool(getattr(message, "retain", False)),
+                    correlation_data=correlation_data,
+                    user_properties=user_props,
+                    content_type=content_type,
+                    message_expiry_interval=expiry,
                 )
         except Exception as exc:
             raise ConnectionLostError(str(exc)) from exc

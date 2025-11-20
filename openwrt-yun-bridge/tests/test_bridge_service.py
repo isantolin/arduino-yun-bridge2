@@ -11,10 +11,29 @@ import pytest
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.services.runtime import BridgeService
 from yunbridge.policy import AllowedCommandPolicy
-from yunbridge.state.context import RuntimeState
-from yunbridge.mqtt import PublishableMessage
+from yunbridge.state.context import (
+    PendingDatastoreRequest,
+    PendingPinRequest,
+    RuntimeState,
+)
+from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.process import ProcessComponent
+
+
+def _make_inbound(
+    topic: str,
+    payload: bytes = b"",
+    *,
+    qos: QOSLevel = QOSLevel.QOS_0,
+    retain: bool = False,
+) -> InboundMessage:
+    return InboundMessage(
+        topic_name=topic,
+        payload=payload,
+        qos=qos,
+        retain=retain,
+    )
 
 
 def test_on_serial_connected_flushes_console_queue(
@@ -318,9 +337,18 @@ def test_on_serial_disconnected_clears_pending(
     async def _run() -> None:
         service = BridgeService(runtime_config, runtime_state)
 
-        runtime_state.pending_digital_reads.extend([1, 2])
-        runtime_state.pending_analog_reads.append(3)
-        runtime_state.pending_datastore_gets.append("key")
+        runtime_state.pending_digital_reads.extend(
+            [
+                PendingPinRequest(pin=1, reply_context=None),
+                PendingPinRequest(pin=2, reply_context=None),
+            ]
+        )
+        runtime_state.pending_analog_reads.append(
+            PendingPinRequest(pin=3, reply_context=None)
+        )
+        runtime_state.pending_datastore_gets.append(
+            PendingDatastoreRequest(key="key", reply_context=None)
+        )
         runtime_state.mcu_is_paused = True
         runtime_state.enqueue_console_chunk(b"keep", logging.getLogger())
 
@@ -353,7 +381,10 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
         assert stored
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/mailbox/read", b""
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/mailbox/read",
+                b"",
+            )
         )
 
         assert runtime_state.mqtt_publish_queue.qsize() == 2
@@ -373,7 +404,7 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
     asyncio.run(_run())
 
 
-def test_mqtt_datastore_put_sends_frame_and_updates(
+def test_mqtt_datastore_put_updates_local_cache(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
@@ -381,26 +412,21 @@ def test_mqtt_datastore_put_sends_frame_and_updates(
         service = BridgeService(runtime_config, runtime_state)
 
         sent_frames: list[tuple[int, bytes]] = []
-        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
-            flow.on_frame_received(
-                Status.ACK.value,
-                struct.pack(">H", command_id),
-            )
             return True
 
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/datastore/put/foo",
-            b"baz",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/datastore/put/foo",
+                b"baz",
+            )
         )
 
-        assert sent_frames
-        assert sent_frames[0][0] == Command.CMD_DATASTORE_PUT.value
-        assert sent_frames[0][1] == b"\x03foo\x03baz"
+        assert not sent_frames
         assert runtime_state.datastore.get("foo") == "baz"
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -427,8 +453,10 @@ def test_mqtt_datastore_put_without_key_is_ignored(
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/datastore/put",
-            b"value",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/datastore/put",
+                b"value",
+            )
         )
 
         assert not sent_frames
@@ -459,8 +487,10 @@ def test_mqtt_datastore_get_non_request_updates_cache(
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo",
-            b"",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo",
+                b"",
+            )
         )
 
         assert sent_frames
@@ -493,8 +523,10 @@ def test_mqtt_datastore_get_send_failure_removes_pending(
         service.register_serial_sender(failing_sender)
 
         await service.handle_mqtt_message(
-            f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo/request",
-            b"",
+            _make_inbound(
+                f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo/request",
+                b"",
+            )
         )
 
         assert sent_frames
@@ -527,11 +559,13 @@ def test_mqtt_datastore_get_key_too_large_logs_warning(
 
         with caplog.at_level(logging.WARNING, logger="yunbridge.datastore"):
             await service.handle_mqtt_message(
-                (
-                    f"{runtime_state.mqtt_topic_prefix}/datastore/get/"
-                    f"{long_key}/request"
-                ),
-                b"",
+                _make_inbound(
+                    (
+                        f"{runtime_state.mqtt_topic_prefix}/datastore/get/"
+                        f"{long_key}/request"
+                    ),
+                    b"",
+                )
             )
 
         assert not sent_frames
@@ -561,7 +595,8 @@ def test_mqtt_datastore_get_roundtrip_updates_cache(
             if command_id == Command.CMD_DATASTORE_GET.value:
                 pending_observed = (
                     bool(runtime_state.pending_datastore_gets)
-                    and runtime_state.pending_datastore_gets[0] == "foo"
+                    and runtime_state.pending_datastore_gets[0].key
+                    == "foo"
                 )
                 await service.handle_mcu_frame(
                     Command.CMD_DATASTORE_GET_RESP.value,
@@ -573,8 +608,13 @@ def test_mqtt_datastore_get_roundtrip_updates_cache(
 
         with caplog.at_level(logging.WARNING, logger="yunbridge.datastore"):
             await service.handle_mqtt_message(
-                f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo/request",
-                b"",
+                _make_inbound(
+                    (
+                        f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo"
+                        "/request"
+                    ),
+                    b"",
+                )
             )
 
         assert sent_frames

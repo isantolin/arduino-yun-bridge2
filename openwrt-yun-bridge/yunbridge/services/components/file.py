@@ -11,7 +11,7 @@ from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
 from ...const import TOPIC_FILE
-from ...mqtt import PublishableMessage
+from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from .base import BridgeContext
@@ -136,7 +136,11 @@ class FileComponent:
         return False
 
     async def handle_mqtt(
-        self, action: str, path_parts: list[str], payload: bytes
+        self,
+        action: str,
+        path_parts: list[str],
+        payload: bytes,
+        inbound: Optional[InboundMessage] = None,
     ) -> None:
         filename = "/".join(path_parts)
         if not filename:
@@ -171,11 +175,18 @@ class FileComponent:
                 f"{self.state.mqtt_topic_prefix}/{TOPIC_FILE}/read/response/"
                 f"{filename}"
             )
-            await self.ctx.enqueue_mqtt(
+            message = (
                 PublishableMessage(
                     topic_name=response_topic,
                     payload=data,
                 )
+                .with_message_expiry(30)
+                .with_user_property("bridge-file-path", filename)
+            )
+
+            await self.ctx.enqueue_mqtt(
+                message,
+                reply_context=inbound,
             )
         elif action == "remove":
             success, _, reason = await self._perform_file_operation(

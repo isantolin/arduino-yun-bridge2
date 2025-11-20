@@ -18,6 +18,11 @@ __pycache__/
 *.log
 *.swp
 *.swo
+.coverage
+coverage/
+coverage.xml
+*.gcda
+*.gcno
 # Python venvs
 pyenv/
 .venv/
@@ -35,6 +40,7 @@ openwrt-yun-core/build/
 luci-app-yunbridge/build/
 YunBridge-v2/build/
 Bridge-v2/build/
+openwrt-library-arduino/build-coverage/
 # Python dist folders
 openwrt-yun-client-python/dist/
 YunBridge-v2/dist/

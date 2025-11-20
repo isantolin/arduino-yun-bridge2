@@ -40,6 +40,7 @@ from yunbridge.mqtt import (
     MQTTError,
     QOSLevel,
     ProtocolVersion,
+    as_inbound_message,
 )
 from yunbridge.services.runtime import (
     BridgeService,
@@ -405,6 +406,7 @@ async def _mqtt_publisher_loop(
                 message_to_publish.payload,
                 qos=int(message_to_publish.qos),
                 retain=message_to_publish.retain,
+                properties=message_to_publish.build_properties(),
             )
         except asyncio.CancelledError:
             logger.info("MQTT publisher loop cancelled.")
@@ -447,16 +449,15 @@ async def _mqtt_subscriber_loop(
     try:
         async with client.unfiltered_messages() as messages:
             async for message in messages:
-                topic = message.topic or ""
-                if not topic:
+                inbound = as_inbound_message(message)
+                if not inbound.topic_name:
                     continue
                 try:
-                    payload = message.payload or b""
-                    await service.handle_mqtt_message(topic, payload)
+                    await service.handle_mqtt_message(inbound)
                 except Exception:
                     logger.exception(
                         "Error processing MQTT topic %s",
-                        topic,
+                        inbound.topic_name,
                     )
     except asyncio.CancelledError:
         logger.info("MQTT subscriber loop cancelled.")

@@ -31,7 +31,7 @@ from ..const import (
     TOPIC_STATUS,
     TOPIC_SYSTEM,
 )
-from ..mqtt import PublishableMessage
+from ..mqtt import InboundMessage, PublishableMessage
 from ..state.context import RuntimeState
 from .components import (
     ConsoleComponent,
@@ -243,19 +243,42 @@ class BridgeService:
                 payload.hex(),
             )
 
-    async def handle_mqtt_message(self, topic: str, payload: bytes) -> None:
+    async def handle_mqtt_message(self, inbound: InboundMessage) -> None:
         try:
-            await self._dispatch_mqtt_message(topic, payload)
+            await self._dispatch_mqtt_message(inbound)
         except Exception:
             logger.exception(
-                "Error processing MQTT message on topic %s", topic
+                "Error processing MQTT message on topic %s",
+                inbound.topic_name,
             )
 
-    async def enqueue_mqtt(self, message: PublishableMessage) -> None:
+    async def enqueue_mqtt(
+        self,
+        message: PublishableMessage,
+        *,
+        reply_context: Optional[InboundMessage] = None,
+    ) -> None:
         queue = self.state.mqtt_publish_queue
+        message_to_queue = message
+        if reply_context is not None:
+            target_topic = (
+                reply_context.response_topic
+                if reply_context.response_topic
+                else message.topic_name
+            )
+            message_to_queue = message_to_queue.with_topic(target_topic)
+            if reply_context.correlation_data is not None:
+                message_to_queue = message_to_queue.with_correlation_data(
+                    reply_context.correlation_data
+                )
+            message_to_queue = message_to_queue.with_user_property(
+                "bridge-request-topic",
+                reply_context.topic_name,
+            )
+
         while True:
             try:
-                queue.put_nowait(message)
+                queue.put_nowait(message_to_queue)
                 return
             except asyncio.QueueFull:
                 try:
@@ -291,7 +314,9 @@ class BridgeService:
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
-            logger.warning("MCU link synchronisation did not confirm within timeout")
+            logger.warning(
+                "MCU link synchronisation did not confirm within timeout"
+            )
             return False
         return True
 
@@ -305,7 +330,10 @@ class BridgeService:
                 and self.state.link_handshake_nonce is None
             ):
                 return True
-            if self.state.link_handshake_nonce != nonce and not self.state.link_is_synchronized:
+            if (
+                self.state.link_handshake_nonce != nonce
+                and not self.state.link_is_synchronized
+            ):
                 break
             await asyncio.sleep(0.01)
         return (
@@ -362,8 +390,8 @@ class BridgeService:
         ):
             await self._acknowledge_mcu_frame(command_id)
 
-    async def _dispatch_mqtt_message(self, topic: str, payload: bytes) -> None:
-        await self._handle_mqtt_topic(topic, payload)
+    async def _dispatch_mqtt_message(self, inbound: InboundMessage) -> None:
+        await self._handle_mqtt_topic(inbound)
 
     # ------------------------------------------------------------------
     # MCU -> Linux handlers
@@ -396,7 +424,7 @@ class BridgeService:
                 "message": text,
             }
         ).encode("utf-8")
-        await self.enqueue_mqtt(
+        message = (
             PublishableMessage(
                 topic_name=(
                     f"{self.state.mqtt_topic_prefix}/"
@@ -404,7 +432,16 @@ class BridgeService:
                 ),
                 payload=report,
             )
+            .with_content_type("application/json")
+            .with_message_expiry(30)
+            .with_user_property("bridge-status", status.name)
         )
+        if text:
+            message = message.with_user_property(
+                "bridge-status-message",
+                text,
+            )
+        await self.enqueue_mqtt(message)
 
     async def _handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
@@ -504,7 +541,8 @@ class BridgeService:
     # MQTT topic handling
     # ------------------------------------------------------------------
 
-    async def _handle_mqtt_topic(self, topic: str, payload: bytes) -> None:
+    async def _handle_mqtt_topic(self, inbound: InboundMessage) -> None:
+        topic = inbound.topic_name
         parts = topic.split("/")
         if not parts or parts[0] != self.state.mqtt_topic_prefix:
             logger.debug(
@@ -516,34 +554,47 @@ class BridgeService:
             logger.debug("MQTT topic missing type segment: %s", topic)
             return
 
+        payload = inbound.payload
         payload_str = payload.decode("utf-8", errors="ignore")
         topic_type = parts[1]
         identifier = parts[2] if len(parts) >= 3 else ""
 
         try:
             if topic_type == TOPIC_FILE and len(parts) >= 4:
-                await self._file.handle_mqtt(identifier, parts[3:], payload)
+                await self._file.handle_mqtt(
+                    identifier,
+                    parts[3:],
+                    payload,
+                    inbound,
+                )
             elif topic_type == TOPIC_CONSOLE and identifier == "in":
-                await self._console.handle_mqtt_input(payload)
+                await self._console.handle_mqtt_input(payload, inbound)
             elif topic_type == TOPIC_DATASTORE and len(parts) >= 3:
                 await self._datastore.handle_mqtt(
                     identifier,
                     parts[3:],
                     payload,
                     payload_str,
+                    inbound,
                 )
             elif topic_type == TOPIC_MAILBOX and identifier == "write":
-                await self._mailbox.handle_mqtt_write(payload)
+                await self._mailbox.handle_mqtt_write(payload, inbound)
             elif topic_type == TOPIC_MAILBOX and identifier == "read":
-                await self._mailbox.handle_mqtt_read()
+                await self._mailbox.handle_mqtt_read(inbound)
             elif topic_type == TOPIC_SHELL:
-                await self._shell.handle_mqtt(parts, payload_str)
+                await self._shell.handle_mqtt(parts, payload_str, inbound)
             elif topic_type in (TOPIC_DIGITAL, TOPIC_ANALOG):
-                await self._pin.handle_mqtt(topic_type, parts, payload_str)
+                await self._pin.handle_mqtt(
+                    topic_type,
+                    parts,
+                    payload_str,
+                    inbound,
+                )
             elif topic_type == TOPIC_SYSTEM:
                 handled = await self._system.handle_mqtt(
                     identifier,
                     parts[3:] if len(parts) > 3 else [],
+                    inbound,
                 )
                 if not handled:
                     logger.debug("Unhandled MQTT system topic %s", topic)

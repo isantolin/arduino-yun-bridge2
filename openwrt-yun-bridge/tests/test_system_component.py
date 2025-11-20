@@ -1,0 +1,272 @@
+"""Unit tests for the SystemComponent publishing logic."""
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Coroutine
+from typing import Any
+
+import pytest
+
+from yunbridge.config.settings import RuntimeConfig
+from yunbridge.const import TOPIC_SYSTEM
+from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
+from yunbridge.rpc.protocol import Command
+from yunbridge.services.components.system import SystemComponent
+from yunbridge.state.context import RuntimeState
+
+
+class DummyContext:
+    def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
+        self.config = config
+        self.state = state
+        self.sent_frames: list[tuple[int, bytes]] = []
+        self.published: list[tuple[PublishableMessage, InboundMessage | None]] = []
+        self.scheduled: list[Coroutine[Any, Any, None]] = []
+        self.send_result: bool = True
+
+    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
+        self.sent_frames.append((command_id, payload))
+        return self.send_result
+
+    async def enqueue_mqtt(
+        self,
+        message: PublishableMessage,
+        *,
+        reply_context: InboundMessage | None = None,
+    ) -> None:
+        self.published.append((message, reply_context))
+
+    def is_command_allowed(self, command: str) -> bool:
+        return True
+
+    def schedule_background(
+        self, coroutine: Coroutine[Any, Any, None]
+    ) -> None:
+        self.scheduled.append(coroutine)
+
+
+def _run(coro: Coroutine[Any, Any, None]) -> None:
+    asyncio.run(coro)
+
+
+def _make_inbound(topic: str) -> InboundMessage:
+    return InboundMessage(
+        topic_name=topic,
+        payload=b"",
+        qos=QOSLevel.QOS_0,
+        retain=False,
+        response_topic=f"reply/{topic}",
+        correlation_data=b"cid",
+    )
+
+
+def test_request_mcu_version_resets_cached_version(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        runtime_state.mcu_version = (3, 4)
+        ok = await component.request_mcu_version()
+        assert ok is True
+        assert ctx.sent_frames == [(Command.CMD_GET_VERSION.value, b"")]
+        assert runtime_state.mcu_version is None
+
+        runtime_state.mcu_version = (5, 6)
+        ctx.send_result = False
+        ok = await component.request_mcu_version()
+        assert ok is False
+        assert runtime_state.mcu_version == (5, 6)
+
+    _run(_coro())
+
+
+def test_handle_get_free_memory_resp_publishes_with_pending_reply(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        inbound = _make_inbound("free")
+        component._pending_free_memory.append(  # pyright: ignore[reportPrivateUsage]
+            inbound
+        )
+
+        await component.handle_get_free_memory_resp(b"\x00d")
+
+        assert len(ctx.published) == 2
+        message, reply_context = ctx.published[0]
+        assert reply_context is inbound
+        assert message.payload == b"100"
+        assert message.content_type == "text/plain; charset=utf-8"
+        assert message.message_expiry_interval == 10
+        assert message.topic_name.endswith(
+            f"/{TOPIC_SYSTEM}/free_memory/value"
+        )
+        assert not component._pending_free_memory  # pyright: ignore[reportPrivateUsage]
+
+    _run(_coro())
+
+
+def test_handle_get_free_memory_resp_ignores_malformed(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        caplog.set_level("WARNING", logger="yunbridge.system")
+
+        await component.handle_get_free_memory_resp(b"\x01")
+
+        assert not ctx.published
+        assert not component._pending_free_memory  # pyright: ignore[reportPrivateUsage]
+        assert any(
+            "Malformed GET_FREE_MEMORY_RESP" in message
+            for message in (record.getMessage() for record in caplog.records)
+        )
+
+    _run(_coro())
+
+
+def test_handle_get_version_resp_publishes_pending_and_updates_state(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        inbound = _make_inbound("version")
+        component._pending_version.append(  # pyright: ignore[reportPrivateUsage]
+            inbound
+        )
+
+        await component.handle_get_version_resp(b"\x01\x02")
+
+        assert runtime_state.mcu_version == (1, 2)
+        assert len(ctx.published) == 2
+        message, reply_ctx = ctx.published[0]
+        assert reply_ctx is inbound
+        assert message.payload == b"1.2"
+        assert message.message_expiry_interval == 60
+        assert message.content_type == "text/plain; charset=utf-8"
+        assert message.topic_name.endswith(
+            f"/{TOPIC_SYSTEM}/version/value"
+        )
+        assert not component._pending_version  # pyright: ignore[reportPrivateUsage]
+
+    _run(_coro())
+
+
+def test_handle_get_version_resp_malformed(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        caplog.set_level("WARNING", logger="yunbridge.system")
+
+        await component.handle_get_version_resp(b"bad")
+
+        assert runtime_state.mcu_version is None
+        assert not ctx.published
+        assert any(
+            "Malformed GET_VERSION_RESP" in message
+            for message in (record.getMessage() for record in caplog.records)
+        )
+
+    _run(_coro())
+
+
+def test_handle_mqtt_version_get_with_cached_version(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        runtime_state.mcu_version = (2, 5)
+        inbound = _make_inbound(
+            f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/version/get"
+        )
+
+        handled = await component.handle_mqtt(
+            "version",
+            ["get"],
+            inbound,
+        )
+
+        assert handled is True
+        assert ctx.sent_frames == [(Command.CMD_GET_VERSION.value, b"")]
+        assert runtime_state.mcu_version is None
+        assert not component._pending_version  # pyright: ignore[reportPrivateUsage]
+        assert len(ctx.published) == 3
+        assert ctx.published[0][1] is inbound
+        assert ctx.published[1][1] is None
+        assert ctx.published[2][1] is None
+        assert ctx.published[0][0].payload == b"2.5"
+
+    _run(_coro())
+
+
+def test_handle_mqtt_version_get_without_cached_version(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        inbound = _make_inbound(
+            f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/version/get"
+        )
+
+        handled = await component.handle_mqtt(
+            "version",
+            ["get"],
+            inbound,
+        )
+
+        assert handled is True
+        assert ctx.sent_frames == [(Command.CMD_GET_VERSION.value, b"")]
+        assert component._pending_version and component._pending_version[0] is inbound  # pyright: ignore[reportPrivateUsage]
+        assert not ctx.published
+
+    _run(_coro())
+
+
+def test_handle_mqtt_free_memory_get_tracks_pending(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        inbound = _make_inbound(
+            f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/free_memory/get"
+        )
+
+        handled = await component.handle_mqtt(
+            "free_memory",
+            ["get"],
+            inbound,
+        )
+
+        assert handled is True
+        assert ctx.sent_frames == [(Command.CMD_GET_FREE_MEMORY.value, b"")]
+        assert component._pending_free_memory and component._pending_free_memory[0] is inbound  # pyright: ignore[reportPrivateUsage]
+        assert not ctx.published
+
+    _run(_coro())

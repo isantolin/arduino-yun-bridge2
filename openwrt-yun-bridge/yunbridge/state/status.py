@@ -60,6 +60,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "running_processes": list(state.running_processes.keys()),
                 "allowed_commands": list(state.allowed_commands),
                 "link_synchronised": state.link_is_synchronized,
+                "serial_flow": state.serial_flow_stats.as_dict(),
                 "heartbeat_unix": time.time(),
                 "mcu_version": (
                     {

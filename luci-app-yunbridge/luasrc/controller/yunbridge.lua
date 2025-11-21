@@ -156,8 +156,10 @@ function action_api(...)
 
     -- Get MQTT config from UCI
     local host = uci:get("yunbridge", "general", "mqtt_host") or "127.0.0.1"
-    local port = uci:get("yunbridge", "general", "mqtt_port") or "1883"
+    local port = uci:get("yunbridge", "general", "mqtt_port") or "8883"
     local topic_prefix = uci:get("yunbridge", "general", "mqtt_topic") or "br"
+    local tls = uci:get("yunbridge", "general", "mqtt_tls") or "1"
+    local cafile = uci:get("yunbridge", "general", "mqtt_cafile") or ""
 
     -- Prepare mosquitto_pub arguments without relying on a shell
     local payload = (state == "ON") and "1" or "0"
@@ -172,6 +174,15 @@ function action_api(...)
         "-i", client_id,
         "-r"
     }
+
+    if tls == "1" then
+        if cafile ~= "" then
+            args[#args + 1] = "--cafile"
+            args[#args + 1] = cafile
+        end
+        args[#args + 1] = "--tls-version"
+        args[#args + 1] = "tlsv1.2"
+    end
 
     local ok, last_error = mosquitto_publish_with_retries(args, 3, 0.5)
 

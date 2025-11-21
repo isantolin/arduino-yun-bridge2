@@ -76,6 +76,25 @@ def _exit_code_dict_factory() -> Dict[int, int]:
     return {}
 
 
+@dataclass(slots=True)
+class SerialFlowStats:
+    commands_sent: int = 0
+    commands_acked: int = 0
+    retries: int = 0
+    failures: int = 0
+    last_event_unix: float = 0.0
+    dirty: bool = False
+
+    def as_dict(self) -> Dict[str, float | int]:
+        return {
+            "commands_sent": self.commands_sent,
+            "commands_acked": self.commands_acked,
+            "retries": self.retries,
+            "failures": self.failures,
+            "last_event_unix": self.last_event_unix,
+        }
+
+
 @dataclass
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers."""
@@ -153,6 +172,9 @@ class RuntimeState:
     mcu_version: Optional[tuple[int, int]] = None
     link_handshake_nonce: Optional[bytes] = None
     link_is_synchronized: bool = False
+    link_expected_tag: Optional[int] = None
+    link_nonce_length: int = 0
+    serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
 
     def configure(self, config: RuntimeConfig) -> None:
         self.allowed_policy = config.allowed_policy
@@ -385,6 +407,28 @@ class RuntimeState:
         self.last_watchdog_beat = (
             timestamp if timestamp is not None else time.monotonic()
         )
+
+    def record_serial_flow_event(self, event: str) -> None:
+        stats = self.serial_flow_stats
+        if event == "sent":
+            stats.commands_sent += 1
+        elif event == "ack":
+            stats.commands_acked += 1
+        elif event == "retry":
+            stats.retries += 1
+        elif event == "failure":
+            stats.failures += 1
+        else:
+            return
+        stats.last_event_unix = time.time()
+        stats.dirty = True
+
+    def consume_serial_flow_payload(self) -> Optional[Dict[str, float | int]]:
+        stats = self.serial_flow_stats
+        if not stats.dirty:
+            return None
+        stats.dirty = False
+        return stats.as_dict()
 
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:

@@ -8,7 +8,7 @@ import os
 import ssl
 import struct
 import sys
-from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
+from typing import Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
 import serial
 import paho.mqtt.client as paho_client
@@ -30,6 +30,7 @@ from yunbridge.common import (
     DecodeError,
     cobs_decode,
     cobs_encode,
+    pack_u16,
 )
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
@@ -55,15 +56,11 @@ from yunbridge.services.runtime import (
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.watchdog import WatchdogKeepalive
-import serial_asyncio  # type: ignore[import]
+import serial_asyncio
 
-OPEN_SERIAL_CONNECTION = cast(
-    Callable[
-        ...,  # type: ignore[misc]
-        Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]],
-    ],
-    cast(Any, serial_asyncio.open_serial_connection),  # type: ignore[misc]
-)
+OPEN_SERIAL_CONNECTION: Callable[
+    ..., Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]]
+] = serial_asyncio.open_serial_connection
 
 
 logger = logging.getLogger("yunbridge")
@@ -210,6 +207,11 @@ async def _send_serial_frame(
                 command_name = f"UNKNOWN_CMD_ID(0x{command_id:02X})"
         logger.debug("LINUX > %s payload=%s", command_name, payload.hex())
         return True
+    except ValueError as exc:
+        logger.error(
+            "Refusing to send frame 0x%02X: %s", command_id, exc
+        )
+        return False
     except ConnectionResetError:
         logger.error(
             "Serial connection reset while sending frame 0x%02X",
@@ -243,6 +245,8 @@ async def serial_reader_task(
 
             state.serial_writer = writer
 
+            previous_sender = getattr(service, "_serial_sender", None)
+
             async def _registered_sender(
                 cmd: int,
                 data: bytes,
@@ -251,7 +255,20 @@ async def serial_reader_task(
             ) -> bool:
                 return await _send_serial_frame(state, writer_ref, cmd, data)
 
-            service.register_serial_sender(_registered_sender)
+            if previous_sender is not None:
+
+                async def _chained_sender(cmd: int, data: bytes) -> bool:
+                    try:
+                        await previous_sender(cmd, data)
+                    except Exception:  # pragma: no cover - defensive
+                        logger.exception(
+                            "Serial sender hook raised an exception"
+                        )
+                    return await _registered_sender(cmd, data)
+
+                service.register_serial_sender(_chained_sender)
+            else:
+                service.register_serial_sender(_registered_sender)
             logger.info("Serial port connected successfully.")
             try:
                 await service.on_serial_connected()
@@ -293,9 +310,7 @@ async def serial_reader_task(
                                 human_hex,
                             )
                         truncated = encoded_packet[:32]
-                        payload = struct.pack(
-                            ">H", 0xFFFF
-                        ) + truncated
+                        payload = pack_u16(0xFFFF) + truncated
                         try:
                             await service.send_frame(
                                 Status.MALFORMED.value, payload
@@ -342,9 +357,7 @@ async def serial_reader_task(
                                 ],
                             )
                         truncated = raw_frame[:32]
-                        payload = (
-                            struct.pack(">H", command_hint) + truncated
-                        )
+                        payload = pack_u16(command_hint) + truncated
                         try:
                             await service.send_frame(status.value, payload)
                         except Exception:

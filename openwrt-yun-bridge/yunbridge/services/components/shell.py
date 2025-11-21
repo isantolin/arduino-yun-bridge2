@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import struct
 from typing import Optional
 
 from yunbridge.rpc.protocol import Status
@@ -11,6 +10,7 @@ from ...const import TOPIC_SHELL
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
+from ...common import pack_u16
 from .base import BridgeContext
 from .process import ProcessComponent
 
@@ -166,11 +166,11 @@ class ShellComponent:
 
     async def _handle_kill(self, pid_str: str) -> None:
         try:
-            pid_bytes = struct.pack(">H", int(pid_str))
+            pid = int(pid_str)
         except ValueError:
             logger.warning("Invalid MQTT PROCESS_KILL PID: %s", pid_str)
             return
-        await self.process.handle_kill(pid_bytes, send_ack=False)
+        await self.process.handle_kill(pack_u16(pid), send_ack=False)
 
 
 __all__ = ["ShellComponent"]

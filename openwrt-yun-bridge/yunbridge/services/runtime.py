@@ -14,13 +14,15 @@ import asyncio
 import json
 import logging
 import os
-import struct
+from binascii import crc_hqx
 from typing import Any, Awaitable, Callable, Coroutine, Optional
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ..config.settings import RuntimeConfig
+from ..common import pack_u16
 from ..const import (
+    SERIAL_NONCE_LENGTH,
     TOPIC_ANALOG,
     TOPIC_CONSOLE,
     TOPIC_DATASTORE,
@@ -140,6 +142,8 @@ class BridgeService:
             max_attempts=config.serial_retry_attempts,
             logger=logger,
         )
+        self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
+        self._secure_handshake = bool(config.serial_shared_secret)
 
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
@@ -184,7 +188,10 @@ class BridgeService:
 
         if not handshake_ok:
             logger.error(
-                "Skipping post-connect initialisation because MCU link sync failed"
+                (
+                    "Skipping post-connect initialisation because MCU link "
+                    "sync failed"
+                )
             )
             return
 
@@ -229,6 +236,7 @@ class BridgeService:
         # Ensure we do not keep the console in a paused state between links.
         self._console.on_serial_disconnected()
         await self._serial_flow.reset()
+        self._clear_handshake_expectations()
 
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
@@ -299,17 +307,30 @@ class BridgeService:
                 )
 
     async def sync_link(self) -> bool:
-        nonce = os.urandom(4)
+        nonce_length = SERIAL_NONCE_LENGTH if self._secure_handshake else 4
+        nonce = os.urandom(nonce_length)
         self.state.link_handshake_nonce = nonce
+        self.state.link_nonce_length = nonce_length
+        self.state.link_expected_tag = (
+            self._compute_handshake_tag(nonce)
+            if self._secure_handshake
+            else None
+        )
         self.state.link_is_synchronized = False
         reset_ok = await self.send_frame(Command.CMD_LINK_RESET.value, b"")
         if not reset_ok:
             logger.warning("Failed to emit LINK_RESET during handshake")
+            self.state.link_expected_tag = None
+            self.state.link_handshake_nonce = None
+            self.state.link_nonce_length = 0
             return False
         await asyncio.sleep(0.05)
         sync_ok = await self.send_frame(Command.CMD_LINK_SYNC.value, nonce)
         if not sync_ok:
             logger.warning("Failed to emit LINK_SYNC during handshake")
+            self.state.link_expected_tag = None
+            self.state.link_handshake_nonce = None
+            self.state.link_nonce_length = 0
             return False
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
@@ -317,6 +338,9 @@ class BridgeService:
             logger.warning(
                 "MCU link synchronisation did not confirm within timeout"
             )
+            self.state.link_expected_tag = None
+            self.state.link_handshake_nonce = None
+            self.state.link_nonce_length = 0
             return False
         return True
 
@@ -341,6 +365,18 @@ class BridgeService:
             and self.state.link_handshake_nonce is None
         )
 
+    def _clear_handshake_expectations(self) -> None:
+        self.state.link_handshake_nonce = None
+        self.state.link_expected_tag = None
+        self.state.link_nonce_length = 0
+
+    def _compute_handshake_tag(self, nonce: bytes) -> int:
+        seed = 0xFFFF
+        secret = self.config.serial_shared_secret
+        if secret:
+            seed = crc_hqx(secret, seed)
+        return crc_hqx(nonce, seed)
+
     def _should_acknowledge_mcu_frame(self, command_id: int) -> bool:
         return command_id not in STATUS_VALUES
 
@@ -351,12 +387,25 @@ class BridgeService:
         status: Status = Status.ACK,
         extra: bytes = b"",
     ) -> None:
-        payload = struct.pack(">H", command_id)
+        payload = pack_u16(command_id)
         if extra:
             remaining = MAX_PAYLOAD_SIZE - len(payload)
             if remaining > 0:
                 payload += extra[:remaining]
-        await self.send_frame(status.value, payload)
+        if not self._serial_sender:
+            logger.error(
+                "Serial sender not registered; cannot emit status 0x%02X",
+                status.value,
+            )
+            return
+        try:
+            await self._serial_sender(status.value, payload)
+        except Exception:
+            logger.exception(
+                "Failed to emit status 0x%02X for command 0x%02X",
+                status.value,
+                command_id,
+            )
 
     # --- MCU command handlers ---
 
@@ -468,23 +517,65 @@ class BridgeService:
             )
             return False
 
-        if payload != expected:
-            logger.warning(
-                "LINK_SYNC_RESP nonce mismatch (expected %s got %s)",
-                expected.hex(),
-                payload.hex(),
-            )
-            await self._acknowledge_mcu_frame(
-                Command.CMD_LINK_SYNC_RESP.value,
-                status=Status.MALFORMED,
-                extra=payload[: MAX_PAYLOAD_SIZE - 2],
-            )
-            self.state.link_is_synchronized = False
-            self.state.link_handshake_nonce = None
-            return False
+        nonce_length = self.state.link_nonce_length or len(expected)
+
+        if self._secure_handshake:
+            required_length = nonce_length + 2
+            if len(payload) != required_length:
+                logger.warning(
+                    "LINK_SYNC_RESP malformed length (expected %d got %d)",
+                    required_length,
+                    len(payload),
+                )
+                await self._acknowledge_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    status=Status.MALFORMED,
+                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                )
+                self._clear_handshake_expectations()
+                return False
+
+            nonce = payload[:nonce_length]
+            tag_bytes = payload[nonce_length:required_length]
+            received_tag = int.from_bytes(tag_bytes, "big")
+            recalculated_tag = self._compute_handshake_tag(nonce)
+
+            if nonce != expected or received_tag != recalculated_tag:
+                logger.warning(
+                    (
+                        "LINK_SYNC_RESP auth mismatch (nonce=%s tag=%04X "
+                        "expected=%04X)"
+                    ),
+                    nonce.hex(),
+                    received_tag,
+                    recalculated_tag,
+                )
+                await self._acknowledge_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    status=Status.MALFORMED,
+                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                )
+                self._clear_handshake_expectations()
+                return False
+
+            payload = nonce  # Normalise for logging below
+        else:
+            if payload != expected:
+                logger.warning(
+                    "LINK_SYNC_RESP nonce mismatch (expected %s got %s)",
+                    expected.hex(),
+                    payload.hex(),
+                )
+                await self._acknowledge_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    status=Status.MALFORMED,
+                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                )
+                self._clear_handshake_expectations()
+                return False
 
         self.state.link_is_synchronized = True
-        self.state.link_handshake_nonce = None
+        self._clear_handshake_expectations()
         logger.info("MCU link synchronised (nonce=%s)", payload.hex())
         return True
 

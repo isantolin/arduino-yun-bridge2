@@ -15,6 +15,7 @@ This documentation outlines the internal structure of the YunBridge Arduino libr
 
 - `Bridge.cpp` implementa colas de seguimiento para operaciones de datastore y mailbox, asegurando que las confirmaciones lleguen al daemon con el formato esperado.
 - Los helpers de proceso mantienen buffers parciales para que las respuestas de `processPoll` coincidan con las garantías descritas en `PROTOCOL.md`.
+- `BridgeSecret.h` define el secreto compartido usado en el handshake autenticado; el valor por defecto `"changeme123"` es solo un marcador y debe reemplazarse en producción junto al ajuste equivalente en el daemon de Linux.
 - Para recolectar cobertura en la librería desde un entorno host, ejecuta `./tools/coverage_arduino.sh`. El script compila automáticamente un harness de protocolo con `g++ -fprofile-arcs -ftest-coverage` contra los stubs de `tools/arduino_stub`, ejecuta el binario y genera reportes HTML/XML bajo `coverage/arduino/`. Si prefieres usar tus propios artefactos instrumentados (por ejemplo, compilados con `arduino-cli`), exporta `BUILD_DIR` y `OUTPUT_ROOT` antes de lanzarlo.
 
 Keeping the protocol and Arduino-specific code separated clarifies ownership and reuse, while the examples directory mirrors Arduino Library Manager conventions.

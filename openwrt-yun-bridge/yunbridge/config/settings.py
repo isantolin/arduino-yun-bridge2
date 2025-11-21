@@ -21,6 +21,7 @@ from ..const import (
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_CAFILE,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_TOPIC,
@@ -33,6 +34,8 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
+    DEFAULT_SERIAL_SHARED_SECRET,
+    MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy
 
@@ -68,6 +71,7 @@ class RuntimeConfig:
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     allowed_policy: AllowedCommandPolicy = field(init=False)
+    serial_shared_secret: bytes = field(repr=False, default=b"")
 
     @property
     def tls_enabled(self) -> bool:
@@ -84,6 +88,29 @@ class RuntimeConfig:
             "serial_response_timeout",
             max(self.serial_response_timeout, self.serial_retry_timeout * 2),
         )
+        if not self.mqtt_tls:
+            raise ValueError("MQTT TLS must be enabled for secure operation")
+        if not self.mqtt_cafile:
+            raise ValueError(
+                "MQTT TLS is enabled but 'mqtt_cafile' is not configured"
+            )
+        if not self.serial_shared_secret:
+            raise ValueError("serial_shared_secret must be configured")
+        if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
+            raise ValueError(
+                "serial_shared_secret must be at least %d bytes" %
+                MIN_SERIAL_SHARED_SECRET_LEN
+            )
+        if self.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
+            raise ValueError(
+                "serial_shared_secret placeholder is insecure"
+            )
+        unique_symbols = {byte for byte in self.serial_shared_secret}
+        if len(unique_symbols) < 4:
+            raise ValueError(
+                "serial_shared_secret must contain at least "
+                "four distinct bytes"
+            )
 
 
 def _load_raw_config() -> Dict[str, str]:
@@ -169,6 +196,22 @@ def load_runtime_config() -> RuntimeConfig:
 
     watchdog_enabled, watchdog_interval = _resolve_watchdog_settings()
 
+    mqtt_tls_value = raw.get("mqtt_tls")
+    mqtt_tls = _to_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
+
+    secret_env = os.environ.get("YUNBRIDGE_SERIAL_SECRET")
+    if secret_env is not None:
+        serial_secret_str = secret_env.strip()
+    else:
+        serial_secret_str = (raw.get("serial_shared_secret") or "").strip()
+    serial_secret_bytes = (
+        serial_secret_str.encode("utf-8") if serial_secret_str else b""
+    )
+
+    mqtt_cafile = _optional_path(raw.get("mqtt_cafile"))
+    if mqtt_cafile is None and mqtt_tls:
+        mqtt_cafile = DEFAULT_MQTT_CAFILE
+
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
         serial_baud=_get_int("serial_baud", DEFAULT_SERIAL_BAUD),
@@ -176,8 +219,8 @@ def load_runtime_config() -> RuntimeConfig:
         mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
         mqtt_user=_optional_path(raw.get("mqtt_user")),
         mqtt_pass=_optional_path(raw.get("mqtt_pass")),
-        mqtt_tls=_to_bool(raw.get("mqtt_tls")),
-        mqtt_cafile=_optional_path(raw.get("mqtt_cafile")),
+        mqtt_tls=mqtt_tls,
+        mqtt_cafile=mqtt_cafile,
         mqtt_certfile=_optional_path(raw.get("mqtt_certfile")),
         mqtt_keyfile=_optional_path(raw.get("mqtt_keyfile")),
         mqtt_topic=raw.get("mqtt_topic", DEFAULT_MQTT_TOPIC),
@@ -210,4 +253,5 @@ def load_runtime_config() -> RuntimeConfig:
         ),
         watchdog_enabled=watchdog_enabled,
         watchdog_interval=watchdog_interval,
+        serial_shared_secret=serial_secret_bytes,
     )

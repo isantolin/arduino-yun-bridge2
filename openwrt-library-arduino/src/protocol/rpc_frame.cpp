@@ -4,6 +4,39 @@
 
 namespace rpc {
 
+namespace {
+
+bool is_cobs_decoded_length_valid(const uint8_t* encoded,
+                                  size_t encoded_len,
+                                  size_t& decoded_len) {
+  decoded_len = 0;
+  size_t index = 0;
+
+  while (index < encoded_len) {
+    uint8_t code = encoded[index++];
+    if (code == 0) {
+      return false;
+    }
+
+    if (decoded_len + static_cast<size_t>(code) - 1 > MAX_RAW_FRAME_SIZE) {
+      return false;
+    }
+    decoded_len += static_cast<size_t>(code) - 1;
+
+    const bool has_more = index < encoded_len;
+    if (code < 0xFF && has_more) {
+      if (decoded_len >= MAX_RAW_FRAME_SIZE) {
+        return false;
+      }
+      decoded_len += 1;  // account for inserted zero byte
+    }
+  }
+
+  return decoded_len <= MAX_RAW_FRAME_SIZE;
+}
+
+}  // namespace
+
 // --- FrameParser ---
 
 FrameParser::FrameParser() {
@@ -22,13 +55,19 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
 
     // We have a complete COBS-encoded packet in _rx_buffer.
     uint8_t decoded_buffer[MAX_RAW_FRAME_SIZE];
-    size_t decoded_len =
-        cobs::decode(_rx_buffer, _rx_buffer_ptr, decoded_buffer);
+    size_t decoded_len = 0;
+    if (!is_cobs_decoded_length_valid(_rx_buffer, _rx_buffer_ptr,
+                                      decoded_len)) {
+      reset();
+      return false;  // Would overflow destination buffer.
+    }
+
+    decoded_len = cobs::decode(_rx_buffer, _rx_buffer_ptr, decoded_buffer);
 
     reset();  // Reset for the next packet.
 
-    if (decoded_len == 0) {
-      return false;  // COBS decoding failed.
+    if (decoded_len == 0 || decoded_len > MAX_RAW_FRAME_SIZE) {
+      return false;  // COBS decoding failed or produced oversize frame.
     }
 
     // --- Validate CRC ---

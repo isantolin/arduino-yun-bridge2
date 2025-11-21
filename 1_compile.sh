@@ -119,7 +119,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                 echo "[INFO] Installing packages for Ubuntu/Debian..."
                 "${PKG_PREFIX[@]}" apt-get update
                 "${PKG_PREFIX[@]}" apt-get install -y \
-                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build \
+                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling \
                     git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev \
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
                     libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
@@ -142,13 +142,13 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                 echo "[INFO] Installing packages for Fedora..."
                 "${PKG_PREFIX[@]}" dnf install -y \
                     make automake gcc gcc-c++ kernel-devel \
-                    python3 python3-pip python3-setuptools python3-wheel python3-build \
+                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling \
                     git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget \
                     python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
                     libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
                     libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
                     tk-devel tcl-devel libuuid-devel sqlite-devel xz-devel \
-                    bluez-libs-devel libbsd-devel binutils-devel
+                    bluez-libs-devel libbsd-devel binutils-devel asciidoctor
             fi
         else
             echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."

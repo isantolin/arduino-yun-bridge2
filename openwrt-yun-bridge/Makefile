@@ -37,7 +37,8 @@ define Package/$(PKG_NAME)
 	TITLE:=Yun Bridge Python Daemon
 	DEPENDS:=+openwrt-yun-core +python3 +python3-asyncio \
 		+python3-pyserial +python3-pyserial-asyncio +python3-cobs \
-		+python3-aiomqtt +python3-tenacity +python3-uci
+		+python3-aiomqtt +python3-tenacity +python3-uci \
+		+python3-more-itertools
 endef
 
 define Package/$(PKG_NAME)/description

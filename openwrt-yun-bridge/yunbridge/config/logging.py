@@ -29,12 +29,13 @@ class YunbridgeFormatter(logging.Formatter):
 def _build_handler(level: int, fmt: str) -> Handler:
     formatter = YunbridgeFormatter(fmt)
     if SYSLOG_SOCKET.exists():
-        handler: Handler = SysLogHandler(
+        syslog_handler = SysLogHandler(
             address=str(SYSLOG_SOCKET),
             facility=SysLogHandler.LOG_DAEMON,
         )
         # Ensure messages are tagged as yunbridge within syslog
-        handler.ident = "yunbridge "  # type: ignore[attr-defined]
+        syslog_handler.ident = "yunbridge "
+        handler = syslog_handler
     else:
         handler = logging.StreamHandler()
 

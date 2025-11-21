@@ -33,3 +33,12 @@ msgstr "Web UI"
 
 msgid "MQTT WebSocket Port"
 msgstr "MQTT WebSocket Port"
+
+msgid "Mandatory. Disabling TLS will prevent the daemon from starting."
+msgstr "Mandatory. Disabling TLS will prevent the daemon from starting."
+
+msgid "Serial Shared Secret"
+msgstr "Serial Shared Secret"
+
+msgid "Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long."
+msgstr "Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long."

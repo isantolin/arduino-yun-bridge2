@@ -3,12 +3,11 @@ from __future__ import annotations
 
 import json
 import logging
-import struct
 from typing import Optional
 
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
-from ...common import encode_status_reason
+from ...common import encode_status_reason, pack_u16, unpack_u16
 from ...const import (
     TOPIC_MAILBOX,
     TOPIC_MAILBOX_INCOMING_AVAILABLE,
@@ -41,7 +40,7 @@ class MailboxComponent:
         )
         message_id: int | None = None
         if len(payload) >= 2:
-            (message_id,) = struct.unpack(">H", payload[:2])
+            message_id = unpack_u16(payload)
 
         if message_id is not None:
             body = json.dumps({"message_id": message_id}).encode("utf-8")
@@ -61,7 +60,7 @@ class MailboxComponent:
             )
             return False
 
-        (msg_len,) = struct.unpack(">H", payload[:2])
+        msg_len = unpack_u16(payload)
         data = payload[2:2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
@@ -106,7 +105,7 @@ class MailboxComponent:
 
     async def handle_available(self, _: bytes) -> None:
         queue_len = len(self.state.mailbox_queue) & 0xFF
-        count_payload = struct.pack(">B", queue_len)
+        count_payload = bytes((queue_len & 0xFF,))
         await self.ctx.send_frame(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             count_payload,
@@ -127,7 +126,7 @@ class MailboxComponent:
             message_payload = message_payload[: MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
-        response_payload = struct.pack(">H", msg_len) + message_payload
+        response_payload = pack_u16(msg_len) + message_payload
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,

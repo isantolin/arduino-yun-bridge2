@@ -104,6 +104,7 @@ class SerialFlowController:
         response_timeout: float,
         max_attempts: int,
         logger: logging.Logger,
+        metrics_callback: Optional[Callable[[str], None]] = None,
     ) -> None:
         self._ack_timeout = max(ack_timeout, MIN_ACK_TIMEOUT)
         self._response_timeout = max(response_timeout, self._ack_timeout)
@@ -112,9 +113,15 @@ class SerialFlowController:
         self._sender: Optional[SendFrameCallable] = None
         self._condition = asyncio.Condition()
         self._current: Optional[PendingCommand] = None
+        self._metrics_callback = metrics_callback
 
     def set_sender(self, sender: SendFrameCallable) -> None:
         self._sender = sender
+
+    def set_metrics_callback(
+        self, callback: Optional[Callable[[str], None]]
+    ) -> None:
+        self._metrics_callback = callback
 
     async def reset(self) -> None:
         async with self._condition:
@@ -155,6 +162,14 @@ class SerialFlowController:
                 if self._current is pending:
                     self._current = None
                     self._condition.notify_all()
+
+    def _emit_metric(self, event: str) -> None:
+        if self._metrics_callback is None:
+            return
+        try:
+            self._metrics_callback(event)
+        except Exception:  # pragma: no cover - defensive guard
+            self._logger.exception("Serial metrics callback failed")
 
     def on_frame_received(self, command_id: int, payload: bytes) -> None:
         pending = self._current
@@ -212,6 +227,8 @@ class SerialFlowController:
                 pending.mark_failure(None)
                 break
 
+            self._emit_metric("sent")
+
             timeout_requires_retry = False
             ack_phase = True
             while True:
@@ -250,11 +267,12 @@ class SerialFlowController:
                     break
 
             if pending.success:
-                return True
+                break
 
             if timeout_requires_retry:
                 pending.ack_received = False
                 pending.completion.clear()
+                self._emit_metric("retry")
                 continue
 
             status_name = _status_name(pending.failure_status)
@@ -265,4 +283,9 @@ class SerialFlowController:
             )
             break
 
-        return bool(pending.success)
+        if pending.success:
+            self._emit_metric("ack")
+            return True
+
+        self._emit_metric("failure")
+        return False

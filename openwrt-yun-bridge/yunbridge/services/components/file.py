@@ -4,12 +4,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import struct
 from typing import Optional, Tuple
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
-from ...common import encode_status_reason
+from ...common import encode_status_reason, pack_u16
 from ...const import TOPIC_FILE
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
@@ -107,7 +106,7 @@ class FileComponent:
                 filename,
             )
             data = data[:max_payload]
-        response = struct.pack(">H", len(data)) + data
+        response = pack_u16(len(data)) + data
         await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
 
     async def handle_remove(self, payload: bytes) -> bool:

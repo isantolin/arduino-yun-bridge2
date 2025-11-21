@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Iterator, cast
 
-from cobs import cobs as _cobs  # type: ignore[import]
+from cobs import cobs as _cobs
 
 COBS_MODULE = cast(Any, _cobs)
 

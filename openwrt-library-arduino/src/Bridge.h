@@ -14,6 +14,7 @@
 #include <Arduino.h>
 
 #include "Print.h"
+#include "arduino/BridgeSecret.h"
 #include "protocol/rpc_frame.h"
 
 class HardwareSerial;

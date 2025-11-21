@@ -8,11 +8,11 @@ import os
 import re
 import sys
 import time
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from typing import Any, Callable, Dict
 
 try:  # pragma: no cover - replaced with test doubles when needed
-    from paho.mqtt import client as mqtt  # type: ignore[import]
+    from paho.mqtt import client as mqtt_client
 except (ImportError, Exception) as exc:  # pragma: no cover
     _missing_reason = repr(exc)
 
@@ -24,7 +24,11 @@ except (ImportError, Exception) as exc:  # pragma: no cover
                 f" ({_missing_reason})."
             )
 
-    mqtt = SimpleNamespace(Client=_MissingClient)  # type: ignore[assignment]
+    mqtt: ModuleType | SimpleNamespace = SimpleNamespace(
+        Client=_MissingClient
+    )
+else:
+    mqtt = mqtt_client
 
 from yunbridge.common import get_uci_config
 from yunbridge.const import (

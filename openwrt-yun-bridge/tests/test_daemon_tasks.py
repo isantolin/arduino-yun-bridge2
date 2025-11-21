@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from collections import deque
 from dataclasses import dataclass
 from types import TracebackType
@@ -13,7 +14,8 @@ from yunbridge.common import cobs_encode
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.daemon import Frame, mqtt_task, serial_reader_task
-from yunbridge.rpc.protocol import Command
+from yunbridge.mqtt import InboundMessage
+from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
 
@@ -154,8 +156,8 @@ class _MQTTServiceStub:
         self.handled = asyncio.Event()
 
     async def handle_mqtt_message(
-        self, inbound: object
-    ) -> None:  # type: ignore[override]
+        self, inbound: InboundMessage
+    ) -> None:
         self.handled.set()
 
     def schedule_background(
@@ -200,6 +202,58 @@ def test_serial_reader_task_processes_frame(
 
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(_run())
+
+
+def test_serial_reader_task_emits_crc_mismatch(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        service = _SerialServiceStub(runtime_config, state)
+
+        status_frames: Deque[tuple[int, bytes]] = deque()
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            status_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, b"\x01").to_bytes()
+        corrupted = bytearray(frame)
+        corrupted[-1] ^= 0xFF
+        encoded = cobs_encode(bytes(corrupted)) + SERIAL_TERMINATOR
+
+        reader = _FakeStreamReader(encoded, b"")
+        writer = _FakeStreamWriter()
+
+        async def _fake_open(*_: object, **__: object):
+            return reader, writer
+
+        monkeypatch.setattr(
+            "yunbridge.daemon._open_serial_connection_with_retry",
+            _fake_open,
+        )
+
+        task = asyncio.create_task(
+            serial_reader_task(runtime_config, state, cast(Any, service))
+        )
+
+        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+        await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
+
+        assert not service.received_frames
+        assert status_frames
+        assert any(
+            command_id == Status.CRC_MISMATCH.value
+            for command_id, _ in status_frames
+        )
+
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
             await task
 
     asyncio.run(_run())

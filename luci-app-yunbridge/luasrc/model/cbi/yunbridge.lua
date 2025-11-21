@@ -43,18 +43,19 @@ local function ensure_general_section()
             serial_port = "/dev/ttyATH0",
             serial_baud = "115200",
             mqtt_host = "127.0.0.1",
-            mqtt_port = "1883",
+            mqtt_port = "8883",
             mqtt_topic = "br",
             mqtt_user = "",
             mqtt_pass = "",
             mqtt_ws_port = "9001",
-            mqtt_tls = "0",
-            mqtt_cafile = "",
+            mqtt_tls = "1",
+            mqtt_cafile = "/etc/ssl/certs/ca-certificates.crt",
             mqtt_certfile = "",
             mqtt_keyfile = "",
             file_system_root = "/root/yun_files",
             process_timeout = "10",
-            allowed_commands = ""
+            allowed_commands = "",
+            serial_shared_secret = "changeme123"
         })
         changed = true
     end
@@ -99,7 +100,7 @@ mqtt_host.rmempty = false
 
 local mqtt_port = s:option(Value, "mqtt_port", translate("MQTT Port"))
 mqtt_port.datatype = "port"
-mqtt_port.placeholder = "1883"
+mqtt_port.placeholder = "8883"
 mqtt_port.rmempty = false
 
 local mqtt_user = s:option(Value, "mqtt_user", translate("MQTT Username"))
@@ -111,12 +112,13 @@ mqtt_pass.rmempty = true
 
 local mqtt_tls = s:option(Flag, "mqtt_tls", translate("Enable TLS/SSL"))
 mqtt_tls.rmempty = false
-mqtt_tls.default = "0"
+mqtt_tls.default = "1"
+mqtt_tls.description = translate("Mandatory. Disabling TLS will prevent the daemon from starting.")
 
 local mqtt_cafile = s:option(Value, "mqtt_cafile", translate("CA File Path"))
-mqtt_cafile.placeholder = "/etc/yunbridge/ca.crt"
+mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
 mqtt_cafile:depends("mqtt_tls", "1")
-mqtt_cafile.rmempty = true
+mqtt_cafile.rmempty = false
 
 local mqtt_certfile = s:option(Value, "mqtt_certfile", translate("Client Certificate Path"))
 mqtt_certfile.placeholder = "/etc/yunbridge/client.crt"
@@ -163,6 +165,11 @@ local allowed_commands = s:option(Value, "allowed_commands", translate("Allowed 
 allowed_commands.placeholder = "date uptime"
 allowed_commands.rmempty = true
 allowed_commands.description = translate("Space separated whitelist for shell execution (leave empty to disable).")
+
+local serial_secret = s:option(Value, "serial_shared_secret", translate("Serial Shared Secret"))
+serial_secret.password = true
+serial_secret.rmempty = false
+serial_secret.description = translate("Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long.")
 
 function m.on_commit(map)
     -- Restart the daemon so changes take effect immediately.

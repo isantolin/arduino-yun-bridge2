@@ -6,11 +6,11 @@ from asyncio import Future
 from typing import TYPE_CHECKING, Any, Callable, Optional, cast
 
 if TYPE_CHECKING:  # pragma: no cover - import only for type checking
-    from aiomqtt import Client as _AiomqttClient  # type: ignore[import]
-    from aiomqtt import MqttError as _AiomqttError  # type: ignore[import]
+    from aiomqtt import Client as _AiomqttClient
+    from aiomqtt import MqttError as _AiomqttError
 else:  # pragma: no cover - exercised in integration/packaging tests
     try:
-        import aiomqtt  # type: ignore[import]
+        import aiomqtt
     except Exception as exc:  # pragma: no cover
         # Allow unit tests to run without aiomqtt installed.
         _missing_reason = repr(exc)
@@ -31,7 +31,7 @@ else:  # pragma: no cover - exercised in integration/packaging tests
         _AiomqttError = getattr(aiomqtt, "MqttError", None)
         if _AiomqttError is None:  # pragma: no cover
             # aiomqtt layout may expose MqttError in a submodule.
-            from aiomqtt import error as _aiomqtt_error  # type: ignore[import]
+            from aiomqtt import error as _aiomqtt_error
 
             _AiomqttError = _aiomqtt_error.MqttError
 
@@ -43,7 +43,7 @@ MqttError = _AiomqttError
 class Client(BaseClient):
     """Subclass that suppresses noisy cancellation traces during shutdown."""
 
-    def _on_disconnect(  # type: ignore[override]
+    def _on_disconnect(
         self,
         client: Any,
         userdata: Any,

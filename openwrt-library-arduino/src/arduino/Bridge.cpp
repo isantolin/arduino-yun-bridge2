@@ -19,6 +19,7 @@
 #include "Bridge.h"
 
 #if defined(ARDUINO_ARCH_AVR)
+#include <avr/pgmspace.h>
 #include <avr/wdt.h>
 #endif
 
@@ -26,6 +27,7 @@
 #include <stdlib.h> // Para atoi
 #include <stdint.h>
 
+#include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
 
 #define BRIDGE_BAUDRATE 115200
@@ -71,6 +73,38 @@ static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
 #endif
 
 namespace {
+
+#if BRIDGE_SERIAL_SHARED_SECRET_LEN > 0
+#if defined(ARDUINO_ARCH_AVR)
+const uint8_t kBridgeSerialSecret[] PROGMEM = BRIDGE_SERIAL_SHARED_SECRET;
+#else
+const uint8_t kBridgeSerialSecret[] = BRIDGE_SERIAL_SHARED_SECRET;
+#endif
+#endif
+
+constexpr size_t kHandshakeTagSize = 2;
+
+inline bool hasSerialSharedSecret() {
+  return BRIDGE_SERIAL_SHARED_SECRET_LEN > 0;
+}
+
+uint16_t computeHandshakeTag(const uint8_t* nonce, size_t nonce_len) {
+  uint16_t crc = crc16_ccitt_init();
+#if BRIDGE_SERIAL_SHARED_SECRET_LEN > 0
+  if (hasSerialSharedSecret()) {
+#if defined(ARDUINO_ARCH_AVR)
+    for (size_t i = 0; i < BRIDGE_SERIAL_SHARED_SECRET_LEN; ++i) {
+      uint8_t byte = pgm_read_byte_near(kBridgeSerialSecret + i);
+      crc = crc16_ccitt_update(crc, byte);
+    }
+#else
+    crc = crc16_ccitt_update(
+        crc, kBridgeSerialSecret, BRIDGE_SERIAL_SHARED_SECRET_LEN);
+#endif
+  }
+#endif
+  return crc16_ccitt_update(crc, nonce, nonce_len);
+}
 
 #if defined(ARDUINO_ARCH_AVR)
 uint16_t calculateFreeMemoryBytes() {
@@ -731,8 +765,37 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       {
         _resetLinkState();
         Console.begin();
-        sendFrame(CMD_LINK_SYNC_RESP, frame.payload,
-                  frame.header.payload_length);
+        const uint16_t nonce_length = frame.header.payload_length;
+        const bool has_secret = hasSerialSharedSecret();
+        if (nonce_length == 0) {
+          sendFrame(STATUS_MALFORMED, nullptr, 0);
+          command_processed_internally = true;
+          requires_ack = false;
+          break;
+        }
+
+        const size_t response_length =
+            static_cast<size_t>(nonce_length) +
+            (has_secret ? kHandshakeTagSize : 0);
+        if (response_length > rpc::MAX_PAYLOAD_SIZE) {
+          sendFrame(STATUS_MALFORMED, nullptr, 0);
+          command_processed_internally = true;
+          requires_ack = false;
+          break;
+        }
+
+        uint8_t response[rpc::MAX_PAYLOAD_SIZE];
+        memcpy(response, frame.payload, nonce_length);
+        if (has_secret) {
+          const uint16_t tag = computeHandshakeTag(frame.payload, nonce_length);
+          response[nonce_length] = static_cast<uint8_t>((tag >> 8) & 0xFF);
+          response[nonce_length + 1] = static_cast<uint8_t>(tag & 0xFF);
+        }
+
+        sendFrame(
+            CMD_LINK_SYNC_RESP,
+            response,
+            static_cast<uint16_t>(response_length));
         command_processed_internally = true;
         requires_ack = true;
       }

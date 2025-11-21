@@ -1,5 +1,3 @@
-# pyright: reportMissingImports=false, reportUnknownMemberType=false
-# pyright: reportUnknownVariableType=false, reportUnknownParameterType=false
 """Aiomqtt-backed MQTT client with MQTT v5 defaults for Yun Bridge examples."""
 from __future__ import annotations
 
@@ -9,6 +7,7 @@ from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import (
     Any,
+    Awaitable,
     AsyncContextManager,
     AsyncIterator,
     Dict,
@@ -22,8 +21,8 @@ from typing import (
 )
 
 try:
-    from aiomqtt import Client as BaseMQTTClient  # type: ignore[import]
-    from aiomqtt.client import ProtocolVersion  # type: ignore[import]
+    from aiomqtt import Client as BaseMQTTClient
+    from aiomqtt.client import ProtocolVersion
 except ModuleNotFoundError as exc:  # pragma: no cover - dependency guard
     raise ModuleNotFoundError(
         "aiomqtt is required to run the Yun Bridge client examples. "
@@ -97,7 +96,10 @@ class PublishableMessage:
         properties: Mapping[Any, Any] | Iterable[Tuple[Any, Any]],
     ) -> "PublishableMessage":
         if isinstance(properties, Mapping):
-            props_iter: Iterable[Tuple[Any, Any]] = properties.items()
+            props_iter: Iterable[Tuple[Any, Any]] = cast(
+                Iterable[Tuple[Any, Any]],
+                properties.items(),
+            )
         else:
             props_iter = properties
         combined = tuple((str(key), str(value)) for key, value in props_iter)
@@ -177,7 +179,7 @@ class Client:
         *,
         client_id: Optional[str] = None,
         hostname: str = "127.0.0.1",
-        port: int = 1883,
+        port: int = 8883,
         username: Optional[str] = None,
         password: Optional[str] = None,
         tls_context: Optional[Any] = None,
@@ -488,7 +490,7 @@ class Client:
             if raw_future is None:
                 await asyncio.Future()
                 return
-            await raw_future  # type: ignore[awaitable-return]
+            await cast(Awaitable[object], raw_future)
             if disconnect_future is not None and not disconnect_future.done():
                 disconnect_future.set_result(None)
         except Exception as exc:  # pragma: no cover - defensive

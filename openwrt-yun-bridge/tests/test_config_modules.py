@@ -5,6 +5,30 @@ import pytest
 
 from yunbridge.config import logging as logging_module
 from yunbridge.config import settings
+from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
+
+
+def _runtime_config_kwargs(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "serial_port": "/dev/ttyUSB0",
+        "serial_baud": 9600,
+        "mqtt_host": "localhost",
+        "mqtt_port": 1883,
+        "mqtt_user": None,
+        "mqtt_pass": None,
+        "mqtt_tls": True,
+        "mqtt_cafile": "/etc/ssl/certs/ca-certificates.crt",
+        "mqtt_certfile": None,
+        "mqtt_keyfile": None,
+        "mqtt_topic": "yunbridge",
+        "allowed_commands": ("ls",),
+        "file_system_root": "/tmp",
+        "process_timeout": 30,
+        "debug_logging": False,
+        "serial_shared_secret": b"secure_secret_123",
+    }
+    base.update(overrides)
+    return base
 
 
 def test_load_runtime_config_applies_env_and_defaults(
@@ -38,6 +62,7 @@ def test_load_runtime_config_applies_env_and_defaults(
         "serial_retry_timeout": "1.5",
         "serial_response_timeout": "1.0",
         "serial_retry_attempts": "0",
+        "serial_shared_secret": " envsecret ",
     }
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
@@ -72,6 +97,7 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
     assert config.tls_enabled is True
+    assert config.serial_shared_secret == b"envsecret"
 
 
 def test_load_runtime_config_prefers_uci_config(
@@ -94,13 +120,8 @@ def test_load_runtime_config_prefers_uci_config(
 
     monkeypatch.setattr(settings, "get_default_config", _unexpected_default)
 
-    config = settings.load_runtime_config()
-
-    assert config.serial_port == "/dev/uci"
-    assert config.debug_logging is True
-    assert config.mqtt_tls is False
-    assert config.watchdog_enabled is False
-    assert config.watchdog_interval == settings.DEFAULT_WATCHDOG_INTERVAL
+    with pytest.raises(ValueError, match="MQTT TLS must be enabled"):
+        settings.load_runtime_config()
 
 
 def test_load_runtime_config_falls_back_to_defaults(
@@ -112,10 +133,10 @@ def test_load_runtime_config_falls_back_to_defaults(
     default_config = {
         "serial_port": "/dev/default",
         "serial_baud": "not-int",
-        "mqtt_tls": "no",
+        "mqtt_tls": "1",
         "mqtt_user": "  ",
         "mqtt_pass": "",
-        "mqtt_cafile": "",
+        "mqtt_cafile": "/etc/cafile",
         "mqtt_certfile": " ",
         "mqtt_keyfile": None,
         "mqtt_queue_limit": "-1",
@@ -123,6 +144,7 @@ def test_load_runtime_config_falls_back_to_defaults(
         "serial_response_timeout": "0.1",
         "serial_retry_attempts": "0",
         "allowed_commands": "* ",
+        "serial_shared_secret": " defaultsecret ",
     }
 
     monkeypatch.setattr(settings, "get_uci_config", _uci_failure)
@@ -134,10 +156,10 @@ def test_load_runtime_config_falls_back_to_defaults(
 
     assert config.serial_port == "/dev/default"
     assert config.serial_baud == settings.DEFAULT_SERIAL_BAUD
-    assert config.mqtt_tls is False
+    assert config.mqtt_tls is True
     assert config.mqtt_user is None
     assert config.mqtt_pass is None
-    assert config.mqtt_cafile is None
+    assert config.mqtt_cafile == "/etc/cafile"
     assert config.mqtt_certfile is None
     assert config.mqtt_keyfile is None
     assert config.mqtt_queue_limit == 1
@@ -149,6 +171,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.allowed_policy.allow_all is True
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 2.0
+    assert config.serial_shared_secret == b"defaultsecret"
 
 
 def test_configure_logging_stream_handler(
@@ -159,21 +182,7 @@ def test_configure_logging_stream_handler(
     monkeypatch.setattr(logging_module, "SYSLOG_SOCKET", missing_socket)
 
     config = settings.RuntimeConfig(
-        serial_port="/dev/ttyUSB0",
-        serial_baud=9600,
-        mqtt_host="localhost",
-        mqtt_port=1883,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-        mqtt_topic="yunbridge",
-        allowed_commands=("ls",),
-        file_system_root="/tmp",
-        process_timeout=30,
-        debug_logging=False,
+        **_runtime_config_kwargs(serial_shared_secret=b"testshared")
     )
 
     logging_module.configure_logging(config)
@@ -196,10 +205,25 @@ def test_configure_logging_stream_handler(
         exc_info=None,
     )
 
-    formatted = handler.format(record)
-    assert formatted == "example: hello world"
+    try:
+        formatted = handler.format(record)
+        assert formatted == "example: hello world"
+    finally:
+        root_logger.handlers.clear()
 
-    root_logger.handlers.clear()
+
+def test_runtime_config_rejects_placeholder_serial_secret() -> None:
+    kwargs = _runtime_config_kwargs(
+        serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET
+    )
+    with pytest.raises(ValueError, match="placeholder"):
+        settings.RuntimeConfig(**kwargs)
+
+
+def test_runtime_config_rejects_low_entropy_serial_secret() -> None:
+    kwargs = _runtime_config_kwargs(serial_shared_secret=b"aaaaaaaa")
+    with pytest.raises(ValueError, match="four distinct"):
+        settings.RuntimeConfig(**kwargs)
 
 
 def test_configure_logging_syslog_handler(
@@ -231,8 +255,8 @@ def test_configure_logging_syslog_handler(
         mqtt_port=1883,
         mqtt_user=None,
         mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
+        mqtt_tls=True,
+        mqtt_cafile="/etc/ssl/certs/ca-certificates.crt",
         mqtt_certfile=None,
         mqtt_keyfile=None,
         mqtt_topic="yunbridge",
@@ -240,6 +264,7 @@ def test_configure_logging_syslog_handler(
         file_system_root="/tmp",
         process_timeout=30,
         debug_logging=True,
+        serial_shared_secret=b"testshared",
     )
 
     logging_module.configure_logging(config)

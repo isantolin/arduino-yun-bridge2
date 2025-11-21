@@ -38,9 +38,11 @@ TOPIC_PREFIX=$(uci -q get yunbridge.general.mqtt_topic 2>/dev/null || printf '%s
 MQTT_TOPIC=${YUNBRIDGE_TOPIC:-${TOPIC_PREFIX}/d/${PIN}}
 
 MQTT_HOST=${YUNBRIDGE_MQTT_HOST:-$(uci -q get yunbridge.general.mqtt_host 2>/dev/null || printf '%s' "127.0.0.1")}
-MQTT_PORT=${YUNBRIDGE_MQTT_PORT:-$(uci -q get yunbridge.general.mqtt_port 2>/dev/null || printf '%s' "1883")}
+MQTT_PORT=${YUNBRIDGE_MQTT_PORT:-$(uci -q get yunbridge.general.mqtt_port 2>/dev/null || printf '%s' "8883")}
 MQTT_USER=${YUNBRIDGE_MQTT_USER:-$(uci -q get yunbridge.general.mqtt_user 2>/dev/null || printf '%s' "")}
 MQTT_PASS=${YUNBRIDGE_MQTT_PASS:-$(uci -q get yunbridge.general.mqtt_pass 2>/dev/null || printf '%s' "")}
+MQTT_TLS=${YUNBRIDGE_MQTT_TLS:-$(uci -q get yunbridge.general.mqtt_tls 2>/dev/null || printf '%s' "1")}
+MQTT_CAFILE=${YUNBRIDGE_MQTT_CAFILE:-$(uci -q get yunbridge.general.mqtt_cafile 2>/dev/null || printf '%s' "")}
 
 # Check for mosquitto_pub command
 if ! command -v mosquitto_pub >/dev/null 2>&1; then
@@ -76,6 +78,12 @@ if [ -n "$MQTT_USER" ]; then
 fi
 if [ -n "$MQTT_PASS" ]; then
     set -- "$@" -P "$MQTT_PASS"
+fi
+if [ "$MQTT_TLS" = "1" ]; then
+    if [ -n "$MQTT_CAFILE" ]; then
+        set -- "$@" --cafile "$MQTT_CAFILE"
+    fi
+    set -- "$@" --tls-version tlsv1.2
 fi
 
 if ! "$@"; then

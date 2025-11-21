@@ -17,23 +17,21 @@ from typing import (
 
 from .client import Client, MQTTError
 
-try:  # pragma: no cover - optional dependency path
-    from aiomqtt.client import ProtocolVersion  # type: ignore[import]
-except Exception:  # pragma: no cover - testing fallback
 
-    class ProtocolVersion(IntEnum):
-        """Fallback protocol version enumerations."""
+class ProtocolVersion(IntEnum):
+    """MQTT protocol versions supported by the client wrapper."""
 
-        V31 = 0x03
-        V311 = 0x04
-        V5 = 0x05
+    V31 = 0x03
+    V311 = 0x04
+    V5 = 0x05
+
 
 try:  # pragma: no cover - optional dependency path
-    from paho.mqtt.packettypes import PacketTypes as _RuntimePacketTypes  # type: ignore[import]
-    from paho.mqtt.properties import Properties as _RuntimeProperties  # type: ignore[import]
+    from paho.mqtt.packettypes import PacketTypes as _RuntimePacketTypes
+    from paho.mqtt.properties import Properties as _RuntimeProperties
 except Exception:  # pragma: no cover - allow tests without paho
-    _RuntimePacketTypes = None  # type: ignore[assignment]
-    _RuntimeProperties = None  # type: ignore[assignment]
+    _RuntimePacketTypes = None
+    _RuntimeProperties = None
 
 PahoPacketTypes: Any = _RuntimePacketTypes
 PahoProperties: Any = _RuntimeProperties
@@ -79,6 +77,7 @@ class MQTTClientProtocol(Protocol):
         *,
         qos: int,
         retain: bool,
+        properties: Optional[Any] = None,
     ) -> None:
         ...
 

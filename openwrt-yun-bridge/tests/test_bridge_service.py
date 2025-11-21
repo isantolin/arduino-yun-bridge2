@@ -56,9 +56,11 @@ def test_on_serial_connected_flushes_console_queue(
                 )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
+                tag = service._compute_handshake_tag(nonce)
+                response = nonce + struct.pack(">H", tag)
                 await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
-                    nonce,
+                    response,
                 )
             elif command_id == Command.CMD_GET_VERSION.value:
                 flow.on_frame_received(
@@ -102,6 +104,82 @@ def test_on_serial_connected_flushes_console_queue(
         )
         assert runtime_state.console_queue_bytes == 0
         assert runtime_state.mcu_version is None
+
+    asyncio.run(_run())
+
+
+def test_sync_link_rejects_invalid_handshake_tag(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            if command_id == Command.CMD_LINK_RESET.value:
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_RESET_RESP.value,
+                    b"",
+                )
+            elif command_id == Command.CMD_LINK_SYNC.value:
+                nonce = service.state.link_handshake_nonce or b""
+                bad_tag = (service._compute_handshake_tag(nonce) + 1) & 0xFFFF
+                response = nonce + struct.pack(">H", bad_tag)
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    response,
+                )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        success = await service.sync_link()
+
+        assert success is False
+        assert service.state.link_is_synchronized is False
+        assert service.state.link_handshake_nonce is None
+        assert any(
+            frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames
+        )
+
+    asyncio.run(_run())
+
+
+def test_sync_link_rejects_truncated_response(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            if command_id == Command.CMD_LINK_RESET.value:
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_RESET_RESP.value,
+                    b"",
+                )
+            elif command_id == Command.CMD_LINK_SYNC.value:
+                nonce = service.state.link_handshake_nonce or b""
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    nonce,
+                )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        success = await service.sync_link()
+
+        assert success is False
+        assert service.state.link_is_synchronized is False
+        assert service.state.link_handshake_nonce is None
+        assert any(
+            frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames
+        )
 
     asyncio.run(_run())
 

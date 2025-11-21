@@ -6,7 +6,8 @@ from collections.abc import Iterable, Sequence
 from struct import pack as struct_pack, unpack as struct_unpack
 from typing import Any, Dict, Final, Optional, Protocol, Tuple, TypeVar, cast
 
-from cobs import cobs as _cobs  # type: ignore[import]
+from cobs import cobs as _cobs
+from more_itertools import chunked, unique_everseen
 
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
 
@@ -17,6 +18,7 @@ from .const import (
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_CAFILE,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_TOPIC,
@@ -86,10 +88,7 @@ def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
         raise ValueError("max_size must be positive")
     if not data:
         return tuple()
-    return tuple(
-        data[index:index + max_size]
-        for index in range(0, len(data), max_size)
-    )
+    return tuple(bytes(chunk) for chunk in chunked(data, max_size))
 
 
 def normalise_allowed_commands(commands: Iterable[str]) -> Tuple[str, ...]:
@@ -114,7 +113,7 @@ def normalise_allowed_commands(commands: Iterable[str]) -> Tuple[str, ...]:
 def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
     """Return ``sequence`` without duplicates, preserving order."""
 
-    return tuple(dict.fromkeys(sequence))
+    return tuple(unique_everseen(sequence))
 
 
 def encode_status_reason(reason: Optional[str]) -> bytes:
@@ -130,7 +129,7 @@ def get_uci_config() -> Dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
 
     try:
-        import uci  # type: ignore
+        import uci
     except ImportError:
         logger.warning(
             "python3-uci bindings unavailable; falling back to defaults."
@@ -140,10 +139,10 @@ def get_uci_config() -> Dict[str, str]:
     uci_exception = getattr(uci, "UciException", Exception)
 
     try:
-        with uci.Uci() as cursor:  # type: ignore[attr-defined]
+        with uci.Uci() as cursor:
             cursor = cast(Any, cursor)
             section: Any = cursor.get_all("yunbridge", "general")
-    except uci_exception as exc:  # type: ignore[misc]
+    except uci_exception as exc:
         logger.warning(
             "Failed to load UCI configuration via python3-uci: %s",
             exc,
@@ -183,6 +182,10 @@ def get_default_config() -> Dict[str, str]:
     return {
         "mqtt_host": DEFAULT_MQTT_HOST,
         "mqtt_port": str(DEFAULT_MQTT_PORT),
+        "mqtt_tls": "1",
+        "mqtt_cafile": DEFAULT_MQTT_CAFILE,
+        "mqtt_certfile": "",
+        "mqtt_keyfile": "",
         "serial_port": DEFAULT_SERIAL_PORT,
         "serial_baud": str(DEFAULT_SERIAL_BAUD),
         "debug": "0",
@@ -190,6 +193,7 @@ def get_default_config() -> Dict[str, str]:
         "mqtt_topic": DEFAULT_MQTT_TOPIC,
         "file_system_root": DEFAULT_FILE_SYSTEM_ROOT,
         "process_timeout": str(DEFAULT_PROCESS_TIMEOUT),
+        "serial_shared_secret": "",
         "console_queue_limit_bytes": str(
             DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
         ),

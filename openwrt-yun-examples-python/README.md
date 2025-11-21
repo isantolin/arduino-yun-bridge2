@@ -54,7 +54,7 @@ Antes de modificar los ejemplos, ejecuta `pyright` en la raíz del proyecto para
 
 ### Puesta en marcha del broker MQTT
 
-Los ejemplos asumen que existe un broker accesible en la IP y puerto configurados (por defecto `127.0.0.1:1883`). En una Yún real, ese broker lo expone el `bridge_daemon.py` cuando está en ejecución. Las conexiones se negocian con MQTT v5 (`clean_start=FIRST_ONLY`, `session_expiry_interval=0`) y publican los motivos de desconexión, por lo que conviene revisar el log del daemon si observas `ConnectionCloseForcedError` o códigos de error adicionales.
+Los ejemplos asumen que existe un broker accesible en la IP y puerto configurados (por defecto `127.0.0.1:8883` con TLS habilitado). En una Yún real, ese broker lo expone el `bridge_daemon.py` cuando está en ejecución. Las conexiones se negocian con MQTT v5 (`clean_start=FIRST_ONLY`, `session_expiry_interval=0`) y publican los motivos de desconexión, por lo que conviene revisar el log del daemon si observas `ConnectionCloseForcedError` o códigos de error adicionales.
 
 ```sh
 # En el dispositivo o en tu máquina de desarrollo
@@ -64,7 +64,12 @@ python3 openwrt-yun-bridge/bridge_daemon.py
 Si prefieres realizar pruebas aisladas sin el daemon, puedes lanzar un mosquitto local:
 
 ```sh
-mosquitto -v -p 1883
+mosquitto -v -p 8883 \
+	--cafile /path/to/ca.crt \
+	--cert /path/to/server.crt \
+	--key /path/to/server.key
+
+> Ajusta las rutas a tus propios certificados TLS emitidos por la CA que configuraste en el daemon.
 ```
 
 Cuando no hay ningún broker escuchando, los ejemplos fallarán con un timeout al conectarse.
@@ -100,7 +105,7 @@ Los módulos de `yunbridge_client` detectan automáticamente estas variables al 
 
 ```sh
 export YUN_BROKER_IP='192.168.1.50'
-export YUN_BROKER_PORT='1883'
+export YUN_BROKER_PORT='8883'
 export YUN_BROKER_USER='mi_usuario'
 export YUN_BROKER_PASS='mi_password'
 # Ajusta la resiliencia de los clientes REST/LuCI frente a brokers lentos

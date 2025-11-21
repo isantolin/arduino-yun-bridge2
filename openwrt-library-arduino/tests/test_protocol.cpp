@@ -118,6 +118,30 @@ static void test_parser_header_validation() {
   assert(!parser.consume(0x00, frame));
 }
 
+static void test_parser_overflow_guard() {
+  FrameParser parser;
+  Frame frame{};
+
+  std::vector<uint8_t> encoded;
+  encoded.reserve(COBS_BUFFER_SIZE);
+
+  size_t generated = 0;
+  while (generated + 254 <= MAX_RAW_FRAME_SIZE) {
+    encoded.push_back(0xFF);
+    encoded.insert(encoded.end(), 254, 0x55);
+    generated += 254;
+  }
+
+  size_t remaining = MAX_RAW_FRAME_SIZE - generated;
+  encoded.push_back(static_cast<uint8_t>(remaining + 2));
+  encoded.insert(encoded.end(), remaining + 1, 0x33);
+
+  for (uint8_t byte : encoded) {
+    assert(!parser.consume(byte, frame));
+  }
+  assert(!parser.consume(0x00, frame));
+}
+
 int main() {
   test_endianness_helpers();
   test_crc_helpers();
@@ -125,6 +149,7 @@ int main() {
   test_builder_payload_limit();
   test_parser_incomplete_packets();
   test_parser_crc_failure();
+  test_parser_overflow_guard();
   test_parser_header_validation();
   return 0;
 }

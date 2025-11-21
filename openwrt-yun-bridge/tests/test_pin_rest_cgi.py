@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+from importlib.abc import Loader
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable, Dict, Protocol, cast
@@ -20,7 +21,10 @@ def _load_pin_rest_cgi() -> ModuleType:
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load pin_rest_cgi script")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)  # type: ignore[misc]
+    loader = spec.loader
+    if not isinstance(loader, Loader):
+        raise RuntimeError("pin_rest_cgi loader is not compatible")
+    loader.exec_module(module)
     return module
 
 

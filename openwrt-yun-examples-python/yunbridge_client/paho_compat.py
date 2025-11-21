@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import logging
+from types import ModuleType
 from typing import Any
 
 try:
-    import paho.mqtt.client as mqtt
+    import paho.mqtt.client as mqtt_client
 except ImportError:  # pragma: no cover - dependency missing during typing
-    mqtt = None  # type: ignore[assignment]
+    mqtt: ModuleType | None = None
 else:
+    mqtt = mqtt_client
     _LOGGER = logging.getLogger("yunbridge_client.paho_compat")
 
     def _noop(*_: Any, **__: Any) -> None:

@@ -1,5 +1,13 @@
 {
-    "typeCheckingMode": "strict",
+    "typeCheckingMode": "standard",
+    "strict": [
+        "openwrt-yun-bridge/yunbridge",
+        "openwrt-yun-examples-python/yunbridge_client"
+    ],
+    "include": [
+        "openwrt-yun-bridge/yunbridge",
+        "openwrt-yun-examples-python/yunbridge_client"
+    ],
     "extraPaths": [
         "typings",
         "openwrt-yun-bridge"

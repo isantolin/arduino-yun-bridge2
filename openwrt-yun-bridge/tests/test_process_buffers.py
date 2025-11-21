@@ -32,8 +32,8 @@ def runtime_service() -> BridgeService:
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,
         mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
+        mqtt_tls=True,
+        mqtt_cafile="/tmp/test-ca.pem",
         mqtt_certfile=None,
         mqtt_keyfile=None,
         mqtt_topic=DEFAULT_MQTT_TOPIC,
@@ -46,6 +46,7 @@ def runtime_service() -> BridgeService:
         console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
         mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
         mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+        serial_shared_secret=b"testshared",
     )
     state = create_runtime_state(config)
     return BridgeService(config, state)

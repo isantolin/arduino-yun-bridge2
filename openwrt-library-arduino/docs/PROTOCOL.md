@@ -68,8 +68,8 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
   - Respuesta (`0x82 GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
 
 - **`0x02` CMD_LINK_SYNC (Linux → MCU)**
-  - Petición: `[nonce_len: u8, nonce: byte[]]`. Se utiliza durante la fase de handshake para confirmar que ambos extremos están alineados y sincronizados.
-  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `[nonce_len: u8, nonce: byte[]]`. El MCU devuelve el nonce recibido para confirmar la sincronía del enlace.
+  - Petición: `nonce: byte[16]`. Durante el handshake inicial el demonio genera un nonce criptográficamente aleatorio y lo envía al MCU.
+  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`. El MCU replica el nonce recibido y adjunta `tag = CRC16-CCITT(secret || nonce)` usando el mismo secreto compartido que el demonio. Si el secreto no coincide o el tag es inválido, el demonio rechaza el enlace con `STATUS_MALFORMED` y reinicia el proceso de sincronización.
 
 - **`0x03` CMD_LINK_RESET (Linux → MCU)**
   - Petición: sin payload. Restablece cualquier estado interno asociado al enlace serie (colas pendientes, buffers de procesos, etc.).

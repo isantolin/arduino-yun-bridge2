@@ -31,8 +31,8 @@ def runtime_config() -> RuntimeConfig:
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,
         mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
+        mqtt_tls=True,
+        mqtt_cafile="/tmp/test-ca.pem",
         mqtt_certfile=None,
         mqtt_keyfile=None,
         mqtt_topic=DEFAULT_MQTT_TOPIC,
@@ -48,6 +48,7 @@ def runtime_config() -> RuntimeConfig:
         mailbox_queue_bytes_limit=32,
         serial_retry_timeout=0.01,
         serial_retry_attempts=1,
+        serial_shared_secret=b"testshared",
     )
 
 

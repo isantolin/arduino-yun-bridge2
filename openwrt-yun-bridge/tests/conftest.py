@@ -54,4 +54,6 @@ def runtime_config() -> RuntimeConfig:
 
 @pytest.fixture()
 def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
-    return create_runtime_state(runtime_config)
+    state = create_runtime_state(runtime_config)
+    state.link_is_synchronized = True
+    return state

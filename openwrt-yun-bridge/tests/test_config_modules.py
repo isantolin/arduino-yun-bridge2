@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import Any, Dict
 
 import pytest
 
@@ -8,8 +9,13 @@ from yunbridge.config import settings
 from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 
 
-def _runtime_config_kwargs(**overrides: object) -> dict[str, object]:
-    base: dict[str, object] = {
+@pytest.fixture(autouse=True)
+def _stub_credentials_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "load_credentials_file", lambda _: {})
+
+
+def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
+    base: Dict[str, Any] = {
         "serial_port": "/dev/ttyUSB0",
         "serial_baud": 9600,
         "mqtt_host": "localhost",
@@ -100,6 +106,45 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.serial_shared_secret == b"envsecret"
 
 
+def test_load_runtime_config_prefers_credentials_file(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.delenv("YUNBRIDGE_DEBUG", raising=False)
+    monkeypatch.delenv("YUNBRIDGE_SERIAL_SECRET", raising=False)
+    monkeypatch.setenv("YUNBRIDGE_CREDENTIALS_FILE", "/tmp/credfile")
+
+    raw_config = {
+        "serial_port": "/dev/cred",
+        "serial_baud": "115200",
+        "mqtt_tls": "1",
+        "mqtt_host": "broker",
+        "serial_shared_secret": " ",
+        "mqtt_user": " ",
+        "mqtt_pass": None,
+        "mqtt_cafile": None,
+    }
+
+    credentials = {
+        "serial_shared_secret": "fromfile",
+        "YUNBRIDGE_MQTT_USER": "user_file",
+        "YUNBRIDGE_MQTT_PASS": "pass_file",
+        "YUNBRIDGE_MQTT_CAFILE": "/etc/cafile",
+    }
+
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setattr(
+        settings, "load_credentials_file", lambda _: credentials
+    )
+
+    config = settings.load_runtime_config()
+
+    assert config.serial_shared_secret == b"fromfile"
+    assert config.mqtt_user == "user_file"
+    assert config.mqtt_pass == "pass_file"
+    assert config.mqtt_cafile == "/etc/cafile"
+    assert config.credentials_file == "/tmp/credfile"
+
+
 def test_load_runtime_config_prefers_uci_config(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -172,6 +217,16 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 2.0
     assert config.serial_shared_secret == b"defaultsecret"
+
+
+def test_resolve_watchdog_settings_uses_procd(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("YUNBRIDGE_WATCHDOG_INTERVAL", raising=False)
+    monkeypatch.setenv("PROCD_WATCHDOG", "10000")
+
+    enabled, interval = settings._resolve_watchdog_settings()
+
+    assert enabled is True
+    assert interval == settings.DEFAULT_WATCHDOG_INTERVAL
 
 
 def test_configure_logging_stream_handler(

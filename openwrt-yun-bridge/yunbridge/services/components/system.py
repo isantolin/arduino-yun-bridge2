@@ -7,10 +7,10 @@ from typing import Deque, Optional, Tuple
 
 from yunbridge.rpc.protocol import Command
 
-from ...const import TOPIC_SYSTEM
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
+from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
 
 logger = logging.getLogger("yunbridge.system")
@@ -45,8 +45,11 @@ class SystemComponent:
             return
 
         free_memory = int.from_bytes(payload, "big")
-        topic = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/free_memory/value"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "free_memory",
+            "value",
         )
         message = (
             PublishableMessage(
@@ -113,8 +116,11 @@ class SystemComponent:
         reply_context: Optional[InboundMessage] = None,
     ) -> None:
         major, minor = version
-        topic = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/version/value"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "version",
+            "value",
         )
         message = (
             PublishableMessage(

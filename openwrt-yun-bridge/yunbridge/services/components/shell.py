@@ -6,13 +6,13 @@ from typing import Optional
 
 from yunbridge.rpc.protocol import Status
 
-from ...const import TOPIC_SHELL
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from ...common import pack_u16
+from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
-from .process import ProcessComponent
+from .process import CommandValidationError, ProcessComponent
 
 logger = logging.getLogger("yunbridge.shell")
 
@@ -95,8 +95,10 @@ class ShellComponent:
             error_detail = stderr_text or "Unexpected server error"
             response = f"Error: {error_detail}"
 
-        response_topic = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/response"
+        response_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "response",
         )
         base_message = (
             PublishableMessage(
@@ -117,9 +119,29 @@ class ShellComponent:
         inbound: Optional[InboundMessage],
     ) -> None:
         logger.info("MQTT async shell command: '%s'", command)
-        pid = await self.process.start_async(command)
-        response_topic = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/run_async/response"
+        try:
+            pid = await self.process.start_async(command)
+        except CommandValidationError as exc:
+            response_topic = topic_path(
+                self.state.mqtt_topic_prefix,
+                Topic.SHELL,
+                "run_async",
+                "error",
+            )
+            base_message = PublishableMessage(
+                topic_name=response_topic,
+                payload=f"error:{exc.message}".encode("utf-8"),
+            )
+            await self.ctx.enqueue_mqtt(
+                base_message,
+                reply_context=inbound,
+            )
+            return
+        response_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "run_async",
+            "response",
         )
         base_message = PublishableMessage(
             topic_name=response_topic,

@@ -17,7 +17,9 @@ def test_get_default_config_matches_constants():
     assert config["serial_retry_attempts"] == str(
         const.DEFAULT_SERIAL_RETRY_ATTEMPTS
     )
-    assert config["serial_retry_timeout"] == str(const.DEFAULT_SERIAL_RETRY_TIMEOUT)
+    assert config["serial_retry_timeout"] == str(
+        const.DEFAULT_SERIAL_RETRY_TIMEOUT
+    )
     assert config["serial_response_timeout"] == str(
         const.DEFAULT_SERIAL_RESPONSE_TIMEOUT
     )

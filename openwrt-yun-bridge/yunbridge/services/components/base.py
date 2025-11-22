@@ -29,7 +29,10 @@ class BridgeContext(Protocol):
         ...
 
     def schedule_background(
-        self, coroutine: Coroutine[Any, Any, None]
+        self,
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        name: Optional[str] = None,
     ) -> None:
         ...
 

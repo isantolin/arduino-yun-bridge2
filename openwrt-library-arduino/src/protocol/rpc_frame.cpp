@@ -23,6 +23,11 @@ bool is_cobs_decoded_length_valid(const uint8_t* encoded,
     }
     decoded_len += static_cast<size_t>(code) - 1;
 
+    if (index + static_cast<size_t>(code) - 1 > encoded_len) {
+      return false;  // Not enough encoded bytes for the claimed data segment.
+    }
+    index += static_cast<size_t>(code) - 1;
+
     const bool has_more = index < encoded_len;
     if (code < 0xFF && has_more) {
       if (decoded_len >= MAX_RAW_FRAME_SIZE) {

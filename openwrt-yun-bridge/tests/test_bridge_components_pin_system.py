@@ -7,10 +7,9 @@ from unittest.mock import patch
 
 from yunbridge.rpc.protocol import Command, Status
 
-from yunbridge.const import TOPIC_SHELL
-
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt import InboundMessage, QOSLevel
+from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import (
     PendingPinRequest,
@@ -58,7 +57,13 @@ def test_mcu_digital_read_response_publishes_to_mqtt(
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/d/7/value")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.DIGITAL,
+            "7",
+            "value",
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"1"
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -97,7 +102,13 @@ def test_mcu_analog_read_response_publishes_to_mqtt(
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/a/3/value")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.ANALOG,
+            "3",
+            "value",
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"127"
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -133,7 +144,11 @@ def test_mqtt_digital_write_sends_frame(
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/d/5",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DIGITAL,
+                    "5",
+                ),
                 b"1",
             )
         )
@@ -168,7 +183,12 @@ def test_mqtt_analog_read_tracks_pending_queue(
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/a/2/read",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.ANALOG,
+                    "2",
+                    "read",
+                ),
                 b"",
             )
         )
@@ -204,7 +224,13 @@ def test_mcu_free_memory_response_enqueues_value(
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/system/free_memory/value")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "free_memory",
+            "value",
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"100"
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -242,7 +268,12 @@ def test_mqtt_system_version_get_requests_and_publishes_cached(
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/system/version/get",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.SYSTEM,
+                    "version",
+                    "get",
+                ),
                 b"",
             )
         )
@@ -252,7 +283,13 @@ def test_mqtt_system_version_get_requests_and_publishes_cached(
         assert runtime_state.mcu_version is None
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/system/version/value")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "version",
+            "value",
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"1.2"
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -280,7 +317,11 @@ def test_mqtt_shell_run_publishes_response(
         ):
             await service.handle_mqtt_message(
                 _make_inbound(
-                    f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/run",
+                    topic_path(
+                        runtime_state.mqtt_topic_prefix,
+                        Topic.SHELL,
+                        "run",
+                    ),
                     b"echo test",
                 )
             )
@@ -292,7 +333,12 @@ def test_mqtt_shell_run_publishes_response(
             ]
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith(f"/{TOPIC_SHELL}/response")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "response",
+        )
+        assert queued.topic_name == expected_topic
         assert b"Exit Code: 0" in queued.payload
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -319,9 +365,10 @@ def test_mqtt_shell_run_async_handles_not_allowed(
         ):
             await service.handle_mqtt_message(
                 _make_inbound(
-                    (
-                        f"{runtime_state.mqtt_topic_prefix}/"
-                        f"{TOPIC_SHELL}/run_async"
+                    topic_path(
+                        runtime_state.mqtt_topic_prefix,
+                        Topic.SHELL,
+                        "run_async",
                     ),
                     b"blocked",
                 )
@@ -334,9 +381,13 @@ def test_mqtt_shell_run_async_handles_not_allowed(
             ]
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith(
-            f"/{TOPIC_SHELL}/run_async/response"
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "run_async",
+            "response",
         )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"error:not_allowed"
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -368,7 +419,12 @@ def test_mqtt_shell_kill_invokes_process_component(
         ):
             await service.handle_mqtt_message(
                 _make_inbound(
-                    f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SHELL}/kill/21",
+                    topic_path(
+                        runtime_state.mqtt_topic_prefix,
+                        Topic.SHELL,
+                        "kill",
+                        "21",
+                    ),
                     b"",
                 )
             )

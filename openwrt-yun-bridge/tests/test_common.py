@@ -69,7 +69,7 @@ def test_normalise_allowed_commands_handles_wildcard():
 
 
 def test_normalise_allowed_commands():
-    result = normalise_allowed_commands([" ls ", "LS", "echo", ""]) 
+    result = normalise_allowed_commands([" ls ", "LS", "echo", ""])
     assert result == ("ls", "echo")
 
 

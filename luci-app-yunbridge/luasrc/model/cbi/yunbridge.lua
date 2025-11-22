@@ -55,7 +55,8 @@ local function ensure_general_section()
             file_system_root = "/root/yun_files",
             process_timeout = "10",
             allowed_commands = "",
-            serial_shared_secret = "changeme123"
+            serial_shared_secret = "changeme123",
+            credentials_file = "/etc/yunbridge/credentials",
         })
         changed = true
     end
@@ -151,6 +152,11 @@ mqtt_ws_port.datatype = "port"
 mqtt_ws_port.placeholder = "9001"
 mqtt_ws_port.rmempty = true
 
+local credentials_file = s:option(Value, "credentials_file", translate("Credentials File"))
+credentials_file.placeholder = "/etc/yunbridge/credentials"
+credentials_file.rmempty = false
+credentials_file.description = translate("Path to the KEY=VALUE envfile loaded via procd; update secrets from the Credentials & TLS tab.")
+
 local fs_root = s:option(Value, "file_system_root", translate("File System Root"))
 fs_root.placeholder = "/root/yun_files"
 fs_root.rmempty = false
@@ -166,10 +172,10 @@ allowed_commands.placeholder = "date uptime"
 allowed_commands.rmempty = true
 allowed_commands.description = translate("Space separated whitelist for shell execution (leave empty to disable).")
 
-local serial_secret = s:option(Value, "serial_shared_secret", translate("Serial Shared Secret"))
-serial_secret.password = true
-serial_secret.rmempty = false
-serial_secret.description = translate("Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long.")
+local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("Serial Shared Secret"))
+function serial_secret.cfgvalue()
+    return translate("Managed via /etc/yunbridge/credentials. Use the Credentials & TLS tab to rotate secrets.")
+end
 
 function m.on_commit(map)
     -- Restart the daemon so changes take effect immediately.

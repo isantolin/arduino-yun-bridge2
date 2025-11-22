@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import ssl
 import sys
 import time
 from types import ModuleType, SimpleNamespace
@@ -30,12 +31,6 @@ except (ImportError, Exception) as exc:  # pragma: no cover
 else:
     mqtt = mqtt_client
 
-from yunbridge.common import get_uci_config
-from yunbridge.const import (
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
-)
 from tenacity import (
     Retrying,
     RetryCallState,
@@ -43,6 +38,11 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+from yunbridge.config.settings import RuntimeConfig, load_runtime_config
+from yunbridge.config.tls import resolve_tls_material
+from yunbridge.const import DEFAULT_MQTT_TOPIC
+
 
 logger = logging.getLogger("yunbridge.pin_rest")
 if not logger.hasHandlers():
@@ -52,13 +52,6 @@ if not logger.hasHandlers():
     )
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
-
-CFG = get_uci_config()
-MQTT_HOST = CFG.get("mqtt_host", DEFAULT_MQTT_HOST)
-MQTT_PORT = int(CFG.get("mqtt_port", DEFAULT_MQTT_PORT))
-MQTT_USER = CFG.get("mqtt_user")
-MQTT_PASS = CFG.get("mqtt_pass")
-TOPIC_PREFIX = CFG.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -81,9 +74,45 @@ DEFAULT_BACKOFF_BASE = _env_float("YUNBRIDGE_MQTT_BACKOFF", 0.5, 0.0)
 DEFAULT_POLL_INTERVAL = _env_float("YUNBRIDGE_MQTT_POLL_INTERVAL", 0.05, 0.001)
 
 
+def _resolve_tls_material(config: RuntimeConfig):
+    if not config.mqtt_tls:
+        raise RuntimeError(
+            "MQTT TLS must remain enabled for pin_rest_cgi operation"
+        )
+
+    env_cert = os.environ.get("YUNBRIDGE_PIN_CERTFILE") or None
+    env_key = os.environ.get("YUNBRIDGE_PIN_KEYFILE") or None
+    env_cafile = os.environ.get("YUNBRIDGE_PIN_CAFILE") or None
+
+    return resolve_tls_material(
+        config,
+        cafile_override=env_cafile,
+        cert_override=env_cert,
+        key_override=env_key,
+    )
+
+
+def _build_client(config: RuntimeConfig) -> Any:
+    client = mqtt.Client(protocol=getattr(mqtt, "MQTTv5", 5))
+    if config.mqtt_user:
+        client.username_pw_set(config.mqtt_user, config.mqtt_pass)
+
+    material = _resolve_tls_material(config)
+    client.tls_set(
+        ca_certs=material.cafile,
+        certfile=material.certfile,
+        keyfile=material.keyfile,
+        tls_version=ssl.PROTOCOL_TLS_CLIENT,
+    )
+    client.tls_insecure_set(False)
+    client.enable_logger(logger)
+    return client
+
+
 def publish_with_retries(
     topic: str,
     payload: str,
+    config: RuntimeConfig,
     retries: int = DEFAULT_RETRIES,
     publish_timeout: float = DEFAULT_PUBLISH_TIMEOUT,
     base_delay: float = DEFAULT_BACKOFF_BASE,
@@ -106,12 +135,10 @@ def publish_with_retries(
         )
 
     def _attempt() -> None:
-        client = mqtt.Client()
-        if MQTT_USER:
-            client.username_pw_set(MQTT_USER, MQTT_PASS)
+        client = _build_client(config)
 
         try:
-            client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+            client.connect(config.mqtt_host, config.mqtt_port, keepalive=60)
             loop_start = getattr(client, "loop_start", None)
             if callable(loop_start):
                 loop_start()
@@ -179,6 +206,19 @@ def send_response(status_code: int, data: Dict[str, Any]) -> None:
 
 
 def main() -> None:
+    try:
+        config = load_runtime_config()
+    except Exception as exc:  # pragma: no cover - configuration failures
+        logger.exception("Failed to load runtime configuration")
+        send_response(
+            500,
+            {
+                "status": "error",
+                "message": f"Configuration error: {exc}",
+            },
+        )
+        return
+
     method = os.environ.get("REQUEST_METHOD", "GET").upper()
     pin = get_pin_from_path()
     logger.info("REST call: method=%s pin=%s", method, pin)
@@ -206,8 +246,20 @@ def main() -> None:
         return
 
     try:
-        content_length = int(os.environ.get("CONTENT_LENGTH", 0))
-        body = sys.stdin.read(content_length) if content_length > 0 else ""
+        content_length_raw = os.environ.get("CONTENT_LENGTH", "0")
+        try:
+            content_length = int(content_length_raw)
+        except (TypeError, ValueError):
+            content_length = 0
+
+        if content_length > 0:
+            body = sys.stdin.read(content_length)
+            remainder = sys.stdin.read()
+            if remainder:
+                body += remainder
+        else:
+            body = sys.stdin.read()
+
         data: Dict[str, Any] = json.loads(body) if body else {}
         state = str(data.get("state", "")).upper()
     except (ValueError, json.JSONDecodeError):
@@ -228,11 +280,11 @@ def main() -> None:
         )
         return
 
-    topic = f"{TOPIC_PREFIX}/d/{pin}"
+    topic = f"{config.mqtt_topic or DEFAULT_MQTT_TOPIC}/d/{pin}"
     payload = "1" if state == "ON" else "0"
 
     try:
-        publish_with_retries(topic, payload)
+        publish_with_retries(topic, payload, config)
         send_response(
             200,
             {

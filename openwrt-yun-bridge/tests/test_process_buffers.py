@@ -19,8 +19,10 @@ from yunbridge.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from yunbridge.services.runtime import BridgeService
-from yunbridge.state.context import create_runtime_state
+from yunbridge.services.components.process import ProcessComponent
+from yunbridge.state.context import ManagedProcess, create_runtime_state
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE, Status
+from yunbridge.policy import AllowedCommandPolicy
 
 
 @pytest.fixture()
@@ -92,9 +94,12 @@ def test_collect_process_output_flushes_stored_buffers(
     async def _run() -> None:
         pid = 42
         state = runtime_service.state
-        state.process_exit_codes[pid] = 3
-        state.process_stdout_buffer[pid] = bytearray(b"hello")
-        state.process_stderr_buffer[pid] = bytearray(b"world")
+        slot = ManagedProcess(pid=pid, command="noop", handle=None)
+        slot.exit_code = 3
+        slot.stdout_buffer.extend(b"hello")
+        slot.stderr_buffer.extend(b"world")
+        async with state.process_lock:
+            state.running_processes[pid] = slot
 
         collect = cast(
             Callable[[int], Awaitable[
@@ -121,12 +126,29 @@ def test_collect_process_output_flushes_stored_buffers(
         assert stdout_truncated is False
         assert stderr_truncated is False
 
-        # Buffers and exit codes should be cleaned up after final chunk
-        assert pid not in state.process_stdout_buffer
-        assert pid not in state.process_stderr_buffer
-        assert pid not in state.process_exit_codes
+        # Slot should be removed after final chunk
+        assert pid not in state.running_processes
         # Ensure lock remains usable for subsequent consumers
         async with state.process_lock:
             pass
+
+    asyncio.run(_run())
+
+
+def test_start_async_respects_concurrency_limit(
+    runtime_service: BridgeService,
+) -> None:
+    async def _run() -> None:
+        process_component = cast(ProcessComponent, runtime_service._process)
+        state = runtime_service.state
+        state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
+        state.process_max_concurrent = 1
+        async with state.process_lock:
+            state.running_processes[123] = ManagedProcess(
+                pid=123,
+                handle=cast(asyncio.subprocess.Process, object()),
+            )
+        result = await process_component.start_async("/bin/true")
+        assert result == 0xFFFF
 
     asyncio.run(_run())

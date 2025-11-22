@@ -6,6 +6,15 @@ import logging
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Dict, Optional, Set
 
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    RetryError,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
+
 from yunbridge.rpc.protocol import Command, Status
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
@@ -19,7 +28,6 @@ REQUEST_RESPONSE_MAP: Dict[int, Set[int]] = {
     },
     Command.CMD_DIGITAL_READ.value: {Command.CMD_DIGITAL_READ_RESP.value},
     Command.CMD_ANALOG_READ.value: {Command.CMD_ANALOG_READ_RESP.value},
-    Command.CMD_DATASTORE_GET.value: {Command.CMD_DATASTORE_GET_RESP.value},
 }
 
 ACK_ONLY_COMMANDS: Set[int] = {
@@ -114,6 +122,19 @@ class SerialFlowController:
         self._condition = asyncio.Condition()
         self._current: Optional[PendingCommand] = None
         self._metrics_callback = metrics_callback
+
+    #  --- Tenacity Helpers ---
+    class _RetryableSerialError(Exception):
+        """Marker exception to request another send attempt."""
+
+        pass
+
+    class _FatalSerialError(Exception):
+        """Raised when a frame should not be retried."""
+
+        def __init__(self, status: Optional[int]) -> None:
+            super().__init__(status)
+            self.status = status
 
     def set_sender(self, sender: SendFrameCallable) -> None:
         self._sender = sender
@@ -216,76 +237,96 @@ class SerialFlowController:
         payload: bytes,
         sender: SendFrameCallable,
     ) -> bool:
-        while pending.attempts < self._max_attempts:
-            pending.attempts += 1
-            send_ok = await sender(pending.command_id, payload)
-            if not send_ok:
-                self._logger.error(
-                    "Serial write failed for command 0x%02X",
-                    pending.command_id,
+        def _before_sleep(retry_state: RetryCallState) -> None:
+            self._emit_metric("retry")
+            attempt_num = retry_state.attempt_number
+            self._logger.warning(
+                "Timeout waiting for MCU response to 0x%02X (attempt %d/%d)",
+                pending.command_id,
+                attempt_num,
+                self._max_attempts,
+            )
+
+        retryer = AsyncRetrying(
+            reraise=False,
+            stop=stop_after_attempt(self._max_attempts),
+            retry=retry_if_exception_type(self._RetryableSerialError),
+            wait=wait_fixed(0),
+            before_sleep=_before_sleep,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    pending.attempts = attempt.retry_state.attempt_number
+                    self._reset_pending_state(pending)
+                    await self._send_and_wait(pending, payload, sender)
+                    self._emit_metric("ack")
+                    return True
+        except self._FatalSerialError as exc:
+            pending.mark_failure(exc.status)
+        except RetryError:
+            pending.mark_failure(Status.TIMEOUT.value)
+
+        self._emit_metric("failure")
+        return False
+
+    def _reset_pending_state(self, pending: PendingCommand) -> None:
+        pending.completion.clear()
+        pending.ack_received = False
+        pending.success = None
+        pending.failure_status = None
+
+    async def _send_and_wait(
+        self,
+        pending: PendingCommand,
+        payload: bytes,
+        sender: SendFrameCallable,
+    ) -> None:
+        send_ok = await sender(pending.command_id, payload)
+        if not send_ok:
+            self._logger.error(
+                "Serial write failed for command 0x%02X",
+                pending.command_id,
+            )
+            pending.mark_failure(None)
+            raise self._FatalSerialError(None)
+
+        self._emit_metric("sent")
+
+        ack_phase = True
+        while True:
+            if ack_phase and pending.ack_received:
+                ack_phase = False
+            timeout = (
+                self._ack_timeout
+                if ack_phase
+                else self._response_timeout
+            )
+            try:
+                await asyncio.wait_for(
+                    pending.completion.wait(),
+                    timeout=timeout,
                 )
-                pending.mark_failure(None)
                 break
-
-            self._emit_metric("sent")
-
-            timeout_requires_retry = False
-            ack_phase = True
-            while True:
-                timeout = (
-                    self._ack_timeout
-                    if ack_phase
-                    else self._response_timeout
-                )
-                try:
-                    await asyncio.wait_for(
-                        pending.completion.wait(),
-                        timeout=timeout,
-                    )
+            except asyncio.TimeoutError:
+                if pending.completion.is_set():
                     break
-                except asyncio.TimeoutError:
-                    if pending.completion.is_set():
-                        break
-                    if ack_phase and pending.ack_received:
-                        ack_phase = False
-                        continue
-                    if pending.attempts >= self._max_attempts:
-                        self._logger.error(
-                            "Timeout waiting for MCU response to 0x%02X",
-                            pending.command_id,
-                        )
-                        pending.mark_failure(Status.TIMEOUT.value)
-                        break
-                    self._logger.warning(
-                        "Timeout waiting for MCU response to 0x%02X "
-                        "(attempt %d/%d)",
-                        pending.command_id,
-                        pending.attempts,
-                        self._max_attempts,
-                    )
-                    timeout_requires_retry = True
-                    break
+                if ack_phase and pending.ack_received:
+                    ack_phase = False
+                    continue
+                raise self._RetryableSerialError()
 
-            if pending.success:
-                break
+        if pending.success:
+            return
 
-            if timeout_requires_retry:
-                pending.ack_received = False
-                pending.completion.clear()
-                self._emit_metric("retry")
-                continue
-
-            status_name = _status_name(pending.failure_status)
+        status_name = _status_name(pending.failure_status)
+        if pending.failure_status is not None:
             self._logger.warning(
                 "MCU rejected command 0x%02X with status %s",
                 pending.command_id,
                 status_name,
             )
-            break
+            raise self._FatalSerialError(pending.failure_status)
 
-        if pending.success:
-            self._emit_metric("ack")
-            return True
-
-        self._emit_metric("failure")
-        return False
+        raise self._RetryableSerialError()

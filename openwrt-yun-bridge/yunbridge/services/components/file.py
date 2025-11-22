@@ -3,16 +3,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
+from pathlib import Path
 from typing import Optional, Tuple
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason, pack_u16
-from ...const import TOPIC_FILE
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
+from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
 
 logger = logging.getLogger("yunbridge.file")
@@ -170,9 +170,12 @@ class FileComponent:
                 )
                 return
             data = content or b""
-            response_topic = (
-                f"{self.state.mqtt_topic_prefix}/{TOPIC_FILE}/read/response/"
-                f"{filename}"
+            response_topic = topic_path(
+                self.state.mqtt_topic_prefix,
+                Topic.FILE,
+                "read",
+                "response",
+                *tuple(segment for segment in filename.split("/") if segment),
             )
             message = (
                 PublishableMessage(
@@ -206,7 +209,7 @@ class FileComponent:
         filename: str,
         data: Optional[bytes] = None,
     ) -> Tuple[bool, Optional[bytes], Optional[str]]:
-        safe_path = await self._get_safe_path(filename)
+        safe_path = self._get_safe_path(filename)
         if not safe_path:
             logger.warning(
                 "File operation rejected due to unsafe path: %s",
@@ -229,7 +232,7 @@ class FileComponent:
                 return True, content, "ok"
 
             if operation == "remove":
-                await asyncio.to_thread(os.remove, safe_path)
+                await asyncio.to_thread(safe_path.unlink)
                 logger.info("Removed file %s", safe_path)
                 return True, None, "ok"
 
@@ -242,44 +245,41 @@ class FileComponent:
             return False, None, str(exc)
         return False, None, "unknown_operation"
 
-    async def _get_safe_path(self, filename: str) -> Optional[str]:
-        base_dir = os.path.abspath(self.state.file_system_root)
+    def _get_safe_path(self, filename: str) -> Optional[Path]:
+        base_dir = Path(self.state.file_system_root).expanduser().resolve()
         try:
-            os.makedirs(base_dir, exist_ok=True)
+            base_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             logger.exception(
                 "Failed to create base directory for files: %s", base_dir
             )
             return None
 
-        cleaned_filename = filename.lstrip("./\\").replace("../", "")
-        safe_path = os.path.abspath(os.path.join(base_dir, cleaned_filename))
-
-        if os.path.commonpath([safe_path, base_dir]) != base_dir:
+        candidate = (base_dir / filename.lstrip("/"))
+        try:
+            safe_path = candidate.resolve()
+            safe_path.relative_to(base_dir)
+        except (OSError, ValueError):
             logger.warning(
                 (
                     "Path traversal blocked. filename='%s', "
                     "resolved='%s', base='%s'"
                 ),
                 filename,
-                safe_path,
+                candidate,
                 base_dir,
             )
             return None
         return safe_path
 
     @staticmethod
-    def _write_file_sync(path: str, data: bytes) -> None:
-        directory = os.path.dirname(path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-        with open(path, "wb") as handle:
-            handle.write(data)
+    def _write_file_sync(path: Path, data: bytes) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
 
     @staticmethod
-    def _read_file_sync(path: str) -> bytes:
-        with open(path, "rb") as handle:
-            return handle.read()
+    def _read_file_sync(path: Path) -> bytes:
+        return path.read_bytes()
 
 
 __all__ = ["FileComponent"]

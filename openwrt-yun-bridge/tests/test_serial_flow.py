@@ -8,7 +8,7 @@ import struct
 import pytest
 
 from yunbridge.rpc.protocol import Command, Status
-from yunbridge.services.serial_flow import SerialFlowController
+from yunbridge.services.serial_flow import SerialFlowController, _status_name
 from yunbridge.state.context import RuntimeState
 
 
@@ -131,3 +131,180 @@ def test_serial_flow_records_failure_metrics(
     assert payload["commands_acked"] == 0
     assert payload["retries"] == 0
     assert payload["failures"] == 1
+
+
+def test_serial_flow_rejects_without_sender(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+        result = await controller.send(Command.CMD_DIGITAL_WRITE.value, b"")
+        assert result is False
+
+    asyncio.run(_run())
+
+
+def test_serial_flow_reset_abandons_pending(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+
+        sender_called = asyncio.Event()
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sender_called.set()
+            return True
+
+        controller.set_sender(fake_sender)
+
+        send_task = asyncio.create_task(
+            controller.send(Command.CMD_DIGITAL_READ.value, b"")
+        )
+        await sender_called.wait()
+        await controller.reset()
+        assert await send_task is False
+
+    asyncio.run(_run())
+
+
+def test_serial_flow_handles_failure_status(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+
+        loop = asyncio.get_running_loop()
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            loop.call_soon(
+                controller.on_frame_received,
+                Status.ERROR.value,
+                b"",
+            )
+            return True
+
+        controller.set_sender(fake_sender)
+
+        result = await controller.send(Command.CMD_DIGITAL_WRITE.value, b"")
+        assert result is False
+
+    asyncio.run(_run())
+
+
+def test_serial_flow_acknowledges_ack_only_command(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+
+        loop = asyncio.get_running_loop()
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            loop.call_soon(
+                controller.on_frame_received,
+                Status.ACK.value,
+                command_id.to_bytes(2, "big"),
+            )
+            return True
+
+        controller.set_sender(fake_sender)
+
+        result = await controller.send(Command.CMD_CONSOLE_WRITE.value, b"")
+        assert result is True
+
+    asyncio.run(_run())
+
+
+def test_serial_flow_handles_response_after_ack(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+
+        loop = asyncio.get_running_loop()
+        command_id = Command.CMD_DIGITAL_READ.value
+
+        async def fake_sender(cid: int, payload: bytes) -> bool:
+            def emit_frames() -> None:
+                controller.on_frame_received(
+                    Status.ACK.value,
+                    command_id.to_bytes(2, "big"),
+                )
+                controller.on_frame_received(
+                    Command.CMD_DIGITAL_READ_RESP.value,
+                    b"\x01",
+                )
+
+            loop.call_soon(emit_frames)
+            return True
+
+        controller.set_sender(fake_sender)
+
+        result = await controller.send(command_id, b"")
+        assert result is True
+
+    asyncio.run(_run())
+
+
+def test_serial_flow_retries_on_mismatched_ack(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.01,
+            response_timeout=0.05,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+
+        loop = asyncio.get_running_loop()
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            def emit_wrong_ack() -> None:
+                other_cmd = Command.CMD_DIGITAL_WRITE.value
+                controller.on_frame_received(
+                    Status.ACK.value,
+                    other_cmd.to_bytes(2, "big"),
+                )
+
+            loop.call_soon(emit_wrong_ack)
+            return True
+
+        controller.set_sender(fake_sender)
+
+        result = await controller.send(Command.CMD_CONSOLE_WRITE.value, b"")
+        assert result is False
+
+    asyncio.run(_run())
+
+
+def test_status_name_handles_unknown() -> None:
+    assert _status_name(None) == "unknown"
+    assert _status_name(Status.OK.value) == "OK"
+    assert _status_name(0x99) == "0x99"

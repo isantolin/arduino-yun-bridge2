@@ -92,10 +92,10 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
   - Payload: `chunk: byte[]` (máx. 256 bytes). No se envía prefijo de longitud; los datos se segmentan en bloques de hasta `MAX_PAYLOAD_SIZE`.
 
 - **`0x30` CMD_DATASTORE_PUT (MCU → Linux)**: `[key_len: u8, key: char[], value_len: u8, value: char[]]`.
-- **`0x31` CMD_DATASTORE_GET (Linux → MCU)**: `[key_len: u8, key: char[]]`.
-- **`0x81` CMD_DATASTORE_GET_RESP (MCU → Linux)**: `[value_len: u8, value: char[]]`. El MCU actualiza la caché local del demonio con el valor recibido.
+- **`0x31` CMD_DATASTORE_GET (MCU → Linux)**: `[key_len: u8, key: char[]]`. El MCU solicita al daemon el último valor conocido para la clave indicada; el demonio responde inmediatamente usando su caché local (alimentada por `CMD_DATASTORE_PUT` y fuentes externas).
+- **`0x81` CMD_DATASTORE_GET_RESP (Linux → MCU)**: `[value_len: u8, value: char[]]`. El MCU recibe la respuesta solicitada; si la clave no existe el payload contiene `value_len = 0`.
 
-  - MQTT: las escrituras se publican en `br/datastore/put/<clave>` y el demonio replica el valor resultante en `br/datastore/get/<clave>`. Para solicitar un valor vía MQTT, los clientes publican un mensaje vacío en `br/datastore/get/<clave>/request`. El demonio responde siempre en `br/datastore/get/<clave>` (payload vacío si la clave no existe), evitando que el cliente consuma su propio mensaje.
+  - MQTT: las escrituras se publican en `br/datastore/put/<clave>` y el demonio replica el valor resultante en `br/datastore/get/<clave>`. Para solicitar un valor vía MQTT, los clientes publican un mensaje vacío en `br/datastore/get/<clave>/request`. El demonio responde siempre en `br/datastore/get/<clave>` reutilizando únicamente la caché local (payload vacío + `bridge-error=datastore-miss` si la clave no existe), evitando round-trips con el MCU y que el cliente consuma su propio mensaje.
 
 ### 5.5 Mailbox (0x40 – 0x4F)
 

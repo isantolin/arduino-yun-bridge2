@@ -11,10 +11,12 @@ this service operates on validated payloads.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
-from binascii import crc_hqx
+import time
 from typing import Any, Awaitable, Callable, Coroutine, Optional
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
@@ -22,16 +24,16 @@ from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from ..config.settings import RuntimeConfig
 from ..common import pack_u16
 from ..const import (
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_HANDSHAKE_TAG_LEN,
     SERIAL_NONCE_LENGTH,
-    TOPIC_ANALOG,
-    TOPIC_CONSOLE,
-    TOPIC_DATASTORE,
-    TOPIC_DIGITAL,
-    TOPIC_FILE,
-    TOPIC_MAILBOX,
-    TOPIC_SHELL,
-    TOPIC_STATUS,
-    TOPIC_SYSTEM,
+)
+from ..protocol.topics import (
+    Topic,
+    handshake_topic,
+    parse_topic,
+    topic_path,
 )
 from ..mqtt import InboundMessage, PublishableMessage
 from ..state.context import RuntimeState
@@ -46,12 +48,25 @@ from .components import (
     SystemComponent,
 )
 from .serial_flow import SerialFlowController
+from .task_supervisor import TaskSupervisor
+
+
+class SerialHandshakeFatal(RuntimeError):
+    """Raised when MCU rejects the serial shared secret permanently."""
+
+
+_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset({"sync_auth_mismatch"})
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 logger = logging.getLogger("yunbridge.service")
 
 STATUS_VALUES = {status.value for status in Status}
+_PRE_SYNC_ALLOWED_COMMANDS = {
+    Command.CMD_LINK_SYNC_RESP.value,
+    Command.CMD_LINK_RESET_RESP.value,
+}
+_TOPIC_FORBIDDEN_REASON = "topic-action-forbidden"
 
 
 class BridgeService:
@@ -61,7 +76,7 @@ class BridgeService:
         self.config = config
         self.state = state
         self._serial_sender: Optional[SendFrameCallable] = None
-        self._background_tasks: set[asyncio.Task[None]] = set()
+        self._task_supervisor = TaskSupervisor(logger=logger)
 
         self._console = ConsoleComponent(config, state, self)
         self._datastore = DatastoreComponent(config, state, self)
@@ -81,15 +96,22 @@ class BridgeService:
             Command.CMD_ANALOG_READ_RESP.value: (
                 self._pin.handle_analog_read_resp
             ),
+            Command.CMD_DIGITAL_READ.value: (
+                lambda payload, cmd=Command.CMD_DIGITAL_READ: (
+                    self._pin.handle_unexpected_mcu_request(cmd, payload)
+                )
+            ),
+            Command.CMD_ANALOG_READ.value: (
+                lambda payload, cmd=Command.CMD_ANALOG_READ: (
+                    self._pin.handle_unexpected_mcu_request(cmd, payload)
+                )
+            ),
             Command.CMD_XOFF.value: self._console.handle_xoff,
             Command.CMD_XON.value: self._console.handle_xon,
             Command.CMD_CONSOLE_WRITE.value: self._console.handle_write,
             Command.CMD_DATASTORE_PUT.value: self._datastore.handle_put,
             Command.CMD_DATASTORE_GET.value: (
                 self._datastore.handle_get_request
-            ),
-            Command.CMD_DATASTORE_GET_RESP.value: (
-                self._datastore.handle_get_response
             ),
             Command.CMD_MAILBOX_PUSH.value: self._mailbox.handle_push,
             Command.CMD_MAILBOX_AVAILABLE.value: (
@@ -143,7 +165,6 @@ class BridgeService:
             logger=logger,
         )
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
-        self._secure_handshake = bool(config.serial_shared_secret)
 
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
@@ -161,32 +182,36 @@ class BridgeService:
         return await self._serial_flow.send(command_id, payload)
 
     def schedule_background(
-        self, coroutine: Coroutine[Any, Any, None]
-    ) -> None:
-        task: asyncio.Task[None] = asyncio.create_task(coroutine)
-        self._background_tasks.add(task)
+        self,
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        name: Optional[str] = None,
+    ) -> asyncio.Task[Any]:
+        """Schedule *coroutine* under the supervisor."""
 
-        def _release(finished: asyncio.Future[None]) -> None:
-            self._background_tasks.discard(task)
-            try:
-                finished.result()
-            except asyncio.CancelledError:
-                logger.debug("Background task cancelled")
-            except Exception:
-                logger.exception("Background task failed")
+        return self._task_supervisor.start(coroutine, name=name)
 
-        task.add_done_callback(_release)
+    async def cancel_background_tasks(self) -> None:
+        await self._task_supervisor.cancel()
 
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""
 
         handshake_ok = False
+        fatal_error: Optional[SerialHandshakeFatal] = None
         try:
             handshake_ok = await self.sync_link()
+        except SerialHandshakeFatal as exc:
+            fatal_error = exc
+            handshake_ok = False
         except Exception:
             logger.exception("Failed to synchronise MCU link after reconnect")
 
+        if fatal_error is not None:
+            raise fatal_error
+
         if not handshake_ok:
+            self._raise_if_handshake_fatal()
             logger.error(
                 (
                     "Skipping post-connect initialisation because MCU link "
@@ -216,22 +241,19 @@ class BridgeService:
 
         pending_digital = len(self.state.pending_digital_reads)
         pending_analog = len(self.state.pending_analog_reads)
-        pending_datastore = len(self.state.pending_datastore_gets)
 
-        total_pending = pending_digital + pending_analog + pending_datastore
+        total_pending = pending_digital + pending_analog
         if total_pending:
             logger.warning(
                 "Serial link lost; clearing %d pending request(s) "
-                "(digital=%d analog=%d datastore=%d)",
+                "(digital=%d analog=%d)",
                 total_pending,
                 pending_digital,
                 pending_analog,
-                pending_datastore,
             )
 
         self.state.pending_digital_reads.clear()
         self.state.pending_analog_reads.clear()
-        self.state.pending_datastore_gets.clear()
 
         # Ensure we do not keep the console in a paused state between links.
         self._console.on_serial_disconnected()
@@ -240,6 +262,19 @@ class BridgeService:
 
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
+
+        if not self._is_frame_allowed_pre_sync(command_id):
+            logger.warning(
+                "Rejecting MCU frame 0x%02X before link synchronisation",
+                command_id,
+            )
+            if command_id < 0x80:
+                await self._acknowledge_mcu_frame(
+                    command_id,
+                    status=Status.MALFORMED,
+                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                )
+            return
 
         self._serial_flow.on_frame_received(command_id, payload)
         try:
@@ -298,6 +333,7 @@ class BridgeService:
                 queue.task_done()
                 drop_topic = dropped.topic_name
                 self.state.record_mqtt_drop(drop_topic)
+                await self.state.stash_mqtt_message(dropped)
                 logger.warning(
                     "MQTT publish queue saturated (%d/%d); dropping oldest "
                     "topic=%s",
@@ -307,14 +343,14 @@ class BridgeService:
                 )
 
     async def sync_link(self) -> bool:
-        nonce_length = SERIAL_NONCE_LENGTH if self._secure_handshake else 4
+        await self._respect_handshake_backoff()
+        nonce_length = SERIAL_NONCE_LENGTH
+        self.state.record_handshake_attempt()
         nonce = os.urandom(nonce_length)
         self.state.link_handshake_nonce = nonce
         self.state.link_nonce_length = nonce_length
         self.state.link_expected_tag = (
             self._compute_handshake_tag(nonce)
-            if self._secure_handshake
-            else None
         )
         self.state.link_is_synchronized = False
         reset_ok = await self.send_frame(Command.CMD_LINK_RESET.value, b"")
@@ -323,6 +359,7 @@ class BridgeService:
             self.state.link_expected_tag = None
             self.state.link_handshake_nonce = None
             self.state.link_nonce_length = 0
+            await self._handle_handshake_failure("link_reset_send_failed")
             return False
         await asyncio.sleep(0.05)
         sync_ok = await self.send_frame(Command.CMD_LINK_SYNC.value, nonce)
@@ -331,6 +368,7 @@ class BridgeService:
             self.state.link_expected_tag = None
             self.state.link_handshake_nonce = None
             self.state.link_nonce_length = 0
+            await self._handle_handshake_failure("link_sync_send_failed")
             return False
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
@@ -338,9 +376,12 @@ class BridgeService:
             logger.warning(
                 "MCU link synchronisation did not confirm within timeout"
             )
+            pending_nonce = self.state.link_handshake_nonce
             self.state.link_expected_tag = None
             self.state.link_handshake_nonce = None
             self.state.link_nonce_length = 0
+            if pending_nonce == nonce:
+                await self._handle_handshake_failure("link_sync_timeout")
             return False
         return True
 
@@ -370,15 +411,130 @@ class BridgeService:
         self.state.link_expected_tag = None
         self.state.link_nonce_length = 0
 
-    def _compute_handshake_tag(self, nonce: bytes) -> int:
-        seed = 0xFFFF
+    def _handshake_backoff_remaining(self) -> float:
+        deadline = self.state.handshake_backoff_until
+        if deadline <= 0:
+            return 0.0
+        return max(0.0, deadline - time.monotonic())
+
+    async def _respect_handshake_backoff(self) -> None:
+        delay = self._handshake_backoff_remaining()
+        if delay <= 0:
+            return
+        logger.warning(
+            "Delaying serial handshake for %.2fs due to prior failures",
+            delay,
+        )
+        await self._publish_handshake_event(
+            "backoff_wait",
+            reason=self.state.last_handshake_error,
+            detail="waiting_for_backoff",
+            extra={"delay_seconds": round(delay, 3)},
+        )
+        await asyncio.sleep(delay)
+
+    async def _publish_handshake_event(
+        self,
+        event: str,
+        *,
+        reason: Optional[str] = None,
+        detail: Optional[str] = None,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "event": event,
+            "reason": reason,
+            "detail": detail,
+            "attempts": self.state.handshake_attempts,
+            "successes": self.state.handshake_successes,
+            "failures": self.state.handshake_failures,
+            "failure_streak": self.state.handshake_failure_streak,
+            "backoff_until": self.state.handshake_backoff_until,
+        }
+        if extra:
+            payload.update(extra)
+        message = (
+            PublishableMessage(
+                topic_name=handshake_topic(self.state.mqtt_topic_prefix),
+                payload=json.dumps(payload).encode("utf-8"),
+            )
+            .with_content_type("application/json")
+            .with_user_property("bridge-event", "handshake")
+        )
+        await self.enqueue_mqtt(message)
+
+    async def _handle_handshake_success(self) -> None:
+        self.state.record_handshake_success()
+        await self._publish_handshake_event("success")
+
+    async def _handle_handshake_failure(
+        self,
+        reason: str,
+        *,
+        detail: Optional[str] = None,
+    ) -> None:
+        self.state.record_handshake_failure(reason)
+        backoff = self._maybe_schedule_handshake_backoff(reason)
+        extra = {"backoff_seconds": round(backoff, 3)} if backoff else None
+        await self._publish_handshake_event(
+            "failure",
+            reason=reason,
+            detail=detail,
+            extra=extra,
+        )
+
+    def _maybe_schedule_handshake_backoff(
+        self, reason: str
+    ) -> Optional[float]:
+        if reason not in _FATAL_HANDSHAKE_REASONS:
+            return None
+        streak = max(1, self.state.handshake_failure_streak)
+        delay = min(
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
+            SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (streak - 1)),
+        )
+        self.state.handshake_backoff_until = time.monotonic() + delay
+        return delay
+
+    def _fatal_handshake_reason(self) -> Optional[str]:
+        reason = self.state.last_handshake_error
+        if reason in _FATAL_HANDSHAKE_REASONS:
+            return reason
+        return None
+
+    def _raise_if_handshake_fatal(self) -> None:
+        reason = self._fatal_handshake_reason()
+        if not reason:
+            return
+
+        hint = (
+            "Verify YUNBRIDGE_SERIAL_SECRET (usually stored in "
+            "/etc/yunbridge/credentials or exported before starting the "
+            "daemon) matches the BridgeSecret.h value flashed on the MCU."
+        )
+        raise SerialHandshakeFatal(
+            (
+                "MCU rejected the serial shared secret "
+                f"(reason={reason}). {hint}"
+            )
+        )
+
+    def _compute_handshake_tag(self, nonce: bytes) -> bytes:
         secret = self.config.serial_shared_secret
-        if secret:
-            seed = crc_hqx(secret, seed)
-        return crc_hqx(nonce, seed)
+        if not secret:
+            return b""
+        digest = hmac.new(secret, nonce, hashlib.sha256).digest()
+        return digest[:SERIAL_HANDSHAKE_TAG_LEN]
 
     def _should_acknowledge_mcu_frame(self, command_id: int) -> bool:
         return command_id not in STATUS_VALUES
+
+    def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
+        if self.state.link_is_synchronized:
+            return True
+        if command_id in STATUS_VALUES:
+            return True
+        return command_id in _PRE_SYNC_ALLOWED_COMMANDS
 
     async def _acknowledge_mcu_frame(
         self,
@@ -462,6 +618,7 @@ class BridgeService:
         return _handler
 
     async def _handle_status(self, status: Status, payload: bytes) -> None:
+        self.state.record_mcu_status(status)
         text = payload.decode("utf-8", errors="ignore") if payload else ""
         log_method = logger.warning if status != Status.ACK else logger.debug
         log_method("MCU > %s %s", status.name, text)
@@ -473,12 +630,14 @@ class BridgeService:
                 "message": text,
             }
         ).encode("utf-8")
+        status_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            Topic.STATUS,
+        )
         message = (
             PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/"
-                    f"{TOPIC_SYSTEM}/{TOPIC_STATUS}"
-                ),
+                topic_name=status_topic,
                 payload=report,
             )
             .with_content_type("application/json")
@@ -500,7 +659,12 @@ class BridgeService:
             return
 
         free_memory = int.from_bytes(payload, "big")
-        topic = f"{self.state.mqtt_topic_prefix}/system/free_memory/value"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "free_memory",
+            "value",
+        )
         message = PublishableMessage(
             topic_name=topic, payload=str(free_memory).encode("utf-8")
         )
@@ -515,67 +679,78 @@ class BridgeService:
                 status=Status.MALFORMED,
                 extra=payload[: MAX_PAYLOAD_SIZE - 2],
             )
+            await self._handle_handshake_failure("unexpected_sync_resp")
             return False
 
         nonce_length = self.state.link_nonce_length or len(expected)
-
-        if self._secure_handshake:
-            required_length = nonce_length + 2
-            if len(payload) != required_length:
-                logger.warning(
-                    "LINK_SYNC_RESP malformed length (expected %d got %d)",
-                    required_length,
-                    len(payload),
-                )
-                await self._acknowledge_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    status=Status.MALFORMED,
-                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
-                )
-                self._clear_handshake_expectations()
-                return False
-
-            nonce = payload[:nonce_length]
-            tag_bytes = payload[nonce_length:required_length]
-            received_tag = int.from_bytes(tag_bytes, "big")
-            recalculated_tag = self._compute_handshake_tag(nonce)
-
-            if nonce != expected or received_tag != recalculated_tag:
+        required_length = nonce_length + SERIAL_HANDSHAKE_TAG_LEN
+        rate_limit = self.config.serial_handshake_min_interval
+        if rate_limit > 0:
+            now = time.monotonic()
+            if now < self.state.handshake_rate_limit_until:
                 logger.warning(
                     (
-                        "LINK_SYNC_RESP auth mismatch (nonce=%s tag=%04X "
-                        "expected=%04X)"
+                        "LINK_SYNC_RESP throttled due to rate limit "
+                        "(remaining=%.2fs)"
                     ),
-                    nonce.hex(),
-                    received_tag,
-                    recalculated_tag,
+                    self.state.handshake_rate_limit_until - now,
                 )
                 await self._acknowledge_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     status=Status.MALFORMED,
                     extra=payload[: MAX_PAYLOAD_SIZE - 2],
                 )
-                self._clear_handshake_expectations()
+                await self._handle_handshake_failure("sync_rate_limited")
                 return False
+            self.state.handshake_rate_limit_until = now + rate_limit
 
-            payload = nonce  # Normalise for logging below
-        else:
-            if payload != expected:
-                logger.warning(
-                    "LINK_SYNC_RESP nonce mismatch (expected %s got %s)",
-                    expected.hex(),
-                    payload.hex(),
-                )
-                await self._acknowledge_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    status=Status.MALFORMED,
-                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
-                )
-                self._clear_handshake_expectations()
-                return False
+        if len(payload) != required_length:
+            logger.warning(
+                "LINK_SYNC_RESP malformed length (expected %d got %d)",
+                required_length,
+                len(payload),
+            )
+            await self._acknowledge_mcu_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            self._clear_handshake_expectations()
+            await self._handle_handshake_failure("sync_length_mismatch")
+            return False
+
+        nonce = payload[:nonce_length]
+        tag_bytes = payload[nonce_length:required_length]
+        expected_tag = self.state.link_expected_tag
+        recalculated_tag = self._compute_handshake_tag(nonce)
+
+        if (
+            nonce != expected
+            or expected_tag is None
+            or len(tag_bytes) != SERIAL_HANDSHAKE_TAG_LEN
+            or not hmac.compare_digest(tag_bytes, recalculated_tag)
+        ):
+            logger.warning(
+                "LINK_SYNC_RESP auth mismatch (nonce=%s)",
+                nonce.hex(),
+            )
+            await self._acknowledge_mcu_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            self._clear_handshake_expectations()
+            await self._handle_handshake_failure(
+                "sync_auth_mismatch",
+                detail="nonce_or_tag_mismatch",
+            )
+            return False
+
+        payload = nonce  # Normalise for logging below
 
         self.state.link_is_synchronized = True
         self._clear_handshake_expectations()
+        await self._handle_handshake_success()
         logger.info("MCU link synchronised (nonce=%s)", payload.hex())
         return True
 
@@ -593,7 +768,12 @@ class BridgeService:
 
         major, minor = payload[0], payload[1]
         self.state.mcu_version = (major, minor)
-        topic = f"{self.state.mqtt_topic_prefix}/system/version/value"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "version",
+            "value",
+        )
         message = PublishableMessage(
             topic_name=topic,
             payload=f"{major}.{minor}".encode("utf-8"),
@@ -633,63 +813,143 @@ class BridgeService:
     # ------------------------------------------------------------------
 
     async def _handle_mqtt_topic(self, inbound: InboundMessage) -> None:
-        topic = inbound.topic_name
-        parts = topic.split("/")
-        if not parts or parts[0] != self.state.mqtt_topic_prefix:
+        topic_name = inbound.topic_name
+        route = parse_topic(self.state.mqtt_topic_prefix, topic_name)
+        if route is None:
             logger.debug(
-                "Ignoring MQTT message with unexpected prefix: %s", topic
+                "Ignoring MQTT message with unexpected prefix: %s",
+                topic_name,
             )
             return
 
-        if len(parts) < 2:
-            logger.debug("MQTT topic missing type segment: %s", topic)
+        if not route.segments:
+            logger.debug("MQTT topic missing identifier: %s", topic_name)
             return
 
         payload = inbound.payload
         payload_str = payload.decode("utf-8", errors="ignore")
-        topic_type = parts[1]
-        identifier = parts[2] if len(parts) >= 3 else ""
+        identifier = route.identifier
+        remainder = list(route.remainder)
+        parts = topic_name.split("/")
 
         try:
-            if topic_type == TOPIC_FILE and len(parts) >= 4:
+            if route.topic == Topic.FILE and len(route.segments) >= 2:
+                if not self._is_topic_action_allowed(route.topic, identifier):
+                    await self._reject_topic_action(
+                        inbound,
+                        route.topic,
+                        identifier,
+                    )
+                    return
                 await self._file.handle_mqtt(
                     identifier,
-                    parts[3:],
+                    remainder,
                     payload,
                     inbound,
                 )
-            elif topic_type == TOPIC_CONSOLE and identifier == "in":
+            elif route.topic == Topic.CONSOLE and identifier == "in":
                 await self._console.handle_mqtt_input(payload, inbound)
-            elif topic_type == TOPIC_DATASTORE and len(parts) >= 3:
+            elif route.topic == Topic.DATASTORE:
+                if not self._is_topic_action_allowed(route.topic, identifier):
+                    await self._reject_topic_action(
+                        inbound,
+                        route.topic,
+                        identifier,
+                    )
+                    return
                 await self._datastore.handle_mqtt(
                     identifier,
-                    parts[3:],
+                    remainder,
                     payload,
                     payload_str,
                     inbound,
                 )
-            elif topic_type == TOPIC_MAILBOX and identifier == "write":
+            elif route.topic == Topic.MAILBOX and identifier == "write":
+                if not self._is_topic_action_allowed(route.topic, identifier):
+                    await self._reject_topic_action(
+                        inbound,
+                        route.topic,
+                        identifier,
+                    )
+                    return
                 await self._mailbox.handle_mqtt_write(payload, inbound)
-            elif topic_type == TOPIC_MAILBOX and identifier == "read":
+            elif route.topic == Topic.MAILBOX and identifier == "read":
+                if not self._is_topic_action_allowed(route.topic, identifier):
+                    await self._reject_topic_action(
+                        inbound,
+                        route.topic,
+                        identifier,
+                    )
+                    return
                 await self._mailbox.handle_mqtt_read(inbound)
-            elif topic_type == TOPIC_SHELL:
+            elif route.topic == Topic.SHELL:
                 await self._shell.handle_mqtt(parts, payload_str, inbound)
-            elif topic_type in (TOPIC_DIGITAL, TOPIC_ANALOG):
+            elif route.topic in (Topic.DIGITAL, Topic.ANALOG):
                 await self._pin.handle_mqtt(
-                    topic_type,
+                    route.topic,
                     parts,
                     payload_str,
                     inbound,
                 )
-            elif topic_type == TOPIC_SYSTEM:
+            elif route.topic == Topic.SYSTEM:
                 handled = await self._system.handle_mqtt(
                     identifier,
-                    parts[3:] if len(parts) > 3 else [],
+                    remainder,
                     inbound,
                 )
                 if not handled:
-                    logger.debug("Unhandled MQTT system topic %s", topic)
+                    logger.debug("Unhandled MQTT system topic %s", topic_name)
             else:
-                logger.debug("Unhandled MQTT topic %s", topic)
+                logger.debug("Unhandled MQTT topic %s", topic_name)
         except Exception:
-            logger.exception("Error processing MQTT topic: %s", topic)
+            logger.exception("Error processing MQTT topic: %s", topic_name)
+
+    def _is_topic_action_allowed(
+        self,
+        topic_type: Topic | str,
+        action: str,
+    ) -> bool:
+        if not action:
+            return True
+        topic_value = (
+            topic_type.value if isinstance(topic_type, Topic) else topic_type
+        )
+        return self.state.topic_authorization.allows(topic_value, action)
+
+    async def _reject_topic_action(
+        self,
+        inbound: InboundMessage,
+        topic_type: Topic | str,
+        action: str,
+    ) -> None:
+        topic_value = (
+            topic_type.value if isinstance(topic_type, Topic) else topic_type
+        )
+        logger.warning(
+            "Blocked MQTT action topic=%s action=%s (message topic=%s)",
+            topic_value,
+            action or "<missing>",
+            inbound.topic_name,
+        )
+        payload = json.dumps(
+            {
+                "status": "forbidden",
+                "topic": topic_value,
+                "action": action,
+            }
+        ).encode("utf-8")
+        status_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            Topic.STATUS,
+        )
+        message = (
+            PublishableMessage(
+                topic_name=status_topic,
+                payload=payload,
+            )
+            .with_content_type("application/json")
+            .with_message_expiry(30)
+            .with_user_property("bridge-error", _TOPIC_FORBIDDEN_REASON)
+        )
+        await self.enqueue_mqtt(message, reply_context=inbound)

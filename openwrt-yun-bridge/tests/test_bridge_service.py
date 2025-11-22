@@ -9,16 +9,32 @@ import struct
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.services.runtime import BridgeService
-from yunbridge.policy import AllowedCommandPolicy
+from yunbridge.policy import AllowedCommandPolicy, TopicAuthorization
+from yunbridge.protocol.topics import (
+    Topic,
+    mailbox_incoming_available_topic,
+    topic_path,
+)
+from yunbridge.services.runtime import BridgeService, SerialHandshakeFatal
 from yunbridge.state.context import (
-    PendingDatastoreRequest,
     PendingPinRequest,
     RuntimeState,
 )
 from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
+from yunbridge.const import SERIAL_NONCE_LENGTH
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.process import ProcessComponent
+
+
+class _FakeMonotonic:
+    def __init__(self, start: float = 0.0) -> None:
+        self.value = start
+
+    def monotonic(self) -> float:
+        return self.value
+
+    def advance(self, delta: float) -> None:
+        self.value += delta
 
 
 def _make_inbound(
@@ -57,7 +73,7 @@ def test_on_serial_connected_flushes_console_queue(
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
-                response = nonce + struct.pack(">H", tag)
+                response = nonce + tag
                 await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
@@ -104,6 +120,9 @@ def test_on_serial_connected_flushes_console_queue(
         )
         assert runtime_state.console_queue_bytes == 0
         assert runtime_state.mcu_version is None
+        assert runtime_state.handshake_attempts == 1
+        assert runtime_state.handshake_successes == 1
+        assert runtime_state.handshake_failures == 0
 
     asyncio.run(_run())
 
@@ -125,8 +144,10 @@ def test_sync_link_rejects_invalid_handshake_tag(
                 )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                bad_tag = (service._compute_handshake_tag(nonce) + 1) & 0xFFFF
-                response = nonce + struct.pack(">H", bad_tag)
+                tag = bytearray(service._compute_handshake_tag(nonce))
+                if tag:
+                    tag[0] ^= 0xFF
+                response = nonce + bytes(tag)
                 await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
@@ -143,6 +164,9 @@ def test_sync_link_rejects_invalid_handshake_tag(
         assert any(
             frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames
         )
+        assert runtime_state.handshake_attempts == 1
+        assert runtime_state.handshake_failures == 1
+        assert runtime_state.handshake_successes == 0
 
     asyncio.run(_run())
 
@@ -180,6 +204,199 @@ def test_sync_link_rejects_truncated_response(
         assert any(
             frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames
         )
+        assert runtime_state.handshake_attempts == 1
+        assert runtime_state.handshake_failures == 1
+
+    asyncio.run(_run())
+
+
+def test_link_sync_resp_respects_rate_limit(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        runtime_config.serial_handshake_min_interval = 5.0
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        fake_clock = _FakeMonotonic(100.0)
+        monkeypatch.setattr(
+            "yunbridge.services.runtime.time.monotonic",
+            fake_clock.monotonic,
+        )
+
+        def _prime_handshake(seed: int) -> bytes:
+            nonce = bytes([seed]) * SERIAL_NONCE_LENGTH
+            tag = service._compute_handshake_tag(nonce)
+            runtime_state.link_is_synchronized = False
+            runtime_state.link_handshake_nonce = nonce
+            runtime_state.link_nonce_length = len(nonce)
+            runtime_state.link_expected_tag = tag
+            return nonce + tag
+
+        payload_ok = _prime_handshake(1)
+        result_ok = await service._handle_link_sync_resp(payload_ok)
+        assert result_ok is True
+
+        fake_clock.advance(0.1)
+        payload_blocked = _prime_handshake(2)
+        rate_limited = await service._handle_link_sync_resp(payload_blocked)
+        assert rate_limited is False
+        assert runtime_state.last_handshake_error == "sync_rate_limited"
+        assert runtime_state.handshake_failure_streak >= 1
+        assert any(
+            frame_id == Status.MALFORMED.value
+            for frame_id, _ in sent_frames
+        )
+
+    asyncio.run(_run())
+
+
+def test_sync_auth_failure_schedules_backoff(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        fake_clock = _FakeMonotonic(200.0)
+        monkeypatch.setattr(
+            "yunbridge.services.runtime.time.monotonic",
+            fake_clock.monotonic,
+        )
+
+        def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
+            nonce = bytes([seed]) * SERIAL_NONCE_LENGTH
+            tag = service._compute_handshake_tag(nonce)
+            runtime_state.link_is_synchronized = False
+            runtime_state.link_handshake_nonce = nonce
+            runtime_state.link_nonce_length = len(nonce)
+            runtime_state.link_expected_tag = tag
+            return nonce, tag
+
+        nonce_one, tag_one = _prime_handshake(3)
+        broken_tag_one = bytearray(tag_one)
+        broken_tag_one[0] ^= 0xFF
+        await service._handle_link_sync_resp(
+            nonce_one + bytes(broken_tag_one)
+        )
+        first_delay = (
+            runtime_state.handshake_backoff_until - fake_clock.monotonic()
+        )
+        assert first_delay > 0
+        assert runtime_state.last_handshake_error == "sync_auth_mismatch"
+
+        fake_clock.advance(first_delay + 0.5)
+        nonce_two, tag_two = _prime_handshake(4)
+        broken_tag_two = bytearray(tag_two)
+        broken_tag_two[-1] ^= 0xFF
+        await service._handle_link_sync_resp(
+            nonce_two + bytes(broken_tag_two)
+        )
+        second_delay = (
+            runtime_state.handshake_backoff_until - fake_clock.monotonic()
+        )
+        assert second_delay > first_delay
+        assert runtime_state.handshake_failure_streak >= 2
+
+    asyncio.run(_run())
+
+
+def test_on_serial_connected_raises_on_secret_mismatch(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            if command_id == Command.CMD_LINK_RESET.value:
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_RESET_RESP.value,
+                    b"",
+                )
+            elif command_id == Command.CMD_LINK_SYNC.value:
+                nonce = service.state.link_handshake_nonce or b""
+                tag = bytearray(service._compute_handshake_tag(nonce))
+                if tag:
+                    tag[0] ^= 0xFF
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    nonce + bytes(tag),
+                )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        with pytest.raises(SerialHandshakeFatal) as exc_info:
+            await service.on_serial_connected()
+
+        message = str(exc_info.value)
+        assert "serial shared secret" in message
+        assert "YUNBRIDGE_SERIAL_SECRET" in message
+
+    asyncio.run(_run())
+
+
+def test_mcu_status_frames_increment_counters(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+        runtime_state.link_is_synchronized = True
+
+        await service.handle_mcu_frame(Status.ERROR.value, b"boom")
+
+        assert runtime_state.mcu_status_counters["ERROR"] == 1
+
+    asyncio.run(_run())
+
+
+def test_mcu_frame_before_sync_is_rejected(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        runtime_state.link_is_synchronized = False
+
+        await service.handle_mcu_frame(
+            Command.CMD_MAILBOX_PUSH.value,
+            b"\x00\x00",
+        )
+
+        assert sent_frames
+        status_id, status_payload = sent_frames[-1]
+        assert status_id == Status.MALFORMED.value
+        assert status_payload[:2] == struct.pack(
+            ">H",
+            Command.CMD_MAILBOX_PUSH.value,
+        )
+        assert runtime_state.mailbox_incoming_queue_bytes == 0
 
     asyncio.run(_run())
 
@@ -299,7 +516,8 @@ def test_datastore_get_from_mcu_returns_cached_value(
 ) -> None:
     async def _run() -> None:
         service = BridgeService(runtime_config, runtime_state)
-        runtime_state.datastore["sensor/temp"] = "42"
+        key = "sensor/temp"
+        runtime_state.datastore[key] = "42"
 
         sent_frames: list[tuple[int, bytes]] = []
 
@@ -309,7 +527,7 @@ def test_datastore_get_from_mcu_returns_cached_value(
 
         service.register_serial_sender(fake_sender)
 
-        key_bytes = b"sensor/temp"
+        key_bytes = key.encode()
         payload = bytes([len(key_bytes)]) + key_bytes
 
         await service.handle_mcu_frame(
@@ -326,7 +544,13 @@ def test_datastore_get_from_mcu_returns_cached_value(
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/datastore/get/sensor/temp")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.DATASTORE,
+            "get",
+            *key.split("/"),
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"42"
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -394,7 +618,13 @@ def test_datastore_put_from_mcu_updates_cache_and_mqtt(
 
         assert runtime_state.datastore.get("mode") == "auto"
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/datastore/get/mode")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.DATASTORE,
+            "get",
+            "mode",
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == value
         runtime_state.mqtt_publish_queue.task_done()
 
@@ -424,9 +654,6 @@ def test_on_serial_disconnected_clears_pending(
         runtime_state.pending_analog_reads.append(
             PendingPinRequest(pin=3, reply_context=None)
         )
-        runtime_state.pending_datastore_gets.append(
-            PendingDatastoreRequest(key="key", reply_context=None)
-        )
         runtime_state.mcu_is_paused = True
         runtime_state.enqueue_console_chunk(b"keep", logging.getLogger())
 
@@ -435,7 +662,6 @@ def test_on_serial_disconnected_clears_pending(
 
         assert not runtime_state.pending_digital_reads
         assert not runtime_state.pending_analog_reads
-        assert not runtime_state.pending_datastore_gets
         assert runtime_state.mcu_is_paused is False
         assert runtime_state.console_to_mcu_queue
         assert runtime_state.console_to_mcu_queue[0] == b"keep"
@@ -460,7 +686,11 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/mailbox/read",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.MAILBOX,
+                    "read",
+                ),
                 b"",
             )
         )
@@ -471,13 +701,49 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
             for _ in range(2)
         ]
         # First message is the payload, second is the availability update.
-        assert topic_payloads[0].topic_name.endswith("/mailbox/incoming")
-        assert topic_payloads[0].payload == b""
-        assert topic_payloads[1].topic_name.endswith(
-            "/mailbox/incoming_available"
+        assert topic_payloads[0].topic_name == topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            "incoming",
         )
+        assert topic_payloads[0].payload == b""
+        incoming_available_topic = mailbox_incoming_available_topic(
+            runtime_state.mqtt_topic_prefix
+        )
+        assert topic_payloads[1].topic_name == incoming_available_topic
         for _ in topic_payloads:
             runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_mailbox_write_blocked_when_topic_disabled(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.topic_authorization = TopicAuthorization(
+            mailbox_write=False
+        )
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.MAILBOX,
+                    "write",
+                ),
+                b"hello",
+            )
+        )
+
+        assert not runtime_state.mailbox_queue
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        payload = json.loads(queued.payload.decode())
+        assert payload["topic"] == "mailbox"
+        assert payload["action"] == "write"
+        runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
 
@@ -499,7 +765,12 @@ def test_mqtt_datastore_put_updates_local_cache(
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/datastore/put/foo",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "put",
+                    "foo",
+                ),
                 b"baz",
             )
         )
@@ -508,8 +779,57 @@ def test_mqtt_datastore_put_updates_local_cache(
         assert runtime_state.datastore.get("foo") == "baz"
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/datastore/get/foo")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.DATASTORE,
+            "get",
+            "foo",
+        )
+        assert queued.topic_name == expected_topic
         assert queued.payload == b"baz"
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_datastore_put_blocked_when_topic_disabled(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.topic_authorization = TopicAuthorization(
+            datastore_put=False
+        )
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "put",
+                    "foo",
+                ),
+                b"baz",
+            )
+        )
+
+        assert runtime_state.datastore.get("foo") is None
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "status",
+        )
+        assert queued.topic_name == expected_topic
+        payload = json.loads(queued.payload.decode())
+        assert payload["status"] == "forbidden"
+        assert payload["topic"] == "datastore"
+        assert payload["action"] == "put"
+        assert ("bridge-error", "topic-action-forbidden") in (
+            queued.user_properties
+        )
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
@@ -532,7 +852,11 @@ def test_mqtt_datastore_put_without_key_is_ignored(
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/datastore/put",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "put",
+                ),
                 b"value",
             )
         )
@@ -543,7 +867,7 @@ def test_mqtt_datastore_put_without_key_is_ignored(
     asyncio.run(_run())
 
 
-def test_mqtt_datastore_get_non_request_updates_cache(
+def test_mqtt_datastore_get_non_request_uses_cache(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
@@ -555,63 +879,154 @@ def test_mqtt_datastore_get_non_request_updates_cache(
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
-            if command_id == Command.CMD_DATASTORE_GET.value:
-                await service.handle_mcu_frame(
-                    Command.CMD_DATASTORE_GET_RESP.value,
-                    b"\x03new",
-                )
             return True
 
         service.register_serial_sender(fake_sender)
 
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "get",
+                    "foo",
+                ),
                 b"",
             )
         )
 
-        assert sent_frames
-        payloads: list[bytes] = []
-        while not runtime_state.mqtt_publish_queue.empty():
-            message = runtime_state.mqtt_publish_queue.get_nowait()
-            payloads.append(message.payload)
-            runtime_state.mqtt_publish_queue.task_done()
+        assert not sent_frames
 
-        assert payloads
-        assert all(payload == b"new" for payload in payloads)
-        assert runtime_state.datastore["foo"] == "new"
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.DATASTORE,
+            "get",
+            "foo",
+        )
+        assert queued.topic_name == expected_topic
+        assert queued.payload == b"cached"
+        runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
 
 
-def test_mqtt_datastore_get_send_failure_removes_pending(
+def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.datastore["foo"] = "cached"
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "get",
+                    "foo",
+                    "request",
+                ),
+                b"",
+            )
+        )
+
+        assert not sent_frames
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.payload == b"cached"
+        assert ("bridge-datastore-key", "foo") in queued.user_properties
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_datastore_get_request_miss_responds_with_error(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
         service = BridgeService(runtime_config, runtime_state)
 
-        sent_frames: list[tuple[int, bytes]] = []
-
-        async def failing_sender(command_id: int, payload: bytes) -> bool:
-            sent_frames.append((command_id, payload))
-            return False
-
-        service.register_serial_sender(failing_sender)
-
         await service.handle_mqtt_message(
             _make_inbound(
-                f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo/request",
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "get",
+                    "foo",
+                    "request",
+                ),
                 b"",
             )
         )
 
-        assert sent_frames
-        assert not runtime_state.pending_datastore_gets
-
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         assert queued.payload == b""
+        assert ("bridge-error", "datastore-miss") in queued.user_properties
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_datastore_get_non_request_miss_is_silent(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.DATASTORE,
+                    "get",
+                    "foo",
+                ),
+                b"",
+            )
+        )
+
+        assert runtime_state.mqtt_publish_queue.qsize() == 0
+
+    asyncio.run(_run())
+
+
+def test_mqtt_file_write_blocked_when_topic_disabled(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.topic_authorization = TopicAuthorization(
+            file_write=False
+        )
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.FILE,
+                    "write",
+                    "test.txt",
+                ),
+                b"payload",
+            )
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        payload = json.loads(queued.payload.decode())
+        assert payload["topic"] == "file"
+        assert payload["action"] == "write"
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
@@ -639,81 +1054,21 @@ def test_mqtt_datastore_get_key_too_large_logs_warning(
             await service.handle_mqtt_message(
                 _make_inbound(
                     (
-                        f"{runtime_state.mqtt_topic_prefix}/datastore/get/"
-                        f"{long_key}/request"
+                        topic_path(
+                            runtime_state.mqtt_topic_prefix,
+                            Topic.DATASTORE,
+                            "get",
+                            long_key,
+                            "request",
+                        )
                     ),
                     b"",
                 )
             )
 
         assert not sent_frames
-        assert not runtime_state.pending_datastore_gets
         assert runtime_state.mqtt_publish_queue.qsize() == 0
         assert any("too large" in record.message for record in caplog.records)
-
-    asyncio.run(_run())
-
-
-def test_mqtt_datastore_get_roundtrip_updates_cache(
-    runtime_config: RuntimeConfig,
-    runtime_state: RuntimeState,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    async def _run() -> None:
-        service = BridgeService(runtime_config, runtime_state)
-
-        sent_frames: list[tuple[int, bytes]] = []
-        pending_observed = False
-
-        async def fake_sender(command_id: int, payload: bytes) -> bool:
-            nonlocal pending_observed
-            sent_frames.append((command_id, payload))
-            if command_id == Status.ACK.value:
-                return True
-            if command_id == Command.CMD_DATASTORE_GET.value:
-                pending_observed = (
-                    bool(runtime_state.pending_datastore_gets)
-                    and runtime_state.pending_datastore_gets[0].key
-                    == "foo"
-                )
-                await service.handle_mcu_frame(
-                    Command.CMD_DATASTORE_GET_RESP.value,
-                    b"\x03bar",
-                )
-            return True
-
-        service.register_serial_sender(fake_sender)
-
-        with caplog.at_level(logging.WARNING, logger="yunbridge.datastore"):
-            await service.handle_mqtt_message(
-                _make_inbound(
-                    (
-                        f"{runtime_state.mqtt_topic_prefix}/datastore/get/foo"
-                        "/request"
-                    ),
-                    b"",
-                )
-            )
-
-        assert sent_frames
-        assert any(
-            frame_id == Command.CMD_DATASTORE_GET.value
-            for frame_id, _ in sent_frames
-        )
-        assert pending_observed
-        assert runtime_state.datastore.get("foo") == "bar"
-        assert not any(
-            "without pending" in record.message for record in caplog.records
-        )
-
-        queued_payloads: list[bytes] = []
-        while not runtime_state.mqtt_publish_queue.empty():
-            message = runtime_state.mqtt_publish_queue.get_nowait()
-            queued_payloads.append(message.payload)
-            runtime_state.mqtt_publish_queue.task_done()
-
-        assert queued_payloads
-        assert all(payload == b"bar" for payload in queued_payloads)
 
     asyncio.run(_run())
 
@@ -749,6 +1104,9 @@ def test_run_command_respects_allow_list(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
+            ["/usr/bin/id"]
+        )
         service = BridgeService(runtime_config, runtime_state)
 
         run_sync = getattr(service, "_run_command_sync")
@@ -767,6 +1125,146 @@ def test_run_command_respects_allow_list(
 
         assert status_ok == Status.OK.value
         assert stderr_ok == b""
+
+    asyncio.run(_run())
+
+
+def test_run_command_rejects_shell_metacharacters(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
+            ["*"]
+        )
+        service = BridgeService(runtime_config, runtime_state)
+
+        run_sync = getattr(service, "_run_command_sync")
+        status, _, stderr, _ = await run_sync("echo hello; ls")
+
+        assert status == Status.ERROR.value
+        assert b"Illegal shell" in stderr
+
+    asyncio.run(_run())
+
+
+def test_process_run_async_rejects_unsafe_command(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
+            ["*"]
+        )
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mcu_frame(
+            Command.CMD_PROCESS_RUN_ASYNC.value,
+            b"echo hi && rm -rf /",
+        )
+
+        assert sent_frames
+        status_id, status_payload = sent_frames[0]
+        assert status_id == Status.ERROR.value
+        assert status_payload == b"command_validation_failed"
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        payload = json.loads(queued.payload.decode())
+        assert payload["reason"] == "command_validation_failed"
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_pin_read_queue_limit_emits_error(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        runtime_state.pending_pin_request_limit = 1
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        async def stub_send(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        monkeypatch.setattr(service._serial_flow, "send", stub_send)
+
+        prefix = runtime_state.mqtt_topic_prefix
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(prefix, Topic.DIGITAL, "2", "read"),
+                b"",
+            ),
+        )
+        assert len(runtime_state.pending_digital_reads) == 1
+        assert len(sent_frames) == 1
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(prefix, Topic.DIGITAL, "3", "read"),
+                b"",
+            ),
+        )
+
+        assert len(runtime_state.pending_digital_reads) == 1
+        assert len(sent_frames) == 1
+
+        user_props: list[tuple[str, str]] = []
+        while not runtime_state.mqtt_publish_queue.empty():
+            message = runtime_state.mqtt_publish_queue.get_nowait()
+            user_props.extend(message.user_properties)
+            runtime_state.mqtt_publish_queue.task_done()
+
+        assert ("bridge-error", "pending-pin-overflow") in user_props
+
+    asyncio.run(_run())
+
+
+def test_legacy_mcu_pin_read_request_emits_not_implemented(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mcu_frame(
+            Command.CMD_DIGITAL_READ.value,
+            b"\x0d",
+        )
+
+        assert sent_frames
+        assert any(
+            status_id == Status.NOT_IMPLEMENTED.value
+            and b"pin-read-origin-mcu" in status_payload
+            for status_id, status_payload in sent_frames
+        )
 
     asyncio.run(_run())
 
@@ -815,7 +1313,13 @@ def test_process_run_async_failure_emits_error(
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name.endswith("/sh/run_async/error")
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "run_async",
+            "error",
+        )
+        assert queued.topic_name == expected_topic
         payload = json.loads(queued.payload.decode())
         assert payload["status"] == "error"
         assert payload["reason"] == "process_run_async_failed"

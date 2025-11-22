@@ -6,7 +6,7 @@ from typing import Optional
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
 
-from ...const import TOPIC_CONSOLE
+from ...protocol.topics import Topic, topic_path
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -29,7 +29,11 @@ class ConsoleComponent:
         self.ctx = ctx
 
     async def handle_write(self, payload: bytes) -> None:
-        topic = f"{self.state.mqtt_topic_prefix}/{TOPIC_CONSOLE}/out"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.CONSOLE,
+            "out",
+        )
         message = PublishableMessage(
             topic_name=topic,
             payload=payload,

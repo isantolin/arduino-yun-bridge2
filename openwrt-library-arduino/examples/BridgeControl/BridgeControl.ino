@@ -67,8 +67,7 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
       digitalWrite(ledPin, LOW);
       Console.println(F("LED 13 apagado por Mailbox"));
     } else if (strcmp(msg_buf, "READ_D13") == 0) {
-      Console.println(F("Solicitando lectura del pin 13 de forma asíncrona..."));
-      Bridge.requestDigitalRead(13);
+      Console.println(F("Las lecturas GPIO ahora las inicia Linux via MQTT; este comando se ignora."));
     } else {
       char error_msg[100];
       snprintf(error_msg, sizeof(error_msg), "Error: Comando de Mailbox desconocido: '%s'", msg_buf);

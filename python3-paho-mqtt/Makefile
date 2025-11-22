@@ -5,6 +5,7 @@ PKG_VERSION:=2.1.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=paho-mqtt
+PYPI_SOURCE_NAME:=paho-mqtt
 PKG_SOURCE:=paho_mqtt-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://files.pythonhosted.org/packages/source/p/$(PYPI_NAME)/
 PKG_HASH:=12d6e7511d4137555a3f6ea167ae846af2c7357b10bc6fa4f7c3968fc1723834

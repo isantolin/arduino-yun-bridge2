@@ -1,6 +1,7 @@
 """Lightweight MQTT type helpers backed by aiomqtt."""
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import (
@@ -193,6 +194,57 @@ class PublishableMessage:
         if self.user_properties:
             props.user_property = list(self.user_properties)
         return props
+
+    def to_spool_record(self) -> dict[str, Any]:
+        """Serialize the message to a JSON-friendly mapping."""
+
+        return {
+            "topic_name": self.topic_name,
+            "payload": base64.b64encode(self.payload).decode("ascii"),
+            "qos": int(self.qos),
+            "retain": self.retain,
+            "content_type": self.content_type,
+            "payload_format_indicator": self.payload_format_indicator,
+            "message_expiry_interval": self.message_expiry_interval,
+            "response_topic": self.response_topic,
+            "correlation_data": (
+                base64.b64encode(self.correlation_data).decode("ascii")
+                if self.correlation_data is not None
+                else None
+            ),
+            "user_properties": list(self.user_properties),
+        }
+
+    @classmethod
+    def from_spool_record(
+        cls,
+        record: Mapping[str, Any],
+    ) -> "PublishableMessage":
+        payload_b64 = record.get("payload", "")
+        payload = base64.b64decode(payload_b64.encode("ascii"))
+        correlation_b64 = record.get("correlation_data")
+        correlation_data = (
+            base64.b64decode(str(correlation_b64).encode("ascii"))
+            if correlation_b64 is not None
+            else None
+        )
+        user_properties_raw = record.get("user_properties") or []
+        user_properties = tuple(
+            (str(key), str(value))
+            for key, value in user_properties_raw
+        )
+        return cls(
+            topic_name=str(record.get("topic_name", "")),
+            payload=payload,
+            qos=QOSLevel(int(record.get("qos", 0))),
+            retain=bool(record.get("retain", False)),
+            content_type=record.get("content_type"),
+            payload_format_indicator=record.get("payload_format_indicator"),
+            message_expiry_interval=record.get("message_expiry_interval"),
+            response_topic=record.get("response_topic"),
+            correlation_data=correlation_data,
+            user_properties=user_properties,
+        )
 
 
 @dataclass(slots=True)

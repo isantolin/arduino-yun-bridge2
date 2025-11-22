@@ -1,0 +1,185 @@
+"""Bounded queue helpers for YunBridge runtime state."""
+from __future__ import annotations
+
+from collections import deque
+from dataclasses import dataclass
+from typing import Deque, Iterable, Iterator, Optional
+
+_UNSET = object()
+
+
+@dataclass
+class QueueEvent:
+    """Outcome of a bounded queue mutation."""
+
+    truncated_bytes: int = 0
+    dropped_chunks: int = 0
+    dropped_bytes: int = 0
+    accepted: bool = False
+
+
+class BoundedByteDeque:
+    """Deque that enforces both item-count and byte-length limits."""
+
+    def __init__(
+        self,
+        *,
+        max_items: Optional[int] = None,
+        max_bytes: Optional[int] = None,
+    ) -> None:
+        self._max_items = self._normalize_limit(max_items)
+        self._max_bytes = self._normalize_limit(max_bytes)
+        self._queue: Deque[bytes] = deque()
+        self._bytes = 0
+
+    def __len__(self) -> int:
+        return len(self._queue)
+
+    def __bool__(self) -> bool:
+        return bool(self._queue)
+
+    def __iter__(self) -> Iterator[bytes]:
+        return iter(self._queue)
+
+    def __getitem__(self, index: int) -> bytes:
+        return self._queue[index]
+
+    @property
+    def bytes_used(self) -> int:
+        return self._bytes
+
+    @property
+    def limit_bytes(self) -> Optional[int]:
+        return self._max_bytes
+
+    def clear(self) -> None:
+        self._queue.clear()
+        self._bytes = 0
+
+    def update_limits(
+        self,
+        *,
+        max_items: object = _UNSET,
+        max_bytes: object = _UNSET,
+    ) -> None:
+        if max_items is not _UNSET:
+            self._max_items = self._normalize_limit(max_items)
+        if max_bytes is not _UNSET:
+            self._max_bytes = self._normalize_limit(max_bytes)
+        self._make_room_for(0, 0)
+
+    def append(self, chunk: bytes) -> QueueEvent:
+        return self._push(chunk, False)
+
+    def appendleft(self, chunk: bytes) -> QueueEvent:
+        return self._push(chunk, True)
+
+    def popleft(self) -> bytes:
+        blob = self._queue.popleft()
+        self._bytes -= len(blob)
+        return blob
+
+    def pop(self) -> bytes:
+        blob = self._queue.pop()
+        self._bytes -= len(blob)
+        return blob
+
+    def to_list(self) -> list[bytes]:
+        return list(self._queue)
+
+    def extend(self, chunks: Iterable[bytes]) -> QueueEvent:
+        event = QueueEvent()
+        for chunk in chunks:
+            update = self.append(chunk)
+            event.truncated_bytes += update.truncated_bytes
+            event.dropped_chunks += update.dropped_chunks
+            event.dropped_bytes += update.dropped_bytes
+        return event
+
+    def _push(self, chunk: bytes, left: bool) -> QueueEvent:
+        data = bytes(chunk)
+        event = QueueEvent()
+
+        if self._max_bytes and len(data) > self._max_bytes:
+            data = data[-self._max_bytes:]
+            event.truncated_bytes = len(chunk) - len(data)
+
+        dropped_chunks, dropped_bytes = self._make_room_for(
+            len(data), 1
+        )
+        event.dropped_chunks += dropped_chunks
+        event.dropped_bytes += dropped_bytes
+
+        if not self._can_fit(len(data), 1):
+            return event
+
+        if left:
+            self._queue.appendleft(data)
+        else:
+            self._queue.append(data)
+        self._bytes += len(data)
+        event.accepted = True
+        return event
+
+    def _make_room_for(
+        self, incoming_bytes: int, incoming_count: int
+    ) -> tuple[int, int]:
+        dropped_chunks = 0
+        dropped_bytes = 0
+        limit_items = self._max_items
+        limit_bytes = self._max_bytes
+
+        while (
+            limit_items is not None
+            and len(self._queue) + incoming_count > limit_items
+            and self._queue
+        ):
+            removed = self._queue.popleft()
+            self._bytes -= len(removed)
+            dropped_chunks += 1
+            dropped_bytes += len(removed)
+
+        if limit_bytes is not None and incoming_bytes > limit_bytes:
+            return dropped_chunks, dropped_bytes
+
+        while (
+            limit_bytes is not None
+            and self._bytes + incoming_bytes > limit_bytes
+            and self._queue
+        ):
+            removed = self._queue.popleft()
+            self._bytes -= len(removed)
+            dropped_chunks += 1
+            dropped_bytes += len(removed)
+
+        return dropped_chunks, dropped_bytes
+
+    def _can_fit(self, incoming_bytes: int, incoming_count: int) -> bool:
+        limit_items = self._max_items
+        limit_bytes = self._max_bytes
+        if limit_bytes is not None and incoming_bytes > limit_bytes:
+            return False
+        if limit_items is not None and incoming_count > limit_items:
+            return False
+        if (
+            limit_items is not None
+            and len(self._queue) + incoming_count > limit_items
+        ):
+            return False
+        if (
+            limit_bytes is not None
+            and self._bytes + incoming_bytes > limit_bytes
+        ):
+            return False
+        return True
+
+    @staticmethod
+    def _normalize_limit(value: object) -> Optional[int]:
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return max(0, value)
+        raise TypeError("Queue limits must be integers or None")
+
+
+__all__ = ["BoundedByteDeque", "QueueEvent"]

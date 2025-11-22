@@ -1,0 +1,138 @@
+"""Tests for FileComponent MCU/MQTT behaviour."""
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Optional
+
+import pytest
+
+from yunbridge.config.settings import RuntimeConfig
+from yunbridge.mqtt import InboundMessage, PublishableMessage
+from yunbridge.rpc.protocol import Command, Status
+from yunbridge.services.components.base import BridgeContext
+from yunbridge.services.components.file import FileComponent
+from yunbridge.state.context import RuntimeState
+
+
+class DummyBridge(BridgeContext):
+    def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
+        self.config = config
+        self.state = state
+        self.sent_frames: list[tuple[int, bytes]] = []
+        self.published: list[PublishableMessage] = []
+
+    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
+        self.sent_frames.append((command_id, payload))
+        return True
+
+    async def enqueue_mqtt(
+        self,
+        message: PublishableMessage,
+        *,
+        reply_context: Optional[InboundMessage] = None,
+    ) -> None:
+        self.published.append(message)
+
+    def is_command_allowed(self, command: str) -> bool:
+        return True
+
+    def schedule_background(
+        self,
+        coroutine,
+        *,
+        name: str | None = None,
+    ):  # pragma: no cover
+        asyncio.create_task(coroutine)
+
+
+@pytest.fixture()
+def file_component(
+    tmp_path: Path,
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> tuple[FileComponent, DummyBridge]:
+    runtime_config.file_system_root = str(tmp_path)
+    runtime_state.file_system_root = str(tmp_path)
+    bridge = DummyBridge(runtime_config, runtime_state)
+    component = FileComponent(runtime_config, runtime_state, bridge)
+    return component, bridge
+
+
+@pytest.fixture()
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_handle_write_and_read_roundtrip(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    payload = bytes([3]) + b"foo" + (4).to_bytes(2, "big") + b"data"
+    await component.handle_write(payload)
+
+    read_payload = bytes([3]) + b"foo"
+    await component.handle_read(read_payload)
+
+    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
+    assert bridge.sent_frames[-1][1] == b"\x00\x04data"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_handle_read_truncated_payload(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    component, bridge = file_component
+    (tmp_path / "long.bin").write_bytes(b"x" * 512)
+    payload = bytes([8]) + b"long.bin"
+    await component.handle_read(payload)
+
+    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
+    assert bridge.sent_frames[-1][1].startswith(b"\x00\xfe")
+
+
+@pytest.mark.anyio("asyncio")
+async def test_handle_remove_missing_file(
+    file_component: tuple[FileComponent, DummyBridge]
+) -> None:
+    component, bridge = file_component
+    payload = bytes([7]) + b"missing"
+    await component.handle_remove(payload)
+
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+
+
+@pytest.mark.anyio("asyncio")
+async def test_handle_mqtt_write_and_read(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    component, bridge = file_component
+    await component.handle_mqtt(
+        "write",
+        ["dir", "file.txt"],
+        b"payload",
+    )
+    assert (tmp_path / "dir" / "file.txt").read_bytes() == b"payload"
+
+    await component.handle_mqtt(
+        "read",
+        ["dir", "file.txt"],
+        b"",
+    )
+
+    assert bridge.published
+    assert bridge.published[-1].payload == b"payload"
+
+
+@pytest.mark.anyio("asyncio")
+async def test_handle_write_invalid_path(
+    file_component: tuple[FileComponent, DummyBridge]
+) -> None:
+    component, bridge = file_component
+    payload = bytes([2]) + b".." + (1).to_bytes(2, "big") + b"x"
+    await component.handle_write(payload)
+
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value

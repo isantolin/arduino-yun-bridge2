@@ -7,6 +7,7 @@ import logging
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.rpc.protocol import Status
 from yunbridge.state.context import RuntimeState
 
 
@@ -148,3 +149,22 @@ def test_watchdog_tracking(runtime_state: RuntimeState) -> None:
     runtime_state.record_watchdog_beat(123.0)
     assert runtime_state.watchdog_beats == 1
     assert runtime_state.last_watchdog_beat == 123.0
+
+
+def test_metrics_snapshot_exposes_error_counters(
+    runtime_state: RuntimeState,
+) -> None:
+    runtime_state.record_serial_flow_event("sent")
+    runtime_state.record_serial_decode_error()
+    runtime_state.record_serial_crc_error()
+    runtime_state.record_mcu_status(Status.CRC_MISMATCH)
+    runtime_state.record_mcu_status(Status.CRC_MISMATCH)
+    runtime_state.record_mqtt_drop("bridge/status")
+
+    snapshot = runtime_state.build_metrics_snapshot()
+
+    assert snapshot["serial"]["commands_sent"] == 1
+    assert snapshot["serial_decode_errors"] == 1
+    assert snapshot["serial_crc_errors"] == 1
+    assert snapshot["mcu_status"]["CRC_MISMATCH"] == 2
+    assert snapshot["mqtt_drop_counts"]["bridge/status"] == 1

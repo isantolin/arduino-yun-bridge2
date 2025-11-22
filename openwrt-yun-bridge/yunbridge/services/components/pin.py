@@ -5,9 +5,9 @@ import logging
 import struct
 from typing import Optional
 
-from yunbridge.rpc.protocol import Command
+from yunbridge.rpc.protocol import Command, Status
 
-from ...const import TOPIC_ANALOG, TOPIC_DIGITAL
+from ...protocol.topics import Topic, topic_path
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import PendingPinRequest, RuntimeState
@@ -47,7 +47,7 @@ class PinComponent:
             )
 
         pin_value = request.pin if request else None
-        topic = self._build_pin_topic(TOPIC_DIGITAL, pin_value)
+        topic = self._build_pin_topic(Topic.DIGITAL, pin_value)
         message = (
             PublishableMessage(
                 topic_name=topic,
@@ -82,7 +82,7 @@ class PinComponent:
             )
 
         pin_value = request.pin if request else None
-        topic = self._build_pin_topic(TOPIC_ANALOG, pin_value)
+        topic = self._build_pin_topic(Topic.ANALOG, pin_value)
         message = (
             PublishableMessage(
                 topic_name=topic,
@@ -99,15 +99,45 @@ class PinComponent:
             reply_context=request.reply_context if request else None,
         )
 
+    async def handle_unexpected_mcu_request(
+        self,
+        command: Command,
+        payload: bytes,
+    ) -> bool:
+        """Gracefully reject MCU-initiated pin READ commands."""
+
+        logger.warning(
+            (
+                "MCU issued %s (payload=%s) but pin reads are initiated "
+                "from Linux; ignoring request"
+            ),
+            command.name,
+            payload.hex(),
+        )
+        reason = f"pin-read-origin-mcu:{command.name.lower()}"
+        await self.ctx.send_frame(
+            Status.NOT_IMPLEMENTED.value,
+            reason.encode("ascii", errors="ignore")[:255],
+        )
+        return True
+
     async def handle_mqtt(
         self,
-        topic_type: str,
+        topic_type: str | Topic,
         parts: list[str],
         payload_str: str,
         inbound: Optional[InboundMessage] = None,
     ) -> None:
         if len(parts) < 3:
             return
+
+        if isinstance(topic_type, Topic):
+            topic_enum = topic_type
+        else:
+            try:
+                topic_enum = Topic(topic_type)
+            except ValueError:
+                return
 
         pin_str = parts[2]
         pin = self._parse_pin_identifier(pin_str)
@@ -116,10 +146,10 @@ class PinComponent:
 
         if len(parts) == 4:
             subtopic = parts[3]
-            if subtopic == "mode" and topic_type == TOPIC_DIGITAL:
+            if subtopic == "mode" and topic_enum == Topic.DIGITAL:
                 await self._handle_mode_command(pin, pin_str, payload_str)
             elif subtopic == "read":
-                await self._handle_read_command(topic_type, pin, inbound)
+                await self._handle_read_command(topic_enum, pin, inbound)
             else:
                 logger.debug(
                     "Unknown pin subtopic for %s: %s", pin_str, subtopic
@@ -128,7 +158,7 @@ class PinComponent:
 
         if len(parts) == 3:
             await self._handle_write_command(
-                topic_type,
+                topic_enum,
                 pin,
                 parts,
                 payload_str,
@@ -154,15 +184,36 @@ class PinComponent:
 
     async def _handle_read_command(
         self,
-        topic_type: str,
+        topic_type: Topic,
         pin: int,
         inbound: Optional[InboundMessage] = None,
     ) -> None:
         command = (
             Command.CMD_DIGITAL_READ
-            if topic_type == TOPIC_DIGITAL
+            if topic_type == Topic.DIGITAL
             else Command.CMD_ANALOG_READ
         )
+        queue_limit = self.state.pending_pin_request_limit
+        queue = (
+            self.state.pending_digital_reads
+            if command == Command.CMD_DIGITAL_READ
+            else self.state.pending_analog_reads
+        )
+        if len(queue) >= queue_limit:
+            logger.warning(
+                "Pending %s read queue saturated (limit=%d); "
+                "dropping pin %s",
+                topic_type,
+                queue_limit,
+                pin,
+            )
+            await self._notify_pin_queue_overflow(
+                topic_type,
+                pin,
+                inbound,
+            )
+            return
+
         send_ok = await self.ctx.send_frame(
             command.value,
             struct.pack(">B", pin),
@@ -178,7 +229,7 @@ class PinComponent:
                 )
 
     async def _handle_write_command(
-        self, topic_type: str, pin: int, parts: list[str], payload_str: str
+        self, topic_type: Topic, pin: int, parts: list[str], payload_str: str
     ) -> None:
         value = self._parse_pin_value(topic_type, payload_str)
         if value is None:
@@ -191,7 +242,7 @@ class PinComponent:
 
         command = (
             Command.CMD_DIGITAL_WRITE
-            if topic_type == TOPIC_DIGITAL
+            if topic_type == Topic.DIGITAL
             else Command.CMD_ANALOG_WRITE
         )
         await self.ctx.send_frame(
@@ -207,7 +258,7 @@ class PinComponent:
         return -1
 
     def _parse_pin_value(
-        self, topic_type: str, payload_str: str
+        self, topic_type: Topic, payload_str: str
     ) -> Optional[int]:
         if not payload_str:
             return 0
@@ -216,18 +267,40 @@ class PinComponent:
         except ValueError:
             return None
 
-        if topic_type == TOPIC_DIGITAL and value in (0, 1):
+        if topic_type == Topic.DIGITAL and value in (0, 1):
             return value
-        if topic_type == TOPIC_ANALOG and 0 <= value <= 255:
+        if topic_type == Topic.ANALOG and 0 <= value <= 255:
             return value
         return None
 
-    def _build_pin_topic(self, topic_type: str, pin: Optional[int]) -> str:
+    def _build_pin_topic(self, topic_type: Topic, pin: Optional[int]) -> str:
+        segments: list[str] = []
         if pin is not None:
-            return (
-                f"{self.state.mqtt_topic_prefix}/{topic_type}/{pin}/value"
-            )
-        return f"{self.state.mqtt_topic_prefix}/{topic_type}/value"
+            segments.append(str(pin))
+        segments.append("value")
+        return topic_path(
+            self.state.mqtt_topic_prefix,
+            topic_type,
+            *segments,
+        )
+
+    async def _notify_pin_queue_overflow(
+        self,
+        topic_type: Topic,
+        pin: int,
+        inbound: Optional[InboundMessage],
+    ) -> None:
+        topic = self._build_pin_topic(topic_type, pin)
+        message = (
+            PublishableMessage(topic_name=topic, payload=b"")
+            .with_message_expiry(5)
+            .with_user_property("bridge-pin", str(pin))
+            .with_user_property("bridge-error", "pending-pin-overflow")
+        )
+        await self.ctx.enqueue_mqtt(
+            message,
+            reply_context=inbound,
+        )
 
 
 __all__ = ["PinComponent"]

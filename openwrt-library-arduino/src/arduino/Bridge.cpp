@@ -74,36 +74,243 @@ static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
 
 namespace {
 
-#if BRIDGE_SERIAL_SHARED_SECRET_LEN > 0
 #if defined(ARDUINO_ARCH_AVR)
-const uint8_t kBridgeSerialSecret[] PROGMEM = BRIDGE_SERIAL_SHARED_SECRET;
+const char kBridgeSerialSecret[] PROGMEM = BRIDGE_SERIAL_SHARED_SECRET;
 #else
-const uint8_t kBridgeSerialSecret[] = BRIDGE_SERIAL_SHARED_SECRET;
-#endif
+const char kBridgeSerialSecret[] = BRIDGE_SERIAL_SHARED_SECRET;
 #endif
 
-constexpr size_t kHandshakeTagSize = 2;
+constexpr size_t kBridgeSerialSecretLen =
+    sizeof(kBridgeSerialSecret) > 0 ? sizeof(kBridgeSerialSecret) - 1 : 0;
+constexpr bool kHasSerialSharedSecret = kBridgeSerialSecretLen > 0;
+constexpr size_t kHandshakeTagSize = 16;
+constexpr size_t kSecretBufferSize =
+    kBridgeSerialSecretLen > 0 ? kBridgeSerialSecretLen : 1;
 
-inline bool hasSerialSharedSecret() {
-  return BRIDGE_SERIAL_SHARED_SECRET_LEN > 0;
+constexpr size_t kSha256BlockSize = 64;
+constexpr size_t kSha256DigestSize = 32;
+
+struct Sha256Context {
+  uint32_t state[8];
+  uint64_t bitcount;
+  uint8_t buffer[kSha256BlockSize];
+};
+
+inline uint32_t rotate_right(uint32_t value, uint8_t bits) {
+  return (value >> bits) | (value << (32 - bits));
 }
 
-uint16_t computeHandshakeTag(const uint8_t* nonce, size_t nonce_len) {
-  uint16_t crc = crc16_ccitt_init();
-#if BRIDGE_SERIAL_SHARED_SECRET_LEN > 0
-  if (hasSerialSharedSecret()) {
-#if defined(ARDUINO_ARCH_AVR)
-    for (size_t i = 0; i < BRIDGE_SERIAL_SHARED_SECRET_LEN; ++i) {
-      uint8_t byte = pgm_read_byte_near(kBridgeSerialSecret + i);
-      crc = crc16_ccitt_update(crc, byte);
-    }
-#else
-    crc = crc16_ccitt_update(
-        crc, kBridgeSerialSecret, BRIDGE_SERIAL_SHARED_SECRET_LEN);
-#endif
+inline uint32_t choose(uint32_t x, uint32_t y, uint32_t z) {
+  return (x & y) ^ (~x & z);
+}
+
+inline uint32_t majority(uint32_t x, uint32_t y, uint32_t z) {
+  return (x & y) ^ (x & z) ^ (y & z);
+}
+
+inline uint32_t big_sigma0(uint32_t x) {
+  return rotate_right(x, 2) ^ rotate_right(x, 13) ^ rotate_right(x, 22);
+}
+
+inline uint32_t big_sigma1(uint32_t x) {
+  return rotate_right(x, 6) ^ rotate_right(x, 11) ^ rotate_right(x, 25);
+}
+
+inline uint32_t small_sigma0(uint32_t x) {
+  return rotate_right(x, 7) ^ rotate_right(x, 18) ^ (x >> 3);
+}
+
+inline uint32_t small_sigma1(uint32_t x) {
+  return rotate_right(x, 17) ^ rotate_right(x, 19) ^ (x >> 10);
+}
+
+const uint32_t kSha256InitState[8] = {
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+    0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+};
+
+const uint32_t kSha256RoundConstants[64] = {
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+    0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+    0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+};
+
+void sha256_transform(Sha256Context* ctx, const uint8_t* block) {
+  uint32_t w[64];
+  for (size_t i = 0; i < 16; ++i) {
+    size_t offset = i * 4;
+    w[i] = (static_cast<uint32_t>(block[offset]) << 24) |
+           (static_cast<uint32_t>(block[offset + 1]) << 16) |
+           (static_cast<uint32_t>(block[offset + 2]) << 8) |
+           (static_cast<uint32_t>(block[offset + 3]));
   }
+  for (size_t i = 16; i < 64; ++i) {
+    w[i] = small_sigma1(w[i - 2]) + w[i - 7] + small_sigma0(w[i - 15]) +
+           w[i - 16];
+  }
+
+  uint32_t a = ctx->state[0];
+  uint32_t b = ctx->state[1];
+  uint32_t c = ctx->state[2];
+  uint32_t d = ctx->state[3];
+  uint32_t e = ctx->state[4];
+  uint32_t f = ctx->state[5];
+  uint32_t g = ctx->state[6];
+  uint32_t h = ctx->state[7];
+
+  for (size_t i = 0; i < 64; ++i) {
+    uint32_t temp1 = h + big_sigma1(e) + choose(e, f, g) +
+                     kSha256RoundConstants[i] + w[i];
+    uint32_t temp2 = big_sigma0(a) + majority(a, b, c);
+    h = g;
+    g = f;
+    f = e;
+    e = d + temp1;
+    d = c;
+    c = b;
+    b = a;
+    a = temp1 + temp2;
+  }
+
+  ctx->state[0] += a;
+  ctx->state[1] += b;
+  ctx->state[2] += c;
+  ctx->state[3] += d;
+  ctx->state[4] += e;
+  ctx->state[5] += f;
+  ctx->state[6] += g;
+  ctx->state[7] += h;
+}
+
+void sha256_init(Sha256Context* ctx) {
+  memcpy(ctx->state, kSha256InitState, sizeof(kSha256InitState));
+  ctx->bitcount = 0;
+  memset(ctx->buffer, 0, sizeof(ctx->buffer));
+}
+
+void sha256_update(
+    Sha256Context* ctx, const uint8_t* data, size_t length) {
+  size_t index = static_cast<size_t>((ctx->bitcount >> 3) & 0x3F);
+  ctx->bitcount += static_cast<uint64_t>(length) << 3;
+
+  size_t part_len = kSha256BlockSize - index;
+  size_t offset = 0;
+
+  if (length >= part_len) {
+    memcpy(&ctx->buffer[index], data, part_len);
+    sha256_transform(ctx, ctx->buffer);
+    for (offset = part_len; offset + 63 < length; offset += kSha256BlockSize) {
+      sha256_transform(ctx, &data[offset]);
+    }
+    index = 0;
+  }
+
+  if (offset < length) {
+    memcpy(&ctx->buffer[index], &data[offset], length - offset);
+  }
+}
+
+void sha256_final(Sha256Context* ctx, uint8_t* digest) {
+  uint8_t padding[kSha256BlockSize] = {0x80};
+  uint8_t length_bytes[8];
+
+  uint64_t bitcount_be = ctx->bitcount;
+  for (int i = 7; i >= 0; --i) {
+    length_bytes[i] = static_cast<uint8_t>(bitcount_be & 0xFF);
+    bitcount_be >>= 8;
+  }
+
+  size_t index = static_cast<size_t>((ctx->bitcount >> 3) & 0x3F);
+  size_t pad_len = (index < 56) ? (56 - index) : (120 - index);
+  sha256_update(ctx, padding, pad_len);
+  sha256_update(ctx, length_bytes, 8);
+
+  for (size_t i = 0; i < 8; ++i) {
+    digest[i * 4] = static_cast<uint8_t>(ctx->state[i] >> 24);
+    digest[i * 4 + 1] = static_cast<uint8_t>(ctx->state[i] >> 16);
+    digest[i * 4 + 2] = static_cast<uint8_t>(ctx->state[i] >> 8);
+    digest[i * 4 + 3] = static_cast<uint8_t>(ctx->state[i]);
+  }
+}
+
+void hmac_sha256(
+    const uint8_t* key,
+    size_t key_len,
+    const uint8_t* data,
+    size_t data_len,
+    uint8_t* out_digest) {
+  uint8_t key_block[kSha256BlockSize];
+  memset(key_block, 0, sizeof(key_block));
+
+  if (key_len > kSha256BlockSize) {
+    Sha256Context hash_ctx;
+    sha256_init(&hash_ctx);
+    sha256_update(&hash_ctx, key, key_len);
+    sha256_final(&hash_ctx, key_block);
+  } else if (key_len > 0) {
+    memcpy(key_block, key, key_len);
+  }
+
+  uint8_t inner_pad[kSha256BlockSize];
+  uint8_t outer_pad[kSha256BlockSize];
+  for (size_t i = 0; i < kSha256BlockSize; ++i) {
+    inner_pad[i] = key_block[i] ^ 0x36;
+    outer_pad[i] = key_block[i] ^ 0x5C;
+  }
+
+  Sha256Context ctx;
+  uint8_t inner_digest[kSha256DigestSize];
+
+  sha256_init(&ctx);
+  sha256_update(&ctx, inner_pad, sizeof(inner_pad));
+  if (data_len > 0) {
+    sha256_update(&ctx, data, data_len);
+  }
+  sha256_final(&ctx, inner_digest);
+
+  sha256_init(&ctx);
+  sha256_update(&ctx, outer_pad, sizeof(outer_pad));
+  sha256_update(&ctx, inner_digest, sizeof(inner_digest));
+  sha256_final(&ctx, out_digest);
+}
+
+void copy_serial_secret(uint8_t* dest) {
+#if defined(ARDUINO_ARCH_AVR)
+  memcpy_P(dest, kBridgeSerialSecret, kBridgeSerialSecretLen);
+#else
+  memcpy(dest, kBridgeSerialSecret, kBridgeSerialSecretLen);
 #endif
-  return crc16_ccitt_update(crc, nonce, nonce_len);
+}
+
+void computeHandshakeTag(
+    const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
+  if (!kHasSerialSharedSecret || nonce_len == 0) {
+    memset(out_tag, 0, kHandshakeTagSize);
+    return;
+  }
+  uint8_t secret_buffer[kSecretBufferSize];
+  copy_serial_secret(secret_buffer);
+  uint8_t digest[kSha256DigestSize];
+  hmac_sha256(
+      secret_buffer,
+      kBridgeSerialSecretLen,
+      nonce,
+      nonce_len,
+      digest);
+  memcpy(out_tag, digest, kHandshakeTagSize);
 }
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -129,228 +336,8 @@ uint16_t calculateFreeMemoryBytes() {
 }  // namespace
 
 // =================================================================================
-// ConsoleClass
-// =================================================================================
-
-ConsoleClass::ConsoleClass()
-    : _begun(false),
-      _rx_buffer_head(0),
-      _rx_buffer_tail(0),
-      _xoff_sent(false) {}
-
-void ConsoleClass::begin() {
-  _begun = true;
-  _rx_buffer_head = 0;
-  _rx_buffer_tail = 0;
-  _xoff_sent = false;
-}
-
-size_t ConsoleClass::write(uint8_t c) { return write(&c, 1); }
-
-size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
-  if (!_begun) return 0;
-  // Limitar el tamaño del payload para evitar fragmentación excesiva
-  size_t remaining = size;
-  size_t offset = 0;
-  size_t transmitted = 0;
-  while (remaining > 0) {
-    size_t chunk_size =
-        remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
-    if (!Bridge.sendFrame(CMD_CONSOLE_WRITE, buffer + offset, chunk_size)) {
-      break;
-    }
-    offset += chunk_size;
-    remaining -= chunk_size;
-    transmitted += chunk_size;
-    // Añadir un pequeño delay puede ayudar si hay problemas de buffer
-    // delayMicroseconds(100);
-  }
-  return transmitted;
-}
-
-int ConsoleClass::available() {
-  return (_rx_buffer_head - _rx_buffer_tail + CONSOLE_RX_BUFFER_SIZE) %
-         CONSOLE_RX_BUFFER_SIZE;
-}
-
-int ConsoleClass::peek() {
-  if (_rx_buffer_head == _rx_buffer_tail) return -1;
-  return _rx_buffer[_rx_buffer_tail];
-}
-
-int ConsoleClass::read() {
-  if (_rx_buffer_head == _rx_buffer_tail) return -1;
-  uint8_t c = _rx_buffer[_rx_buffer_tail];
-  _rx_buffer_tail = (_rx_buffer_tail + 1) % CONSOLE_RX_BUFFER_SIZE;
-
-  // Enviar XON si el buffer baja del límite inferior
-  if (_xoff_sent && available() < CONSOLE_BUFFER_LOW_WATER) {
-    Bridge.sendFrame(CMD_XON, nullptr, 0);
-    _xoff_sent = false;
-  }
-
-  return c;
-}
-
-void ConsoleClass::flush() {
-  if (!_begun) {
-    return;
-  }
-  Bridge.flushStream();
-}
-
-void ConsoleClass::_push(const uint8_t* buffer, size_t size) {
-  for (size_t i = 0; i < size; i++) {
-    uint16_t next_head = (_rx_buffer_head + 1) % CONSOLE_RX_BUFFER_SIZE;
-    if (next_head != _rx_buffer_tail) {
-      _rx_buffer[_rx_buffer_head] = buffer[i];
-      _rx_buffer_head = next_head;
-    } else {
-      // Buffer lleno, descartar byte. Podríamos loggear esto si tuviéramos un log.
-    }
-  }
-
-  // Enviar XOFF si el buffer supera el límite superior
-  if (!_xoff_sent && available() > CONSOLE_BUFFER_HIGH_WATER) {
-    Bridge.sendFrame(CMD_XOFF, nullptr, 0);
-    _xoff_sent = true;
-  }
-}
-
-// =================================================================================
-// DataStoreClass
-// =================================================================================
-
-DataStoreClass::DataStoreClass() {}
-
-void DataStoreClass::put(const char* key, const char* value) {
-  if (!key || !value) return;
-
-    size_t key_len = strlen(key);
-    size_t value_len = strlen(value);
-    if (key_len == 0 ||
-        key_len > BridgeClass::kMaxDatastoreKeyLength ||
-        value_len > BridgeClass::kMaxDatastoreKeyLength) {
-      return;
-    }
-
-  const size_t payload_len = 2 + key_len + value_len;
-  if (payload_len > rpc::MAX_PAYLOAD_SIZE) return;
-
-  uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
-  payload[0] = static_cast<uint8_t>(key_len);
-  memcpy(payload + 1, key, key_len);
-  payload[1 + key_len] = static_cast<uint8_t>(value_len);
-  memcpy(payload + 2 + key_len, value, value_len);
-
-  Bridge.sendFrame(CMD_DATASTORE_PUT, payload, static_cast<uint16_t>(payload_len));
-}
-
-void DataStoreClass::requestGet(const char* key) {
-  if (!key) return;
-    size_t key_len = strlen(key);
-    if (key_len == 0 || key_len > BridgeClass::kMaxDatastoreKeyLength) return;
-
-  uint8_t payload[1 + 255];
-  payload[0] = static_cast<uint8_t>(key_len);
-  memcpy(payload + 1, key, key_len);
-
-  Bridge._trackPendingDatastoreKey(key);
-  Bridge.sendFrame(CMD_DATASTORE_GET, payload, static_cast<uint16_t>(key_len + 1));
-}
-
-// =================================================================================
-// MailboxClass
-// =================================================================================
-
-MailboxClass::MailboxClass() {}
-
-void MailboxClass::send(const char* message) {
-  if (!message) return;
-  send(reinterpret_cast<const uint8_t*>(message), strlen(message));
-}
-
-void MailboxClass::send(const uint8_t* data, size_t length) {
-  if (!data || length == 0) return;
-
-  size_t max_payload = rpc::MAX_PAYLOAD_SIZE - 2;
-  if (length > max_payload) {
-    length = max_payload;
-  }
-
-  uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
-  rpc::write_u16_be(payload, static_cast<uint16_t>(length));
-  memcpy(payload + 2, data, length);
-  Bridge.sendFrame(CMD_MAILBOX_PUSH, payload, static_cast<uint16_t>(length + 2));
-}
-
-void MailboxClass::requestRead() {
-  // Solicita a Linux que envíe el siguiente mensaje disponible.
-  Bridge.sendFrame(CMD_MAILBOX_READ, nullptr, 0);
-}
-
-void MailboxClass::requestAvailable() {
-  // Solicita a Linux la cantidad de mensajes pendientes para el MCU.
-  Bridge.sendFrame(CMD_MAILBOX_AVAILABLE, nullptr, 0);
-}
-
-// ANÁLISIS: Eliminados available() y read() que no forman parte de la API V2 asíncrona.
-
-// =================================================================================
-// FileSystemClass
-// =================================================================================
-
-void FileSystemClass::write(const char* filePath, const uint8_t* data,
-                            size_t length) {
-  if (!filePath || !data) return;
-  size_t path_len = strlen(filePath);
-  if (path_len == 0 || path_len > 255) return;
-
-  const size_t max_data = rpc::MAX_PAYLOAD_SIZE - 3 - path_len;
-  if (length > max_data) {
-    length = max_data;
-  }
-
-  uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
-  payload[0] = static_cast<uint8_t>(path_len);
-  memcpy(payload + 1, filePath, path_len);
-  rpc::write_u16_be(payload + 1 + path_len, static_cast<uint16_t>(length));
-  if (length > 0) {
-    memcpy(payload + 3 + path_len, data, length);
-  }
-
-  Bridge.sendFrame(CMD_FILE_WRITE, payload,
-                   static_cast<uint16_t>(path_len + length + 3));
-}
-
-void FileSystemClass::remove(const char* filePath) {
-  if (!filePath) return;
-  size_t path_len = strlen(filePath);
-  if (path_len == 0 || path_len > 255) return;
-
-  uint8_t payload[1 + 255];
-  payload[0] = static_cast<uint8_t>(path_len);
-  memcpy(payload + 1, filePath, path_len);
-  Bridge.sendFrame(CMD_FILE_REMOVE, payload,
-                   static_cast<uint16_t>(path_len + 1));
-}
-
-// =================================================================================
-// ProcessClass
-// =================================================================================
-
-ProcessClass::ProcessClass() {}
-
-void ProcessClass::kill(int pid) {
-  uint8_t pid_payload[2];
-  rpc::write_u16_be(pid_payload, (uint16_t)pid);
-  Bridge.sendFrame(CMD_PROCESS_KILL, pid_payload, 2);
-}
-
-// =================================================================================
 // BridgeClass
 // =================================================================================
-
 BridgeClass::BridgeClass(HardwareSerial& serial)
     : BridgeClass(static_cast<Stream&>(serial)) {
   _hardware_serial = &serial;
@@ -361,6 +348,7 @@ BridgeClass::BridgeClass(Stream& stream)
       _hardware_serial(nullptr),
       _parser(),
       _builder(),
+      _rx_frame{},
       _command_handler(nullptr),
       _datastore_get_handler(nullptr),
       _mailbox_handler(nullptr),
@@ -376,108 +364,64 @@ BridgeClass::BridgeClass(Stream& stream)
       _pending_datastore_head(0),
       _pending_datastore_count(0),
       _pending_process_poll_head(0),
-      _pending_process_poll_count(0) {
-  for (uint8_t i = 0; i < kMaxPendingDatastore; ++i) {
-    _pending_datastore_keys[i][0] = '\0';
-    _pending_datastore_key_lengths[i] = 0;
-  }
-  for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
-    _pending_process_pids[i] = 0;
-  }
+      _pending_process_poll_count(0),
+      _pending_tx_head(0),
+      _pending_tx_count(0)
 #if BRIDGE_DEBUG_FRAMES
-  _tx_debug = {};
+      , _tx_debug{}
 #endif
-  _awaiting_ack = false;
-  _last_command_id = 0;
-  _last_raw_length = 0;
-  _last_cobs_length = 0;
-  _retry_count = 0;
-  _last_send_millis = 0;
-  _pending_tx_head = 0;
-  _pending_tx_count = 0;
-}
-
-void BridgeClass::_trackPendingDatastoreKey(const char* key) {
-  if (!key || !*key) {
-    return;
-  }
-  size_t key_len = strlen(key);
-  if (key_len == 0) {
-    return;
-  }
-  if (key_len > kMaxDatastoreKeyLength) {
-    key_len = kMaxDatastoreKeyLength;
-  }
-
-  if (_pending_datastore_count == kMaxPendingDatastore) {
-    _pending_datastore_head = (_pending_datastore_head + 1) % kMaxPendingDatastore;
-    _pending_datastore_count--;
-  }
-
-  uint8_t index = (_pending_datastore_head + _pending_datastore_count) % kMaxPendingDatastore;
-  memcpy(_pending_datastore_keys[index], key, key_len);
-  _pending_datastore_keys[index][key_len] = '\0';
-  _pending_datastore_key_lengths[index] = static_cast<uint8_t>(key_len);
-  _pending_datastore_count++;
-}
-
-const char* BridgeClass::_popPendingDatastoreKey() {
-  if (_pending_datastore_count == 0) {
-    return nullptr;
-  }
-    const char* key = nullptr;
-    if (_pending_datastore_key_lengths[_pending_datastore_head] != 0) {
-      key = _pending_datastore_keys[_pending_datastore_head];
-    }
-    _pending_datastore_key_lengths[_pending_datastore_head] = 0;
-    _pending_datastore_head = (_pending_datastore_head + 1) % kMaxPendingDatastore;
-    _pending_datastore_count--;
-    return key;
-}
-
-bool BridgeClass::_pushPendingProcessPid(uint16_t pid) {
-  if (_pending_process_poll_count == kMaxPendingProcessPolls) {
-    return false;
-  }
-  uint8_t index = (_pending_process_poll_head + _pending_process_poll_count) % kMaxPendingProcessPolls;
-  _pending_process_pids[index] = pid;
-  _pending_process_poll_count++;
-  return true;
-}
-
-uint16_t BridgeClass::_popPendingProcessPid() {
-  if (_pending_process_poll_count == 0) {
-    return 0xFFFF;
-  }
-  uint16_t pid = _pending_process_pids[_pending_process_poll_head];
-  _pending_process_poll_head = (_pending_process_poll_head + 1) % kMaxPendingProcessPolls;
-  _pending_process_poll_count--;
-  return pid;
+      , _awaiting_ack(false),
+      _last_command_id(0),
+      _last_raw_frame{},
+      _last_raw_length(0),
+      _last_cobs_frame{},
+      _last_cobs_length(0),
+      _retry_count(0),
+      _last_send_millis(0) {
+  memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
+  memset(
+      _pending_datastore_key_lengths,
+      0,
+      sizeof(_pending_datastore_key_lengths));
+  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
+  memset(_pending_tx_frames, 0, sizeof(_pending_tx_frames));
 }
 
 void BridgeClass::begin() {
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(BRIDGE_BAUDRATE);
   }
-  // Añadir un pequeño delay o flush para asegurar que el puerto serie esté listo
-  delay(10);
-  _stream.flush(); // Asegura que cualquier dato pendiente en el buffer TX se envíe
-  for (uint8_t i = 0; i < kMaxPendingDatastore; ++i) {
-    _pending_datastore_key_lengths[i] = 0;
-    _pending_datastore_keys[i][0] = '\0';
-  }
+
+  _resetLinkState();
+  _clearPendingTxQueue();
+
   _pending_datastore_head = 0;
   _pending_datastore_count = 0;
-  _parser.reset();
-  Console.begin(); // Inicializa la instancia global de Console
-#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
-  wdt_enable(BRIDGE_WATCHDOG_TIMEOUT);
+  memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
+  memset(
+      _pending_datastore_key_lengths,
+      0,
+      sizeof(_pending_datastore_key_lengths));
+
+  _pending_process_poll_head = 0;
+  _pending_process_poll_count = 0;
+  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
+
+  _awaiting_ack = false;
+  _last_command_id = 0;
+  _last_raw_length = 0;
+  _last_cobs_length = 0;
+  _retry_count = 0;
+  _last_send_millis = 0;
+#if BRIDGE_DEBUG_FRAMES
+  _tx_debug = {};
 #endif
-  _resetLinkState();
 }
 
-// --- Register Callbacks ---
-void BridgeClass::onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
+void BridgeClass::onMailboxMessage(MailboxHandler handler) {
+  _mailbox_handler = handler;
+}
+
 void BridgeClass::onMailboxAvailableResponse(MailboxAvailableHandler handler) {
   _mailbox_available_handler = handler;
 }
@@ -710,44 +654,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         command_processed_internally = true;
       }
       break;
-    case STATUS_ACK:
-      {
-        uint16_t ack_id = 0xFFFF;
-        if (frame.header.payload_length >= 2) {
-          ack_id = rpc::read_u16_be(frame.payload);
-        }
-        _handleAck(ack_id);
-        if (_status_handler) {
-          _status_handler((uint8_t)frame.header.command_id, frame.payload,
-                          frame.header.payload_length);
-        }
-      }
-      command_processed_internally = true;
-      break;
-    case STATUS_MALFORMED:
-      {
-        uint16_t malformed_id = 0xFFFF;
-        if (frame.header.payload_length >= 2) {
-          malformed_id = rpc::read_u16_be(frame.payload);
-        }
-        _handleMalformed(malformed_id);
-        if (_status_handler) {
-          _status_handler((uint8_t)frame.header.command_id, frame.payload,
-                          frame.header.payload_length);
-        }
-      }
-      command_processed_internally = true;
-      break;
-    case STATUS_CMD_UNKNOWN:
-    case STATUS_CRC_MISMATCH:
-    case STATUS_TIMEOUT:
-    case STATUS_NOT_IMPLEMENTED:
-      if (_status_handler) {
-        _status_handler((uint8_t)frame.header.command_id, frame.payload,
-                        frame.header.payload_length);
-      }
-      command_processed_internally = true;
-      break;
     case CMD_GET_FREE_MEMORY:
       {
         uint16_t free_mem = calculateFreeMemoryBytes();
@@ -766,7 +672,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         _resetLinkState();
         Console.begin();
         const uint16_t nonce_length = frame.header.payload_length;
-        const bool has_secret = hasSerialSharedSecret();
+        const bool has_secret = kHasSerialSharedSecret;
         if (nonce_length == 0) {
           sendFrame(STATUS_MALFORMED, nullptr, 0);
           command_processed_internally = true;
@@ -787,9 +693,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         uint8_t response[rpc::MAX_PAYLOAD_SIZE];
         memcpy(response, frame.payload, nonce_length);
         if (has_secret) {
-          const uint16_t tag = computeHandshakeTag(frame.payload, nonce_length);
-          response[nonce_length] = static_cast<uint8_t>((tag >> 8) & 0xFF);
-          response[nonce_length + 1] = static_cast<uint8_t>(tag & 0xFF);
+          uint8_t tag[kHandshakeTagSize];
+          computeHandshakeTag(frame.payload, nonce_length, tag);
+          memcpy(&response[nonce_length], tag, kHandshakeTagSize);
         }
 
         sendFrame(
@@ -896,10 +802,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CMD_PROCESS_RUN:
     case CMD_PROCESS_RUN_ASYNC:
     case CMD_PROCESS_POLL:
-      // Estos comandos son solicitudes a Linux, Arduino no los recibe.
-      // Si llegaran, serían inesperados. Podríamos enviar error.
-      // O simplemente pasarlos al handler del usuario.
-       break; // Pasa al handler del usuario
+      // Estos comandos normalmente los origina el MCU hacia Linux; si llegan
+      // desde Linux (algo inesperado) simplemente se delegan al handler
+      // del usuario para que decida cómo responder.
+      break; // Pasa al handler del usuario
 
     default:
       // Comando desconocido o no manejado internamente
@@ -1230,13 +1136,13 @@ void BridgeClass::analogWrite(uint8_t pin, int value) {
 }
 
 void BridgeClass::requestDigitalRead(uint8_t pin) {
-  uint8_t payload[1] = {pin};
-  sendFrame(CMD_DIGITAL_READ, payload, 1); // Envía solicitud a Linux
+  (void)pin;
+  _emitStatus(STATUS_NOT_IMPLEMENTED, "pin_read_initiate_from_linux");
 }
 
 void BridgeClass::requestAnalogRead(uint8_t pin) {
-  uint8_t payload[1] = {pin};
-  sendFrame(CMD_ANALOG_READ, payload, 1); // Envía solicitud a Linux
+  (void)pin;
+  _emitStatus(STATUS_NOT_IMPLEMENTED, "pin_read_initiate_from_linux");
 }
 
 void BridgeClass::requestProcessRun(const char* command) {
@@ -1304,4 +1210,79 @@ void BridgeClass::requestFileSystemRead(const char* filePath) {
 
 void BridgeClass::requestGetFreeMemory() {
   sendFrame(CMD_GET_FREE_MEMORY, nullptr, 0);
+}
+
+void BridgeClass::_trackPendingDatastoreKey(const char* key) {
+  if (!key || !*key) {
+    return;
+  }
+
+  size_t length = strnlen(key, kMaxDatastoreKeyLength);
+  if (length == 0) {
+    return;
+  }
+
+  if (_pending_datastore_count >= kMaxPendingDatastore) {
+    _pending_datastore_head =
+        (_pending_datastore_head + 1) % kMaxPendingDatastore;
+    _pending_datastore_count--;
+  }
+
+  uint8_t slot =
+      (_pending_datastore_head + _pending_datastore_count) %
+      kMaxPendingDatastore;
+  memcpy(_pending_datastore_keys[slot], key, length);
+  _pending_datastore_keys[slot][length] = '\0';
+  _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
+  _pending_datastore_count++;
+}
+
+const char* BridgeClass::_popPendingDatastoreKey() {
+  static char key_buffer[kMaxDatastoreKeyLength + 1] = {0};
+  if (_pending_datastore_count == 0) {
+    key_buffer[0] = '\0';
+    return key_buffer;
+  }
+
+  uint8_t slot = _pending_datastore_head;
+  uint8_t length = _pending_datastore_key_lengths[slot];
+  if (length > kMaxDatastoreKeyLength) {
+    length = kMaxDatastoreKeyLength;
+  }
+  memcpy(key_buffer, _pending_datastore_keys[slot], length);
+  key_buffer[length] = '\0';
+
+  _pending_datastore_head =
+      (_pending_datastore_head + 1) % kMaxPendingDatastore;
+  _pending_datastore_count--;
+  _pending_datastore_key_lengths[slot] = 0;
+  _pending_datastore_keys[slot][0] = '\0';
+  return key_buffer;
+}
+
+bool BridgeClass::_pushPendingProcessPid(uint16_t pid) {
+  if (_pending_process_poll_count >= kMaxPendingProcessPolls) {
+    return false;
+  }
+
+  uint8_t slot =
+      (_pending_process_poll_head + _pending_process_poll_count) %
+      kMaxPendingProcessPolls;
+  _pending_process_pids[slot] = pid;
+  _pending_process_poll_count++;
+  return true;
+}
+
+uint16_t BridgeClass::_popPendingProcessPid() {
+  if (_pending_process_poll_count == 0) {
+    return 0xFFFF;
+  }
+
+  uint8_t slot = _pending_process_poll_head;
+  uint16_t pid = _pending_process_pids[slot];
+  _pending_process_poll_head =
+      (_pending_process_poll_head + 1) % kMaxPendingProcessPolls;
+  _pending_process_poll_count--;
+  _pending_process_pids[slot] = 0;
+  return pid;
 }

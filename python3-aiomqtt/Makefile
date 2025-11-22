@@ -24,7 +24,7 @@ define Package/python3-aiomqtt
   SUBMENU:=Python
   TITLE:=Idiomatic asyncio MQTT client built on top of paho-mqtt
   URL:=https://github.com/sbtinstruments/aiomqtt
-  DEPENDS:=+python3-light +python3-asyncio +python3-paho-mqtt +python3-typing-extensions +python3-hatchling
+  DEPENDS:=+python3-light +python3-asyncio +python3-paho-mqtt +python3-typing-extensions
 endef
 
 define Package/python3-aiomqtt/description

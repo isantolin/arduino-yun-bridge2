@@ -27,6 +27,7 @@ fi
 
 pytest \
   --cov=openwrt-yun-bridge \
+  --cov-branch \
   --cov-report=term-missing \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \
   --cov-report=html:"$COVERAGE_ROOT/html" \

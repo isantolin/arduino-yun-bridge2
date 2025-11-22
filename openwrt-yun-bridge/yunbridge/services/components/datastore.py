@@ -5,16 +5,12 @@ import logging
 import struct
 from typing import Optional
 
-from ...const import TOPIC_DATASTORE
 from ...mqtt import InboundMessage, PublishableMessage
-from ...state.context import (
-    PendingDatastoreRequest,
-    RuntimeState,
-)
+from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
+from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
 from yunbridge.rpc.protocol import (
-    DATASTORE_KEY_LEN_FORMAT,
     DATASTORE_VALUE_LEN_FORMAT,
     DATASTORE_VALUE_LEN_SIZE,
     Command,
@@ -72,49 +68,6 @@ class DatastoreComponent:
 
         self.state.datastore[key] = value
         await self._publish_value(key, value_bytes)
-        return True
-
-    async def handle_get_response(self, payload: bytes) -> bool:
-        """Process CMD_DATASTORE_GET_RESP frames coming from the MCU."""
-        if len(payload) < DATASTORE_VALUE_LEN_SIZE:
-            logger.warning(
-                "Malformed DATASTORE_GET_RESP payload: too short (%d bytes)",
-                len(payload),
-            )
-            return False
-
-        value_len = payload[0]
-        expected_length = DATASTORE_VALUE_LEN_SIZE + value_len
-        if len(payload) < expected_length:
-            logger.warning(
-                "Malformed DATASTORE_GET_RESP payload: expected %d bytes, "
-                "got %d",
-                expected_length,
-                len(payload),
-            )
-            return False
-
-        value_bytes = payload[DATASTORE_VALUE_LEN_SIZE:expected_length]
-        pending: Optional[PendingDatastoreRequest] = None
-        if self.state.pending_datastore_gets:
-            pending = self.state.pending_datastore_gets.popleft()
-        else:
-            logger.warning("DATASTORE_GET_RESP without pending key tracking.")
-
-        if pending:
-            key = pending.key
-            value_text = value_bytes.decode("utf-8", errors="ignore")
-            self.state.datastore[key] = value_text
-            await self._publish_value(
-                key,
-                value_bytes,
-                reply_context=pending.reply_context,
-            )
-        else:
-            logger.debug(
-                "DATASTORE_GET_RESP value=%s",
-                value_bytes.decode("utf-8", errors="ignore"),
-            )
         return True
 
     async def handle_get_request(self, payload: bytes) -> bool:
@@ -232,42 +185,26 @@ class DatastoreComponent:
             )
             return
 
-        payload = (
-            struct.pack(DATASTORE_KEY_LEN_FORMAT, len(key_bytes))
-            + key_bytes
-        )
+        cached_value = self.state.datastore.get(key)
+        if cached_value is None:
+            if is_request:
+                await self._publish_value(
+                    key,
+                    b"",
+                    reply_context=inbound,
+                    error_reason="datastore-miss",
+                )
+            else:
+                logger.debug(
+                    "Datastore GET for '%s' has no cached value", key
+                )
+            return
 
-        pending = PendingDatastoreRequest(
-            key=key,
+        await self._publish_value(
+            key,
+            cached_value.encode("utf-8"),
             reply_context=inbound,
         )
-        self.state.pending_datastore_gets.append(pending)
-        send_ok = False
-        try:
-            send_ok = await self.ctx.send_frame(
-                Command.CMD_DATASTORE_GET.value,
-                payload,
-            )
-        finally:
-            if not send_ok:
-                try:
-                    self.state.pending_datastore_gets.remove(pending)
-                except ValueError:
-                    pass
-
-        cached_value = self.state.datastore.get(key)
-        if cached_value is not None:
-            await self._publish_value(
-                key,
-                cached_value.encode("utf-8"),
-                reply_context=inbound,
-            )
-        elif is_request:
-            await self._publish_value(
-                key,
-                b"",
-                reply_context=inbound,
-            )
 
     async def _publish_value(
         self,
@@ -275,9 +212,14 @@ class DatastoreComponent:
         value: bytes,
         *,
         reply_context: Optional[InboundMessage] = None,
+        error_reason: Optional[str] = None,
     ) -> None:
-        topic_name = "/".join(
-            [self.state.mqtt_topic_prefix, TOPIC_DATASTORE, "get", key]
+        key_segments = tuple(segment for segment in key.split("/") if segment)
+        topic_name = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.DATASTORE,
+            "get",
+            *key_segments,
         )
         message = (
             PublishableMessage(topic_name=topic_name, payload=value)
@@ -285,6 +227,11 @@ class DatastoreComponent:
             .with_content_type("text/plain; charset=utf-8")
             .with_user_property("bridge-datastore-key", key)
         )
+        if error_reason:
+            message = message.with_user_property(
+                "bridge-error",
+                error_reason,
+            )
         await self.ctx.enqueue_mqtt(
             message,
             reply_context=reply_context,

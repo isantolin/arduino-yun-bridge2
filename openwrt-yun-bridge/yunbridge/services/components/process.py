@@ -5,20 +5,37 @@ import asyncio
 import base64
 import json
 import logging
-from dataclasses import dataclass
+import shlex
+from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 from ...common import encode_status_reason, pack_u16, unpack_u16
-from ...const import (
-    TOPIC_SHELL,
-)
+from ...protocol.topics import Topic, topic_path
 from ...mqtt import PublishableMessage
-from ...state.context import RuntimeState
+from ...state.context import ManagedProcess, RuntimeState
 from ...config.settings import RuntimeConfig
 from .base import BridgeContext
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 logger = logging.getLogger("yunbridge.process")
+
+try:
+    import psutil  # type: ignore[import-first]
+except ImportError:  # pragma: no cover - optional dependency on OpenWrt image
+    psutil = None
+
+_PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
+
+_FORBIDDEN_CHARS = frozenset({";", "&", "|", ">", "<", "`"})
+_FORBIDDEN_SUBSTRINGS: Tuple[str, ...] = ("$(", "${", "&&", "||")
+
+
+class CommandValidationError(Exception):
+    """Raised when an inbound command string is unsafe or not allowed."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 @dataclass(slots=True)
@@ -28,6 +45,16 @@ class ProcessComponent:
     config: RuntimeConfig
     state: RuntimeState
     ctx: BridgeContext
+    _process_slots: Optional[asyncio.BoundedSemaphore] = field(
+        init=False, repr=False, default=None
+    )
+
+    def __post_init__(self) -> None:
+        limit = max(0, self.config.process_max_concurrent)
+        if limit > 0:
+            self._process_slots = asyncio.BoundedSemaphore(limit)
+        else:
+            self._process_slots = None
 
     async def handle_run(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")
@@ -53,6 +80,11 @@ class ProcessComponent:
                     status,
                     exit_code,
                 )
+            except CommandValidationError as exc:
+                await self.ctx.send_frame(
+                    Status.ERROR.value,
+                    encode_status_reason(exc.message),
+                )
             except Exception:
                 logger.exception(
                     "Failed to execute synchronous process command '%s'",
@@ -67,35 +99,51 @@ class ProcessComponent:
 
     async def handle_run_async(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")
-        pid = await self.start_async(command)
+        try:
+            pid = await self.start_async(command)
+        except CommandValidationError as exc:
+            logger.warning("Rejected async command '%s': %s", command, exc)
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason("command_validation_failed"),
+            )
+            await self._publish_run_async_error("command_validation_failed")
+            return
         if pid == 0xFFFF:
             await self.ctx.send_frame(
                 Status.ERROR.value,
                 encode_status_reason("process_run_async_failed"),
             )
-            topic = (
-                f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/"
-                "run_async/error"
-            )
-            error_payload = json.dumps(
-                {
-                    "status": "error",
-                    "reason": "process_run_async_failed",
-                }
-            ).encode("utf-8")
-            await self.ctx.enqueue_mqtt(
-                PublishableMessage(topic_name=topic, payload=error_payload)
-            )
+            await self._publish_run_async_error("process_run_async_failed")
             return
         await self.ctx.send_frame(
             Command.CMD_PROCESS_RUN_ASYNC_RESP.value, pack_u16(pid)
         )
-        topic = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/"
-            "run_async/response"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "run_async",
+            "response",
         )
         await self.ctx.enqueue_mqtt(
             PublishableMessage(topic_name=topic, payload=str(pid).encode())
+        )
+
+    async def _publish_run_async_error(self, reason: str) -> None:
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "run_async",
+            "error",
+        )
+        error_payload = json.dumps(
+            {
+                "status": "error",
+                "reason": reason,
+            }
+        ).encode("utf-8")
+        await self.ctx.enqueue_mqtt(
+            PublishableMessage(topic_name=topic, payload=error_payload)
         )
 
     async def handle_poll(self, payload: bytes) -> bool:
@@ -161,48 +209,58 @@ class ProcessComponent:
         pid = unpack_u16(payload)
 
         async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-            if proc is None:
-                logger.warning("Attempted to kill non-existent PID: %d", pid)
-                return send_ack
+            slot = self.state.running_processes.get(pid)
+            proc = slot.handle if slot is not None else None
 
-            try:
-                proc.kill()
-                async with asyncio.timeout(0.5):
-                    await proc.wait()
-                logger.info("Killed process with PID %d", pid)
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "Process PID %d did not terminate after kill signal.", pid
-                )
-            except ProcessLookupError:
-                logger.info("Process PID %d already exited before kill.", pid)
-            except Exception:
-                logger.exception("Error killing process PID %d", pid)
-            finally:
-                self.state.running_processes.pop(pid, None)
+        if proc is None:
+            logger.warning("Attempted to kill non-existent PID: %d", pid)
+            return send_ack
+
+        try:
+            await self._terminate_process_tree(proc)
+            async with asyncio.timeout(0.5):
+                await proc.wait()
+            logger.info("Killed process with PID %d", pid)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Process PID %d did not terminate after kill signal.", pid
+            )
+        except ProcessLookupError:
+            logger.info("Process PID %d already exited before kill.", pid)
+        except Exception:
+            logger.exception("Error killing process PID %d", pid)
+        finally:
+            released_slot = False
+            async with self.state.process_lock:
+                slot = self.state.running_processes.get(pid)
+                if slot is not None:
+                    if slot.handle is not None:
+                        released_slot = True
+                    slot.handle = None
+                    slot.exit_code = (
+                        proc.returncode
+                        if proc.returncode is not None
+                        else 0xFF
+                    )
+                    if slot.is_drained():
+                        self.state.running_processes.pop(pid, None)
+            if released_slot:
+                self._release_process_slot()
 
         return send_ack
 
     async def run_sync(
         self, command: str
     ) -> Tuple[int, bytes, bytes, Optional[int]]:
-        if not command.strip():
-            return Status.MALFORMED.value, b"", b"Empty command", None
-
-        if not self.ctx.is_command_allowed(command):
-            logger.warning("Rejected blocked command: '%s'", command)
-            first = command.split()[0] if command else ""
-            return (
-                Status.ERROR.value,
-                b"",
-                f"Command '{first}' not allowed".encode("utf-8"),
-                None,
-            )
+        try:
+            tokens = self._prepare_command(command)
+        except CommandValidationError as exc:
+            logger.warning("Rejected command '%s': %s", command, exc)
+            return Status.ERROR.value, b"", exc.message.encode("utf-8"), None
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            proc = await asyncio.create_subprocess_exec(
+                *tokens,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -248,30 +306,44 @@ class ProcessComponent:
             )
             return Status.ERROR.value, b"", b"Internal error", None
 
+        stdout_bytes = stdout_bytes or b""
+        stderr_bytes = stderr_bytes or b""
+        stdout_bytes, stdout_truncated = self._limit_sync_payload(stdout_bytes)
+        stderr_bytes, stderr_truncated = self._limit_sync_payload(stderr_bytes)
+        if stdout_truncated or stderr_truncated:
+            logger.warning(
+                "Synchronous command '%s' output truncated to %d bytes",
+                command,
+                self.state.process_output_limit,
+            )
         return (
             Status.OK.value,
-            stdout_bytes or b"",
-            stderr_bytes or b"",
+            stdout_bytes,
+            stderr_bytes,
             proc.returncode,
         )
 
     async def start_async(self, command: str) -> int:
-        if not command.strip():
-            return 0xFFFF
-        if not self.ctx.is_command_allowed(command):
+        try:
+            tokens = self._prepare_command(command)
+        except CommandValidationError as exc:
+            logger.warning("Rejected async command '%s': %s", command, exc)
+            raise
+        if not await self._try_acquire_process_slot():
             logger.warning(
-                "Rejected async command due to policy: '%s'",
-                command,
+                "Concurrent process limit reached (%d)",
+                self.state.process_max_concurrent,
             )
             return 0xFFFF
 
         pid = await self._allocate_pid()
         if pid == 0xFFFF:
+            self._release_process_slot()
             return 0xFFFF
 
         try:
-            proc = await asyncio.create_subprocess_shell(
-                command,
+            proc = await asyncio.create_subprocess_exec(
+                *tokens,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -281,154 +353,131 @@ class ProcessComponent:
                 command,
                 exc,
             )
+            self._release_process_slot()
             return 0xFFFF
         except Exception:
             logger.exception(
                 "Unexpected error starting async process '%s'",
                 command,
             )
+            self._release_process_slot()
             return 0xFFFF
 
+        slot = ManagedProcess(pid=pid, command=command, handle=proc)
         async with self.state.process_lock:
-            self.state.running_processes[pid] = proc
-            self.state.process_stdout_buffer[pid] = bytearray()
-            self.state.process_stderr_buffer[pid] = bytearray()
-            self.state.process_exit_codes.pop(pid, None)
+            self.state.running_processes[pid] = slot
 
         logger.info("Started async process '%s' with PID %d", command, pid)
         return pid
 
+    def _prepare_command(self, command: str) -> Tuple[str, ...]:
+        tokens = self._tokenize_command(command)
+        head = tokens[0]
+        if not self.ctx.is_command_allowed(head):
+            raise CommandValidationError(
+                f"Command '{head}' not allowed"
+            )
+        return tokens
+
+    def _tokenize_command(self, command: str) -> Tuple[str, ...]:
+        stripped = command.strip()
+        if not stripped:
+            raise CommandValidationError("Empty command")
+        try:
+            tokens = tuple(shlex.split(stripped, posix=True))
+        except ValueError as exc:
+            raise CommandValidationError("Malformed command syntax") from exc
+        if not tokens:
+            raise CommandValidationError("Empty command")
+        for token in tokens:
+            if not token:
+                raise CommandValidationError("Malformed command syntax")
+            if any(char in _FORBIDDEN_CHARS for char in token):
+                raise CommandValidationError(
+                    "Illegal shell control characters detected"
+                )
+            if any(seq in token for seq in _FORBIDDEN_SUBSTRINGS):
+                raise CommandValidationError(
+                    "Illegal shell control characters detected"
+                )
+        return tokens
+
     async def collect_output(
         self, pid: int
     ) -> Tuple[int, int, bytes, bytes, bool, bool, bool]:
-        async def _read_chunk(
-            reader: Optional[asyncio.StreamReader],
-            *,
-            size: int = 1024,
-        ) -> bytes:
-            if reader is None:
-                return b""
-            try:
-                async with asyncio.timeout(0.05):
-                    return await reader.read(size)
-            except asyncio.TimeoutError:
-                return b""
-            except (OSError, ValueError, BrokenPipeError):
-                logger.debug(
-                    "Error reading process pipe for PID %d", pid, exc_info=True
-                )
-                return b""
-
-        async def _drain(reader: Optional[asyncio.StreamReader]) -> bytes:
-            if reader is None:
-                return b""
-            chunks = bytearray()
-            while True:
-                chunk = await _read_chunk(reader)
-                if not chunk:
-                    break
-                chunks.extend(chunk)
-                if len(chunk) < 1024:
-                    break
-            return bytes(chunks)
-
         async with self.state.process_lock:
-            proc = self.state.running_processes.get(pid)
-            stdout_buf = self.state.process_stdout_buffer.setdefault(
-                pid, bytearray()
-            )
-            stderr_buf = self.state.process_stderr_buffer.setdefault(
-                pid, bytearray()
-            )
-            cached_exit = self.state.process_exit_codes.get(pid)
+            slot = self.state.running_processes.get(pid)
+            proc = slot.handle if slot is not None else None
 
-        if proc is None:
-            if cached_exit is None:
-                logger.debug("PROCESS_POLL received for unknown PID %d", pid)
-                return Status.ERROR.value, 0xFF, b"", b"", False, False, False
+        if slot is None:
+            logger.debug("PROCESS_POLL received for unknown PID %d", pid)
+            return Status.ERROR.value, 0xFF, b"", b"", False, False, False
 
-            async with self.state.process_lock:
-                stdout_buf = self.state.process_stdout_buffer.setdefault(
-                    pid, bytearray()
-                )
-                stderr_buf = self.state.process_stderr_buffer.setdefault(
-                    pid, bytearray()
-                )
-                stdout_chunk, stderr_chunk, truncated_out, truncated_err = (
-                    self._trim_process_buffers(stdout_buf, stderr_buf)
-                )
-                empty = not stdout_buf and not stderr_buf
-                exit_value = self.state.process_exit_codes.get(pid, 0xFF)
-                if empty:
-                    self.state.process_stdout_buffer.pop(pid, None)
-                    self.state.process_stderr_buffer.pop(pid, None)
-                    self.state.process_exit_codes.pop(pid, None)
-
-            return (
-                Status.OK.value,
-                exit_value & 0xFF,
-                stdout_chunk,
-                stderr_chunk,
-                True,
-                truncated_out,
-                truncated_err,
-            )
-
-        stdout_collected = bytearray()
-        stderr_collected = bytearray()
-
-        stdout_chunk = await _read_chunk(proc.stdout)
-        if stdout_chunk:
-            stdout_collected.extend(stdout_chunk)
-
-        stderr_chunk = await _read_chunk(proc.stderr)
-        if stderr_chunk:
-            stderr_collected.extend(stderr_chunk)
-
-        finished = proc.returncode is not None
-
-        if finished:
-            stdout_remaining = await _drain(proc.stdout)
-            if stdout_remaining:
-                stdout_collected.extend(stdout_remaining)
-            stderr_remaining = await _drain(proc.stderr)
-            if stderr_remaining:
-                stderr_collected.extend(stderr_remaining)
-
+        stdout_chunk = b""
+        stderr_chunk = b""
+        stdout_truncated_limit = False
+        stderr_truncated_limit = False
+        finished_flag = proc is None
         log_finished = False
 
+        if proc is not None:
+            stdout_chunk, stderr_chunk = await self._read_process_pipes(
+                pid, proc
+            )
+            if proc.returncode is not None:
+                finished_flag = True
+                extra_stdout, extra_stderr = await self._drain_process_pipes(
+                    pid, proc
+                )
+                if extra_stdout:
+                    stdout_chunk += extra_stdout
+                if extra_stderr:
+                    stderr_chunk += extra_stderr
+
         async with self.state.process_lock:
-            stdout_buf = self.state.process_stdout_buffer.setdefault(
-                pid, bytearray()
-            )
-            stderr_buf = self.state.process_stderr_buffer.setdefault(
-                pid, bytearray()
-            )
+            slot = self.state.running_processes.get(pid)
+            if slot is None:
+                return Status.ERROR.value, 0xFF, b"", b"", False, False, False
 
-            if stdout_collected:
-                stdout_buf.extend(stdout_collected)
-            if stderr_collected:
-                stderr_buf.extend(stderr_collected)
+            if stdout_chunk or stderr_chunk:
+                trunc_out, trunc_err = slot.append_output(
+                    stdout_chunk,
+                    stderr_chunk,
+                    limit=self.state.process_output_limit,
+                )
+                stdout_truncated_limit |= trunc_out
+                stderr_truncated_limit |= trunc_err
 
-            if finished:
-                exit_value = (
+            (
+                stdout_payload,
+                stderr_payload,
+                payload_trunc_out,
+                payload_trunc_err,
+            ) = slot.pop_payload(_PROCESS_POLL_BUDGET)
+            stdout_truncated_limit |= payload_trunc_out
+            stderr_truncated_limit |= payload_trunc_err
+
+            released_slot = False
+            if proc is not None and proc.returncode is not None:
+                slot.exit_code = (
                     proc.returncode if proc.returncode is not None else 0
                 )
-                if pid in self.state.running_processes:
-                    self.state.running_processes.pop(pid, None)
-                    log_finished = True
-                self.state.process_exit_codes[pid] = exit_value
+                slot.handle = None
+                finished_flag = True
+                log_finished = True
+                released_slot = True
             else:
-                exit_value = 0xFF
+                finished_flag = slot.handle is None
 
-            stdout_chunk, stderr_chunk, truncated_out, truncated_err = (
-                self._trim_process_buffers(stdout_buf, stderr_buf)
+            exit_value = (
+                slot.exit_code if slot.exit_code is not None else 0xFF
             )
-            empty = not stdout_buf and not stderr_buf
-            if finished and empty:
-                self.state.process_stdout_buffer.pop(pid, None)
-                self.state.process_stderr_buffer.pop(pid, None)
-                self.state.process_exit_codes.pop(pid, None)
+
+            if slot.handle is None and slot.is_drained():
+                self.state.running_processes.pop(pid, None)
+
+        if released_slot:
+            self._release_process_slot()
 
         if log_finished:
             logger.info(
@@ -440,12 +489,70 @@ class ProcessComponent:
         return (
             Status.OK.value,
             exit_value & 0xFF,
-            stdout_chunk,
-            stderr_chunk,
-            finished,
-            truncated_out,
-            truncated_err,
+            stdout_payload,
+            stderr_payload,
+            finished_flag,
+            stdout_truncated_limit,
+            stderr_truncated_limit,
         )
+
+    async def _read_process_pipes(
+        self, pid: int, proc: asyncio.subprocess.Process
+    ) -> tuple[bytes, bytes]:
+        async with asyncio.TaskGroup() as tg:
+            stdout_task = tg.create_task(
+                self._read_stream_chunk(pid, proc.stdout)
+            )
+            stderr_task = tg.create_task(
+                self._read_stream_chunk(pid, proc.stderr)
+            )
+        return stdout_task.result(), stderr_task.result()
+
+    async def _drain_process_pipes(
+        self, pid: int, proc: asyncio.subprocess.Process
+    ) -> tuple[bytes, bytes]:
+        async with asyncio.TaskGroup() as tg:
+            stdout_task = tg.create_task(self._drain_stream(pid, proc.stdout))
+            stderr_task = tg.create_task(self._drain_stream(pid, proc.stderr))
+        return stdout_task.result(), stderr_task.result()
+
+    async def _read_stream_chunk(
+        self,
+        pid: int,
+        reader: Optional[asyncio.StreamReader],
+        *,
+        size: int = 1024,
+        timeout: float = 0.05,
+    ) -> bytes:
+        if reader is None:
+            return b""
+        try:
+            async with asyncio.timeout(timeout):
+                return await reader.read(size)
+        except asyncio.TimeoutError:
+            return b""
+        except (OSError, ValueError, BrokenPipeError):
+            logger.debug(
+                "Error reading process pipe for PID %d", pid, exc_info=True
+            )
+            return b""
+
+    async def _drain_stream(
+        self,
+        pid: int,
+        reader: Optional[asyncio.StreamReader],
+    ) -> bytes:
+        if reader is None:
+            return b""
+        chunks = bytearray()
+        while True:
+            chunk = await self._read_stream_chunk(pid, reader)
+            if not chunk:
+                break
+            chunks.extend(chunk)
+            if len(chunk) < 1024:
+                break
+        return bytes(chunks)
 
     def trim_buffers(
         self,
@@ -459,7 +566,7 @@ class ProcessComponent:
         stdout_buffer: bytearray,
         stderr_buffer: bytearray,
     ) -> Tuple[bytes, bytes, bool, bool]:
-        max_payload = MAX_PAYLOAD_SIZE - 6
+        max_payload = _PROCESS_POLL_BUDGET
         stdout_len = min(len(stdout_buffer), max_payload)
         stdout_chunk = bytes(stdout_buffer[:stdout_len])
         del stdout_buffer[:stdout_len]
@@ -484,9 +591,12 @@ class ProcessComponent:
         stderr_truncated: bool,
         finished: bool,
     ) -> None:
-        topic = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_SHELL}/"
-            f"poll/{pid}/response"
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SHELL,
+            "poll",
+            str(pid),
+            "response",
         )
         message = (
             PublishableMessage(topic_name=topic, payload=b"")
@@ -527,6 +637,40 @@ class ProcessComponent:
         logger.error("No async process slots available; all PIDs in use")
         return 0xFFFF
 
+    async def _terminate_process_tree(
+        self, proc: asyncio.subprocess.Process
+    ) -> None:
+        if proc.returncode is not None:
+            return
+        if psutil is None or proc.pid is None:
+            proc.kill()
+            return
+        pid = proc.pid
+        await asyncio.to_thread(self._kill_process_tree_sync, pid)
+        proc.kill()
+
+    @staticmethod
+    def _kill_process_tree_sync(pid: int) -> None:
+        if psutil is None:
+            return
+        try:
+            process = psutil.Process(pid)
+        except psutil.Error:
+            return
+        try:
+            children = process.children(recursive=True)
+        except psutil.Error:
+            children = []
+        for child in children:
+            try:
+                child.kill()
+            except psutil.Error:
+                continue
+        try:
+            process.kill()
+        except psutil.Error:
+            pass
+
     def _build_sync_response(
         self, status: int, stdout_bytes: bytes, stderr_bytes: bytes
     ) -> bytes:
@@ -542,5 +686,30 @@ class ProcessComponent:
             + stderr_trim
         )
 
+    def _limit_sync_payload(self, payload: bytes) -> tuple[bytes, bool]:
+        limit = self.state.process_output_limit
+        if limit <= 0 or len(payload) <= limit:
+            return payload, False
+        return payload[-limit:], True
 
-__all__ = ["ProcessComponent"]
+    async def _try_acquire_process_slot(self) -> bool:
+        guard = self._process_slots
+        if guard is None:
+            return True
+        try:
+            await asyncio.wait_for(guard.acquire(), timeout=0)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
+    def _release_process_slot(self) -> None:
+        guard = self._process_slots
+        if guard is None:
+            return
+        try:
+            guard.release()
+        except ValueError:
+            pass
+
+
+__all__ = ["ProcessComponent", "CommandValidationError"]

@@ -20,6 +20,7 @@ module("luci.controller.yunbridge", package.seeall)
 
 local fs = require "nixio.fs"
 local uci = require "luci.model.uci".cursor()
+local sys = require "luci.sys"
 local posix = require "posix"
 local unistd = require "posix.unistd"
 local sys_wait = require "posix.sys.wait"
@@ -98,6 +99,7 @@ function index()
     entry({"admin", "services", "yunbridge"}, cbi("yunbridge"), "YunBridge", 90).dependent = true
     entry({"admin", "services", "yunbridge", "webui"}, template("yunbridge/webui"), "Web UI", 100).dependent = false
     entry({"admin", "services", "yunbridge", "status"}, template("yunbridge/status"), "Daemon Status", 110).dependent = false
+    entry({"admin", "services", "yunbridge", "credentials"}, template("yunbridge/credentials"), "Credentials & TLS", 120).dependent = false
 
     -- Internal actions for status page
     entry({"admin", "services", "yunbridge", "status_raw"}, call("action_status")).leaf = true
@@ -106,6 +108,8 @@ function index()
     entry({"admin", "services", "yunbridge", "log_script"}, call("action_log_script")).leaf = true
     entry({"admin", "services", "yunbridge", "mqtt_ws_auth"}, call("action_mqtt_ws_auth")).leaf = true
     entry({"admin", "services", "yunbridge", "mqtt_ws_url"}, call("action_mqtt_ws_url")).leaf = true
+    entry({"admin", "services", "yunbridge", "rotate_credentials"}, call("action_rotate_credentials")).leaf = true
+    entry({"admin", "services", "yunbridge", "hw_smoke"}, call("action_hw_smoke")).leaf = true
 
     -- REST API Endpoint
     entry({"admin", "services", "yunbridge", "api"}, call("action_api")).leaf = true
@@ -256,4 +260,34 @@ end
 
 function action_log_script()
     serve_log_file("/var/log/yunbridge_script.log", "No script log file found.")
+end
+
+local function run_and_capture(cmd)
+    local tmp = os.tmpname()
+    local wrapped = string.format("%s >%s 2>&1", cmd, tmp)
+    local rc = sys.call(wrapped)
+    local output = fs.readfile(tmp) or ""
+    fs.remove(tmp)
+    return rc, output
+end
+
+function action_rotate_credentials()
+    local credfile = luci.http.formvalue("path") or "/etc/yunbridge/credentials"
+    local cmd = string.format("/usr/bin/yunbridge-rotate-credentials %q", credfile)
+    local rc, output = run_and_capture(cmd)
+    local status = rc == 0 and 200 or 500
+    send_json(status, {
+        status = (rc == 0) and "ok" or "error",
+        output = output,
+    })
+end
+
+function action_hw_smoke()
+    local cmd = "/usr/bin/yunbridge-hw-smoke"
+    local rc, output = run_and_capture(cmd)
+    local status = rc == 0 and 200 or 500
+    send_json(status, {
+        status = (rc == 0) and "ok" or "error",
+        output = output,
+    })
 end

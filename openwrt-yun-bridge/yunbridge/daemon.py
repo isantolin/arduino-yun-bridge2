@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import ssl
 import struct
 import sys
@@ -34,7 +33,8 @@ from yunbridge.common import (
 )
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.const import MQTT_TLS_MIN_VERSION, SERIAL_TERMINATOR
+from yunbridge.config.tls import build_tls_context, resolve_tls_material
+from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.mqtt import (
     Client as MQTTClient,
     MQTTClientProtocol,
@@ -43,19 +43,16 @@ from yunbridge.mqtt import (
     ProtocolVersion,
     as_inbound_message,
 )
+from yunbridge.protocol import Topic, topic_path
 from yunbridge.services.runtime import (
     BridgeService,
-    TOPIC_ANALOG,
-    TOPIC_CONSOLE,
-    TOPIC_DATASTORE,
-    TOPIC_DIGITAL,
-    TOPIC_FILE,
-    TOPIC_MAILBOX,
-    TOPIC_SHELL,
+    SendFrameCallable,
+    SerialHandshakeFatal,
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.watchdog import WatchdogKeepalive
+from yunbridge.metrics import publish_metrics
 import serial_asyncio
 
 OPEN_SERIAL_CONNECTION: Callable[
@@ -230,6 +227,82 @@ async def _send_serial_frame(
         return False
 
 
+async def _process_serial_packet(
+    encoded_packet: bytes,
+    service: BridgeService,
+    state: RuntimeState,
+) -> None:
+    try:
+        raw_frame = cobs_decode(encoded_packet)
+    except DecodeError as exc:
+        packet_hex = encoded_packet.hex()
+        logger.warning(
+            "COBS decode error %s for packet %s (len=%d)",
+            exc,
+            packet_hex,
+            len(encoded_packet),
+        )
+        if logger.isEnabledFor(logging.DEBUG):
+            appended = encoded_packet + SERIAL_TERMINATOR
+            human_hex = " ".join(f"{byte:02x}" for byte in appended)
+            logger.debug(
+                "Decode error raw bytes (len=%d): %s",
+                len(appended),
+                human_hex,
+            )
+        state.record_serial_decode_error()
+        truncated = encoded_packet[:32]
+        payload = pack_u16(0xFFFF) + truncated
+        try:
+            await service.send_frame(Status.MALFORMED.value, payload)
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Failed to request MCU retransmission after decode error"
+            )
+        return
+
+    try:
+        frame = Frame.from_bytes(raw_frame)
+    except ValueError as exc:
+        header_hex = raw_frame[: protocol.CRC_COVERED_HEADER_SIZE].hex()
+        logger.warning(
+            (
+                "Frame parse error %s for raw %s (len=%d header=%s)"
+            ),
+            exc,
+            raw_frame.hex(),
+            len(raw_frame),
+            header_hex,
+        )
+        status = Status.MALFORMED
+        if "crc mismatch" in str(exc).lower():
+            status = Status.CRC_MISMATCH
+            state.record_serial_crc_error()
+        command_hint = 0xFFFF
+        if len(raw_frame) >= protocol.CRC_COVERED_HEADER_SIZE:
+            _, _, command_hint = struct.unpack(
+                protocol.CRC_COVERED_HEADER_FORMAT,
+                raw_frame[: protocol.CRC_COVERED_HEADER_SIZE],
+            )
+        truncated = raw_frame[:32]
+        payload = pack_u16(command_hint) + truncated
+        try:
+            await service.send_frame(status.value, payload)
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Failed to notify MCU about frame parse error"
+            )
+        return
+    except Exception:
+        logger.exception("Unhandled error processing MCU frame")
+        return
+
+    try:
+        await service.handle_mcu_frame(frame.command_id, frame.payload)
+    except Exception:
+        logger.exception("Unhandled error processing MCU frame")
+
+
 async def serial_reader_task(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -240,12 +313,15 @@ async def serial_reader_task(
     while True:
         reader: Optional[asyncio.StreamReader] = None
         writer: Optional[asyncio.StreamWriter] = None
+        should_retry = True
         try:
             reader, writer = await _open_serial_connection_with_retry(config)
 
             state.serial_writer = writer
 
-            previous_sender = getattr(service, "_serial_sender", None)
+            previous_sender: Optional[SendFrameCallable] = getattr(
+                service, "_serial_sender", None
+            )
 
             async def _registered_sender(
                 cmd: int,
@@ -256,10 +332,16 @@ async def serial_reader_task(
                 return await _send_serial_frame(state, writer_ref, cmd, data)
 
             if previous_sender is not None:
+                prev_sender: SendFrameCallable = previous_sender
 
-                async def _chained_sender(cmd: int, data: bytes) -> bool:
+                async def _chained_sender(
+                    cmd: int,
+                    data: bytes,
+                    *,
+                    prior_sender: SendFrameCallable = prev_sender,
+                ) -> bool:
                     try:
-                        await previous_sender(cmd, data)
+                        await prior_sender(cmd, data)
                     except Exception:  # pragma: no cover - defensive
                         logger.exception(
                             "Serial sender hook raised an exception"
@@ -272,6 +354,10 @@ async def serial_reader_task(
             logger.info("Serial port connected successfully.")
             try:
                 await service.on_serial_connected()
+            except SerialHandshakeFatal as exc:
+                should_retry = False
+                logger.critical("%s", exc)
+                raise
             except Exception:
                 logger.exception(
                     "Error running post-connect hooks for serial link"
@@ -289,85 +375,11 @@ async def serial_reader_task(
                         continue
                     encoded_packet = bytes(buffer)
                     buffer.clear()
-                    try:
-                        raw_frame = cobs_decode(encoded_packet)
-                    except DecodeError as exc:
-                        packet_hex = encoded_packet.hex()
-                        logger.warning(
-                            "COBS decode error %s for packet %s (len=%d)",
-                            exc,
-                            packet_hex,
-                            len(encoded_packet),
-                        )
-                        if logger.isEnabledFor(logging.DEBUG):
-                            appended = encoded_packet + SERIAL_TERMINATOR
-                            human_hex = " ".join(
-                                f"{byte:02x}" for byte in appended
-                            )
-                            logger.debug(
-                                "Decode error raw bytes (len=%d): %s",
-                                len(appended),
-                                human_hex,
-                            )
-                        truncated = encoded_packet[:32]
-                        payload = pack_u16(0xFFFF) + truncated
-                        try:
-                            await service.send_frame(
-                                Status.MALFORMED.value, payload
-                            )
-                        except Exception:
-                            logger.exception(
-                                "Failed to request MCU retransmission after "
-                                "decode error"
-                            )
-                        continue
-
-                    try:
-                        frame = Frame.from_bytes(raw_frame)
-                        await service.handle_mcu_frame(
-                            frame.command_id,
-                            frame.payload,
-                        )
-                    except ValueError as exc:
-                        header_hex = raw_frame[
-                            : protocol.CRC_COVERED_HEADER_SIZE
-                        ].hex()
-                        logger.warning(
-                            (
-                                "Frame parse error %s for raw %s "
-                                "(len=%d header=%s)"
-                            ),
-                            exc,
-                            raw_frame.hex(),
-                            len(raw_frame),
-                            header_hex,
-                        )
-                        status = Status.MALFORMED
-                        if "crc mismatch" in str(exc).lower():
-                            status = Status.CRC_MISMATCH
-                        command_hint = 0xFFFF
-                        if (
-                            len(raw_frame)
-                            >= protocol.CRC_COVERED_HEADER_SIZE
-                        ):
-                            _, _, command_hint = struct.unpack(
-                                protocol.CRC_COVERED_HEADER_FORMAT,
-                                raw_frame[
-                                    : protocol.CRC_COVERED_HEADER_SIZE
-                                ],
-                            )
-                        truncated = raw_frame[:32]
-                        payload = pack_u16(command_hint) + truncated
-                        try:
-                            await service.send_frame(status.value, payload)
-                        except Exception:
-                            logger.exception(
-                                "Failed to notify MCU about frame parse error"
-                            )
-                    except Exception:
-                        logger.exception(
-                            "Unhandled error processing MCU frame"
-                        )
+                    await _process_serial_packet(
+                        encoded_packet,
+                        service,
+                        state,
+                    )
                 else:
                     buffer.append(byte[0])
         except (serial.SerialException, asyncio.IncompleteReadError) as exc:
@@ -399,11 +411,12 @@ async def serial_reader_task(
                     "Error resetting service state after serial disconnect"
                 )
             service.register_serial_sender(_serial_sender_not_ready)
-            logger.warning(
-                "Serial port disconnected. Retrying in %d seconds...",
-                reconnect_delay,
-            )
-            await asyncio.sleep(reconnect_delay)
+            if should_retry:
+                logger.warning(
+                    "Serial port disconnected. Retrying in %d seconds...",
+                    reconnect_delay,
+                )
+                await asyncio.sleep(reconnect_delay)
 
 
 async def _mqtt_publisher_loop(
@@ -411,6 +424,7 @@ async def _mqtt_publisher_loop(
     state: RuntimeState,
 ) -> None:
     while True:
+        await state.flush_mqtt_spool()
         message_to_publish = await state.mqtt_publish_queue.get()
         topic_name = message_to_publish.topic_name
         try:
@@ -453,6 +467,7 @@ async def _mqtt_publisher_loop(
             raise
         finally:
             state.mqtt_publish_queue.task_done()
+            await state.flush_mqtt_spool()
 
 
 async def _mqtt_subscriber_loop(
@@ -484,32 +499,17 @@ def _build_mqtt_tls_context(config: RuntimeConfig) -> Optional[ssl.SSLContext]:
     if not config.tls_enabled:
         return None
 
-    cafile = config.mqtt_cafile
-    if not cafile:
-        raise RuntimeError(
-            "MQTT TLS is enabled but 'mqtt_cafile' is not configured."
-        )
-    if not os.path.exists(cafile):
-        raise FileNotFoundError(f"TLS CA file does not exist: {cafile}")
-
     try:
-        context = ssl.create_default_context(
-            ssl.Purpose.SERVER_AUTH,
-            cafile=cafile,
-        )
-        context.minimum_version = MQTT_TLS_MIN_VERSION
-        if config.mqtt_certfile and config.mqtt_keyfile:
-            context.load_cert_chain(
-                certfile=config.mqtt_certfile,
-                keyfile=config.mqtt_keyfile,
-            )
+        material = resolve_tls_material(config)
+        context = build_tls_context(material)
+        if material.certfile and material.keyfile:
             logger.info(
                 "Using MQTT TLS with client certificate authentication."
             )
         else:
             logger.info("Using MQTT TLS with CA verification only.")
         return context
-    except (ssl.SSLError, FileNotFoundError) as exc:
+    except (ssl.SSLError, FileNotFoundError, RuntimeError) as exc:
         raise RuntimeError(f"Failed to create TLS context: {exc}") from exc
 
 
@@ -554,26 +554,35 @@ async def mqtt_task(
             )
             logger.info("Connected to MQTT broker.")
 
+            def _sub(
+                top_segment: Topic | str,
+                *segments: str,
+            ) -> tuple[str, QOSLevel]:
+                return (
+                    topic_path(prefix, top_segment, *segments),
+                    QOSLevel.QOS_0,
+                )
+
             subscriptions: Tuple[Tuple[str, QOSLevel], ...] = (
-                (f"{prefix}/{TOPIC_DIGITAL}/+/mode", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DIGITAL}/+/read", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DIGITAL}/+", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_ANALOG}/+/read", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_ANALOG}/+", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_CONSOLE}/in", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DATASTORE}/put/#", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_DATASTORE}/get/#", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_MAILBOX}/write", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_MAILBOX}/read", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SHELL}/run", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SHELL}/run_async", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SHELL}/poll/#", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_SHELL}/kill/#", QOSLevel.QOS_0),
-                (f"{prefix}/system/free_memory/get", QOSLevel.QOS_0),
-                (f"{prefix}/system/version/get", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_FILE}/write/#", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_FILE}/read/#", QOSLevel.QOS_0),
-                (f"{prefix}/{TOPIC_FILE}/remove/#", QOSLevel.QOS_0),
+                _sub(Topic.DIGITAL, "+", "mode"),
+                _sub(Topic.DIGITAL, "+", "read"),
+                _sub(Topic.DIGITAL, "+"),
+                _sub(Topic.ANALOG, "+", "read"),
+                _sub(Topic.ANALOG, "+"),
+                _sub(Topic.CONSOLE, "in"),
+                _sub(Topic.DATASTORE, "put", "#"),
+                _sub(Topic.DATASTORE, "get", "#"),
+                _sub(Topic.MAILBOX, "write"),
+                _sub(Topic.MAILBOX, "read"),
+                _sub(Topic.SHELL, "run"),
+                _sub(Topic.SHELL, "run_async"),
+                _sub(Topic.SHELL, "poll", "#"),
+                _sub(Topic.SHELL, "kill", "#"),
+                _sub(Topic.SYSTEM, "free_memory", "get"),
+                _sub(Topic.SYSTEM, "version", "get"),
+                _sub(Topic.FILE, "write", "#"),
+                _sub(Topic.FILE, "read", "#"),
+                _sub(Topic.FILE, "remove", "#"),
             )
 
             for topic, qos in subscriptions:
@@ -646,6 +655,13 @@ async def main_async(config: RuntimeConfig) -> None:
             )
             task_group.create_task(
                 status_writer(state, config.status_interval)
+            )
+            task_group.create_task(
+                publish_metrics(
+                    state,
+                    service.enqueue_mqtt,
+                    float(config.status_interval),
+                )
             )
     except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")

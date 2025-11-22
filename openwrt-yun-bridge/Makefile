@@ -35,10 +35,22 @@ define Package/$(PKG_NAME)
 	SECTION:=utils
 	CATEGORY:=Utilities
 	TITLE:=Yun Bridge Python Daemon
-	DEPENDS:=+openwrt-yun-core +python3 +python3-asyncio \
-		+python3-pyserial +python3-pyserial-asyncio +python3-cobs \
-		+python3-aiomqtt +python3-tenacity +python3-uci \
+	DEPENDS:=+openwrt-yun-core
+	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
+	DEPENDS+= \
+		+python3 \
+		+python3-asyncio \
+		+python3-uci \
+		+python3-aiomqtt \
+		+python3-paho-mqtt \
+		+python3-pyserial \
+		+python3-pyserial-asyncio \
+		+python3-cobs \
+		+python3-tenacity \
+		+python3-sqlite3 \
+		+python3-psutil \
 		+python3-more-itertools
+	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

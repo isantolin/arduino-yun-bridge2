@@ -1,4 +1,6 @@
 # List of files to install for YunBridge OpenWRT integration
 /usr/bin/yunbridge
+/usr/bin/yunbridge-hw-smoke
+/usr/bin/yunbridge-rotate-credentials
 /etc/init.d/yunbridge
 /etc/config/yunbridge-ttyath0

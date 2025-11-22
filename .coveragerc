@@ -1,0 +1,7 @@
+[run]
+branch = True
+source = openwrt-yun-bridge
+
+[report]
+show_missing = True
+skip_covered = False

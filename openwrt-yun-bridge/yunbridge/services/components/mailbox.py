@@ -8,14 +8,15 @@ from typing import Optional
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
 from ...common import encode_status_reason, pack_u16, unpack_u16
-from ...const import (
-    TOPIC_MAILBOX,
-    TOPIC_MAILBOX_INCOMING_AVAILABLE,
-    TOPIC_MAILBOX_OUTGOING_AVAILABLE,
-)
 from ...mqtt import InboundMessage, PublishableMessage
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
+from ...protocol.topics import (
+    Topic,
+    mailbox_incoming_available_topic,
+    mailbox_outgoing_available_topic,
+    topic_path,
+)
 from .base import BridgeContext
 
 logger = logging.getLogger("yunbridge.mailbox")
@@ -35,8 +36,10 @@ class MailboxComponent:
         self.ctx = ctx
 
     async def handle_processed(self, payload: bytes) -> bool:
-        topic_name = (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/processed"
+        topic_name = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            "processed",
         )
         message_id: int | None = None
         if len(payload) >= 2:
@@ -83,8 +86,10 @@ class MailboxComponent:
             )
             return False
 
-        topic = self.state.mailbox_incoming_topic or (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
+        topic = self.state.mailbox_incoming_topic or topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            "incoming",
         )
         await self.ctx.enqueue_mqtt(
             PublishableMessage(topic_name=topic, payload=data)
@@ -92,9 +97,8 @@ class MailboxComponent:
 
         await self.ctx.enqueue_mqtt(
             PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/"
-                    f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
+                topic_name=mailbox_incoming_available_topic(
+                    self.state.mqtt_topic_prefix
                 ),
                 payload=str(
                     len(self.state.mailbox_incoming_queue)
@@ -139,9 +143,8 @@ class MailboxComponent:
 
         await self.ctx.enqueue_mqtt(
             PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/"
-                    f"{TOPIC_MAILBOX_OUTGOING_AVAILABLE}"
+                topic_name=mailbox_outgoing_available_topic(
+                    self.state.mqtt_topic_prefix
                 ),
                 payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
@@ -166,9 +169,8 @@ class MailboxComponent:
         )
         await self.ctx.enqueue_mqtt(
             PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/"
-                    f"{TOPIC_MAILBOX_OUTGOING_AVAILABLE}"
+                topic_name=mailbox_outgoing_available_topic(
+                    self.state.mqtt_topic_prefix
                 ),
                 payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
@@ -178,8 +180,10 @@ class MailboxComponent:
         self,
         inbound: Optional[InboundMessage] = None,
     ) -> None:
-        topic = self.state.mailbox_incoming_topic or (
-            f"{self.state.mqtt_topic_prefix}/{TOPIC_MAILBOX}/incoming"
+        topic = self.state.mailbox_incoming_topic or topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            "incoming",
         )
 
         if self.state.mailbox_incoming_queue:
@@ -216,9 +220,8 @@ class MailboxComponent:
 
         await self.ctx.enqueue_mqtt(
             PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/"
-                    f"{TOPIC_MAILBOX_OUTGOING_AVAILABLE}"
+                topic_name=mailbox_outgoing_available_topic(
+                    self.state.mqtt_topic_prefix
                 ),
                 payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
@@ -227,9 +230,8 @@ class MailboxComponent:
     async def _publish_incoming_available(self) -> None:
         await self.ctx.enqueue_mqtt(
             PublishableMessage(
-                topic_name=(
-                    f"{self.state.mqtt_topic_prefix}/"
-                    f"{TOPIC_MAILBOX_INCOMING_AVAILABLE}"
+                topic_name=mailbox_incoming_available_topic(
+                    self.state.mqtt_topic_prefix
                 ),
                 payload=str(
                     len(self.state.mailbox_incoming_queue)

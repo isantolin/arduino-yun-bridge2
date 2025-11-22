@@ -106,4 +106,3 @@ def test_cleanup_status_file(monkeypatch, tmp_path):
     assert status_path.exists()
     status_module.cleanup_status_file()
     assert not status_path.exists()
-

@@ -11,9 +11,16 @@
 #ifndef BRIDGE_V2_H
 #define BRIDGE_V2_H
 
+#if defined(ARDUINO)
 #include <Arduino.h>
-
-#include "Print.h"
+#include <Print.h>
+#else
+#include "arduino/ArduinoCompat.h"
+#include "arduino/PrintCompat.h"
+#ifndef BRIDGE_ALLOW_INSECURE_SERIAL_SECRET
+#define BRIDGE_ALLOW_INSECURE_SERIAL_SECRET 1
+#endif
+#endif
 #include "arduino/BridgeSecret.h"
 #include "protocol/rpc_frame.h"
 
@@ -82,6 +89,11 @@ class DataStoreClass {
  public:
   DataStoreClass();
   void put(const char* key, const char* value);
+  /**
+   * @brief Solicita al daemon el último valor cacheado para la clave dada.
+   * @details El resultado llega de forma asíncrona vía
+   * Bridge.onDataStoreGetResponse sin bloquear el bucle principal.
+   */
   void requestGet(const char* key);
 };
 
@@ -178,6 +190,7 @@ class BridgeClass {
   void pinMode(uint8_t pin, uint8_t mode);
   void digitalWrite(uint8_t pin, uint8_t value);
   void analogWrite(uint8_t pin, int value);
+  // Deprecated: pin reads are initiated from Linux; these methods emit STATUS_NOT_IMPLEMENTED.
   void requestDigitalRead(uint8_t pin);
   void requestAnalogRead(uint8_t pin);
 

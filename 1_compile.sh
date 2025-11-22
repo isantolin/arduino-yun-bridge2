@@ -99,6 +99,7 @@ OPENWRT_TARGET=${2:-"ath79/generic"}
 OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
 SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ "$INSTALL_HOST_DEPS" = "1" ]; then
     echo "[INFO] Host dependency auto-install enabled."
@@ -168,6 +169,94 @@ for cmd in "${REQUIRED_COMMANDS[@]}"; do
     fi
 done
 
+auto_install_python_module() {
+    local module="$1"
+    local package="python3-${module}"
+    local prefix=()
+
+    if [ "$INSTALL_HOST_DEPS" != "1" ]; then
+        return 1
+    fi
+
+    if [ "$EUID" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1; then
+            prefix=(sudo)
+        else
+            echo "[WARN] sudo not found; cannot auto-install ${package}." >&2
+            return 1
+        fi
+    fi
+
+    if [ -f /etc/debian_version ]; then
+        echo "[INFO] Installing ${package} via apt-get..."
+        if "${prefix[@]}" apt-get install -y "$package"; then
+            return 0
+        fi
+    elif [ -f /etc/fedora-release ]; then
+        echo "[INFO] Installing ${package} via dnf..."
+        if "${prefix[@]}" dnf install -y "$package"; then
+            return 0
+        fi
+    fi
+
+    echo "[WARN] Automatic installation failed for ${package}." >&2
+    return 1
+}
+
+check_python_module() {
+    local module="$1"
+    if python3 -c "import ${module}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if auto_install_python_module "$module" && python3 -c "import ${module}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "[ERROR] Missing required Python module '${module}'." >&2
+    if [ -f /etc/debian_version ]; then
+        echo "[HINT] Install it via: sudo apt-get install python3-${module}" >&2
+    elif [ -f /etc/fedora-release ]; then
+        echo "[HINT] Install it via: sudo dnf install python3-${module}" >&2
+    else
+        echo "[HINT] Install the python3-${module} package using your distro's package manager." >&2
+    fi
+    exit 1
+}
+
+check_python_module "setuptools"
+
+bootstrap_sdk_python_module() {
+    local module="$1"
+    local host_python="$SDK_DIR/staging_dir/host/bin/python3"
+    local host_prefix="$SDK_DIR/staging_dir/host"
+
+    if [ ! -x "$host_python" ]; then
+        echo "[WARN] SDK host python not found at $host_python; skip auto-install for ${module} until the toolchain is prepared." >&2
+        return 0
+    fi
+
+    if "$host_python" -c "import ${module}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "[INFO] Installing ${module} inside the OpenWrt SDK host python..."
+
+    if ! "$host_python" -m pip --version >/dev/null 2>&1; then
+        if ! "$host_python" -m ensurepip --upgrade; then
+            echo "[ERROR] Failed to bootstrap pip inside the SDK host python." >&2
+            return 1
+        fi
+    fi
+
+    if "$host_python" -m pip install --upgrade --prefix "$host_prefix" "$module"; then
+        return 0
+    fi
+
+    echo "[ERROR] Unable to install ${module} into the SDK host python." >&2
+    return 1
+}
+
 if command -v unzstd >/dev/null 2>&1; then
     ZSTD_DECOMPRESSOR="unzstd"
 elif command -v zstd >/dev/null 2>&1; then
@@ -215,6 +304,11 @@ if [ ! -d "$SDK_DIR" ]; then
     fi
 fi
 
+if ! bootstrap_sdk_python_module "setuptools"; then
+    echo "[ERROR] SDK host python is missing setuptools even after an install attempt." >&2
+    exit 1
+fi
+
 # 2. Copy OpenWRT packages to buildroot/SDK (after feeds are updated and luci-base is installed)
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
@@ -222,7 +316,7 @@ fi
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
 
-for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-paho-mqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     if [ -d "$pkg" ]; then
         echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
@@ -270,6 +364,12 @@ fi
 echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 
+# Remove feed-provided python-paho-mqtt to avoid duplicate Kconfig entries.
+if [ -d "package/feeds/packages/python-paho-mqtt" ]; then
+    echo "[INFO] Removing feed copy of python-paho-mqtt (overridden locally)."
+    rm -rf package/feeds/packages/python-paho-mqtt
+fi
+
 # The SDK for ath79 omits bcm53xx PHY modules, strip the dangling deps to avoid warnings.
 USB_MODULES_MK="package/kernel/linux/modules/usb.mk"
 if [ -f "$USB_MODULES_MK" ]; then
@@ -281,8 +381,13 @@ if [ -f "$USB_MODULES_MK" ]; then
 fi
 
 # Enable required Yun packages and dependencies automatically
-REQUIRED_PKGS="python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
-REQUIRED_DEPS="python3 python3-asyncio python3-pyserial python3-pyserial-asyncio python3-cobs python3-tenacity mosquitto-client luaposix"
+MANIFEST_DEPS="$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | paste -sd ' ' -)"
+if [ -z "$MANIFEST_DEPS" ]; then
+    echo "[ERROR] Unable to collect runtime dependencies from dependencies/runtime.toml" >&2
+    exit 1
+fi
+REQUIRED_PKGS="python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-paho-mqtt python3-tenacity openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
+REQUIRED_DEPS="${MANIFEST_DEPS} mosquitto-client luaposix"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
@@ -313,7 +418,7 @@ echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
 find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
 
 pushd "$SDK_DIR"
-for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity python3-sqlite3 luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     echo "[BUILD] Building $pkg (.ipk) in SDK..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s
@@ -321,6 +426,18 @@ for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacit
     find bin/packages/ -name "$pkg*_*.ipk" -exec cp {} ../$BIN_DIR/ \;
 done
 popd
+
+
+if ls "$BIN_DIR"/*.ipk >/dev/null 2>&1; then
+    if command -v sha256sum >/dev/null 2>&1; then
+        echo "[INFO] Generating SHA256SUMS manifest in $BIN_DIR..."
+        (cd "$BIN_DIR" && sha256sum *.ipk > SHA256SUMS)
+    else
+        echo "[WARN] sha256sum command not found; skipping checksum manifest generation."
+    fi
+else
+    echo "[WARN] No .ipk artifacts detected in $BIN_DIR; skipping SHA256SUMS generation."
+fi
 
 
 

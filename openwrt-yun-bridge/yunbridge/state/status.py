@@ -31,6 +31,14 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "mqtt_queue_limit": state.mqtt_queue_limit,
                 "mqtt_messages_dropped": state.mqtt_dropped_messages,
                 "mqtt_drop_counts": dict(state.mqtt_drop_counts),
+                "mqtt_spooled_messages": state.mqtt_spooled_messages,
+                "mqtt_spooled_replayed": state.mqtt_spooled_replayed,
+                "mqtt_spool_errors": state.mqtt_spool_errors,
+                "mqtt_spool_pending": (
+                    state.mqtt_spool.pending
+                    if state.mqtt_spool is not None
+                    else 0
+                ),
                 "datastore_keys": list(state.datastore.keys()),
                 "mailbox_size": len(state.mailbox_queue),
                 "mailbox_bytes": state.mailbox_queue_bytes,
@@ -60,6 +68,11 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "running_processes": list(state.running_processes.keys()),
                 "allowed_commands": list(state.allowed_commands),
                 "link_synchronised": state.link_is_synchronized,
+                "handshake_attempts": state.handshake_attempts,
+                "handshake_successes": state.handshake_successes,
+                "handshake_failures": state.handshake_failures,
+                "handshake_last_error": state.last_handshake_error,
+                "handshake_last_unix": state.last_handshake_unix,
                 "serial_flow": state.serial_flow_stats.as_dict(),
                 "heartbeat_unix": time.time(),
                 "mcu_version": (

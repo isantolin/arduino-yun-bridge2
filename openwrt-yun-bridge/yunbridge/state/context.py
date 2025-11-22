@@ -6,30 +6,32 @@ import collections
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Deque, Dict, Optional
+from typing import Any, Deque, Dict, Optional
 
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_TOPIC,
+    DEFAULT_PROCESS_MAX_CONCURRENT,
+    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..mqtt import InboundMessage, PublishableMessage
+from ..mqtt.spool import MQTTPublishSpool
+from .queues import BoundedByteDeque
 
 from ..config.settings import RuntimeConfig
-from ..policy import AllowedCommandPolicy
+from ..policy import AllowedCommandPolicy, TopicAuthorization
+from ..rpc.protocol import Status
 
 
 def _mqtt_queue_factory() -> asyncio.Queue[PublishableMessage]:
     return asyncio.Queue()
-
-
-def _bytes_deque_factory() -> Deque[bytes]:
-    return collections.deque()
 
 
 @dataclass(slots=True)
@@ -39,16 +41,82 @@ class PendingPinRequest:
 
 
 @dataclass(slots=True)
-class PendingDatastoreRequest:
-    key: str
-    reply_context: Optional[InboundMessage]
+class ManagedProcess:
+    pid: int
+    command: str = ""
+    handle: Optional[asyncio.subprocess.Process] = None
+    stdout_buffer: bytearray = field(default_factory=bytearray)
+    stderr_buffer: bytearray = field(default_factory=bytearray)
+    exit_code: Optional[int] = None
+
+    def append_output(
+        self,
+        stdout_chunk: bytes,
+        stderr_chunk: bytes,
+        *,
+        limit: int,
+    ) -> tuple[bool, bool]:
+        truncated_stdout = _append_with_limit(
+            self.stdout_buffer,
+            stdout_chunk,
+            limit,
+        )
+        truncated_stderr = _append_with_limit(
+            self.stderr_buffer,
+            stderr_chunk,
+            limit,
+        )
+        return truncated_stdout, truncated_stderr
+
+    def pop_payload(
+        self,
+        budget: int,
+    ) -> tuple[bytes, bytes, bool, bool]:
+        return _trim_process_buffers(
+            self.stdout_buffer,
+            self.stderr_buffer,
+            budget,
+        )
+
+    def is_drained(self) -> bool:
+        return not self.stdout_buffer and not self.stderr_buffer
+
+
+def _append_with_limit(
+    buffer: bytearray,
+    chunk: bytes,
+    limit: int,
+) -> bool:
+    if not chunk:
+        return False
+    buffer.extend(chunk)
+    if limit <= 0 or len(buffer) <= limit:
+        return False
+    excess = len(buffer) - limit
+    del buffer[:excess]
+    return True
+
+
+def _trim_process_buffers(
+    stdout_buffer: bytearray,
+    stderr_buffer: bytearray,
+    budget: int,
+) -> tuple[bytes, bytes, bool, bool]:
+    stdout_len = min(len(stdout_buffer), budget)
+    stdout_chunk = bytes(stdout_buffer[:stdout_len])
+    del stdout_buffer[:stdout_len]
+
+    remaining = budget - len(stdout_chunk)
+    stderr_len = min(len(stderr_buffer), remaining)
+    stderr_chunk = bytes(stderr_buffer[:stderr_len])
+    del stderr_buffer[:stderr_len]
+
+    truncated_out = len(stdout_buffer) > 0
+    truncated_err = len(stderr_buffer) > 0
+    return stdout_chunk, stderr_chunk, truncated_out, truncated_err
 
 
 def _pending_pin_deque_factory() -> Deque[PendingPinRequest]:
-    return collections.deque()
-
-
-def _pending_datastore_deque_factory() -> Deque[PendingDatastoreRequest]:
     return collections.deque()
 
 
@@ -64,15 +132,7 @@ def _str_int_dict_factory() -> Dict[str, int]:
     return {}
 
 
-def _process_dict_factory() -> Dict[int, asyncio.subprocess.Process]:
-    return {}
-
-
-def _buffer_dict_factory() -> Dict[int, bytearray]:
-    return {}
-
-
-def _exit_code_dict_factory() -> Dict[int, int]:
+def _process_map_factory() -> Dict[int, ManagedProcess]:
     return {}
 
 
@@ -108,11 +168,17 @@ class RuntimeState:
     mqtt_drop_counts: Dict[str, int] = field(
         default_factory=_str_int_dict_factory
     )
+    mqtt_spool: Optional[MQTTPublishSpool] = None
+    mqtt_spooled_messages: int = 0
+    mqtt_spooled_replayed: int = 0
+    mqtt_spool_errors: int = 0
     datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
-    mailbox_queue: Deque[bytes] = field(default_factory=_bytes_deque_factory)
+    mailbox_queue: BoundedByteDeque = field(
+        default_factory=BoundedByteDeque
+    )
     mcu_is_paused: bool = False
-    console_to_mcu_queue: Deque[bytes] = field(
-        default_factory=_bytes_deque_factory
+    console_to_mcu_queue: BoundedByteDeque = field(
+        default_factory=BoundedByteDeque
     )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
@@ -120,22 +186,16 @@ class RuntimeState:
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: Dict[int, asyncio.subprocess.Process] = field(
-        default_factory=_process_dict_factory
-    )
-    process_stdout_buffer: Dict[int, bytearray] = field(
-        default_factory=_buffer_dict_factory
-    )
-    process_stderr_buffer: Dict[int, bytearray] = field(
-        default_factory=_buffer_dict_factory
-    )
-    process_exit_codes: Dict[int, int] = field(
-        default_factory=_exit_code_dict_factory
+    running_processes: Dict[int, ManagedProcess] = field(
+        default_factory=_process_map_factory
     )
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = field(
         default_factory=_policy_factory
+    )
+    topic_authorization: TopicAuthorization = field(
+        default_factory=TopicAuthorization
     )
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
@@ -150,19 +210,17 @@ class RuntimeState:
     pending_analog_reads: Deque[PendingPinRequest] = field(
         default_factory=_pending_pin_deque_factory
     )
-    pending_datastore_gets: Deque[PendingDatastoreRequest] = field(
-        default_factory=_pending_datastore_deque_factory
-    )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
     mailbox_queue_bytes: int = 0
     mailbox_dropped_messages: int = 0
     mailbox_truncated_messages: int = 0
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
-    mailbox_incoming_queue: Deque[bytes] = field(
-        default_factory=_bytes_deque_factory
+    mailbox_incoming_queue: BoundedByteDeque = field(
+        default_factory=BoundedByteDeque
     )
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
@@ -172,9 +230,24 @@ class RuntimeState:
     mcu_version: Optional[tuple[int, int]] = None
     link_handshake_nonce: Optional[bytes] = None
     link_is_synchronized: bool = False
-    link_expected_tag: Optional[int] = None
+    link_expected_tag: Optional[bytes] = None
     link_nonce_length: int = 0
+    handshake_attempts: int = 0
+    handshake_successes: int = 0
+    handshake_failures: int = 0
+    handshake_failure_streak: int = 0
+    handshake_backoff_until: float = 0.0
+    handshake_rate_limit_until: float = 0.0
+    last_handshake_error: Optional[str] = None
+    last_handshake_unix: float = 0.0
     serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
+    process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
+    serial_decode_errors: int = 0
+    serial_crc_errors: int = 0
+    mcu_status_counters: Dict[str, int] = field(
+        default_factory=_str_int_dict_factory
+    )
 
     def configure(self, config: RuntimeConfig) -> None:
         self.allowed_policy = config.allowed_policy
@@ -187,6 +260,22 @@ class RuntimeState:
         self.mqtt_queue_limit = config.mqtt_queue_limit
         self.watchdog_enabled = config.watchdog_enabled
         self.watchdog_interval = config.watchdog_interval
+        self.pending_pin_request_limit = config.pending_pin_request_limit
+        self.topic_authorization = config.topic_authorization
+        self.process_output_limit = config.process_max_output_bytes
+        self.process_max_concurrent = config.process_max_concurrent
+        self.console_to_mcu_queue = BoundedByteDeque(
+            max_items=None,
+            max_bytes=self.console_queue_limit_bytes,
+        )
+        self.mailbox_queue = BoundedByteDeque(
+            max_items=self.mailbox_queue_limit,
+            max_bytes=self.mailbox_queue_bytes_limit,
+        )
+        self.mailbox_incoming_queue = BoundedByteDeque(
+            max_items=self.mailbox_queue_limit,
+            max_bytes=self.mailbox_queue_bytes_limit,
+        )
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:
@@ -197,55 +286,41 @@ class RuntimeState:
     ) -> None:
         if not chunk:
             return
-        data = bytes(chunk)
-        chunk_len = len(data)
-        if chunk_len > self.console_queue_limit_bytes:
+
+        self._sync_console_queue_limits()
+        evt = self.console_to_mcu_queue.append(chunk)
+        if evt.truncated_bytes:
             logger.warning(
-                "Console chunk truncated from %d to %d bytes to respect "
-                "limit.",
-                chunk_len,
-                self.console_queue_limit_bytes,
+                "Console chunk truncated by %d byte(s) to respect limit.",
+                evt.truncated_bytes,
             )
-            data = data[-self.console_queue_limit_bytes:]
-            truncated = chunk_len - len(data)
-            chunk_len = len(data)
             self.console_truncated_chunks += 1
-            self.console_truncated_bytes += truncated
-
-        while (
-            self.console_queue_bytes + chunk_len
-            > self.console_queue_limit_bytes
-            and self.console_to_mcu_queue
-        ):
-            removed = self.console_to_mcu_queue.popleft()
-            self.console_queue_bytes -= len(removed)
+            self.console_truncated_bytes += evt.truncated_bytes
+        if evt.dropped_chunks:
             logger.warning(
-                "Dropping oldest console chunk (%d bytes) due to buffer "
-                "limit.",
-                len(removed),
+                (
+                    "Dropping oldest console chunk(s): %d item(s), %d "
+                    "bytes to respect limit."
+                ),
+                evt.dropped_chunks,
+                evt.dropped_bytes,
             )
-            self.console_dropped_chunks += 1
-            self.console_dropped_bytes += len(removed)
-
-        if (
-            self.console_queue_bytes + chunk_len
-            > self.console_queue_limit_bytes
-        ):
+            self.console_dropped_chunks += evt.dropped_chunks
+            self.console_dropped_bytes += evt.dropped_bytes
+        if not evt.accepted:
             logger.error(
-                "Console queue overflow; dropping %d-byte chunk after "
-                "trimming.",
-                chunk_len,
+                "Console queue overflow; rejected chunk of %d bytes.",
+                len(chunk),
             )
             self.console_dropped_chunks += 1
-            self.console_dropped_bytes += chunk_len
-            return
-
-        self.console_to_mcu_queue.append(data)
-        self.console_queue_bytes += chunk_len
+            self.console_dropped_bytes += len(chunk)
+        else:
+            self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def pop_console_chunk(self) -> bytes:
+        self._sync_console_queue_limits()
         chunk = self.console_to_mcu_queue.popleft()
-        self.console_queue_bytes -= len(chunk)
+        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
         return chunk
 
     def requeue_console_chunk_front(self, chunk: bytes) -> None:
@@ -255,148 +330,149 @@ class RuntimeState:
         chunk_len = len(chunk)
         # The caller should ensure the chunk fits within the configured limit.
         if chunk_len > self.console_queue_limit_bytes:
-            # Truncate to respect the limit; this situation should be rare and
-            # indicates the configured limit is smaller than incoming frames.
             data = bytes(chunk[-self.console_queue_limit_bytes:])
             chunk_len = len(data)
         else:
             data = bytes(chunk)
 
-        self.console_to_mcu_queue.appendleft(data)
-        self.console_queue_bytes += chunk_len
+        self._sync_console_queue_limits()
+        evt = self.console_to_mcu_queue.appendleft(data)
+        if evt.truncated_bytes:
+            self.console_truncated_chunks += 1
+            self.console_truncated_bytes += evt.truncated_bytes
+        if evt.dropped_chunks:
+            self.console_dropped_chunks += evt.dropped_chunks
+            self.console_dropped_bytes += evt.dropped_bytes
+        if evt.accepted:
+            self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def enqueue_mailbox_message(
         self, payload: bytes, logger: logging.Logger
     ) -> bool:
-        data = bytes(payload)
-        length = len(data)
-        if length > self.mailbox_queue_bytes_limit:
+        self._sync_mailbox_queue_limits()
+        evt = self.mailbox_queue.append(payload)
+        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
+        if evt.truncated_bytes:
             logger.warning(
-                "Mailbox message truncated from %d to %d bytes to respect "
-                "limit.",
-                length,
-                self.mailbox_queue_bytes_limit,
+                "Mailbox message truncated by %d bytes to respect limit.",
+                evt.truncated_bytes,
             )
-            data = data[: self.mailbox_queue_bytes_limit]
-            truncated = length - len(data)
-            length = len(data)
             self.mailbox_truncated_messages += 1
-            self.mailbox_truncated_bytes += truncated
-
-        while (
-            (
-                len(self.mailbox_queue) >= self.mailbox_queue_limit
-                or (
-                    self.mailbox_queue_bytes + length
-                    > self.mailbox_queue_bytes_limit
-                )
-            )
-        ) and self.mailbox_queue:
-            removed = self.mailbox_queue.popleft()
-            self.mailbox_queue_bytes -= len(removed)
+            self.mailbox_truncated_bytes += evt.truncated_bytes
+        if evt.dropped_chunks:
             logger.warning(
-                "Dropping oldest mailbox message (%d bytes) to honor limits.",
-                len(removed),
+                (
+                    "Dropping oldest mailbox message(s): %d item(s), %d "
+                    "bytes to honor limits."
+                ),
+                evt.dropped_chunks,
+                evt.dropped_bytes,
             )
-            self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += len(removed)
-
-        if (
-            len(self.mailbox_queue) >= self.mailbox_queue_limit
-            or (
-                self.mailbox_queue_bytes + length
-                > self.mailbox_queue_bytes_limit
-            )
-        ):
+            self.mailbox_dropped_messages += evt.dropped_chunks
+            self.mailbox_dropped_bytes += evt.dropped_bytes
+        if not evt.accepted:
             logger.error(
-                "Mailbox queue overflow; rejecting incoming message (%d "
-                "bytes).",
-                length,
+                (
+                    "Mailbox queue overflow; rejecting incoming message "
+                    "(%d bytes)."
+                ),
+                len(payload),
             )
             self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += length
+            self.mailbox_dropped_bytes += len(payload)
             return False
-
-        self.mailbox_queue.append(data)
-        self.mailbox_queue_bytes += length
         return True
 
     def pop_mailbox_message(self) -> Optional[bytes]:
+        self._sync_mailbox_queue_limits()
         if not self.mailbox_queue:
             return None
         message = self.mailbox_queue.popleft()
-        self.mailbox_queue_bytes -= len(message)
+        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
         return message
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        data = bytes(payload)
-        self.mailbox_queue.appendleft(data)
-        self.mailbox_queue_bytes += len(data)
+        self._sync_mailbox_queue_limits()
+        evt = self.mailbox_queue.appendleft(payload)
+        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
+        if evt.dropped_chunks:
+            self.mailbox_dropped_messages += evt.dropped_chunks
+            self.mailbox_dropped_bytes += evt.dropped_bytes
 
     def enqueue_mailbox_incoming(
         self, payload: bytes, logger: logging.Logger
     ) -> bool:
-        data = bytes(payload)
-        length = len(data)
-        if length > self.mailbox_queue_bytes_limit:
+        self._sync_mailbox_incoming_limits()
+        evt = self.mailbox_incoming_queue.append(payload)
+        self.mailbox_incoming_queue_bytes = (
+            self.mailbox_incoming_queue.bytes_used
+        )
+        if evt.truncated_bytes:
             logger.warning(
-                "Mailbox incoming message truncated from %d to %d bytes to "
-                "respect limit.",
-                length,
-                self.mailbox_queue_bytes_limit,
+                (
+                    "Mailbox incoming message truncated by %d bytes to "
+                    "respect limit."
+                ),
+                evt.truncated_bytes,
             )
-            data = data[: self.mailbox_queue_bytes_limit]
-            truncated = length - len(data)
-            length = len(data)
             self.mailbox_incoming_truncated_messages += 1
-            self.mailbox_incoming_truncated_bytes += truncated
-
-        while (
-            (
-                len(self.mailbox_incoming_queue) >= self.mailbox_queue_limit
-                or (
-                    self.mailbox_incoming_queue_bytes + length
-                    > self.mailbox_queue_bytes_limit
-                )
-            )
-            and self.mailbox_incoming_queue
-        ):
-            removed = self.mailbox_incoming_queue.popleft()
-            self.mailbox_incoming_queue_bytes -= len(removed)
+            self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
+        if evt.dropped_chunks:
             logger.warning(
-                "Dropping oldest mailbox incoming message (%d bytes) to "
-                "honor limits.",
-                len(removed),
+                (
+                    "Dropping oldest mailbox incoming message(s): %d "
+                    "item(s), %d bytes to honor limits."
+                ),
+                evt.dropped_chunks,
+                evt.dropped_bytes,
             )
-            self.mailbox_incoming_dropped_messages += 1
-            self.mailbox_incoming_dropped_bytes += len(removed)
-
-        if (
-            len(self.mailbox_incoming_queue) >= self.mailbox_queue_limit
-            or (
-                self.mailbox_incoming_queue_bytes + length
-                > self.mailbox_queue_bytes_limit
-            )
-        ):
+            self.mailbox_incoming_dropped_messages += evt.dropped_chunks
+            self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
+        if not evt.accepted:
             logger.error(
-                "Mailbox incoming queue overflow; rejecting message (%d "
-                "bytes).",
-                length,
+                (
+                    "Mailbox incoming queue overflow; rejecting message "
+                    "(%d bytes)."
+                ),
+                len(payload),
             )
             self.mailbox_incoming_dropped_messages += 1
-            self.mailbox_incoming_dropped_bytes += length
+            self.mailbox_incoming_dropped_bytes += len(payload)
             return False
-
-        self.mailbox_incoming_queue.append(data)
-        self.mailbox_incoming_queue_bytes += length
         return True
 
     def pop_mailbox_incoming(self) -> Optional[bytes]:
+        self._sync_mailbox_incoming_limits()
         if not self.mailbox_incoming_queue:
             return None
         message = self.mailbox_incoming_queue.popleft()
-        self.mailbox_incoming_queue_bytes -= len(message)
+        self.mailbox_incoming_queue_bytes = (
+            self.mailbox_incoming_queue.bytes_used
+        )
         return message
+
+    def _sync_console_queue_limits(self) -> None:
+        self.console_to_mcu_queue.update_limits(
+            max_items=None,
+            max_bytes=self.console_queue_limit_bytes,
+        )
+        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
+
+    def _sync_mailbox_queue_limits(self) -> None:
+        self.mailbox_queue.update_limits(
+            max_items=self.mailbox_queue_limit,
+            max_bytes=self.mailbox_queue_bytes_limit,
+        )
+        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
+
+    def _sync_mailbox_incoming_limits(self) -> None:
+        self.mailbox_incoming_queue.update_limits(
+            max_items=self.mailbox_queue_limit,
+            max_bytes=self.mailbox_queue_bytes_limit,
+        )
+        self.mailbox_incoming_queue_bytes = (
+            self.mailbox_incoming_queue.bytes_used
+        )
 
     def record_mqtt_drop(self, topic: str) -> None:
         self.mqtt_dropped_messages += 1
@@ -407,6 +483,25 @@ class RuntimeState:
         self.last_watchdog_beat = (
             timestamp if timestamp is not None else time.monotonic()
         )
+
+    def record_handshake_attempt(self) -> None:
+        self.handshake_attempts += 1
+        self.last_handshake_unix = time.time()
+
+    def record_handshake_success(self) -> None:
+        self.handshake_successes += 1
+        self.last_handshake_error = None
+        self.handshake_failure_streak = 0
+        self.handshake_backoff_until = 0.0
+
+    def record_handshake_failure(self, reason: str) -> None:
+        self.handshake_failures += 1
+        if self.last_handshake_error == reason:
+            self.handshake_failure_streak += 1
+        else:
+            self.handshake_failure_streak = 1
+        self.last_handshake_error = reason
+        self.last_handshake_unix = time.time()
 
     def record_serial_flow_event(self, event: str) -> None:
         stats = self.serial_flow_stats
@@ -430,11 +525,97 @@ class RuntimeState:
         stats.dirty = False
         return stats.as_dict()
 
+    def record_serial_decode_error(self) -> None:
+        self.serial_decode_errors += 1
+
+    def record_serial_crc_error(self) -> None:
+        self.serial_crc_errors += 1
+
+    def record_mcu_status(self, status: Status) -> None:
+        key = status.name if isinstance(status, Status) else str(status)
+        self.mcu_status_counters[key] = (
+            self.mcu_status_counters.get(key, 0) + 1
+        )
+
+    async def stash_mqtt_message(self, message: PublishableMessage) -> None:
+        spool = self.mqtt_spool
+        if spool is None:
+            self.record_mqtt_drop(message.topic_name)
+            return
+        try:
+            await asyncio.to_thread(spool.append, message)
+            self.mqtt_spooled_messages += 1
+        except Exception:
+            self.mqtt_spool_errors += 1
+            self.record_mqtt_drop(message.topic_name)
+
+    async def flush_mqtt_spool(self) -> None:
+        spool = self.mqtt_spool
+        if spool is None:
+            return
+        while True:
+            if self.mqtt_publish_queue.qsize() >= self.mqtt_queue_limit:
+                break
+            message = await asyncio.to_thread(spool.pop_next)
+            if message is None:
+                break
+            enriched = message.with_user_property("bridge-spooled", "1")
+            try:
+                self.mqtt_publish_queue.put_nowait(enriched)
+                self.mqtt_spooled_replayed += 1
+            except asyncio.QueueFull:
+                await asyncio.to_thread(spool.requeue, message)
+                break
+
+    def build_metrics_snapshot(self) -> Dict[str, Any]:
+        spool_snapshot = (
+            self.mqtt_spool.snapshot() if self.mqtt_spool is not None else {}
+        )
+        snapshot: Dict[str, Any] = {
+            "serial": self.serial_flow_stats.as_dict(),
+            "mqtt_queue_size": self.mqtt_publish_queue.qsize(),
+            "mqtt_queue_limit": self.mqtt_queue_limit,
+            "mqtt_dropped": self.mqtt_dropped_messages,
+            "mqtt_drop_counts": dict(self.mqtt_drop_counts),
+            "mqtt_spooled": self.mqtt_spooled_messages,
+            "mqtt_spool_replayed": self.mqtt_spooled_replayed,
+            "mqtt_spool_errors": self.mqtt_spool_errors,
+            "handshake_attempts": self.handshake_attempts,
+            "handshake_successes": self.handshake_successes,
+            "handshake_failures": self.handshake_failures,
+            "handshake_failure_streak": self.handshake_failure_streak,
+            "handshake_backoff_until": self.handshake_backoff_until,
+            "handshake_last_error": self.last_handshake_error,
+            "handshake_last_unix": self.last_handshake_unix,
+            "link_synchronised": self.link_is_synchronized,
+            "serial_decode_errors": self.serial_decode_errors,
+            "serial_crc_errors": self.serial_crc_errors,
+            "mcu_status": dict(self.mcu_status_counters),
+        }
+        snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
+        return snapshot
+
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:
+    spool = None
+    try:
+        spool = MQTTPublishSpool(
+            config.mqtt_spool_dir,
+            config.mqtt_queue_limit * 4,
+        )
+    except Exception:
+        logger = logging.getLogger("yunbridge.state")
+        logger.warning(
+            "Failed to initialise MQTT spool at %s; operating without",
+            config.mqtt_spool_dir,
+            exc_info=True,
+        )
+        spool = None
+
     state = RuntimeState(
         mqtt_publish_queue=asyncio.Queue(config.mqtt_queue_limit),
         mqtt_queue_limit=config.mqtt_queue_limit,
+        mqtt_spool=spool,
     )
     state.configure(config)
     return state

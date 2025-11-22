@@ -27,6 +27,7 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./yunbridge.files $(PKG_BUILD_DIR)/
 	$(CP) ./99-yunbridge-ttyath0.conf $(PKG_BUILD_DIR)/
+	$(CP) ./credentials.env $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/
 endef
 
@@ -38,6 +39,8 @@ endef
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/yunbridge
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/yunbridge.files $(1)/etc/yunbridge/
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/credentials.env $(1)/etc/yunbridge/credentials
+	chmod 0600 $(1)/etc/yunbridge/credentials
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) $(PKG_BUILD_DIR)/99-yunbridge-ttyath0.conf $(1)/etc/config/yunbridge-ttyath0
 	$(INSTALL_DIR) $(1)/www/cgi-bin

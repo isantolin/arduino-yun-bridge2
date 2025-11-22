@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.const import TOPIC_SYSTEM
 from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
+from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc.protocol import Command
 from yunbridge.services.components.system import SystemComponent
 from yunbridge.state.context import RuntimeState
@@ -20,7 +20,9 @@ class DummyContext:
         self.config = config
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
-        self.published: list[tuple[PublishableMessage, InboundMessage | None]] = []
+        self.published: list[
+            tuple[PublishableMessage, InboundMessage | None]
+        ] = []
         self.scheduled: list[Coroutine[Any, Any, None]] = []
         self.send_result: bool = True
 
@@ -40,7 +42,10 @@ class DummyContext:
         return True
 
     def schedule_background(
-        self, coroutine: Coroutine[Any, Any, None]
+        self,
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        name: str | None = None,
     ) -> None:
         self.scheduled.append(coroutine)
 
@@ -92,9 +97,8 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         inbound = _make_inbound("free")
-        component._pending_free_memory.append(  # pyright: ignore[reportPrivateUsage]
-            inbound
-        )
+        # pyright: ignore[reportPrivateUsage]
+        component._pending_free_memory.append(inbound)
 
         await component.handle_get_free_memory_resp(b"\x00d")
 
@@ -104,10 +108,15 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         assert message.payload == b"100"
         assert message.content_type == "text/plain; charset=utf-8"
         assert message.message_expiry_interval == 10
-        assert message.topic_name.endswith(
-            f"/{TOPIC_SYSTEM}/free_memory/value"
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "free_memory",
+            "value",
         )
-        assert not component._pending_free_memory  # pyright: ignore[reportPrivateUsage]
+        assert message.topic_name == expected_topic
+        # pyright: ignore[reportPrivateUsage]
+        assert not component._pending_free_memory
 
     _run(_coro())
 
@@ -126,7 +135,8 @@ def test_handle_get_free_memory_resp_ignores_malformed(
         await component.handle_get_free_memory_resp(b"\x01")
 
         assert not ctx.published
-        assert not component._pending_free_memory  # pyright: ignore[reportPrivateUsage]
+        # pyright: ignore[reportPrivateUsage]
+        assert not component._pending_free_memory
         assert any(
             "Malformed GET_FREE_MEMORY_RESP" in message
             for message in (record.getMessage() for record in caplog.records)
@@ -144,9 +154,8 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         inbound = _make_inbound("version")
-        component._pending_version.append(  # pyright: ignore[reportPrivateUsage]
-            inbound
-        )
+        # pyright: ignore[reportPrivateUsage]
+        component._pending_version.append(inbound)
 
         await component.handle_get_version_resp(b"\x01\x02")
 
@@ -157,10 +166,15 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
         assert message.payload == b"1.2"
         assert message.message_expiry_interval == 60
         assert message.content_type == "text/plain; charset=utf-8"
-        assert message.topic_name.endswith(
-            f"/{TOPIC_SYSTEM}/version/value"
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "version",
+            "value",
         )
-        assert not component._pending_version  # pyright: ignore[reportPrivateUsage]
+        assert message.topic_name == expected_topic
+        # pyright: ignore[reportPrivateUsage]
+        assert not component._pending_version
 
     _run(_coro())
 
@@ -198,7 +212,12 @@ def test_handle_mqtt_version_get_with_cached_version(
 
         runtime_state.mcu_version = (2, 5)
         inbound = _make_inbound(
-            f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/version/get"
+            topic_path(
+                runtime_state.mqtt_topic_prefix,
+                Topic.SYSTEM,
+                "version",
+                "get",
+            )
         )
 
         handled = await component.handle_mqtt(
@@ -210,7 +229,8 @@ def test_handle_mqtt_version_get_with_cached_version(
         assert handled is True
         assert ctx.sent_frames == [(Command.CMD_GET_VERSION.value, b"")]
         assert runtime_state.mcu_version is None
-        assert not component._pending_version  # pyright: ignore[reportPrivateUsage]
+        # pyright: ignore[reportPrivateUsage]
+        assert not component._pending_version
         assert len(ctx.published) == 3
         assert ctx.published[0][1] is inbound
         assert ctx.published[1][1] is None
@@ -229,7 +249,12 @@ def test_handle_mqtt_version_get_without_cached_version(
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         inbound = _make_inbound(
-            f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/version/get"
+            topic_path(
+                runtime_state.mqtt_topic_prefix,
+                Topic.SYSTEM,
+                "version",
+                "get",
+            )
         )
 
         handled = await component.handle_mqtt(
@@ -240,7 +265,10 @@ def test_handle_mqtt_version_get_without_cached_version(
 
         assert handled is True
         assert ctx.sent_frames == [(Command.CMD_GET_VERSION.value, b"")]
-        assert component._pending_version and component._pending_version[0] is inbound  # pyright: ignore[reportPrivateUsage]
+        assert component._pending_version
+        # pyright: ignore[reportPrivateUsage]
+        first_pending_version = component._pending_version[0]
+        assert first_pending_version is inbound
         assert not ctx.published
 
     _run(_coro())
@@ -255,7 +283,12 @@ def test_handle_mqtt_free_memory_get_tracks_pending(
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         inbound = _make_inbound(
-            f"{runtime_state.mqtt_topic_prefix}/{TOPIC_SYSTEM}/free_memory/get"
+            topic_path(
+                runtime_state.mqtt_topic_prefix,
+                Topic.SYSTEM,
+                "free_memory",
+                "get",
+            )
         )
 
         handled = await component.handle_mqtt(
@@ -266,7 +299,11 @@ def test_handle_mqtt_free_memory_get_tracks_pending(
 
         assert handled is True
         assert ctx.sent_frames == [(Command.CMD_GET_FREE_MEMORY.value, b"")]
-        assert component._pending_free_memory and component._pending_free_memory[0] is inbound  # pyright: ignore[reportPrivateUsage]
+        assert component._pending_free_memory
+        # pyright: ignore[reportPrivateUsage]
+        first_pending_free = component._pending_free_memory[0]
+        assert first_pending_free is inbound
         assert not ctx.published
 
     _run(_coro())
+    return None

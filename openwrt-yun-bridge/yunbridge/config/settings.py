@@ -7,6 +7,7 @@ RuntimeConfig instance.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 import os
 from typing import Dict, Optional, Tuple
 
@@ -16,6 +17,7 @@ from ..common import (
     normalise_allowed_commands,
 )
 from ..const import (
+    DEFAULT_CREDENTIALS_FILE,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
@@ -25,9 +27,13 @@ from ..const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_TOPIC,
+    DEFAULT_PENDING_PIN_REQUESTS,
+    DEFAULT_PROCESS_MAX_CONCURRENT,
+    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_BAUD,
+    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_ATTEMPTS,
@@ -35,9 +41,14 @@ from ..const import (
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
     DEFAULT_SERIAL_SHARED_SECRET,
+    DEFAULT_MQTT_SPOOL_DIR,
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
-from ..policy import AllowedCommandPolicy
+from ..policy import AllowedCommandPolicy, TopicAuthorization
+from .credentials import load_credentials_file, lookup_credential
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -65,13 +76,24 @@ class RuntimeConfig:
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
     serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
     serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
     serial_retry_attempts: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
+    serial_handshake_min_interval: float = (
+        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    )
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
+    topic_authorization: TopicAuthorization = field(
+        default_factory=TopicAuthorization
+    )
     allowed_policy: AllowedCommandPolicy = field(init=False)
     serial_shared_secret: bytes = field(repr=False, default=b"")
+    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
+    process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
+    credentials_file: str = DEFAULT_CREDENTIALS_FILE
 
     @property
     def tls_enabled(self) -> bool:
@@ -87,6 +109,11 @@ class RuntimeConfig:
             self,
             "serial_response_timeout",
             max(self.serial_response_timeout, self.serial_retry_timeout * 2),
+        )
+        object.__setattr__(
+            self,
+            "serial_handshake_min_interval",
+            max(0.0, self.serial_handshake_min_interval),
         )
         if not self.mqtt_tls:
             raise ValueError("MQTT TLS must be enabled for secure operation")
@@ -105,6 +132,11 @@ class RuntimeConfig:
             raise ValueError(
                 "serial_shared_secret placeholder is insecure"
             )
+        object.__setattr__(
+            self,
+            "pending_pin_request_limit",
+            max(1, self.pending_pin_request_limit),
+        )
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
             raise ValueError(
@@ -177,6 +209,20 @@ def _resolve_watchdog_settings() -> Tuple[bool, float]:
     return False, DEFAULT_WATCHDOG_INTERVAL
 
 
+def _resolve_credentials_path(raw: Dict[str, str]) -> str:
+    env_override = os.environ.get("YUNBRIDGE_CREDENTIALS_FILE")
+    if env_override:
+        trimmed = env_override.strip()
+        if trimmed:
+            return trimmed
+    configured = raw.get("credentials_file")
+    if configured:
+        trimmed = configured.strip()
+        if trimmed:
+            return trimmed
+    return DEFAULT_CREDENTIALS_FILE
+
+
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults and environment variables."""
 
@@ -184,6 +230,10 @@ def load_runtime_config() -> RuntimeConfig:
 
     def _get_int(key: str, default: int) -> int:
         return _coerce_int(raw.get(key), default)
+
+    def _get_bool(key: str, default: bool) -> bool:
+        value = raw.get(key)
+        return _to_bool(value) if value is not None else default
 
     debug_logging = _to_bool(raw.get("debug"))
     if os.environ.get("YUNBRIDGE_DEBUG") == "1":
@@ -199,30 +249,121 @@ def load_runtime_config() -> RuntimeConfig:
     mqtt_tls_value = raw.get("mqtt_tls")
     mqtt_tls = _to_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
 
-    secret_env = os.environ.get("YUNBRIDGE_SERIAL_SECRET")
-    if secret_env is not None:
-        serial_secret_str = secret_env.strip()
-    else:
-        serial_secret_str = (raw.get("serial_shared_secret") or "").strip()
+    credentials_path = _resolve_credentials_path(raw)
+    credentials_map: Dict[str, str] = {}
+    try:
+        credentials_map = load_credentials_file(credentials_path)
+    except FileNotFoundError:
+        logger.warning(
+            "Credentials file %s missing; falling back to inline config.",
+            credentials_path,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Unable to load credentials file %s: %s",
+            credentials_path,
+            exc,
+        )
+
+    serial_secret_str = lookup_credential(
+        (
+            "YUNBRIDGE_SERIAL_SECRET",
+            "SERIAL_SHARED_SECRET",
+            "serial_shared_secret",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("serial_shared_secret") or "",
+    )
     serial_secret_bytes = (
         serial_secret_str.encode("utf-8") if serial_secret_str else b""
     )
 
-    mqtt_cafile = _optional_path(raw.get("mqtt_cafile"))
+    spool_dir = os.environ.get("YUNBRIDGE_MQTT_SPOOL_DIR") or raw.get(
+        "mqtt_spool_dir",
+        DEFAULT_MQTT_SPOOL_DIR,
+    )
+    spool_dir = (spool_dir or DEFAULT_MQTT_SPOOL_DIR).strip()
+    if not spool_dir:
+        spool_dir = DEFAULT_MQTT_SPOOL_DIR
+
+    mqtt_cafile = lookup_credential(
+        (
+            "YUNBRIDGE_MQTT_CAFILE",
+            "MQTT_CAFILE",
+            "mqtt_cafile",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_cafile"),
+    )
+    mqtt_cafile = _optional_path(mqtt_cafile)
     if mqtt_cafile is None and mqtt_tls:
         mqtt_cafile = DEFAULT_MQTT_CAFILE
+
+    mqtt_certfile = lookup_credential(
+        (
+            "YUNBRIDGE_MQTT_CERTFILE",
+            "MQTT_CERTFILE",
+            "mqtt_certfile",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_certfile"),
+    )
+    mqtt_keyfile = lookup_credential(
+        (
+            "YUNBRIDGE_MQTT_KEYFILE",
+            "MQTT_KEYFILE",
+            "mqtt_keyfile",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_keyfile"),
+    )
+
+    mqtt_user = lookup_credential(
+        (
+            "YUNBRIDGE_MQTT_USER",
+            "MQTT_USERNAME",
+            "mqtt_user",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_user"),
+    )
+    mqtt_pass = lookup_credential(
+        (
+            "YUNBRIDGE_MQTT_PASS",
+            "MQTT_PASSWORD",
+            "mqtt_pass",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_pass"),
+    )
+
+    topic_authorization = TopicAuthorization(
+        file_read=_get_bool("mqtt_allow_file_read", True),
+        file_write=_get_bool("mqtt_allow_file_write", True),
+        file_remove=_get_bool("mqtt_allow_file_remove", True),
+        datastore_get=_get_bool("mqtt_allow_datastore_get", True),
+        datastore_put=_get_bool("mqtt_allow_datastore_put", True),
+        mailbox_read=_get_bool("mqtt_allow_mailbox_read", True),
+        mailbox_write=_get_bool("mqtt_allow_mailbox_write", True),
+    )
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
         serial_baud=_get_int("serial_baud", DEFAULT_SERIAL_BAUD),
         mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
         mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
-        mqtt_user=_optional_path(raw.get("mqtt_user")),
-        mqtt_pass=_optional_path(raw.get("mqtt_pass")),
+        mqtt_user=_optional_path(mqtt_user),
+        mqtt_pass=_optional_path(mqtt_pass),
         mqtt_tls=mqtt_tls,
         mqtt_cafile=mqtt_cafile,
-        mqtt_certfile=_optional_path(raw.get("mqtt_certfile")),
-        mqtt_keyfile=_optional_path(raw.get("mqtt_keyfile")),
+        mqtt_certfile=_optional_path(mqtt_certfile),
+        mqtt_keyfile=_optional_path(mqtt_keyfile),
         mqtt_topic=raw.get("mqtt_topic", DEFAULT_MQTT_TOPIC),
         allowed_commands=allowed_commands,
         file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
@@ -242,6 +383,10 @@ def load_runtime_config() -> RuntimeConfig:
         mailbox_queue_bytes_limit=_get_int(
             "mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
         ),
+        pending_pin_request_limit=_get_int(
+            "pending_pin_request_limit",
+            DEFAULT_PENDING_PIN_REQUESTS,
+        ),
         serial_retry_timeout=_coerce_float(
             raw.get("serial_retry_timeout"), DEFAULT_SERIAL_RETRY_TIMEOUT
         ),
@@ -251,7 +396,31 @@ def load_runtime_config() -> RuntimeConfig:
         serial_retry_attempts=max(
             1, _get_int("serial_retry_attempts", DEFAULT_SERIAL_RETRY_ATTEMPTS)
         ),
+        serial_handshake_min_interval=max(
+            0.0,
+            _coerce_float(
+                raw.get("serial_handshake_min_interval"),
+                DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+            ),
+        ),
         watchdog_enabled=watchdog_enabled,
         watchdog_interval=watchdog_interval,
+        topic_authorization=topic_authorization,
         serial_shared_secret=serial_secret_bytes,
+        mqtt_spool_dir=spool_dir,
+        process_max_output_bytes=max(
+            1024,
+            _get_int(
+                "process_max_output_bytes",
+                DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+            ),
+        ),
+        process_max_concurrent=max(
+            1,
+            _get_int(
+                "process_max_concurrent",
+                DEFAULT_PROCESS_MAX_CONCURRENT,
+            ),
+        ),
+        credentials_file=credentials_path,
     )

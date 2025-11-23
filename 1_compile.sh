@@ -125,7 +125,8 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
                     libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
                     libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
-                    uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor
+                    uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor \
+                    g++-multilib
             fi
         elif [ -f /etc/fedora-release ]; then
             if [ "$EUID" -ne 0 ]; then
@@ -149,7 +150,8 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
                     libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
                     tk-devel tcl-devel libuuid-devel sqlite-devel xz-devel \
-                    bluez-libs-devel libbsd-devel binutils-devel asciidoctor
+                    bluez-libs-devel libbsd-devel binutils-devel asciidoctor \
+                    glibc-devel.i686 libstdc++-devel.i686
             fi
         else
             echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."
@@ -263,6 +265,13 @@ elif command -v zstd >/dev/null 2>&1; then
     ZSTD_DECOMPRESSOR="zstd -d"
 else
     echo "[ERROR] Neither 'unzstd' nor 'zstd' is available. Install zstd package." >&2
+    exit 1
+fi
+
+
+echo "[INFO] Regenerating protocol files from spec..."
+if ! python3 "$REPO_ROOT/tools/protocol/generate.py"; then
+    echo "[ERROR] Failed to regenerate protocol files. Aborting." >&2
     exit 1
 fi
 
@@ -418,7 +427,7 @@ echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
 find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
 
 pushd "$SDK_DIR"
-for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity python3-sqlite3 luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     echo "[BUILD] Building $pkg (.ipk) in SDK..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s

@@ -171,6 +171,13 @@ for cmd in "${REQUIRED_COMMANDS[@]}"; do
     fi
 done
 
+echo "[INFO] Regenerating protocol files from spec..."
+if ! python3 "$REPO_ROOT/tools/protocol/generate.py"; then
+    echo "[ERROR] Failed to regenerate protocol files. Aborting." >&2
+    exit 1
+fi
+echo "[INFO] Protocol files regenerated successfully."
+
 auto_install_python_module() {
     local module="$1"
     local package="python3-${module}"

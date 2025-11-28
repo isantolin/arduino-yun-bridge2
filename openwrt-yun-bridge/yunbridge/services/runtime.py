@@ -486,12 +486,15 @@ class BridgeService:
     def _maybe_schedule_handshake_backoff(
         self, reason: str
     ) -> Optional[float]:
-        if reason not in _FATAL_HANDSHAKE_REASONS:
-            return None
         streak = max(1, self.state.handshake_failure_streak)
+        fatal = reason in _FATAL_HANDSHAKE_REASONS
+        threshold = 1 if fatal else 3
+        if streak < threshold:
+            return None
+        power = max(0, streak - threshold)
         delay = min(
             SERIAL_HANDSHAKE_BACKOFF_MAX,
-            SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** (streak - 1)),
+            SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** power),
         )
         self.state.handshake_backoff_until = time.monotonic() + delay
         return delay

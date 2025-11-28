@@ -34,6 +34,10 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "mqtt_spooled_messages": state.mqtt_spooled_messages,
                 "mqtt_spooled_replayed": state.mqtt_spooled_replayed,
                 "mqtt_spool_errors": state.mqtt_spool_errors,
+                "mqtt_spool_degraded": state.mqtt_spool_degraded,
+                "mqtt_spool_failure_reason": (
+                    state.mqtt_spool_failure_reason
+                ),
                 "mqtt_spool_pending": (
                     state.mqtt_spool.pending
                     if state.mqtt_spool is not None

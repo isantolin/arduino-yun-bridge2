@@ -29,6 +29,8 @@ from ..config.settings import RuntimeConfig
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..rpc.protocol import Status
 
+logger = logging.getLogger("yunbridge.state")
+
 
 def _mqtt_queue_factory() -> asyncio.Queue[PublishableMessage]:
     return asyncio.Queue()
@@ -48,6 +50,10 @@ class ManagedProcess:
     stdout_buffer: bytearray = field(default_factory=bytearray)
     stderr_buffer: bytearray = field(default_factory=bytearray)
     exit_code: Optional[int] = None
+    io_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        repr=False,
+    )
 
     def append_output(
         self,
@@ -172,6 +178,8 @@ class RuntimeState:
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
     mqtt_spool_errors: int = 0
+    mqtt_spool_degraded: bool = False
+    mqtt_spool_failure_reason: Optional[str] = None
     datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: BoundedByteDeque = field(
         default_factory=BoundedByteDeque
@@ -537,6 +545,35 @@ class RuntimeState:
             self.mcu_status_counters.get(key, 0) + 1
         )
 
+    def _disable_mqtt_spool(self, reason: str) -> None:
+        spool = self.mqtt_spool
+        if spool is not None:
+            try:
+                spool.close()
+            except Exception:
+                logger.debug(
+                    "Failed to close MQTT spool during disable.",
+                    exc_info=True,
+                )
+        self.mqtt_spool = None
+        self.mqtt_spool_degraded = True
+        self.mqtt_spool_failure_reason = reason
+
+    def _handle_mqtt_spool_failure(
+        self,
+        reason: str,
+        *,
+        exc: Optional[BaseException] = None,
+    ) -> None:
+        if self.mqtt_spool_degraded and self.mqtt_spool is None:
+            return
+        detail = reason if exc is None else f"{reason}:{exc}"
+        logger.warning(
+            "MQTT spool failure (%s); disabling durable spool.", detail
+        )
+        self.mqtt_spool_errors += 1
+        self._disable_mqtt_spool(detail)
+
     async def stash_mqtt_message(self, message: PublishableMessage) -> None:
         spool = self.mqtt_spool
         if spool is None:
@@ -545,9 +582,9 @@ class RuntimeState:
         try:
             await asyncio.to_thread(spool.append, message)
             self.mqtt_spooled_messages += 1
-        except Exception:
-            self.mqtt_spool_errors += 1
+        except Exception as exc:
             self.record_mqtt_drop(message.topic_name)
+            self._handle_mqtt_spool_failure("append_failed", exc=exc)
 
     async def flush_mqtt_spool(self) -> None:
         spool = self.mqtt_spool
@@ -556,7 +593,11 @@ class RuntimeState:
         while True:
             if self.mqtt_publish_queue.qsize() >= self.mqtt_queue_limit:
                 break
-            message = await asyncio.to_thread(spool.pop_next)
+            try:
+                message = await asyncio.to_thread(spool.pop_next)
+            except Exception as exc:
+                self._handle_mqtt_spool_failure("pop_failed", exc=exc)
+                break
             if message is None:
                 break
             enriched = message.with_user_property("bridge-spooled", "1")
@@ -564,7 +605,13 @@ class RuntimeState:
                 self.mqtt_publish_queue.put_nowait(enriched)
                 self.mqtt_spooled_replayed += 1
             except asyncio.QueueFull:
-                await asyncio.to_thread(spool.requeue, message)
+                try:
+                    await asyncio.to_thread(spool.requeue, message)
+                except Exception as exc:
+                    self._handle_mqtt_spool_failure(
+                        "requeue_failed", exc=exc
+                    )
+                    break
                 break
 
     def build_metrics_snapshot(self) -> Dict[str, Any]:
@@ -580,6 +627,8 @@ class RuntimeState:
             "mqtt_spooled": self.mqtt_spooled_messages,
             "mqtt_spool_replayed": self.mqtt_spooled_replayed,
             "mqtt_spool_errors": self.mqtt_spool_errors,
+            "mqtt_spool_degraded": self.mqtt_spool_degraded,
+            "mqtt_spool_failure_reason": self.mqtt_spool_failure_reason,
             "handshake_attempts": self.handshake_attempts,
             "handshake_successes": self.handshake_successes,
             "handshake_failures": self.handshake_failures,
@@ -597,19 +646,20 @@ class RuntimeState:
 
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:
-    spool = None
+    spool: Optional[MQTTPublishSpool] = None
+    spool_failure_reason: Optional[str] = None
     try:
         spool = MQTTPublishSpool(
             config.mqtt_spool_dir,
             config.mqtt_queue_limit * 4,
         )
-    except Exception:
-        logger = logging.getLogger("yunbridge.state")
+    except Exception as exc:
         logger.warning(
             "Failed to initialise MQTT spool at %s; operating without",
             config.mqtt_spool_dir,
             exc_info=True,
         )
+        spool_failure_reason = str(exc)
         spool = None
 
     state = RuntimeState(
@@ -617,5 +667,10 @@ def create_runtime_state(config: RuntimeConfig) -> RuntimeState:
         mqtt_queue_limit=config.mqtt_queue_limit,
         mqtt_spool=spool,
     )
+    if spool is None:
+        state.mqtt_spool_degraded = True
+        state.mqtt_spool_failure_reason = (
+            spool_failure_reason or "initialization_failed"
+        )
     state.configure(config)
     return state

@@ -1,14 +1,16 @@
 """Unit tests for RuntimeState helpers."""
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 import logging
 
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.mqtt import PublishableMessage
 from yunbridge.rpc.protocol import Status
-from yunbridge.state.context import RuntimeState
+from yunbridge.state.context import RuntimeState, create_runtime_state
 
 
 class _ListHandler(logging.Handler):
@@ -160,6 +162,8 @@ def test_metrics_snapshot_exposes_error_counters(
     runtime_state.record_mcu_status(Status.CRC_MISMATCH)
     runtime_state.record_mcu_status(Status.CRC_MISMATCH)
     runtime_state.record_mqtt_drop("bridge/status")
+    runtime_state.mqtt_spool_degraded = True
+    runtime_state.mqtt_spool_failure_reason = "disk-full"
 
     snapshot = runtime_state.build_metrics_snapshot()
 
@@ -168,3 +172,84 @@ def test_metrics_snapshot_exposes_error_counters(
     assert snapshot["serial_crc_errors"] == 1
     assert snapshot["mcu_status"]["CRC_MISMATCH"] == 2
     assert snapshot["mqtt_drop_counts"]["bridge/status"] == 1
+    assert snapshot["mqtt_spool_degraded"] is True
+    assert snapshot["mqtt_spool_failure_reason"] == "disk-full"
+
+
+def test_create_runtime_state_marks_spool_degraded(
+    runtime_config: RuntimeConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BoomSpool:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(
+        "yunbridge.state.context.MQTTPublishSpool",
+        _BoomSpool,
+    )
+
+    state = create_runtime_state(runtime_config)
+
+    assert state.mqtt_spool is None
+    assert state.mqtt_spool_degraded is True
+    assert state.mqtt_spool_failure_reason == "boom"
+
+
+def test_stash_mqtt_message_disables_spool_on_failure(
+    runtime_config: RuntimeConfig,
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        if state.mqtt_spool is not None:
+            state.mqtt_spool.close()
+
+        class _BrokenSpool:
+            def append(self, _message: PublishableMessage) -> None:
+                raise RuntimeError("disk-full")
+
+            def close(self) -> None:
+                return None
+
+        state.mqtt_spool = _BrokenSpool()  # type: ignore[assignment]
+        message = PublishableMessage(topic_name="br/test", payload=b"{}")
+        await state.stash_mqtt_message(message)
+
+        assert state.mqtt_spool is None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_errors == 1
+        assert state.mqtt_dropped_messages == 1
+        assert state.mqtt_spool_failure_reason is not None
+        assert "append_failed" in state.mqtt_spool_failure_reason
+
+    asyncio.run(_run())
+
+
+def test_flush_mqtt_spool_handles_pop_failure(
+    runtime_config: RuntimeConfig,
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        if state.mqtt_spool is not None:
+            state.mqtt_spool.close()
+
+        class _FailingSpool:
+            def pop_next(self) -> PublishableMessage:
+                raise RuntimeError("read-error")
+
+            def requeue(self, _message: PublishableMessage) -> None:
+                return None
+
+            def close(self) -> None:
+                return None
+
+        state.mqtt_spool = _FailingSpool()  # type: ignore[assignment]
+        await state.flush_mqtt_spool()
+
+        assert state.mqtt_spool is None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_errors == 1
+        assert state.mqtt_spool_failure_reason is not None
+        assert "pop_failed" in state.mqtt_spool_failure_reason
+
+    asyncio.run(_run())

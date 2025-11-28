@@ -5,18 +5,24 @@ import asyncio
 import contextlib
 from collections import deque
 from dataclasses import dataclass
-from types import TracebackType
+from types import MethodType, TracebackType
 from typing import Any, Awaitable, Callable, Coroutine, Deque, Optional, cast
 
 import pytest
 
-from yunbridge.common import cobs_encode
+from yunbridge.common import cobs_encode, pack_u16
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import SERIAL_TERMINATOR
-from yunbridge.daemon import Frame, mqtt_task, serial_reader_task
+from yunbridge.daemon import (
+    Frame,
+    MAX_SERIAL_PACKET_BYTES,
+    mqtt_task,
+    serial_reader_task,
+)
 from yunbridge.mqtt import InboundMessage
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
+from yunbridge.services.runtime import SerialHandshakeFatal
 
 
 class _FakeStreamWriter:
@@ -172,6 +178,11 @@ class _MQTTServiceStub:
         asyncio.create_task(coroutine)
 
 
+class _FatalSerialServiceStub(_SerialServiceStub):
+    async def on_serial_connected(self) -> None:
+        raise SerialHandshakeFatal("fatal-handshake")
+
+
 def test_serial_reader_task_processes_frame(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
@@ -260,6 +271,85 @@ def test_serial_reader_task_emits_crc_mismatch(
 
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(_run())
+
+
+def test_serial_reader_task_limits_packet_size(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        service = _SerialServiceStub(runtime_config, state)
+
+        reported: Deque[tuple[int, bytes]] = deque()
+
+        async def _capture_send_frame(
+            self: _SerialServiceStub,
+            command_id: int,
+            payload: bytes,
+        ) -> bool:
+            reported.append((command_id, payload))
+            return True
+
+        service.send_frame = MethodType(_capture_send_frame, service)
+
+        oversized = b"\xAA" * (MAX_SERIAL_PACKET_BYTES + 16)
+        reader = _FakeStreamReader(oversized + SERIAL_TERMINATOR, b"")
+        writer = _FakeStreamWriter()
+
+        async def _fake_open(*_: object, **__: object):
+            return reader, writer
+
+        monkeypatch.setattr(
+            "yunbridge.daemon._open_serial_connection_with_retry",
+            _fake_open,
+        )
+
+        task = asyncio.create_task(
+            serial_reader_task(runtime_config, state, cast(Any, service))
+        )
+
+        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+        await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
+
+        assert not service.received_frames
+        assert reported
+        status_id, payload = reported.pop()
+        assert status_id == Status.MALFORMED.value
+        assert payload[:2] == pack_u16(0xFFFF)
+
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+    asyncio.run(_run())
+
+
+def test_serial_reader_task_propagates_handshake_fatal(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        service = _FatalSerialServiceStub(runtime_config, state)
+
+        reader = _FakeStreamReader(b"")
+        writer = _FakeStreamWriter()
+
+        async def _fake_open(*_: object, **__: object):
+            return reader, writer
+
+        monkeypatch.setattr(
+            "yunbridge.daemon._open_serial_connection_with_retry",
+            _fake_open,
+        )
+
+        task = asyncio.create_task(
+            serial_reader_task(runtime_config, state, cast(Any, service))
+        )
+
+        with pytest.raises(SerialHandshakeFatal):
             await task
 
     asyncio.run(_run())

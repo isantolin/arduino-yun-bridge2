@@ -52,7 +52,7 @@ from yunbridge.services.runtime import (
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.watchdog import WatchdogKeepalive
-from yunbridge.metrics import publish_metrics
+from yunbridge.metrics import PrometheusExporter, publish_metrics
 import serial_asyncio
 
 OPEN_SERIAL_CONNECTION: Callable[
@@ -63,6 +63,14 @@ OPEN_SERIAL_CONNECTION: Callable[
 logger = logging.getLogger("yunbridge")
 
 T = TypeVar("T")
+
+
+MAX_SERIAL_PACKET_BYTES = (
+    protocol.CRC_COVERED_HEADER_SIZE
+    + protocol.MAX_PAYLOAD_SIZE
+    + protocol.CRC_SIZE
+    + 4
+)
 
 
 async def _serial_sender_not_ready(command_id: int, _: bytes) -> bool:
@@ -382,10 +390,32 @@ async def serial_reader_task(
                     )
                 else:
                     buffer.append(byte[0])
+                    if len(buffer) > MAX_SERIAL_PACKET_BYTES:
+                        snapshot = bytes(buffer[:32])
+                        buffer.clear()
+                        state.record_serial_decode_error()
+                        logger.warning(
+                            "Serial packet exceeded %d bytes; "
+                            "requesting retransmit.",
+                            MAX_SERIAL_PACKET_BYTES,
+                        )
+                        payload = pack_u16(0xFFFF) + snapshot
+                        try:
+                            await service.send_frame(
+                                Status.MALFORMED.value,
+                                payload,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to notify MCU about oversized "
+                                "serial packet"
+                            )
         except (serial.SerialException, asyncio.IncompleteReadError) as exc:
             logger.error("Serial communication error: %s", exc)
         except ConnectionResetError:
             logger.error("Serial connection reset.")
+        except SerialHandshakeFatal:
+            raise
         except asyncio.CancelledError:
             logger.info("Serial reader task cancelled.")
             raise
@@ -663,6 +693,13 @@ async def main_async(config: RuntimeConfig) -> None:
                     float(config.status_interval),
                 )
             )
+            if config.metrics_enabled:
+                exporter = PrometheusExporter(
+                    state,
+                    config.metrics_host,
+                    config.metrics_port,
+                )
+                task_group.create_task(exporter.run())
     except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")
     except* Exception as exc_group:

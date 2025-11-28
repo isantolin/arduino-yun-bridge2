@@ -53,3 +53,5 @@ luci-app-yunbridge/dist/
 **/*.whl
 .vscode
 packages_dump_tab_separated.csv
+.hypothesis/
+.tox/

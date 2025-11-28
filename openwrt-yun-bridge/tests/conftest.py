@@ -17,6 +17,14 @@ from yunbridge.const import (
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
+pytest_plugins = ("pytest_asyncio", "anyio")
+
+
+@pytest.fixture(autouse=True)
+def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure load_runtime_config() sees a secure serial secret by default."""
+    monkeypatch.setenv("YUNBRIDGE_SERIAL_SECRET", "unit-test-secret-1234")
+
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Awaitable, Callable, cast
+from typing import Awaitable, Callable, Optional, cast
 
 import pytest
 
@@ -150,5 +150,55 @@ def test_start_async_respects_concurrency_limit(
             )
         result = await process_component.start_async("/bin/true")
         assert result == 0xFFFF
+
+    asyncio.run(_run())
+
+
+def test_async_process_monitor_releases_slot(
+    runtime_service: BridgeService,
+) -> None:
+    async def _run() -> None:
+        process_component = cast(ProcessComponent, runtime_service._process)
+        state = runtime_service.state
+        process_component._process_slots = asyncio.BoundedSemaphore(1)
+        guard = process_component._process_slots
+        assert guard is not None
+        await guard.acquire()
+
+        class _FakeProcess:
+            def __init__(self) -> None:
+                self.stdout = asyncio.StreamReader()
+                self.stderr = asyncio.StreamReader()
+                self.returncode: Optional[int] = 5
+                self.pid = 9999
+
+            async def wait(self) -> None:
+                return None
+
+        fake_proc = _FakeProcess()
+        fake_proc.stdout.feed_data(b"out")
+        fake_proc.stdout.feed_eof()
+        fake_proc.stderr.feed_data(b"err")
+        fake_proc.stderr.feed_eof()
+
+        slot = ManagedProcess(
+            pid=77,
+            command="/bin/true",
+            handle=cast(asyncio.subprocess.Process, fake_proc),
+        )
+        async with state.process_lock:
+            state.running_processes[slot.pid] = slot
+
+        await process_component._monitor_async_process(
+            slot.pid,
+            cast(asyncio.subprocess.Process, fake_proc),
+        )
+
+        assert slot.handle is None
+        assert slot.exit_code == 5
+        assert bytes(slot.stdout_buffer) == b"out"
+        assert bytes(slot.stderr_buffer) == b"err"
+        await asyncio.wait_for(guard.acquire(), timeout=0.1)
+        process_component._release_process_slot()
 
     asyncio.run(_run())

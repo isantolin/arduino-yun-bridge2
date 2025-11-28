@@ -1,9 +1,12 @@
+import io
+import json
 import logging
 from pathlib import Path
 from typing import Any, Dict
 
 import pytest
 
+from yunbridge.config import credentials as credentials_module
 from yunbridge.config import logging as logging_module
 from yunbridge.config import settings
 from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
@@ -40,6 +43,7 @@ def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
 def test_load_runtime_config_applies_env_and_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.delenv("YUNBRIDGE_SERIAL_SECRET", raising=False)
     monkeypatch.setenv("YUNBRIDGE_DEBUG", "1")
     monkeypatch.setenv("YUNBRIDGE_WATCHDOG_INTERVAL", "0.2")
     monkeypatch.delenv("PROCD_WATCHDOG", raising=False)
@@ -104,6 +108,39 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.watchdog_interval == 0.5
     assert config.tls_enabled is True
     assert config.serial_shared_secret == b"envsecret"
+    assert config.metrics_enabled is False
+    assert config.metrics_host == settings.DEFAULT_METRICS_HOST
+    assert config.metrics_port == settings.DEFAULT_METRICS_PORT
+
+
+def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
+    raw_config = {
+        "serial_port": "/dev/ttyS1",
+        "serial_baud": "115200",
+        "mqtt_host": "broker",
+        "mqtt_port": "8883",
+        "mqtt_tls": "1",
+        "mqtt_cafile": "/etc/ca.pem",
+        "mqtt_topic": "br",
+        "allowed_commands": "uptime",
+        "file_system_root": "/tmp",
+        "process_timeout": "10",
+        "serial_shared_secret": " inline ",
+        "metrics_enabled": "0",
+        "metrics_host": "0.0.0.0",
+        "metrics_port": "9200",
+    }
+
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setenv("YUNBRIDGE_METRICS_ENABLED", "1")
+    monkeypatch.setenv("YUNBRIDGE_METRICS_HOST", " ::1 ")
+    monkeypatch.setenv("YUNBRIDGE_METRICS_PORT", "9400")
+
+    config = settings.load_runtime_config()
+
+    assert config.metrics_enabled is True
+    assert config.metrics_host == "::1"
+    assert config.metrics_port == 9400
 
 
 def test_load_runtime_config_prefers_credentials_file(
@@ -145,6 +182,28 @@ def test_load_runtime_config_prefers_credentials_file(
     assert config.credentials_file == "/tmp/credfile"
 
 
+def test_load_runtime_config_allows_empty_mqtt_user_env(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("YUNBRIDGE_MQTT_USER", "   ")
+
+    raw_config = {
+        "serial_port": "/dev/env",
+        "serial_baud": "57600",
+        "mqtt_tls": "1",
+        "mqtt_host": "broker",
+        "mqtt_port": "8883",
+        "mqtt_cafile": "/etc/cafile",
+        "serial_shared_secret": " envsecret ",
+    }
+
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+
+    config = settings.load_runtime_config()
+
+    assert config.mqtt_user is None
+
+
 def test_load_runtime_config_prefers_uci_config(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -172,6 +231,8 @@ def test_load_runtime_config_prefers_uci_config(
 def test_load_runtime_config_falls_back_to_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.delenv("YUNBRIDGE_SERIAL_SECRET", raising=False)
+
     def _uci_failure() -> dict[str, str]:
         raise RuntimeError("uci unavailable")
 
@@ -219,6 +280,35 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.serial_shared_secret == b"defaultsecret"
 
 
+def test_load_runtime_config_fails_when_credentials_insecure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    insecure = tmp_path / "credentials"
+    insecure.write_text("serial_shared_secret=fromfile\n", encoding="utf-8")
+    insecure.chmod(0o644)
+
+    raw_config = {
+        "serial_port": "/dev/uci",
+        "serial_baud": "57600",
+        "mqtt_host": "broker",
+        "mqtt_port": "8883",
+        "mqtt_tls": "1",
+        "mqtt_cafile": "/etc/cafile",
+        "serial_shared_secret": " inline ",
+    }
+
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setenv("YUNBRIDGE_CREDENTIALS_FILE", str(insecure))
+    monkeypatch.setattr(
+        settings,
+        "load_credentials_file",
+        credentials_module.load_credentials_file,
+    )
+
+    with pytest.raises(RuntimeError, match="Insecure credentials file"):
+        settings.load_runtime_config()
+
+
 def test_resolve_watchdog_settings_uses_procd(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("YUNBRIDGE_WATCHDOG_INTERVAL", raising=False)
     monkeypatch.setenv("PROCD_WATCHDOG", "10000")
@@ -247,22 +337,21 @@ def test_configure_logging_stream_handler(
 
     handler = root_logger.handlers[0]
     assert handler.level == logging.INFO
-    assert isinstance(handler.formatter, logging_module.YunbridgeFormatter)
-    assert handler.formatter._fmt == "%(name)s: %(message)s"
-
-    record = logging.LogRecord(
-        name="yunbridge.example",
-        level=logging.INFO,
-        pathname=__file__,
-        lineno=0,
-        msg="hello %s",
-        args=("world",),
-        exc_info=None,
+    assert isinstance(
+        handler.formatter, logging_module.StructuredLogFormatter
     )
 
+    capture = io.StringIO()
+    handler.stream = capture
+
     try:
-        formatted = handler.format(record)
-        assert formatted == "example: hello world"
+        logger = logging.getLogger("yunbridge.example")
+        logger.info("hello world", extra={"foo": "bar"})
+        line = capture.getvalue().strip().splitlines()[-1]
+        payload = json.loads(line)
+        assert payload["logger"] == "example"
+        assert payload["message"] == "hello world"
+        assert payload["extra"]["foo"] == "bar"
     finally:
         root_logger.handlers.clear()
 
@@ -330,15 +419,16 @@ def test_configure_logging_syslog_handler(
     assert handler.address == str(socket_path)
     assert handler.facility is DummySysLogHandler.LOG_DAEMON
     assert handler.level == logging.DEBUG
-    assert isinstance(handler.formatter, logging_module.YunbridgeFormatter)
-    assert handler.formatter._fmt == "%(name)s %(levelname)s: %(message)s"
+    assert isinstance(
+        handler.formatter, logging_module.StructuredLogFormatter
+    )
     assert handler.ident == "yunbridge "
 
     logging.getLogger().handlers.clear()
 
 
-def test_yunbridge_formatter_preserves_original_name():
-    formatter = logging_module.YunbridgeFormatter("%(name)s %(message)s")
+def test_structured_formatter_trims_prefix_and_serialises_extra():
+    formatter = logging_module.StructuredLogFormatter()
     record = logging.LogRecord(
         name="yunbridge.sub",
         level=logging.INFO,
@@ -348,26 +438,10 @@ def test_yunbridge_formatter_preserves_original_name():
         args=(),
         exc_info=None,
     )
+    record.custom = "value"
 
-    output = formatter.format(record)
+    payload = json.loads(formatter.format(record))
 
-    assert output == "sub hello"
-    assert record.name == "yunbridge.sub"
-
-
-def test_yunbridge_formatter_no_prefix():
-    formatter = logging_module.YunbridgeFormatter("%(name)s %(message)s")
-    record = logging.LogRecord(
-        name="other",
-        level=logging.INFO,
-        pathname=__file__,
-        lineno=0,
-        msg="hello",
-        args=(),
-        exc_info=None,
-    )
-
-    output = formatter.format(record)
-
-    assert output == "other hello"
-    assert record.name == "other"
+    assert payload["logger"] == "sub"
+    assert payload["message"] == "hello"
+    assert payload["extra"]["custom"] == "value"

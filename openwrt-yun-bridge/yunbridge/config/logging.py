@@ -1,33 +1,87 @@
 """Logging helpers for Yun Bridge daemon."""
 from __future__ import annotations
 
+import json
 import logging
+from datetime import datetime, timezone
 from logging import Handler
 from logging.handlers import SysLogHandler
 from pathlib import Path
+from typing import Any, Dict
 
 from .settings import RuntimeConfig
 
 SYSLOG_SOCKET = Path("/dev/log")
 
+_RESERVED_LOG_KEYS = {
+    "args",
+    "asctime",
+    "created",
+    "exc_info",
+    "exc_text",
+    "filename",
+    "funcName",
+    "levelname",
+    "levelno",
+    "lineno",
+    "module",
+    "msecs",
+    "message",
+    "msg",
+    "name",
+    "pathname",
+    "process",
+    "processName",
+    "relativeCreated",
+    "stack_info",
+    "thread",
+    "threadName",
+}
 
-class YunbridgeFormatter(logging.Formatter):
-    """Formatter that strips the common 'yunbridge.' prefix."""
+
+def _serialise_value(value: Any) -> Any:
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+class StructuredLogFormatter(logging.Formatter):
+    """Emit JSON per log line while trimming the shared prefix."""
 
     PREFIX = "yunbridge."
 
     def format(self, record: logging.LogRecord) -> str:
-        original_name = record.name
-        if original_name.startswith(self.PREFIX):
-            record.name = original_name[len(self.PREFIX):]
-        try:
-            return super().format(record)
-        finally:
-            record.name = original_name
+        logger_name = record.name
+        if logger_name.startswith(self.PREFIX):
+            logger_name = logger_name[len(self.PREFIX):]
+
+        payload: Dict[str, Any] = {
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": logger_name,
+            "message": record.getMessage(),
+        }
+
+        extras = {
+            key: _serialise_value(value)
+            for key, value in record.__dict__.items()
+            if key not in _RESERVED_LOG_KEYS and not key.startswith("_")
+        }
+        if extras:
+            payload["extra"] = extras
+
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+
+        return json.dumps(payload, ensure_ascii=False)
 
 
-def _build_handler(level: int, fmt: str) -> Handler:
-    formatter = YunbridgeFormatter(fmt)
+def _build_handler(level: int) -> Handler:
+    formatter = StructuredLogFormatter()
     if SYSLOG_SOCKET.exists():
         syslog_handler = SysLogHandler(
             address=str(SYSLOG_SOCKET),
@@ -48,18 +102,11 @@ def configure_logging(config: RuntimeConfig) -> None:
     """Configure root logging based on runtime settings."""
 
     level = logging.DEBUG if config.debug_logging else logging.INFO
-    # Match OpenWrt syslog style by keeping formatter minimal; syslog adds
-    # timestamp, severity and process automatically.
-    fmt = (
-        "%(name)s %(levelname)s: %(message)s"
-        if level == logging.DEBUG
-        else "%(name)s: %(message)s"
-    )
 
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
     root_logger.setLevel(level)
-    root_logger.addHandler(_build_handler(level, fmt))
+    root_logger.addHandler(_build_handler(level))
 
     logging.getLogger("yunbridge").info(
         "Logging configured at level %s", logging.getLevelName(level)

@@ -11,8 +11,9 @@ from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from ...common import pack_u16
 from ...protocol.topics import Topic, topic_path
+from ...policy import CommandValidationError
 from .base import BridgeContext
-from .process import CommandValidationError, ProcessComponent
+from .process import ProcessComponent
 
 logger = logging.getLogger("yunbridge.shell")
 

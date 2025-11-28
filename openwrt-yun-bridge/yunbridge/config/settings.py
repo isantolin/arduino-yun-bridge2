@@ -22,10 +22,13 @@ from ..const import (
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_MQTT_HOST,
+    DEFAULT_METRICS_HOST,
+    DEFAULT_METRICS_PORT,
     DEFAULT_MQTT_CAFILE,
+    DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TOPIC,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
@@ -38,10 +41,9 @@ from ..const import (
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_ATTEMPTS,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
+    DEFAULT_SERIAL_SHARED_SECRET,
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
-    DEFAULT_SERIAL_SHARED_SECRET,
-    DEFAULT_MQTT_SPOOL_DIR,
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
@@ -94,6 +96,9 @@ class RuntimeConfig:
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     credentials_file: str = DEFAULT_CREDENTIALS_FILE
+    metrics_enabled: bool = False
+    metrics_host: str = DEFAULT_METRICS_HOST
+    metrics_port: int = DEFAULT_METRICS_PORT
 
     @property
     def tls_enabled(self) -> bool:
@@ -258,6 +263,10 @@ def load_runtime_config() -> RuntimeConfig:
             "Credentials file %s missing; falling back to inline config.",
             credentials_path,
         )
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"Insecure credentials file {credentials_path}: {exc}"
+        ) from exc
     except Exception as exc:
         logger.warning(
             "Unable to load credentials file %s: %s",
@@ -352,6 +361,26 @@ def load_runtime_config() -> RuntimeConfig:
         mailbox_read=_get_bool("mqtt_allow_mailbox_read", True),
         mailbox_write=_get_bool("mqtt_allow_mailbox_write", True),
     )
+    metrics_enabled = _get_bool("metrics_enabled", False)
+    if os.environ.get("YUNBRIDGE_METRICS_ENABLED") == "1":
+        metrics_enabled = True
+
+    metrics_host = raw.get("metrics_host", DEFAULT_METRICS_HOST).strip()
+    if not metrics_host:
+        metrics_host = DEFAULT_METRICS_HOST
+    env_metrics_host = os.environ.get("YUNBRIDGE_METRICS_HOST")
+    if env_metrics_host:
+        candidate_host = env_metrics_host.strip()
+        if candidate_host:
+            metrics_host = candidate_host
+
+    metrics_port = _get_int("metrics_port", DEFAULT_METRICS_PORT)
+    env_metrics_port = os.environ.get("YUNBRIDGE_METRICS_PORT")
+    if env_metrics_port:
+        try:
+            metrics_port = int(env_metrics_port)
+        except ValueError:
+            metrics_port = DEFAULT_METRICS_PORT
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
@@ -423,4 +452,7 @@ def load_runtime_config() -> RuntimeConfig:
             ),
         ),
         credentials_file=credentials_path,
+        metrics_enabled=metrics_enabled,
+        metrics_host=metrics_host,
+        metrics_port=max(0, metrics_port),
     )

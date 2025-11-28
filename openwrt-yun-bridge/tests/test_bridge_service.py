@@ -21,7 +21,10 @@ from yunbridge.state.context import (
     RuntimeState,
 )
 from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
-from yunbridge.const import SERIAL_NONCE_LENGTH
+from yunbridge.const import (
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_NONCE_LENGTH,
+)
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.process import ProcessComponent
 
@@ -314,6 +317,33 @@ def test_sync_auth_failure_schedules_backoff(
         assert runtime_state.handshake_failure_streak >= 2
 
     asyncio.run(_run())
+
+
+@pytest.mark.asyncio
+async def test_transient_handshake_failures_eventually_backoff(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_state.link_is_synchronized = False
+    service = BridgeService(runtime_config, runtime_state)
+
+    fake_clock = _FakeMonotonic(50.0)
+    monkeypatch.setattr(
+        "yunbridge.services.runtime.time.monotonic",
+        fake_clock.monotonic,
+    )
+
+    for attempt in range(1, 4):
+        await service._handle_handshake_failure("link_sync_timeout")
+        if attempt < 3:
+            assert runtime_state.handshake_backoff_until == 0
+        else:
+            remaining = (
+                runtime_state.handshake_backoff_until
+                - fake_clock.monotonic()
+            )
+            assert remaining >= SERIAL_HANDSHAKE_BACKOFF_BASE
 
 
 def test_on_serial_connected_raises_on_secret_mismatch(

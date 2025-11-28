@@ -5,7 +5,6 @@ import asyncio
 import base64
 import json
 import logging
-import shlex
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
@@ -14,6 +13,7 @@ from ...protocol.topics import Topic, topic_path
 from ...mqtt import PublishableMessage
 from ...state.context import ManagedProcess, RuntimeState
 from ...config.settings import RuntimeConfig
+from ...policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
@@ -25,17 +25,6 @@ except ImportError:  # pragma: no cover - optional dependency on OpenWrt image
     psutil = None
 
 _PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
-
-_FORBIDDEN_CHARS = frozenset({";", "&", "|", ">", "<", "`"})
-_FORBIDDEN_SUBSTRINGS: Tuple[str, ...] = ("$(", "${", "&&", "||")
-
-
-class CommandValidationError(Exception):
-    """Raised when an inbound command string is unsafe or not allowed."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
 
 
 @dataclass(slots=True)
@@ -367,6 +356,10 @@ class ProcessComponent:
         async with self.state.process_lock:
             self.state.running_processes[pid] = slot
 
+        self.ctx.schedule_background(
+            self._monitor_async_process(pid, proc),
+            name=f"process-monitor-{pid}",
+        )
         logger.info("Started async process '%s' with PID %d", command, pid)
         return pid
 
@@ -380,27 +373,7 @@ class ProcessComponent:
         return tokens
 
     def _tokenize_command(self, command: str) -> Tuple[str, ...]:
-        stripped = command.strip()
-        if not stripped:
-            raise CommandValidationError("Empty command")
-        try:
-            tokens = tuple(shlex.split(stripped, posix=True))
-        except ValueError as exc:
-            raise CommandValidationError("Malformed command syntax") from exc
-        if not tokens:
-            raise CommandValidationError("Empty command")
-        for token in tokens:
-            if not token:
-                raise CommandValidationError("Malformed command syntax")
-            if any(char in _FORBIDDEN_CHARS for char in token):
-                raise CommandValidationError(
-                    "Illegal shell control characters detected"
-                )
-            if any(seq in token for seq in _FORBIDDEN_SUBSTRINGS):
-                raise CommandValidationError(
-                    "Illegal shell control characters detected"
-                )
-        return tokens
+        return tokenize_shell_command(command)
 
     async def collect_output(
         self, pid: int
@@ -421,18 +394,28 @@ class ProcessComponent:
         log_finished = False
 
         if proc is not None:
-            stdout_chunk, stderr_chunk = await self._read_process_pipes(
-                pid, proc
-            )
-            if proc.returncode is not None:
-                finished_flag = True
-                extra_stdout, extra_stderr = await self._drain_process_pipes(
-                    pid, proc
+            async with slot.io_lock:
+                chunk_out, chunk_err = await self._read_process_pipes(
+                    pid,
+                    proc,
                 )
-                if extra_stdout:
-                    stdout_chunk += extra_stdout
-                if extra_stderr:
-                    stderr_chunk += extra_stderr
+                if chunk_out:
+                    stdout_chunk += chunk_out
+                if chunk_err:
+                    stderr_chunk += chunk_err
+                if proc.returncode is not None:
+                    finished_flag = True
+                    (
+                        extra_stdout,
+                        extra_stderr,
+                    ) = await self._drain_process_pipes(
+                        pid,
+                        proc,
+                    )
+                    if extra_stdout:
+                        stdout_chunk += extra_stdout
+                    if extra_stderr:
+                        stderr_chunk += extra_stderr
 
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
@@ -649,6 +632,67 @@ class ProcessComponent:
         await asyncio.to_thread(self._kill_process_tree_sync, pid)
         proc.kill()
 
+    async def _monitor_async_process(
+        self,
+        pid: int,
+        proc: asyncio.subprocess.Process,
+    ) -> None:
+        try:
+            await proc.wait()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Error while awaiting async process PID %d", pid
+            )
+            return
+        await self._finalize_async_process(pid, proc)
+
+    async def _finalize_async_process(
+        self,
+        pid: int,
+        proc: asyncio.subprocess.Process,
+    ) -> None:
+        async with self.state.process_lock:
+            slot = self.state.running_processes.get(pid)
+        if slot is None:
+            self._release_process_slot()
+            return
+
+        async with slot.io_lock:
+            stdout_tail, stderr_tail = await self._drain_process_pipes(
+                pid,
+                proc,
+            )
+
+        release_slot = False
+        exit_value = proc.returncode if proc.returncode is not None else 0xFF
+        async with self.state.process_lock:
+            current_slot = self.state.running_processes.get(pid)
+            if current_slot is None or current_slot is not slot:
+                return
+            if current_slot.handle is not proc:
+                return
+            if stdout_tail or stderr_tail:
+                current_slot.append_output(
+                    stdout_tail,
+                    stderr_tail,
+                    limit=self.state.process_output_limit,
+                )
+            current_slot.exit_code = exit_value
+            current_slot.handle = None
+            if current_slot.is_drained():
+                self.state.running_processes.pop(pid, None)
+            release_slot = True
+
+        if release_slot:
+            self._release_process_slot()
+            logger.info(
+                "Async process %d finished with exit code %d",
+                pid,
+                exit_value,
+            )
+
     @staticmethod
     def _kill_process_tree_sync(pid: int) -> None:
         if psutil is None:
@@ -712,4 +756,4 @@ class ProcessComponent:
             pass
 
 
-__all__ = ["ProcessComponent", "CommandValidationError"]
+__all__ = ["ProcessComponent"]

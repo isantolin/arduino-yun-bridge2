@@ -12,8 +12,6 @@ PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE
 PKG_MAINTAINER:=Ignacio Santolin <ignaciosantolin@example.com>
 
-PKG_BUILD_DEPENDS:=python-hatchling/host
-
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk

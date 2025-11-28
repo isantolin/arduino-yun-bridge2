@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import string
 from pathlib import Path
 from typing import Optional
 
 import pytest
+from hypothesis import HealthCheck, given, settings, strategies as st
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt import InboundMessage, PublishableMessage
@@ -136,3 +138,33 @@ async def test_handle_write_invalid_path(
     await component.handle_write(payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
+
+
+SAFE_FILENAME_CHARS = (
+    string.ascii_letters + string.digits + "/._- " + "\\"
+)
+FILENAME_INPUTS = st.text(SAFE_FILENAME_CHARS, min_size=0, max_size=64)
+
+
+@given(filename=FILENAME_INPUTS)
+def test_normalise_filename_strips_traversal(filename: str) -> None:
+    result = FileComponent._normalise_filename(filename)
+    if result is None:
+        return
+    assert not result.is_absolute()
+    for part in result.parts:
+        assert part not in {"", ".", ".."}
+        assert "\x00" not in part
+
+
+@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(filename=FILENAME_INPUTS)
+def test_get_safe_path_confines_to_root(
+    file_component: tuple[FileComponent, DummyBridge], filename: str
+) -> None:
+    component, _ = file_component
+    base_dir = Path(component.state.file_system_root).expanduser().resolve()
+    safe_path = component._get_safe_path(filename)
+    if safe_path is None:
+        return
+    assert safe_path.is_relative_to(base_dir)

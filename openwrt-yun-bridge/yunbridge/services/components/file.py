@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional, Tuple
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
@@ -255,7 +255,12 @@ class FileComponent:
             )
             return None
 
-        candidate = (base_dir / filename.lstrip("/"))
+        normalised = self._normalise_filename(filename)
+        if normalised is None:
+            logger.warning("Rejected unsafe filename '%s'", filename)
+            return None
+
+        candidate = base_dir.joinpath(*normalised.parts)
         try:
             safe_path = candidate.resolve()
             safe_path.relative_to(base_dir)
@@ -271,6 +276,36 @@ class FileComponent:
             )
             return None
         return safe_path
+
+    @staticmethod
+    def _normalise_filename(filename: str) -> Optional[PurePosixPath]:
+        stripped = filename.replace("\\", "/").strip()
+        if not stripped:
+            return None
+
+        try:
+            posix_path = PurePosixPath(stripped)
+        except ValueError:
+            return None
+
+        if posix_path.is_absolute():
+            try:
+                posix_path = posix_path.relative_to("/")
+            except ValueError:
+                return None
+
+        cleaned_parts: list[str] = []
+        for part in posix_path.parts:
+            if part in {"", "."}:
+                continue
+            if part == ".." or "\x00" in part:
+                return None
+            cleaned_parts.append(part)
+
+        if not cleaned_parts:
+            return None
+
+        return PurePosixPath(*cleaned_parts)
 
     @staticmethod
     def _write_file_sync(path: Path, data: bytes) -> None:

@@ -91,6 +91,10 @@ class TopicAuthorization:
     datastore_put: bool = True
     mailbox_read: bool = True
     mailbox_write: bool = True
+    shell_run: bool = True
+    shell_run_async: bool = True
+    shell_poll: bool = True
+    shell_kill: bool = True
 
     def allows(self, topic: str, action: str) -> bool:
         topic_key = topic.lower()
@@ -103,6 +107,10 @@ class TopicAuthorization:
             (Topic.DATASTORE.value, "put"): self.datastore_put,
             (Topic.MAILBOX.value, "read"): self.mailbox_read,
             (Topic.MAILBOX.value, "write"): self.mailbox_write,
+            (Topic.SHELL.value, "run"): self.shell_run,
+            (Topic.SHELL.value, "run_async"): self.shell_run_async,
+            (Topic.SHELL.value, "poll"): self.shell_poll,
+            (Topic.SHELL.value, "kill"): self.shell_kill,
         }
         return mapping.get((topic_key, action_key), True)
 

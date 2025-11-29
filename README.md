@@ -109,6 +109,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	```
 - También puedes usar `tools/rotate_credentials.sh --host <yun>` o la pestaña *Credentials & TLS* para ejecutar ese procedimiento remotamente mediante `/usr/bin/yunbridge-rotate-credentials`.
 - Si necesitas almacenarlo en otra ruta (por ejemplo en un volumen cifrado), ajusta `uci set yunbridge.general.credentials_file='/srv/secure/yunbridge.env'` o exporta `YUNBRIDGE_CREDENTIALS_FILE` antes de iniciar el servicio; el init script seguirá aprovisionando `envfile` con la ruta final.
+- `3_install.sh` reprovisiona por defecto `/etc/yunbridge/tls/ca.crt`, `yunbridge.crt` y `yunbridge.key` en cada ejecución, reescribiendo la ruta heredada (`/etc/ssl/certs/ca-certificates.crt`) y cualquier `cert/key` inexistente para apuntar al bundle privado bajo `/etc/yunbridge/tls`. El script instala automáticamente la dependencia `openssl-util` si falta antes de generar el material. Importa el CA resultante en tu broker si habilitarás TLS mutuo; exporta `YUNBRIDGE_FORCE_TLS_REGEN=0` (o `YUNBRIDGE_SKIP_TLS_AUTOGEN=1`) si prefieres mantener tus propios archivos y quieres que el instalador solo valide que existen.
 ### 1. Autenticación del enlace serie MCU ↔ Linux
 
 - El handshake usa un tag HMAC-SHA256 (16 bytes) derivado de `serial_shared_secret`; si el secreto no existe o es débil, el daemon se niega a arrancar.
@@ -120,7 +121,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	/etc/init.d/yunbridge restart
 	```
 - También puedes exportar `YUNBRIDGE_SERIAL_SECRET` en `/etc/rc.local` o en el `procd` `env` para mantener el valor fuera de UCI.
-- En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o el nuevo flag de LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake.
+- En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o el nuevo flag de LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake. Los ejemplos de la librería incluyen por defecto `changeme123` para coincidir con `openwrt-yun-core/credentials.env`, pero debes reemplazarlo antes de producción o correr `tools/rotate_credentials.sh` para regenerar ambos extremos.
 
 ### 2. Políticas de comando y topics sensibles
 
@@ -129,6 +130,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	- `mqtt_allow_file_read`, `mqtt_allow_file_write`, `mqtt_allow_file_remove`
 	- `mqtt_allow_datastore_get`, `mqtt_allow_datastore_put`
 	- `mqtt_allow_mailbox_read`, `mqtt_allow_mailbox_write`
+	- `mqtt_allow_shell_run`, `mqtt_allow_shell_run_async`, `mqtt_allow_shell_poll`, `mqtt_allow_shell_kill`
 - Configúralos en LuCI (sección **Services → YunBridge → Security**) o vía CLI:
 	```sh
 	uci set yunbridge.general.mqtt_allow_file_write='0'

@@ -235,35 +235,99 @@ check_python_module() {
 
 check_python_module "setuptools"
 
-bootstrap_sdk_python_module() {
-    local module="$1"
-    local host_python="$SDK_DIR/staging_dir/host/bin/python3"
-    local host_prefix="$SDK_DIR/staging_dir/host"
+bootstrap_python_module_into_prefix() {
+    local python_bin="$1"
+    local prefix_dir="$2"
+    local module="$3"
+    local package_spec="${4:-$module}"
+    local env_label="$5"
 
-    if [ ! -x "$host_python" ]; then
-        echo "[WARN] SDK host python not found at $host_python; skip auto-install for ${module} until the toolchain is prepared." >&2
+    if [ -z "$python_bin" ] || [ ! -x "$python_bin" ]; then
+        echo "[WARN] ${env_label} python not found at ${python_bin:-<missing>}; skip auto-install for ${module} until the toolchain is prepared." >&2
         return 0
     fi
 
-    if "$host_python" -c "import ${module}" >/dev/null 2>&1; then
+    if "$python_bin" -c "import ${module}" >/dev/null 2>&1; then
         return 0
     fi
 
-    echo "[INFO] Installing ${module} inside the OpenWrt SDK host python..."
+    echo "[INFO] Installing ${module} inside the ${env_label} python..."
 
-    if ! "$host_python" -m pip --version >/dev/null 2>&1; then
-        if ! "$host_python" -m ensurepip --upgrade; then
-            echo "[ERROR] Failed to bootstrap pip inside the SDK host python." >&2
+    if ! "$python_bin" -m pip --version >/dev/null 2>&1; then
+        if ! "$python_bin" -m ensurepip --upgrade; then
+            echo "[ERROR] Failed to bootstrap pip inside the ${env_label} python." >&2
             return 1
         fi
     fi
 
-    if "$host_python" -m pip install --upgrade --prefix "$host_prefix" "$module"; then
+    if "$python_bin" -m pip install --upgrade --prefix "$prefix_dir" "$package_spec"; then
         return 0
     fi
 
-    echo "[ERROR] Unable to install ${module} into the SDK host python." >&2
+    echo "[ERROR] Unable to install ${module} into the ${env_label} python." >&2
     return 1
+}
+
+bootstrap_sdk_python_module() {
+    local module="$1"
+    local package_spec="${2:-$module}"
+    local host_python="$SDK_DIR/staging_dir/host/bin/python3"
+    local host_prefix="$SDK_DIR/staging_dir/host"
+
+    bootstrap_python_module_into_prefix "$host_python" "$host_prefix" "$module" "$package_spec" "OpenWrt SDK host"
+}
+
+bootstrap_sdk_hostpkg_python_module() {
+    local module="$1"
+    local package_spec="${2:-$module}"
+    local hostpkg_prefix="$SDK_DIR/staging_dir/hostpkg"
+    local hostpkg_python=""
+
+    for candidate in python3 python3.12 python3.11 python3.10; do
+        if [ -x "$hostpkg_prefix/bin/$candidate" ]; then
+            hostpkg_python="$hostpkg_prefix/bin/$candidate"
+            break
+        fi
+    done
+
+    bootstrap_python_module_into_prefix "$hostpkg_python" "$hostpkg_prefix" "$module" "$package_spec" "OpenWrt SDK hostpkg"
+}
+
+strip_kernel_package() {
+    local mk_file="$1"
+    local pkg_name="$2"
+
+    if [ ! -f "$mk_file" ]; then
+        return 0
+    fi
+
+    if grep -q "KernelPackage/${pkg_name}" "$mk_file"; then
+        echo "[INFO] Removing KernelPackage/${pkg_name} from $mk_file (missing in target kernel config)..."
+        python3 - "$mk_file" "$pkg_name" <<'PY'
+import re
+import sys
+
+path, pkg = sys.argv[1:3]
+with open(path, encoding="utf-8") as fh:
+    text = fh.read()
+
+changed = False
+for suffix in ("", "/description"):
+    pattern = re.compile(rf"(?ms)^define\s+KernelPackage/{re.escape(pkg)}{re.escape(suffix)}\n.*?\nendef\n")
+    text, count = pattern.subn("", text)
+    if count:
+        changed = True
+
+eval_pattern = re.compile(rf"(?m)^\$\((eval|Eval)\s+\$\((call|Call)\s+KernelPackage,{re.escape(pkg)}\)\)\n?")
+text, count = eval_pattern.subn("", text)
+if count:
+    changed = True
+
+if changed:
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+PY
+    fi
 }
 
 if command -v unzstd >/dev/null 2>&1; then
@@ -322,6 +386,16 @@ fi
 
 if ! bootstrap_sdk_python_module "setuptools"; then
     echo "[ERROR] SDK host python is missing setuptools even after an install attempt." >&2
+    exit 1
+fi
+
+if ! bootstrap_sdk_python_module "hatchling" "hatchling==1.18.0"; then
+    echo "[ERROR] SDK host python is missing hatchling even after an install attempt." >&2
+    exit 1
+fi
+
+if ! bootstrap_sdk_hostpkg_python_module "hatchling" "hatchling==1.18.0"; then
+    echo "[ERROR] SDK hostpkg python is missing hatchling even after an install attempt." >&2
     exit 1
 fi
 
@@ -395,6 +469,23 @@ if [ -f "$USB_MODULES_MK" ]; then
         sed -i '/kmod-phy-bcm-ns-usb3/d' "$USB_MODULES_MK"
     fi
 fi
+
+declare -A KERNEL_STUB_MAP=(
+    ["package/kernel/linux/modules/hwmon.mk"]="hwmon-max6642 hwmon-pwmfan"
+    ["package/kernel/linux/modules/i2c.mk"]="i2c-pxa"
+    ["package/kernel/linux/modules/leds.mk"]="ledtrig-gpio"
+    ["package/kernel/linux/modules/lib.mk"]="asn1-encoder lib-objagg lib-parman"
+    ["package/kernel/linux/modules/netdevices.mk"]="ixgbevf iavf"
+    ["package/kernel/linux/modules/other.mk"]="thermal"
+    ["package/kernel/linux/modules/sound.mk"]="sound-hda-core sound-hda-codec-realtek sound-hda-codec-cmedia sound-hda-codec-analog sound-hda-codec-idt sound-hda-codec-si3054 sound-hda-codec-cirrus sound-hda-codec-ca0110 sound-hda-codec-ca0132 sound-hda-codec-conexant sound-hda-codec-via sound-hda-codec-hdmi"
+    ["package/kernel/linux/modules/video.mk"]="video-async video-fwnode video-cpia2"
+)
+
+for mk_path in "${!KERNEL_STUB_MAP[@]}"; do
+    for pkg in ${KERNEL_STUB_MAP[$mk_path]}; do
+        strip_kernel_package "$mk_path" "$pkg"
+    done
+done
 
 # Enable required Yun packages and dependencies automatically
 MANIFEST_DEPS="$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | paste -sd ' ' -)"

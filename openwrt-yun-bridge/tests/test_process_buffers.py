@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from types import MethodType
 from typing import Awaitable, Callable, Optional, cast
 
 import pytest
@@ -150,6 +151,43 @@ def test_start_async_respects_concurrency_limit(
             )
         result = await process_component.start_async("/bin/true")
         assert result == 0xFFFF
+
+    asyncio.run(_run())
+
+
+def test_handle_run_respects_concurrency_limit(
+    runtime_service: BridgeService,
+) -> None:
+    async def _run() -> None:
+        process_component = cast(ProcessComponent, runtime_service._process)
+        runtime_service.state.allowed_policy = AllowedCommandPolicy.from_iterable(
+            ["*"]
+        )
+        guard = asyncio.BoundedSemaphore(1)
+        await guard.acquire()
+        process_component._process_slots = guard
+
+        captured: list[tuple[int, bytes]] = []
+
+        async def _fake_send_frame(
+            self: BridgeService, command_id: int, payload: bytes = b""
+        ) -> bool:
+            captured.append((command_id, payload))
+            return True
+
+        runtime_service.send_frame = MethodType(  # type: ignore[assignment]
+            _fake_send_frame,
+            runtime_service,
+        )
+
+        await process_component.handle_run(b"/bin/true")
+
+        assert captured, "Expected an error frame when slots are exhausted"
+        status_id, payload = captured[0]
+        assert status_id == Status.ERROR.value
+        assert payload == b"process_limit_reached"
+
+        guard.release()
 
     asyncio.run(_run())
 

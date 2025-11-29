@@ -48,6 +48,17 @@ class ProcessComponent:
     async def handle_run(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")
 
+        if not await self._try_acquire_process_slot():
+            logger.warning(
+                "Concurrent process limit reached (%d) for sync command",
+                self.state.process_max_concurrent,
+            )
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason("process_limit_reached"),
+            )
+            return
+
         async def _execute() -> None:
             try:
                 (
@@ -83,6 +94,8 @@ class ProcessComponent:
                     Status.ERROR.value,
                     b"process_run_internal_error",
                 )
+            finally:
+                self._release_process_slot()
 
         self.ctx.schedule_background(_execute())
 

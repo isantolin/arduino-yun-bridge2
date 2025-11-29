@@ -865,6 +865,46 @@ def test_mqtt_datastore_put_blocked_when_topic_disabled(
     asyncio.run(_run())
 
 
+def test_mqtt_shell_run_blocked_when_topic_disabled(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.topic_authorization = TopicAuthorization(
+            shell_run=False
+        )
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.SHELL,
+                    "run",
+                ),
+                b"ls",
+            )
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "status",
+        )
+        assert queued.topic_name == expected_topic
+        payload = json.loads(queued.payload.decode())
+        assert payload["status"] == "forbidden"
+        assert payload["topic"] == Topic.SHELL.value
+        assert payload["action"] == "run"
+        assert ("bridge-error", "topic-action-forbidden") in (
+            queued.user_properties
+        )
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
 def test_mqtt_datastore_put_without_key_is_ignored(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,

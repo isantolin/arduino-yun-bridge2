@@ -3,7 +3,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-yunbridge
 PKG_VERSION:=1.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_MAINTAINER:=Ignacio Santolin and contributors
 
@@ -36,6 +36,7 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./luasrc/model/cbi/yunbridge.lua $(1)/usr/lib/lua/luci/model/cbi/
 	$(CP) ./luasrc/view/yunbridge/status.htm $(1)/usr/lib/lua/luci/view/yunbridge/
 	$(CP) ./luasrc/view/yunbridge/webui.htm $(1)/usr/lib/lua/luci/view/yunbridge/
+	$(CP) ./luasrc/view/yunbridge/credentials.htm $(1)/usr/lib/lua/luci/view/yunbridge/
 	$(CP) -r ./root/etc/config/yunbridge $(1)/etc/config/
 	[ -d ./root/www/yunbridge ] && $(CP) -r ./root/www/yunbridge $(1)/www/ || true
 endef

@@ -18,6 +18,12 @@
 #define BRIDGE_ENABLE_FILESYSTEM 0
 #define BRIDGE_ENABLE_PROCESS 0
 
+// Define a shared secret for the serial handshake if the build has not
+// provided one already. Match this value with YUNBRIDGE_SERIAL_SECRET on Linux.
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET "755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
+#endif
+
 #include <Bridge.h>
 #include <string.h>
 
@@ -51,7 +57,7 @@ void handleCommand(const rpc::Frame& frame) {
 // Esta función será llamada por la librería Bridge cuando llegue un mensaje
 // del Mailbox de Linux.
 void handleMailboxMessage(const uint8_t* buffer, size_t size) {
-  char msg_buf[256]; // Asumiendo que el tamaño máximo del mensaje cabe en el buffer
+  char msg_buf[80];  // Ajustado para no reservar SRAM innecesaria
   if (size < sizeof(msg_buf)) {
     memcpy(msg_buf, buffer, size);
     msg_buf[size] = '\0';  // Asegurar la terminación NULL
@@ -69,9 +75,9 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
     } else if (strcmp(msg_buf, "READ_D13") == 0) {
       Console.println(F("Las lecturas GPIO ahora las inicia Linux via MQTT; este comando se ignora."));
     } else {
-      char error_msg[100];
-      snprintf(error_msg, sizeof(error_msg), "Error: Comando de Mailbox desconocido: '%s'", msg_buf);
-      Console.println(error_msg);
+      Console.print(F("Error: Comando de Mailbox desconocido: '"));
+      Console.print(msg_buf);
+      Console.println('\'');
     }
   } else {
     Console.println(F("Error: Mensaje de Mailbox demasiado largo."));

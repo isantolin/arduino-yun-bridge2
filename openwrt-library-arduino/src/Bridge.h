@@ -27,10 +27,10 @@
 class HardwareSerial;
 
 // Adjusted resource limits to keep SRAM usage below 2.5 KB on ATmega32u4.
-constexpr uint8_t BRIDGE_DATASTORE_PENDING_MAX = 4;
-constexpr size_t BRIDGE_DATASTORE_KEY_MAX_LEN = 96;
-constexpr uint8_t BRIDGE_PROCESS_PENDING_MAX = 8;
-constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 3;
+constexpr uint8_t BRIDGE_DATASTORE_PENDING_MAX = 1;
+constexpr size_t BRIDGE_DATASTORE_KEY_MAX_LEN = 48;
+constexpr uint8_t BRIDGE_PROCESS_PENDING_MAX = 2;
+constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 1;
 
 #ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
 #define BRIDGE_FIRMWARE_VERSION_MAJOR 2
@@ -52,9 +52,15 @@ constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 3;
 // Ajustar los límites de agua para que respiren sobre un buffer real.
 // El cabezal circular necesita al menos un byte libre, por lo que un
 // tamaño de 64 bytes permite aplicar backpressure antes de saturar.
-#define CONSOLE_RX_BUFFER_SIZE 64
-#define CONSOLE_BUFFER_HIGH_WATER 48
-#define CONSOLE_BUFFER_LOW_WATER 16
+#ifndef CONSOLE_RX_BUFFER_SIZE
+#define CONSOLE_RX_BUFFER_SIZE 32
+#endif
+#ifndef CONSOLE_BUFFER_HIGH_WATER
+#define CONSOLE_BUFFER_HIGH_WATER 24
+#endif
+#ifndef CONSOLE_BUFFER_LOW_WATER
+#define CONSOLE_BUFFER_LOW_WATER 8
+#endif
 
 /**
  * @class ConsoleClass
@@ -276,8 +282,6 @@ class BridgeClass {
 
   bool _awaiting_ack;
   uint16_t _last_command_id;
-  uint8_t _last_raw_frame[rpc::MAX_RAW_FRAME_SIZE];
-  uint16_t _last_raw_length;
   uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
   uint16_t _last_cobs_length;
   uint8_t _retry_count;
@@ -287,8 +291,7 @@ class BridgeClass {
   static constexpr unsigned long kAckTimeoutMs = 75;
 
   bool _requiresAck(uint16_t command_id) const;
-  void _recordLastFrame(uint16_t command_id, const uint8_t* raw_frame,
-                        size_t raw_len, const uint8_t* cobs_frame,
+  void _recordLastFrame(uint16_t command_id, const uint8_t* cobs_frame,
                         size_t cobs_len);
   void _clearAckState();
   void _handleAck(uint16_t command_id);

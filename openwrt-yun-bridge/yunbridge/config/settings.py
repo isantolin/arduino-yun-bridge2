@@ -360,6 +360,10 @@ def load_runtime_config() -> RuntimeConfig:
         datastore_put=_get_bool("mqtt_allow_datastore_put", True),
         mailbox_read=_get_bool("mqtt_allow_mailbox_read", True),
         mailbox_write=_get_bool("mqtt_allow_mailbox_write", True),
+        shell_run=_get_bool("mqtt_allow_shell_run", True),
+        shell_run_async=_get_bool("mqtt_allow_shell_run_async", True),
+        shell_poll=_get_bool("mqtt_allow_shell_poll", True),
+        shell_kill=_get_bool("mqtt_allow_shell_kill", True),
     )
     metrics_enabled = _get_bool("metrics_enabled", False)
     if os.environ.get("YUNBRIDGE_METRICS_ENABLED") == "1":

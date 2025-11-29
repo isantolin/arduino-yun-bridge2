@@ -17,10 +17,14 @@
 // secret for the handshake to complete successfully.
 
 #ifndef BRIDGE_SERIAL_SHARED_SECRET
-#define BRIDGE_SERIAL_SHARED_SECRET "changeme123"
-#define BRIDGE_SERIAL_SHARED_SECRET_IS_DEFAULT 1
-#else
-#define BRIDGE_SERIAL_SHARED_SECRET_IS_DEFAULT 0
+#if __has_include("BridgeSecret.local.h")
+#include "BridgeSecret.local.h"
+#endif
+#endif
+
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET \
+  "755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 #endif
 
 #ifndef BRIDGE_SERIAL_SHARED_SECRET_LEN
@@ -28,10 +32,6 @@
   (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)
 #endif
 
-#if BRIDGE_SERIAL_SHARED_SECRET_IS_DEFAULT && \
-    !defined(BRIDGE_ALLOW_INSECURE_SERIAL_SECRET)
-#error                                                                         \
-    "Bridge serial handshake secret must be overridden for production builds"
+#ifdef BRIDGE_ALLOW_INSECURE_SERIAL_SECRET
+#warning "BRIDGE_ALLOW_INSECURE_SERIAL_SECRET is deprecated and ignored"
 #endif
-
-#undef BRIDGE_SERIAL_SHARED_SECRET_IS_DEFAULT

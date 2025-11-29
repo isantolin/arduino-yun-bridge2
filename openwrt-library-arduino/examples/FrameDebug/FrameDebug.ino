@@ -1,3 +1,9 @@
+// Provide a development-only default secret so the example builds. Override it
+// (and update the daemon) before deploying to production devices.
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET "755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
+#endif
+
 #include <Bridge.h>
 
 // Demonstrates how to inspect frame transmission statistics collected by

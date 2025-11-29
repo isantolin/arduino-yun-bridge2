@@ -3,6 +3,7 @@ aiomqtt>=2.4,<3.0
 cobs>=1.2,<2.0
 more-itertools>=10.0,<11.0
 paho-mqtt>=2.1,<3.0
+prometheus-client>=0.20,<1.0
 psutil>=5.9,<6.0
 pyserial-asyncio>=0.6,<1.0
 pyserial>=3.5,<4.0

@@ -47,8 +47,8 @@ define Package/$(PKG_NAME)
 		+python3-pyserial-asyncio \
 		+python3-cobs \
 		+python3-tenacity \
-		+python3-sqlite3 \
 		+python3-psutil \
+		+python3-prometheus-client \
 		+python3-more-itertools
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef

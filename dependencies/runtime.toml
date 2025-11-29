@@ -62,16 +62,16 @@ pip = "tenacity>=9.0,<10.0"
 rationale = "Retry/backoff utilities for serial and MQTT paths"
 
 [[dependency]]
-name = "sqlite3"
-openwrt = "python3-sqlite3"
-pip = ""
-rationale = "Durable MQTT spool powered by sqlite3"
-
-[[dependency]]
 name = "psutil"
 openwrt = "python3-psutil"
 pip = "psutil>=5.9,<6.0"
 rationale = "Process supervision and zombie cleanup"
+
+[[dependency]]
+name = "prometheus-client"
+openwrt = "python3-prometheus-client"
+pip = "prometheus-client>=0.20,<1.0"
+rationale = "Expose runtime metrics via the Prometheus Python client"
 
 [[dependency]]
 name = "more-itertools"

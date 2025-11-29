@@ -4,6 +4,10 @@
 #include <Arduino.h>
 #include <stddef.h>
 
+#if defined(ARDUINO)
+#include <COBS.h>
+#endif
+
 namespace cobs {
 
 /**
@@ -15,6 +19,23 @@ namespace cobs {
  * @return size_t The number of bytes written to the destination buffer. Does
  * NOT include the trailing zero.
  */
+#if defined(ARDUINO)
+inline size_t encode(
+    const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
+  if (!src_buf || !dst_buf) {
+    return 0;
+  }
+  return COBS::encode(src_buf, src_len, dst_buf);
+}
+
+inline size_t decode(
+    const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
+  if (!src_buf || !dst_buf) {
+    return 0;
+  }
+  return COBS::decode(src_buf, src_len, dst_buf);
+}
+#else
 inline size_t encode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
   const uint8_t* src_end = src_buf + src_len;
   uint8_t* dst_start = dst_buf;
@@ -44,16 +65,6 @@ inline size_t encode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
   return dst_buf - dst_start;
 }
 
-/**
- * @brief Decodes a COBS-encoded source buffer into a destination buffer.
- *
- * @param src_buf Pointer to the COBS-encoded source buffer (without the
- * trailing zero).
- * @param src_len Number of bytes in the source buffer.
- * @param dst_buf Pointer to the destination buffer.
- * @return size_t The number of bytes written to the destination buffer, or 0 on
- * decoding error.
- */
 inline size_t decode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
   const uint8_t* src_end = src_buf + src_len;
   uint8_t* dst_start = dst_buf;
@@ -75,6 +86,7 @@ inline size_t decode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
   }
   return dst_buf - dst_start;
 }
+#endif
 
 }  // namespace cobs
 

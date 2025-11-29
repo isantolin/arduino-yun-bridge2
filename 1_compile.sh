@@ -125,7 +125,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
                     libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
                     libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
-                    uuid-dev libsqlite3-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor \
+                    uuid-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor \
                     g++-multilib
             fi
         elif [ -f /etc/fedora-release ]; then
@@ -149,7 +149,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
                     libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
                     libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
-                    tk-devel tcl-devel libuuid-devel sqlite-devel xz-devel \
+                    tk-devel tcl-devel libuuid-devel xz-devel \
                     bluez-libs-devel libbsd-devel binutils-devel asciidoctor \
                     glibc-devel.i686 libstdc++-devel.i686
             fi

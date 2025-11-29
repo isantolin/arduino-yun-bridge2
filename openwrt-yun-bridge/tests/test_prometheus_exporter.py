@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from prometheus_client import CONTENT_TYPE_LATEST
 
 from yunbridge.metrics import PrometheusExporter
 
@@ -27,4 +28,4 @@ async def test_prometheus_exporter_serves_metrics(runtime_state):
         await exporter.stop()
 
     assert b"yunbridge_mqtt_queue_limit" in payload
-    assert b"text/plain; version=0.0.4" in payload
+    assert CONTENT_TYPE_LATEST.encode("ascii") in payload

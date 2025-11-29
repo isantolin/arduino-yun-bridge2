@@ -1,13 +1,9 @@
 #include "crc.h"
 
 #if defined(ARDUINO_ARCH_AVR)
-#include <avr/pgmspace.h>
-#endif
-#if defined(ARDUINO_ARCH_AVR)
-static const uint16_t crc16_ccitt_table[256] PROGMEM = {
+#include <util/crc16.h>
 #else
-static const uint16_t crc16_ccitt_table[256] = {
-#endif
+static const uint16_t kCrc16Table[256] = {
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7, 0x8108,
     0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef, 0x1231, 0x0210,
     0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6, 0x9339, 0x8318, 0xb37b,
@@ -38,30 +34,29 @@ static const uint16_t crc16_ccitt_table[256] = {
     0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8, 0x6e17, 0x7e36, 0x4e55, 0x5e74,
     0x2e93, 0x3eb2, 0x0ed1, 0x1ef0};
 
-static inline uint16_t crc_table_read(uint8_t index) {
-#if defined(ARDUINO_ARCH_AVR)
-  return pgm_read_word(&crc16_ccitt_table[index]);
-#else
-  return crc16_ccitt_table[index];
-#endif
+static inline uint16_t host_crc_step(uint16_t crc, uint8_t data) {
+  uint8_t index = ((crc >> 8) ^ data) & 0xFF;
+  return (crc << 8) ^ kCrc16Table[index];
 }
+#endif
 
 uint16_t crc16_ccitt_init() { return 0xFFFF; }
 
 uint16_t crc16_ccitt_update(uint16_t crc, uint8_t data) {
-  uint8_t index = ((crc >> 8) ^ data) & 0xFF;
-  return (crc << 8) ^ crc_table_read(index);
+#if defined(ARDUINO_ARCH_AVR)
+  return _crc_ccitt_update(crc, data);
+#else
+  return host_crc_step(crc, data);
+#endif
 }
 
-uint16_t crc16_ccitt_update(uint16_t crc, const uint8_t *data, size_t len) {
-  for (size_t i = 0; i < len; i++) {
+uint16_t crc16_ccitt_update(uint16_t crc, const uint8_t* data, size_t len) {
+  for (size_t i = 0; i < len; ++i) {
     crc = crc16_ccitt_update(crc, data[i]);
   }
   return crc;
 }
 
-uint16_t crc16_ccitt(const uint8_t *data, size_t len) {
-  uint16_t crc = crc16_ccitt_init();
-  crc = crc16_ccitt_update(crc, data, len);
-  return crc;
+uint16_t crc16_ccitt(const uint8_t* data, size_t len) {
+  return crc16_ccitt_update(crc16_ccitt_init(), data, len);
 }

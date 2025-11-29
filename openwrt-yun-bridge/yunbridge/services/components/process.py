@@ -97,7 +97,7 @@ class ProcessComponent:
             finally:
                 self._release_process_slot()
 
-        self.ctx.schedule_background(_execute())
+        await self.ctx.schedule_background(_execute())
 
     async def handle_run_async(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")
@@ -369,7 +369,7 @@ class ProcessComponent:
         async with self.state.process_lock:
             self.state.running_processes[pid] = slot
 
-        self.ctx.schedule_background(
+        await self.ctx.schedule_background(
             self._monitor_async_process(pid, proc),
             name=f"process-monitor-{pid}",
         )
@@ -455,9 +455,7 @@ class ProcessComponent:
 
             released_slot = False
             if proc is not None and proc.returncode is not None:
-                slot.exit_code = (
-                    proc.returncode if proc.returncode is not None else 0
-                )
+                slot.exit_code = proc.returncode
                 slot.handle = None
                 finished_flag = True
                 log_finished = True
@@ -638,10 +636,11 @@ class ProcessComponent:
     ) -> None:
         if proc.returncode is not None:
             return
-        if psutil is None or proc.pid is None:
+        pid_value = getattr(proc, "pid", None)
+        if psutil is None or pid_value is None:
             proc.kill()
             return
-        pid = proc.pid
+        pid = int(pid_value)
         await asyncio.to_thread(self._kill_process_tree_sync, pid)
         proc.kill()
 

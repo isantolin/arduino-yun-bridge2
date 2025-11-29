@@ -1,7 +1,6 @@
 """Reusable TLS helpers for YunBridge components."""
 from __future__ import annotations
 
-import os
 import ssl
 from dataclasses import dataclass
 from pathlib import Path

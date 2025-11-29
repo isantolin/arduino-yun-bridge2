@@ -98,13 +98,13 @@ class _SerialServiceStub:
     def is_command_allowed(self, _command: str) -> bool:
         return False
 
-    def schedule_background(
+    async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ) -> None:
-        asyncio.create_task(coroutine)
+    ) -> asyncio.Task[Any]:
+        return asyncio.create_task(coroutine, name=name)
 
 
 class _FakeMQTTClient:
@@ -169,13 +169,13 @@ class _MQTTServiceStub:
     ) -> None:
         self.handled.set()
 
-    def schedule_background(
+    async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ) -> None:
-        asyncio.create_task(coroutine)
+    ) -> asyncio.Task[Any]:
+        return asyncio.create_task(coroutine, name=name)
 
 
 class _FatalSerialServiceStub(_SerialServiceStub):

@@ -516,11 +516,20 @@ class Client:
         return ConnectionLostError(f"MQTT connection failed (rc={rc})")
 
 
+def _set_mqtt_property(props: Properties, camel_name: str, value: int) -> None:
+    try:
+        setattr(props, camel_name, value)
+    except AttributeError as exc:
+        raise RuntimeError(
+            f"paho-mqtt missing MQTT v5 property '{camel_name}'"
+        ) from exc
+
+
 def _build_mqtt_connect_properties() -> Properties:
     props = Properties(PacketTypes.CONNECT)
-    props.session_expiry_interval = 0
-    props.request_response_information = 1
-    props.request_problem_information = 1
+    _set_mqtt_property(props, "SessionExpiryInterval", 0)
+    _set_mqtt_property(props, "RequestResponseInformation", 1)
+    _set_mqtt_property(props, "RequestProblemInformation", 1)
     return props
 
 

@@ -15,6 +15,7 @@ from ..const import (
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
@@ -180,6 +181,12 @@ class RuntimeState:
     mqtt_spool_errors: int = 0
     mqtt_spool_degraded: bool = False
     mqtt_spool_failure_reason: Optional[str] = None
+    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
+    mqtt_spool_limit: int = 0
+    mqtt_spool_retry_attempts: int = 0
+    mqtt_spool_backoff_until: float = 0.0
+    mqtt_spool_last_error: Optional[str] = None
+    mqtt_spool_recoveries: int = 0
     datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: BoundedByteDeque = field(
         default_factory=BoundedByteDeque
@@ -540,12 +547,84 @@ class RuntimeState:
         self.serial_crc_errors += 1
 
     def record_mcu_status(self, status: Status) -> None:
-        key = status.name if isinstance(status, Status) else str(status)
+        key = status.name
         self.mcu_status_counters[key] = (
             self.mcu_status_counters.get(key, 0) + 1
         )
 
-    def _disable_mqtt_spool(self, reason: str) -> None:
+    def configure_spool(self, directory: str, limit: int) -> None:
+        self.mqtt_spool_dir = directory
+        self.mqtt_spool_limit = max(0, limit)
+
+    def initialize_spool(self) -> None:
+        if not self.mqtt_spool_dir or self.mqtt_spool_limit <= 0:
+            self._disable_mqtt_spool("disabled", schedule_retry=False)
+            return
+        try:
+            self.mqtt_spool = MQTTPublishSpool(
+                self.mqtt_spool_dir,
+                self.mqtt_spool_limit,
+            )
+            self.mqtt_spool_degraded = False
+            self.mqtt_spool_failure_reason = None
+            self.mqtt_spool_retry_attempts = 0
+            self.mqtt_spool_backoff_until = 0.0
+            self.mqtt_spool_last_error = None
+        except Exception as exc:
+            self._handle_mqtt_spool_failure(
+                "initialization_failed", exc=exc
+            )
+
+    async def ensure_spool(self) -> bool:
+        if self.mqtt_spool is not None:
+            return True
+        if not self.mqtt_spool_dir or self.mqtt_spool_limit <= 0:
+            return False
+        if self._spool_backoff_remaining() > 0:
+            return False
+        try:
+            spool = await asyncio.to_thread(
+                MQTTPublishSpool,
+                self.mqtt_spool_dir,
+                self.mqtt_spool_limit,
+            )
+        except Exception as exc:
+            self._handle_mqtt_spool_failure(
+                "reactivation_failed", exc=exc
+            )
+            return False
+        self.mqtt_spool = spool
+        self.mqtt_spool_degraded = False
+        self.mqtt_spool_failure_reason = None
+        self.mqtt_spool_retry_attempts = 0
+        self.mqtt_spool_backoff_until = 0.0
+        self.mqtt_spool_last_error = None
+        self.mqtt_spool_recoveries += 1
+        return True
+
+    def _spool_backoff_remaining(self) -> float:
+        if self.mqtt_spool_backoff_until <= 0:
+            return 0.0
+        return max(0.0, self.mqtt_spool_backoff_until - time.monotonic())
+
+    def _schedule_spool_retry(self) -> None:
+        self.mqtt_spool_retry_attempts = min(
+            self.mqtt_spool_retry_attempts + 1,
+            6,
+        )
+        base_delay = 5.0
+        delay = min(
+            60.0,
+            base_delay * (2 ** (self.mqtt_spool_retry_attempts - 1)),
+        )
+        self.mqtt_spool_backoff_until = time.monotonic() + delay
+
+    def _disable_mqtt_spool(
+        self,
+        reason: str,
+        *,
+        schedule_retry: bool = True,
+    ) -> None:
         spool = self.mqtt_spool
         if spool is not None:
             try:
@@ -558,6 +637,8 @@ class RuntimeState:
         self.mqtt_spool = None
         self.mqtt_spool_degraded = True
         self.mqtt_spool_failure_reason = reason
+        if schedule_retry:
+            self._schedule_spool_retry()
 
     def _handle_mqtt_spool_failure(
         self,
@@ -565,28 +646,33 @@ class RuntimeState:
         *,
         exc: Optional[BaseException] = None,
     ) -> None:
-        if self.mqtt_spool_degraded and self.mqtt_spool is None:
-            return
         detail = reason if exc is None else f"{reason}:{exc}"
         logger.warning(
             "MQTT spool failure (%s); disabling durable spool.", detail
         )
         self.mqtt_spool_errors += 1
+        self.mqtt_spool_last_error = detail
         self._disable_mqtt_spool(detail)
 
-    async def stash_mqtt_message(self, message: PublishableMessage) -> None:
+    async def stash_mqtt_message(
+        self, message: PublishableMessage
+    ) -> bool:
+        if self.mqtt_spool is None:
+            await self.ensure_spool()
         spool = self.mqtt_spool
         if spool is None:
-            self.record_mqtt_drop(message.topic_name)
-            return
+            return False
         try:
             await asyncio.to_thread(spool.append, message)
             self.mqtt_spooled_messages += 1
+            return True
         except Exception as exc:
-            self.record_mqtt_drop(message.topic_name)
             self._handle_mqtt_spool_failure("append_failed", exc=exc)
+            return False
 
     async def flush_mqtt_spool(self) -> None:
+        if self.mqtt_spool is None:
+            await self.ensure_spool()
         spool = self.mqtt_spool
         if spool is None:
             return
@@ -629,6 +715,10 @@ class RuntimeState:
             "mqtt_spool_errors": self.mqtt_spool_errors,
             "mqtt_spool_degraded": self.mqtt_spool_degraded,
             "mqtt_spool_failure_reason": self.mqtt_spool_failure_reason,
+            "mqtt_spool_retry_attempts": self.mqtt_spool_retry_attempts,
+            "mqtt_spool_backoff_until": self.mqtt_spool_backoff_until,
+            "mqtt_spool_last_error": self.mqtt_spool_last_error,
+            "mqtt_spool_recoveries": self.mqtt_spool_recoveries,
             "handshake_attempts": self.handshake_attempts,
             "handshake_successes": self.handshake_successes,
             "handshake_failures": self.handshake_failures,
@@ -646,31 +736,18 @@ class RuntimeState:
 
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:
-    spool: Optional[MQTTPublishSpool] = None
-    spool_failure_reason: Optional[str] = None
-    try:
-        spool = MQTTPublishSpool(
-            config.mqtt_spool_dir,
-            config.mqtt_queue_limit * 4,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Failed to initialise MQTT spool at %s; operating without",
-            config.mqtt_spool_dir,
-            exc_info=True,
-        )
-        spool_failure_reason = str(exc)
-        spool = None
-
     state = RuntimeState(
         mqtt_publish_queue=asyncio.Queue(config.mqtt_queue_limit),
         mqtt_queue_limit=config.mqtt_queue_limit,
-        mqtt_spool=spool,
     )
-    if spool is None:
-        state.mqtt_spool_degraded = True
-        state.mqtt_spool_failure_reason = (
-            spool_failure_reason or "initialization_failed"
-        )
     state.configure(config)
+    state.configure_spool(
+        config.mqtt_spool_dir,
+        config.mqtt_queue_limit * 4,
+    )
+    state.initialize_spool()
+    if state.mqtt_spool is None:
+        state.mqtt_spool_degraded = True
+        if not state.mqtt_spool_failure_reason:
+            state.mqtt_spool_failure_reason = "initialization_failed"
     return state

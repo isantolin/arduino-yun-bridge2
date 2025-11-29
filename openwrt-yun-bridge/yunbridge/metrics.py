@@ -5,7 +5,11 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterator, Optional, Tuple, cast
+
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
+from prometheus_client.registry import Collector
+from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
 
 from .protocol.topics import Topic, topic_path
 from .mqtt import PublishableMessage
@@ -15,11 +19,15 @@ logger = logging.getLogger("yunbridge.metrics")
 
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 _INFO_METRIC = "yunbridge_info"
+_GAUGE_DOC = "YunBridge auto-generated metric"
+_INFO_DOC = "YunBridge informational metric"
+
+PublishEnqueue = Callable[[PublishableMessage], Awaitable[None]]
 
 
 async def publish_metrics(
     state: RuntimeState,
-    enqueue,
+    enqueue: PublishEnqueue,
     interval: float,
     *,
     min_interval: float = 5.0,
@@ -50,72 +58,54 @@ async def publish_metrics(
         await asyncio.sleep(tick)
 
 
-class _PrometheusFormatter:
-    def __init__(self) -> None:
-        self._lines: list[str] = []
-        self._declared: set[str] = set()
+class _RuntimeStateCollector(Collector):
+    """Prometheus collector that projects RuntimeState snapshots."""
 
-    def render(self) -> str:
-        return "\n".join(self._lines) + "\n"
+    def __init__(self, state: RuntimeState) -> None:
+        self._state = state
 
-    def add_snapshot(self, snapshot: Dict[str, Any]) -> None:
-        self._flatten("yunbridge", snapshot)
+    def collect(self) -> Iterator[Any]:  # pragma: no cover - exercised via exporter
+        snapshot = self._state.build_metrics_snapshot()
+        info_values: list[Tuple[str, str]] = []
+        for metric_type, name, value in self._flatten("yunbridge", snapshot):
+            if metric_type == "gauge":
+                metric = GaugeMetricFamily(_sanitize_metric_name(name), _GAUGE_DOC)
+                metric.add_metric((), value)
+                yield metric
+            else:
+                info_values.append((name, value))
+        if info_values:
+            info_metric = InfoMetricFamily(
+                _INFO_METRIC,
+                _INFO_DOC,
+                labels=("key",),
+            )
+            for key, value in info_values:
+                info_metric.add_metric((key,), {"value": value})
+            yield info_metric
 
-    def _flatten(self, prefix: str, value: Any) -> None:
+    def _flatten(
+        self,
+        prefix: str,
+        value: Any,
+    ) -> Iterator[Tuple[str, str, Any]]:
         if isinstance(value, dict):
-            for key, sub_value in value.items():
+            typed_dict = cast(Dict[Any, Any], value)
+            for raw_key, sub_value in typed_dict.items():
+                key = raw_key if isinstance(raw_key, str) else str(raw_key)
                 next_prefix = f"{prefix}_{key}" if prefix else key
-                self._flatten(next_prefix, sub_value)
-            return
-        if isinstance(value, (int, float)):
-            self._emit_metric(prefix, float(value))
+                yield from self._flatten(next_prefix, sub_value)
             return
         if isinstance(value, bool):
-            self._emit_metric(prefix, 1.0 if value else 0.0)
+            yield ("gauge", prefix, 1.0 if value else 0.0)
+            return
+        if isinstance(value, (int, float)):
+            yield ("gauge", prefix, float(value))
             return
         if value is None:
-            self._emit_info(prefix, "null")
+            yield ("info", prefix, "null")
             return
-        self._emit_info(prefix, str(value))
-
-    def _emit_metric(self, name: str, value: float) -> None:
-        metric = _sanitize_metric_name(name)
-        self._declare(metric)
-        self._lines.append(f"{metric} {value}")
-
-    def _emit_info(self, key: str, value: str) -> None:
-        self._declare(_INFO_METRIC)
-        label_key = _escape_label(key)
-        label_value = _escape_label(value)
-        self._lines.append(
-            f'{_INFO_METRIC}{{key="{label_key}",value="{label_value}"}} 1'
-        )
-
-    def _declare(self, metric: str) -> None:
-        if metric in self._declared:
-            return
-        metric_type = "gauge"
-        self._lines.append(
-            f"# HELP {metric} YunBridge auto-generated metric"
-        )
-        self._lines.append(f"# TYPE {metric} {metric_type}")
-        self._declared.add(metric)
-
-
-def _sanitize_metric_name(name: str) -> str:
-    cleaned = _SANITIZE_RE.sub("_", name.lower())
-    cleaned = cleaned.strip("_") or "yunbridge_metric"
-    if cleaned[0].isdigit():
-        cleaned = f"_{cleaned}"
-    return cleaned
-
-
-def _escape_label(value: str) -> str:
-    return (
-        value.replace("\\", "\\\\")
-        .replace("\n", "\\n")
-        .replace('"', '\\"')
-    )
+        yield ("info", prefix, str(value))
 
 
 class PrometheusExporter:
@@ -127,6 +117,9 @@ class PrometheusExporter:
         self._port = port
         self._server: Optional[asyncio.AbstractServer] = None
         self._resolved_port: Optional[int] = None
+        self._registry = CollectorRegistry()
+        self._collector = _RuntimeStateCollector(state)
+        self._registry.register(self._collector)
 
     @property
     def port(self) -> int:
@@ -144,7 +137,11 @@ class PrometheusExporter:
         if sockets:
             sockname = sockets[0].getsockname()
             if isinstance(sockname, tuple):
-                self._resolved_port = int(sockname[1])
+                typed_sockname = cast(tuple[object, ...], sockname)
+                if len(typed_sockname) >= 2:
+                    port_candidate = typed_sockname[1]
+                    if isinstance(port_candidate, int):
+                        self._resolved_port = port_candidate
         logger.info(
             "Prometheus exporter listening",
             extra={"host": self._host, "port": self.port},
@@ -189,12 +186,12 @@ class PrometheusExporter:
             if method != "GET" or path not in {"/metrics", "/"}:
                 await self._write_response(writer, 404, b"")
                 return
-            payload = self._render_metrics().encode("utf-8")
+            payload = self._render_metrics()
             await self._write_response(
                 writer,
                 200,
                 payload,
-                content_type="text/plain; version=0.0.4; charset=utf-8",
+                content_type=CONTENT_TYPE_LATEST,
             )
         except asyncio.CancelledError:
             raise
@@ -231,10 +228,16 @@ class PrometheusExporter:
         )
         await writer.drain()
 
-    def _render_metrics(self) -> str:
-        formatter = _PrometheusFormatter()
-        formatter.add_snapshot(self._state.build_metrics_snapshot())
-        return formatter.render()
+    def _render_metrics(self) -> bytes:
+        return generate_latest(self._registry)
+
+
+def _sanitize_metric_name(name: str) -> str:
+    cleaned = _SANITIZE_RE.sub("_", name.lower())
+    cleaned = cleaned.strip("_") or "yunbridge_metric"
+    if cleaned[0].isdigit():
+        cleaned = f"_{cleaned}"
+    return cleaned
 
 
 __all__ = ["publish_metrics", "PrometheusExporter"]

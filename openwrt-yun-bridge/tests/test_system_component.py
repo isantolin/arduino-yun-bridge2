@@ -41,13 +41,14 @@ class DummyContext:
     def is_command_allowed(self, command: str) -> bool:
         return True
 
-    def schedule_background(
+    async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ) -> None:
+    ) -> asyncio.Task[Any]:
         self.scheduled.append(coroutine)
+        return asyncio.create_task(coroutine, name=name)
 
 
 def _run(coro: Coroutine[Any, Any, None]) -> None:

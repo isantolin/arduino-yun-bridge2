@@ -11,6 +11,7 @@ from typing import (
     Mapping,
     Optional,
     Protocol,
+    Sequence,
     Self,
     Tuple,
     cast,
@@ -228,11 +229,20 @@ class PublishableMessage:
             if correlation_b64 is not None
             else None
         )
-        user_properties_raw = record.get("user_properties") or []
-        user_properties = tuple(
-            (str(key), str(value))
-            for key, value in user_properties_raw
-        )
+        raw_properties = record.get("user_properties")
+        user_properties: tuple[tuple[str, str], ...] = ()
+        if isinstance(raw_properties, (list, tuple)):
+            normalized: list[tuple[str, str]] = []
+            entries = cast(Sequence[Any], raw_properties)
+            for entry in entries:
+                if not isinstance(entry, (list, tuple)):
+                    continue
+                entry_seq = cast(Sequence[Any], entry)
+                if len(entry_seq) < 2:
+                    continue
+                key_obj, value_obj = entry_seq[0], entry_seq[1]
+                normalized.append((str(key_obj), str(value_obj)))
+            user_properties = tuple(normalized)
         return cls(
             topic_name=str(record.get("topic_name", "")),
             payload=payload,

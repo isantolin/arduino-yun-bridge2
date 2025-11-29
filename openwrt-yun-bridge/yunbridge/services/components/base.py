@@ -1,6 +1,7 @@
 """Base interfaces for service components."""
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Coroutine, Optional, Protocol
 
 from ...mqtt import InboundMessage, PublishableMessage
@@ -28,12 +29,12 @@ class BridgeContext(Protocol):
     def is_command_allowed(self, command: str) -> bool:
         ...
 
-    def schedule_background(
+    async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: Optional[str] = None,
-    ) -> None:
+    ) -> asyncio.Task[Any]:
         ...
 
 

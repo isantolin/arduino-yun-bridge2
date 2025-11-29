@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import string
 from pathlib import Path
-from typing import Optional
+from typing import Any, Coroutine, Optional
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
@@ -39,13 +39,13 @@ class DummyBridge(BridgeContext):
     def is_command_allowed(self, command: str) -> bool:
         return True
 
-    def schedule_background(
+    async def schedule_background(
         self,
-        coroutine,
+        coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ):  # pragma: no cover
-        asyncio.create_task(coroutine)
+    ) -> asyncio.Task[Any]:  # pragma: no cover
+        return asyncio.create_task(coroutine, name=name)
 
 
 @pytest.fixture()

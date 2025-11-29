@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -60,11 +59,10 @@ def test_spool_skips_corrupt_rows(
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     spool.append(_make_message("topic/first"))
 
-    with sqlite3.connect(spool._db_path) as conn:  # type: ignore[attr-defined]
-        conn.execute(
-            "INSERT INTO spool (payload) VALUES (?)",
-            ("{this-is: not-json}",),
-        )
+    corrupt_entry = spool._next_entry_path()  # type: ignore[attr-defined]
+    corrupt_entry.write_text("{this-is: not-json}", encoding="utf-8")
+    spool._queue.append(corrupt_entry)  # type: ignore[attr-defined]
+    spool._pending += 1  # type: ignore[attr-defined]
 
     spool.append(_make_message("topic/second"))
 
@@ -78,4 +76,4 @@ def test_spool_skips_corrupt_rows(
     assert restored_two is not None
     assert restored_two.topic_name == "topic/second"
     assert spool.pop_next() is None
-    assert "Dropping corrupt MQTT spool row" in caplog.text
+    assert "Dropping corrupt MQTT spool entry" in caplog.text

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import stat
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Mapping
 
 
 def _parse_line(line: str) -> tuple[str, str] | None:
@@ -62,8 +62,8 @@ def load_credentials_file(path: str | Path) -> Dict[str, str]:
 def lookup_credential(
     keys: Iterable[str],
     *,
-    credential_map: Dict[str, str],
-    environ: Dict[str, str],
+    credential_map: Mapping[str, str],
+    environ: Mapping[str, str],
     fallback: str | None = None,
 ) -> str | None:
     """Resolve a credential trying env vars first, then the map."""

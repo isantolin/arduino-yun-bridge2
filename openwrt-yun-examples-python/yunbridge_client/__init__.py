@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import secrets
+import shlex
 import uuid
 from contextlib import asynccontextmanager
 from typing import (
+    Any,
     AsyncGenerator,
     Dict,
     Iterable,
@@ -16,7 +19,9 @@ from typing import (
     Sequence,
     Tuple,
     TypeVar,
+    TypedDict,
     Union,
+    cast,
 )
 
 # Importing paho_compat ensures the Paho compatibility shim runs first.
@@ -55,6 +60,23 @@ MQTT_PASS = os.environ.get("YUN_BROKER_PASS")
 logger = logging.getLogger(__name__)
 
 _PublishPayload = TypeVar("_PublishPayload", str, bytes)
+
+
+class ShellPollResponse(TypedDict, total=False):
+    stdout: str
+    stderr: str
+    stdout_base64: str
+    stderr_base64: str
+    stdout_truncated: bool
+    stderr_truncated: bool
+    finished: bool
+    exit_code: int
+
+
+def _format_shell_command(parts: Sequence[str]) -> str:
+    if not parts:
+        raise ValueError("command_parts must not be empty")
+    return " ".join(shlex.quote(part) for part in parts)
 
 
 async def _subscribe_many(client: Client, topics: Sequence[str]) -> None:
@@ -449,13 +471,14 @@ class Bridge:
     async def run_sketch_command(
         self, command_parts: List[str], timeout: float = 10
     ) -> bytes:
+        command_str = _format_shell_command(command_parts)
         logger.warning(
             "run_sketch_command falls back to a synchronous shell "
             "command via MQTT."
         )
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run",
-            " ".join(command_parts).encode("utf-8"),
+            command_str.encode("utf-8"),
             resp_topic=f"{self.topic_prefix}/sh/response",
             timeout=timeout,
         )
@@ -464,13 +487,37 @@ class Bridge:
     async def run_shell_command_async(
         self, command_parts: List[str], timeout: float = 10
     ) -> int:
+        command_str = _format_shell_command(command_parts)
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run_async",
-            " ".join(command_parts).encode("utf-8"),
+            command_str.encode("utf-8"),
             resp_topic=f"{self.topic_prefix}/sh/run_async/response",
             timeout=timeout,
         )
         return int(response.decode("utf-8"))
+
+    async def poll_shell_process(
+        self,
+        pid: int,
+        *,
+        timeout: float = 10,
+    ) -> ShellPollResponse:
+        if pid <= 0:
+            raise ValueError("pid must be a positive integer")
+        response = await self._publish_and_wait(
+            f"{self.topic_prefix}/sh/poll/{pid}",
+            b"",
+            resp_topic=f"{self.topic_prefix}/sh/poll/{pid}/response",
+            timeout=timeout,
+        )
+        try:
+            payload = json.loads(response.decode("utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError("Malformed process poll response") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("Process poll response must be an object")
+        payload_dict = cast(Dict[str, Any], payload)
+        return cast(ShellPollResponse, payload_dict)
 
     async def console_write(self, message: str) -> None:
         topic = f"{self.topic_prefix}/console/in"

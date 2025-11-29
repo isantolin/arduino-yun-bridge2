@@ -164,6 +164,10 @@ def test_metrics_snapshot_exposes_error_counters(
     runtime_state.record_mqtt_drop("bridge/status")
     runtime_state.mqtt_spool_degraded = True
     runtime_state.mqtt_spool_failure_reason = "disk-full"
+    runtime_state.mqtt_spool_retry_attempts = 2
+    runtime_state.mqtt_spool_backoff_until = 123.0
+    runtime_state.mqtt_spool_last_error = "disk-full"
+    runtime_state.mqtt_spool_recoveries = 1
 
     snapshot = runtime_state.build_metrics_snapshot()
 
@@ -174,6 +178,10 @@ def test_metrics_snapshot_exposes_error_counters(
     assert snapshot["mqtt_drop_counts"]["bridge/status"] == 1
     assert snapshot["mqtt_spool_degraded"] is True
     assert snapshot["mqtt_spool_failure_reason"] == "disk-full"
+    assert snapshot["mqtt_spool_retry_attempts"] == 2
+    assert snapshot["mqtt_spool_backoff_until"] == 123.0
+    assert snapshot["mqtt_spool_last_error"] == "disk-full"
+    assert snapshot["mqtt_spool_recoveries"] == 1
 
 
 def test_create_runtime_state_marks_spool_degraded(
@@ -193,7 +201,7 @@ def test_create_runtime_state_marks_spool_degraded(
 
     assert state.mqtt_spool is None
     assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_failure_reason == "boom"
+    assert state.mqtt_spool_failure_reason == "initialization_failed:boom"
 
 
 def test_stash_mqtt_message_disables_spool_on_failure(
@@ -213,12 +221,13 @@ def test_stash_mqtt_message_disables_spool_on_failure(
 
         state.mqtt_spool = _BrokenSpool()  # type: ignore[assignment]
         message = PublishableMessage(topic_name="br/test", payload=b"{}")
-        await state.stash_mqtt_message(message)
+        stored = await state.stash_mqtt_message(message)
 
+        assert stored is False
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
         assert state.mqtt_spool_errors == 1
-        assert state.mqtt_dropped_messages == 1
+        assert state.mqtt_dropped_messages == 0
         assert state.mqtt_spool_failure_reason is not None
         assert "append_failed" in state.mqtt_spool_failure_reason
 
@@ -251,5 +260,31 @@ def test_flush_mqtt_spool_handles_pop_failure(
         assert state.mqtt_spool_errors == 1
         assert state.mqtt_spool_failure_reason is not None
         assert "pop_failed" in state.mqtt_spool_failure_reason
+
+    asyncio.run(_run())
+
+
+def test_ensure_spool_recovers_after_disable(
+    runtime_config: RuntimeConfig,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> None:
+    async def _run() -> None:
+        runtime_config.mqtt_spool_dir = str(
+            tmp_path_factory.mktemp("spool")
+        )
+        state = create_runtime_state(runtime_config)
+        assert state.mqtt_spool is not None
+        state.mqtt_spool.close()
+        state.mqtt_spool = None
+        state.mqtt_spool_degraded = True
+        state.mqtt_spool_failure_reason = "test"
+
+        recovered = await state.ensure_spool()
+
+        assert recovered is True
+        assert state.mqtt_spool is not None
+        assert state.mqtt_spool_degraded is False
+        assert state.mqtt_spool_failure_reason is None
+        assert state.mqtt_spool_recoveries == 1
 
     asyncio.run(_run())

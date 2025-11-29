@@ -26,6 +26,8 @@
 #include <string.h> // Para strcmp, strlen, memcpy
 #include <stdlib.h> // Para atoi
 #include <stdint.h>
+#include <HMAC.h>
+#include <SHA256.h>
 
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
@@ -87,227 +89,7 @@ constexpr size_t kHandshakeTagSize = 16;
 constexpr size_t kSecretBufferSize =
     kBridgeSerialSecretLen > 0 ? kBridgeSerialSecretLen : 1;
 
-constexpr size_t kSha256BlockSize = 64;
 constexpr size_t kSha256DigestSize = 32;
-
-struct Sha256Context {
-  uint32_t state[8];
-  uint64_t bitcount;
-  uint8_t buffer[kSha256BlockSize];
-};
-
-inline uint32_t rotate_right(uint32_t value, uint8_t bits) {
-  return (value >> bits) | (value << (32 - bits));
-}
-
-inline uint32_t choose(uint32_t x, uint32_t y, uint32_t z) {
-  return (x & y) ^ (~x & z);
-}
-
-inline uint32_t majority(uint32_t x, uint32_t y, uint32_t z) {
-  return (x & y) ^ (x & z) ^ (y & z);
-}
-
-inline uint32_t big_sigma0(uint32_t x) {
-  return rotate_right(x, 2) ^ rotate_right(x, 13) ^ rotate_right(x, 22);
-}
-
-inline uint32_t big_sigma1(uint32_t x) {
-  return rotate_right(x, 6) ^ rotate_right(x, 11) ^ rotate_right(x, 25);
-}
-
-inline uint32_t small_sigma0(uint32_t x) {
-  return rotate_right(x, 7) ^ rotate_right(x, 18) ^ (x >> 3);
-}
-
-inline uint32_t small_sigma1(uint32_t x) {
-  return rotate_right(x, 17) ^ rotate_right(x, 19) ^ (x >> 10);
-}
-
-#if defined(ARDUINO_ARCH_AVR)
-const uint32_t kSha256InitState[8] PROGMEM = {
-#else
-const uint32_t kSha256InitState[8] = {
-#endif
-  0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-  0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-};
-
-#if defined(ARDUINO_ARCH_AVR)
-const uint32_t kSha256RoundConstants[64] PROGMEM = {
-#else
-const uint32_t kSha256RoundConstants[64] = {
-#endif
-  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-  0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-  0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-  0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-  0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-  0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-  0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-  0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-  0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-};
-
-inline uint32_t read_progmem_u32(const uint32_t* ptr) {
-#if defined(ARDUINO_ARCH_AVR)
-  return pgm_read_dword(ptr);
-#else
-  return *ptr;
-#endif
-}
-
-void sha256_transform(Sha256Context* ctx, const uint8_t* block) {
-  uint32_t w[64];
-  for (size_t i = 0; i < 16; ++i) {
-    size_t offset = i * 4;
-    w[i] = (static_cast<uint32_t>(block[offset]) << 24) |
-           (static_cast<uint32_t>(block[offset + 1]) << 16) |
-           (static_cast<uint32_t>(block[offset + 2]) << 8) |
-           (static_cast<uint32_t>(block[offset + 3]));
-  }
-  for (size_t i = 16; i < 64; ++i) {
-    w[i] = small_sigma1(w[i - 2]) + w[i - 7] + small_sigma0(w[i - 15]) +
-           w[i - 16];
-  }
-
-  uint32_t a = ctx->state[0];
-  uint32_t b = ctx->state[1];
-  uint32_t c = ctx->state[2];
-  uint32_t d = ctx->state[3];
-  uint32_t e = ctx->state[4];
-  uint32_t f = ctx->state[5];
-  uint32_t g = ctx->state[6];
-  uint32_t h = ctx->state[7];
-
-  for (size_t i = 0; i < 64; ++i) {
-    uint32_t temp1 = h + big_sigma1(e) + choose(e, f, g) +
-             read_progmem_u32(&kSha256RoundConstants[i]) + w[i];
-    uint32_t temp2 = big_sigma0(a) + majority(a, b, c);
-    h = g;
-    g = f;
-    f = e;
-    e = d + temp1;
-    d = c;
-    c = b;
-    b = a;
-    a = temp1 + temp2;
-  }
-
-  ctx->state[0] += a;
-  ctx->state[1] += b;
-  ctx->state[2] += c;
-  ctx->state[3] += d;
-  ctx->state[4] += e;
-  ctx->state[5] += f;
-  ctx->state[6] += g;
-  ctx->state[7] += h;
-}
-
-void sha256_init(Sha256Context* ctx) {
-#if defined(ARDUINO_ARCH_AVR)
-  for (size_t i = 0; i < 8; ++i) {
-    ctx->state[i] = read_progmem_u32(&kSha256InitState[i]);
-  }
-#else
-  memcpy(ctx->state, kSha256InitState, sizeof(kSha256InitState));
-#endif
-  ctx->bitcount = 0;
-  memset(ctx->buffer, 0, sizeof(ctx->buffer));
-}
-
-void sha256_update(
-    Sha256Context* ctx, const uint8_t* data, size_t length) {
-  size_t index = static_cast<size_t>((ctx->bitcount >> 3) & 0x3F);
-  ctx->bitcount += static_cast<uint64_t>(length) << 3;
-
-  size_t part_len = kSha256BlockSize - index;
-  size_t offset = 0;
-
-  if (length >= part_len) {
-    memcpy(&ctx->buffer[index], data, part_len);
-    sha256_transform(ctx, ctx->buffer);
-    for (offset = part_len; offset + 63 < length; offset += kSha256BlockSize) {
-      sha256_transform(ctx, &data[offset]);
-    }
-    index = 0;
-  }
-
-  if (offset < length) {
-    memcpy(&ctx->buffer[index], &data[offset], length - offset);
-  }
-}
-
-void sha256_final(Sha256Context* ctx, uint8_t* digest) {
-  uint8_t padding[kSha256BlockSize] = {0x80};
-  uint8_t length_bytes[8];
-
-  uint64_t bitcount_be = ctx->bitcount;
-  for (int i = 7; i >= 0; --i) {
-    length_bytes[i] = static_cast<uint8_t>(bitcount_be & 0xFF);
-    bitcount_be >>= 8;
-  }
-
-  size_t index = static_cast<size_t>((ctx->bitcount >> 3) & 0x3F);
-  size_t pad_len = (index < 56) ? (56 - index) : (120 - index);
-  sha256_update(ctx, padding, pad_len);
-  sha256_update(ctx, length_bytes, 8);
-
-  for (size_t i = 0; i < 8; ++i) {
-    digest[i * 4] = static_cast<uint8_t>(ctx->state[i] >> 24);
-    digest[i * 4 + 1] = static_cast<uint8_t>(ctx->state[i] >> 16);
-    digest[i * 4 + 2] = static_cast<uint8_t>(ctx->state[i] >> 8);
-    digest[i * 4 + 3] = static_cast<uint8_t>(ctx->state[i]);
-  }
-}
-
-void hmac_sha256(
-    const uint8_t* key,
-    size_t key_len,
-    const uint8_t* data,
-    size_t data_len,
-    uint8_t* out_digest) {
-  uint8_t key_block[kSha256BlockSize];
-  memset(key_block, 0, sizeof(key_block));
-
-  if (key_len > kSha256BlockSize) {
-    Sha256Context hash_ctx;
-    sha256_init(&hash_ctx);
-    sha256_update(&hash_ctx, key, key_len);
-    sha256_final(&hash_ctx, key_block);
-  } else if (key_len > 0) {
-    memcpy(key_block, key, key_len);
-  }
-
-  uint8_t inner_pad[kSha256BlockSize];
-  uint8_t outer_pad[kSha256BlockSize];
-  for (size_t i = 0; i < kSha256BlockSize; ++i) {
-    inner_pad[i] = key_block[i] ^ 0x36;
-    outer_pad[i] = key_block[i] ^ 0x5C;
-  }
-
-  Sha256Context ctx;
-  uint8_t inner_digest[kSha256DigestSize];
-
-  sha256_init(&ctx);
-  sha256_update(&ctx, inner_pad, sizeof(inner_pad));
-  if (data_len > 0) {
-    sha256_update(&ctx, data, data_len);
-  }
-  sha256_final(&ctx, inner_digest);
-
-  sha256_init(&ctx);
-  sha256_update(&ctx, outer_pad, sizeof(outer_pad));
-  sha256_update(&ctx, inner_digest, sizeof(inner_digest));
-  sha256_final(&ctx, out_digest);
-}
 
 void copy_serial_secret(uint8_t* dest) {
 #if defined(ARDUINO_ARCH_AVR)
@@ -323,15 +105,18 @@ void computeHandshakeTag(
     memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
+
   uint8_t secret_buffer[kSecretBufferSize];
   copy_serial_secret(secret_buffer);
+
+  SHA256 sha256;
+  HMAC<SHA256> hmac(sha256);
   uint8_t digest[kSha256DigestSize];
-  hmac_sha256(
-      secret_buffer,
-      kBridgeSerialSecretLen,
-      nonce,
-      nonce_len,
-      digest);
+
+  hmac.reset(secret_buffer, kBridgeSerialSecretLen);
+  hmac.update(nonce, nonce_len);
+  hmac.finalize(digest, kSha256DigestSize);
+
   memcpy(out_tag, digest, kHandshakeTagSize);
 }
 

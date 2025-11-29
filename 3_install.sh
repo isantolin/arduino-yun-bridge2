@@ -594,7 +594,6 @@ python3-cobs \
 python3-tenacity \
 python3-psutil \
 python3-more-itertools \
-python3-sqlite3 \
 openssl-util \
 coreutils-stty \
 mosquitto-client-ssl \

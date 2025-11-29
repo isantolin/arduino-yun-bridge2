@@ -22,7 +22,7 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 
 - **Logging estructurado**: todo el árbol `yunbridge.*` escribe líneas JSON (`ts`, `level`, `logger`, `message`, `extra`). Esto facilita enviar los logs directamente a syslog, Loki o Elastic sin parsers adicionales.
 - **Metrics MQTT**: `publish_metrics()` sigue publicando snapshots periódicos en `br/system/metrics` con la misma estructura JSON usada por `RuntimeState`.
-- **Exportador Prometheus** *(nuevo)*: al habilitar `metrics_enabled`, el daemon levanta un listener HTTP (por defecto `127.0.0.1:9130`) que expone todas las métricas numéricas en el formato `text/plain; version=0.0.4`. Los campos no numéricos se representan como `yunbridge_info{key="...",value="..."} 1`.
+- **Exportador Prometheus** *(nuevo)*: al habilitar `metrics_enabled`, el daemon levanta un listener HTTP (por defecto `127.0.0.1:9130`) respaldado por `prometheus_client`. Expone todas las métricas numéricas en el formato `CONTENT_TYPE_LATEST` y los campos no numéricos se representan como `yunbridge_info{key="...",value="..."} 1`.
 - **Status Writer**: `status_writer()` mantiene `/tmp/yunbridge_status.json` como snapshot local para depuración rápida y para scripts de LuCI.
 
 ## Configuración relevante

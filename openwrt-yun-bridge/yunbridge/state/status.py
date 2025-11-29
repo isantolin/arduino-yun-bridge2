@@ -38,6 +38,14 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "mqtt_spool_failure_reason": (
                     state.mqtt_spool_failure_reason
                 ),
+                "mqtt_spool_retry_attempts": (
+                    state.mqtt_spool_retry_attempts
+                ),
+                "mqtt_spool_backoff_until": (
+                    state.mqtt_spool_backoff_until
+                ),
+                "mqtt_spool_last_error": state.mqtt_spool_last_error,
+                "mqtt_spool_recoveries": state.mqtt_spool_recoveries,
                 "mqtt_spool_pending": (
                     state.mqtt_spool.pending
                     if state.mqtt_spool is not None

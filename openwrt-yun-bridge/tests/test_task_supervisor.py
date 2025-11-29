@@ -18,10 +18,11 @@ def test_task_supervisor_tracks_lifecycle(caplog: pytest.LogCaptureFixture) -> N
             await asyncio.sleep(0)
             completed.set()
 
-        supervisor.start(worker(), name="worker")
+        await supervisor.start(worker(), name="worker")
         await asyncio.wait_for(completed.wait(), timeout=1)
         await asyncio.sleep(0)
         assert supervisor.active_count == 0
+        await supervisor.cancel()
 
     asyncio.run(_run())
 
@@ -34,10 +35,11 @@ def test_task_supervisor_logs_failures(caplog: pytest.LogCaptureFixture) -> None
         async def boom() -> None:
             raise RuntimeError("boom")
 
-        supervisor.start(boom(), name="boom-task")
+        await supervisor.start(boom(), name="boom-task")
         await asyncio.sleep(0)
         await asyncio.sleep(0)
         assert supervisor.active_count == 0
+        await supervisor.cancel()
 
     asyncio.run(_run())
     assert "boom" in caplog.text

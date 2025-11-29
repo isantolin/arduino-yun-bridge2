@@ -181,7 +181,7 @@ class BridgeService:
             return False
         return await self._serial_flow.send(command_id, payload)
 
-    def schedule_background(
+    async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
@@ -189,7 +189,7 @@ class BridgeService:
     ) -> asyncio.Task[Any]:
         """Schedule *coroutine* under the supervisor."""
 
-        return self._task_supervisor.start(coroutine, name=name)
+        return await self._task_supervisor.start(coroutine, name=name)
 
     async def cancel_background_tasks(self) -> None:
         await self._task_supervisor.cancel()
@@ -333,13 +333,35 @@ class BridgeService:
                 queue.task_done()
                 drop_topic = dropped.topic_name
                 self.state.record_mqtt_drop(drop_topic)
-                await self.state.stash_mqtt_message(dropped)
+                stored = await self.state.stash_mqtt_message(dropped)
+                spool_note: str
+                if stored:
+                    pending = (
+                        self.state.mqtt_spool.pending
+                        if self.state.mqtt_spool is not None
+                        else 0
+                    )
+                    spool_note = f"; spooled_pending={pending}"
+                else:
+                    reason = (
+                        self.state.mqtt_spool_failure_reason or "unknown"
+                    )
+                    backoff_remaining = max(
+                        0.0,
+                        self.state.mqtt_spool_backoff_until
+                        - time.monotonic(),
+                    )
+                    spool_note = (
+                        "; spool_unavailable reason=%s backoff_remaining=%.1fs"
+                        % (reason, backoff_remaining)
+                    )
                 logger.warning(
                     "MQTT publish queue saturated (%d/%d); dropping oldest "
-                    "topic=%s",
+                    "topic=%s%s",
                     queue.qsize(),
                     self.state.mqtt_queue_limit,
                     drop_topic,
+                    spool_note,
                 )
 
     async def sync_link(self) -> bool:

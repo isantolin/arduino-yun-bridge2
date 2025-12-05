@@ -49,6 +49,7 @@ define Package/$(PKG_NAME)
 		+python3-tenacity \
 		+python3-psutil \
 		+python3-prometheus-client \
+		+python3-pydantic \
 		+python3-more-itertools
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef

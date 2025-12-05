@@ -5,6 +5,7 @@ import asyncio
 import base64
 import json
 import logging
+from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
@@ -60,42 +61,42 @@ class ProcessComponent:
             return
 
         async def _execute() -> None:
-            try:
-                (
-                    status,
-                    stdout_bytes,
-                    stderr_bytes,
-                    exit_code,
-                ) = await self.run_sync(command)
-                response = self._build_sync_response(
-                    status,
-                    stdout_bytes,
-                    stderr_bytes,
-                )
-                await self.ctx.send_frame(
-                    Command.CMD_PROCESS_RUN_RESP.value, response
-                )
-                logger.debug(
-                    "Sent PROCESS_RUN_RESP status=%d exit=%s",
-                    status,
-                    exit_code,
-                )
-            except CommandValidationError as exc:
-                await self.ctx.send_frame(
-                    Status.ERROR.value,
-                    encode_status_reason(exc.message),
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to execute synchronous process command '%s'",
-                    command,
-                )
-                await self.ctx.send_frame(
-                    Status.ERROR.value,
-                    b"process_run_internal_error",
-                )
-            finally:
-                self._release_process_slot()
+            async with AsyncExitStack() as stack:
+                stack.callback(self._release_process_slot)
+                try:
+                    (
+                        status,
+                        stdout_bytes,
+                        stderr_bytes,
+                        exit_code,
+                    ) = await self.run_sync(command)
+                    response = self._build_sync_response(
+                        status,
+                        stdout_bytes,
+                        stderr_bytes,
+                    )
+                    await self.ctx.send_frame(
+                        Command.CMD_PROCESS_RUN_RESP.value, response
+                    )
+                    logger.debug(
+                        "Sent PROCESS_RUN_RESP status=%d exit=%s",
+                        status,
+                        exit_code,
+                    )
+                except CommandValidationError as exc:
+                    await self.ctx.send_frame(
+                        Status.ERROR.value,
+                        encode_status_reason(exc.message),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to execute synchronous process command '%s'",
+                        command,
+                    )
+                    await self.ctx.send_frame(
+                        Status.ERROR.value,
+                        b"process_run_internal_error",
+                    )
 
         await self.ctx.schedule_background(_execute())
 
@@ -111,25 +112,29 @@ class ProcessComponent:
             )
             await self._publish_run_async_error("command_validation_failed")
             return
-        if pid == 0xFFFF:
-            await self.ctx.send_frame(
-                Status.ERROR.value,
-                encode_status_reason("process_run_async_failed"),
-            )
-            await self._publish_run_async_error("process_run_async_failed")
-            return
-        await self.ctx.send_frame(
-            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, pack_u16(pid)
-        )
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SHELL,
-            "run_async",
-            "response",
-        )
-        await self.ctx.enqueue_mqtt(
-            PublishableMessage(topic_name=topic, payload=str(pid).encode())
-        )
+        match pid:
+            case 0xFFFF:
+                await self.ctx.send_frame(
+                    Status.ERROR.value,
+                    encode_status_reason("process_run_async_failed"),
+                )
+                await self._publish_run_async_error("process_run_async_failed")
+                return
+            case _:
+                await self.ctx.send_frame(
+                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value, pack_u16(pid)
+                )
+                topic = topic_path(
+                    self.state.mqtt_topic_prefix,
+                    Topic.SHELL,
+                    "run_async",
+                    "response",
+                )
+                await self.ctx.enqueue_mqtt(
+                    PublishableMessage(
+                        topic_name=topic, payload=str(pid).encode()
+                    )
+                )
 
     async def _publish_run_async_error(self, reason: str) -> None:
         topic = topic_path(
@@ -338,32 +343,34 @@ class ProcessComponent:
             )
             return 0xFFFF
 
-        pid = await self._allocate_pid()
-        if pid == 0xFFFF:
-            self._release_process_slot()
-            return 0xFFFF
+        async with AsyncExitStack() as stack:
+            stack.callback(self._release_process_slot)
 
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *tokens,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except OSError as exc:
-            logger.warning(
-                "Failed to start async process '%s': %s",
-                command,
-                exc,
-            )
-            self._release_process_slot()
-            return 0xFFFF
-        except Exception:
-            logger.exception(
-                "Unexpected error starting async process '%s'",
-                command,
-            )
-            self._release_process_slot()
-            return 0xFFFF
+            pid = await self._allocate_pid()
+            if pid == 0xFFFF:
+                return 0xFFFF
+
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *tokens,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            except OSError as exc:
+                logger.warning(
+                    "Failed to start async process '%s': %s",
+                    command,
+                    exc,
+                )
+                return 0xFFFF
+            except Exception:
+                logger.exception(
+                    "Unexpected error starting async process '%s'",
+                    command,
+                )
+                return 0xFFFF
+
+            stack.pop_all()
 
         slot = ManagedProcess(pid=pid, command=command, handle=proc)
         async with self.state.process_lock:

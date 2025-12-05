@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 from typing import Optional, Tuple
 
@@ -148,60 +149,93 @@ class FileComponent:
             )
             return
 
-        if action == "write":
-            success, _, reason = await self._perform_file_operation(
-                "write", filename, payload
+        outcome: dict[str, str] = {"status": "ignored"}
+        action_label = action or "<missing>"
+        async with AsyncExitStack() as stack:
+            stack.callback(
+                self._log_mqtt_outcome,
+                action_label,
+                filename,
+                outcome,
             )
-            if not success:
-                logger.error(
-                    "MQTT file write failed for %s: %s",
-                    filename,
-                    reason or "unknown_reason",
-                )
-        elif action == "read":
-            success, content, reason = await self._perform_file_operation(
-                "read", filename
-            )
-            if not success:
-                logger.error(
-                    "MQTT file read failed for %s: %s",
-                    filename,
-                    reason or "unknown_reason",
-                )
-                return
-            data = content or b""
-            response_topic = topic_path(
-                self.state.mqtt_topic_prefix,
-                Topic.FILE,
-                "read",
-                "response",
-                *tuple(segment for segment in filename.split("/") if segment),
-            )
-            message = (
-                PublishableMessage(
-                    topic_name=response_topic,
-                    payload=data,
-                )
-                .with_message_expiry(30)
-                .with_user_property("bridge-file-path", filename)
-            )
+            match action:
+                case "write":
+                    success, _, reason = await self._perform_file_operation(
+                        "write", filename, payload
+                    )
+                    if not success:
+                        outcome["status"] = reason or "write_failed"
+                        logger.error(
+                            "MQTT file write failed for %s: %s",
+                            filename,
+                            reason or "unknown_reason",
+                        )
+                    else:
+                        outcome["status"] = "ok"
+                case "read":
+                    success, content, reason = await self._perform_file_operation(
+                        "read", filename
+                    )
+                    if not success:
+                        outcome["status"] = reason or "read_failed"
+                        logger.error(
+                            "MQTT file read failed for %s: %s",
+                            filename,
+                            reason or "unknown_reason",
+                        )
+                        return
+                    outcome["status"] = "ok"
+                    data = content or b""
+                    response_topic = topic_path(
+                        self.state.mqtt_topic_prefix,
+                        Topic.FILE,
+                        "read",
+                        "response",
+                        *tuple(
+                            segment for segment in filename.split("/") if segment
+                        ),
+                    )
+                    message = (
+                        PublishableMessage(
+                            topic_name=response_topic,
+                            payload=data,
+                        )
+                        .with_message_expiry(30)
+                        .with_user_property("bridge-file-path", filename)
+                    )
 
-            await self.ctx.enqueue_mqtt(
-                message,
-                reply_context=inbound,
-            )
-        elif action == "remove":
-            success, _, reason = await self._perform_file_operation(
-                "remove", filename
-            )
-            if not success:
-                logger.error(
-                    "MQTT file remove failed for %s: %s",
-                    filename,
-                    reason or "unknown_reason",
-                )
-        else:
-            logger.debug("Ignoring unknown file action '%s'", action)
+                    await self.ctx.enqueue_mqtt(
+                        message,
+                        reply_context=inbound,
+                    )
+                case "remove":
+                    success, _, reason = await self._perform_file_operation(
+                        "remove", filename
+                    )
+                    if not success:
+                        outcome["status"] = reason or "remove_failed"
+                        logger.error(
+                            "MQTT file remove failed for %s: %s",
+                            filename,
+                            reason or "unknown_reason",
+                        )
+                    else:
+                        outcome["status"] = "ok"
+                case _:
+                    logger.debug("Ignoring unknown file action '%s'", action)
+
+    @staticmethod
+    def _log_mqtt_outcome(
+        action: str,
+        filename: str,
+        outcome: dict[str, str],
+    ) -> None:
+        logger.debug(
+            "MQTT file action '%s' for %s finished with %s",
+            action,
+            filename or "<missing>",
+            outcome.get("status", "unknown"),
+        )
 
     async def _perform_file_operation(
         self,

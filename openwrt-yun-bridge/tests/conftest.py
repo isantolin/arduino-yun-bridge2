@@ -1,10 +1,13 @@
 """Pytest configuration for Yun Bridge tests."""
 from __future__ import annotations
 
+import asyncio
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
@@ -20,10 +23,32 @@ from yunbridge.state.context import RuntimeState, create_runtime_state
 pytest_plugins = ("pytest_asyncio", "anyio")
 
 
+@pytest_asyncio.fixture()
+def event_loop() -> asyncio.AbstractEventLoop:
+    """Provide a clean event loop per-test to mirror historical behavior."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        yield loop
+    finally:
+        with suppress(RuntimeError):
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        asyncio.set_event_loop(None)
+        loop.close()
+
+
 @pytest.fixture(autouse=True)
 def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure load_runtime_config() sees a secure serial secret by default."""
     monkeypatch.setenv("YUNBRIDGE_SERIAL_SECRET", "unit-test-secret-1234")
+
+
+@pytest.fixture()
+def enable_event_loop_debug(event_loop: asyncio.AbstractEventLoop) -> None:
+    """Mirror HA fixture but ensure pytest-asyncio already created the loop."""
+    event_loop.set_debug(True)
+    yield
+    event_loop.set_debug(False)
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:

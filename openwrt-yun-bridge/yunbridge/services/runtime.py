@@ -889,24 +889,21 @@ class BridgeService:
                     payload_str,
                     inbound,
                 )
-            elif route.topic == Topic.MAILBOX and identifier == "write":
-                if not self._is_topic_action_allowed(route.topic, identifier):
+            elif route.topic == Topic.MAILBOX:
+                if identifier and not self._is_topic_action_allowed(
+                    route.topic, identifier
+                ):
                     await self._reject_topic_action(
                         inbound,
                         route.topic,
                         identifier,
                     )
                     return
-                await self._mailbox.handle_mqtt_write(payload, inbound)
-            elif route.topic == Topic.MAILBOX and identifier == "read":
-                if not self._is_topic_action_allowed(route.topic, identifier):
-                    await self._reject_topic_action(
-                        inbound,
-                        route.topic,
-                        identifier,
-                    )
-                    return
-                await self._mailbox.handle_mqtt_read(inbound)
+                await self._mailbox.handle_mqtt(
+                    identifier,
+                    payload,
+                    inbound,
+                )
             elif route.topic == Topic.SHELL:
                 if identifier and not self._is_topic_action_allowed(
                     route.topic, identifier
@@ -917,7 +914,7 @@ class BridgeService:
                         identifier,
                     )
                     return
-                await self._shell.handle_mqtt(parts, payload_str, inbound)
+                await self._shell.handle_mqtt(parts, payload, inbound)
             elif route.topic in (Topic.DIGITAL, Topic.ANALOG):
                 await self._pin.handle_mqtt(
                     route.topic,

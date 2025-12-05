@@ -12,7 +12,9 @@ def anyio_backend() -> str:
 
 
 @pytest.mark.anyio("asyncio")
-async def test_prometheus_exporter_serves_metrics(runtime_state):
+async def test_prometheus_exporter_serves_metrics(
+    runtime_state, socket_enabled: None
+):
     exporter = PrometheusExporter(runtime_state, "127.0.0.1", 0)
     await exporter.start()
     try:

@@ -1,0 +1,5 @@
+# Auto-populated by tools/sync_feed_overlay.sh; ignore generated content
+*
+!.gitignore
+!.gitkeep
+!README.md

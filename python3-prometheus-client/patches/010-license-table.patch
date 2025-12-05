@@ -1,0 +1,34 @@
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,5 +1,5 @@
+ [build-system]
+-requires = ["setuptools>=77.0.0"]
++requires = ["setuptools>=65.5.0"]
+ build-backend = "setuptools.build_meta"
+ 
+ [project]
+@@ -7,11 +7,7 @@
+ version = "0.23.1"
+ description = "Python client for the Prometheus monitoring system."
+ readme = "README.md"
+-license = "Apache-2.0 AND BSD-2-Clause"
+-license-files = [
+-	"LICENSE",
+-	"NOTICE",
+-]
++license = { text = "Apache-2.0 AND BSD-2-Clause" }
+ requires-python = ">=3.9"
+ authors = [
+     { name = "The Prometheus Authors", email = "prometheus-developers@googlegroups.com" },
+@@ -48,5 +44,11 @@
+ Homepage = "https://github.com/prometheus/client_python"
+ Documentation = "https://prometheus.github.io/client_python/"
+ 
++[tool.setuptools]
++license-files = [
++    "LICENSE",
++    "NOTICE",
++]
++
+ [tool.setuptools.package-data]
+ prometheus_client = ['py.typed']

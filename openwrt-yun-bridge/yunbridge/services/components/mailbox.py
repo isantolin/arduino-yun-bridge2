@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import AsyncExitStack
 from typing import Optional
 
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
@@ -151,10 +152,36 @@ class MailboxComponent:
         )
         return True
 
+    async def handle_mqtt(
+        self,
+        action: str,
+        payload: bytes,
+        inbound: Optional[InboundMessage] = None,
+    ) -> None:
+        match action:
+            case "write":
+                await self._handle_mqtt_write(payload)
+            case "read":
+                await self._handle_mqtt_read(inbound)
+            case _:
+                logger.debug("Ignoring mailbox action '%s'", action)
+
     async def handle_mqtt_write(
         self,
         payload: bytes,
         inbound: Optional[InboundMessage] = None,
+    ) -> None:
+        await self._handle_mqtt_write(payload)
+
+    async def handle_mqtt_read(
+        self,
+        inbound: Optional[InboundMessage] = None,
+    ) -> None:
+        await self._handle_mqtt_read(inbound)
+
+    async def _handle_mqtt_write(
+        self,
+        payload: bytes,
     ) -> None:
         if not self.state.enqueue_mailbox_message(payload, logger):
             logger.error(
@@ -167,16 +194,10 @@ class MailboxComponent:
             "Added message to mailbox queue. Size=%d",
             len(self.state.mailbox_queue),
         )
-        await self.ctx.enqueue_mqtt(
-            PublishableMessage(
-                topic_name=mailbox_outgoing_available_topic(
-                    self.state.mqtt_topic_prefix
-                ),
-                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
-            )
-        )
+        async with AsyncExitStack() as stack:
+            stack.push_async_callback(self._publish_outgoing_available)
 
-    async def handle_mqtt_read(
+    async def _handle_mqtt_read(
         self,
         inbound: Optional[InboundMessage] = None,
     ) -> None:
@@ -187,23 +208,22 @@ class MailboxComponent:
         )
 
         if self.state.mailbox_incoming_queue:
-            message_payload = self.state.pop_mailbox_incoming()
-            if message_payload is None:
-                await self._publish_incoming_available()
+            async with AsyncExitStack() as stack:
+                stack.push_async_callback(self._publish_incoming_available)
+                message_payload = self.state.pop_mailbox_incoming()
+                if message_payload is None:
+                    return
+
+                message = PublishableMessage(
+                    topic_name=topic,
+                    payload=message_payload,
+                )
+
+                await self.ctx.enqueue_mqtt(
+                    message,
+                    reply_context=inbound,
+                )
                 return
-
-            message = PublishableMessage(
-                topic_name=topic,
-                payload=message_payload,
-            )
-
-            await self.ctx.enqueue_mqtt(
-                message,
-                reply_context=inbound,
-            )
-
-            await self._publish_incoming_available()
-            return
 
         message_payload = self.state.pop_mailbox_message()
         if message_payload is None:
@@ -213,19 +233,12 @@ class MailboxComponent:
             topic_name=topic,
             payload=message_payload,
         )
-        await self.ctx.enqueue_mqtt(
-            message,
-            reply_context=inbound,
-        )
-
-        await self.ctx.enqueue_mqtt(
-            PublishableMessage(
-                topic_name=mailbox_outgoing_available_topic(
-                    self.state.mqtt_topic_prefix
-                ),
-                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
+        async with AsyncExitStack() as stack:
+            stack.push_async_callback(self._publish_outgoing_available)
+            await self.ctx.enqueue_mqtt(
+                message,
+                reply_context=inbound,
             )
-        )
 
     async def _publish_incoming_available(self) -> None:
         await self.ctx.enqueue_mqtt(
@@ -236,6 +249,16 @@ class MailboxComponent:
                 payload=str(
                     len(self.state.mailbox_incoming_queue)
                 ).encode("utf-8"),
+            )
+        )
+
+    async def _publish_outgoing_available(self) -> None:
+        await self.ctx.enqueue_mqtt(
+            PublishableMessage(
+                topic_name=mailbox_outgoing_available_topic(
+                    self.state.mqtt_topic_prefix
+                ),
+                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
         )
 

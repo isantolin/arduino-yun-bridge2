@@ -1,20 +1,18 @@
 import io
 import json
 import logging
+import sys
+import types
 from pathlib import Path
 from typing import Any, Dict
 
 import pytest
 
-from yunbridge.config import credentials as credentials_module
+from yunbridge import common
 from yunbridge.config import logging as logging_module
 from yunbridge.config import settings
 from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 
-
-@pytest.fixture(autouse=True)
-def _stub_credentials_loader(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "load_credentials_file", lambda _: {})
 
 
 def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
@@ -38,6 +36,35 @@ def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
     }
     base.update(overrides)
     return base
+
+
+def _install_dummy_uci_module(
+    monkeypatch: pytest.MonkeyPatch, section: Dict[str, Any]
+) -> None:
+    class _DummyCursor:
+        def __init__(self, payload: Dict[str, Any]):
+            self._payload = payload
+
+        def __enter__(self) -> "_DummyCursor":
+            return self
+
+        def __exit__(
+            self,
+            exc_type: Any,
+            exc: Any,
+            exc_tb: Any,
+        ) -> bool:  # pragma: no cover - simple context manager
+            return False
+
+        def get_all(self, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+            return self._payload
+
+    module = types.SimpleNamespace(
+        Uci=lambda: _DummyCursor(section),
+        UciException=RuntimeError,
+    )
+
+    monkeypatch.setitem(sys.modules, "uci", module)
 
 
 def test_load_runtime_config_applies_env_and_defaults(
@@ -143,44 +170,6 @@ def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
     assert config.metrics_port == 9400
 
 
-def test_load_runtime_config_prefers_credentials_file(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.delenv("YUNBRIDGE_DEBUG", raising=False)
-    monkeypatch.delenv("YUNBRIDGE_SERIAL_SECRET", raising=False)
-    monkeypatch.setenv("YUNBRIDGE_CREDENTIALS_FILE", "/tmp/credfile")
-
-    raw_config = {
-        "serial_port": "/dev/cred",
-        "serial_baud": "115200",
-        "mqtt_tls": "1",
-        "mqtt_host": "broker",
-        "serial_shared_secret": " ",
-        "mqtt_user": " ",
-        "mqtt_pass": None,
-        "mqtt_cafile": None,
-    }
-
-    credentials = {
-        "serial_shared_secret": "fromfile",
-        "YUNBRIDGE_MQTT_USER": "user_file",
-        "YUNBRIDGE_MQTT_PASS": "pass_file",
-        "YUNBRIDGE_MQTT_CAFILE": "/etc/cafile",
-    }
-
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
-    monkeypatch.setattr(
-        settings, "load_credentials_file", lambda _: credentials
-    )
-
-    config = settings.load_runtime_config()
-
-    assert config.serial_shared_secret == b"fromfile"
-    assert config.mqtt_user == "user_file"
-    assert config.mqtt_pass == "pass_file"
-    assert config.mqtt_cafile == "/etc/cafile"
-    assert config.credentials_file == "/tmp/credfile"
-
 
 def test_load_runtime_config_allows_empty_mqtt_user_env(
     monkeypatch: pytest.MonkeyPatch,
@@ -224,8 +213,12 @@ def test_load_runtime_config_prefers_uci_config(
 
     monkeypatch.setattr(settings, "get_default_config", _unexpected_default)
 
-    with pytest.raises(ValueError, match="MQTT TLS must be enabled"):
-        settings.load_runtime_config()
+    config = settings.load_runtime_config()
+
+    assert config.serial_port == "/dev/uci"
+    assert config.debug_logging is True
+    assert config.mqtt_tls is False
+    assert config.tls_enabled is False
 
 
 def test_load_runtime_config_falls_back_to_defaults(
@@ -280,33 +273,47 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.serial_shared_secret == b"defaultsecret"
 
 
-def test_load_runtime_config_fails_when_credentials_insecure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_get_uci_config_flattens_nested_structures(
+    monkeypatch: pytest.MonkeyPatch,
 ):
-    insecure = tmp_path / "credentials"
-    insecure.write_text("serial_shared_secret=fromfile\n", encoding="utf-8")
-    insecure.chmod(0o644)
-
-    raw_config = {
-        "serial_port": "/dev/uci",
-        "serial_baud": "57600",
-        "mqtt_host": "broker",
-        "mqtt_port": "8883",
-        "mqtt_tls": "1",
-        "mqtt_cafile": "/etc/cafile",
-        "serial_shared_secret": " inline ",
+    section = {
+        "general": {
+            "name": "general",
+            "type": "general",
+            "options": {
+                "mqtt_host": "remote.example",
+                "mqtt_port": "1884",
+                "mqtt_tls": "0",
+            },
+        }
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
-    monkeypatch.setenv("YUNBRIDGE_CREDENTIALS_FILE", str(insecure))
-    monkeypatch.setattr(
-        settings,
-        "load_credentials_file",
-        credentials_module.load_credentials_file,
-    )
+    _install_dummy_uci_module(monkeypatch, section)
 
-    with pytest.raises(RuntimeError, match="Insecure credentials file"):
-        settings.load_runtime_config()
+    config = common.get_uci_config()
+
+    assert config["mqtt_host"] == "remote.example"
+    assert config["mqtt_port"] == "1884"
+    assert config["mqtt_tls"] == "0"
+
+
+def test_get_uci_config_handles_value_wrappers(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    section = {
+        "options": {
+            "mqtt_host": {"value": "wrapped.example"},
+            "allowed_commands": {"values": ["ls", "echo"]},
+        }
+    }
+
+    _install_dummy_uci_module(monkeypatch, section)
+
+    config = common.get_uci_config()
+
+    assert config["mqtt_host"] == "wrapped.example"
+    assert config["allowed_commands"] == "ls echo"
+
 
 
 def test_resolve_watchdog_settings_uses_procd(monkeypatch: pytest.MonkeyPatch):
@@ -368,6 +375,36 @@ def test_runtime_config_rejects_low_entropy_serial_secret() -> None:
     kwargs = _runtime_config_kwargs(serial_shared_secret=b"aaaaaaaa")
     with pytest.raises(ValueError, match="four distinct"):
         settings.RuntimeConfig(**kwargs)
+
+
+def test_runtime_config_rejects_invalid_mailbox_limits() -> None:
+    kwargs = _runtime_config_kwargs(
+        mailbox_queue_limit=4,
+        mailbox_queue_bytes_limit=2,
+        serial_shared_secret=b"testshared",
+    )
+    with pytest.raises(ValueError, match="mailbox_queue_bytes_limit"):
+        settings.RuntimeConfig(**kwargs)
+
+
+def test_runtime_config_rejects_zero_console_limit() -> None:
+    kwargs = _runtime_config_kwargs(
+        console_queue_limit_bytes=0,
+        serial_shared_secret=b"testshared",
+    )
+    with pytest.raises(ValueError, match="console_queue_limit_bytes"):
+        settings.RuntimeConfig(**kwargs)
+
+
+def test_runtime_config_allows_disabling_tls() -> None:
+    kwargs = _runtime_config_kwargs(
+        mqtt_tls=False,
+        mqtt_cafile=None,
+        serial_shared_secret=b"testshared",
+    )
+    config = settings.RuntimeConfig(**kwargs)
+
+    assert config.tls_enabled is False
 
 
 def test_configure_logging_syslog_handler(

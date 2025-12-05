@@ -22,59 +22,71 @@ rationale = "Asyncio stdlib backport packaged separately on OpenWrt"
 [[dependency]]
 name = "python3-uci"
 openwrt = "python3-uci"
-pip = "uci>=2023.3"
+pip = "uci==1.0.6"
 rationale = "Load daemon configuration from UCI"
 
 [[dependency]]
+name = "attrs"
+openwrt = ""
+pip = "attrs==24.2.0"
+rationale = "Declarative validation for runtime configuration"
+
+[[dependency]]
 name = "aiomqtt"
-openwrt = "python3-aiomqtt"
-pip = "aiomqtt>=2.4,<3.0"
+openwrt = ""
+pip = "aiomqtt==2.4.0"
 rationale = "Async MQTT v5 client used for runtime telemetry"
 
 [[dependency]]
 name = "paho-mqtt"
-openwrt = "python3-paho-mqtt"
-pip = "paho-mqtt>=2.1,<3.0"
+openwrt = ""
+pip = "paho-mqtt==2.1.0"
 rationale = "Paho helpers still power low-level MQTT handshake logic"
 
 [[dependency]]
 name = "pyserial"
 openwrt = "python3-pyserial"
-pip = "pyserial>=3.5,<4.0"
+pip = "pyserial==3.5"
 rationale = "Serial I/O with the MCU"
 
 [[dependency]]
 name = "pyserial-asyncio"
-openwrt = "python3-pyserial-asyncio"
-pip = "pyserial-asyncio>=0.6,<1.0"
+openwrt = ""
+pip = "pyserial-asyncio==0.6"
 rationale = "Asyncio transport wrapper around pyserial"
 
 [[dependency]]
 name = "python-cobs"
-openwrt = "python3-cobs"
-pip = "cobs>=1.2,<2.0"
+openwrt = ""
+pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
 
 [[dependency]]
 name = "tenacity"
-openwrt = "python3-tenacity"
-pip = "tenacity>=9.0,<10.0"
+openwrt = ""
+pip = "tenacity==9.1.2"
 rationale = "Retry/backoff utilities for serial and MQTT paths"
 
 [[dependency]]
 name = "psutil"
 openwrt = "python3-psutil"
-pip = "psutil>=5.9,<6.0"
+pip = "psutil==5.9.8"
 rationale = "Process supervision and zombie cleanup"
 
 [[dependency]]
 name = "prometheus-client"
-openwrt = "python3-prometheus-client"
-pip = "prometheus-client>=0.20,<1.0"
+openwrt = ""
+pip = "prometheus-client==0.23.1"
 rationale = "Expose runtime metrics via the Prometheus Python client"
+
+[[dependency]]
+name = "persist-queue"
+openwrt = ""
+pip = "persist-queue==1.1.0"
+rationale = "Durable filesystem-backed queues for MQTT spool"
 
 [[dependency]]
 name = "more-itertools"
 openwrt = "python3-more-itertools"
-pip = "more-itertools>=10.0,<11.0"
+pip = "more-itertools==10.8.0"
 rationale = "Chunk helpers for frame encoding/decoding"

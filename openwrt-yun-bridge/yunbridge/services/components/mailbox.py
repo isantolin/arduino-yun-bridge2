@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import logging
-from contextlib import AsyncExitStack
 from typing import Optional
 
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
@@ -160,7 +159,7 @@ class MailboxComponent:
     ) -> None:
         match action:
             case "write":
-                await self._handle_mqtt_write(payload)
+                await self._handle_mqtt_write(payload, inbound)
             case "read":
                 await self._handle_mqtt_read(inbound)
             case _:
@@ -171,7 +170,7 @@ class MailboxComponent:
         payload: bytes,
         inbound: Optional[InboundMessage] = None,
     ) -> None:
-        await self._handle_mqtt_write(payload)
+        await self._handle_mqtt_write(payload, inbound)
 
     async def handle_mqtt_read(
         self,
@@ -182,20 +181,22 @@ class MailboxComponent:
     async def _handle_mqtt_write(
         self,
         payload: bytes,
+        inbound: Optional[InboundMessage] = None,
     ) -> None:
         if not self.state.enqueue_mailbox_message(payload, logger):
-            logger.error(
-                "Failed to enqueue MQTT mailbox payload (%d bytes); "
-                "queue full.",
-                len(payload),
-            )
+            await self._handle_outgoing_overflow(len(payload), inbound)
             return
+        queue_len = len(self.state.mailbox_queue)
         logger.info(
             "Added message to mailbox queue. Size=%d",
-            len(self.state.mailbox_queue),
+            queue_len,
+            extra={
+                "queue_len": queue_len,
+                "queue_limit": self.state.mailbox_queue_limit,
+                "queue_bytes_used": self.state.mailbox_queue_bytes,
+            },
         )
-        async with AsyncExitStack() as stack:
-            stack.push_async_callback(self._publish_outgoing_available)
+        await self._publish_outgoing_available()
 
     async def _handle_mqtt_read(
         self,
@@ -208,22 +209,24 @@ class MailboxComponent:
         )
 
         if self.state.mailbox_incoming_queue:
-            async with AsyncExitStack() as stack:
-                stack.push_async_callback(self._publish_incoming_available)
-                message_payload = self.state.pop_mailbox_incoming()
-                if message_payload is None:
-                    return
+            message_payload = self.state.pop_mailbox_incoming()
+            if message_payload is None:
+                await self._publish_incoming_available()
+                return
 
-                message = PublishableMessage(
-                    topic_name=topic,
-                    payload=message_payload,
-                )
+            message = PublishableMessage(
+                topic_name=topic,
+                payload=message_payload,
+            )
 
+            try:
                 await self.ctx.enqueue_mqtt(
                     message,
                     reply_context=inbound,
                 )
-                return
+            finally:
+                await self._publish_incoming_available()
+            return
 
         message_payload = self.state.pop_mailbox_message()
         if message_payload is None:
@@ -233,32 +236,86 @@ class MailboxComponent:
             topic_name=topic,
             payload=message_payload,
         )
-        async with AsyncExitStack() as stack:
-            stack.push_async_callback(self._publish_outgoing_available)
+        try:
             await self.ctx.enqueue_mqtt(
                 message,
                 reply_context=inbound,
             )
+        finally:
+            await self._publish_outgoing_available()
+
+    async def _handle_outgoing_overflow(
+        self,
+        payload_size: int,
+        inbound: Optional[InboundMessage],
+    ) -> None:
+        queue_len = len(self.state.mailbox_queue)
+        logger.error(
+            "Mailbox outgoing queue full; rejecting MQTT payload (%d bytes)",
+            payload_size,
+            extra={
+                "queue_len": queue_len,
+                "queue_limit": self.state.mailbox_queue_limit,
+                "queue_bytes_limit": self.state.mailbox_queue_bytes_limit,
+                "queue_bytes_used": self.state.mailbox_queue_bytes,
+                "payload_bytes": payload_size,
+            },
+        )
+        await self.ctx.send_frame(
+            Status.ERROR.value,
+            encode_status_reason("mailbox_outgoing_overflow"),
+        )
+        await self._publish_outgoing_available()
+        overflow_topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.MAILBOX,
+            "errors",
+        )
+        body = json.dumps(
+            {
+                "event": "write_overflow",
+                "reason": "mailbox_outgoing_overflow",
+                "queue_size": queue_len,
+                "queue_limit": self.state.mailbox_queue_limit,
+                "queue_bytes_limit": self.state.mailbox_queue_bytes_limit,
+                "payload_bytes": payload_size,
+                "overflow_events": self.state.mailbox_outgoing_overflow_events,
+            }
+        ).encode("utf-8")
+        message = PublishableMessage(
+            topic_name=overflow_topic,
+            payload=body,
+        ).with_content_type("application/json")
+        if inbound is not None:
+            message = message.with_user_property("bridge-error", "mailbox")
+        await self.ctx.enqueue_mqtt(message, reply_context=inbound)
 
     async def _publish_incoming_available(self) -> None:
-        await self.ctx.enqueue_mqtt(
-            PublishableMessage(
-                topic_name=mailbox_incoming_available_topic(
-                    self.state.mqtt_topic_prefix
-                ),
-                payload=str(
-                    len(self.state.mailbox_incoming_queue)
-                ).encode("utf-8"),
-            )
+        await self._publish_queue_depth(
+            topic_name=mailbox_incoming_available_topic(
+                self.state.mqtt_topic_prefix
+            ),
+            length=len(self.state.mailbox_incoming_queue),
         )
 
     async def _publish_outgoing_available(self) -> None:
+        await self._publish_queue_depth(
+            topic_name=mailbox_outgoing_available_topic(
+                self.state.mqtt_topic_prefix
+            ),
+            length=len(self.state.mailbox_queue),
+        )
+
+    async def _publish_queue_depth(
+        self,
+        *,
+        topic_name: str,
+        length: int,
+    ) -> None:
         await self.ctx.enqueue_mqtt(
             PublishableMessage(
-                topic_name=mailbox_outgoing_available_topic(
-                    self.state.mqtt_topic_prefix
-                ),
-                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
+                topic_name=topic_name,
+                payload=str(length).encode("utf-8"),
             )
         )
 

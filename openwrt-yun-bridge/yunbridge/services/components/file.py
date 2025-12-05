@@ -173,9 +173,11 @@ class FileComponent:
                     else:
                         outcome["status"] = "ok"
                 case "read":
-                    success, content, reason = await self._perform_file_operation(
-                        "read", filename
-                    )
+                    (
+                        success,
+                        content,
+                        reason,
+                    ) = await self._perform_file_operation("read", filename)
                     if not success:
                         outcome["status"] = reason or "read_failed"
                         logger.error(
@@ -192,7 +194,9 @@ class FileComponent:
                         "read",
                         "response",
                         *tuple(
-                            segment for segment in filename.split("/") if segment
+                            segment
+                            for segment in filename.split("/")
+                            if segment
                         ),
                     )
                     message = (

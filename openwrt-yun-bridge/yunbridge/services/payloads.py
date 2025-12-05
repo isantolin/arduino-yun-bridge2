@@ -2,15 +2,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
-
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    PositiveInt,
-    ValidationError,
-    Field,
-)
+from dataclasses import dataclass
+from typing import Any, Dict, cast
 
 __all__ = [
     "PayloadValidationError",
@@ -27,24 +20,11 @@ class PayloadValidationError(ValueError):
         self.message = message
 
 
-def _format_validation_errors(errors: Iterable[dict[str, Any]]) -> str:
-    messages: list[str] = []
-    for error in errors:
-        loc = ".".join(
-            str(part) if not isinstance(part, slice) else "slice"
-            for part in error.get("loc", ())
-        )
-        prefix = f"{loc}: " if loc else ""
-        messages.append(f"{prefix}{error.get('msg', 'Invalid payload')}")
-    return "; ".join(messages)
-
-
-class ShellCommandPayload(BaseModel):
+@dataclass(slots=True)
+class ShellCommandPayload:
     """Represents a shell command request coming from MQTT."""
 
-    model_config = ConfigDict(str_strip_whitespace=True)
-
-    command: str = Field(min_length=1, max_length=512)
+    command: str
 
     @classmethod
     def from_mqtt(cls, payload: bytes) -> "ShellCommandPayload":
@@ -61,26 +41,43 @@ class ShellCommandPayload(BaseModel):
         else:
             candidate = {"command": text}
 
-        try:
-            return cls.model_validate(candidate)
-        except ValidationError as exc:  # pragma: no cover - forwarded to caller
-            details = [dict(error) for error in exc.errors()]
-            raise PayloadValidationError(_format_validation_errors(details))
+        if not isinstance(candidate, dict):
+            raise PayloadValidationError("Payload must be an object")
+
+        mapping: Dict[str, Any] = cast(Dict[str, Any], candidate)
+
+        raw_command = mapping.get("command")
+        if not isinstance(raw_command, str):
+            raise PayloadValidationError("Field 'command' must be a string")
+
+        normalized = raw_command.strip()
+        if not normalized:
+            raise PayloadValidationError("Shell command payload is empty")
+        if len(normalized) > 512:
+            raise PayloadValidationError(
+                "Command cannot exceed 512 characters"
+            )
+
+        return cls(command=normalized)
 
 
-class ShellPidPayload(BaseModel):
+@dataclass(slots=True)
+class ShellPidPayload:
     """MQTT payload specifying an async shell PID to operate on."""
 
-    pid: PositiveInt = Field(le=0xFFFF)
+    pid: int
 
     @classmethod
     def from_topic_segment(cls, segment: str) -> "ShellPidPayload":
         try:
-            candidate = {"pid": int(segment, 10)}
+            value = int(segment, 10)
         except ValueError as exc:
-            raise PayloadValidationError("PID segment must be an integer") from exc
-        try:
-            return cls.model_validate(candidate)
-        except ValidationError as exc:
-            details = [dict(error) for error in exc.errors()]
-            raise PayloadValidationError(_format_validation_errors(details))
+            raise PayloadValidationError(
+                "PID segment must be an integer"
+            ) from exc
+
+        if value <= 0:
+            raise PayloadValidationError("PID must be a positive integer")
+        if value > 0xFFFF:
+            raise PayloadValidationError("PID cannot exceed 65535")
+        return cls(pid=value)

@@ -1,9 +1,23 @@
 #!/bin/sh
 set -eu
+# Always run relative paths from the repository root
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_ROOT"
+# Required metadata paths relative to the repository root.
+DEPENDENCY_MANIFEST="$PROJECT_ROOT/dependencies/runtime.toml"
+
 # This file is part of Arduino Yun Ecosystem v2.
 # Copyright (C) 2025 Ignacio Santolin and contributors
 # This program is free software: you can redistribute it and/or modify
 
+
+if [ ! -f "$DEPENDENCY_MANIFEST" ]; then
+    cat >&2 <<EOF
+[ERROR] Missing dependency manifest at $DEPENDENCY_MANIFEST.
+[HINT] Copy the entire arduino-yun-bridge2 repository (including dependencies/) to the device and run ./3_install.sh from that directory.
+EOF
+    exit 1
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: este script debe ejecutarse como root." >&2
@@ -18,6 +32,7 @@ export TMPDIR=/overlay/upper/tmp
 LOCAL_IPK_INSTALL_FLAGS="--force-reinstall --force-downgrade --force-overwrite --force-depends --nodeps"
 DEFAULT_CREDENTIALS_FILE="/etc/yunbridge/credentials"
 SERIAL_SECRET_PLACEHOLDER="changeme123"
+BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 CARRIAGE_RETURN_CHAR="$(printf '\r')"
 DOUBLE_QUOTE_CHAR="\""
 SINGLE_QUOTE_CHAR="'"
@@ -119,6 +134,70 @@ install_dependency() {
     echo "[ERROR] Failed to install dependency $pkg from feeds or bin/." >&2
     echo "[HINT] Run ./1_compile.sh to refresh local packages or update feeds." >&2
     exit 1
+}
+
+install_manifest_pip_requirements() {
+    local manifest_path="$DEPENDENCY_MANIFEST"
+    local tmp_requirements
+
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "[ERROR] python3 binary not found; install python3 before running this installer." >&2
+        exit 1
+    fi
+
+    if [ ! -f "$manifest_path" ]; then
+        echo "[ERROR] Missing dependency manifest at $manifest_path" >&2
+        exit 1
+    fi
+
+    tmp_requirements=$(mktemp "${TMPDIR:-/tmp}/yunbridge-pip.XXXXXX")
+    python3 - "$manifest_path" "$tmp_requirements" <<'PY'
+import sys
+from pathlib import Path
+
+try:
+    import tomllib  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # pragma: no cover - OpenWrt 3.10 fallback
+    import tomli as tomllib  # type: ignore[assignment]
+
+manifest = Path(sys.argv[1])
+output = Path(sys.argv[2])
+if not manifest.exists():
+    raise SystemExit(f"Missing manifest: {manifest}")
+
+data = tomllib.loads(manifest.read_text())
+specs = sorted(
+    {
+        entry.get("pip", "").strip()
+        for entry in data.get("dependency", [])
+        if entry.get("pip") and not entry.get("openwrt")
+    }
+)
+if specs:
+    output.write_text("\n".join(specs) + "\n")
+else:
+    output.write_text("")
+PY
+
+    if [ ! -s "$tmp_requirements" ]; then
+        echo "[INFO] Manifest declares no pip-only dependencies; skipping PyPI install."
+        rm -f "$tmp_requirements"
+        return
+    fi
+
+    if ! command -v pip3 >/dev/null 2>&1; then
+        echo "[INFO] pip3 not found; installing python3-pip..."
+        install_dependency python3-pip
+    fi
+
+    echo "[INFO] Installing pinned PyPI dependencies defined in dependencies/runtime.toml..."
+    if ! python3 -m pip install --no-cache-dir --upgrade --pre -r "$tmp_requirements"; then
+        echo "[ERROR] Failed to install pinned PyPI dependencies." >&2
+        rm -f "$tmp_requirements"
+        exit 1
+    fi
+
+    rm -f "$tmp_requirements"
 }
 
 resolve_credentials_file() {
@@ -448,7 +527,9 @@ ensure_secure_serial_secret() {
     local cred_file="$1"
     local current_secret
     current_secret=$(read_serial_secret_from_file "$cred_file")
-    if [ -n "$current_secret" ] && [ "$current_secret" != "$SERIAL_SECRET_PLACEHOLDER" ]; then
+    if [ -n "$current_secret" ] \
+        && [ "$current_secret" != "$SERIAL_SECRET_PLACEHOLDER" ] \
+        && [ "$current_secret" != "$BOOTSTRAP_SERIAL_SECRET" ]; then
         return
     fi
 
@@ -467,13 +548,17 @@ ensure_secure_serial_secret() {
 
     local final_secret
     final_secret=$(read_serial_secret_from_file "$cred_file")
-    if [ -z "$final_secret" ] || [ "$final_secret" = "$SERIAL_SECRET_PLACEHOLDER" ]; then
+    if [ -z "$final_secret" ] \
+        || [ "$final_secret" = "$SERIAL_SECRET_PLACEHOLDER" ] \
+        || [ "$final_secret" = "$BOOTSTRAP_SERIAL_SECRET" ]; then
         if [ "$rotation_ok" -eq 1 ]; then
             echo "[WARN] Rotation script did not yield a valid secret; falling back to local generation." >&2
         fi
         generate_local_serial_secret "$cred_file"
         final_secret=$(read_serial_secret_from_file "$cred_file")
-        if [ -z "$final_secret" ] || [ "$final_secret" = "$SERIAL_SECRET_PLACEHOLDER" ]; then
+        if [ -z "$final_secret" ] \
+            || [ "$final_secret" = "$SERIAL_SECRET_PLACEHOLDER" ] \
+            || [ "$final_secret" = "$BOOTSTRAP_SERIAL_SECRET" ]; then
             echo "[ERROR] Unable to read serial shared secret from $cred_file after fallback generation." >&2
             exit 1
         fi
@@ -481,8 +566,8 @@ ensure_secure_serial_secret() {
 
     cat <<EOF
 [INFO] Serial shared secret refreshed.
-[HINT] Update your MCU firmware (BridgeSecret.h) with:
-       $final_secret
+[HINT] Paste the following into your sketches before including Bridge.h:
+       #define BRIDGE_SERIAL_SHARED_SECRET "$final_secret"
 EOF
 }
 #  --- Main Script Execution ---
@@ -584,14 +669,9 @@ fi
 
 #  Install essential packages with local fallbacks when feeds lack them.
 ESSENTIAL_PACKAGES="\
-python3-paho-mqtt \
 python3-asyncio \
-python3-aiomqtt \
 python3-uci \
 python3-pyserial \
-python3-pyserial-asyncio \
-python3-cobs \
-python3-tenacity \
 python3-psutil \
 python3-more-itertools \
 openssl-util \
@@ -608,6 +688,8 @@ ${LUA_RUNTIME}"
 for pkg in $ESSENTIAL_PACKAGES; do
     install_dependency "$pkg"
 done
+
+install_manifest_pip_requirements
 
 #  --- Stop Existing Daemon ---
 stop_daemon
@@ -635,11 +717,6 @@ fi
 credentials_file=$(resolve_credentials_file)
 ensure_secure_serial_secret "$credentials_file"
 ensure_tls_material "$credentials_file"
-
-if ! opkg list-installed python3-aiomqtt >/dev/null 2>&1; then
-    echo "[ERROR] python3-aiomqtt no se pudo instalar. Revisa bin/ y vuelve a ejecutar ./1_compile.sh." >&2
-    exit 1
-fi
 
 # --- System & LuCI Configuration ---
 echo "[STEP 6/6] Finalizing system configuration..."

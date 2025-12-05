@@ -22,6 +22,12 @@ This library provides the MCU-side runtime for the Arduino Yun Bridge v2 project
 2. Open Arduino IDE and locate the `BridgeControl` example under **File > Examples > YunBridge**.
 3. Upload to your Arduino Yun to validate the end-to-end communication with the bridge daemon.
 
+### External dependencies
+
+- **Crypto**: The installer fetches the [Crypto](https://github.com/rweather/arduinolibs/tree/master/libraries/Crypto) library from `rweather/arduinolibs`. That package exposes the same `<HMAC.h>` / `<SHA256.h>` interfaces, so the bridge keeps using `HMAC<SHA256>` out of the box but you can still swap algorithms by instantiating a different hash class (for example `HMAC<SHA3_256>`) in `Bridge.cpp` if your sketch needs another primitive.
+- **PacketSerial**: For COBS framing we reuse [bakercp/PacketSerial](https://github.com/bakercp/PacketSerial). Only the encoding helpers are used, so the binary protocol (headers + CRC32) stays identical; PacketSerial simply provides the battle-tested framing layer.
+- **CRC32**: Frame checksums are delegated to [bakercp/CRC32](https://github.com/bakercp/CRC32), matching the IEEE 802.3 polynomial so both the Arduino sketch and the Python daemon share the same 32-bit trailer implementation.
+
 ## Building From Source
 
 - The library targets AVR-based Arduino Yun boards. Ensure the Arduino AVR core is installed.

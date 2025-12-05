@@ -116,6 +116,7 @@ def test_handle_push_overflow_sends_error(
     result = asyncio.run(component.handle_push(payload))
     assert result is False
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert runtime_state.mailbox_incoming_overflow_events == 1
 
 
 def test_handle_read_success_publishes_available(
@@ -169,6 +170,33 @@ def test_handle_mqtt_write_enqueues_and_notifies(
     assert bridge.published[-1].payload == b"1"
 
 
+def test_handle_mqtt_write_overflow_signals_error(
+    mailbox_component: tuple[MailboxComponent, DummyBridge],
+    runtime_state: RuntimeState,
+) -> None:
+    component, bridge = mailbox_component
+    runtime_state.mailbox_queue_limit = 0
+    asyncio.run(component.handle_mqtt_write(b"boom"))
+
+    assert not runtime_state.mailbox_queue
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert runtime_state.mailbox_outgoing_overflow_events == 1
+
+    topics = [msg.topic_name for msg in bridge.published]
+    overflow_topic = topic_path(
+        runtime_state.mqtt_topic_prefix,
+        Topic.MAILBOX,
+        "errors",
+    )
+    assert topics[0] == mailbox_outgoing_available_topic(
+        runtime_state.mqtt_topic_prefix
+    )
+    assert topics[1] == overflow_topic
+    error_payload = json.loads(bridge.published[1].payload)
+    assert error_payload["event"] == "write_overflow"
+    assert error_payload["overflow_events"] == 1
+
+
 def test_handle_mqtt_read_prefers_incoming_queue(
     mailbox_component: tuple[MailboxComponent, DummyBridge],
     runtime_state: RuntimeState,
@@ -207,3 +235,57 @@ def test_handle_mqtt_read_drains_mailbox_queue(
     ]
     assert bridge.published[0].payload == b"beta"
     assert bridge.published[1].payload == b"0"
+
+
+def test_handle_mqtt_read_incoming_still_notifies_on_failure(
+    mailbox_component: tuple[MailboxComponent, DummyBridge],
+    runtime_state: RuntimeState,
+    mailbox_logger: logging.Logger,
+) -> None:
+    component, bridge = mailbox_component
+    runtime_state.enqueue_mailbox_incoming(b"gamma", mailbox_logger)
+
+    async def flaky_enqueue(
+        message: PublishableMessage,
+        *,
+        reply_context: Optional[InboundMessage] = None,
+    ) -> None:
+        if message.topic_name.endswith("/incoming"):
+            raise RuntimeError("boom")
+        bridge.published.append(message)
+
+    bridge.enqueue_mqtt = flaky_enqueue  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(component.handle_mqtt_read())
+
+    assert [msg.topic_name for msg in bridge.published] == [
+        mailbox_incoming_available_topic(runtime_state.mqtt_topic_prefix)
+    ]
+
+
+def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
+    mailbox_component: tuple[MailboxComponent, DummyBridge],
+    runtime_state: RuntimeState,
+    mailbox_logger: logging.Logger,
+) -> None:
+    component, bridge = mailbox_component
+    runtime_state.enqueue_mailbox_message(b"delta", mailbox_logger)
+
+    async def flaky_enqueue(
+        message: PublishableMessage,
+        *,
+        reply_context: Optional[InboundMessage] = None,
+    ) -> None:
+        if message.topic_name.endswith("/incoming"):
+            raise RuntimeError("boom")
+        bridge.published.append(message)
+
+    bridge.enqueue_mqtt = flaky_enqueue  # type: ignore[assignment]
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(component.handle_mqtt_read())
+
+    assert [msg.topic_name for msg in bridge.published] == [
+        mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix)
+    ]

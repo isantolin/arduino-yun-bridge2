@@ -50,7 +50,8 @@ Environment variables:
 EOF
 }
 
-INSTALL_HOST_DEPS=${YUNBRIDGE_INSTALL_HOST_DEPS:-0}
+# Default to installing host deps unless explicitly disabled
+INSTALL_HOST_DEPS=${YUNBRIDGE_INSTALL_HOST_DEPS:-1}
 if [ "${YUNBRIDGE_SKIP_HOST_DEPS:-0}" = "1" ]; then
     INSTALL_HOST_DEPS=0
 fi
@@ -101,6 +102,30 @@ SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+sanitize_path() {
+    local original_path="$PATH"
+    local cleaned=""
+    local separator=""
+    local modified=0
+
+    IFS=':' read -r -a path_entries <<<"$original_path"
+    for entry in "${path_entries[@]}"; do
+        if [ -z "$entry" ] || [ "$entry" = "-" ]; then
+            modified=1
+            continue
+        fi
+        cleaned+="${separator}${entry}"
+        separator=":"
+    done
+
+    if [ $modified -eq 1 ]; then
+        export PATH="$cleaned"
+        echo "[INFO] Removed unsafe PATH entries (blank or '-') for build tooling."
+    fi
+}
+
+sanitize_path
+
 if [ "$INSTALL_HOST_DEPS" = "1" ]; then
     echo "[INFO] Host dependency auto-install enabled."
     if [ "$(uname -s)" = "Linux" ]; then
@@ -126,7 +151,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
                     libxcrypt-dev libb2-dev libbz2-dev libgdbm-dev libnsl-dev tk-dev tcl-dev \
                     uuid-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor \
-                    g++-multilib
+                    g++-multilib gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
             fi
         elif [ -f /etc/fedora-release ]; then
             if [ "$EUID" -ne 0 ]; then
@@ -151,7 +176,8 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
                     tk-devel tcl-devel libuuid-devel xz-devel \
                     bluez-libs-devel libbsd-devel binutils-devel asciidoctor \
-                    glibc-devel.i686 libstdc++-devel.i686
+                    glibc-devel.i686 libstdc++-devel.i686 \
+                    mingw64-gcc mingw64-binutils
             fi
         else
             echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."
@@ -170,6 +196,13 @@ for cmd in "${REQUIRED_COMMANDS[@]}"; do
         exit 1
     fi
 done
+
+echo "[INFO] Synchronizing runtime dependency manifests..."
+if ! python3 "$REPO_ROOT/tools/sync_runtime_deps.py"; then
+    echo "[ERROR] Failed to synchronize dependency manifests. Aborting." >&2
+    exit 1
+fi
+echo "[INFO] Dependency manifests regenerated successfully."
 
 echo "[INFO] Regenerating protocol files from spec..."
 if ! python3 "$REPO_ROOT/tools/protocol/generate.py"; then
@@ -406,7 +439,7 @@ fi
 
 # Always copy latest package sources into SDK/package (prevents stale/missing package errors)
 
-for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-paho-mqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     if [ -d "$pkg" ]; then
         echo "[INFO] Syncing $pkg to SDK..."
         rm -rf "$SDK_DIR/package/$pkg"
@@ -428,6 +461,27 @@ for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-paho-mq
         echo "[WARN] Package $pkg not found."
     fi
 done
+
+LOCAL_FEED_ENABLED=0
+LOCAL_FEED_PATH="$REPO_ROOT/feeds/yunbridge"
+SYNC_FEED_HELPER="$REPO_ROOT/tools/sync_feed_overlay.sh"
+if [ -d "$LOCAL_FEED_PATH" ]; then
+    if [ -x "$SYNC_FEED_HELPER" ]; then
+        echo "[INFO] Syncing yunbridge feed overlay..."
+        "$SYNC_FEED_HELPER" --dest "$LOCAL_FEED_PATH"
+    else
+        echo "[WARN] $SYNC_FEED_HELPER missing or not executable; feed overlay may be stale."
+    fi
+    FEEDS_CONF="$SDK_DIR/feeds.conf"
+    if [ ! -f "$FEEDS_CONF" ]; then
+        cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
+    fi
+    if ! grep -q "^src-link[[:space:]]\+yunbridge" "$FEEDS_CONF"; then
+        echo "src-link yunbridge $LOCAL_FEED_PATH" >> "$FEEDS_CONF"
+        echo "[INFO] Added local yunbridge feed entry to feeds.conf."
+    fi
+    LOCAL_FEED_ENABLED=1
+fi
 
 # Ensure OpenWRT SDK detects new packages (refresh package index)
 pushd "$SDK_DIR"
@@ -453,11 +507,16 @@ if [ $SUCCESS -ne 1 ]; then
 fi
 echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
+if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
+    echo "[INFO] Installing yunbridge feed overrides..."
+    ./scripts/feeds install -f -p yunbridge -a
+fi
 
-# Remove feed-provided python-paho-mqtt to avoid duplicate Kconfig entries.
-if [ -d "package/feeds/packages/python-paho-mqtt" ]; then
-    echo "[INFO] Removing feed copy of python-paho-mqtt (overridden locally)."
-    rm -rf package/feeds/packages/python-paho-mqtt
+FEEDS_PACKAGES_OVERLAY_DIR="$REPO_ROOT/openwrt-overlays/feeds/packages"
+if [ -d "$FEEDS_PACKAGES_OVERLAY_DIR" ]; then
+    echo "[INFO] Applying feeds/packages overlay (host pip requirements, etc.)..."
+    mkdir -p feeds/packages
+    cp -a "$FEEDS_PACKAGES_OVERLAY_DIR/." feeds/packages/
 fi
 
 # The SDK for ath79 omits bcm53xx PHY modules, strip the dangling deps to avoid warnings.
@@ -493,7 +552,7 @@ if [ -z "$MANIFEST_DEPS" ]; then
     echo "[ERROR] Unable to collect runtime dependencies from dependencies/runtime.toml" >&2
     exit 1
 fi
-REQUIRED_PKGS="python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-paho-mqtt python3-tenacity openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
+REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
 REQUIRED_DEPS="${MANIFEST_DEPS} mosquitto-client luaposix"
 CONFIG_CHANGED=0
 for pkg in $REQUIRED_PKGS; do
@@ -525,7 +584,7 @@ echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
 find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
 
 pushd "$SDK_DIR"
-for pkg in python3-cobs python3-pyserial-asyncio python3-aiomqtt python3-tenacity luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     echo "[BUILD] Building $pkg (.ipk) in SDK..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s

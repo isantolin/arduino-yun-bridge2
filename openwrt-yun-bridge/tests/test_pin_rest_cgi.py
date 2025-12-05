@@ -151,6 +151,34 @@ def test_publish_with_retries_configures_tls(
     assert fake_client.disconnected is True
 
 
+def test_publish_with_retries_allows_insecure(
+    pin_rest_module: ModuleType,
+    runtime_config: RuntimeConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_client = _FakeClient()
+
+    monkeypatch.setattr(
+        pin_rest_module,
+        "mqtt",
+        SimpleNamespace(Client=lambda *_, **__: fake_client),
+    )
+
+    runtime_config.mqtt_tls = False
+    runtime_config.mqtt_cafile = None
+
+    pin_rest_module.publish_with_retries(
+        topic="br/d/13",
+        payload="1",
+        config=runtime_config,
+        retries=1,
+        publish_timeout=0.1,
+    )
+
+    assert fake_client.tls_arguments is None
+    assert fake_client.tls_insecure is None
+
+
 def test_publish_with_retries_times_out(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,

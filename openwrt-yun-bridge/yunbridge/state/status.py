@@ -77,6 +77,10 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "console_dropped_bytes": state.console_dropped_bytes,
                 "console_truncated_chunks": state.console_truncated_chunks,
                 "console_truncated_bytes": state.console_truncated_bytes,
+                "watchdog_enabled": state.watchdog_enabled,
+                "watchdog_interval": state.watchdog_interval,
+                "watchdog_beats": state.watchdog_beats,
+                "watchdog_last_beat": state.last_watchdog_beat,
                 "running_processes": list(state.running_processes.keys()),
                 "allowed_commands": list(state.allowed_commands),
                 "link_synchronised": state.link_is_synchronized,
@@ -85,6 +89,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "handshake_failures": state.handshake_failures,
                 "handshake_last_error": state.last_handshake_error,
                 "handshake_last_unix": state.last_handshake_unix,
+                "bridge": state.build_bridge_snapshot(),
                 "serial_flow": state.serial_flow_stats.as_dict(),
                 "heartbeat_unix": time.time(),
                 "mcu_version": (

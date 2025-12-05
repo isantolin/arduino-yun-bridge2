@@ -68,7 +68,10 @@ class ShellComponent:
                     return
                 await self._handle_kill(pid_model)
             case _:
-                logger.debug("Ignoring shell topic action: %s", "/".join(parts))
+                logger.debug(
+                    "Ignoring shell topic action: %s",
+                    "/".join(parts),
+                )
 
     async def _handle_shell_run(
         self,

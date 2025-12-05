@@ -8,10 +8,14 @@ import pytest
 from yunbridge.services.task_supervisor import TaskSupervisor
 
 
-def test_task_supervisor_tracks_lifecycle(caplog: pytest.LogCaptureFixture) -> None:
+def test_task_supervisor_tracks_lifecycle(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     async def _run() -> None:
         caplog.set_level(logging.DEBUG, logger="test.supervisor")
-        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
+        supervisor = TaskSupervisor(
+            logger=logging.getLogger("test.supervisor")
+        )
         completed = asyncio.Event()
 
         async def worker() -> None:
@@ -27,10 +31,14 @@ def test_task_supervisor_tracks_lifecycle(caplog: pytest.LogCaptureFixture) -> N
     asyncio.run(_run())
 
 
-def test_task_supervisor_logs_failures(caplog: pytest.LogCaptureFixture) -> None:
+def test_task_supervisor_logs_failures(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     async def _run() -> None:
         caplog.set_level(logging.ERROR, logger="test.supervisor")
-        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
+        supervisor = TaskSupervisor(
+            logger=logging.getLogger("test.supervisor")
+        )
 
         async def boom() -> None:
             raise RuntimeError("boom")

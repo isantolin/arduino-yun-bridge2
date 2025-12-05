@@ -76,13 +76,13 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     }
 
     // --- Validate CRC ---
-    // The last 2 bytes of the decoded buffer are the CRC.
-    if (decoded_len < sizeof(uint16_t)) {
+    // The last 4 bytes of the decoded buffer are the CRC32.
+    if (decoded_len < CRC_TRAILER_SIZE) {
       return false;  // Not even enough data for a CRC.
     }
-    size_t crc_start = decoded_len - sizeof(uint16_t);
-    uint16_t received_crc = read_u16_be(&decoded_buffer[crc_start]);
-    uint16_t calculated_crc = crc16_ccitt(decoded_buffer, crc_start);
+    size_t crc_start = decoded_len - CRC_TRAILER_SIZE;
+    uint32_t received_crc = read_u32_be(&decoded_buffer[crc_start]);
+    uint32_t calculated_crc = crc32_ieee(decoded_buffer, crc_start);
 
     if (received_crc != calculated_crc) {
       return false;  // CRC mismatch.
@@ -157,10 +157,10 @@ size_t FrameBuilder::build(uint8_t* buffer, uint16_t command_id,
   size_t data_len = sizeof(FrameHeader) + payload_len;
 
   // --- CRC ---
-  uint16_t crc = crc16_ccitt(buffer, data_len);
-  write_u16_be(buffer + data_len, crc);
+  uint32_t crc = crc32_ieee(buffer, data_len);
+  write_u32_be(buffer + data_len, crc);
 
-  return data_len + sizeof(uint16_t);  // Return total raw frame length
+  return data_len + CRC_TRAILER_SIZE;  // Return total raw frame length
 }
 
 }  // namespace rpc

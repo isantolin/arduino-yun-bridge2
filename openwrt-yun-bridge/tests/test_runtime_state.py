@@ -9,7 +9,7 @@ import pytest
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt import PublishableMessage
-from yunbridge.rpc.protocol import Status
+from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
 
@@ -182,6 +182,109 @@ def test_metrics_snapshot_exposes_error_counters(
     assert snapshot["mqtt_spool_backoff_until"] == 123.0
     assert snapshot["mqtt_spool_last_error"] == "disk-full"
     assert snapshot["mqtt_spool_recoveries"] == 1
+
+
+def test_metrics_snapshot_includes_spool_snapshot(
+    runtime_state: RuntimeState,
+) -> None:
+    class _StubSpool:
+        def snapshot(self) -> dict[str, int]:
+            return {"pending": 5, "limit": 128}
+
+    runtime_state.mqtt_spool = _StubSpool()  # type: ignore[assignment]
+
+    snapshot = runtime_state.build_metrics_snapshot()
+
+    assert snapshot["spool_pending"] == 5
+    assert snapshot["spool_limit"] == 128
+
+
+def test_handshake_snapshot_reflects_state(
+    runtime_state: RuntimeState,
+) -> None:
+    runtime_state.link_is_synchronized = True
+    runtime_state.handshake_attempts = 4
+    runtime_state.handshake_failures = 1
+    runtime_state.link_nonce_length = 16
+
+    snapshot = runtime_state.build_handshake_snapshot()
+
+    assert snapshot["synchronised"] is True
+    assert snapshot["attempts"] == 4
+    assert snapshot["failures"] == 1
+    assert snapshot["nonce_length"] == 16
+
+
+def test_serial_pipeline_snapshot_tracks_events(
+    runtime_state: RuntimeState,
+) -> None:
+    runtime_state.record_serial_pipeline_event(
+        {
+            "event": "start",
+            "command_id": Command.CMD_DIGITAL_WRITE.value,
+            "attempt": 1,
+            "timestamp": 10.0,
+        }
+    )
+    runtime_state.record_serial_pipeline_event(
+        {
+            "event": "ack",
+            "command_id": Command.CMD_DIGITAL_WRITE.value,
+            "attempt": 1,
+            "timestamp": 10.1,
+            "ack_received": True,
+        }
+    )
+    runtime_state.record_serial_pipeline_event(
+        {
+            "event": "success",
+            "command_id": Command.CMD_DIGITAL_WRITE.value,
+            "attempt": 1,
+            "timestamp": 10.2,
+            "ack_received": True,
+            "status": Status.OK.value,
+        }
+    )
+
+    snapshot = runtime_state.build_serial_pipeline_snapshot()
+    assert snapshot["inflight"] is None
+    last = snapshot["last_completion"]
+    assert last is not None
+    assert last["event"] == "success"
+    assert last["status_name"] == "OK"
+    assert last["duration"] > 0
+
+
+def test_bridge_snapshot_combines_sections(
+    runtime_state: RuntimeState,
+) -> None:
+    runtime_state.serial_link_connected = True
+    runtime_state.handshake_attempts = 2
+    runtime_state.mcu_version = (1, 2)
+    runtime_state.record_serial_pipeline_event(
+        {
+            "event": "start",
+            "command_id": Command.CMD_DIGITAL_READ.value,
+            "attempt": 1,
+            "timestamp": 20.0,
+        }
+    )
+    runtime_state.record_serial_pipeline_event(
+        {
+            "event": "failure",
+            "command_id": Command.CMD_DIGITAL_READ.value,
+            "attempt": 1,
+            "timestamp": 20.5,
+            "status": Status.TIMEOUT.value,
+        }
+    )
+
+    bridge = runtime_state.build_bridge_snapshot()
+    assert bridge["serial_link"]["connected"] is True
+    assert bridge["handshake"]["attempts"] == 2
+    assert bridge["mcu_version"] == {"major": 1, "minor": 2}
+    last = bridge["serial_pipeline"]["last_completion"]
+    assert last is not None and last["event"] == "failure"
 
 
 def test_create_runtime_state_marks_spool_degraded(

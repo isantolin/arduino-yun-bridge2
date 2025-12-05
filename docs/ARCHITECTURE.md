@@ -12,8 +12,8 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 
 ## Seguridad
 
-1. **TLS obligatorio**: `mqtt_tls=1` y la presencia de `mqtt_cafile` son requisitos al cargar la configuración; el daemon se niega a arrancar si faltan.
-2. **Secreto serie fuerte**: el handshake MCU↔Linux exige un `serial_shared_secret` de al menos ocho bytes con cuatro símbolos distintos. Los chequeos viven en `RuntimeConfig.__post_init__` para evitar estados inseguros.
+1. **TLS recomendado**: por defecto `mqtt_tls=1` y se exige `mqtt_cafile` para levantar el contexto TLS. Puedes desactivar TLS explícitamente (por ejemplo desde LuCI) para entornos de depuración, pero el daemon lo registra como advertencia y todo el tráfico MQTT —incluyendo credenciales— viaja en texto plano.
+2. **Secreto serie fuerte**: el handshake MCU↔Linux exige un `serial_shared_secret` de al menos ocho bytes con cuatro símbolos distintos. El demonio genera un nonce de 16 bytes y valida `HMAC-SHA256(secret, nonce)` truncado a 16 bytes. Los chequeos viven en `RuntimeConfig.__post_init__` para evitar estados inseguros. El árbol fuente solo expone un placeholder sincronizado (`changeme123`) almacenado en `uci set yunbridge.general.serial_shared_secret=...` y en los ejemplos de la librería, y el daemon lo rechaza explícitamente para forzar la rotación antes de producción.
 3. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se vuelve a aplicar en `ProcessComponent` y `ShellComponent` mediante el sanitizador compartido de `yunbridge.policy`.
 4. **Topics sensibles**: `TopicAuthorization` permite deshabilitar acciones MQTT específicas (`mqtt_allow_file_write`, `mqtt_allow_mailbox_write`, etc.) sin recompilar.
 5. **Sandbox de archivos**: `FileComponent` normaliza las rutas con `PurePosixPath`, evita saltos (`..`) y obliga a permanecer bajo `file_system_root`.
@@ -23,6 +23,8 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 - **Logging estructurado**: todo el árbol `yunbridge.*` escribe líneas JSON (`ts`, `level`, `logger`, `message`, `extra`). Esto facilita enviar los logs directamente a syslog, Loki o Elastic sin parsers adicionales.
 - **Metrics MQTT**: `publish_metrics()` sigue publicando snapshots periódicos en `br/system/metrics` con la misma estructura JSON usada por `RuntimeState`.
 - **Exportador Prometheus** *(nuevo)*: al habilitar `metrics_enabled`, el daemon levanta un listener HTTP (por defecto `127.0.0.1:9130`) respaldado por `prometheus_client`. Expone todas las métricas numéricas en el formato `CONTENT_TYPE_LATEST` y los campos no numéricos se representan como `yunbridge_info{key="...",value="..."} 1`.
+- Los snapshots publicados (prometheus, status JSON y MQTT) incluyen `mqtt_spool_*` y `watchdog_*`, y además `br/system/metrics` adjunta propiedades MQTT `bridge-spool`, `bridge-watchdog-enabled` e `bridge-watchdog-interval` para que la UI o los brokers puedan alertar sin parsear JSON.
+- **Snapshot del enlace (`br/system/bridge/*`)**: cualquier cliente puede pedir `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` y recibirá un JSON con el estado del handshake, la versión del MCU, el pipeline serial (comando en vuelo y último resultado) y el flujo de métricas del enlace. Es la misma estructura que ahora aparece embebida en `/tmp/yunbridge_status.json`, `br/system/status` y el exportador Prometheus bajo la clave `bridge`.
 - **Status Writer**: `status_writer()` mantiene `/tmp/yunbridge_status.json` como snapshot local para depuración rápida y para scripts de LuCI.
 
 ## Configuración relevante

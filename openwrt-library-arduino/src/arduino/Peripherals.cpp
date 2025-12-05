@@ -40,7 +40,11 @@ void DataStoreClass::requestGet(const char* key) {
   payload[0] = static_cast<uint8_t>(key_len);
   memcpy(payload + 1, key, key_len);
 
-  Bridge._trackPendingDatastoreKey(key);
+  if (!Bridge._trackPendingDatastoreKey(key)) {
+    Bridge._emitStatus(STATUS_ERROR, "datastore_queue_full");
+    return;
+  }
+
   // Linux responde con CMD_DATASTORE_GET_RESP usando únicamente su caché.
   Bridge.sendFrame(CMD_DATASTORE_GET, payload,
                    static_cast<uint16_t>(key_len + 1));

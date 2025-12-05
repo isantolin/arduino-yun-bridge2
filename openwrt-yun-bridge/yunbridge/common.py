@@ -27,7 +27,6 @@ from .const import (
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_SERIAL_BAUD,
-    DEFAULT_CREDENTIALS_FILE,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_ATTEMPTS,
@@ -159,7 +158,8 @@ def get_uci_config() -> Dict[str, str]:
         )
         return get_default_config()
 
-    if not isinstance(section, dict) or not section:
+    options = _extract_uci_options(section)
+    if not options:
         logger.warning(
             "python3-uci returned no options for 'yunbridge'; using defaults."
         )
@@ -167,12 +167,62 @@ def get_uci_config() -> Dict[str, str]:
 
     return {
         str(key): _stringify_value(value)
-        for key, value in cast(Dict[Any, Any], section).items()
+        for key, value in options.items()
     }
+
+
+def _extract_uci_options(section: Any) -> Dict[str, Any]:
+    """Normalise python3-uci section structures into a flat options dict."""
+
+    if not isinstance(section, dict) or not section:
+        return {}
+
+    stack: list[dict[Any, Any]] = [section]
+    while stack:
+        current = stack.pop()
+        for key in ("options", "values"):
+            nested = current.get(key)
+            if isinstance(nested, dict) and nested:
+                return nested
+
+        flattened: dict[str, Any] = {}
+        for key, value in current.items():
+            if (
+                key in {"name", "type", ".name", ".type"}
+                or key.startswith("@")
+            ):
+                continue
+            if not isinstance(value, dict) or any(
+                nested_key in value for nested_key in ("value", "values")
+            ):
+                flattened[str(key)] = value
+
+        if flattened:
+            return flattened
+
+        stack.extend(
+            nested
+            for nested in current.values()
+            if isinstance(nested, dict) and nested
+        )
+
+    return {}
 
 
 def _stringify_value(value: Any) -> str:
     """Convert UCI values (strings or sequences) to space-separated text."""
+
+    attr_value = getattr(value, "value", None)
+    if attr_value is not None and not isinstance(value, (str, bytes)):
+        return _stringify_value(attr_value)
+
+    if isinstance(value, dict):
+        if "value" in value:
+            return _stringify_value(value["value"])
+        if "values" in value and isinstance(value["values"], Iterable):
+            iterable_value = cast(Iterable[Any], value["values"])
+            return " ".join(str(item) for item in iterable_value)
+        return " ".join(str(item) for item in value.values())
 
     if isinstance(value, (tuple, list)):
         iterable_value = cast(Iterable[Any], value)
@@ -219,7 +269,6 @@ def get_default_config() -> Dict[str, str]:
         "mqtt_spool_dir": DEFAULT_MQTT_SPOOL_DIR,
         "process_max_output_bytes": str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES),
         "process_max_concurrent": str(DEFAULT_PROCESS_MAX_CONCURRENT),
-        "credentials_file": DEFAULT_CREDENTIALS_FILE,
     }
 
 

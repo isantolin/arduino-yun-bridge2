@@ -19,7 +19,7 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 
 ```
 +--------------------------+---------------------+----------+
-|   Cabecera (5 bytes)     |   Payload (0-256)   |   CRC    |
+|   Cabecera (5 bytes)     |   Payload (0-256)   |   CRC32  |
 +--------------------------+---------------------+----------+
 ```
 
@@ -33,7 +33,7 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 
 ### 3.2 CRC
 
-El CRC (2 bytes, Big Endian) cubre cabecera + payload y utiliza CRC-16-CCITT (polinomio `0x1021`, valor inicial `0xFFFF`).
+El CRC (4 bytes, Big Endian) cubre cabecera + payload y utiliza CRC-32 IEEE 802.3 (polinomio reflejado `0x04C11DB7`, estado inicial `0xFFFFFFFF`, XOR final `0xFFFFFFFF`).
 
 ## 4. Códigos de estado (`Status`)
 
@@ -69,7 +69,7 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
 
 - **`0x02` CMD_LINK_SYNC (Linux → MCU)**
   - Petición: `nonce: byte[16]`. Durante el handshake inicial el demonio genera un nonce criptográficamente aleatorio y lo envía al MCU.
-  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`. El MCU replica el nonce recibido y adjunta `tag = CRC16-CCITT(secret || nonce)` usando el mismo secreto compartido que el demonio. Si el secreto no coincide o el tag es inválido, el demonio rechaza el enlace con `STATUS_MALFORMED` y reinicia el proceso de sincronización.
+  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`. El MCU replica el nonce recibido y adjunta `tag = HMAC-SHA256(secret, nonce)` truncado a 16 bytes usando el mismo secreto compartido que el demonio. Si el secreto no coincide o el tag es inválido, el demonio rechaza el enlace con `STATUS_MALFORMED` y reinicia el proceso de sincronización.
 
 - **`0x03` CMD_LINK_RESET (Linux → MCU)**
   - Petición: sin payload. Restablece cualquier estado interno asociado al enlace serie (colas pendientes, buffers de procesos, etc.).

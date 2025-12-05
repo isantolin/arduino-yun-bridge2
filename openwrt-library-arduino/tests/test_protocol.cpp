@@ -18,15 +18,9 @@ static void test_endianness_helpers() {
 
 static void test_crc_helpers() {
   const uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD};
-  uint16_t crc = crc16_ccitt(data, sizeof(data));
-  // Valor calculado con crc_hqx (polinomio 0x1021, seed 0xFFFF).
-  assert(crc == 0x41FA);
-
-  uint16_t incremental = crc16_ccitt_init();
-  for (uint8_t byte : data) {
-    incremental = crc16_ccitt_update(incremental, byte);
-  }
-  assert(incremental == crc);
+  uint32_t crc = crc32_ieee(data, sizeof(data));
+  // Valor verificado con binascii.crc32 (polinomio IEEE 802.3).
+  assert(crc == 0x55B401A7);
 }
 
 static void test_builder_roundtrip() {
@@ -38,11 +32,12 @@ static void test_builder_roundtrip() {
   const uint8_t payload[] = {0x00, 0x01, 0xFF, 0x02, 0x00};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, command_id, payload, sizeof(payload));
-  assert(raw_len == sizeof(FrameHeader) + sizeof(payload) + sizeof(uint16_t));
+    size_t raw_len = builder.build(raw, command_id, payload, sizeof(payload));
+    assert(raw_len ==
+      sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
 
-  uint16_t crc = read_u16_be(raw + raw_len - sizeof(uint16_t));
-  assert(crc == crc16_ccitt(raw, raw_len - sizeof(uint16_t)));
+    uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
+    assert(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);

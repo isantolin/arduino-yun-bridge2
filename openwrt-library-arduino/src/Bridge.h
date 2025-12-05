@@ -21,8 +21,16 @@
 #define BRIDGE_ALLOW_INSECURE_SERIAL_SECRET 1
 #endif
 #endif
-#include "arduino/BridgeSecret.h"
 #include "protocol/rpc_frame.h"
+
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#error "Define BRIDGE_SERIAL_SHARED_SECRET (e.g. a string literal) before including Bridge.h"
+#endif
+
+#ifndef BRIDGE_SERIAL_SHARED_SECRET_LEN
+#define BRIDGE_SERIAL_SHARED_SECRET_LEN \
+  (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)
+#endif
 
 class HardwareSerial;
 
@@ -307,7 +315,7 @@ class BridgeClass {
   bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload,
                            uint16_t payload_len);
 
-  void _trackPendingDatastoreKey(const char* key);
+  bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();

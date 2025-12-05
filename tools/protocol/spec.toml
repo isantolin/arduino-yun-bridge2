@@ -6,11 +6,17 @@ protocol_version = 0x02
 max_payload_size = 256
 rpc_buffer_size = 256
 
+[handshake]
+nonce_length = 16
+tag_length = 16
+tag_algorithm = "HMAC-SHA256"
+tag_description = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
+
 [data_formats]
 datastore_key_len_format = ">B"
 datastore_value_len_format = ">B"
 crc_covered_header_format = ">BHH"
-crc_format = ">H"
+crc_format = ">I"
 
 [[statuses]]
 name = "OK"

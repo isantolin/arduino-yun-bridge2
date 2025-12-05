@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable, Dict, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, Optional, Set
 
 from tenacity import (
     AsyncRetrying,
@@ -122,6 +123,9 @@ class SerialFlowController:
         self._condition = asyncio.Condition()
         self._current: Optional[PendingCommand] = None
         self._metrics_callback = metrics_callback
+        self._pipeline_observer: Optional[Callable[[Dict[str, Any]], None]] = (
+            None
+        )
 
     #  --- Tenacity Helpers ---
     class _RetryableSerialError(Exception):
@@ -144,6 +148,11 @@ class SerialFlowController:
     ) -> None:
         self._metrics_callback = callback
 
+    def set_pipeline_observer(
+        self, observer: Optional[Callable[[Dict[str, Any]], None]]
+    ) -> None:
+        self._pipeline_observer = observer
+
     async def reset(self) -> None:
         async with self._condition:
             if self._current and not self._current.completion.is_set():
@@ -152,6 +161,11 @@ class SerialFlowController:
                     self._current.command_id,
                 )
                 self._current.mark_failure(Status.TIMEOUT.value)
+                self._notify_pipeline(
+                    "abandoned",
+                    self._current,
+                    status=Status.TIMEOUT.value,
+                )
             self._current = None
             self._condition.notify_all()
 
@@ -192,6 +206,28 @@ class SerialFlowController:
         except Exception:  # pragma: no cover - defensive guard
             self._logger.exception("Serial metrics callback failed")
 
+    def _notify_pipeline(
+        self,
+        event: str,
+        pending: PendingCommand,
+        *,
+        status: Optional[int] = None,
+    ) -> None:
+        if self._pipeline_observer is None:
+            return
+        payload = {
+            "event": event,
+            "command_id": pending.command_id,
+            "attempt": max(1, pending.attempts or 1),
+            "ack_received": pending.ack_received,
+            "status": status,
+            "timestamp": time.time(),
+        }
+        try:
+            self._pipeline_observer(payload)
+        except Exception:  # pragma: no cover - defensive guard
+            self._logger.exception("Serial pipeline observer failed")
+
     def on_frame_received(self, command_id: int, payload: bytes) -> None:
         pending = self._current
         if pending is None:
@@ -203,8 +239,10 @@ class SerialFlowController:
                 ack_target = int.from_bytes(payload[:2], "big")
             if ack_target != pending.command_id:
                 return
-            if pending.expected_responses:
+            if not pending.ack_received:
                 pending.ack_received = True
+                self._notify_pipeline("ack", pending)
+            if pending.expected_responses:
                 return
             pending.mark_success()
             return
@@ -259,14 +297,22 @@ class SerialFlowController:
             async for attempt in retryer:
                 with attempt:
                     pending.attempts = attempt.retry_state.attempt_number
+                    self._notify_pipeline("start", pending)
                     self._reset_pending_state(pending)
                     await self._send_and_wait(pending, payload, sender)
                     self._emit_metric("ack")
+                    self._notify_pipeline("success", pending)
                     return True
         except self._FatalSerialError as exc:
             pending.mark_failure(exc.status)
+            self._notify_pipeline("failure", pending, status=exc.status)
         except RetryError:
             pending.mark_failure(Status.TIMEOUT.value)
+            self._notify_pipeline(
+                "failure",
+                pending,
+                status=Status.TIMEOUT.value,
+            )
 
         self._emit_metric("failure")
         return False

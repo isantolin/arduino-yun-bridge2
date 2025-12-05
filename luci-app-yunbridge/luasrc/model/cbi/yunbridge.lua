@@ -56,7 +56,6 @@ local function ensure_general_section()
             process_timeout = "10",
             allowed_commands = "",
             serial_shared_secret = "changeme123",
-            credentials_file = "/etc/yunbridge/credentials",
         })
         changed = true
     end
@@ -114,7 +113,7 @@ mqtt_pass.rmempty = true
 local mqtt_tls = s:option(Flag, "mqtt_tls", translate("Enable TLS/SSL"))
 mqtt_tls.rmempty = false
 mqtt_tls.default = "1"
-mqtt_tls.description = translate("Mandatory. Disabling TLS will prevent the daemon from starting.")
+mqtt_tls.description = translate("Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext.")
 
 local mqtt_cafile = s:option(Value, "mqtt_cafile", translate("CA File Path"))
 mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
@@ -152,11 +151,6 @@ mqtt_ws_port.datatype = "port"
 mqtt_ws_port.placeholder = "9001"
 mqtt_ws_port.rmempty = true
 
-local credentials_file = s:option(Value, "credentials_file", translate("Credentials File"))
-credentials_file.placeholder = "/etc/yunbridge/credentials"
-credentials_file.rmempty = false
-credentials_file.description = translate("Path to the KEY=VALUE envfile loaded via procd; update secrets from the Credentials & TLS tab.")
-
 local fs_root = s:option(Value, "file_system_root", translate("File System Root"))
 fs_root.placeholder = "/root/yun_files"
 fs_root.rmempty = false
@@ -174,7 +168,7 @@ allowed_commands.description = translate("Space separated whitelist for shell ex
 
 local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("Serial Shared Secret"))
 function serial_secret.cfgvalue()
-    return translate("Managed via /etc/yunbridge/credentials. Use the Credentials & TLS tab to rotate secrets.")
+    return translate("Managed via UCI. Use the Credentials & TLS tab to rotate secrets.")
 end
 
 function m.on_commit(map)

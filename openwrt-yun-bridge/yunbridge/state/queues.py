@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
-from typing import Deque, Iterable, Iterator, Optional
+from typing import Deque, Iterable, Iterator, Optional, cast
+
+from attrs import define, field
 
 _UNSET = object()
 
 
-@dataclass
+@define(slots=True)
 class QueueEvent:
     """Outcome of a bounded queue mutation."""
 
@@ -18,19 +19,32 @@ class QueueEvent:
     accepted: bool = False
 
 
+def _normalize_limit(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return max(0, value)
+    raise TypeError("Queue limits must be integers or None")
+
+
+@define(slots=True)
 class BoundedByteDeque:
     """Deque that enforces both item-count and byte-length limits."""
 
-    def __init__(
-        self,
-        *,
-        max_items: Optional[int] = None,
-        max_bytes: Optional[int] = None,
-    ) -> None:
-        self._max_items = self._normalize_limit(max_items)
-        self._max_bytes = self._normalize_limit(max_bytes)
-        self._queue: Deque[bytes] = deque()
-        self._bytes = 0
+    max_items: Optional[int] = field(
+        default=None,
+        converter=_normalize_limit,
+    )
+    max_bytes: Optional[int] = field(
+        default=None,
+        converter=_normalize_limit,
+    )
+    _queue: Deque[bytes] = field(
+        init=False,
+        factory=lambda: cast(Deque[bytes], deque()),
+        repr=False,
+    )
+    _bytes: int = field(init=False, default=0, repr=False)
 
     def __len__(self) -> int:
         return len(self._queue)
@@ -50,7 +64,7 @@ class BoundedByteDeque:
 
     @property
     def limit_bytes(self) -> Optional[int]:
-        return self._max_bytes
+        return self.max_bytes
 
     def clear(self) -> None:
         self._queue.clear()
@@ -63,9 +77,9 @@ class BoundedByteDeque:
         max_bytes: object = _UNSET,
     ) -> None:
         if max_items is not _UNSET:
-            self._max_items = self._normalize_limit(max_items)
+            self.max_items = _normalize_limit(max_items)
         if max_bytes is not _UNSET:
-            self._max_bytes = self._normalize_limit(max_bytes)
+            self.max_bytes = _normalize_limit(max_bytes)
         self._make_room_for(0, 0)
 
     def append(self, chunk: bytes) -> QueueEvent:
@@ -100,8 +114,8 @@ class BoundedByteDeque:
         data = bytes(chunk)
         event = QueueEvent()
 
-        if self._max_bytes and len(data) > self._max_bytes:
-            data = data[-self._max_bytes:]
+        if self.max_bytes and len(data) > self.max_bytes:
+            data = data[-self.max_bytes:]
             event.truncated_bytes = len(chunk) - len(data)
 
         dropped_chunks, dropped_bytes = self._make_room_for(
@@ -126,8 +140,8 @@ class BoundedByteDeque:
     ) -> tuple[int, int]:
         dropped_chunks = 0
         dropped_bytes = 0
-        limit_items = self._max_items
-        limit_bytes = self._max_bytes
+        limit_items = self.max_items
+        limit_bytes = self.max_bytes
 
         while (
             limit_items is not None
@@ -155,8 +169,8 @@ class BoundedByteDeque:
         return dropped_chunks, dropped_bytes
 
     def _can_fit(self, incoming_bytes: int, incoming_count: int) -> bool:
-        limit_items = self._max_items
-        limit_bytes = self._max_bytes
+        limit_items = self.max_items
+        limit_bytes = self.max_bytes
         if limit_bytes is not None and incoming_bytes > limit_bytes:
             return False
         if limit_items is not None and incoming_count > limit_items:
@@ -172,14 +186,6 @@ class BoundedByteDeque:
         ):
             return False
         return True
-
-    @staticmethod
-    def _normalize_limit(value: object) -> Optional[int]:
-        if value is None:
-            return None
-        if isinstance(value, int):
-            return max(0, value)
-        raise TypeError("Queue limits must be integers or None")
 
 
 __all__ = ["BoundedByteDeque", "QueueEvent"]

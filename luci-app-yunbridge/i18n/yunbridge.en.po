@@ -34,11 +34,20 @@ msgstr "Web UI"
 msgid "MQTT WebSocket Port"
 msgstr "MQTT WebSocket Port"
 
-msgid "Mandatory. Disabling TLS will prevent the daemon from starting."
-msgstr "Mandatory. Disabling TLS will prevent the daemon from starting."
+msgid "Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext."
+msgstr "Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext."
 
 msgid "Serial Shared Secret"
 msgstr "Serial Shared Secret"
 
 msgid "Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long."
 msgstr "Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long."
+
+msgid "Arduino Secret Template"
+msgstr "Arduino Secret Template"
+
+msgid "Paste this snippet into your sketch (before including Bridge.h) so the MCU matches the new daemon secret."
+msgstr "Paste this snippet into your sketch (before including Bridge.h) so the MCU matches the new daemon secret."
+
+msgid "Copy snippet"
+msgstr "Copy snippet"

@@ -4,9 +4,28 @@
 #include <Arduino.h>
 #include <stddef.h>
 
-#if defined(ARDUINO)
-#include <COBS.h>
+#if defined(__has_include)
+#if __has_include(<PacketSerial.h>)
+#include <PacketSerial.h>
+#define BRIDGE_HAS_PACKET_SERIAL 1
 #endif
+#endif
+
+#if !defined(BRIDGE_HAS_PACKET_SERIAL)
+#error "PacketSerial dependency missing: install bakercp/PacketSerial so <PacketSerial.h> is available."
+#endif
+
+#if defined(__has_include)
+#if __has_include(<Encoding/COBS.h>)
+#define BRIDGE_HAS_PACKET_SERIAL_COBS 1
+#endif
+#endif
+
+#if !defined(BRIDGE_HAS_PACKET_SERIAL_COBS)
+#error "PacketSerial installation incomplete: <Encoding/COBS.h> not found after installing bakercp/PacketSerial."
+#endif
+
+#include <Encoding/COBS.h>
 
 namespace cobs {
 
@@ -19,13 +38,12 @@ namespace cobs {
  * @return size_t The number of bytes written to the destination buffer. Does
  * NOT include the trailing zero.
  */
-#if defined(ARDUINO)
 inline size_t encode(
     const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
   if (!src_buf || !dst_buf) {
     return 0;
   }
-  return COBS::encode(src_buf, src_len, dst_buf);
+  return ::COBS::encode(src_buf, src_len, dst_buf);
 }
 
 inline size_t decode(
@@ -33,60 +51,8 @@ inline size_t decode(
   if (!src_buf || !dst_buf) {
     return 0;
   }
-  return COBS::decode(src_buf, src_len, dst_buf);
+  return ::COBS::decode(src_buf, src_len, dst_buf);
 }
-#else
-inline size_t encode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
-  const uint8_t* src_end = src_buf + src_len;
-  uint8_t* dst_start = dst_buf;
-  uint8_t* code_ptr = dst_buf++;
-  uint8_t code = 1;
-
-  while (src_buf < src_end) {
-    if (*src_buf == 0) {
-      *code_ptr = code;
-      code_ptr = dst_buf++;
-      code = 1;
-    } else {
-      *dst_buf++ = *src_buf;
-      code++;
-      if (code == 0xFF) {
-        *code_ptr = code;
-        if (src_buf + 1 < src_end) {
-          code_ptr = dst_buf++;
-          code = 1;
-        }
-      }
-    }
-    src_buf++;
-  }
-
-  *code_ptr = code;
-  return dst_buf - dst_start;
-}
-
-inline size_t decode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
-  const uint8_t* src_end = src_buf + src_len;
-  uint8_t* dst_start = dst_buf;
-
-  while (src_buf < src_end) {
-    uint8_t code = *src_buf++;
-    if (code == 0) return 0;  // Should not happen in a valid packet
-
-    size_t copy_len = code - 1;
-    if (src_buf + copy_len > src_end) return 0;  // Not enough data
-
-    memcpy(dst_buf, src_buf, copy_len);
-    src_buf += copy_len;
-    dst_buf += copy_len;
-
-    if (code < 0xFF && src_buf < src_end) {
-      *dst_buf++ = 0;
-    }
-  }
-  return dst_buf - dst_start;
-}
-#endif
 
 }  // namespace cobs
 

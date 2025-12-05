@@ -272,13 +272,25 @@ local function run_and_capture(cmd)
 end
 
 function action_rotate_credentials()
-    local credfile = luci.http.formvalue("path") or "/etc/yunbridge/credentials"
-    local cmd = string.format("/usr/bin/yunbridge-rotate-credentials %q", credfile)
+    local cmd = "/usr/bin/yunbridge-rotate-credentials"
     local rc, output = run_and_capture(cmd)
     local status = rc == 0 and 200 or 500
+    local serial_secret
+    if output then
+        serial_secret = output:match("SERIAL_SECRET=([0-9a-fA-F]+)")
+    end
+    local sketch_snippet
+    if serial_secret then
+        sketch_snippet = string.format(
+            '#define BRIDGE_SERIAL_SHARED_SECRET "%s"\n#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)',
+            serial_secret
+        )
+    end
     send_json(status, {
         status = (rc == 0) and "ok" or "error",
         output = output,
+        serial_secret = serial_secret,
+        sketch_snippet = sketch_snippet,
     })
 end
 

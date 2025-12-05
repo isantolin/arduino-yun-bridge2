@@ -59,11 +59,8 @@ def test_spool_skips_corrupt_rows(
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     spool.append(_make_message("topic/first"))
 
-    corrupt_entry = spool._next_entry_path()  # type: ignore[attr-defined]
-    corrupt_entry.write_text("{this-is: not-json}", encoding="utf-8")
-    spool._queue.append(corrupt_entry)  # type: ignore[attr-defined]
-    spool._pending += 1  # type: ignore[attr-defined]
-
+    # Inject a corrupt entry directly into the underlying durable queue.
+    spool._queue.put(b"not-a-dict")  # type: ignore[attr-defined]
     spool.append(_make_message("topic/second"))
 
     caplog.set_level(logging.WARNING, "yunbridge.mqtt.spool")

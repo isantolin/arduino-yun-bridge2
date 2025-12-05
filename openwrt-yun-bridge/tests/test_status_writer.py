@@ -1,5 +1,6 @@
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -50,8 +51,24 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state.console_truncated_bytes = 4
         state.mcu_is_paused = True
         state.link_is_synchronized = True
+        state.serial_link_connected = True
+        state.handshake_attempts = 2
         state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
         state.mcu_version = (2, 5)
+        state.mqtt_spooled_messages = 10
+        state.mqtt_spooled_replayed = 4
+        state.mqtt_spool_errors = 2
+        state.mqtt_spool_degraded = True
+        state.mqtt_spool_failure_reason = "disk-full"
+        state.mqtt_spool_retry_attempts = 3
+        state.mqtt_spool_backoff_until = 42.0
+        state.mqtt_spool_last_error = "append_failed"
+        state.mqtt_spool_recoveries = 1
+        state.mqtt_spool = SimpleNamespace(pending=7)
+        state.watchdog_enabled = True
+        state.watchdog_interval = 7.5
+        state.watchdog_beats = 11
+        state.last_watchdog_beat = 101.0
 
         task = asyncio.create_task(status_module.status_writer(state, 0))
         for _ in range(10):
@@ -90,6 +107,22 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["allowed_commands"] == ["ls"]
         assert payload["link_synchronised"] is True
         assert payload["mcu_version"] == {"major": 2, "minor": 5}
+        assert "bridge" in payload
+        assert payload["bridge"]["handshake"]["attempts"] == 2
+        assert payload["mqtt_spooled_messages"] == 10
+        assert payload["mqtt_spooled_replayed"] == 4
+        assert payload["mqtt_spool_errors"] == 2
+        assert payload["mqtt_spool_degraded"] is True
+        assert payload["mqtt_spool_failure_reason"] == "disk-full"
+        assert payload["mqtt_spool_retry_attempts"] == 3
+        assert payload["mqtt_spool_backoff_until"] == 42.0
+        assert payload["mqtt_spool_last_error"] == "append_failed"
+        assert payload["mqtt_spool_recoveries"] == 1
+        assert payload["mqtt_spool_pending"] == 7
+        assert payload["watchdog_enabled"] is True
+        assert payload["watchdog_interval"] == 7.5
+        assert payload["watchdog_beats"] == 11
+        assert payload["watchdog_last_beat"] == 101.0
 
         assert status_path.exists()
         file_payload = json.loads(status_path.read_text())

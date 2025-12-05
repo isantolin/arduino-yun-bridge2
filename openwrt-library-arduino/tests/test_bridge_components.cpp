@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -110,6 +111,23 @@ class RecordingStream : public Stream {
   std::vector<uint8_t> buffer_;
 };
 
+// Rebinds the global Bridge instance to a host-side stream while in scope.
+class ScopedBridgeBinding {
+ public:
+  explicit ScopedBridgeBinding(Stream& stream) {
+    new (&Bridge) BridgeClass(stream);
+    Bridge.begin();
+  }
+
+  ~ScopedBridgeBinding() {
+    new (&Bridge) BridgeClass(Serial1);
+    Bridge.begin();
+  }
+
+  ScopedBridgeBinding(const ScopedBridgeBinding&) = delete;
+  ScopedBridgeBinding& operator=(const ScopedBridgeBinding&) = delete;
+};
+
 std::vector<Frame> decode_frames(const std::vector<uint8_t>& bytes) {
   FrameParser parser;
   Frame frame{};
@@ -137,7 +155,8 @@ void test_datastore_get_response_dispatches_handler() {
   DatastoreHandlerState::instance = &handler_state;
   bridge.onDataStoreGetResponse(datastore_handler_trampoline);
 
-  bridge._trackPendingDatastoreKey("thermostat");
+  bool enqueued = bridge._trackPendingDatastoreKey("thermostat");
+  assert(enqueued);
 
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
@@ -152,6 +171,234 @@ void test_datastore_get_response_dispatches_handler() {
   assert(handler_state.key == "thermostat");
   assert(handler_state.value == "23.7C");
   DatastoreHandlerState::instance = nullptr;
+}
+
+void test_datastore_queue_rejects_overflow() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  bool first = bridge._trackPendingDatastoreKey("alpha");
+  assert(first);
+
+  bool second = bridge._trackPendingDatastoreKey("beta");
+  assert(!second);
+
+  const char* key = bridge._popPendingDatastoreKey();
+  assert(std::strcmp(key, "alpha") == 0);
+
+  const char* empty = bridge._popPendingDatastoreKey();
+  assert(empty[0] == '\0');
+}
+
+void test_console_write_and_flow_control() {
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  Console.begin();
+
+  const uint8_t payload[] = {0xAA, 0xBB, 0xCC};
+  size_t written = Console.write(payload, sizeof(payload));
+  assert(written == sizeof(payload));
+
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 1);
+  const Frame& console_frame = frames.front();
+  assert(console_frame.header.command_id == CMD_CONSOLE_WRITE);
+  assert(console_frame.header.payload_length == sizeof(payload));
+  assert(std::memcmp(console_frame.payload, payload, sizeof(payload)) == 0);
+  Bridge._handleAck(CMD_CONSOLE_WRITE);
+  stream.clear();
+
+  std::vector<uint8_t> large(MAX_PAYLOAD_SIZE + 5, 0x5A);
+  size_t large_written = Console.write(large.data(), large.size());
+  assert(large_written == large.size());
+  auto limited_frames = decode_frames(stream.data());
+  assert(limited_frames.size() == 1);
+  assert(limited_frames[0].header.command_id == CMD_CONSOLE_WRITE);
+  assert(limited_frames[0].header.payload_length == MAX_PAYLOAD_SIZE);
+  Bridge._handleAck(CMD_CONSOLE_WRITE);
+  stream.clear();
+
+  Bridge.begin();
+  Console.begin();
+
+  std::vector<uint8_t> inbound(CONSOLE_BUFFER_HIGH_WATER + 2, 0x34);
+  Console._push(inbound.data(), inbound.size());
+  assert(Console.available() == static_cast<int>(inbound.size()));
+  int peeked = Console.peek();
+  assert(peeked == 0x34);
+
+  auto xoff_frames = decode_frames(stream.data());
+  assert(!xoff_frames.empty());
+  assert(xoff_frames.back().header.command_id == CMD_XOFF);
+  Bridge._handleAck(CMD_XOFF);
+  stream.clear();
+
+  for (size_t i = 0; i < inbound.size(); ++i) {
+    int value = Console.read();
+    assert(value == 0x34);
+  }
+  assert(Console.read() == -1);
+
+  auto xon_frames = decode_frames(stream.data());
+  assert(!xon_frames.empty());
+  assert(xon_frames.back().header.command_id == CMD_XON);
+  Bridge._handleAck(CMD_XON);
+
+  Console.flush();
+}
+
+void test_datastore_put_and_request_behavior() {
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  const char* key = "temp";
+  const char* value = "23.5";
+
+  DataStore.put(key, value);
+  auto put_frames = decode_frames(stream.data());
+  assert(put_frames.size() == 1);
+  const Frame& put_frame = put_frames.front();
+  assert(put_frame.header.command_id == CMD_DATASTORE_PUT);
+  uint8_t key_len = static_cast<uint8_t>(std::strlen(key));
+  uint8_t value_len = static_cast<uint8_t>(std::strlen(value));
+  assert(put_frame.payload[0] == key_len);
+  assert(std::memcmp(put_frame.payload + 1, key, key_len) == 0);
+  assert(put_frame.payload[1 + key_len] == value_len);
+  assert(std::memcmp(put_frame.payload + 2 + key_len, value, value_len) == 0);
+  Bridge._handleAck(CMD_DATASTORE_PUT);
+  stream.clear();
+
+  DataStore.put(nullptr, value);
+  DataStore.put("", value);
+  std::string oversized_key(BridgeClass::kMaxDatastoreKeyLength + 1, 'k');
+  DataStore.put(oversized_key.c_str(), value);
+  std::string oversized_value(BridgeClass::kMaxDatastoreKeyLength + 1, 'v');
+  DataStore.put(key, oversized_value.c_str());
+  assert(stream.data().empty());
+
+  DataStore.requestGet(key);
+  auto get_frames = decode_frames(stream.data());
+  assert(get_frames.size() == 1);
+  assert(get_frames.front().header.command_id == CMD_DATASTORE_GET);
+  Bridge._handleAck(CMD_DATASTORE_GET);
+  stream.clear();
+
+  DataStore.requestGet("other");
+  auto status_frames = decode_frames(stream.data());
+  assert(!status_frames.empty());
+  const Frame& status_frame = status_frames.back();
+  assert(status_frame.header.command_id == STATUS_ERROR);
+  std::string status_message(
+      reinterpret_cast<const char*>(status_frame.payload),
+      reinterpret_cast<const char*>(status_frame.payload) +
+          status_frame.header.payload_length);
+  assert(status_message == "datastore_queue_full");
+  (void)Bridge._popPendingDatastoreKey();
+}
+
+void test_mailbox_send_and_requests_emit_commands() {
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  const char* msg = "hello";
+  Mailbox.send(msg);
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 1);
+  const Frame& mailbox_frame = frames.front();
+  assert(mailbox_frame.header.command_id == CMD_MAILBOX_PUSH);
+  size_t msg_len = std::strlen(msg);
+  assert(mailbox_frame.header.payload_length == msg_len + 2);
+  uint16_t encoded_len = read_u16_be(mailbox_frame.payload);
+  assert(encoded_len == msg_len);
+  assert(std::memcmp(mailbox_frame.payload + 2, msg, msg_len) == 0);
+  Bridge._handleAck(CMD_MAILBOX_PUSH);
+  stream.clear();
+
+  std::vector<uint8_t> raw(MAX_PAYLOAD_SIZE, 0x41);
+  Mailbox.send(raw.data(), raw.size());
+  auto raw_frames = decode_frames(stream.data());
+  assert(raw_frames.size() == 1);
+  size_t capped_len = MAX_PAYLOAD_SIZE - 2;
+  assert(raw_frames[0].header.payload_length == capped_len + 2);
+  uint16_t encoded_raw_len = read_u16_be(raw_frames[0].payload);
+  assert(encoded_raw_len == capped_len);
+  Bridge._handleAck(CMD_MAILBOX_PUSH);
+  stream.clear();
+
+  Mailbox.requestRead();
+  auto read_frames = decode_frames(stream.data());
+  assert(read_frames.size() == 1);
+  assert(read_frames[0].header.command_id == CMD_MAILBOX_READ);
+  assert(read_frames[0].header.payload_length == 0);
+  Bridge._handleAck(CMD_MAILBOX_READ);
+  stream.clear();
+
+  Mailbox.requestAvailable();
+  auto avail_frames = decode_frames(stream.data());
+  assert(avail_frames.size() == 1);
+  assert(avail_frames[0].header.command_id == CMD_MAILBOX_AVAILABLE);
+  assert(avail_frames[0].header.payload_length == 0);
+  Bridge._handleAck(CMD_MAILBOX_AVAILABLE);
+  stream.clear();
+}
+
+void test_filesystem_write_and_remove_payloads() {
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  const char* path = "/tmp/data";
+  std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, 0xEE);
+  FileSystem.write(path, blob.data(), blob.size());
+  auto write_frames = decode_frames(stream.data());
+  assert(write_frames.size() == 1);
+  const Frame& write_frame = write_frames.front();
+  assert(write_frame.header.command_id == CMD_FILE_WRITE);
+  uint8_t path_len = static_cast<uint8_t>(std::strlen(path));
+  assert(write_frame.payload[0] == path_len);
+  assert(std::memcmp(write_frame.payload + 1, path, path_len) == 0);
+  uint16_t encoded_len = read_u16_be(write_frame.payload + 1 + path_len);
+  size_t max_data = MAX_PAYLOAD_SIZE - 3 - path_len;
+  assert(encoded_len == max_data);
+  assert(write_frame.header.payload_length == path_len + encoded_len + 3);
+  Bridge._handleAck(CMD_FILE_WRITE);
+  stream.clear();
+
+  FileSystem.write(nullptr, blob.data(), blob.size());
+  FileSystem.write(path, nullptr, blob.size());
+  FileSystem.write("", blob.data(), blob.size());
+  std::string long_path(300, 'a');
+  FileSystem.write(long_path.c_str(), blob.data(), blob.size());
+  assert(stream.data().empty());
+
+  FileSystem.remove(path);
+  auto remove_frames = decode_frames(stream.data());
+  assert(remove_frames.size() == 1);
+  const Frame& remove_frame = remove_frames.front();
+  assert(remove_frame.header.command_id == CMD_FILE_REMOVE);
+  assert(remove_frame.payload[0] == path_len);
+  assert(std::memcmp(remove_frame.payload + 1, path, path_len) == 0);
+  Bridge._handleAck(CMD_FILE_REMOVE);
+  stream.clear();
+
+  FileSystem.remove("");
+  assert(stream.data().empty());
+}
+
+void test_process_kill_encodes_pid() {
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  Process.kill(0x1234);
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 1);
+  const Frame& frame = frames.front();
+  assert(frame.header.command_id == CMD_PROCESS_KILL);
+  assert(frame.header.payload_length == 2);
+  uint16_t encoded = read_u16_be(frame.payload);
+  assert(encoded == 0x1234);
+  Bridge._handleAck(CMD_PROCESS_KILL);
+  stream.clear();
 }
 
 void test_mailbox_read_response_delivers_payload() {
@@ -290,6 +537,12 @@ void test_malformed_status_triggers_retransmit() {
 
 int main() {
   test_datastore_get_response_dispatches_handler();
+  test_datastore_queue_rejects_overflow();
+  test_console_write_and_flow_control();
+  test_datastore_put_and_request_behavior();
+  test_mailbox_send_and_requests_emit_commands();
+  test_filesystem_write_and_remove_payloads();
+  test_process_kill_encodes_pid();
   test_mailbox_read_response_delivers_payload();
   test_process_poll_response_requeues_on_streaming_output();
   test_ack_flushes_pending_queue_after_response();

@@ -1,1 +1,0 @@
-pydantic==2.12.5 --hash=sha256:4d351024c75c0f085a9febbb665ce8c0c6ec5d30e903bdb6394b7ede26aebb49

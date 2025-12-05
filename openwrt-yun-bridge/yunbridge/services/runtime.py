@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Awaitable, Callable, Coroutine, Optional
+from typing import Any, Awaitable, Callable, Coroutine, Dict, Optional
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
@@ -31,6 +31,7 @@ from ..const import (
 )
 from ..protocol.topics import (
     Topic,
+    TopicRoute,
     handshake_topic,
     parse_topic,
     topic_path,
@@ -49,6 +50,7 @@ from .components import (
 )
 from .serial_flow import SerialFlowController
 from .task_supervisor import TaskSupervisor
+from .routers import MCUHandlerRegistry, MQTTRouter, McuHandler
 
 
 class SerialHandshakeFatal(RuntimeError):
@@ -87,9 +89,52 @@ class BridgeService:
         self._shell = ShellComponent(config, state, self, self._process)
         self._system = SystemComponent(config, state, self)
 
-        self._mcu_handlers: dict[
-            int, Callable[[bytes], Awaitable[Optional[bool]]]
-        ] = {
+        self._mcu_handlers = MCUHandlerRegistry()
+        self._register_mcu_handlers()
+
+        self._mqtt_router = MQTTRouter()
+        self._register_mqtt_routes()
+
+        self._serial_flow = SerialFlowController(
+            ack_timeout=config.serial_retry_timeout,
+            response_timeout=config.serial_response_timeout,
+            max_attempts=config.serial_retry_attempts,
+            logger=logger,
+        )
+        self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
+        self._serial_flow.set_pipeline_observer(
+            state.record_serial_pipeline_event
+        )
+
+    def _register_mcu_handlers(self) -> None:
+        handler_sets = (
+            self._gpio_mcu_handlers(),
+            self._console_mcu_handlers(),
+            self._datastore_mcu_handlers(),
+            self._mailbox_mcu_handlers(),
+            self._file_mcu_handlers(),
+            self._process_mcu_handlers(),
+            self._system_mcu_handlers(),
+            self._status_mcu_handlers(),
+        )
+        for mapping in handler_sets:
+            self._mcu_handlers.bulk_register(mapping)
+
+    def _register_mqtt_routes(self) -> None:
+        self._mqtt_router.register(Topic.FILE, self._handle_file_topic)
+        self._mqtt_router.register(Topic.CONSOLE, self._handle_console_topic)
+        self._mqtt_router.register(
+            Topic.DATASTORE,
+            self._handle_datastore_topic,
+        )
+        self._mqtt_router.register(Topic.MAILBOX, self._handle_mailbox_topic)
+        self._mqtt_router.register(Topic.SHELL, self._handle_shell_topic)
+        self._mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)
+        self._mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)
+        self._mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
+
+    def _gpio_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_DIGITAL_READ_RESP.value: (
                 self._pin.handle_digital_read_resp
             ),
@@ -106,13 +151,25 @@ class BridgeService:
                     self._pin.handle_unexpected_mcu_request(cmd, payload)
                 )
             ),
+        }
+
+    def _console_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_XOFF.value: self._console.handle_xoff,
             Command.CMD_XON.value: self._console.handle_xon,
             Command.CMD_CONSOLE_WRITE.value: self._console.handle_write,
+        }
+
+    def _datastore_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_DATASTORE_PUT.value: self._datastore.handle_put,
             Command.CMD_DATASTORE_GET.value: (
                 self._datastore.handle_get_request
             ),
+        }
+
+    def _mailbox_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_MAILBOX_PUSH.value: self._mailbox.handle_push,
             Command.CMD_MAILBOX_AVAILABLE.value: (
                 self._mailbox.handle_available
@@ -121,15 +178,27 @@ class BridgeService:
             Command.CMD_MAILBOX_PROCESSED.value: (
                 self._mailbox.handle_processed
             ),
+        }
+
+    def _file_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_FILE_WRITE.value: self._file.handle_write,
             Command.CMD_FILE_READ.value: self._file.handle_read,
             Command.CMD_FILE_REMOVE.value: self._file.handle_remove,
+        }
+
+    def _process_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_PROCESS_RUN.value: self._process.handle_run,
             Command.CMD_PROCESS_RUN_ASYNC.value: (
                 self._process.handle_run_async
             ),
             Command.CMD_PROCESS_POLL.value: self._process.handle_poll,
             Command.CMD_PROCESS_KILL.value: self._handle_process_kill,
+        }
+
+    def _system_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Command.CMD_GET_FREE_MEMORY_RESP.value: (
                 self._system.handle_get_free_memory_resp
             ),
@@ -142,6 +211,10 @@ class BridgeService:
             Command.CMD_GET_VERSION_RESP.value: (
                 self._system.handle_get_version_resp
             ),
+        }
+
+    def _status_mcu_handlers(self) -> Dict[int, McuHandler]:
+        return {
             Status.ACK.value: self._handle_ack,
             Status.OK.value: self._status_handler(Status.OK),
             Status.ERROR.value: self._status_handler(Status.ERROR),
@@ -157,14 +230,6 @@ class BridgeService:
                 self._status_handler(Status.NOT_IMPLEMENTED)
             ),
         }
-
-        self._serial_flow = SerialFlowController(
-            ack_timeout=config.serial_retry_timeout,
-            response_timeout=config.serial_response_timeout,
-            max_attempts=config.serial_retry_attempts,
-            logger=logger,
-        )
-        self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
 
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
@@ -197,6 +262,7 @@ class BridgeService:
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""
 
+        self.state.serial_link_connected = True
         handshake_ok = False
         fatal_error: Optional[SerialHandshakeFatal] = None
         try:
@@ -238,6 +304,8 @@ class BridgeService:
 
     async def on_serial_disconnected(self) -> None:
         """Reset transient MCU tracking when the serial link drops."""
+
+        self.state.serial_link_connected = False
 
         pending_digital = len(self.state.pending_digital_reads)
         pending_analog = len(self.state.pending_analog_reads)
@@ -487,7 +555,11 @@ class BridgeService:
 
     async def _handle_handshake_success(self) -> None:
         self.state.record_handshake_success()
-        await self._publish_handshake_event("success")
+        duration = round(self.state.handshake_last_duration, 3)
+        await self._publish_handshake_event(
+            "success",
+            extra={"duration_seconds": duration},
+        )
 
     async def _handle_handshake_failure(
         self,
@@ -497,7 +569,14 @@ class BridgeService:
     ) -> None:
         self.state.record_handshake_failure(reason)
         backoff = self._maybe_schedule_handshake_backoff(reason)
-        extra = {"backoff_seconds": round(backoff, 3)} if backoff else None
+        extra: dict[str, Any] = {
+            "duration_seconds": round(
+                self.state.handshake_last_duration,
+                3,
+            )
+        }
+        if backoff:
+            extra["backoff_seconds"] = round(backoff, 3)
         await self._publish_handshake_event(
             "failure",
             reason=reason,
@@ -533,9 +612,9 @@ class BridgeService:
             return
 
         hint = (
-            "Verify YUNBRIDGE_SERIAL_SECRET (usually stored in "
-            "/etc/yunbridge/credentials or exported before starting the "
-            "daemon) matches the BridgeSecret.h value flashed on the MCU."
+            "Verify YUNBRIDGE_SERIAL_SECRET (configured via UCI/LuCI or "
+            "exported before starting the daemon) matches the "
+            "BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
         raise SerialHandshakeFatal(
             (
@@ -851,89 +930,174 @@ class BridgeService:
             logger.debug("MQTT topic missing identifier: %s", topic_name)
             return
 
-        payload = inbound.payload
-        payload_str = payload.decode("utf-8", errors="ignore")
-        identifier = route.identifier
-        remainder = list(route.remainder)
-        parts = topic_name.split("/")
-
         try:
-            if route.topic == Topic.FILE and len(route.segments) >= 2:
-                if not self._is_topic_action_allowed(route.topic, identifier):
-                    await self._reject_topic_action(
-                        inbound,
-                        route.topic,
-                        identifier,
-                    )
-                    return
-                await self._file.handle_mqtt(
-                    identifier,
-                    remainder,
-                    payload,
-                    inbound,
-                )
-            elif route.topic == Topic.CONSOLE and identifier == "in":
-                await self._console.handle_mqtt_input(payload, inbound)
-            elif route.topic == Topic.DATASTORE:
-                if not self._is_topic_action_allowed(route.topic, identifier):
-                    await self._reject_topic_action(
-                        inbound,
-                        route.topic,
-                        identifier,
-                    )
-                    return
-                await self._datastore.handle_mqtt(
-                    identifier,
-                    remainder,
-                    payload,
-                    payload_str,
-                    inbound,
-                )
-            elif route.topic == Topic.MAILBOX:
-                if identifier and not self._is_topic_action_allowed(
-                    route.topic, identifier
-                ):
-                    await self._reject_topic_action(
-                        inbound,
-                        route.topic,
-                        identifier,
-                    )
-                    return
-                await self._mailbox.handle_mqtt(
-                    identifier,
-                    payload,
-                    inbound,
-                )
-            elif route.topic == Topic.SHELL:
-                if identifier and not self._is_topic_action_allowed(
-                    route.topic, identifier
-                ):
-                    await self._reject_topic_action(
-                        inbound,
-                        route.topic,
-                        identifier,
-                    )
-                    return
-                await self._shell.handle_mqtt(parts, payload, inbound)
-            elif route.topic in (Topic.DIGITAL, Topic.ANALOG):
-                await self._pin.handle_mqtt(
-                    route.topic,
-                    parts,
-                    payload_str,
-                    inbound,
-                )
-            elif route.topic == Topic.SYSTEM:
-                handled = await self._system.handle_mqtt(
-                    identifier,
-                    remainder,
-                    inbound,
-                )
-                if not handled:
-                    logger.debug("Unhandled MQTT system topic %s", topic_name)
-            else:
-                logger.debug("Unhandled MQTT topic %s", topic_name)
+            handled = await self._mqtt_router.dispatch(route, inbound)
         except Exception:
             logger.exception("Error processing MQTT topic: %s", topic_name)
+            return
+
+        if not handled:
+            logger.debug("Unhandled MQTT topic %s", topic_name)
+
+    async def _handle_file_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        if len(route.segments) < 2:
+            return False
+        identifier = route.identifier
+        if not self._is_topic_action_allowed(route.topic, identifier):
+            await self._reject_topic_action(inbound, route.topic, identifier)
+            return True
+        await self._file.handle_mqtt(
+            identifier,
+            list(route.remainder),
+            inbound.payload,
+            inbound,
+        )
+        return True
+
+    async def _handle_console_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        if route.identifier != "in":
+            return False
+        await self._console.handle_mqtt_input(inbound.payload, inbound)
+        return True
+
+    async def _handle_datastore_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        identifier = route.identifier
+        if not identifier:
+            return False
+        if not self._is_topic_action_allowed(route.topic, identifier):
+            await self._reject_topic_action(inbound, route.topic, identifier)
+            return True
+        payload = inbound.payload
+        payload_str = payload.decode("utf-8", errors="ignore")
+        await self._datastore.handle_mqtt(
+            identifier,
+            list(route.remainder),
+            payload,
+            payload_str,
+            inbound,
+        )
+        return True
+
+    async def _handle_mailbox_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        identifier = route.identifier
+        if identifier and not self._is_topic_action_allowed(
+            route.topic, identifier
+        ):
+            await self._reject_topic_action(inbound, route.topic, identifier)
+            return True
+        await self._mailbox.handle_mqtt(identifier, inbound.payload, inbound)
+        return True
+
+    async def _handle_shell_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        identifier = route.identifier
+        if identifier and not self._is_topic_action_allowed(
+            route.topic, identifier
+        ):
+            await self._reject_topic_action(inbound, route.topic, identifier)
+            return True
+        await self._shell.handle_mqtt(
+            route.raw.split("/"),
+            inbound.payload,
+            inbound,
+        )
+        return True
+
+    async def _handle_pin_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        payload_str = inbound.payload.decode("utf-8", errors="ignore")
+        await self._pin.handle_mqtt(
+            route.topic,
+            route.raw.split("/"),
+            payload_str,
+            inbound,
+        )
+        return True
+
+    async def _handle_system_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        if route.identifier == "bridge":
+            bridge_handled = await self._handle_bridge_topic(route, inbound)
+            if bridge_handled:
+                return True
+        handled = await self._system.handle_mqtt(
+            route.identifier,
+            list(route.remainder),
+            inbound,
+        )
+        if not handled:
+            logger.debug("Unhandled MQTT system topic %s", route.raw)
+        return handled
+
+    async def _handle_bridge_topic(
+        self,
+        route: TopicRoute,
+        inbound: InboundMessage,
+    ) -> bool:
+        segments = list(route.remainder)
+        if not segments:
+            return False
+        category = segments[0]
+        action = segments[1] if len(segments) > 1 else ""
+        if category == "handshake" and action == "get":
+            await self._publish_bridge_snapshot("handshake", inbound)
+            return True
+        if category in {"summary", "state"} and action == "get":
+            await self._publish_bridge_snapshot("summary", inbound)
+            return True
+        return False
+
+    async def _publish_bridge_snapshot(
+        self,
+        flavor: str,
+        inbound: Optional[InboundMessage],
+    ) -> None:
+        if flavor == "handshake":
+            snapshot = self.state.build_handshake_snapshot()
+            topic_segments = ("bridge", "handshake", "value")
+        else:
+            snapshot = self.state.build_bridge_snapshot()
+            topic_segments = ("bridge", "summary", "value")
+        topic = topic_path(
+            self.state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            *topic_segments,
+        )
+        message = (
+            PublishableMessage(
+                topic_name=topic,
+                payload=json.dumps(snapshot).encode("utf-8"),
+            )
+            .with_content_type("application/json")
+            .with_message_expiry(30)
+            .with_user_property("bridge-snapshot", flavor)
+        )
+        await self.enqueue_mqtt(message, reply_context=inbound)
 
     def _is_topic_action_allowed(
         self,

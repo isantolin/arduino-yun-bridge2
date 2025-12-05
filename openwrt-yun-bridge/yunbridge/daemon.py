@@ -7,7 +7,29 @@ import logging
 import ssl
 import struct
 import sys
-from typing import Awaitable, Callable, Optional, Tuple, TypeVar, cast
+import time
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
+
+try:  # Python >= 3.11
+    from builtins import BaseExceptionGroup, ExceptionGroup
+except ImportError:  # pragma: no cover - fallback for Python < 3.11
+
+    class BaseExceptionGroup(BaseException):
+        """Compatibility shim for runtimes lacking ExceptionGroup."""
+
+        exceptions: tuple[BaseException, ...]
+
+        def __init__(
+            self,
+            _message: str = "ExceptionGroup not supported",
+            *exceptions: BaseException,
+        ) -> None:
+            super().__init__(_message)
+            self.exceptions = tuple(exceptions)
+
+    class ExceptionGroup(BaseExceptionGroup):
+        pass
 
 import serial
 import paho.mqtt.client as paho_client
@@ -16,14 +38,6 @@ from paho.mqtt.properties import Properties
 from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status
-
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    retry_if_exception_type,
-    stop_never,
-    wait_exponential,
-)
 
 from yunbridge.common import (
     DecodeError,
@@ -54,6 +68,13 @@ from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.watchdog import WatchdogKeepalive
 from yunbridge.metrics import PrometheusExporter, publish_metrics
 import serial_asyncio
+from tenacity import (
+    AsyncRetrying,
+    RetryCallState,
+    retry_if_exception_type,
+    stop_never,
+    wait_exponential,
+)
 
 OPEN_SERIAL_CONNECTION: Callable[
     ..., Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]]
@@ -73,66 +94,319 @@ MAX_SERIAL_PACKET_BYTES = (
 )
 
 
+@dataclass(slots=True)
+class _SupervisedTaskSpec:
+    name: str
+    factory: Callable[[], Awaitable[None]]
+    fatal_exceptions: Tuple[type[BaseException], ...] = ()
+    max_restarts: Optional[int] = None
+    restart_interval: float = 60.0
+    min_backoff: float = 1.0
+    max_backoff: float = 30.0
+
+
+@dataclass(slots=True)
+class _RetryPolicy:
+    action: str
+    retry_exceptions: Tuple[type[BaseException], ...]
+    base_delay: float
+    max_delay: float
+    announce_attempt: Optional[Callable[[], None]] = None
+
+
+class _RetryableSupervisorError(Exception):
+    """Sentinel exception to request another supervisor attempt."""
+
+    def __init__(
+        self,
+        original: BaseException,
+        *,
+        reset_backoff: bool,
+    ) -> None:
+        super().__init__(str(original))
+        self.original = original
+        self.reset_backoff = reset_backoff
+
+
+ExcLike = BaseException | BaseExceptionGroup
+
+
+def _unwrap_retryable_exception_group(
+    group: BaseExceptionGroup[BaseException],
+    retry_types: Tuple[type[BaseException], ...],
+) -> Optional[BaseException]:
+    collected: list[BaseException] = []
+
+    def _collect(exc: ExcLike) -> bool:
+        if isinstance(exc, BaseExceptionGroup):
+            group_exc = cast(BaseExceptionGroup, exc)
+            members = getattr(group_exc, "exceptions", ())
+            return all(_collect(inner) for inner in members)
+        if isinstance(exc, retry_types):
+            collected.append(exc)
+            return True
+        return False
+
+    if _collect(group) and collected:
+        return collected[0]
+    return None
+
+
+class _SupervisorWait:
+    """Stateful wait strategy that allows backoff resets."""
+
+    def __init__(self, *, min_delay: float, max_delay: float) -> None:
+        self._min = max(0.1, min_delay)
+        self._max = max(self._min, max_delay)
+        self._streak = 0
+
+    def __call__(self, retry_state: RetryCallState) -> float:
+        outcome = retry_state.outcome
+        reset_requested = False
+        if outcome is not None and outcome.failed:
+            exc = outcome.exception()
+            if isinstance(exc, _RetryableSupervisorError):
+                reset_requested = exc.reset_backoff
+
+        if reset_requested or self._streak <= 0:
+            self._streak = 1
+        else:
+            self._streak += 1
+
+        delay = min(self._max, self._min * (2 ** (self._streak - 1)))
+        return delay
+
+
 async def _serial_sender_not_ready(command_id: int, _: bytes) -> bool:
-    logger.warning("Serial disconnected; dropping frame 0x%02X", command_id)
+    logger.warning(
+        "Serial disconnected; dropping frame 0x%02X",
+        command_id,
+    )
     return False
 
 
-def _make_before_sleep_log(action: str) -> Callable[[RetryCallState], None]:
-    def _log(retry_state: RetryCallState) -> None:
-        delay = (
-            retry_state.next_action.sleep
-            if retry_state.next_action is not None
-            else None
-        )
-        exc = retry_state.outcome.exception() if retry_state.outcome else None
-        if delay is None:
-            logger.warning("%s failed (%s); retrying soon.", action, exc)
-        else:
-            logger.warning(
-                "%s failed (%s); retrying in %.1fs.",
-                action,
-                exc,
-                delay,
-            )
-
-    return _log
-
-
 async def _run_with_retry(
-    action: str,
+    policy: _RetryPolicy,
     handler: Callable[[], Awaitable[T]],
-    *,
-    base_delay: float,
-    retry_exceptions: Tuple[type[BaseException], ...],
-    announce_attempt: Optional[Callable[[], None]] = None,
 ) -> T:
-    max_delay = max(base_delay, base_delay * 8)
-    retryer = AsyncRetrying(
-        reraise=True,
-        stop=stop_never,
-        retry=retry_if_exception_type(retry_exceptions),
-        wait=wait_exponential(
+    """Retry *handler* indefinitely according to *policy*."""
+
+    if not policy.retry_exceptions:
+        raise ValueError("retry_exceptions must not be empty")
+
+    base_delay = max(0.1, policy.base_delay)
+    max_delay = max(base_delay, policy.max_delay)
+
+    def _before_sleep(retry_state: RetryCallState) -> None:
+        exc: Optional[BaseException] = None
+        outcome: Any = retry_state.outcome
+        if outcome is not None:
+            exc = outcome.exception()
+
+        next_action: Any = retry_state.next_action
+        sleep_for: float
+        if (
+            next_action is not None
+            and getattr(next_action, "sleep", None) is not None
+        ):
+            sleep_for = float(next_action.sleep)
+        else:
+            sleep_for = base_delay
+        logger.warning(
+            "%s failed (%s); retrying in %.1fs.",
+            policy.action,
+            exc,
+            sleep_for,
+        )
+
+    retry_kwargs: dict[str, Any] = {
+        "retry": retry_if_exception_type(policy.retry_exceptions),
+        "wait": wait_exponential(
             multiplier=base_delay,
             min=base_delay,
             max=max_delay,
         ),
-        before_sleep=_make_before_sleep_log(action),
+        "stop": stop_never,
+        "reraise": True,
+        "before_sleep": _before_sleep,
+    }
+
+    if policy.announce_attempt is not None:
+        announce_callback = policy.announce_attempt
+
+        def _before(_: RetryCallState) -> None:
+            announce_callback()
+
+        retry_kwargs["before"] = _before
+
+    retryer = AsyncRetrying(**retry_kwargs)
+
+    async def _invoke_handler() -> T:
+        try:
+            return await handler()
+        except BaseExceptionGroup as exc_group:
+            group_exc = cast(BaseExceptionGroup, exc_group)
+            flattened = _unwrap_retryable_exception_group(
+                group_exc,
+                policy.retry_exceptions,
+            )
+            if flattened is not None:
+                raise flattened from exc_group
+            raise
+
+    try:
+        async for attempt in retryer:
+            with attempt:
+                return await _invoke_handler()
+    except asyncio.CancelledError:
+        logger.debug("%s retry loop cancelled", policy.action)
+        raise
+
+    raise RuntimeError(f"{policy.action} retry loop terminated unexpectedly")
+
+
+async def _supervise_task(
+    name: str,
+    coro_factory: Callable[[], Awaitable[None]],
+    *,
+    fatal_exceptions: Tuple[type[BaseException], ...] = (),
+    min_backoff: float = 1.0,
+    max_backoff: float = 30.0,
+    state: Optional[RuntimeState] = None,
+    max_restarts: Optional[int] = None,
+    restart_interval: float = 60.0,
+) -> None:
+    """Run *coro_factory* restarting it on failures."""
+
+    restart_window = max(1.0, restart_interval)
+    restarts_in_window = 0
+    window_started = time.monotonic()
+
+    wait_strategy = _SupervisorWait(
+        min_delay=min_backoff,
+        max_delay=max_backoff,
+    )
+
+    def _before_sleep(retry_state: RetryCallState) -> None:
+        outcome: Any = retry_state.outcome
+        next_action: Any = retry_state.next_action
+        if outcome is None or not getattr(outcome, "failed", False):
+            return
+        exc = outcome.exception()
+        if not isinstance(exc, _RetryableSupervisorError):
+            return
+        sleep_value = None
+        if next_action is not None:
+            sleep_value = getattr(next_action, "sleep", None)
+        delay = (
+            float(sleep_value)
+            if sleep_value is not None
+            else max(0.1, min_backoff)
+        )
+        logger.warning(
+            "%s task crashed; restarting in %.1fs",
+            name,
+            delay,
+        )
+        if state is not None:
+            state.record_supervisor_failure(
+                name,
+                backoff=delay,
+                exc=exc.original,
+            )
+
+    retryer = AsyncRetrying(
+        retry=retry_if_exception_type(_RetryableSupervisorError),
+        wait=wait_strategy,
+        stop=stop_never,
+        reraise=True,
+        before_sleep=_before_sleep,
     )
 
     async for attempt in retryer:
         with attempt:
-            if announce_attempt:
-                announce_attempt()
-            return await handler()
+            started = time.monotonic()
+            try:
+                await coro_factory()
+                logger.warning(
+                    "%s task exited cleanly; supervisor exiting",
+                    name,
+                )
+                if state is not None:
+                    state.mark_supervisor_healthy(name)
+                return
+            except asyncio.CancelledError:
+                logger.debug("%s supervisor cancelled", name)
+                raise
+            except fatal_exceptions as exc:
+                logger.critical("%s task hit fatal error: %s", name, exc)
+                if state is not None:
+                    state.record_supervisor_failure(
+                        name,
+                        backoff=0.0,
+                        exc=exc,
+                        fatal=True,
+                    )
+                raise
+            except Exception as exc:
+                logger.exception("%s task crashed", name)
 
-    raise RuntimeError(f"Retry loop exhausted for {action}")
+                restarts_in_window += 1
+                now = time.monotonic()
+                window_age = now - window_started
+                if window_age > restart_window:
+                    window_started = now
+                    restarts_in_window = 1
+                    window_age = 0.0
+
+                if (
+                    max_restarts is not None
+                    and max_restarts > 0
+                    and restarts_in_window > max_restarts
+                ):
+                    logger.critical(
+                        "%s task exceeded %d restarts within %.1fs; aborting",
+                        name,
+                        max_restarts,
+                        window_age,
+                    )
+                    if state is not None:
+                        state.record_supervisor_failure(
+                            name,
+                            backoff=0.0,
+                            exc=exc,
+                            fatal=True,
+                        )
+                    raise
+
+                elapsed = now - started
+                reset_backoff = elapsed > max_backoff
+                raise _RetryableSupervisorError(
+                    exc,
+                    reset_backoff=reset_backoff,
+                ) from exc
 
 
 async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
 ) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     base_delay = float(max(1, config.reconnect_delay))
+
+    policy = _RetryPolicy(
+        action=f"Serial connection to {config.serial_port}",
+        retry_exceptions=(
+            serial.SerialException,
+            ConnectionResetError,
+            OSError,
+        ),
+        base_delay=base_delay,
+        max_delay=base_delay * 8,
+        announce_attempt=lambda: logger.info(
+            "Connecting to serial port %s at %d baud...",
+            config.serial_port,
+            config.serial_baud,
+        ),
+    )
 
     async def _connect() -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         return await OPEN_SERIAL_CONNECTION(
@@ -141,21 +415,7 @@ async def _open_serial_connection_with_retry(
             exclusive=True,
         )
 
-    return await _run_with_retry(
-        f"Serial connection to {config.serial_port}",
-        _connect,
-        base_delay=base_delay,
-        retry_exceptions=(
-            serial.SerialException,
-            ConnectionResetError,
-            OSError,
-        ),
-        announce_attempt=lambda: logger.info(
-            "Connecting to serial port %s at %d baud...",
-            config.serial_port,
-            config.serial_baud,
-        ),
-    )
+    return await _run_with_retry(policy, _connect)
 
 
 async def _connect_mqtt_with_retry(
@@ -163,25 +423,22 @@ async def _connect_mqtt_with_retry(
     client: MQTTClientProtocol,
 ):
     base_delay = float(max(1, config.reconnect_delay))
-
-    async def _connect() -> None:
-        await client.connect()
-
-    return await _run_with_retry(
-        f"MQTT connection to {config.mqtt_host}:{config.mqtt_port}",
-        _connect,
+    policy = _RetryPolicy(
+        action=f"MQTT connection to {config.mqtt_host}:{config.mqtt_port}",
+        retry_exceptions=(MQTTError, asyncio.TimeoutError, OSError),
         base_delay=base_delay,
-        retry_exceptions=(
-            MQTTError,
-            asyncio.TimeoutError,
-            OSError,
-        ),
+        max_delay=base_delay * 8,
         announce_attempt=lambda: logger.info(
             "Connecting to MQTT broker at %s:%d...",
             config.mqtt_host,
             config.mqtt_port,
         ),
     )
+
+    async def _connect() -> None:
+        await client.connect()
+
+    return await _run_with_retry(policy, _connect)
 
 
 async def _send_serial_frame(
@@ -540,13 +797,15 @@ def _build_mqtt_tls_context(config: RuntimeConfig) -> Optional[ssl.SSLContext]:
             logger.info("Using MQTT TLS with CA verification only.")
         return context
     except (ssl.SSLError, FileNotFoundError, RuntimeError) as exc:
-        raise RuntimeError(f"Failed to create TLS context: {exc}") from exc
+        message = f"Failed to create TLS context: {exc}"
+        raise RuntimeError(message) from exc
 
 
 def _set_mqtt_property(props: Properties, camel_name: str, value: int) -> None:
     try:
         setattr(props, camel_name, value)
-    except AttributeError as exc:  # pragma: no cover - defensive: depends on paho version
+    except AttributeError as exc:
+        # pragma: no cover - defensive: depends on paho version
         raise RuntimeError(
             f"paho-mqtt missing MQTT v5 property '{camel_name}'"
         ) from exc
@@ -674,45 +933,103 @@ async def main_async(config: RuntimeConfig) -> None:
     except Exception as exc:
         raise RuntimeError(f"TLS configuration invalid: {exc}") from exc
 
+    async def _serial_runner() -> None:
+        await serial_reader_task(config, state, service)
+
+    async def _mqtt_runner() -> None:
+        await mqtt_task(config, state, service, tls_context)
+
+    async def _status_runner() -> None:
+        await status_writer(state, config.status_interval)
+
+    async def _metrics_runner() -> None:
+        await publish_metrics(
+            state,
+            service.enqueue_mqtt,
+            float(config.status_interval),
+        )
+
+    supervised_tasks: list[_SupervisedTaskSpec] = [
+        _SupervisedTaskSpec(
+            name="serial-link",
+            factory=_serial_runner,
+            fatal_exceptions=(SerialHandshakeFatal,),
+        ),
+        _SupervisedTaskSpec(
+            name="mqtt-link",
+            factory=_mqtt_runner,
+        ),
+        _SupervisedTaskSpec(
+            name="status-writer",
+            factory=_status_runner,
+            max_restarts=5,
+            restart_interval=120.0,
+            max_backoff=10.0,
+        ),
+        _SupervisedTaskSpec(
+            name="metrics-publisher",
+            factory=_metrics_runner,
+            max_restarts=5,
+            restart_interval=120.0,
+            max_backoff=10.0,
+        ),
+    ]
+
+    if config.watchdog_enabled:
+        watchdog = WatchdogKeepalive(
+            interval=config.watchdog_interval,
+            state=state,
+        )
+        logger.info(
+            "Starting watchdog keepalive at %.2f second interval",
+            config.watchdog_interval,
+        )
+        supervised_tasks.append(
+            _SupervisedTaskSpec(
+                name="watchdog",
+                factory=watchdog.run,
+                max_restarts=5,
+                restart_interval=120.0,
+                max_backoff=10.0,
+            )
+        )
+
+    exporter: Optional[PrometheusExporter] = None
+    if config.metrics_enabled:
+        exporter = PrometheusExporter(
+            state,
+            config.metrics_host,
+            config.metrics_port,
+        )
+        supervised_tasks.append(
+            _SupervisedTaskSpec(
+                name="prometheus-exporter",
+                factory=exporter.run,
+                max_restarts=5,
+                restart_interval=300.0,
+            )
+        )
+
     try:
         async with asyncio.TaskGroup() as task_group:
-            if config.watchdog_enabled:
-                watchdog = WatchdogKeepalive(
-                    interval=config.watchdog_interval,
-                    state=state,
+            for spec in supervised_tasks:
+                task_group.create_task(
+                    _supervise_task(
+                        spec.name,
+                        spec.factory,
+                        fatal_exceptions=spec.fatal_exceptions,
+                        min_backoff=spec.min_backoff,
+                        max_backoff=spec.max_backoff,
+                        state=state,
+                        max_restarts=spec.max_restarts,
+                        restart_interval=spec.restart_interval,
+                    )
                 )
-                logger.info(
-                    "Starting watchdog keepalive at %.2f second interval",
-                    config.watchdog_interval,
-                )
-                task_group.create_task(watchdog.run())
-            task_group.create_task(
-                serial_reader_task(config, state, service)
-            )
-            task_group.create_task(
-                mqtt_task(config, state, service, tls_context)
-            )
-            task_group.create_task(
-                status_writer(state, config.status_interval)
-            )
-            task_group.create_task(
-                publish_metrics(
-                    state,
-                    service.enqueue_mqtt,
-                    float(config.status_interval),
-                )
-            )
-            if config.metrics_enabled:
-                exporter = PrometheusExporter(
-                    state,
-                    config.metrics_host,
-                    config.metrics_port,
-                )
-                task_group.create_task(exporter.run())
     except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")
     except* Exception as exc_group:
-        for exc in exc_group.exceptions:
+        group_exc = cast(ExceptionGroup, exc_group)
+        for exc in getattr(group_exc, "exceptions", ()):  # pragma: no branch
             logger.critical(
                 "Unhandled exception in main task group",
                 exc_info=exc,

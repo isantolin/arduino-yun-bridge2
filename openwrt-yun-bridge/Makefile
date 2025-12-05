@@ -41,15 +41,8 @@ define Package/$(PKG_NAME)
 		+python3 \
 		+python3-asyncio \
 		+python3-uci \
-		+python3-aiomqtt \
-		+python3-paho-mqtt \
 		+python3-pyserial \
-		+python3-pyserial-asyncio \
-		+python3-cobs \
-		+python3-tenacity \
 		+python3-psutil \
-		+python3-prometheus-client \
-		+python3-pydantic \
 		+python3-more-itertools
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef

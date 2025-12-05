@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import replace
+from attrs import evolve
 from pathlib import Path
 from typing import Any, cast
 
@@ -99,7 +99,7 @@ def test_build_mqtt_tls_context_with_client_cert(
         tls_module.ssl, "create_default_context", _fake_context
     )
 
-    cfg = replace(
+    cfg = evolve(
         runtime_config,
         mqtt_cafile=str(cafile_path),
         mqtt_certfile=str(certfile),
@@ -118,7 +118,7 @@ def test_build_mqtt_tls_context_missing_cafile(
     tmp_path: Path,
 ) -> None:
     missing = tmp_path / "missing.pem"
-    cfg = replace(runtime_config, mqtt_cafile=str(missing))
+    cfg = evolve(runtime_config, mqtt_cafile=str(missing))
 
     with pytest.raises(RuntimeError, match="TLS CA file does not exist"):
         daemon._build_mqtt_tls_context(cfg)

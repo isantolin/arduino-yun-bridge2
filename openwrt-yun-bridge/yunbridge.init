@@ -17,19 +17,23 @@ start_service() {
 
     procd_set_param command /usr/bin/python3 /usr/libexec/yunbridge/bridge_daemon.py
 
-    local credfile="/etc/yunbridge/credentials"
-    if [ -f "$credfile" ]; then
-        procd_set_param envfile "$credfile"
-    fi
-    procd_set_param env YUNBRIDGE_CREDENTIALS_FILE="$credfile"
-
     procd_set_param respawn 5 30 5
-    # procd will export PROCD_WATCHDOG (ms) for the daemon. The Python
-    # keepalive loop consumes this value to emit WATCHDOG=trigger pulses on
-    # stdout at half the negotiated window.
-    # DEFAULT_WATCHDOG_INTERVAL is 5s, the Python keepalive pulses at half the
-    # negotiated window, hence 10s here.
-    procd_set_param watchdog 10000
+
+    local watchdog_disabled="${YUNBRIDGE_DISABLE_PROCD_WATCHDOG:-0}"
+    local watchdog_ms="${YUNBRIDGE_PROCD_WATCHDOG_MS:-10000}"
+
+    case "$(printf '%s' "$watchdog_disabled" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on)
+            procd_set_param env YUNBRIDGE_DISABLE_WATCHDOG="1"
+            ;;
+        *)
+            # procd exports PROCD_WATCHDOG to the daemon when this parameter is set.
+            # We also forward the raw window (ms) so the Python process can fall back
+            # if that export is missing.
+            procd_set_param watchdog "$watchdog_ms"
+            procd_set_param env YUNBRIDGE_PROCD_WATCHDOG_MS="$watchdog_ms"
+            ;;
+    esac
     procd_set_param stdout 1
     procd_set_param stderr 1
 

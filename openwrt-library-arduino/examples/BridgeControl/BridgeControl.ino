@@ -18,11 +18,9 @@
 #define BRIDGE_ENABLE_FILESYSTEM 0
 #define BRIDGE_ENABLE_PROCESS 0
 
-// Define a shared secret for the serial handshake if the build has not
-// provided one already. Match this value with YUNBRIDGE_SERIAL_SECRET on Linux.
-#ifndef BRIDGE_SERIAL_SHARED_SECRET
-#define BRIDGE_SERIAL_SHARED_SECRET "755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
-#endif
+// Define a shared secret for the serial handshake; match it with
+// YUNBRIDGE_SERIAL_SECRET on Linux before including Bridge.h.
+#define BRIDGE_SERIAL_SHARED_SECRET "changeme123"
 
 #include <Bridge.h>
 #include <string.h>

@@ -75,11 +75,6 @@ DEFAULT_POLL_INTERVAL = _env_float("YUNBRIDGE_MQTT_POLL_INTERVAL", 0.05, 0.001)
 
 
 def _resolve_tls_material(config: RuntimeConfig):
-    if not config.mqtt_tls:
-        raise RuntimeError(
-            "MQTT TLS must remain enabled for pin_rest_cgi operation"
-        )
-
     env_cert = os.environ.get("YUNBRIDGE_PIN_CERTFILE") or None
     env_key = os.environ.get("YUNBRIDGE_PIN_KEYFILE") or None
     env_cafile = os.environ.get("YUNBRIDGE_PIN_CAFILE") or None
@@ -97,14 +92,20 @@ def _build_client(config: RuntimeConfig) -> Any:
     if config.mqtt_user:
         client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 
-    material = _resolve_tls_material(config)
-    client.tls_set(
-        ca_certs=material.cafile,
-        certfile=material.certfile,
-        keyfile=material.keyfile,
-        tls_version=ssl.PROTOCOL_TLS_CLIENT,
-    )
-    client.tls_insecure_set(False)
+    if config.mqtt_tls:
+        material = _resolve_tls_material(config)
+        client.tls_set(
+            ca_certs=material.cafile,
+            certfile=material.certfile,
+            keyfile=material.keyfile,
+            tls_version=ssl.PROTOCOL_TLS_CLIENT,
+        )
+        client.tls_insecure_set(False)
+    else:
+        logger.warning(
+            "MQTT TLS is disabled for pin_rest_cgi; commands will be sent "
+            "in plaintext."
+        )
     client.enable_logger(logger)
     return client
 

@@ -304,6 +304,96 @@ def test_serial_flow_retries_on_mismatched_ack(
     asyncio.run(_run())
 
 
+def test_serial_flow_emits_pipeline_events(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    events: list[dict[str, object]] = []
+
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+        controller.set_pipeline_observer(events.append)
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            asyncio.create_task(_send_ack(controller, command_id))
+            return True
+
+        controller.set_sender(fake_sender)
+
+        result = await controller.send(Command.CMD_DIGITAL_WRITE.value, b"")
+        assert result is True
+
+    asyncio.run(_run())
+
+    names = [event["event"] for event in events]
+    assert names == ["start", "ack", "success"]
+
+
+def test_serial_flow_pipeline_failure_event(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    events: list[dict[str, object]] = []
+
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+        controller.set_pipeline_observer(events.append)
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            return False
+
+        controller.set_sender(fake_sender)
+        result = await controller.send(Command.CMD_DIGITAL_WRITE.value, b"")
+        assert result is False
+
+    asyncio.run(_run())
+
+    assert events[-1]["event"] == "failure"
+
+
+def test_serial_flow_pipeline_abandoned_on_reset(
+    serial_flow_logger: logging.Logger,
+) -> None:
+    events: list[dict[str, object]] = []
+
+    async def _run() -> None:
+        controller = SerialFlowController(
+            ack_timeout=0.05,
+            response_timeout=0.1,
+            max_attempts=1,
+            logger=serial_flow_logger,
+        )
+        controller.set_pipeline_observer(events.append)
+
+        sender_called = asyncio.Event()
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sender_called.set()
+            return True
+
+        controller.set_sender(fake_sender)
+
+        send_task = asyncio.create_task(
+            controller.send(Command.CMD_DIGITAL_READ.value, b"")
+        )
+        await sender_called.wait()
+        await controller.reset()
+        assert await send_task is False
+
+    asyncio.run(_run())
+
+    event_names = [event["event"] for event in events]
+    assert "abandoned" in event_names
+
+
 def test_status_name_handles_unknown() -> None:
     assert _status_name(None) == "unknown"
     assert _status_name(Status.OK.value) == "OK"

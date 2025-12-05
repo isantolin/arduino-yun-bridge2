@@ -21,8 +21,25 @@ inline void write_u16_be(uint8_t* buffer, uint16_t value) {
   buffer[1] = value & 0xFF;
 }
 
+// Reads a uint32_t from a Big Endian buffer.
+inline uint32_t read_u32_be(const uint8_t* buffer) {
+  return (static_cast<uint32_t>(buffer[0]) << 24) |
+         (static_cast<uint32_t>(buffer[1]) << 16) |
+         (static_cast<uint32_t>(buffer[2]) << 8) |
+         static_cast<uint32_t>(buffer[3]);
+}
+
+// Writes a uint32_t to a Big Endian buffer.
+inline void write_u32_be(uint8_t* buffer, uint32_t value) {
+  buffer[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
+  buffer[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
+  buffer[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
+  buffer[3] = static_cast<uint8_t>(value & 0xFF);
+}
+
 constexpr uint8_t PROTOCOL_VERSION = 0x02;
 constexpr size_t MAX_PAYLOAD_SIZE = 256;
+constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // Define FrameHeader struct before it is used in sizeof()
 // CRITICAL: This attribute is essential for protocol compatibility.
@@ -40,7 +57,7 @@ static_assert(sizeof(FrameHeader) == 5, "FrameHeader must be exactly 5 bytes");
 
 // Maximum size of a raw frame (Header + Payload + CRC)
 constexpr size_t MAX_RAW_FRAME_SIZE =
-    sizeof(FrameHeader) + MAX_PAYLOAD_SIZE + sizeof(uint16_t);
+  sizeof(FrameHeader) + MAX_PAYLOAD_SIZE + CRC_TRAILER_SIZE;
 
 // Buffer to hold a COBS-encoded frame. Overhead is 1 byte per 254-byte block +
 // 1 code byte. Add a little extra for safety.

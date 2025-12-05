@@ -3,47 +3,108 @@ from __future__ import annotations
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from yunbridge.metrics import publish_metrics
+from yunbridge.mqtt import PublishableMessage
 from yunbridge.state.context import RuntimeState
 
 
 @pytest.mark.asyncio
 async def test_publish_metrics_publishes_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
     runtime_state: RuntimeState,
 ) -> None:
-    """Verify that publish_metrics enqueues a valid metrics payload."""
-    mock_enqueue = AsyncMock()
-    fake_snapshot = {"cpu": 99.0, "mem": {"free": 1024}}
+    """Verify that publish_metrics enqueues payload with telemetry metadata."""
 
-    def _build_snapshot() -> dict:
+    event = asyncio.Event()
+    captured: dict[str, PublishableMessage] = {}
+
+    async def fake_enqueue(message: PublishableMessage) -> None:
+        captured["message"] = message
+        event.set()
+
+    fake_snapshot = {
+        "cpu": 99.0,
+        "mem": {"free": 1024},
+        "mqtt_spool_degraded": True,
+        "mqtt_spool_failure_reason": "disk-full",
+        "watchdog_enabled": True,
+        "watchdog_interval": 7.5,
+    }
+
+    def _snapshot() -> dict[str, object]:
         return fake_snapshot
 
-    runtime_state.build_metrics_snapshot = _build_snapshot
+    runtime_state.build_metrics_snapshot = (  # type: ignore[assignment]
+        _snapshot
+    )
     runtime_state.mqtt_topic_prefix = "test/prefix"
 
-    # Run the publisher for one cycle
-    try:
-        await asyncio.wait_for(
-            publish_metrics(runtime_state, mock_enqueue, interval=0.01, min_interval=0.01),
-            timeout=0.1,
+    task = asyncio.create_task(
+        publish_metrics(
+            runtime_state,
+            fake_enqueue,
+            interval=0.01,
+            min_interval=0.01,
         )
-    except asyncio.TimeoutError:
-        pass  # Expected timeout as the task runs in an infinite loop
+    )
+    await asyncio.wait_for(event.wait(), timeout=0.5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
-    assert mock_enqueue.call_count > 0
-    
-    # Get the message object from the mock call
-    message = mock_enqueue.call_args[0][0]
-    
+    message = captured["message"]
     expected_topic = "test/prefix/system/metrics"
     expected_payload = json.dumps(fake_snapshot).encode("utf-8")
-    
+
     assert message.topic_name == expected_topic
     assert message.payload == expected_payload
     assert message.content_type == "application/json"
+    assert ("bridge-spool", "disk-full") in message.user_properties
+    assert ("bridge-watchdog-enabled", "1") in message.user_properties
+    assert ("bridge-watchdog-interval", "7.5") in message.user_properties
 
+
+@pytest.mark.asyncio
+async def test_publish_metrics_marks_unknown_spool_reason(
+    runtime_state: RuntimeState,
+) -> None:
+    """Ensure bridge-spool user property defaults to 'unknown'."""
+
+    event = asyncio.Event()
+    captured: dict[str, PublishableMessage] = {}
+
+    async def fake_enqueue(message: PublishableMessage) -> None:
+        captured["message"] = message
+        event.set()
+
+    def _degraded_snapshot() -> dict[str, object]:
+        return {
+            "mqtt_spool_degraded": True,
+            "watchdog_enabled": False,
+        }
+
+    runtime_state.build_metrics_snapshot = (  # type: ignore[assignment]
+        _degraded_snapshot
+    )
+    runtime_state.mqtt_topic_prefix = "br"
+
+    task = asyncio.create_task(
+        publish_metrics(
+            runtime_state,
+            fake_enqueue,
+            interval=0.01,
+            min_interval=0.01,
+        )
+    )
+    await asyncio.wait_for(event.wait(), timeout=0.5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    message = captured["message"]
+    assert ("bridge-spool", "unknown") in message.user_properties
+    assert any(
+        key == "bridge-watchdog-enabled" for key, _ in message.user_properties
+    )

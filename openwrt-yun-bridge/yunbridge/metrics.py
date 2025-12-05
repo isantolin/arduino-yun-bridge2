@@ -5,9 +5,22 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, Awaitable, Callable, Dict, Iterator, Optional, Tuple, cast
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    Iterator,
+    Optional,
+    Tuple,
+    cast,
+)
 
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    generate_latest,
+)
 from prometheus_client.registry import Collector
 from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
 
@@ -25,6 +38,49 @@ _INFO_DOC = "YunBridge informational metric"
 PublishEnqueue = Callable[[PublishableMessage], Awaitable[None]]
 
 
+def _build_metrics_message(
+    state: RuntimeState,
+    snapshot: Dict[str, Any],
+    *,
+    expiry_seconds: float,
+) -> PublishableMessage:
+    topic = topic_path(
+        state.mqtt_topic_prefix,
+        Topic.SYSTEM,
+        "metrics",
+    )
+    message = (
+        PublishableMessage(
+            topic_name=topic,
+            payload=json.dumps(snapshot).encode("utf-8"),
+        )
+        .with_content_type("application/json")
+        .with_message_expiry(int(expiry_seconds))
+    )
+
+    mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
+    if snapshot.get("mqtt_spool_degraded"):
+        message = message.with_user_property(
+            "bridge-spool",
+            mqtt_spool_failure or "unknown",
+        )
+
+    if snapshot.get("watchdog_enabled") is not None:
+        enabled = bool(snapshot.get("watchdog_enabled"))
+        message = message.with_user_property(
+            "bridge-watchdog-enabled",
+            "1" if enabled else "0",
+        )
+        watchdog_interval = snapshot.get("watchdog_interval")
+        if isinstance(watchdog_interval, (int, float)):
+            message = message.with_user_property(
+                "bridge-watchdog-interval",
+                str(watchdog_interval),
+            )
+
+    return message
+
+
 async def publish_metrics(
     state: RuntimeState,
     enqueue: PublishEnqueue,
@@ -35,21 +91,13 @@ async def publish_metrics(
     """Publish runtime metrics to MQTT at a fixed cadence."""
 
     tick = max(min_interval, interval)
+    expiry = tick * 2
     while True:
         try:
             snapshot = state.build_metrics_snapshot()
-            payload = json.dumps(snapshot).encode("utf-8")
-            topic = topic_path(
-                state.mqtt_topic_prefix,
-                Topic.SYSTEM,
-                "metrics",
+            await enqueue(
+                _build_metrics_message(state, snapshot, expiry_seconds=expiry)
             )
-            message = (
-                PublishableMessage(topic_name=topic, payload=payload)
-                .with_content_type("application/json")
-                .with_message_expiry(int(tick * 2))
-            )
-            await enqueue(message)
         except asyncio.CancelledError:
             logger.info("Metrics publisher cancelled.")
             raise
@@ -64,12 +112,19 @@ class _RuntimeStateCollector(Collector):
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
 
-    def collect(self) -> Iterator[Any]:  # pragma: no cover - exercised via exporter
+    def collect(self) -> Iterator[Any]:
+        # pragma: no cover - exercised via exporter
         snapshot = self._state.build_metrics_snapshot()
         info_values: list[Tuple[str, str]] = []
-        for metric_type, name, value in self._flatten("yunbridge", snapshot):
+        for metric_type, name, value in self._flatten(
+            "yunbridge",
+            snapshot,
+        ):
             if metric_type == "gauge":
-                metric = GaugeMetricFamily(_sanitize_metric_name(name), _GAUGE_DOC)
+                metric = GaugeMetricFamily(
+                    _sanitize_metric_name(name),
+                    _GAUGE_DOC,
+                )
                 metric.add_metric((), value)
                 yield metric
             else:
@@ -81,7 +136,10 @@ class _RuntimeStateCollector(Collector):
                 labels=("key",),
             )
             for key, value in info_values:
-                info_metric.add_metric((key,), {"value": value})
+                info_metric.add_metric(
+                    (key,),
+                    {"value": value},
+                )
             yield info_metric
 
     def _flatten(

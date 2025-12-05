@@ -31,6 +31,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - El daemon ahora **falla en seguro** cuando `mqtt_tls=1`: si falta el CA o el certificado cliente, el arranque se aborta con error explícito.
 - La ejecución remota de comandos MQTT requiere una lista blanca explícita (`yunbridge.general.allowed_commands`). Un valor vacío significa *ningún comando permitido*; use `*` para habilitar todos de forma consciente.
 - **Keepalive de watchdog integrado:** cuando `procd` expone `PROCD_WATCHDOG` (configurado por defecto a `10000` ms en `yunbridge.init` para producir pulsos cada 5 s) o exportas `YUNBRIDGE_WATCHDOG_INTERVAL`, el daemon lanza un `WatchdogKeepalive` asíncrono que pulsa `WATCHDOG=trigger` en `stdout` y reporta los latidos en `RuntimeState`. Ajusta `procd_set_param watchdog` si necesitas ventanas más estrictas; el daemon emitirá pulsos cada mitad del valor negociado.
+- Puedes desactivar la integración del watchdog definiendo `YUNBRIDGE_DISABLE_PROCD_WATCHDOG=1` antes de iniciar el servicio o ajustar la ventana exportando `YUNBRIDGE_PROCD_WATCHDOG_MS=<milisegundos>` (el init script propagará ese valor al daemon para que mantenga la cadencia correcta).
 - **Logging estructurado + Prometheus:** todos los módulos `yunbridge.*` ahora emiten líneas JSON con `ts`, `level`, `logger`, `message` y `extra`, facilitando la ingesta directa en syslog, Loki o Elastic. Además, se añadió un exportador HTTP opcional (`metrics_enabled`, `metrics_host`, `metrics_port`) que expone el mismo snapshot de `RuntimeState` en formato Prometheus sin dejar de publicar `br/system/metrics` vía MQTT.
 - **Enlace serie con autenticación estricta:** el handshake `CMD_LINK_RESET`/`CMD_LINK_SYNC` ahora se valida en ambos extremos: la librería Arduino exige definir `BRIDGE_SERIAL_SHARED_SECRET` (o compilar con `BRIDGE_ALLOW_INSECURE_SERIAL_SECRET` en entornos de laboratorio) y el daemon rechaza cualquier frame que no sea de handshake o estado hasta que la sincronización se complete exitosamente. Todos los parámetros derivan de `tools/protocol/spec.toml`, por lo que debes regenerar el protocolo tras modificar el spec.
 - **Cuotas de peticiones pendientes:** `RuntimeState` expone `pending_pin_request_limit` (configurable vía UCI) para evitar que MQTT u otros productores saturen las colas de lecturas GPIO; si se supera el límite, el daemon responde con `bridge-error=pending-pin-overflow` y no emite el comando al MCU, manteniendo el enlace libre de ataques por agotamiento.
@@ -76,39 +77,39 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Automatización operativa
 
-- **Rotación de secretos:** Ejecuta `tools/rotate_credentials.sh --host <yun>` o usa la pestaña *Credentials & TLS* en LuCI para invocar `/usr/bin/yunbridge-rotate-credentials`, lo cual genera un nuevo `YUNBRIDGE_SERIAL_SECRET`, credenciales MQTT y reinicia el daemon.
+- **Rotación de secretos:** Ejecuta `tools/rotate_credentials.sh --host <yun>` o usa la pestaña *Credentials & TLS* en LuCI para invocar `/usr/bin/yunbridge-rotate-credentials`. Ambas rutas generan un `YUNBRIDGE_SERIAL_SECRET` nuevo, refrescan la contraseña MQTT, reinician el daemon y terminan imprimiendo el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."` para que lo pegues al inicio de tu sketch antes de incluir `Bridge.h`.
 - **Smoke test de hardware:** Lanza `tools/hardware_smoke_test.sh --host <yun>` (o el botón *Run smoke test* en LuCI) para ejecutar `/usr/bin/yunbridge-hw-smoke`, que valida servicio, credenciales y una ida y vuelta real a `br/system/status`.
 - **TLS guiado:** La pestaña *Credentials & TLS* documenta cómo subir bundles `tar.gz` con CA/cert/key a `/etc/yunbridge/tls/` usando `scp` antes de apuntar el daemon al nuevo material.
 
-### Resolver errores de `python3-aiomqtt` / `python3-hatchling`
+### Resolver errores de `aiomqtt` / `paho-mqtt`
 
-- En OpenWrt 24.10.4 para `mips_24kc` el feed oficial `python3-aiomqtt` declara una dependencia de runtime `python3-hatchling`, pero ese paquete solo existe para hosts x86_64.
-- El instalador (`3_install.sh`) ahora prioriza los IPKs empaquetados en `./bin`, de modo que `python3-aiomqtt` se instala desde el artefacto local sin requerir `python3-hatchling` en el dispositivo.
-- Si ves `pkg_hash_check_unresolved: cannot find dependency python3-hatchling`, ejecuta manualmente:
+- Para evitar el bug del feed oficial (que arrastra `python3-hatchling` como dependencia de runtime), `3_install.sh` ahora instala `aiomqtt>=2.4,<3.0` y `paho-mqtt>=2.1,<3.0` directamente desde PyPI usando `pip3`.
+- Si el dispositivo no tenía `pip3`, el instalador añade automáticamente `python3-pip` antes de continuar.
+- Si la instalación falla por certificados o espacio en disco, puedes repetir el paso manualmente:
 	```sh
-	opkg remove python3-aiomqtt
-	opkg install ./bin/python3-aiomqtt_2.4.0-r1_mips_24kc.ipk
+	python3 -m pip install --no-cache-dir --upgrade "aiomqtt>=2.4,<3.0" "paho-mqtt>=2.1,<3.0"
 	```
-	y vuelve a lanzar `./3_install.sh`. El instalador repetirá este flujo automáticamente a partir de esta versión.
+	Vuelve a lanzar `./3_install.sh` cuando el comando termine con éxito.
+- Para limpiar restos de IPKs antiguos, ejecuta `opkg remove python3-aiomqtt python3-paho-mqtt` antes de iniciar el instalador.
 
 ## Despliegue seguro
 
 ### 0. Credenciales compartidas (daemon, CGI y scripts)
 
+> **Nota:** Todo el árbol sigue iniciando con el placeholder `changeme123` definido en la sección `yunbridge.general.serial_shared_secret` de UCI y en los ejemplos de la librería. Solo sirve para demos; `RuntimeConfig.__post_init__` lo rechaza, así que rota el material con `tools/rotate_credentials.sh` o desde LuCI y pega el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."` en tu sketch antes de exponer el equipo. Consulta la guía completa en [`docs/CREDENTIALS.md`](docs/CREDENTIALS.md).
+
 	```sh
-	sudo tee /etc/yunbridge/credentials >/dev/null <<'EOF'
-	YUNBRIDGE_SERIAL_SECRET=$(openssl rand -hex 32)
-	YUNBRIDGE_MQTT_USER=yunbridge-daemon
-	YUNBRIDGE_MQTT_PASS=$(openssl rand -base64 24)
-	YUNBRIDGE_MQTT_CAFILE=/etc/yunbridge/tls/ca.crt
-	YUNBRIDGE_MQTT_CERTFILE=/etc/yunbridge/tls/client.crt
-	YUNBRIDGE_MQTT_KEYFILE=/etc/yunbridge/tls/client.key
+	SECRET=$(openssl rand -hex 32)
+	PASS=$(openssl rand -base64 24)
+	uci batch <<EOF
+	set yunbridge.general.serial_shared_secret='$SECRET'
+	set yunbridge.general.mqtt_user='yunbridge-daemon'
+	set yunbridge.general.mqtt_pass='$PASS'
+	commit yunbridge
 	EOF
-	chmod 600 /etc/yunbridge/credentials
 	/etc/init.d/yunbridge restart
 	```
-- También puedes usar `tools/rotate_credentials.sh --host <yun>` o la pestaña *Credentials & TLS* para ejecutar ese procedimiento remotamente mediante `/usr/bin/yunbridge-rotate-credentials`.
-- Si necesitas almacenarlo en otra ruta (por ejemplo en un volumen cifrado), ajusta `uci set yunbridge.general.credentials_file='/srv/secure/yunbridge.env'` o exporta `YUNBRIDGE_CREDENTIALS_FILE` antes de iniciar el servicio; el init script seguirá aprovisionando `envfile` con la ruta final.
+- También puedes usar `tools/rotate_credentials.sh --host <yun>` o la pestaña *Credentials & TLS* (que imprime el snippet `#define BRIDGE_SERIAL_SHARED_SECRET`) para ejecutar ese procedimiento remotamente mediante `/usr/bin/yunbridge-rotate-credentials`, que ahora actualiza UCI directamente.
 - `3_install.sh` reprovisiona por defecto `/etc/yunbridge/tls/ca.crt`, `yunbridge.crt` y `yunbridge.key` en cada ejecución, reescribiendo la ruta heredada (`/etc/ssl/certs/ca-certificates.crt`) y cualquier `cert/key` inexistente para apuntar al bundle privado bajo `/etc/yunbridge/tls`. El script instala automáticamente la dependencia `openssl-util` si falta antes de generar el material. Importa el CA resultante en tu broker si habilitarás TLS mutuo; exporta `YUNBRIDGE_FORCE_TLS_REGEN=0` (o `YUNBRIDGE_SKIP_TLS_AUTOGEN=1`) si prefieres mantener tus propios archivos y quieres que el instalador solo valide que existen.
 ### 1. Autenticación del enlace serie MCU ↔ Linux
 
@@ -120,8 +121,8 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	uci commit yunbridge
 	/etc/init.d/yunbridge restart
 	```
-- También puedes exportar `YUNBRIDGE_SERIAL_SECRET` en `/etc/rc.local` o en el `procd` `env` para mantener el valor fuera de UCI.
-- En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o el nuevo flag de LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake. Los ejemplos de la librería incluyen por defecto `changeme123` para coincidir con `openwrt-yun-core/credentials.env`, pero debes reemplazarlo antes de producción o correr `tools/rotate_credentials.sh` para regenerar ambos extremos.
+- También puedes exportar `YUNBRIDGE_SERIAL_SECRET` en `/etc/rc.local` o en el `procd` `env` si prefieres inyectar el valor en runtime sin escribirlo en UCI.
+- En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o usa el snippet que muestra LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake. Los ejemplos de la librería incluyen por defecto `changeme123`, pero debes reemplazarlo antes de producción o correr `tools/rotate_credentials.sh` para regenerar ambos extremos.
 
 ### 2. Políticas de comando y topics sensibles
 
@@ -180,22 +181,36 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad y observabilidad? Revisa [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para obtener un desglose actualizado.
 
-> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`. `python3-aiomqtt` y `python3-paho-mqtt` traen el stack MQTT v5 actualizado, mientras que `python3-pyserial` llega desde los feeds oficiales de OpenWrt. `python3-pyserial-asyncio` y `python3-cobs` se empaquetan desde PyPI dentro de este repositorio y se distribuyen como `.ipk` junto al daemon. `python3-psutil` permite terminar árboles de procesos cuando se matan comandos asíncronos y `python3-prometheus-client` habilita el exportador HTTP nativo. El inventario completo vive en `dependencies/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt`, refrescar el `Makefile` e instruir a `1_compile.sh`.
+> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`, salvo las bibliotecas que solo existen en PyPI (`aiomqtt==2.4.0`, `paho-mqtt==2.1.0`, `pyserial-asyncio==0.6`, `cobs==1.2.2`, `tenacity==9.1.2`, `prometheus-client==0.23.1`, `persist-queue==1.1.0`, `attrs==24.2.0`). Esos paquetes se obtienen automáticamente de PyPI durante `3_install.sh`, que ahora lee `dependencies/runtime.toml` y aplica los mismos pines usados por `requirements/runtime.txt`. El resto (`python3-pyserial==3.5`, `python3-psutil==5.9.8`, `python3-more-itertools==10.8.0`, etc.) sigue llegando como IPKs tradicionales. El inventario completo vive en `dependencies/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt`, refrescar el `Makefile` e instruir a `1_compile.sh`.
+
+### Flujo reproducible con PyPI
+
+- **Instala localmente los mismos paquetes que el daemon:**
+	```sh
+	python3 -m pip install --upgrade -r requirements/runtime.txt
+	```
+	Esto usa exactamente los pines publicados en `dependencies/runtime.toml`, por lo que cualquier entorno virtual replica al daemon.
+- **Valida que los pines sigan disponibles en PyPI:** con `pip>=24.2` puedes hacer un chequeo sin modificar tu entorno usando `python3 -m pip install --dry-run -r requirements/runtime.txt`. En versiones anteriores de `pip`, ejecuta el mismo comando sin `--dry-run` dentro de un entorno temporal.
+- **Dispositivos OpenWrt:** `3_install.sh` ahora genera una lista temporal a partir de `dependencies/runtime.toml` e instala exclusivamente los paquetes que NO tienen contraparte `opkg`, garantizando que el sistema embebido y tu entorno local comparten versiones.
+- **Automatiza las revisiones:** añade `./tools/sync_runtime_deps.py --check` a tus pipelines para asegurar que ningún commit olvida actualizar los artefactos derivados.
+- **Pruebas locales:** los entornos de `tox` consumen `requirements/runtime.txt`, así que `tox -e py311,py312` siempre valida contra el mismo conjunto de librerías que se usan en producción.
 
 ## Primeros Pasos
 
 1.  **Compilar:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes IPK de OpenWRT.
 2.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software y las dependencias.
 	- El script pedirá confirmación antes de lanzar `opkg upgrade`. Exporta `YUNBRIDGE_AUTO_UPGRADE=1` si necesitas ejecución no interactiva.
-	> **Nota:** `3_install.sh` intenta instalar cada dependencia desde los feeds y, si no existe (p.ej. `python3-aiomqtt`), recurre automáticamente a los IPK bajo `bin/`. Si ves `[ERROR] python3-aiomqtt no se pudo instalar`, vuelve a ejecutar `./1_compile.sh` y confirma que `bin/python3-aiomqtt_*.ipk` está presente antes de repetir la instalación.
+	> **Nota:** `3_install.sh` combina `opkg` (IPKs tradicionales) con una instalación controlada vía `pip3` para los paquetes que solo existen en PyPI. Si se interrumpe esa fase, verifica la conectividad TLS y ejecuta `python3 -m pip install --no-cache-dir --upgrade -r requirements/runtime.txt` antes de relanzar el instalador para asegurarte de que cada pin declarado en `dependencies/runtime.toml` quedó aplicado.
 3.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción edita `/etc/yunbridge/credentials` con el secreto serie y las credenciales MQTT.
 4.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
 
 ### Verificación y control de calidad
 
 - **Tipado estático:** Ejecuta `pyright` en la raíz del repositorio antes de enviar parches; la configuración (`pyrightconfig.json`) está preparada para ignorar los ejemplos legacy y validar el daemon y sus utilidades.
-- **Cobertura Python:** Lanza `./tools/coverage_python.sh` para generar `coverage/python/` con reportes `term-missing`, `coverage.xml` y HTML. Puedes pasar argumentos extra (por ejemplo un subconjunto de tests) y exportar `COVERAGE_ROOT` si necesitas otro directorio.
-- **Cobertura C++:** Ejecuta `./tools/coverage_arduino.sh` para compilar un harness host que prueba el protocolo binario con `g++ -fprofile-arcs -ftest-coverage`, ejecuta los tests y genera reportes en `coverage/arduino/`. Si ya tienes un build instrumentado diferente, exporta `BUILD_DIR`/`OUTPUT_ROOT` o `FORCE_REBUILD=1` para reutilizarlo.
+- **Cobertura Python:** Lanza `./tools/coverage_python.sh` (o simplemente `tox -e coverage`, que encadena ambos scripts) para generar `coverage/python/` con reportes `term-missing`, `coverage.xml` y HTML. Puedes pasar argumentos extra (por ejemplo un subconjunto de tests) y exportar `COVERAGE_ROOT` si necesitas otro directorio.
+- **Cobertura C++:** Ejecuta `./tools/coverage_arduino.sh` o reutiliza el `tox -e coverage` anterior para compilar un harness host que prueba el protocolo binario con `g++ -fprofile-arcs -ftest-coverage`, ejecuta los tests y genera reportes en `coverage/arduino/`. Si ya tienes un build instrumentado diferente, exporta `BUILD_DIR`/`OUTPUT_ROOT` o `FORCE_REBUILD=1` para reutilizarlo.
+- **Resumen automático:** Después de correr ambos scripts, ejecuta `python tools/coverage_report.py` para generar una tabla consolidada (`coverage/coverage-summary.md` + `.json`). El workflow de CI hace esto automáticamente y publica la tabla en el *GitHub Step Summary*, además de adjuntar el markdown como artefacto.
+- **Artefactos de cobertura en CI:** El workflow `coverage` de GitHub Actions corre `tox -e coverage` en Python 3.11 y publica los directorios `coverage/python` y `coverage/arduino` como artefactos para cada PR/commit, facilitando su inspección sin levantar un entorno local.
 - **Matriz Python 3.11/3.12:** Usa `tox` para ejecutar la suite completa en ambos intérpretes y detectar regresiones antes de desplegar:
 	```sh
 	tox -e py311,py312
@@ -203,6 +218,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Smoke test remoto:** `./tools/hardware_smoke_test.sh --host <yun>` invoca `/usr/bin/yunbridge-hw-smoke` vía SSH y falla si el daemon no responde a `br/system/status` en menos de 7 segundos.
 - **Pruebas manuales:** Tras instalar los paquetes IPK en tu Yún, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-yun-examples-python` y revisa el nuevo log del daemon (`/var/log/yunbridge.log`).
 - **Diagnóstico en el MCU:** Carga el sketch `openwrt-library-arduino/examples/FrameDebug/FrameDebug.ino` para imprimir cada 5 s el snapshot de transmisión y confirmar que `expected_serial_bytes` coincide con `last_write_return`.
-- **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/yunbridge_status.json` junto al límite configurado, además de las banderas `mqtt_spool_degraded`/`mqtt_spool_failure_reason` para que puedas alertar cuando el spool persistente se deshabilita por falta de espacio o corrupción.
+- **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/yunbridge_status.json` junto al límite configurado. Ese snapshot ahora incluye `mqtt_spool_*` y `watchdog_*` (latido, intervalo, habilitado) para que LuCI los muestre sin parsers adicionales. Además, `br/system/metrics` adjunta las mismas claves y propiedades MQTT (`bridge-spool`, `bridge-watchdog-enabled`, `bridge-watchdog-interval`) para que los consumidores puedan alertar cuando el spool persistente se degrada o el watchdog deja de latir.
 - **Telemetría reforzada:** `RuntimeState` cuenta los eventos de drop y truncamiento en todas las colas (MQTT, consola, mailbox y mailbox_incoming) y el writer periódico exporta los acumuladores en `/tmp/yunbridge_status.json` (`*_dropped_*`, `*_truncated_*`) junto con los tamaños actuales. Estos mismos contadores se publican en `br/system/status` para integrarse con dashboards MQTT.
+- **Snapshots `br/system/bridge/*`:** ahora puedes consultar el estado del enlace serie sin inspeccionar archivos locales. Publica un mensaje vacío en `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` (MQTT v5 opcionalmente con `response_topic`) y el daemon responderá con `.../handshake/value` o `.../summary/value` en JSON (`content-type: application/json`). Incluye sincronización actual, contadores de handshake, versión del MCU, pipeline serial en curso y el último comando completado, además de adjuntar la propiedad de usuario `bridge-snapshot` para que los clientes puedan enrutar la respuesta.
 - **Exportador Prometheus:** Habilita `uci set yunbridge.general.metrics_enabled='1'` (o exporta `YUNBRIDGE_METRICS_ENABLED=1`) para exponer `http://<host>:<metrics_port>/metrics` con `Content-Type: text/plain; version=0.0.4`. Ajusta `metrics_host`/`metrics_port` si necesitas escuchar en otra interfaz. Verifica con `curl http://127.0.0.1:9130/metrics` y busca gauges como `yunbridge_mqtt_queue_size` o `yunbridge_serial_decode_errors`. Los campos de texto se representan como `yunbridge_info{key="...",value="..."} 1`.

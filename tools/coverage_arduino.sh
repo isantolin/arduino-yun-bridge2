@@ -8,12 +8,15 @@ TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${BUILD_DIR:-${LIB_ROOT}/build-coverage}"
 OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/coverage/arduino}"
+SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 COMPILE_FLAGS=(
   -std=c++17
   -Wall
   -Wextra
   -pedantic
+  -DBRIDGE_HOST_TEST=1
+  -DBRIDGE_SERIAL_SHARED_SECRET=\"host_test_secret\"
   -fprofile-arcs
   -ftest-coverage
   -I"${SRC_ROOT}"
@@ -97,6 +100,12 @@ gcovr \
   --object-directory "${BUILD_DIR}" \
   --filter "${SRC_ROOT}" \
   --print-summary >"${SUMMARY_PATH}"
+
+gcovr \
+  --root "${SRC_ROOT}" \
+  --object-directory "${BUILD_DIR}" \
+  --filter "${SRC_ROOT}" \
+  --json-summary "${SUMMARY_JSON_PATH}"
 
 gcovr \
   --root "${SRC_ROOT}" \

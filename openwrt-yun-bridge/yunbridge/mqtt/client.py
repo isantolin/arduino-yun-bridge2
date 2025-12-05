@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from asyncio import Future
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Optional, cast
 
 if TYPE_CHECKING:  # pragma: no cover - import only for type checking
     from aiomqtt import Client as _AiomqttClient
@@ -41,7 +41,57 @@ MqttError = _AiomqttError
 
 
 class Client(BaseClient):
-    """Subclass that suppresses noisy cancellation traces during shutdown."""
+    """Subclass that adds explicit connect/disconnect helpers."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._entered_context = False
+
+    async def connect(
+        self,
+        *args: Any,
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> None:
+        """Provide an explicit connect hook for the daemon."""
+
+        if self._entered_context:
+            return
+        connect_fn = getattr(super(), "connect", None)
+        if callable(connect_fn):
+            if timeout is not None and "timeout" not in kwargs:
+                kwargs = dict(kwargs)
+                kwargs["timeout"] = timeout
+            await cast(
+                Callable[..., Awaitable[Any]],
+                connect_fn,
+            )(*args, **kwargs)
+        else:
+            await super().__aenter__()
+        self._entered_context = True
+
+    async def disconnect(
+        self,
+        *args: Any,
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if not self._entered_context:
+            return
+        try:
+            disconnect_fn = getattr(super(), "disconnect", None)
+            if callable(disconnect_fn):
+                if timeout is not None and "timeout" not in kwargs:
+                    kwargs = dict(kwargs)
+                    kwargs["timeout"] = timeout
+                await cast(
+                    Callable[..., Awaitable[Any]],
+                    disconnect_fn,
+                )(*args, **kwargs)
+            else:
+                await super().__aexit__(None, None, None)
+        finally:
+            self._entered_context = False
 
     def _on_disconnect(
         self,

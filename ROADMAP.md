@@ -19,7 +19,7 @@
 
 ### Modernización del daemon Python
 - [ ] Adoptar pattern matching estructural y `contextlib.AsyncExitStack` en los componentes (file, mailbox, process, shell) para simplificar operaciones con estado.
-- [ ] Investigar el uso de `pydantic` o `attrs` para validar payloads MQTT entrantes y eliminar validaciones ad-hoc.
+- [x] Reemplazar validaciones ad-hoc de payloads MQTT por dataclasses y comprobaciones manuales, eliminando la dependencia de `pydantic`.
 
 ### Web UI (luci-app-yunbridge)
 - [ ] Dashboard en vivo basado 100% en MQTT.
@@ -37,7 +37,7 @@
 | Core Yun / OpenWRT | Imágenes preconfiguradas para demos | Pendiente | No existen recetas/fotos en `openwrt-sdk/` para snapshots listos. |
 | Core Yun / OpenWRT | Consola serie dedicada | Pendiente | Aún se comparte `ttyATH0`; no hay servicio paralelo de depuración. |
 | Modernización daemon | Adoptar pattern matching + `AsyncExitStack` | Pendiente | Componentes `file`, `mailbox`, `process`, `shell` siguen usando `if/elif` y contextos manuales. |
-| Modernización daemon | Validar payloads con `pydantic`/`attrs` | Pendiente | Validaciones continúan ad-hoc en handlers MQTT. |
+| Modernización daemon | Validar payloads con dataclasses | Completado | Payloads `ShellCommandPayload` y `ShellPidPayload` usan dataclasses + validaciones personalizadas; `pydantic` eliminado. |
 | Web UI | Dashboard en vivo 100% MQTT | Pendiente | Sólo existe demo `root/www/yunbridge/index.html`. |
 | Web UI | Editor de reglas (GPIO ↔ procesos) | Pendiente | No hay interfaz para generar reglas desde navegador. |
 | Web UI | Localización FR/DE + tema responsivo | Pendiente | Traducciones limitadas a ES/EN y UI bootstrap básica. |

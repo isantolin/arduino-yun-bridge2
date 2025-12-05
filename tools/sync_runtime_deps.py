@@ -37,11 +37,7 @@ def load_manifest() -> List[dict]:
     for entry in entries:
         openwrt = entry.get("openwrt", "").strip()
         pip_spec = entry.get("pip", "").strip()
-        name = entry.get("name", openwrt)
-        if not openwrt:
-            raise ManifestError(
-                f"Dependency '{name}' is missing an OpenWrt name"
-            )
+        name = entry.get("name") or openwrt or "(unnamed)"
         normalized.append(
             {
                 "name": name,
@@ -57,7 +53,7 @@ def collect_pip_specs(deps: Sequence[dict]) -> List[str]:
 
 
 def collect_openwrt_packages(deps: Sequence[dict]) -> List[str]:
-    return [dep["openwrt"] for dep in deps]
+    return [dep["openwrt"] for dep in deps if dep.get("openwrt")]
 
 
 def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
@@ -90,8 +86,11 @@ def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
             "cannot inject dependencies"
         )
     tokens = [f"+{pkg}" for pkg in collect_openwrt_packages(deps)]
-    block_lines = ["\tDEPENDS+= \\"]
-    block_lines.extend(format_openwrt_lines(tokens))
+    if tokens:
+        block_lines = ["\tDEPENDS+= \\"]
+        block_lines.extend(format_openwrt_lines(tokens))
+    else:
+        block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
     new_text = []
     in_block = False

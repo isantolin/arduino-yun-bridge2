@@ -26,6 +26,7 @@
 #include <string.h> // Para strcmp, strlen, memcpy
 #include <stdlib.h> // Para atoi
 #include <stdint.h>
+#include <Crypto.h>
 #include <HMAC.h>
 #include <SHA256.h>
 
@@ -1010,20 +1011,18 @@ void BridgeClass::requestGetFreeMemory() {
   sendFrame(CMD_GET_FREE_MEMORY, nullptr, 0);
 }
 
-void BridgeClass::_trackPendingDatastoreKey(const char* key) {
+bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   if (!key || !*key) {
-    return;
+    return false;
   }
 
   size_t length = strnlen(key, kMaxDatastoreKeyLength);
   if (length == 0) {
-    return;
+    return false;
   }
 
   if (_pending_datastore_count >= kMaxPendingDatastore) {
-    _pending_datastore_head =
-        (_pending_datastore_head + 1) % kMaxPendingDatastore;
-    _pending_datastore_count--;
+    return false;
   }
 
   uint8_t slot =
@@ -1033,6 +1032,7 @@ void BridgeClass::_trackPendingDatastoreKey(const char* key) {
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
+  return true;
 }
 
 const char* BridgeClass::_popPendingDatastoreKey() {

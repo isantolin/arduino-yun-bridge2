@@ -6,7 +6,10 @@ import collections
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Deque, Dict, Optional
+from types import SimpleNamespace
+from typing import Any, Deque, Dict, Mapping, Optional
+
+from tenacity import wait_exponential
 
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -28,13 +31,29 @@ from .queues import BoundedByteDeque
 
 from ..config.settings import RuntimeConfig
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..rpc.protocol import Status
+from ..rpc.protocol import Command, Status
 
 logger = logging.getLogger("yunbridge.state")
 
 
 def _mqtt_queue_factory() -> asyncio.Queue[PublishableMessage]:
     return asyncio.Queue()
+
+
+def _command_name(command_id: int) -> str:
+    try:
+        return Command(command_id).name
+    except ValueError:
+        return f"0x{command_id:02X}"
+
+
+def _status_label(code: Optional[int]) -> str:
+    if code is None:
+        return "unknown"
+    try:
+        return Status(code).name
+    except ValueError:
+        return f"0x{code:02X}"
 
 
 @dataclass(slots=True)
@@ -143,6 +162,10 @@ def _process_map_factory() -> Dict[int, ManagedProcess]:
     return {}
 
 
+def _supervisor_stats_factory() -> Dict[str, "SupervisorStats"]:
+    return {}
+
+
 @dataclass(slots=True)
 class SerialFlowStats:
     commands_sent: int = 0
@@ -162,11 +185,30 @@ class SerialFlowStats:
         }
 
 
+@dataclass(slots=True)
+class SupervisorStats:
+    restarts: int = 0
+    last_failure_unix: float = 0.0
+    last_exception: Optional[str] = None
+    backoff_seconds: float = 0.0
+    fatal: bool = False
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "restarts": self.restarts,
+            "last_failure_unix": self.last_failure_unix,
+            "last_exception": self.last_exception,
+            "backoff_seconds": self.backoff_seconds,
+            "fatal": self.fatal,
+        }
+
+
 @dataclass
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers."""
 
     serial_writer: Optional[asyncio.StreamWriter] = None
+    serial_link_connected: bool = False
     mqtt_publish_queue: asyncio.Queue[PublishableMessage] = field(
         default_factory=_mqtt_queue_factory
     )
@@ -187,6 +229,15 @@ class RuntimeState:
     mqtt_spool_backoff_until: float = 0.0
     mqtt_spool_last_error: Optional[str] = None
     mqtt_spool_recoveries: int = 0
+    _spool_wait_strategy: Any = field(
+        default_factory=lambda: wait_exponential(
+            multiplier=5.0,
+            min=5.0,
+            max=60.0,
+        ),
+        init=False,
+        repr=False,
+    )
     datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: BoundedByteDeque = field(
         default_factory=BoundedByteDeque
@@ -234,6 +285,7 @@ class RuntimeState:
     mailbox_truncated_messages: int = 0
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
+    mailbox_outgoing_overflow_events: int = 0
     mailbox_incoming_queue: BoundedByteDeque = field(
         default_factory=BoundedByteDeque
     )
@@ -242,6 +294,7 @@ class RuntimeState:
     mailbox_incoming_truncated_messages: int = 0
     mailbox_incoming_truncated_bytes: int = 0
     mailbox_incoming_dropped_bytes: int = 0
+    mailbox_incoming_overflow_events: int = 0
     mcu_version: Optional[tuple[int, int]] = None
     link_handshake_nonce: Optional[bytes] = None
     link_is_synchronized: bool = False
@@ -255,13 +308,20 @@ class RuntimeState:
     handshake_rate_limit_until: float = 0.0
     last_handshake_error: Optional[str] = None
     last_handshake_unix: float = 0.0
+    handshake_last_duration: float = 0.0
+    _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
+    serial_pipeline_inflight: Optional[Dict[str, Any]] = None
+    serial_pipeline_last: Optional[Dict[str, Any]] = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     serial_decode_errors: int = 0
     serial_crc_errors: int = 0
     mcu_status_counters: Dict[str, int] = field(
         default_factory=_str_int_dict_factory
+    )
+    supervisor_stats: Dict[str, SupervisorStats] = field(
+        default_factory=_supervisor_stats_factory
     )
 
     def configure(self, config: RuntimeConfig) -> None:
@@ -395,6 +455,7 @@ class RuntimeState:
             )
             self.mailbox_dropped_messages += 1
             self.mailbox_dropped_bytes += len(payload)
+            self.mailbox_outgoing_overflow_events += 1
             return False
         return True
 
@@ -453,6 +514,7 @@ class RuntimeState:
             )
             self.mailbox_incoming_dropped_messages += 1
             self.mailbox_incoming_dropped_bytes += len(payload)
+            self.mailbox_incoming_overflow_events += 1
             return False
         return True
 
@@ -502,12 +564,15 @@ class RuntimeState:
     def record_handshake_attempt(self) -> None:
         self.handshake_attempts += 1
         self.last_handshake_unix = time.time()
+        self._handshake_last_started = time.monotonic()
 
     def record_handshake_success(self) -> None:
         self.handshake_successes += 1
         self.last_handshake_error = None
         self.handshake_failure_streak = 0
         self.handshake_backoff_until = 0.0
+        self.handshake_last_duration = self._handshake_duration_since_start()
+        self._handshake_last_started = 0.0
 
     def record_handshake_failure(self, reason: str) -> None:
         self.handshake_failures += 1
@@ -517,6 +582,8 @@ class RuntimeState:
             self.handshake_failure_streak = 1
         self.last_handshake_error = reason
         self.last_handshake_unix = time.time()
+        self.handshake_last_duration = self._handshake_duration_since_start()
+        self._handshake_last_started = 0.0
 
     def record_serial_flow_event(self, event: str) -> None:
         stats = self.serial_flow_stats
@@ -540,6 +607,63 @@ class RuntimeState:
         stats.dirty = False
         return stats.as_dict()
 
+    def record_serial_pipeline_event(self, event: Mapping[str, Any]) -> None:
+        name = str(event.get("event", ""))
+        command_id = int(event.get("command_id", 0))
+        attempt = int(event.get("attempt", 1) or 1)
+        timestamp = float(event.get("timestamp") or time.time())
+        acked = bool(event.get("ack_received"))
+        status_code = event.get("status")
+
+        def _base_payload() -> Dict[str, Any]:
+            return {
+                "command_id": command_id,
+                "command_name": _command_name(command_id),
+                "attempt": attempt,
+            }
+
+        if name == "start":
+            payload = _base_payload()
+            payload.update(
+                started_unix=timestamp,
+                acknowledged=False,
+                last_event="start",
+                last_event_unix=timestamp,
+            )
+            self.serial_pipeline_inflight = payload
+            return
+
+        inflight = self.serial_pipeline_inflight
+        if name == "ack" and inflight is not None:
+            inflight["acknowledged"] = True
+            inflight["ack_unix"] = timestamp
+            inflight["last_event"] = "ack"
+            inflight["last_event_unix"] = timestamp
+            return
+
+        if name in {"success", "failure", "abandoned"}:
+            payload = _base_payload()
+            payload.update(
+                event=name,
+                completed_unix=timestamp,
+                status_code=status_code,
+                status_name=_status_label(status_code),
+                acknowledged=acked
+                or bool(inflight and inflight.get("acknowledged")),
+            )
+            if inflight is not None:
+                started = inflight.get("started_unix")
+                if isinstance(started, (int, float)) and started >= 0:
+                    payload["started_unix"] = float(started)
+                    payload["duration"] = max(0.0, timestamp - float(started))
+                payload.setdefault("ack_unix", inflight.get("ack_unix"))
+                payload["acknowledged"] = inflight.get(
+                    "acknowledged",
+                    payload["acknowledged"],
+                )
+            self.serial_pipeline_last = payload
+            self.serial_pipeline_inflight = None
+
     def record_serial_decode_error(self) -> None:
         self.serial_decode_errors += 1
 
@@ -551,6 +675,31 @@ class RuntimeState:
         self.mcu_status_counters[key] = (
             self.mcu_status_counters.get(key, 0) + 1
         )
+
+    def record_supervisor_failure(
+        self,
+        name: str,
+        *,
+        backoff: float,
+        exc: BaseException,
+        fatal: bool = False,
+    ) -> None:
+        stats = self.supervisor_stats.get(name)
+        if stats is None:
+            stats = SupervisorStats()
+            self.supervisor_stats[name] = stats
+        stats.restarts += 1
+        stats.last_failure_unix = time.time()
+        stats.last_exception = f"{exc.__class__.__name__}: {exc}"
+        stats.backoff_seconds = backoff
+        stats.fatal = fatal
+
+    def mark_supervisor_healthy(self, name: str) -> None:
+        stats = self.supervisor_stats.get(name)
+        if stats is None:
+            return
+        stats.backoff_seconds = 0.0
+        stats.fatal = False
 
     def configure_spool(self, directory: str, limit: int) -> None:
         self.mqtt_spool_dir = directory
@@ -612,11 +761,10 @@ class RuntimeState:
             self.mqtt_spool_retry_attempts + 1,
             6,
         )
-        base_delay = 5.0
-        delay = min(
-            60.0,
-            base_delay * (2 ** (self.mqtt_spool_retry_attempts - 1)),
+        retry_state = SimpleNamespace(
+            attempt_number=max(1, self.mqtt_spool_retry_attempts)
         )
+        delay = self._spool_wait_strategy(retry_state)
         self.mqtt_spool_backoff_until = time.monotonic() + delay
 
     def _disable_mqtt_spool(
@@ -726,20 +874,117 @@ class RuntimeState:
             "handshake_backoff_until": self.handshake_backoff_until,
             "handshake_last_error": self.last_handshake_error,
             "handshake_last_unix": self.last_handshake_unix,
+            "handshake_last_duration": self.handshake_last_duration,
             "link_synchronised": self.link_is_synchronized,
             "serial_decode_errors": self.serial_decode_errors,
             "serial_crc_errors": self.serial_crc_errors,
             "mcu_status": dict(self.mcu_status_counters),
+            "watchdog_enabled": self.watchdog_enabled,
+            "watchdog_interval": self.watchdog_interval,
+            "watchdog_beats": self.watchdog_beats,
+            "watchdog_last_unix": self.last_watchdog_beat,
+            "supervisors": {
+                name: stats.as_dict()
+                for name, stats in self.supervisor_stats.items()
+            },
+            "bridge": self.build_bridge_snapshot(),
         }
+        snapshot.update(
+            mailbox_outgoing_len=len(self.mailbox_queue),
+            mailbox_outgoing_bytes=self.mailbox_queue_bytes,
+            mailbox_outgoing_dropped_messages=self.mailbox_dropped_messages,
+            mailbox_outgoing_dropped_bytes=self.mailbox_dropped_bytes,
+            mailbox_outgoing_truncated_messages=(
+                self.mailbox_truncated_messages
+            ),
+            mailbox_outgoing_truncated_bytes=(
+                self.mailbox_truncated_bytes
+            ),
+            mailbox_outgoing_overflow_events=(
+                self.mailbox_outgoing_overflow_events
+            ),
+            mailbox_incoming_len=len(self.mailbox_incoming_queue),
+            mailbox_incoming_bytes=self.mailbox_incoming_queue_bytes,
+            mailbox_incoming_dropped_messages=(
+                self.mailbox_incoming_dropped_messages
+            ),
+            mailbox_incoming_dropped_bytes=(
+                self.mailbox_incoming_dropped_bytes
+            ),
+            mailbox_incoming_truncated_messages=(
+                self.mailbox_incoming_truncated_messages
+            ),
+            mailbox_incoming_truncated_bytes=(
+                self.mailbox_incoming_truncated_bytes
+            ),
+            mailbox_incoming_overflow_events=(
+                self.mailbox_incoming_overflow_events
+            ),
+        )
         snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
         return snapshot
 
+    def build_handshake_snapshot(self) -> Dict[str, Any]:
+        return {
+            "synchronised": self.link_is_synchronized,
+            "attempts": self.handshake_attempts,
+            "successes": self.handshake_successes,
+            "failures": self.handshake_failures,
+            "failure_streak": self.handshake_failure_streak,
+            "last_error": self.last_handshake_error,
+            "last_unix": self.last_handshake_unix,
+            "last_duration": self.handshake_last_duration,
+            "backoff_until": self.handshake_backoff_until,
+            "rate_limit_until": self.handshake_rate_limit_until,
+            "pending_nonce": bool(self.link_handshake_nonce),
+            "nonce_length": self.link_nonce_length,
+        }
+
+    def build_serial_pipeline_snapshot(self) -> Dict[str, Any]:
+        inflight = (
+            self.serial_pipeline_inflight.copy()
+            if self.serial_pipeline_inflight
+            else None
+        )
+        last = (
+            self.serial_pipeline_last.copy()
+            if self.serial_pipeline_last
+            else None
+        )
+        return {
+            "inflight": inflight,
+            "last_completion": last,
+        }
+
+    def build_bridge_snapshot(self) -> Dict[str, Any]:
+        mcu_version = None
+        if self.mcu_version is not None:
+            mcu_version = {
+                "major": self.mcu_version[0],
+                "minor": self.mcu_version[1],
+            }
+        return {
+            "serial_link": {
+                "connected": self.serial_link_connected,
+                "writer_attached": self.serial_writer is not None,
+                "synchronised": self.link_is_synchronized,
+            },
+            "handshake": self.build_handshake_snapshot(),
+            "serial_pipeline": self.build_serial_pipeline_snapshot(),
+            "serial_flow": self.serial_flow_stats.as_dict(),
+            "mcu_version": mcu_version,
+        }
+
+    def _handshake_duration_since_start(self) -> float:
+        if self._handshake_last_started <= 0.0:
+            return 0.0
+        return max(0.0, time.monotonic() - self._handshake_last_started)
+
 
 def create_runtime_state(config: RuntimeConfig) -> RuntimeState:
-    state = RuntimeState(
-        mqtt_publish_queue=asyncio.Queue(config.mqtt_queue_limit),
-        mqtt_queue_limit=config.mqtt_queue_limit,
-    )
+    state = RuntimeState()
+    state.mqtt_publish_queue = asyncio.Queue(config.mqtt_queue_limit)
+    state.mqtt_queue_limit = config.mqtt_queue_limit
     state.configure(config)
     state.configure_spool(
         config.mqtt_spool_dir,

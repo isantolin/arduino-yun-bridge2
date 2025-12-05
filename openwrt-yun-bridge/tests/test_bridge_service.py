@@ -126,6 +126,7 @@ def test_on_serial_connected_flushes_console_queue(
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_successes == 1
         assert runtime_state.handshake_failures == 0
+        assert runtime_state.serial_link_connected is True
 
     asyncio.run(_run())
 
@@ -699,6 +700,7 @@ def test_on_serial_disconnected_clears_pending(
             runtime_state.console_to_mcu_queue[0]
         )
         assert any("clearing" in record.message for record in caplog.records)
+        assert runtime_state.serial_link_connected is False
 
     asyncio.run(_run())
 
@@ -900,6 +902,84 @@ def test_mqtt_shell_run_blocked_when_topic_disabled(
         assert ("bridge-error", "topic-action-forbidden") in (
             queued.user_properties
         )
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_bridge_handshake_topic_returns_snapshot(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.handshake_attempts = 3
+        runtime_state.link_is_synchronized = True
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.SYSTEM,
+                    "bridge",
+                    "handshake",
+                    "get",
+                ),
+                b"",
+            )
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name == topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "bridge",
+            "handshake",
+            "value",
+        )
+        payload = json.loads(queued.payload.decode())
+        assert payload["attempts"] == 3
+        assert payload["synchronised"] is True
+        assert ("bridge-snapshot", "handshake") in queued.user_properties
+        runtime_state.mqtt_publish_queue.task_done()
+
+    asyncio.run(_run())
+
+
+def test_mqtt_bridge_summary_topic_returns_snapshot(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_state.serial_link_connected = True
+        runtime_state.handshake_successes = 5
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service.handle_mqtt_message(
+            _make_inbound(
+                topic_path(
+                    runtime_state.mqtt_topic_prefix,
+                    Topic.SYSTEM,
+                    "bridge",
+                    "summary",
+                    "get",
+                ),
+                b"",
+            )
+        )
+
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        assert queued.topic_name == topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "bridge",
+            "summary",
+            "value",
+        )
+        payload = json.loads(queued.payload.decode())
+        assert payload["serial_link"]["connected"] is True
+        assert payload["handshake"]["successes"] == 5
+        assert ("bridge-snapshot", "summary") in queued.user_properties
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())

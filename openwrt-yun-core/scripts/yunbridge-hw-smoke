@@ -8,27 +8,32 @@ if ! command -v mosquitto_pub >/dev/null 2>&1 || ! command -v mosquitto_sub >/de
 fi
 
 STATUS_FILE="/tmp/yunbridge_status.json"
-CRED_FILE="${YUNBRIDGE_CREDENTIALS_FILE:-/etc/yunbridge/credentials}"
-MQTT_USER=""
-MQTT_PASS=""
-MQTT_CAFILE=""
-MQTT_CERTFILE=""
-MQTT_KEYFILE=""
 
-if [ -f "$CRED_FILE" ]; then
-    # shellcheck disable=SC1090
-    . "$CRED_FILE"
-    MQTT_USER=${YUNBRIDGE_MQTT_USER:-""}
-    MQTT_PASS=${YUNBRIDGE_MQTT_PASS:-""}
-    MQTT_CAFILE=${YUNBRIDGE_MQTT_CAFILE:-""}
-    MQTT_CERTFILE=${YUNBRIDGE_MQTT_CERTFILE:-""}
-    MQTT_KEYFILE=${YUNBRIDGE_MQTT_KEYFILE:-""}
+uci_get() {
+    local key="$1"
+    uci -q get "yunbridge.general.${key}" 2>/dev/null || true
+}
+
+MQTT_USER=$(uci_get mqtt_user)
+MQTT_PASS=$(uci_get mqtt_pass)
+MQTT_CAFILE=$(uci_get mqtt_cafile)
+MQTT_CERTFILE=$(uci_get mqtt_certfile)
+MQTT_KEYFILE=$(uci_get mqtt_keyfile)
+SERIAL_SECRET=$(uci_get serial_shared_secret)
+
+if [ -z "$SERIAL_SECRET" ] || [ "$SERIAL_SECRET" = "changeme123" ]; then
+    echo "[yunbridge-hw-smoke] Serial secret missing or still using the placeholder value." >&2
+    exit 1
 fi
 
-HOST=$(uci get yunbridge.general.mqtt_host 2>/dev/null || echo 127.0.0.1)
-PORT=$(uci get yunbridge.general.mqtt_port 2>/dev/null || echo 8883)
-TOPIC=$(uci get yunbridge.general.mqtt_topic 2>/dev/null || echo br)
-TLS=$(uci get yunbridge.general.mqtt_tls 2>/dev/null || echo 1)
+HOST=$(uci_get mqtt_host)
+HOST=${HOST:-127.0.0.1}
+PORT=$(uci_get mqtt_port)
+PORT=${PORT:-8883}
+TOPIC=$(uci_get mqtt_topic)
+TOPIC=${TOPIC:-br}
+TLS=$(uci_get mqtt_tls)
+TLS=${TLS:-1}
 
 if ! /etc/init.d/yunbridge status >/dev/null 2>&1; then
     echo "[yunbridge-hw-smoke] YunBridge service is not running." >&2
@@ -48,6 +53,14 @@ MOSQUITTO_SUB_ARGS="-h $HOST -p $PORT -t ${TOPIC}/system/status -C 1 -W 7"
 MOSQUITTO_PUB_ARGS="-h $HOST -p $PORT -t ${TOPIC}/system/status/request -m {\"request\":\"ping\"}"
 
 if [ "$TLS" = "1" ]; then
+    for entry in "CAFILE:$MQTT_CAFILE" "CERTFILE:$MQTT_CERTFILE" "KEYFILE:$MQTT_KEYFILE"; do
+        name=${entry%%:*}
+        path=${entry#*:}
+        if [ -z "$path" ] || [ ! -s "$path" ]; then
+            echo "[yunbridge-hw-smoke] TLS is enabled but $name ($path) is missing." >&2
+            exit 1
+        fi
+    done
     if [ -n "$MQTT_CAFILE" ]; then
         MOSQUITTO_SUB_ARGS="$MOSQUITTO_SUB_ARGS --cafile $MQTT_CAFILE"
         MOSQUITTO_PUB_ARGS="$MOSQUITTO_PUB_ARGS --cafile $MQTT_CAFILE"

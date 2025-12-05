@@ -35,7 +35,7 @@ CRC_COVERED_HEADER_SIZE: int = struct.calcsize(
     CRC_COVERED_HEADER_FORMAT
 )
 
-CRC_FORMAT: str = ">H"
+CRC_FORMAT: str = ">I"
 CRC_SIZE: int = struct.calcsize(CRC_FORMAT)
 
 MIN_FRAME_SIZE: int = CRC_COVERED_HEADER_SIZE + CRC_SIZE

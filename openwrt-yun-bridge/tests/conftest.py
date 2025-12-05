@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Iterator
 from contextlib import suppress
 from pathlib import Path
 
@@ -24,7 +25,7 @@ pytest_plugins = ("pytest_asyncio", "anyio")
 
 
 @pytest_asyncio.fixture()
-def event_loop() -> asyncio.AbstractEventLoop:
+def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
     """Provide a clean event loop per-test to mirror historical behavior."""
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -44,11 +45,14 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture()
-def enable_event_loop_debug(event_loop: asyncio.AbstractEventLoop) -> None:
+def enable_event_loop_debug(
+    event_loop: asyncio.AbstractEventLoop,
+) -> Iterator[None]:
     """Mirror HA fixture but ensure pytest-asyncio already created the loop."""
     event_loop.set_debug(True)
     yield
     event_loop.set_debug(False)
+
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
@@ -81,7 +85,7 @@ def runtime_config() -> RuntimeConfig:
         mailbox_queue_bytes_limit=32,
         serial_retry_timeout=0.01,
         serial_retry_attempts=1,
-        serial_shared_secret=b"testshared",
+        serial_shared_secret=b"unit-test-secret-1234",
     )
 
 
@@ -90,3 +94,9 @@ def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
     state = create_runtime_state(runtime_config)
     state.link_is_synchronized = True
     return state
+
+
+@pytest.fixture()
+def socket_enabled() -> Iterator[None]:
+    """Compat fixture so network tests work without HA plugins."""
+    yield

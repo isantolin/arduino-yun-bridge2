@@ -6,10 +6,11 @@ RuntimeConfig instance.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import logging
 import os
 from typing import Dict, Optional, Tuple
+
+from attrs import define, field
 
 from ..common import (
     get_default_config,
@@ -17,7 +18,6 @@ from ..common import (
     normalise_allowed_commands,
 )
 from ..const import (
-    DEFAULT_CREDENTIALS_FILE,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
@@ -47,13 +47,13 @@ from ..const import (
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from .credentials import load_credentials_file, lookup_credential
+from .credentials import lookup_credential
 
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
+@define(slots=True)
 class RuntimeConfig:
     """Strongly typed configuration for the daemon."""
 
@@ -87,15 +87,12 @@ class RuntimeConfig:
     )
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: TopicAuthorization = field(
-        default_factory=TopicAuthorization
-    )
+    topic_authorization: TopicAuthorization = field(factory=TopicAuthorization)
     allowed_policy: AllowedCommandPolicy = field(init=False)
     serial_shared_secret: bytes = field(repr=False, default=b"")
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
-    credentials_file: str = DEFAULT_CREDENTIALS_FILE
     metrics_enabled: bool = False
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: int = DEFAULT_METRICS_PORT
@@ -104,25 +101,22 @@ class RuntimeConfig:
     def tls_enabled(self) -> bool:
         return self.mqtt_tls and bool(self.mqtt_cafile)
 
-    def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "allowed_policy",
-            AllowedCommandPolicy.from_iterable(self.allowed_commands),
+    def __attrs_post_init__(self) -> None:
+        self.allowed_policy = AllowedCommandPolicy.from_iterable(
+            self.allowed_commands
         )
-        object.__setattr__(
-            self,
-            "serial_response_timeout",
-            max(self.serial_response_timeout, self.serial_retry_timeout * 2),
+        self.serial_response_timeout = max(
+            self.serial_response_timeout, self.serial_retry_timeout * 2
         )
-        object.__setattr__(
-            self,
-            "serial_handshake_min_interval",
-            max(0.0, self.serial_handshake_min_interval),
+        self.serial_handshake_min_interval = max(
+            0.0, self.serial_handshake_min_interval
         )
         if not self.mqtt_tls:
-            raise ValueError("MQTT TLS must be enabled for secure operation")
-        if not self.mqtt_cafile:
+            logger.warning(
+                "MQTT TLS is disabled; MQTT credentials and payloads "
+                "will be sent in plaintext."
+            )
+        elif not self.mqtt_cafile:
             raise ValueError(
                 "MQTT TLS is enabled but 'mqtt_cafile' is not configured"
             )
@@ -137,10 +131,8 @@ class RuntimeConfig:
             raise ValueError(
                 "serial_shared_secret placeholder is insecure"
             )
-        object.__setattr__(
-            self,
-            "pending_pin_request_limit",
-            max(1, self.pending_pin_request_limit),
+        self.pending_pin_request_limit = max(
+            1, self.pending_pin_request_limit
         )
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
@@ -148,6 +140,111 @@ class RuntimeConfig:
                 "serial_shared_secret must contain at least "
                 "four distinct bytes"
             )
+        self._validate_queue_limits()
+        self._normalize_topic_prefix()
+        self._normalize_paths()
+        self._validate_operational_limits()
+
+    def _validate_queue_limits(self) -> None:
+        mailbox_limit = self._require_positive(
+            "mailbox_queue_limit",
+            self.mailbox_queue_limit,
+        )
+        mailbox_bytes_limit = self._require_positive(
+            "mailbox_queue_bytes_limit",
+            self.mailbox_queue_bytes_limit,
+        )
+        if mailbox_bytes_limit < mailbox_limit:
+            raise ValueError(
+                "mailbox_queue_bytes_limit must be greater than or equal to "
+                "mailbox_queue_limit"
+            )
+        console_limit = self._require_positive(
+            "console_queue_limit_bytes",
+            self.console_queue_limit_bytes,
+        )
+        mqtt_limit = self._require_positive(
+            "mqtt_queue_limit",
+            self.mqtt_queue_limit,
+        )
+        self.mailbox_queue_limit = mailbox_limit
+        self.mailbox_queue_bytes_limit = mailbox_bytes_limit
+        self.console_queue_limit_bytes = console_limit
+        self.mqtt_queue_limit = mqtt_limit
+
+    @staticmethod
+    def _require_positive(name: str, value: int) -> int:
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        return value
+
+    def _normalize_topic_prefix(self) -> None:
+        normalized = self._build_topic_prefix(self.mqtt_topic)
+        self.mqtt_topic = normalized
+
+    def _normalize_paths(self) -> None:
+        root = self._normalize_path(
+            self.file_system_root,
+            field="file_system_root",
+            require_absolute=True,
+        )
+        spool = self._normalize_path(
+            self.mqtt_spool_dir,
+            field="mqtt_spool_dir",
+            require_absolute=False,
+        )
+        self.file_system_root = root
+        self.mqtt_spool_dir = spool
+
+    def _validate_operational_limits(self) -> None:
+        positive_int_fields = (
+            "reconnect_delay",
+            "status_interval",
+            "process_timeout",
+            "process_max_output_bytes",
+            "process_max_concurrent",
+        )
+        for field_name in positive_int_fields:
+            value = getattr(self, field_name)
+            validated = self._require_positive(field_name, int(value))
+            setattr(self, field_name, validated)
+
+        if self.watchdog_enabled:
+            interval = self._require_positive_float(
+                "watchdog_interval",
+                float(self.watchdog_interval),
+            )
+            self.watchdog_interval = interval
+
+    @staticmethod
+    def _build_topic_prefix(prefix: str) -> str:
+        segments = [segment for segment in prefix.split("/") if segment]
+        normalized = "/".join(segments)
+        if not normalized:
+            raise ValueError("mqtt_topic must contain at least one segment")
+        return normalized
+
+    @staticmethod
+    def _normalize_path(
+        value: str,
+        *,
+        field: str,
+        require_absolute: bool,
+    ) -> str:
+        candidate = (value or "").strip()
+        if not candidate:
+            raise ValueError(f"{field} must be a non-empty path")
+        expanded = os.path.expanduser(candidate)
+        normalized = os.path.abspath(expanded)
+        if require_absolute and not os.path.isabs(expanded):
+            raise ValueError(f"{field} must be an absolute path")
+        return normalized
+
+    @staticmethod
+    def _require_positive_float(name: str, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError(f"{name} must be a positive number")
+        return value
 
 
 def _load_raw_config() -> Dict[str, str]:
@@ -193,6 +290,15 @@ def _coerce_float(value: Optional[str], default: float) -> float:
 
 
 def _resolve_watchdog_settings() -> Tuple[bool, float]:
+    disable_flag = os.environ.get("YUNBRIDGE_DISABLE_WATCHDOG")
+    if disable_flag and disable_flag.strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False, DEFAULT_WATCHDOG_INTERVAL
+
     env_interval = os.environ.get("YUNBRIDGE_WATCHDOG_INTERVAL")
     if env_interval:
         try:
@@ -201,7 +307,9 @@ def _resolve_watchdog_settings() -> Tuple[bool, float]:
             interval = DEFAULT_WATCHDOG_INTERVAL
         return True, interval
 
-    procd_raw = os.environ.get("PROCD_WATCHDOG")
+    procd_raw = os.environ.get("PROCD_WATCHDOG") or os.environ.get(
+        "YUNBRIDGE_PROCD_WATCHDOG_MS"
+    )
     if procd_raw:
         try:
             procd_ms = max(0, int(procd_raw))
@@ -212,20 +320,6 @@ def _resolve_watchdog_settings() -> Tuple[bool, float]:
             return True, heartbeat
 
     return False, DEFAULT_WATCHDOG_INTERVAL
-
-
-def _resolve_credentials_path(raw: Dict[str, str]) -> str:
-    env_override = os.environ.get("YUNBRIDGE_CREDENTIALS_FILE")
-    if env_override:
-        trimmed = env_override.strip()
-        if trimmed:
-            return trimmed
-    configured = raw.get("credentials_file")
-    if configured:
-        trimmed = configured.strip()
-        if trimmed:
-            return trimmed
-    return DEFAULT_CREDENTIALS_FILE
 
 
 def load_runtime_config() -> RuntimeConfig:
@@ -254,25 +348,7 @@ def load_runtime_config() -> RuntimeConfig:
     mqtt_tls_value = raw.get("mqtt_tls")
     mqtt_tls = _to_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
 
-    credentials_path = _resolve_credentials_path(raw)
     credentials_map: Dict[str, str] = {}
-    try:
-        credentials_map = load_credentials_file(credentials_path)
-    except FileNotFoundError:
-        logger.warning(
-            "Credentials file %s missing; falling back to inline config.",
-            credentials_path,
-        )
-    except PermissionError as exc:
-        raise RuntimeError(
-            f"Insecure credentials file {credentials_path}: {exc}"
-        ) from exc
-    except Exception as exc:
-        logger.warning(
-            "Unable to load credentials file %s: %s",
-            credentials_path,
-            exc,
-        )
 
     serial_secret_str = lookup_credential(
         (
@@ -455,7 +531,6 @@ def load_runtime_config() -> RuntimeConfig:
                 DEFAULT_PROCESS_MAX_CONCURRENT,
             ),
         ),
-        credentials_file=credentials_path,
         metrics_enabled=metrics_enabled,
         metrics_host=metrics_host,
         metrics_port=max(0, metrics_port),

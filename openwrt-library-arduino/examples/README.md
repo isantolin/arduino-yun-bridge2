@@ -11,7 +11,7 @@ The sketches under `openwrt-library-arduino/examples/` act as smoke tests for th
 ## FrameDebug
 
 - Build with `-DBRIDGE_DEBUG_FRAMES=1` (defined in `Bridge.h`) to emit TX counters.
-- Sends `CMD_GET_FREE_MEMORY` every few seconds and prints frame stats (COBS/RAW lengths, CRC, shortfalls) over Serial.
+- Sends `CMD_GET_FREE_MEMORY` every few seconds and prints frame stats (COBS/RAW lengths, CRC32, shortfalls) over Serial.
 - Ideal for debugging MCU<->Linux synchronization issues and for tuning the daemon `serial_retry_*` knobs.
 
 ## Quick build and upload
@@ -35,6 +35,6 @@ Tips:
 
 1. Flash `BridgeControl.ino` and restart the daemon (`/etc/init.d/yunbridge restart`).
 2. From Linux run `openwrt-yun-examples-python/mailbox_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
-3. Switch to `FrameDebug.ino` when you need to inspect timings or CRCs on the serial link; keep the serial console open for a few minutes to gather meaningful stats.
+3. Switch to `FrameDebug.ino` when you need to inspect timings or CRC32 values on the serial link; keep the serial console open for a few minutes to gather meaningful stats.
 
-These steps keep the examples aligned with the modern stack (mandatory TLS, strong handshake, and MQTT v5 topics) described in `docs/ARCHITECTURE.md`.
+These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in `docs/ARCHITECTURE.md`.

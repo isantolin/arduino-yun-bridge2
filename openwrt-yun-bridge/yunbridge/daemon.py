@@ -9,27 +9,49 @@ import struct
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
+from typing import Any, Awaitable, Callable, Generic, Optional, Tuple, TypeVar, cast
+
+_BaseExceptionT_co = TypeVar(
+    "_BaseExceptionT_co", bound=BaseException, covariant=True
+)
+_ExceptionT_co = TypeVar(
+    "_ExceptionT_co", bound=BaseException, covariant=True
+)
 
 try:  # Python >= 3.11
-    from builtins import BaseExceptionGroup, ExceptionGroup
+    from builtins import (
+        BaseExceptionGroup as _NativeBaseExceptionGroup,
+        ExceptionGroup as _NativeExceptionGroup,
+    )
 except ImportError:  # pragma: no cover - fallback for Python < 3.11
 
-    class BaseExceptionGroup(BaseException):
+    class _CompatibilityBaseExceptionGroup(
+        BaseException, Generic[_BaseExceptionT_co]
+    ):
         """Compatibility shim for runtimes lacking ExceptionGroup."""
 
-        exceptions: tuple[BaseException, ...]
+        exceptions: tuple[_BaseExceptionT_co, ...]
 
         def __init__(
             self,
             _message: str = "ExceptionGroup not supported",
-            *exceptions: BaseException,
+            *exceptions: _BaseExceptionT_co,
         ) -> None:
             super().__init__(_message)
             self.exceptions = tuple(exceptions)
 
-    class ExceptionGroup(BaseExceptionGroup):
+    class _CompatibilityExceptionGroup(
+        _CompatibilityBaseExceptionGroup[_ExceptionT_co],
+        Exception,
+        Generic[_ExceptionT_co],
+    ):
         pass
+
+    _NativeBaseExceptionGroup = _CompatibilityBaseExceptionGroup
+    _NativeExceptionGroup = _CompatibilityExceptionGroup
+
+BaseExceptionGroup = _NativeBaseExceptionGroup
+ExceptionGroup = _NativeExceptionGroup
 
 import serial
 import paho.mqtt.client as paho_client
@@ -53,6 +75,7 @@ from yunbridge.mqtt import (
     Client as MQTTClient,
     MQTTClientProtocol,
     MQTTError,
+    MQTTMessageStream,
     QOSLevel,
     ProtocolVersion,
     as_inbound_message,
@@ -128,7 +151,7 @@ class _RetryableSupervisorError(Exception):
         self.reset_backoff = reset_backoff
 
 
-ExcLike = BaseException | BaseExceptionGroup
+ExcLike = BaseException | BaseExceptionGroup[BaseException]
 
 
 def _unwrap_retryable_exception_group(
@@ -139,8 +162,10 @@ def _unwrap_retryable_exception_group(
 
     def _collect(exc: ExcLike) -> bool:
         if isinstance(exc, BaseExceptionGroup):
-            group_exc = cast(BaseExceptionGroup, exc)
-            members = getattr(group_exc, "exceptions", ())
+            members = cast(
+                tuple[BaseException, ...],
+                cast(Any, exc).exceptions,
+            )
             return all(_collect(inner) for inner in members)
         if isinstance(exc, retry_types):
             collected.append(exc)
@@ -245,13 +270,16 @@ async def _run_with_retry(
         try:
             return await handler()
         except BaseExceptionGroup as exc_group:
-            group_exc = cast(BaseExceptionGroup, exc_group)
+            typed_group = cast(
+                BaseExceptionGroup[BaseException],
+                exc_group,
+            )
             flattened = _unwrap_retryable_exception_group(
-                group_exc,
+                typed_group,
                 policy.retry_exceptions,
             )
             if flattened is not None:
-                raise flattened from exc_group
+                raise flattened from typed_group
             raise
 
     try:
@@ -757,12 +785,66 @@ async def _mqtt_publisher_loop(
             await state.flush_mqtt_spool()
 
 
+class _DeliverMessageStream:
+    """Minimal async iterator built from legacy deliver_message APIs."""
+
+    def __init__(self, deliver_fn: Callable[[], Awaitable[Any]]) -> None:
+        self._deliver_fn = deliver_fn
+
+    async def __aenter__(self) -> "_DeliverMessageStream":
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[Any],
+    ) -> bool:
+        return False
+
+    def __aiter__(self) -> "_DeliverMessageStream":
+        return self
+
+    async def __anext__(self) -> Any:
+        return await self._deliver_fn()
+
+
+def _mqtt_message_stream(client: MQTTClientProtocol) -> MQTTMessageStream:
+    """Return the best-effort message stream for any aiomqtt version."""
+
+    stream_factory = getattr(client, "unfiltered_messages", None)
+    if callable(stream_factory):
+        return cast(MQTTMessageStream, stream_factory())
+
+    legacy_factory = getattr(client, "messages", None)
+    if callable(legacy_factory):
+        logger.warning(
+            "MQTT client missing unfiltered_messages(); "
+            "using legacy messages() API.",
+        )
+        return cast(MQTTMessageStream, legacy_factory())
+
+    deliver_fn_raw = getattr(client, "deliver_message", None)
+    if callable(deliver_fn_raw):
+        deliver_fn = cast(Callable[[], Awaitable[Any]], deliver_fn_raw)
+        logger.warning(
+            "MQTT client missing message stream helpers; "
+            "falling back to deliver_message().",
+        )
+        return cast(MQTTMessageStream, _DeliverMessageStream(deliver_fn))
+
+    raise RuntimeError(
+        "MQTT client does not expose unfiltered_messages(), "
+        "messages(), or deliver_message().",
+    )
+
+
 async def _mqtt_subscriber_loop(
     client: MQTTClientProtocol,
     service: BridgeService,
 ) -> None:
     try:
-        async with client.unfiltered_messages() as messages:
+        async with _mqtt_message_stream(client) as messages:
             async for message in messages:
                 inbound = as_inbound_message(message)
                 if not inbound.topic_name:
@@ -1028,7 +1110,7 @@ async def main_async(config: RuntimeConfig) -> None:
     except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")
     except* Exception as exc_group:
-        group_exc = cast(ExceptionGroup, exc_group)
+        group_exc = cast(BaseExceptionGroup[BaseException], exc_group)
         for exc in getattr(group_exc, "exceptions", ()):  # pragma: no branch
             logger.critical(
                 "Unhandled exception in main task group",
@@ -1060,7 +1142,8 @@ def main() -> None:
         logger.critical("Startup aborted: %s", exc)
         sys.exit(1)
     except ExceptionGroup as exc_group:
-        for exc in exc_group.exceptions:
+        typed_exc_group = cast(BaseExceptionGroup[BaseException], exc_group)
+        for exc in typed_exc_group.exceptions:
             logger.critical("Fatal error in main execution", exc_info=exc)
     except Exception:
         logger.critical("Fatal error in main execution", exc_info=True)

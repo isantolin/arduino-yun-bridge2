@@ -30,12 +30,8 @@ REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
 export TMPDIR=/overlay/upper/tmp
 LOCAL_IPK_INSTALL_FLAGS="--force-reinstall --force-downgrade --force-overwrite --force-depends --nodeps"
-DEFAULT_CREDENTIALS_FILE="/etc/yunbridge/credentials"
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
-CARRIAGE_RETURN_CHAR="$(printf '\r')"
-DOUBLE_QUOTE_CHAR="\""
-SINGLE_QUOTE_CHAR="'"
 DEFAULT_TLS_DIR="/etc/yunbridge/tls"
 DEFAULT_TLS_CAFILE="$DEFAULT_TLS_DIR/ca.crt"
 DEFAULT_TLS_CERTFILE="$DEFAULT_TLS_DIR/yunbridge.crt"
@@ -57,6 +53,7 @@ PROJECT_IPK_PATTERNS="\
 openwrt-yun-bridge_*.ipk \
 openwrt-yun-core_*.ipk \
 luci-app-yunbridge_*.ipk"
+UCI_GENERAL_DIRTY=0
 #  --- Helper Functions ---
 mkdir -p "$TMPDIR"
 # Function to stop the yunbridge daemon robustly
@@ -200,97 +197,45 @@ PY
     rm -f "$tmp_requirements"
 }
 
-resolve_credentials_file() {
-    local configured=""
-    if command -v uci >/dev/null 2>&1; then
-        configured=$(uci -q get yunbridge.general.credentials_file 2>/dev/null || true)
-    fi
-    if [ -n "$configured" ]; then
-        printf '%s\n' "$configured"
-    else
-        printf '%s\n' "$DEFAULT_CREDENTIALS_FILE"
+uci_get_general() {
+    local key="$1"
+    uci -q get "yunbridge.general.${key}" 2>/dev/null || true
+}
+
+uci_set_general() {
+    local key="$1" value="$2"
+    uci set "yunbridge.general.${key}=$value"
+    UCI_GENERAL_DIRTY=1
+}
+
+uci_commit_general() {
+    if [ "${UCI_GENERAL_DIRTY:-0}" -ne 0 ]; then
+        uci commit yunbridge
+        UCI_GENERAL_DIRTY=0
     fi
 }
 
-credential_key_exists() {
-    local file="$1" key="$2"
-    if [ ! -f "$file" ]; then
-        return 1
-    fi
-    if grep -q "^${key}=" "$file"; then
-        return 0
-    fi
-    return 1
-}
-
-read_credential_value() {
-    local file="$1" key="$2"
-    if [ ! -f "$file" ]; then
-        echo ""
-        return
-    fi
-    local raw
-    raw=$(sed -n "s/^${key}=//p" "$file" | tail -n 1)
-    raw=${raw%"$CARRIAGE_RETURN_CHAR"}
-    raw=${raw%"$DOUBLE_QUOTE_CHAR"}
-    raw=${raw#"$DOUBLE_QUOTE_CHAR"}
-    raw=${raw%"$SINGLE_QUOTE_CHAR"}
-    raw=${raw#"$SINGLE_QUOTE_CHAR"}
-    raw=${raw% }
-    raw=${raw# }
-    printf '%s\n' "$raw"
-}
-
-write_credential_value() {
-    local file="$1" key="$2" value="$3" tmp_file
-    umask 077
-    mkdir -p "$(dirname "$file")"
-    tmp_file="${file}.tmp.$$"
-    if [ -f "$file" ]; then
-        grep -v "^${key}=" "$file" >"$tmp_file" || true
-    else
-        : >"$tmp_file"
-    fi
-    printf '%s=%s\n' "$key" "$value" >>"$tmp_file"
-    mv "$tmp_file" "$file"
-    chmod 600 "$file"
-}
-
-ensure_credential_default() {
-    local file="$1" key="$2" default_value="$3" current
-    current=$(read_credential_value "$file" "$key")
-    if [ -n "$current" ]; then
-        printf '%s\n' "$current"
-        return
-    fi
-    if credential_key_exists "$file" "$key"; then
-        printf '%s\n' "$current"
-        return
-    fi
-    echo "[INFO] Setting default ${key}=$default_value in $file" >&2
-    write_credential_value "$file" "$key" "$default_value"
-    printf '%s\n' "$default_value"
-}
-
-read_serial_secret_from_file() {
-    read_credential_value "$1" "YUNBRIDGE_SERIAL_SECRET"
-}
-
-normalize_tls_path() {
-    local cred_file="$1" key="$2" current="$3" default_value="$4" placeholder="$5"
-
+ensure_general_default() {
+    local key="$1" default_value="$2"
+    local current
+    current=$(uci_get_general "$key")
     if [ -z "$current" ]; then
-        echo "[INFO] Setting ${key} to default path $default_value." >&2
-        write_credential_value "$cred_file" "$key" "$default_value"
-        printf '%s\n' "$default_value"
-        return
+        echo "[INFO] Setting default ${key}=$default_value in UCI." >&2
+        uci_set_general "$key" "$default_value"
+        current="$default_value"
     fi
+    printf '%s\n' "$current"
+}
+
+normalize_tls_path_in_uci() {
+    local key="$1" default_value="$2" placeholder="$3"
+    local current
+    current=$(ensure_general_default "$key" "$default_value")
 
     if [ -n "$placeholder" ] && [ "$current" = "$placeholder" ]; then
         echo "[INFO] Rewriting ${key} placeholder to $default_value for automatic TLS provisioning." >&2
-        write_credential_value "$cred_file" "$key" "$default_value"
-        printf '%s\n' "$default_value"
-        return
+        current="$default_value"
+        uci_set_general "$key" "$current"
     fi
 
     case "$current" in
@@ -302,38 +247,63 @@ normalize_tls_path() {
 
     if [ ! -s "$current" ]; then
         echo "[INFO] ${key} path ($current) missing; resetting to $default_value for automatic TLS provisioning." >&2
-        write_credential_value "$cred_file" "$key" "$default_value"
-        printf '%s\n' "$default_value"
-        return
+        current="$default_value"
+        uci_set_general "$key" "$current"
     fi
 
     printf '%s\n' "$current"
 }
 
-generate_local_serial_secret() {
-    local cred_file="$1"
-    local new_secret=""
+generate_random_hex() {
+    local length="$1" value=""
 
     if command -v python3 >/dev/null 2>&1; then
-        new_secret=$(python3 - <<'PY'
-import os, binascii
-print(binascii.hexlify(os.urandom(32)).decode())
+        value=$(python3 - "$length" <<'PY'
+import binascii
+import os
+import sys
+
+length = int(sys.argv[1])
+print(binascii.hexlify(os.urandom(length)).decode(), end="")
 PY
         )
     fi
-    if [ -z "$new_secret" ]; then
-        if command -v hexdump >/dev/null 2>&1; then
-            new_secret=$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | hexdump -v -e '/1 "%02x"')
-        else
-            new_secret=$(dd if=/dev/urandom bs=1 count=32 2>/dev/null | od -An -tx1 | tr -d ' \n')
-        fi
-    fi
-    if [ -z "$new_secret" ]; then
-        echo "[ERROR] Unable to generate a random serial shared secret." >&2
-        exit 1
+
+    if [ -z "$value" ] && command -v hexdump >/dev/null 2>&1; then
+        value=$(head -c "$length" /dev/urandom | hexdump -v -e '/1 "%02x"')
     fi
 
-    write_credential_value "$cred_file" "YUNBRIDGE_SERIAL_SECRET" "$new_secret"
+    if [ -z "$value" ] && command -v od >/dev/null 2>&1; then
+        value=$(head -c "$length" /dev/urandom | od -An -tx1 | tr -d ' \n')
+    fi
+
+    printf '%s\n' "$value"
+}
+
+generate_random_b64() {
+    local length="$1" value=""
+
+    if command -v python3 >/dev/null 2>&1; then
+        value=$(python3 - "$length" <<'PY'
+import base64
+import os
+import sys
+
+length = int(sys.argv[1])
+print(base64.b64encode(os.urandom(length)).decode().rstrip('='), end="")
+PY
+        )
+    fi
+
+    if [ -z "$value" ] && command -v base64 >/dev/null 2>&1; then
+        value=$(head -c "$length" /dev/urandom | base64 | tr -d '\n=')
+    fi
+
+    if [ -z "$value" ]; then
+        value=$(generate_random_hex "$length")
+    fi
+
+    printf '%s\n' "$value"
 }
 
 generate_tls_material() (
@@ -429,8 +399,6 @@ EOF
 )
 
 ensure_tls_material() {
-    local cred_file="$1"
-
     if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN" != "1" ]; then
         echo "[INFO] YUNBRIDGE_SKIP_TLS_AUTOGEN=1 detected; skipping TLS material generation."
         return
@@ -452,20 +420,18 @@ ensure_tls_material() {
     local cafile certfile keyfile
     if [ "$FORCE_TLS_REGEN" = "1" ]; then
         echo "[INFO] Resetting MQTT TLS paths to defaults under $DEFAULT_TLS_DIR."
-        write_credential_value "$cred_file" "YUNBRIDGE_MQTT_CAFILE" "$DEFAULT_TLS_CAFILE"
-        write_credential_value "$cred_file" "YUNBRIDGE_MQTT_CERTFILE" "$DEFAULT_TLS_CERTFILE"
-        write_credential_value "$cred_file" "YUNBRIDGE_MQTT_KEYFILE" "$DEFAULT_TLS_KEYFILE"
         cafile="$DEFAULT_TLS_CAFILE"
         certfile="$DEFAULT_TLS_CERTFILE"
         keyfile="$DEFAULT_TLS_KEYFILE"
+        uci_set_general mqtt_cafile "$cafile"
+        uci_set_general mqtt_certfile "$certfile"
+        uci_set_general mqtt_keyfile "$keyfile"
+        uci_commit_general
     else
-        cafile=$(ensure_credential_default "$cred_file" "YUNBRIDGE_MQTT_CAFILE" "$DEFAULT_TLS_CAFILE")
-        certfile=$(ensure_credential_default "$cred_file" "YUNBRIDGE_MQTT_CERTFILE" "$DEFAULT_TLS_CERTFILE")
-        keyfile=$(ensure_credential_default "$cred_file" "YUNBRIDGE_MQTT_KEYFILE" "$DEFAULT_TLS_KEYFILE")
-
-        cafile=$(normalize_tls_path "$cred_file" "YUNBRIDGE_MQTT_CAFILE" "$cafile" "$DEFAULT_TLS_CAFILE" "$SHIPPING_TLS_CAFILE_PLACEHOLDER")
-        certfile=$(normalize_tls_path "$cred_file" "YUNBRIDGE_MQTT_CERTFILE" "$certfile" "$DEFAULT_TLS_CERTFILE" "")
-        keyfile=$(normalize_tls_path "$cred_file" "YUNBRIDGE_MQTT_KEYFILE" "$keyfile" "$DEFAULT_TLS_KEYFILE" "")
+        cafile=$(normalize_tls_path_in_uci mqtt_cafile "$DEFAULT_TLS_CAFILE" "$SHIPPING_TLS_CAFILE_PLACEHOLDER")
+        certfile=$(normalize_tls_path_in_uci mqtt_certfile "$DEFAULT_TLS_CERTFILE" "")
+        keyfile=$(normalize_tls_path_in_uci mqtt_keyfile "$DEFAULT_TLS_KEYFILE" "")
+        uci_commit_general
     fi
 
     if [ -z "$cafile" ]; then
@@ -480,7 +446,7 @@ ensure_tls_material() {
 
     if [ -z "$certfile" ] || [ -z "$keyfile" ]; then
         cat >&2 <<EOF
-[ERROR] mqtt_certfile/mqtt_keyfile mismatch detected. Ensure both values are set in $cred_file or remove both to disable client authentication.
+[ERROR] mqtt_certfile/mqtt_keyfile mismatch detected. Ensure both values are set in UCI or remove both to disable client authentication.
 EOF
         exit 1
     fi
@@ -524,50 +490,68 @@ EOF
 }
 
 ensure_secure_serial_secret() {
-    local cred_file="$1"
     local current_secret
-    current_secret=$(read_serial_secret_from_file "$cred_file")
+    current_secret=$(uci_get_general serial_shared_secret)
     if [ -n "$current_secret" ] \
         && [ "$current_secret" != "$SERIAL_SECRET_PLACEHOLDER" ] \
         && [ "$current_secret" != "$BOOTSTRAP_SERIAL_SECRET" ]; then
         return
     fi
 
-    echo "[INFO] Generating secure serial shared secret at $cred_file..."
+    echo "[INFO] Generating secure serial shared secret via UCI..."
     local rotation_ok=0
+    local rotation_output=""
+    local final_secret=""
+
     if command -v yunbridge-rotate-credentials >/dev/null 2>&1; then
-        if yunbridge-rotate-credentials "$cred_file"; then
+        if rotation_output=$(yunbridge-rotate-credentials 2>&1); then
             rotation_ok=1
+            printf '%s\n' "$rotation_output"
+            final_secret=$(printf '%s\n' "$rotation_output" | sed -n 's/^SERIAL_SECRET=//p' | tail -n 1)
         else
             echo "[WARN] yunbridge-rotate-credentials failed; using local fallback." >&2
         fi
     fi
-    if [ "$rotation_ok" -ne 1 ]; then
-        generate_local_serial_secret "$cred_file"
-    fi
 
-    local final_secret
-    final_secret=$(read_serial_secret_from_file "$cred_file")
-    if [ -z "$final_secret" ] \
-        || [ "$final_secret" = "$SERIAL_SECRET_PLACEHOLDER" ] \
-        || [ "$final_secret" = "$BOOTSTRAP_SERIAL_SECRET" ]; then
-        if [ "$rotation_ok" -eq 1 ]; then
-            echo "[WARN] Rotation script did not yield a valid secret; falling back to local generation." >&2
-        fi
-        generate_local_serial_secret "$cred_file"
-        final_secret=$(read_serial_secret_from_file "$cred_file")
-        if [ -z "$final_secret" ] \
-            || [ "$final_secret" = "$SERIAL_SECRET_PLACEHOLDER" ] \
-            || [ "$final_secret" = "$BOOTSTRAP_SERIAL_SECRET" ]; then
-            echo "[ERROR] Unable to read serial shared secret from $cred_file after fallback generation." >&2
+    if [ "$rotation_ok" -ne 1 ] || [ -z "$final_secret" ]; then
+        echo "[INFO] Falling back to local secret/password generation via UCI." >&2
+        final_secret=$(generate_random_hex 32)
+        if [ -z "$final_secret" ]; then
+            echo "[ERROR] Unable to generate a random serial shared secret." >&2
             exit 1
         fi
+
+        local mqtt_pass mqtt_user
+        mqtt_pass=$(generate_random_b64 32)
+        if [ -z "$mqtt_pass" ]; then
+            echo "[ERROR] Unable to generate a random MQTT password." >&2
+            exit 1
+        fi
+
+        mqtt_user=$(uci_get_general mqtt_user)
+        if [ -z "$mqtt_user" ]; then
+            mqtt_user="yunbridge"
+        fi
+
+        uci_set_general serial_shared_secret "$final_secret"
+        uci_set_general mqtt_user "$mqtt_user"
+        uci_set_general mqtt_pass "$mqtt_pass"
+        uci_commit_general
+    fi
+
+    local final_current
+    final_current=$(uci_get_general serial_shared_secret)
+    if [ -z "$final_current" ] \
+        || [ "$final_current" = "$SERIAL_SECRET_PLACEHOLDER" ] \
+        || [ "$final_current" = "$BOOTSTRAP_SERIAL_SECRET" ]; then
+        echo "[ERROR] Unable to read serial shared secret from UCI after provisioning." >&2
+        exit 1
     fi
 
     cat <<EOF
-[INFO] Serial shared secret refreshed.
+[INFO] Serial shared secret refreshed in UCI.
 [HINT] Paste the following into your sketches before including Bridge.h:
-       #define BRIDGE_SERIAL_SHARED_SECRET "$final_secret"
+       #define BRIDGE_SERIAL_SHARED_SECRET "$final_current"
 EOF
 }
 #  --- Main Script Execution ---
@@ -714,9 +698,8 @@ if [ "$project_ipk_installed" -eq 0 ]; then
     echo "[INFO] No project-specific .ipk files found in bin/. Skipping Step 5."
 fi
 
-credentials_file=$(resolve_credentials_file)
-ensure_secure_serial_secret "$credentials_file"
-ensure_tls_material "$credentials_file"
+ensure_secure_serial_secret
+ensure_tls_material
 
 # --- System & LuCI Configuration ---
 echo "[STEP 6/6] Finalizing system configuration..."

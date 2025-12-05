@@ -201,7 +201,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 2.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software y las dependencias.
 	- El script pedirá confirmación antes de lanzar `opkg upgrade`. Exporta `YUNBRIDGE_AUTO_UPGRADE=1` si necesitas ejecución no interactiva.
 	> **Nota:** `3_install.sh` combina `opkg` (IPKs tradicionales) con una instalación controlada vía `pip3` para los paquetes que solo existen en PyPI. Si se interrumpe esa fase, verifica la conectividad TLS y ejecuta `python3 -m pip install --no-cache-dir --upgrade -r requirements/runtime.txt` antes de relanzar el instalador para asegurarte de que cada pin declarado en `dependencies/runtime.toml` quedó aplicado.
-3.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción edita `/etc/yunbridge/credentials` con el secreto serie y las credenciales MQTT.
+3.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `tools/rotate_credentials.sh --host <yun>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
 4.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
 
 ### Verificación y control de calidad

@@ -59,44 +59,13 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
             status_content_element.textContent = display_content;
         });
     }
-
-    function fetchLogDaemon() {
-        var log_url = buildControllerUrl('log_daemon');
-        XHR.get(log_url, null, function(x, data) {
-            // **CORRECCIÓN:** Usamos 'data' si tiene contenido, o 'x.responseText' (el contenido HTTP crudo) si 'data' está vacío.
-            var content = data || x.responseText;
-            document.getElementById('log-daemon-content').textContent = content || 'No daemon log file found.';
-        });
-    }
-
-    function fetchLogMQTT() {
-        var log_url = buildControllerUrl('log_mqtt');
-        XHR.get(log_url, null, function(x, data) {
-            var content = data || x.responseText;
-            document.getElementById('log-mqtt-content').textContent = content || 'No MQTT log file found.';
-        });
-    }
-
-    function fetchLogScript() {
-        var log_url = buildControllerUrl('log_script');
-        XHR.get(log_url, null, function(x, data) {
-            var content = data || x.responseText;
-            document.getElementById('log-script-content').textContent = content || 'No script log file found.';
-        });
-    }
     
     // Función para iniciar todas las llamadas
     function startFetching() {
         fetchStatus();
-        fetchLogDaemon();
-        fetchLogMQTT();
-        fetchLogScript();
         
         // Configurar los intervalos de actualización (5 segundos)
         setInterval(fetchStatus, 5000);
-        setInterval(fetchLogDaemon, 5000);
-        setInterval(fetchLogMQTT, 5000);
-        setInterval(fetchLogScript, 5000);
     }
 
     // Iniciar cuando la ventana esté completamente cargada
@@ -106,21 +75,6 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 <h2>YunBridge Daemon Status</h2>
 <div id="daemon-status">
   <pre id="status-content">Loading status...</pre>
-</div>
----
-<h2>Daemon Log</h2>
-<div id="daemon-log">
-  <pre id="log-daemon-content">Loading daemon log...</pre>
-</div>
----
-<h2>MQTT Plugin Log</h2>
-<div id="mqtt-log">
-  <pre id="log-mqtt-content">Loading MQTT log...</pre>
-</div>
----
-<h2>Script Log</h2>
-<div id="script-log">
-  <pre id="log-script-content">Loading script log...</pre>
 </div>
 
 <%+footer%>

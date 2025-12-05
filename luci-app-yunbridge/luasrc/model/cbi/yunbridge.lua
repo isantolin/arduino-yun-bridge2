@@ -1,5 +1,6 @@
 local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
+local http = require "luci.http"
 
 -- Guarantee the daemon always has a 'general' section to edit.
 local function ensure_general_section()
@@ -170,6 +171,9 @@ local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("S
 function serial_secret.cfgvalue()
     return translate("Managed via UCI. Use the Credentials & TLS tab to rotate secrets.")
 end
+
+-- Deleted: Manual required_field_rules table and validation functions.
+-- LuCI handles dependencies (depends) and required fields (rmempty=false) natively.
 
 function m.on_commit(map)
     -- Restart the daemon so changes take effect immediately.

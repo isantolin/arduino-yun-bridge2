@@ -181,19 +181,49 @@ class PublishableMessage:
         ):
             return None
 
+        def _set_prop(
+            props_obj: Any,
+            *names: str,
+            value: Any,
+        ) -> None:
+            for candidate in names:
+                if hasattr(props_obj, candidate):
+                    setattr(props_obj, candidate, value)
+                    return
+
         props = PahoProperties(PahoPacketTypes.PUBLISH)
         if self.content_type is not None:
-            props.content_type = self.content_type
+            _set_prop(props, "ContentType", "content_type", value=self.content_type)
         if self.payload_format_indicator is not None:
-            props.payload_format_indicator = self.payload_format_indicator
+            _set_prop(
+                props,
+                "PayloadFormatIndicator",
+                "payload_format_indicator",
+                value=self.payload_format_indicator,
+            )
         if self.message_expiry_interval is not None:
-            props.message_expiry_interval = int(self.message_expiry_interval)
+            _set_prop(
+                props,
+                "MessageExpiryInterval",
+                "message_expiry_interval",
+                value=int(self.message_expiry_interval),
+            )
         if self.response_topic:
-            props.response_topic = self.response_topic
+            _set_prop(props, "ResponseTopic", "response_topic", value=self.response_topic)
         if self.correlation_data is not None:
-            props.correlation_data = self.correlation_data
+            _set_prop(
+                props,
+                "CorrelationData",
+                "correlation_data",
+                value=self.correlation_data,
+            )
         if self.user_properties:
-            props.user_property = list(self.user_properties)
+            _set_prop(
+                props,
+                "UserProperty",
+                "user_property",
+                value=list(self.user_properties),
+            )
         return props
 
     def to_spool_record(self) -> dict[str, Any]:

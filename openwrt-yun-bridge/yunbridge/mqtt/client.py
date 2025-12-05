@@ -127,6 +127,16 @@ class Client(BaseClient):
             if disconnected_future and not disconnected_future.done():
                 disconnected_future.cancel()
 
+    def unfiltered_messages(self) -> Any:
+        base = super()
+        stream_factory = getattr(base, "unfiltered_messages", None)
+        if callable(stream_factory):
+            return stream_factory()
+        legacy_factory = getattr(base, "messages", None)
+        if callable(legacy_factory):
+            return legacy_factory()
+        raise AttributeError("MQTT client does not provide a message stream API")
+
 
 MQTTError = MqttError
 

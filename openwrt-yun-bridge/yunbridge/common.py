@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping as MappingABC, Sequence
 from struct import pack as struct_pack, unpack as struct_unpack
-from typing import Any, Dict, Final, Optional, Protocol, Tuple, TypeVar, cast
+from typing import Any, Dict, Final, Mapping, Optional, Protocol, Tuple, TypeVar, cast
 
 from cobs import cobs as _cobs
 from more_itertools import chunked, unique_everseen
@@ -158,34 +158,43 @@ def get_uci_config() -> Dict[str, str]:
         )
         return get_default_config()
 
-    options = _extract_uci_options(section)
+    options: Dict[str, Any] = _extract_uci_options(section)
     if not options:
         logger.warning(
             "python3-uci returned no options for 'yunbridge'; using defaults."
         )
         return get_default_config()
 
-    return {
-        str(key): _stringify_value(value)
-        for key, value in options.items()
-    }
+    normalised: Dict[str, str] = {}
+    for key, value in options.items():
+        normalised[str(key)] = _stringify_value(value)
+    return normalised
+
+
+def _as_option_dict(candidate: Mapping[Any, Any]) -> Dict[str, Any]:
+    typed: Dict[str, Any] = {}
+    for key, value in candidate.items():
+        typed[str(key)] = value
+    return typed
 
 
 def _extract_uci_options(section: Any) -> Dict[str, Any]:
     """Normalise python3-uci section structures into a flat options dict."""
 
-    if not isinstance(section, dict) or not section:
-        return {}
+    if not isinstance(section, MappingABC) or not section:
+        empty: Dict[str, Any] = {}
+        return empty
 
-    stack: list[dict[Any, Any]] = [section]
+    typed_section = _as_option_dict(cast(Mapping[Any, Any], section))
+    stack: list[Dict[str, Any]] = [typed_section]
     while stack:
         current = stack.pop()
         for key in ("options", "values"):
             nested = current.get(key)
-            if isinstance(nested, dict) and nested:
-                return nested
+            if isinstance(nested, MappingABC) and nested:
+                return _as_option_dict(cast(Mapping[Any, Any], nested))
 
-        flattened: dict[str, Any] = {}
+        flattened: Dict[str, Any] = {}
         for key, value in current.items():
             if (
                 key in {"name", "type", ".name", ".type"}
@@ -200,13 +209,19 @@ def _extract_uci_options(section: Any) -> Dict[str, Any]:
         if flattened:
             return flattened
 
-        stack.extend(
-            nested
-            for nested in current.values()
-            if isinstance(nested, dict) and nested
-        )
+        for nested in current.values():
+            if isinstance(nested, MappingABC) and nested:
+                stack.append(_as_option_dict(cast(Mapping[Any, Any], nested)))
 
-    return {}
+    empty: Dict[str, Any] = {}
+    return empty
+
+
+def _stringify_iterable(values: Iterable[Any]) -> str:
+    parts: list[str] = []
+    for item in values:
+        parts.append(str(item))
+    return " ".join(parts)
 
 
 def _stringify_value(value: Any) -> str:
@@ -217,16 +232,19 @@ def _stringify_value(value: Any) -> str:
         return _stringify_value(attr_value)
 
     if isinstance(value, dict):
-        if "value" in value:
-            return _stringify_value(value["value"])
-        if "values" in value and isinstance(value["values"], Iterable):
-            iterable_value = cast(Iterable[Any], value["values"])
-            return " ".join(str(item) for item in iterable_value)
-        return " ".join(str(item) for item in value.values())
+        dict_value = cast(dict[Any, Any], value)
+        if "value" in dict_value:
+            return _stringify_value(dict_value["value"])
+        values_candidate = dict_value.get("values")
+        if isinstance(values_candidate, Iterable):
+            iterable_value = cast(Iterable[Any], values_candidate)
+            return _stringify_iterable(iterable_value)
+        dict_items: Iterable[Any] = cast(Iterable[Any], dict_value.values())
+        return _stringify_iterable(dict_items)
 
     if isinstance(value, (tuple, list)):
         iterable_value = cast(Iterable[Any], value)
-        return " ".join(str(item) for item in iterable_value)
+        return _stringify_iterable(iterable_value)
     return str(value)
 
 

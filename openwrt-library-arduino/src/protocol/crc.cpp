@@ -1,14 +1,7 @@
 #include "crc.h"
 
-#if defined(__has_include)
-#if __has_include(<CRC32.h>)
-#define BRIDGE_HAS_PACKET_CRC32 1
-#endif
-#endif
-
-#if !defined(BRIDGE_HAS_PACKET_CRC32)
-#error "CRC32 dependency missing: install bakercp/CRC32 so <CRC32.h> is available."
-#endif
+// CORRECCIÓN: Eliminamos los checks estrictos de __has_include.
+// El usuario debe incluir <CRC32.h> en su sketch.
 
 #include <CRC32.h>
 

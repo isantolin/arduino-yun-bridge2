@@ -1,6 +1,9 @@
-// Provide a development-only default secret; match it with Linux before
-// including Bridge.h.
-#define BRIDGE_SERIAL_SHARED_SECRET "changeme123"
+// Match BridgeControl's initialization pattern: disable optional subsystems
+// (they are unused here) and define the shared secret locally.
+#define BRIDGE_ENABLE_DATASTORE 0
+#define BRIDGE_ENABLE_FILESYSTEM 0
+#define BRIDGE_ENABLE_PROCESS 0
+#define BRIDGE_SECRET "changeme123"
 
 #include <Bridge.h>
 
@@ -20,8 +23,8 @@ void setup() {
 
   Serial.println(F("[FrameDebug] Starting"));
 
-  Bridge.begin();
-  Serial.println(F("[FrameDebug] Bridge initialized"));
+  Bridge.begin(115200, BRIDGE_SECRET);
+  Serial.println(F("[FrameDebug] Bridge initialized with sketch-defined secret"));
 }
 
 void loop() {

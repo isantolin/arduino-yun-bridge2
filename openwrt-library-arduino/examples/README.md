@@ -27,7 +27,7 @@ arduino-cli upload --fqbn arduino:avr:yun --port /dev/ttyACM0 \
 
 Tips:
 
-1. Set `BRIDGE_SERIAL_SHARED_SECRET` in the sketch (and `/etc/yunbridge/credentials`) before flashing.
+1. Set `BRIDGE_SERIAL_SHARED_SECRET` in the sketch using the snippet from LuCI's *Credentials & TLS* tab (or `tools/rotate_credentials.sh`) before flashing.
 2. PlatformIO users can point `src_dir` to the example inside an `arduino_yun` environment to reuse the same macros.
 3. After uploading, open the 115200 baud serial monitor to watch the logs that correlate with the Python daemon.
 

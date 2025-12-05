@@ -103,9 +103,8 @@ function index()
 
     -- Internal actions for status page
     entry({"admin", "services", "yunbridge", "status_raw"}, call("action_status")).leaf = true
-    entry({"admin", "services", "yunbridge", "log_daemon"}, call("action_log_daemon")).leaf = true
-    entry({"admin", "services", "yunbridge", "log_mqtt"}, call("action_log_mqtt")).leaf = true
-    entry({"admin", "services", "yunbridge", "log_script"}, call("action_log_script")).leaf = true
+    -- Logs actions removed
+    
     entry({"admin", "services", "yunbridge", "mqtt_ws_auth"}, call("action_mqtt_ws_auth")).leaf = true
     entry({"admin", "services", "yunbridge", "mqtt_ws_url"}, call("action_mqtt_ws_url")).leaf = true
     entry({"admin", "services", "yunbridge", "rotate_credentials"}, call("action_rotate_credentials")).leaf = true
@@ -232,35 +231,7 @@ function action_status()
     luci.http.write(content)
 end
 
-local function tail_file(path, n)
-    local f = io.open(path, "r")
-    if not f then return nil end
-    local lines = {}
-    for line in f:lines() do
-        table.insert(lines, line)
-        if #lines > n then table.remove(lines, 1) end
-    end
-    f:close()
-    return table.concat(lines, "\n")
-end
-
-local function serve_log_file(path, error_msg)
-    local content = tail_file(path, 50) or error_msg
-    luci.http.prepare_content("text/plain")
-    luci.http.write(content)
-end
-
-function action_log_daemon()
-    serve_log_file("/var/log/yun-bridge.log", "No daemon log file found.")
-end
-
-function action_log_mqtt()
-    serve_log_file("/var/log/yunbridge_mqtt_plugin.log", "No MQTT log file found.")
-end
-
-function action_log_script()
-    serve_log_file("/var/log/yunbridge_script.log", "No script log file found.")
-end
+-- Deleted: action_log_daemon, action_log_mqtt, action_log_script and helper functions
 
 local function run_and_capture(cmd)
     local tmp = os.tmpname()

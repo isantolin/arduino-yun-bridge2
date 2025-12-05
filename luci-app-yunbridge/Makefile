@@ -7,7 +7,20 @@ PKG_RELEASE:=2
 
 PKG_MAINTAINER:=Ignacio Santolin and contributors
 
+MQTT_JS_VERSION:=5.14.1
+MQTT_JS_HASH:=a72e7b7c2bad997f81c9b394d38bc9cdb79c49dfb59f9ec729030c7e6209ac1e
+MQTT_JS_URL:=https://unpkg.com/mqtt@$(MQTT_JS_VERSION)/dist/mqtt.min.js
+MQTT_JS_DL_FILE:=mqtt-$(MQTT_JS_VERSION).min.js
+
 include $(INCLUDE_DIR)/package.mk
+
+define Download/mqtt_js
+	FILE:=$(MQTT_JS_DL_FILE)
+	URL:=$(MQTT_JS_URL)
+	HASH:=$(MQTT_JS_HASH)
+endef
+
+$(eval $(call Download,mqtt_js))
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
@@ -39,6 +52,8 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./luasrc/view/yunbridge/credentials.htm $(1)/usr/lib/lua/luci/view/yunbridge/
 	$(CP) -r ./root/etc/config/yunbridge $(1)/etc/config/
 	[ -d ./root/www/yunbridge ] && $(CP) -r ./root/www/yunbridge $(1)/www/ || true
+	$(INSTALL_DIR) $(1)/www/yunbridge
+	$(INSTALL_DATA) $(DL_DIR)/$(MQTT_JS_DL_FILE) $(1)/www/yunbridge/mqtt.min.js
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

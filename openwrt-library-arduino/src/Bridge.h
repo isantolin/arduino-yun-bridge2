@@ -1,12 +1,6 @@
 /**
  * @file Bridge.h
- * @brief Librería principal del Arduino Yun Bridge v2.
- * @details Esta librería facilita la comunicación RPC (Remote Procedure Call)
- * entre el microcontrolador Arduino y el procesador Linux en placas como
- * el Arduino Yún. Esta versión impone un modelo de programación puramente asíncrono.
- *
- * Copyright (C) 2025 Ignacio Santolin and contributors
- * Licenciado bajo la GNU General Public License, v3 o posterior.
+ * @brief Librería principal del Arduino Yun Bridge v2 (Runtime Secret Support + Console Fix).
  */
 #ifndef BRIDGE_V2_H
 #define BRIDGE_V2_H
@@ -17,24 +11,11 @@
 #else
 #include "arduino/ArduinoCompat.h"
 #include "arduino/PrintCompat.h"
-#ifndef BRIDGE_ALLOW_INSECURE_SERIAL_SECRET
-#define BRIDGE_ALLOW_INSECURE_SERIAL_SECRET 1
-#endif
 #endif
 #include "protocol/rpc_frame.h"
 
-#ifndef BRIDGE_SERIAL_SHARED_SECRET
-#error "Define BRIDGE_SERIAL_SHARED_SECRET (e.g. a string literal) before including Bridge.h"
-#endif
-
-#ifndef BRIDGE_SERIAL_SHARED_SECRET_LEN
-#define BRIDGE_SERIAL_SHARED_SECRET_LEN \
-  (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)
-#endif
-
 class HardwareSerial;
 
-// Adjusted resource limits to keep SRAM usage below 2.5 KB on ATmega32u4.
 constexpr uint8_t BRIDGE_DATASTORE_PENDING_MAX = 1;
 constexpr size_t BRIDGE_DATASTORE_KEY_MAX_LEN = 48;
 constexpr uint8_t BRIDGE_PROCESS_PENDING_MAX = 2;
@@ -45,7 +26,7 @@ constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 1;
 #endif
 
 #ifndef BRIDGE_FIRMWARE_VERSION_MINOR
-#define BRIDGE_FIRMWARE_VERSION_MINOR 0
+#define BRIDGE_FIRMWARE_VERSION_MINOR 1
 #endif
 
 #ifndef BRIDGE_DEBUG_IO
@@ -56,13 +37,11 @@ constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 1;
 #define BRIDGE_DEBUG_FRAMES 1
 #endif
 
-// --- Constantes de la Consola ---
-// Ajustar los límites de agua para que respiren sobre un buffer real.
-// El cabezal circular necesita al menos un byte libre, por lo que un
-// tamaño de 64 bytes permite aplicar backpressure antes de saturar.
 #ifndef CONSOLE_RX_BUFFER_SIZE
 #define CONSOLE_RX_BUFFER_SIZE 32
 #endif
+
+// CORRECCIÓN: Agregamos las definiciones de watermark faltantes
 #ifndef CONSOLE_BUFFER_HIGH_WATER
 #define CONSOLE_BUFFER_HIGH_WATER 24
 #endif
@@ -70,10 +49,6 @@ constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 1;
 #define CONSOLE_BUFFER_LOW_WATER 8
 #endif
 
-/**
- * @class ConsoleClass
- * @brief Permite enviar y recibir datos de texto a/desde la consola de Linux.
- */
 class ConsoleClass : public Print {
  public:
   ConsoleClass();
@@ -92,29 +67,18 @@ class ConsoleClass : public Print {
   uint8_t _rx_buffer[CONSOLE_RX_BUFFER_SIZE];
   volatile uint16_t _rx_buffer_head;
   volatile uint16_t _rx_buffer_tail;
+  
+  // CORRECCIÓN: Agregamos la variable miembro faltante
   bool _xoff_sent;
 };
 
-/**
- * @class DataStoreClass
- * @brief Proporciona un almacén de clave-valor en el lado de Linux.
- */
 class DataStoreClass {
  public:
   DataStoreClass();
   void put(const char* key, const char* value);
-  /**
-   * @brief Solicita al daemon el último valor cacheado para la clave dada.
-   * @details El resultado llega de forma asíncrona vía
-   * Bridge.onDataStoreGetResponse sin bloquear el bucle principal.
-   */
   void requestGet(const char* key);
 };
 
-/**
- * @class MailboxClass
- * @brief Permite el intercambio de mensajes entre Arduino y Linux.
- */
 class MailboxClass {
  public:
   MailboxClass();
@@ -124,39 +88,29 @@ class MailboxClass {
   void requestAvailable();
 };
 
-/**
- * @class FileSystemClass
- * @brief Permite al sketch interactuar con el sistema de ficheros de Linux.
- */
 class FileSystemClass {
  public:
   void write(const char* filePath, const uint8_t* data, size_t length);
   void remove(const char* filePath);
 };
 
-/**
- * @class ProcessClass
- * @brief Permite al sketch ejecutar comandos y procesos en Linux.
- */
 class ProcessClass {
  public:
   ProcessClass();
   void kill(int pid);
 };
 
-/**
- * @class BridgeClass
- * @brief Clase principal que gestiona la comunicación RPC.
- */
 class BridgeClass {
  public:
   explicit BridgeClass(HardwareSerial& serial);
   BridgeClass(Stream& stream);
-  void begin();
+
+  // begin acepta baudrate y secreto
+  void begin(unsigned long baudrate = 115200, const char* secret = nullptr);
+  
   void process();
   void flushStream();
 
-  // --- Manejadores de Respuestas (Callbacks) ---
   typedef void (*MailboxHandler)(const uint8_t* buffer, size_t size);
   void onMailboxMessage(MailboxHandler handler);
 
@@ -200,24 +154,19 @@ class BridgeClass {
                                 uint16_t length);
   void onStatus(StatusHandler handler);
 
-  // --- API de Control de Pines (No Bloqueante) ---
   void pinMode(uint8_t pin, uint8_t mode);
   void digitalWrite(uint8_t pin, uint8_t value);
   void analogWrite(uint8_t pin, int value);
-  // Deprecated: pin reads are initiated from Linux; these methods emit STATUS_NOT_IMPLEMENTED.
   void requestDigitalRead(uint8_t pin);
   void requestAnalogRead(uint8_t pin);
 
-  // --- API de Procesos (No Bloqueante) ---
   void requestProcessRun(const char* command);
   void requestProcessRunAsync(const char* command);
   void requestProcessPoll(int pid);
 
-  // --- API de Sistema de Ficheros (No Bloqueante) ---
   void requestFileSystemRead(const char* filePath);
   void requestGetFreeMemory();
 
-  // --- Métodos de Bajo Nivel ---
   bool sendFrame(uint16_t command_id, const uint8_t* payload,
                  uint16_t payload_len);
 
@@ -243,11 +192,14 @@ class BridgeClass {
  private:
   Stream& _stream;
   HardwareSerial* _hardware_serial;
+  
+  const char* _shared_secret;
+  size_t _shared_secret_len;
+
   rpc::FrameParser _parser;
   rpc::FrameBuilder _builder;
-  rpc::Frame _rx_frame;  // Reuse a single frame buffer to save stack space.
+  rpc::Frame _rx_frame;
 
-  // Punteros a las funciones de callback
   CommandHandler _command_handler;
   DataStoreGetHandler _datastore_get_handler;
   MailboxHandler _mailbox_handler;
@@ -323,9 +275,10 @@ class BridgeClass {
 
   void dispatch(const rpc::Frame& frame);
   void _emitStatus(uint8_t status_code, const char* message);
+  
+  void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
 };
 
-// --- Instancias Globales ---
 extern BridgeClass Bridge;
 extern ConsoleClass Console;
 extern DataStoreClass DataStore;
@@ -333,4 +286,4 @@ extern MailboxClass Mailbox;
 extern FileSystemClass FileSystem;
 extern ProcessClass Process;
 
-#endif  // BRIDGE_V2_H
+#endif

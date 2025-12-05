@@ -1,20 +1,5 @@
 /*
  * This file is part of Arduino Yun Ecosystem v2.
- *
- * Copyright (C) 2025 Ignacio Santolin and contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "Bridge.h"
 
@@ -23,17 +8,14 @@
 #include <avr/wdt.h>
 #endif
 
-#include <string.h> // Para strcmp, strlen, memcpy
-#include <stdlib.h> // Para atoi
+#include <string.h> 
+#include <stdlib.h> 
 #include <stdint.h>
 #include <Crypto.h>
-#include <HMAC.h>
 #include <SHA256.h>
 
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
-
-#define BRIDGE_BAUDRATE 115200
 
 using namespace rpc;
 
@@ -46,10 +28,6 @@ using namespace rpc;
 #define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
 #endif
 #endif
-
-// =================================================================================
-// Global Instances
-// =================================================================================
 
 BridgeClass Bridge(Serial1);
 ConsoleClass Console;
@@ -76,50 +54,8 @@ static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
 #endif
 
 namespace {
-
-#if defined(ARDUINO_ARCH_AVR)
-const char kBridgeSerialSecret[] PROGMEM = BRIDGE_SERIAL_SHARED_SECRET;
-#else
-const char kBridgeSerialSecret[] = BRIDGE_SERIAL_SHARED_SECRET;
-#endif
-
-constexpr size_t kBridgeSerialSecretLen =
-    sizeof(kBridgeSerialSecret) > 0 ? sizeof(kBridgeSerialSecret) - 1 : 0;
-constexpr bool kHasSerialSharedSecret = kBridgeSerialSecretLen > 0;
 constexpr size_t kHandshakeTagSize = 16;
-constexpr size_t kSecretBufferSize =
-    kBridgeSerialSecretLen > 0 ? kBridgeSerialSecretLen : 1;
-
 constexpr size_t kSha256DigestSize = 32;
-
-void copy_serial_secret(uint8_t* dest) {
-#if defined(ARDUINO_ARCH_AVR)
-  memcpy_P(dest, kBridgeSerialSecret, kBridgeSerialSecretLen);
-#else
-  memcpy(dest, kBridgeSerialSecret, kBridgeSerialSecretLen);
-#endif
-}
-
-void computeHandshakeTag(
-    const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
-  if (!kHasSerialSharedSecret || nonce_len == 0) {
-    memset(out_tag, 0, kHandshakeTagSize);
-    return;
-  }
-
-  uint8_t secret_buffer[kSecretBufferSize];
-  copy_serial_secret(secret_buffer);
-
-  SHA256 sha256;
-  HMAC<SHA256> hmac(sha256);
-  uint8_t digest[kSha256DigestSize];
-
-  hmac.reset(secret_buffer, kBridgeSerialSecretLen);
-  hmac.update(nonce, nonce_len);
-  hmac.finalize(digest, kSha256DigestSize);
-
-  memcpy(out_tag, digest, kHandshakeTagSize);
-}
 
 #if defined(ARDUINO_ARCH_AVR)
 uint16_t calculateFreeMemoryBytes() {
@@ -136,16 +72,11 @@ uint16_t calculateFreeMemoryBytes() {
 }
 #else
 uint16_t calculateFreeMemoryBytes() {
-  // Platform not yet supported; report 0 to signal unavailable data.
   return 0;
 }
 #endif
+}
 
-}  // namespace
-
-// =================================================================================
-// BridgeClass
-// =================================================================================
 BridgeClass::BridgeClass(HardwareSerial& serial)
     : BridgeClass(static_cast<Stream&>(serial)) {
   _hardware_serial = &serial;
@@ -154,6 +85,8 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _hardware_serial(nullptr),
+      _shared_secret(nullptr),
+      _shared_secret_len(0),
       _parser(),
       _builder(),
       _rx_frame{},
@@ -193,9 +126,18 @@ BridgeClass::BridgeClass(Stream& stream)
   memset(_pending_tx_frames, 0, sizeof(_pending_tx_frames));
 }
 
-void BridgeClass::begin() {
+// MODIFICADO: begin ahora recibe el secreto
+void BridgeClass::begin(unsigned long baudrate, const char* secret) {
   if (_hardware_serial != nullptr) {
-    _hardware_serial->begin(BRIDGE_BAUDRATE);
+    _hardware_serial->begin(baudrate);
+  }
+
+  // Guardamos el secreto en runtime
+  _shared_secret = secret;
+  if (_shared_secret) {
+    _shared_secret_len = strlen(_shared_secret);
+  } else {
+    _shared_secret_len = 0;
   }
 
   _resetLinkState();
@@ -223,6 +165,24 @@ void BridgeClass::begin() {
 #endif
 }
 
+// NUEVO: Método privado para usar el secreto de la instancia
+void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
+  if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
+    memset(out_tag, 0, kHandshakeTagSize);
+    return;
+  }
+
+  SHA256 sha256;
+  uint8_t digest[kSha256DigestSize];
+
+  // Usamos el secreto pasado en runtime
+  sha256.resetHMAC(_shared_secret, _shared_secret_len);
+  sha256.update(nonce, nonce_len);
+  sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
+
+  memcpy(out_tag, digest, kHandshakeTagSize);
+}
+
 void BridgeClass::onMailboxMessage(MailboxHandler handler) {
   _mailbox_handler = handler;
 }
@@ -241,22 +201,15 @@ void BridgeClass::onFileSystemReadResponse(FileSystemReadHandler handler) { _fil
 void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
-
-/**
- * @brief Procesa los datos entrantes del stream serial.
- * Debe llamarse repetidamente en el loop principal del sketch.
- */
 void BridgeClass::process() {
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
   wdt_reset();
 #endif
   while (_stream.available()) {
     uint8_t byte = _stream.read();
-    // consume() decodifica COBS, verifica CRC y parsea el header/payload
     if (_parser.consume(byte, _rx_frame)) {
-      dispatch(_rx_frame); // Si se recibe una trama válida, se procesa
+      dispatch(_rx_frame); 
     }
-    // Si consume devuelve false, o no era fin de paquete (0x00) o hubo error
   }
   _processAckTimeout();
 }
@@ -269,32 +222,22 @@ void BridgeClass::flushStream() {
   _stream.flush();
 }
 
-/**
- * @brief Enruta una trama RPC válida a su manejador correspondiente.
- * @param frame La trama RPC recibida y validada.
- */
 void BridgeClass::dispatch(const rpc::Frame& frame) {
-  // --- Manejo de Respuestas Asíncronas (Callback Flow) ---
-  // Las respuestas tienen IDs >= 0x80
   if (frame.header.command_id >= 0x80) {
+    // Manejo de respuestas (sin cambios)
     switch (frame.header.command_id) {
       case CMD_DIGITAL_READ_RESP:
         if (_digital_read_handler && frame.header.payload_length == 1) {
           int value = frame.payload[0];
-          // The pin is not part of the response payload. The handler should be aware of the context.
-          _digital_read_handler(value); // Pass only the value
+          _digital_read_handler(value); 
         }
         break;
-
       case CMD_ANALOG_READ_RESP:
           if (_analog_read_handler && frame.header.payload_length == 2) {
-              // Asume Big Endian para el valor (2 bytes)
               int value = (int)rpc::read_u16_be(frame.payload);
-              // The pin is not part of the response payload. The handler should be aware of the context.
-              _analog_read_handler(value); // Pass only the value
+              _analog_read_handler(value); 
           }
           break;
-
       case CMD_DATASTORE_GET_RESP:
         if (frame.header.payload_length >= 1) {
           uint8_t value_len = frame.payload[0];
@@ -307,7 +250,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           }
         }
         break;
-
       case CMD_MAILBOX_READ_RESP:
         if (_mailbox_handler && frame.header.payload_length >= 2) {
           uint16_t message_len = rpc::read_u16_be(frame.payload);
@@ -316,14 +258,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           }
         }
         break;
-
        case CMD_MAILBOX_AVAILABLE_RESP:
         if (_mailbox_available_handler && frame.header.payload_length == 1) {
           uint8_t count = frame.payload[0];
           _mailbox_available_handler(count);
         }
          break;
-
       case CMD_PROCESS_RUN_RESP:
         if (_process_run_handler && frame.header.payload_length >= 5) {
           const uint8_t* cursor = frame.payload;
@@ -344,9 +284,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
         }
         break;
-
       case CMD_PROCESS_POLL_RESP:
-        if (frame.header.payload_length >= 6) { // Min payload: status(1) + exit_code(1) + stdout_len(2) + stderr_len(2)
+        if (frame.header.payload_length >= 6) { 
           uint16_t pid = _popPendingProcessPid();
           const uint8_t* p = frame.payload;
           uint8_t status = *p++;
@@ -355,33 +294,24 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           p += 2;
           uint16_t stderr_len = rpc::read_u16_be(p);
           p += 2;
-
           if (frame.header.payload_length >= (6 + stdout_len + stderr_len)) {
             const uint8_t* stdout_data = p;
             const uint8_t* stderr_data = p + stdout_len;
             if (_process_poll_handler) {
               _process_poll_handler(status, exit_code, stdout_data, stdout_len, stderr_data, stderr_len);
             }
-
             if (pid != 0xFFFF && status == STATUS_OK && (stdout_len > 0 || stderr_len > 0)) {
-              // Solicita automáticamente el siguiente fragmento cuando se recibe datos parciales.
               requestProcessPoll((int)pid);
             }
-          } else {
-            // Log error for malformed payload
           }
-        } else {
-          // Log error for malformed payload
-        }
+        } 
         break;
-
       case CMD_PROCESS_RUN_ASYNC_RESP:
         if (_process_run_async_handler && frame.header.payload_length == 2) {
           uint16_t pid = rpc::read_u16_be(frame.payload);
           _process_run_async_handler(pid);
         }
         break;
-
       case CMD_FILE_READ_RESP:
         if (_file_system_read_handler && frame.header.payload_length >= 2) {
           uint16_t data_len = rpc::read_u16_be(frame.payload);
@@ -390,15 +320,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           }
         }
         break;
-
       case CMD_GET_FREE_MEMORY_RESP:
         if (_get_free_memory_handler && frame.header.payload_length >= 2) {
           uint16_t free_mem = rpc::read_u16_be(frame.payload);
           _get_free_memory_handler(free_mem);
         }
         break;
-
-      // Otros casos de respuesta...
       case STATUS_ACK: {
         uint16_t ack_id = 0xFFFF;
         if (frame.header.payload_length >= 2) {
@@ -433,18 +360,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                           frame.header.payload_length);
         }
         break;
-
        default:
-         // Respuesta desconocida o no manejada explícitamente.
-         // Podría pasar al _command_handler general si quisiéramos.
          break;
     }
-     // Si era una respuesta, ya ha sido manejada (o ignorada), terminamos aquí.
     return;
   }
-
-  // --- Manejo de Comandos Entrantes (No Respuestas) ---
-  // IDs < 0x80
 
   bool command_processed_internally = false;
   bool requires_ack = false;
@@ -462,9 +382,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CMD_GET_FREE_MEMORY:
       {
         uint16_t free_mem = calculateFreeMemoryBytes();
-
         uint8_t resp_payload[2];
-        // Pack free_mem as Big Endian
         resp_payload[0] = (free_mem >> 8) & 0xFF;
         resp_payload[1] = free_mem & 0xFF;
         sendFrame(CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
@@ -472,19 +390,19 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
+    // MODIFICADO: LINK_SYNC ahora usa el método de instancia
     case CMD_LINK_SYNC:
       {
         _resetLinkState();
         Console.begin();
         const uint16_t nonce_length = frame.header.payload_length;
-        const bool has_secret = kHasSerialSharedSecret;
+        const bool has_secret = (_shared_secret_len > 0);
         if (nonce_length == 0) {
           sendFrame(STATUS_MALFORMED, nullptr, 0);
           command_processed_internally = true;
           requires_ack = false;
           break;
         }
-
         const size_t response_length =
             static_cast<size_t>(nonce_length) +
             (has_secret ? kHandshakeTagSize : 0);
@@ -499,7 +417,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         memcpy(response, frame.payload, nonce_length);
         if (has_secret) {
           uint8_t tag[kHandshakeTagSize];
-          computeHandshakeTag(frame.payload, nonce_length, tag);
+          // Usamos el método de la clase
+          _computeHandshakeTag(frame.payload, nonce_length, tag);
           memcpy(&response[nonce_length], tag, kHandshakeTagSize);
         }
 
@@ -521,7 +440,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
-    // --- Comandos I/O que la librería maneja automáticamente ---
     case CMD_SET_PIN_MODE:
       if (frame.header.payload_length == 2) {
       uint8_t pin = frame.payload[0];
@@ -548,7 +466,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       break;
     case CMD_ANALOG_WRITE:
       if (frame.header.payload_length == 2) {
-        // analogWrite espera int, pero el payload es uint8_t
         ::analogWrite(frame.payload[0], (int)frame.payload[1]);
         command_processed_internally = true;
         requires_ack = true;
@@ -581,58 +498,38 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
-    // --- Otros comandos que requieren ACK pero se manejan aquí o por el usuario ---
     case CMD_CONSOLE_WRITE:
-      // El payload se pasa a la instancia Console
       Console._push(frame.payload, frame.header.payload_length);
-      // No necesita ACK explícito aquí, XON/XOFF maneja el flujo.
-      command_processed_internally = true; // Se considera manejado internamente por Console
+      command_processed_internally = true; 
       requires_ack = true;
       break;
-    case CMD_DATASTORE_PUT: // Podría ser manejado por el usuario también
+    case CMD_DATASTORE_PUT: 
     case CMD_FILE_WRITE:
     case CMD_FILE_REMOVE:
     case CMD_PROCESS_KILL:
-      requires_ack = true; // Estos necesitan ACK, pero la acción la puede hacer el usuario
-      break; // Pasa al handler del usuario si existe
-
+      requires_ack = true; 
+      break; 
         case CMD_MAILBOX_AVAILABLE:
-          // Este comando debería originarse en el MCU hacia Linux; si llega
-          // desde Linux se delega al manejador de usuario.
           break;
-    // Comandos que Linux envía pero Arduino no implementa directamente la acción
     case CMD_DATASTORE_GET:
-    case CMD_MAILBOX_READ: // El sketch llama a Mailbox.requestRead() para iniciar esto
+    case CMD_MAILBOX_READ: 
     case CMD_FILE_READ:
     case CMD_PROCESS_RUN:
     case CMD_PROCESS_RUN_ASYNC:
     case CMD_PROCESS_POLL:
-      // Estos comandos normalmente los origina el MCU hacia Linux; si llegan
-      // desde Linux (algo inesperado) simplemente se delegan al handler
-      // del usuario para que decida cómo responder.
-      break; // Pasa al handler del usuario
-
+      break; 
     default:
-      // Comando desconocido o no manejado internamente
       break;
   }
 
-  // Enviar ACK si es necesario y fue procesado (interna o externamente)
     if (requires_ack) {
       uint8_t ack_payload[2];
       rpc::write_u16_be(ack_payload, frame.header.command_id);
       sendFrame(STATUS_ACK, ack_payload, sizeof(ack_payload));
   }
 
-  // --- Llamar al Manejador de Comandos del Usuario ---
-  // Si el comando no fue completamente manejado por la librería Y
-  // si el usuario ha registrado un callback onCommand, se lo pasamos.
   if (!command_processed_internally && _command_handler) {
     _command_handler(frame);
-  } else if (!command_processed_internally && !requires_ack) {
-    // Si no fue manejado internamente, no requería ACK, y no hay handler de usuario,
-    // podríamos enviar CMD_UNKNOWN o simplemente ignorarlo.
-    // Ignorarlo es más simple por ahora.
   }
 }
 
@@ -652,13 +549,6 @@ void BridgeClass::_emitStatus(uint8_t status_code, const char* message) {
   }
 }
 
-
-/**
- * @brief Construye y envía una trama RPC a través del stream serial.
- * @param command_id ID del comando o estado a enviar.
- * @param payload Puntero al buffer de datos del payload.
- * @param payload_len Longitud del payload en bytes.
- */
 bool BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
                             uint16_t payload_len) {
   if (!_requiresAck(command_id)) {
@@ -684,12 +574,10 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
                                       uint16_t payload_len) {
   uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
 
-  // build() crea Header + Payload + CRC en raw_frame_buf
   size_t raw_len =
       _builder.build(raw_frame_buf, command_id, payload, payload_len);
 
   if (raw_len == 0) {
-    // Error en la construcción (ej. payload demasiado grande)
 #if BRIDGE_DEBUG_FRAMES
     _tx_debug.build_failures++;
 #endif
@@ -703,10 +591,8 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
 #endif
 
   uint8_t* cobs_buf = _last_cobs_frame;
-  // encode() aplica COBS a la trama raw
   size_t cobs_len = cobs::encode(raw_frame_buf, raw_len, cobs_buf);
 
-  // Envía la trama COBS seguida del terminador 0x00
   size_t written = _stream.write(cobs_buf, cobs_len);
   written += _stream.write((uint8_t)0x00);
 
@@ -747,8 +633,6 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
     _last_send_millis = millis();
   }
 
-  // Podríamos añadir verificación de 'written' si _stream.write devuelve algo útil
-  // y manejar errores de escritura si es necesario.
   return true;
 }
 
@@ -914,12 +798,6 @@ bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
   return true;
 }
 
-// --- Public API Methods ---
-
-// Note: These functions directly perform local hardware operations using the Arduino API.
-// They do NOT send RPC commands to Linux. For sending RPC commands to Linux
-// (e.g., to request a read from a pin), use the `requestXyz` methods.
-
 void BridgeClass::pinMode(uint8_t pin, uint8_t mode) {
   ::pinMode(pin, mode);
 }
@@ -929,7 +807,6 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 }
 
 void BridgeClass::analogWrite(uint8_t pin, int value) {
-  // Asegurarse de que el valor está en el rango 0-255
   uint8_t val_u8 = constrain(value, 0, 255);
   ::analogWrite(pin, (int)val_u8);
 }

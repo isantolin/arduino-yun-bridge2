@@ -109,7 +109,7 @@ class _SerialServiceStub:
 
 class _FakeMQTTClient:
     def __init__(self, messages: Deque[object]) -> None:
-        self.messages = messages
+        self._messages = messages
         self.subscriptions: list[tuple[str, int]] = []
         self.published: list[tuple[str, bytes, int, bool]] = []
 
@@ -132,7 +132,7 @@ class _FakeMQTTClient:
     async def subscribe(self, topic: str, qos: int) -> None:
         self.subscriptions.append((topic, qos))
 
-    def unfiltered_messages(self):
+    def _message_stream(self):
         client = self
 
         class _Stream:
@@ -152,11 +152,17 @@ class _FakeMQTTClient:
 
             async def __anext__(self) -> object:
                 await asyncio.sleep(0)
-                if client.messages:
-                    return client.messages.popleft()
+                if client._messages:
+                    return client._messages.popleft()
                 raise StopAsyncIteration
 
         return _Stream()
+
+    def unfiltered_messages(self):
+        return self._message_stream()
+
+    def messages(self):
+        return self._message_stream()
 
 
 class _MQTTServiceStub:
@@ -181,6 +187,21 @@ class _MQTTServiceStub:
 class _FatalSerialServiceStub(_SerialServiceStub):
     async def on_serial_connected(self) -> None:
         raise SerialHandshakeFatal("fatal-handshake")
+
+
+class _InboundMessageStub:
+    def __init__(self, topic: str, payload: bytes) -> None:
+        self.topic = topic
+        self.payload = payload
+        self.qos = 0
+        self.retain = False
+        self.response_topic = None
+        self.correlation_data = None
+        self.user_properties: tuple[tuple[str, str], ...] = ()
+        self.content_type = None
+        self.message_expiry_interval = None
+        self.payload_format_indicator = None
+        self.topic_alias = None
 
 
 def test_serial_reader_task_processes_frame(
@@ -363,26 +384,70 @@ def test_mqtt_task_handles_incoming_message(
         state.mqtt_topic_prefix = runtime_config.mqtt_topic
         service = _MQTTServiceStub(state)
 
-        class _Inbound:
-            def __init__(self, topic: str, payload: bytes) -> None:
-                self.topic = topic
-                self.payload = payload
-                self.qos = 0
-                self.retain = False
-                self.response_topic = None
-                self.correlation_data = None
-                self.user_properties = ()
-                self.content_type = None
-                self.message_expiry_interval = None
-                self.payload_format_indicator = None
-                self.topic_alias = None
-
         messages: Deque[object] = deque(
-            [_Inbound(f"{state.mqtt_topic_prefix}/console/in", b"hi")]
+            [
+                _InboundMessageStub(
+                    f"{state.mqtt_topic_prefix}/console/in",
+                    b"hi",
+                )
+            ]
         )
 
         def _client_factory(*_: object, **__: object) -> _FakeMQTTClient:
             return _FakeMQTTClient(messages)
+
+        monkeypatch.setattr("yunbridge.daemon.MQTTClient", _client_factory)
+
+        async def _noop_connect(
+            _config: RuntimeConfig, client: _FakeMQTTClient
+        ) -> None:
+            await client.connect()
+
+        monkeypatch.setattr(
+            "yunbridge.daemon._connect_mqtt_with_retry",
+            _noop_connect,
+        )
+
+        monkeypatch.setattr(
+            "yunbridge.daemon._build_mqtt_connect_properties",
+            lambda: None,
+        )
+
+        task = asyncio.create_task(
+            mqtt_task(runtime_config, state, cast(Any, service), None)
+        )
+
+        await asyncio.wait_for(service.handled.wait(), timeout=1)
+
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        assert not messages
+
+    asyncio.run(_run())
+
+
+def test_mqtt_task_falls_back_to_legacy_messages(
+    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        state.mqtt_topic_prefix = runtime_config.mqtt_topic
+        service = _MQTTServiceStub(state)
+
+        messages: Deque[object] = deque(
+            [
+                _InboundMessageStub(
+                    f"{state.mqtt_topic_prefix}/console/in",
+                    b"hi",
+                )
+            ]
+        )
+
+        def _client_factory(*_: object, **__: object) -> _FakeMQTTClient:
+            instance = _FakeMQTTClient(messages)
+            setattr(instance, "unfiltered_messages", None)
+            return instance
 
         monkeypatch.setattr("yunbridge.daemon.MQTTClient", _client_factory)
 

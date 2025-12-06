@@ -19,6 +19,8 @@
 #ifndef RPC_PROTOCOL_H
 #define RPC_PROTOCOL_H
 
+#include <cstddef>
+
 #include "rpc_frame.h"
 
 static_assert(
@@ -48,6 +50,17 @@ constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = 100;
 constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = 180000;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = 1;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = 8;
+
+struct RpcHandshakeTimingConfigWire {
+    uint16_t ack_timeout_ms;
+    uint8_t retry_limit;
+    uint32_t response_timeout_ms;
+} __attribute__((packed));
+
+static_assert(
+    sizeof(RpcHandshakeTimingConfigWire) == RPC_HANDSHAKE_CONFIG_SIZE,
+    "Handshake config size mismatch with spec.toml"
+);
 
 // Status Codes
 #define STATUS_OK 0x00

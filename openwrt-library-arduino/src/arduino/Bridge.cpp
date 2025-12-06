@@ -134,16 +134,20 @@ BridgeClass::BridgeClass(Stream& stream)
 }
 
 // MODIFICADO: begin ahora recibe el secreto
-void BridgeClass::begin(unsigned long baudrate, const char* secret) {
+void BridgeClass::begin(unsigned long baudrate, const char* secret, size_t secret_len) {
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(baudrate);
   }
 
-  // Guardamos el secreto en runtime
-  _shared_secret = secret;
-  if (_shared_secret) {
-    _shared_secret_len = strlen(_shared_secret);
+  // Guardamos el secreto en runtime (aceptando binarios con longitud explícita)
+  if (secret != nullptr) {
+    if (secret_len == 0) {
+      secret_len = strlen(secret);
+    }
+    _shared_secret = reinterpret_cast<const uint8_t*>(secret);
+    _shared_secret_len = secret_len;
   } else {
+    _shared_secret = nullptr;
     _shared_secret_len = 0;
   }
 

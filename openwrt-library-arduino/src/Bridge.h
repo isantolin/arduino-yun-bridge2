@@ -105,8 +105,11 @@ class BridgeClass {
   explicit BridgeClass(HardwareSerial& serial);
   BridgeClass(Stream& stream);
 
-  // begin acepta baudrate y secreto
-  void begin(unsigned long baudrate = 115200, const char* secret = nullptr);
+  // begin acepta baudrate y secreto (permite longitud explícita)
+  void begin(
+      unsigned long baudrate = 115200,
+      const char* secret = nullptr,
+      size_t secret_len = 0);
   
   void process();
   void flushStream();
@@ -193,7 +196,7 @@ class BridgeClass {
   Stream& _stream;
   HardwareSerial* _hardware_serial;
   
-  const char* _shared_secret;
+  const uint8_t* _shared_secret;
   size_t _shared_secret_len;
 
   rpc::FrameParser _parser;

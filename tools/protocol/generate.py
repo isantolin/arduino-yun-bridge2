@@ -355,6 +355,24 @@ def generate_cpp(
         )
         sections.append(f"{header}\n{body}")
 
+    handshake_struct_block = ""
+    if handshake_config_size:
+        handshake_struct_block = textwrap.dedent(
+            """\
+            struct RpcHandshakeTimingConfigWire {
+                uint16_t ack_timeout_ms;
+                uint8_t retry_limit;
+                uint32_t response_timeout_ms;
+            } __attribute__((packed));
+
+            static_assert(
+                sizeof(RpcHandshakeTimingConfigWire) == RPC_HANDSHAKE_CONFIG_SIZE,
+                "Handshake config size mismatch with spec.toml"
+            );
+
+            """
+        )
+
     cpp_template = textwrap.dedent(
         """\
         /*
@@ -362,6 +380,8 @@ def generate_cpp(
          */
         #ifndef RPC_PROTOCOL_H
         #define RPC_PROTOCOL_H
+
+        #include <cstddef>
 
         #include "rpc_frame.h"
 
@@ -393,6 +413,8 @@ def generate_cpp(
         constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {retry_min};
         constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {retry_max};
 
+        {handshake_struct_block}
+
         // Status Codes
         {status_definitions}
 
@@ -422,6 +444,7 @@ def generate_cpp(
         resp_max=handshake.response_timeout_max_ms,
         retry_min=handshake.retry_limit_min,
         retry_max=handshake.retry_limit_max,
+        handshake_struct_block=handshake_struct_block.rstrip(),
         status_definitions=status_lines,
         command_definitions="\n\n".join(sections),
     ).strip() + "\n"

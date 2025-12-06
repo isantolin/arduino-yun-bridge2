@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import pytest
 
@@ -13,8 +14,8 @@ from yunbridge.const import (
 )
 
 
-def _config_kwargs(**overrides: object) -> dict[str, object]:
-    base: dict[str, object] = {
+def _config_kwargs(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
         "serial_port": "/dev/null",
         "serial_baud": DEFAULT_SERIAL_BAUD,
         "mqtt_host": "localhost",
@@ -68,5 +69,14 @@ def test_runtime_config_requires_watchdog_interval_when_enabled() -> None:
             **_config_kwargs(
                 watchdog_enabled=True,
                 watchdog_interval=0.0,
+            )
+        )
+
+
+def test_runtime_config_rejects_non_positive_fatal_threshold() -> None:
+    with pytest.raises(ValueError, match="serial_handshake_fatal_failures"):
+        RuntimeConfig(
+            **_config_kwargs(
+                serial_handshake_fatal_failures=0,
             )
         )

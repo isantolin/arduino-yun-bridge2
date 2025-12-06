@@ -154,7 +154,10 @@ class Bridge:
             str,
             List[Tuple[asyncio.Queue[InboundMessage], bool]],
         ] = {}
-        self._correlation_routes: Dict[bytes, asyncio.Queue[InboundMessage]] = {}
+        self._correlation_routes: Dict[
+            bytes,
+            asyncio.Queue[InboundMessage],
+        ] = {}
         self._reply_topic: Optional[str] = None
         self._listener_task: Optional[asyncio.Task[None]] = None
         self._digital_modes: Dict[int, int] = {}

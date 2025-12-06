@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Coroutine, Optional
+from typing import Any, Awaitable, Coroutine, Optional, Protocol
 
 import pytest
 
@@ -23,6 +23,16 @@ from yunbridge.services.components.mailbox import MailboxComponent
 from yunbridge.state.context import RuntimeState
 
 
+class EnqueueHook(Protocol):
+    def __call__(
+        self,
+        message: PublishableMessage,
+        *,
+        reply_context: Optional[InboundMessage] = None,
+    ) -> Awaitable[None]:
+        ...
+
+
 class DummyBridge(BridgeContext):
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
@@ -30,6 +40,7 @@ class DummyBridge(BridgeContext):
         self.sent_frames: list[tuple[int, bytes]] = []
         self.published: list[PublishableMessage] = []
         self.send_frame_result = True
+        self._enqueue_hook: EnqueueHook | None = None
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
         self.sent_frames.append((command_id, payload))
@@ -41,7 +52,16 @@ class DummyBridge(BridgeContext):
         *,
         reply_context: Optional[InboundMessage] = None,
     ) -> None:
+        if self._enqueue_hook is not None:
+            await self._enqueue_hook(
+                message,
+                reply_context=reply_context,
+            )
+            return
         self.published.append(message)
+
+    def set_enqueue_hook(self, hook: EnqueueHook | None) -> None:
+        self._enqueue_hook = hook
 
     def is_command_allowed(self, command: str) -> bool:
         return True
@@ -254,7 +274,7 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
             raise RuntimeError("boom")
         bridge.published.append(message)
 
-    bridge.enqueue_mqtt = flaky_enqueue  # type: ignore[assignment]
+    bridge.set_enqueue_hook(flaky_enqueue)
 
     with pytest.raises(RuntimeError):
         asyncio.run(component.handle_mqtt_read())
@@ -281,7 +301,7 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
             raise RuntimeError("boom")
         bridge.published.append(message)
 
-    bridge.enqueue_mqtt = flaky_enqueue  # type: ignore[assignment]
+    bridge.set_enqueue_hook(flaky_enqueue)
 
     with pytest.raises(RuntimeError):
         asyncio.run(component.handle_mqtt_read())

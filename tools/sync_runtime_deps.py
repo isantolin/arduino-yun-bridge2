@@ -7,10 +7,7 @@ import sys
 from pathlib import Path
 from typing import List, Sequence
 
-try:  # Python 3.11+
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - fall back for local dev
-    import tomli as tomllib  # type: ignore[assignment]
+import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]

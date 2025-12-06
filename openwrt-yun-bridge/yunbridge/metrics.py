@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 from typing import (
     Any,
@@ -12,10 +13,12 @@ from typing import (
     Dict,
     Iterator,
     Optional,
+    Sequence,
     Tuple,
     cast,
 )
 
+import aiocron
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -34,6 +37,7 @@ _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 _INFO_METRIC = "yunbridge_info"
 _GAUGE_DOC = "YunBridge auto-generated metric"
 _INFO_DOC = "YunBridge informational metric"
+_BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[PublishableMessage], Awaitable[None]]
 
@@ -90,20 +94,133 @@ async def publish_metrics(
 ) -> None:
     """Publish runtime metrics to MQTT at a fixed cadence."""
 
-    tick = max(min_interval, interval)
-    expiry = tick * 2
-    while True:
-        try:
-            snapshot = state.build_metrics_snapshot()
-            await enqueue(
-                _build_metrics_message(state, snapshot, expiry_seconds=expiry)
+    tick_seconds = _normalize_interval(interval, min_interval)
+    if tick_seconds is None:
+        raise ValueError("interval must be greater than zero")
+    expiry = float(tick_seconds * 2)
+
+    async def _emit_snapshot() -> None:
+        snapshot = state.build_metrics_snapshot()
+        await enqueue(
+            _build_metrics_message(
+                state,
+                snapshot,
+                expiry_seconds=expiry,
             )
+        )
+
+    async def _tick() -> None:
+        try:
+            await _emit_snapshot()
         except asyncio.CancelledError:
             logger.info("Metrics publisher cancelled.")
             raise
         except Exception:
             logger.exception("Failed to publish metrics payload")
-        await asyncio.sleep(tick)
+
+    cron: Optional[aiocron.Cron] = None
+    blocker = asyncio.Event()
+    cron_spec = _cron_expression_from_interval(tick_seconds)
+
+    try:
+        await _tick()
+        cron = aiocron.crontab(
+            cron_spec,
+            func=_tick,
+            start=False,
+            loop=asyncio.get_running_loop(),
+        )
+        cron.start()
+        await blocker.wait()
+    except asyncio.CancelledError:
+        raise
+    finally:
+        if cron is not None:
+            cron.stop()
+
+
+def _cron_expression_from_interval(seconds: float) -> str:
+    """Render a 6-field cron expression that fires every *seconds*."""
+
+    rounded = max(1, int(math.ceil(seconds)))
+    return f"*/{rounded} * * * * *"
+
+
+async def publish_bridge_snapshots(
+    state: RuntimeState,
+    enqueue: PublishEnqueue,
+    *,
+    summary_interval: float,
+    handshake_interval: float,
+    min_interval: float = 5.0,
+) -> None:
+    """Periodically publish bridge summary and handshake snapshots."""
+
+    summary_seconds = _normalize_interval(summary_interval, min_interval)
+    handshake_seconds = _normalize_interval(handshake_interval, min_interval)
+
+    if summary_seconds is None and handshake_seconds is None:
+        logger.info("Bridge snapshot cron disabled; awaiting cancellation.")
+        blocker = asyncio.Event()
+        try:
+            await blocker.wait()
+        except asyncio.CancelledError:
+            raise
+        return
+
+    crons: list[aiocron.Cron] = []
+    blocker = asyncio.Event()
+
+    async def _emit(flavor: str) -> None:
+        try:
+            snapshot = (
+                state.build_handshake_snapshot()
+                if flavor == "handshake"
+                else state.build_bridge_snapshot()
+            )
+            await enqueue(
+                _build_bridge_snapshot_message(
+                    state,
+                    flavor,
+                    snapshot,
+                )
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Failed to publish bridge snapshot",
+                extra={"flavor": flavor},
+            )
+
+    def _tick_factory(flavor: str) -> Callable[[], Awaitable[None]]:
+        async def _tick() -> None:
+            await _emit(flavor)
+
+        return _tick
+
+    async def _schedule(flavor: str, seconds: int) -> None:
+        await _emit(flavor)
+        cron = aiocron.crontab(
+            _cron_expression_from_interval(seconds),
+            func=_tick_factory(flavor),
+            start=False,
+            loop=asyncio.get_running_loop(),
+        )
+        cron.start()
+        crons.append(cron)
+
+    try:
+        if summary_seconds is not None:
+            await _schedule("summary", summary_seconds)
+        if handshake_seconds is not None:
+            await _schedule("handshake", handshake_seconds)
+        await blocker.wait()
+    except asyncio.CancelledError:
+        raise
+    finally:
+        for cron in crons:
+            cron.stop()
 
 
 class _RuntimeStateCollector(Collector):
@@ -298,4 +415,44 @@ def _sanitize_metric_name(name: str) -> str:
     return cleaned
 
 
-__all__ = ["publish_metrics", "PrometheusExporter"]
+def _build_bridge_snapshot_message(
+    state: RuntimeState,
+    flavor: str,
+    snapshot: Dict[str, Any],
+) -> PublishableMessage:
+    segments: Sequence[str]
+    if flavor == "handshake":
+        segments = ("bridge", "handshake", "value")
+    else:
+        segments = ("bridge", "summary", "value")
+    topic = topic_path(
+        state.mqtt_topic_prefix,
+        Topic.SYSTEM,
+        *segments,
+    )
+    return (
+        PublishableMessage(
+            topic_name=topic,
+            payload=json.dumps(snapshot).encode("utf-8"),
+        )
+        .with_content_type("application/json")
+        .with_message_expiry(_BRIDGE_SNAPSHOT_EXPIRY_SECONDS)
+        .with_user_property("bridge-snapshot", flavor)
+    )
+
+
+def _normalize_interval(
+    interval: float,
+    min_interval: float,
+) -> Optional[int]:
+    if interval <= 0:
+        return None
+    tick = max(min_interval, interval)
+    return max(1, math.ceil(tick))
+
+
+__all__ = [
+    "PrometheusExporter",
+    "publish_bridge_snapshots",
+    "publish_metrics",
+]

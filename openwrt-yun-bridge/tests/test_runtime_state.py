@@ -4,11 +4,13 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 import logging
+from typing import cast
 
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt import PublishableMessage
+from yunbridge.mqtt.spool import MQTTPublishSpool
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
@@ -191,7 +193,7 @@ def test_metrics_snapshot_includes_spool_snapshot(
         def snapshot(self) -> dict[str, int]:
             return {"pending": 5, "limit": 128}
 
-    runtime_state.mqtt_spool = _StubSpool()  # type: ignore[assignment]
+    runtime_state.mqtt_spool = cast(MQTTPublishSpool, _StubSpool())
 
     snapshot = runtime_state.build_metrics_snapshot()
 
@@ -324,7 +326,7 @@ def test_stash_mqtt_message_disables_spool_on_failure(
             def close(self) -> None:
                 return None
 
-        state.mqtt_spool = _BrokenSpool()  # type: ignore[assignment]
+        state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
         message = PublishableMessage(topic_name="br/test", payload=b"{}")
         stored = await state.stash_mqtt_message(message)
 
@@ -358,7 +360,7 @@ def test_flush_mqtt_spool_handles_pop_failure(
             def close(self) -> None:
                 return None
 
-        state.mqtt_spool = _FailingSpool()  # type: ignore[assignment]
+        state.mqtt_spool = cast(MQTTPublishSpool, _FailingSpool())
         await state.flush_mqtt_spool()
 
         assert state.mqtt_spool is None

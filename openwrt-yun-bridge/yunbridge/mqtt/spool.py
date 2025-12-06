@@ -8,8 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from persistqueue import Queue
-from persistqueue.exceptions import Empty
+from diskcache import Deque
 
 from . import PublishableMessage
 
@@ -41,7 +40,9 @@ class MQTTPublishSpool:
         self._queue_dir = self.directory / "queue"
         self._queue_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
-        self._queue = Queue(str(self._queue_dir), maxsize=0)
+        self._queue: Deque[dict[str, Any]] = Deque(
+            directory=str(self._queue_dir)
+        )
         self._dropped_due_to_limit = 0
         self._trim_events = 0
         self._last_trim_unix = 0.0
@@ -55,6 +56,8 @@ class MQTTPublishSpool:
             close_fn = getattr(self._queue, "close", None)
             if callable(close_fn):
                 close_fn()
+            else:
+                self._queue.clear()
 
     def __del__(self) -> None:  # pragma: no cover - defensive cleanup
         try:
@@ -66,9 +69,13 @@ class MQTTPublishSpool:
         record = message.to_spool_record()
         with self._lock:
             try:
-                self._queue.put(record)
+                self._queue.append(record)
             except OSError as exc:
-                reason = "disk_full" if exc.errno == errno.ENOSPC else "append_failed"
+                reason = (
+                    "disk_full"
+                    if exc.errno == errno.ENOSPC
+                    else "append_failed"
+                )
                 raise MQTTSpoolError(reason, original=exc) from exc
             except Exception as exc:  # pragma: no cover - defensive
                 raise MQTTSpoolError("append_failed", original=exc) from exc
@@ -79,8 +86,8 @@ class MQTTPublishSpool:
         while True:
             with self._lock:
                 try:
-                    record: Any = self._queue.get(block=False)
-                except Empty:
+                    record: dict[str, Any] = self._queue.popleft()
+                except IndexError:
                     return None
             try:
                 return PublishableMessage.from_spool_record(record)
@@ -98,7 +105,7 @@ class MQTTPublishSpool:
     @property
     def pending(self) -> int:
         with self._lock:
-            return self._queue.qsize()
+            return len(self._queue)
 
     @property
     def queue_path(self) -> Path:
@@ -118,11 +125,11 @@ class MQTTPublishSpool:
         if self.limit <= 0:
             return
         dropped = 0
-        while self._queue.qsize() > self.limit:
+        while len(self._queue) > self.limit:
             try:
-                self._queue.get(block=False)
+                self._queue.popleft()
                 dropped += 1
-            except Empty:
+            except IndexError:
                 break
         if dropped:
             self._dropped_due_to_limit += dropped

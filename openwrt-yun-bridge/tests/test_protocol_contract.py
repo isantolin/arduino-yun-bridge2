@@ -45,10 +45,28 @@ def _load_spec() -> tuple[
         _CommandSpec(name=entry["name"], value=int(entry["value"]))
         for entry in raw.get("commands", [])
     ]
+    handshake_data = raw.get("handshake", {})
     handshake = {
-        "nonce_length": int(raw.get("handshake", {}).get("nonce_length", 0)),
-        "tag_length": int(raw.get("handshake", {}).get("tag_length", 0)),
-        "tag_algorithm": raw.get("handshake", {}).get("tag_algorithm", ""),
+        "nonce_length": int(handshake_data.get("nonce_length", 0)),
+        "tag_length": int(handshake_data.get("tag_length", 0)),
+        "tag_algorithm": handshake_data.get("tag_algorithm", ""),
+        "tag_description": handshake_data.get("tag_description", ""),
+        "config_format": handshake_data.get("config_format", ""),
+        "config_description": handshake_data.get("config_description", ""),
+        "ack_timeout_min_ms": int(
+            handshake_data.get("ack_timeout_min_ms", 0)
+        ),
+        "ack_timeout_max_ms": int(
+            handshake_data.get("ack_timeout_max_ms", 0)
+        ),
+        "response_timeout_min_ms": int(
+            handshake_data.get("response_timeout_min_ms", 0)
+        ),
+        "response_timeout_max_ms": int(
+            handshake_data.get("response_timeout_max_ms", 0)
+        ),
+        "retry_limit_min": int(handshake_data.get("retry_limit_min", 0)),
+        "retry_limit_max": int(handshake_data.get("retry_limit_max", 0)),
     }
     return constants, statuses, commands, handshake
 
@@ -75,4 +93,33 @@ def test_protocol_spec_matches_generated_bindings() -> None:
 
     assert handshake["nonce_length"] == const.SERIAL_NONCE_LENGTH
     assert handshake["tag_length"] == const.SERIAL_HANDSHAKE_TAG_LEN
-    assert handshake["tag_algorithm"] == "HMAC-SHA256"
+    assert handshake["tag_algorithm"] == const.SERIAL_HANDSHAKE_TAG_ALGORITHM
+    assert (
+        handshake["tag_description"]
+        == const.SERIAL_HANDSHAKE_TAG_DESCRIPTION
+    )
+    assert (
+        handshake["config_format"] == const.SERIAL_HANDSHAKE_CONFIG_FORMAT
+    )
+    assert (
+        handshake["ack_timeout_min_ms"]
+        == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    )
+    assert (
+        handshake["ack_timeout_max_ms"]
+        == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MAX_MS
+    )
+    assert (
+        handshake["response_timeout_min_ms"]
+        == const.SERIAL_RESPONSE_TIMEOUT_MIN_MS
+    )
+    assert (
+        handshake["response_timeout_max_ms"]
+        == const.SERIAL_RESPONSE_TIMEOUT_MAX_MS
+    )
+    assert (
+        handshake["retry_limit_min"] == const.SERIAL_RETRY_LIMIT_MIN
+    )
+    assert (
+        handshake["retry_limit_max"] == const.SERIAL_RETRY_LIMIT_MAX
+    )

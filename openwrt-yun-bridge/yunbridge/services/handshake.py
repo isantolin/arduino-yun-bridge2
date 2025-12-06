@@ -7,7 +7,9 @@ import hmac
 import json
 import logging
 import os
+import struct
 import time
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
 from ..config.settings import RuntimeConfig
@@ -19,6 +21,7 @@ from ..const import (
 )
 from ..mqtt import PublishableMessage
 from ..protocol.topics import handshake_topic
+from ..rpc import protocol as rpc_protocol
 from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from ..state.context import RuntimeState
 
@@ -29,11 +32,67 @@ AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 logger = logging.getLogger("yunbridge.service.handshake")
 
 
+@dataclass(frozen=True, slots=True)
+class SerialTimingWindow:
+    """Derived serial retry/response windows used by both MCU and MPU."""
+
+    ack_timeout_ms: int
+    response_timeout_ms: int
+    retry_limit: int
+
+    @property
+    def ack_timeout_seconds(self) -> float:
+        return self.ack_timeout_ms / 1000.0
+
+    @property
+    def response_timeout_seconds(self) -> float:
+        return self.response_timeout_ms / 1000.0
+
+
+def _clamp(value: int, lower: int, upper: int) -> int:
+    return max(lower, min(upper, value))
+
+
+def _seconds_to_ms(value: float) -> int:
+    return int(round(max(0.0, value) * 1000.0))
+
+
+def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
+    ack_ms = _clamp(
+        _seconds_to_ms(config.serial_retry_timeout),
+        rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
+        rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
+    )
+    response_ms = _clamp(
+        _seconds_to_ms(config.serial_response_timeout),
+        rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
+        rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
+    )
+    response_ms = max(response_ms, ack_ms)
+    retry_limit = _clamp(
+        int(config.serial_retry_attempts),
+        rpc_protocol.HANDSHAKE_RETRY_LIMIT_MIN,
+        rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX,
+    )
+    return SerialTimingWindow(
+        ack_timeout_ms=ack_ms,
+        response_timeout_ms=response_ms,
+        retry_limit=retry_limit,
+    )
+
+
 class SerialHandshakeFatal(RuntimeError):
     """Raised when MCU rejects the serial shared secret permanently."""
 
 
-_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset({"sync_auth_mismatch"})
+_IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
+    {
+        "sync_auth_mismatch",
+        "sync_length_mismatch",
+    }
+)
+
+_STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
 
 
 class SerialHandshakeManager:
@@ -44,6 +103,7 @@ class SerialHandshakeManager:
         *,
         config: RuntimeConfig,
         state: RuntimeState,
+        serial_timing: SerialTimingWindow,
         send_frame: SendFrameCallable,
         enqueue_mqtt: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
@@ -51,10 +111,13 @@ class SerialHandshakeManager:
     ) -> None:
         self._config = config
         self._state = state
+        self._timing = serial_timing
         self._send_frame = send_frame
         self._enqueue_mqtt = enqueue_mqtt
         self._acknowledge_frame = acknowledge_frame
         self._logger = logger_ or logger
+        self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
+        self._reset_payload = self._build_reset_payload()
 
     async def synchronize(self) -> bool:
         await self._respect_handshake_backoff()
@@ -65,7 +128,10 @@ class SerialHandshakeManager:
         self._state.link_nonce_length = nonce_length
         self._state.link_expected_tag = self._compute_handshake_tag(nonce)
         self._state.link_is_synchronized = False
-        reset_ok = await self._send_frame(Command.CMD_LINK_RESET.value, b"")
+        reset_ok = await self._send_frame(
+            Command.CMD_LINK_RESET.value,
+            self._reset_payload,
+        )
         if not reset_ok:
             self._logger.warning(
                 "Failed to emit LINK_RESET during handshake"
@@ -104,7 +170,7 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
-                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
             await self._handle_handshake_failure("unexpected_sync_resp")
             return False
@@ -125,7 +191,7 @@ class SerialHandshakeManager:
                 await self._acknowledge_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     status=Status.MALFORMED,
-                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                    extra=payload[:_STATUS_PAYLOAD_WINDOW],
                 )
                 await self._handle_handshake_failure("sync_rate_limited")
                 return False
@@ -140,7 +206,7 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
-                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
             self._clear_handshake_expectations()
             await self._handle_handshake_failure("sync_length_mismatch")
@@ -164,7 +230,7 @@ class SerialHandshakeManager:
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
-                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
             self._clear_handshake_expectations()
             await self._handle_handshake_failure(
@@ -218,7 +284,7 @@ class SerialHandshakeManager:
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         loop = asyncio.get_running_loop()
-        timeout = max(0.5, self._config.serial_response_timeout)
+        timeout = max(0.5, self._timing.response_timeout_seconds)
         deadline = loop.time() + timeout
         while loop.time() < deadline:
             if (
@@ -313,13 +379,18 @@ class SerialHandshakeManager:
         detail: Optional[str] = None,
     ) -> None:
         self._state.record_handshake_failure(reason)
-        is_fatal = reason in _FATAL_HANDSHAKE_REASONS
+        is_fatal = self._should_mark_failure_fatal(reason)
+        fatal_detail = detail
+        if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
+            fatal_detail = detail or (
+                f"failure_streak_exceeded_{self._fatal_threshold}"
+            )
         if is_fatal:
-            self._state.record_handshake_fatal(reason, detail)
+            self._state.record_handshake_fatal(reason, fatal_detail)
             self._logger.error(
                 "Fatal serial handshake failure reason=%s detail=%s",
                 reason,
-                detail or "",
+                fatal_detail or "",
             )
         backoff = self._maybe_schedule_handshake_backoff(reason)
         extra: dict[str, Any] = {
@@ -332,6 +403,7 @@ class SerialHandshakeManager:
             extra["backoff_seconds"] = round(backoff, 3)
         extra["fatal"] = is_fatal
         extra["fatal_count"] = self._state.handshake_fatal_count
+        extra["fatal_threshold"] = self._fatal_threshold
         if self._state.handshake_fatal_count > 0:
             extra["fatal_unix"] = self._state.handshake_fatal_unix
             if self._state.handshake_fatal_detail:
@@ -339,7 +411,7 @@ class SerialHandshakeManager:
         await self._publish_handshake_event(
             "failure",
             reason=reason,
-            detail=detail,
+            detail=fatal_detail if is_fatal else detail,
             extra=extra,
         )
 
@@ -347,7 +419,7 @@ class SerialHandshakeManager:
         self, reason: str
     ) -> Optional[float]:
         streak = max(1, self._state.handshake_failure_streak)
-        fatal = reason in _FATAL_HANDSHAKE_REASONS
+        fatal = self._is_immediate_fatal(reason)
         threshold = 1 if fatal else 3
         if streak < threshold:
             return None
@@ -360,9 +432,8 @@ class SerialHandshakeManager:
         return delay
 
     def _fatal_handshake_reason(self) -> Optional[str]:
-        reason = self._state.last_handshake_error
-        if reason in _FATAL_HANDSHAKE_REASONS:
-            return reason
+        if self._state.handshake_fatal_reason:
+            return self._state.handshake_fatal_reason
         return None
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
@@ -374,3 +445,25 @@ class SerialHandshakeManager:
             return b""
         digest = hmac.new(secret, nonce, hashlib.sha256).digest()
         return digest[:SERIAL_HANDSHAKE_TAG_LEN]
+
+    def _build_reset_payload(self) -> bytes:
+        fmt = rpc_protocol.HANDSHAKE_CONFIG_FORMAT
+        if not fmt:
+            return b""
+        packed = struct.pack(
+            fmt,
+            self._timing.ack_timeout_ms,
+            self._timing.retry_limit,
+            self._timing.response_timeout_ms,
+        )
+        return packed
+
+    def _should_mark_failure_fatal(self, reason: str) -> bool:
+        if self._is_immediate_fatal(reason):
+            return True
+        threshold = max(1, self._fatal_threshold)
+        return self._state.handshake_failure_streak >= threshold
+
+    @staticmethod
+    def _is_immediate_fatal(reason: str) -> bool:
+        return reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS

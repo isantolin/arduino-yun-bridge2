@@ -6,6 +6,8 @@ from types import MethodType
 from typing import Awaitable, Callable, Optional, cast
 
 import pytest
+from anyio import EndOfStream
+from anyio.abc import ByteReceiveStream, Process as AnyioProcess
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
@@ -147,7 +149,7 @@ def test_start_async_respects_concurrency_limit(
         async with state.process_lock:
             state.running_processes[123] = ManagedProcess(
                 pid=123,
-                handle=cast(asyncio.subprocess.Process, object()),
+                handle=cast(AnyioProcess, object()),
             )
         result = await process_component.start_async("/bin/true")
         assert result == 0xFFFF
@@ -160,9 +162,8 @@ def test_handle_run_respects_concurrency_limit(
 ) -> None:
     async def _run() -> None:
         process_component = cast(ProcessComponent, runtime_service._process)
-        runtime_service.state.allowed_policy = AllowedCommandPolicy.from_iterable(
-            ["*"]
-        )
+        allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
+        runtime_service.state.allowed_policy = allowed_policy
         guard = asyncio.BoundedSemaphore(1)
         await guard.acquire()
         process_component._process_slots = guard
@@ -175,9 +176,12 @@ def test_handle_run_respects_concurrency_limit(
             captured.append((command_id, payload))
             return True
 
-        runtime_service.send_frame = MethodType(  # type: ignore[assignment]
-            _fake_send_frame,
-            runtime_service,
+        runtime_service.send_frame = cast(
+            Callable[[int, bytes], Awaitable[bool]],
+            MethodType(
+                _fake_send_frame,
+                runtime_service,
+            ),
         )
 
         await process_component.handle_run(b"/bin/true")
@@ -203,10 +207,34 @@ def test_async_process_monitor_releases_slot(
         assert guard is not None
         await guard.acquire()
 
+        class _FakeStream(ByteReceiveStream):
+            def __init__(self, payload: bytes) -> None:
+                self._buffer = bytearray(payload)
+                self._closed = False
+
+            async def receive(self, max_bytes: Optional[int] = None) -> bytes:
+                if self._closed:
+                    raise EndOfStream
+                if not self._buffer:
+                    self._closed = True
+                    raise EndOfStream
+                size = len(self._buffer)
+                if max_bytes is not None:
+                    size = min(size, max_bytes)
+                chunk = bytes(self._buffer[:size])
+                del self._buffer[:size]
+                if not self._buffer:
+                    self._closed = True
+                return chunk
+
+            async def aclose(self) -> None:
+                self._closed = True
+                self._buffer.clear()
+
         class _FakeProcess:
             def __init__(self) -> None:
-                self.stdout = asyncio.StreamReader()
-                self.stderr = asyncio.StreamReader()
+                self.stdout: ByteReceiveStream = _FakeStream(b"out")
+                self.stderr: ByteReceiveStream = _FakeStream(b"err")
                 self.returncode: Optional[int] = 5
                 self.pid = 9999
 
@@ -214,22 +242,17 @@ def test_async_process_monitor_releases_slot(
                 return None
 
         fake_proc = _FakeProcess()
-        fake_proc.stdout.feed_data(b"out")
-        fake_proc.stdout.feed_eof()
-        fake_proc.stderr.feed_data(b"err")
-        fake_proc.stderr.feed_eof()
-
         slot = ManagedProcess(
             pid=77,
             command="/bin/true",
-            handle=cast(asyncio.subprocess.Process, fake_proc),
+            handle=cast(AnyioProcess, fake_proc),
         )
         async with state.process_lock:
             state.running_processes[slot.pid] = slot
 
         await process_component._monitor_async_process(
             slot.pid,
-            cast(asyncio.subprocess.Process, fake_proc),
+            cast(AnyioProcess, fake_proc),
         )
 
         assert slot.handle is None

@@ -8,7 +8,6 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-import pytest_asyncio
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
@@ -24,7 +23,7 @@ from yunbridge.state.context import RuntimeState, create_runtime_state
 pytest_plugins = ("pytest_asyncio", "anyio")
 
 
-@pytest_asyncio.fixture()
+@pytest.fixture()
 def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
     """Provide a clean event loop per-test to mirror historical behavior."""
     loop = asyncio.new_event_loop()

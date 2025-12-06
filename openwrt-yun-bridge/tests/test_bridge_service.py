@@ -25,8 +25,10 @@ from yunbridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_NONCE_LENGTH,
 )
+from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.process import ProcessComponent
+from yunbridge.services.handshake import derive_serial_timing
 
 
 class _FakeMonotonic:
@@ -102,6 +104,22 @@ def test_on_serial_connected_flushes_console_queue(
         await service.on_serial_connected()
 
         assert sent_frames
+        reset_payloads = [
+            payload
+            for frame_id, payload in sent_frames
+            if frame_id == Command.CMD_LINK_RESET.value
+        ]
+        assert reset_payloads
+        reset_payload = reset_payloads[0]
+        assert len(reset_payload) == rpc_protocol.HANDSHAKE_CONFIG_SIZE
+        timing = derive_serial_timing(runtime_config)
+        unpacked = struct.unpack(
+            rpc_protocol.HANDSHAKE_CONFIG_FORMAT,
+            reset_payload,
+        )
+        assert unpacked[0] == timing.ack_timeout_ms
+        assert unpacked[1] == timing.retry_limit
+        assert unpacked[2] == timing.response_timeout_ms
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         handshake_ids = [
             frame_id
@@ -127,6 +145,12 @@ def test_on_serial_connected_flushes_console_queue(
         assert runtime_state.handshake_successes == 1
         assert runtime_state.handshake_failures == 0
         assert runtime_state.serial_link_connected is True
+        assert runtime_state.serial_ack_timeout_ms == timing.ack_timeout_ms
+        assert (
+            runtime_state.serial_response_timeout_ms
+            == timing.response_timeout_ms
+        )
+        assert runtime_state.serial_retry_limit == timing.retry_limit
 
     asyncio.run(_run())
 
@@ -171,6 +195,8 @@ def test_sync_link_rejects_invalid_handshake_tag(
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
         assert runtime_state.handshake_successes == 0
+        assert runtime_state.handshake_fatal_count == 1
+        assert runtime_state.handshake_fatal_reason == "sync_auth_mismatch"
 
     asyncio.run(_run())
 
@@ -210,6 +236,30 @@ def test_sync_link_rejects_truncated_response(
         )
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
+        assert runtime_state.handshake_fatal_count == 1
+        assert runtime_state.handshake_fatal_reason == "sync_length_mismatch"
+
+    asyncio.run(_run())
+
+
+def test_repeated_sync_timeouts_become_fatal(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        runtime_config.serial_handshake_fatal_failures = 2
+        service = BridgeService(runtime_config, runtime_state)
+
+        await service._handle_handshake_failure("link_sync_timeout")
+        assert runtime_state.handshake_fatal_count == 0
+        assert runtime_state.handshake_failure_streak == 1
+
+        await service._handle_handshake_failure("link_sync_timeout")
+        assert runtime_state.handshake_fatal_count == 1
+        assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
+        assert runtime_state.handshake_fatal_detail == (
+            "failure_streak_exceeded_2"
+        )
 
     asyncio.run(_run())
 
@@ -351,7 +401,33 @@ async def test_transient_handshake_failures_eventually_backoff(
             )
             assert remaining >= SERIAL_HANDSHAKE_BACKOFF_BASE
 
-    assert runtime_state.handshake_fatal_count == 0
+    assert runtime_state.handshake_failure_streak == 3
+    assert runtime_state.handshake_fatal_count == 1
+    assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
+    assert runtime_state.handshake_fatal_detail == (
+        "failure_streak_exceeded_3"
+    )
+
+
+def test_derive_serial_timing_clamps_to_spec(
+    runtime_config: RuntimeConfig,
+) -> None:
+    runtime_config.serial_retry_timeout = 0.0001
+    runtime_config.serial_response_timeout = 999.0
+    runtime_config.serial_retry_attempts = 99
+    timing = derive_serial_timing(runtime_config)
+    assert (
+        timing.ack_timeout_ms
+        == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    )
+    assert (
+        timing.response_timeout_ms
+        == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    )
+    assert (
+        timing.retry_limit
+        == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
+    )
 
 
 def test_on_serial_connected_raises_on_secret_mismatch(

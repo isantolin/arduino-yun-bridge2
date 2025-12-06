@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Deque, Dict, Mapping, Optional
 
+from anyio.abc import Process as AnyioProcess
+
 from tenacity import wait_exponential
 
 from ..const import (
@@ -23,6 +25,9 @@ from ..const import (
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+    DEFAULT_SERIAL_RETRY_ATTEMPTS,
+    DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..mqtt import InboundMessage, PublishableMessage
@@ -34,6 +39,8 @@ from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..rpc.protocol import Command, Status
 
 logger = logging.getLogger("yunbridge.state")
+
+SpoolSnapshot = Dict[str, int | float]
 
 
 def _mqtt_queue_factory() -> asyncio.Queue[PublishableMessage]:
@@ -66,7 +73,7 @@ class PendingPinRequest:
 class ManagedProcess:
     pid: int
     command: str = ""
-    handle: Optional[asyncio.subprocess.Process] = None
+    handle: Optional[AnyioProcess] = None
     stdout_buffer: bytearray = field(default_factory=bytearray)
     stderr_buffer: bytearray = field(default_factory=bytearray)
     exit_code: Optional[int] = None
@@ -233,7 +240,7 @@ class RuntimeState:
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: Dict[str, Any] = field(
+    _last_spool_snapshot: SpoolSnapshot = field(
         default_factory=dict,
         repr=False,
     )
@@ -329,6 +336,11 @@ class RuntimeState:
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     serial_decode_errors: int = 0
     serial_crc_errors: int = 0
+    serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
+    serial_response_timeout_ms: int = int(
+        DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000
+    )
+    serial_retry_limit: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
     mcu_status_counters: Dict[str, int] = field(
         default_factory=_str_int_dict_factory
     )
@@ -898,10 +910,12 @@ class RuntimeState:
             value = snapshot.get(name)
             if isinstance(value, (int, float)):
                 return int(value)
-            try:
-                return int(value)  # type: ignore[arg-type]
-            except (TypeError, ValueError):
-                return current
+            if isinstance(value, str):
+                try:
+                    return int(value)
+                except ValueError:
+                    return current
+            return current
 
         self.mqtt_spool_dropped_limit = _coerce_int(
             "dropped_due_to_limit",

@@ -41,7 +41,9 @@ from .components import (
 from .handshake import (
     SerialHandshakeFatal,
     SerialHandshakeManager,
+    SerialTimingWindow,
     SendFrameCallable,
+    derive_serial_timing,
 )
 from .serial_flow import SerialFlowController
 from .task_supervisor import TaskSupervisor
@@ -55,6 +57,9 @@ _PRE_SYNC_ALLOWED_COMMANDS = {
 }
 _TOPIC_FORBIDDEN_REASON = "topic-action-forbidden"
 
+_MAX_PAYLOAD_BYTES = int(MAX_PAYLOAD_SIZE)
+_STATUS_PAYLOAD_WINDOW = max(0, _MAX_PAYLOAD_BYTES - 2)
+
 
 class BridgeService:
     """Service façade orchestrating MCU and MQTT interactions."""
@@ -63,6 +68,7 @@ class BridgeService:
         self.config = config
         self.state = state
         self._serial_sender: Optional[SendFrameCallable] = None
+        self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_supervisor = TaskSupervisor(logger=logger)
 
         self._console = ConsoleComponent(config, state, self)
@@ -80,10 +86,16 @@ class BridgeService:
         self._mqtt_router = MQTTRouter()
         self._register_mqtt_routes()
 
+        state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
+        state.serial_response_timeout_ms = (
+            self._serial_timing.response_timeout_ms
+        )
+        state.serial_retry_limit = self._serial_timing.retry_limit
+
         self._serial_flow = SerialFlowController(
-            ack_timeout=config.serial_retry_timeout,
-            response_timeout=config.serial_response_timeout,
-            max_attempts=config.serial_retry_attempts,
+            ack_timeout=self._serial_timing.ack_timeout_seconds,
+            response_timeout=self._serial_timing.response_timeout_seconds,
+            max_attempts=self._serial_timing.retry_limit,
             logger=logger,
         )
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
@@ -94,6 +106,7 @@ class BridgeService:
         self._handshake = SerialHandshakeManager(
             config=config,
             state=state,
+            serial_timing=self._serial_timing,
             send_frame=self.send_frame,
             enqueue_mqtt=self._enqueue_handshake_message,
             acknowledge_frame=self._acknowledge_mcu_frame,
@@ -334,7 +347,7 @@ class BridgeService:
                 await self._acknowledge_mcu_frame(
                     command_id,
                     status=Status.MALFORMED,
-                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                    extra=payload[:_STATUS_PAYLOAD_WINDOW],
                 )
             return
 
@@ -479,7 +492,7 @@ class BridgeService:
     ) -> None:
         payload = pack_u16(command_id)
         if extra:
-            remaining = MAX_PAYLOAD_SIZE - len(payload)
+            remaining = _MAX_PAYLOAD_BYTES - len(payload)
             if remaining > 0:
                 payload += extra[:remaining]
         if not self._serial_sender:

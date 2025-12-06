@@ -37,9 +37,13 @@ class Frame:
             command_id,
         )
 
-        # Calculate CRC over the header and payload
+        # Calculate CRC over the header and payload, then mask it to the
+        # exact number of bits declared by the protocol. This avoids
+        # struct.pack failures when older firmwares still expect 16-bit CRCs
+        # while the daemon computes the checksum with a 32-bit helper.
         data_to_crc = crc_covered_header + payload
-        crc = crc32_ieee(data_to_crc)
+        crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
+        crc = crc32_ieee(data_to_crc) & crc_mask
 
         # Pack the CRC
         crc_packed = struct.pack(

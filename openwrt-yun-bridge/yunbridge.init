@@ -16,9 +16,12 @@ start_service() {
     procd_open_instance
 
     procd_set_param env PYTHONPATH=/usr/libexec/yunbridge
-    procd_set_param command /usr/bin/python3 -m yunbridge.daemon
+    procd_set_param command /usr/bin/yunbridge
 
-    procd_set_param respawn 5 30 5
+    local respawn_threshold="${YUNBRIDGE_RESPAWN_THRESHOLD:-5}"
+    local respawn_window="${YUNBRIDGE_RESPAWN_WINDOW:-30}"
+    local respawn_retry="${YUNBRIDGE_RESPAWN_RETRY:-5}"
+    procd_set_param respawn "$respawn_threshold" "$respawn_window" "$respawn_retry"
 
     local watchdog_disabled="${YUNBRIDGE_DISABLE_PROCD_WATCHDOG:-0}"
     local watchdog_ms="${YUNBRIDGE_PROCD_WATCHDOG_MS:-10000}"

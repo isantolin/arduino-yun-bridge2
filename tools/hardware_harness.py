@@ -2,12 +2,10 @@
 """Coordinate YunBridge hardware smoke tests across multiple devices."""
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
 import os
 import shlex
-import sys
 import textwrap
 import time
 from dataclasses import dataclass
@@ -15,10 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Sequence
 
-try:  # Python 3.11+
-    import tomllib  # type: ignore[attr-defined]
-except ModuleNotFoundError:  # pragma: no cover - fallback for older interpreters
-    import tomli as tomllib  # type: ignore
+import tomllib
+import typer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SMOKE_SCRIPT = REPO_ROOT / "tools" / "hardware_smoke_test.sh"
@@ -82,7 +78,10 @@ def _coerce_tags(value: Any) -> set[str]:
 
 def load_manifest(path: Path) -> list[Target]:
     if not path.exists():
-        hint = f"Copy {EXAMPLE_MANIFEST.relative_to(REPO_ROOT)} to {path.relative_to(REPO_ROOT)}"
+        hint = "Copy {} to {}".format(
+            EXAMPLE_MANIFEST.relative_to(REPO_ROOT),
+            path.relative_to(REPO_ROOT),
+        )
         raise FileNotFoundError(
             textwrap.dedent(
                 f"""
@@ -120,7 +119,9 @@ def load_manifest(path: Path) -> list[Target]:
         local = bool(entry.get("local", False))
         host = entry.get("host")
         if not local and not host:
-            raise ValueError(f"Target {name} must define 'host' or set local=true")
+            raise ValueError(
+                f"Target {name} must define 'host' or set local=true"
+            )
 
         user = entry.get("user", default_user)
         ssh_value = entry.get("ssh")
@@ -131,10 +132,16 @@ def load_manifest(path: Path) -> list[Target]:
         )
         tags = default_tags | _coerce_tags(entry.get("tags"))
         extra_value = entry.get("extra_args")
-        extra_args = _coerce_list(extra_value) if extra_value is not None else []
+        extra_args = (
+            _coerce_list(extra_value) if extra_value is not None else []
+        )
         timeout_value = entry.get("timeout")
         if timeout_value is None:
-            timeout_val = float(default_timeout) if default_timeout is not None else None
+            timeout_val = (
+                float(default_timeout)
+                if default_timeout is not None
+                else None
+            )
         else:
             timeout_val = float(timeout_value)
         retries = int(entry.get("retries", default_retries))
@@ -160,7 +167,11 @@ def load_manifest(path: Path) -> list[Target]:
 
 
 async def _invoke_command(
-    cmd: Sequence[str], *, env: dict[str, str], cwd: Path, timeout: float | None
+    cmd: Sequence[str],
+    *,
+    env: dict[str, str],
+    cwd: Path,
+    timeout: float | None,
 ) -> tuple[int | None, str, str, float, str | None]:
     start = time.monotonic()
     proc = await asyncio.create_subprocess_exec(
@@ -171,7 +182,10 @@ async def _invoke_command(
         env=env,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout,
+        )
         duration = time.monotonic() - start
         return (
             proc.returncode,
@@ -232,7 +246,9 @@ async def run_target(
     overall_stdout: list[str] = []
     overall_stderr: list[str] = []
     total_duration = 0.0
-    timeout = timeout_override if timeout_override is not None else target.timeout
+    timeout = (
+        timeout_override if timeout_override is not None else target.timeout
+    )
 
     while True:
         attempts += 1
@@ -285,19 +301,27 @@ async def run_target(
 
 
 def format_summary(results: Sequence[Result]) -> str:
-    lines = [f"{len(results)} target(s) processed at {datetime.now().isoformat(timespec='seconds')}"]
-    header = f"{'STATUS':8} {'TARGET':20} {'HOST':22} {'ATTEMPTS':8} {'DURATION':10}"
+    timestamp = datetime.now().isoformat(timespec="seconds")
+    lines = [f"{len(results)} target(s) processed at {timestamp}"]
+    header = (
+        f"{'STATUS':8} {'TARGET':20} {'HOST':22} "
+        f"{'ATTEMPTS':8} {'DURATION':10}"
+    )
     lines.append(header)
     lines.append("-" * len(header))
     for res in results:
         host = res.target.host or "local"
         lines.append(
-            f"{res.status_label:8} {res.target.name:20} {host:22} {res.attempts:>8} {res.duration:>9.1f}s"
+            f"{res.status_label:8} {res.target.name:20} {host:22} "
+            f"{res.attempts:>8} {res.duration:>9.1f}s"
         )
         if not res.success and not res.skipped:
             snippet = res.stderr.strip() or res.stdout.strip()
             if snippet:
-                snippet = textwrap.shorten(snippet.replace("\n", " | "), width=120)
+                snippet = textwrap.shorten(
+                    snippet.replace("\n", " | "),
+                    width=120,
+                )
                 lines.append(f"    detail: {snippet}")
     return "\n".join(lines)
 
@@ -325,57 +349,6 @@ def write_json(results: Sequence[Result], path: Path) -> None:
     path.write_text(json.dumps(payload, indent=2))
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Run YunBridge smoke tests across multiple devices.",
-    )
-    parser.add_argument(
-        "--manifest",
-        type=Path,
-        default=DEFAULT_MANIFEST,
-        help=f"Path to targets manifest (default: %(default)s)",
-    )
-    parser.add_argument(
-        "--target",
-        action="append",
-        dest="targets",
-        help="Limit execution to the specified target name (repeatable).",
-    )
-    parser.add_argument(
-        "--tag",
-        action="append",
-        dest="tags",
-        help="Only run targets that contain the given tag (repeatable).",
-    )
-    parser.add_argument(
-        "--max-parallel",
-        type=int,
-        default=2,
-        help="Maximum concurrent smoke runs.",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        help="Override per-target timeout (seconds).",
-    )
-    parser.add_argument(
-        "--json",
-        type=Path,
-        help="Write a JSON report to this path.",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print the commands that would run without executing them.",
-    )
-    parser.add_argument(
-        "--list",
-        action="store_true",
-        help="List targets that match the current filters and exit.",
-    )
-    return parser
-
-
 def filter_targets(
     targets: Iterable[Target],
     *,
@@ -394,58 +367,152 @@ def filter_targets(
     return filtered
 
 
-async def main_async(argv: Sequence[str]) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-
+async def main_async(
+    *,
+    manifest: Path,
+    targets_filter: Sequence[str] | None,
+    tags_filter: Sequence[str] | None,
+    max_parallel: int,
+    timeout_override: float | None,
+    json_path: Path | None,
+    dry_run: bool,
+    list_only: bool,
+) -> int:
     if not SMOKE_SCRIPT.exists():
-        parser.error(f"Smoke script missing at {SMOKE_SCRIPT}")
+        raise FileNotFoundError(f"Smoke script missing at {SMOKE_SCRIPT}")
 
-    try:
-        targets = load_manifest(args.manifest)
-    except (FileNotFoundError, ValueError) as exc:
-        parser.error(str(exc))
+    targets = load_manifest(manifest)
 
-    targets = filter_targets(targets, names=args.targets, tags=args.tags)
+    targets = filter_targets(
+        targets,
+        names=targets_filter,
+        tags=tags_filter,
+    )
     if not targets:
-        parser.error("No targets matched the provided filters.")
+        raise RuntimeError("No targets matched the provided filters.")
 
-    if args.list:
+    if list_only:
         for target in targets:
             tag_str = ",".join(sorted(target.tags)) or "-"
             host = target.host or "local"
             print(f"{target.name:20} host={host:20} tags={tag_str}")
         return 0
 
-    semaphore = asyncio.Semaphore(max(1, args.max_parallel))
+    semaphore = asyncio.Semaphore(max(1, max_parallel))
 
     async def runner(target: Target) -> Result:
         async with semaphore:
             return await run_target(
                 target,
-                dry_run=args.dry_run,
+                dry_run=dry_run,
                 cwd=REPO_ROOT,
-                timeout_override=args.timeout,
+                timeout_override=timeout_override,
             )
 
     results = await asyncio.gather(*(runner(target) for target in targets))
 
     print(format_summary(results))
-    if args.json:
-        write_json(results, args.json)
-        print(f"JSON report written to {args.json}")
+    if json_path:
+        write_json(results, json_path)
+        print(f"JSON report written to {json_path}")
 
     if any((not res.success) and (not res.skipped) for res in results):
         return 1
     return 0
 
 
-def main() -> None:
+app = typer.Typer(
+    add_completion=False,
+    help="Run YunBridge smoke tests across multiple devices.",
+)
+
+
+@app.command("run")
+def run_command(
+    manifest: Path = typer.Option(
+        DEFAULT_MANIFEST,
+        "--manifest",
+        "-m",
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Path to targets manifest.",
+    ),
+    target: list[str] | None = typer.Option(
+        None,
+        "--target",
+        "-t",
+        help="Limit execution to the specified target name (repeatable).",
+    ),
+    tag: list[str] | None = typer.Option(
+        None,
+        "--tag",
+        help="Only run targets containing the given tag (repeatable).",
+    ),
+    max_parallel: int = typer.Option(
+        2,
+        "--max-parallel",
+        "-p",
+        min=1,
+        help="Maximum concurrent smoke runs.",
+    ),
+    timeout: float | None = typer.Option(
+        None,
+        "--timeout",
+        "-T",
+        min=0.0,
+        help="Override per-target timeout (seconds).",
+    ),
+    json_path: Path | None = typer.Option(
+        None,
+        "--json",
+        file_okay=True,
+        dir_okay=False,
+        writable=True,
+        resolve_path=True,
+        help="Write a JSON report to this path.",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Print the commands that would run without executing them.",
+    ),
+    list_only: bool = typer.Option(
+        False,
+        "--list",
+        help="List targets that match the current filters and exit.",
+    ),
+) -> None:
     try:
-        exit_code = asyncio.run(main_async(sys.argv[1:]))
+        exit_code = asyncio.run(
+            main_async(
+                manifest=manifest,
+                targets_filter=target,
+                tags_filter=tag,
+                max_parallel=max_parallel,
+                timeout_override=timeout,
+                json_path=json_path,
+                dry_run=dry_run,
+                list_only=list_only,
+            )
+        )
     except KeyboardInterrupt:
-        exit_code = 130
-    sys.exit(exit_code)
+        raise typer.Exit(130)
+    except FileNotFoundError as exc:
+        typer.secho(str(exc), err=True, fg=typer.colors.RED)
+        raise typer.Exit(2)
+    except ValueError as exc:
+        typer.secho(str(exc), err=True, fg=typer.colors.RED)
+        raise typer.Exit(2)
+    except RuntimeError as exc:
+        typer.secho(str(exc), err=True, fg=typer.colors.RED)
+        raise typer.Exit(1)
+    raise typer.Exit(exit_code)
+
+
+def main() -> None:
+    app()
 
 
 if __name__ == "__main__":

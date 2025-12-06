@@ -4,34 +4,27 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Mapping as MappingABC, Sequence
 from struct import pack as struct_pack, unpack as struct_unpack
-from typing import Any, Dict, Final, Mapping, Optional, Protocol, Tuple, TypeVar, cast
+from types import TracebackType
+from typing import (
+    Any,
+    Dict,
+    Final,
+    Mapping,
+    Self,
+    Optional,
+    Protocol,
+    Tuple,
+    TypeVar,
+    cast,
+)
 
 from cobs import cobs as _cobs
 from more_itertools import chunked, unique_everseen
 
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
 
-from .const import (
-    ALLOWED_COMMAND_WILDCARD,
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_FILE_SYSTEM_ROOT,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-    DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_CAFILE,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_QUEUE_LIMIT,
-    DEFAULT_MQTT_TOPIC,
-    DEFAULT_MQTT_SPOOL_DIR,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_PROCESS_MAX_CONCURRENT,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-    DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_PORT,
-    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_ATTEMPTS,
-    DEFAULT_SERIAL_RETRY_TIMEOUT,
-)
+from .config.uci_model import UciConfigModel
+from .const import ALLOWED_COMMAND_WILDCARD
 
 
 logger = logging.getLogger(__name__)
@@ -50,6 +43,29 @@ _COBC_MODULE: _CobsCodec = cast(_CobsCodec, _cobs)
 DecodeError = getattr(_COBC_MODULE, "DecodeError", ValueError)
 
 T = TypeVar("T")
+
+
+class _UciCursor(Protocol):
+    def __enter__(self) -> Self:
+        ...
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        ...
+
+    def get_all(self, package: str, section: str) -> Mapping[str, Any]:
+        ...
+
+
+class _UciModule(Protocol):
+    UciException: type[Exception]
+
+    def Uci(self) -> _UciCursor:
+        ...
 
 
 def cobs_encode(data: bytes) -> bytes:
@@ -132,17 +148,17 @@ def get_uci_config() -> Dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
 
     try:
-        import uci
+        import uci as uci_runtime
     except ImportError as exc:  # pragma: no cover - fail fast in dev envs
         raise RuntimeError(
             "python3-uci is required to load Yun Bridge configuration."
         ) from exc
 
-    uci_exception = getattr(uci, "UciException", Exception)
+    uci_module = cast(_UciModule, uci_runtime)
+    uci_exception = getattr(uci_module, "UciException", Exception)
 
     try:
-        with uci.Uci() as cursor:
-            cursor = cast(Any, cursor)
+        with uci_module.Uci() as cursor:
             section: Any = cursor.get_all("yunbridge", "general")
     except uci_exception as exc:
         logger.warning(
@@ -163,11 +179,7 @@ def get_uci_config() -> Dict[str, str]:
             "python3-uci returned no options for 'yunbridge'; using defaults."
         )
         return get_default_config()
-
-    normalised: Dict[str, str] = {}
-    for key, value in options.items():
-        normalised[str(key)] = _stringify_value(value)
-    return normalised
+    return UciConfigModel.from_mapping(options).as_dict()
 
 
 def _as_option_dict(candidate: Mapping[Any, Any]) -> Dict[str, Any]:
@@ -216,77 +228,10 @@ def _extract_uci_options(section: Any) -> Dict[str, Any]:
     return empty
 
 
-def _stringify_iterable(values: Iterable[Any]) -> str:
-    parts: list[str] = []
-    for item in values:
-        parts.append(str(item))
-    return " ".join(parts)
-
-
-def _stringify_value(value: Any) -> str:
-    """Convert UCI values (strings or sequences) to space-separated text."""
-
-    attr_value = getattr(value, "value", None)
-    if attr_value is not None and not isinstance(value, (str, bytes)):
-        return _stringify_value(attr_value)
-
-    if isinstance(value, dict):
-        dict_value = cast(dict[Any, Any], value)
-        if "value" in dict_value:
-            return _stringify_value(dict_value["value"])
-        values_candidate = dict_value.get("values")
-        if isinstance(values_candidate, Iterable):
-            iterable_value = cast(Iterable[Any], values_candidate)
-            return _stringify_iterable(iterable_value)
-        dict_items: Iterable[Any] = cast(Iterable[Any], dict_value.values())
-        return _stringify_iterable(dict_items)
-
-    if isinstance(value, (tuple, list)):
-        iterable_value = cast(Iterable[Any], value)
-        return _stringify_iterable(iterable_value)
-    return str(value)
-
-
 def get_default_config() -> Dict[str, str]:
     """Provide default Yun Bridge configuration values."""
 
-    return {
-        "mqtt_host": DEFAULT_MQTT_HOST,
-        "mqtt_port": str(DEFAULT_MQTT_PORT),
-        "mqtt_tls": "1",
-        "mqtt_cafile": DEFAULT_MQTT_CAFILE,
-        "mqtt_certfile": "",
-        "mqtt_keyfile": "",
-        "serial_port": DEFAULT_SERIAL_PORT,
-        "serial_baud": str(DEFAULT_SERIAL_BAUD),
-        "debug": "0",
-        "allowed_commands": "",
-        "mqtt_topic": DEFAULT_MQTT_TOPIC,
-        "file_system_root": DEFAULT_FILE_SYSTEM_ROOT,
-        "process_timeout": str(DEFAULT_PROCESS_TIMEOUT),
-        "serial_shared_secret": "",
-        "console_queue_limit_bytes": str(
-            DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-        ),
-        "mailbox_queue_limit": str(DEFAULT_MAILBOX_QUEUE_LIMIT),
-        "mailbox_queue_bytes_limit": str(
-            DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-        ),
-        "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
-        "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
-        "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
-        "serial_retry_attempts": str(DEFAULT_SERIAL_RETRY_ATTEMPTS),
-        "mqtt_allow_file_read": "1",
-        "mqtt_allow_file_write": "1",
-        "mqtt_allow_file_remove": "1",
-        "mqtt_allow_datastore_get": "1",
-        "mqtt_allow_datastore_put": "1",
-        "mqtt_allow_mailbox_read": "1",
-        "mqtt_allow_mailbox_write": "1",
-        "mqtt_spool_dir": DEFAULT_MQTT_SPOOL_DIR,
-        "process_max_output_bytes": str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES),
-        "process_max_concurrent": str(DEFAULT_PROCESS_MAX_CONCURRENT),
-    }
+    return UciConfigModel.defaults()
 
 
 __all__: Final[tuple[str, ...]] = (

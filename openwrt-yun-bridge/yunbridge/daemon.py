@@ -49,7 +49,11 @@ from yunbridge.services.runtime import (
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.watchdog import WatchdogKeepalive
-from yunbridge.metrics import PrometheusExporter, publish_metrics
+from yunbridge.metrics import (
+    PrometheusExporter,
+    publish_bridge_snapshots,
+    publish_metrics,
+)
 import serial_asyncio
 from tenacity import (
     AsyncRetrying,
@@ -230,16 +234,12 @@ async def _run_with_retry(
         try:
             return await handler()
         except BaseExceptionGroup as exc_group:
-            typed_group = cast(
-                BaseExceptionGroup[BaseException],
-                exc_group,
-            )
             flattened = _unwrap_retryable_exception_group(
-                typed_group,
+                exc_group,
                 policy.retry_exceptions,
             )
             if flattened is not None:
-                raise flattened from typed_group
+                raise flattened from exc_group
             raise
 
     try:
@@ -949,6 +949,14 @@ async def main_async(config: RuntimeConfig) -> None:
             float(config.status_interval),
         )
 
+    async def _bridge_snapshots_runner() -> None:
+        await publish_bridge_snapshots(
+            state,
+            service.enqueue_mqtt,
+            summary_interval=float(config.bridge_summary_interval),
+            handshake_interval=float(config.bridge_handshake_interval),
+        )
+
     supervised_tasks: list[_SupervisedTaskSpec] = [
         _SupervisedTaskSpec(
             name="serial-link",
@@ -974,6 +982,20 @@ async def main_async(config: RuntimeConfig) -> None:
             max_backoff=10.0,
         ),
     ]
+
+    if (
+        config.bridge_summary_interval > 0.0
+        or config.bridge_handshake_interval > 0.0
+    ):
+        supervised_tasks.append(
+            _SupervisedTaskSpec(
+                name="bridge-snapshots",
+                factory=_bridge_snapshots_runner,
+                max_restarts=5,
+                restart_interval=120.0,
+                max_backoff=10.0,
+            )
+        )
 
     if config.watchdog_enabled:
         watchdog = WatchdogKeepalive(

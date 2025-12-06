@@ -8,6 +8,7 @@
         "openwrt-yun-bridge/yunbridge",
         "openwrt-yun-examples-python/yunbridge_client"
     ],
+    "stubPath": "stubs",
     "extraPaths": [
         "openwrt-yun-bridge"
     ],

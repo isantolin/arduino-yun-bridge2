@@ -28,7 +28,7 @@ rationale = "Load daemon configuration from UCI"
 [[dependency]]
 name = "attrs"
 openwrt = ""
-pip = "attrs==24.2.0"
+pip = "attrs==25.4.0"
 rationale = "Declarative validation for runtime configuration"
 
 [[dependency]]
@@ -36,6 +36,12 @@ name = "aiomqtt"
 openwrt = ""
 pip = "aiomqtt==2.4.0"
 rationale = "Async MQTT v5 client used for runtime telemetry"
+
+[[dependency]]
+name = "anyio"
+openwrt = ""
+pip = "anyio==4.12.0"
+rationale = "Structured concurrency and subprocess orchestration for process supervision"
 
 [[dependency]]
 name = "paho-mqtt"
@@ -70,7 +76,7 @@ rationale = "Retry/backoff utilities for serial and MQTT paths"
 [[dependency]]
 name = "psutil"
 openwrt = "python3-psutil"
-pip = "psutil==5.9.8"
+pip = "psutil==7.1.3"
 rationale = "Process supervision and zombie cleanup"
 
 [[dependency]]
@@ -80,10 +86,22 @@ pip = "prometheus-client==0.23.1"
 rationale = "Expose runtime metrics via the Prometheus Python client"
 
 [[dependency]]
-name = "persist-queue"
+name = "aiocron"
 openwrt = ""
-pip = "persist-queue==1.1.0"
-rationale = "Durable filesystem-backed queues for MQTT spool"
+pip = "aiocron==2.1"
+rationale = "Cron-style scheduling for periodic metrics publication"
+
+[[dependency]]
+name = "diskcache"
+openwrt = ""
+pip = "diskcache==5.6.3"
+rationale = "Durable filesystem-backed queue powering the MQTT spool"
+
+[[dependency]]
+name = "typer"
+openwrt = ""
+pip = "typer==0.20.0"
+rationale = "Modern CLI ergonomics for developer tooling such as the hardware harness"
 
 [[dependency]]
 name = "more-itertools"

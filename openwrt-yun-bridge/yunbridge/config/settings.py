@@ -22,6 +22,8 @@ from ..const import (
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_METRICS_HOST,
     DEFAULT_METRICS_PORT,
     DEFAULT_MQTT_CAFILE,
@@ -37,6 +39,7 @@ from ..const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_BAUD,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_ATTEMPTS,
@@ -85,6 +88,9 @@ class RuntimeConfig:
     serial_handshake_min_interval: float = (
         DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
     )
+    serial_handshake_fatal_failures: int = (
+        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    )
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization = field(factory=TopicAuthorization)
@@ -96,6 +102,8 @@ class RuntimeConfig:
     metrics_enabled: bool = False
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: int = DEFAULT_METRICS_PORT
+    bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
 
     @property
     def tls_enabled(self) -> bool:
@@ -110,6 +118,10 @@ class RuntimeConfig:
         )
         self.serial_handshake_min_interval = max(
             0.0, self.serial_handshake_min_interval
+        )
+        self.serial_handshake_fatal_failures = self._require_positive(
+            "serial_handshake_fatal_failures",
+            int(self.serial_handshake_fatal_failures),
         )
         if not self.mqtt_tls:
             logger.warning(
@@ -203,6 +215,7 @@ class RuntimeConfig:
             "process_timeout",
             "process_max_output_bytes",
             "process_max_concurrent",
+            "serial_handshake_fatal_failures",
         )
         for field_name in positive_int_fields:
             value = getattr(self, field_name)
@@ -215,6 +228,15 @@ class RuntimeConfig:
                 float(self.watchdog_interval),
             )
             self.watchdog_interval = interval
+
+        self.bridge_summary_interval = max(
+            0.0,
+            float(self.bridge_summary_interval),
+        )
+        self.bridge_handshake_interval = max(
+            0.0,
+            float(self.bridge_handshake_interval),
+        )
 
     @staticmethod
     def _build_topic_prefix(prefix: str) -> str:
@@ -462,6 +484,28 @@ def load_runtime_config() -> RuntimeConfig:
         except ValueError:
             metrics_port = DEFAULT_METRICS_PORT
 
+    summary_interval = _coerce_float(
+        raw.get("bridge_summary_interval"),
+        float(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
+    )
+    env_summary = os.environ.get("YUNBRIDGE_BRIDGE_SUMMARY_INTERVAL")
+    if env_summary:
+        try:
+            summary_interval = float(env_summary)
+        except ValueError:
+            summary_interval = float(DEFAULT_BRIDGE_SUMMARY_INTERVAL)
+
+    handshake_interval = _coerce_float(
+        raw.get("bridge_handshake_interval"),
+        float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
+    )
+    env_handshake = os.environ.get("YUNBRIDGE_BRIDGE_HANDSHAKE_INTERVAL")
+    if env_handshake:
+        try:
+            handshake_interval = float(env_handshake)
+        except ValueError:
+            handshake_interval = float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL)
+
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
         serial_baud=_get_int("serial_baud", DEFAULT_SERIAL_BAUD),
@@ -512,6 +556,13 @@ def load_runtime_config() -> RuntimeConfig:
                 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
             ),
         ),
+        serial_handshake_fatal_failures=max(
+            1,
+            _get_int(
+                "serial_handshake_fatal_failures",
+                DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+            ),
+        ),
         watchdog_enabled=watchdog_enabled,
         watchdog_interval=watchdog_interval,
         topic_authorization=topic_authorization,
@@ -534,4 +585,6 @@ def load_runtime_config() -> RuntimeConfig:
         metrics_enabled=metrics_enabled,
         metrics_host=metrics_host,
         metrics_port=max(0, metrics_port),
+        bridge_summary_interval=summary_interval,
+        bridge_handshake_interval=handshake_interval,
     )

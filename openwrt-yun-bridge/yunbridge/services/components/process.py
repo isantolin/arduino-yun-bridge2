@@ -5,10 +5,14 @@ import asyncio
 import base64
 import json
 import logging
+import subprocess
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+import anyio
+from anyio import EndOfStream, to_thread
+from anyio.abc import ByteReceiveStream, Process as AnyioProcess
 import psutil
 
 from ...common import encode_status_reason, pack_u16, unpack_u16
@@ -222,13 +226,16 @@ class ProcessComponent:
 
         try:
             await self._terminate_process_tree(proc)
-            async with asyncio.timeout(0.5):
-                await proc.wait()
-            logger.info("Killed process with PID %d", pid)
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Process PID %d did not terminate after kill signal.", pid
-            )
+            try:
+                with anyio.fail_after(0.5):
+                    await proc.wait()
+            except TimeoutError:
+                logger.warning(
+                    "Process PID %d did not terminate after kill signal.",
+                    pid,
+                )
+            else:
+                logger.info("Killed process with PID %d", pid)
         except ProcessLookupError:
             logger.info("Process PID %d already exited before kill.", pid)
         except Exception:
@@ -263,10 +270,10 @@ class ProcessComponent:
             return Status.ERROR.value, b"", exc.message.encode("utf-8"), None
 
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *tokens,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            proc = await anyio.open_process(
+                tokens,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
         except OSError as exc:
             return (
@@ -275,43 +282,61 @@ class ProcessComponent:
                 str(exc).encode("utf-8", errors="ignore"),
                 None,
             )
+        pid_hint = int(getattr(proc, "pid", 0) or 0)
+        stdout_buffer = bytearray()
+        stderr_buffer = bytearray()
+        timed_out = False
 
-        stdout_bytes: bytes
-        stderr_bytes: bytes
-        try:
-            async with asyncio.TaskGroup() as tg:
-                comm_task = tg.create_task(proc.communicate())
+        async def _wait_for_completion() -> None:
+            nonlocal timed_out
+            timeout = self.state.process_timeout
+            if timeout <= 0:
+                await proc.wait()
+                return
+            try:
+                with anyio.fail_after(timeout):
+                    await proc.wait()
+            except TimeoutError:
+                timed_out = True
+                await self._terminate_process_tree(proc)
                 try:
-                    async with asyncio.timeout(self.state.process_timeout):
-                        await comm_task
-                except asyncio.TimeoutError:
-                    proc.kill()
-                    async with asyncio.timeout(1):
-                        await comm_task
-                    if not comm_task.done():
-                        return (
-                            Status.TIMEOUT.value,
-                            b"",
-                            b"Timeout after kill",
-                            None,
-                        )
-                    stdout_bytes, stderr_bytes = comm_task.result()
-                    return (
-                        Status.TIMEOUT.value,
-                        stdout_bytes,
-                        stderr_bytes,
-                        proc.returncode,
+                    with anyio.fail_after(1):
+                        await proc.wait()
+                except TimeoutError:
+                    logger.warning(
+                        "Synchronous process PID %d did not exit after kill",
+                        pid_hint,
                     )
-            stdout_bytes, stderr_bytes = comm_task.result()
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(
+                    self._consume_stream,
+                    pid_hint,
+                    proc.stdout,
+                    stdout_buffer,
+                )
+                tg.start_soon(
+                    self._consume_stream,
+                    pid_hint,
+                    proc.stderr,
+                    stderr_buffer,
+                )
+                tg.start_soon(_wait_for_completion)
         except Exception:
             logger.exception(
                 "Unexpected error executing command '%s'",
                 command,
             )
+            await self._terminate_process_tree(proc)
+            try:
+                await proc.wait()
+            except Exception:
+                pass
             return Status.ERROR.value, b"", b"Internal error", None
 
-        stdout_bytes = stdout_bytes or b""
-        stderr_bytes = stderr_bytes or b""
+        stdout_bytes = bytes(stdout_buffer)
+        stderr_bytes = bytes(stderr_buffer)
         stdout_bytes, stdout_truncated = self._limit_sync_payload(stdout_bytes)
         stderr_bytes, stderr_truncated = self._limit_sync_payload(stderr_bytes)
         if stdout_truncated or stderr_truncated:
@@ -320,8 +345,9 @@ class ProcessComponent:
                 command,
                 self.state.process_output_limit,
             )
+        status_value = Status.TIMEOUT.value if timed_out else Status.OK.value
         return (
-            Status.OK.value,
+            status_value,
             stdout_bytes,
             stderr_bytes,
             proc.returncode,
@@ -348,10 +374,10 @@ class ProcessComponent:
                 return 0xFFFF
 
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *tokens,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                proc = await anyio.open_process(
+                    tokens,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
                 )
             except OSError as exc:
                 logger.warning(
@@ -494,63 +520,124 @@ class ProcessComponent:
             stderr_truncated_limit,
         )
 
+    async def _consume_stream(
+        self,
+        pid: int,
+        reader: Optional[ByteReceiveStream],
+        buffer: bytearray,
+        *,
+        chunk_size: int = 4096,
+    ) -> None:
+        if reader is None:
+            return
+        while True:
+            try:
+                chunk = await reader.receive(chunk_size)
+            except EndOfStream:
+                break
+            except Exception:
+                logger.debug(
+                    "Error reading process pipe for PID %d",
+                    pid,
+                    exc_info=True,
+                )
+                break
+            if not chunk:
+                continue
+            buffer.extend(chunk)
+
     async def _read_process_pipes(
-        self, pid: int, proc: asyncio.subprocess.Process
+        self, pid: int, proc: AnyioProcess
     ) -> tuple[bytes, bytes]:
-        async with asyncio.TaskGroup() as tg:
-            stdout_task = tg.create_task(
-                self._read_stream_chunk(pid, proc.stdout)
-            )
-            stderr_task = tg.create_task(
-                self._read_stream_chunk(pid, proc.stderr)
-            )
-        return stdout_task.result(), stderr_task.result()
+        stdout_chunk = b""
+        stderr_chunk = b""
+
+        async def _read_stdout() -> None:
+            nonlocal stdout_chunk
+            stdout_chunk = await self._read_stream_chunk(pid, proc.stdout)
+
+        async def _read_stderr() -> None:
+            nonlocal stderr_chunk
+            stderr_chunk = await self._read_stream_chunk(pid, proc.stderr)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(_read_stdout)
+            tg.start_soon(_read_stderr)
+        return stdout_chunk, stderr_chunk
 
     async def _drain_process_pipes(
-        self, pid: int, proc: asyncio.subprocess.Process
+        self, pid: int, proc: AnyioProcess
     ) -> tuple[bytes, bytes]:
-        async with asyncio.TaskGroup() as tg:
-            stdout_task = tg.create_task(self._drain_stream(pid, proc.stdout))
-            stderr_task = tg.create_task(self._drain_stream(pid, proc.stderr))
-        return stdout_task.result(), stderr_task.result()
+        stdout_tail = b""
+        stderr_tail = b""
+
+        async def _drain_stdout() -> None:
+            nonlocal stdout_tail
+            stdout_tail = await self._drain_stream(pid, proc.stdout)
+
+        async def _drain_stderr() -> None:
+            nonlocal stderr_tail
+            stderr_tail = await self._drain_stream(pid, proc.stderr)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(_drain_stdout)
+            tg.start_soon(_drain_stderr)
+        return stdout_tail, stderr_tail
 
     async def _read_stream_chunk(
         self,
         pid: int,
-        reader: Optional[asyncio.StreamReader],
+        reader: Optional[ByteReceiveStream],
         *,
         size: int = 1024,
         timeout: float = 0.05,
     ) -> bytes:
         if reader is None:
             return b""
+        chunk: bytes = b""
         try:
-            async with asyncio.timeout(timeout):
-                return await reader.read(size)
-        except asyncio.TimeoutError:
+            if timeout > 0:
+                with anyio.fail_after(timeout):
+                    chunk = await reader.receive(size)
+            else:
+                chunk = await reader.receive(size)
+        except TimeoutError:
             return b""
-        except (OSError, ValueError, BrokenPipeError):
+        except EndOfStream:
+            return b""
+        except (OSError, ValueError, BrokenPipeError, RuntimeError):
             logger.debug(
-                "Error reading process pipe for PID %d", pid, exc_info=True
+                "Error reading process pipe for PID %d",
+                pid,
+                exc_info=True,
             )
             return b""
+        except Exception:
+            logger.debug(
+                "Unexpected error reading pipe for PID %d",
+                pid,
+                exc_info=True,
+            )
+            return b""
+        return chunk or b""
 
     async def _drain_stream(
         self,
         pid: int,
-        reader: Optional[asyncio.StreamReader],
+        reader: Optional[ByteReceiveStream],
+        *,
+        chunk_size: int = 1024,
     ) -> bytes:
         if reader is None:
             return b""
-        chunks = bytearray()
-        while True:
-            chunk = await self._read_stream_chunk(pid, reader)
-            if not chunk:
-                break
-            chunks.extend(chunk)
-            if len(chunk) < 1024:
-                break
-        return bytes(chunks)
+        buffer = bytearray()
+        await self._consume_stream(
+            pid,
+            reader,
+            buffer,
+            chunk_size=chunk_size,
+        )
+        return bytes(buffer)
 
     def trim_buffers(
         self,
@@ -636,7 +723,7 @@ class ProcessComponent:
         return 0xFFFF
 
     async def _terminate_process_tree(
-        self, proc: asyncio.subprocess.Process
+        self, proc: AnyioProcess
     ) -> None:
         if proc.returncode is not None:
             return
@@ -645,13 +732,13 @@ class ProcessComponent:
             proc.kill()
             return
         pid = int(pid_value)
-        await asyncio.to_thread(self._kill_process_tree_sync, pid)
+        await to_thread.run_sync(self._kill_process_tree_sync, pid)
         proc.kill()
 
     async def _monitor_async_process(
         self,
         pid: int,
-        proc: asyncio.subprocess.Process,
+        proc: AnyioProcess,
     ) -> None:
         try:
             await proc.wait()
@@ -667,7 +754,7 @@ class ProcessComponent:
     async def _finalize_async_process(
         self,
         pid: int,
-        proc: asyncio.subprocess.Process,
+        proc: AnyioProcess,
     ) -> None:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)

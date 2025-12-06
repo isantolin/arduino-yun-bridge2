@@ -10,7 +10,9 @@ from yunbridge.protocol.topics import Topic
 class TestAllowedCommandPolicy:
     def test_allow_all_wildcard(self) -> None:
         """Verify the wildcard allows any command."""
-        policy = AllowedCommandPolicy.from_iterable(["/bin/ls", "*", "cat"])
+        policy = AllowedCommandPolicy.from_iterable(
+            ["/bin/ls", "*", "cat"]
+        )
         assert policy.allow_all
         assert policy.is_allowed("/usr/bin/python -c 'import os'")
         assert policy.is_allowed("anything")
@@ -18,7 +20,9 @@ class TestAllowedCommandPolicy:
 
     def test_specific_commands_are_normalized(self) -> None:
         """Verify commands are lowercased and matched correctly."""
-        policy = AllowedCommandPolicy.from_iterable(["/bin/ls", "CAT", "dmesg "])
+        policy = AllowedCommandPolicy.from_iterable(["/bin/ls",
+                                                     "CAT",
+                                                     "dmesg "])
         assert not policy.allow_all
         assert policy.is_allowed("/bin/ls -la")
         assert policy.is_allowed("cat /etc/passwd")
@@ -66,12 +70,12 @@ class TestTopicAuthorization:
         policy = TopicAuthorization(file_write=False, datastore_put=False)
         assert policy.allows(Topic.FILE.value, "write") is False
         assert policy.allows(Topic.DATASTORE.value, "put") is False
-        
+
         # Check that others are still allowed
         assert policy.allows(Topic.FILE.value, "read") is True
         assert policy.allows(Topic.DATASTORE.value, "get") is True
         assert policy.allows(Topic.MAILBOX.value, "write") is True
-        
+
     def test_case_insensitivity(self) -> None:
         """Verify topic and action matching is case-insensitive."""
         policy = TopicAuthorization(file_read=False)

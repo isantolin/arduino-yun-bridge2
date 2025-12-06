@@ -119,7 +119,23 @@ mqtt_tls.description = translate("Strongly recommended. Disabling TLS sends MQTT
 local mqtt_cafile = s:option(Value, "mqtt_cafile", translate("CA File Path"))
 mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
 mqtt_cafile:depends("mqtt_tls", "1")
-mqtt_cafile.rmempty = false
+mqtt_cafile.rmempty = true
+local function is_tls_enabled(section)
+    local form_value = mqtt_tls:formvalue(section)
+    if form_value == nil then
+        form_value = uci:get("yunbridge", section, "mqtt_tls")
+    end
+    return tostring(form_value or "0") == "1"
+end
+
+function mqtt_cafile.validate(self, value, section)
+    if is_tls_enabled(section) then
+        if not value or value == "" then
+            return nil, translate("CA file is required when TLS is enabled.")
+        end
+    end
+    return value
+end
 
 local mqtt_certfile = s:option(Value, "mqtt_certfile", translate("Client Certificate Path"))
 mqtt_certfile.placeholder = "/etc/yunbridge/client.crt"

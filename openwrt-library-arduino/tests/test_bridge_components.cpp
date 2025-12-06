@@ -662,6 +662,57 @@ void test_process_run_rejects_oversized_payload() {
   StatusHandlerState::instance = nullptr;
 }
 
+void test_apply_timing_config_accepts_valid_payload() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  uint8_t payload[RPC_HANDSHAKE_CONFIG_SIZE] = {};
+  const uint16_t ack_timeout = RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS + 5;
+  const uint8_t retry_limit = RPC_HANDSHAKE_RETRY_LIMIT_MIN + 1;
+  const uint32_t response_timeout =
+      RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS - 250;
+
+  rpc::write_u16_be(payload, ack_timeout);
+  payload[2] = retry_limit;
+  rpc::write_u32_be(payload + 3, response_timeout);
+
+  bridge._applyTimingConfig(payload, sizeof(payload));
+
+  assert(bridge._ack_timeout_ms == ack_timeout);
+  assert(bridge._ack_retry_limit == retry_limit);
+  assert(bridge._response_timeout_ms == response_timeout);
+}
+
+void test_apply_timing_config_rejects_invalid_payload() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  uint8_t payload[RPC_HANDSHAKE_CONFIG_SIZE] = {};
+  const uint16_t invalid_ack_timeout = RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS + 5;
+  const uint8_t invalid_retry_limit = RPC_HANDSHAKE_RETRY_LIMIT_MAX + 1;
+  const uint32_t invalid_response_timeout =
+      RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS + 1;
+
+  rpc::write_u16_be(payload, invalid_ack_timeout);
+  payload[2] = invalid_retry_limit;
+  rpc::write_u32_be(payload + 3, invalid_response_timeout);
+
+  bridge._applyTimingConfig(payload, sizeof(payload));
+
+  assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
+  assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
+  assert(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+
+  bridge._ack_timeout_ms = 1;
+  bridge._ack_retry_limit = 1;
+  bridge._response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
+  bridge._applyTimingConfig(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1);
+
+  assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
+  assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
+  assert(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+}
+
 }  // namespace
 
 int main() {
@@ -680,5 +731,7 @@ int main() {
   test_link_sync_without_secret_replays_nonce_only();
   test_ack_timeout_emits_status_and_resets_state();
   test_process_run_rejects_oversized_payload();
+  test_apply_timing_config_accepts_valid_payload();
+  test_apply_timing_config_rejects_invalid_payload();
   return 0;
 }

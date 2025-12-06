@@ -17,8 +17,15 @@ from typing import (
     cast,
 )
 
-from paho.mqtt.packettypes import PacketTypes as PahoPacketTypes
-from paho.mqtt.properties import Properties as PahoProperties
+try:  # pragma: no cover - optional dependency guard
+    from paho.mqtt.packettypes import PacketTypes as PahoPacketTypes
+except ImportError:  # pragma: no cover - dependency missing at runtime
+    PahoPacketTypes = None  # type: ignore[assignment]
+
+try:  # pragma: no cover - optional dependency guard
+    from paho.mqtt.properties import Properties as PahoProperties
+except ImportError:  # pragma: no cover - dependency missing at runtime
+    PahoProperties = None  # type: ignore[assignment]
 
 from .client import Client, MQTTError
 
@@ -185,7 +192,12 @@ class PublishableMessage:
 
         props = PahoProperties(PahoPacketTypes.PUBLISH)
         if self.content_type is not None:
-            _set_prop(props, "ContentType", "content_type", value=self.content_type)
+            _set_prop(
+                props,
+                "ContentType",
+                "content_type",
+                value=self.content_type,
+            )
         if self.payload_format_indicator is not None:
             _set_prop(
                 props,
@@ -201,7 +213,12 @@ class PublishableMessage:
                 value=int(self.message_expiry_interval),
             )
         if self.response_topic:
-            _set_prop(props, "ResponseTopic", "response_topic", value=self.response_topic)
+            _set_prop(
+                props,
+                "ResponseTopic",
+                "response_topic",
+                value=self.response_topic,
+            )
         if self.correlation_data is not None:
             _set_prop(
                 props,

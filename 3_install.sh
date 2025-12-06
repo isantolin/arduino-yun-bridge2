@@ -37,6 +37,12 @@ DEFAULT_TLS_CAFILE="$DEFAULT_TLS_DIR/ca.crt"
 DEFAULT_TLS_CERTFILE="$DEFAULT_TLS_DIR/yunbridge.crt"
 DEFAULT_TLS_KEYFILE="$DEFAULT_TLS_DIR/yunbridge.key"
 SHIPPING_TLS_CAFILE_PLACEHOLDER="/etc/ssl/certs/ca-certificates.crt"
+# Keep shell defaults aligned with yunbridge.const to seed UCI on fresh installs.
+DEFAULT_SERIAL_RETRY_TIMEOUT="0.75"
+DEFAULT_SERIAL_RESPONSE_TIMEOUT="3.0"
+DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
+DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL="0.0"
+DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
 SKIP_TLS_AUTOGEN="${YUNBRIDGE_SKIP_TLS_AUTOGEN:-0}"
 if [ "${YUNBRIDGE_FORCE_TLS_REGEN+set}" = "set" ]; then
     FORCE_TLS_REGEN="$YUNBRIDGE_FORCE_TLS_REGEN"
@@ -554,6 +560,31 @@ ensure_secure_serial_secret() {
        #define BRIDGE_SERIAL_SHARED_SECRET "$final_current"
 EOF
 }
+
+set_serial_uci_value() {
+    local key="$1" default_value="$2" env_value="$3"
+    if [ -n "$env_value" ]; then
+        echo "[INFO] Applying ${key} override from environment: $env_value"
+        uci_set_general "$key" "$env_value"
+    else
+        ensure_general_default "$key" "$default_value" >/dev/null
+    fi
+}
+
+configure_serial_link_settings() {
+    echo "[INFO] Ensuring serial timing defaults in UCI..."
+    set_serial_uci_value "serial_retry_timeout" \
+        "$DEFAULT_SERIAL_RETRY_TIMEOUT" "${YUNBRIDGE_SERIAL_RETRY_TIMEOUT:-}"
+    set_serial_uci_value "serial_retry_attempts" \
+        "$DEFAULT_SERIAL_RETRY_ATTEMPTS" "${YUNBRIDGE_SERIAL_RETRY_ATTEMPTS:-}"
+    set_serial_uci_value "serial_response_timeout" \
+        "$DEFAULT_SERIAL_RESPONSE_TIMEOUT" "${YUNBRIDGE_SERIAL_RESPONSE_TIMEOUT:-}"
+    set_serial_uci_value "serial_handshake_min_interval" \
+        "$DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL" "${YUNBRIDGE_SERIAL_HANDSHAKE_MIN_INTERVAL:-}"
+    set_serial_uci_value "serial_handshake_fatal_failures" \
+        "$DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES" "${YUNBRIDGE_SERIAL_HANDSHAKE_FATAL_FAILURES:-}"
+    uci_commit_general
+}
 #  --- Main Script Execution ---
 echo "[STEP 1/6] Checking swap availability..."
 swap_total_kb=$(read_swap_total_with_fallback)
@@ -700,6 +731,7 @@ fi
 
 ensure_secure_serial_secret
 ensure_tls_material
+configure_serial_link_settings
 
 # --- System & LuCI Configuration ---
 echo "[STEP 6/6] Finalizing system configuration..."

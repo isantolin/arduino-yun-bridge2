@@ -54,7 +54,11 @@ static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
 #endif
 
 namespace {
-constexpr size_t kHandshakeTagSize = 16;
+constexpr size_t kHandshakeTagSize = RPC_HANDSHAKE_TAG_LENGTH;
+static_assert(
+  kHandshakeTagSize > 0,
+  "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
+);
 constexpr size_t kSha256DigestSize = 32;
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -116,7 +120,10 @@ BridgeClass::BridgeClass(Stream& stream)
       _last_cobs_frame{},
       _last_cobs_length(0),
       _retry_count(0),
-      _last_send_millis(0) {
+      _last_send_millis(0),
+      _ack_timeout_ms(kAckTimeoutMs),
+      _ack_retry_limit(kMaxAckRetries),
+      _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS) {
   memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
   memset(
       _pending_datastore_key_lengths,
@@ -181,6 +188,45 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
   memcpy(out_tag, digest, kHandshakeTagSize);
+}
+
+void BridgeClass::_applyTimingConfig(const uint8_t* payload, uint16_t length) {
+  if (payload == nullptr || length < RPC_HANDSHAKE_CONFIG_SIZE) {
+    _ack_timeout_ms = kAckTimeoutMs;
+    _ack_retry_limit = kMaxAckRetries;
+    _response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+    return;
+  }
+
+  const uint8_t* cursor = payload;
+  uint16_t ack_timeout_ms = rpc::read_u16_be(cursor);
+  cursor += 2;
+  uint8_t retry_limit = *cursor++;
+  uint32_t response_timeout_ms = rpc::read_u32_be(cursor);
+
+  if (
+      ack_timeout_ms >= RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
+      ack_timeout_ms <= RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS) {
+    _ack_timeout_ms = ack_timeout_ms;
+  } else {
+    _ack_timeout_ms = kAckTimeoutMs;
+  }
+
+  if (
+      retry_limit >= RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
+      retry_limit <= RPC_HANDSHAKE_RETRY_LIMIT_MAX) {
+    _ack_retry_limit = retry_limit;
+  } else {
+    _ack_retry_limit = kMaxAckRetries;
+  }
+
+  if (
+      response_timeout_ms >= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
+      response_timeout_ms <= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS) {
+    _response_timeout_ms = response_timeout_ms;
+  } else {
+    _response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+  }
 }
 
 void BridgeClass::onMailboxMessage(MailboxHandler handler) {
@@ -433,6 +479,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CMD_LINK_RESET:
       {
         _resetLinkState();
+        _applyTimingConfig(frame.payload, frame.header.payload_length);
         Console.begin();
         sendFrame(CMD_LINK_RESET_RESP, nullptr, 0);
         command_processed_internally = true;
@@ -716,10 +763,10 @@ void BridgeClass::_processAckTimeout() {
     return;
   }
   unsigned long now = millis();
-  if ((now - _last_send_millis) < kAckTimeoutMs) {
+  if ((now - _last_send_millis) < _ack_timeout_ms) {
     return;
   }
-  if (_retry_count >= kMaxAckRetries) {
+  if (_retry_count >= _ack_retry_limit) {
     _awaiting_ack = false;
     if (_status_handler) {
       _status_handler(STATUS_TIMEOUT, nullptr, 0);

@@ -4,6 +4,7 @@ from __future__ import annotations
 import errno
 import logging
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -65,7 +66,8 @@ def test_spool_skips_corrupt_rows(
     spool.append(_make_message("topic/first"))
 
     # Inject a corrupt entry directly into the underlying durable queue.
-    spool._queue.put(b"not-a-dict")  # type: ignore[attr-defined]
+    queue: Any = getattr(spool, "_queue")
+    queue.append(b"not-a-dict")
     spool.append(_make_message("topic/second"))
 
     caplog.set_level(logging.WARNING, "yunbridge.mqtt.spool")
@@ -90,7 +92,8 @@ def test_spool_detects_disk_full(
     def _boom(_record: object) -> None:
         raise OSError(errno.ENOSPC, "disk full")
 
-    monkeypatch.setattr(spool._queue, "put", _boom)  # type: ignore[attr-defined]
+    queue: Any = getattr(spool, "_queue")
+    monkeypatch.setattr(queue, "append", _boom)
 
     with pytest.raises(MQTTSpoolError) as excinfo:
         spool.append(_make_message("topic/disk"))
@@ -106,7 +109,8 @@ def test_spool_detects_generic_append_failure(
     def _boom(_record: object) -> None:
         raise RuntimeError("boom")
 
-    monkeypatch.setattr(spool._queue, "put", _boom)  # type: ignore[attr-defined]
+    queue: Any = getattr(spool, "_queue")
+    monkeypatch.setattr(queue, "append", _boom)
 
     with pytest.raises(MQTTSpoolError) as excinfo:
         spool.append(_make_message("topic/boom"))

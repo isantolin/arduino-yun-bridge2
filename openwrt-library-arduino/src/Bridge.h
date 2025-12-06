@@ -246,6 +246,9 @@ class BridgeClass {
   uint16_t _last_cobs_length;
   uint8_t _retry_count;
   unsigned long _last_send_millis;
+  unsigned long _ack_timeout_ms;
+  uint8_t _ack_retry_limit;
+  uint32_t _response_timeout_ms;
 
   static constexpr uint8_t kMaxAckRetries = 3;
   static constexpr unsigned long kAckTimeoutMs = 75;
@@ -275,7 +278,8 @@ class BridgeClass {
 
   void dispatch(const rpc::Frame& frame);
   void _emitStatus(uint8_t status_code, const char* message);
-  
+  void _applyTimingConfig(const uint8_t* payload, uint16_t length);
+
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
 };
 

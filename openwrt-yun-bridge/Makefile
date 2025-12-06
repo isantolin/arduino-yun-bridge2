@@ -61,6 +61,7 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./yunbridge $(PKG_BUILD_DIR)/
 	$(CP) ./yunbridge.init $(PKG_BUILD_DIR)/
+	$(CP) ./yunbridge.sh $(PKG_BUILD_DIR)/
 endef
 
 define Package/$(PKG_NAME)/install
@@ -68,8 +69,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(CP) $(PKG_BUILD_DIR)/yunbridge $(1)/usr/libexec/yunbridge/
-	echo -e '#!/bin/sh\nexport PYTHONPATH=/usr/libexec/yunbridge\nexec python3 -m yunbridge.daemon' > $(1)/usr/bin/yunbridge
-	chmod 755 $(1)/usr/bin/yunbridge
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.sh $(1)/usr/bin/yunbridge
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge
 endef
 

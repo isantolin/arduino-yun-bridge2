@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import struct
 import textwrap
 from pathlib import Path
 from typing import Iterable
@@ -62,13 +63,35 @@ class Command:
     direction: str
 
 
+@dataclass(slots=True)
+class Handshake:
+    nonce_length: int
+    tag_length: int
+    tag_algorithm: str
+    tag_description: str
+    config_format: str
+    config_description: str
+    ack_timeout_min_ms: int
+    ack_timeout_max_ms: int
+    response_timeout_min_ms: int
+    response_timeout_max_ms: int
+    retry_limit_min: int
+    retry_limit_max: int
+
+
 def _format_hex(value: int, width: int = 2) -> str:
     return f"0x{value:0{width}X}"
 
 
 def load_spec(
     path: Path,
-) -> tuple[dict[str, int], dict[str, str], list[Status], list[Command]]:
+) -> tuple[
+    dict[str, int],
+    dict[str, str],
+    Handshake,
+    list[Status],
+    list[Command],
+]:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     constants = {
         "PROTOCOL_VERSION": int(data["constants"]["protocol_version"]),
@@ -87,6 +110,35 @@ def load_spec(
         ],
         "CRC_FORMAT": data["data_formats"]["crc_format"],
     }
+    handshake_data = data.get("handshake", {})
+    handshake = Handshake(
+        nonce_length=int(handshake_data.get("nonce_length", 0)),
+        tag_length=int(handshake_data.get("tag_length", 0)),
+        tag_algorithm=str(handshake_data.get("tag_algorithm", "")),
+        tag_description=str(
+            handshake_data.get(
+                "tag_description",
+                "",
+            )
+        ),
+        config_format=str(handshake_data.get("config_format", "")),
+        config_description=str(
+            handshake_data.get(
+                "config_description",
+                "",
+            )
+        ),
+        ack_timeout_min_ms=int(handshake_data.get("ack_timeout_min_ms", 0)),
+        ack_timeout_max_ms=int(handshake_data.get("ack_timeout_max_ms", 0)),
+        response_timeout_min_ms=int(
+            handshake_data.get("response_timeout_min_ms", 0)
+        ),
+        response_timeout_max_ms=int(
+            handshake_data.get("response_timeout_max_ms", 0)
+        ),
+        retry_limit_min=int(handshake_data.get("retry_limit_min", 0)),
+        retry_limit_max=int(handshake_data.get("retry_limit_max", 0)),
+    )
     statuses = [
         Status(
             name=entry["name"],
@@ -104,12 +156,13 @@ def load_spec(
         )
         for entry in data.get("commands", [])
     ]
-    return constants, data_formats, statuses, commands
+    return constants, data_formats, handshake, statuses, commands
 
 
 def generate_python(
     constants: dict[str, int],
     data_formats: dict[str, str],
+    handshake: Handshake,
     statuses: list[Status],
     commands: list[Command],
 ) -> str:
@@ -161,6 +214,7 @@ def generate_python(
         f'"{data_formats["CRC_FORMAT"]}"'
     )
     lines.append('CRC_SIZE: int = struct.calcsize(CRC_FORMAT)')
+    lines.append('CRC_BITS: int = CRC_SIZE * 8')
     lines.append('')
 
     lines.append('MIN_FRAME_SIZE: int = CRC_COVERED_HEADER_SIZE + CRC_SIZE')
@@ -182,6 +236,59 @@ def generate_python(
     lines.append('DATASTORE_VALUE_LEN_SIZE: int = struct.calcsize(')
     lines.append('    DATASTORE_VALUE_LEN_FORMAT')
     lines.append(')')
+    lines.append('')
+
+    lines.append(
+        'HANDSHAKE_NONCE_LENGTH: Final[int] = '
+        f'{handshake.nonce_length}'
+    )
+    lines.append(
+        'HANDSHAKE_TAG_LENGTH: Final[int] = '
+        f'{handshake.tag_length}'
+    )
+    lines.append(
+        'HANDSHAKE_TAG_ALGORITHM: Final[str] = '
+        f'{handshake.tag_algorithm!r}'
+    )
+    lines.append(
+        'HANDSHAKE_TAG_DESCRIPTION: Final[str] = '
+        f'{handshake.tag_description!r}'
+    )
+    lines.append(
+        'HANDSHAKE_CONFIG_FORMAT: Final[str] = '
+        f'{handshake.config_format!r}'
+    )
+    lines.append('HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(')
+    lines.append('    HANDSHAKE_CONFIG_FORMAT')
+    lines.append(')')
+    lines.append(
+        'HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = '
+        f'{handshake.config_description!r}'
+    )
+    lines.append(
+        'HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = '
+        f'{handshake.ack_timeout_min_ms}'
+    )
+    lines.append(
+        'HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = '
+        f'{handshake.ack_timeout_max_ms}'
+    )
+    lines.append(
+        'HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = '
+        f'{handshake.response_timeout_min_ms}'
+    )
+    lines.append(
+        'HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = '
+        f'{handshake.response_timeout_max_ms}'
+    )
+    lines.append(
+        'HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = '
+        f'{handshake.retry_limit_min}'
+    )
+    lines.append(
+        'HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = '
+        f'{handshake.retry_limit_max}'
+    )
     lines.append('')
 
     lines.append('')
@@ -219,14 +326,25 @@ def _categorize(commands: Iterable[Command]) -> dict[str, list[Command]]:
 
 def generate_cpp(
     constants: dict[str, int],
+    data_formats: dict[str, str],
+    handshake: Handshake,
     statuses: list[Status],
     commands: list[Command],
 ) -> str:
+    crc_trailer_size = struct.calcsize(data_formats["CRC_FORMAT"])
+    handshake_config_size = (
+        struct.calcsize(handshake.config_format)
+        if handshake.config_format
+        else 0
+    )
     categories = _categorize(commands)
     status_lines = "\n".join(
         f"#define STATUS_{status.name} {_format_hex(status.value)}"
         for status in statuses
     )
+
+    def _escape_cpp(value: str) -> str:
+        return value.replace("\\", "\\\\").replace('"', '\\"')
 
     sections: list[str] = []
     for category, entries in categories.items():
@@ -255,8 +373,25 @@ def generate_cpp(
             rpc::MAX_PAYLOAD_SIZE == {max_payload},
             "Max payload size mismatch with spec.toml"
         );
+        static_assert(
+            rpc::CRC_TRAILER_SIZE == {crc_trailer},
+            "CRC trailer size mismatch with spec.toml"
+        );
 
         constexpr unsigned int RPC_BUFFER_SIZE = {rpc_buffer};
+        constexpr std::size_t RPC_HANDSHAKE_NONCE_LENGTH = {nonce_len}u;
+        constexpr std::size_t RPC_HANDSHAKE_TAG_LENGTH = {tag_len}u;
+        constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] = "{tag_algo}";
+        constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] = "{tag_desc}";
+        constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] = "{config_format}";
+        constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] = "{config_desc}";
+        constexpr std::size_t RPC_HANDSHAKE_CONFIG_SIZE = {config_size}u;
+        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {ack_min};
+        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {ack_max};
+        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {resp_min};
+        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {resp_max};
+        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {retry_min};
+        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {retry_max};
 
         // Status Codes
         {status_definitions}
@@ -272,7 +407,21 @@ def generate_cpp(
         license_block=textwrap.indent(LICENSE_HEADER.strip(), " * "),
         protocol_version=_format_hex(constants["PROTOCOL_VERSION"]),
         max_payload=constants["MAX_PAYLOAD_SIZE"],
+        crc_trailer=crc_trailer_size,
         rpc_buffer=constants["RPC_BUFFER_SIZE"],
+        nonce_len=handshake.nonce_length,
+        tag_len=handshake.tag_length,
+        tag_algo=_escape_cpp(handshake.tag_algorithm),
+        tag_desc=_escape_cpp(handshake.tag_description),
+        config_format=_escape_cpp(handshake.config_format),
+        config_desc=_escape_cpp(handshake.config_description),
+        config_size=handshake_config_size,
+        ack_min=handshake.ack_timeout_min_ms,
+        ack_max=handshake.ack_timeout_max_ms,
+        resp_min=handshake.response_timeout_min_ms,
+        resp_max=handshake.response_timeout_max_ms,
+        retry_min=handshake.retry_limit_min,
+        retry_max=handshake.retry_limit_max,
         status_definitions=status_lines,
         command_definitions="\n\n".join(sections),
     ).strip() + "\n"
@@ -302,14 +451,28 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    constants, data_formats, statuses, commands = load_spec(args.spec)
+    constants, data_formats, handshake, statuses, commands = load_spec(
+        args.spec
+    )
 
     args.python_output.write_text(
-        generate_python(constants, data_formats, statuses, commands),
+        generate_python(
+            constants,
+            data_formats,
+            handshake,
+            statuses,
+            commands,
+        ),
         encoding="utf-8",
     )
     args.cpp_output.write_text(
-        generate_cpp(constants, statuses, commands),
+        generate_cpp(
+            constants,
+            data_formats,
+            handshake,
+            statuses,
+            commands,
+        ),
         encoding="utf-8",
     )
 

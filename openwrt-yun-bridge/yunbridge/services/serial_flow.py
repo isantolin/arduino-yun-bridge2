@@ -16,20 +16,10 @@ from tenacity import (
     wait_fixed,
 )
 
+from yunbridge.rpc.contracts import expected_responses, response_to_request
 from yunbridge.rpc.protocol import Command, Status
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
-
-REQUEST_RESPONSE_MAP: Dict[int, Set[int]] = {
-    Command.CMD_LINK_RESET.value: {Command.CMD_LINK_RESET_RESP.value},
-    Command.CMD_LINK_SYNC.value: {Command.CMD_LINK_SYNC_RESP.value},
-    Command.CMD_GET_VERSION.value: {Command.CMD_GET_VERSION_RESP.value},
-    Command.CMD_GET_FREE_MEMORY.value: {
-        Command.CMD_GET_FREE_MEMORY_RESP.value
-    },
-    Command.CMD_DIGITAL_READ.value: {Command.CMD_DIGITAL_READ_RESP.value},
-    Command.CMD_ANALOG_READ.value: {Command.CMD_ANALOG_READ_RESP.value},
-}
 
 ACK_ONLY_COMMANDS: Set[int] = {
     Command.CMD_SET_PIN_MODE.value,
@@ -37,12 +27,6 @@ ACK_ONLY_COMMANDS: Set[int] = {
     Command.CMD_ANALOG_WRITE.value,
     Command.CMD_CONSOLE_WRITE.value,
     Command.CMD_DATASTORE_PUT.value,
-}
-
-RESPONSE_TO_REQUEST: Dict[int, int] = {
-    response: request
-    for request, responses in REQUEST_RESPONSE_MAP.items()
-    for response in responses
 }
 
 FAILURE_STATUS_CODES: Set[int] = {
@@ -61,13 +45,6 @@ MIN_ACK_TIMEOUT = 0.05
 
 def _empty_int_set() -> Set[int]:
     return set()
-
-
-def _expected_responses_for(command_id: int) -> Set[int]:
-    responses = REQUEST_RESPONSE_MAP.get(command_id)
-    if responses is None:
-        return _empty_int_set()
-    return set(responses)
 
 
 def _status_name(code: Optional[int]) -> str:
@@ -183,7 +160,7 @@ class SerialFlowController:
 
         pending = PendingCommand(
             command_id=command_id,
-            expected_responses=_expected_responses_for(command_id),
+            expected_responses=set(expected_responses(command_id)),
         )
 
         async with self._condition:
@@ -247,8 +224,8 @@ class SerialFlowController:
             pending.mark_success()
             return
 
-        if command_id in RESPONSE_TO_REQUEST:
-            request_id = RESPONSE_TO_REQUEST[command_id]
+        request_id = response_to_request(command_id)
+        if request_id is not None:
             if request_id == pending.command_id:
                 pending.mark_success()
             return
@@ -265,7 +242,7 @@ class SerialFlowController:
 
     def _should_track(self, command_id: int) -> bool:
         return (
-            command_id in REQUEST_RESPONSE_MAP
+            bool(expected_responses(command_id))
             or command_id in ACK_ONLY_COMMANDS
         )
 

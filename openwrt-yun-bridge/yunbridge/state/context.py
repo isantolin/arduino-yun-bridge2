@@ -26,7 +26,7 @@ from ..const import (
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..mqtt import InboundMessage, PublishableMessage
-from ..mqtt.spool import MQTTPublishSpool
+from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from .queues import BoundedByteDeque
 
 from ..config.settings import RuntimeConfig
@@ -229,6 +229,14 @@ class RuntimeState:
     mqtt_spool_backoff_until: float = 0.0
     mqtt_spool_last_error: Optional[str] = None
     mqtt_spool_recoveries: int = 0
+    mqtt_spool_last_trim_unix: float = 0.0
+    mqtt_spool_dropped_limit: int = 0
+    mqtt_spool_trim_events: int = 0
+    mqtt_spool_corrupt_dropped: int = 0
+    _last_spool_snapshot: Dict[str, Any] = field(
+        default_factory=dict,
+        repr=False,
+    )
     _spool_wait_strategy: Any = field(
         default_factory=lambda: wait_exponential(
             multiplier=5.0,
@@ -309,6 +317,10 @@ class RuntimeState:
     last_handshake_error: Optional[str] = None
     last_handshake_unix: float = 0.0
     handshake_last_duration: float = 0.0
+    handshake_fatal_count: int = 0
+    handshake_fatal_reason: Optional[str] = None
+    handshake_fatal_detail: Optional[str] = None
+    handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
     serial_pipeline_inflight: Optional[Dict[str, Any]] = None
@@ -585,6 +597,14 @@ class RuntimeState:
         self.handshake_last_duration = self._handshake_duration_since_start()
         self._handshake_last_started = 0.0
 
+    def record_handshake_fatal(
+        self, reason: str, detail: Optional[str] = None
+    ) -> None:
+        self.handshake_fatal_count += 1
+        self.handshake_fatal_reason = reason
+        self.handshake_fatal_detail = detail
+        self.handshake_fatal_unix = time.time()
+
     def record_serial_flow_event(self, event: str) -> None:
         stats = self.serial_flow_stats
         if event == "sent":
@@ -800,7 +820,7 @@ class RuntimeState:
         )
         self.mqtt_spool_errors += 1
         self.mqtt_spool_last_error = detail
-        self._disable_mqtt_spool(detail)
+        self._disable_mqtt_spool(reason)
 
     async def stash_mqtt_message(
         self, message: PublishableMessage
@@ -815,7 +835,10 @@ class RuntimeState:
             self.mqtt_spooled_messages += 1
             return True
         except Exception as exc:
-            self._handle_mqtt_spool_failure("append_failed", exc=exc)
+            reason = "append_failed"
+            if isinstance(exc, MQTTSpoolError):
+                reason = exc.reason
+            self._handle_mqtt_spool_failure(reason, exc=exc)
             return False
 
     async def flush_mqtt_spool(self) -> None:
@@ -830,7 +853,10 @@ class RuntimeState:
             try:
                 message = await asyncio.to_thread(spool.pop_next)
             except Exception as exc:
-                self._handle_mqtt_spool_failure("pop_failed", exc=exc)
+                reason = "pop_failed"
+                if isinstance(exc, MQTTSpoolError):
+                    reason = exc.reason
+                self._handle_mqtt_spool_failure(reason, exc=exc)
                 break
             if message is None:
                 break
@@ -842,16 +868,58 @@ class RuntimeState:
                 try:
                     await asyncio.to_thread(spool.requeue, message)
                 except Exception as exc:
-                    self._handle_mqtt_spool_failure(
-                        "requeue_failed", exc=exc
-                    )
+                    reason = "requeue_failed"
+                    if isinstance(exc, MQTTSpoolError):
+                        reason = exc.reason
+                    self._handle_mqtt_spool_failure(reason, exc=exc)
                     break
                 break
 
-    def build_metrics_snapshot(self) -> Dict[str, Any]:
-        spool_snapshot = (
-            self.mqtt_spool.snapshot() if self.mqtt_spool is not None else {}
+    def _current_spool_snapshot(self) -> Dict[str, Any]:
+        spool = self.mqtt_spool
+        if spool is None:
+            if self._last_spool_snapshot:
+                return dict(self._last_spool_snapshot)
+            return {
+                "pending": 0,
+                "limit": self.mqtt_spool_limit,
+                "dropped_due_to_limit": self.mqtt_spool_dropped_limit,
+                "trim_events": self.mqtt_spool_trim_events,
+                "last_trim_unix": self.mqtt_spool_last_trim_unix,
+                "corrupt_dropped": self.mqtt_spool_corrupt_dropped,
+            }
+        snapshot = spool.snapshot()
+        self._last_spool_snapshot = dict(snapshot)
+        self._apply_spool_observation(snapshot)
+        return snapshot
+
+    def _apply_spool_observation(self, snapshot: Mapping[str, Any]) -> None:
+        def _coerce_int(name: str, current: int) -> int:
+            value = snapshot.get(name)
+            if isinstance(value, (int, float)):
+                return int(value)
+            try:
+                return int(value)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return current
+
+        self.mqtt_spool_dropped_limit = _coerce_int(
+            "dropped_due_to_limit",
+            self.mqtt_spool_dropped_limit,
         )
+        self.mqtt_spool_trim_events = _coerce_int(
+            "trim_events",
+            self.mqtt_spool_trim_events,
+        )
+        corrupt = snapshot.get("corrupt_dropped")
+        if isinstance(corrupt, (int, float)):
+            self.mqtt_spool_corrupt_dropped = int(corrupt)
+        last_trim = snapshot.get("last_trim_unix")
+        if isinstance(last_trim, (int, float)):
+            self.mqtt_spool_last_trim_unix = float(last_trim)
+
+    def build_metrics_snapshot(self) -> Dict[str, Any]:
+        spool_snapshot = self._current_spool_snapshot()
         snapshot: Dict[str, Any] = {
             "serial": self.serial_flow_stats.as_dict(),
             "mqtt_queue_size": self.mqtt_publish_queue.qsize(),
@@ -875,6 +943,10 @@ class RuntimeState:
             "handshake_last_error": self.last_handshake_error,
             "handshake_last_unix": self.last_handshake_unix,
             "handshake_last_duration": self.handshake_last_duration,
+            "handshake_fatal_count": self.handshake_fatal_count,
+            "handshake_fatal_reason": self.handshake_fatal_reason,
+            "handshake_fatal_detail": self.handshake_fatal_detail,
+            "handshake_fatal_unix": self.handshake_fatal_unix,
             "link_synchronised": self.link_is_synchronized,
             "serial_decode_errors": self.serial_decode_errors,
             "serial_crc_errors": self.serial_crc_errors,
@@ -920,6 +992,10 @@ class RuntimeState:
             mailbox_incoming_overflow_events=(
                 self.mailbox_incoming_overflow_events
             ),
+            mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
+            mqtt_spool_trim_events=self.mqtt_spool_trim_events,
+            mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
+            mqtt_spool_corrupt_dropped=self.mqtt_spool_corrupt_dropped,
         )
         snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
         return snapshot
@@ -936,6 +1012,10 @@ class RuntimeState:
             "last_duration": self.handshake_last_duration,
             "backoff_until": self.handshake_backoff_until,
             "rate_limit_until": self.handshake_rate_limit_until,
+            "fatal_count": self.handshake_fatal_count,
+            "fatal_reason": self.handshake_fatal_reason,
+            "fatal_detail": self.handshake_fatal_detail,
+            "fatal_unix": self.handshake_fatal_unix,
             "pending_nonce": bool(self.link_handshake_nonce),
             "nonce_length": self.link_nonce_length,
         }

@@ -446,7 +446,7 @@ for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
         cp -r "$pkg" "$SDK_DIR/package/"
         # For openwrt-yun-bridge, verify critical files
         if [ "$pkg" = "openwrt-yun-bridge" ]; then
-            for f in bridge_daemon.py yunbridge.init; do
+            for f in yunbridge.init; do
                 if [ ! -f "$pkg/$f" ]; then
                     echo "[ERROR] $f missing in $pkg. Aborting build."
                     exit 1

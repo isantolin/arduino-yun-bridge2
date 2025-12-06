@@ -1,18 +1,18 @@
 # Arquitectura del Cliente del Puente de Yun v2
 
-Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través del `bridge_daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.4** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, reutilizando el mismo shim asíncrono que usa el daemon para conservar compatibilidad con la antigua API de `asyncio-mqtt`.
+Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través de `yunbridge/daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.4** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, reutilizando el mismo shim asíncrono que usa el daemon para conservar compatibilidad con la antigua API de `asyncio-mqtt`.
 
 ## API de Comunicación: MQTT
 
-El ecosistema utiliza MQTT como el mecanismo principal de comunicación para interactuar con el `bridge_daemon.py`.
+El ecosistema utiliza MQTT como el mecanismo principal de comunicación para interactuar con `yunbridge/daemon.py`.
 
 -   **Propósito:** Para scripts y aplicaciones que se ejecutan **tanto en el procesador Linux del Yun como externamente**.
--   **Mecanismo:** El `bridge_daemon.py` expone la funcionalidad del microcontrolador a través de un broker MQTT. Los clientes (como los ejemplos en este directorio) se conectan a este broker para enviar comandos y recibir datos.
+-   **Mecanismo:** `yunbridge/daemon.py` expone la funcionalidad del microcontrolador a través de un broker MQTT. Los clientes (como los ejemplos en este directorio) se conectan a este broker para enviar comandos y recibir datos.
 -   **Caso de uso:** Un script de Python en el Yun que monitoriza el uso de CPU y quiere mostrar el resultado en una pantalla LCD conectada al microcontrolador, o un panel de control web (Dashboard) que se ejecuta en un servidor en la nube y muestra la temperatura leída por un sensor en el Arduino, y permite encender un LED desde el navegador.
 
 ### Flujo request/response con MQTT v5
 
-El shim `yunbridge_client._mqtt_asyncio` y el daemon utilizan las capacidades de **MQTT v5** para correlacionar peticiones y respuestas sin depender de nombres de tópicos rígidos:
+El módulo compartido `yunbridge.mqtt` (el mismo que usa el daemon) aprovecha las capacidades de **MQTT v5** para correlacionar peticiones y respuestas sin depender de nombres de tópicos rígidos:
 
 - Al invocar métodos como `Bridge._publish_and_wait(...)`, el cliente genera un `correlation_data` aleatorio y fija su propio `response_topic` privado (`br/client/<uuid>/reply`). El daemon reutiliza ambos campos en cada respuesta para que la correlación sea inequívoca incluso frente a múltiples consumidores.
 - Cuando una petición incluye un tópico de respuesta explícito (por compatibilidad hacia atrás), el daemon se suscribe temporalmente y publica allí la respuesta; si no, envía el payload al `response_topic` privado.
@@ -34,13 +34,13 @@ El shim `yunbridge_client._mqtt_asyncio` y el daemon utilizan las capacidades de
 
 ## El Sistema de Plugins (Nota Histórica)
 
-Versiones anteriores del diseño consideraban un sistema de plugins para extender la funcionalidad del cliente. Sin embargo, la arquitectura actual centraliza la lógica de puente en `bridge_daemon.py` y utiliza MQTT como la interfaz unificada. Esto simplifica el diseño y mejora la interoperabilidad.
+Versiones anteriores del diseño consideraban un sistema de plugins para extender la funcionalidad del cliente. Sin embargo, la arquitectura actual centraliza la lógica de puente en `yunbridge/daemon.py` y utiliza MQTT como la interfaz unificada. Esto simplifica el diseño y mejora la interoperabilidad.
 
 En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que proporciona una solución robusta, modular y adaptable a casi cualquier caso de uso de IoT.
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `pyserial-asyncio`, `prometheus-client` y `tenacity` llegan ahora desde PyPI, mientras que `python3-pyserial` proviene de los feeds oficiales. No necesitas instalar `asyncio-mqtt`: el módulo `yunbridge_client._mqtt_asyncio` implementa la API equivalente sobre aiomqtt, habilitando propiedades MQTT v5 como `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `pyserial-asyncio`, `prometheus-client` y `tenacity` llegan ahora desde PyPI, mientras que `python3-pyserial` proviene de los feeds oficiales. No necesitas instalar `asyncio-mqtt`: `yunbridge.mqtt` implementa la API equivalente sobre aiomqtt y expone propiedades MQTT v5 como `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
 
 Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala las dependencias mínimas en tu entorno de desarrollo:
 
@@ -60,11 +60,11 @@ Antes de modificar los ejemplos, ejecuta `pyright` en la raíz del proyecto para
 
 ### Puesta en marcha del broker MQTT
 
-Los ejemplos asumen que existe un broker accesible en la IP y puerto configurados (por defecto `127.0.0.1:8883` con TLS habilitado). En una Yún real, ese broker lo expone el `bridge_daemon.py` cuando está en ejecución. Las conexiones se negocian con MQTT v5 (`clean_start=FIRST_ONLY`, `session_expiry_interval=0`) y publican los motivos de desconexión, por lo que conviene revisar el log del daemon si observas `ConnectionCloseForcedError` o códigos de error adicionales.
+Los ejemplos asumen que existe un broker accesible en la IP y puerto configurados (por defecto `127.0.0.1:8883` con TLS habilitado). En una Yún real, ese broker lo expone `yunbridge/daemon.py` cuando está en ejecución. Las conexiones se negocian con MQTT v5 (`clean_start=FIRST_ONLY`, `session_expiry_interval=0`) y publican los motivos de desconexión, por lo que conviene revisar el log del daemon si observas `ConnectionCloseForcedError` o códigos de error adicionales.
 
 ```sh
 # En el dispositivo o en tu máquina de desarrollo
-python3 openwrt-yun-bridge/bridge_daemon.py
+python3 openwrt-yun-bridge/yunbridge/daemon.py
 ```
 
 Si prefieres realizar pruebas aisladas sin el daemon, puedes lanzar un mosquitto local:

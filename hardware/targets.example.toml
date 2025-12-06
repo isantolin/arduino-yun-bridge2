@@ -1,0 +1,35 @@
+# Hardware harness manifest example.
+# Copy this file to hardware/targets.toml and adjust values for your lab.
+
+[defaults]
+# SSH user applied when a target does not specify one.
+user = "root"
+# Optional SSH arguments passed to tools/hardware_smoke_test.sh via repeated --ssh flags.
+ssh = ["-o StrictHostKeyChecking=no", "-i ~/.ssh/id_ed25519"]
+# Maximum seconds to wait for each smoke run before declaring a timeout.
+timeout = 90
+# Number of retries (per target) when the smoke script exits non-zero.
+retries = 1
+# Default tags merged into every target. Useful for grouping.
+tags = ["lab"]
+
+[[targets]]
+name = "lab-yun-01"
+host = "192.168.50.21"
+tags = ["regression", "rev1"]
+notes = "Prototype board near the RF chamber"
+
+[[targets]]
+name = "staging-yun"
+host = "yun-staging.local"
+user = "admin"
+ssh = ["-o StrictHostKeyChecking=no"]
+tags = ["staging"]
+extra_args = ["--ssh", "-o ConnectTimeout=5"]
+
+[[targets]]
+name = "local-loopback"
+local = true
+# Optional environment variables are expressed as a table.
+[targets.env]
+YUNBRIDGE_SMOKE_VERBOSE = "1"

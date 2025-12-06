@@ -9,7 +9,6 @@
         "openwrt-yun-examples-python/yunbridge_client"
     ],
     "extraPaths": [
-        "typings",
         "openwrt-yun-bridge"
     ],
     "exclude": [

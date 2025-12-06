@@ -61,7 +61,7 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
 - **`0x00` GET_VERSION (Linux → MCU)**
   - Petición: sin payload.
   - Respuesta (`0x80 GET_VERSION_RESP`): `[version_major: u8, version_minor: u8]`.
-  - El daemon `bridge_daemon.py` envía automáticamente este comando tras establecer la conexión serie y publica la respuesta en el tópico MQTT `br/system/version/value` con el formato `MAJOR.MINOR`.
+  - El daemon `yunbridge/daemon.py` envía automáticamente este comando tras establecer la conexión serie y publica la respuesta en el tópico MQTT `br/system/version/value` con el formato `MAJOR.MINOR`.
 
 - **`0x01` GET_FREE_MEMORY (Linux → MCU)**
   - Petición: sin payload.

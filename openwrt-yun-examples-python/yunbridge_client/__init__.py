@@ -24,24 +24,20 @@ from typing import (
     cast,
 )
 
-# Importing paho_compat ensures the Paho compatibility shim runs first.
-from . import paho_compat
-from ._mqtt import (
-    Client,
-    DeliveredMessage,
-    MQTTError,
-    PublishableMessage,
-    QOSLevel,
-)
 from .env import dump_client_env
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
 )
-
-# Touch the module so static analyzers acknowledge its side effects.
-paho_compat.ensure_compat()
+from yunbridge.mqtt import (
+    Client,
+    InboundMessage,
+    MQTTError,
+    PublishableMessage,
+    QOSLevel,
+    as_inbound_message,
+)
 
 __all__ = [
     "Bridge",
@@ -156,11 +152,9 @@ class Bridge:
         self._client: Optional[Client] = None
         self._response_routes: Dict[
             str,
-            List[Tuple[asyncio.Queue[DeliveredMessage], bool]],
+            List[Tuple[asyncio.Queue[InboundMessage], bool]],
         ] = {}
-        self._correlation_routes: Dict[
-            bytes, asyncio.Queue[DeliveredMessage]
-        ] = {}
+        self._correlation_routes: Dict[bytes, asyncio.Queue[InboundMessage]] = {}
         self._reply_topic: Optional[str] = None
         self._listener_task: Optional[asyncio.Task[None]] = None
         self._digital_modes: Dict[int, int] = {}
@@ -227,8 +221,10 @@ class Bridge:
         client = self._ensure_client()
 
         try:
-            async for message in client.delivered_messages():
-                await self._handle_delivered_message(message)
+            async with client.unfiltered_messages() as messages:
+                async for raw_message in messages:
+                    inbound = as_inbound_message(raw_message)
+                    await self._handle_inbound_message(inbound)
         except asyncio.CancelledError:
             raise
         except MQTTError as exc:  # pragma: no cover - defensive guard
@@ -236,8 +232,8 @@ class Bridge:
         except Exception:  # pragma: no cover - unexpected failure
             logger.exception("Unexpected error in MQTT listener")
 
-    async def _handle_delivered_message(
-        self, message: DeliveredMessage
+    async def _handle_inbound_message(
+        self, message: InboundMessage
     ) -> None:
         topic = message.topic_name
         if not topic:
@@ -276,8 +272,8 @@ class Bridge:
 
     def _safe_queue_put(
         self,
-        queue: asyncio.Queue[DeliveredMessage],
-        message: DeliveredMessage,
+        queue: asyncio.Queue[InboundMessage],
+        message: InboundMessage,
         *,
         drop_oldest: bool,
     ) -> None:
@@ -301,7 +297,7 @@ class Bridge:
     def _register_route(
         self,
         prefix: str,
-        queue: asyncio.Queue[DeliveredMessage],
+        queue: asyncio.Queue[InboundMessage],
         *,
         drop_oldest: bool = False,
     ) -> None:
@@ -311,7 +307,7 @@ class Bridge:
     def _unregister_route(
         self,
         prefix: str,
-        queue: asyncio.Queue[DeliveredMessage],
+        queue: asyncio.Queue[InboundMessage],
     ) -> None:
         routes = self._response_routes.get(prefix)
         if not routes:
@@ -342,7 +338,7 @@ class Bridge:
         if not topics:
             raise ValueError("resp_topic must contain at least one topic")
 
-        response_queue: asyncio.Queue[DeliveredMessage] = asyncio.Queue(
+        response_queue: asyncio.Queue[InboundMessage] = asyncio.Queue(
             maxsize=1
         )
         correlation = secrets.token_bytes(12)
@@ -370,7 +366,13 @@ class Bridge:
             )
             message = message.with_response_topic(reply_topic)
             message = message.with_correlation_data(correlation)
-            await client.publish(message)
+            await client.publish(
+                message.topic_name,
+                message.payload,
+                qos=int(message.qos),
+                retain=message.retain,
+                properties=message.build_properties(),
+            )
             delivered = await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
@@ -527,7 +529,7 @@ class Bridge:
     async def console_read_async(self) -> Optional[str]:
         topic = f"{self.topic_prefix}/console/out"
         client = self._ensure_client()
-        queue: Optional[asyncio.Queue[DeliveredMessage]] = None
+        queue: Optional[asyncio.Queue[InboundMessage]] = None
         routes = self._response_routes.get(topic)
         if routes:
             queue = routes[0][0]

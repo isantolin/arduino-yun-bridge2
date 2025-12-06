@@ -17,6 +17,9 @@ from typing import (
     cast,
 )
 
+from paho.mqtt.packettypes import PacketTypes as PahoPacketTypes
+from paho.mqtt.properties import Properties as PahoProperties
+
 from .client import Client, MQTTError
 
 
@@ -26,17 +29,6 @@ class ProtocolVersion(IntEnum):
     V31 = 0x03
     V311 = 0x04
     V5 = 0x05
-
-
-try:  # pragma: no cover - optional dependency path
-    from paho.mqtt.packettypes import PacketTypes as _RuntimePacketTypes
-    from paho.mqtt.properties import Properties as _RuntimeProperties
-except Exception:  # pragma: no cover - allow tests without paho
-    _RuntimePacketTypes = None
-    _RuntimeProperties = None
-
-PahoPacketTypes: Any = _RuntimePacketTypes
-PahoProperties: Any = _RuntimeProperties
 
 
 class QOSLevel(IntEnum):

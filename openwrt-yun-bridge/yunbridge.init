@@ -15,7 +15,8 @@ USE_PROCD=1
 start_service() {
     procd_open_instance
 
-    procd_set_param command /usr/bin/python3 /usr/libexec/yunbridge/bridge_daemon.py
+    procd_set_param env PYTHONPATH=/usr/libexec/yunbridge
+    procd_set_param command /usr/bin/python3 -m yunbridge.daemon
 
     procd_set_param respawn 5 30 5
 

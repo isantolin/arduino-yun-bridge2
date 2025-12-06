@@ -59,7 +59,6 @@ endef
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
-	$(CP) ./bridge_daemon.py $(PKG_BUILD_DIR)/
 	$(CP) -r ./yunbridge $(PKG_BUILD_DIR)/
 	$(CP) ./yunbridge.init $(PKG_BUILD_DIR)/
 endef
@@ -68,9 +67,8 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/yunbridge
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/etc/init.d
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bridge_daemon.py $(1)/usr/libexec/yunbridge/
 	$(CP) $(PKG_BUILD_DIR)/yunbridge $(1)/usr/libexec/yunbridge/
-	echo -e '#!/bin/sh\nexec python3 /usr/libexec/yunbridge/bridge_daemon.py' > $(1)/usr/bin/yunbridge
+	echo -e '#!/bin/sh\nexport PYTHONPATH=/usr/libexec/yunbridge\nexec python3 -m yunbridge.daemon' > $(1)/usr/bin/yunbridge
 	chmod 755 $(1)/usr/bin/yunbridge
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge
 endef

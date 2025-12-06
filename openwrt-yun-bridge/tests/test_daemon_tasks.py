@@ -427,7 +427,7 @@ def test_mqtt_task_handles_incoming_message(
     asyncio.run(_run())
 
 
-def test_mqtt_task_falls_back_to_legacy_messages(
+def test_mqtt_task_requires_unfiltered_messages(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
     async def _run() -> None:
@@ -470,11 +470,12 @@ def test_mqtt_task_falls_back_to_legacy_messages(
             mqtt_task(runtime_config, state, cast(Any, service), None)
         )
 
-        await asyncio.wait_for(service.handled.wait(), timeout=1)
+        await asyncio.sleep(0.1)
 
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-        assert not messages
+        assert not service.handled.is_set()
+        assert len(messages) == 1
 
     asyncio.run(_run())

@@ -1,0 +1,376 @@
+"""Serial handshake coordination utilities for BridgeService."""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import os
+import time
+from typing import Any, Awaitable, Callable, Optional
+
+from ..config.settings import RuntimeConfig
+from ..const import (
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_HANDSHAKE_TAG_LEN,
+    SERIAL_NONCE_LENGTH,
+)
+from ..mqtt import PublishableMessage
+from ..protocol.topics import handshake_topic
+from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
+from ..state.context import RuntimeState
+
+SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
+EnqueueMessageCallable = Callable[[PublishableMessage], Awaitable[None]]
+AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
+
+logger = logging.getLogger("yunbridge.service.handshake")
+
+
+class SerialHandshakeFatal(RuntimeError):
+    """Raised when MCU rejects the serial shared secret permanently."""
+
+
+_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset({"sync_auth_mismatch"})
+
+
+class SerialHandshakeManager:
+    """Encapsulates MCU serial handshake orchestration and telemetry."""
+
+    def __init__(
+        self,
+        *,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        send_frame: SendFrameCallable,
+        enqueue_mqtt: EnqueueMessageCallable,
+        acknowledge_frame: AcknowledgeFrameCallable,
+        logger_: Optional[logging.Logger] = None,
+    ) -> None:
+        self._config = config
+        self._state = state
+        self._send_frame = send_frame
+        self._enqueue_mqtt = enqueue_mqtt
+        self._acknowledge_frame = acknowledge_frame
+        self._logger = logger_ or logger
+
+    async def synchronize(self) -> bool:
+        await self._respect_handshake_backoff()
+        nonce_length = SERIAL_NONCE_LENGTH
+        self._state.record_handshake_attempt()
+        nonce = os.urandom(nonce_length)
+        self._state.link_handshake_nonce = nonce
+        self._state.link_nonce_length = nonce_length
+        self._state.link_expected_tag = self._compute_handshake_tag(nonce)
+        self._state.link_is_synchronized = False
+        reset_ok = await self._send_frame(Command.CMD_LINK_RESET.value, b"")
+        if not reset_ok:
+            self._logger.warning(
+                "Failed to emit LINK_RESET during handshake"
+            )
+            self._clear_handshake_expectations()
+            await self._handle_handshake_failure("link_reset_send_failed")
+            return False
+        await asyncio.sleep(0.05)
+        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce)
+        if not sync_ok:
+            self._logger.warning(
+                "Failed to emit LINK_SYNC during handshake"
+            )
+            self._clear_handshake_expectations()
+            await self._handle_handshake_failure("link_sync_send_failed")
+            return False
+
+        confirmed = await self._wait_for_link_sync_confirmation(nonce)
+        if not confirmed:
+            self._logger.warning(
+                "MCU link synchronisation did not confirm within timeout"
+            )
+            pending_nonce = self._state.link_handshake_nonce
+            self._clear_handshake_expectations()
+            if pending_nonce == nonce:
+                await self._handle_handshake_failure("link_sync_timeout")
+            return False
+        return True
+
+    async def handle_link_sync_resp(self, payload: bytes) -> bool:
+        expected = self._state.link_handshake_nonce
+        if expected is None:
+            self._logger.warning(
+                "Unexpected LINK_SYNC_RESP without pending nonce"
+            )
+            await self._acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            await self._handle_handshake_failure("unexpected_sync_resp")
+            return False
+
+        nonce_length = self._state.link_nonce_length or len(expected)
+        required_length = nonce_length + SERIAL_HANDSHAKE_TAG_LEN
+        rate_limit = self._config.serial_handshake_min_interval
+        if rate_limit > 0:
+            now = time.monotonic()
+            if now < self._state.handshake_rate_limit_until:
+                self._logger.warning(
+                    (
+                        "LINK_SYNC_RESP throttled due to rate limit "
+                        "(remaining=%.2fs)"
+                    ),
+                    self._state.handshake_rate_limit_until - now,
+                )
+                await self._acknowledge_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    status=Status.MALFORMED,
+                    extra=payload[: MAX_PAYLOAD_SIZE - 2],
+                )
+                await self._handle_handshake_failure("sync_rate_limited")
+                return False
+            self._state.handshake_rate_limit_until = now + rate_limit
+
+        if len(payload) != required_length:
+            self._logger.warning(
+                "LINK_SYNC_RESP malformed length (expected %d got %d)",
+                required_length,
+                len(payload),
+            )
+            await self._acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            self._clear_handshake_expectations()
+            await self._handle_handshake_failure("sync_length_mismatch")
+            return False
+
+        nonce = payload[:nonce_length]
+        tag_bytes = payload[nonce_length:required_length]
+        expected_tag = self._state.link_expected_tag
+        recalculated_tag = self._compute_handshake_tag(nonce)
+
+        if (
+            nonce != expected
+            or expected_tag is None
+            or len(tag_bytes) != SERIAL_HANDSHAKE_TAG_LEN
+            or not hmac.compare_digest(tag_bytes, recalculated_tag)
+        ):
+            self._logger.warning(
+                "LINK_SYNC_RESP auth mismatch (nonce=%s)",
+                nonce.hex(),
+            )
+            await self._acknowledge_frame(
+                Command.CMD_LINK_SYNC_RESP.value,
+                status=Status.MALFORMED,
+                extra=payload[: MAX_PAYLOAD_SIZE - 2],
+            )
+            self._clear_handshake_expectations()
+            await self._handle_handshake_failure(
+                "sync_auth_mismatch",
+                detail="nonce_or_tag_mismatch",
+            )
+            return False
+
+        payload = nonce  # Normalise for logging
+
+        self._state.link_is_synchronized = True
+        self._clear_handshake_expectations()
+        await self._handle_handshake_success()
+        self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
+        return True
+
+    async def handle_link_reset_resp(self, payload: bytes) -> bool:
+        self._logger.info(
+            "MCU link reset acknowledged (payload=%s)", payload.hex()
+        )
+        self._state.link_is_synchronized = False
+        return True
+
+    async def handle_handshake_failure(
+        self,
+        reason: str,
+        *,
+        detail: Optional[str] = None,
+    ) -> None:
+        await self._handle_handshake_failure(reason, detail=detail)
+
+    def clear_handshake_expectations(self) -> None:
+        self._clear_handshake_expectations()
+
+    def raise_if_handshake_fatal(self) -> None:
+        reason = self._fatal_handshake_reason()
+        if not reason:
+            return
+
+        hint = (
+            "Verify YUNBRIDGE_SERIAL_SECRET (configured via UCI/LuCI or "
+            "exported before starting the daemon) matches the "
+            "BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
+        )
+        raise SerialHandshakeFatal(
+            (
+                "MCU rejected the serial shared secret "
+                f"(reason={reason}). {hint}"
+            )
+        )
+
+    async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
+        loop = asyncio.get_running_loop()
+        timeout = max(0.5, self._config.serial_response_timeout)
+        deadline = loop.time() + timeout
+        while loop.time() < deadline:
+            if (
+                self._state.link_is_synchronized
+                and self._state.link_handshake_nonce is None
+            ):
+                return True
+            if (
+                self._state.link_handshake_nonce != nonce
+                and not self._state.link_is_synchronized
+            ):
+                break
+            await asyncio.sleep(0.01)
+        return (
+            self._state.link_is_synchronized
+            and self._state.link_handshake_nonce is None
+        )
+
+    def _clear_handshake_expectations(self) -> None:
+        self._state.link_handshake_nonce = None
+        self._state.link_expected_tag = None
+        self._state.link_nonce_length = 0
+
+    def _handshake_backoff_remaining(self) -> float:
+        deadline = self._state.handshake_backoff_until
+        if deadline <= 0:
+            return 0.0
+        return max(0.0, deadline - time.monotonic())
+
+    async def _respect_handshake_backoff(self) -> None:
+        delay = self._handshake_backoff_remaining()
+        if delay <= 0:
+            return
+        self._logger.warning(
+            "Delaying serial handshake for %.2fs due to prior failures",
+            delay,
+        )
+        await self._publish_handshake_event(
+            "backoff_wait",
+            reason=self._state.last_handshake_error,
+            detail="waiting_for_backoff",
+            extra={"delay_seconds": round(delay, 3)},
+        )
+        await asyncio.sleep(delay)
+
+    async def _publish_handshake_event(
+        self,
+        event: str,
+        *,
+        reason: Optional[str] = None,
+        detail: Optional[str] = None,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "event": event,
+            "reason": reason,
+            "detail": detail,
+            "attempts": self._state.handshake_attempts,
+            "successes": self._state.handshake_successes,
+            "failures": self._state.handshake_failures,
+            "failure_streak": self._state.handshake_failure_streak,
+            "backoff_until": self._state.handshake_backoff_until,
+            "fatal_count": self._state.handshake_fatal_count,
+            "fatal_reason": self._state.handshake_fatal_reason,
+            "fatal_detail": self._state.handshake_fatal_detail,
+            "fatal_unix": self._state.handshake_fatal_unix,
+        }
+        if extra:
+            payload.update(extra)
+        message = (
+            PublishableMessage(
+                topic_name=handshake_topic(self._state.mqtt_topic_prefix),
+                payload=json.dumps(payload).encode("utf-8"),
+            )
+            .with_content_type("application/json")
+            .with_user_property("bridge-event", "handshake")
+        )
+        await self._enqueue_mqtt(message)
+
+    async def _handle_handshake_success(self) -> None:
+        self._state.record_handshake_success()
+        duration = round(self._state.handshake_last_duration, 3)
+        await self._publish_handshake_event(
+            "success",
+            extra={"duration_seconds": duration},
+        )
+
+    async def _handle_handshake_failure(
+        self,
+        reason: str,
+        *,
+        detail: Optional[str] = None,
+    ) -> None:
+        self._state.record_handshake_failure(reason)
+        is_fatal = reason in _FATAL_HANDSHAKE_REASONS
+        if is_fatal:
+            self._state.record_handshake_fatal(reason, detail)
+            self._logger.error(
+                "Fatal serial handshake failure reason=%s detail=%s",
+                reason,
+                detail or "",
+            )
+        backoff = self._maybe_schedule_handshake_backoff(reason)
+        extra: dict[str, Any] = {
+            "duration_seconds": round(
+                self._state.handshake_last_duration,
+                3,
+            )
+        }
+        if backoff:
+            extra["backoff_seconds"] = round(backoff, 3)
+        extra["fatal"] = is_fatal
+        extra["fatal_count"] = self._state.handshake_fatal_count
+        if self._state.handshake_fatal_count > 0:
+            extra["fatal_unix"] = self._state.handshake_fatal_unix
+            if self._state.handshake_fatal_detail:
+                extra["fatal_detail"] = self._state.handshake_fatal_detail
+        await self._publish_handshake_event(
+            "failure",
+            reason=reason,
+            detail=detail,
+            extra=extra,
+        )
+
+    def _maybe_schedule_handshake_backoff(
+        self, reason: str
+    ) -> Optional[float]:
+        streak = max(1, self._state.handshake_failure_streak)
+        fatal = reason in _FATAL_HANDSHAKE_REASONS
+        threshold = 1 if fatal else 3
+        if streak < threshold:
+            return None
+        power = max(0, streak - threshold)
+        delay = min(
+            SERIAL_HANDSHAKE_BACKOFF_MAX,
+            SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** power),
+        )
+        self._state.handshake_backoff_until = time.monotonic() + delay
+        return delay
+
+    def _fatal_handshake_reason(self) -> Optional[str]:
+        reason = self._state.last_handshake_error
+        if reason in _FATAL_HANDSHAKE_REASONS:
+            return reason
+        return None
+
+    def compute_handshake_tag(self, nonce: bytes) -> bytes:
+        return self._compute_handshake_tag(nonce)
+
+    def _compute_handshake_tag(self, nonce: bytes) -> bytes:
+        secret = self._config.serial_shared_secret
+        if not secret:
+            return b""
+        digest = hmac.new(secret, nonce, hashlib.sha256).digest()
+        return digest[:SERIAL_HANDSHAKE_TAG_LEN]

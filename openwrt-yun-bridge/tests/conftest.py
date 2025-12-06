@@ -86,6 +86,7 @@ def runtime_config() -> RuntimeConfig:
         serial_retry_timeout=0.01,
         serial_retry_attempts=1,
         serial_shared_secret=b"unit-test-secret-1234",
+        mqtt_spool_dir="/tmp/yunbridge-tests-spool",
     )
 
 

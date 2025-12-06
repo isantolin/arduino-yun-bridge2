@@ -9,6 +9,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+import psutil
+
 from ...common import encode_status_reason, pack_u16, unpack_u16
 from ...protocol.topics import Topic, topic_path
 from ...mqtt import PublishableMessage
@@ -19,11 +21,6 @@ from .base import BridgeContext
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 logger = logging.getLogger("yunbridge.process")
-
-try:
-    import psutil  # type: ignore[import-first]
-except ImportError:  # pragma: no cover - optional dependency on OpenWrt image
-    psutil = None
 
 _PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
 
@@ -644,7 +641,7 @@ class ProcessComponent:
         if proc.returncode is not None:
             return
         pid_value = getattr(proc, "pid", None)
-        if psutil is None or pid_value is None:
+        if pid_value is None:
             proc.kill()
             return
         pid = int(pid_value)
@@ -714,8 +711,6 @@ class ProcessComponent:
 
     @staticmethod
     def _kill_process_tree_sync(pid: int) -> None:
-        if psutil is None:
-            return
         try:
             process = psutil.Process(pid)
         except psutil.Error:

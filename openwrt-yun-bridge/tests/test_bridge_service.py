@@ -233,7 +233,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         fake_clock = _FakeMonotonic(100.0)
         monkeypatch.setattr(
-            "yunbridge.services.runtime.time.monotonic",
+            "yunbridge.services.handshake.time.monotonic",
             fake_clock.monotonic,
         )
 
@@ -279,7 +279,7 @@ def test_sync_auth_failure_schedules_backoff(
 
         fake_clock = _FakeMonotonic(200.0)
         monkeypatch.setattr(
-            "yunbridge.services.runtime.time.monotonic",
+            "yunbridge.services.handshake.time.monotonic",
             fake_clock.monotonic,
         )
 
@@ -303,6 +303,10 @@ def test_sync_auth_failure_schedules_backoff(
         )
         assert first_delay > 0
         assert runtime_state.last_handshake_error == "sync_auth_mismatch"
+        assert runtime_state.handshake_fatal_count == 1
+        assert runtime_state.handshake_fatal_reason == "sync_auth_mismatch"
+        assert runtime_state.handshake_fatal_detail == "nonce_or_tag_mismatch"
+        assert runtime_state.handshake_fatal_unix > 0
 
         fake_clock.advance(first_delay + 0.5)
         nonce_two, tag_two = _prime_handshake(4)
@@ -316,6 +320,7 @@ def test_sync_auth_failure_schedules_backoff(
         )
         assert second_delay > first_delay
         assert runtime_state.handshake_failure_streak >= 2
+        assert runtime_state.handshake_fatal_count == 2
 
     asyncio.run(_run())
 
@@ -331,7 +336,7 @@ async def test_transient_handshake_failures_eventually_backoff(
 
     fake_clock = _FakeMonotonic(50.0)
     monkeypatch.setattr(
-        "yunbridge.services.runtime.time.monotonic",
+        "yunbridge.services.handshake.time.monotonic",
         fake_clock.monotonic,
     )
 
@@ -345,6 +350,8 @@ async def test_transient_handshake_failures_eventually_backoff(
                 - fake_clock.monotonic()
             )
             assert remaining >= SERIAL_HANDSHAKE_BACKOFF_BASE
+
+    assert runtime_state.handshake_fatal_count == 0
 
 
 def test_on_serial_connected_raises_on_secret_mismatch(

@@ -9,7 +9,7 @@ PKG_MAINTAINER:=Ignacio Santolin and contributors
 
 MQTT_JS_VERSION:=5.14.1
 MQTT_JS_HASH:=a72e7b7c2bad997f81c9b394d38bc9cdb79c49dfb59f9ec729030c7e6209ac1e
-MQTT_JS_URL:=https://unpkg.com/mqtt@$(MQTT_JS_VERSION)/dist/mqtt.min.js
+MQTT_JS_URL:=https://unpkg.com/mqtt@$(MQTT_JS_VERSION)/dist/
 MQTT_JS_DL_FILE:=mqtt-$(MQTT_JS_VERSION).min.js
 
 include $(INCLUDE_DIR)/package.mk
@@ -17,6 +17,7 @@ include $(INCLUDE_DIR)/package.mk
 define Download/mqtt_js
 	FILE:=$(MQTT_JS_DL_FILE)
 	URL:=$(MQTT_JS_URL)
+	URL_FILE:=mqtt.min.js
 	HASH:=$(MQTT_JS_HASH)
 endef
 

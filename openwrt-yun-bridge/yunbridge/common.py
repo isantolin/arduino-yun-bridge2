@@ -133,11 +133,10 @@ def get_uci_config() -> Dict[str, str]:
 
     try:
         import uci
-    except ImportError:
-        logger.warning(
-            "python3-uci bindings unavailable; falling back to defaults."
-        )
-        return get_default_config()
+    except ImportError as exc:  # pragma: no cover - fail fast in dev envs
+        raise RuntimeError(
+            "python3-uci is required to load Yun Bridge configuration."
+        ) from exc
 
     uci_exception = getattr(uci, "UciException", Exception)
 

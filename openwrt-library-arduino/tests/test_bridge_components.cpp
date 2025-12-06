@@ -88,6 +88,28 @@ void process_poll_handler_trampoline(
       reinterpret_cast<const char*>(stderr_data), stderr_len);
 }
 
+struct StatusHandlerState {
+  static StatusHandlerState* instance;
+  bool called = false;
+  uint8_t status_code = 0x00;
+  std::string payload;
+};
+
+StatusHandlerState* StatusHandlerState::instance = nullptr;
+
+void status_handler_trampoline(
+    uint8_t status_code, const uint8_t* payload, uint16_t length) {
+  auto* state = StatusHandlerState::instance;
+  if (!state) {
+    return;
+  }
+  state->called = true;
+  state->status_code = status_code;
+  state->payload.assign(
+      reinterpret_cast<const char*>(payload),
+      reinterpret_cast<const char*>(payload) + length);
+}
+
 class RecordingStream : public Stream {
  public:
   size_t write(uint8_t c) override {
@@ -533,6 +555,113 @@ void test_malformed_status_triggers_retransmit() {
   assert(bridge._retry_count == 1);
 }
 
+void test_link_sync_generates_tag_and_ack() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  const char* secret = "unit-test-secret";
+  bridge.begin(115200, secret);
+
+  const uint8_t nonce[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+  Frame frame{};
+  frame.header.version = PROTOCOL_VERSION;
+  frame.header.command_id = CMD_LINK_SYNC;
+  frame.header.payload_length = sizeof(nonce);
+  std::memcpy(frame.payload, nonce, sizeof(nonce));
+
+  stream.clear();
+  bridge.dispatch(frame);
+
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 2);
+  const Frame& sync = frames.front();
+  assert(sync.header.command_id == CMD_LINK_SYNC_RESP);
+  assert(sync.header.payload_length == sizeof(nonce) + 16);
+  assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
+  uint8_t expected_tag[16];
+  bridge._computeHandshakeTag(nonce, sizeof(nonce), expected_tag);
+  assert(std::memcmp(sync.payload + sizeof(nonce), expected_tag, 16) == 0);
+
+  const Frame& ack = frames.back();
+  assert(ack.header.command_id == STATUS_ACK);
+  assert(ack.header.payload_length == 2);
+  assert(read_u16_be(ack.payload) == CMD_LINK_SYNC);
+}
+
+void test_link_sync_without_secret_replays_nonce_only() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  bridge.begin(115200, nullptr);
+
+  const uint8_t nonce[] = {0xAA, 0xBB, 0xCC};
+  Frame frame{};
+  frame.header.version = PROTOCOL_VERSION;
+  frame.header.command_id = CMD_LINK_SYNC;
+  frame.header.payload_length = sizeof(nonce);
+  std::memcpy(frame.payload, nonce, sizeof(nonce));
+
+  stream.clear();
+  bridge.dispatch(frame);
+
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 2);
+  const Frame& sync = frames.front();
+  assert(sync.header.command_id == CMD_LINK_SYNC_RESP);
+  assert(sync.header.payload_length == sizeof(nonce));
+  assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
+}
+
+void test_ack_timeout_emits_status_and_resets_state() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  StatusHandlerState status_state;
+  StatusHandlerState::instance = &status_state;
+  bridge.onStatus(status_handler_trampoline);
+
+  const uint8_t payload[] = {0x99};
+  bool sent = bridge.sendFrame(CMD_MAILBOX_PUSH, payload, sizeof(payload));
+  assert(sent);
+  assert(bridge._awaiting_ack);
+
+  bridge._retry_count = BridgeClass::kMaxAckRetries;
+  bridge._last_send_millis = 1000;
+  bridge._processAckTimeout();
+
+  assert(status_state.called);
+  assert(status_state.status_code == STATUS_TIMEOUT);
+  assert(!bridge._awaiting_ack);
+  StatusHandlerState::instance = nullptr;
+}
+
+void test_process_run_rejects_oversized_payload() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  StatusHandlerState status_state;
+  StatusHandlerState::instance = &status_state;
+  bridge.onStatus(status_handler_trampoline);
+
+  std::string huge(rpc::MAX_PAYLOAD_SIZE + 4, 'x');
+  bridge.requestProcessRun(huge.c_str());
+
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 1);
+  const Frame& status_frame = frames.front();
+  assert(status_frame.header.command_id == STATUS_ERROR);
+  std::string message(
+      reinterpret_cast<const char*>(status_frame.payload),
+      reinterpret_cast<const char*>(status_frame.payload) +
+          status_frame.header.payload_length);
+  assert(message == "process_run_payload_too_large");
+  assert(status_state.called);
+  assert(status_state.payload == "process_run_payload_too_large");
+
+  bridge._handleAck(STATUS_ERROR);
+  StatusHandlerState::instance = nullptr;
+}
+
 }  // namespace
 
 int main() {
@@ -547,5 +676,9 @@ int main() {
   test_process_poll_response_requeues_on_streaming_output();
   test_ack_flushes_pending_queue_after_response();
   test_malformed_status_triggers_retransmit();
+  test_link_sync_generates_tag_and_ack();
+  test_link_sync_without_secret_replays_nonce_only();
+  test_ack_timeout_emits_status_and_resets_state();
+  test_process_run_rejects_oversized_payload();
   return 0;
 }

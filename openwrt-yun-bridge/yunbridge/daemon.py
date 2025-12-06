@@ -9,49 +9,9 @@ import struct
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Generic, Optional, Tuple, TypeVar, cast
+from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
 
-_BaseExceptionT_co = TypeVar(
-    "_BaseExceptionT_co", bound=BaseException, covariant=True
-)
-_ExceptionT_co = TypeVar(
-    "_ExceptionT_co", bound=BaseException, covariant=True
-)
-
-try:  # Python >= 3.11
-    from builtins import (
-        BaseExceptionGroup as _NativeBaseExceptionGroup,
-        ExceptionGroup as _NativeExceptionGroup,
-    )
-except ImportError:  # pragma: no cover - fallback for Python < 3.11
-
-    class _CompatibilityBaseExceptionGroup(
-        BaseException, Generic[_BaseExceptionT_co]
-    ):
-        """Compatibility shim for runtimes lacking ExceptionGroup."""
-
-        exceptions: tuple[_BaseExceptionT_co, ...]
-
-        def __init__(
-            self,
-            _message: str = "ExceptionGroup not supported",
-            *exceptions: _BaseExceptionT_co,
-        ) -> None:
-            super().__init__(_message)
-            self.exceptions = tuple(exceptions)
-
-    class _CompatibilityExceptionGroup(
-        _CompatibilityBaseExceptionGroup[_ExceptionT_co],
-        Exception,
-        Generic[_ExceptionT_co],
-    ):
-        pass
-
-    _NativeBaseExceptionGroup = _CompatibilityBaseExceptionGroup
-    _NativeExceptionGroup = _CompatibilityExceptionGroup
-
-BaseExceptionGroup = _NativeBaseExceptionGroup
-ExceptionGroup = _NativeExceptionGroup
+from builtins import BaseExceptionGroup, ExceptionGroup
 
 import serial
 import paho.mqtt.client as paho_client
@@ -785,58 +745,16 @@ async def _mqtt_publisher_loop(
             await state.flush_mqtt_spool()
 
 
-class _DeliverMessageStream:
-    """Minimal async iterator built from legacy deliver_message APIs."""
-
-    def __init__(self, deliver_fn: Callable[[], Awaitable[Any]]) -> None:
-        self._deliver_fn = deliver_fn
-
-    async def __aenter__(self) -> "_DeliverMessageStream":
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: Optional[type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[Any],
-    ) -> bool:
-        return False
-
-    def __aiter__(self) -> "_DeliverMessageStream":
-        return self
-
-    async def __anext__(self) -> Any:
-        return await self._deliver_fn()
-
-
 def _mqtt_message_stream(client: MQTTClientProtocol) -> MQTTMessageStream:
-    """Return the best-effort message stream for any aiomqtt version."""
+    """Return the MQTT message stream exposed by the client implementation."""
 
     stream_factory = getattr(client, "unfiltered_messages", None)
-    if callable(stream_factory):
-        return cast(MQTTMessageStream, stream_factory())
-
-    legacy_factory = getattr(client, "messages", None)
-    if callable(legacy_factory):
-        logger.warning(
-            "MQTT client missing unfiltered_messages(); "
-            "using legacy messages() API.",
+    if not callable(stream_factory):
+        raise RuntimeError(
+            "MQTT client does not expose unfiltered_messages(); "
+            "upgrade aiomqtt to a supported version.",
         )
-        return cast(MQTTMessageStream, legacy_factory())
-
-    deliver_fn_raw = getattr(client, "deliver_message", None)
-    if callable(deliver_fn_raw):
-        deliver_fn = cast(Callable[[], Awaitable[Any]], deliver_fn_raw)
-        logger.warning(
-            "MQTT client missing message stream helpers; "
-            "falling back to deliver_message().",
-        )
-        return cast(MQTTMessageStream, _DeliverMessageStream(deliver_fn))
-
-    raise RuntimeError(
-        "MQTT client does not expose unfiltered_messages(), "
-        "messages(), or deliver_message().",
-    )
+    return cast(MQTTMessageStream, stream_factory())
 
 
 async def _mqtt_subscriber_loop(

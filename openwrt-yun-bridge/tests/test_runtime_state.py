@@ -304,7 +304,9 @@ def test_create_runtime_state_marks_spool_degraded(
 
     assert state.mqtt_spool is None
     assert state.mqtt_spool_degraded is True
-    assert state.mqtt_spool_failure_reason == "initialization_failed:boom"
+    assert state.mqtt_spool_failure_reason == "initialization_failed"
+    assert state.mqtt_spool_last_error
+    assert "boom" in state.mqtt_spool_last_error
 
 
 def test_stash_mqtt_message_disables_spool_on_failure(
@@ -331,8 +333,9 @@ def test_stash_mqtt_message_disables_spool_on_failure(
         assert state.mqtt_spool_degraded is True
         assert state.mqtt_spool_errors == 1
         assert state.mqtt_dropped_messages == 0
-        assert state.mqtt_spool_failure_reason is not None
-        assert "append_failed" in state.mqtt_spool_failure_reason
+        assert state.mqtt_spool_failure_reason == "append_failed"
+        assert state.mqtt_spool_last_error is not None
+        assert "append_failed" in state.mqtt_spool_last_error
 
     asyncio.run(_run())
 
@@ -361,8 +364,9 @@ def test_flush_mqtt_spool_handles_pop_failure(
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
         assert state.mqtt_spool_errors == 1
-        assert state.mqtt_spool_failure_reason is not None
-        assert "pop_failed" in state.mqtt_spool_failure_reason
+        assert state.mqtt_spool_failure_reason == "pop_failed"
+        assert state.mqtt_spool_last_error is not None
+        assert "pop_failed" in state.mqtt_spool_last_error
 
     asyncio.run(_run())
 

@@ -181,7 +181,10 @@ class FileComponent:
                     success,
                     content,
                     reason,
-                ) = await self._perform_file_operation(ACTION_FILE_READ, filename)
+                ) = await self._perform_file_operation(
+                    ACTION_FILE_READ,
+                    filename,
+                )
                 if not success:
                     outcome["status"] = reason or "read_failed"
                     logger.error(

@@ -85,7 +85,9 @@ def test_spool_skips_corrupt_rows(
 
 
 def test_spool_fallback_on_disk_full(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test automatic fallback to memory queue when disk write fails."""
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=5)
@@ -98,20 +100,22 @@ def test_spool_fallback_on_disk_full(
 
     # First append should fail on disk and trigger fallback
     spool.append(_make_message("topic/disk"))
-    
+
     assert spool.is_degraded
     assert "disk_full" in caplog.text
     assert "Switching to memory-only mode" in caplog.text
-    
+
     # Second append goes to memory
     spool.append(_make_message("topic/memory"))
-    
+
     assert spool.pending == 2
-    
+
     # Verify pops work from memory
     msg1 = spool.pop_next()
     msg2 = spool.pop_next()
-    
+
+    assert msg1 is not None
+    assert msg2 is not None
     assert msg1.topic_name == "topic/disk"
     assert msg2.topic_name == "topic/memory"
 
@@ -119,21 +123,22 @@ def test_spool_fallback_on_disk_full(
 def test_spool_fallback_on_init_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Test that spool initializes in degraded mode if directory creation fails."""
-    
+    """Spool degrades if directory creation fails."""
+
     # Force Path.mkdir to fail
     def _fail_mkdir(*args, **kwargs):
         raise PermissionError("No access")
-        
+
     monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
-    
+
     spool = MQTTPublishSpool("/root/protected", limit=5)
-    
+
     assert spool.is_degraded
     assert spool._disk_queue is None
-    
+
     # Should still work in memory
     spool.append(_make_message("topic/fallback"))
     assert spool.pending == 1
-    assert spool.pop_next().topic_name == "topic/fallback"
-    
+    popped = spool.pop_next()
+    assert popped is not None
+    assert popped.topic_name == "topic/fallback"

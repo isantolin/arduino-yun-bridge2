@@ -51,10 +51,10 @@ def test_shell_pid_payload_rejects_invalid(segment: str) -> None:
 
 @given(command=st.text(min_size=1, max_size=512))
 def test_shell_command_payload_accepts_valid_utf8(command: str) -> None:
-    """Verify that any non-empty UTF-8 string up to 512 chars is accepted as raw payload."""
+    """Any non-empty UTF-8 ≤512 chars is accepted as raw payload."""
     if not command.strip():
         return  # Empty commands are invalid
-        
+
     encoded = command.encode("utf-8")
     payload = ShellCommandPayload.from_mqtt(encoded)
     assert payload.command == command.strip()

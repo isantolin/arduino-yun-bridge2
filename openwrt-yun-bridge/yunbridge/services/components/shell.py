@@ -52,7 +52,7 @@ class ShellComponent:
         inbound: Optional[InboundMessage] = None,
     ) -> None:
         action = parts[2] if len(parts) >= 3 else ""
-        
+
         if action == ACTION_SHELL_RUN:
             payload_model = self._parse_shell_command(payload, action)
             if payload_model is None:

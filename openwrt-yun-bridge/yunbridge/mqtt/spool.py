@@ -7,13 +7,29 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Deque as TypingDeque, Optional
+from typing import Any, Deque as TypingDeque, Optional, Protocol, TypeAlias, cast
 
 from diskcache import Deque as DiskDeque
 
 from . import PublishableMessage
 
 logger = logging.getLogger("yunbridge.mqtt.spool")
+
+SpoolRecord: TypeAlias = dict[str, Any]
+
+
+class DiskQueue(Protocol):
+    def append(self, item: SpoolRecord) -> None: ...
+
+    def appendleft(self, item: SpoolRecord) -> None: ...
+
+    def popleft(self) -> SpoolRecord: ...
+
+    def close(self) -> None: ...
+
+    def clear(self) -> None: ...
+
+    def __len__(self) -> int: ...
 
 
 class MQTTSpoolError(RuntimeError):
@@ -38,8 +54,8 @@ class MQTTPublishSpool:
         self.directory = Path(directory)
         self.limit = max(0, limit)
         self._lock = threading.Lock()
-        self._memory_queue: TypingDeque[dict[str, Any]] = collections.deque()
-        self._disk_queue: Optional[DiskDeque] = None
+        self._memory_queue: TypingDeque[SpoolRecord] = collections.deque()
+        self._disk_queue: Optional[DiskQueue] = None
         self._use_disk = True
         self._dropped_due_to_limit = 0
         self._trim_events = 0
@@ -52,7 +68,9 @@ class MQTTPublishSpool:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 queue_dir = self.directory / "queue"
                 queue_dir.mkdir(parents=True, exist_ok=True)
-                self._disk_queue = DiskDeque(directory=str(queue_dir))
+                self._disk_queue = cast(
+                    DiskQueue, DiskDeque(directory=str(queue_dir))
+                )
             except Exception as exc:
                 logger.warning(
                     "Failed to initialize disk spool at %s; falling back "
@@ -87,7 +105,7 @@ class MQTTPublishSpool:
             pass
 
     def append(self, message: PublishableMessage) -> None:
-        record = message.to_spool_record()
+        record: SpoolRecord = message.to_spool_record()
         with self._lock:
             if self._use_disk and self._disk_queue is not None:
                 try:
@@ -104,14 +122,11 @@ class MQTTPublishSpool:
 
     def pop_next(self) -> Optional[PublishableMessage]:
         while True:
-            record: Optional[dict[str, Any]] = None
+            record: Optional[SpoolRecord] = None
             with self._lock:
-                # Prefer disk if active, then memory
-                # If fallback is active, we might still have items on disk from before?
-                # Strategy: Drain disk if possible, then drain memory. Or simple fallback switch.
-                # Simplest robust strategy:
-                # If disk is active, try pop from disk. If error, switch to fallback.
-                # If fallback, pop from memory.
+                # Prefer disk if active; drain memory otherwise. If fallback is
+                # engaged we may still have disk entries pending, so attempt
+                # them first and degrade on failure.
 
                 if self._use_disk and self._disk_queue is not None:
                     try:
@@ -140,10 +155,9 @@ class MQTTPublishSpool:
                 continue
 
     def requeue(self, message: PublishableMessage) -> None:
-        # Requeue puts it back on the right (end). Ideally pushleft but append is safer for FIFO.
-        # But `flush_mqtt_spool` expects popping from left. If we fail to send, we should put it back.
-        # Ideally pushleft (re-inject at head).
-        record = message.to_spool_record()
+        # Requeue by returning the record to the front so the next dequeue
+        # attempt retries it immediately.
+        record: SpoolRecord = message.to_spool_record()
         with self._lock:
             if self._use_disk and self._disk_queue is not None:
                 try:
@@ -194,29 +208,30 @@ class MQTTPublishSpool:
             self._disk_queue = None
 
     def _handle_disk_error(self, exc: Exception, op: str) -> None:
-        reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
-        logger.error(
-            (
-                "MQTT Spool disk error during %s: %s. "
-                "Switching to memory-only mode (reason=%s)."
-            ),
-            op,
-            exc,
-            reason,
+        reason = (
+            "disk_full"
+            if getattr(exc, "errno", 0) == errno.ENOSPC
+            else "io_error"
         )
+        message = (
+            "MQTT Spool disk error during %s: %s. "
+            "Switching to memory-only mode (reason=%s)."
+        )
+        logger.error(message, op, exc, reason)
         self._activate_fallback()
         # We don't raise MQTTSpoolError anymore; we handle it by degrading.
 
     def _trim_locked(self) -> None:
         if self.limit <= 0:
             return
-        
+
         current_size = len(self._memory_queue)
         if self._disk_queue is not None:
             try:
                 current_size += len(self._disk_queue)
             except Exception:
-                pass # Can't count disk, assume 0 for disk part or just trim memory
+                # Can't count disk, assume 0 for disk part or just trim memory
+                pass
 
         dropped = 0
         while current_size > self.limit:
@@ -230,13 +245,13 @@ class MQTTPublishSpool:
             except Exception:
                 # Disk failure during trim, degrade
                 self._activate_fallback()
-            
+
             if self._memory_queue:
                 self._memory_queue.popleft()
                 dropped += 1
                 current_size -= 1
             else:
-                break # Should not happen if size calculation correct
+                break  # Should not happen if size calculation correct
 
         if dropped:
             self._dropped_due_to_limit += dropped

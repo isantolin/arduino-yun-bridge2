@@ -3,19 +3,29 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import ssl
 import struct
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar, cast
+from typing import (
+    Any,
+    AsyncContextManager,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Protocol,
+    TypeVar,
+    cast,
+)
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
 import serial
 import serial_asyncio
-from aiomqtt import Client as MqttClient, MqttError
+from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -38,10 +48,7 @@ from yunbridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from yunbridge.mqtt import (
-    ProtocolVersion,
-    as_inbound_message,
-)
+from yunbridge.mqtt import as_inbound_message
 from yunbridge.protocol import Topic, topic_path
 from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
@@ -70,6 +77,24 @@ MAX_SERIAL_PACKET_BYTES = (
     + protocol.CRC_SIZE
     + 4
 )
+
+
+class MQTTClientProtocol(Protocol):
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes,
+        *,
+        qos: int,
+        retain: bool,
+        properties: Properties | None = None,
+    ) -> None: ...
+
+    async def subscribe(self, topic: str, qos: int = 0) -> None: ...
+
+    async def unsubscribe(self, topic: str) -> None: ...
+
+    def messages(self) -> AsyncContextManager[AsyncIterator[Any]]: ...
 
 
 @dataclass(slots=True)
@@ -662,17 +687,17 @@ async def serial_reader_task(
 
 
 async def _mqtt_publisher_loop(
-    client: MqttClient,
+    client: MQTTClientProtocol,
     state: RuntimeState,
 ) -> None:
     while True:
         await state.flush_mqtt_spool()
         message_to_publish = await state.mqtt_publish_queue.get()
         topic_name = message_to_publish.topic_name
-        
+
         # Build properties using our helper
         props = build_mqtt_properties(message_to_publish)
-        
+
         try:
             await client.publish(
                 topic_name,
@@ -717,11 +742,15 @@ async def _mqtt_publisher_loop(
 
 
 async def _mqtt_subscriber_loop(
-    client: MqttClient,
+    client: MQTTClientProtocol,
     service: BridgeService,
 ) -> None:
     try:
-        async with client.messages() as stream:
+        messages_cm = client.messages()
+        if inspect.isawaitable(messages_cm):
+            messages_cm = await messages_cm
+
+        async with messages_cm as stream:
             async for message in stream:
                 # Convert aiomqtt message to our internal DTO
                 inbound = as_inbound_message(message)
@@ -765,7 +794,7 @@ def _set_mqtt_property(props: Properties, camel_name: str, value: Any) -> None:
     try:
         setattr(props, camel_name, value)
     except AttributeError:
-        # paho-mqtt might lack some properties if very old, but we depend on >=2.1
+        # Some older paho builds may lack these attributes; ignore gracefully.
         pass
 
 
@@ -777,6 +806,20 @@ def _build_mqtt_connect_properties() -> Properties:
     return props
 
 
+def _apply_connect_properties(client: MQTTClientProtocol) -> None:
+    try:
+        props = _build_mqtt_connect_properties()
+        raw_client = getattr(client, "_client", None)
+        native = getattr(raw_client, "_client", raw_client)
+        if native is not None and hasattr(native, "_connect_properties"):
+            setattr(native, "_connect_properties", props)
+    except Exception:
+        logger.debug(
+            "Unable to apply MQTT CONNECT properties; continuing without",
+            exc_info=True,
+        )
+
+
 async def mqtt_task(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -784,8 +827,8 @@ async def mqtt_task(
     tls_context: ssl.SSLContext | None,
 ) -> None:
     reconnect_delay = max(1, config.reconnect_delay)
-    
-    # Configure aiomqtt Client directly
+
+    # Configure aiomqtt Client directly with TLS and credentials.
     client_kwargs: dict[str, Any] = {
         "hostname": config.mqtt_host,
         "port": config.mqtt_port,
@@ -794,36 +837,27 @@ async def mqtt_task(
         "tls_context": tls_context,
         "logger": logging.getLogger("yunbridge.mqtt.client"),
         "protocol": ProtocolVersion.V5,
-        "clean_session": None, # Deprecated in v5, implicit in clean_start
+        "clean_session": None,  # Deprecated in v5; clean_start handles this.
     }
-    
-    # aiomqtt < 2.0 uses 'clean_session', >= 2.0 'clean_start'
-    # We target aiomqtt 2.4.0+, so we use clean_start=True (for FIRST_ONLY equivalent)
-    # Actually, aiomqtt doesn't support FIRST_ONLY logic directly in constructor
-    # like paho does. We rely on session expiry 0 to clean up.
-    
+
+    # aiomqtt < 2.0 relied on clean_session. We target 2.4+, so the
+    # session expiry interval of zero keeps the connection stateless.
+
     while True:
         try:
-            # We must use the properties for connection
-            connect_props = _build_mqtt_connect_properties()
-            
-            async with MqttClient(**client_kwargs) as client:
-                # Manual property injection because aiomqtt constructor doesn't expose it easily
-                # in a standardized way for CONNECT packets before v2.3+.
-                # But aiomqtt 2.4+ allows properties in __aenter__ if we didn't use context manager?
-                # Actually, aiomqtt.Client takes kwargs that pass to paho.
-                # However, for CONNECT properties specifically, we might need to hook into paho instance.
-                # Since we are using ProtocolVersion.V5, paho client defaults are mostly sane.
-                # SessionExpiry 0 is default.
-                
+            client_cm = cast(
+                AsyncContextManager[MQTTClientProtocol],
+                MqttClient(**client_kwargs),
+            )
+            async with client_cm as client:
+                _apply_connect_properties(client)
                 logger.info("Connected to MQTT broker.")
 
-                # Subscribe
                 prefix = state.mqtt_topic_prefix
+
                 def _sub_path(top: Topic | str, *segs: str) -> str:
                     return topic_path(prefix, top, *segs)
 
-                # Bulk subscribe
                 topics = [
                     (_sub_path(Topic.DIGITAL, "+", "mode"), 0),
                     (_sub_path(Topic.DIGITAL, "+", "read"), 0),
@@ -845,12 +879,10 @@ async def mqtt_task(
                     (_sub_path(Topic.FILE, "read", "#"), 0),
                     (_sub_path(Topic.FILE, "remove", "#"), 0),
                 ]
-                
-                # aiomqtt subscribe takes topic, qos.
-                # We can iterate.
+
                 for topic, qos in topics:
                     await client.subscribe(topic, qos=qos)
-                
+
                 logger.info("Subscribed to %d MQTT topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:

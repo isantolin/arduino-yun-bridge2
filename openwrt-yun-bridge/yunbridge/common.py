@@ -132,37 +132,37 @@ def build_mqtt_properties(message: Any) -> Any | None:
         message.correlation_data is not None,
         message.user_properties,
     ])
-    
+
     if not has_props:
         return None
 
     props = Properties(PacketTypes.PUBLISH)
-    
+
     if message.content_type is not None:
         props.ContentType = message.content_type
-        
+
     if message.payload_format_indicator is not None:
         props.PayloadFormatIndicator = message.payload_format_indicator
-        
+
     if message.message_expiry_interval is not None:
         props.MessageExpiryInterval = int(message.message_expiry_interval)
-        
+
     if message.response_topic:
         props.ResponseTopic = message.response_topic
-        
+
     if message.correlation_data is not None:
         props.CorrelationData = message.correlation_data
-        
+
     if message.user_properties:
         props.UserProperty = list(message.user_properties)
-        
+
     return props
 
 
 def get_uci_config() -> Dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
     try:
-        import uci as uci_runtime
+        import uci as uci_runtime  # type: ignore[reportMissingImports]
     except ImportError as exc:  # pragma: no cover - fail fast in dev envs
         raise RuntimeError(
             "python3-uci is required to load Yun Bridge configuration."
@@ -258,4 +258,3 @@ __all__: Final[tuple[str, ...]] = (
     "get_uci_config",
     "build_mqtt_properties",
 )
-

@@ -318,12 +318,12 @@ def test_mqtt_task_handles_incoming_message(
         mock_client = AsyncMock()
         mock_client.__aenter__.return_value = mock_client
         mock_client.__aexit__.return_value = None
-        
+
         # Mock messages context manager
         mock_msgs_ctx = AsyncMock()
         mock_msgs_ctx.__aenter__.return_value = mock_msgs_ctx
         mock_client.messages.return_value = mock_msgs_ctx
-        
+
         # Mock iterator
         fake_msg = MagicMock()
         fake_msg.topic = f"{state.mqtt_topic_prefix}/console/in"
@@ -331,13 +331,16 @@ def test_mqtt_task_handles_incoming_message(
         fake_msg.qos = 0
         fake_msg.retain = False
         fake_msg.properties = None
-        
+
         async def msg_gen():
             yield fake_msg
-            
+
         mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
-        monkeypatch.setattr("yunbridge.daemon.MqttClient", lambda **kw: mock_client)
+        monkeypatch.setattr(
+            "yunbridge.daemon.MqttClient",
+            lambda **kw: mock_client,
+        )
 
         task = asyncio.create_task(
             mqtt_task(runtime_config, state, cast(Any, service), None)

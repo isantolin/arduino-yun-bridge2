@@ -125,18 +125,25 @@ class PublishableMessage:
     ) -> "PublishableMessage":
         payload_b64 = str(record.get("payload", ""))
         payload = base64.b64decode(payload_b64.encode("ascii"))
-        
+
         correlation_raw = record.get("correlation_data")
         correlation_data = None
         if correlation_raw is not None:
-            correlation_data = base64.b64decode(str(correlation_raw).encode("ascii"))
+            encoded = str(correlation_raw).encode("ascii")
+            correlation_data = base64.b64decode(encoded)
 
         raw_properties = record.get("user_properties")
         user_properties: list[tuple[str, str]] = []
         if isinstance(raw_properties, (list, tuple)):
-            for entry in raw_properties:
-                if isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                    user_properties.append((str(entry[0]), str(entry[1])))
+            for raw_entry_obj in raw_properties:
+                if not isinstance(raw_entry_obj, (list, tuple)):
+                    continue
+                entry_seq = cast(Sequence[Any], raw_entry_obj)
+                if len(entry_seq) < 2:
+                    continue
+                user_properties.append(
+                    (str(entry_seq[0]), str(entry_seq[1]))
+                )
 
         return cls(
             topic_name=str(record.get("topic_name", "")),
@@ -174,13 +181,13 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
     topic_obj = getattr(raw_message, "topic", "")
     topic = str(topic_obj) if topic_obj is not None else ""
     payload = getattr(raw_message, "payload", None) or b""
-    
+
     qos_val = getattr(raw_message, "qos", 0)
     try:
         qos = QOSLevel(int(qos_val))
     except (ValueError, TypeError):
         qos = QOSLevel.QOS_0
-        
+
     retain = bool(getattr(raw_message, "retain", False))
 
     response_topic: str | None = None
@@ -191,26 +198,30 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
     payload_format_indicator: int | None = None
     topic_alias: int | None = None
 
-    # aiomqtt exposes properties via .properties (if paho < 2) or direct access
-    # We assume aiomqtt 2.0+ wrapping paho 2.0+, where properties are accessible.
+    # aiomqtt exposes properties via .properties (if paho < 2) or direct
+    # attributes when running with the modern paho 2.x stack.
     properties = getattr(raw_message, "properties", None)
-    
+
     if properties is not None:
         response_topic = getattr(properties, "ResponseTopic", None)
         # Some paho versions return bytes for string props, normalize
         if isinstance(response_topic, bytes):
             response_topic = response_topic.decode("utf-8", errors="ignore")
-            
+
         correlation_data = getattr(properties, "CorrelationData", None)
-        
+
         raw_user_props = getattr(properties, "UserProperty", None)
         if raw_user_props:
             for k, v in raw_user_props:
                 user_properties.append((str(k), str(v)))
-                
+
         content_type = getattr(properties, "ContentType", None)
         message_expiry = getattr(properties, "MessageExpiryInterval", None)
-        payload_format_indicator = getattr(properties, "PayloadFormatIndicator", None)
+        payload_format_indicator = getattr(
+            properties,
+            "PayloadFormatIndicator",
+            None,
+        )
         topic_alias = getattr(properties, "TopicAlias", None)
 
     return InboundMessage(

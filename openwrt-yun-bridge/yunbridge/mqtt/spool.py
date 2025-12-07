@@ -7,7 +7,14 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Any, Deque as TypingDeque, Optional, Protocol, TypeAlias, cast
+from typing import (
+    Any,
+    Deque as TypingDeque,
+    Optional,
+    Protocol,
+    TypeAlias,
+    cast,
+)
 
 from diskcache import Deque as DiskDeque
 
@@ -199,9 +206,8 @@ class MQTTPublishSpool:
         self._fallback_active = True
         if self._disk_queue is not None:
             try:
-                # Try to salvage items from disk to memory?
-                # Might be dangerous if disk is corrupt. Safe to just abandon or keep open for reads?
-                # Here we just close it to stop further I/O attempts.
+                # Attempting to salvage data from disk could be dangerous if
+                # the queue is corrupt, so close it to stop further disk I/O.
                 self._disk_queue.close()
             except Exception:
                 pass

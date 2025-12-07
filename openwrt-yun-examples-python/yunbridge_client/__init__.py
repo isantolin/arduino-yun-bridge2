@@ -23,9 +23,6 @@ from typing import (
 )
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from paho.mqtt.properties import Properties
-from paho.mqtt.packettypes import PacketTypes
-
 from yunbridge.mqtt import (
     QOSLevel,
     InboundMessage,
@@ -116,7 +113,7 @@ class Bridge:
             protocol=ProtocolVersion.V5,
         )
         await self._exit_stack.enter_async_context(self._client)
-        
+
         logger.info("Connected to MQTT broker at %s:%d", self.host, self.port)
         self._digital_modes.clear()
         self._response_routes.clear()
@@ -275,7 +272,7 @@ class Bridge:
         reply_topic = self._reply_topic
         if reply_topic is None:
             raise RuntimeError("Reply topic not initialised; call connect()")
-        
+
         topics: tuple[str, ...]
         if isinstance(resp_topic, str):
             topics = (resp_topic,)
@@ -307,13 +304,17 @@ class Bridge:
                 )
 
             # Construct message envelope to use our shared builder logic
-            message = PublishableMessage(
-                topic_name=pub_topic,
-                payload=pub_payload,
-                qos=QOSLevel.QOS_0,
-                retain=False,
-            ).with_response_topic(reply_topic).with_correlation_data(correlation)
-            
+            message = (
+                PublishableMessage(
+                    topic_name=pub_topic,
+                    payload=pub_payload,
+                    qos=QOSLevel.QOS_0,
+                    retain=False,
+                )
+                .with_response_topic(reply_topic)
+                .with_correlation_data(correlation)
+            )
+
             props = build_mqtt_properties(message)
 
             await client.publish(
@@ -323,7 +324,7 @@ class Bridge:
                 retain=message.retain,
                 properties=props,
             )
-            
+
             delivered = await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
@@ -541,7 +542,7 @@ class Bridge:
     ) -> None:
         topic = f"{self.topic_prefix}/file/write/{filename}"
         await self._publish_simple(topic, content)
-        logger.debug("file_write('%s', %d bytes)", filename, len(content) if isinstance(content, bytes) else len(content))
+        logger.debug("file_write('%s', %d bytes)", filename, len(content))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
         return await self._publish_and_wait(
@@ -560,4 +561,3 @@ class Bridge:
         topic = f"{self.topic_prefix}/mailbox/write"
         await self._publish_simple(topic, message)
         logger.debug("mailbox_write(%d bytes)", len(message))
-    

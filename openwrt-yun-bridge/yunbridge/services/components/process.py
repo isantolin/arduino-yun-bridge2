@@ -605,7 +605,13 @@ class ProcessComponent:
                 chunk = await reader.read(size)
         except asyncio.TimeoutError:
             return b""
-        except (asyncio.IncompleteReadError, OSError, ValueError, BrokenPipeError, RuntimeError):
+        except (
+            asyncio.IncompleteReadError,
+            OSError,
+            ValueError,
+            BrokenPipeError,
+            RuntimeError,
+        ):
             logger.debug(
                 "Error reading process pipe for PID %d",
                 pid,

@@ -15,7 +15,7 @@ from typing import Iterable, Optional
 
 import serial
 
-from yunbridge.common import cobs_decode, cobs_encode
+from cobs import cobs
 from yunbridge.const import (
     DEFAULT_SERIAL_BAUD,
     SERIAL_TERMINATOR,
@@ -106,7 +106,7 @@ def _hex_with_spacing(data: bytes) -> str:
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
     crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE:], "big")
-    encoded_body = cobs_encode(raw_frame)
+    encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + SERIAL_TERMINATOR
     return FrameDebugSnapshot(
         command_id=command_id,
@@ -152,7 +152,7 @@ def _read_frame(device: serial.Serial, timeout: float) -> Optional[bytes]:
 
 
 def _decode_frame(encoded_packet: bytes) -> Frame:
-    raw_frame = cobs_decode(encoded_packet)
+    raw_frame = cobs.decode(encoded_packet)
     return Frame.from_bytes(raw_frame)
 
 

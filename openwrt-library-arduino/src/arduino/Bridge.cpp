@@ -60,6 +60,8 @@ static_assert(
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
 );
 constexpr size_t kSha256DigestSize = 32;
+constexpr size_t kFileReadLengthPrefix = 1;
+constexpr size_t kMaxFilePathLength = 255;
 
 #if defined(ARDUINO_ARCH_AVR)
 uint16_t calculateFreeMemoryBytes() {
@@ -454,7 +456,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         }
 
-        uint8_t response[rpc::MAX_PAYLOAD_SIZE];
+        uint8_t* response = _scratch_payload;
         memcpy(response, frame.payload, nonce_length);
         if (has_secret) {
           uint8_t tag[kHandshakeTagSize];
@@ -653,11 +655,12 @@ bool BridgeClass::sendFrame(uint16_t command_id, const uint8_t* payload,
 bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
                                       const uint8_t* payload,
                                       uint16_t payload_len) {
-  uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
+  uint8_t* raw_frame_buf = _raw_frame_buffer;
+  const size_t raw_capacity = sizeof(_raw_frame_buffer);
 
   // Use safe build method with buffer size
   size_t raw_len =
-      _builder.build(raw_frame_buf, sizeof(raw_frame_buf), command_id, payload, payload_len);
+      _builder.build(raw_frame_buf, raw_capacity, command_id, payload, payload_len);
 
   if (raw_len == 0) {
 #if BRIDGE_DEBUG_FRAMES
@@ -956,14 +959,20 @@ void BridgeClass::requestProcessPoll(int pid) {
 }
 
 void BridgeClass::requestFileSystemRead(const char* filePath) {
-  if (!filePath) return;
+  if (!filePath) {
+    return;
+  }
   size_t path_len = strlen(filePath);
-  if (path_len == 0 || path_len > 255) return;
+  if (path_len == 0 || path_len > kMaxFilePathLength) {
+    return;
+  }
 
-  uint8_t payload[1 + 255];
+  uint8_t* payload = _scratch_payload;
   payload[0] = static_cast<uint8_t>(path_len);
-  memcpy(payload + 1, filePath, path_len);
-  sendFrame(CMD_FILE_READ, payload, static_cast<uint16_t>(path_len + 1));
+  memcpy(payload + kFileReadLengthPrefix, filePath, path_len);
+  const uint16_t total = static_cast<uint16_t>(
+      path_len + kFileReadLengthPrefix);
+  sendFrame(CMD_FILE_READ, payload, total);
 }
 
 void BridgeClass::requestGetFreeMemory() {

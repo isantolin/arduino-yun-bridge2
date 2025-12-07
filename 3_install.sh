@@ -157,11 +157,7 @@ install_manifest_pip_requirements() {
     python3 - "$manifest_path" "$tmp_requirements" <<'PY'
 import sys
 from pathlib import Path
-
-try:
-    import tomllib  # type: ignore[attr-defined]
-except ModuleNotFoundError:  # pragma: no cover - OpenWrt 3.10 fallback
-    import tomli as tomllib  # type: ignore[assignment]
+import tomllib
 
 manifest = Path(sys.argv[1])
 output = Path(sys.argv[2])

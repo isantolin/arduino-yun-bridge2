@@ -15,6 +15,7 @@ from typing import Any, Awaitable, Callable, Protocol, TypeVar, cast
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
+from aiomqtt import Client as MQTTClient, MqttError as MQTTError
 import serial
 import paho.mqtt.client as paho_client
 from paho.mqtt.packettypes import PacketTypes
@@ -23,10 +24,9 @@ from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status
 
+from cobs import cobs
+
 from yunbridge.common import (
-    DecodeError,
-    cobs_decode,
-    cobs_encode,
     pack_u16,
 )
 from yunbridge.config.logging import configure_logging
@@ -34,8 +34,6 @@ from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.mqtt import (
-    MQTTClient,
-    MQTTError,
     QOSLevel,
     ProtocolVersion,
     as_inbound_message,
@@ -460,7 +458,7 @@ async def _send_serial_frame(
 
     try:
         raw_frame = Frame(command_id, payload).to_bytes()
-        encoded_frame = cobs_encode(raw_frame) + SERIAL_TERMINATOR
+        encoded_frame = cobs.encode(raw_frame) + SERIAL_TERMINATOR
         writer.write(encoded_frame)
         await writer.drain()
 
@@ -502,8 +500,8 @@ async def _process_serial_packet(
     state: RuntimeState,
 ) -> None:
     try:
-        raw_frame = cobs_decode(encoded_packet)
-    except DecodeError as exc:
+        raw_frame = cobs.decode(encoded_packet)
+    except cobs.DecodeError as exc:
         packet_hex = encoded_packet.hex()
         logger.warning(
             "COBS decode error %s for packet %s (len=%d)",

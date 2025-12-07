@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from typing import cast
 
-from yunbridge.common import cobs_encode
+from cobs import cobs
 from yunbridge.daemon import _process_serial_packet
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status
@@ -44,7 +44,7 @@ def test_process_serial_packet_records_crc_error(runtime_state) -> None:
     raw_frame = frame.to_bytes()
     corrupted = bytearray(raw_frame)
     corrupted[-1] ^= 0xFF
-    encoded = cobs_encode(bytes(corrupted))
+    encoded = cobs.encode(bytes(corrupted))
 
     asyncio.run(_process_serial_packet(encoded, service, runtime_state))
 
@@ -60,7 +60,7 @@ def test_process_serial_packet_forwards_valid_frames(runtime_state) -> None:
     service = cast(BridgeService, stub)
 
     frame = Frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
-    encoded = cobs_encode(frame.to_bytes())
+    encoded = cobs.encode(frame.to_bytes())
 
     asyncio.run(_process_serial_packet(encoded, service, runtime_state))
 

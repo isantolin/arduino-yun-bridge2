@@ -10,7 +10,6 @@
 #include <Print.h>
 #else
 #include "arduino/ArduinoCompat.h"
-#include "arduino/PrintCompat.h"
 #endif
 #include "protocol/rpc_frame.h"
 
@@ -247,6 +246,8 @@ class BridgeClass {
   uint16_t _last_command_id;
   uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
   uint16_t _last_cobs_length;
+  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+  uint8_t _raw_frame_buffer[rpc::MAX_RAW_FRAME_SIZE];
   uint8_t _retry_count;
   unsigned long _last_send_millis;
   unsigned long _ack_timeout_ms;

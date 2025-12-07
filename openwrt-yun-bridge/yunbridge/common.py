@@ -18,7 +18,6 @@ from typing import (
     cast,
 )
 
-from cobs import cobs as _cobs
 from more_itertools import chunked, unique_everseen
 
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
@@ -28,19 +27,6 @@ from .const import ALLOWED_COMMAND_WILDCARD
 
 
 logger = logging.getLogger(__name__)
-
-
-class _CobsCodec(Protocol):
-    def encode(self, data: bytes) -> bytes:
-        ...
-
-    def decode(self, data: bytes) -> bytes:
-        ...
-
-
-_COBC_MODULE: _CobsCodec = cast(_CobsCodec, _cobs)
-
-DecodeError = getattr(_COBC_MODULE, "DecodeError", ValueError)
 
 T = TypeVar("T")
 
@@ -66,18 +52,6 @@ class _UciModule(Protocol):
 
     def Uci(self) -> _UciCursor:
         ...
-
-
-def cobs_encode(data: bytes) -> bytes:
-    """COBS-encode *data* using the upstream library."""
-
-    return _COBC_MODULE.encode(data)
-
-
-def cobs_decode(data: bytes) -> bytes:
-    """COBS-decode *data* using the upstream library."""
-
-    return _COBC_MODULE.decode(data)
 
 
 def pack_u16(value: int) -> bytes:
@@ -235,9 +209,6 @@ def get_default_config() -> Dict[str, str]:
 
 
 __all__: Final[tuple[str, ...]] = (
-    "DecodeError",
-    "cobs_encode",
-    "cobs_decode",
     "normalise_allowed_commands",
     "pack_u16",
     "unpack_u16",

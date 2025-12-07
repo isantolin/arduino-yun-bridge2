@@ -1,25 +1,14 @@
 import pytest
 
 from yunbridge.common import (
-    DecodeError,
     chunk_payload,
     clamp,
-    cobs_decode,
-    cobs_encode,
     deduplicate,
     encode_status_reason,
     normalise_allowed_commands,
     pack_u16,
     unpack_u16,
 )
-
-
-def test_cobs_roundtrip():
-    payload = b"hello\x00world"
-    encoded = cobs_encode(payload)
-    assert b"\x00" not in encoded
-    decoded = cobs_decode(encoded)
-    assert decoded == payload
 
 
 @pytest.mark.parametrize(
@@ -93,16 +82,3 @@ def test_encode_status_reason_truncates():
     reason = "x" * 300
     result = encode_status_reason(reason)
     assert len(result) == 256
-
-
-def test_cobs_decode_error(monkeypatch):
-    class FakeCodec:
-        def decode(self, data):
-            raise DecodeError("bad frame")
-
-    from yunbridge import common as common_module
-
-    monkeypatch.setattr(common_module, "_COBC_MODULE", FakeCodec())
-
-    with pytest.raises(DecodeError):
-        common_module.cobs_decode(b"123")

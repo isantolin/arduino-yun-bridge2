@@ -10,7 +10,9 @@ from typing import Any, Awaitable, Callable, Coroutine, Deque, Optional, cast
 
 import pytest
 
-from yunbridge.common import cobs_encode, pack_u16
+from cobs import cobs
+
+from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.daemon import (
@@ -213,7 +215,7 @@ def test_serial_reader_task_processes_frame(
 
         payload = b"\x01"
         frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, payload).to_bytes()
-        encoded = cobs_encode(frame) + SERIAL_TERMINATOR
+        encoded = cobs.encode(frame) + SERIAL_TERMINATOR
 
         reader = _FakeStreamReader(encoded, b"")
         writer = _FakeStreamWriter()
@@ -263,7 +265,7 @@ def test_serial_reader_task_emits_crc_mismatch(
         frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, b"\x01").to_bytes()
         corrupted = bytearray(frame)
         corrupted[-1] ^= 0xFF
-        encoded = cobs_encode(bytes(corrupted)) + SERIAL_TERMINATOR
+        encoded = cobs.encode(bytes(corrupted)) + SERIAL_TERMINATOR
 
         reader = _FakeStreamReader(encoded, b"")
         writer = _FakeStreamWriter()

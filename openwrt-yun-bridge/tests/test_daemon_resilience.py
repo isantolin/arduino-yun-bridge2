@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from serial import SerialException
 
+from aiomqtt import MqttError as MQTTError
+
 from yunbridge.config.settings import load_runtime_config
 from yunbridge.daemon import (
     _RetryPolicy,
@@ -15,7 +17,6 @@ from yunbridge.daemon import (
     _run_with_retry,
     _supervise_task,
 )
-from yunbridge.mqtt import MQTTError
 from yunbridge.state.context import RuntimeState
 
 

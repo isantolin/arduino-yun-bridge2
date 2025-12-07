@@ -7,8 +7,6 @@ from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import Any, Self, cast
 
-from aiomqtt import Client as MQTTClient, MqttError as MQTTError
-
 try:  # pragma: no cover - optional dependency for tests
     from paho.mqtt.packettypes import PacketTypes as PahoPacketTypes
     from paho.mqtt.properties import Properties as PahoProperties
@@ -342,8 +340,6 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
 
 
 __all__ = [
-    "MQTTClient",
-    "MQTTError",
     "PublishableMessage",
     "DeliveredMessage",
     "InboundMessage",

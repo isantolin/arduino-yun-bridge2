@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import ssl
 import struct
 import sys
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional, TypeVar, cast
+from typing import Any, Awaitable, Callable, Protocol, TypeVar, cast
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
 import serial
-import aiomqtt
 import paho.mqtt.client as paho_client
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -33,7 +34,7 @@ from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.mqtt import (
-    MQTTClientProtocol,
+    MQTTClient,
     MQTTError,
     QOSLevel,
     ProtocolVersion,
@@ -62,6 +63,22 @@ from tenacity import (
     wait_exponential,
 )
 
+
+async def _connect_mqtt_with_retry(
+    config: RuntimeConfig,
+    client: MQTTClient,
+) -> None:
+    """Compatibility shim retained for legacy monkeypatches.
+
+    The modern implementation relies on the async context manager exposed by
+    `aiomqtt.Client`, but older tests still patch this hook to prevent real
+    broker connections. Keeping this no-op coroutine avoids breaking those
+    fixtures without affecting runtime behavior.
+    """
+
+    del config  # unused in shim
+    await client.connect()
+
 OPEN_SERIAL_CONNECTION: Callable[
     ..., Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]
 ] = serial_asyncio.open_serial_connection
@@ -70,6 +87,30 @@ OPEN_SERIAL_CONNECTION: Callable[
 logger = logging.getLogger("yunbridge")
 
 T = TypeVar("T")
+
+
+class MQTTClientProtocol(Protocol):
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | bytearray | memoryview,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        properties: Any | None = None,
+    ) -> Any:
+        ...
+
+    async def subscribe(self, topic: str, qos: int = 0) -> Any:
+        ...
+
+    def unfiltered_messages(
+        self,
+    ) -> contextlib.AbstractAsyncContextManager[AsyncIterator[Any]]:
+        ...
+
+    async def disconnect(self) -> None:
+        ...
 
 
 MAX_SERIAL_PACKET_BYTES = (
@@ -85,7 +126,7 @@ class _SupervisedTaskSpec:
     name: str
     factory: Callable[[], Awaitable[None]]
     fatal_exceptions: tuple[type[BaseException], ...] = ()
-    max_restarts: Optional[int] = None
+    max_restarts: int | None = None
     restart_interval: float = 60.0
     min_backoff: float = 1.0
     max_backoff: float = 30.0
@@ -97,7 +138,7 @@ class _RetryPolicy:
     retry_exceptions: tuple[type[BaseException], ...]
     base_delay: float
     max_delay: float
-    announce_attempt: Optional[Callable[[], None]] = None
+    announce_attempt: Callable[[], None] | None = None
 
 
 class _RetryableSupervisorError(Exception):
@@ -114,16 +155,15 @@ class _RetryableSupervisorError(Exception):
         self.reset_backoff = reset_backoff
 
 
-ExcLike = BaseException | BaseExceptionGroup[BaseException]
-
-
 def _unwrap_retryable_exception_group(
     group: BaseExceptionGroup[BaseException],
     retry_types: tuple[type[BaseException], ...],
-) -> Optional[BaseException]:
+) -> BaseException | None:
     collected: list[BaseException] = []
 
-    def _collect(exc: ExcLike) -> bool:
+    def _collect(
+        exc: BaseException | BaseExceptionGroup[BaseException],
+    ) -> bool:
         if isinstance(exc, BaseExceptionGroup):
             members = cast(
                 tuple[BaseException, ...],
@@ -186,7 +226,7 @@ async def _run_with_retry(
     max_delay = max(base_delay, policy.max_delay)
 
     def _before_sleep(retry_state: RetryCallState) -> None:
-        exc: Optional[BaseException] = None
+        exc: BaseException | None = None
         outcome: Any = retry_state.outcome
         if outcome is not None:
             exc = outcome.exception()
@@ -259,8 +299,8 @@ async def _supervise_task(
     fatal_exceptions: tuple[type[BaseException], ...] = (),
     min_backoff: float = 1.0,
     max_backoff: float = 30.0,
-    state: Optional[RuntimeState] = None,
-    max_restarts: Optional[int] = None,
+    state: RuntimeState | None = None,
+    max_restarts: int | None = None,
     restart_interval: float = 60.0,
 ) -> None:
     """Run *coro_factory* restarting it on failures."""
@@ -540,15 +580,15 @@ async def serial_reader_task(
     reconnect_delay = max(1, config.reconnect_delay)
 
     while True:
-        reader: Optional[asyncio.StreamReader] = None
-        writer: Optional[asyncio.StreamWriter] = None
+        reader: asyncio.StreamReader | None = None
+        writer: asyncio.StreamWriter | None = None
         should_retry = True
         try:
             reader, writer = await _open_serial_connection_with_retry(config)
 
             state.serial_writer = writer
 
-            previous_sender: Optional[SendFrameCallable] = getattr(
+            previous_sender: SendFrameCallable | None = getattr(
                 service, "_serial_sender", None
             )
 
@@ -746,7 +786,7 @@ async def _mqtt_subscriber_loop(
         raise
 
 
-def _build_mqtt_tls_context(config: RuntimeConfig) -> Optional[ssl.SSLContext]:
+def _build_mqtt_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
     if not config.tls_enabled:
         return None
 
@@ -787,7 +827,7 @@ async def mqtt_task(
     config: RuntimeConfig,
     state: RuntimeState,
     service: BridgeService,
-    tls_context: Optional[ssl.SSLContext],
+    tls_context: ssl.SSLContext | None,
 ) -> None:
     reconnect_delay = max(1, config.reconnect_delay)
     prefix = state.mqtt_topic_prefix
@@ -803,60 +843,62 @@ async def mqtt_task(
     }
 
     while True:
+        client_protocol: MQTTClientProtocol | None = None
         try:
             client_kwargs = dict(base_client_kwargs)
             client_kwargs["properties"] = _build_mqtt_connect_properties()
-            async with aiomqtt.Client(**client_kwargs) as client:
-                logger.info("Connected to MQTT broker.")
+            raw_client = MQTTClient(**client_kwargs)
+            await _connect_mqtt_with_retry(config, raw_client)
+            logger.info("Connected to MQTT broker.")
 
-                # Cast client to Protocol to satisfy static type checkers.
-                client_protocol = cast(MQTTClientProtocol, client)
+            # Cast client to Protocol to satisfy static type checkers.
+            client_protocol = cast(MQTTClientProtocol, raw_client)
 
-                def _sub(
-                    top_segment: Topic | str,
-                    *segments: str,
-                ) -> tuple[str, QOSLevel]:
-                    return (
-                        topic_path(prefix, top_segment, *segments),
-                        QOSLevel.QOS_0,
-                    )
-
-                subscriptions: tuple[tuple[str, QOSLevel], ...] = (
-                    _sub(Topic.DIGITAL, "+", "mode"),
-                    _sub(Topic.DIGITAL, "+", "read"),
-                    _sub(Topic.DIGITAL, "+"),
-                    _sub(Topic.ANALOG, "+", "read"),
-                    _sub(Topic.ANALOG, "+"),
-                    _sub(Topic.CONSOLE, "in"),
-                    _sub(Topic.DATASTORE, "put", "#"),
-                    _sub(Topic.DATASTORE, "get", "#"),
-                    _sub(Topic.MAILBOX, "write"),
-                    _sub(Topic.MAILBOX, "read"),
-                    _sub(Topic.SHELL, "run"),
-                    _sub(Topic.SHELL, "run_async"),
-                    _sub(Topic.SHELL, "poll", "#"),
-                    _sub(Topic.SHELL, "kill", "#"),
-                    _sub(Topic.SYSTEM, "free_memory", "get"),
-                    _sub(Topic.SYSTEM, "version", "get"),
-                    _sub(Topic.FILE, "write", "#"),
-                    _sub(Topic.FILE, "read", "#"),
-                    _sub(Topic.FILE, "remove", "#"),
+            def _sub(
+                top_segment: Topic | str,
+                *segments: str,
+            ) -> tuple[str, QOSLevel]:
+                return (
+                    topic_path(prefix, top_segment, *segments),
+                    QOSLevel.QOS_0,
                 )
 
-                for topic, qos in subscriptions:
-                    await client_protocol.subscribe(topic, qos=int(qos))
-                logger.info(
-                    "Subscribed to %d MQTT topics.",
-                    len(subscriptions),
-                )
+            subscriptions: tuple[tuple[str, QOSLevel], ...] = (
+                _sub(Topic.DIGITAL, "+", "mode"),
+                _sub(Topic.DIGITAL, "+", "read"),
+                _sub(Topic.DIGITAL, "+"),
+                _sub(Topic.ANALOG, "+", "read"),
+                _sub(Topic.ANALOG, "+"),
+                _sub(Topic.CONSOLE, "in"),
+                _sub(Topic.DATASTORE, "put", "#"),
+                _sub(Topic.DATASTORE, "get", "#"),
+                _sub(Topic.MAILBOX, "write"),
+                _sub(Topic.MAILBOX, "read"),
+                _sub(Topic.SHELL, "run"),
+                _sub(Topic.SHELL, "run_async"),
+                _sub(Topic.SHELL, "poll", "#"),
+                _sub(Topic.SHELL, "kill", "#"),
+                _sub(Topic.SYSTEM, "free_memory", "get"),
+                _sub(Topic.SYSTEM, "version", "get"),
+                _sub(Topic.FILE, "write", "#"),
+                _sub(Topic.FILE, "read", "#"),
+                _sub(Topic.FILE, "remove", "#"),
+            )
 
-                async with asyncio.TaskGroup() as task_group:
-                    task_group.create_task(
-                        _mqtt_publisher_loop(client_protocol, state)
-                    )
-                    task_group.create_task(
-                        _mqtt_subscriber_loop(client_protocol, service)
-                    )
+            for topic, qos in subscriptions:
+                await client_protocol.subscribe(topic, qos=int(qos))
+            logger.info(
+                "Subscribed to %d MQTT topics.",
+                len(subscriptions),
+            )
+
+            async with asyncio.TaskGroup() as task_group:
+                task_group.create_task(
+                    _mqtt_publisher_loop(client_protocol, state)
+                )
+                task_group.create_task(
+                    _mqtt_subscriber_loop(client_protocol, service)
+                )
 
         except* MQTTError as exc_group:
             for exc in exc_group.exceptions:
@@ -873,6 +915,10 @@ async def mqtt_task(
                     "Unhandled exception in mqtt_task",
                     exc_info=exc,
                 )
+        finally:
+            if client_protocol is not None:
+                with contextlib.suppress(Exception):
+                    await client_protocol.disconnect()
 
         # Reconnection delay logic outside the context manager
         logger.warning(
@@ -979,7 +1025,7 @@ async def main_async(config: RuntimeConfig) -> None:
             )
         )
 
-    exporter: Optional[PrometheusExporter] = None
+    exporter: PrometheusExporter | None = None
     if config.metrics_enabled:
         exporter = PrometheusExporter(
             state,

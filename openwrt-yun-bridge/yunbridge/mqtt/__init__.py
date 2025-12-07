@@ -2,33 +2,19 @@
 from __future__ import annotations
 
 import base64
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from enum import IntEnum
-from typing import (
-    Any,
-    AsyncIterator,
-    Iterable,
-    Mapping,
-    Optional,
-    Protocol,
-    Sequence,
-    Self,
-    Tuple,
-    cast,
-)
+from typing import Any, Self, cast
 
-try:  # pragma: no cover - optional dependency guard
+from aiomqtt import Client as MQTTClient, MqttError as MQTTError
+
+try:  # pragma: no cover - optional dependency for tests
     from paho.mqtt.packettypes import PacketTypes as PahoPacketTypes
-except ImportError:  # pragma: no cover - dependency missing at runtime
-    PahoPacketTypes = None  # type: ignore[assignment]
-
-try:  # pragma: no cover - optional dependency guard
     from paho.mqtt.properties import Properties as PahoProperties
-except ImportError:  # pragma: no cover - dependency missing at runtime
-    PahoProperties = None  # type: ignore[assignment]
-
-# Note: The 'Client' shim has been removed. Use aiomqtt.Client directly.
-from aiomqtt import MqttError as MQTTError
+except ImportError:  # pragma: no cover - allow running without paho
+    PahoPacketTypes = None
+    PahoProperties = None
 
 
 class ProtocolVersion(IntEnum):
@@ -47,49 +33,6 @@ class QOSLevel(IntEnum):
     QOS_2 = 2
 
 
-class MQTTIncomingMessage(Protocol):
-    topic: Optional[str]
-    payload: Optional[bytes]
-
-
-class MQTTMessageStream(Protocol):
-    async def __aenter__(self) -> AsyncIterator[MQTTIncomingMessage]:
-        ...
-
-    async def __aexit__(
-        self,
-        exc_type: Optional[type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[Any],
-    ) -> None:
-        ...
-
-
-class MQTTClientProtocol(Protocol):
-    async def connect(self) -> None:
-        ...
-
-    async def disconnect(self) -> None:
-        ...
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        *,
-        qos: int,
-        retain: bool,
-        properties: Optional[Any] = None,
-    ) -> None:
-        ...
-
-    async def subscribe(self, topic: str, qos: int) -> None:
-        ...
-
-    def unfiltered_messages(self) -> MQTTMessageStream:
-        ...
-
-
 @dataclass(slots=True)
 class PublishableMessage:
     """Envelope describing an outgoing MQTT publication."""
@@ -98,21 +41,21 @@ class PublishableMessage:
     payload: bytes
     qos: QOSLevel = QOSLevel.QOS_0
     retain: bool = False
-    content_type: Optional[str] = None
-    payload_format_indicator: Optional[int] = None
-    message_expiry_interval: Optional[int] = None
-    response_topic: Optional[str] = None
-    correlation_data: Optional[bytes] = None
-    user_properties: Tuple[Tuple[str, str], ...] = ()
+    content_type: str | None = None
+    payload_format_indicator: int | None = None
+    message_expiry_interval: int | None = None
+    response_topic: str | None = None
+    correlation_data: bytes | None = None
+    user_properties: tuple[tuple[str, str], ...] = ()
 
     def with_payload(
         self,
         payload: bytes,
         *,
-        qos: Optional[QOSLevel] = None,
-        retain: Optional[bool] = None,
-        content_type: Optional[str] = None,
-        payload_format_indicator: Optional[int] = None,
+        qos: QOSLevel | None = None,
+        retain: bool | None = None,
+        content_type: str | None = None,
+        payload_format_indicator: int | None = None,
     ) -> Self:
         """Return a copy with updated payload and optional metadata."""
 
@@ -134,10 +77,10 @@ class PublishableMessage:
     def with_topic(self, topic: str) -> Self:
         return replace(self, topic_name=topic)
 
-    def with_correlation_data(self, data: Optional[bytes]) -> Self:
+    def with_correlation_data(self, data: bytes | None) -> Self:
         return replace(self, correlation_data=data)
 
-    def with_response_topic(self, topic: Optional[str]) -> Self:
+    def with_response_topic(self, topic: str | None) -> Self:
         return replace(self, response_topic=topic)
 
     def with_user_property(self, key: str, value: str) -> Self:
@@ -159,13 +102,13 @@ class PublishableMessage:
         items = tuple((str(k), str(v)) for k, v in pairs)
         return replace(self, user_properties=self.user_properties + items)
 
-    def with_message_expiry(self, ttl_seconds: Optional[int]) -> Self:
+    def with_message_expiry(self, ttl_seconds: int | None) -> Self:
         return replace(self, message_expiry_interval=ttl_seconds)
 
-    def with_content_type(self, content_type: Optional[str]) -> Self:
+    def with_content_type(self, content_type: str | None) -> Self:
         return replace(self, content_type=content_type)
 
-    def build_properties(self) -> Optional[Any]:
+    def build_properties(self) -> Any | None:
         if PahoProperties is None or PahoPacketTypes is None:
             return None
 
@@ -315,19 +258,19 @@ class InboundMessage:
     payload: bytes
     qos: QOSLevel
     retain: bool
-    response_topic: Optional[str] = None
-    correlation_data: Optional[bytes] = None
-    user_properties: Tuple[Tuple[str, str], ...] = ()
-    content_type: Optional[str] = None
-    message_expiry_interval: Optional[int] = None
-    payload_format_indicator: Optional[int] = None
-    topic_alias: Optional[int] = None
+    response_topic: str | None = None
+    correlation_data: bytes | None = None
+    user_properties: tuple[tuple[str, str], ...] = ()
+    content_type: str | None = None
+    message_expiry_interval: int | None = None
+    payload_format_indicator: int | None = None
+    topic_alias: int | None = None
 
 
 def as_delivered_message(
     *,
     topic: str,
-    payload: Optional[bytes],
+    payload: bytes | None,
     qos: int,
     retain: bool,
 ) -> DeliveredMessage:
@@ -355,13 +298,13 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
         qos = QOSLevel.QOS_0
     retain = bool(getattr(raw_message, "retain", False))
 
-    response_topic: Optional[str] = None
-    correlation_data: Optional[bytes] = None
-    user_properties: Tuple[Tuple[str, str], ...] = ()
-    content_type: Optional[str] = None
-    message_expiry: Optional[int] = None
-    payload_format_indicator: Optional[int] = None
-    topic_alias: Optional[int] = None
+    response_topic: str | None = None
+    correlation_data: bytes | None = None
+    user_properties: tuple[tuple[str, str], ...] = ()
+    content_type: str | None = None
+    message_expiry: int | None = None
+    payload_format_indicator: int | None = None
+    topic_alias: int | None = None
 
     properties = getattr(raw_message, "properties", None)
     if properties is not None:
@@ -399,15 +342,13 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
 
 
 __all__ = [
+    "MQTTClient",
     "MQTTError",
     "PublishableMessage",
     "DeliveredMessage",
     "InboundMessage",
     "QOSLevel",
     "ProtocolVersion",
-    "MQTTClientProtocol",
-    "MQTTIncomingMessage",
-    "MQTTMessageStream",
     "as_delivered_message",
     "as_inbound_message",
 ]

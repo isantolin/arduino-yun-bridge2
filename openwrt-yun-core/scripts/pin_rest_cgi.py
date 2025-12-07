@@ -6,42 +6,19 @@ import json
 import logging
 import os
 import re
-import ssl
 import sys
 import time
-from types import ModuleType, SimpleNamespace
-from typing import Any, Callable, Dict
+from collections.abc import Callable
+from typing import Any
 
-try:  # pragma: no cover - replaced with test doubles when needed
-    from paho.mqtt import client as mqtt_client
-except (ImportError, Exception) as exc:  # pragma: no cover
-    _missing_reason = repr(exc)
-
-    class _MissingClient:
-        def __init__(self, *_: Any, **__: Any) -> None:
-            raise RuntimeError(
-                "paho-mqtt dependencies are unavailable; "
-                "install the package to use pin_rest_cgi"
-                f" ({_missing_reason})."
-            )
-
-    mqtt: ModuleType | SimpleNamespace = SimpleNamespace(
-        Client=_MissingClient
-    )
-else:
-    mqtt = mqtt_client
-
-from tenacity import (
-    Retrying,
-    RetryCallState,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from paho.mqtt import client as mqtt
 
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import resolve_tls_material
 from yunbridge.const import DEFAULT_MQTT_TOPIC
+from yunbridge.mqtt.publisher import (
+    publish_with_retries as _publish_with_retries,
+)
 
 
 logger = logging.getLogger("yunbridge.pin_rest")
@@ -87,29 +64,6 @@ def _resolve_tls_material(config: RuntimeConfig):
     )
 
 
-def _build_client(config: RuntimeConfig) -> Any:
-    client = mqtt.Client(protocol=getattr(mqtt, "MQTTv5", 5))
-    if config.mqtt_user:
-        client.username_pw_set(config.mqtt_user, config.mqtt_pass)
-
-    if config.mqtt_tls:
-        material = _resolve_tls_material(config)
-        client.tls_set(
-            ca_certs=material.cafile,
-            certfile=material.certfile,
-            keyfile=material.keyfile,
-            tls_version=ssl.PROTOCOL_TLS_CLIENT,
-        )
-        client.tls_insecure_set(False)
-    else:
-        logger.warning(
-            "MQTT TLS is disabled for pin_rest_cgi; commands will be sent "
-            "in plaintext."
-        )
-    client.enable_logger(logger)
-    return client
-
-
 def publish_with_retries(
     topic: str,
     payload: str,
@@ -121,77 +75,21 @@ def publish_with_retries(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
 ) -> None:
     """Publish an MQTT message with retry and timeout semantics."""
+    tls_material = _resolve_tls_material(config) if config.mqtt_tls else None
 
-    if retries <= 0:
-        raise ValueError("retries must be a positive integer")
-    if poll_interval <= 0:
-        poll_interval = DEFAULT_POLL_INTERVAL
-
-    def _log_retry(state: RetryCallState) -> None:
-        exc = state.outcome.exception() if state.outcome else None
-        logger.warning(
-            "MQTT publish attempt %d failed: %s",
-            state.attempt_number,
-            exc,
-        )
-
-    def _attempt() -> None:
-        client = _build_client(config)
-
-        try:
-            client.connect(config.mqtt_host, config.mqtt_port, keepalive=60)
-            loop_start = getattr(client, "loop_start", None)
-            if callable(loop_start):
-                loop_start()
-
-            result = client.publish(topic, payload, qos=1, retain=False)
-
-            if publish_timeout <= 0:
-                raise TimeoutError("MQTT publish timed out before completion")
-
-            deadline = time.monotonic() + publish_timeout
-            while not result.is_published():
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(
-                        (
-                            "MQTT publish timed out after "
-                            f"{publish_timeout} seconds"
-                        )
-                    )
-                sleep_fn(poll_interval)
-
-            logger.info("Published to %s with payload %s", topic, payload)
-        finally:
-            for cleanup in ("loop_stop", "disconnect"):
-                method = getattr(client, cleanup, None)
-                if callable(method):
-                    try:
-                        method()
-                    except Exception:  # pragma: no cover - defensive cleanup
-                        logger.debug(
-                            "Cleanup %s failed", cleanup, exc_info=True
-                        )
-
-    adjusted_base = max(base_delay, 0.0)
-    wait_kwargs: Dict[str, float] = {
-        "multiplier": adjusted_base or 0.0,
-        "min": adjusted_base or 0.0,
-    }
-    if adjusted_base > 0:
-        wait_kwargs["max"] = adjusted_base * 8
-
-    wait = wait_exponential(**wait_kwargs)
-
-    retryer = Retrying(
-        reraise=True,
-        stop=stop_after_attempt(retries),
-        wait=wait,
-        retry=retry_if_exception_type(Exception),
-        before_sleep=_log_retry,
-        sleep=sleep_fn,
+    _publish_with_retries(
+        topic,
+        payload,
+        config,
+        logger=logger,
+        retries=retries,
+        publish_timeout=publish_timeout,
+        base_delay=base_delay,
+        sleep_fn=sleep_fn,
+        poll_interval=poll_interval,
+        tls_material=tls_material,
+        client_module=mqtt,
     )
-
-    retryer(_attempt)
 
 
 def get_pin_from_path() -> str | None:
@@ -200,7 +98,7 @@ def get_pin_from_path() -> str | None:
     return match.group(1) if match else None
 
 
-def send_response(status_code: int, data: Dict[str, Any]) -> None:
+def send_response(status_code: int, data: dict[str, Any]) -> None:
     print(f"Status: {status_code}")
     print("Content-Type: application/json\n")
     print(json.dumps(data))
@@ -261,7 +159,7 @@ def main() -> None:
         else:
             body = sys.stdin.read()
 
-        data: Dict[str, Any] = json.loads(body) if body else {}
+        data: dict[str, Any] = json.loads(body) if body else {}
         state = str(data.get("state", "")).upper()
     except (ValueError, json.JSONDecodeError):
         logger.exception("POST body parse error")

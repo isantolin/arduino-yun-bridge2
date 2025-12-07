@@ -8,10 +8,8 @@ import os
 import secrets
 import shlex
 import uuid
-from contextlib import asynccontextmanager
 from typing import (
     Any,
-    AsyncGenerator,
     Dict,
     Iterable,
     List,
@@ -24,7 +22,7 @@ from typing import (
     cast,
 )
 
-from aiomqtt import Client, MqttError
+from aiomqtt import Client, MqttError as MQTTError
 from aiomqtt.client import Client as AiomqttClient
 
 from .env import dump_client_env

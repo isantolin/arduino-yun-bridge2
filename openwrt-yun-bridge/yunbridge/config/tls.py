@@ -4,7 +4,6 @@ from __future__ import annotations
 import ssl
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from ..const import MQTT_TLS_MIN_VERSION
 from .settings import RuntimeConfig
@@ -13,16 +12,16 @@ from .settings import RuntimeConfig
 @dataclass(slots=True)
 class TLSMaterial:
     cafile: str
-    certfile: Optional[str]
-    keyfile: Optional[str]
+    certfile: str | None
+    keyfile: str | None
 
 
 def resolve_tls_material(
     config: RuntimeConfig,
     *,
-    cafile_override: Optional[str] = None,
-    cert_override: Optional[str] = None,
-    key_override: Optional[str] = None,
+    cafile_override: str | None = None,
+    cert_override: str | None = None,
+    key_override: str | None = None,
 ) -> TLSMaterial:
     cafile = cafile_override or config.mqtt_cafile or ""
     if not cafile:

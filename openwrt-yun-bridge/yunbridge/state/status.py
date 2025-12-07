@@ -101,7 +101,14 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                     else None
                 ),
             }
-            await asyncio.to_thread(_write_status_file, payload)
+            write_task = asyncio.create_task(
+                asyncio.to_thread(_write_status_file, payload)
+            )
+            try:
+                await asyncio.shield(write_task)
+            except asyncio.CancelledError:
+                await write_task
+                raise
         except asyncio.CancelledError:
             logger.info("Status writer task cancelled.")
             raise

@@ -132,15 +132,15 @@ class UciConfigModel:
 
     def __post_init__(self) -> None:
         """Stringify all fields post-initialization."""
-        # We iterate through all fields except 'extras' and ensure they are strings
+        # Stringify every field (except extras) to keep UCI writes consistent
         for f in fields(self):
             if f.name == "extras":
                 continue
             value = getattr(self, f.name)
             setattr(self, f.name, _stringify_value(value))
-        
+
         # Process extras
-        new_extras = {}
+        new_extras: dict[str, str] = {}
         if self.extras:
             for k, v in self.extras.items():
                 new_extras[str(k)] = _stringify_value(v)

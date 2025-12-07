@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Coroutine, Optional, Protocol
+from collections.abc import Coroutine
+from typing import Any, Protocol
 
 from ...mqtt import InboundMessage, PublishableMessage
 from ...state.context import RuntimeState
@@ -22,7 +23,7 @@ class BridgeContext(Protocol):
         self,
         message: PublishableMessage,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> None:
         ...
 
@@ -33,7 +34,7 @@ class BridgeContext(Protocol):
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> asyncio.Task[Any]:
         ...
 

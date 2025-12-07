@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
 
 from ..common import (
     get_default_config,
@@ -63,18 +62,18 @@ class RuntimeConfig:
     serial_baud: int
     mqtt_host: str
     mqtt_port: int
-    mqtt_user: Optional[str]
-    mqtt_pass: Optional[str]
+    mqtt_user: str | None
+    mqtt_pass: str | None
     mqtt_tls: bool
-    mqtt_cafile: Optional[str]
-    mqtt_certfile: Optional[str]
-    mqtt_keyfile: Optional[str]
+    mqtt_cafile: str | None
+    mqtt_certfile: str | None
+    mqtt_keyfile: str | None
     mqtt_topic: str
-    allowed_commands: Tuple[str, ...]
+    allowed_commands: tuple[str, ...]
     file_system_root: str
     process_timeout: int
     allowed_policy: AllowedCommandPolicy = field(init=False)
-    
+
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: int = DEFAULT_RECONNECT_DELAY
     status_interval: int = DEFAULT_STATUS_INTERVAL
@@ -94,7 +93,9 @@ class RuntimeConfig:
     )
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
+    topic_authorization: TopicAuthorization = field(
+        default_factory=TopicAuthorization
+    )
     serial_shared_secret: bytes = field(repr=False, default=b"")
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -269,7 +270,7 @@ class RuntimeConfig:
         return value
 
 
-def _load_raw_config() -> Dict[str, str]:
+def _load_raw_config() -> dict[str, str]:
     try:
         uci_values = get_uci_config()
         if uci_values:
@@ -280,20 +281,20 @@ def _load_raw_config() -> Dict[str, str]:
     return get_default_config()
 
 
-def _to_bool(value: Optional[str]) -> bool:
+def _to_bool(value: str | None) -> bool:
     if value is None:
         return False
     return value.strip() in {"1", "true", "True", "yes", "on"}
 
 
-def _optional_path(path: Optional[str]) -> Optional[str]:
+def _optional_path(path: str | None) -> str | None:
     if not path:
         return None
     candidate = path.strip()
     return candidate or None
 
 
-def _coerce_int(value: Optional[str], default: int) -> int:
+def _coerce_int(value: str | None, default: int) -> int:
     if value is None:
         return default
     try:
@@ -302,7 +303,7 @@ def _coerce_int(value: Optional[str], default: int) -> int:
         return default
 
 
-def _coerce_float(value: Optional[str], default: float) -> float:
+def _coerce_float(value: str | None, default: float) -> float:
     if value is None:
         return default
     try:
@@ -311,7 +312,7 @@ def _coerce_float(value: Optional[str], default: float) -> float:
         return default
 
 
-def _resolve_watchdog_settings() -> Tuple[bool, float]:
+def _resolve_watchdog_settings() -> tuple[bool, float]:
     disable_flag = os.environ.get("YUNBRIDGE_DISABLE_WATCHDOG")
     if disable_flag and disable_flag.strip().lower() in {
         "1",
@@ -370,7 +371,7 @@ def load_runtime_config() -> RuntimeConfig:
     mqtt_tls_value = raw.get("mqtt_tls")
     mqtt_tls = _to_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
 
-    credentials_map: Dict[str, str] = {}
+    credentials_map: dict[str, str] = {}
 
     serial_secret_str = lookup_credential(
         (

@@ -53,13 +53,18 @@ DATASTORE_VALUE_LEN_SIZE: int = struct.calcsize(
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16
-HANDSHAKE_TAG_ALGORITHM: Final[str] = 'HMAC-SHA256'
-HANDSHAKE_TAG_DESCRIPTION: Final[str] = 'HMAC-SHA256(secret, nonce) truncated to 16 bytes'
+HANDSHAKE_TAG_ALGORITHM: Final[str] = "HMAC-SHA256"
+HANDSHAKE_TAG_DESCRIPTION: Final[str] = (
+    "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
+)
 HANDSHAKE_CONFIG_FORMAT: Final[str] = '>HBI'
 HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(
     HANDSHAKE_CONFIG_FORMAT
 )
-HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = 'Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), response_timeout_ms (uint32)'
+HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = (
+    "Serialized timing config: ack_timeout_ms (uint16), "
+    "ack_retry_limit (uint8), response_timeout_ms (uint32)"
+)
 HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = 25
 HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = 60000
 HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = 100

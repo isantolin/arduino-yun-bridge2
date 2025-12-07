@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Coroutine, Optional, TypeVar
+from builtins import BaseExceptionGroup
+from contextlib import suppress
+from collections.abc import Coroutine, Sequence
+from typing import Any, TypeVar, cast
 
 
 _T = TypeVar("_T")
@@ -12,37 +15,74 @@ _T = TypeVar("_T")
 class TaskSupervisor:
     """Track background coroutines under a dedicated TaskGroup anchor."""
 
-    def __init__(self, *, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(self, *, logger: logging.Logger | None = None) -> None:
         self._logger = logger or logging.getLogger("yunbridge.tasks")
+        self._group: asyncio.TaskGroup | None = None
+        self._group_owner: asyncio.Task[None] | None = None
+        self._group_ready = asyncio.Event()
+        self._shutdown = asyncio.Event()
         self._tasks: set[asyncio.Task[Any]] = set()
         self._lock = asyncio.Lock()
+
+    async def _run_group_owner(self) -> None:
+        try:
+            async with asyncio.TaskGroup() as group:
+                self._group = group
+                self._group_ready.set()
+                await self._shutdown.wait()
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:  # pragma: no cover - defensive logging
+            self._log_group_exception(exc)
+        finally:
+            self._group = None
+            self._group_ready.clear()
+            self._shutdown.clear()
+
+    async def _ensure_group(self) -> asyncio.TaskGroup:
+        async with self._lock:
+            owner = self._group_owner
+            if owner is None or owner.done():
+                self._group_owner = asyncio.create_task(
+                    self._run_group_owner()
+                )
+
+        await self._group_ready.wait()
+        if self._group is None:
+            raise RuntimeError("TaskGroup owner not initialised")
+        return self._group
 
     async def start(
         self,
         coroutine: Coroutine[Any, Any, _T],
         *,
-        name: Optional[str] = None,
-    ) -> asyncio.Task[_T]:
+        name: str | None = None,
+    ) -> asyncio.Task[_T | None]:
         """Schedule *coroutine* and keep track of its lifecycle."""
 
-        task: asyncio.Task[_T] = asyncio.create_task(coroutine, name=name)
+        group = await self._ensure_group()
+        task = group.create_task(
+            self._wrap_coroutine(coroutine, name=name),
+            name=name,
+        )
         task.add_done_callback(self._on_task_done)
-        async with self._lock:
-            self._tasks.add(task)
+        self._tasks.add(task)
         return task
 
     async def cancel(self) -> None:
         """Cancel all tracked tasks by closing the TaskGroup."""
 
         async with self._lock:
-            if not self._tasks:
-                return
-            tasks = list(self._tasks)
-            self._tasks.clear()
+            owner = self._group_owner
+            self._group_owner = None
 
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        if owner is None:
+            return
+
+        self._shutdown.set()
+        with suppress(asyncio.CancelledError):
+            await owner
+        self._tasks.clear()
 
     @property
     def active_count(self) -> int:
@@ -57,11 +97,40 @@ class TaskSupervisor:
                 "Background task %s cancelled",
                 task.get_name() or hex(id(task)),
             )
-        except Exception:
-            self._logger.exception(
-                "Background task %s failed",
-                task.get_name() or hex(id(task)),
+
+    def _wrap_coroutine(
+        self,
+        coroutine: Coroutine[Any, Any, _T],
+        *,
+        name: str | None,
+    ) -> Coroutine[Any, Any, _T | None]:
+        async def runner() -> _T | None:
+            try:
+                return await coroutine
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self._logger.exception(
+                    "Background task %s failed",
+                    name or hex(id(coroutine)),
+                )
+                return None
+
+        return runner()
+
+    def _log_group_exception(self, exc: BaseException) -> None:
+        if isinstance(exc, BaseExceptionGroup):
+            members: Sequence[BaseException] = cast(
+                Sequence[BaseException],
+                exc.exceptions,
             )
+            for inner in members:
+                self._log_group_exception(inner)
+            return
+        self._logger.exception(
+            "Background task failed during shutdown",
+            exc_info=exc,
+        )
 
 
 __all__ = ["TaskSupervisor"]

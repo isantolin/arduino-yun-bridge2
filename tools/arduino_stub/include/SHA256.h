@@ -81,6 +81,41 @@ class SHA256 {
     }
   }
 
+  void resetHMAC(const uint8_t* key, size_t key_len) {
+    uint8_t key_block[kBlockSize] = {};
+    if (key && key_len > 0) {
+      if (key_len > kBlockSize) {
+        SHA256 tmp;
+        tmp.update(key, key_len);
+        tmp.finalize(key_block, kDigestSize);
+      } else {
+        std::memcpy(key_block, key, key_len);
+      }
+    }
+
+    for (size_t i = 0; i < kBlockSize; ++i) {
+      ipad_[i] = key_block[i] ^ 0x36u;
+      opad_[i] = key_block[i] ^ 0x5Cu;
+    }
+
+    reset();
+    update(ipad_, kBlockSize);
+    hmac_active_ = true;
+  }
+
+  void finalizeHMAC(
+      const uint8_t* /*key*/, size_t /*key_len*/, uint8_t* digest,
+      size_t len) {
+    uint8_t inner_digest[kDigestSize];
+    finalize(inner_digest, kDigestSize);
+
+    SHA256 outer;
+    outer.update(opad_, kBlockSize);
+    outer.update(inner_digest, kDigestSize);
+    outer.finalize(digest, len);
+    hmac_active_ = false;
+  }
+
  private:
   static constexpr uint32_t rotr(uint32_t value, uint32_t bits) {
     return (value >> bits) | (value << (32 - bits));
@@ -167,4 +202,7 @@ class SHA256 {
   uint64_t bit_length_ = 0;
   uint8_t buffer_[kBlockSize];
   size_t buffer_len_ = 0;
+  uint8_t ipad_[kBlockSize] = {};
+  uint8_t opad_[kBlockSize] = {};
+  bool hmac_active_ = false;
 };

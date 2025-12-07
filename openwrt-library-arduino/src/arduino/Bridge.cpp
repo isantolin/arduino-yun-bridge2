@@ -139,11 +139,11 @@ void BridgeClass::begin(
     _hardware_serial->begin(baudrate);
   }
 
-  _shared_secret = secret;
+  _shared_secret = reinterpret_cast<const uint8_t*>(secret);
   if (_shared_secret && secret_len > 0) {
     _shared_secret_len = secret_len;
   } else if (_shared_secret) {
-    _shared_secret_len = strlen(_shared_secret);
+    _shared_secret_len = strlen(secret);
   } else {
     _shared_secret_len = 0;
   }
@@ -398,33 +398,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       return;
     }
-    case STATUS_MALFORMED: {
-      uint16_t malformed_id = 0xFFFF;
-      if (frame.header.payload_length >= 2) {
-        malformed_id = rpc::read_u16_be(frame.payload);
-      }
-      _handleMalformed(malformed_id);
-      if (_status_handler) {
-        _status_handler(
-            (uint8_t)frame.header.command_id,
-            frame.payload,
-            frame.header.payload_length);
-      }
-      return;
-    }
-    case STATUS_ERROR:
-    case STATUS_CMD_UNKNOWN:
-    case STATUS_CRC_MISMATCH:
-    case STATUS_TIMEOUT:
-    case STATUS_NOT_IMPLEMENTED:
-    case STATUS_OK:
-      if (_status_handler) {
-        _status_handler(
-            (uint8_t)frame.header.command_id,
-            frame.payload,
-            frame.header.payload_length);
-      }
-      return;
     default:
       break;
   }
@@ -435,6 +408,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   switch (frame.header.command_id) {
     case CMD_GET_VERSION:
       {
+        if (frame.header.payload_length != 0) {
+          break;
+        }
         uint8_t version_payload[2] = {
             (uint8_t)BRIDGE_FIRMWARE_VERSION_MAJOR,
             (uint8_t)BRIDGE_FIRMWARE_VERSION_MINOR};
@@ -444,6 +420,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       break;
     case CMD_GET_FREE_MEMORY:
       {
+        if (frame.header.payload_length != 0) {
+          break;
+        }
         uint16_t free_mem = calculateFreeMemoryBytes();
         uint8_t resp_payload[2];
         resp_payload[0] = (free_mem >> 8) & 0xFF;
@@ -455,16 +434,13 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
     case CMD_LINK_SYNC:
       {
-        _resetLinkState();
-        Console.begin();
         const uint16_t nonce_length = frame.header.payload_length;
-        const bool has_secret = (_shared_secret_len > 0);
-        if (nonce_length == 0) {
-          sendFrame(STATUS_MALFORMED, nullptr, 0);
-          command_processed_internally = true;
-          requires_ack = false;
+        if (nonce_length != RPC_HANDSHAKE_NONCE_LENGTH) {
           break;
         }
+        _resetLinkState();
+        Console.begin();
+        const bool has_secret = (_shared_secret_len > 0);
         const size_t response_length =
             static_cast<size_t>(nonce_length) +
             (has_secret ? kHandshakeTagSize : 0);
@@ -493,6 +469,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       break;
     case CMD_LINK_RESET:
       {
+        if (
+            frame.header.payload_length != 0 &&
+            frame.header.payload_length != RPC_HANDSHAKE_CONFIG_SIZE) {
+          break;
+        }
         _resetLinkState();
         _applyTimingConfig(frame.payload, frame.header.payload_length);
         Console.begin();
@@ -589,6 +570,41 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       rpc::write_u16_be(ack_payload, frame.header.command_id);
       sendFrame(STATUS_ACK, ack_payload, sizeof(ack_payload));
   }
+
+    if (!command_processed_internally &&
+        frame.header.command_id <= STATUS_NOT_IMPLEMENTED) {
+      switch (frame.header.command_id) {
+        case STATUS_MALFORMED: {
+          uint16_t malformed_id = 0xFFFF;
+          if (frame.header.payload_length >= 2) {
+            malformed_id = rpc::read_u16_be(frame.payload);
+          }
+          _handleMalformed(malformed_id);
+          if (_status_handler) {
+            _status_handler(
+                (uint8_t)frame.header.command_id,
+                frame.payload,
+                frame.header.payload_length);
+          }
+          return;
+        }
+        case STATUS_ERROR:
+        case STATUS_CMD_UNKNOWN:
+        case STATUS_CRC_MISMATCH:
+        case STATUS_TIMEOUT:
+        case STATUS_NOT_IMPLEMENTED:
+        case STATUS_OK:
+          if (_status_handler) {
+            _status_handler(
+                (uint8_t)frame.header.command_id,
+                frame.payload,
+                frame.header.payload_length);
+          }
+          return;
+        default:
+          break;
+      }
+    }
 
   if (!command_processed_internally && _command_handler) {
     _command_handler(frame);

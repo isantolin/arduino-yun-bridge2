@@ -507,7 +507,9 @@ void test_begin_preserves_binary_shared_secret_length() {
   const char* binary_secret = reinterpret_cast<const char*>(secret_bytes);
   bridge_explicit.begin(115200, binary_secret, sizeof(secret_bytes));
 
-  assert(bridge_explicit._shared_secret == binary_secret);
+  assert(
+      reinterpret_cast<const void*>(bridge_explicit._shared_secret) ==
+      reinterpret_cast<const void*>(binary_secret));
   assert(bridge_explicit._shared_secret_len == sizeof(secret_bytes));
 
   const uint8_t nonce[] = {0x10, 0x11, 0x12, 0x13};
@@ -657,7 +659,11 @@ void test_link_sync_generates_tag_and_ack() {
   const char* secret = "unit-test-secret";
   bridge.begin(115200, secret);
 
-  const uint8_t nonce[] = {0x01, 0x02, 0x03, 0x04, 0x05};
+  const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
+      0x01, 0x02, 0x03, 0x04,
+      0x05, 0x06, 0x07, 0x08,
+      0x09, 0x0A, 0x0B, 0x0C,
+      0x0D, 0x0E, 0x0F, 0x10};
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
   frame.header.command_id = CMD_LINK_SYNC;
@@ -689,7 +695,11 @@ void test_link_sync_without_secret_replays_nonce_only() {
 
   bridge.begin(115200, nullptr);
 
-  const uint8_t nonce[] = {0xAA, 0xBB, 0xCC};
+  const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
+      0xAA, 0xBB, 0xCC, 0xDD,
+      0xEE, 0x01, 0x02, 0x03,
+      0x04, 0x05, 0x06, 0x07,
+      0x08, 0x09, 0x0A, 0x0B};
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
   frame.header.command_id = CMD_LINK_SYNC;

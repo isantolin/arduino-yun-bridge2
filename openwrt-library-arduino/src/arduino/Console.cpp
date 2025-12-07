@@ -8,19 +8,34 @@ ConsoleClass::ConsoleClass()
     : _begun(false),
       _rx_buffer_head(0),
       _rx_buffer_tail(0),
-      _xoff_sent(false) {}
+      _xoff_sent(false),
+      _tx_buffer_pos(0) {}
 
 void ConsoleClass::begin() {
   _begun = true;
   _rx_buffer_head = 0;
   _rx_buffer_tail = 0;
   _xoff_sent = false;
+  _tx_buffer_pos = 0;
 }
 
-size_t ConsoleClass::write(uint8_t c) { return write(&c, 1); }
+size_t ConsoleClass::write(uint8_t c) {
+  if (!_begun) return 0;
+  _tx_buffer[_tx_buffer_pos++] = c;
+  
+  if (_tx_buffer_pos >= CONSOLE_TX_BUFFER_SIZE || c == '\n') {
+    flush();
+  }
+  return 1;
+}
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (!_begun) return 0;
+
+  // If there's buffered data, flush it first to maintain order
+  if (_tx_buffer_pos > 0) {
+    flush();
+  }
 
   size_t remaining = size;
   size_t offset = 0;
@@ -65,6 +80,12 @@ void ConsoleClass::flush() {
   if (!_begun) {
     return;
   }
+  
+  if (_tx_buffer_pos > 0) {
+    Bridge.sendFrame(CMD_CONSOLE_WRITE, _tx_buffer, _tx_buffer_pos);
+    _tx_buffer_pos = 0;
+  }
+
   Bridge.flushStream();
 }
 

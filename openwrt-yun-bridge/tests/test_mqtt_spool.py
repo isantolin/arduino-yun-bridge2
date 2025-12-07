@@ -1,4 +1,4 @@
-"""Tests for MQTT publish spool durability."""
+"""Tests for MQTT publish spool durability and fallback."""
 from __future__ import annotations
 
 import errno
@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from yunbridge.mqtt import PublishableMessage, QOSLevel
-from yunbridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
+from yunbridge.mqtt.spool import MQTTPublishSpool
 
 
 def _make_message(topic: str, payload: str = "hello") -> PublishableMessage:
@@ -66,7 +66,7 @@ def test_spool_skips_corrupt_rows(
     spool.append(_make_message("topic/first"))
 
     # Inject a corrupt entry directly into the underlying durable queue.
-    queue: Any = getattr(spool, "_queue")
+    queue: Any = getattr(spool, "_disk_queue")
     queue.append(b"not-a-dict")
     spool.append(_make_message("topic/second"))
 
@@ -84,35 +84,56 @@ def test_spool_skips_corrupt_rows(
     assert spool.snapshot()["corrupt_dropped"] == 1
 
 
-def test_spool_detects_disk_full(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_spool_fallback_on_disk_full(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=1)
+    """Test automatic fallback to memory queue when disk write fails."""
+    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=5)
 
     def _boom(_record: object) -> None:
         raise OSError(errno.ENOSPC, "disk full")
 
-    queue: Any = getattr(spool, "_queue")
+    queue: Any = getattr(spool, "_disk_queue")
     monkeypatch.setattr(queue, "append", _boom)
 
-    with pytest.raises(MQTTSpoolError) as excinfo:
-        spool.append(_make_message("topic/disk"))
+    # First append should fail on disk and trigger fallback
+    spool.append(_make_message("topic/disk"))
+    
+    assert spool.is_degraded
+    assert "disk_full" in caplog.text
+    assert "Switching to memory-only mode" in caplog.text
+    
+    # Second append goes to memory
+    spool.append(_make_message("topic/memory"))
+    
+    assert spool.pending == 2
+    
+    # Verify pops work from memory
+    msg1 = spool.pop_next()
+    msg2 = spool.pop_next()
+    
+    assert msg1.topic_name == "topic/disk"
+    assert msg2.topic_name == "topic/memory"
 
-    assert excinfo.value.reason == "disk_full"
 
-
-def test_spool_detects_generic_append_failure(
+def test_spool_fallback_on_init_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=1)
-
-    def _boom(_record: object) -> None:
-        raise RuntimeError("boom")
-
-    queue: Any = getattr(spool, "_queue")
-    monkeypatch.setattr(queue, "append", _boom)
-
-    with pytest.raises(MQTTSpoolError) as excinfo:
-        spool.append(_make_message("topic/boom"))
-
-    assert excinfo.value.reason == "append_failed"
+    """Test that spool initializes in degraded mode if directory creation fails."""
+    
+    # Force Path.mkdir to fail
+    def _fail_mkdir(*args, **kwargs):
+        raise PermissionError("No access")
+        
+    monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
+    
+    spool = MQTTPublishSpool("/root/protected", limit=5)
+    
+    assert spool.is_degraded
+    assert spool._disk_queue is None
+    
+    # Should still work in memory
+    spool.append(_make_message("topic/fallback"))
+    assert spool.pending == 1
+    assert spool.pop_next().topic_name == "topic/fallback"
+    

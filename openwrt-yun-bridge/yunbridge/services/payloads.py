@@ -36,8 +36,8 @@ class ShellCommandPayload:
         if text.startswith("{"):
             try:
                 candidate = json.loads(text)
-            except json.JSONDecodeError as exc:  # pragma: no cover - defensive
-                raise PayloadValidationError("Invalid JSON body") from exc
+            except json.JSONDecodeError:
+                candidate = {"command": text}
         else:
             candidate = {"command": text}
 

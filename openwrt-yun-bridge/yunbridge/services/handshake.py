@@ -436,15 +436,22 @@ class SerialHandshakeManager:
             return self._state.handshake_fatal_reason
         return None
 
+    @staticmethod
+    def calculate_handshake_tag(
+        secret: Optional[bytes], nonce: bytes
+    ) -> bytes:
+        """Return the truncated HMAC tag defined by the serial spec."""
+        if not secret:
+            return b""
+        digest = hmac.new(secret, nonce, hashlib.sha256).digest()
+        return digest[:SERIAL_HANDSHAKE_TAG_LEN]
+
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
         return self._compute_handshake_tag(nonce)
 
     def _compute_handshake_tag(self, nonce: bytes) -> bytes:
         secret = self._config.serial_shared_secret
-        if not secret:
-            return b""
-        digest = hmac.new(secret, nonce, hashlib.sha256).digest()
-        return digest[:SERIAL_HANDSHAKE_TAG_LEN]
+        return self.calculate_handshake_tag(secret, nonce)
 
     def _build_reset_payload(self) -> bytes:
         fmt = rpc_protocol.HANDSHAKE_CONFIG_FORMAT

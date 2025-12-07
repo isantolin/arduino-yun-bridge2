@@ -28,6 +28,7 @@ fi
 INIT_SCRIPT="/etc/init.d/yunbridge"
 REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
+MIN_DISK_KB=51200 # 50MB free required
 export TMPDIR=/overlay/upper/tmp
 LOCAL_IPK_INSTALL_FLAGS="--force-reinstall --force-downgrade --force-overwrite --force-depends --nodeps"
 SERIAL_SECRET_PLACEHOLDER="changeme123"
@@ -139,6 +140,19 @@ install_dependency() {
     exit 1
 }
 
+check_disk_space() {
+    local target="$1"
+    local available_kb
+    available_kb=$(df -k "$target" | awk 'NR==2 {print $4}')
+    
+    if [ "$available_kb" -lt "$MIN_DISK_KB" ]; then
+        echo "[ERROR] Insufficient disk space on $target. Available: ${available_kb}KB, Required: ${MIN_DISK_KB}KB" >&2
+        return 1
+    fi
+    echo "[INFO] Disk space check passed on $target (${available_kb}KB available)."
+    return 0
+}
+
 install_manifest_pip_requirements() {
     local manifest_path="$DEPENDENCY_MANIFEST"
     local tmp_requirements
@@ -187,6 +201,13 @@ PY
     if ! command -v pip3 >/dev/null 2>&1; then
         echo "[INFO] pip3 not found; installing python3-pip..."
         install_dependency python3-pip
+    fi
+
+    # Check disk space on overlay before heavy pip install
+    if ! check_disk_space "/overlay"; then
+        echo "[ERROR] Not enough space for pip packages. Extend your rootfs with ./2_expand.sh" >&2
+        rm -f "$tmp_requirements"
+        exit 1
     fi
 
     echo "[INFO] Installing pinned PyPI dependencies defined in dependencies/runtime.toml..."

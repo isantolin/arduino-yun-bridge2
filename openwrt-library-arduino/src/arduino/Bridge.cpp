@@ -262,6 +262,8 @@ void BridgeClass::process() {
     }
   }
   _processAckTimeout();
+  // Also pump console to flush partial buffers
+  Console.flush(); 
 }
 
 void BridgeClass::flushStream() {

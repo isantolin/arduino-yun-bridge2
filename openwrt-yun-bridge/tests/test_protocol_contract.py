@@ -1,6 +1,10 @@
 """Contract tests keeping protocol spec and bindings in sync."""
 from __future__ import annotations
 
+import hashlib
+import hmac
+import re
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,6 +12,7 @@ import tomllib
 
 from yunbridge import const
 from yunbridge.rpc import protocol as rpc_protocol
+from yunbridge.services.handshake import SerialHandshakeManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "tools/protocol/spec.toml"
@@ -123,3 +128,32 @@ def test_protocol_spec_matches_generated_bindings() -> None:
     assert (
         handshake["retry_limit_max"] == const.SERIAL_RETRY_LIMIT_MAX
     )
+
+
+def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
+    _, _, _, handshake = _load_spec()
+    fmt = handshake["config_format"]
+    assert fmt, "Handshake config format missing in spec"
+
+    packed_size = struct.calcsize(fmt)
+    assert packed_size == rpc_protocol.HANDSHAKE_CONFIG_SIZE
+
+    header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
+    match = re.search(
+        r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u", header_text
+    )
+    assert match, "RPC_HANDSHAKE_CONFIG_SIZE missing in header"
+    assert int(match.group(1)) == packed_size
+
+    sample_payload = struct.pack(fmt, 750, 3, 120000)
+    assert len(sample_payload) == packed_size
+
+
+def test_handshake_tag_reference_vector_matches_spec() -> None:
+    secret = b"yunbridge-shared"
+    nonce = bytes(range(const.SERIAL_NONCE_LENGTH))
+    expected = hmac.new(secret, nonce, hashlib.sha256).digest()[
+        : const.SERIAL_HANDSHAKE_TAG_LEN
+    ]
+    computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+    assert computed == expected

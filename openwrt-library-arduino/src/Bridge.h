@@ -40,6 +40,10 @@ constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 1;
 #define CONSOLE_RX_BUFFER_SIZE 32
 #endif
 
+#ifndef CONSOLE_TX_BUFFER_SIZE
+#define CONSOLE_TX_BUFFER_SIZE 64
+#endif
+
 // CORRECCIÓN: Agregamos las definiciones de watermark faltantes
 #ifndef CONSOLE_BUFFER_HIGH_WATER
 #define CONSOLE_BUFFER_HIGH_WATER 24
@@ -64,8 +68,10 @@ class ConsoleClass : public Print {
  private:
   bool _begun;
   uint8_t _rx_buffer[CONSOLE_RX_BUFFER_SIZE];
+  uint8_t _tx_buffer[CONSOLE_TX_BUFFER_SIZE];
   volatile uint16_t _rx_buffer_head;
   volatile uint16_t _rx_buffer_tail;
+  uint16_t _tx_buffer_pos;
   
   // CORRECCIÓN: Agregamos la variable miembro faltante
   bool _xoff_sent;

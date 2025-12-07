@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 from collections import deque
+from dataclasses import dataclass, field
 from typing import Deque, Iterable, Iterator, Optional, cast
-
-from attrs import define, field
 
 _UNSET = object()
 
 
-@define(slots=True)
+@dataclass(slots=True)
 class QueueEvent:
     """Outcome of a bounded queue mutation."""
 
@@ -24,27 +23,30 @@ def _normalize_limit(value: object) -> Optional[int]:
         return None
     if isinstance(value, int):
         return max(0, value)
-    raise TypeError("Queue limits must be integers or None")
+    if isinstance(value, str):
+        try:
+            return max(0, int(value))
+        except ValueError:
+            pass
+    return None  # Default fallback logic handled by caller if needed, or None
 
 
-@define(slots=True)
+@dataclass(slots=True)
 class BoundedByteDeque:
     """Deque that enforces both item-count and byte-length limits."""
 
-    max_items: Optional[int] = field(
-        default=None,
-        converter=_normalize_limit,
-    )
-    max_bytes: Optional[int] = field(
-        default=None,
-        converter=_normalize_limit,
-    )
+    max_items: Optional[int] = None
+    max_bytes: Optional[int] = None
     _queue: Deque[bytes] = field(
         init=False,
-        factory=lambda: cast(Deque[bytes], deque()),
+        default_factory=lambda: cast(Deque[bytes], deque()),
         repr=False,
     )
     _bytes: int = field(init=False, default=0, repr=False)
+
+    def __post_init__(self) -> None:
+        self.max_items = _normalize_limit(self.max_items)
+        self.max_bytes = _normalize_limit(self.max_bytes)
 
     def __len__(self) -> int:
         return len(self._queue)

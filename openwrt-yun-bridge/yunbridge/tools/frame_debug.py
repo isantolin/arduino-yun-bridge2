@@ -18,7 +18,6 @@ import serial
 from yunbridge.common import cobs_decode, cobs_encode
 from yunbridge.const import (
     DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_PORT,
     SERIAL_TERMINATOR,
 )
 from yunbridge.rpc import protocol as rpc_protocol
@@ -69,7 +68,10 @@ def _resolve_command(candidate: str) -> int:
         return Command[normalized].value
     except KeyError as exc:
         raise ValueError(
-            f"Unknown command '{candidate}'. Use hex (e.g. 0x03) or a Command enum name."
+            (
+                f"Unknown command '{candidate}'. Use hex (e.g. 0x03) "
+                "or a Command enum name."
+            )
         ) from exc
 
 
@@ -103,7 +105,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
-    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE :], "big")
+    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE:], "big")
     encoded_body = cobs_encode(raw_frame)
     encoded_packet = encoded_body + SERIAL_TERMINATOR
     return FrameDebugSnapshot(
@@ -130,7 +132,7 @@ def _open_serial_device(port: str, baud: int, timeout: float) -> serial.Serial:
 def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
-    return written
+    return int(written) if written is not None else 0
 
 
 def _read_frame(device: serial.Serial, timeout: float) -> Optional[bytes]:
@@ -156,9 +158,12 @@ def _decode_frame(encoded_packet: bytes) -> Frame:
 
 def _print_response(frame: Frame) -> None:
     payload_hex = frame.payload.hex()
-    payload_preview = payload_hex[:64] + ("…" if len(payload_hex) > 64 else "")
+    payload_preview = payload_hex[:64]
+    if len(payload_hex) > 64:
+        payload_preview += "…"
     print("[FrameDebug] --- MCU Response ---")
-    print(f"cmd_id=0x{frame.command_id:02X} ({_name_for_command(frame.command_id)})")
+    command_name = _name_for_command(frame.command_id)
+    print(f"cmd_id=0x{frame.command_id:02X} ({command_name})")
     print(f"payload_len={len(frame.payload)}")
     print(f"payload={payload_preview}")
 
@@ -219,7 +224,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=_non_negative_int,
         default=1,
         help=(
-            "Number of frames to send. 0 means run indefinitely without delay between iterations."
+            "Number of frames to send. 0 means run indefinitely without "
+            "delay between iterations."
         ),
     )
     parser.add_argument(
@@ -231,7 +237,10 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--read-timeout",
         type=_positive_float,
         default=2.0,
-        help="Seconds to wait for a response when --read-response is set (default: 2).",
+        help=(
+            "Seconds to wait for a response when --read-response is set "
+            "(default: 2)."
+        ),
     )
     return parser
 
@@ -259,7 +268,11 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     serial_device: Optional[serial.Serial] = None
     if args.port:
-        serial_device = _open_serial_device(args.port, args.baud, args.read_timeout)
+        serial_device = _open_serial_device(
+            args.port,
+            args.baud,
+            args.read_timeout,
+        )
         print(
             f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud"
         )
@@ -282,7 +295,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                             response_frame = _decode_frame(encoded_response)
                         except Exception as exc:
                             print(
-                                f"[FrameDebug] Failed to decode MCU response: {exc}"
+                                "[FrameDebug] Failed to decode MCU response: "
+                                f"{exc}"
                             )
                         else:
                             _print_response(response_frame)

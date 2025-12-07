@@ -26,12 +26,6 @@ pip = "uci==1.0.6"
 rationale = "Load daemon configuration from UCI"
 
 [[dependency]]
-name = "attrs"
-openwrt = ""
-pip = "attrs==25.4.0"
-rationale = "Declarative validation for runtime configuration"
-
-[[dependency]]
 name = "aiomqtt"
 openwrt = ""
 pip = "aiomqtt==2.4.0"

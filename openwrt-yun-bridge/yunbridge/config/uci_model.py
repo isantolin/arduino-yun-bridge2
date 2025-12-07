@@ -1,10 +1,9 @@
-"""attrs-based normalisation for UCI key/value pairs."""
+"""Dataclass-based normalisation for UCI key/value pairs."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, fields
 from typing import Any, Dict, Iterable as TypingIterable, Tuple, cast
-
-from attrs import define, field, fields_dict
 
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -74,157 +73,78 @@ def _stringify_value(value: Any) -> str:
     return str(value) if value is not None else ""
 
 
-def _string_field(value: Any) -> str:
-    return _stringify_value(value)
-
-
-def _extras_converter(values: Mapping[str, Any] | None) -> Dict[str, str]:
-    if not values:
-        return {}
-    items = cast(TypingIterable[Tuple[Any, Any]], values.items())
-    return {str(key): _stringify_value(val) for key, val in items}
-
-
-def _extras_factory() -> Dict[str, str]:
-    return {}
-
-
-@define(slots=True)
+@dataclass(slots=True)
 class UciConfigModel:
     """Structured representation of UCI options with sane defaults."""
 
-    mqtt_host: str = field(default=DEFAULT_MQTT_HOST, converter=_string_field)
-    mqtt_port: str = field(
-        default=str(DEFAULT_MQTT_PORT),
-        converter=_string_field,
+    mqtt_host: str = DEFAULT_MQTT_HOST
+    mqtt_port: str = str(DEFAULT_MQTT_PORT)
+    mqtt_tls: str = "1"
+    mqtt_cafile: str = DEFAULT_MQTT_CAFILE
+    mqtt_certfile: str = ""
+    mqtt_keyfile: str = ""
+    mqtt_user: str = ""
+    mqtt_pass: str = ""
+    mqtt_topic: str = DEFAULT_MQTT_TOPIC
+    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
+    mqtt_queue_limit: str = str(DEFAULT_MQTT_QUEUE_LIMIT)
+    serial_port: str = DEFAULT_SERIAL_PORT
+    serial_baud: str = str(DEFAULT_SERIAL_BAUD)
+    serial_shared_secret: str = ""
+    serial_retry_timeout: str = str(DEFAULT_SERIAL_RETRY_TIMEOUT)
+    serial_response_timeout: str = str(DEFAULT_SERIAL_RESPONSE_TIMEOUT)
+    serial_retry_attempts: str = str(DEFAULT_SERIAL_RETRY_ATTEMPTS)
+    serial_handshake_min_interval: str = str(
+        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
     )
-    mqtt_tls: str = field(default="1", converter=_string_field)
-    mqtt_cafile: str = field(
-        default=DEFAULT_MQTT_CAFILE,
-        converter=_string_field,
+    serial_handshake_fatal_failures: str = str(
+        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     )
-    mqtt_certfile: str = field(default="", converter=_string_field)
-    mqtt_keyfile: str = field(default="", converter=_string_field)
-    mqtt_user: str = field(default="", converter=_string_field)
-    mqtt_pass: str = field(default="", converter=_string_field)
-    mqtt_topic: str = field(
-        default=DEFAULT_MQTT_TOPIC,
-        converter=_string_field,
-    )
-    mqtt_spool_dir: str = field(
-        default=DEFAULT_MQTT_SPOOL_DIR,
-        converter=_string_field,
-    )
-    mqtt_queue_limit: str = field(
-        default=str(DEFAULT_MQTT_QUEUE_LIMIT),
-        converter=_string_field,
-    )
-    serial_port: str = field(
-        default=DEFAULT_SERIAL_PORT,
-        converter=_string_field,
-    )
-    serial_baud: str = field(
-        default=str(DEFAULT_SERIAL_BAUD),
-        converter=_string_field,
-    )
-    serial_shared_secret: str = field(default="", converter=_string_field)
-    serial_retry_timeout: str = field(
-        default=str(DEFAULT_SERIAL_RETRY_TIMEOUT),
-        converter=_string_field,
-    )
-    serial_response_timeout: str = field(
-        default=str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
-        converter=_string_field,
-    )
-    serial_retry_attempts: str = field(
-        default=str(DEFAULT_SERIAL_RETRY_ATTEMPTS),
-        converter=_string_field,
-    )
-    serial_handshake_min_interval: str = field(
-        default=str(DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL),
-        converter=_string_field,
-    )
-    serial_handshake_fatal_failures: str = field(
-        default=str(DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES),
-        converter=_string_field,
-    )
-    debug: str = field(default="0", converter=_string_field)
-    allowed_commands: str = field(default="", converter=_string_field)
-    file_system_root: str = field(
-        default=DEFAULT_FILE_SYSTEM_ROOT,
-        converter=_string_field,
-    )
-    process_timeout: str = field(
-        default=str(DEFAULT_PROCESS_TIMEOUT),
-        converter=_string_field,
-    )
-    process_max_output_bytes: str = field(
-        default=str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES),
-        converter=_string_field,
-    )
-    process_max_concurrent: str = field(
-        default=str(DEFAULT_PROCESS_MAX_CONCURRENT),
-        converter=_string_field,
-    )
-    console_queue_limit_bytes: str = field(
-        default=str(DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES),
-        converter=_string_field,
-    )
-    mailbox_queue_limit: str = field(
-        default=str(DEFAULT_MAILBOX_QUEUE_LIMIT),
-        converter=_string_field,
-    )
-    mailbox_queue_bytes_limit: str = field(
-        default=str(DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT),
-        converter=_string_field,
-    )
-    pending_pin_request_limit: str = field(
-        default=str(DEFAULT_PENDING_PIN_REQUESTS),
-        converter=_string_field,
-    )
-    reconnect_delay: str = field(
-        default=str(DEFAULT_RECONNECT_DELAY),
-        converter=_string_field,
-    )
-    status_interval: str = field(
-        default=str(DEFAULT_STATUS_INTERVAL),
-        converter=_string_field,
-    )
-    bridge_summary_interval: str = field(
-        default=str(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
-        converter=_string_field,
-    )
-    bridge_handshake_interval: str = field(
-        default=str(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
-        converter=_string_field,
-    )
-    mqtt_allow_file_read: str = field(default="1", converter=_string_field)
-    mqtt_allow_file_write: str = field(default="1", converter=_string_field)
-    mqtt_allow_file_remove: str = field(default="1", converter=_string_field)
-    mqtt_allow_datastore_get: str = field(default="1", converter=_string_field)
-    mqtt_allow_datastore_put: str = field(default="1", converter=_string_field)
-    mqtt_allow_mailbox_read: str = field(default="1", converter=_string_field)
-    mqtt_allow_mailbox_write: str = field(default="1", converter=_string_field)
-    mqtt_allow_shell_run: str = field(default="1", converter=_string_field)
-    mqtt_allow_shell_run_async: str = field(
-        default="1",
-        converter=_string_field,
-    )
-    mqtt_allow_shell_poll: str = field(default="1", converter=_string_field)
-    mqtt_allow_shell_kill: str = field(default="1", converter=_string_field)
-    metrics_enabled: str = field(default="0", converter=_string_field)
-    metrics_host: str = field(
-        default=DEFAULT_METRICS_HOST,
-        converter=_string_field,
-    )
-    metrics_port: str = field(
-        default=str(DEFAULT_METRICS_PORT),
-        converter=_string_field,
-    )
-    extras: Dict[str, str] = field(
-        factory=_extras_factory,
-        converter=_extras_converter,
-    )
+    debug: str = "0"
+    allowed_commands: str = ""
+    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
+    process_timeout: str = str(DEFAULT_PROCESS_TIMEOUT)
+    process_max_output_bytes: str = str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
+    process_max_concurrent: str = str(DEFAULT_PROCESS_MAX_CONCURRENT)
+    console_queue_limit_bytes: str = str(DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES)
+    mailbox_queue_limit: str = str(DEFAULT_MAILBOX_QUEUE_LIMIT)
+    mailbox_queue_bytes_limit: str = str(DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT)
+    pending_pin_request_limit: str = str(DEFAULT_PENDING_PIN_REQUESTS)
+    reconnect_delay: str = str(DEFAULT_RECONNECT_DELAY)
+    status_interval: str = str(DEFAULT_STATUS_INTERVAL)
+    bridge_summary_interval: str = str(DEFAULT_BRIDGE_SUMMARY_INTERVAL)
+    bridge_handshake_interval: str = str(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL)
+    mqtt_allow_file_read: str = "1"
+    mqtt_allow_file_write: str = "1"
+    mqtt_allow_file_remove: str = "1"
+    mqtt_allow_datastore_get: str = "1"
+    mqtt_allow_datastore_put: str = "1"
+    mqtt_allow_mailbox_read: str = "1"
+    mqtt_allow_mailbox_write: str = "1"
+    mqtt_allow_shell_run: str = "1"
+    mqtt_allow_shell_run_async: str = "1"
+    mqtt_allow_shell_poll: str = "1"
+    mqtt_allow_shell_kill: str = "1"
+    metrics_enabled: str = "0"
+    metrics_host: str = DEFAULT_METRICS_HOST
+    metrics_port: str = str(DEFAULT_METRICS_PORT)
+    extras: Dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Stringify all fields post-initialization."""
+        # We iterate through all fields except 'extras' and ensure they are strings
+        for f in fields(self):
+            if f.name == "extras":
+                continue
+            value = getattr(self, f.name)
+            setattr(self, f.name, _stringify_value(value))
+        
+        # Process extras
+        new_extras = {}
+        if self.extras:
+            for k, v in self.extras.items():
+                new_extras[str(k)] = _stringify_value(v)
+        self.extras = new_extras
 
     @classmethod
     def from_mapping(cls, mapping: Mapping[str, Any]) -> "UciConfigModel":
@@ -250,11 +170,7 @@ class UciConfigModel:
 
     @classmethod
     def _known_fields(cls) -> set[str]:
-        return {
-            name
-            for name in fields_dict(cls)
-            if name != "extras"
-        }
+        return {f.name for f in fields(cls) if f.name != "extras"}
 
 
 __all__ = [

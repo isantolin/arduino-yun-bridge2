@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
-
-from attrs import define, field
 
 from ..common import (
     get_default_config,
@@ -56,7 +55,7 @@ from .credentials import lookup_credential
 logger = logging.getLogger(__name__)
 
 
-@define(slots=True)
+@dataclass(slots=True)
 class RuntimeConfig:
     """Strongly typed configuration for the daemon."""
 
@@ -74,6 +73,8 @@ class RuntimeConfig:
     allowed_commands: Tuple[str, ...]
     file_system_root: str
     process_timeout: int
+    allowed_policy: AllowedCommandPolicy = field(init=False)
+    
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: int = DEFAULT_RECONNECT_DELAY
     status_interval: int = DEFAULT_STATUS_INTERVAL
@@ -93,8 +94,7 @@ class RuntimeConfig:
     )
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: TopicAuthorization = field(factory=TopicAuthorization)
-    allowed_policy: AllowedCommandPolicy = field(init=False)
+    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
     serial_shared_secret: bytes = field(repr=False, default=b"")
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -109,7 +109,7 @@ class RuntimeConfig:
     def tls_enabled(self) -> bool:
         return self.mqtt_tls and bool(self.mqtt_cafile)
 
-    def __attrs_post_init__(self) -> None:
+    def __post_init__(self) -> None:
         self.allowed_policy = AllowedCommandPolicy.from_iterable(
             self.allowed_commands
         )

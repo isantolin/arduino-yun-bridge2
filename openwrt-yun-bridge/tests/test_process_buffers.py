@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from types import MethodType
-from typing import Awaitable, Callable, Optional, cast
+from typing import Any, Awaitable, Callable, Optional, cast
 
 import pytest
 from anyio import EndOfStream
@@ -97,7 +97,7 @@ def test_collect_process_output_flushes_stored_buffers(
     async def _run() -> None:
         pid = 42
         state = runtime_service.state
-        slot = ManagedProcess(pid=pid, command="noop", handle=None)
+        slot = ManagedProcess(pid, "noop", None)
         slot.exit_code = 3
         slot.stdout_buffer.extend(b"hello")
         slot.stderr_buffer.extend(b"world")
@@ -148,8 +148,9 @@ def test_start_async_respects_concurrency_limit(
         state.process_max_concurrent = 1
         async with state.process_lock:
             state.running_processes[123] = ManagedProcess(
-                pid=123,
-                handle=cast(AnyioProcess, object()),
+                123,
+                "",
+                cast(AnyioProcess, object()),
             )
         result = await process_component.start_async("/bin/true")
         assert result == 0xFFFF
@@ -176,12 +177,10 @@ def test_handle_run_respects_concurrency_limit(
             captured.append((command_id, payload))
             return True
 
-        runtime_service.send_frame = cast(
-            Callable[[int, bytes], Awaitable[bool]],
-            MethodType(
-                _fake_send_frame,
-                runtime_service,
-            ),
+        runtime_service_any = cast(Any, runtime_service)
+        runtime_service_any.send_frame = MethodType(
+            _fake_send_frame,
+            runtime_service,
         )
 
         await process_component.handle_run(b"/bin/true")
@@ -243,9 +242,9 @@ def test_async_process_monitor_releases_slot(
 
         fake_proc = _FakeProcess()
         slot = ManagedProcess(
-            pid=77,
-            command="/bin/true",
-            handle=cast(AnyioProcess, fake_proc),
+            77,
+            "/bin/true",
+            cast(AnyioProcess, fake_proc),
         )
         async with state.process_lock:
             state.running_processes[slot.pid] = slot

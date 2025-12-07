@@ -27,7 +27,8 @@ try:  # pragma: no cover - optional dependency guard
 except ImportError:  # pragma: no cover - dependency missing at runtime
     PahoProperties = None  # type: ignore[assignment]
 
-from .client import Client, MQTTError
+# Note: The 'Client' shim has been removed. Use aiomqtt.Client directly.
+from aiomqtt import MqttError as MQTTError
 
 
 class ProtocolVersion(IntEnum):
@@ -398,7 +399,6 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
 
 
 __all__ = [
-    "Client",
     "MQTTError",
     "PublishableMessage",
     "DeliveredMessage",

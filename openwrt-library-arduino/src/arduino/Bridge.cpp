@@ -251,9 +251,12 @@ void BridgeClass::process() {
   wdt_reset();
 #endif
   while (_stream.available()) {
-    uint8_t byte = _stream.read();
-    if (_parser.consume(byte, _rx_frame)) {
-      dispatch(_rx_frame); 
+    int byte_read = _stream.read(); // Use int to check -1
+    if (byte_read >= 0) {
+      uint8_t byte = static_cast<uint8_t>(byte_read);
+      if (_parser.consume(byte, _rx_frame)) {
+        dispatch(_rx_frame); 
+      }
     }
   }
   _processAckTimeout();
@@ -299,7 +302,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         uint16_t message_len = rpc::read_u16_be(frame.payload);
         if (frame.header.payload_length >=
             static_cast<uint16_t>(2 + message_len)) {
-          _mailbox_handler(frame.payload + 2, message_len);
+          _mailbox_handler(frame.payload + 2, static_cast<size_t>(message_len));
         }
       }
       return;
@@ -366,7 +369,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CMD_PROCESS_RUN_ASYNC_RESP:
       if (_process_run_async_handler && frame.header.payload_length == 2) {
         uint16_t pid = rpc::read_u16_be(frame.payload);
-        _process_run_async_handler(pid);
+        _process_run_async_handler((int)pid);
       }
       return;
     case CMD_FILE_READ_RESP:

@@ -30,8 +30,13 @@ class Print {
 
   std::size_t print(int value) {
     char buf[16];
+    // SAFETY: Replaced sprintf with snprintf to prevent buffer overflows
     int len = std::snprintf(buf, sizeof(buf), "%d", value);
     if (len <= 0) return 0;
+    // Check truncation, though with 16 bytes and %d it shouldn't happen for int
+    if (static_cast<size_t>(len) >= sizeof(buf)) {
+        len = sizeof(buf) - 1;
+    }
     return write(reinterpret_cast<const std::uint8_t*>(buf),
                  static_cast<std::size_t>(len));
   }

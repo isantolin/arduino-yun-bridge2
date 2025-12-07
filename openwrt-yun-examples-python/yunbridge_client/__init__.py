@@ -24,6 +24,9 @@ from typing import (
     cast,
 )
 
+from aiomqtt import Client, MqttError
+from aiomqtt.client import Client as AiomqttClient
+
 from .env import dump_client_env
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
@@ -31,9 +34,7 @@ from yunbridge.const import (
     DEFAULT_MQTT_TOPIC,
 )
 from yunbridge.mqtt import (
-    Client,
     InboundMessage,
-    MQTTError,
     PublishableMessage,
     QOSLevel,
     as_inbound_message,
@@ -75,18 +76,18 @@ def _format_shell_command(parts: Sequence[str]) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
-async def _subscribe_many(client: Client, topics: Sequence[str]) -> None:
+async def _subscribe_many(client: AiomqttClient, topics: Sequence[str]) -> None:
     for topic in topics:
         await client.subscribe(topic, qos=int(QOSLevel.QOS_0))
 
 
-async def _unsubscribe_many(client: Client, topics: Sequence[str]) -> None:
+async def _unsubscribe_many(client: AiomqttClient, topics: Sequence[str]) -> None:
     for topic in topics:
         await client.unsubscribe(topic)
 
 
 async def _publish_simple(
-    client: Client,
+    client: AiomqttClient,
     topic: str,
     payload: _PublishPayload,
     *,
@@ -99,38 +100,6 @@ async def _publish_simple(
         qos=int(QOSLevel.QOS_0),
         retain=retain,
     )
-
-
-@asynccontextmanager
-async def get_mqtt_client(
-    *,
-    host: str = MQTT_HOST,
-    port: int = MQTT_PORT,
-    username: Optional[str] = MQTT_USER,
-    password: Optional[str] = MQTT_PASS,
-) -> AsyncGenerator[Client, None]:
-    """Provide a connected MQTT client and clean up reliably."""
-
-    client = Client(
-        hostname=host,
-        port=port,
-        username=username,
-        password=password,
-        logger=logging.getLogger("yunbridge.examples.client"),
-    )
-    try:
-        await client.connect()
-        yield client
-    except MQTTError as error:  # pragma: no cover - connection issues
-        logger.error("Error connecting to MQTT broker: %s", error)
-        raise
-    finally:
-        try:
-            await client.disconnect()
-        except MQTTError:
-            logger.debug("Ignoring MQTT disconnect error during cleanup")
-        finally:
-            logger.info("Disconnected from MQTT broker.")
 
 
 class Bridge:
@@ -149,7 +118,7 @@ class Bridge:
         self.topic_prefix = topic_prefix
         self.username = username
         self.password = password
-        self._client: Optional[Client] = None
+        self._client: Optional[AiomqttClient] = None
         self._response_routes: Dict[
             str,
             List[Tuple[asyncio.Queue[InboundMessage], bool]],
@@ -161,20 +130,24 @@ class Bridge:
         self._reply_topic: Optional[str] = None
         self._listener_task: Optional[asyncio.Task[None]] = None
         self._digital_modes: Dict[int, int] = {}
+        # Internal stack for managing the context manager
+        self._exit_stack: Optional[Any] = None
 
     async def connect(self) -> None:
         if self._client is not None:
-            await self._client.disconnect()
+            await self.disconnect()
 
-        client = Client(
+        # We manually enter the client context manager to keep connection open
+        # until disconnect() is called.
+        self._client = Client(
             hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
             logger=logging.getLogger("yunbridge.examples.bridge"),
         )
-        await client.connect()
-        self._client = client
+        await self._client.__aenter__()
+        
         logger.info("Connected to MQTT broker at %s:%d", self.host, self.port)
         self._digital_modes.clear()
         self._response_routes.clear()
@@ -183,7 +156,7 @@ class Bridge:
             f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
         )
         try:
-            await client.subscribe(
+            await self._client.subscribe(
                 self._reply_topic,
                 qos=int(QOSLevel.QOS_0),
             )
@@ -198,13 +171,15 @@ class Bridge:
     async def disconnect(self) -> None:
         if self._listener_task is not None:
             self._listener_task.cancel()
-            await asyncio.gather(self._listener_task, return_exceptions=True)
+            try:
+                await self._listener_task
+            except asyncio.CancelledError:
+                pass
             self._listener_task = None
 
-        client = self._client
-        if client is not None:
+        if self._client is not None:
             try:
-                await client.disconnect()
+                await self._client.__aexit__(None, None, None)
             finally:
                 self._response_routes.clear()
                 self._correlation_routes.clear()
@@ -212,7 +187,7 @@ class Bridge:
                 self._client = None
                 logger.info("Disconnected from MQTT broker.")
 
-    def _ensure_client(self) -> Client:
+    def _ensure_client(self) -> AiomqttClient:
         client = self._client
         if client is None:
             raise ConnectionError(
@@ -224,7 +199,7 @@ class Bridge:
         client = self._ensure_client()
 
         try:
-            async with client.unfiltered_messages() as messages:
+            async with client.messages() as messages:
                 async for raw_message in messages:
                     inbound = as_inbound_message(raw_message)
                     await self._handle_inbound_message(inbound)

@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Optional, TypeVar, cast
 from builtins import BaseExceptionGroup, ExceptionGroup
 
 import serial
+import aiomqtt
 import paho.mqtt.client as paho_client
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -32,10 +33,8 @@ from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.mqtt import (
-    Client as MQTTClient,
     MQTTClientProtocol,
     MQTTError,
-    MQTTMessageStream,
     QOSLevel,
     ProtocolVersion,
     as_inbound_message,
@@ -406,29 +405,6 @@ async def _open_serial_connection_with_retry(
     return await _run_with_retry(policy, _connect)
 
 
-async def _connect_mqtt_with_retry(
-    config: RuntimeConfig,
-    client: MQTTClientProtocol,
-):
-    base_delay = float(max(1, config.reconnect_delay))
-    policy = _RetryPolicy(
-        action=f"MQTT connection to {config.mqtt_host}:{config.mqtt_port}",
-        retry_exceptions=(MQTTError, asyncio.TimeoutError, OSError),
-        base_delay=base_delay,
-        max_delay=base_delay * 8,
-        announce_attempt=lambda: logger.info(
-            "Connecting to MQTT broker at %s:%d...",
-            config.mqtt_host,
-            config.mqtt_port,
-        ),
-    )
-
-    async def _connect() -> None:
-        await client.connect()
-
-    return await _run_with_retry(policy, _connect)
-
-
 async def _send_serial_frame(
     state: RuntimeState,
     writer: asyncio.StreamWriter,
@@ -745,25 +721,13 @@ async def _mqtt_publisher_loop(
             await state.flush_mqtt_spool()
 
 
-def _mqtt_message_stream(client: MQTTClientProtocol) -> MQTTMessageStream:
-    """Return the MQTT message stream exposed by the client implementation."""
-
-    stream_factory = getattr(client, "unfiltered_messages", None)
-    if not callable(stream_factory):
-        raise RuntimeError(
-            "MQTT client does not expose unfiltered_messages(); "
-            "upgrade aiomqtt to a supported version.",
-        )
-    return cast(MQTTMessageStream, stream_factory())
-
-
 async def _mqtt_subscriber_loop(
     client: MQTTClientProtocol,
     service: BridgeService,
 ) -> None:
     try:
-        async with _mqtt_message_stream(client) as messages:
-            async for message in messages:
+        async with client.unfiltered_messages() as stream:
+            async for message in stream:
                 inbound = as_inbound_message(message)
                 if not inbound.topic_name:
                     continue
@@ -827,69 +791,72 @@ async def mqtt_task(
 ) -> None:
     reconnect_delay = max(1, config.reconnect_delay)
     prefix = state.mqtt_topic_prefix
+    base_client_kwargs: dict[str, Any] = {
+        "hostname": config.mqtt_host,
+        "port": config.mqtt_port,
+        "username": config.mqtt_user or None,
+        "password": config.mqtt_pass or None,
+        "tls_context": tls_context,
+        "logger": logging.getLogger("yunbridge.mqtt.client"),
+        "protocol": ProtocolVersion.V5,
+        "clean_start": paho_client.MQTT_CLEAN_START_FIRST_ONLY,
+    }
 
     while True:
-        client_logger = logging.getLogger("yunbridge.mqtt.client")
-        client = cast(
-            MQTTClientProtocol,
-            MQTTClient(
-                hostname=config.mqtt_host,
-                port=config.mqtt_port,
-                username=config.mqtt_user or None,
-                password=config.mqtt_pass or None,
-                tls_context=tls_context,
-                logger=client_logger,
-                protocol=ProtocolVersion.V5,
-                clean_start=paho_client.MQTT_CLEAN_START_FIRST_ONLY,
-                properties=_build_mqtt_connect_properties(),
-            ),
-        )
-        should_retry = True
         try:
-            await _connect_mqtt_with_retry(
-                config,
-                client,
-            )
-            logger.info("Connected to MQTT broker.")
+            client_kwargs = dict(base_client_kwargs)
+            client_kwargs["properties"] = _build_mqtt_connect_properties()
+            async with aiomqtt.Client(**client_kwargs) as client:
+                logger.info("Connected to MQTT broker.")
 
-            def _sub(
-                top_segment: Topic | str,
-                *segments: str,
-            ) -> tuple[str, QOSLevel]:
-                return (
-                    topic_path(prefix, top_segment, *segments),
-                    QOSLevel.QOS_0,
+                # Cast client to Protocol to satisfy static type checkers.
+                client_protocol = cast(MQTTClientProtocol, client)
+
+                def _sub(
+                    top_segment: Topic | str,
+                    *segments: str,
+                ) -> tuple[str, QOSLevel]:
+                    return (
+                        topic_path(prefix, top_segment, *segments),
+                        QOSLevel.QOS_0,
+                    )
+
+                subscriptions: tuple[tuple[str, QOSLevel], ...] = (
+                    _sub(Topic.DIGITAL, "+", "mode"),
+                    _sub(Topic.DIGITAL, "+", "read"),
+                    _sub(Topic.DIGITAL, "+"),
+                    _sub(Topic.ANALOG, "+", "read"),
+                    _sub(Topic.ANALOG, "+"),
+                    _sub(Topic.CONSOLE, "in"),
+                    _sub(Topic.DATASTORE, "put", "#"),
+                    _sub(Topic.DATASTORE, "get", "#"),
+                    _sub(Topic.MAILBOX, "write"),
+                    _sub(Topic.MAILBOX, "read"),
+                    _sub(Topic.SHELL, "run"),
+                    _sub(Topic.SHELL, "run_async"),
+                    _sub(Topic.SHELL, "poll", "#"),
+                    _sub(Topic.SHELL, "kill", "#"),
+                    _sub(Topic.SYSTEM, "free_memory", "get"),
+                    _sub(Topic.SYSTEM, "version", "get"),
+                    _sub(Topic.FILE, "write", "#"),
+                    _sub(Topic.FILE, "read", "#"),
+                    _sub(Topic.FILE, "remove", "#"),
                 )
 
-            subscriptions: tuple[tuple[str, QOSLevel], ...] = (
-                _sub(Topic.DIGITAL, "+", "mode"),
-                _sub(Topic.DIGITAL, "+", "read"),
-                _sub(Topic.DIGITAL, "+"),
-                _sub(Topic.ANALOG, "+", "read"),
-                _sub(Topic.ANALOG, "+"),
-                _sub(Topic.CONSOLE, "in"),
-                _sub(Topic.DATASTORE, "put", "#"),
-                _sub(Topic.DATASTORE, "get", "#"),
-                _sub(Topic.MAILBOX, "write"),
-                _sub(Topic.MAILBOX, "read"),
-                _sub(Topic.SHELL, "run"),
-                _sub(Topic.SHELL, "run_async"),
-                _sub(Topic.SHELL, "poll", "#"),
-                _sub(Topic.SHELL, "kill", "#"),
-                _sub(Topic.SYSTEM, "free_memory", "get"),
-                _sub(Topic.SYSTEM, "version", "get"),
-                _sub(Topic.FILE, "write", "#"),
-                _sub(Topic.FILE, "read", "#"),
-                _sub(Topic.FILE, "remove", "#"),
-            )
+                for topic, qos in subscriptions:
+                    await client_protocol.subscribe(topic, qos=int(qos))
+                logger.info(
+                    "Subscribed to %d MQTT topics.",
+                    len(subscriptions),
+                )
 
-            for topic, qos in subscriptions:
-                await client.subscribe(topic, qos=int(qos))
-            logger.info("Subscribed to %d MQTT topics.", len(subscriptions))
-
-            async with asyncio.TaskGroup() as task_group:
-                task_group.create_task(_mqtt_publisher_loop(client, state))
-                task_group.create_task(_mqtt_subscriber_loop(client, service))
+                async with asyncio.TaskGroup() as task_group:
+                    task_group.create_task(
+                        _mqtt_publisher_loop(client_protocol, state)
+                    )
+                    task_group.create_task(
+                        _mqtt_subscriber_loop(client_protocol, service)
+                    )
 
         except* MQTTError as exc_group:
             for exc in exc_group.exceptions:
@@ -899,7 +866,6 @@ async def mqtt_task(
                 logger.error("MQTT connection error: %s", exc)
         except* asyncio.CancelledError:
             logger.info("MQTT task cancelled.")
-            should_retry = False
             raise
         except* Exception as exc_group:
             for exc in exc_group.exceptions:
@@ -907,20 +873,17 @@ async def mqtt_task(
                     "Unhandled exception in mqtt_task",
                     exc_info=exc,
                 )
-        finally:
-            try:
-                await client.disconnect()
-            except MQTTError:
-                logger.debug("MQTT disconnect raised broker error; ignoring.")
-            except Exception:
-                logger.debug("Ignoring error while disconnecting MQTT client.")
 
-            if should_retry:
-                logger.warning(
-                    "Waiting %d seconds before MQTT reconnect...",
-                    reconnect_delay,
-                )
-                await asyncio.sleep(reconnect_delay)
+        # Reconnection delay logic outside the context manager
+        logger.warning(
+            "Waiting %d seconds before MQTT reconnect...",
+            reconnect_delay,
+        )
+        try:
+            await asyncio.sleep(reconnect_delay)
+        except asyncio.CancelledError:
+            logger.info("MQTT task cancelled during backoff.")
+            raise
 
 
 async def main_async(config: RuntimeConfig) -> None:

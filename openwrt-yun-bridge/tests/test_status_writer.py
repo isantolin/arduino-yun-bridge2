@@ -1,12 +1,14 @@
 import asyncio
 import json
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from yunbridge.policy import AllowedCommandPolicy
 from yunbridge.state.context import RuntimeState
 from yunbridge.state import status as status_module
+from yunbridge.mqtt.spool import MQTTPublishSpool
 
 
 def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
@@ -64,7 +66,10 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state.mqtt_spool_backoff_until = 42.0
         state.mqtt_spool_last_error = "append_failed"
         state.mqtt_spool_recoveries = 1
-        state.mqtt_spool = SimpleNamespace(pending=7)
+        state.mqtt_spool = cast(
+            MQTTPublishSpool,
+            SimpleNamespace(pending=7),
+        )
         state.watchdog_enabled = True
         state.watchdog_interval = 7.5
         state.watchdog_beats = 11
@@ -108,7 +113,12 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["link_synchronised"] is True
         assert payload["mcu_version"] == {"major": 2, "minor": 5}
         assert "bridge" in payload
-        assert payload["bridge"]["handshake"]["attempts"] == 2
+        bridge_snapshot = cast(dict[str, object], payload["bridge"])
+        handshake_snapshot = cast(
+            dict[str, object],
+            bridge_snapshot["handshake"],
+        )
+        assert handshake_snapshot["attempts"] == 2
         assert payload["mqtt_spooled_messages"] == 10
         assert payload["mqtt_spooled_replayed"] == 4
         assert payload["mqtt_spool_errors"] == 2

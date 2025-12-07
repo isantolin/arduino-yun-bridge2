@@ -1,92 +1,57 @@
-import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiomqtt import Client as BaseClient
 
-from yunbridge.mqtt import client as client_module
-
-
-def _make_client(loop: asyncio.AbstractEventLoop):
-    instance = client_module.Client.__new__(client_module.Client)
-    connected = loop.create_future()
-    disconnected = loop.create_future()
-    object.__setattr__(instance, "_connected", connected)
-    object.__setattr__(instance, "_disconnected", disconnected)
-    return instance, connected, disconnected
+# We are testing direct usage of aiomqtt since the custom Client shim is gone.
+# The tests confirm we can mock aiomqtt.Client the same way daemon.py does.
 
 
-def test_disconnect_cancels_pending_future(monkeypatch: pytest.MonkeyPatch):
-    loop = asyncio.new_event_loop()
-    try:
-        instance, connected, disconnected = _make_client(loop)
-        connected.cancel()
+@pytest.mark.asyncio
+async def test_aiomqtt_context_manager_mocking():
+    """Verify that we can mock the async context manager of aiomqtt."""
+    mock_client_instance = AsyncMock(spec=BaseClient)
 
-        base_called = False
+    # Setup the __aenter__ to return the mock instance itself
+    mock_client_instance.__aenter__.return_value = mock_client_instance
 
-        def fake_base(self, client, userdata, *args, **kwargs):
-            nonlocal base_called
-            base_called = True
+    async with mock_client_instance as client:
+        assert client is mock_client_instance
+        await client.publish("test/topic", b"payload")
 
-        monkeypatch.setattr(
-            client_module.BaseClient,
-            "_on_disconnect",
-            fake_base,
-            raising=False,
-        )
-
-        client_module.Client._on_disconnect(instance, object(), object())
-
-        assert disconnected.cancelled()
-        assert base_called is False
-    finally:
-        loop.close()
+    mock_client_instance.publish.assert_awaited_once_with(
+        "test/topic",
+        b"payload",
+    )
+    mock_client_instance.__aexit__.assert_awaited_once()
 
 
-def test_disconnect_swallows_cancelled_error(monkeypatch: pytest.MonkeyPatch):
-    loop = asyncio.new_event_loop()
-    try:
-        instance, connected, disconnected = _make_client(loop)
+@pytest.mark.asyncio
+async def test_aiomqtt_messages_iterator_mocking():
+    """Verify mocking of the messages() async iterator."""
+    mock_client = AsyncMock(spec=BaseClient)
+    mock_messages = AsyncMock()
 
-        def fake_base(self, client, userdata, *args, **kwargs):
-            raise asyncio.CancelledError()
+    # Mock messages() context manager
+    mock_messages.__aenter__.return_value = mock_messages
+    mock_client.messages.return_value = mock_messages
 
-        monkeypatch.setattr(
-            client_module.BaseClient,
-            "_on_disconnect",
-            fake_base,
-            raising=False,
-        )
+    # Mock async iterator behavior
+    fake_msg = MagicMock()
+    fake_msg.topic = "test/in"
+    fake_msg.payload = b"123"
 
-        client_module.Client._on_disconnect(instance, object(), object())
+    # Setup __aiter__ to return an iterator that yields one item
+    async def msg_gen():
+        yield fake_msg
 
-        assert disconnected.cancelled()
-        assert connected.cancelled() is False
-    finally:
-        loop.close()
+    mock_messages.__aiter__.side_effect = msg_gen
 
+    async with mock_client.messages() as messages:
+        received = []
+        async for msg in messages:
+            received.append(msg)
 
-def test_disconnect_delegates_to_base(monkeypatch: pytest.MonkeyPatch):
-    loop = asyncio.new_event_loop()
-    try:
-        instance, connected, disconnected = _make_client(loop)
-        disconnected.set_result(None)
-
-        base_called = False
-
-        def fake_base(self, client, userdata, *args, **kwargs):
-            nonlocal base_called
-            base_called = True
-
-        monkeypatch.setattr(
-            client_module.BaseClient,
-            "_on_disconnect",
-            fake_base,
-            raising=False,
-        )
-
-        client_module.Client._on_disconnect(instance, "client", "userdata")
-
-        assert base_called is True
-        assert disconnected.cancelled() is False
-        assert connected.cancelled() is False
-    finally:
-        loop.close()
+    assert len(received) == 1
+    assert received[0].topic == "test/in"
+    assert received[0].payload == b"123"

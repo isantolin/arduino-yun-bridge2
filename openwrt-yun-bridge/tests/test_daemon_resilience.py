@@ -11,7 +11,6 @@ from serial import SerialException
 from yunbridge.config.settings import load_runtime_config
 from yunbridge.daemon import (
     _RetryPolicy,
-    _connect_mqtt_with_retry,
     _open_serial_connection_with_retry,
     _run_with_retry,
     _supervise_task,
@@ -45,31 +44,6 @@ async def test_open_serial_connection_retries_on_failure(
     assert mock_sleep.call_count == 2
     assert isinstance(reader, MagicMock)
     assert isinstance(writer, MagicMock)
-
-
-@pytest.mark.asyncio
-async def test_connect_mqtt_retries_on_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Verify MQTT connection retries on MQTTError."""
-    config = load_runtime_config()
-    mock_client = AsyncMock()
-    mock_client.connect = AsyncMock(
-        side_effect=[
-            MQTTError("fail 1"),
-            MQTTError("fail 2"),
-            None,  # Success
-        ]
-    )
-
-    # Patch sleep to avoid waiting during tests
-    mock_sleep = AsyncMock()
-    monkeypatch.setattr("asyncio.sleep", mock_sleep)
-
-    await _connect_mqtt_with_retry(config, mock_client)
-
-    assert mock_client.connect.call_count == 3
-    assert mock_sleep.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -160,7 +134,7 @@ async def test_run_with_retry_retries_until_success(
         nonlocal attempts
         attempts += 1
         if attempts < 3:
-            raise MQTTError(f"boom-{attempts}")
+            raise MQTTError("boom")
         return "ok"
 
     async def fake_sleep(delay: float) -> None:

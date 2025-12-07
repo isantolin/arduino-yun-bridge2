@@ -11,5 +11,7 @@ def test_expected_responses_infers_link_reset_pair() -> None:
 
 
 def test_response_to_request_lookup() -> None:
-    request = contracts.response_to_request(Command.CMD_MAILBOX_AVAILABLE_RESP.value)
+    request = contracts.response_to_request(
+        Command.CMD_MAILBOX_AVAILABLE_RESP.value
+    )
     assert request == Command.CMD_MAILBOX_AVAILABLE.value

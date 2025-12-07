@@ -7,7 +7,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Deque, Dict, Mapping, Optional
+from typing import Any, Deque, Dict, Mapping, Optional, cast
 
 from anyio.abc import Process as AnyioProcess
 
@@ -241,7 +241,7 @@ class RuntimeState:
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = field(
-        default_factory=dict,
+        default_factory=lambda: cast(SpoolSnapshot, {}),
         repr=False,
     )
     _spool_wait_strategy: Any = field(

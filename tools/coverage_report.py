@@ -46,6 +46,7 @@ def _read_python_metrics(path: Path) -> Optional[CoverageMetrics]:
         return None
     root = ET.parse(path).getroot()
     attr = root.attrib
+
     def _get(name: str) -> int:
         raw = attr.get(name)
         if raw is None:
@@ -58,12 +59,20 @@ def _read_python_metrics(path: Path) -> Optional[CoverageMetrics]:
     lines_total = _get("lines-valid")
     lines_covered = _get("lines-covered")
     line_rate = attr.get("line-rate")
-    line_percent = float(line_rate) * 100 if line_rate is not None else None
+    line_percent = (
+        float(line_rate) * 100
+        if line_rate is not None
+        else None
+    )
 
     branches_total = _get("branches-valid")
     branches_covered = _get("branches-covered")
     branch_rate = attr.get("branch-rate")
-    branch_percent = float(branch_rate) * 100 if branch_rate is not None else None
+    branch_percent = (
+        float(branch_rate) * 100
+        if branch_rate is not None
+        else None
+    )
 
     return CoverageMetrics(
         suite="Python",
@@ -103,14 +112,30 @@ def _read_arduino_metrics(path: Path) -> Optional[CoverageMetrics]:
         percent = summary.get("percent", {})
         line_counts = count.get("lines", {})
         branch_counts = count.get("branches", {})
-        lines_total = int(line_counts.get("found") or line_counts.get("total") or 0)
-        lines_covered = int(line_counts.get("hit") or line_counts.get("covered") or 0)
+        lines_total = int(
+            line_counts.get("found")
+            or line_counts.get("total")
+            or 0
+        )
+        lines_covered = int(
+            line_counts.get("hit")
+            or line_counts.get("covered")
+            or 0
+        )
         line_percent = percent.get("lines")
         if line_percent is None:
             line_percent = _safe_percent(lines_covered, lines_total)
 
-        branches_total = int(branch_counts.get("found") or branch_counts.get("total") or 0)
-        branches_covered = int(branch_counts.get("hit") or branch_counts.get("covered") or 0)
+        branches_total = int(
+            branch_counts.get("found")
+            or branch_counts.get("total")
+            or 0
+        )
+        branches_covered = int(
+            branch_counts.get("hit")
+            or branch_counts.get("covered")
+            or 0
+        )
         branch_percent = percent.get("branches")
         if branch_percent is None:
             branch_percent = _safe_percent(branches_covered, branches_total)
@@ -139,7 +164,9 @@ def _read_arduino_metrics(path: Path) -> Optional[CoverageMetrics]:
     )
 
 
-def _build_combined_metrics(metrics: list[CoverageMetrics]) -> Optional[CoverageMetrics]:
+def _build_combined_metrics(
+    metrics: list[CoverageMetrics],
+) -> Optional[CoverageMetrics]:
     include = [m for m in metrics if m is not None]
     if not include:
         return None
@@ -162,11 +189,16 @@ def _build_combined_metrics(metrics: list[CoverageMetrics]) -> Optional[Coverage
 
 
 def _render_markdown(rows: list[CoverageMetrics]) -> str:
-    header = "| Suite | Lines (hit/total) | Line % | Branches (hit/total) | Branch % |"
+    header = (
+        "| Suite | Lines (hit/total) | Line % | "
+        "Branches (hit/total) | Branch % |"
+    )
     separator = "| --- | --- | --- | --- | --- |"
     body = []
     for row in rows:
-        line = "| {suite} | {lines} | {line_pct} | {branches} | {branch_pct} |".format(
+        line = (
+            "| {suite} | {lines} | {line_pct} | {branches} | {branch_pct} |"
+        ).format(
             suite=row.suite,
             lines=row.lines_display,
             line_pct=CoverageMetrics.format_percent(row.line_percent),
@@ -174,7 +206,10 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
             branch_pct=CoverageMetrics.format_percent(row.branch_percent),
         )
         body.append(line)
-    artifact_list = "\n".join(f"- `{row.suite}` artifacts: {row.artifact_hint}" for row in rows)
+    artifact_list = "\n".join(
+        f"- `{row.suite}` artifacts: {row.artifact_hint}"
+        for row in rows
+    )
     return "\n".join([header, separator, *body, "", artifact_list])
 
 
@@ -200,23 +235,45 @@ def _append_optional(path: Optional[str], content: str) -> None:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--python-xml", default="coverage/python/coverage.xml")
-    parser.add_argument("--arduino-summary", default="coverage/arduino/summary.json")
-    parser.add_argument("--output-markdown", help="Write the table to the given markdown file.")
-    parser.add_argument("--output-json", help="Write machine-readable metrics to this path.")
-    parser.add_argument("--github-step-summary", help="Append the table to GitHub step summary output.")
+    parser.add_argument(
+        "--python-xml",
+        default="coverage/python/coverage.xml",
+    )
+    parser.add_argument(
+        "--arduino-summary",
+        default="coverage/arduino/summary.json",
+    )
+    parser.add_argument(
+        "--output-markdown",
+        help="Write the table to the given markdown file.",
+    )
+    parser.add_argument(
+        "--output-json",
+        help="Write machine-readable metrics to this path.",
+    )
+    parser.add_argument(
+        "--github-step-summary",
+        help="Append the table to GitHub step summary output.",
+    )
     args = parser.parse_args(argv)
 
     python_metrics = _read_python_metrics(Path(args.python_xml))
     arduino_metrics = _read_arduino_metrics(Path(args.arduino_summary))
 
-    rows = [row for row in [python_metrics, arduino_metrics] if row is not None]
+    rows = [
+        row
+        for row in [python_metrics, arduino_metrics]
+        if row is not None
+    ]
     combined = _build_combined_metrics(rows)
     if combined is not None:
         rows.append(combined)
 
     if not rows:
-        print("[coverage-report] No coverage artifacts were found.", file=sys.stderr)
+        print(
+            "[coverage-report] No coverage artifacts were found.",
+            file=sys.stderr,
+        )
         return 1
 
     table = _render_markdown(rows)
@@ -238,7 +295,10 @@ def main(argv: list[str]) -> int:
             for row in rows
         }
         Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.output_json).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        Path(args.output_json).write_text(
+            json.dumps(payload, indent=2),
+            encoding="utf-8",
+        )
 
     return 0
 

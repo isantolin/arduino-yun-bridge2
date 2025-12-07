@@ -14,7 +14,6 @@ from yunbridge.config import settings
 from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 
 
-
 def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
     base: Dict[str, Any] = {
         "serial_port": "/dev/ttyUSB0",
@@ -170,7 +169,6 @@ def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
     assert config.metrics_port == 9400
 
 
-
 def test_load_runtime_config_allows_empty_mqtt_user_env(
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -315,7 +313,6 @@ def test_get_uci_config_handles_value_wrappers(
     assert config["allowed_commands"] == "ls echo"
 
 
-
 def test_resolve_watchdog_settings_uses_procd(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("YUNBRIDGE_WATCHDOG_INTERVAL", raising=False)
     monkeypatch.setenv("PROCD_WATCHDOG", "10000")
@@ -349,6 +346,7 @@ def test_configure_logging_stream_handler(
     )
 
     capture = io.StringIO()
+    assert isinstance(handler, logging.StreamHandler)
     handler.stream = capture
 
     try:

@@ -366,7 +366,8 @@ def generate_cpp(
             } __attribute__((packed));
 
             static_assert(
-                sizeof(RpcHandshakeTimingConfigWire) == RPC_HANDSHAKE_CONFIG_SIZE,
+                sizeof(RpcHandshakeTimingConfigWire)
+                == RPC_HANDSHAKE_CONFIG_SIZE,
                 "Handshake config size mismatch with spec.toml"
             );
 
@@ -401,17 +402,27 @@ def generate_cpp(
         constexpr unsigned int RPC_BUFFER_SIZE = {rpc_buffer};
         constexpr std::size_t RPC_HANDSHAKE_NONCE_LENGTH = {nonce_len}u;
         constexpr std::size_t RPC_HANDSHAKE_TAG_LENGTH = {tag_len}u;
-        constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] = "{tag_algo}";
-        constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] = "{tag_desc}";
-        constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] = "{config_format}";
-        constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] = "{config_desc}";
+        constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] =
+            "{tag_algo}";
+        constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] =
+            "{tag_desc}";
+        constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] =
+            "{config_format}";
+        constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] =
+            "{config_desc}";
         constexpr std::size_t RPC_HANDSHAKE_CONFIG_SIZE = {config_size}u;
-        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {ack_min};
-        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {ack_max};
-        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {resp_min};
-        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {resp_max};
-        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {retry_min};
-        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {retry_max};
+        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS =
+            {ack_min};
+        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS =
+            {ack_max};
+        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS =
+            {resp_min};
+        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS =
+            {resp_max};
+        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN =
+            {retry_min};
+        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX =
+            {retry_max};
 
         {handshake_struct_block}
 

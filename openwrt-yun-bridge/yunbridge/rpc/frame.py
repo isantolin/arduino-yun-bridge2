@@ -2,7 +2,7 @@
 # Provides classes for building and parsing RPC frames.
 
 import struct
-from typing import Self, Tuple
+from typing import Self
 
 from . import protocol
 from .crc import crc32_ieee
@@ -38,9 +38,7 @@ class Frame:
         )
 
         # Calculate CRC over the header and payload, then mask it to the
-        # exact number of bits declared by the protocol. This avoids
-        # struct.pack failures when older firmwares still expect 16-bit CRCs
-        # while the daemon computes the checksum with a 32-bit helper.
+        # exact number of bits declared by the protocol.
         data_to_crc = crc_covered_header + payload
         crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
         crc = crc32_ieee(data_to_crc) & crc_mask
@@ -55,7 +53,7 @@ class Frame:
         return crc_covered_header + payload + crc_packed
 
     @staticmethod
-    def parse(raw_frame_buffer: bytes) -> Tuple[int, bytes]:
+    def parse(raw_frame_buffer: bytes) -> tuple[int, bytes]:
         """Parse a decoded frame and validate header, payload, and CRC."""
         # 1. Verify minimum size
         if len(raw_frame_buffer) < protocol.MIN_FRAME_SIZE:

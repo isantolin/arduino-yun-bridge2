@@ -32,7 +32,7 @@ static void test_builder_roundtrip() {
   const uint8_t payload[] = {0x00, 0x01, 0xFF, 0x02, 0x00};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-    size_t raw_len = builder.build(raw, command_id, payload, sizeof(payload));
+    size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
     assert(raw_len ==
       sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
 
@@ -59,7 +59,7 @@ static void test_builder_payload_limit() {
   FrameBuilder builder;
   std::vector<uint8_t> payload(MAX_PAYLOAD_SIZE + 1, 0x01);
   uint8_t buffer[MAX_RAW_FRAME_SIZE] = {0};
-  size_t len = builder.build(buffer, 0x1234, payload.data(), payload.size());
+  size_t len = builder.build(buffer, sizeof(buffer), 0x1234, payload.data(), payload.size());
   assert(len == 0);
 }
 
@@ -79,7 +79,7 @@ static void test_parser_crc_failure() {
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, 0x1111, payload, sizeof(payload));
+  size_t raw_len = builder.build(raw, sizeof(raw), 0x1111, payload, sizeof(payload));
   assert(raw_len > 0);
 
   raw[sizeof(FrameHeader)] ^= 0xFF;  // Corrupt payload without fixing CRC.
@@ -99,7 +99,7 @@ static void test_parser_header_validation() {
 
   const uint8_t payload[] = {0xAA};
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, 0x0102, payload, sizeof(payload));
+  size_t raw_len = builder.build(raw, sizeof(raw), 0x0102, payload, sizeof(payload));
   assert(raw_len > 0);
 
   // Break protocol version.

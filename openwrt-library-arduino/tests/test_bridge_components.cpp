@@ -499,6 +499,50 @@ void test_process_poll_response_requeues_on_streaming_output() {
   assert(encoded_pid == pid);
 }
 
+void test_begin_preserves_binary_shared_secret_length() {
+  RecordingStream stream_explicit;
+  BridgeClass bridge_explicit(stream_explicit);
+
+  const uint8_t secret_bytes[] = {0x00, 0x01, 0x02, 0x00, 0x03};
+  const char* binary_secret = reinterpret_cast<const char*>(secret_bytes);
+  bridge_explicit.begin(115200, binary_secret, sizeof(secret_bytes));
+
+  assert(bridge_explicit._shared_secret == binary_secret);
+  assert(bridge_explicit._shared_secret_len == sizeof(secret_bytes));
+
+  const uint8_t nonce[] = {0x10, 0x11, 0x12, 0x13};
+  uint8_t explicit_tag[16];
+  bridge_explicit._computeHandshakeTag(
+      nonce, sizeof(nonce), explicit_tag);
+
+  bool explicit_has_entropy = false;
+  for (uint8_t byte : explicit_tag) {
+    if (byte != 0) {
+      explicit_has_entropy = true;
+      break;
+    }
+  }
+  assert(explicit_has_entropy);
+
+  RecordingStream stream_default;
+  BridgeClass bridge_default(stream_default);
+  bridge_default.begin(115200, binary_secret);
+
+  uint8_t truncated_tag[16];
+  bridge_default._computeHandshakeTag(
+      nonce, sizeof(nonce), truncated_tag);
+
+  bool truncated_all_zero = true;
+  for (uint8_t byte : truncated_tag) {
+    if (byte != 0) {
+      truncated_all_zero = false;
+      break;
+    }
+  }
+  assert(truncated_all_zero);
+  assert(std::memcmp(explicit_tag, truncated_tag, sizeof(explicit_tag)) != 0);
+}
+
 void test_ack_flushes_pending_queue_after_response() {
   RecordingStream stream;
   BridgeClass bridge(stream);
@@ -530,6 +574,57 @@ void test_ack_flushes_pending_queue_after_response() {
   assert(std::memcmp(flushed.payload, queued_payload, sizeof(queued_payload)) == 0);
   assert(bridge._pending_tx_count == 0);
   assert(bridge._awaiting_ack);
+}
+
+void test_status_ack_frame_clears_pending_state_via_dispatch() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  bridge.begin();
+  StatusHandlerState status_state;
+  StatusHandlerState::instance = &status_state;
+  bridge.onStatus(status_handler_trampoline);
+
+  const uint8_t payload[] = {0x55};
+  bool sent = bridge.sendFrame(CMD_CONSOLE_WRITE, payload, sizeof(payload));
+  assert(sent);
+  assert(bridge._awaiting_ack);
+
+  Frame ack{};
+  ack.header.version = PROTOCOL_VERSION;
+  ack.header.command_id = STATUS_ACK;
+  ack.header.payload_length = 2;
+  write_u16_be(ack.payload, CMD_CONSOLE_WRITE);
+
+  bridge.dispatch(ack);
+
+  assert(!bridge._awaiting_ack);
+  assert(status_state.called);
+  assert(status_state.status_code == STATUS_ACK);
+  StatusHandlerState::instance = nullptr;
+}
+
+void test_status_error_frame_dispatches_handler() {
+  RecordingStream stream;
+  BridgeClass bridge(stream);
+
+  StatusHandlerState status_state;
+  StatusHandlerState::instance = &status_state;
+  bridge.onStatus(status_handler_trampoline);
+
+  const char* message = "remote_fault";
+  Frame frame{};
+  frame.header.version = PROTOCOL_VERSION;
+  frame.header.command_id = STATUS_ERROR;
+  frame.header.payload_length = static_cast<uint16_t>(std::strlen(message));
+  std::memcpy(frame.payload, message, frame.header.payload_length);
+
+  bridge.dispatch(frame);
+
+  assert(status_state.called);
+  assert(status_state.status_code == STATUS_ERROR);
+  assert(status_state.payload == message);
+  StatusHandlerState::instance = nullptr;
 }
 
 void test_malformed_status_triggers_retransmit() {
@@ -725,7 +820,10 @@ int main() {
   test_process_kill_encodes_pid();
   test_mailbox_read_response_delivers_payload();
   test_process_poll_response_requeues_on_streaming_output();
+  test_begin_preserves_binary_shared_secret_length();
   test_ack_flushes_pending_queue_after_response();
+  test_status_ack_frame_clears_pending_state_via_dispatch();
+  test_status_error_frame_dispatches_handler();
   test_malformed_status_triggers_retransmit();
   test_link_sync_generates_tag_and_ack();
   test_link_sync_without_secret_replays_nonce_only();

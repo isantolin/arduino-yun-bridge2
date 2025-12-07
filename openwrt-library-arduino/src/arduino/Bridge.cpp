@@ -133,21 +133,18 @@ BridgeClass::BridgeClass(Stream& stream)
   memset(_pending_tx_frames, 0, sizeof(_pending_tx_frames));
 }
 
-// MODIFICADO: begin ahora recibe el secreto
-void BridgeClass::begin(unsigned long baudrate, const char* secret, size_t secret_len) {
+void BridgeClass::begin(
+    unsigned long baudrate, const char* secret, size_t secret_len) {
   if (_hardware_serial != nullptr) {
     _hardware_serial->begin(baudrate);
   }
 
-  // Guardamos el secreto en runtime (aceptando binarios con longitud explícita)
-  if (secret != nullptr) {
-    if (secret_len == 0) {
-      secret_len = strlen(secret);
-    }
-    _shared_secret = reinterpret_cast<const uint8_t*>(secret);
+  _shared_secret = secret;
+  if (_shared_secret && secret_len > 0) {
     _shared_secret_len = secret_len;
+  } else if (_shared_secret) {
+    _shared_secret_len = strlen(_shared_secret);
   } else {
-    _shared_secret = nullptr;
     _shared_secret_len = 0;
   }
 
@@ -176,7 +173,6 @@ void BridgeClass::begin(unsigned long baudrate, const char* secret, size_t secre
 #endif
 }
 
-// NUEVO: Método privado para usar el secreto de la instancia
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
     memset(out_tag, 0, kHandshakeTagSize);
@@ -186,7 +182,6 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   SHA256 sha256;
   uint8_t digest[kSha256DigestSize];
 
-  // Usamos el secreto pasado en runtime
   sha256.resetHMAC(_shared_secret, _shared_secret_len);
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
@@ -273,147 +268,165 @@ void BridgeClass::flushStream() {
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
-  if (frame.header.command_id >= 0x80) {
-    // Manejo de respuestas (sin cambios)
-    switch (frame.header.command_id) {
-      case CMD_DIGITAL_READ_RESP:
-        if (_digital_read_handler && frame.header.payload_length == 1) {
-          int value = frame.payload[0];
-          _digital_read_handler(value); 
-        }
-        break;
-      case CMD_ANALOG_READ_RESP:
-          if (_analog_read_handler && frame.header.payload_length == 2) {
-              int value = (int)rpc::read_u16_be(frame.payload);
-              _analog_read_handler(value); 
-          }
-          break;
-      case CMD_DATASTORE_GET_RESP:
-        if (frame.header.payload_length >= 1) {
-          uint8_t value_len = frame.payload[0];
-          if (frame.header.payload_length >= static_cast<uint16_t>(1 + value_len)) {
-            const uint8_t* value_ptr = frame.payload + 1;
-            const char* key = _popPendingDatastoreKey();
-            if (_datastore_get_handler) {
-              _datastore_get_handler(key, value_ptr, value_len);
-            }
-          }
-        }
-        break;
-      case CMD_MAILBOX_READ_RESP:
-        if (_mailbox_handler && frame.header.payload_length >= 2) {
-          uint16_t message_len = rpc::read_u16_be(frame.payload);
-          if (frame.header.payload_length >= static_cast<uint16_t>(2 + message_len)) {
-            _mailbox_handler(frame.payload + 2, message_len);
-          }
-        }
-        break;
-       case CMD_MAILBOX_AVAILABLE_RESP:
-        if (_mailbox_available_handler && frame.header.payload_length == 1) {
-          uint8_t count = frame.payload[0];
-          _mailbox_available_handler(count);
-        }
-         break;
-      case CMD_PROCESS_RUN_RESP:
-        if (_process_run_handler && frame.header.payload_length >= 5) {
-          const uint8_t* cursor = frame.payload;
-          uint8_t status = *cursor++;
-          uint16_t stdout_len = rpc::read_u16_be(cursor);
-          cursor += 2;
-          if (frame.header.payload_length < static_cast<uint16_t>(5 + stdout_len)) {
-            break;
-          }
-          const uint8_t* stdout_ptr = cursor;
-          cursor += stdout_len;
-          uint16_t stderr_len = rpc::read_u16_be(cursor);
-          cursor += 2;
-          if (frame.header.payload_length < static_cast<uint16_t>(5 + stdout_len + stderr_len)) {
-            break;
-          }
-          const uint8_t* stderr_ptr = cursor;
-          _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
-        }
-        break;
-      case CMD_PROCESS_POLL_RESP:
-        if (frame.header.payload_length >= 6) { 
-          uint16_t pid = _popPendingProcessPid();
-          const uint8_t* p = frame.payload;
-          uint8_t status = *p++;
-          uint8_t exit_code = *p++;
-          uint16_t stdout_len = rpc::read_u16_be(p);
-          p += 2;
-          uint16_t stderr_len = rpc::read_u16_be(p);
-          p += 2;
-          if (frame.header.payload_length >= (6 + stdout_len + stderr_len)) {
-            const uint8_t* stdout_data = p;
-            const uint8_t* stderr_data = p + stdout_len;
-            if (_process_poll_handler) {
-              _process_poll_handler(status, exit_code, stdout_data, stdout_len, stderr_data, stderr_len);
-            }
-            if (pid != 0xFFFF && status == STATUS_OK && (stdout_len > 0 || stderr_len > 0)) {
-              requestProcessPoll((int)pid);
-            }
-          }
-        } 
-        break;
-      case CMD_PROCESS_RUN_ASYNC_RESP:
-        if (_process_run_async_handler && frame.header.payload_length == 2) {
-          uint16_t pid = rpc::read_u16_be(frame.payload);
-          _process_run_async_handler(pid);
-        }
-        break;
-      case CMD_FILE_READ_RESP:
-        if (_file_system_read_handler && frame.header.payload_length >= 2) {
-          uint16_t data_len = rpc::read_u16_be(frame.payload);
-          if (frame.header.payload_length >= static_cast<uint16_t>(2 + data_len)) {
-            _file_system_read_handler(frame.payload + 2, data_len);
-          }
-        }
-        break;
-      case CMD_GET_FREE_MEMORY_RESP:
-        if (_get_free_memory_handler && frame.header.payload_length >= 2) {
-          uint16_t free_mem = rpc::read_u16_be(frame.payload);
-          _get_free_memory_handler(free_mem);
-        }
-        break;
-      case STATUS_ACK: {
-        uint16_t ack_id = 0xFFFF;
-        if (frame.header.payload_length >= 2) {
-          ack_id = rpc::read_u16_be(frame.payload);
-        }
-        _handleAck(ack_id);
-        if (_status_handler) {
-          _status_handler((uint8_t)frame.header.command_id, frame.payload,
-                          frame.header.payload_length);
-        }
-        break;
+  switch (frame.header.command_id) {
+    case CMD_DIGITAL_READ_RESP:
+      if (_digital_read_handler && frame.header.payload_length == 1) {
+        int value = frame.payload[0];
+        _digital_read_handler(value);
       }
-      case STATUS_MALFORMED: {
-        uint16_t malformed_id = 0xFFFF;
-        if (frame.header.payload_length >= 2) {
-          malformed_id = rpc::read_u16_be(frame.payload);
-        }
-        _handleMalformed(malformed_id);
-        if (_status_handler) {
-          _status_handler((uint8_t)frame.header.command_id, frame.payload,
-                          frame.header.payload_length);
-        }
-        break;
+      return;
+    case CMD_ANALOG_READ_RESP:
+      if (_analog_read_handler && frame.header.payload_length == 2) {
+        int value = (int)rpc::read_u16_be(frame.payload);
+        _analog_read_handler(value);
       }
-      case STATUS_ERROR:
-      case STATUS_CMD_UNKNOWN:
-      case STATUS_CRC_MISMATCH:
-      case STATUS_TIMEOUT:
-      case STATUS_NOT_IMPLEMENTED:
-        if (_status_handler) {
-          _status_handler((uint8_t)frame.header.command_id, frame.payload,
-                          frame.header.payload_length);
+      return;
+    case CMD_DATASTORE_GET_RESP:
+      if (frame.header.payload_length >= 1) {
+        uint8_t value_len = frame.payload[0];
+        if (frame.header.payload_length >=
+            static_cast<uint16_t>(1 + value_len)) {
+          const uint8_t* value_ptr = frame.payload + 1;
+          const char* key = _popPendingDatastoreKey();
+          if (_datastore_get_handler) {
+            _datastore_get_handler(key, value_ptr, value_len);
+          }
         }
-        break;
-       default:
-         break;
+      }
+      return;
+    case CMD_MAILBOX_READ_RESP:
+      if (_mailbox_handler && frame.header.payload_length >= 2) {
+        uint16_t message_len = rpc::read_u16_be(frame.payload);
+        if (frame.header.payload_length >=
+            static_cast<uint16_t>(2 + message_len)) {
+          _mailbox_handler(frame.payload + 2, message_len);
+        }
+      }
+      return;
+    case CMD_MAILBOX_AVAILABLE_RESP:
+      if (_mailbox_available_handler && frame.header.payload_length == 1) {
+        uint8_t count = frame.payload[0];
+        _mailbox_available_handler(count);
+      }
+      return;
+    case CMD_PROCESS_RUN_RESP:
+      if (_process_run_handler && frame.header.payload_length >= 5) {
+        const uint8_t* cursor = frame.payload;
+        uint8_t status = *cursor++;
+        uint16_t stdout_len = rpc::read_u16_be(cursor);
+        cursor += 2;
+        if (frame.header.payload_length <
+            static_cast<uint16_t>(5 + stdout_len)) {
+          return;
+        }
+        const uint8_t* stdout_ptr = cursor;
+        cursor += stdout_len;
+        uint16_t stderr_len = rpc::read_u16_be(cursor);
+        cursor += 2;
+        if (frame.header.payload_length < static_cast<uint16_t>(
+                5 + stdout_len + stderr_len)) {
+          return;
+        }
+        const uint8_t* stderr_ptr = cursor;
+        _process_run_handler(
+            status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
+      }
+      return;
+    case CMD_PROCESS_POLL_RESP:
+      if (frame.header.payload_length >= 6) {
+        uint16_t pid = _popPendingProcessPid();
+        const uint8_t* p = frame.payload;
+        uint8_t status = *p++;
+        uint8_t exit_code = *p++;
+        uint16_t stdout_len = rpc::read_u16_be(p);
+        p += 2;
+        uint16_t stderr_len = rpc::read_u16_be(p);
+        p += 2;
+        if (frame.header.payload_length >=
+            (6 + stdout_len + stderr_len)) {
+          const uint8_t* stdout_data = p;
+          const uint8_t* stderr_data = p + stdout_len;
+          if (_process_poll_handler) {
+            _process_poll_handler(
+                status,
+                exit_code,
+                stdout_data,
+                stdout_len,
+                stderr_data,
+                stderr_len);
+          }
+          if (
+              pid != 0xFFFF && status == STATUS_OK
+              && (stdout_len > 0 || stderr_len > 0)) {
+            requestProcessPoll((int)pid);
+          }
+        }
+      }
+      return;
+    case CMD_PROCESS_RUN_ASYNC_RESP:
+      if (_process_run_async_handler && frame.header.payload_length == 2) {
+        uint16_t pid = rpc::read_u16_be(frame.payload);
+        _process_run_async_handler(pid);
+      }
+      return;
+    case CMD_FILE_READ_RESP:
+      if (_file_system_read_handler && frame.header.payload_length >= 2) {
+        uint16_t data_len = rpc::read_u16_be(frame.payload);
+        if (frame.header.payload_length >=
+            static_cast<uint16_t>(2 + data_len)) {
+          _file_system_read_handler(frame.payload + 2, data_len);
+        }
+      }
+      return;
+    case CMD_GET_FREE_MEMORY_RESP:
+      if (_get_free_memory_handler && frame.header.payload_length >= 2) {
+        uint16_t free_mem = rpc::read_u16_be(frame.payload);
+        _get_free_memory_handler(free_mem);
+      }
+      return;
+    case STATUS_ACK: {
+      uint16_t ack_id = 0xFFFF;
+      if (frame.header.payload_length >= 2) {
+        ack_id = rpc::read_u16_be(frame.payload);
+      }
+      _handleAck(ack_id);
+      if (_status_handler) {
+        _status_handler(
+            (uint8_t)frame.header.command_id,
+            frame.payload,
+            frame.header.payload_length);
+      }
+      return;
     }
-    return;
+    case STATUS_MALFORMED: {
+      uint16_t malformed_id = 0xFFFF;
+      if (frame.header.payload_length >= 2) {
+        malformed_id = rpc::read_u16_be(frame.payload);
+      }
+      _handleMalformed(malformed_id);
+      if (_status_handler) {
+        _status_handler(
+            (uint8_t)frame.header.command_id,
+            frame.payload,
+            frame.header.payload_length);
+      }
+      return;
+    }
+    case STATUS_ERROR:
+    case STATUS_CMD_UNKNOWN:
+    case STATUS_CRC_MISMATCH:
+    case STATUS_TIMEOUT:
+    case STATUS_NOT_IMPLEMENTED:
+    case STATUS_OK:
+      if (_status_handler) {
+        _status_handler(
+            (uint8_t)frame.header.command_id,
+            frame.payload,
+            frame.header.payload_length);
+      }
+      return;
+    default:
+      break;
   }
 
   bool command_processed_internally = false;
@@ -440,7 +453,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
-    // MODIFICADO: LINK_SYNC ahora usa el método de instancia
     case CMD_LINK_SYNC:
       {
         _resetLinkState();
@@ -467,7 +479,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         memcpy(response, frame.payload, nonce_length);
         if (has_secret) {
           uint8_t tag[kHandshakeTagSize];
-          // Usamos el método de la clase
           _computeHandshakeTag(frame.payload, nonce_length, tag);
           memcpy(&response[nonce_length], tag, kHandshakeTagSize);
         }
@@ -625,8 +636,9 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
                                       uint16_t payload_len) {
   uint8_t raw_frame_buf[rpc::MAX_RAW_FRAME_SIZE];
 
+  // Use safe build method with buffer size
   size_t raw_len =
-      _builder.build(raw_frame_buf, command_id, payload, payload_len);
+      _builder.build(raw_frame_buf, sizeof(raw_frame_buf), command_id, payload, payload_len);
 
   if (raw_len == 0) {
 #if BRIDGE_DEBUG_FRAMES
@@ -961,6 +973,13 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
   return true;
+}
+
+const char* _popPendingDatastoreKey() {
+  // Not using _popPendingDatastoreKey in the current implementation logic
+  // inside BridgeClass, but keeping signature consistent if needed.
+  // Here we just use the member function version.
+  return nullptr; 
 }
 
 const char* BridgeClass::_popPendingDatastoreKey() {

@@ -43,10 +43,6 @@ constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // Define FrameHeader struct before it is used in sizeof()
 // CRITICAL: This attribute is essential for protocol compatibility.
-// It ensures the compiler creates a 5-byte struct (1 + 2 + 2) by preventing
-// it from adding padding bytes for memory alignment. The Python side of the
-// bridge expects a 5-byte header, and removing this attribute will break
-// the communication protocol.
 struct FrameHeader {
   uint8_t version;
   uint16_t payload_length;
@@ -86,8 +82,9 @@ class FrameBuilder {
  public:
   FrameBuilder();
   // Builds a raw frame into a buffer. Returns the length of the raw frame.
-  size_t build(uint8_t* buffer, uint16_t command_id, const uint8_t* payload,
-               uint16_t payload_len);
+  // SAFETY: Now requires the buffer size to prevent overflows.
+  size_t build(uint8_t* buffer, size_t buffer_size, uint16_t command_id, 
+               const uint8_t* payload, uint16_t payload_len);
 };
 
 }  // namespace rpc

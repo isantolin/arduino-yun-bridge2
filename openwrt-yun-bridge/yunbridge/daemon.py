@@ -9,7 +9,7 @@ import struct
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional, Tuple, TypeVar, cast
+from typing import Any, Awaitable, Callable, Optional, TypeVar, cast
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
@@ -64,7 +64,7 @@ from tenacity import (
 )
 
 OPEN_SERIAL_CONNECTION: Callable[
-    ..., Awaitable[Tuple[asyncio.StreamReader, asyncio.StreamWriter]]
+    ..., Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]
 ] = serial_asyncio.open_serial_connection
 
 
@@ -85,7 +85,7 @@ MAX_SERIAL_PACKET_BYTES = (
 class _SupervisedTaskSpec:
     name: str
     factory: Callable[[], Awaitable[None]]
-    fatal_exceptions: Tuple[type[BaseException], ...] = ()
+    fatal_exceptions: tuple[type[BaseException], ...] = ()
     max_restarts: Optional[int] = None
     restart_interval: float = 60.0
     min_backoff: float = 1.0
@@ -95,7 +95,7 @@ class _SupervisedTaskSpec:
 @dataclass(slots=True)
 class _RetryPolicy:
     action: str
-    retry_exceptions: Tuple[type[BaseException], ...]
+    retry_exceptions: tuple[type[BaseException], ...]
     base_delay: float
     max_delay: float
     announce_attempt: Optional[Callable[[], None]] = None
@@ -120,7 +120,7 @@ ExcLike = BaseException | BaseExceptionGroup[BaseException]
 
 def _unwrap_retryable_exception_group(
     group: BaseExceptionGroup[BaseException],
-    retry_types: Tuple[type[BaseException], ...],
+    retry_types: tuple[type[BaseException], ...],
 ) -> Optional[BaseException]:
     collected: list[BaseException] = []
 
@@ -257,7 +257,7 @@ async def _supervise_task(
     name: str,
     coro_factory: Callable[[], Awaitable[None]],
     *,
-    fatal_exceptions: Tuple[type[BaseException], ...] = (),
+    fatal_exceptions: tuple[type[BaseException], ...] = (),
     min_backoff: float = 1.0,
     max_backoff: float = 30.0,
     state: Optional[RuntimeState] = None,
@@ -377,7 +377,7 @@ async def _supervise_task(
 
 async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
-) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     base_delay = float(max(1, config.reconnect_delay))
 
     policy = _RetryPolicy(
@@ -396,7 +396,7 @@ async def _open_serial_connection_with_retry(
         ),
     )
 
-    async def _connect() -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    async def _connect() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
         return await OPEN_SERIAL_CONNECTION(
             url=config.serial_port,
             baudrate=config.serial_baud,
@@ -861,7 +861,7 @@ async def mqtt_task(
                     QOSLevel.QOS_0,
                 )
 
-            subscriptions: Tuple[Tuple[str, QOSLevel], ...] = (
+            subscriptions: tuple[tuple[str, QOSLevel], ...] = (
                 _sub(Topic.DIGITAL, "+", "mode"),
                 _sub(Topic.DIGITAL, "+", "read"),
                 _sub(Topic.DIGITAL, "+"),

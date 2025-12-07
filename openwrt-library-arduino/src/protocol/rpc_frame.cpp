@@ -134,10 +134,17 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
 
 FrameBuilder::FrameBuilder() {}
 
-size_t FrameBuilder::build(uint8_t* buffer, uint16_t command_id,
+size_t FrameBuilder::build(uint8_t* buffer, size_t buffer_size, uint16_t command_id,
                            const uint8_t* payload, uint16_t payload_len) {
   if (payload_len > MAX_PAYLOAD_SIZE) {
     return 0;
+  }
+
+  size_t data_len = sizeof(FrameHeader) + payload_len;
+  size_t total_len = data_len + CRC_TRAILER_SIZE;
+
+  if (total_len > buffer_size) {
+    return 0; // Buffer overflow protection
   }
 
   // --- Header ---
@@ -154,13 +161,11 @@ size_t FrameBuilder::build(uint8_t* buffer, uint16_t command_id,
     memcpy(p, payload, payload_len);
   }
 
-  size_t data_len = sizeof(FrameHeader) + payload_len;
-
   // --- CRC ---
   uint32_t crc = crc32_ieee(buffer, data_len);
   write_u32_be(buffer + data_len, crc);
 
-  return data_len + CRC_TRAILER_SIZE;  // Return total raw frame length
+  return total_len;  // Return total raw frame length
 }
 
 }  // namespace rpc

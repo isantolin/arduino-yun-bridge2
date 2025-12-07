@@ -56,9 +56,13 @@ void clearSnapshotStats() {
 
 void setup() {
   Serial.begin(115200);
+  // NOTE: Removed blocking wait for Serial to allow daemon handshake
+  // independent of USB connection.
+  /*
   while (!Serial) {
     // Wait for the USB serial console to be ready.
   }
+  */
 
   Serial.println(F("[FrameDebug] Starting"));
 

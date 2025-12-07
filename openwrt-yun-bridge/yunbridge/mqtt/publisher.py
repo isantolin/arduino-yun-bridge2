@@ -43,6 +43,7 @@ def build_client(
     client_module: Any = mqtt_client,
 ) -> mqtt_client.Client:
     client_cls = getattr(client_module, "Client")
+    # paho mqtt 2.0+ uses protocol=MQTTv5 enum or int 5
     client = client_cls(protocol=getattr(client_module, "MQTTv5", 5))
     if config.mqtt_user:
         client.username_pw_set(config.mqtt_user, config.mqtt_pass)

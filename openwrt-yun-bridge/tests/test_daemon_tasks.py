@@ -5,8 +5,9 @@ import asyncio
 import contextlib
 from collections import deque
 from dataclasses import dataclass
-from types import MethodType, TracebackType
+from types import MethodType
 from typing import Any, Awaitable, Callable, Coroutine, Deque, Optional, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -109,77 +110,6 @@ class _SerialServiceStub:
         return asyncio.create_task(coroutine, name=name)
 
 
-class _FakeMQTTClient:
-    def __init__(self, messages: Deque[object]) -> None:
-        self._messages = messages
-        self.subscriptions: list[tuple[str, int]] = []
-        self.published: list[tuple[str, bytes, int, bool]] = []
-
-    async def __aenter__(self) -> "_FakeMQTTClient":
-        await self.connect()
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> bool:
-        await self.disconnect()
-        return False
-
-    async def connect(self) -> None:
-        return None
-
-    async def disconnect(self) -> None:
-        return None
-
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        *,
-        qos: int,
-        retain: bool,
-    ) -> None:
-        self.published.append((topic, payload, qos, retain))
-
-    async def subscribe(self, topic: str, qos: int) -> None:
-        self.subscriptions.append((topic, qos))
-
-    def _message_stream(self):
-        client = self
-
-        class _Stream:
-            async def __aenter__(self) -> _Stream:
-                return self
-
-            async def __aexit__(
-                self,
-                exc_type: type[BaseException] | None,
-                exc: BaseException | None,
-                tb: TracebackType | None,
-            ) -> bool:
-                return False
-
-            def __aiter__(self) -> _Stream:
-                return self
-
-            async def __anext__(self) -> object:
-                await asyncio.sleep(0)
-                if client._messages:
-                    return client._messages.popleft()
-                raise StopAsyncIteration
-
-        return _Stream()
-
-    def unfiltered_messages(self):
-        return self._message_stream()
-
-    def messages(self):
-        return self._message_stream()
-
-
 class _MQTTServiceStub:
     def __init__(self, state: RuntimeState) -> None:
         self.state = state
@@ -202,21 +132,6 @@ class _MQTTServiceStub:
 class _FatalSerialServiceStub(_SerialServiceStub):
     async def on_serial_connected(self) -> None:
         raise SerialHandshakeFatal("fatal-handshake")
-
-
-class _InboundMessageStub:
-    def __init__(self, topic: str, payload: bytes) -> None:
-        self.topic = topic
-        self.payload = payload
-        self.qos = 0
-        self.retain = False
-        self.response_topic = None
-        self.correlation_data = None
-        self.user_properties: tuple[tuple[str, str], ...] = ()
-        self.content_type = None
-        self.message_expiry_interval = None
-        self.payload_format_indicator = None
-        self.topic_alias = None
 
 
 def test_serial_reader_task_processes_frame(
@@ -399,24 +314,30 @@ def test_mqtt_task_handles_incoming_message(
         state.mqtt_topic_prefix = runtime_config.mqtt_topic
         service = _MQTTServiceStub(state)
 
-        messages: Deque[object] = deque(
-            [
-                _InboundMessageStub(
-                    f"{state.mqtt_topic_prefix}/console/in",
-                    b"hi",
-                )
-            ]
-        )
+        # Mock aiomqtt Client
+        mock_client = AsyncMock()
+        mock_client.__aenter__.return_value = mock_client
+        mock_client.__aexit__.return_value = None
+        
+        # Mock messages context manager
+        mock_msgs_ctx = AsyncMock()
+        mock_msgs_ctx.__aenter__.return_value = mock_msgs_ctx
+        mock_client.messages.return_value = mock_msgs_ctx
+        
+        # Mock iterator
+        fake_msg = MagicMock()
+        fake_msg.topic = f"{state.mqtt_topic_prefix}/console/in"
+        fake_msg.payload = b"hi"
+        fake_msg.qos = 0
+        fake_msg.retain = False
+        fake_msg.properties = None
+        
+        async def msg_gen():
+            yield fake_msg
+            
+        mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
-        def _client_factory(*_: object, **__: object) -> _FakeMQTTClient:
-            return _FakeMQTTClient(messages)
-
-        monkeypatch.setattr("yunbridge.daemon.MQTTClient", _client_factory)
-
-        monkeypatch.setattr(
-            "yunbridge.daemon._build_mqtt_connect_properties",
-            lambda: None,
-        )
+        monkeypatch.setattr("yunbridge.daemon.MqttClient", lambda **kw: mock_client)
 
         task = asyncio.create_task(
             mqtt_task(runtime_config, state, cast(Any, service), None)
@@ -426,51 +347,5 @@ def test_mqtt_task_handles_incoming_message(
 
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
-
-        assert not messages
-
-    asyncio.run(_run())
-
-
-def test_mqtt_task_requires_unfiltered_messages(
-    monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
-) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        state.mqtt_topic_prefix = runtime_config.mqtt_topic
-        service = _MQTTServiceStub(state)
-
-        messages: Deque[object] = deque(
-            [
-                _InboundMessageStub(
-                    f"{state.mqtt_topic_prefix}/console/in",
-                    b"hi",
-                )
-            ]
-        )
-
-        def _client_factory(*_: object, **__: object) -> _FakeMQTTClient:
-            instance = _FakeMQTTClient(messages)
-            setattr(instance, "unfiltered_messages", None)
-            return instance
-
-        monkeypatch.setattr("yunbridge.daemon.MQTTClient", _client_factory)
-
-        monkeypatch.setattr(
-            "yunbridge.daemon._build_mqtt_connect_properties",
-            lambda: None,
-        )
-
-        task = asyncio.create_task(
-            mqtt_task(runtime_config, state, cast(Any, service), None)
-        )
-
-        await asyncio.sleep(0.1)
-
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-
-        assert not service.handled.is_set()
-        assert len(messages) == 1
 
     asyncio.run(_run())

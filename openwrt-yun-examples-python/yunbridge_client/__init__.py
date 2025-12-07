@@ -8,6 +8,7 @@ import os
 import secrets
 import shlex
 import uuid
+from contextlib import AsyncExitStack
 from typing import (
     Any,
     Dict,
@@ -16,35 +17,33 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    TypeVar,
     TypedDict,
     Union,
     cast,
 )
 
-from .env import dump_client_env
+from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
+from paho.mqtt.properties import Properties
+from paho.mqtt.packettypes import PacketTypes
+
+from yunbridge.mqtt import (
+    QOSLevel,
+    InboundMessage,
+    as_inbound_message,
+    PublishableMessage,
+)
+from yunbridge.common import build_mqtt_properties
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
 )
-from yunbridge.mqtt import (
-    InboundMessage,
-    PublishableMessage,
-    QOSLevel,
-    as_inbound_message,
-    MQTTClient,
-    MQTTError,
-)
-
-Client = MQTTClient
-AiomqttClient = MQTTClient
+from .env import dump_client_env
 
 __all__ = [
     "Bridge",
     "dump_client_env",
-    "Client",
-    "MQTTError",
+    "MqttError",
     "QOSLevel",
 ]
 
@@ -55,8 +54,6 @@ MQTT_USER = os.environ.get("YUN_BROKER_USER")
 MQTT_PASS = os.environ.get("YUN_BROKER_PASS")
 
 logger = logging.getLogger(__name__)
-
-_PublishPayload = TypeVar("_PublishPayload", str, bytes)
 
 
 class ShellPollResponse(TypedDict, total=False):
@@ -76,32 +73,6 @@ def _format_shell_command(parts: Sequence[str]) -> str:
     return " ".join(shlex.quote(part) for part in parts)
 
 
-async def _subscribe_many(client: AiomqttClient, topics: Sequence[str]) -> None:
-    for topic in topics:
-        await client.subscribe(topic, qos=int(QOSLevel.QOS_0))
-
-
-async def _unsubscribe_many(client: AiomqttClient, topics: Sequence[str]) -> None:
-    for topic in topics:
-        await client.unsubscribe(topic)
-
-
-async def _publish_simple(
-    client: AiomqttClient,
-    topic: str,
-    payload: _PublishPayload,
-    *,
-    retain: bool = False,
-) -> None:
-    data = payload.encode("utf-8") if isinstance(payload, str) else payload
-    await client.publish(
-        topic,
-        data,
-        qos=int(QOSLevel.QOS_0),
-        retain=retain,
-    )
-
-
 class Bridge:
     """High-level helper that mirrors the bridge daemon MQTT contract."""
 
@@ -118,7 +89,7 @@ class Bridge:
         self.topic_prefix = topic_prefix
         self.username = username
         self.password = password
-        self._client: Optional[AiomqttClient] = None
+        self._client: Optional[MqttClient] = None
         self._response_routes: Dict[
             str,
             List[Tuple[asyncio.Queue[InboundMessage], bool]],
@@ -130,23 +101,21 @@ class Bridge:
         self._reply_topic: Optional[str] = None
         self._listener_task: Optional[asyncio.Task[None]] = None
         self._digital_modes: Dict[int, int] = {}
-        # Internal stack for managing the context manager
-        self._exit_stack: Optional[Any] = None
+        self._exit_stack = AsyncExitStack()
 
     async def connect(self) -> None:
         if self._client is not None:
             await self.disconnect()
 
-        # We manually enter the client context manager to keep connection open
-        # until disconnect() is called.
-        self._client = Client(
+        self._client = MqttClient(
             hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
             logger=logging.getLogger("yunbridge.examples.bridge"),
+            protocol=ProtocolVersion.V5,
         )
-        await self._client.__aenter__()
+        await self._exit_stack.enter_async_context(self._client)
         
         logger.info("Connected to MQTT broker at %s:%d", self.host, self.port)
         self._digital_modes.clear()
@@ -161,7 +130,7 @@ class Bridge:
                 qos=int(QOSLevel.QOS_0),
             )
             logger.debug("Subscribed to reply topic %s", self._reply_topic)
-        except MQTTError:
+        except MqttError:
             logger.warning(
                 "Failed to subscribe to reply topic %s",
                 self._reply_topic,
@@ -177,17 +146,14 @@ class Bridge:
                 pass
             self._listener_task = None
 
-        if self._client is not None:
-            try:
-                await self._client.__aexit__(None, None, None)
-            finally:
-                self._response_routes.clear()
-                self._correlation_routes.clear()
-                self._reply_topic = None
-                self._client = None
-                logger.info("Disconnected from MQTT broker.")
+        await self._exit_stack.aclose()
+        self._response_routes.clear()
+        self._correlation_routes.clear()
+        self._reply_topic = None
+        self._client = None
+        logger.info("Disconnected from MQTT broker.")
 
-    def _ensure_client(self) -> AiomqttClient:
+    def _ensure_client(self) -> MqttClient:
         client = self._client
         if client is None:
             raise ConnectionError(
@@ -205,9 +171,9 @@ class Bridge:
                     await self._handle_inbound_message(inbound)
         except asyncio.CancelledError:
             raise
-        except MQTTError as exc:  # pragma: no cover - defensive guard
+        except MqttError as exc:
             logger.debug("MQTT listener stopped: %s", exc)
-        except Exception:  # pragma: no cover - unexpected failure
+        except Exception:
             logger.exception("Unexpected error in MQTT listener")
 
     async def _handle_inbound_message(
@@ -309,8 +275,10 @@ class Bridge:
         reply_topic = self._reply_topic
         if reply_topic is None:
             raise RuntimeError("Reply topic not initialised; call connect()")
+        
+        topics: tuple[str, ...]
         if isinstance(resp_topic, str):
-            topics: tuple[str, ...] = (resp_topic,)
+            topics = (resp_topic,)
         else:
             topics = tuple(resp_topic)
         if not topics:
@@ -327,30 +295,35 @@ class Bridge:
             self._correlation_routes[correlation] = response_queue
 
             try:
-                await _subscribe_many(client, topics)
+                # aiomqtt subscribe accepts simple topic string or list
+                for t in topics:
+                    await client.subscribe(t, qos=0)
                 subscribed = True
-            except MQTTError:
+            except MqttError:
                 logger.debug(
                     "Subscription to response topics %s failed; "
                     "relying on reply topic",
                     topics,
                 )
 
+            # Construct message envelope to use our shared builder logic
             message = PublishableMessage(
                 topic_name=pub_topic,
                 payload=pub_payload,
                 qos=QOSLevel.QOS_0,
                 retain=False,
-            )
-            message = message.with_response_topic(reply_topic)
-            message = message.with_correlation_data(correlation)
+            ).with_response_topic(reply_topic).with_correlation_data(correlation)
+            
+            props = build_mqtt_properties(message)
+
             await client.publish(
                 message.topic_name,
                 message.payload,
                 qos=int(message.qos),
                 retain=message.retain,
-                properties=message.build_properties(),
+                properties=props,
             )
+            
             delivered = await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
@@ -361,15 +334,30 @@ class Bridge:
                 self._unregister_route(topic, response_queue)
             try:
                 if subscribed:
-                    await _unsubscribe_many(client, topics)
-            except MQTTError:
+                    for t in topics:
+                        await client.unsubscribe(t)
+            except MqttError:
                 logger.debug("Ignoring MQTT unsubscribe error")
+
+    async def _publish_simple(
+        self,
+        topic: str,
+        payload: str | bytes,
+        retain: bool = False,
+    ) -> None:
+        data = payload.encode("utf-8") if isinstance(payload, str) else payload
+        await self._ensure_client().publish(
+            topic,
+            data,
+            qos=0,
+            retain=retain,
+        )
 
     async def digital_write(self, pin: int, value: int) -> None:
         if self._digital_modes.get(pin) != 1:
             await self.set_digital_mode(pin, 1)
         topic = f"{self.topic_prefix}/d/{pin}"
-        await _publish_simple(self._ensure_client(), topic, str(value))
+        await self._publish_simple(topic, str(value))
         logger.debug("digital_write(%d, %d) -> %s", pin, value, topic)
 
     async def digital_read(self, pin: int, timeout: float = 10) -> int:
@@ -417,7 +405,7 @@ class Bridge:
             raise ValueError(f"Invalid digital mode value: {mode}")
 
         topic = f"{self.topic_prefix}/d/{pin}/mode"
-        await _publish_simple(self._ensure_client(), topic, str(mode_value))
+        await self._publish_simple(topic, str(mode_value))
         self._digital_modes[pin] = mode_value
         logger.debug("set_digital_mode(%d, %d)", pin, mode_value)
 
@@ -501,7 +489,7 @@ class Bridge:
 
     async def console_write(self, message: str) -> None:
         topic = f"{self.topic_prefix}/console/in"
-        await _publish_simple(self._ensure_client(), topic, message)
+        await self._publish_simple(topic, message)
         logger.debug("console_write('%s')", message)
 
     async def console_read_async(self) -> Optional[str]:
@@ -515,7 +503,7 @@ class Bridge:
         if queue is None:
             queue = asyncio.Queue(maxsize=100)
             self._register_route(topic, queue, drop_oldest=True)
-            await client.subscribe(topic, qos=int(QOSLevel.QOS_0))
+            await client.subscribe(topic, qos=0)
             logger.debug("Subscribed to console output topic: %s", topic)
 
         try:
@@ -551,12 +539,9 @@ class Bridge:
     async def file_write(
         self, filename: str, content: Union[str, bytes]
     ) -> None:
-        payload = (
-            content.encode("utf-8") if isinstance(content, str) else content
-        )
         topic = f"{self.topic_prefix}/file/write/{filename}"
-        await _publish_simple(self._ensure_client(), topic, payload)
-        logger.debug("file_write('%s', %d bytes)", filename, len(payload))
+        await self._publish_simple(topic, content)
+        logger.debug("file_write('%s', %d bytes)", filename, len(content) if isinstance(content, bytes) else len(content))
 
     async def file_read(self, filename: str, timeout: float = 10) -> bytes:
         return await self._publish_and_wait(
@@ -568,13 +553,11 @@ class Bridge:
 
     async def file_remove(self, filename: str) -> None:
         topic = f"{self.topic_prefix}/file/remove/{filename}"
-        await _publish_simple(self._ensure_client(), topic, b"")
+        await self._publish_simple(topic, b"")
         logger.debug("file_remove('%s')", filename)
 
     async def mailbox_write(self, message: Union[str, bytes]) -> None:
-        payload = (
-            message.encode("utf-8") if isinstance(message, str) else message
-        )
         topic = f"{self.topic_prefix}/mailbox/write"
-        await _publish_simple(self._ensure_client(), topic, payload)
-        logger.debug("mailbox_write(%d bytes)", len(payload))
+        await self._publish_simple(topic, message)
+        logger.debug("mailbox_write(%d bytes)", len(message))
+    

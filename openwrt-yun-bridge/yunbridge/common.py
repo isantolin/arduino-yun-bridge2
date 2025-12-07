@@ -20,6 +20,13 @@ from typing import (
 
 from more_itertools import chunked, unique_everseen
 
+try:
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.properties import Properties
+except ImportError:
+    PacketTypes = None
+    Properties = None
+
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
 
 from .config.uci_model import UciConfigModel
@@ -56,13 +63,11 @@ class _UciModule(Protocol):
 
 def pack_u16(value: int) -> bytes:
     """Pack ``value`` as big-endian unsigned 16-bit."""
-
     return struct_pack(">H", value & 0xFFFF)
 
 
 def unpack_u16(data: bytes) -> int:
     """Decode the first two bytes of ``data`` as big-endian unsigned 16-bit."""
-
     if len(data) < 2:
         raise ValueError("payload shorter than 2 bytes for u16 unpack")
     return struct_unpack(">H", data[:2])[0]
@@ -70,13 +75,11 @@ def unpack_u16(data: bytes) -> int:
 
 def clamp(value: int, minimum: int, maximum: int) -> int:
     """Return *value* constrained to the ``[minimum, maximum]`` range."""
-
     return max(minimum, min(maximum, value))
 
 
 def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
     """Split *data* in chunks of at most ``max_size`` bytes."""
-
     if max_size <= 0:
         raise ValueError("max_size must be positive")
     if not data:
@@ -86,7 +89,6 @@ def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
 
 def normalise_allowed_commands(commands: Iterable[str]) -> Tuple[str, ...]:
     """Return a deduplicated, lower-cased allow-list preserving wildcards."""
-
     seen: set[str] = set()
     normalised: list[str] = []
     for item in commands:
@@ -105,22 +107,60 @@ def normalise_allowed_commands(commands: Iterable[str]) -> Tuple[str, ...]:
 
 def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
     """Return ``sequence`` without duplicates, preserving order."""
-
     return tuple(unique_everseen(sequence))
 
 
 def encode_status_reason(reason: Optional[str]) -> bytes:
     """Return a UTF-8 encoded payload trimming to MAX frame limits."""
-
     if not reason:
         return b""
     payload = reason.encode("utf-8", errors="ignore")
     return payload[:MAX_PAYLOAD_SIZE]
 
 
+def build_mqtt_properties(message: Any) -> Any | None:
+    """Construct Paho MQTT v5 properties from a message object."""
+    if Properties is None or PacketTypes is None:
+        return None
+
+    # Check if we have any property to set
+    has_props = any([
+        message.content_type,
+        message.payload_format_indicator is not None,
+        message.message_expiry_interval is not None,
+        message.response_topic,
+        message.correlation_data is not None,
+        message.user_properties,
+    ])
+    
+    if not has_props:
+        return None
+
+    props = Properties(PacketTypes.PUBLISH)
+    
+    if message.content_type is not None:
+        props.ContentType = message.content_type
+        
+    if message.payload_format_indicator is not None:
+        props.PayloadFormatIndicator = message.payload_format_indicator
+        
+    if message.message_expiry_interval is not None:
+        props.MessageExpiryInterval = int(message.message_expiry_interval)
+        
+    if message.response_topic:
+        props.ResponseTopic = message.response_topic
+        
+    if message.correlation_data is not None:
+        props.CorrelationData = message.correlation_data
+        
+    if message.user_properties:
+        props.UserProperty = list(message.user_properties)
+        
+    return props
+
+
 def get_uci_config() -> Dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
-
     try:
         import uci as uci_runtime
     except ImportError as exc:  # pragma: no cover - fail fast in dev envs
@@ -165,7 +205,6 @@ def _as_option_dict(candidate: Mapping[Any, Any]) -> Dict[str, Any]:
 
 def _extract_uci_options(section: Any) -> Dict[str, Any]:
     """Normalise python3-uci section structures into a flat options dict."""
-
     if not isinstance(section, MappingABC) or not section:
         empty: Dict[str, Any] = {}
         return empty
@@ -204,7 +243,6 @@ def _extract_uci_options(section: Any) -> Dict[str, Any]:
 
 def get_default_config() -> Dict[str, str]:
     """Provide default Yun Bridge configuration values."""
-
     return UciConfigModel.defaults()
 
 
@@ -218,4 +256,6 @@ __all__: Final[tuple[str, ...]] = (
     "encode_status_reason",
     "get_default_config",
     "get_uci_config",
+    "build_mqtt_properties",
 )
+

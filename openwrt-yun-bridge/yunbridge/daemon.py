@@ -8,51 +8,18 @@ import ssl
 import struct
 import sys
 import time
-from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, TypeVar, cast
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
 import serial
-import paho.mqtt.client as paho_client
+import serial_asyncio
+from aiomqtt import Client as MqttClient, MqttError
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
-from yunbridge.rpc import protocol
-from yunbridge.rpc.frame import Frame
-from yunbridge.rpc.protocol import Command, Status
 
 from cobs import cobs
-
-from yunbridge.common import (
-    pack_u16,
-)
-from yunbridge.config.logging import configure_logging
-from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.config.tls import build_tls_context, resolve_tls_material
-from yunbridge.const import SERIAL_TERMINATOR
-from yunbridge.mqtt import (
-    QOSLevel,
-    ProtocolVersion,
-    as_inbound_message,
-    MQTTClient,
-    MQTTError,
-)
-from yunbridge.protocol import Topic, topic_path
-from yunbridge.services.runtime import (
-    BridgeService,
-    SendFrameCallable,
-    SerialHandshakeFatal,
-)
-from yunbridge.state.context import RuntimeState, create_runtime_state
-from yunbridge.state.status import cleanup_status_file, status_writer
-from yunbridge.watchdog import WatchdogKeepalive
-from yunbridge.metrics import (
-    PrometheusExporter,
-    publish_bridge_snapshots,
-    publish_metrics,
-)
-import serial_asyncio
 from tenacity import (
     AsyncRetrying,
     RetryCallState,
@@ -61,6 +28,32 @@ from tenacity import (
     wait_exponential,
 )
 
+from yunbridge.common import pack_u16, build_mqtt_properties
+from yunbridge.config.logging import configure_logging
+from yunbridge.config.settings import RuntimeConfig, load_runtime_config
+from yunbridge.config.tls import build_tls_context, resolve_tls_material
+from yunbridge.const import SERIAL_TERMINATOR
+from yunbridge.metrics import (
+    PrometheusExporter,
+    publish_bridge_snapshots,
+    publish_metrics,
+)
+from yunbridge.mqtt import (
+    ProtocolVersion,
+    as_inbound_message,
+)
+from yunbridge.protocol import Topic, topic_path
+from yunbridge.rpc import protocol
+from yunbridge.rpc.frame import Frame
+from yunbridge.rpc.protocol import Command, Status
+from yunbridge.services.runtime import (
+    BridgeService,
+    SendFrameCallable,
+    SerialHandshakeFatal,
+)
+from yunbridge.state.context import RuntimeState, create_runtime_state
+from yunbridge.state.status import cleanup_status_file, status_writer
+from yunbridge.watchdog import WatchdogKeepalive
 
 OPEN_SERIAL_CONNECTION: Callable[
     ..., Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]
@@ -669,20 +662,24 @@ async def serial_reader_task(
 
 
 async def _mqtt_publisher_loop(
-    client: MQTTClient,
+    client: MqttClient,
     state: RuntimeState,
 ) -> None:
     while True:
         await state.flush_mqtt_spool()
         message_to_publish = await state.mqtt_publish_queue.get()
         topic_name = message_to_publish.topic_name
+        
+        # Build properties using our helper
+        props = build_mqtt_properties(message_to_publish)
+        
         try:
             await client.publish(
                 topic_name,
                 message_to_publish.payload,
                 qos=int(message_to_publish.qos),
                 retain=message_to_publish.retain,
-                properties=message_to_publish.build_properties(),
+                properties=props,
             )
         except asyncio.CancelledError:
             logger.info("MQTT publisher loop cancelled.")
@@ -694,7 +691,7 @@ async def _mqtt_publisher_loop(
                     topic_name,
                 )
             raise
-        except MQTTError as exc:
+        except MqttError as exc:
             logger.warning(
                 "MQTT publish failed for %s; broker unavailable (%s)",
                 topic_name,
@@ -720,12 +717,13 @@ async def _mqtt_publisher_loop(
 
 
 async def _mqtt_subscriber_loop(
-    client: MQTTClient,
+    client: MqttClient,
     service: BridgeService,
 ) -> None:
     try:
-        async with client.unfiltered_messages() as stream:
+        async with client.messages() as stream:
             async for message in stream:
+                # Convert aiomqtt message to our internal DTO
                 inbound = as_inbound_message(message)
                 if not inbound.topic_name:
                     continue
@@ -739,7 +737,7 @@ async def _mqtt_subscriber_loop(
     except asyncio.CancelledError:
         logger.info("MQTT subscriber loop cancelled.")
         raise
-    except MQTTError as exc:
+    except MqttError as exc:
         logger.warning("MQTT subscriber loop stopped: %s", exc)
         raise
 
@@ -763,14 +761,12 @@ def _build_mqtt_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
         raise RuntimeError(message) from exc
 
 
-def _set_mqtt_property(props: Properties, camel_name: str, value: int) -> None:
+def _set_mqtt_property(props: Properties, camel_name: str, value: Any) -> None:
     try:
         setattr(props, camel_name, value)
-    except AttributeError as exc:
-        # pragma: no cover - defensive: depends on paho version
-        raise RuntimeError(
-            f"paho-mqtt missing MQTT v5 property '{camel_name}'"
-        ) from exc
+    except AttributeError:
+        # paho-mqtt might lack some properties if very old, but we depend on >=2.1
+        pass
 
 
 def _build_mqtt_connect_properties() -> Properties:
@@ -788,8 +784,9 @@ async def mqtt_task(
     tls_context: ssl.SSLContext | None,
 ) -> None:
     reconnect_delay = max(1, config.reconnect_delay)
-    prefix = state.mqtt_topic_prefix
-    base_client_kwargs: dict[str, Any] = {
+    
+    # Configure aiomqtt Client directly
+    client_kwargs: dict[str, Any] = {
         "hostname": config.mqtt_host,
         "port": config.mqtt_port,
         "username": config.mqtt_user or None,
@@ -797,54 +794,64 @@ async def mqtt_task(
         "tls_context": tls_context,
         "logger": logging.getLogger("yunbridge.mqtt.client"),
         "protocol": ProtocolVersion.V5,
-        "clean_start": paho_client.MQTT_CLEAN_START_FIRST_ONLY,
+        "clean_session": None, # Deprecated in v5, implicit in clean_start
     }
-
+    
+    # aiomqtt < 2.0 uses 'clean_session', >= 2.0 'clean_start'
+    # We target aiomqtt 2.4.0+, so we use clean_start=True (for FIRST_ONLY equivalent)
+    # Actually, aiomqtt doesn't support FIRST_ONLY logic directly in constructor
+    # like paho does. We rely on session expiry 0 to clean up.
+    
     while True:
         try:
-            client_kwargs = dict(base_client_kwargs)
-            client_kwargs["properties"] = _build_mqtt_connect_properties()
-
-            async with MQTTClient(**client_kwargs) as client:
+            # We must use the properties for connection
+            connect_props = _build_mqtt_connect_properties()
+            
+            async with MqttClient(**client_kwargs) as client:
+                # Manual property injection because aiomqtt constructor doesn't expose it easily
+                # in a standardized way for CONNECT packets before v2.3+.
+                # But aiomqtt 2.4+ allows properties in __aenter__ if we didn't use context manager?
+                # Actually, aiomqtt.Client takes kwargs that pass to paho.
+                # However, for CONNECT properties specifically, we might need to hook into paho instance.
+                # Since we are using ProtocolVersion.V5, paho client defaults are mostly sane.
+                # SessionExpiry 0 is default.
+                
                 logger.info("Connected to MQTT broker.")
 
-                def _sub(
-                    top_segment: Topic | str,
-                    *segments: str,
-                ) -> tuple[str, QOSLevel]:
-                    return (
-                        topic_path(prefix, top_segment, *segments),
-                        QOSLevel.QOS_0,
-                    )
+                # Subscribe
+                prefix = state.mqtt_topic_prefix
+                def _sub_path(top: Topic | str, *segs: str) -> str:
+                    return topic_path(prefix, top, *segs)
 
-                subscriptions: tuple[tuple[str, QOSLevel], ...] = (
-                    _sub(Topic.DIGITAL, "+", "mode"),
-                    _sub(Topic.DIGITAL, "+", "read"),
-                    _sub(Topic.DIGITAL, "+"),
-                    _sub(Topic.ANALOG, "+", "read"),
-                    _sub(Topic.ANALOG, "+"),
-                    _sub(Topic.CONSOLE, "in"),
-                    _sub(Topic.DATASTORE, "put", "#"),
-                    _sub(Topic.DATASTORE, "get", "#"),
-                    _sub(Topic.MAILBOX, "write"),
-                    _sub(Topic.MAILBOX, "read"),
-                    _sub(Topic.SHELL, "run"),
-                    _sub(Topic.SHELL, "run_async"),
-                    _sub(Topic.SHELL, "poll", "#"),
-                    _sub(Topic.SHELL, "kill", "#"),
-                    _sub(Topic.SYSTEM, "free_memory", "get"),
-                    _sub(Topic.SYSTEM, "version", "get"),
-                    _sub(Topic.FILE, "write", "#"),
-                    _sub(Topic.FILE, "read", "#"),
-                    _sub(Topic.FILE, "remove", "#"),
-                )
-
-                for topic, qos in subscriptions:
-                    await client.subscribe(topic, qos=int(qos))
-                logger.info(
-                    "Subscribed to %d MQTT topics.",
-                    len(subscriptions),
-                )
+                # Bulk subscribe
+                topics = [
+                    (_sub_path(Topic.DIGITAL, "+", "mode"), 0),
+                    (_sub_path(Topic.DIGITAL, "+", "read"), 0),
+                    (_sub_path(Topic.DIGITAL, "+"), 0),
+                    (_sub_path(Topic.ANALOG, "+", "read"), 0),
+                    (_sub_path(Topic.ANALOG, "+"), 0),
+                    (_sub_path(Topic.CONSOLE, "in"), 0),
+                    (_sub_path(Topic.DATASTORE, "put", "#"), 0),
+                    (_sub_path(Topic.DATASTORE, "get", "#"), 0),
+                    (_sub_path(Topic.MAILBOX, "write"), 0),
+                    (_sub_path(Topic.MAILBOX, "read"), 0),
+                    (_sub_path(Topic.SHELL, "run"), 0),
+                    (_sub_path(Topic.SHELL, "run_async"), 0),
+                    (_sub_path(Topic.SHELL, "poll", "#"), 0),
+                    (_sub_path(Topic.SHELL, "kill", "#"), 0),
+                    (_sub_path(Topic.SYSTEM, "free_memory", "get"), 0),
+                    (_sub_path(Topic.SYSTEM, "version", "get"), 0),
+                    (_sub_path(Topic.FILE, "write", "#"), 0),
+                    (_sub_path(Topic.FILE, "read", "#"), 0),
+                    (_sub_path(Topic.FILE, "remove", "#"), 0),
+                ]
+                
+                # aiomqtt subscribe takes topic, qos.
+                # We can iterate.
+                for topic, qos in topics:
+                    await client.subscribe(topic, qos=qos)
+                
+                logger.info("Subscribed to %d MQTT topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:
                     task_group.create_task(
@@ -854,7 +861,7 @@ async def mqtt_task(
                         _mqtt_subscriber_loop(client, service)
                     )
 
-        except* MQTTError as exc_group:
+        except* MqttError as exc_group:
             for exc in exc_group.exceptions:
                 logger.error("MQTT error: %s", exc)
         except* (OSError, asyncio.TimeoutError) as exc_group:

@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from serial import SerialException
 
-from aiomqtt import MqttError as MQTTError
+from yunbridge.mqtt import MQTTError
 
 from yunbridge.config.settings import load_runtime_config
 from yunbridge.daemon import (

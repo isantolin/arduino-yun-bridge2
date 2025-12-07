@@ -7,6 +7,9 @@ from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import Any, Self, cast
 
+from aiomqtt import Client as MQTTClient, MqttError as MQTTError
+from aiomqtt.message import Message as MQTTMessage
+
 try:  # pragma: no cover - optional dependency for tests
     from paho.mqtt.packettypes import PacketTypes as PahoPacketTypes
     from paho.mqtt.properties import Properties as PahoProperties
@@ -283,7 +286,7 @@ def as_delivered_message(
     )
 
 
-def as_inbound_message(raw_message: Any) -> InboundMessage:
+def as_inbound_message(raw_message: MQTTMessage | Any) -> InboundMessage:
     """Convert an aiomqtt message into InboundMessage with MQTT v5 metadata."""
 
     topic_obj = getattr(raw_message, "topic", "")
@@ -345,6 +348,9 @@ __all__ = [
     "InboundMessage",
     "QOSLevel",
     "ProtocolVersion",
+    "MQTTClient",
+    "MQTTMessage",
+    "MQTTError",
     "as_delivered_message",
     "as_inbound_message",
 ]

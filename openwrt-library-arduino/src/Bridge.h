@@ -52,6 +52,15 @@ constexpr uint8_t BRIDGE_TX_QUEUE_MAX = 1;
 #define CONSOLE_BUFFER_LOW_WATER 8
 #endif
 
+static_assert(
+  CONSOLE_RX_BUFFER_SIZE > 0,
+  "Console RX buffer size must be greater than zero"
+);
+static_assert(
+  CONSOLE_TX_BUFFER_SIZE > 0,
+  "Console TX buffer size must be greater than zero"
+);
+
 class ConsoleClass : public Print {
  public:
   ConsoleClass();
@@ -69,9 +78,9 @@ class ConsoleClass : public Print {
   bool _begun;
   uint8_t _rx_buffer[CONSOLE_RX_BUFFER_SIZE];
   uint8_t _tx_buffer[CONSOLE_TX_BUFFER_SIZE];
-  volatile uint16_t _rx_buffer_head;
-  volatile uint16_t _rx_buffer_tail;
-  uint16_t _tx_buffer_pos;
+    volatile size_t _rx_buffer_head;
+    volatile size_t _rx_buffer_tail;
+    size_t _tx_buffer_pos;
   
   // CORRECCIÓN: Agregamos la variable miembro faltante
   bool _xoff_sent;

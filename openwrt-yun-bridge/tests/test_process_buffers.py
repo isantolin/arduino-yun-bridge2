@@ -6,8 +6,7 @@ from types import MethodType
 from typing import Any, Awaitable, Callable, Optional, cast
 
 import pytest
-from anyio import EndOfStream
-from anyio.abc import ByteReceiveStream, Process as AnyioProcess
+from asyncio.subprocess import Process as AsyncioProcess
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
@@ -150,7 +149,7 @@ def test_start_async_respects_concurrency_limit(
             state.running_processes[123] = ManagedProcess(
                 123,
                 "",
-                cast(AnyioProcess, object()),
+                cast(AsyncioProcess, object()),
             )
         result = await process_component.start_async("/bin/true")
         assert result == 0xFFFF
@@ -206,34 +205,24 @@ def test_async_process_monitor_releases_slot(
         assert guard is not None
         await guard.acquire()
 
-        class _FakeStream(ByteReceiveStream):
+        class _FakeStream:
             def __init__(self, payload: bytes) -> None:
                 self._buffer = bytearray(payload)
-                self._closed = False
 
-            async def receive(self, max_bytes: Optional[int] = None) -> bytes:
-                if self._closed:
-                    raise EndOfStream
+            async def read(self, max_bytes: Optional[int] = None) -> bytes:
                 if not self._buffer:
-                    self._closed = True
-                    raise EndOfStream
+                    return b""
                 size = len(self._buffer)
                 if max_bytes is not None:
                     size = min(size, max_bytes)
                 chunk = bytes(self._buffer[:size])
                 del self._buffer[:size]
-                if not self._buffer:
-                    self._closed = True
                 return chunk
-
-            async def aclose(self) -> None:
-                self._closed = True
-                self._buffer.clear()
 
         class _FakeProcess:
             def __init__(self) -> None:
-                self.stdout: ByteReceiveStream = _FakeStream(b"out")
-                self.stderr: ByteReceiveStream = _FakeStream(b"err")
+                self.stdout = _FakeStream(b"out")
+                self.stderr = _FakeStream(b"err")
                 self.returncode: Optional[int] = 5
                 self.pid = 9999
 
@@ -244,14 +233,14 @@ def test_async_process_monitor_releases_slot(
         slot = ManagedProcess(
             77,
             "/bin/true",
-            cast(AnyioProcess, fake_proc),
+            cast(AsyncioProcess, fake_proc),
         )
         async with state.process_lock:
             state.running_processes[slot.pid] = slot
 
         await process_component._monitor_async_process(
             slot.pid,
-            cast(AnyioProcess, fake_proc),
+            cast(AsyncioProcess, fake_proc),
         )
 
         assert slot.handle is None

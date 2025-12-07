@@ -32,12 +32,6 @@ pip = "aiomqtt==2.4.0"
 rationale = "Async MQTT v5 client used for runtime telemetry"
 
 [[dependency]]
-name = "anyio"
-openwrt = ""
-pip = "anyio==4.12.0"
-rationale = "Structured concurrency and subprocess orchestration for process supervision"
-
-[[dependency]]
 name = "paho-mqtt"
 openwrt = ""
 pip = "paho-mqtt==2.1.0"

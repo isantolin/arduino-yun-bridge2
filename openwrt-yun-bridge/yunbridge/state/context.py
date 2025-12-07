@@ -5,11 +5,10 @@ import asyncio
 import collections
 import logging
 import time
+from asyncio.subprocess import Process as AsyncioProcess
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Deque, Dict, Mapping, Optional, cast
-
-from anyio.abc import Process as AnyioProcess
 
 from tenacity import wait_exponential
 
@@ -73,7 +72,7 @@ class PendingPinRequest:
 class ManagedProcess:
     pid: int
     command: str = ""
-    handle: Optional[AnyioProcess] = None
+    handle: Optional[AsyncioProcess] = None
     stdout_buffer: bytearray = field(default_factory=bytearray)
     stderr_buffer: bytearray = field(default_factory=bytearray)
     exit_code: Optional[int] = None

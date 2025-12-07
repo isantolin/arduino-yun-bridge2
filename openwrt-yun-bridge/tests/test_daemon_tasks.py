@@ -115,6 +115,19 @@ class _FakeMQTTClient:
         self.subscriptions: list[tuple[str, int]] = []
         self.published: list[tuple[str, bytes, int, bool]] = []
 
+    async def __aenter__(self) -> "_FakeMQTTClient":
+        await self.connect()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> bool:
+        await self.disconnect()
+        return False
+
     async def connect(self) -> None:
         return None
 
@@ -400,16 +413,6 @@ def test_mqtt_task_handles_incoming_message(
 
         monkeypatch.setattr("yunbridge.daemon.MQTTClient", _client_factory)
 
-        async def _noop_connect(
-            _config: RuntimeConfig, client: _FakeMQTTClient
-        ) -> None:
-            await client.connect()
-
-        monkeypatch.setattr(
-            "yunbridge.daemon._connect_mqtt_with_retry",
-            _noop_connect,
-        )
-
         monkeypatch.setattr(
             "yunbridge.daemon._build_mqtt_connect_properties",
             lambda: None,
@@ -452,16 +455,6 @@ def test_mqtt_task_requires_unfiltered_messages(
             return instance
 
         monkeypatch.setattr("yunbridge.daemon.MQTTClient", _client_factory)
-
-        async def _noop_connect(
-            _config: RuntimeConfig, client: _FakeMQTTClient
-        ) -> None:
-            await client.connect()
-
-        monkeypatch.setattr(
-            "yunbridge.daemon._connect_mqtt_with_retry",
-            _noop_connect,
-        )
 
         monkeypatch.setattr(
             "yunbridge.daemon._build_mqtt_connect_properties",

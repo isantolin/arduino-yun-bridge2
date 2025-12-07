@@ -22,9 +22,6 @@ from typing import (
     cast,
 )
 
-from aiomqtt import Client, MqttError as MQTTError
-from aiomqtt.client import Client as AiomqttClient
-
 from .env import dump_client_env
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
@@ -36,7 +33,12 @@ from yunbridge.mqtt import (
     PublishableMessage,
     QOSLevel,
     as_inbound_message,
+    MQTTClient,
+    MQTTError,
 )
+
+Client = MQTTClient
+AiomqttClient = MQTTClient
 
 __all__ = [
     "Bridge",

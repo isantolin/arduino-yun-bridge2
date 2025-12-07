@@ -20,7 +20,7 @@ from yunbridge.const import (
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
-pytest_plugins = ("pytest_asyncio", "anyio")
+pytest_plugins = ("pytest_asyncio",)
 
 
 @pytest.fixture()

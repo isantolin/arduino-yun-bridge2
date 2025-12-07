@@ -61,12 +61,7 @@ def file_component(
     return component, bridge
 
 
-@pytest.fixture()
-def anyio_backend() -> str:
-    return "asyncio"
-
-
-@pytest.mark.anyio("asyncio")
+@pytest.mark.asyncio
 async def test_handle_write_and_read_roundtrip(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
@@ -81,7 +76,7 @@ async def test_handle_write_and_read_roundtrip(
     assert bridge.sent_frames[-1][1] == b"\x00\x04data"
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.asyncio
 async def test_handle_read_truncated_payload(
     file_component: tuple[FileComponent, DummyBridge],
     tmp_path: Path,
@@ -95,7 +90,7 @@ async def test_handle_read_truncated_payload(
     assert bridge.sent_frames[-1][1].startswith(b"\x00\xfe")
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.asyncio
 async def test_handle_remove_missing_file(
     file_component: tuple[FileComponent, DummyBridge]
 ) -> None:
@@ -106,7 +101,7 @@ async def test_handle_remove_missing_file(
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.asyncio
 async def test_handle_mqtt_write_and_read(
     file_component: tuple[FileComponent, DummyBridge],
     tmp_path: Path,
@@ -129,7 +124,7 @@ async def test_handle_mqtt_write_and_read(
     assert bridge.published[-1].payload == b"payload"
 
 
-@pytest.mark.anyio("asyncio")
+@pytest.mark.asyncio
 async def test_handle_write_invalid_path(
     file_component: tuple[FileComponent, DummyBridge]
 ) -> None:

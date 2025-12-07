@@ -6,12 +6,7 @@ from prometheus_client import CONTENT_TYPE_LATEST
 from yunbridge.metrics import PrometheusExporter
 
 
-@pytest.fixture()
-def anyio_backend() -> str:
-    return "asyncio"
-
-
-@pytest.mark.anyio("asyncio")
+@pytest.mark.asyncio
 async def test_prometheus_exporter_serves_metrics(
     runtime_state, socket_enabled: None
 ):

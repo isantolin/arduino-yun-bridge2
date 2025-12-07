@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 import ssl
 import struct
@@ -11,11 +10,10 @@ import sys
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Protocol, TypeVar, cast
+from typing import Any, Awaitable, Callable, TypeVar, cast
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
-from aiomqtt import Client as MQTTClient, MqttError as MQTTError
 import serial
 import paho.mqtt.client as paho_client
 from paho.mqtt.packettypes import PacketTypes
@@ -37,6 +35,8 @@ from yunbridge.mqtt import (
     QOSLevel,
     ProtocolVersion,
     as_inbound_message,
+    MQTTClient,
+    MQTTError,
 )
 from yunbridge.protocol import Topic, topic_path
 from yunbridge.services.runtime import (
@@ -62,21 +62,6 @@ from tenacity import (
 )
 
 
-async def _connect_mqtt_with_retry(
-    config: RuntimeConfig,
-    client: MQTTClient,
-) -> None:
-    """Compatibility shim retained for legacy monkeypatches.
-
-    The modern implementation relies on the async context manager exposed by
-    `aiomqtt.Client`, but older tests still patch this hook to prevent real
-    broker connections. Keeping this no-op coroutine avoids breaking those
-    fixtures without affecting runtime behavior.
-    """
-
-    del config  # unused in shim
-    await client.connect()
-
 OPEN_SERIAL_CONNECTION: Callable[
     ..., Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]
 ] = serial_asyncio.open_serial_connection
@@ -85,31 +70,6 @@ OPEN_SERIAL_CONNECTION: Callable[
 logger = logging.getLogger("yunbridge")
 
 T = TypeVar("T")
-
-
-class MQTTClientProtocol(Protocol):
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes | bytearray | memoryview,
-        *,
-        qos: int = 0,
-        retain: bool = False,
-        properties: Any | None = None,
-    ) -> Any:
-        ...
-
-    async def subscribe(self, topic: str, qos: int = 0) -> Any:
-        ...
-
-    def unfiltered_messages(
-        self,
-    ) -> contextlib.AbstractAsyncContextManager[AsyncIterator[Any]]:
-        ...
-
-    async def disconnect(self) -> None:
-        ...
-
 
 MAX_SERIAL_PACKET_BYTES = (
     protocol.CRC_COVERED_HEADER_SIZE
@@ -709,7 +669,7 @@ async def serial_reader_task(
 
 
 async def _mqtt_publisher_loop(
-    client: MQTTClientProtocol,
+    client: MQTTClient,
     state: RuntimeState,
 ) -> None:
     while True:
@@ -760,7 +720,7 @@ async def _mqtt_publisher_loop(
 
 
 async def _mqtt_subscriber_loop(
-    client: MQTTClientProtocol,
+    client: MQTTClient,
     service: BridgeService,
 ) -> None:
     try:
@@ -841,62 +801,58 @@ async def mqtt_task(
     }
 
     while True:
-        client_protocol: MQTTClientProtocol | None = None
         try:
             client_kwargs = dict(base_client_kwargs)
             client_kwargs["properties"] = _build_mqtt_connect_properties()
-            raw_client = MQTTClient(**client_kwargs)
-            await _connect_mqtt_with_retry(config, raw_client)
-            logger.info("Connected to MQTT broker.")
 
-            # Cast client to Protocol to satisfy static type checkers.
-            client_protocol = cast(MQTTClientProtocol, raw_client)
+            async with MQTTClient(**client_kwargs) as client:
+                logger.info("Connected to MQTT broker.")
 
-            def _sub(
-                top_segment: Topic | str,
-                *segments: str,
-            ) -> tuple[str, QOSLevel]:
-                return (
-                    topic_path(prefix, top_segment, *segments),
-                    QOSLevel.QOS_0,
+                def _sub(
+                    top_segment: Topic | str,
+                    *segments: str,
+                ) -> tuple[str, QOSLevel]:
+                    return (
+                        topic_path(prefix, top_segment, *segments),
+                        QOSLevel.QOS_0,
+                    )
+
+                subscriptions: tuple[tuple[str, QOSLevel], ...] = (
+                    _sub(Topic.DIGITAL, "+", "mode"),
+                    _sub(Topic.DIGITAL, "+", "read"),
+                    _sub(Topic.DIGITAL, "+"),
+                    _sub(Topic.ANALOG, "+", "read"),
+                    _sub(Topic.ANALOG, "+"),
+                    _sub(Topic.CONSOLE, "in"),
+                    _sub(Topic.DATASTORE, "put", "#"),
+                    _sub(Topic.DATASTORE, "get", "#"),
+                    _sub(Topic.MAILBOX, "write"),
+                    _sub(Topic.MAILBOX, "read"),
+                    _sub(Topic.SHELL, "run"),
+                    _sub(Topic.SHELL, "run_async"),
+                    _sub(Topic.SHELL, "poll", "#"),
+                    _sub(Topic.SHELL, "kill", "#"),
+                    _sub(Topic.SYSTEM, "free_memory", "get"),
+                    _sub(Topic.SYSTEM, "version", "get"),
+                    _sub(Topic.FILE, "write", "#"),
+                    _sub(Topic.FILE, "read", "#"),
+                    _sub(Topic.FILE, "remove", "#"),
                 )
 
-            subscriptions: tuple[tuple[str, QOSLevel], ...] = (
-                _sub(Topic.DIGITAL, "+", "mode"),
-                _sub(Topic.DIGITAL, "+", "read"),
-                _sub(Topic.DIGITAL, "+"),
-                _sub(Topic.ANALOG, "+", "read"),
-                _sub(Topic.ANALOG, "+"),
-                _sub(Topic.CONSOLE, "in"),
-                _sub(Topic.DATASTORE, "put", "#"),
-                _sub(Topic.DATASTORE, "get", "#"),
-                _sub(Topic.MAILBOX, "write"),
-                _sub(Topic.MAILBOX, "read"),
-                _sub(Topic.SHELL, "run"),
-                _sub(Topic.SHELL, "run_async"),
-                _sub(Topic.SHELL, "poll", "#"),
-                _sub(Topic.SHELL, "kill", "#"),
-                _sub(Topic.SYSTEM, "free_memory", "get"),
-                _sub(Topic.SYSTEM, "version", "get"),
-                _sub(Topic.FILE, "write", "#"),
-                _sub(Topic.FILE, "read", "#"),
-                _sub(Topic.FILE, "remove", "#"),
-            )
-
-            for topic, qos in subscriptions:
-                await client_protocol.subscribe(topic, qos=int(qos))
-            logger.info(
-                "Subscribed to %d MQTT topics.",
-                len(subscriptions),
-            )
-
-            async with asyncio.TaskGroup() as task_group:
-                task_group.create_task(
-                    _mqtt_publisher_loop(client_protocol, state)
+                for topic, qos in subscriptions:
+                    await client.subscribe(topic, qos=int(qos))
+                logger.info(
+                    "Subscribed to %d MQTT topics.",
+                    len(subscriptions),
                 )
-                task_group.create_task(
-                    _mqtt_subscriber_loop(client_protocol, service)
-                )
+
+                async with asyncio.TaskGroup() as task_group:
+                    task_group.create_task(
+                        _mqtt_publisher_loop(client, state)
+                    )
+                    task_group.create_task(
+                        _mqtt_subscriber_loop(client, service)
+                    )
 
         except* MQTTError as exc_group:
             for exc in exc_group.exceptions:
@@ -913,11 +869,6 @@ async def mqtt_task(
                     "Unhandled exception in mqtt_task",
                     exc_info=exc,
                 )
-        finally:
-            if client_protocol is not None:
-                with contextlib.suppress(Exception):
-                    await client_protocol.disconnect()
-
         # Reconnection delay logic outside the context manager
         logger.warning(
             "Waiting %d seconds before MQTT reconnect...",

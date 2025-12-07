@@ -39,17 +39,27 @@ static_assert(
 constexpr unsigned int RPC_BUFFER_SIZE = 256;
 constexpr std::size_t RPC_HANDSHAKE_NONCE_LENGTH = 16u;
 constexpr std::size_t RPC_HANDSHAKE_TAG_LENGTH = 16u;
-constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] = "HMAC-SHA256";
-constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] = "HMAC-SHA256(secret, nonce) truncated to 16 bytes";
-constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] = ">HBI";
-constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] = "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), response_timeout_ms (uint32)";
+constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] =
+    "HMAC-SHA256";
+constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] =
+    "HMAC-SHA256(secret, nonce) truncated to 16 bytes";
+constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] =
+    ">HBI";
+constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] =
+    "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), response_timeout_ms (uint32)";
 constexpr std::size_t RPC_HANDSHAKE_CONFIG_SIZE = 7u;
-constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = 25;
-constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = 60000;
-constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = 100;
-constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = 180000;
-constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = 1;
-constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = 8;
+constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS =
+    25;
+constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS =
+    60000;
+constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS =
+    100;
+constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS =
+    180000;
+constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN =
+    1;
+constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX =
+    8;
 
 struct RpcHandshakeTimingConfigWire {
     uint16_t ack_timeout_ms;
@@ -58,7 +68,8 @@ struct RpcHandshakeTimingConfigWire {
 } __attribute__((packed));
 
 static_assert(
-    sizeof(RpcHandshakeTimingConfigWire) == RPC_HANDSHAKE_CONFIG_SIZE,
+    sizeof(RpcHandshakeTimingConfigWire)
+    == RPC_HANDSHAKE_CONFIG_SIZE,
     "Handshake config size mismatch with spec.toml"
 );
 

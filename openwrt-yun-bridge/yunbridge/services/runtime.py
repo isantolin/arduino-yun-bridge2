@@ -28,7 +28,7 @@ from ..protocol.topics import (
     parse_topic,
     topic_path,
 )
-from ..mqtt import InboundMessage
+from ..mqtt.inbound import InboundMessage
 from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 from .components import (
@@ -397,9 +397,10 @@ class BridgeService:
                 )
             message_to_queue = replace(
                 message_to_queue,
-                user_properties=
-                message_to_queue.user_properties
-                + (("bridge-request-topic", reply_context.topic_name),),
+                user_properties=(
+                    message_to_queue.user_properties
+                    + (("bridge-request-topic", reply_context.topic_name),)
+                ),
             )
 
         while True:

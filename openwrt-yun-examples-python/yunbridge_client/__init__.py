@@ -13,12 +13,8 @@ from typing import Any, TypedDict, cast
 from collections.abc import Iterable, Sequence
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from yunbridge.mqtt import (
-    QOSLevel,
-    InboundMessage,
-    QueuedPublish,
-    as_inbound_message,
-)
+from yunbridge.mqtt.inbound import InboundMessage, QOSLevel, as_inbound_message
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.common import build_mqtt_properties
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,

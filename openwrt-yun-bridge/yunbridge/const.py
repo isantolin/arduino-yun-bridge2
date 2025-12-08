@@ -5,6 +5,7 @@ from ssl import TLSVersion
 
 from .protocol.topics import Topic
 from .rpc import protocol as rpc_protocol
+from .rpc.protocol import Command, Status
 
 
 SERIAL_TERMINATOR: bytes = b"\x00"
@@ -61,6 +62,27 @@ SERIAL_RETRY_LIMIT_MAX: int = rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
 MIN_SERIAL_SHARED_SECRET_LEN: int = 8
 DEFAULT_SERIAL_SHARED_SECRET: bytes = b"changeme123"
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES: int = 3
+SERIAL_MIN_ACK_TIMEOUT: float = 0.05
+SERIAL_ACK_ONLY_COMMANDS: frozenset[int] = frozenset(
+    {
+        Command.CMD_SET_PIN_MODE.value,
+        Command.CMD_DIGITAL_WRITE.value,
+        Command.CMD_ANALOG_WRITE.value,
+        Command.CMD_CONSOLE_WRITE.value,
+        Command.CMD_DATASTORE_PUT.value,
+    }
+)
+SERIAL_FAILURE_STATUS_CODES: frozenset[int] = frozenset(
+    {
+        Status.ERROR.value,
+        Status.CMD_UNKNOWN.value,
+        Status.MALFORMED.value,
+        Status.CRC_MISMATCH.value,
+        Status.TIMEOUT.value,
+        Status.NOT_IMPLEMENTED.value,
+    }
+)
+SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({Status.OK.value})
 DEFAULT_MQTT_SPOOL_DIR: str = "/root/.yunbridge/mqtt_spool"
 DEFAULT_PROCESS_MAX_OUTPUT_BYTES: int = 65536
 DEFAULT_PROCESS_MAX_CONCURRENT: int = 4
@@ -140,6 +162,10 @@ __all__ = [
     "MIN_SERIAL_SHARED_SECRET_LEN",
     "DEFAULT_SERIAL_SHARED_SECRET",
     "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES",
+    "SERIAL_MIN_ACK_TIMEOUT",
+    "SERIAL_ACK_ONLY_COMMANDS",
+    "SERIAL_FAILURE_STATUS_CODES",
+    "SERIAL_SUCCESS_STATUS_CODES",
     "DEFAULT_MQTT_SPOOL_DIR",
     "DEFAULT_PROCESS_MAX_OUTPUT_BYTES",
     "DEFAULT_PROCESS_MAX_CONCURRENT",

@@ -7,7 +7,7 @@ from typing import Deque
 
 from yunbridge.rpc.protocol import Command
 
-from ...mqtt import InboundMessage
+from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState

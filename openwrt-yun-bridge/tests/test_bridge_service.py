@@ -20,7 +20,8 @@ from yunbridge.state.context import (
     PendingPinRequest,
     RuntimeState,
 )
-from yunbridge.mqtt import InboundMessage, QOSLevel, QueuedPublish
+from yunbridge.mqtt.inbound import InboundMessage, QOSLevel
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_NONCE_LENGTH,

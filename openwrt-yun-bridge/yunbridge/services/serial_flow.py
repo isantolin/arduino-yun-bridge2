@@ -17,31 +17,16 @@ from tenacity import (
     wait_fixed,
 )
 
+from yunbridge.const import (
+    SERIAL_ACK_ONLY_COMMANDS,
+    SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_MIN_ACK_TIMEOUT,
+    SERIAL_SUCCESS_STATUS_CODES,
+)
 from yunbridge.rpc.contracts import expected_responses, response_to_request
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc.protocol import Status
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
-
-ACK_ONLY_COMMANDS: set[int] = {
-    Command.CMD_SET_PIN_MODE.value,
-    Command.CMD_DIGITAL_WRITE.value,
-    Command.CMD_ANALOG_WRITE.value,
-    Command.CMD_CONSOLE_WRITE.value,
-    Command.CMD_DATASTORE_PUT.value,
-}
-
-FAILURE_STATUS_CODES: set[int] = {
-    Status.ERROR.value,
-    Status.CMD_UNKNOWN.value,
-    Status.MALFORMED.value,
-    Status.CRC_MISMATCH.value,
-    Status.TIMEOUT.value,
-    Status.NOT_IMPLEMENTED.value,
-}
-
-SUCCESS_STATUS_CODES: set[int] = {Status.OK.value}
-
-MIN_ACK_TIMEOUT = 0.05
 
 
 def _empty_int_set() -> set[int]:
@@ -93,7 +78,7 @@ class SerialFlowController:
         logger: logging.Logger,
         metrics_callback: Callable[[str], None] | None = None,
     ) -> None:
-        self._ack_timeout = max(ack_timeout, MIN_ACK_TIMEOUT)
+        self._ack_timeout = max(ack_timeout, SERIAL_MIN_ACK_TIMEOUT)
         self._response_timeout = max(response_timeout, self._ack_timeout)
         self._max_attempts = max(1, max_attempts)
         self._logger = logger
@@ -231,12 +216,12 @@ class SerialFlowController:
                 pending.mark_success()
             return
 
-        if command_id in FAILURE_STATUS_CODES:
+        if command_id in SERIAL_FAILURE_STATUS_CODES:
             pending.mark_failure(command_id)
             return
 
         if (
-            command_id in SUCCESS_STATUS_CODES
+            command_id in SERIAL_SUCCESS_STATUS_CODES
             and not pending.expected_responses
         ):
             pending.mark_success()
@@ -244,7 +229,7 @@ class SerialFlowController:
     def _should_track(self, command_id: int) -> bool:
         return (
             bool(expected_responses(command_id))
-            or command_id in ACK_ONLY_COMMANDS
+            or command_id in SERIAL_ACK_ONLY_COMMANDS
         )
 
     async def _execute_with_retries(

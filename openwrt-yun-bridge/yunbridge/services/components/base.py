@@ -5,7 +5,7 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any, Protocol
 
-from ...mqtt import InboundMessage
+from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig

@@ -74,6 +74,10 @@ def _stringify_value(value: Any) -> str:
     return str(value) if value is not None else ""
 
 
+def _extras_default() -> dict[str, str]:
+    return {}
+
+
 @dataclass(slots=True)
 class UciConfigModel:
     """Structured representation of UCI options with sane defaults."""
@@ -135,7 +139,7 @@ class UciConfigModel:
     metrics_enabled: str = "0"
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: str = str(DEFAULT_METRICS_PORT)
-    extras: dict[str, str] = field(default_factory=dict)
+    extras: dict[str, str] = field(default_factory=_extras_default)
 
     def __post_init__(self) -> None:
         """Stringify all fields post-initialization."""
@@ -157,13 +161,13 @@ class UciConfigModel:
     def from_mapping(cls, mapping: Mapping[str, Any]) -> UciConfigModel:
         known = cls._known_fields()
         kwargs: dict[str, Any] = {}
-        extras: dict[str, Any] = {}
+        extras: dict[str, str] = {}
         for key, value in mapping.items():
             key_str = str(key)
             if key_str in known:
                 kwargs[key_str] = value
             else:
-                extras[key_str] = value
+                extras[key_str] = _stringify_value(value)
         return cls(extras=extras, **kwargs)
 
     def as_dict(self) -> dict[str, str]:

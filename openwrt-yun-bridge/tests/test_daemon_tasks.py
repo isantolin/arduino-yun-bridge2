@@ -17,13 +17,13 @@ from cobs import cobs
 from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import SERIAL_TERMINATOR
-from yunbridge.daemon import (
-    Frame,
+from yunbridge.rpc.frame import Frame
+from yunbridge.transport.mqtt import mqtt_task
+from yunbridge.transport.serial import (
     MAX_SERIAL_PACKET_BYTES,
-    mqtt_task,
     serial_reader_task,
 )
-from yunbridge.mqtt import InboundMessage
+from yunbridge.mqtt.inbound import InboundMessage
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.services.runtime import SerialHandshakeFatal
@@ -153,7 +153,7 @@ def test_serial_reader_task_processes_frame(
             return reader, writer
 
         monkeypatch.setattr(
-            "yunbridge.daemon._open_serial_connection_with_retry",
+            "yunbridge.transport.serial._open_serial_connection_with_retry",
             _fake_open,
         )
 
@@ -203,7 +203,7 @@ def test_serial_reader_task_emits_crc_mismatch(
             return reader, writer
 
         monkeypatch.setattr(
-            "yunbridge.daemon._open_serial_connection_with_retry",
+            "yunbridge.transport.serial._open_serial_connection_with_retry",
             _fake_open,
         )
 
@@ -255,7 +255,7 @@ def test_serial_reader_task_limits_packet_size(
             return reader, writer
 
         monkeypatch.setattr(
-            "yunbridge.daemon._open_serial_connection_with_retry",
+            "yunbridge.transport.serial._open_serial_connection_with_retry",
             _fake_open,
         )
 
@@ -293,7 +293,7 @@ def test_serial_reader_task_propagates_handshake_fatal(
             return reader, writer
 
         monkeypatch.setattr(
-            "yunbridge.daemon._open_serial_connection_with_retry",
+            "yunbridge.transport.serial._open_serial_connection_with_retry",
             _fake_open,
         )
 
@@ -339,7 +339,7 @@ def test_mqtt_task_handles_incoming_message(
         mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
         monkeypatch.setattr(
-            "yunbridge.daemon.MqttClient",
+            "yunbridge.transport.mqtt.MqttClient",
             lambda **kw: mock_client,
         )
 

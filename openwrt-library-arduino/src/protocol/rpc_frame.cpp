@@ -1,5 +1,6 @@
 #include "rpc_frame.h"
 
+#include <limits>
 #include <string.h>
 
 namespace rpc {
@@ -138,11 +139,17 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
 
 FrameBuilder::FrameBuilder() {}
 
-size_t FrameBuilder::build(uint8_t* buffer, size_t buffer_size, uint16_t command_id,
-                           const uint8_t* payload, uint16_t payload_len) {
-  if (payload_len > MAX_PAYLOAD_SIZE) {
+size_t FrameBuilder::build(uint8_t* buffer,
+                           size_t buffer_size,
+                           uint16_t command_id,
+                           const uint8_t* payload,
+                           size_t payload_len) {
+  if (payload_len > MAX_PAYLOAD_SIZE ||
+      payload_len > std::numeric_limits<uint16_t>::max()) {
     return 0;
   }
+
+  const uint16_t payload_len_u16 = static_cast<uint16_t>(payload_len);
 
   size_t data_len = sizeof(FrameHeader) + payload_len;
   size_t total_len = data_len + CRC_TRAILER_SIZE;
@@ -155,7 +162,7 @@ size_t FrameBuilder::build(uint8_t* buffer, size_t buffer_size, uint16_t command
   // Write header fields manually to ensure correct Big Endian byte order
   uint8_t* p = buffer;
   *p++ = PROTOCOL_VERSION;
-  write_u16_be(p, payload_len);
+  write_u16_be(p, payload_len_u16);
   p += 2;
   write_u16_be(p, command_id);
   p += 2;

@@ -7,7 +7,7 @@ import struct
 from yunbridge.rpc.protocol import Command, Status
 
 from ...protocol.topics import Topic, topic_path
-from ...mqtt import InboundMessage
+from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import PendingPinRequest, RuntimeState

@@ -1,36 +1,20 @@
-"""Lightweight MQTT type helpers and DTOs."""
+"""Inbound MQTT helpers and DTOs used across the daemon."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Any
 
-from aiomqtt import Client as MqttClient, MqttError
 
-from .messages import QueuedPublish
-
-# Re-export exceptions for convenience
-__all__ = [
-    "MqttError",
-    "MQTTError",
-    "QOSLevel",
-    "QueuedPublish",
-    "InboundMessage",
-    "as_inbound_message",
-    "MQTTClient",
-]
-
+__all__ = ["QOSLevel", "InboundMessage", "as_inbound_message"]
 
 
 class QOSLevel(IntEnum):
     """MQTT Quality-of-Service levels."""
+
     QOS_0 = 0
     QOS_1 = 1
     QOS_2 = 2
-
-
-MQTTClient = MqttClient
-MQTTError = MqttError
 
 
 @dataclass(slots=True)
@@ -51,7 +35,8 @@ class InboundMessage:
 
 
 def as_inbound_message(raw_message: Any) -> InboundMessage:
-    """Convert an aiomqtt message into InboundMessage."""
+    """Convert an aiomqtt message into :class:`InboundMessage`."""
+
     topic_obj = getattr(raw_message, "topic", "")
     topic = str(topic_obj) if topic_obj is not None else ""
     payload = getattr(raw_message, "payload", None) or b""
@@ -72,13 +57,9 @@ def as_inbound_message(raw_message: Any) -> InboundMessage:
     payload_format_indicator: int | None = None
     topic_alias: int | None = None
 
-    # aiomqtt exposes properties via .properties (if paho < 2) or direct
-    # attributes when running with the modern paho 2.x stack.
     properties = getattr(raw_message, "properties", None)
-
     if properties is not None:
         response_topic = getattr(properties, "ResponseTopic", None)
-        # Some paho versions return bytes for string props, normalize
         if isinstance(response_topic, bytes):
             response_topic = response_topic.decode("utf-8", errors="ignore")
 

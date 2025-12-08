@@ -30,7 +30,7 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
-from ..mqtt import InboundMessage
+from ..mqtt.inbound import InboundMessage
 from ..mqtt.messages import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from .queues import BoundedByteDeque

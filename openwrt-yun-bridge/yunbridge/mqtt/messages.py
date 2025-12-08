@@ -3,9 +3,31 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import Any, Sequence, cast
+from collections.abc import Iterable as IterableABC
+from typing import Any, TypeGuard
 
 SpoolRecord = dict[str, Any]
+
+def _is_iterable_sequence(value: Any) -> TypeGuard[IterableABC[Any]]:
+    return isinstance(value, IterableABC) and not isinstance(value, (bytes, str))
+
+
+def _normalize_user_properties(
+    raw: Any,
+) -> tuple[tuple[str, str], ...]:
+    if not _is_iterable_sequence(raw):
+        return ()
+
+    normalized: list[tuple[str, str]] = []
+    for entry in raw:
+        if not _is_iterable_sequence(entry):
+            continue
+        entry_seq: list[Any] = list(entry)
+        if len(entry_seq) < 2:
+            continue
+        normalized.append((str(entry_seq[0]), str(entry_seq[1])))
+
+    return tuple(normalized)
 
 
 @dataclass(slots=True)
@@ -53,15 +75,7 @@ class QueuedPublish:
             correlation_data = base64.b64decode(encoded)
 
         raw_properties = record.get("user_properties")
-        user_properties: list[tuple[str, str]] = []
-        if isinstance(raw_properties, (list, tuple)):
-            for raw_entry_obj in raw_properties:
-                if not isinstance(raw_entry_obj, (list, tuple)):
-                    continue
-                entry_seq = cast(Sequence[Any], raw_entry_obj)
-                if len(entry_seq) < 2:
-                    continue
-                user_properties.append((str(entry_seq[0]), str(entry_seq[1])))
+        user_properties = _normalize_user_properties(raw_properties)
 
         return cls(
             topic_name=str(record.get("topic_name", "")),
@@ -73,7 +87,7 @@ class QueuedPublish:
             message_expiry_interval=record.get("message_expiry_interval"),
             response_topic=record.get("response_topic"),
             correlation_data=correlation_data,
-            user_properties=tuple(user_properties),
+            user_properties=user_properties,
         )
 
 

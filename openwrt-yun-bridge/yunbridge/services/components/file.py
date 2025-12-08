@@ -14,7 +14,7 @@ from yunbridge.const import (
 )
 
 from ...common import encode_status_reason, pack_u16
-from ...mqtt import InboundMessage
+from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState

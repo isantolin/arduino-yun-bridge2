@@ -17,7 +17,7 @@ from yunbridge.protocol.topics import (
     mailbox_outgoing_available_topic,
     topic_path,
 )
-from yunbridge.mqtt import InboundMessage
+from yunbridge.mqtt.inbound import InboundMessage
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext

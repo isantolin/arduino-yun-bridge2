@@ -3,96 +3,45 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
-import ssl
-import struct
 import sys
 import time
 from dataclasses import dataclass
-from typing import (
-    Any,
-    AsyncContextManager,
-    Protocol,
-    TypeVar,
-    cast,
-)
-from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, Callable, cast
+from collections.abc import Awaitable
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
-import serial
-import serial_asyncio
-from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
-
-from cobs import cobs
 from tenacity import (
     AsyncRetrying,
     RetryCallState,
     retry_if_exception_type,
     stop_never,
-    wait_exponential,
 )
 
-from yunbridge.common import pack_u16, build_mqtt_properties
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.config.tls import build_tls_context, resolve_tls_material
-from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,
     publish_metrics,
 )
-from yunbridge.mqtt import as_inbound_message
-from yunbridge.protocol import Topic, topic_path
-from yunbridge.rpc import protocol
-from yunbridge.rpc.frame import Frame
-from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.runtime import (
     BridgeService,
-    SendFrameCallable,
     SerialHandshakeFatal,
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
+from yunbridge.transport import (
+    build_mqtt_tls_context,
+    mqtt_task,
+    serial_reader_task,
+    serial_sender_not_ready,
+)
 from yunbridge.watchdog import WatchdogKeepalive
-
-OPEN_SERIAL_CONNECTION: Callable[
-    ..., Awaitable[tuple[asyncio.StreamReader, asyncio.StreamWriter]]
-] = serial_asyncio.open_serial_connection
 
 
 logger = logging.getLogger("yunbridge")
-
-T = TypeVar("T")
-
-MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE
-    + protocol.MAX_PAYLOAD_SIZE
-    + protocol.CRC_SIZE
-    + 4
-)
-
-
-class MQTTClientProtocol(Protocol):
-    async def publish(
-        self,
-        topic: str,
-        payload: bytes,
-        *,
-        qos: int,
-        retain: bool,
-        properties: Properties | None = None,
-    ) -> None: ...
-
-    async def subscribe(self, topic: str, qos: int = 0) -> None: ...
-
-    async def unsubscribe(self, topic: str) -> None: ...
-
-    def messages(self) -> AsyncContextManager[AsyncIterator[Any]]: ...
 
 
 @dataclass(slots=True)
@@ -104,15 +53,6 @@ class _SupervisedTaskSpec:
     restart_interval: float = 60.0
     min_backoff: float = 1.0
     max_backoff: float = 30.0
-
-
-@dataclass(slots=True)
-class _RetryPolicy:
-    action: str
-    retry_exceptions: tuple[type[BaseException], ...]
-    base_delay: float
-    max_delay: float
-    announce_attempt: Callable[[], None] | None = None
 
 
 class _RetryableSupervisorError(Exception):
@@ -127,31 +67,6 @@ class _RetryableSupervisorError(Exception):
         super().__init__(str(original))
         self.original = original
         self.reset_backoff = reset_backoff
-
-
-def _unwrap_retryable_exception_group(
-    group: BaseExceptionGroup[BaseException],
-    retry_types: tuple[type[BaseException], ...],
-) -> BaseException | None:
-    collected: list[BaseException] = []
-
-    def _collect(
-        exc: BaseException | BaseExceptionGroup[BaseException],
-    ) -> bool:
-        if isinstance(exc, BaseExceptionGroup):
-            members = cast(
-                tuple[BaseException, ...],
-                cast(Any, exc).exceptions,
-            )
-            return all(_collect(inner) for inner in members)
-        if isinstance(exc, retry_types):
-            collected.append(exc)
-            return True
-        return False
-
-    if _collect(group) and collected:
-        return collected[0]
-    return None
 
 
 class _SupervisorWait:
@@ -177,93 +92,6 @@ class _SupervisorWait:
 
         delay = min(self._max, self._min * (2 ** (self._streak - 1)))
         return delay
-
-
-async def _serial_sender_not_ready(command_id: int, _: bytes) -> bool:
-    logger.warning(
-        "Serial disconnected; dropping frame 0x%02X",
-        command_id,
-    )
-    return False
-
-
-async def _run_with_retry(
-    policy: _RetryPolicy,
-    handler: Callable[[], Awaitable[T]],
-) -> T:
-    """Retry *handler* indefinitely according to *policy*."""
-
-    if not policy.retry_exceptions:
-        raise ValueError("retry_exceptions must not be empty")
-
-    base_delay = max(0.1, policy.base_delay)
-    max_delay = max(base_delay, policy.max_delay)
-
-    def _before_sleep(retry_state: RetryCallState) -> None:
-        exc: BaseException | None = None
-        outcome: Any = retry_state.outcome
-        if outcome is not None:
-            exc = outcome.exception()
-
-        next_action: Any = retry_state.next_action
-        sleep_for: float
-        if (
-            next_action is not None
-            and getattr(next_action, "sleep", None) is not None
-        ):
-            sleep_for = float(next_action.sleep)
-        else:
-            sleep_for = base_delay
-        logger.warning(
-            "%s failed (%s); retrying in %.1fs.",
-            policy.action,
-            exc,
-            sleep_for,
-        )
-
-    retry_kwargs: dict[str, Any] = {
-        "retry": retry_if_exception_type(policy.retry_exceptions),
-        "wait": wait_exponential(
-            multiplier=base_delay,
-            min=base_delay,
-            max=max_delay,
-        ),
-        "stop": stop_never,
-        "reraise": True,
-        "before_sleep": _before_sleep,
-    }
-
-    if policy.announce_attempt is not None:
-        announce_callback = policy.announce_attempt
-
-        def _before(_: RetryCallState) -> None:
-            announce_callback()
-
-        retry_kwargs["before"] = _before
-
-    retryer = AsyncRetrying(**retry_kwargs)
-
-    async def _invoke_handler() -> T:
-        try:
-            return await handler()
-        except BaseExceptionGroup as exc_group:
-            flattened = _unwrap_retryable_exception_group(
-                exc_group,
-                policy.retry_exceptions,
-            )
-            if flattened is not None:
-                raise flattened from exc_group
-            raise
-
-    try:
-        async for attempt in retryer:
-            with attempt:
-                return await _invoke_handler()
-    except asyncio.CancelledError:
-        logger.debug("%s retry loop cancelled", policy.action)
-        raise
-
-    raise RuntimeError(f"{policy.action} retry loop terminated unexpectedly")
 
 
 async def _supervise_task(
@@ -388,543 +216,13 @@ async def _supervise_task(
                 ) from exc
 
 
-async def _open_serial_connection_with_retry(
-    config: RuntimeConfig,
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    base_delay = float(max(1, config.reconnect_delay))
-
-    policy = _RetryPolicy(
-        action=f"Serial connection to {config.serial_port}",
-        retry_exceptions=(
-            serial.SerialException,
-            ConnectionResetError,
-            OSError,
-        ),
-        base_delay=base_delay,
-        max_delay=base_delay * 8,
-        announce_attempt=lambda: logger.info(
-            "Connecting to serial port %s at %d baud...",
-            config.serial_port,
-            config.serial_baud,
-        ),
-    )
-
-    async def _connect() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-        return await OPEN_SERIAL_CONNECTION(
-            url=config.serial_port,
-            baudrate=config.serial_baud,
-            exclusive=True,
-        )
-
-    return await _run_with_retry(policy, _connect)
-
-
-async def _send_serial_frame(
-    state: RuntimeState,
-    writer: asyncio.StreamWriter,
-    command_id: int,
-    payload: bytes,
-) -> bool:
-    if writer.is_closing():
-        logger.error(
-            "Serial writer closed; cannot send frame 0x%02X",
-            command_id,
-        )
-        return False
-
-    try:
-        raw_frame = Frame(command_id, payload).to_bytes()
-        encoded_frame = cobs.encode(raw_frame) + SERIAL_TERMINATOR
-        writer.write(encoded_frame)
-        await writer.drain()
-
-        try:
-            command_name = Command(command_id).name
-        except ValueError:
-            try:
-                command_name = Status(command_id).name
-            except ValueError:
-                command_name = f"UNKNOWN_CMD_ID(0x{command_id:02X})"
-        logger.debug("LINUX > %s payload=%s", command_name, payload.hex())
-        return True
-    except ValueError as exc:
-        logger.error(
-            "Refusing to send frame 0x%02X: %s", command_id, exc
-        )
-        return False
-    except ConnectionResetError:
-        logger.error(
-            "Serial connection reset while sending frame 0x%02X",
-            command_id,
-        )
-        if state.serial_writer and not state.serial_writer.is_closing():
-            try:
-                state.serial_writer.close()
-                await state.serial_writer.wait_closed()
-            except Exception:
-                logger.exception("Error closing serial writer after reset.")
-        state.serial_writer = None
-        return False
-    except Exception:
-        logger.exception("Unexpected error sending frame 0x%02X", command_id)
-        return False
-
-
-async def _process_serial_packet(
-    encoded_packet: bytes,
-    service: BridgeService,
-    state: RuntimeState,
-) -> None:
-    try:
-        raw_frame = cobs.decode(encoded_packet)
-    except cobs.DecodeError as exc:
-        packet_hex = encoded_packet.hex()
-        logger.warning(
-            "COBS decode error %s for packet %s (len=%d)",
-            exc,
-            packet_hex,
-            len(encoded_packet),
-        )
-        if logger.isEnabledFor(logging.DEBUG):
-            appended = encoded_packet + SERIAL_TERMINATOR
-            human_hex = " ".join(f"{byte:02x}" for byte in appended)
-            logger.debug(
-                "Decode error raw bytes (len=%d): %s",
-                len(appended),
-                human_hex,
-            )
-        state.record_serial_decode_error()
-        truncated = encoded_packet[:32]
-        payload = pack_u16(0xFFFF) + truncated
-        try:
-            await service.send_frame(Status.MALFORMED.value, payload)
-        except Exception:  # pragma: no cover - defensive logging
-            logger.exception(
-                "Failed to request MCU retransmission after decode error"
-            )
-        return
-
-    try:
-        frame = Frame.from_bytes(raw_frame)
-    except ValueError as exc:
-        header_hex = raw_frame[: protocol.CRC_COVERED_HEADER_SIZE].hex()
-        logger.warning(
-            (
-                "Frame parse error %s for raw %s (len=%d header=%s)"
-            ),
-            exc,
-            raw_frame.hex(),
-            len(raw_frame),
-            header_hex,
-        )
-        status = Status.MALFORMED
-        if "crc mismatch" in str(exc).lower():
-            status = Status.CRC_MISMATCH
-            state.record_serial_crc_error()
-        command_hint = 0xFFFF
-        if len(raw_frame) >= protocol.CRC_COVERED_HEADER_SIZE:
-            _, _, command_hint = struct.unpack(
-                protocol.CRC_COVERED_HEADER_FORMAT,
-                raw_frame[: protocol.CRC_COVERED_HEADER_SIZE],
-            )
-        truncated = raw_frame[:32]
-        payload = pack_u16(command_hint) + truncated
-        try:
-            await service.send_frame(status.value, payload)
-        except Exception:  # pragma: no cover - defensive logging
-            logger.exception(
-                "Failed to notify MCU about frame parse error"
-            )
-        return
-    except Exception:
-        logger.exception("Unhandled error processing MCU frame")
-        return
-
-    try:
-        await service.handle_mcu_frame(frame.command_id, frame.payload)
-    except Exception:
-        logger.exception("Unhandled error processing MCU frame")
-
-
-async def serial_reader_task(
-    config: RuntimeConfig,
-    state: RuntimeState,
-    service: BridgeService,
-) -> None:
-    reconnect_delay = max(1, config.reconnect_delay)
-
-    while True:
-        reader: asyncio.StreamReader | None = None
-        writer: asyncio.StreamWriter | None = None
-        should_retry = True
-        try:
-            reader, writer = await _open_serial_connection_with_retry(config)
-
-            state.serial_writer = writer
-
-            previous_sender: SendFrameCallable | None = getattr(
-                service, "_serial_sender", None
-            )
-
-            async def _registered_sender(
-                cmd: int,
-                data: bytes,
-                *,
-                writer_ref: asyncio.StreamWriter = writer,
-            ) -> bool:
-                return await _send_serial_frame(state, writer_ref, cmd, data)
-
-            if previous_sender is not None:
-                prev_sender: SendFrameCallable = previous_sender
-
-                async def _chained_sender(
-                    cmd: int,
-                    data: bytes,
-                    *,
-                    prior_sender: SendFrameCallable = prev_sender,
-                ) -> bool:
-                    try:
-                        await prior_sender(cmd, data)
-                    except Exception:  # pragma: no cover - defensive
-                        logger.exception(
-                            "Serial sender hook raised an exception"
-                        )
-                    return await _registered_sender(cmd, data)
-
-                service.register_serial_sender(_chained_sender)
-            else:
-                service.register_serial_sender(_registered_sender)
-            logger.info("Serial port connected successfully.")
-            try:
-                await service.on_serial_connected()
-            except SerialHandshakeFatal as exc:
-                should_retry = False
-                logger.critical("%s", exc)
-                raise
-            except Exception:
-                logger.exception(
-                    "Error running post-connect hooks for serial link"
-                )
-
-            buffer = bytearray()
-            while True:
-                byte = await reader.read(1)
-                if not byte:
-                    logger.warning("Serial stream ended; reconnecting.")
-                    break
-
-                if byte == SERIAL_TERMINATOR:
-                    if not buffer:
-                        continue
-                    encoded_packet = bytes(buffer)
-                    buffer.clear()
-                    await _process_serial_packet(
-                        encoded_packet,
-                        service,
-                        state,
-                    )
-                else:
-                    buffer.append(byte[0])
-                    if len(buffer) > MAX_SERIAL_PACKET_BYTES:
-                        snapshot = bytes(buffer[:32])
-                        buffer.clear()
-                        state.record_serial_decode_error()
-                        logger.warning(
-                            "Serial packet exceeded %d bytes; "
-                            "requesting retransmit.",
-                            MAX_SERIAL_PACKET_BYTES,
-                        )
-                        payload = pack_u16(0xFFFF) + snapshot
-                        try:
-                            await service.send_frame(
-                                Status.MALFORMED.value,
-                                payload,
-                            )
-                        except Exception:
-                            logger.exception(
-                                "Failed to notify MCU about oversized "
-                                "serial packet"
-                            )
-        except (serial.SerialException, asyncio.IncompleteReadError) as exc:
-            logger.error("Serial communication error: %s", exc)
-        except ConnectionResetError:
-            logger.error("Serial connection reset.")
-        except SerialHandshakeFatal:
-            raise
-        except asyncio.CancelledError:
-            logger.info("Serial reader task cancelled.")
-            raise
-        except Exception:
-            logger.critical(
-                "Unhandled exception in serial_reader_task",
-                exc_info=True,
-            )
-        finally:
-            if writer and not writer.is_closing():
-                try:
-                    writer.close()
-                    await writer.wait_closed()
-                except Exception:
-                    logger.exception(
-                        "Error closing serial writer during cleanup."
-                    )
-            state.serial_writer = None
-            try:
-                await service.on_serial_disconnected()
-            except Exception:
-                logger.exception(
-                    "Error resetting service state after serial disconnect"
-                )
-            service.register_serial_sender(_serial_sender_not_ready)
-            if should_retry:
-                logger.warning(
-                    "Serial port disconnected. Retrying in %d seconds...",
-                    reconnect_delay,
-                )
-                await asyncio.sleep(reconnect_delay)
-
-
-async def _mqtt_publisher_loop(
-    client: MQTTClientProtocol,
-    state: RuntimeState,
-) -> None:
-    while True:
-        await state.flush_mqtt_spool()
-        message_to_publish = await state.mqtt_publish_queue.get()
-        topic_name = message_to_publish.topic_name
-
-        # Build properties using our helper
-        props = build_mqtt_properties(message_to_publish)
-
-        try:
-            await client.publish(
-                topic_name,
-                message_to_publish.payload,
-                qos=int(message_to_publish.qos),
-                retain=message_to_publish.retain,
-                properties=props,
-            )
-        except asyncio.CancelledError:
-            logger.info("MQTT publisher loop cancelled.")
-            try:
-                state.mqtt_publish_queue.put_nowait(message_to_publish)
-            except asyncio.QueueFull:
-                logger.debug(
-                    "MQTT publish queue full while cancelling; dropping %s",
-                    topic_name,
-                )
-            raise
-        except MqttError as exc:
-            logger.warning(
-                "MQTT publish failed for %s; broker unavailable (%s)",
-                topic_name,
-                exc,
-            )
-            try:
-                state.mqtt_publish_queue.put_nowait(message_to_publish)
-            except asyncio.QueueFull:
-                logger.error(
-                    "MQTT publish queue full; dropping message for %s",
-                    topic_name,
-                )
-            raise
-        except Exception:
-            logger.exception(
-                "Failed to publish MQTT message for topic %s",
-                topic_name,
-            )
-            raise
-        finally:
-            state.mqtt_publish_queue.task_done()
-            await state.flush_mqtt_spool()
-
-
-async def _mqtt_subscriber_loop(
-    client: MQTTClientProtocol,
-    service: BridgeService,
-) -> None:
-    try:
-        messages_cm = client.messages()
-        if inspect.isawaitable(messages_cm):
-            messages_cm = await messages_cm
-
-        async with messages_cm as stream:
-            async for message in stream:
-                # Convert aiomqtt message to our internal DTO
-                inbound = as_inbound_message(message)
-                if not inbound.topic_name:
-                    continue
-                try:
-                    await service.handle_mqtt_message(inbound)
-                except Exception:
-                    logger.exception(
-                        "Error processing MQTT topic %s",
-                        inbound.topic_name,
-                    )
-    except asyncio.CancelledError:
-        logger.info("MQTT subscriber loop cancelled.")
-        raise
-    except MqttError as exc:
-        logger.warning("MQTT subscriber loop stopped: %s", exc)
-        raise
-
-
-def _build_mqtt_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
-    if not config.tls_enabled:
-        return None
-
-    try:
-        material = resolve_tls_material(config)
-        context = build_tls_context(material)
-        if material.certfile and material.keyfile:
-            logger.info(
-                "Using MQTT TLS with client certificate authentication."
-            )
-        else:
-            logger.info("Using MQTT TLS with CA verification only.")
-        return context
-    except (ssl.SSLError, FileNotFoundError, RuntimeError) as exc:
-        message = f"Failed to create TLS context: {exc}"
-        raise RuntimeError(message) from exc
-
-
-def _set_mqtt_property(props: Properties, camel_name: str, value: Any) -> None:
-    try:
-        setattr(props, camel_name, value)
-    except AttributeError:
-        # Some older paho builds may lack these attributes; ignore gracefully.
-        pass
-
-
-def _build_mqtt_connect_properties() -> Properties:
-    props = Properties(PacketTypes.CONNECT)
-    _set_mqtt_property(props, "SessionExpiryInterval", 0)
-    _set_mqtt_property(props, "RequestResponseInformation", 1)
-    _set_mqtt_property(props, "RequestProblemInformation", 1)
-    return props
-
-
-def _apply_connect_properties(client: MQTTClientProtocol) -> None:
-    try:
-        props = _build_mqtt_connect_properties()
-        raw_client = getattr(client, "_client", None)
-        native = getattr(raw_client, "_client", raw_client)
-        if native is not None and hasattr(native, "_connect_properties"):
-            setattr(native, "_connect_properties", props)
-    except Exception:
-        logger.debug(
-            "Unable to apply MQTT CONNECT properties; continuing without",
-            exc_info=True,
-        )
-
-
-async def mqtt_task(
-    config: RuntimeConfig,
-    state: RuntimeState,
-    service: BridgeService,
-    tls_context: ssl.SSLContext | None,
-) -> None:
-    reconnect_delay = max(1, config.reconnect_delay)
-
-    # Configure aiomqtt Client directly with TLS and credentials.
-    client_kwargs: dict[str, Any] = {
-        "hostname": config.mqtt_host,
-        "port": config.mqtt_port,
-        "username": config.mqtt_user or None,
-        "password": config.mqtt_pass or None,
-        "tls_context": tls_context,
-        "logger": logging.getLogger("yunbridge.mqtt.client"),
-        "protocol": ProtocolVersion.V5,
-        "clean_session": None,  # Deprecated in v5; clean_start handles this.
-    }
-
-    # aiomqtt < 2.0 relied on clean_session. We target 2.4+, so the
-    # session expiry interval of zero keeps the connection stateless.
-
-    while True:
-        try:
-            client_cm = cast(
-                AsyncContextManager[MQTTClientProtocol],
-                MqttClient(**client_kwargs),
-            )
-            async with client_cm as client:
-                _apply_connect_properties(client)
-                logger.info("Connected to MQTT broker.")
-
-                prefix = state.mqtt_topic_prefix
-
-                def _sub_path(top: Topic | str, *segs: str) -> str:
-                    return topic_path(prefix, top, *segs)
-
-                topics = [
-                    (_sub_path(Topic.DIGITAL, "+", "mode"), 0),
-                    (_sub_path(Topic.DIGITAL, "+", "read"), 0),
-                    (_sub_path(Topic.DIGITAL, "+"), 0),
-                    (_sub_path(Topic.ANALOG, "+", "read"), 0),
-                    (_sub_path(Topic.ANALOG, "+"), 0),
-                    (_sub_path(Topic.CONSOLE, "in"), 0),
-                    (_sub_path(Topic.DATASTORE, "put", "#"), 0),
-                    (_sub_path(Topic.DATASTORE, "get", "#"), 0),
-                    (_sub_path(Topic.MAILBOX, "write"), 0),
-                    (_sub_path(Topic.MAILBOX, "read"), 0),
-                    (_sub_path(Topic.SHELL, "run"), 0),
-                    (_sub_path(Topic.SHELL, "run_async"), 0),
-                    (_sub_path(Topic.SHELL, "poll", "#"), 0),
-                    (_sub_path(Topic.SHELL, "kill", "#"), 0),
-                    (_sub_path(Topic.SYSTEM, "free_memory", "get"), 0),
-                    (_sub_path(Topic.SYSTEM, "version", "get"), 0),
-                    (_sub_path(Topic.FILE, "write", "#"), 0),
-                    (_sub_path(Topic.FILE, "read", "#"), 0),
-                    (_sub_path(Topic.FILE, "remove", "#"), 0),
-                ]
-
-                for topic, qos in topics:
-                    await client.subscribe(topic, qos=qos)
-
-                logger.info("Subscribed to %d MQTT topics.", len(topics))
-
-                async with asyncio.TaskGroup() as task_group:
-                    task_group.create_task(
-                        _mqtt_publisher_loop(client, state)
-                    )
-                    task_group.create_task(
-                        _mqtt_subscriber_loop(client, service)
-                    )
-
-        except* MqttError as exc_group:
-            for exc in exc_group.exceptions:
-                logger.error("MQTT error: %s", exc)
-        except* (OSError, asyncio.TimeoutError) as exc_group:
-            for exc in exc_group.exceptions:
-                logger.error("MQTT connection error: %s", exc)
-        except* asyncio.CancelledError:
-            logger.info("MQTT task cancelled.")
-            raise
-        except* Exception as exc_group:
-            for exc in exc_group.exceptions:
-                logger.critical(
-                    "Unhandled exception in mqtt_task",
-                    exc_info=exc,
-                )
-        # Reconnection delay logic outside the context manager
-        logger.warning(
-            "Waiting %d seconds before MQTT reconnect...",
-            reconnect_delay,
-        )
-        try:
-            await asyncio.sleep(reconnect_delay)
-        except asyncio.CancelledError:
-            logger.info("MQTT task cancelled during backoff.")
-            raise
-
-
 async def main_async(config: RuntimeConfig) -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
-    service.register_serial_sender(_serial_sender_not_ready)
+    service.register_serial_sender(serial_sender_not_ready)
 
     try:
-        tls_context = _build_mqtt_tls_context(config)
+        tls_context = build_mqtt_tls_context(config)
     except Exception as exc:
         raise RuntimeError(f"TLS configuration invalid: {exc}") from exc
 

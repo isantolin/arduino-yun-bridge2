@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from builtins import ExceptionGroup
 
 import pytest
 
@@ -51,3 +52,28 @@ def test_task_supervisor_logs_failures(
 
     asyncio.run(_run())
     assert "boom" in caplog.text
+
+
+def test_task_supervisor_logs_exception_groups(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def _run() -> None:
+        caplog.set_level(logging.ERROR, logger="test.supervisor")
+        supervisor = TaskSupervisor(
+            logger=logging.getLogger("test.supervisor")
+        )
+
+        async def cascaded() -> None:
+            raise ExceptionGroup(
+                "cascade",
+                [RuntimeError("boom-1"), RuntimeError("boom-2")],
+            )
+
+        await supervisor.start(cascaded(), name="cascade")
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        await supervisor.cancel()
+
+    asyncio.run(_run())
+    assert "boom-1" in caplog.text
+    assert "boom-2" in caplog.text

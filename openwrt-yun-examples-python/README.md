@@ -1,6 +1,6 @@
 # Arquitectura del Cliente del Puente de Yun v2
 
-Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través de `yunbridge/daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.4** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, reutilizando el mismo shim asíncrono que usa el daemon para conservar compatibilidad con la antigua API de `asyncio-mqtt`.
+Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través de `yunbridge/daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.4** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, compartiendo los mismos DTOs (`InboundMessage`, `QueuedPublish`) que consume el daemon sin recurrir a ningún shim intermedio.
 
 ## API de Comunicación: MQTT
 
@@ -12,7 +12,7 @@ El ecosistema utiliza MQTT como el mecanismo principal de comunicación para int
 
 ### Flujo request/response con MQTT v5
 
-El módulo compartido `yunbridge.mqtt` (el mismo que usa el daemon) aprovecha las capacidades de **MQTT v5** para correlacionar peticiones y respuestas sin depender de nombres de tópicos rígidos:
+Las estructuras compartidas de `yunbridge.mqtt` (ahora limitadas a DTOs serializables) aprovechan las capacidades de **MQTT v5** para correlacionar peticiones y respuestas sin depender de nombres de tópicos rígidos:
 
 - Al invocar métodos como `Bridge._publish_and_wait(...)`, el cliente genera un `correlation_data` aleatorio y fija su propio `response_topic` privado (`br/client/<uuid>/reply`). El daemon reutiliza ambos campos en cada respuesta para que la correlación sea inequívoca incluso frente a múltiples consumidores.
 - Cuando una petición incluye un tópico de respuesta explícito (por compatibilidad hacia atrás), el daemon se suscribe temporalmente y publica allí la respuesta; si no, envía el payload al `response_topic` privado.
@@ -40,7 +40,7 @@ En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `pyserial-asyncio`, `prometheus-client` y `tenacity` llegan ahora desde PyPI, mientras que `python3-pyserial` proviene de los feeds oficiales. No necesitas instalar `asyncio-mqtt`: `yunbridge.mqtt` implementa la API equivalente sobre aiomqtt y expone propiedades MQTT v5 como `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `pyserial-asyncio`, `prometheus-client` y `tenacity` llegan ahora desde PyPI, mientras que `python3-pyserial` proviene de los feeds oficiales. No necesitas instalar `asyncio-mqtt`: trabajamos directamente contra `aiomqtt.Client` y reutilizamos los DTOs propios del daemon para exponer `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
 
 Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala las dependencias mínimas en tu entorno de desarrollo:
 

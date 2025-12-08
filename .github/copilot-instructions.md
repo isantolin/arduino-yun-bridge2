@@ -9,7 +9,7 @@
 - `openwrt-yun-bridge/`: async daemon (`yunbridge/daemon.py`, `BridgeService`, `RuntimeState`, MQTT helpers), init scripts, and Python tests.
 - `openwrt-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums).
 - `luci-app-yunbridge/`: LuCI UI plus CGI endpoints that mirror `/tmp/yunbridge_status.json` and `br/system/status`.
-- `openwrt-yun-examples-python/`: MQTT client scripts sharing the same `yunbridge.mqtt` shim as the daemon; useful for manual verification.
+- `openwrt-yun-examples-python/`: MQTT client scripts that reuse the daemon's DTO modules (`yunbridge.mqtt.messages` + `yunbridge.mqtt.inbound`) while talking to `aiomqtt` directly; useful for manual verification.
 - `feeds/` + `openwrt-sdk/`: local OpenWrt feed populated by `tools/sync_feed_overlay.sh`; SDK builds IPKs via the top-level scripts.
 
 ## Protocol, Config, and Secrets

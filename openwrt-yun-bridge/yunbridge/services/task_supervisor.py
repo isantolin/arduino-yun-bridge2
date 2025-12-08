@@ -5,12 +5,11 @@ import asyncio
 import logging
 from builtins import BaseExceptionGroup
 from contextlib import suppress
-from collections.abc import Coroutine, Sequence
+from collections.abc import Coroutine
 from typing import Any, TypeVar, cast
 
 
 _T = TypeVar("_T")
-
 
 class TaskSupervisor:
     """Track background coroutines under a dedicated TaskGroup anchor."""
@@ -109,26 +108,38 @@ class TaskSupervisor:
                 return await coroutine
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                self._logger.exception(
-                    "Background task %s failed",
-                    name or hex(id(coroutine)),
-                )
+            except BaseException as exc:
+                self._log_task_exception(exc, name=name, coroutine=coroutine)
                 return None
 
         return runner()
 
     def _log_group_exception(self, exc: BaseException) -> None:
         if isinstance(exc, BaseExceptionGroup):
-            members: Sequence[BaseException] = cast(
-                Sequence[BaseException],
-                exc.exceptions,
-            )
-            for inner in members:
+            group_exc = cast(BaseExceptionGroup[BaseException], exc)
+            for inner in group_exc.exceptions:
                 self._log_group_exception(inner)
             return
         self._logger.exception(
             "Background task failed during shutdown",
+            exc_info=exc,
+        )
+
+    def _log_task_exception(
+        self,
+        exc: BaseException,
+        *,
+        name: str | None,
+        coroutine: Coroutine[Any, Any, _T],
+    ) -> None:
+        if isinstance(exc, BaseExceptionGroup):
+            group_exc = cast(BaseExceptionGroup[BaseException], exc)
+            for inner in group_exc.exceptions:
+                self._log_task_exception(inner, name=name, coroutine=coroutine)
+            return
+        self._logger.exception(
+            "Background task %s failed",
+            name or hex(id(coroutine)),
             exc_info=exc,
         )
 

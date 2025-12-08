@@ -83,8 +83,11 @@ class FrameBuilder {
   FrameBuilder();
   // Builds a raw frame into a buffer. Returns the length of the raw frame.
   // SAFETY: Now requires the buffer size to prevent overflows.
-  size_t build(uint8_t* buffer, size_t buffer_size, uint16_t command_id, 
-               const uint8_t* payload, uint16_t payload_len);
+  size_t build(uint8_t* buffer,
+               size_t buffer_size,
+               uint16_t command_id,
+               const uint8_t* payload,
+               size_t payload_len);
 };
 
 }  // namespace rpc

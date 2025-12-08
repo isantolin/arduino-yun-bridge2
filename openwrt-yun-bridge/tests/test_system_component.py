@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt import InboundMessage, QOSLevel
+from yunbridge.mqtt.inbound import InboundMessage, QOSLevel
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc.protocol import Command

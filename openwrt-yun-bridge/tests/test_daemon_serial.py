@@ -5,7 +5,7 @@ import asyncio
 from typing import cast
 
 from cobs import cobs
-from yunbridge.daemon import _process_serial_packet
+from yunbridge.transport.serial import _process_serial_packet
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.runtime import BridgeService

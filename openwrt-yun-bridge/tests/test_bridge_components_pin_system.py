@@ -8,7 +8,7 @@ from unittest.mock import patch
 from yunbridge.rpc.protocol import Command, Status
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt import InboundMessage, QOSLevel
+from yunbridge.mqtt.inbound import InboundMessage, QOSLevel
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import (

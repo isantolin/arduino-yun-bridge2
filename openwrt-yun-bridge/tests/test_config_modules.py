@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 
 from yunbridge import common
+from yunbridge import const
 from yunbridge.config import logging as logging_module
 from yunbridge.config import settings
-from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 
 
 def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
@@ -135,8 +135,8 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.tls_enabled is True
     assert config.serial_shared_secret == b"envsecret"
     assert config.metrics_enabled is False
-    assert config.metrics_host == settings.DEFAULT_METRICS_HOST
-    assert config.metrics_port == settings.DEFAULT_METRICS_PORT
+    assert config.metrics_host == const.DEFAULT_METRICS_HOST
+    assert config.metrics_port == const.DEFAULT_METRICS_PORT
 
 
 def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
@@ -252,7 +252,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     config = settings.load_runtime_config()
 
     assert config.serial_port == "/dev/default"
-    assert config.serial_baud == settings.DEFAULT_SERIAL_BAUD
+    assert config.serial_baud == const.DEFAULT_SERIAL_BAUD
     assert config.mqtt_tls is True
     assert config.mqtt_user is None
     assert config.mqtt_pass is None
@@ -260,9 +260,9 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.mqtt_certfile is None
     assert config.mqtt_keyfile is None
     assert config.mqtt_queue_limit == 1
-    assert config.serial_retry_timeout == settings.DEFAULT_SERIAL_RETRY_TIMEOUT
+    assert config.serial_retry_timeout == const.DEFAULT_SERIAL_RETRY_TIMEOUT
     assert config.serial_response_timeout == (
-        settings.DEFAULT_SERIAL_RETRY_TIMEOUT * 2
+        const.DEFAULT_SERIAL_RETRY_TIMEOUT * 2
     )
     assert config.serial_retry_attempts == 1
     assert config.allowed_policy.allow_all is True
@@ -320,7 +320,7 @@ def test_resolve_watchdog_settings_uses_procd(monkeypatch: pytest.MonkeyPatch):
     enabled, interval = settings._resolve_watchdog_settings()
 
     assert enabled is True
-    assert interval == settings.DEFAULT_WATCHDOG_INTERVAL
+    assert interval == const.DEFAULT_WATCHDOG_INTERVAL
 
 
 def test_configure_logging_stream_handler(
@@ -363,7 +363,7 @@ def test_configure_logging_stream_handler(
 
 def test_runtime_config_rejects_placeholder_serial_secret() -> None:
     kwargs = _runtime_config_kwargs(
-        serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET
+        serial_shared_secret=const.DEFAULT_SERIAL_SHARED_SECRET
     )
     with pytest.raises(ValueError, match="placeholder"):
         settings.RuntimeConfig(**kwargs)

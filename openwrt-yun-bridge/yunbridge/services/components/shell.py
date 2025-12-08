@@ -12,7 +12,7 @@ from yunbridge.const import (
     ACTION_SHELL_KILL,
 )
 
-from ...mqtt import InboundMessage
+from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState

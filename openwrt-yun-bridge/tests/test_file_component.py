@@ -11,7 +11,7 @@ import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt import InboundMessage
+from yunbridge.mqtt.inbound import InboundMessage
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext

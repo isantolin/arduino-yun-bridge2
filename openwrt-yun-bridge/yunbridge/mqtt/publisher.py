@@ -20,21 +20,6 @@ from ..config.settings import RuntimeConfig
 from ..config.tls import TLSMaterial, resolve_tls_material
 
 
-def _build_client(
-    config: RuntimeConfig,
-    *,
-    logger: logging.Logger,
-    tls_material: TLSMaterial | None = None,
-    client_module: Any = mqtt_client,
-) -> mqtt_client.Client:
-    return build_client(
-        config,
-        logger=logger,
-        tls_material=tls_material,
-        client_module=client_module,
-    )
-
-
 def build_client(
     config: RuntimeConfig,
     *,
@@ -97,7 +82,7 @@ def publish_with_retries(
         )
 
     def _attempt() -> None:
-        client = _build_client(
+        client = build_client(
             config,
             logger=logger,
             tls_material=tls_material,

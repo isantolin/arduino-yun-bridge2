@@ -5,28 +5,29 @@ import asyncio
 import struct
 from unittest.mock import patch
 
+from aiomqtt.client import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt.inbound import InboundMessage, QOSLevel
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import (
     PendingPinRequest,
     RuntimeState,
 )
+from .mqtt_helpers import make_inbound_message
 
 
 def _make_inbound(
     topic: str,
     payload: bytes = b"",
     *,
-    qos: QOSLevel = QOSLevel.QOS_0,
+    qos: int = 0,
     retain: bool = False,
-) -> InboundMessage:
-    return InboundMessage(
-        topic_name=topic,
-        payload=payload,
+) -> MQTTMessage:
+    return make_inbound_message(
+        topic,
+        payload,
         qos=qos,
         retain=retain,
     )

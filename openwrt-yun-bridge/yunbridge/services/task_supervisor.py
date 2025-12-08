@@ -116,8 +116,9 @@ class TaskSupervisor:
 
     def _log_group_exception(self, exc: BaseException) -> None:
         if isinstance(exc, BaseExceptionGroup):
-            group_exc = cast(BaseExceptionGroup[BaseException], exc)
-            for inner in group_exc.exceptions:
+            group_exc = cast(BaseExceptionGroup, exc)
+            exceptions = cast(tuple[BaseException, ...], group_exc.exceptions)
+            for inner in exceptions:
                 self._log_group_exception(inner)
             return
         self._logger.exception(
@@ -133,8 +134,9 @@ class TaskSupervisor:
         coroutine: Coroutine[Any, Any, _T],
     ) -> None:
         if isinstance(exc, BaseExceptionGroup):
-            group_exc = cast(BaseExceptionGroup[BaseException], exc)
-            for inner in group_exc.exceptions:
+            group_exc = cast(BaseExceptionGroup, exc)
+            exceptions = cast(tuple[BaseException, ...], group_exc.exceptions)
+            for inner in exceptions:
                 self._log_task_exception(inner, name=name, coroutine=coroutine)
             return
         self._logger.exception(

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import struct
 
-from ...mqtt.inbound import InboundMessage
+from aiomqtt.client import Message as MQTTMessage
 from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
@@ -122,7 +122,7 @@ class DatastoreComponent:
         remainder: list[str],
         payload: bytes,
         payload_str: str,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         is_request = False
         parts = remainder.copy()
@@ -151,7 +151,7 @@ class DatastoreComponent:
         self,
         key: str,
         value_text: str,
-        inbound: InboundMessage | None,
+        inbound: MQTTMessage | None,
     ) -> None:
         key_bytes = key.encode("utf-8")
         value_bytes = value_text.encode("utf-8")
@@ -175,7 +175,7 @@ class DatastoreComponent:
         self,
         key: str,
         is_request: bool,
-        inbound: InboundMessage | None,
+        inbound: MQTTMessage | None,
     ) -> None:
         key_bytes = key.encode("utf-8")
         if len(key_bytes) > 255:
@@ -211,7 +211,7 @@ class DatastoreComponent:
         key: str,
         value: bytes,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
         error_reason: str | None = None,
     ) -> None:
         key_segments = tuple(segment for segment in key.split("/") if segment)

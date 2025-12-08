@@ -14,7 +14,7 @@ from paho.mqtt.properties import Properties
 from yunbridge.common import build_mqtt_properties
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
-from yunbridge.mqtt.inbound import as_inbound_message
+from yunbridge.mqtt.inbound import topic_name
 from yunbridge.protocol import Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
@@ -116,15 +116,15 @@ async def _mqtt_subscriber_loop(
 
         async with messages_cm as stream:
             async for message in stream:
-                inbound = as_inbound_message(message)
-                if not inbound.topic_name:
+                topic = topic_name(message)
+                if not topic:
                     continue
                 try:
-                    await service.handle_mqtt_message(inbound)
+                    await service.handle_mqtt_message(message)
                 except Exception:
                     logger.exception(
                         "Error processing MQTT topic %s",
-                        inbound.topic_name,
+                        topic,
                     )
     except asyncio.CancelledError:
         logger.info("MQTT subscriber loop cancelled.")

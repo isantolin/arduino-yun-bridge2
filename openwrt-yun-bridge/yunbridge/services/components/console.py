@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import logging
 
+from aiomqtt.client import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
 
 from ...protocol.topics import Topic, topic_path
-from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -53,7 +53,7 @@ class ConsoleComponent:
     async def handle_mqtt_input(
         self,
         payload: bytes,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         chunks = self._iter_console_chunks(payload)
         if self.state.mcu_is_paused:

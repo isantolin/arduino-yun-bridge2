@@ -18,6 +18,7 @@ from typing import Any
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import replace
 
+from aiomqtt.client import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ..config.settings import RuntimeConfig
@@ -28,7 +29,11 @@ from ..protocol.topics import (
     parse_topic,
     topic_path,
 )
-from ..mqtt.inbound import InboundMessage
+from ..mqtt.inbound import (
+    correlation_data,
+    response_topic,
+    topic_name,
+)
 from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 from .components import (
@@ -362,44 +367,43 @@ class BridgeService:
                 payload.hex(),
             )
 
-    async def handle_mqtt_message(self, inbound: InboundMessage) -> None:
+    async def handle_mqtt_message(self, inbound: MQTTMessage) -> None:
+        inbound_topic = topic_name(inbound)
         try:
             await self._dispatch_mqtt_message(inbound)
         except Exception:
             logger.exception(
                 "Error processing MQTT message on topic %s",
-                inbound.topic_name,
+                inbound_topic,
             )
 
     async def enqueue_mqtt(
         self,
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         queue = self.state.mqtt_publish_queue
         message_to_queue = message
         if reply_context is not None:
-            target_topic = (
-                reply_context.response_topic
-                if reply_context.response_topic
-                else message.topic_name
-            )
+            target_topic = response_topic(reply_context) or message.topic_name
             if target_topic != message_to_queue.topic_name:
                 message_to_queue = replace(
                     message_to_queue,
                     topic_name=target_topic,
                 )
-            if reply_context.correlation_data is not None:
+            reply_correlation = correlation_data(reply_context)
+            if reply_correlation is not None:
                 message_to_queue = replace(
                     message_to_queue,
-                    correlation_data=reply_context.correlation_data,
+                    correlation_data=reply_correlation,
                 )
+            origin_topic = topic_name(reply_context)
             message_to_queue = replace(
                 message_to_queue,
                 user_properties=(
                     message_to_queue.user_properties
-                    + (("bridge-request-topic", reply_context.topic_name),)
+                    + (("bridge-request-topic", origin_topic),)
                 ),
             )
 
@@ -551,7 +555,7 @@ class BridgeService:
         ):
             await self._acknowledge_mcu_frame(command_id)
 
-    async def _dispatch_mqtt_message(self, inbound: InboundMessage) -> None:
+    async def _dispatch_mqtt_message(self, inbound: MQTTMessage) -> None:
         await self._handle_mqtt_topic(inbound)
 
     # ------------------------------------------------------------------
@@ -678,33 +682,33 @@ class BridgeService:
     # MQTT topic handling
     # ------------------------------------------------------------------
 
-    async def _handle_mqtt_topic(self, inbound: InboundMessage) -> None:
-        topic_name = inbound.topic_name
-        route = parse_topic(self.state.mqtt_topic_prefix, topic_name)
+    async def _handle_mqtt_topic(self, inbound: MQTTMessage) -> None:
+        inbound_topic = topic_name(inbound)
+        route = parse_topic(self.state.mqtt_topic_prefix, inbound_topic)
         if route is None:
             logger.debug(
                 "Ignoring MQTT message with unexpected prefix: %s",
-                topic_name,
+                inbound_topic,
             )
             return
 
         if not route.segments:
-            logger.debug("MQTT topic missing identifier: %s", topic_name)
+            logger.debug("MQTT topic missing identifier: %s", inbound_topic)
             return
 
         try:
             handled = await self._mqtt_router.dispatch(route, inbound)
         except Exception:
-            logger.exception("Error processing MQTT topic: %s", topic_name)
+            logger.exception("Error processing MQTT topic: %s", inbound_topic)
             return
 
         if not handled:
-            logger.debug("Unhandled MQTT topic %s", topic_name)
+            logger.debug("Unhandled MQTT topic %s", inbound_topic)
 
     async def _handle_file_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         if len(route.segments) < 2:
             return False
@@ -723,7 +727,7 @@ class BridgeService:
     async def _handle_console_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         if route.identifier != "in":
             return False
@@ -737,7 +741,7 @@ class BridgeService:
     async def _handle_datastore_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         identifier = route.identifier
         if not identifier:
@@ -759,7 +763,7 @@ class BridgeService:
     async def _handle_mailbox_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         identifier = route.identifier
         if identifier and not self._is_topic_action_allowed(
@@ -773,7 +777,7 @@ class BridgeService:
     async def _handle_shell_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         identifier = route.identifier
         if identifier and not self._is_topic_action_allowed(
@@ -791,7 +795,7 @@ class BridgeService:
     async def _handle_pin_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         payload_str = inbound.payload.decode("utf-8", errors="ignore")
         parts = route.raw.split("/")
@@ -819,7 +823,7 @@ class BridgeService:
     async def _handle_system_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         if route.identifier == "bridge":
             bridge_handled = await self._handle_bridge_topic(route, inbound)
@@ -837,7 +841,7 @@ class BridgeService:
     async def _handle_bridge_topic(
         self,
         route: TopicRoute,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
     ) -> bool:
         segments = list(route.remainder)
         if not segments:
@@ -855,7 +859,7 @@ class BridgeService:
     async def _publish_bridge_snapshot(
         self,
         flavor: str,
-        inbound: InboundMessage | None,
+        inbound: MQTTMessage | None,
     ) -> None:
         if flavor == "handshake":
             snapshot = self.state.build_handshake_snapshot()
@@ -891,7 +895,7 @@ class BridgeService:
 
     async def _reject_topic_action(
         self,
-        inbound: InboundMessage,
+        inbound: MQTTMessage,
         topic_type: Topic | str,
         action: str,
     ) -> None:
@@ -902,7 +906,7 @@ class BridgeService:
             "Blocked MQTT action topic=%s action=%s (message topic=%s)",
             topic_value,
             action or "<missing>",
-            inbound.topic_name,
+            topic_name(inbound),
         )
         payload = json.dumps(
             {

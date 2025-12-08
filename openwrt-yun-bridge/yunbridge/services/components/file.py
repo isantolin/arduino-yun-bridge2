@@ -6,6 +6,7 @@ import logging
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
+from aiomqtt.client import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from yunbridge.const import (
     ACTION_FILE_READ,
@@ -14,7 +15,6 @@ from yunbridge.const import (
 )
 
 from ...common import encode_status_reason, pack_u16
-from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -145,7 +145,7 @@ class FileComponent:
         action: str,
         path_parts: list[str],
         payload: bytes,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         filename = "/".join(path_parts)
         if not filename:

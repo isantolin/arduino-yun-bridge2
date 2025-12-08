@@ -6,14 +6,15 @@ from collections.abc import Coroutine
 from typing import Any
 
 import pytest
+from aiomqtt.client import Message as MQTTMessage
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt.inbound import InboundMessage, QOSLevel
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc.protocol import Command
 from yunbridge.services.components.system import SystemComponent
 from yunbridge.state.context import RuntimeState
+from .mqtt_helpers import make_inbound_message
 
 
 class DummyContext:
@@ -22,7 +23,7 @@ class DummyContext:
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
         self.published: list[
-            tuple[QueuedPublish, InboundMessage | None]
+            tuple[QueuedPublish, MQTTMessage | None]
         ] = []
         self.scheduled: list[Coroutine[Any, Any, None]] = []
         self.send_result: bool = True
@@ -35,7 +36,7 @@ class DummyContext:
         self,
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         self.published.append((message, reply_context))
 
@@ -56,12 +57,9 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
     asyncio.run(coro)
 
 
-def _make_inbound(topic: str) -> InboundMessage:
-    return InboundMessage(
-        topic_name=topic,
-        payload=b"",
-        qos=QOSLevel.QOS_0,
-        retain=False,
+def _make_inbound(topic: str) -> MQTTMessage:
+    return make_inbound_message(
+        topic,
         response_topic=f"reply/{topic}",
         correlation_data=b"cid",
     )

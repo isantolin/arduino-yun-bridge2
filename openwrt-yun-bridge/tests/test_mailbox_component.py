@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from collections.abc import Awaitable, Coroutine
 
 import pytest
+from aiomqtt.client import Message as MQTTMessage
 
 from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig
@@ -17,7 +18,6 @@ from yunbridge.protocol.topics import (
     mailbox_outgoing_available_topic,
     topic_path,
 )
-from yunbridge.mqtt.inbound import InboundMessage
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext
@@ -30,7 +30,7 @@ class EnqueueHook(Protocol):
         self,
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> Awaitable[None]:
         ...
 
@@ -52,7 +52,7 @@ class DummyBridge(BridgeContext):
         self,
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         if self._enqueue_hook is not None:
             await self._enqueue_hook(
@@ -270,7 +270,7 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
     async def flaky_enqueue(
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         if message.topic_name.endswith("/incoming"):
             raise RuntimeError("boom")
@@ -297,7 +297,7 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
     async def flaky_enqueue(
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         if message.topic_name.endswith("/incoming"):
             raise RuntimeError("boom")

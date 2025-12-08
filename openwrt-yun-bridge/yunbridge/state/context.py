@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from typing import Any, Deque, cast
 from collections.abc import Mapping
 
+from aiomqtt.client import Message as MQTTMessage
 from tenacity import wait_exponential
 
 from ..const import (
@@ -30,7 +31,6 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
-from ..mqtt.inbound import InboundMessage
 from ..mqtt.messages import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from .queues import BoundedByteDeque
@@ -67,7 +67,7 @@ def _status_label(code: int | None) -> str:
 @dataclass(slots=True)
 class PendingPinRequest:
     pin: int
-    reply_context: InboundMessage | None
+    reply_context: MQTTMessage | None
 
 
 @dataclass(slots=True)

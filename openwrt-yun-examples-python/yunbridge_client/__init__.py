@@ -13,7 +13,9 @@ from typing import Any, TypedDict, cast
 from collections.abc import Iterable, Sequence
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from yunbridge.mqtt.inbound import InboundMessage, QOSLevel, as_inbound_message
+from aiomqtt.client import Message as MQTTMessage
+from yunbridge.mqtt import QOSLevel
+from yunbridge.mqtt.inbound import correlation_data, topic_name
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.common import build_mqtt_properties
 from yunbridge.const import (
@@ -75,11 +77,11 @@ class Bridge:
         self._client: MqttClient | None = None
         self._response_routes: dict[
             str,
-            list[tuple[asyncio.Queue[InboundMessage], bool]],
+            list[tuple[asyncio.Queue[MQTTMessage], bool]],
         ] = {}
         self._correlation_routes: dict[
             bytes,
-            asyncio.Queue[InboundMessage],
+            asyncio.Queue[MQTTMessage],
         ] = {}
         self._reply_topic: str | None = None
         self._listener_task: asyncio.Task[None] | None = None
@@ -149,9 +151,8 @@ class Bridge:
 
         try:
             async with client.messages() as messages:
-                async for raw_message in messages:
-                    inbound = as_inbound_message(raw_message)
-                    await self._handle_inbound_message(inbound)
+                async for message in messages:
+                    await self._handle_inbound_message(message)
         except asyncio.CancelledError:
             raise
         except MqttError as exc:
@@ -160,9 +161,9 @@ class Bridge:
             logger.exception("Unexpected error in MQTT listener")
 
     async def _handle_inbound_message(
-        self, message: InboundMessage
+        self, message: MQTTMessage
     ) -> None:
-        topic = message.topic_name
+        topic = topic_name(message)
         if not topic:
             return
 
@@ -174,7 +175,7 @@ class Bridge:
         )
 
         handled = False
-        correlation = message.correlation_data
+        correlation = correlation_data(message)
         if correlation is not None:
             queue = self._correlation_routes.pop(correlation, None)
             if queue is not None:
@@ -199,8 +200,8 @@ class Bridge:
 
     def _safe_queue_put(
         self,
-        queue: asyncio.Queue[InboundMessage],
-        message: InboundMessage,
+        queue: asyncio.Queue[MQTTMessage],
+        message: MQTTMessage,
         *,
         drop_oldest: bool,
     ) -> None:
@@ -224,7 +225,7 @@ class Bridge:
     def _register_route(
         self,
         prefix: str,
-        queue: asyncio.Queue[InboundMessage],
+        queue: asyncio.Queue[MQTTMessage],
         *,
         drop_oldest: bool = False,
     ) -> None:
@@ -234,7 +235,7 @@ class Bridge:
     def _unregister_route(
         self,
         prefix: str,
-        queue: asyncio.Queue[InboundMessage],
+        queue: asyncio.Queue[MQTTMessage],
     ) -> None:
         routes = self._response_routes.get(prefix)
         if not routes:
@@ -267,7 +268,7 @@ class Bridge:
         if not topics:
             raise ValueError("resp_topic must contain at least one topic")
 
-        response_queue: asyncio.Queue[InboundMessage] = asyncio.Queue(
+        response_queue: asyncio.Queue[MQTTMessage] = asyncio.Queue(
             maxsize=1
         )
         correlation = secrets.token_bytes(12)
@@ -480,7 +481,7 @@ class Bridge:
     async def console_read_async(self) -> str | None:
         topic = f"{self.topic_prefix}/console/out"
         client = self._ensure_client()
-        queue: asyncio.Queue[InboundMessage] | None = None
+        queue: asyncio.Queue[MQTTMessage] | None = None
         routes = self._response_routes.get(topic)
         if routes:
             queue = routes[0][0]

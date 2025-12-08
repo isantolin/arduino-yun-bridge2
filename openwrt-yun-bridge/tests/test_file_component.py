@@ -8,10 +8,10 @@ from typing import Any
 from collections.abc import Coroutine
 
 import pytest
+from aiomqtt.client import Message as MQTTMessage
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt.inbound import InboundMessage
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext
@@ -34,7 +34,7 @@ class DummyBridge(BridgeContext):
         self,
         message: QueuedPublish,
         *,
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         self.published.append(message)
 

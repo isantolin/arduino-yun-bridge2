@@ -7,6 +7,7 @@ import logging
 import struct
 
 import pytest
+from aiomqtt.client import Message as MQTTMessage
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.policy import AllowedCommandPolicy, TopicAuthorization
@@ -20,7 +21,6 @@ from yunbridge.state.context import (
     PendingPinRequest,
     RuntimeState,
 )
-from yunbridge.mqtt.inbound import InboundMessage, QOSLevel
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -30,6 +30,7 @@ from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.process import ProcessComponent
 from yunbridge.services.handshake import derive_serial_timing
+from .mqtt_helpers import make_inbound_message
 
 
 class _FakeMonotonic:
@@ -47,12 +48,12 @@ def _make_inbound(
     topic: str,
     payload: bytes = b"",
     *,
-    qos: QOSLevel = QOSLevel.QOS_0,
+    qos: int = 0,
     retain: bool = False,
-) -> InboundMessage:
-    return InboundMessage(
-        topic_name=topic,
-        payload=payload,
+) -> MQTTMessage:
+    return make_inbound_message(
+        topic,
+        payload,
         qos=qos,
         retain=retain,
     )

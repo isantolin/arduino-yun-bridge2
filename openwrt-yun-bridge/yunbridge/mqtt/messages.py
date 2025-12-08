@@ -4,25 +4,28 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from collections.abc import Iterable as IterableABC
-from typing import Any, TypeGuard
+from typing import Any, TypeGuard, cast
 
 SpoolRecord = dict[str, Any]
+UserProperty = tuple[str, str]
 
-def _is_iterable_sequence(value: Any) -> TypeGuard[IterableABC[Any]]:
+IterableAny = IterableABC[Any]
+
+def _is_iterable_sequence(value: Any) -> TypeGuard[IterableAny]:
     return isinstance(value, IterableABC) and not isinstance(value, (bytes, str))
 
 
 def _normalize_user_properties(
     raw: Any,
-) -> tuple[tuple[str, str], ...]:
+) -> tuple[UserProperty, ...]:
     if not _is_iterable_sequence(raw):
         return ()
 
-    normalized: list[tuple[str, str]] = []
-    for entry in raw:
+    normalized: list[UserProperty] = []
+    for entry in cast(IterableAny, raw):
         if not _is_iterable_sequence(entry):
             continue
-        entry_seq: list[Any] = list(entry)
+        entry_seq = list(cast(IterableAny, entry))
         if len(entry_seq) < 2:
             continue
         normalized.append((str(entry_seq[0]), str(entry_seq[1])))
@@ -43,7 +46,7 @@ class QueuedPublish:
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: tuple[tuple[str, str], ...] = ()
+    user_properties: tuple[UserProperty, ...] = ()
 
     def to_record(self) -> SpoolRecord:
         return {

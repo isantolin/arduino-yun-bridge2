@@ -3,11 +3,11 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Deque
+from collections.abc import Deque
 
+from aiomqtt.client import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command
 
-from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -29,8 +29,8 @@ class SystemComponent:
         self.config = config
         self.state = state
         self.ctx = ctx
-        self._pending_free_memory: Deque[InboundMessage] = collections.deque()
-        self._pending_version: Deque[InboundMessage] = collections.deque()
+        self._pending_free_memory: Deque[MQTTMessage] = collections.deque()
+        self._pending_version: Deque[MQTTMessage] = collections.deque()
 
     async def request_mcu_version(self) -> bool:
         send_ok = await self.ctx.send_frame(Command.CMD_GET_VERSION.value, b"")
@@ -87,7 +87,7 @@ class SystemComponent:
         self,
         identifier: str,
         remainder: list[str],
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> bool:
         if identifier == "free_memory" and remainder and remainder[0] == "get":
             if inbound is not None:
@@ -112,7 +112,7 @@ class SystemComponent:
     async def _publish_version(
         self,
         version: tuple[int, int],
-        reply_context: InboundMessage | None = None,
+        reply_context: MQTTMessage | None = None,
     ) -> None:
         major, minor = version
         topic = topic_path(

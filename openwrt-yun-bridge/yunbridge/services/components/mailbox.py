@@ -4,10 +4,10 @@ from __future__ import annotations
 import json
 import logging
 
+from aiomqtt.client import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
 from ...common import encode_status_reason, pack_u16, unpack_u16
-from ...mqtt.inbound import InboundMessage
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -155,7 +155,7 @@ class MailboxComponent:
         self,
         action: str,
         payload: bytes,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         match action:
             case "write":
@@ -168,20 +168,20 @@ class MailboxComponent:
     async def handle_mqtt_write(
         self,
         payload: bytes,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         await self._handle_mqtt_write(payload, inbound)
 
     async def handle_mqtt_read(
         self,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         await self._handle_mqtt_read(inbound)
 
     async def _handle_mqtt_write(
         self,
         payload: bytes,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         if not self.state.enqueue_mailbox_message(payload, logger):
             await self._handle_outgoing_overflow(len(payload), inbound)
@@ -200,7 +200,7 @@ class MailboxComponent:
 
     async def _handle_mqtt_read(
         self,
-        inbound: InboundMessage | None = None,
+        inbound: MQTTMessage | None = None,
     ) -> None:
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
@@ -247,7 +247,7 @@ class MailboxComponent:
     async def _handle_outgoing_overflow(
         self,
         payload_size: int,
-        inbound: InboundMessage | None,
+        inbound: MQTTMessage | None,
     ) -> None:
         queue_len = len(self.state.mailbox_queue)
         logger.error(

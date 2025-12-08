@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from aiomqtt.client import Message as MQTTMessage
 
 from cobs import cobs
 
@@ -23,7 +24,6 @@ from yunbridge.transport.serial import (
     MAX_SERIAL_PACKET_BYTES,
     serial_reader_task,
 )
-from yunbridge.mqtt.inbound import InboundMessage
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.services.runtime import SerialHandshakeFatal
@@ -117,7 +117,7 @@ class _MQTTServiceStub:
         self.handled = asyncio.Event()
 
     async def handle_mqtt_message(
-        self, inbound: InboundMessage
+        self, inbound: MQTTMessage
     ) -> None:
         self.handled.set()
 

@@ -10,8 +10,8 @@ ConsoleClass::ConsoleClass()
     : _begun(false),
       _rx_buffer_head(0),
       _rx_buffer_tail(0),
-      _xoff_sent(false),
-      _tx_buffer_pos(0) {}
+  _tx_buffer_pos(0),
+  _xoff_sent(false) {}
 
 void ConsoleClass::begin() {
   _begun = true;

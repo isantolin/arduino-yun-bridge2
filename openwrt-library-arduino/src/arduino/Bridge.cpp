@@ -14,6 +14,7 @@
 #include <Crypto.h>
 #include <SHA256.h>
 
+#include "arduino/StringUtils.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
 
@@ -61,7 +62,6 @@ static_assert(
 );
 constexpr size_t kSha256DigestSize = 32;
 constexpr size_t kFileReadLengthPrefix = 1;
-constexpr size_t kMaxFilePathLength = 255;
 
 #if defined(ARDUINO_ARCH_AVR)
 uint16_t calculateFreeMemoryBytes() {
@@ -622,10 +622,8 @@ void BridgeClass::_emitStatus(uint8_t status_code, const char* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
   if (message && *message) {
-    length = static_cast<uint16_t>(strlen(message));
-    if (length > rpc::MAX_PAYLOAD_SIZE) {
-      length = rpc::MAX_PAYLOAD_SIZE;
-    }
+    const auto info = measure_bounded_cstring(message, rpc::MAX_PAYLOAD_SIZE);
+    length = static_cast<uint16_t>(info.length);
     payload = reinterpret_cast<const uint8_t*>(message);
   }
   sendFrame(status_code, payload, length);
@@ -909,39 +907,33 @@ void BridgeClass::requestAnalogRead(uint8_t pin) {
 }
 
 void BridgeClass::requestProcessRun(const char* command) {
-  if (!command) {
+  const auto info = measure_bounded_cstring(command, rpc::MAX_PAYLOAD_SIZE);
+  if (info.length == 0) {
     return;
   }
-  size_t cmd_len = strlen(command);
-  if (cmd_len == 0) {
-    return;
-  }
-  if (cmd_len > rpc::MAX_PAYLOAD_SIZE) {
+  if (info.overflowed) {
     _emitStatus(STATUS_ERROR, "process_run_payload_too_large");
     return;
   }
   sendFrame(
       CMD_PROCESS_RUN,
       reinterpret_cast<const uint8_t*>(command),
-      static_cast<uint16_t>(cmd_len));
+      static_cast<uint16_t>(info.length));
 }
 
 void BridgeClass::requestProcessRunAsync(const char* command) {
-  if (!command) {
+  const auto info = measure_bounded_cstring(command, rpc::MAX_PAYLOAD_SIZE);
+  if (info.length == 0) {
     return;
   }
-  size_t cmd_len = strlen(command);
-  if (cmd_len == 0) {
-    return;
-  }
-  if (cmd_len > rpc::MAX_PAYLOAD_SIZE) {
+  if (info.overflowed) {
     _emitStatus(STATUS_ERROR, "process_run_async_payload_too_large");
     return;
   }
   sendFrame(
       CMD_PROCESS_RUN_ASYNC,
       reinterpret_cast<const uint8_t*>(command),
-      static_cast<uint16_t>(cmd_len));
+      static_cast<uint16_t>(info.length));
 }
 
 void BridgeClass::requestProcessPoll(int pid) {
@@ -961,19 +953,17 @@ void BridgeClass::requestProcessPoll(int pid) {
 }
 
 void BridgeClass::requestFileSystemRead(const char* filePath) {
-  if (!filePath) {
-    return;
-  }
-  size_t path_len = strlen(filePath);
-  if (path_len == 0 || path_len > kMaxFilePathLength) {
+  const auto info = measure_bounded_cstring(
+      filePath, BridgeClass::kMaxFilePathLength);
+  if (info.length == 0 || info.overflowed) {
     return;
   }
 
   uint8_t* payload = _scratch_payload;
-  payload[0] = static_cast<uint8_t>(path_len);
-  memcpy(payload + kFileReadLengthPrefix, filePath, path_len);
+  payload[0] = static_cast<uint8_t>(info.length);
+  memcpy(payload + kFileReadLengthPrefix, filePath, info.length);
   const uint16_t total = static_cast<uint16_t>(
-      path_len + kFileReadLengthPrefix);
+      info.length + kFileReadLengthPrefix);
   sendFrame(CMD_FILE_READ, payload, total);
 }
 
@@ -986,10 +976,11 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
     return false;
   }
 
-  size_t length = strnlen(key, kMaxDatastoreKeyLength);
-  if (length == 0) {
+  const auto info = measure_bounded_cstring(key, kMaxDatastoreKeyLength);
+  if (info.length == 0 || info.overflowed) {
     return false;
   }
+  const size_t length = info.length;
 
   if (_pending_datastore_count >= kMaxPendingDatastore) {
     return false;

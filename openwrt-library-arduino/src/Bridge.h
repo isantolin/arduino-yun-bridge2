@@ -119,6 +119,8 @@ class BridgeClass {
   explicit BridgeClass(HardwareSerial& serial);
   BridgeClass(Stream& stream);
 
+  static constexpr size_t kMaxFilePathLength = 255;
+
   // begin acepta baudrate y secreto (permite longitud explícita)
   void begin(
       unsigned long baudrate = 115200,

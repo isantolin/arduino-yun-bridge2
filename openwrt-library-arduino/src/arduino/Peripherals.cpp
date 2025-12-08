@@ -1,5 +1,7 @@
 #include "Bridge.h"
 
+#include "arduino/StringUtils.h"
+
 #include <string.h>
 
 #include "protocol/rpc_protocol.h"
@@ -11,12 +13,20 @@ DataStoreClass::DataStoreClass() {}
 void DataStoreClass::put(const char* key, const char* value) {
   if (!key || !value) return;
 
-  size_t key_len = strlen(key);
-  size_t value_len = strlen(value);
-  if (key_len == 0 || key_len > BridgeClass::kMaxDatastoreKeyLength ||
-      value_len > BridgeClass::kMaxDatastoreKeyLength) {
+  const auto key_info = measure_bounded_cstring(
+      key, BridgeClass::kMaxDatastoreKeyLength);
+  if (key_info.length == 0 || key_info.overflowed) {
     return;
   }
+
+  const auto value_info = measure_bounded_cstring(
+      value, BridgeClass::kMaxDatastoreKeyLength);
+  if (value_info.overflowed) {
+    return;
+  }
+
+  const size_t key_len = key_info.length;
+  const size_t value_len = value_info.length;
 
   const size_t payload_len = 2 + key_len + value_len;
   if (payload_len > MAX_PAYLOAD_SIZE) return;
@@ -33,8 +43,10 @@ void DataStoreClass::put(const char* key, const char* value) {
 
 void DataStoreClass::requestGet(const char* key) {
   if (!key) return;
-  size_t key_len = strlen(key);
-  if (key_len == 0 || key_len > BridgeClass::kMaxDatastoreKeyLength) return;
+  const auto key_info = measure_bounded_cstring(
+      key, BridgeClass::kMaxDatastoreKeyLength);
+  if (key_info.length == 0 || key_info.overflowed) return;
+  const size_t key_len = key_info.length;
 
   uint8_t payload[1 + 255];
   payload[0] = static_cast<uint8_t>(key_len);
@@ -54,7 +66,16 @@ MailboxClass::MailboxClass() {}
 
 void MailboxClass::send(const char* message) {
   if (!message) return;
-  send(reinterpret_cast<const uint8_t*>(message), strlen(message));
+  const size_t max_payload = MAX_PAYLOAD_SIZE - 2;
+  const auto info = measure_bounded_cstring(message, max_payload);
+  if (info.length == 0) {
+    return;
+  }
+  size_t length = info.length;
+  if (info.overflowed) {
+    length = max_payload;
+  }
+  send(reinterpret_cast<const uint8_t*>(message), length);
 }
 
 void MailboxClass::send(const uint8_t* data, size_t length) {
@@ -83,8 +104,10 @@ void MailboxClass::requestAvailable() {
 void FileSystemClass::write(const char* filePath, const uint8_t* data,
                             size_t length) {
   if (!filePath || !data) return;
-  size_t path_len = strlen(filePath);
-  if (path_len == 0 || path_len > 255) return;
+  const auto path_info = measure_bounded_cstring(
+      filePath, BridgeClass::kMaxFilePathLength);
+  if (path_info.length == 0 || path_info.overflowed) return;
+  const size_t path_len = path_info.length;
 
   const size_t max_data = MAX_PAYLOAD_SIZE - 3 - path_len;
   if (length > max_data) {
@@ -105,8 +128,10 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
 
 void FileSystemClass::remove(const char* filePath) {
   if (!filePath) return;
-  size_t path_len = strlen(filePath);
-  if (path_len == 0 || path_len > 255) return;
+  const auto path_info = measure_bounded_cstring(
+      filePath, BridgeClass::kMaxFilePathLength);
+  if (path_info.length == 0 || path_info.overflowed) return;
+  const size_t path_len = path_info.length;
 
   uint8_t payload[1 + 255];
   payload[0] = static_cast<uint8_t>(path_len);

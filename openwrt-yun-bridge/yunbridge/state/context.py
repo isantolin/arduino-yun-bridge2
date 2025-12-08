@@ -6,9 +6,10 @@ import collections
 import logging
 import time
 from asyncio.subprocess import Process as AsyncioProcess
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
-from typing import Any, Deque, Dict, Mapping, Optional, cast
+from typing import Any, Deque, cast
+from collections.abc import Mapping
 
 from tenacity import wait_exponential
 
@@ -29,7 +30,8 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
-from ..mqtt import InboundMessage, PublishableMessage
+from ..mqtt import InboundMessage
+from ..mqtt.messages import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
 from .queues import BoundedByteDeque
 
@@ -39,10 +41,10 @@ from ..rpc.protocol import Command, Status
 
 logger = logging.getLogger("yunbridge.state")
 
-SpoolSnapshot = Dict[str, int | float]
+SpoolSnapshot = dict[str, int | float]
 
 
-def _mqtt_queue_factory() -> asyncio.Queue[PublishableMessage]:
+def _mqtt_queue_factory() -> asyncio.Queue[QueuedPublish]:
     return asyncio.Queue()
 
 
@@ -53,7 +55,7 @@ def _command_name(command_id: int) -> str:
         return f"0x{command_id:02X}"
 
 
-def _status_label(code: Optional[int]) -> str:
+def _status_label(code: int | None) -> str:
     if code is None:
         return "unknown"
     try:
@@ -65,17 +67,17 @@ def _status_label(code: Optional[int]) -> str:
 @dataclass(slots=True)
 class PendingPinRequest:
     pin: int
-    reply_context: Optional[InboundMessage]
+    reply_context: InboundMessage | None
 
 
 @dataclass(slots=True)
 class ManagedProcess:
     pid: int
     command: str = ""
-    handle: Optional[AsyncioProcess] = None
+    handle: AsyncioProcess | None = None
     stdout_buffer: bytearray = field(default_factory=bytearray)
     stderr_buffer: bytearray = field(default_factory=bytearray)
-    exit_code: Optional[int] = None
+    exit_code: int | None = None
     io_lock: asyncio.Lock = field(
         default_factory=asyncio.Lock,
         repr=False,
@@ -152,7 +154,7 @@ def _pending_pin_deque_factory() -> Deque[PendingPinRequest]:
     return collections.deque()
 
 
-def _str_dict_factory() -> Dict[str, str]:
+def _str_dict_factory() -> dict[str, str]:
     return {}
 
 
@@ -160,15 +162,15 @@ def _policy_factory() -> AllowedCommandPolicy:
     return AllowedCommandPolicy.from_iterable(())
 
 
-def _str_int_dict_factory() -> Dict[str, int]:
+def _str_int_dict_factory() -> dict[str, int]:
     return {}
 
 
-def _process_map_factory() -> Dict[int, ManagedProcess]:
+def _process_map_factory() -> dict[int, ManagedProcess]:
     return {}
 
 
-def _supervisor_stats_factory() -> Dict[str, "SupervisorStats"]:
+def _supervisor_stats_factory() -> dict[str, SupervisorStats]:
     return {}
 
 
@@ -181,7 +183,7 @@ class SerialFlowStats:
     last_event_unix: float = 0.0
     dirty: bool = False
 
-    def as_dict(self) -> Dict[str, float | int]:
+    def as_dict(self) -> dict[str, float | int]:
         return {
             "commands_sent": self.commands_sent,
             "commands_acked": self.commands_acked,
@@ -195,11 +197,11 @@ class SerialFlowStats:
 class SupervisorStats:
     restarts: int = 0
     last_failure_unix: float = 0.0
-    last_exception: Optional[str] = None
+    last_exception: str | None = None
     backoff_seconds: float = 0.0
     fatal: bool = False
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> dict[str, Any]:
         return {
             "restarts": self.restarts,
             "last_failure_unix": self.last_failure_unix,
@@ -213,27 +215,27 @@ class SupervisorStats:
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers."""
 
-    serial_writer: Optional[asyncio.StreamWriter] = None
+    serial_writer: asyncio.StreamWriter | None = None
     serial_link_connected: bool = False
-    mqtt_publish_queue: asyncio.Queue[PublishableMessage] = field(
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(
         default_factory=_mqtt_queue_factory
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: Dict[str, int] = field(
+    mqtt_drop_counts: dict[str, int] = field(
         default_factory=_str_int_dict_factory
     )
-    mqtt_spool: Optional[MQTTPublishSpool] = None
+    mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
     mqtt_spool_errors: int = 0
     mqtt_spool_degraded: bool = False
-    mqtt_spool_failure_reason: Optional[str] = None
+    mqtt_spool_failure_reason: str | None = None
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     mqtt_spool_limit: int = 0
     mqtt_spool_retry_attempts: int = 0
     mqtt_spool_backoff_until: float = 0.0
-    mqtt_spool_last_error: Optional[str] = None
+    mqtt_spool_last_error: str | None = None
     mqtt_spool_recoveries: int = 0
     mqtt_spool_last_trim_unix: float = 0.0
     mqtt_spool_dropped_limit: int = 0
@@ -252,7 +254,7 @@ class RuntimeState:
         init=False,
         repr=False,
     )
-    datastore: Dict[str, str] = field(default_factory=_str_dict_factory)
+    datastore: dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: BoundedByteDeque = field(
         default_factory=BoundedByteDeque
     )
@@ -266,7 +268,7 @@ class RuntimeState:
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: Dict[int, ManagedProcess] = field(
+    running_processes: dict[int, ManagedProcess] = field(
         default_factory=_process_map_factory
     )
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
@@ -309,10 +311,10 @@ class RuntimeState:
     mailbox_incoming_truncated_bytes: int = 0
     mailbox_incoming_dropped_bytes: int = 0
     mailbox_incoming_overflow_events: int = 0
-    mcu_version: Optional[tuple[int, int]] = None
-    link_handshake_nonce: Optional[bytes] = None
+    mcu_version: tuple[int, int] | None = None
+    link_handshake_nonce: bytes | None = None
     link_is_synchronized: bool = False
-    link_expected_tag: Optional[bytes] = None
+    link_expected_tag: bytes | None = None
     link_nonce_length: int = 0
     handshake_attempts: int = 0
     handshake_successes: int = 0
@@ -320,17 +322,17 @@ class RuntimeState:
     handshake_failure_streak: int = 0
     handshake_backoff_until: float = 0.0
     handshake_rate_limit_until: float = 0.0
-    last_handshake_error: Optional[str] = None
+    last_handshake_error: str | None = None
     last_handshake_unix: float = 0.0
     handshake_last_duration: float = 0.0
     handshake_fatal_count: int = 0
-    handshake_fatal_reason: Optional[str] = None
-    handshake_fatal_detail: Optional[str] = None
+    handshake_fatal_reason: str | None = None
+    handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
-    serial_pipeline_inflight: Optional[Dict[str, Any]] = None
-    serial_pipeline_last: Optional[Dict[str, Any]] = None
+    serial_pipeline_inflight: dict[str, Any] | None = None
+    serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     serial_decode_errors: int = 0
@@ -340,10 +342,10 @@ class RuntimeState:
         DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000
     )
     serial_retry_limit: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
-    mcu_status_counters: Dict[str, int] = field(
+    mcu_status_counters: dict[str, int] = field(
         default_factory=_str_int_dict_factory
     )
-    supervisor_stats: Dict[str, SupervisorStats] = field(
+    supervisor_stats: dict[str, SupervisorStats] = field(
         default_factory=_supervisor_stats_factory
     )
 
@@ -482,7 +484,7 @@ class RuntimeState:
             return False
         return True
 
-    def pop_mailbox_message(self) -> Optional[bytes]:
+    def pop_mailbox_message(self) -> bytes | None:
         self._sync_mailbox_queue_limits()
         if not self.mailbox_queue:
             return None
@@ -541,7 +543,7 @@ class RuntimeState:
             return False
         return True
 
-    def pop_mailbox_incoming(self) -> Optional[bytes]:
+    def pop_mailbox_incoming(self) -> bytes | None:
         self._sync_mailbox_incoming_limits()
         if not self.mailbox_incoming_queue:
             return None
@@ -578,7 +580,7 @@ class RuntimeState:
         self.mqtt_dropped_messages += 1
         self.mqtt_drop_counts[topic] = self.mqtt_drop_counts.get(topic, 0) + 1
 
-    def record_watchdog_beat(self, timestamp: Optional[float] = None) -> None:
+    def record_watchdog_beat(self, timestamp: float | None = None) -> None:
         self.watchdog_beats += 1
         self.last_watchdog_beat = (
             timestamp if timestamp is not None else time.monotonic()
@@ -609,7 +611,7 @@ class RuntimeState:
         self._handshake_last_started = 0.0
 
     def record_handshake_fatal(
-        self, reason: str, detail: Optional[str] = None
+        self, reason: str, detail: str | None = None
     ) -> None:
         self.handshake_fatal_count += 1
         self.handshake_fatal_reason = reason
@@ -631,7 +633,7 @@ class RuntimeState:
         stats.last_event_unix = time.time()
         stats.dirty = True
 
-    def consume_serial_flow_payload(self) -> Optional[Dict[str, float | int]]:
+    def consume_serial_flow_payload(self) -> dict[str, float | int] | None:
         stats = self.serial_flow_stats
         if not stats.dirty:
             return None
@@ -646,7 +648,7 @@ class RuntimeState:
         acked = bool(event.get("ack_received"))
         status_code = event.get("status")
 
-        def _base_payload() -> Dict[str, Any]:
+        def _base_payload() -> dict[str, Any]:
             return {
                 "command_id": command_id,
                 "command_name": _command_name(command_id),
@@ -823,7 +825,7 @@ class RuntimeState:
         self,
         reason: str,
         *,
-        exc: Optional[BaseException] = None,
+        exc: BaseException | None = None,
     ) -> None:
         detail = reason if exc is None else f"{reason}:{exc}"
         logger.warning(
@@ -834,7 +836,7 @@ class RuntimeState:
         self._disable_mqtt_spool(reason)
 
     async def stash_mqtt_message(
-        self, message: PublishableMessage
+        self, message: QueuedPublish
     ) -> bool:
         if self.mqtt_spool is None:
             await self.ensure_spool()
@@ -871,7 +873,11 @@ class RuntimeState:
                 break
             if message is None:
                 break
-            enriched = message.with_user_property("bridge-spooled", "1")
+            enriched = replace(
+                message,
+                user_properties=message.user_properties
+                + (("bridge-spooled", "1"),),
+            )
             try:
                 self.mqtt_publish_queue.put_nowait(enriched)
                 self.mqtt_spooled_replayed += 1
@@ -886,7 +892,7 @@ class RuntimeState:
                     break
                 break
 
-    def _current_spool_snapshot(self) -> Dict[str, Any]:
+    def _current_spool_snapshot(self) -> dict[str, Any]:
         spool = self.mqtt_spool
         if spool is None:
             if self._last_spool_snapshot:
@@ -931,9 +937,9 @@ class RuntimeState:
         if isinstance(last_trim, (int, float)):
             self.mqtt_spool_last_trim_unix = float(last_trim)
 
-    def build_metrics_snapshot(self) -> Dict[str, Any]:
+    def build_metrics_snapshot(self) -> dict[str, Any]:
         spool_snapshot = self._current_spool_snapshot()
-        snapshot: Dict[str, Any] = {
+        snapshot: dict[str, Any] = {
             "serial": self.serial_flow_stats.as_dict(),
             "mqtt_queue_size": self.mqtt_publish_queue.qsize(),
             "mqtt_queue_limit": self.mqtt_queue_limit,
@@ -1013,7 +1019,7 @@ class RuntimeState:
         snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
         return snapshot
 
-    def build_handshake_snapshot(self) -> Dict[str, Any]:
+    def build_handshake_snapshot(self) -> dict[str, Any]:
         return {
             "synchronised": self.link_is_synchronized,
             "attempts": self.handshake_attempts,
@@ -1033,7 +1039,7 @@ class RuntimeState:
             "nonce_length": self.link_nonce_length,
         }
 
-    def build_serial_pipeline_snapshot(self) -> Dict[str, Any]:
+    def build_serial_pipeline_snapshot(self) -> dict[str, Any]:
         inflight = (
             self.serial_pipeline_inflight.copy()
             if self.serial_pipeline_inflight
@@ -1049,7 +1055,7 @@ class RuntimeState:
             "last_completion": last,
         }
 
-    def build_bridge_snapshot(self) -> Dict[str, Any]:
+    def build_bridge_snapshot(self) -> dict[str, Any]:
         mcu_version = None
         if self.mcu_version is not None:
             mcu_version = {

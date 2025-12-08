@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Generic, Iterator, TypeVar
+from typing import Any, Generic, TypeVar
+from collections.abc import Iterator
 
 _T = TypeVar("_T")
 

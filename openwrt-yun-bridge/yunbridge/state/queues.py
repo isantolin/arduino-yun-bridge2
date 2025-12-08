@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Iterable, Iterator, Optional, cast
+from typing import Deque, cast
+from collections.abc import Iterable, Iterator
 
 _UNSET = object()
 
@@ -18,7 +19,7 @@ class QueueEvent:
     accepted: bool = False
 
 
-def _normalize_limit(value: object) -> Optional[int]:
+def _normalize_limit(value: object) -> int | None:
     if value is None:
         return None
     if isinstance(value, int):
@@ -35,8 +36,8 @@ def _normalize_limit(value: object) -> Optional[int]:
 class BoundedByteDeque:
     """Deque that enforces both item-count and byte-length limits."""
 
-    max_items: Optional[int] = None
-    max_bytes: Optional[int] = None
+    max_items: int | None = None
+    max_bytes: int | None = None
     _queue: Deque[bytes] = field(
         init=False,
         default_factory=lambda: cast(Deque[bytes], deque()),
@@ -65,7 +66,7 @@ class BoundedByteDeque:
         return self._bytes
 
     @property
-    def limit_bytes(self) -> Optional[int]:
+    def limit_bytes(self) -> int | None:
         return self.max_bytes
 
     def clear(self) -> None:

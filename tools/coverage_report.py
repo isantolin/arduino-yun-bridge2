@@ -8,7 +8,6 @@ import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 
 @dataclass
@@ -16,10 +15,10 @@ class CoverageMetrics:
     suite: str
     lines_total: int
     lines_covered: int
-    line_percent: Optional[float]
+    line_percent: float | None
     branches_total: int
     branches_covered: int
-    branch_percent: Optional[float]
+    branch_percent: float | None
     artifact_hint: str
 
     @property
@@ -35,13 +34,13 @@ class CoverageMetrics:
         return f"{self.branches_covered}/{self.branches_total}"
 
     @staticmethod
-    def format_percent(value: Optional[float]) -> str:
+    def format_percent(value: float | None) -> str:
         if value is None:
             return "n/a"
         return f"{value:.2f}%"
 
 
-def _read_python_metrics(path: Path) -> Optional[CoverageMetrics]:
+def _read_python_metrics(path: Path) -> CoverageMetrics | None:
     if not path.exists():
         return None
     root = ET.parse(path).getroot()
@@ -86,13 +85,13 @@ def _read_python_metrics(path: Path) -> Optional[CoverageMetrics]:
     )
 
 
-def _safe_percent(hit: int, total: int) -> Optional[float]:
+def _safe_percent(hit: int, total: int) -> float | None:
     if total <= 0:
         return None
     return (hit / total) * 100.0
 
 
-def _read_arduino_metrics(path: Path) -> Optional[CoverageMetrics]:
+def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
     if not path.exists():
         return None
     data = json.loads(path.read_text())
@@ -166,7 +165,7 @@ def _read_arduino_metrics(path: Path) -> Optional[CoverageMetrics]:
 
 def _build_combined_metrics(
     metrics: list[CoverageMetrics],
-) -> Optional[CoverageMetrics]:
+) -> CoverageMetrics | None:
     include = [m for m in metrics if m is not None]
     if not include:
         return None
@@ -213,7 +212,7 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
     return "\n".join([header, separator, *body, "", artifact_list])
 
 
-def _write_optional(path: Optional[str], content: str) -> None:
+def _write_optional(path: str | None, content: str) -> None:
     if not path:
         return
     dest = Path(path)
@@ -222,7 +221,7 @@ def _write_optional(path: Optional[str], content: str) -> None:
         handle.write(content)
 
 
-def _append_optional(path: Optional[str], content: str) -> None:
+def _append_optional(path: str | None, content: str) -> None:
     if not path:
         return
     dest = Path(path)

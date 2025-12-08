@@ -9,25 +9,15 @@ import secrets
 import shlex
 import uuid
 from contextlib import AsyncExitStack
-from typing import (
-    Any,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
-    TypedDict,
-    Union,
-    cast,
-)
+from typing import Any, TypedDict, cast
+from collections.abc import Iterable, Sequence
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
 from yunbridge.mqtt import (
     QOSLevel,
     InboundMessage,
+    QueuedPublish,
     as_inbound_message,
-    PublishableMessage,
 )
 from yunbridge.common import build_mqtt_properties
 from yunbridge.const import (
@@ -67,7 +57,7 @@ class ShellPollResponse(TypedDict, total=False):
 def _format_shell_command(parts: Sequence[str]) -> str:
     if not parts:
         raise ValueError("command_parts must not be empty")
-    return " ".join(shlex.quote(part) for part in parts)
+    return shlex.join(parts)
 
 
 class Bridge:
@@ -78,26 +68,26 @@ class Bridge:
         host: str = MQTT_HOST,
         port: int = MQTT_PORT,
         topic_prefix: str = MQTT_TOPIC_PREFIX,
-        username: Optional[str] = MQTT_USER,
-        password: Optional[str] = MQTT_PASS,
+        username: str | None = MQTT_USER,
+        password: str | None = MQTT_PASS,
     ) -> None:
         self.host = host
         self.port = port
         self.topic_prefix = topic_prefix
         self.username = username
         self.password = password
-        self._client: Optional[MqttClient] = None
-        self._response_routes: Dict[
+        self._client: MqttClient | None = None
+        self._response_routes: dict[
             str,
-            List[Tuple[asyncio.Queue[InboundMessage], bool]],
+            list[tuple[asyncio.Queue[InboundMessage], bool]],
         ] = {}
-        self._correlation_routes: Dict[
+        self._correlation_routes: dict[
             bytes,
             asyncio.Queue[InboundMessage],
         ] = {}
-        self._reply_topic: Optional[str] = None
-        self._listener_task: Optional[asyncio.Task[None]] = None
-        self._digital_modes: Dict[int, int] = {}
+        self._reply_topic: str | None = None
+        self._listener_task: asyncio.Task[None] | None = None
+        self._digital_modes: dict[int, int] = {}
         self._exit_stack = AsyncExitStack()
 
     async def connect(self) -> None:
@@ -265,7 +255,7 @@ class Bridge:
         pub_topic: str,
         pub_payload: bytes,
         *,
-        resp_topic: Union[str, Sequence[str], Iterable[str]],
+        resp_topic: str | Sequence[str] | Iterable[str],
         timeout: float = 10,
     ) -> bytes:
         client = self._ensure_client()
@@ -304,15 +294,13 @@ class Bridge:
                 )
 
             # Construct message envelope to use our shared builder logic
-            message = (
-                PublishableMessage(
-                    topic_name=pub_topic,
-                    payload=pub_payload,
-                    qos=QOSLevel.QOS_0,
-                    retain=False,
-                )
-                .with_response_topic(reply_topic)
-                .with_correlation_data(correlation)
+            message = QueuedPublish(
+                topic_name=pub_topic,
+                payload=pub_payload,
+                qos=int(QOSLevel.QOS_0),
+                retain=False,
+                response_topic=reply_topic,
+                correlation_data=correlation,
             )
 
             props = build_mqtt_properties(message)
@@ -386,7 +374,7 @@ class Bridge:
         return int(response.decode("utf-8"))
 
     async def set_digital_mode(
-        self, pin: int, mode: Union[int, str]
+        self, pin: int, mode: int | str
     ) -> None:
         if isinstance(mode, str):
             normalized = mode.strip().lower()
@@ -438,7 +426,7 @@ class Bridge:
         return int(response.decode("utf-8"))
 
     async def run_sketch_command(
-        self, command_parts: List[str], timeout: float = 10
+        self, command_parts: list[str], timeout: float = 10
     ) -> bytes:
         command_str = _format_shell_command(command_parts)
         logger.warning(
@@ -454,7 +442,7 @@ class Bridge:
         return response
 
     async def run_shell_command_async(
-        self, command_parts: List[str], timeout: float = 10
+        self, command_parts: list[str], timeout: float = 10
     ) -> int:
         command_str = _format_shell_command(command_parts)
         response = await self._publish_and_wait(
@@ -485,7 +473,7 @@ class Bridge:
             raise ValueError("Malformed process poll response") from exc
         if not isinstance(payload, dict):
             raise ValueError("Process poll response must be an object")
-        payload_dict = cast(Dict[str, Any], payload)
+        payload_dict = cast(dict[str, Any], payload)
         return cast(ShellPollResponse, payload_dict)
 
     async def console_write(self, message: str) -> None:
@@ -493,10 +481,10 @@ class Bridge:
         await self._publish_simple(topic, message)
         logger.debug("console_write('%s')", message)
 
-    async def console_read_async(self) -> Optional[str]:
+    async def console_read_async(self) -> str | None:
         topic = f"{self.topic_prefix}/console/out"
         client = self._ensure_client()
-        queue: Optional[asyncio.Queue[InboundMessage]] = None
+        queue: asyncio.Queue[InboundMessage] | None = None
         routes = self._response_routes.get(topic)
         if routes:
             queue = routes[0][0]
@@ -509,7 +497,7 @@ class Bridge:
 
         try:
             message = await asyncio.wait_for(queue.get(), timeout=0.1)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         except Exception:  # pragma: no cover - defensive logging
             logger.exception("Error reading from console queue")
@@ -517,7 +505,7 @@ class Bridge:
 
         return message.payload.decode("utf-8", errors="ignore")
 
-    async def mailbox_read(self, timeout: float = 5.0) -> Optional[bytes]:
+    async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
         incoming_topic = f"{self.topic_prefix}/mailbox/incoming"
         try:
             payload = await self._publish_and_wait(
@@ -526,7 +514,7 @@ class Bridge:
                 resp_topic=incoming_topic,
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return None
         except Exception:  # pragma: no cover - defensive logging
             logger.exception("Error waiting for mailbox message")
@@ -538,7 +526,7 @@ class Bridge:
         return payload
 
     async def file_write(
-        self, filename: str, content: Union[str, bytes]
+        self, filename: str, content: str | bytes
     ) -> None:
         topic = f"{self.topic_prefix}/file/write/{filename}"
         await self._publish_simple(topic, content)
@@ -557,7 +545,7 @@ class Bridge:
         await self._publish_simple(topic, b"")
         logger.debug("file_remove('%s')", filename)
 
-    async def mailbox_write(self, message: Union[str, bytes]) -> None:
+    async def mailbox_write(self, message: str | bytes) -> None:
         topic = f"{self.topic_prefix}/mailbox/write"
         await self._publish_simple(topic, message)
         logger.debug("mailbox_write(%d bytes)", len(message))

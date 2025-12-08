@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from logging import Handler
 from logging.handlers import SysLogHandler
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from .settings import RuntimeConfig
 
@@ -57,7 +57,7 @@ class StructuredLogFormatter(logging.Formatter):
         if logger_name.startswith(self.PREFIX):
             logger_name = logger_name[len(self.PREFIX):]
 
-        payload: Dict[str, Any] = {
+        payload: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
             .isoformat()
             .replace("+00:00", "Z"),

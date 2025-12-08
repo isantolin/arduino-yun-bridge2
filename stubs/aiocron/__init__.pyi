@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Awaitable, Callable, Mapping, Sequence
+from typing import Any
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 CronCallback = Callable[[], Awaitable[None]]
 

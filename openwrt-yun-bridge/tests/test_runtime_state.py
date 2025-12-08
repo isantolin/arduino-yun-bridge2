@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt import PublishableMessage
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.mqtt.spool import MQTTPublishSpool
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
@@ -320,14 +320,14 @@ def test_stash_mqtt_message_disables_spool_on_failure(
             state.mqtt_spool.close()
 
         class _BrokenSpool:
-            def append(self, _message: PublishableMessage) -> None:
+            def append(self, _message: QueuedPublish) -> None:
                 raise RuntimeError("disk-full")
 
             def close(self) -> None:
                 return None
 
         state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
-        message = PublishableMessage(topic_name="br/test", payload=b"{}")
+        message = QueuedPublish(topic_name="br/test", payload=b"{}")
         stored = await state.stash_mqtt_message(message)
 
         assert stored is False
@@ -351,10 +351,10 @@ def test_flush_mqtt_spool_handles_pop_failure(
             state.mqtt_spool.close()
 
         class _FailingSpool:
-            def pop_next(self) -> PublishableMessage:
+            def pop_next(self) -> QueuedPublish:
                 raise RuntimeError("read-error")
 
-            def requeue(self, _message: PublishableMessage) -> None:
+            def requeue(self, _message: QueuedPublish) -> None:
                 return None
 
             def close(self) -> None:

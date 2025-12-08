@@ -4,13 +4,15 @@ from __future__ import annotations
 import asyncio
 import string
 from pathlib import Path
-from typing import Any, Coroutine, Optional
+from typing import Any
+from collections.abc import Coroutine
 
 import pytest
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt import InboundMessage, PublishableMessage
+from yunbridge.mqtt import InboundMessage
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.file import FileComponent
@@ -22,7 +24,7 @@ class DummyBridge(BridgeContext):
         self.config = config
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
-        self.published: list[PublishableMessage] = []
+        self.published: list[QueuedPublish] = []
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
         self.sent_frames.append((command_id, payload))
@@ -30,9 +32,9 @@ class DummyBridge(BridgeContext):
 
     async def enqueue_mqtt(
         self,
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> None:
         self.published.append(message)
 

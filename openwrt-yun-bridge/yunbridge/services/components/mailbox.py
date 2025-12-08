@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
 from ...common import encode_status_reason, pack_u16, unpack_u16
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from ...protocol.topics import (
@@ -51,7 +51,7 @@ class MailboxComponent:
             body = payload
 
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(topic_name=topic_name, payload=body)
+            QueuedPublish(topic_name=topic_name, payload=body)
         )
         return True
 
@@ -92,11 +92,11 @@ class MailboxComponent:
             "incoming",
         )
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(topic_name=topic, payload=data)
+            QueuedPublish(topic_name=topic, payload=data)
         )
 
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(
+            QueuedPublish(
                 topic_name=mailbox_incoming_available_topic(
                     self.state.mqtt_topic_prefix
                 ),
@@ -142,7 +142,7 @@ class MailboxComponent:
             return False
 
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(
+            QueuedPublish(
                 topic_name=mailbox_outgoing_available_topic(
                     self.state.mqtt_topic_prefix
                 ),
@@ -155,7 +155,7 @@ class MailboxComponent:
         self,
         action: str,
         payload: bytes,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         match action:
             case "write":
@@ -168,20 +168,20 @@ class MailboxComponent:
     async def handle_mqtt_write(
         self,
         payload: bytes,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         await self._handle_mqtt_write(payload, inbound)
 
     async def handle_mqtt_read(
         self,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         await self._handle_mqtt_read(inbound)
 
     async def _handle_mqtt_write(
         self,
         payload: bytes,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         if not self.state.enqueue_mailbox_message(payload, logger):
             await self._handle_outgoing_overflow(len(payload), inbound)
@@ -200,7 +200,7 @@ class MailboxComponent:
 
     async def _handle_mqtt_read(
         self,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
@@ -214,7 +214,7 @@ class MailboxComponent:
                 await self._publish_incoming_available()
                 return
 
-            message = PublishableMessage(
+            message = QueuedPublish(
                 topic_name=topic,
                 payload=message_payload,
             )
@@ -232,7 +232,7 @@ class MailboxComponent:
         if message_payload is None:
             return
 
-        message = PublishableMessage(
+        message = QueuedPublish(
             topic_name=topic,
             payload=message_payload,
         )
@@ -247,7 +247,7 @@ class MailboxComponent:
     async def _handle_outgoing_overflow(
         self,
         payload_size: int,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         queue_len = len(self.state.mailbox_queue)
         logger.error(
@@ -282,12 +282,17 @@ class MailboxComponent:
                 "overflow_events": self.state.mailbox_outgoing_overflow_events,
             }
         ).encode("utf-8")
-        message = PublishableMessage(
+        properties: tuple[tuple[str, str], ...]
+        if inbound is not None:
+            properties = (("bridge-error", "mailbox"),)
+        else:
+            properties = ()
+        message = QueuedPublish(
             topic_name=overflow_topic,
             payload=body,
-        ).with_content_type("application/json")
-        if inbound is not None:
-            message = message.with_user_property("bridge-error", "mailbox")
+            content_type="application/json",
+            user_properties=properties,
+        )
         await self.ctx.enqueue_mqtt(message, reply_context=inbound)
 
     async def _publish_incoming_available(self) -> None:
@@ -313,7 +318,7 @@ class MailboxComponent:
         length: int,
     ) -> None:
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(
+            QueuedPublish(
                 topic_name=topic_name,
                 payload=str(length).encode("utf-8"),
             )

@@ -10,7 +10,8 @@ import os
 import struct
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 from ..config.settings import RuntimeConfig
 from ..const import (
@@ -19,14 +20,14 @@ from ..const import (
     SERIAL_HANDSHAKE_TAG_LEN,
     SERIAL_NONCE_LENGTH,
 )
-from ..mqtt import PublishableMessage
+from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import handshake_topic
 from ..rpc import protocol as rpc_protocol
 from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from ..state.context import RuntimeState
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
-EnqueueMessageCallable = Callable[[PublishableMessage], Awaitable[None]]
+EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
 logger = logging.getLogger("yunbridge.service.handshake")
@@ -107,7 +108,7 @@ class SerialHandshakeManager:
         send_frame: SendFrameCallable,
         enqueue_mqtt: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
-        logger_: Optional[logging.Logger] = None,
+        logger_: logging.Logger | None = None,
     ) -> None:
         self._config = config
         self._state = state
@@ -258,7 +259,7 @@ class SerialHandshakeManager:
         self,
         reason: str,
         *,
-        detail: Optional[str] = None,
+        detail: str | None = None,
     ) -> None:
         await self._handle_handshake_failure(reason, detail=detail)
 
@@ -276,10 +277,8 @@ class SerialHandshakeManager:
             "BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
         raise SerialHandshakeFatal(
-            (
                 "MCU rejected the serial shared secret "
                 f"(reason={reason}). {hint}"
-            )
         )
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
@@ -334,9 +333,9 @@ class SerialHandshakeManager:
         self,
         event: str,
         *,
-        reason: Optional[str] = None,
-        detail: Optional[str] = None,
-        extra: Optional[dict[str, Any]] = None,
+        reason: str | None = None,
+        detail: str | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         payload: dict[str, Any] = {
             "event": event,
@@ -354,13 +353,11 @@ class SerialHandshakeManager:
         }
         if extra:
             payload.update(extra)
-        message = (
-            PublishableMessage(
-                topic_name=handshake_topic(self._state.mqtt_topic_prefix),
-                payload=json.dumps(payload).encode("utf-8"),
-            )
-            .with_content_type("application/json")
-            .with_user_property("bridge-event", "handshake")
+        message = QueuedPublish(
+            topic_name=handshake_topic(self._state.mqtt_topic_prefix),
+            payload=json.dumps(payload).encode("utf-8"),
+            content_type="application/json",
+            user_properties=(("bridge-event", "handshake"),),
         )
         await self._enqueue_mqtt(message)
 
@@ -376,7 +373,7 @@ class SerialHandshakeManager:
         self,
         reason: str,
         *,
-        detail: Optional[str] = None,
+        detail: str | None = None,
     ) -> None:
         self._state.record_handshake_failure(reason)
         is_fatal = self._should_mark_failure_fatal(reason)
@@ -417,7 +414,7 @@ class SerialHandshakeManager:
 
     def _maybe_schedule_handshake_backoff(
         self, reason: str
-    ) -> Optional[float]:
+    ) -> float | None:
         streak = max(1, self._state.handshake_failure_streak)
         fatal = self._is_immediate_fatal(reason)
         threshold = 1 if fatal else 3
@@ -431,14 +428,14 @@ class SerialHandshakeManager:
         self._state.handshake_backoff_until = time.monotonic() + delay
         return delay
 
-    def _fatal_handshake_reason(self) -> Optional[str]:
+    def _fatal_handshake_reason(self) -> str | None:
         if self._state.handshake_fatal_reason:
             return self._state.handshake_fatal_reason
         return None
 
     @staticmethod
     def calculate_handshake_tag(
-        secret: Optional[bytes], nonce: bytes
+        secret: bytes | None, nonce: bytes
     ) -> bytes:
         """Return the truncated HMAC tag defined by the serial spec."""
         if not secret:

@@ -8,22 +8,31 @@ from typing import Any
 
 import pytest
 
-from yunbridge.mqtt import PublishableMessage, QOSLevel
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.mqtt.spool import MQTTPublishSpool
 
 
-def _make_message(topic: str, payload: str = "hello") -> PublishableMessage:
-    return PublishableMessage(
+def _make_message(
+    topic: str,
+    payload: str = "hello",
+    *,
+    user_properties: tuple[tuple[str, str], ...] = (),
+) -> QueuedPublish:
+    return QueuedPublish(
         topic_name=topic,
         payload=payload.encode(),
-        qos=QOSLevel.QOS_0,
+        qos=0,
         retain=False,
+        user_properties=user_properties,
     )
 
 
 def test_spool_roundtrip(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
-    message = _make_message("br/system/test").with_user_property("k", "v")
+    message = _make_message(
+        "br/system/test",
+        user_properties=(("k", "v"),),
+    )
 
     spool.append(message)
 

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Deque, Optional, Tuple
+from typing import Deque
 
 from yunbridge.rpc.protocol import Command
 
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from ...protocol.topics import Topic, topic_path
@@ -51,13 +52,11 @@ class SystemComponent:
             "free_memory",
             "value",
         )
-        message = (
-            PublishableMessage(
-                topic_name=topic,
-                payload=str(free_memory).encode("utf-8"),
-            )
-            .with_message_expiry(10)
-            .with_content_type("text/plain; charset=utf-8")
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=str(free_memory).encode("utf-8"),
+            message_expiry_interval=10,
+            content_type="text/plain; charset=utf-8",
         )
         reply_context = None
         if self._pending_free_memory:
@@ -88,7 +87,7 @@ class SystemComponent:
         self,
         identifier: str,
         remainder: list[str],
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> bool:
         if identifier == "free_memory" and remainder and remainder[0] == "get":
             if inbound is not None:
@@ -112,8 +111,8 @@ class SystemComponent:
 
     async def _publish_version(
         self,
-        version: Tuple[int, int],
-        reply_context: Optional[InboundMessage] = None,
+        version: tuple[int, int],
+        reply_context: InboundMessage | None = None,
     ) -> None:
         major, minor = version
         topic = topic_path(
@@ -122,13 +121,11 @@ class SystemComponent:
             "version",
             "value",
         )
-        message = (
-            PublishableMessage(
-                topic_name=topic,
-                payload=f"{major}.{minor}".encode("utf-8"),
-            )
-            .with_message_expiry(60)
-            .with_content_type("text/plain; charset=utf-8")
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=f"{major}.{minor}".encode(),
+            message_expiry_interval=60,
+            content_type="text/plain; charset=utf-8",
         )
         if reply_context is not None:
             await self.ctx.enqueue_mqtt(

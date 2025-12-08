@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 _BROKER_ENV_VARS: tuple[str, ...] = (
     "YUN_BROKER_IP",
@@ -13,7 +13,7 @@ _BROKER_ENV_VARS: tuple[str, ...] = (
 )
 
 
-def dump_client_env(logger: Optional[logging.Logger] = None) -> None:
+def dump_client_env(logger: logging.Logger | None = None) -> None:
     """Log the MQTT-related environment variables for quick diagnostics."""
 
     def _emit(message: str) -> None:

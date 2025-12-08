@@ -14,7 +14,9 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Optional
+from typing import Any
+from collections.abc import Awaitable, Callable, Coroutine
+from dataclasses import replace
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
@@ -26,7 +28,8 @@ from ..protocol.topics import (
     parse_topic,
     topic_path,
 )
-from ..mqtt import InboundMessage, PublishableMessage
+from ..mqtt import InboundMessage
+from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 from .components import (
     ConsoleComponent,
@@ -67,7 +70,7 @@ class BridgeService:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
         self.state = state
-        self._serial_sender: Optional[SendFrameCallable] = None
+        self._serial_sender: SendFrameCallable | None = None
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_supervisor = TaskSupervisor(logger=logger)
 
@@ -140,7 +143,7 @@ class BridgeService:
         self._mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)
         self._mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
 
-    def _gpio_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _gpio_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_DIGITAL_READ_RESP.value: (
                 self._pin.handle_digital_read_resp
@@ -160,14 +163,14 @@ class BridgeService:
             ),
         }
 
-    def _console_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _console_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_XOFF.value: self._console.handle_xoff,
             Command.CMD_XON.value: self._console.handle_xon,
             Command.CMD_CONSOLE_WRITE.value: self._console.handle_write,
         }
 
-    def _datastore_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _datastore_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_DATASTORE_PUT.value: self._datastore.handle_put,
             Command.CMD_DATASTORE_GET.value: (
@@ -175,7 +178,7 @@ class BridgeService:
             ),
         }
 
-    def _mailbox_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _mailbox_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_MAILBOX_PUSH.value: self._mailbox.handle_push,
             Command.CMD_MAILBOX_AVAILABLE.value: (
@@ -187,14 +190,14 @@ class BridgeService:
             ),
         }
 
-    def _file_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _file_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_FILE_WRITE.value: self._file.handle_write,
             Command.CMD_FILE_READ.value: self._file.handle_read,
             Command.CMD_FILE_REMOVE.value: self._file.handle_remove,
         }
 
-    def _process_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _process_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_PROCESS_RUN.value: self._process.handle_run,
             Command.CMD_PROCESS_RUN_ASYNC.value: (
@@ -204,7 +207,7 @@ class BridgeService:
             Command.CMD_PROCESS_KILL.value: self._handle_process_kill,
         }
 
-    def _system_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _system_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_GET_FREE_MEMORY_RESP.value: (
                 self._system.handle_get_free_memory_resp
@@ -220,7 +223,7 @@ class BridgeService:
             ),
         }
 
-    def _status_mcu_handlers(self) -> Dict[int, McuHandler]:
+    def _status_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Status.ACK.value: self._handle_ack,
             Status.OK.value: self._status_handler(Status.OK),
@@ -257,7 +260,7 @@ class BridgeService:
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
-        name: Optional[str] = None,
+        name: str | None = None,
     ) -> asyncio.Task[Any]:
         """Schedule *coroutine* under the supervisor."""
 
@@ -271,7 +274,7 @@ class BridgeService:
 
         self.state.serial_link_connected = True
         handshake_ok = False
-        fatal_error: Optional[SerialHandshakeFatal] = None
+        fatal_error: SerialHandshakeFatal | None = None
         try:
             handshake_ok = await self.sync_link()
         except SerialHandshakeFatal as exc:
@@ -286,10 +289,8 @@ class BridgeService:
         if not handshake_ok:
             self._raise_if_handshake_fatal()
             logger.error(
-                (
                     "Skipping post-connect initialisation because MCU link "
                     "sync failed"
-                )
             )
             return
 
@@ -372,9 +373,9 @@ class BridgeService:
 
     async def enqueue_mqtt(
         self,
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> None:
         queue = self.state.mqtt_publish_queue
         message_to_queue = message
@@ -384,14 +385,21 @@ class BridgeService:
                 if reply_context.response_topic
                 else message.topic_name
             )
-            message_to_queue = message_to_queue.with_topic(target_topic)
-            if reply_context.correlation_data is not None:
-                message_to_queue = message_to_queue.with_correlation_data(
-                    reply_context.correlation_data
+            if target_topic != message_to_queue.topic_name:
+                message_to_queue = replace(
+                    message_to_queue,
+                    topic_name=target_topic,
                 )
-            message_to_queue = message_to_queue.with_user_property(
-                "bridge-request-topic",
-                reply_context.topic_name,
+            if reply_context.correlation_data is not None:
+                message_to_queue = replace(
+                    message_to_queue,
+                    correlation_data=reply_context.correlation_data,
+                )
+            message_to_queue = replace(
+                message_to_queue,
+                user_properties=
+                message_to_queue.user_properties
+                + (("bridge-request-topic", reply_context.topic_name),),
             )
 
         while True:
@@ -440,7 +448,7 @@ class BridgeService:
                 )
 
     async def _enqueue_handshake_message(
-        self, message: PublishableMessage
+        self, message: QueuedPublish
     ) -> None:
         await self.enqueue_mqtt(message)
 
@@ -451,7 +459,7 @@ class BridgeService:
         self,
         reason: str,
         *,
-        detail: Optional[str] = None,
+        detail: str | None = None,
     ) -> None:
         await self._handshake.handle_handshake_failure(
             reason,
@@ -516,7 +524,7 @@ class BridgeService:
         self, command_id: int, payload: bytes
     ) -> None:
         handler = self._mcu_handlers.get(command_id)
-        command_name: Optional[str] = None
+        command_name: str | None = None
         try:
             command_name = Command(command_id).name
         except ValueError:
@@ -582,20 +590,18 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        message = (
-            PublishableMessage(
-                topic_name=status_topic,
-                payload=report,
-            )
-            .with_content_type("application/json")
-            .with_message_expiry(30)
-            .with_user_property("bridge-status", status.name)
-        )
+        properties: list[tuple[str, str]] = [
+            ("bridge-status", status.name)
+        ]
         if text:
-            message = message.with_user_property(
-                "bridge-status-message",
-                text,
-            )
+            properties.append(("bridge-status-message", text))
+        message = QueuedPublish(
+            topic_name=status_topic,
+            payload=report,
+            content_type="application/json",
+            message_expiry_interval=30,
+            user_properties=tuple(properties),
+        )
         await self.enqueue_mqtt(message)
 
     async def _handle_get_free_memory_resp(self, payload: bytes) -> None:
@@ -612,8 +618,9 @@ class BridgeService:
             "free_memory",
             "value",
         )
-        message = PublishableMessage(
-            topic_name=topic, payload=str(free_memory).encode("utf-8")
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=str(free_memory).encode("utf-8"),
         )
         await self.enqueue_mqtt(message)
 
@@ -632,9 +639,9 @@ class BridgeService:
             "version",
             "value",
         )
-        message = PublishableMessage(
+        message = QueuedPublish(
             topic_name=topic,
-            payload=f"{major}.{minor}".encode("utf-8"),
+            payload=f"{major}.{minor}".encode(),
         )
         await self.enqueue_mqtt(message)
         logger.info("MCU firmware version reported as %d.%d", major, minor)
@@ -648,7 +655,7 @@ class BridgeService:
 
     async def _run_command_sync(
         self, command: str
-    ) -> tuple[int, bytes, bytes, Optional[int]]:
+    ) -> tuple[int, bytes, bytes, int | None]:
         return await self._process.run_sync(command)
 
     async def _collect_process_output(
@@ -719,6 +726,10 @@ class BridgeService:
     ) -> bool:
         if route.identifier != "in":
             return False
+        action = "input"
+        if not self._is_topic_action_allowed(Topic.CONSOLE, action):
+            await self._reject_topic_action(inbound, Topic.CONSOLE, action)
+            return True
         await self._console.handle_mqtt_input(inbound.payload, inbound)
         return True
 
@@ -782,13 +793,27 @@ class BridgeService:
         inbound: InboundMessage,
     ) -> bool:
         payload_str = inbound.payload.decode("utf-8", errors="ignore")
+        parts = route.raw.split("/")
+        action = self._pin_action_from_parts(parts)
+        if action and not self._is_topic_action_allowed(route.topic, action):
+            await self._reject_topic_action(inbound, route.topic, action)
+            return True
         await self._pin.handle_mqtt(
             route.topic,
-            route.raw.split("/"),
+            parts,
             payload_str,
             inbound,
         )
         return True
+
+    @staticmethod
+    def _pin_action_from_parts(parts: list[str]) -> str | None:
+        if len(parts) < 3:
+            return None
+        if len(parts) == 3:
+            return "write"
+        subtopic = parts[3].strip().lower()
+        return subtopic or None
 
     async def _handle_system_topic(
         self,
@@ -829,7 +854,7 @@ class BridgeService:
     async def _publish_bridge_snapshot(
         self,
         flavor: str,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         if flavor == "handshake":
             snapshot = self.state.build_handshake_snapshot()
@@ -842,14 +867,12 @@ class BridgeService:
             Topic.SYSTEM,
             *topic_segments,
         )
-        message = (
-            PublishableMessage(
-                topic_name=topic,
-                payload=json.dumps(snapshot).encode("utf-8"),
-            )
-            .with_content_type("application/json")
-            .with_message_expiry(30)
-            .with_user_property("bridge-snapshot", flavor)
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=json.dumps(snapshot).encode("utf-8"),
+            content_type="application/json",
+            message_expiry_interval=30,
+            user_properties=(("bridge-snapshot", flavor),),
         )
         await self.enqueue_mqtt(message, reply_context=inbound)
 
@@ -892,13 +915,11 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        message = (
-            PublishableMessage(
-                topic_name=status_topic,
-                payload=payload,
-            )
-            .with_content_type("application/json")
-            .with_message_expiry(30)
-            .with_user_property("bridge-error", _TOPIC_FORBIDDEN_REASON)
+        message = QueuedPublish(
+            topic_name=status_topic,
+            payload=payload,
+            content_type="application/json",
+            message_expiry_interval=30,
+            user_properties=(("bridge-error", _TOPIC_FORBIDDEN_REASON),),
         )
         await self.enqueue_mqtt(message, reply_context=inbound)

@@ -5,7 +5,8 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, Optional, Set
+from typing import Any
+from collections.abc import Awaitable, Callable
 
 from tenacity import (
     AsyncRetrying,
@@ -21,7 +22,7 @@ from yunbridge.rpc.protocol import Command, Status
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
-ACK_ONLY_COMMANDS: Set[int] = {
+ACK_ONLY_COMMANDS: set[int] = {
     Command.CMD_SET_PIN_MODE.value,
     Command.CMD_DIGITAL_WRITE.value,
     Command.CMD_ANALOG_WRITE.value,
@@ -29,7 +30,7 @@ ACK_ONLY_COMMANDS: Set[int] = {
     Command.CMD_DATASTORE_PUT.value,
 }
 
-FAILURE_STATUS_CODES: Set[int] = {
+FAILURE_STATUS_CODES: set[int] = {
     Status.ERROR.value,
     Status.CMD_UNKNOWN.value,
     Status.MALFORMED.value,
@@ -38,16 +39,16 @@ FAILURE_STATUS_CODES: Set[int] = {
     Status.NOT_IMPLEMENTED.value,
 }
 
-SUCCESS_STATUS_CODES: Set[int] = {Status.OK.value}
+SUCCESS_STATUS_CODES: set[int] = {Status.OK.value}
 
 MIN_ACK_TIMEOUT = 0.05
 
 
-def _empty_int_set() -> Set[int]:
+def _empty_int_set() -> set[int]:
     return set()
 
 
-def _status_name(code: Optional[int]) -> str:
+def _status_name(code: int | None) -> str:
     if code is None:
         return "unknown"
     try:
@@ -61,11 +62,11 @@ class PendingCommand:
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_responses: Set[int] = field(default_factory=_empty_int_set)
+    expected_responses: set[int] = field(default_factory=_empty_int_set)
     completion: asyncio.Event = field(default_factory=asyncio.Event)
     attempts: int = 0
-    success: Optional[bool] = None
-    failure_status: Optional[int] = None
+    success: bool | None = None
+    failure_status: int | None = None
     ack_received: bool = False
 
     def mark_success(self) -> None:
@@ -73,7 +74,7 @@ class PendingCommand:
         if not self.completion.is_set():
             self.completion.set()
 
-    def mark_failure(self, status: Optional[int]) -> None:
+    def mark_failure(self, status: int | None) -> None:
         self.success = False
         self.failure_status = status
         if not self.completion.is_set():
@@ -90,17 +91,17 @@ class SerialFlowController:
         response_timeout: float,
         max_attempts: int,
         logger: logging.Logger,
-        metrics_callback: Optional[Callable[[str], None]] = None,
+        metrics_callback: Callable[[str], None] | None = None,
     ) -> None:
         self._ack_timeout = max(ack_timeout, MIN_ACK_TIMEOUT)
         self._response_timeout = max(response_timeout, self._ack_timeout)
         self._max_attempts = max(1, max_attempts)
         self._logger = logger
-        self._sender: Optional[SendFrameCallable] = None
+        self._sender: SendFrameCallable | None = None
         self._condition = asyncio.Condition()
-        self._current: Optional[PendingCommand] = None
+        self._current: PendingCommand | None = None
         self._metrics_callback = metrics_callback
-        self._pipeline_observer: Optional[Callable[[Dict[str, Any]], None]] = (
+        self._pipeline_observer: Callable[[dict[str, Any]], None] | None = (
             None
         )
 
@@ -113,7 +114,7 @@ class SerialFlowController:
     class _FatalSerialError(Exception):
         """Raised when a frame should not be retried."""
 
-        def __init__(self, status: Optional[int]) -> None:
+        def __init__(self, status: int | None) -> None:
             super().__init__(status)
             self.status = status
 
@@ -121,12 +122,12 @@ class SerialFlowController:
         self._sender = sender
 
     def set_metrics_callback(
-        self, callback: Optional[Callable[[str], None]]
+        self, callback: Callable[[str], None] | None
     ) -> None:
         self._metrics_callback = callback
 
     def set_pipeline_observer(
-        self, observer: Optional[Callable[[Dict[str, Any]], None]]
+        self, observer: Callable[[dict[str, Any]], None] | None
     ) -> None:
         self._pipeline_observer = observer
 
@@ -188,7 +189,7 @@ class SerialFlowController:
         event: str,
         pending: PendingCommand,
         *,
-        status: Optional[int] = None,
+        status: int | None = None,
     ) -> None:
         if self._pipeline_observer is None:
             return
@@ -332,7 +333,7 @@ class SerialFlowController:
                     timeout=timeout,
                 )
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 if pending.completion.is_set():
                     break
                 if ack_phase and pending.ack_received:

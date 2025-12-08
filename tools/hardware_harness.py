@@ -11,7 +11,8 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
+from collections.abc import Iterable, Sequence
 
 import tomllib
 import typer
@@ -194,7 +195,7 @@ async def _invoke_command(
             duration,
             None,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         proc.kill()
         stdout, stderr = await proc.communicate()
         duration = time.monotonic() - start
@@ -229,7 +230,7 @@ async def run_target(
     env.update(target.env)
 
     if dry_run:
-        rendered = " ".join(shlex.quote(part) for part in cmd)
+        rendered = shlex.join(cmd)
         return Result(
             target=target,
             success=True,

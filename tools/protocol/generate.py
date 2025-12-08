@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import struct
 import textwrap
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 
 import tomllib
 

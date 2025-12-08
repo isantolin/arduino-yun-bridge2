@@ -4,7 +4,7 @@ import logging
 import sys
 import types
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -14,8 +14,8 @@ from yunbridge.config import settings
 from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 
 
-def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
-    base: Dict[str, Any] = {
+def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
         "serial_port": "/dev/ttyUSB0",
         "serial_baud": 9600,
         "mqtt_host": "localhost",
@@ -38,10 +38,10 @@ def _runtime_config_kwargs(**overrides: Any) -> Dict[str, Any]:
 
 
 def _install_dummy_uci_module(
-    monkeypatch: pytest.MonkeyPatch, section: Dict[str, Any]
+    monkeypatch: pytest.MonkeyPatch, section: dict[str, Any]
 ) -> None:
     class _DummyCursor:
-        def __init__(self, payload: Dict[str, Any]):
+        def __init__(self, payload: dict[str, Any]):
             self._payload = payload
 
         def __enter__(self) -> "_DummyCursor":
@@ -55,7 +55,7 @@ def _install_dummy_uci_module(
         ) -> bool:  # pragma: no cover - simple context manager
             return False
 
-        def get_all(self, *_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+        def get_all(self, *_args: Any, **_kwargs: Any) -> dict[str, Any]:
             return self._payload
 
     module = types.SimpleNamespace(

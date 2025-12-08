@@ -20,7 +20,7 @@ from yunbridge.state.context import (
     PendingPinRequest,
     RuntimeState,
 )
-from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
+from yunbridge.mqtt import InboundMessage, QOSLevel, QueuedPublish
 from yunbridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_NONCE_LENGTH,
@@ -1315,8 +1315,8 @@ def test_enqueue_mqtt_drops_oldest_when_full(
         runtime_state.mqtt_queue_limit = 1
         service = BridgeService(runtime_config, runtime_state)
 
-        first = PublishableMessage("br/test/one", b"1")
-        second = PublishableMessage("br/test/two", b"2")
+        first = QueuedPublish("br/test/one", b"1")
+        second = QueuedPublish("br/test/two", b"2")
 
         await service.enqueue_mqtt(first)
         await service.enqueue_mqtt(second)

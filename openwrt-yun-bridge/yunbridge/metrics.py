@@ -6,17 +6,12 @@ import json
 import logging
 import math
 import re
+from dataclasses import replace
 from typing import (
     Any,
-    Awaitable,
-    Callable,
-    Dict,
-    Iterator,
-    Optional,
-    Sequence,
-    Tuple,
     cast,
 )
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 
 import aiocron
 from prometheus_client import (
@@ -28,7 +23,7 @@ from prometheus_client.registry import Collector
 from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
 
 from .protocol.topics import Topic, topic_path
-from .mqtt import PublishableMessage
+from .mqtt.messages import QueuedPublish
 from .state.context import RuntimeState
 
 logger = logging.getLogger("yunbridge.metrics")
@@ -39,50 +34,62 @@ _GAUGE_DOC = "YunBridge auto-generated metric"
 _INFO_DOC = "YunBridge informational metric"
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
-PublishEnqueue = Callable[[PublishableMessage], Awaitable[None]]
+PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
 def _build_metrics_message(
     state: RuntimeState,
-    snapshot: Dict[str, Any],
+    snapshot: dict[str, Any],
     *,
     expiry_seconds: float,
-) -> PublishableMessage:
+) -> QueuedPublish:
     topic = topic_path(
         state.mqtt_topic_prefix,
         Topic.SYSTEM,
         "metrics",
     )
-    message = (
-        PublishableMessage(
-            topic_name=topic,
-            payload=json.dumps(snapshot).encode("utf-8"),
-        )
-        .with_content_type("application/json")
-        .with_message_expiry(int(expiry_seconds))
+    message = QueuedPublish(
+        topic_name=topic,
+        payload=json.dumps(snapshot).encode("utf-8"),
+        content_type="application/json",
+        message_expiry_interval=int(expiry_seconds),
     )
 
     mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
     if snapshot.get("mqtt_spool_degraded"):
-        message = message.with_user_property(
+        message = _with_user_property(
+            message,
             "bridge-spool",
             mqtt_spool_failure or "unknown",
         )
 
     if snapshot.get("watchdog_enabled") is not None:
         enabled = bool(snapshot.get("watchdog_enabled"))
-        message = message.with_user_property(
+        message = _with_user_property(
+            message,
             "bridge-watchdog-enabled",
             "1" if enabled else "0",
         )
         watchdog_interval = snapshot.get("watchdog_interval")
         if isinstance(watchdog_interval, (int, float)):
-            message = message.with_user_property(
+            message = _with_user_property(
+                message,
                 "bridge-watchdog-interval",
                 str(watchdog_interval),
             )
 
     return message
+
+
+def _with_user_property(
+    message: QueuedPublish,
+    key: str,
+    value: str,
+) -> QueuedPublish:
+    return replace(
+        message,
+        user_properties=message.user_properties + ((key, value),),
+    )
 
 
 async def publish_metrics(
@@ -118,7 +125,7 @@ async def publish_metrics(
         except Exception:
             logger.exception("Failed to publish metrics payload")
 
-    cron: Optional[aiocron.Cron] = None
+    cron: aiocron.Cron | None = None
     blocker = asyncio.Event()
     cron_spec = _cron_expression_from_interval(tick_seconds)
 
@@ -232,7 +239,7 @@ class _RuntimeStateCollector(Collector):
     def collect(self) -> Iterator[Any]:
         # pragma: no cover - exercised via exporter
         snapshot = self._state.build_metrics_snapshot()
-        info_values: list[Tuple[str, str]] = []
+        info_values: list[tuple[str, str]] = []
         for metric_type, name, value in self._flatten(
             "yunbridge",
             snapshot,
@@ -263,9 +270,9 @@ class _RuntimeStateCollector(Collector):
         self,
         prefix: str,
         value: Any,
-    ) -> Iterator[Tuple[str, str, Any]]:
+    ) -> Iterator[tuple[str, str, Any]]:
         if isinstance(value, dict):
-            typed_dict = cast(Dict[Any, Any], value)
+            typed_dict = cast(dict[Any, Any], value)
             for raw_key, sub_value in typed_dict.items():
                 key = raw_key if isinstance(raw_key, str) else str(raw_key)
                 next_prefix = f"{prefix}_{key}" if prefix else key
@@ -290,8 +297,8 @@ class PrometheusExporter:
         self._state = state
         self._host = host
         self._port = port
-        self._server: Optional[asyncio.AbstractServer] = None
-        self._resolved_port: Optional[int] = None
+        self._server: asyncio.AbstractServer | None = None
+        self._resolved_port: int | None = None
         self._registry = CollectorRegistry()
         self._collector = _RuntimeStateCollector(state)
         self._registry.register(self._collector)
@@ -418,8 +425,8 @@ def _sanitize_metric_name(name: str) -> str:
 def _build_bridge_snapshot_message(
     state: RuntimeState,
     flavor: str,
-    snapshot: Dict[str, Any],
-) -> PublishableMessage:
+    snapshot: dict[str, Any],
+) -> QueuedPublish:
     segments: Sequence[str]
     if flavor == "handshake":
         segments = ("bridge", "handshake", "value")
@@ -430,21 +437,19 @@ def _build_bridge_snapshot_message(
         Topic.SYSTEM,
         *segments,
     )
-    return (
-        PublishableMessage(
-            topic_name=topic,
-            payload=json.dumps(snapshot).encode("utf-8"),
-        )
-        .with_content_type("application/json")
-        .with_message_expiry(_BRIDGE_SNAPSHOT_EXPIRY_SECONDS)
-        .with_user_property("bridge-snapshot", flavor)
+    return QueuedPublish(
+        topic_name=topic,
+        payload=json.dumps(snapshot).encode("utf-8"),
+        content_type="application/json",
+        message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
+        user_properties=(("bridge-snapshot", flavor),),
     )
 
 
 def _normalize_interval(
     interval: float,
     min_interval: float,
-) -> Optional[int]:
+) -> int | None:
     if interval <= 0:
         return None
     tick = max(min_interval, interval)

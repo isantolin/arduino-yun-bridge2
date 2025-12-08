@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import asyncio
 from types import MethodType
-from typing import Any, Awaitable, Callable, Optional, cast
+from typing import Any, cast
+from collections.abc import Awaitable, Callable
 
 import pytest
 from asyncio.subprocess import Process as AsyncioProcess
@@ -209,7 +210,7 @@ def test_async_process_monitor_releases_slot(
             def __init__(self, payload: bytes) -> None:
                 self._buffer = bytearray(payload)
 
-            async def read(self, max_bytes: Optional[int] = None) -> bytes:
+            async def read(self, max_bytes: int | None = None) -> bytes:
                 if not self._buffer:
                     return b""
                 size = len(self._buffer)
@@ -223,7 +224,7 @@ def test_async_process_monitor_releases_slot(
             def __init__(self) -> None:
                 self.stdout = _FakeStream(b"out")
                 self.stderr = _FakeStream(b"err")
-                self.returncode: Optional[int] = 5
+                self.returncode: int | None = 5
                 self.pid = 9999
 
             async def wait(self) -> None:

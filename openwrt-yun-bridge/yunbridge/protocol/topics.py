@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Tuple
 
 
 class Topic(StrEnum):
@@ -27,18 +26,18 @@ class TopicRoute:
     raw: str
     prefix: str
     topic: Topic
-    segments: Tuple[str, ...]
+    segments: tuple[str, ...]
 
     @property
     def identifier(self) -> str:
         return self.segments[0] if self.segments else ""
 
     @property
-    def remainder(self) -> Tuple[str, ...]:
+    def remainder(self) -> tuple[str, ...]:
         return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-def _split_segments(path: str) -> Tuple[str, ...]:
+def _split_segments(path: str) -> tuple[str, ...]:
     if not path:
         return ()
     return tuple(segment for segment in path.split("/") if segment)
@@ -90,11 +89,11 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
 
 
 _HANDSHAKE_SEGMENT = "handshake"
-_MAILBOX_INCOMING_AVAILABLE_SEGMENTS: Tuple[str, ...] = (
+_MAILBOX_INCOMING_AVAILABLE_SEGMENTS: tuple[str, ...] = (
     "mailbox",
     "incoming_available",
 )
-_MAILBOX_OUTGOING_AVAILABLE_SEGMENTS: Tuple[str, ...] = (
+_MAILBOX_OUTGOING_AVAILABLE_SEGMENTS: tuple[str, ...] = (
     "mailbox",
     "outgoing_available",
 )

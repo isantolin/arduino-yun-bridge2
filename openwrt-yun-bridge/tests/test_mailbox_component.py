@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Awaitable, Coroutine, Optional, Protocol
+from typing import Any, Protocol
+from collections.abc import Awaitable, Coroutine
 
 import pytest
 
@@ -16,7 +17,8 @@ from yunbridge.protocol.topics import (
     mailbox_outgoing_available_topic,
     topic_path,
 )
-from yunbridge.mqtt import InboundMessage, PublishableMessage
+from yunbridge.mqtt import InboundMessage
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.mailbox import MailboxComponent
@@ -26,9 +28,9 @@ from yunbridge.state.context import RuntimeState
 class EnqueueHook(Protocol):
     def __call__(
         self,
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> Awaitable[None]:
         ...
 
@@ -38,7 +40,7 @@ class DummyBridge(BridgeContext):
         self.config = config
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
-        self.published: list[PublishableMessage] = []
+        self.published: list[QueuedPublish] = []
         self.send_frame_result = True
         self._enqueue_hook: EnqueueHook | None = None
 
@@ -48,9 +50,9 @@ class DummyBridge(BridgeContext):
 
     async def enqueue_mqtt(
         self,
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> None:
         if self._enqueue_hook is not None:
             await self._enqueue_hook(
@@ -266,9 +268,9 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
     runtime_state.enqueue_mailbox_incoming(b"gamma", mailbox_logger)
 
     async def flaky_enqueue(
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> None:
         if message.topic_name.endswith("/incoming"):
             raise RuntimeError("boom")
@@ -293,9 +295,9 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
     runtime_state.enqueue_mailbox_message(b"delta", mailbox_logger)
 
     async def flaky_enqueue(
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
-        reply_context: Optional[InboundMessage] = None,
+        reply_context: InboundMessage | None = None,
     ) -> None:
         if message.topic_name.endswith("/incoming"):
             raise RuntimeError("boom")

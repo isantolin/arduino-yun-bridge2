@@ -6,7 +6,7 @@ order used throughout the codebase.
 """
 from __future__ import annotations
 
-from typing import Iterable, Mapping
+from collections.abc import Iterable, Mapping
 
 
 def lookup_credential(

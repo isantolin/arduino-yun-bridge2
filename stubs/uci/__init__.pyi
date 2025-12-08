@@ -1,4 +1,5 @@
-from typing import Any, Mapping, Optional, Type, TypeVar
+from typing import Any, TypeVar
+from collections.abc import Mapping
 
 
 class UciException(Exception):
@@ -13,9 +14,9 @@ class Uci:
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc: Optional[BaseException],
-        tb: Optional[Any],
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: Any | None,
     ) -> None: ...
 
     def get_all(self, package: str, section: str) -> Mapping[str, Any]: ...

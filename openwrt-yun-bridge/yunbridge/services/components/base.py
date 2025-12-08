@@ -5,7 +5,8 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any, Protocol
 
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
 
@@ -21,7 +22,7 @@ class BridgeContext(Protocol):
 
     async def enqueue_mqtt(
         self,
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
         reply_context: InboundMessage | None = None,
     ) -> None:

@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import logging
 import struct
-from typing import Optional
 
 from yunbridge.rpc.protocol import Command, Status
 
 from ...protocol.topics import Topic, topic_path
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import PendingPinRequest, RuntimeState
 from .base import BridgeContext
@@ -38,7 +38,7 @@ class PinComponent:
             return
 
         value = payload[0]
-        request: Optional[PendingPinRequest] = None
+        request: PendingPinRequest | None = None
         if self.state.pending_digital_reads:
             request = self.state.pending_digital_reads.popleft()
         else:
@@ -48,16 +48,12 @@ class PinComponent:
 
         pin_value = request.pin if request else None
         topic = self._build_pin_topic(Topic.DIGITAL, pin_value)
-        message = (
-            PublishableMessage(
-                topic_name=topic,
-                payload=str(value).encode("utf-8"),
-            )
-            .with_message_expiry(5)
-            .with_user_property(
-                "bridge-pin",
-                str(pin_value) if pin_value is not None else "unknown",
-            )
+        pin_label = str(pin_value) if pin_value is not None else "unknown"
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=str(value).encode("utf-8"),
+            message_expiry_interval=5,
+            user_properties=(("bridge-pin", pin_label),),
         )
         await self.ctx.enqueue_mqtt(
             message,
@@ -73,7 +69,7 @@ class PinComponent:
             return
 
         value = int.from_bytes(payload, "big")
-        request: Optional[PendingPinRequest] = None
+        request: PendingPinRequest | None = None
         if self.state.pending_analog_reads:
             request = self.state.pending_analog_reads.popleft()
         else:
@@ -83,16 +79,12 @@ class PinComponent:
 
         pin_value = request.pin if request else None
         topic = self._build_pin_topic(Topic.ANALOG, pin_value)
-        message = (
-            PublishableMessage(
-                topic_name=topic,
-                payload=str(value).encode("utf-8"),
-            )
-            .with_message_expiry(5)
-            .with_user_property(
-                "bridge-pin",
-                str(pin_value) if pin_value is not None else "unknown",
-            )
+        pin_label = str(pin_value) if pin_value is not None else "unknown"
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=str(value).encode("utf-8"),
+            message_expiry_interval=5,
+            user_properties=(("bridge-pin", pin_label),),
         )
         await self.ctx.enqueue_mqtt(
             message,
@@ -126,7 +118,7 @@ class PinComponent:
         topic_type: str | Topic,
         parts: list[str],
         payload_str: str,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         if len(parts) < 3:
             return
@@ -186,7 +178,7 @@ class PinComponent:
         self,
         topic_type: Topic,
         pin: int,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         command = (
             Command.CMD_DIGITAL_READ
@@ -259,7 +251,7 @@ class PinComponent:
 
     def _parse_pin_value(
         self, topic_type: Topic, payload_str: str
-    ) -> Optional[int]:
+    ) -> int | None:
         if not payload_str:
             return 0
         try:
@@ -273,7 +265,7 @@ class PinComponent:
             return value
         return None
 
-    def _build_pin_topic(self, topic_type: Topic, pin: Optional[int]) -> str:
+    def _build_pin_topic(self, topic_type: Topic, pin: int | None) -> str:
         segments: list[str] = []
         if pin is not None:
             segments.append(str(pin))
@@ -288,14 +280,17 @@ class PinComponent:
         self,
         topic_type: Topic,
         pin: int,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
-        message = (
-            PublishableMessage(topic_name=topic, payload=b"")
-            .with_message_expiry(5)
-            .with_user_property("bridge-pin", str(pin))
-            .with_user_property("bridge-error", "pending-pin-overflow")
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=b"",
+            message_expiry_interval=5,
+            user_properties=(
+                ("bridge-pin", str(pin)),
+                ("bridge-error", "pending-pin-overflow"),
+            ),
         )
         await self.ctx.enqueue_mqtt(
             message,

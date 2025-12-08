@@ -2,7 +2,7 @@
 """Example: Run an async shell command and stream its output via MQTT polls."""
 import asyncio
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from yunbridge_client import Bridge, dump_client_env
 
@@ -24,7 +24,7 @@ async def _stream_poll_updates(
 
     logger = logging.getLogger(__name__)
     while True:
-        poll_payload: Dict[str, Any] = await bridge.poll_shell_process(pid)
+        poll_payload: dict[str, Any] = await bridge.poll_shell_process(pid)
         stdout_chunk = (poll_payload.get("stdout") or "").rstrip()
         stderr_chunk = (poll_payload.get("stderr") or "").rstrip()
         exit_code = poll_payload.get("exit_code")

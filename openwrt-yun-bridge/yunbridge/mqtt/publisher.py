@@ -119,10 +119,8 @@ def publish_with_retries(
             while not result.is_published():
                 if time.monotonic() >= deadline:
                     raise TimeoutError(
-                        (
                             "MQTT publish timed out after "
                             f"{publish_timeout} seconds"
-                        )
                     )
                 sleep_fn(poll_interval)
 

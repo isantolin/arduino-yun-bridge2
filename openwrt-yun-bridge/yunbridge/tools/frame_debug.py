@@ -11,7 +11,7 @@ import argparse
 import sys
 import time
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 import serial
 
@@ -68,14 +68,12 @@ def _resolve_command(candidate: str) -> int:
         return Command[normalized].value
     except KeyError as exc:
         raise ValueError(
-            (
                 f"Unknown command '{candidate}'. Use hex (e.g. 0x03) "
                 "or a Command enum name."
-            )
         ) from exc
 
 
-def _parse_payload(hex_string: Optional[str]) -> bytes:
+def _parse_payload(hex_string: str | None) -> bytes:
     if not hex_string:
         return b""
     compact = "".join(hex_string.split())
@@ -135,7 +133,7 @@ def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
     return int(written) if written is not None else 0
 
 
-def _read_frame(device: serial.Serial, timeout: float) -> Optional[bytes]:
+def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
     buffer = bytearray()
     deadline = time.monotonic() + timeout if timeout > 0 else None
     while True:
@@ -255,7 +253,7 @@ def _iter_counts(count: int) -> Iterable[int]:
         yield from range(count)
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
@@ -266,7 +264,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         parser.error(str(exc))
         return 2
 
-    serial_device: Optional[serial.Serial] = None
+    serial_device: serial.Serial | None = None
     if args.port:
         serial_device = _open_serial_device(
             args.port,

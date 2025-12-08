@@ -8,7 +8,8 @@ from typing import Any
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.mqtt import InboundMessage, PublishableMessage, QOSLevel
+from yunbridge.mqtt import InboundMessage, QOSLevel
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc.protocol import Command
 from yunbridge.services.components.system import SystemComponent
@@ -21,7 +22,7 @@ class DummyContext:
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
         self.published: list[
-            tuple[PublishableMessage, InboundMessage | None]
+            tuple[QueuedPublish, InboundMessage | None]
         ] = []
         self.scheduled: list[Coroutine[Any, Any, None]] = []
         self.send_result: bool = True
@@ -32,7 +33,7 @@ class DummyContext:
 
     async def enqueue_mqtt(
         self,
-        message: PublishableMessage,
+        message: QueuedPublish,
         *,
         reply_context: InboundMessage | None = None,
     ) -> None:

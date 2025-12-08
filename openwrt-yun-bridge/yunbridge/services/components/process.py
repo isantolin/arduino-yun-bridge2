@@ -10,13 +10,12 @@ from asyncio import StreamReader
 from asyncio.subprocess import Process as AsyncioProcess
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
 
 import psutil
 
 from ...common import encode_status_reason, pack_u16, unpack_u16
 from ...protocol.topics import Topic, topic_path
-from ...mqtt import PublishableMessage
+from ...mqtt.messages import QueuedPublish
 from ...state.context import ManagedProcess, RuntimeState
 from ...config.settings import RuntimeConfig
 from ...policy import CommandValidationError, tokenize_shell_command
@@ -35,7 +34,7 @@ class ProcessComponent:
     config: RuntimeConfig
     state: RuntimeState
     ctx: BridgeContext
-    _process_slots: Optional[asyncio.BoundedSemaphore] = field(
+    _process_slots: asyncio.BoundedSemaphore | None = field(
         init=False, repr=False, default=None
     )
 
@@ -131,8 +130,9 @@ class ProcessComponent:
                     "response",
                 )
                 await self.ctx.enqueue_mqtt(
-                    PublishableMessage(
-                        topic_name=topic, payload=str(pid).encode()
+                    QueuedPublish(
+                        topic_name=topic,
+                        payload=str(pid).encode(),
                     )
                 )
 
@@ -150,7 +150,7 @@ class ProcessComponent:
             }
         ).encode("utf-8")
         await self.ctx.enqueue_mqtt(
-            PublishableMessage(topic_name=topic, payload=error_payload)
+            QueuedPublish(topic_name=topic, payload=error_payload)
         )
 
     async def handle_poll(self, payload: bytes) -> bool:
@@ -227,7 +227,7 @@ class ProcessComponent:
             await self._terminate_process_tree(proc)
             try:
                 await asyncio.wait_for(proc.wait(), timeout=0.5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "Process PID %d did not terminate after kill signal.",
                     pid,
@@ -260,7 +260,7 @@ class ProcessComponent:
 
     async def run_sync(
         self, command: str
-    ) -> Tuple[int, bytes, bytes, Optional[int]]:
+    ) -> tuple[int, bytes, bytes, int | None]:
         try:
             tokens = self._prepare_command(command)
         except CommandValidationError as exc:
@@ -293,12 +293,12 @@ class ProcessComponent:
                 return
             try:
                 await asyncio.wait_for(proc.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 timed_out = True
                 await self._terminate_process_tree(proc)
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=1)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning(
                         "Synchronous process PID %d did not exit after kill",
                         pid_hint,
@@ -404,7 +404,7 @@ class ProcessComponent:
         logger.info("Started async process '%s' with PID %d", command, pid)
         return pid
 
-    def _prepare_command(self, command: str) -> Tuple[str, ...]:
+    def _prepare_command(self, command: str) -> tuple[str, ...]:
         tokens = self._tokenize_command(command)
         head = tokens[0]
         if not self.ctx.is_command_allowed(head):
@@ -413,12 +413,12 @@ class ProcessComponent:
             )
         return tokens
 
-    def _tokenize_command(self, command: str) -> Tuple[str, ...]:
+    def _tokenize_command(self, command: str) -> tuple[str, ...]:
         return tokenize_shell_command(command)
 
     async def collect_output(
         self, pid: int
-    ) -> Tuple[int, int, bytes, bytes, bool, bool, bool]:
+    ) -> tuple[int, int, bytes, bytes, bool, bool, bool]:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
             proc = slot.handle if slot is not None else None
@@ -521,7 +521,7 @@ class ProcessComponent:
     async def _consume_stream(
         self,
         pid: int,
-        reader: Optional[StreamReader],
+        reader: StreamReader | None,
         buffer: bytearray,
         *,
         chunk_size: int = 4096,
@@ -590,7 +590,7 @@ class ProcessComponent:
     async def _read_stream_chunk(
         self,
         pid: int,
-        reader: Optional[StreamReader],
+        reader: StreamReader | None,
         *,
         size: int = 1024,
         timeout: float = 0.05,
@@ -603,7 +603,7 @@ class ProcessComponent:
                 chunk = await asyncio.wait_for(reader.read(size), timeout)
             else:
                 chunk = await reader.read(size)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return b""
         except (
             asyncio.IncompleteReadError,
@@ -630,7 +630,7 @@ class ProcessComponent:
     async def _drain_stream(
         self,
         pid: int,
-        reader: Optional[StreamReader],
+        reader: StreamReader | None,
         *,
         chunk_size: int = 1024,
     ) -> bytes:
@@ -649,14 +649,14 @@ class ProcessComponent:
         self,
         stdout_buffer: bytearray,
         stderr_buffer: bytearray,
-    ) -> Tuple[bytes, bytes, bool, bool]:
+    ) -> tuple[bytes, bytes, bool, bool]:
         return self._trim_process_buffers(stdout_buffer, stderr_buffer)
 
     def _trim_process_buffers(
         self,
         stdout_buffer: bytearray,
         stderr_buffer: bytearray,
-    ) -> Tuple[bytes, bytes, bool, bool]:
+    ) -> tuple[bytes, bytes, bool, bool]:
         max_payload = _PROCESS_POLL_BUDGET
         stdout_len = min(len(stdout_buffer), max_payload)
         stdout_chunk = bytes(stdout_buffer[:stdout_len])
@@ -689,12 +689,6 @@ class ProcessComponent:
             str(pid),
             "response",
         )
-        message = (
-            PublishableMessage(topic_name=topic, payload=b"")
-            .with_content_type("application/json")
-            .with_message_expiry(30)
-            .with_user_property("bridge-process-pid", str(pid))
-        )
         payload = json.dumps(
             {
                 "status": status_byte,
@@ -712,7 +706,14 @@ class ProcessComponent:
                 "finished": finished,
             }
         ).encode("utf-8")
-        await self.ctx.enqueue_mqtt(message.with_payload(payload))
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=payload,
+            content_type="application/json",
+            message_expiry_interval=30,
+            user_properties=(("bridge-process-pid", str(pid)),),
+        )
+        await self.ctx.enqueue_mqtt(message)
 
     async def _allocate_pid(self) -> int:
         async with self.state.process_lock:
@@ -850,7 +851,7 @@ class ProcessComponent:
         try:
             await asyncio.wait_for(guard.acquire(), timeout=0)
             return True
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return False
 
     def _release_process_slot(self) -> None:

@@ -463,6 +463,12 @@ def load_runtime_config() -> RuntimeConfig:
         shell_run_async=_get_bool("mqtt_allow_shell_run_async", True),
         shell_poll=_get_bool("mqtt_allow_shell_poll", True),
         shell_kill=_get_bool("mqtt_allow_shell_kill", True),
+        console_input=_get_bool("mqtt_allow_console_input", True),
+        digital_write=_get_bool("mqtt_allow_digital_write", True),
+        digital_read=_get_bool("mqtt_allow_digital_read", True),
+        digital_mode=_get_bool("mqtt_allow_digital_mode", True),
+        analog_write=_get_bool("mqtt_allow_analog_write", True),
+        analog_read=_get_bool("mqtt_allow_analog_read", True),
     )
     metrics_enabled = _get_bool("metrics_enabled", False)
     if os.environ.get("YUNBRIDGE_METRICS_ENABLED") == "1":

@@ -5,7 +5,6 @@ import asyncio
 import logging
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
-from typing import Optional, Tuple
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from yunbridge.const import (
@@ -15,7 +14,8 @@ from yunbridge.const import (
 )
 
 from ...common import encode_status_reason, pack_u16
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from ...protocol.topics import Topic, topic_path
@@ -145,7 +145,7 @@ class FileComponent:
         action: str,
         path_parts: list[str],
         payload: bytes,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         filename = "/".join(path_parts)
         if not filename:
@@ -206,13 +206,11 @@ class FileComponent:
                         if segment
                     ),
                 )
-                message = (
-                    PublishableMessage(
-                        topic_name=response_topic,
-                        payload=data,
-                    )
-                    .with_message_expiry(30)
-                    .with_user_property("bridge-file-path", filename)
+                message = QueuedPublish(
+                    topic_name=response_topic,
+                    payload=data,
+                    message_expiry_interval=30,
+                    user_properties=(("bridge-file-path", filename),),
                 )
 
                 await self.ctx.enqueue_mqtt(
@@ -252,8 +250,8 @@ class FileComponent:
         self,
         operation: str,
         filename: str,
-        data: Optional[bytes] = None,
-    ) -> Tuple[bool, Optional[bytes], Optional[str]]:
+        data: bytes | None = None,
+    ) -> tuple[bool, bytes | None, str | None]:
         safe_path = self._get_safe_path(filename)
         if not safe_path:
             logger.warning(
@@ -290,7 +288,7 @@ class FileComponent:
             return False, None, str(exc)
         return False, None, "unknown_operation"
 
-    def _get_safe_path(self, filename: str) -> Optional[Path]:
+    def _get_safe_path(self, filename: str) -> Path | None:
         base_dir = Path(self.state.file_system_root).expanduser().resolve()
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
@@ -323,7 +321,7 @@ class FileComponent:
         return safe_path
 
     @staticmethod
-    def _normalise_filename(filename: str) -> Optional[PurePosixPath]:
+    def _normalise_filename(filename: str) -> PurePosixPath | None:
         stripped = filename.replace("\\", "/").strip()
         if not stripped:
             return None

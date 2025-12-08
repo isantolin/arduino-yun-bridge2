@@ -137,12 +137,16 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	- `mqtt_allow_datastore_get`, `mqtt_allow_datastore_put`
 	- `mqtt_allow_mailbox_read`, `mqtt_allow_mailbox_write`
 	- `mqtt_allow_shell_run`, `mqtt_allow_shell_run_async`, `mqtt_allow_shell_poll`, `mqtt_allow_shell_kill`
+	- `mqtt_allow_console_input`
+	- `mqtt_allow_digital_read`, `mqtt_allow_digital_write`, `mqtt_allow_digital_mode`
+	- `mqtt_allow_analog_read`, `mqtt_allow_analog_write`
 - Configúralos en LuCI (sección **Services → YunBridge → Security**) o vía CLI:
 	```sh
 	uci set yunbridge.general.mqtt_allow_file_write='0'
 	uci set yunbridge.general.mqtt_allow_mailbox_write='0'
 	uci commit yunbridge && /etc/init.d/yunbridge reload
 	```
+- TopicAuthorization ahora opera en modo "deny-by-default": cualquier combinación topic/acción no listada arriba se rechaza y se publica `topic-action-forbidden`.
 - Cuando una acción está bloqueada, el daemon publica `bridge-error=topic-action-forbidden` en `br/system/status`, de modo que los consumidores reciben un fallo explícito.
 
 ### 3. Recomendaciones para ACLs MQTT

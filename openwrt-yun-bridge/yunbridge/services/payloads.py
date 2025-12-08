@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, cast
+from typing import Any, cast
 
 __all__ = [
     "PayloadValidationError",
@@ -27,7 +27,7 @@ class ShellCommandPayload:
     command: str
 
     @classmethod
-    def from_mqtt(cls, payload: bytes) -> "ShellCommandPayload":
+    def from_mqtt(cls, payload: bytes) -> ShellCommandPayload:
         text = payload.decode("utf-8", errors="ignore").strip()
         if not text:
             raise PayloadValidationError("Shell command payload is empty")
@@ -44,7 +44,7 @@ class ShellCommandPayload:
         if not isinstance(candidate, dict):
             raise PayloadValidationError("Payload must be an object")
 
-        mapping: Dict[str, Any] = cast(Dict[str, Any], candidate)
+        mapping: dict[str, Any] = cast(dict[str, Any], candidate)
 
         raw_command = mapping.get("command")
         if not isinstance(raw_command, str):
@@ -68,7 +68,7 @@ class ShellPidPayload:
     pid: int
 
     @classmethod
-    def from_topic_segment(cls, segment: str) -> "ShellPidPayload":
+    def from_topic_segment(cls, segment: str) -> ShellPidPayload:
         try:
             value = int(segment, 10)
         except ValueError as exc:

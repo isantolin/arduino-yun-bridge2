@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import logging
 import struct
-from typing import Optional
 
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
 from ...protocol.topics import Topic, topic_path
@@ -122,7 +122,7 @@ class DatastoreComponent:
         remainder: list[str],
         payload: bytes,
         payload_str: str,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         is_request = False
         parts = remainder.copy()
@@ -151,7 +151,7 @@ class DatastoreComponent:
         self,
         key: str,
         value_text: str,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         key_bytes = key.encode("utf-8")
         value_bytes = value_text.encode("utf-8")
@@ -175,7 +175,7 @@ class DatastoreComponent:
         self,
         key: str,
         is_request: bool,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         key_bytes = key.encode("utf-8")
         if len(key_bytes) > 255:
@@ -211,8 +211,8 @@ class DatastoreComponent:
         key: str,
         value: bytes,
         *,
-        reply_context: Optional[InboundMessage] = None,
-        error_reason: Optional[str] = None,
+        reply_context: InboundMessage | None = None,
+        error_reason: str | None = None,
     ) -> None:
         key_segments = tuple(segment for segment in key.split("/") if segment)
         topic_name = topic_path(
@@ -221,17 +221,18 @@ class DatastoreComponent:
             "get",
             *key_segments,
         )
-        message = (
-            PublishableMessage(topic_name=topic_name, payload=value)
-            .with_message_expiry(60)
-            .with_content_type("text/plain; charset=utf-8")
-            .with_user_property("bridge-datastore-key", key)
-        )
+        properties: list[tuple[str, str]] = [
+            ("bridge-datastore-key", key)
+        ]
         if error_reason:
-            message = message.with_user_property(
-                "bridge-error",
-                error_reason,
-            )
+            properties.append(("bridge-error", error_reason))
+        message = QueuedPublish(
+            topic_name=topic_name,
+            payload=value,
+            message_expiry_interval=60,
+            content_type="text/plain; charset=utf-8",
+            user_properties=tuple(properties),
+        )
         await self.ctx.enqueue_mqtt(
             message,
             reply_context=reply_context,

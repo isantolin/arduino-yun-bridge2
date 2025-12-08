@@ -183,6 +183,103 @@ allowed_commands.placeholder = "date uptime"
 allowed_commands.rmempty = true
 allowed_commands.description = translate("Space separated whitelist for shell execution (leave empty to disable).")
 
+-- MQTT topic permissions ----------------------------------------------------
+local function mqtt_acl_option(key, label, description)
+    local opt = s:option(Flag, key, translate(label))
+    opt.rmempty = false
+    opt.default = "1"
+    if description then
+        opt.description = translate(description)
+    end
+    return opt
+end
+
+mqtt_acl_option(
+    "mqtt_allow_file_read",
+    "Allow file reads",
+    "Accept MQTT requests that read files via br/fs/read.",
+)
+mqtt_acl_option(
+    "mqtt_allow_file_write",
+    "Allow file writes",
+    "Accept MQTT requests that write files via br/fs/write.",
+)
+mqtt_acl_option(
+    "mqtt_allow_file_remove",
+    "Allow file deletes",
+    "Accept MQTT requests that delete files via br/fs/remove.",
+)
+mqtt_acl_option(
+    "mqtt_allow_datastore_get",
+    "Allow datastore get",
+    "Allow clients to read key/value pairs via br/datastore/get.",
+)
+mqtt_acl_option(
+    "mqtt_allow_datastore_put",
+    "Allow datastore put",
+    "Allow clients to modify key/value pairs via br/datastore/put.",
+)
+mqtt_acl_option(
+    "mqtt_allow_mailbox_read",
+    "Allow mailbox read",
+    "Permit MQTT reads from the MCU mailbox.",
+)
+mqtt_acl_option(
+    "mqtt_allow_mailbox_write",
+    "Allow mailbox write",
+    "Permit MQTT writes into the MCU mailbox queue.",
+)
+mqtt_acl_option(
+    "mqtt_allow_shell_run",
+    "Allow shell run",
+    "Allow synchronous shell execution via br/sh/run.",
+)
+mqtt_acl_option(
+    "mqtt_allow_shell_run_async",
+    "Allow shell run_async",
+    "Allow asynchronous shell execution via br/sh/run_async.",
+)
+mqtt_acl_option(
+    "mqtt_allow_shell_poll",
+    "Allow shell poll",
+    "Allow polling of asynchronous shell jobs via br/sh/poll.",
+)
+mqtt_acl_option(
+    "mqtt_allow_shell_kill",
+    "Allow shell kill",
+    "Allow canceling asynchronous shell jobs via br/sh/kill.",
+)
+mqtt_acl_option(
+    "mqtt_allow_console_input",
+    "Allow console input",
+    "Permit MQTT writes to br/console/in to reach the MCU console.",
+)
+mqtt_acl_option(
+    "mqtt_allow_digital_write",
+    "Allow digital write",
+    "Allow MQTT writes to br/d/<pin>/write.",
+)
+mqtt_acl_option(
+    "mqtt_allow_digital_read",
+    "Allow digital read",
+    "Allow MQTT reads via br/d/<pin>/read.",
+)
+mqtt_acl_option(
+    "mqtt_allow_digital_mode",
+    "Allow digital mode",
+    "Allow MQTT access to br/d/<pin>/mode.",
+)
+mqtt_acl_option(
+    "mqtt_allow_analog_write",
+    "Allow analog write",
+    "Allow MQTT writes to br/a/<pin>/write.",
+)
+mqtt_acl_option(
+    "mqtt_allow_analog_read",
+    "Allow analog read",
+    "Allow MQTT reads via br/a/<pin>/read.",
+)
+
 local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("Serial Shared Secret"))
 function serial_secret.cfgvalue()
     return translate("Managed via UCI. Use the Credentials & TLS tab to rotate secrets.")

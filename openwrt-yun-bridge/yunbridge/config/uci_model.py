@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
-from typing import Any, Dict, Iterable as TypingIterable, Tuple, cast
+from typing import Any, cast
+from collections.abc import Iterable as TypingIterable
 
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -49,9 +50,9 @@ def _stringify_value(value: Any) -> str:
         return _stringify_value(attr_value)
 
     if isinstance(value, Mapping):
-        dict_value: Dict[str, Any] = {}
+        dict_value: dict[str, Any] = {}
         mapping_items = cast(
-            TypingIterable[Tuple[Any, Any]],
+            TypingIterable[tuple[Any, Any]],
             value.items(),
         )
         for key, entry in mapping_items:
@@ -125,10 +126,16 @@ class UciConfigModel:
     mqtt_allow_shell_run_async: str = "1"
     mqtt_allow_shell_poll: str = "1"
     mqtt_allow_shell_kill: str = "1"
+    mqtt_allow_console_input: str = "1"
+    mqtt_allow_digital_write: str = "1"
+    mqtt_allow_digital_read: str = "1"
+    mqtt_allow_digital_mode: str = "1"
+    mqtt_allow_analog_write: str = "1"
+    mqtt_allow_analog_read: str = "1"
     metrics_enabled: str = "0"
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: str = str(DEFAULT_METRICS_PORT)
-    extras: Dict[str, str] = field(default_factory=dict)
+    extras: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Stringify all fields post-initialization."""
@@ -147,10 +154,10 @@ class UciConfigModel:
         self.extras = new_extras
 
     @classmethod
-    def from_mapping(cls, mapping: Mapping[str, Any]) -> "UciConfigModel":
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> UciConfigModel:
         known = cls._known_fields()
-        kwargs: Dict[str, Any] = {}
-        extras: Dict[str, Any] = {}
+        kwargs: dict[str, Any] = {}
+        extras: dict[str, Any] = {}
         for key, value in mapping.items():
             key_str = str(key)
             if key_str in known:
@@ -159,13 +166,13 @@ class UciConfigModel:
                 extras[key_str] = value
         return cls(extras=extras, **kwargs)
 
-    def as_dict(self) -> Dict[str, str]:
+    def as_dict(self) -> dict[str, str]:
         values = {name: getattr(self, name) for name in self._known_fields()}
         values.update(self.extras)
         return values
 
     @classmethod
-    def defaults(cls) -> Dict[str, str]:
+    def defaults(cls) -> dict[str, str]:
         return cls().as_dict()
 
     @classmethod

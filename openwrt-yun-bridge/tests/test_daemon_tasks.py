@@ -6,7 +6,8 @@ import contextlib
 from collections import deque
 from dataclasses import dataclass
 from types import MethodType
-from typing import Any, Awaitable, Callable, Coroutine, Deque, Optional, cast
+from typing import Any, Deque, cast
+from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -72,9 +73,9 @@ class _SerialServiceStub:
         self.received_frames: Deque[tuple[int, bytes]] = deque()
         self.serial_connected = asyncio.Event()
         self.serial_disconnected = asyncio.Event()
-        self._serial_sender: Optional[
+        self._serial_sender: None | (
             Callable[[int, bytes], Awaitable[bool]]
-        ] = None
+        ) = None
 
     def register_serial_sender(
         self, sender: Callable[[int, bytes], Awaitable[bool]]

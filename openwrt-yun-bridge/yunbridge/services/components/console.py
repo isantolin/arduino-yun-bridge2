@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
 
 from ...protocol.topics import Topic, topic_path
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from .base import BridgeContext
@@ -34,10 +34,11 @@ class ConsoleComponent:
             Topic.CONSOLE,
             "out",
         )
-        message = PublishableMessage(
+        message = QueuedPublish(
             topic_name=topic,
             payload=payload,
-        ).with_message_expiry(5)
+            message_expiry_interval=5,
+        )
         await self.ctx.enqueue_mqtt(message)
 
     async def handle_xoff(self, _: bytes) -> None:
@@ -52,7 +53,7 @@ class ConsoleComponent:
     async def handle_mqtt_input(
         self,
         payload: bytes,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         chunks = self._iter_console_chunks(payload)
         if self.state.mcu_is_paused:

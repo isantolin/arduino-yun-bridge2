@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Sequence
+from collections.abc import Sequence
 
 import tomllib
 
@@ -22,7 +22,7 @@ class ManifestError(RuntimeError):
     """Raised when the manifest file is missing or malformed."""
 
 
-def load_manifest() -> List[dict]:
+def load_manifest() -> list[dict]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
 
@@ -30,7 +30,7 @@ def load_manifest() -> List[dict]:
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
-    normalized: List[dict] = []
+    normalized: list[dict] = []
     for entry in entries:
         openwrt = entry.get("openwrt", "").strip()
         pip_spec = entry.get("pip", "").strip()
@@ -45,11 +45,11 @@ def load_manifest() -> List[dict]:
     return normalized
 
 
-def collect_pip_specs(deps: Sequence[dict]) -> List[str]:
+def collect_pip_specs(deps: Sequence[dict]) -> list[str]:
     return sorted({dep["pip"] for dep in deps if dep.get("pip")})
 
 
-def collect_openwrt_packages(deps: Sequence[dict]) -> List[str]:
+def collect_openwrt_packages(deps: Sequence[dict]) -> list[str]:
     return [dep["openwrt"] for dep in deps if dep.get("openwrt")]
 
 
@@ -67,8 +67,8 @@ def write_requirements(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     return True
 
 
-def format_openwrt_lines(tokens: Sequence[str]) -> List[str]:
-    lines: List[str] = []
+def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
+    lines: list[str] = []
     for index, token in enumerate(tokens):
         suffix = " \\" if index < len(tokens) - 1 else ""
         lines.append(f"\t\t{token}{suffix}")

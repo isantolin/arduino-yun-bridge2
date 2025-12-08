@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import AsyncExitStack
-from typing import Optional
 
 from yunbridge.rpc.protocol import Status
 from yunbridge.const import (
@@ -13,7 +12,8 @@ from yunbridge.const import (
     ACTION_SHELL_KILL,
 )
 
-from ...mqtt import InboundMessage, PublishableMessage
+from ...mqtt import InboundMessage
+from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
 from ...common import pack_u16
@@ -49,7 +49,7 @@ class ShellComponent:
         self,
         parts: list[str],
         payload: bytes,
-        inbound: Optional[InboundMessage] = None,
+        inbound: InboundMessage | None = None,
     ) -> None:
         action = parts[2] if len(parts) >= 3 else ""
 
@@ -82,7 +82,7 @@ class ShellComponent:
     async def _handle_shell_run(
         self,
         payload: ShellCommandPayload,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         command = payload.command
         logger.info("Executing shell command from MQTT: '%s'", command)
@@ -91,18 +91,19 @@ class ShellComponent:
             Topic.SHELL,
             "response",
         )
-        base_message = (
-            PublishableMessage(
+
+        def _build_response(payload_bytes: bytes) -> QueuedPublish:
+            return QueuedPublish(
                 topic_name=response_topic,
-                payload=b"",
+                payload=payload_bytes,
+                content_type="text/plain; charset=utf-8",
+                message_expiry_interval=30,
             )
-            .with_content_type("text/plain; charset=utf-8")
-            .with_message_expiry(30)
-        )
+
         async with AsyncExitStack() as stack:
             stack.push_async_callback(
                 self.ctx.enqueue_mqtt,
-                base_message.with_payload(
+                _build_response(
                     b"Error: shell handler failed unexpectedly"
                 ),
                 reply_context=inbound,
@@ -136,14 +137,14 @@ class ShellComponent:
 
             stack.pop_all()
             await self.ctx.enqueue_mqtt(
-                base_message.with_payload(response.encode("utf-8")),
+                _build_response(response.encode("utf-8")),
                 reply_context=inbound,
             )
 
     async def _handle_run_async(
         self,
         payload: ShellCommandPayload,
-        inbound: Optional[InboundMessage],
+        inbound: InboundMessage | None,
     ) -> None:
         command = payload.command
         logger.info("MQTT async shell command: '%s'", command)
@@ -156,33 +157,37 @@ class ShellComponent:
                 ACTION_SHELL_RUN_ASYNC,
                 "error",
             )
-            base_message = PublishableMessage(
-                topic_name=response_topic,
-                payload=f"error:{exc.message}".encode("utf-8"),
-            )
             await self.ctx.enqueue_mqtt(
-                base_message,
+                QueuedPublish(
+                    topic_name=response_topic,
+                    payload=f"error:{exc.message}".encode(),
+                ),
                 reply_context=inbound,
             )
             return
+
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
             ACTION_SHELL_RUN_ASYNC,
             "response",
         )
-        base_message = PublishableMessage(
-            topic_name=response_topic,
-            payload=b"",
-        )
+
+        def _build_response(payload_bytes: bytes) -> QueuedPublish:
+            return QueuedPublish(
+                topic_name=response_topic,
+                payload=payload_bytes,
+            )
+
         if pid == 0xFFFF:
             await self.ctx.enqueue_mqtt(
-                base_message.with_payload(b"error:not_allowed"),
+                _build_response(b"error:not_allowed"),
                 reply_context=inbound,
             )
             return
+
         await self.ctx.enqueue_mqtt(
-            base_message.with_payload(str(pid).encode("utf-8")),
+            _build_response(str(pid).encode("utf-8")),
             reply_context=inbound,
         )
 
@@ -220,7 +225,7 @@ class ShellComponent:
         self,
         payload: bytes,
         action: str,
-    ) -> Optional[ShellCommandPayload]:
+    ) -> ShellCommandPayload | None:
         try:
             return ShellCommandPayload.from_mqtt(payload)
         except PayloadValidationError as exc:
@@ -235,7 +240,7 @@ class ShellComponent:
         self,
         segment: str,
         action: str,
-    ) -> Optional[ShellPidPayload]:
+    ) -> ShellPidPayload | None:
         try:
             return ShellPidPayload.from_topic_segment(segment)
         except PayloadValidationError as exc:

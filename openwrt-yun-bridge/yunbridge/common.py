@@ -7,16 +7,13 @@ from struct import pack as struct_pack, unpack as struct_unpack
 from types import TracebackType
 from typing import (
     Any,
-    Dict,
     Final,
-    Mapping,
     Self,
-    Optional,
     Protocol,
-    Tuple,
     TypeVar,
     cast,
 )
+from collections.abc import Mapping
 
 from more_itertools import chunked, unique_everseen
 
@@ -87,7 +84,7 @@ def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
     return tuple(bytes(chunk) for chunk in chunked(data, max_size))
 
 
-def normalise_allowed_commands(commands: Iterable[str]) -> Tuple[str, ...]:
+def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
     """Return a deduplicated, lower-cased allow-list preserving wildcards."""
     seen: set[str] = set()
     normalised: list[str] = []
@@ -110,7 +107,7 @@ def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
     return tuple(unique_everseen(sequence))
 
 
-def encode_status_reason(reason: Optional[str]) -> bytes:
+def encode_status_reason(reason: str | None) -> bytes:
     """Return a UTF-8 encoded payload trimming to MAX frame limits."""
     if not reason:
         return b""
@@ -159,7 +156,7 @@ def build_mqtt_properties(message: Any) -> Any | None:
     return props
 
 
-def get_uci_config() -> Dict[str, str]:
+def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
     try:
         import uci as uci_runtime  # type: ignore[reportMissingImports]
@@ -187,7 +184,7 @@ def get_uci_config() -> Dict[str, str]:
         )
         return get_default_config()
 
-    options: Dict[str, Any] = _extract_uci_options(section)
+    options: dict[str, Any] = _extract_uci_options(section)
     if not options:
         logger.warning(
             "python3-uci returned no options for 'yunbridge'; using defaults."
@@ -196,21 +193,21 @@ def get_uci_config() -> Dict[str, str]:
     return UciConfigModel.from_mapping(options).as_dict()
 
 
-def _as_option_dict(candidate: Mapping[Any, Any]) -> Dict[str, Any]:
-    typed: Dict[str, Any] = {}
+def _as_option_dict(candidate: Mapping[Any, Any]) -> dict[str, Any]:
+    typed: dict[str, Any] = {}
     for key, value in candidate.items():
         typed[str(key)] = value
     return typed
 
 
-def _extract_uci_options(section: Any) -> Dict[str, Any]:
+def _extract_uci_options(section: Any) -> dict[str, Any]:
     """Normalise python3-uci section structures into a flat options dict."""
     if not isinstance(section, MappingABC) or not section:
-        empty: Dict[str, Any] = {}
+        empty: dict[str, Any] = {}
         return empty
 
     typed_section = _as_option_dict(cast(Mapping[Any, Any], section))
-    stack: list[Dict[str, Any]] = [typed_section]
+    stack: list[dict[str, Any]] = [typed_section]
     while stack:
         current = stack.pop()
         for key in ("options", "values"):
@@ -218,7 +215,7 @@ def _extract_uci_options(section: Any) -> Dict[str, Any]:
             if isinstance(nested, MappingABC) and nested:
                 return _as_option_dict(cast(Mapping[Any, Any], nested))
 
-        flattened: Dict[str, Any] = {}
+        flattened: dict[str, Any] = {}
         for key, value in current.items():
             if (
                 key in {"name", "type", ".name", ".type"}
@@ -237,11 +234,11 @@ def _extract_uci_options(section: Any) -> Dict[str, Any]:
             if isinstance(nested, MappingABC) and nested:
                 stack.append(_as_option_dict(cast(Mapping[Any, Any], nested)))
 
-    empty: Dict[str, Any] = {}
+    empty: dict[str, Any] = {}
     return empty
 
 
-def get_default_config() -> Dict[str, str]:
+def get_default_config() -> dict[str, str]:
     """Provide default Yun Bridge configuration values."""
     return UciConfigModel.defaults()
 

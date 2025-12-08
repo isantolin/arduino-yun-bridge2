@@ -7,7 +7,7 @@ import logging
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict
+from typing import Any
 
 from ..const import STATUS_FILE_PATH
 from .context import RuntimeState
@@ -25,7 +25,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
             serial_connected = (
                 serial_writer is not None and not serial_writer.is_closing()
             )
-            payload: Dict[str, Any] = {
+            payload: dict[str, Any] = {
                 "serial_connected": serial_connected,
                 "mqtt_queue_size": state.mqtt_publish_queue.qsize(),
                 "mqtt_queue_limit": state.mqtt_queue_limit,
@@ -126,7 +126,7 @@ def cleanup_status_file() -> None:
         logger.debug("Ignoring error while removing status file.")
 
 
-def _write_status_file(payload: Dict[str, Any]) -> None:
+def _write_status_file(payload: dict[str, Any]) -> None:
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile(
         "w",

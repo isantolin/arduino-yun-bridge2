@@ -12,7 +12,7 @@ from yunbridge.metrics import (
     publish_metrics,
     _cron_expression_from_interval,
 )
-from yunbridge.mqtt import PublishableMessage
+from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.state.context import RuntimeState
 
 
@@ -23,9 +23,9 @@ async def test_publish_metrics_publishes_snapshot(
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
 
     event = asyncio.Event()
-    captured: dict[str, PublishableMessage] = {}
+    captured: dict[str, QueuedPublish] = {}
 
-    async def fake_enqueue(message: PublishableMessage) -> None:
+    async def fake_enqueue(message: QueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -79,9 +79,9 @@ async def test_publish_metrics_marks_unknown_spool_reason(
     """Ensure bridge-spool user property defaults to 'unknown'."""
 
     event = asyncio.Event()
-    captured: dict[str, PublishableMessage] = {}
+    captured: dict[str, QueuedPublish] = {}
 
-    async def fake_enqueue(message: PublishableMessage) -> None:
+    async def fake_enqueue(message: QueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -128,9 +128,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     runtime_state: RuntimeState,
 ) -> None:
     event = asyncio.Event()
-    messages: list[PublishableMessage] = []
+    messages: list[QueuedPublish] = []
 
-    async def fake_enqueue(message: PublishableMessage) -> None:
+    async def fake_enqueue(message: QueuedPublish) -> None:
         messages.append(message)
         if len(messages) >= 2:
             event.set()
@@ -181,9 +181,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
 async def test_publish_bridge_snapshots_noop_when_disabled(
     runtime_state: RuntimeState,
 ) -> None:
-    messages: list[PublishableMessage] = []
+    messages: list[QueuedPublish] = []
 
-    async def fake_enqueue(message: PublishableMessage) -> None:
+    async def fake_enqueue(message: QueuedPublish) -> None:
         messages.append(message)
 
     task = asyncio.create_task(

@@ -7,22 +7,13 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import (
-    Any,
-    Deque as TypingDeque,
-    Optional,
-    Protocol,
-    TypeAlias,
-    cast,
-)
+from typing import Deque as TypingDeque, Protocol, cast
 
 from diskcache import Deque as DiskDeque
 
-from . import PublishableMessage
+from .messages import QueuedPublish, SpoolRecord
 
 logger = logging.getLogger("yunbridge.mqtt.spool")
-
-SpoolRecord: TypeAlias = dict[str, Any]
 
 
 class DiskQueue(Protocol):
@@ -46,7 +37,7 @@ class MQTTSpoolError(RuntimeError):
         self,
         reason: str,
         *,
-        original: Optional[BaseException] = None,
+        original: BaseException | None = None,
     ) -> None:
         message = reason if original is None else f"{reason}:{original}"
         super().__init__(message)
@@ -62,7 +53,7 @@ class MQTTPublishSpool:
         self.limit = max(0, limit)
         self._lock = threading.Lock()
         self._memory_queue: TypingDeque[SpoolRecord] = collections.deque()
-        self._disk_queue: Optional[DiskQueue] = None
+        self._disk_queue: DiskQueue | None = None
         self._use_disk = True
         self._dropped_due_to_limit = 0
         self._trim_events = 0
@@ -111,8 +102,8 @@ class MQTTPublishSpool:
         except Exception:
             pass
 
-    def append(self, message: PublishableMessage) -> None:
-        record: SpoolRecord = message.to_spool_record()
+    def append(self, message: QueuedPublish) -> None:
+        record: SpoolRecord = message.to_record()
         with self._lock:
             if self._use_disk and self._disk_queue is not None:
                 try:
@@ -127,9 +118,9 @@ class MQTTPublishSpool:
             if self.limit > 0:
                 self._trim_locked()
 
-    def pop_next(self) -> Optional[PublishableMessage]:
+    def pop_next(self) -> QueuedPublish | None:
         while True:
-            record: Optional[SpoolRecord] = None
+            record: SpoolRecord | None = None
             with self._lock:
                 # Prefer disk if active; drain memory otherwise. If fallback is
                 # engaged we may still have disk entries pending, so attempt
@@ -152,7 +143,7 @@ class MQTTPublishSpool:
                 return None
 
             try:
-                return PublishableMessage.from_spool_record(record)
+                return QueuedPublish.from_record(record)
             except Exception:
                 logger.warning(
                     "Dropping corrupt MQTT spool entry; cannot decode",
@@ -161,10 +152,10 @@ class MQTTPublishSpool:
                 self._corrupt_dropped += 1
                 continue
 
-    def requeue(self, message: PublishableMessage) -> None:
+    def requeue(self, message: QueuedPublish) -> None:
         # Requeue by returning the record to the front so the next dequeue
         # attempt retries it immediately.
-        record: SpoolRecord = message.to_spool_record()
+        record: SpoolRecord = message.to_record()
         with self._lock:
             if self._use_disk and self._disk_queue is not None:
                 try:
@@ -270,4 +261,4 @@ class MQTTPublishSpool:
             )
 
 
-__all__ = ["MQTTPublishSpool", "MQTTSpoolError"]
+__all__ = ["QueuedPublish", "MQTTPublishSpool", "MQTTSpoolError"]

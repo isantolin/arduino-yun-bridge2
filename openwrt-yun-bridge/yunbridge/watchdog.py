@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from .const import DEFAULT_WATCHDOG_INTERVAL, WATCHDOG_TRIGGER_TOKEN
 from .state.context import RuntimeState
@@ -24,10 +24,10 @@ class WatchdogKeepalive:
         self,
         *,
         interval: float = DEFAULT_WATCHDOG_INTERVAL,
-        state: Optional[RuntimeState] = None,
+        state: RuntimeState | None = None,
         token: bytes = WATCHDOG_TRIGGER_TOKEN,
-        write: Optional[WatchdogWrite] = None,
-        logger: Optional[logging.Logger] = None,
+        write: WatchdogWrite | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         self._interval = max(0.5, interval)
         self._state = state

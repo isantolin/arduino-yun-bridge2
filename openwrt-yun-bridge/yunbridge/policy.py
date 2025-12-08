@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import shlex
 from dataclasses import dataclass
-from typing import Iterable, Tuple
+from collections.abc import Iterable
 
 from .common import normalise_allowed_commands
 from .const import ALLOWED_COMMAND_WILDCARD
 from .protocol.topics import Topic
 
 _FORBIDDEN_COMMAND_CHARS = frozenset({";", "&", "|", ">", "<", "`"})
-_FORBIDDEN_COMMAND_SUBSTRINGS: Tuple[str, ...] = ("$(", "${", "&&", "||")
+_FORBIDDEN_COMMAND_SUBSTRINGS: tuple[str, ...] = ("$(", "${", "&&", "||")
 
 
 class CommandValidationError(Exception):
@@ -21,7 +21,7 @@ class CommandValidationError(Exception):
         self.message = message
 
 
-def tokenize_shell_command(command: str) -> Tuple[str, ...]:
+def tokenize_shell_command(command: str) -> tuple[str, ...]:
     """Split and validate a shell command string with YunBridge policy."""
 
     stripped = command.strip()
@@ -51,7 +51,7 @@ def tokenize_shell_command(command: str) -> Tuple[str, ...]:
 class AllowedCommandPolicy:
     """Normalised allow-list for shell/process commands."""
 
-    entries: Tuple[str, ...]
+    entries: tuple[str, ...]
 
     @property
     def allow_all(self) -> bool:
@@ -68,14 +68,14 @@ class AllowedCommandPolicy:
     def __contains__(self, item: str) -> bool:  # pragma: no cover
         return item.lower() in self.entries
 
-    def as_tuple(self) -> Tuple[str, ...]:
+    def as_tuple(self) -> tuple[str, ...]:
         return self.entries
 
     @classmethod
     def from_iterable(
         cls,
         entries: Iterable[str],
-    ) -> "AllowedCommandPolicy":
+    ) -> AllowedCommandPolicy:
         normalised = normalise_allowed_commands(entries)
         return cls(entries=normalised)
 
@@ -95,6 +95,12 @@ class TopicAuthorization:
     shell_run_async: bool = True
     shell_poll: bool = True
     shell_kill: bool = True
+    console_input: bool = True
+    digital_write: bool = True
+    digital_read: bool = True
+    digital_mode: bool = True
+    analog_write: bool = True
+    analog_read: bool = True
 
     def allows(self, topic: str, action: str) -> bool:
         topic_key = topic.lower()
@@ -111,8 +117,14 @@ class TopicAuthorization:
             (Topic.SHELL.value, "run_async"): self.shell_run_async,
             (Topic.SHELL.value, "poll"): self.shell_poll,
             (Topic.SHELL.value, "kill"): self.shell_kill,
+            (Topic.CONSOLE.value, "input"): self.console_input,
+            (Topic.DIGITAL.value, "write"): self.digital_write,
+            (Topic.DIGITAL.value, "read"): self.digital_read,
+            (Topic.DIGITAL.value, "mode"): self.digital_mode,
+            (Topic.ANALOG.value, "write"): self.analog_write,
+            (Topic.ANALOG.value, "read"): self.analog_read,
         }
-        return mapping.get((topic_key, action_key), True)
+        return mapping.get((topic_key, action_key), False)
 
 
 __all__ = [

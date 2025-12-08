@@ -13,13 +13,11 @@ from dataclasses import dataclass
 from typing import (
     Any,
     AsyncContextManager,
-    AsyncIterator,
-    Awaitable,
-    Callable,
     Protocol,
     TypeVar,
     cast,
 )
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 

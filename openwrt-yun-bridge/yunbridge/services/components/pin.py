@@ -91,27 +91,23 @@ class PinComponent:
             reply_context=request.reply_context if request else None,
         )
 
-    async def handle_unexpected_mcu_request(
-        self,
-        command: Command,
-        payload: bytes,
-    ) -> bool:
-        """Gracefully reject MCU-initiated pin READ commands."""
-
-        logger.warning(
-            (
-                "MCU issued %s (payload=%s) but pin reads are initiated "
-                "from Linux; ignoring request"
-            ),
-            command.name,
-            payload.hex(),
-        )
-        reason = f"pin-read-origin-mcu:{command.name.lower()}"
+    async def handle_digital_read(self, payload: bytes) -> None:
+        """Handle request from MCU to read a Linux GPIO."""
+        # TODO: Implement actual GPIO reading via sysfs or libgpiod when available.
+        # Currently, we maintain protocol symmetry but acknowledge missing HW support.
+        logger.info("MCU requested DIGITAL_READ on Linux pin (unsupported).")
         await self.ctx.send_frame(
             Status.NOT_IMPLEMENTED.value,
-            reason.encode("ascii", errors="ignore")[:255],
+            b"Linux GPIO read not available"
         )
-        return True
+
+    async def handle_analog_read(self, payload: bytes) -> None:
+        """Handle request from MCU to read a Linux ADC channel."""
+        logger.info("MCU requested ANALOG_READ on Linux pin (unsupported).")
+        await self.ctx.send_frame(
+            Status.NOT_IMPLEMENTED.value,
+            b"Linux ADC read not available"
+        )
 
     async def handle_mqtt(
         self,

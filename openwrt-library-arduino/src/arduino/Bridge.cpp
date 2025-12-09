@@ -295,6 +295,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   const BufferView payload(frame.payload, payload_length);
   const uint8_t* payload_data = payload.data();
 
+  // Switch 1: RESPONSES (from Linux -> MCU requests)
   switch (command) {
     case CommandId::CMD_DIGITAL_READ_RESP:
       if (_digital_read_handler && payload.size() == 1) {
@@ -416,6 +417,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         _get_free_memory_handler(free_mem);
       }
       return;
+    // --- Flow Control (Ignored but handled to prevent unknown cmd error) ---
+    case CommandId::CMD_XOFF:
+    case CommandId::CMD_XON:
+    case CommandId::CMD_MAILBOX_PROCESSED:
+      return; 
     default:
       break;
   }
@@ -423,6 +429,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool command_processed_internally = false;
   bool requires_ack = false;
 
+  // Switch 2: COMMANDS (Actions requested by Linux)
   switch (command) {
     case CommandId::CMD_GET_VERSION:
       {
@@ -464,10 +471,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         const size_t response_length =
             static_cast<size_t>(nonce_length) +
             (has_secret ? kHandshakeTagSize : 0);
-        // NOTE: Keeping this aligned with rpc::MAX_PAYLOAD_SIZE preserves
-        // protocol compatibility with the Linux daemon at the cost of a
-        // ~256-byte SRAM buffer. Do not shrink it without coordinating both
-        // sides of the transport, or we risk corrupting handshake frames.
         if (response_length > rpc::MAX_PAYLOAD_SIZE) {
           sendFrame(StatusCode::STATUS_MALFORMED);
           command_processed_internally = true;
@@ -570,6 +573,22 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
+    // --- NUEVO: Soporte para Push desde Linux (Simetria) ---
+    // Moved to Command Switch to ensure ACKs are sent
+    case CommandId::CMD_MAILBOX_PUSH:
+      if (_mailbox_handler && payload_length >= 2 && payload_data != nullptr) {
+        uint16_t message_len = rpc::read_u16_be(payload_data);
+        const size_t expected = static_cast<size_t>(2 + message_len);
+        if (payload.size() >= expected) {
+          const BufferView body = payload.slice(2, message_len);
+          const uint8_t* body_ptr = body.empty() ? payload_data + 2 : body.data();
+          _mailbox_handler(body_ptr, body.size());
+        }
+      }
+      command_processed_internally = true;
+      requires_ack = true;
+      break;
+
     case CommandId::CMD_CONSOLE_WRITE:
       Console._push(BufferView(frame.payload, frame.header.payload_length));
       command_processed_internally = true; 
@@ -581,8 +600,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CommandId::CMD_PROCESS_KILL:
       requires_ack = true; 
       break; 
-        case CommandId::CMD_MAILBOX_AVAILABLE:
-          break;
+    case CommandId::CMD_MAILBOX_AVAILABLE:
+      break;
     case CommandId::CMD_DATASTORE_GET:
     case CommandId::CMD_MAILBOX_READ: 
     case CommandId::CMD_FILE_READ:
@@ -1008,13 +1027,13 @@ void BridgeClass::analogWrite(uint8_t pin, int value) {
 }
 
 void BridgeClass::requestDigitalRead(uint8_t pin) {
-  (void)pin;
-  _emitStatus(StatusCode::STATUS_NOT_IMPLEMENTED, "pin_read_initiate_from_linux");
+  uint8_t payload = pin;
+  sendFrame(CommandId::CMD_DIGITAL_READ, BufferView(&payload, 1));
 }
 
 void BridgeClass::requestAnalogRead(uint8_t pin) {
-  (void)pin;
-  _emitStatus(StatusCode::STATUS_NOT_IMPLEMENTED, "pin_read_initiate_from_linux");
+  uint8_t payload = pin;
+  sendFrame(CommandId::CMD_ANALOG_READ, BufferView(&payload, 1));
 }
 
 void BridgeClass::requestProcessRun(const char* command) {
@@ -1107,13 +1126,6 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
   return true;
-}
-
-const char* _popPendingDatastoreKey() {
-  // Not using _popPendingDatastoreKey in the current implementation logic
-  // inside BridgeClass, but keeping signature consistent if needed.
-  // Here we just use the member function version.
-  return nullptr; 
 }
 
 const char* BridgeClass::_popPendingDatastoreKey() {

@@ -1,6 +1,8 @@
 import sys
 import types
 
+from typing import Self
+
 import pytest
 
 from yunbridge import common as utils
@@ -31,7 +33,7 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
         def __init__(self, payload: dict[str, object]) -> None:
             self._payload = payload
 
-        def __enter__(self) -> "FakeCursor":
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> bool:
@@ -67,7 +69,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         pass
 
     class FakeCursor:
-        def __enter__(self) -> "FakeCursor":
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(self, exc_type, exc, tb) -> bool:

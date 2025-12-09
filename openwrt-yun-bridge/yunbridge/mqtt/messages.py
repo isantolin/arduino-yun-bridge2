@@ -5,7 +5,7 @@ import base64
 from dataclasses import dataclass
 from enum import IntEnum
 from collections.abc import Iterable as IterableABC
-from typing import Any, TypeGuard
+from typing import Any, Self, TypeGuard
 
 SpoolRecord = dict[str, Any]
 UserProperty = tuple[str, str]
@@ -79,7 +79,7 @@ class QueuedPublish:
         }
 
     @classmethod
-    def from_record(cls, record: SpoolRecord) -> "QueuedPublish":
+    def from_record(cls, record: SpoolRecord) -> Self:
         payload_b64 = str(record.get("payload", ""))
         payload = base64.b64decode(payload_b64.encode("ascii"))
 

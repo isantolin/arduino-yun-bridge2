@@ -290,6 +290,7 @@ class BridgeClass {
   bool _dequeuePendingTx(PendingTxFrame& frame);
   bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload,
                            uint16_t payload_len);
+  size_t _writeFrameBytes(const uint8_t* data, size_t length);
 
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();

@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from builtins import BaseExceptionGroup
-from contextlib import suppress
 from collections.abc import Coroutine
 from typing import Any, TypeVar, cast
 
@@ -18,39 +17,19 @@ class TaskSupervisor:
     def __init__(self, *, logger: logging.Logger | None = None) -> None:
         self._logger = logger or logging.getLogger("yunbridge.tasks")
         self._group: asyncio.TaskGroup | None = None
-        self._group_owner: asyncio.Task[None] | None = None
-        self._group_ready = asyncio.Event()
-        self._shutdown = asyncio.Event()
         self._tasks: set[asyncio.Task[Any]] = set()
         self._lock = asyncio.Lock()
 
-    async def _run_group_owner(self) -> None:
-        try:
-            async with asyncio.TaskGroup() as group:
-                self._group = group
-                self._group_ready.set()
-                await self._shutdown.wait()
-        except asyncio.CancelledError:
-            raise
-        except BaseException as exc:  # pragma: no cover - defensive logging
-            self._log_group_exception(exc)
-        finally:
-            self._group = None
-            self._group_ready.clear()
-            self._shutdown.clear()
-
     async def _ensure_group(self) -> asyncio.TaskGroup:
         async with self._lock:
-            owner = self._group_owner
-            if owner is None or owner.done():
-                self._group_owner = asyncio.create_task(
-                    self._run_group_owner()
-                )
-
-        await self._group_ready.wait()
-        if self._group is None:
-            raise RuntimeError("TaskGroup owner not initialised")
-        return self._group
+            if self._group is None:
+                group = asyncio.TaskGroup()
+                await group.__aenter__()
+                self._group = group
+        group = self._group
+        if group is None:  # pragma: no cover - defensive
+            raise RuntimeError("TaskGroup initialisation failed")
+        return group
 
     async def start(
         self,
@@ -73,16 +52,20 @@ class TaskSupervisor:
         """Cancel all tracked tasks by closing the TaskGroup."""
 
         async with self._lock:
-            owner = self._group_owner
-            self._group_owner = None
+            group = self._group
+            self._group = None
 
-        if owner is None:
+        if group is None:
             return
 
-        self._shutdown.set()
-        with suppress(asyncio.CancelledError):
-            await owner
-        self._tasks.clear()
+        try:
+            await group.__aexit__(None, None, None)
+        except asyncio.CancelledError:  # pragma: no cover - cancellation path
+            pass
+        except BaseException as exc:  # pragma: no cover - defensive logging
+            self._log_group_exception(exc)
+        finally:
+            self._tasks.clear()
 
     @property
     def active_count(self) -> int:

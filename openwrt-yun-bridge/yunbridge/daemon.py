@@ -351,6 +351,7 @@ async def main_async(config: RuntimeConfig) -> None:
             )
         raise
     finally:
+        await service.cancel_background_tasks()
         cleanup_status_file()
         logger.info("Yun Bridge daemon stopped.")
 

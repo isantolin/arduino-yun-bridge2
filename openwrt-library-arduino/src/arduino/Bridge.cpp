@@ -682,8 +682,11 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
   uint8_t* cobs_buf = _last_cobs_frame;
   size_t cobs_len = cobs::encode(raw_frame_buf, raw_len, cobs_buf);
 
-  size_t written = _stream.write(cobs_buf, cobs_len);
-  written += _stream.write((uint8_t)0x00);
+  size_t written = _writeFrameBytes(cobs_buf, cobs_len);
+  if (written == cobs_len) {
+    const uint8_t terminator = 0x00;
+    written += _writeFrameBytes(&terminator, 1);
+  }
 
 #if BRIDGE_DEBUG_FRAMES
   _tx_debug.cobs_length = static_cast<uint16_t>(cobs_len);
@@ -723,6 +726,53 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
   }
 
   return true;
+}
+
+size_t BridgeClass::_writeFrameBytes(const uint8_t* data, size_t length) {
+  if (data == nullptr || length == 0) {
+    return 0;
+  }
+
+  if (_hardware_serial == nullptr) {
+    return _stream.write(data, length);
+  }
+
+  size_t total_written = 0;
+  unsigned long last_progress = millis();
+  unsigned long timeout = _response_timeout_ms;
+  if (timeout == 0) {
+    timeout = 1;
+  }
+
+  while (total_written < length) {
+    size_t available = _hardware_serial->availableForWrite();
+    if (available == 0) {
+      if ((millis() - last_progress) >= timeout) {
+        break;
+      }
+      yield();
+      continue;
+    }
+
+    size_t chunk = length - total_written;
+    if (chunk > available) {
+      chunk = available;
+    }
+
+    size_t wrote = _hardware_serial->write(data + total_written, chunk);
+    if (wrote == 0) {
+      if ((millis() - last_progress) >= timeout) {
+        break;
+      }
+      yield();
+      continue;
+    }
+
+    total_written += wrote;
+    last_progress = millis();
+  }
+
+  return total_written;
 }
 
 #if BRIDGE_DEBUG_FRAMES
@@ -779,8 +829,11 @@ void BridgeClass::_retransmitLastFrame() {
   if (!_awaiting_ack || !_last_cobs_length) {
     return;
   }
-  size_t written = _stream.write(_last_cobs_frame, _last_cobs_length);
-  written += _stream.write((uint8_t)0x00);
+  size_t written = _writeFrameBytes(_last_cobs_frame, _last_cobs_length);
+  if (written == _last_cobs_length) {
+    const uint8_t terminator = 0x00;
+    written += _writeFrameBytes(&terminator, 1);
+  }
 #if BRIDGE_DEBUG_FRAMES
   _tx_debug.tx_count++;
   _tx_debug.last_write_return = static_cast<uint16_t>(written);

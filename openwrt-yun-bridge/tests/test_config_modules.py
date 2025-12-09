@@ -4,7 +4,7 @@ import logging
 import sys
 import types
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import pytest
 
@@ -44,7 +44,7 @@ def _install_dummy_uci_module(
         def __init__(self, payload: dict[str, Any]):
             self._payload = payload
 
-        def __enter__(self) -> "_DummyCursor":
+        def __enter__(self) -> Self:
             return self
 
         def __exit__(

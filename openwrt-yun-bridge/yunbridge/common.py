@@ -18,13 +18,8 @@ from typing import (
 from collections.abc import Mapping
 
 from more_itertools import chunked, unique_everseen
-
-try:
-    from paho.mqtt.packettypes import PacketTypes
-    from paho.mqtt.properties import Properties
-except ImportError:
-    PacketTypes = None
-    Properties = None
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
 
@@ -63,16 +58,6 @@ from .const import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
-
-def _set_mqtt_property(props: Any, camel_name: str, value: Any) -> None:
-    if props is None:
-        return
-    try:
-        setattr(props, camel_name, value)
-    except AttributeError:
-        # Some paho builds omit optional fields; ignore quietly.
-        pass
 
 
 class _UciCursor(Protocol):
@@ -155,11 +140,8 @@ def encode_status_reason(reason: str | None) -> bytes:
     return payload[:MAX_PAYLOAD_SIZE]
 
 
-def build_mqtt_properties(message: Any) -> Any | None:
+def build_mqtt_properties(message: Any) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
-    if Properties is None or PacketTypes is None:
-        return None
-
     # Check if we have any property to set
     has_props = any([
         message.content_type,
@@ -196,15 +178,13 @@ def build_mqtt_properties(message: Any) -> Any | None:
     return props
 
 
-def build_mqtt_connect_properties() -> Any | None:
+def build_mqtt_connect_properties() -> Properties:
     """Return default CONNECT properties for aiomqtt/paho clients."""
-    if Properties is None or PacketTypes is None:
-        return None
 
     props = Properties(PacketTypes.CONNECT)
-    _set_mqtt_property(props, "SessionExpiryInterval", 0)
-    _set_mqtt_property(props, "RequestResponseInformation", 1)
-    _set_mqtt_property(props, "RequestProblemInformation", 1)
+    props.SessionExpiryInterval = 0
+    props.RequestResponseInformation = 1
+    props.RequestProblemInformation = 1
     return props
 
 
@@ -215,8 +195,6 @@ def apply_mqtt_connect_properties(client: Any) -> None:
 
     try:
         props = build_mqtt_connect_properties()
-        if props is None:
-            return
 
         raw_client = getattr(client, "_client", None)
         native = getattr(raw_client, "_client", raw_client)

@@ -20,6 +20,24 @@
 
 const int ledPin = 13;
 
+void printHexValue(Print& target, uint16_t value, uint8_t width) {
+  static constexpr char kHexDigits[] = "0123456789ABCDEF";
+  if (width == 0) {
+    return;
+  }
+  if (width > 4) {
+    width = 4;
+  }
+  char buffer[4];
+  for (int i = width - 1; i >= 0; --i) {
+    buffer[i] = kHexDigits[value & 0x0F];
+    value >>= 4;
+  }
+  for (uint8_t i = 0; i < width; ++i) {
+    target.print(buffer[i]);
+  }
+}
+
 void handleDigitalReadResponse(int value) {
   Console.print(F("Respuesta asíncrona de lectura digital: "));
   Console.println(value);
@@ -27,7 +45,7 @@ void handleDigitalReadResponse(int value) {
 
 void handleCommand(const rpc::Frame& frame) {
   Console.print(F("Comando RPC no manejado: ID=0x"));
-  Console.print(frame.header.command_id, HEX);
+  printHexValue(Console, frame.header.command_id, 4);
   Console.print(F(", Payload Len="));
   Console.println(frame.header.payload_length);
 }
@@ -55,9 +73,9 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
   Mailbox.requestRead();
 }
 
-void handleStatusFrame(uint8_t status_code, const uint8_t* payload, uint16_t length) {
+void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   Console.print(F("Estado: 0x"));
-  Console.print(status_code, HEX);
+  printHexValue(Console, rpc::to_underlying(status_code), 2);
   Console.println();
 }
 

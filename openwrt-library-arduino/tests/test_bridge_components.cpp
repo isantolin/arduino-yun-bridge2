@@ -16,6 +16,14 @@
 
 using namespace rpc;
 
+constexpr uint16_t command_value(CommandId command) {
+  return to_underlying(command);
+}
+
+constexpr uint8_t status_value(StatusCode status) {
+  return to_underlying(status);
+}
+
 namespace {
 
 struct DatastoreHandlerState {
@@ -60,7 +68,7 @@ void mailbox_handler_trampoline(const uint8_t* buffer, size_t size) {
 struct ProcessPollHandlerState {
   static ProcessPollHandlerState* instance;
   bool called = false;
-  uint8_t status = 0xFF;
+  StatusCode status = StatusCode::STATUS_ERROR;
   uint8_t exit_code = 0xFF;
   std::string stdout_text;
   std::string stderr_text;
@@ -69,7 +77,7 @@ struct ProcessPollHandlerState {
 ProcessPollHandlerState* ProcessPollHandlerState::instance = nullptr;
 
 void process_poll_handler_trampoline(
-    uint8_t status,
+  StatusCode status,
     uint8_t exit_code,
     const uint8_t* stdout_data,
     uint16_t stdout_len,
@@ -91,14 +99,14 @@ void process_poll_handler_trampoline(
 struct StatusHandlerState {
   static StatusHandlerState* instance;
   bool called = false;
-  uint8_t status_code = 0x00;
+  StatusCode status_code = StatusCode::STATUS_OK;
   std::string payload;
 };
 
 StatusHandlerState* StatusHandlerState::instance = nullptr;
 
 void status_handler_trampoline(
-    uint8_t status_code, const uint8_t* payload, uint16_t length) {
+    StatusCode status_code, const uint8_t* payload, uint16_t length) {
   auto* state = StatusHandlerState::instance;
   if (!state) {
     return;
@@ -182,7 +190,7 @@ void test_datastore_get_response_dispatches_handler() {
 
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
-  frame.header.command_id = CMD_DATASTORE_GET_RESP;
+  frame.header.command_id = command_value(CommandId::CMD_DATASTORE_GET_RESP);
   frame.header.payload_length = 1 + 5;
   frame.payload[0] = 5;
   std::memcpy(frame.payload + 1, "23.7C", 5);
@@ -225,10 +233,10 @@ void test_console_write_and_flow_control() {
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
   const Frame& console_frame = frames.front();
-  assert(console_frame.header.command_id == CMD_CONSOLE_WRITE);
+  assert(console_frame.header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
   assert(console_frame.header.payload_length == sizeof(payload));
   assert(std::memcmp(console_frame.payload, payload, sizeof(payload)) == 0);
-  Bridge._handleAck(CMD_CONSOLE_WRITE);
+  Bridge._handleAck(command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
   std::vector<uint8_t> large(MAX_PAYLOAD_SIZE + 5, 0x5A);
@@ -236,9 +244,9 @@ void test_console_write_and_flow_control() {
   assert(large_written == large.size());
   auto limited_frames = decode_frames(stream.data());
   assert(limited_frames.size() == 1);
-  assert(limited_frames[0].header.command_id == CMD_CONSOLE_WRITE);
+  assert(limited_frames[0].header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
   assert(limited_frames[0].header.payload_length == MAX_PAYLOAD_SIZE);
-  Bridge._handleAck(CMD_CONSOLE_WRITE);
+  Bridge._handleAck(command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
   Bridge.begin();
@@ -252,8 +260,8 @@ void test_console_write_and_flow_control() {
 
   auto xoff_frames = decode_frames(stream.data());
   assert(!xoff_frames.empty());
-  assert(xoff_frames.back().header.command_id == CMD_XOFF);
-  Bridge._handleAck(CMD_XOFF);
+  assert(xoff_frames.back().header.command_id == command_value(CommandId::CMD_XOFF));
+  Bridge._handleAck(command_value(CommandId::CMD_XOFF));
   stream.clear();
 
   for (size_t i = 0; i < inbound.size(); ++i) {
@@ -264,8 +272,8 @@ void test_console_write_and_flow_control() {
 
   auto xon_frames = decode_frames(stream.data());
   assert(!xon_frames.empty());
-  assert(xon_frames.back().header.command_id == CMD_XON);
-  Bridge._handleAck(CMD_XON);
+  assert(xon_frames.back().header.command_id == command_value(CommandId::CMD_XON));
+  Bridge._handleAck(command_value(CommandId::CMD_XON));
 
   Console.flush();
 }
@@ -281,14 +289,14 @@ void test_datastore_put_and_request_behavior() {
   auto put_frames = decode_frames(stream.data());
   assert(put_frames.size() == 1);
   const Frame& put_frame = put_frames.front();
-  assert(put_frame.header.command_id == CMD_DATASTORE_PUT);
+  assert(put_frame.header.command_id == command_value(CommandId::CMD_DATASTORE_PUT));
   uint8_t key_len = static_cast<uint8_t>(std::strlen(key));
   uint8_t value_len = static_cast<uint8_t>(std::strlen(value));
   assert(put_frame.payload[0] == key_len);
   assert(std::memcmp(put_frame.payload + 1, key, key_len) == 0);
   assert(put_frame.payload[1 + key_len] == value_len);
   assert(std::memcmp(put_frame.payload + 2 + key_len, value, value_len) == 0);
-  Bridge._handleAck(CMD_DATASTORE_PUT);
+  Bridge._handleAck(command_value(CommandId::CMD_DATASTORE_PUT));
   stream.clear();
 
   DataStore.put(nullptr, value);
@@ -302,15 +310,15 @@ void test_datastore_put_and_request_behavior() {
   DataStore.requestGet(key);
   auto get_frames = decode_frames(stream.data());
   assert(get_frames.size() == 1);
-  assert(get_frames.front().header.command_id == CMD_DATASTORE_GET);
-  Bridge._handleAck(CMD_DATASTORE_GET);
+  assert(get_frames.front().header.command_id == command_value(CommandId::CMD_DATASTORE_GET));
+  Bridge._handleAck(command_value(CommandId::CMD_DATASTORE_GET));
   stream.clear();
 
   DataStore.requestGet("other");
   auto status_frames = decode_frames(stream.data());
   assert(!status_frames.empty());
   const Frame& status_frame = status_frames.back();
-  assert(status_frame.header.command_id == STATUS_ERROR);
+  assert(status_frame.header.command_id == status_value(StatusCode::STATUS_ERROR));
   std::string status_message(
       reinterpret_cast<const char*>(status_frame.payload),
       reinterpret_cast<const char*>(status_frame.payload) +
@@ -328,13 +336,13 @@ void test_mailbox_send_and_requests_emit_commands() {
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
   const Frame& mailbox_frame = frames.front();
-  assert(mailbox_frame.header.command_id == CMD_MAILBOX_PUSH);
+  assert(mailbox_frame.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
   size_t msg_len = std::strlen(msg);
   assert(mailbox_frame.header.payload_length == msg_len + 2);
   uint16_t encoded_len = read_u16_be(mailbox_frame.payload);
   assert(encoded_len == msg_len);
   assert(std::memcmp(mailbox_frame.payload + 2, msg, msg_len) == 0);
-  Bridge._handleAck(CMD_MAILBOX_PUSH);
+  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
   std::vector<uint8_t> raw(MAX_PAYLOAD_SIZE, 0x41);
@@ -345,23 +353,23 @@ void test_mailbox_send_and_requests_emit_commands() {
   assert(raw_frames[0].header.payload_length == capped_len + 2);
   uint16_t encoded_raw_len = read_u16_be(raw_frames[0].payload);
   assert(encoded_raw_len == capped_len);
-  Bridge._handleAck(CMD_MAILBOX_PUSH);
+  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
   Mailbox.requestRead();
   auto read_frames = decode_frames(stream.data());
   assert(read_frames.size() == 1);
-  assert(read_frames[0].header.command_id == CMD_MAILBOX_READ);
+  assert(read_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_READ));
   assert(read_frames[0].header.payload_length == 0);
-  Bridge._handleAck(CMD_MAILBOX_READ);
+  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_READ));
   stream.clear();
 
   Mailbox.requestAvailable();
   auto avail_frames = decode_frames(stream.data());
   assert(avail_frames.size() == 1);
-  assert(avail_frames[0].header.command_id == CMD_MAILBOX_AVAILABLE);
+  assert(avail_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_AVAILABLE));
   assert(avail_frames[0].header.payload_length == 0);
-  Bridge._handleAck(CMD_MAILBOX_AVAILABLE);
+  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_AVAILABLE));
   stream.clear();
 }
 
@@ -375,7 +383,7 @@ void test_filesystem_write_and_remove_payloads() {
   auto write_frames = decode_frames(stream.data());
   assert(write_frames.size() == 1);
   const Frame& write_frame = write_frames.front();
-  assert(write_frame.header.command_id == CMD_FILE_WRITE);
+  assert(write_frame.header.command_id == command_value(CommandId::CMD_FILE_WRITE));
   uint8_t path_len = static_cast<uint8_t>(std::strlen(path));
   assert(write_frame.payload[0] == path_len);
   assert(std::memcmp(write_frame.payload + 1, path, path_len) == 0);
@@ -383,7 +391,7 @@ void test_filesystem_write_and_remove_payloads() {
   size_t max_data = MAX_PAYLOAD_SIZE - 3 - path_len;
   assert(encoded_len == max_data);
   assert(write_frame.header.payload_length == path_len + encoded_len + 3);
-  Bridge._handleAck(CMD_FILE_WRITE);
+  Bridge._handleAck(command_value(CommandId::CMD_FILE_WRITE));
   stream.clear();
 
   FileSystem.write(nullptr, blob.data(), blob.size());
@@ -397,10 +405,10 @@ void test_filesystem_write_and_remove_payloads() {
   auto remove_frames = decode_frames(stream.data());
   assert(remove_frames.size() == 1);
   const Frame& remove_frame = remove_frames.front();
-  assert(remove_frame.header.command_id == CMD_FILE_REMOVE);
+  assert(remove_frame.header.command_id == command_value(CommandId::CMD_FILE_REMOVE));
   assert(remove_frame.payload[0] == path_len);
   assert(std::memcmp(remove_frame.payload + 1, path, path_len) == 0);
-  Bridge._handleAck(CMD_FILE_REMOVE);
+  Bridge._handleAck(command_value(CommandId::CMD_FILE_REMOVE));
   stream.clear();
 
   FileSystem.remove("");
@@ -415,11 +423,11 @@ void test_process_kill_encodes_pid() {
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
   const Frame& frame = frames.front();
-  assert(frame.header.command_id == CMD_PROCESS_KILL);
+  assert(frame.header.command_id == command_value(CommandId::CMD_PROCESS_KILL));
   assert(frame.header.payload_length == 2);
   uint16_t encoded = read_u16_be(frame.payload);
   assert(encoded == 0x1234);
-  Bridge._handleAck(CMD_PROCESS_KILL);
+  Bridge._handleAck(command_value(CommandId::CMD_PROCESS_KILL));
   stream.clear();
 }
 
@@ -436,7 +444,7 @@ void test_mailbox_read_response_delivers_payload() {
 
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
-  frame.header.command_id = CMD_MAILBOX_READ_RESP;
+  frame.header.command_id = command_value(CommandId::CMD_MAILBOX_READ_RESP);
   frame.header.payload_length = static_cast<uint16_t>(2 + payload_len);
   write_u16_be(frame.payload, payload_len);
   std::memcpy(frame.payload + 2, payload, payload_len);
@@ -469,10 +477,10 @@ void test_process_poll_response_requeues_on_streaming_output() {
 
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
-  frame.header.command_id = CMD_PROCESS_POLL_RESP;
+  frame.header.command_id = command_value(CommandId::CMD_PROCESS_POLL_RESP);
   frame.header.payload_length = 6 + sizeof(stdout_text);
   uint8_t* cursor = frame.payload;
-  *cursor++ = STATUS_OK;
+  *cursor++ = status_value(StatusCode::STATUS_OK);
   *cursor++ = 0x7F;
   write_u16_be(cursor, sizeof(stdout_text));
   cursor += 2;
@@ -484,7 +492,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   bridge.dispatch(frame);
 
   assert(poll_state.called);
-  assert(poll_state.status == STATUS_OK);
+  assert(poll_state.status == StatusCode::STATUS_OK);
   assert(poll_state.exit_code == 0x7F);
   assert(poll_state.stdout_text == "ok");
   assert(poll_state.stderr_text.empty());
@@ -493,7 +501,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   const auto frames = decode_frames(stream.data());
   assert(!frames.empty());
   const Frame& resend = frames.back();
-  assert(resend.header.command_id == CMD_PROCESS_POLL);
+  assert(resend.header.command_id == command_value(CommandId::CMD_PROCESS_POLL));
   assert(resend.header.payload_length == 2);
   uint16_t encoded_pid = read_u16_be(resend.payload);
   assert(encoded_pid == pid);
@@ -553,25 +561,27 @@ void test_ack_flushes_pending_queue_after_response() {
 
   const uint8_t first_payload[] = {0x42};
   bool sent = bridge.sendFrame(
-      CMD_CONSOLE_WRITE, first_payload, sizeof(first_payload));
+      CommandId::CMD_CONSOLE_WRITE,
+      BufferView(first_payload, sizeof(first_payload)));
   assert(sent);
   assert(bridge._awaiting_ack);
 
   const uint8_t queued_payload[] = {0xAA, 0xBB};
-  bool enqueued = bridge._enqueuePendingTx(
-      CMD_MAILBOX_PUSH, queued_payload, sizeof(queued_payload));
+    bool enqueued = bridge._enqueuePendingTx(
+      command_value(CommandId::CMD_MAILBOX_PUSH),
+      BufferView(queued_payload, sizeof(queued_payload)));
   assert(enqueued);
   assert(bridge._pending_tx_count == 1);
 
   auto before = decode_frames(stream.data());
   size_t before_count = before.size();
 
-  bridge._handleAck(CMD_CONSOLE_WRITE);
+  bridge._handleAck(command_value(CommandId::CMD_CONSOLE_WRITE));
 
   auto after = decode_frames(stream.data());
   assert(after.size() == before_count + 1);
   const Frame& flushed = after.back();
-  assert(flushed.header.command_id == CMD_MAILBOX_PUSH);
+  assert(flushed.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
   assert(flushed.header.payload_length == sizeof(queued_payload));
   assert(std::memcmp(flushed.payload, queued_payload, sizeof(queued_payload)) == 0);
   assert(bridge._pending_tx_count == 0);
@@ -588,21 +598,22 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
   bridge.onStatus(status_handler_trampoline);
 
   const uint8_t payload[] = {0x55};
-  bool sent = bridge.sendFrame(CMD_CONSOLE_WRITE, payload, sizeof(payload));
+  bool sent = bridge.sendFrame(
+      CommandId::CMD_CONSOLE_WRITE, BufferView(payload, sizeof(payload)));
   assert(sent);
   assert(bridge._awaiting_ack);
 
   Frame ack{};
   ack.header.version = PROTOCOL_VERSION;
-  ack.header.command_id = STATUS_ACK;
+  ack.header.command_id = status_value(StatusCode::STATUS_ACK);
   ack.header.payload_length = 2;
-  write_u16_be(ack.payload, CMD_CONSOLE_WRITE);
+  write_u16_be(ack.payload, command_value(CommandId::CMD_CONSOLE_WRITE));
 
   bridge.dispatch(ack);
 
   assert(!bridge._awaiting_ack);
   assert(status_state.called);
-  assert(status_state.status_code == STATUS_ACK);
+  assert(status_state.status_code == StatusCode::STATUS_ACK);
   StatusHandlerState::instance = nullptr;
 }
 
@@ -617,14 +628,14 @@ void test_status_error_frame_dispatches_handler() {
   const char* message = "remote_fault";
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
-  frame.header.command_id = STATUS_ERROR;
+  frame.header.command_id = status_value(StatusCode::STATUS_ERROR);
   frame.header.payload_length = static_cast<uint16_t>(std::strlen(message));
   std::memcpy(frame.payload, message, frame.header.payload_length);
 
   bridge.dispatch(frame);
 
   assert(status_state.called);
-  assert(status_state.status_code == STATUS_ERROR);
+  assert(status_state.status_code == StatusCode::STATUS_ERROR);
   assert(status_state.payload == message);
   StatusHandlerState::instance = nullptr;
 }
@@ -634,19 +645,20 @@ void test_malformed_status_triggers_retransmit() {
   BridgeClass bridge(stream);
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
-  bool sent = bridge.sendFrame(CMD_MAILBOX_PUSH, payload, sizeof(payload));
+  bool sent = bridge.sendFrame(
+      CommandId::CMD_MAILBOX_PUSH, BufferView(payload, sizeof(payload)));
   assert(sent);
   assert(bridge._awaiting_ack);
 
   auto before = decode_frames(stream.data());
   assert(before.size() == 1);
 
-  bridge._handleMalformed(CMD_MAILBOX_PUSH);
+  bridge._handleMalformed(command_value(CommandId::CMD_MAILBOX_PUSH));
 
   auto after = decode_frames(stream.data());
   assert(after.size() == 2);
   const Frame& resent = after.back();
-  assert(resent.header.command_id == CMD_MAILBOX_PUSH);
+  assert(resent.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
   assert(resent.header.payload_length == sizeof(payload));
   assert(std::memcmp(resent.payload, payload, sizeof(payload)) == 0);
   assert(bridge._retry_count == 1);
@@ -666,7 +678,7 @@ void test_link_sync_generates_tag_and_ack() {
       0x0D, 0x0E, 0x0F, 0x10};
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
-  frame.header.command_id = CMD_LINK_SYNC;
+  frame.header.command_id = command_value(CommandId::CMD_LINK_SYNC);
   frame.header.payload_length = sizeof(nonce);
   std::memcpy(frame.payload, nonce, sizeof(nonce));
 
@@ -676,7 +688,7 @@ void test_link_sync_generates_tag_and_ack() {
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 2);
   const Frame& sync = frames.front();
-  assert(sync.header.command_id == CMD_LINK_SYNC_RESP);
+  assert(sync.header.command_id == command_value(CommandId::CMD_LINK_SYNC_RESP));
   assert(sync.header.payload_length == sizeof(nonce) + 16);
   assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
   uint8_t expected_tag[16];
@@ -684,9 +696,9 @@ void test_link_sync_generates_tag_and_ack() {
   assert(std::memcmp(sync.payload + sizeof(nonce), expected_tag, 16) == 0);
 
   const Frame& ack = frames.back();
-  assert(ack.header.command_id == STATUS_ACK);
+  assert(ack.header.command_id == status_value(StatusCode::STATUS_ACK));
   assert(ack.header.payload_length == 2);
-  assert(read_u16_be(ack.payload) == CMD_LINK_SYNC);
+  assert(read_u16_be(ack.payload) == command_value(CommandId::CMD_LINK_SYNC));
 }
 
 void test_link_sync_without_secret_replays_nonce_only() {
@@ -702,7 +714,7 @@ void test_link_sync_without_secret_replays_nonce_only() {
       0x08, 0x09, 0x0A, 0x0B};
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
-  frame.header.command_id = CMD_LINK_SYNC;
+  frame.header.command_id = command_value(CommandId::CMD_LINK_SYNC);
   frame.header.payload_length = sizeof(nonce);
   std::memcpy(frame.payload, nonce, sizeof(nonce));
 
@@ -712,7 +724,7 @@ void test_link_sync_without_secret_replays_nonce_only() {
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 2);
   const Frame& sync = frames.front();
-  assert(sync.header.command_id == CMD_LINK_SYNC_RESP);
+  assert(sync.header.command_id == command_value(CommandId::CMD_LINK_SYNC_RESP));
   assert(sync.header.payload_length == sizeof(nonce));
   assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
 }
@@ -726,7 +738,8 @@ void test_ack_timeout_emits_status_and_resets_state() {
   bridge.onStatus(status_handler_trampoline);
 
   const uint8_t payload[] = {0x99};
-  bool sent = bridge.sendFrame(CMD_MAILBOX_PUSH, payload, sizeof(payload));
+  bool sent = bridge.sendFrame(
+      CommandId::CMD_MAILBOX_PUSH, BufferView(payload, sizeof(payload)));
   assert(sent);
   assert(bridge._awaiting_ack);
 
@@ -735,7 +748,7 @@ void test_ack_timeout_emits_status_and_resets_state() {
   bridge._processAckTimeout();
 
   assert(status_state.called);
-  assert(status_state.status_code == STATUS_TIMEOUT);
+  assert(status_state.status_code == StatusCode::STATUS_TIMEOUT);
   assert(!bridge._awaiting_ack);
   StatusHandlerState::instance = nullptr;
 }
@@ -754,7 +767,7 @@ void test_process_run_rejects_oversized_payload() {
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
   const Frame& status_frame = frames.front();
-  assert(status_frame.header.command_id == STATUS_ERROR);
+  assert(status_frame.header.command_id == status_value(StatusCode::STATUS_ERROR));
   std::string message(
       reinterpret_cast<const char*>(status_frame.payload),
       reinterpret_cast<const char*>(status_frame.payload) +
@@ -763,7 +776,7 @@ void test_process_run_rejects_oversized_payload() {
   assert(status_state.called);
   assert(status_state.payload == "process_run_payload_too_large");
 
-  bridge._handleAck(STATUS_ERROR);
+  bridge._handleAck(status_value(StatusCode::STATUS_ERROR));
   StatusHandlerState::instance = nullptr;
 }
 

@@ -5,7 +5,7 @@
 #define BRIDGE_ENABLE_PROCESS 0
 #define BRIDGE_SECRET "changeme123"
 
-// When set to 1 the sketch automatically sends CMD_GET_FREE_MEMORY frames
+// When set to 1 the sketch automatically sends CommandId::CMD_GET_FREE_MEMORY frames
 // every kSendIntervalMs milliseconds (behaviour prior to this change).
 // Leaving it at 0 keeps the link quiet unless you trigger a command manually
 // from the USB serial console (see the loop() implementation below).
@@ -79,7 +79,7 @@ void loop() {
   if (now - last_send_ms >= kSendIntervalMs) {
     last_send_ms = now;
 
-    Serial.println(F("[FrameDebug] Sending CMD_GET_FREE_MEMORY"));
+    Serial.println(F("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY"));
     Bridge.requestGetFreeMemory();
 
     delay(20);  // Allow time for the frame to flush over Serial1.
@@ -96,7 +96,7 @@ void loop() {
     switch (cmd) {
       case 'f':
       case 'F':
-        Serial.println(F("[FrameDebug] Manual CMD_GET_FREE_MEMORY trigger"));
+        Serial.println(F("[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY trigger"));
         Bridge.requestGetFreeMemory();
         delay(20);
         printSnapshot(Bridge.getTxDebugSnapshot());

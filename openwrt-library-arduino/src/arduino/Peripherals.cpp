@@ -37,8 +37,9 @@ void DataStoreClass::put(const char* key, const char* value) {
   payload[1 + key_len] = static_cast<uint8_t>(value_len);
   memcpy(payload + 2 + key_len, value, value_len);
 
-  Bridge.sendFrame(CMD_DATASTORE_PUT, payload,
-                   static_cast<uint16_t>(payload_len));
+  Bridge.sendFrame(
+      CommandId::CMD_DATASTORE_PUT,
+      BufferView(payload, static_cast<uint16_t>(payload_len)));
 }
 
 void DataStoreClass::requestGet(const char* key) {
@@ -53,13 +54,14 @@ void DataStoreClass::requestGet(const char* key) {
   memcpy(payload + 1, key, key_len);
 
   if (!Bridge._trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(STATUS_ERROR, "datastore_queue_full");
+    Bridge._emitStatus(StatusCode::STATUS_ERROR, "datastore_queue_full");
     return;
   }
 
-  // Linux responde con CMD_DATASTORE_GET_RESP usando únicamente su caché.
-  Bridge.sendFrame(CMD_DATASTORE_GET, payload,
-                   static_cast<uint16_t>(key_len + 1));
+  // Linux responde con CommandId::CMD_DATASTORE_GET_RESP usando únicamente su caché.
+  Bridge.sendFrame(
+      CommandId::CMD_DATASTORE_GET,
+      BufferView(payload, static_cast<uint16_t>(key_len + 1)));
 }
 
 MailboxClass::MailboxClass() {}
@@ -89,16 +91,17 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
   uint8_t payload[MAX_PAYLOAD_SIZE];
   write_u16_be(payload, static_cast<uint16_t>(length));
   memcpy(payload + 2, data, length);
-  Bridge.sendFrame(CMD_MAILBOX_PUSH, payload,
-                   static_cast<uint16_t>(length + 2));
+  Bridge.sendFrame(
+      CommandId::CMD_MAILBOX_PUSH,
+      BufferView(payload, static_cast<uint16_t>(length + 2)));
 }
 
 void MailboxClass::requestRead() {
-  Bridge.sendFrame(CMD_MAILBOX_READ, nullptr, 0);
+  Bridge.sendFrame(CommandId::CMD_MAILBOX_READ);
 }
 
 void MailboxClass::requestAvailable() {
-  Bridge.sendFrame(CMD_MAILBOX_AVAILABLE, nullptr, 0);
+  Bridge.sendFrame(CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
 void FileSystemClass::write(const char* filePath, const uint8_t* data,
@@ -122,8 +125,9 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
     memcpy(payload + 3 + path_len, data, length);
   }
 
-  Bridge.sendFrame(CMD_FILE_WRITE, payload,
-                   static_cast<uint16_t>(path_len + length + 3));
+  Bridge.sendFrame(
+      CommandId::CMD_FILE_WRITE,
+      BufferView(payload, static_cast<uint16_t>(path_len + length + 3)));
 }
 
 void FileSystemClass::remove(const char* filePath) {
@@ -136,8 +140,9 @@ void FileSystemClass::remove(const char* filePath) {
   uint8_t payload[1 + 255];
   payload[0] = static_cast<uint8_t>(path_len);
   memcpy(payload + 1, filePath, path_len);
-  Bridge.sendFrame(CMD_FILE_REMOVE, payload,
-                   static_cast<uint16_t>(path_len + 1));
+  Bridge.sendFrame(
+      CommandId::CMD_FILE_REMOVE,
+      BufferView(payload, static_cast<uint16_t>(path_len + 1)));
 }
 
 ProcessClass::ProcessClass() {}
@@ -145,5 +150,5 @@ ProcessClass::ProcessClass() {}
 void ProcessClass::kill(int pid) {
   uint8_t pid_payload[2];
   write_u16_be(pid_payload, static_cast<uint16_t>(pid));
-  Bridge.sendFrame(CMD_PROCESS_KILL, pid_payload, 2);
+  Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, BufferView(pid_payload, 2));
 }

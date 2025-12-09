@@ -22,13 +22,11 @@ class TaskSupervisor:
 
     async def _ensure_group(self) -> asyncio.TaskGroup:
         async with self._lock:
-            if self._group is None:
+            group = self._group
+            if group is None:
                 group = asyncio.TaskGroup()
                 await group.__aenter__()
                 self._group = group
-        group = self._group
-        if group is None:  # pragma: no cover - defensive
-            raise RuntimeError("TaskGroup initialisation failed")
         return group
 
     async def start(

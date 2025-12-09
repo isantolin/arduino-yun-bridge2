@@ -12,6 +12,7 @@ from yunbridge import common
 from yunbridge import const
 from yunbridge.config import logging as logging_module
 from yunbridge.config import settings
+from yunbridge.config.uci_model import UciConfigModel
 
 
 def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
@@ -480,3 +481,25 @@ def test_structured_formatter_trims_prefix_and_serialises_extra():
     assert payload["logger"] == "sub"
     assert payload["message"] == "hello"
     assert payload["extra"]["custom"] == "value"
+
+
+def test_uci_model_from_mapping_handles_iterables() -> None:
+    source = [
+        ("serial_port", "/dev/ttyFAKE"),
+        ("custom_option", {"value": 42}),
+    ]
+
+    model = UciConfigModel.from_mapping(source)
+    values = model.as_dict()
+
+    assert values["serial_port"] == "/dev/ttyFAKE"
+    assert values["custom_option"] == "42"
+
+
+def test_uci_model_from_mapping_graceful_on_invalid() -> None:
+    sentinel = object()
+
+    model = UciConfigModel.from_mapping(sentinel)
+    values = model.as_dict()
+
+    assert values["serial_port"] == const.DEFAULT_SERIAL_PORT

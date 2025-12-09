@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
-from typing import Any, cast
-from collections.abc import Iterable as TypingIterable
+from typing import Any, Iterable as TypingIterable, Iterator, cast
 
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -72,6 +71,24 @@ def _stringify_value(value: Any) -> str:
         return _stringify_iterable(iterable_value)
 
     return str(value) if value is not None else ""
+
+
+def _iter_mapping_items(candidate: Any) -> Iterator[tuple[Any, Any]]:
+    if isinstance(candidate, Mapping):
+        mapping_items = cast(
+            TypingIterable[tuple[Any, Any]],
+            candidate.items(),
+        )
+        return iter(mapping_items)
+    try:
+        coerced = dict(candidate)
+    except Exception:
+        return iter(())
+    coerced_items = cast(
+        TypingIterable[tuple[Any, Any]],
+        coerced.items(),
+    )
+    return iter(coerced_items)
 
 
 def _extras_default() -> dict[str, str]:
@@ -158,11 +175,14 @@ class UciConfigModel:
         self.extras = new_extras
 
     @classmethod
-    def from_mapping(cls, mapping: Mapping[str, Any]) -> UciConfigModel:
+    def from_mapping(
+        cls,
+        mapping: Mapping[str, Any] | TypingIterable[tuple[Any, Any]] | Any,
+    ) -> UciConfigModel:
         known = cls._known_fields()
         kwargs: dict[str, Any] = {}
         extras: dict[str, str] = {}
-        for key, value in mapping.items():
+        for key, value in _iter_mapping_items(mapping):
             key_str = str(key)
             if key_str in known:
                 kwargs[key_str] = value

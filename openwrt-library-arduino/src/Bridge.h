@@ -12,6 +12,8 @@
 #include "arduino/ArduinoCompat.h"
 #endif
 #include "protocol/rpc_frame.h"
+#include "protocol/rpc_protocol.h"
+#include "arduino/BufferView.h"
 
 class HardwareSerial;
 
@@ -150,14 +152,14 @@ class BridgeClass {
   typedef void (*AnalogReadHandler)(int value);
   void onAnalogReadResponse(AnalogReadHandler handler);
 
-  typedef void (*ProcessRunHandler)(uint8_t status,
+  typedef void (*ProcessRunHandler)(rpc::StatusCode status,
                                    const uint8_t* stdout_data,
                                    uint16_t stdout_len,
                                    const uint8_t* stderr_data,
                                    uint16_t stderr_len);
   void onProcessRunResponse(ProcessRunHandler handler);
 
-  typedef void (*ProcessPollHandler)(uint8_t status, uint8_t exit_code, const uint8_t* stdout_data, uint16_t stdout_len, const uint8_t* stderr_data, uint16_t stderr_len);
+  typedef void (*ProcessPollHandler)(rpc::StatusCode status, uint8_t exit_code, const uint8_t* stdout_data, uint16_t stdout_len, const uint8_t* stderr_data, uint16_t stderr_len);
   void onProcessPollResponse(ProcessPollHandler handler);
 
   typedef void (*ProcessRunAsyncHandler)(int pid);
@@ -169,7 +171,7 @@ class BridgeClass {
   typedef void (*GetFreeMemoryHandler)(uint16_t free_memory);
   void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
 
-  typedef void (*StatusHandler)(uint8_t status_code, const uint8_t* payload,
+  typedef void (*StatusHandler)(rpc::StatusCode status_code, const uint8_t* payload,
                                 uint16_t length);
   void onStatus(StatusHandler handler);
 
@@ -186,8 +188,10 @@ class BridgeClass {
   void requestFileSystemRead(const char* filePath);
   void requestGetFreeMemory();
 
-  bool sendFrame(uint16_t command_id, const uint8_t* payload,
-                 uint16_t payload_len);
+  bool sendFrame(rpc::CommandId command_id,
+                 BufferView payload = BufferView());
+  bool sendFrame(rpc::StatusCode status_code,
+                 BufferView payload = BufferView());
 
   struct FrameDebugSnapshot {
     uint16_t command_id;
@@ -285,11 +289,10 @@ class BridgeClass {
   void _resetLinkState();
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
-  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
-                         uint16_t payload_len);
+  bool _enqueuePendingTx(uint16_t command_id, BufferView payload);
   bool _dequeuePendingTx(PendingTxFrame& frame);
-  bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload,
-                           uint16_t payload_len);
+  bool _sendFrame(uint16_t command_id, BufferView payload);
+  bool _sendFrameImmediate(uint16_t command_id, BufferView payload);
   size_t _writeFrameBytes(const uint8_t* data, size_t length);
 
   bool _trackPendingDatastoreKey(const char* key);
@@ -299,7 +302,7 @@ class BridgeClass {
   friend class DataStoreClass;
 
   void dispatch(const rpc::Frame& frame);
-  void _emitStatus(uint8_t status_code, const char* message);
+  void _emitStatus(rpc::StatusCode status_code, const char* message);
   void _applyTimingConfig(const uint8_t* payload, uint16_t length);
 
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);

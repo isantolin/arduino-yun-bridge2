@@ -9,6 +9,7 @@ from types import TracebackType
 from typing import (
     Any,
     Final,
+    Iterable as TypingIterable,
     Protocol,
     Self,
     TypeVar,
@@ -320,16 +321,31 @@ def _stringify_value(value: Any) -> str:
         return _stringify_value(attr_value)
 
     if isinstance(value, Mapping):
-        dict_value = {str(key): entry for key, entry in value.items()}
+        mapping_items = cast(
+            TypingIterable[tuple[Any, Any]],
+            value.items(),
+        )
+        dict_value: dict[str, Any] = {
+            str(key): entry for key, entry in mapping_items
+        }
         if "value" in dict_value:
             return _stringify_value(dict_value["value"])
         values_candidate = dict_value.get("values")
         if isinstance(values_candidate, Iterable):
-            return _stringify_iterable(values_candidate)
-        return _stringify_iterable(dict_value.values())
+            iterable_values = cast(
+                TypingIterable[Any],
+                values_candidate,
+            )
+            return _stringify_iterable(iterable_values)
+        dict_values_iter = cast(
+            TypingIterable[Any],
+            dict_value.values(),
+        )
+        return _stringify_iterable(dict_values_iter)
 
     if isinstance(value, (tuple, list, set)):
-        return _stringify_iterable(value)
+        iterable_value = cast(TypingIterable[Any], value)
+        return _stringify_iterable(iterable_value)
 
     return str(value) if value is not None else ""
 

@@ -58,7 +58,9 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
     size_t chunk_size =
         remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
     const uint16_t chunk_len = static_cast<uint16_t>(chunk_size);
-    if (!Bridge.sendFrame(CMD_CONSOLE_WRITE, buffer + offset, chunk_len)) {
+    if (!Bridge.sendFrame(
+            CommandId::CMD_CONSOLE_WRITE,
+            BufferView(buffer + offset, chunk_len))) {
       break;
     }
     offset += chunk_size;
@@ -97,7 +99,7 @@ int ConsoleClass::read() {
   _rx_buffer_tail = (_rx_buffer_tail + 1) % CONSOLE_RX_BUFFER_SIZE;
 
   if (_xoff_sent && available() < CONSOLE_BUFFER_LOW_WATER) {
-    Bridge.sendFrame(CMD_XON, nullptr, 0);
+    Bridge.sendFrame(CommandId::CMD_XON);
     _xoff_sent = false;
   }
 
@@ -115,10 +117,9 @@ void ConsoleClass::flush() {
     while (remaining > 0) {
       size_t chunk = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
       const uint16_t chunk_len = static_cast<uint16_t>(chunk);
-      if (!Bridge.sendFrame(
-              CMD_CONSOLE_WRITE,
-              _tx_buffer + offset,
-              chunk_len)) {
+            if (!Bridge.sendFrame(
+              CommandId::CMD_CONSOLE_WRITE,
+              BufferView(_tx_buffer + offset, chunk_len))) {
         break;
       }
       offset += chunk;
@@ -145,7 +146,7 @@ void ConsoleClass::_push(const uint8_t* buffer, size_t size) {
   }
 
   if (!_xoff_sent && available() > CONSOLE_BUFFER_HIGH_WATER) {
-    Bridge.sendFrame(CMD_XOFF, nullptr, 0);
+    Bridge.sendFrame(CommandId::CMD_XOFF);
     _xoff_sent = true;
   }
 }

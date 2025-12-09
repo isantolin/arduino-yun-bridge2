@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from logging import Handler
+from logging.config import dictConfig
 from logging.handlers import SysLogHandler
 from pathlib import Path
 from typing import Any
@@ -80,34 +81,45 @@ class StructuredLogFormatter(logging.Formatter):
         return json.dumps(payload, ensure_ascii=False)
 
 
-def _build_handler(level: int) -> Handler:
-    formatter = StructuredLogFormatter()
+def _build_handler() -> Handler:
     if SYSLOG_SOCKET.exists():
         syslog_handler = SysLogHandler(
             address=str(SYSLOG_SOCKET),
             facility=SysLogHandler.LOG_DAEMON,
         )
-        # Ensure messages are tagged as yunbridge within syslog
         syslog_handler.ident = "yunbridge "
-        handler = syslog_handler
-    else:
-        handler = logging.StreamHandler()
-
-    handler.setLevel(level)
-    handler.setFormatter(formatter)
-    return handler
+        return syslog_handler
+    return logging.StreamHandler()
 
 
 def configure_logging(config: RuntimeConfig) -> None:
     """Configure root logging based on runtime settings."""
 
-    level = logging.DEBUG if config.debug_logging else logging.INFO
+    level_name = "DEBUG" if config.debug_logging else "INFO"
 
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-    root_logger.setLevel(level)
-    root_logger.addHandler(_build_handler(level))
+    dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "structured": {
+                    "()": "yunbridge.config.logging.StructuredLogFormatter",
+                }
+            },
+            "handlers": {
+                "yunbridge": {
+                    "()": "yunbridge.config.logging._build_handler",
+                    "level": level_name,
+                    "formatter": "structured",
+                }
+            },
+            "root": {
+                "level": level_name,
+                "handlers": ["yunbridge"],
+            },
+        }
+    )
 
     logging.getLogger("yunbridge").info(
-        "Logging configured at level %s", logging.getLevelName(level)
+        "Logging configured at level %s", level_name
     )

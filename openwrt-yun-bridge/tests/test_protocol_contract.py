@@ -87,14 +87,16 @@ def test_protocol_spec_matches_generated_bindings() -> None:
     for status in statuses:
         enum_member = rpc_protocol.Status[status.name]
         assert enum_member.value == status.value
-        expected_define = f"#define STATUS_{status.name} 0x{status.value:02X}"
-        assert expected_define in header_text
+        macro = f"#define STATUS_{status.name} 0x{status.value:02X}"
+        enum_entry = f"{status.name} = 0x{status.value:02X}"
+        assert macro in header_text or enum_entry in header_text
 
     for command in commands:
         enum_member = rpc_protocol.Command[command.name]
         assert enum_member.value == command.value
-        expected_define = f"#define {command.name} 0x{command.value:02X}"
-        assert expected_define in header_text
+        macro = f"#define {command.name} 0x{command.value:02X}"
+        enum_entry = f"{command.name} = 0x{command.value:02X}"
+        assert macro in header_text or enum_entry in header_text
 
     assert handshake["nonce_length"] == const.SERIAL_NONCE_LENGTH
     assert handshake["tag_length"] == const.SERIAL_HANDSHAKE_TAG_LEN

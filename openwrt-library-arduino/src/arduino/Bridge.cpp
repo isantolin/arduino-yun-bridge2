@@ -43,7 +43,8 @@ extern "C" char* __brkval;
 #endif
 
 #if BRIDGE_DEBUG_IO
-static void bridge_debug_log_gpio(const char* action, uint8_t pin, int value) {
+template <typename ActionText>
+static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int value) {
   if (!Console) return;
   Console.print(F("[GPIO] "));
   Console.print(action);
@@ -62,6 +63,7 @@ static_assert(
 );
 constexpr size_t kSha256DigestSize = 32;
 constexpr size_t kFileReadLengthPrefix = 1;
+constexpr const char kSerialOverflowMessage[] = "serial_rx_overflow";
 
 #if defined(ARDUINO_ARCH_AVR)
 uint16_t calculateFreeMemoryBytes() {
@@ -256,8 +258,14 @@ void BridgeClass::process() {
     int byte_read = _stream.read(); // Use int to check -1
     if (byte_read >= 0) {
       uint8_t byte = static_cast<uint8_t>(byte_read);
-      if (_parser.consume(byte, _rx_frame)) {
-        dispatch(_rx_frame); 
+      bool parsed = _parser.consume(byte, _rx_frame);
+      if (_parser.overflowed()) {
+        _parser.reset();
+        _emitStatus(StatusCode::STATUS_MALFORMED, kSerialOverflowMessage);
+        continue;
+      }
+      if (parsed) {
+        dispatch(_rx_frame);
       }
     }
   }
@@ -490,7 +498,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       uint8_t mode = frame.payload[1];
       ::pinMode(pin, mode);
     #if BRIDGE_DEBUG_IO
-      bridge_debug_log_gpio("pinMode", pin, mode);
+      bridge_debug_log_gpio(F("pinMode"), pin, mode);
     #endif
         command_processed_internally = true;
         requires_ack = true;
@@ -502,7 +510,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       uint8_t value = frame.payload[1] ? HIGH : LOW;
       ::digitalWrite(pin, value);
     #if BRIDGE_DEBUG_IO
-      bridge_debug_log_gpio("digitalWrite", pin, value == HIGH ? 1 : 0);
+      bridge_debug_log_gpio(
+          F("digitalWrite"), pin, value == HIGH ? 1 : 0);
     #endif
         command_processed_internally = true;
         requires_ack = true;
@@ -520,7 +529,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         uint8_t pin = frame.payload[0];
         int value = ::digitalRead(pin);
 #if BRIDGE_DEBUG_IO
-        bridge_debug_log_gpio("digitalRead", pin, value);
+  bridge_debug_log_gpio(F("digitalRead"), pin, value);
 #endif
         uint8_t resp_payload = static_cast<uint8_t>(value & 0xFF);
         sendFrame(CommandId::CMD_DIGITAL_READ_RESP, BufferView(&resp_payload, 1));
@@ -532,7 +541,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         uint8_t pin = frame.payload[0];
         int value = ::analogRead(pin);
 #if BRIDGE_DEBUG_IO
-        bridge_debug_log_gpio("analogRead", pin, value);
+  bridge_debug_log_gpio(F("analogRead"), pin, value);
 #endif
         uint8_t resp_payload[2];
         rpc::write_u16_be(resp_payload,

@@ -68,3 +68,15 @@ def test_process_serial_packet_forwards_valid_frames(runtime_state) -> None:
         (Command.CMD_CONSOLE_WRITE.value, b"hi"),
     ]
     assert not stub.sent_frames
+
+
+def test_process_serial_packet_rejects_non_binary_payload(runtime_state) -> None:
+    stub = _StubService()
+    service = cast(BridgeService, stub)
+
+    asyncio.run(_process_serial_packet("not-bytes", service, runtime_state))
+
+    assert runtime_state.serial_decode_errors == 1
+    assert not stub.handled_frames
+    assert stub.sent_frames
+    assert stub.sent_frames[-1][0] == Status.MALFORMED.value

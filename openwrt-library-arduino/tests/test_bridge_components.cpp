@@ -1,4 +1,5 @@
 #include <cassert>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -140,6 +141,33 @@ class RecordingStream : public Stream {
  private:
   std::vector<uint8_t> buffer_;
 };
+
+  class ReplayStream : public Stream {
+   public:
+    explicit ReplayStream(std::vector<uint8_t> data)
+        : data_(std::move(data)), index_(0) {}
+
+    int available() override {
+      if (index_ >= data_.size()) {
+        return 0;
+      }
+      size_t remaining = data_.size() - index_;
+      return remaining > static_cast<size_t>(INT_MAX)
+                 ? INT_MAX
+                 : static_cast<int>(remaining);
+    }
+
+    int read() override {
+      if (index_ >= data_.size()) {
+        return -1;
+      }
+      return data_[index_++];
+    }
+
+   private:
+    std::vector<uint8_t> data_;
+    size_t index_;
+  };
 
 // Rebinds the global Bridge instance to a host-side stream while in scope.
 class ScopedBridgeBinding {
@@ -637,6 +665,23 @@ void test_status_error_frame_dispatches_handler() {
   assert(status_state.called);
   assert(status_state.status_code == StatusCode::STATUS_ERROR);
   assert(status_state.payload == message);
+  StatusHandlerState::instance = nullptr;
+}
+
+void test_serial_overflow_emits_status_notification() {
+  std::vector<uint8_t> oversized(rpc::COBS_BUFFER_SIZE + 8, 0xAA);
+  ReplayStream stream(oversized);
+  BridgeClass bridge(stream);
+
+  StatusHandlerState status_state;
+  StatusHandlerState::instance = &status_state;
+  bridge.onStatus(status_handler_trampoline);
+
+  bridge.process();
+
+  assert(status_state.called);
+  assert(status_state.status_code == StatusCode::STATUS_MALFORMED);
+  assert(status_state.payload == "serial_rx_overflow");
   StatusHandlerState::instance = nullptr;
 }
 

@@ -50,7 +50,12 @@ FrameParser::FrameParser() {
   memset(_rx_buffer, 0, sizeof(_rx_buffer));
 }
 
-void FrameParser::reset() { _rx_buffer_ptr = 0; }
+void FrameParser::reset() {
+  _rx_buffer_ptr = 0;
+  _overflow_detected = false;
+}
+
+bool FrameParser::overflowed() const { return _overflow_detected; }
 
 bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
   // If we receive a zero byte, the packet is complete.
@@ -127,6 +132,8 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     // Not a zero byte, so add it to the buffer if there's space.
     if (_rx_buffer_ptr < COBS_BUFFER_SIZE) {
       _rx_buffer[_rx_buffer_ptr++] = byte;
+    } else {
+      _overflow_detected = true;
     }
     // If the buffer overflows, the packet will be corrupt and fail COBS/CRC
     // check later.

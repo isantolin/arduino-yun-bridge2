@@ -72,10 +72,12 @@ class FrameParser {
   // it decodes, validates, and populates out_frame, returning true.
   bool consume(uint8_t byte, Frame& out_frame);
   void reset();
+  bool overflowed() const;
 
  private:
   uint8_t _rx_buffer[COBS_BUFFER_SIZE];
   size_t _rx_buffer_ptr;
+  bool _overflow_detected;
 };
 
 class FrameBuilder {

@@ -5,7 +5,7 @@ import asyncio
 import logging
 import struct
 from builtins import BaseExceptionGroup
-from typing import Any
+from typing import Any, TypeGuard
 
 import serial
 import serial_asyncio
@@ -41,6 +41,23 @@ MAX_SERIAL_PACKET_BYTES = (
     + protocol.CRC_SIZE
     + 4
 )
+
+BinaryPacket = bytes | bytearray | memoryview
+
+
+def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
+    if not isinstance(candidate, (bytes, bytearray, memoryview)):
+        return False
+    length = len(candidate)
+    if length == 0:
+        return False
+    return length <= MAX_SERIAL_PACKET_BYTES
+
+
+def _coerce_packet(candidate: BinaryPacket) -> bytes:
+    if isinstance(candidate, bytes):
+        return candidate
+    return bytes(candidate)
 
 
 def _unwrap_retryable_exception_group(
@@ -208,22 +225,38 @@ async def _send_serial_frame(
 
 
 async def _process_serial_packet(
-    encoded_packet: bytes,
+    encoded_packet: object,
     service: BridgeService,
     state: RuntimeState,
 ) -> None:
+    if not _is_binary_packet(encoded_packet):
+        logger.warning(
+            "Dropping non-binary serial packet type %s",
+            type(encoded_packet).__name__,
+        )
+        state.record_serial_decode_error()
+        payload = pack_u16(0xFFFF)
+        try:
+            await service.send_frame(Status.MALFORMED.value, payload)
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Failed to notify MCU about non-binary serial payload"
+            )
+        return
+
+    packet_bytes = _coerce_packet(encoded_packet)
     try:
-        raw_frame = cobs.decode(encoded_packet)
+        raw_frame = cobs.decode(packet_bytes)
     except cobs.DecodeError as exc:
-        packet_hex = encoded_packet.hex()
+        packet_hex = packet_bytes.hex()
         logger.warning(
             "COBS decode error %s for packet %s (len=%d)",
             exc,
             packet_hex,
-            len(encoded_packet),
+            len(packet_bytes),
         )
         if logger.isEnabledFor(logging.DEBUG):
-            appended = encoded_packet + SERIAL_TERMINATOR
+            appended = packet_bytes + SERIAL_TERMINATOR
             human_hex = " ".join(f"{byte:02x}" for byte in appended)
             logger.debug(
                 "Decode error raw bytes (len=%d): %s",
@@ -231,7 +264,7 @@ async def _process_serial_packet(
                 human_hex,
             )
         state.record_serial_decode_error()
-        truncated = encoded_packet[:32]
+        truncated = packet_bytes[:32]
         payload = pack_u16(0xFFFF) + truncated
         try:
             await service.send_frame(Status.MALFORMED.value, payload)

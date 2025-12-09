@@ -57,10 +57,9 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   while (remaining > 0) {
     size_t chunk_size =
         remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
-    const uint16_t chunk_len = static_cast<uint16_t>(chunk_size);
     if (!Bridge.sendFrame(
             CommandId::CMD_CONSOLE_WRITE,
-            BufferView(buffer + offset, chunk_len))) {
+            BufferView(buffer + offset, chunk_size))) {
       break;
     }
     offset += chunk_size;
@@ -116,10 +115,9 @@ void ConsoleClass::flush() {
     size_t offset = 0;
     while (remaining > 0) {
       size_t chunk = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
-      const uint16_t chunk_len = static_cast<uint16_t>(chunk);
-            if (!Bridge.sendFrame(
+      if (!Bridge.sendFrame(
               CommandId::CMD_CONSOLE_WRITE,
-              BufferView(_tx_buffer + offset, chunk_len))) {
+              BufferView(_tx_buffer + offset, chunk))) {
         break;
       }
       offset += chunk;
@@ -131,16 +129,17 @@ void ConsoleClass::flush() {
   Bridge.flushStream();
 }
 
-void ConsoleClass::_push(const uint8_t* buffer, size_t size) {
+void ConsoleClass::_push(BufferView chunk) {
   const size_t capacity = CONSOLE_RX_BUFFER_SIZE;
-  if (capacity == 0) {
+  if (capacity == 0 || chunk.empty() || !chunk.valid()) {
     return;
   }
 
-  for (size_t i = 0; i < size; i++) {
+  const uint8_t* data = chunk.data();
+  for (size_t i = 0; i < chunk.size(); i++) {
     size_t next_head = (_rx_buffer_head + 1) % capacity;
     if (next_head != _rx_buffer_tail) {
-      _rx_buffer[_rx_buffer_head] = buffer[i];
+      _rx_buffer[_rx_buffer_head] = data[i];
       _rx_buffer_head = next_head;
     }
   }

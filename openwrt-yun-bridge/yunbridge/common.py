@@ -5,17 +5,17 @@ import logging
 from collections.abc import Iterable, Mapping as MappingABC, Sequence
 from dataclasses import dataclass, field, fields
 from struct import pack as struct_pack, unpack as struct_unpack
-from types import TracebackType
 from typing import (
     Any,
     Final,
     Iterable as TypingIterable,
-    Protocol,
     Self,
     TypeVar,
     cast,
 )
 from collections.abc import Mapping
+
+import uci
 
 from more_itertools import chunked, unique_everseen
 from paho.mqtt.packettypes import PacketTypes
@@ -58,29 +58,6 @@ from .const import (
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-
-
-class _UciCursor(Protocol):
-    def __enter__(self) -> Self:
-        ...
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: TracebackType | None,
-    ) -> None:
-        ...
-
-    def get_all(self, package: str, section: str) -> Mapping[str, Any]:
-        ...
-
-
-class _UciModule(Protocol):
-    UciException: type[Exception]
-
-    def Uci(self) -> _UciCursor:
-        ...
 
 
 def pack_u16(value: int) -> bytes:
@@ -210,19 +187,9 @@ def apply_mqtt_connect_properties(client: Any) -> None:
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
     try:
-        import uci as uci_runtime  # type: ignore[reportMissingImports]
-    except ImportError as exc:  # pragma: no cover - fail fast in dev envs
-        raise RuntimeError(
-            "python3-uci is required to load Yun Bridge configuration."
-        ) from exc
-
-    uci_module = cast(_UciModule, uci_runtime)
-    uci_exception = getattr(uci_module, "UciException", Exception)
-
-    try:
-        with uci_module.Uci() as cursor:
+        with uci.Uci() as cursor:
             section: Any = cursor.get_all("yunbridge", "general")
-    except uci_exception as exc:
+    except uci.UciException as exc:
         logger.warning(
             "Failed to load UCI configuration via python3-uci: %s",
             exc,

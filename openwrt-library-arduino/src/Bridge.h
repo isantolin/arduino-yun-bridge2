@@ -74,7 +74,7 @@ class ConsoleClass : public Print {
   int peek();
   void flush();
   explicit operator bool() const { return _begun; }
-  void _push(const uint8_t* buffer, size_t size);
+  void _push(BufferView chunk);
 
  private:
   bool _begun;
@@ -303,7 +303,7 @@ class BridgeClass {
 
   void dispatch(const rpc::Frame& frame);
   void _emitStatus(rpc::StatusCode status_code, const char* message);
-  void _applyTimingConfig(const uint8_t* payload, uint16_t length);
+  void _applyTimingConfig(BufferView payload);
 
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
 };

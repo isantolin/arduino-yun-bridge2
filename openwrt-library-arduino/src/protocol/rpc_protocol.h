@@ -20,6 +20,8 @@
 #define RPC_PROTOCOL_H
 
 #include <cstddef>
+#include <cstdint>
+#include <type_traits>
 
 #include "rpc_frame.h"
 
@@ -73,69 +75,90 @@ static_assert(
     "Handshake config size mismatch with spec.toml"
 );
 
-// Status Codes
-#define STATUS_OK 0x00
-#define STATUS_ERROR 0x01
-#define STATUS_CMD_UNKNOWN 0x02
-#define STATUS_MALFORMED 0x03
-#define STATUS_CRC_MISMATCH 0x04
-#define STATUS_TIMEOUT 0x05
-#define STATUS_NOT_IMPLEMENTED 0x06
-#define STATUS_ACK 0x07
+namespace rpc {
 
-// Command Identifiers
-// System
-#define CMD_GET_VERSION 0x00
-#define CMD_GET_VERSION_RESP 0x80
-#define CMD_GET_FREE_MEMORY 0x01
-#define CMD_GET_FREE_MEMORY_RESP 0x82
-#define CMD_LINK_SYNC 0x02
-#define CMD_LINK_SYNC_RESP 0x83
-#define CMD_LINK_RESET 0x03
-#define CMD_LINK_RESET_RESP 0x84
+enum class StatusCode : uint8_t {
+    STATUS_OK = 0x00,
+    STATUS_ERROR = 0x01,
+    STATUS_CMD_UNKNOWN = 0x02,
+    STATUS_MALFORMED = 0x03,
+    STATUS_CRC_MISMATCH = 0x04,
+    STATUS_TIMEOUT = 0x05,
+    STATUS_NOT_IMPLEMENTED = 0x06,
+    STATUS_ACK = 0x07,
+};
 
-// Flow Control
-#define CMD_XOFF 0x08
-#define CMD_XON 0x09
+enum class CommandId : uint16_t {
+    // System
+    CMD_GET_VERSION = 0x00,
+    CMD_GET_VERSION_RESP = 0x80,
+    CMD_GET_FREE_MEMORY = 0x01,
+    CMD_GET_FREE_MEMORY_RESP = 0x82,
+    CMD_LINK_SYNC = 0x02,
+    CMD_LINK_SYNC_RESP = 0x83,
+    CMD_LINK_RESET = 0x03,
+    CMD_LINK_RESET_RESP = 0x84,
 
-// Gpio
-#define CMD_SET_PIN_MODE 0x10
-#define CMD_DIGITAL_WRITE 0x11
-#define CMD_ANALOG_WRITE 0x12
-#define CMD_DIGITAL_READ 0x13
-#define CMD_ANALOG_READ 0x14
-#define CMD_DIGITAL_READ_RESP 0x15
-#define CMD_ANALOG_READ_RESP 0x16
+    // Flow Control
+    CMD_XOFF = 0x08,
+    CMD_XON = 0x09,
 
-// Console
-#define CMD_CONSOLE_WRITE 0x20
+    // GPIO
+    CMD_SET_PIN_MODE = 0x10,
+    CMD_DIGITAL_WRITE = 0x11,
+    CMD_ANALOG_WRITE = 0x12,
+    CMD_DIGITAL_READ = 0x13,
+    CMD_ANALOG_READ = 0x14,
+    CMD_DIGITAL_READ_RESP = 0x15,
+    CMD_ANALOG_READ_RESP = 0x16,
 
-// Datastore
-#define CMD_DATASTORE_PUT 0x30
-#define CMD_DATASTORE_GET 0x31
-#define CMD_DATASTORE_GET_RESP 0x81
+    // Console
+    CMD_CONSOLE_WRITE = 0x20,
 
-// Mailbox
-#define CMD_MAILBOX_READ 0x40
-#define CMD_MAILBOX_PROCESSED 0x41
-#define CMD_MAILBOX_AVAILABLE 0x42
-#define CMD_MAILBOX_PUSH 0x43
-#define CMD_MAILBOX_READ_RESP 0x90
-#define CMD_MAILBOX_AVAILABLE_RESP 0x92
+    // Datastore
+    CMD_DATASTORE_PUT = 0x30,
+    CMD_DATASTORE_GET = 0x31,
+    CMD_DATASTORE_GET_RESP = 0x81,
 
-// Filesystem
-#define CMD_FILE_WRITE 0x50
-#define CMD_FILE_READ 0x51
-#define CMD_FILE_REMOVE 0x52
-#define CMD_FILE_READ_RESP 0xA1
+    // Mailbox
+    CMD_MAILBOX_READ = 0x40,
+    CMD_MAILBOX_PROCESSED = 0x41,
+    CMD_MAILBOX_AVAILABLE = 0x42,
+    CMD_MAILBOX_PUSH = 0x43,
+    CMD_MAILBOX_READ_RESP = 0x90,
+    CMD_MAILBOX_AVAILABLE_RESP = 0x92,
 
-// Process
-#define CMD_PROCESS_RUN 0x60
-#define CMD_PROCESS_RUN_ASYNC 0x61
-#define CMD_PROCESS_POLL 0x62
-#define CMD_PROCESS_KILL 0x63
-#define CMD_PROCESS_RUN_RESP 0xB0
-#define CMD_PROCESS_RUN_ASYNC_RESP 0xB1
-#define CMD_PROCESS_POLL_RESP 0xB2
+    // Filesystem
+    CMD_FILE_WRITE = 0x50,
+    CMD_FILE_READ = 0x51,
+    CMD_FILE_REMOVE = 0x52,
+    CMD_FILE_READ_RESP = 0xA1,
+
+    // Process
+    CMD_PROCESS_RUN = 0x60,
+    CMD_PROCESS_RUN_ASYNC = 0x61,
+    CMD_PROCESS_POLL = 0x62,
+    CMD_PROCESS_KILL = 0x63,
+    CMD_PROCESS_RUN_RESP = 0xB0,
+    CMD_PROCESS_RUN_ASYNC_RESP = 0xB1,
+    CMD_PROCESS_POLL_RESP = 0xB2,
+};
+
+template <typename Enum>
+constexpr auto to_underlying(Enum value) noexcept ->
+    typename std::underlying_type<Enum>::type {
+    static_assert(std::is_enum<Enum>::value, "Enum required");
+    return static_cast<typename std::underlying_type<Enum>::type>(value);
+}
+
+constexpr bool is_status_frame(uint16_t command_id) noexcept {
+    return command_id <= to_underlying(StatusCode::STATUS_ACK);
+}
+
+constexpr bool is_command_frame(uint16_t command_id) noexcept {
+    return command_id > to_underlying(StatusCode::STATUS_ACK);
+}
+
+}  // namespace rpc
 
 #endif  // RPC_PROTOCOL_H

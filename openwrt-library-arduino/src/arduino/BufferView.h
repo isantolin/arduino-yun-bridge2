@@ -7,8 +7,8 @@
 class BufferView {
  public:
   constexpr BufferView() : _data(nullptr), _size(0) {}
-  constexpr BufferView(const uint8_t* data, std::size_t size)
-      : _data(size == 0 ? nullptr : data), _size(size) {}
+    constexpr BufferView(const uint8_t* data, std::size_t size)
+      : _data(data), _size(size) {}
 
   template <std::size_t N>
   constexpr BufferView(const uint8_t (&array)[N])

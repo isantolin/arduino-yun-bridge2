@@ -281,7 +281,7 @@ void test_console_write_and_flow_control() {
   Console.begin();
 
   std::vector<uint8_t> inbound(CONSOLE_BUFFER_HIGH_WATER + 2, 0x34);
-  Console._push(inbound.data(), inbound.size());
+  Console._push(BufferView(inbound.data(), inbound.size()));
   assert(Console.available() == static_cast<int>(inbound.size()));
   int peeked = Console.peek();
   assert(peeked == 0x34);
@@ -839,7 +839,7 @@ void test_apply_timing_config_accepts_valid_payload() {
   payload[2] = retry_limit;
   rpc::write_u32_be(payload + 3, response_timeout);
 
-  bridge._applyTimingConfig(payload, sizeof(payload));
+  bridge._applyTimingConfig(BufferView(payload, sizeof(payload)));
 
   assert(bridge._ack_timeout_ms == ack_timeout);
   assert(bridge._ack_retry_limit == retry_limit);
@@ -860,7 +860,7 @@ void test_apply_timing_config_rejects_invalid_payload() {
   payload[2] = invalid_retry_limit;
   rpc::write_u32_be(payload + 3, invalid_response_timeout);
 
-  bridge._applyTimingConfig(payload, sizeof(payload));
+  bridge._applyTimingConfig(BufferView(payload, sizeof(payload)));
 
   assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
   assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
@@ -869,7 +869,7 @@ void test_apply_timing_config_rejects_invalid_payload() {
   bridge._ack_timeout_ms = 1;
   bridge._ack_retry_limit = 1;
   bridge._response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
-  bridge._applyTimingConfig(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1);
+  bridge._applyTimingConfig(BufferView(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1));
 
   assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
   assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);

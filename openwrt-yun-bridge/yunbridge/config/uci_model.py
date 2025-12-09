@@ -1,11 +1,12 @@
 """Dataclass-based normalisation for UCI key/value pairs."""
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, fields
-from typing import Any, Iterable as TypingIterable, Iterator, cast
+from typing import Any, Mapping
 
 from ..const import (
+    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
@@ -23,11 +24,9 @@ from ..const import (
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_ATTEMPTS,
@@ -36,72 +35,43 @@ from ..const import (
 )
 
 
-def _stringify_iterable(values: Iterable[Any]) -> str:
-    parts: list[str] = []
-    for item in values:
-        parts.append(str(item))
-    return " ".join(parts)
+def _parse_bool(value: Any) -> bool:
+    """Parse a UCI boolean value safely."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if value is None:
+        return False
+    s = str(value).lower().strip()
+    return s in ("1", "yes", "on", "true", "enable", "enabled")
 
 
-def _stringify_value(value: Any) -> str:
-    attr_value = getattr(value, "value", None)
-    if attr_value is not None and not isinstance(value, (str, bytes)):
-        return _stringify_value(attr_value)
-
-    if isinstance(value, Mapping):
-        dict_value: dict[str, Any] = {}
-        mapping_items = cast(
-            TypingIterable[tuple[Any, Any]],
-            value.items(),
-        )
-        for key, entry in mapping_items:
-            dict_value[str(key)] = entry
-        if "value" in dict_value:
-            return _stringify_value(dict_value["value"])
-        values_candidate: Any = dict_value.get("values")
-        if isinstance(values_candidate, Iterable):
-            iterable_values = cast(TypingIterable[Any], values_candidate)
-            return _stringify_iterable(iterable_values)
-        return _stringify_iterable(
-            cast(TypingIterable[Any], dict_value.values())
-        )
-
-    if isinstance(value, (tuple, list, set)):
-        iterable_value = cast(TypingIterable[Any], value)
-        return _stringify_iterable(iterable_value)
-
-    return str(value) if value is not None else ""
-
-
-def _iter_mapping_items(candidate: Any) -> Iterator[tuple[Any, Any]]:
-    if isinstance(candidate, Mapping):
-        mapping_items = cast(
-            TypingIterable[tuple[Any, Any]],
-            candidate.items(),
-        )
-        return iter(mapping_items)
+def _parse_int(value: Any, default: int) -> int:
+    """Parse a UCI integer value safely."""
     try:
-        coerced = dict(candidate)
-    except Exception:
-        return iter(())
-    coerced_items = cast(
-        TypingIterable[tuple[Any, Any]],
-        coerced.items(),
-    )
-    return iter(coerced_items)
+        # Handle cases like "10.0" being passed as string
+        return int(float(value))
+    except (ValueError, TypeError):
+        return default
 
 
-def _extras_default() -> dict[str, str]:
-    return {}
+def _parse_float(value: Any, default: float) -> float:
+    """Parse a UCI float value safely."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
 
 @dataclass(slots=True)
 class UciConfigModel:
-    """Structured representation of UCI options with sane defaults."""
+    """Structured representation of UCI options with sane defaults and typed fields."""
 
+    # MQTT Settings
     mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: str = str(DEFAULT_MQTT_PORT)
-    mqtt_tls: str = "1"
+    mqtt_port: int = DEFAULT_MQTT_PORT
+    mqtt_tls: bool = True
     mqtt_cafile: str = DEFAULT_MQTT_CAFILE
     mqtt_certfile: str = ""
     mqtt_keyfile: str = ""
@@ -109,99 +79,122 @@ class UciConfigModel:
     mqtt_pass: str = ""
     mqtt_topic: str = DEFAULT_MQTT_TOPIC
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    mqtt_queue_limit: str = str(DEFAULT_MQTT_QUEUE_LIMIT)
+    mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
+
+    # Serial Settings
     serial_port: str = DEFAULT_SERIAL_PORT
-    serial_baud: str = str(DEFAULT_SERIAL_BAUD)
+    serial_baud: int = DEFAULT_SERIAL_BAUD
     serial_shared_secret: str = ""
-    serial_retry_timeout: str = str(DEFAULT_SERIAL_RETRY_TIMEOUT)
-    serial_response_timeout: str = str(DEFAULT_SERIAL_RESPONSE_TIMEOUT)
-    serial_retry_attempts: str = str(DEFAULT_SERIAL_RETRY_ATTEMPTS)
-    serial_handshake_min_interval: str = str(
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    )
-    serial_handshake_fatal_failures: str = str(
-        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    )
-    debug: str = "0"
+    serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    serial_retry_attempts: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
+    serial_handshake_min_interval: float = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+
+    # General Settings
+    debug: bool = False
     allowed_commands: str = ""
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: str = str(DEFAULT_PROCESS_TIMEOUT)
-    process_max_output_bytes: str = str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
-    process_max_concurrent: str = str(DEFAULT_PROCESS_MAX_CONCURRENT)
-    console_queue_limit_bytes: str = str(DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES)
-    mailbox_queue_limit: str = str(DEFAULT_MAILBOX_QUEUE_LIMIT)
-    mailbox_queue_bytes_limit: str = str(DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT)
-    pending_pin_request_limit: str = str(DEFAULT_PENDING_PIN_REQUESTS)
-    reconnect_delay: str = str(DEFAULT_RECONNECT_DELAY)
-    status_interval: str = str(DEFAULT_STATUS_INTERVAL)
-    bridge_summary_interval: str = str(DEFAULT_BRIDGE_SUMMARY_INTERVAL)
-    bridge_handshake_interval: str = str(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL)
-    mqtt_allow_file_read: str = "1"
-    mqtt_allow_file_write: str = "1"
-    mqtt_allow_file_remove: str = "1"
-    mqtt_allow_datastore_get: str = "1"
-    mqtt_allow_datastore_put: str = "1"
-    mqtt_allow_mailbox_read: str = "1"
-    mqtt_allow_mailbox_write: str = "1"
-    mqtt_allow_shell_run: str = "1"
-    mqtt_allow_shell_run_async: str = "1"
-    mqtt_allow_shell_poll: str = "1"
-    mqtt_allow_shell_kill: str = "1"
-    mqtt_allow_console_input: str = "1"
-    mqtt_allow_digital_write: str = "1"
-    mqtt_allow_digital_read: str = "1"
-    mqtt_allow_digital_mode: str = "1"
-    mqtt_allow_analog_write: str = "1"
-    mqtt_allow_analog_read: str = "1"
-    metrics_enabled: str = "0"
-    metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: str = str(DEFAULT_METRICS_PORT)
-    extras: dict[str, str] = field(default_factory=_extras_default)
+    process_timeout: float = DEFAULT_PROCESS_TIMEOUT
+    process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
+    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
+    reconnect_delay: float = DEFAULT_RECONNECT_DELAY
+    status_interval: float = DEFAULT_STATUS_INTERVAL
+    bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
 
-    def __post_init__(self) -> None:
-        """Stringify all fields post-initialization."""
-        # Stringify every field (except extras) to keep UCI writes consistent
+    # Permissions (Defaults from '1' in original)
+    mqtt_allow_file_read: bool = True
+    mqtt_allow_file_write: bool = True
+    mqtt_allow_file_remove: bool = True
+    mqtt_allow_datastore_get: bool = True
+    mqtt_allow_datastore_put: bool = True
+    mqtt_allow_mailbox_read: bool = True
+    mqtt_allow_mailbox_write: bool = True
+    mqtt_allow_shell_run: bool = True
+    mqtt_allow_shell_run_async: bool = True
+    mqtt_allow_shell_poll: bool = True
+    mqtt_allow_shell_kill: bool = True
+    mqtt_allow_console_input: bool = True
+    mqtt_allow_digital_write: bool = True
+    mqtt_allow_digital_read: bool = True
+    mqtt_allow_digital_mode: bool = True
+    mqtt_allow_analog_write: bool = True
+    mqtt_allow_analog_read: bool = True
+
+    # Metrics
+    metrics_enabled: bool = False
+    metrics_host: str = DEFAULT_METRICS_HOST
+    metrics_port: int = DEFAULT_METRICS_PORT
+
+    # Extras to preserve unknown keys
+    extras: dict[str, str] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, mapping: Mapping[str, Any]) -> UciConfigModel:
+        """Create config model from a mapping, converting types appropriately."""
+        known_fields = {f.name: f for f in fields(cls) if f.name != "extras"}
+        init_args: dict[str, Any] = {}
+        extras: dict[str, str] = {}
+
+        for key, value in mapping.items():
+            key_str = str(key)
+            if key_str not in known_fields:
+                extras[key_str] = str(value) if value is not None else ""
+                continue
+
+            field_info = known_fields[key_str]
+            target_type = field_info.type
+
+            # Type conversion logic
+            if target_type == bool:
+                init_args[key_str] = _parse_bool(value)
+            elif target_type == int:
+                # Get default from field or constant if possible for fallback
+                default = field_info.default if isinstance(field_info.default, int) else 0
+                init_args[key_str] = _parse_int(value, default)
+            elif target_type == float:
+                default = field_info.default if isinstance(field_info.default, (int, float)) else 0.0
+                init_args[key_str] = _parse_float(value, default)
+            else:
+                # Default to string
+                init_args[key_str] = str(value) if value is not None else ""
+
+        return cls(extras=extras, **init_args)
+
+    def to_uci_dict(self) -> dict[str, str]:
+        """Export configuration as a flat dictionary of strings for UCI."""
+        output: dict[str, str] = {}
+
         for f in fields(self):
             if f.name == "extras":
                 continue
+
             value = getattr(self, f.name)
-            setattr(self, f.name, _stringify_value(value))
 
-        # Process extras
-        new_extras: dict[str, str] = {}
-        if self.extras:
-            for k, v in self.extras.items():
-                new_extras[str(k)] = _stringify_value(v)
-        self.extras = new_extras
-
-    @classmethod
-    def from_mapping(
-        cls,
-        mapping: Mapping[str, Any] | TypingIterable[tuple[Any, Any]] | Any,
-    ) -> UciConfigModel:
-        known = cls._known_fields()
-        kwargs: dict[str, Any] = {}
-        extras: dict[str, str] = {}
-        for key, value in _iter_mapping_items(mapping):
-            key_str = str(key)
-            if key_str in known:
-                kwargs[key_str] = value
+            if isinstance(value, bool):
+                output[f.name] = "1" if value else "0"
+            elif value is None:
+                output[f.name] = ""
             else:
-                extras[key_str] = _stringify_value(value)
-        return cls(extras=extras, **kwargs)
+                output[f.name] = str(value)
+
+        # Merge extras
+        output.update(self.extras)
+        return output
 
     def as_dict(self) -> dict[str, str]:
-        values = {name: getattr(self, name) for name in self._known_fields()}
-        values.update(self.extras)
-        return values
+        """Alias for legacy compatibility."""
+        return self.to_uci_dict()
 
     @classmethod
     def defaults(cls) -> dict[str, str]:
-        return cls().as_dict()
-
-    @classmethod
-    def _known_fields(cls) -> set[str]:
-        return {f.name for f in fields(cls) if f.name != "extras"}
+        """Return the default configuration as a UCI dict."""
+        return cls().to_uci_dict()
 
 
 __all__ = [

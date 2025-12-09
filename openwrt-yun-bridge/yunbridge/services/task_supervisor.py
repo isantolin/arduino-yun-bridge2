@@ -11,6 +11,7 @@ from typing import Any, TypeVar, cast
 
 _T = TypeVar("_T")
 
+
 class TaskSupervisor:
     """Track background coroutines under a dedicated TaskGroup anchor."""
 

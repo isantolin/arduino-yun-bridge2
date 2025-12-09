@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Any, Deque, cast
 from collections.abc import Mapping
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from tenacity import wait_exponential
 
 from ..const import (

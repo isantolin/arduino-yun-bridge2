@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import struct
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig

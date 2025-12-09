@@ -5,7 +5,7 @@ import asyncio
 import struct
 from unittest.mock import patch
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status
 
 from yunbridge.config.settings import RuntimeConfig

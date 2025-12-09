@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
 
 from ...protocol.topics import Topic, topic_path

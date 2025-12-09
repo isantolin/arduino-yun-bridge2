@@ -22,7 +22,10 @@ from yunbridge.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from yunbridge.services.runtime import BridgeService
-from yunbridge.services.components.process import ProcessComponent
+from yunbridge.services.components.process import (
+    ProcessComponent,
+    ProcessOutputBatch,
+)
 from yunbridge.state.context import ManagedProcess, create_runtime_state
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE, Status
 from yunbridge.policy import AllowedCommandPolicy
@@ -105,29 +108,19 @@ def test_collect_process_output_flushes_stored_buffers(
             state.running_processes[pid] = slot
 
         collect = cast(
-            Callable[[int], Awaitable[
-                tuple[int, int, bytes, bytes, bool, bool, bool]
-            ]],
+            Callable[[int], Awaitable[ProcessOutputBatch]],
             getattr(runtime_service, "_collect_process_output"),
         )
 
-        (
-            status,
-            exit_code,
-            stdout_chunk,
-            stderr_chunk,
-            finished,
-            stdout_truncated,
-            stderr_truncated,
-        ) = await collect(pid)
+        batch = await collect(pid)
 
-        assert status == Status.OK.value
-        assert exit_code == 3
-        assert stdout_chunk == b"hello"
-        assert stderr_chunk == b"world"
-        assert finished is True
-        assert stdout_truncated is False
-        assert stderr_truncated is False
+        assert batch.status_byte == Status.OK.value
+        assert batch.exit_code == 3
+        assert batch.stdout_chunk == b"hello"
+        assert batch.stderr_chunk == b"world"
+        assert batch.finished is True
+        assert batch.stdout_truncated is False
+        assert batch.stderr_truncated is False
 
         # Slot should be removed after final chunk
         assert pid not in state.running_processes

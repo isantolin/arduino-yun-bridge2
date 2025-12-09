@@ -3,16 +3,28 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+from enum import IntEnum
 from collections.abc import Iterable as IterableABC
-from typing import Any, TypeGuard, cast
+from typing import Any, TypeGuard
 
 SpoolRecord = dict[str, Any]
 UserProperty = tuple[str, str]
 
 IterableAny = IterableABC[Any]
 
+
+class QOSLevel(IntEnum):
+    """MQTT Quality-of-Service levels."""
+
+    QOS_0 = 0
+    QOS_1 = 1
+    QOS_2 = 2
+
+
 def _is_iterable_sequence(value: Any) -> TypeGuard[IterableAny]:
-    return isinstance(value, IterableABC) and not isinstance(value, (bytes, str))
+    return isinstance(value, IterableABC) and not isinstance(
+        value, (bytes, str)
+    )
 
 
 def _normalize_user_properties(
@@ -22,10 +34,10 @@ def _normalize_user_properties(
         return ()
 
     normalized: list[UserProperty] = []
-    for entry in cast(IterableAny, raw):
+    for entry in raw:
         if not _is_iterable_sequence(entry):
             continue
-        entry_seq = list(cast(IterableAny, entry))
+        entry_seq = list(entry)
         if len(entry_seq) < 2:
             continue
         normalized.append((str(entry_seq[0]), str(entry_seq[1])))
@@ -94,4 +106,4 @@ class QueuedPublish:
         )
 
 
-__all__ = ["QueuedPublish", "SpoolRecord"]
+__all__ = ["QOSLevel", "QueuedPublish", "SpoolRecord"]

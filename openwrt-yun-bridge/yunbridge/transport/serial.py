@@ -126,7 +126,10 @@ async def _open_serial_connection_with_retry(
         before_sleep=_before_sleep,
     )
 
-    async def _connect_once() -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    async def _connect_once() -> tuple[
+        asyncio.StreamReader,
+        asyncio.StreamWriter,
+    ]:
         try:
             return await OPEN_SERIAL_CONNECTION(
                 url=config.serial_port,

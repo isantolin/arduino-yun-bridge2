@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from contextlib import AsyncExitStack
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.rpc.protocol import Status
 from yunbridge.const import (
@@ -195,26 +195,9 @@ class ShellComponent:
     async def _handle_poll(self, pid_model: ShellPidPayload) -> None:
         pid = pid_model.pid
 
-        (
-            status_byte,
-            exit_code,
-            stdout_buffer,
-            stderr_buffer,
-            finished,
-            stdout_truncated,
-            stderr_truncated,
-        ) = await self.process.collect_output(pid)
+        batch = await self.process.collect_output(pid)
 
-        await self.process.publish_poll_result(
-            pid,
-            status_byte,
-            exit_code,
-            stdout_buffer,
-            stderr_buffer,
-            stdout_truncated,
-            stderr_truncated,
-            finished,
-        )
+        await self.process.publish_poll_result(pid, batch)
 
     async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
         await self.process.handle_kill(

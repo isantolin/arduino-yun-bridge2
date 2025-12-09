@@ -8,7 +8,7 @@ from typing import Any
 from collections.abc import Coroutine
 
 import pytest
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from hypothesis import HealthCheck, given, settings, strategies as st
 
 from yunbridge.config.settings import RuntimeConfig

@@ -28,6 +28,19 @@ _PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
 
 
 @dataclass(slots=True)
+class ProcessOutputBatch:
+    """Structured payload describing PROCESS_POLL results."""
+
+    status_byte: int
+    exit_code: int
+    stdout_chunk: bytes
+    stderr_chunk: bytes
+    finished: bool
+    stdout_truncated: bool
+    stderr_truncated: bool
+
+
+@dataclass(slots=True)
 class ProcessComponent:
     """Encapsulates shell/process interactions for BridgeService."""
 
@@ -167,38 +180,21 @@ class ProcessComponent:
             return False
 
         pid = unpack_u16(payload)
-        (
-            status_byte,
-            exit_code,
-            stdout_chunk,
-            stderr_chunk,
-            finished,
-            stdout_truncated,
-            stderr_truncated,
-        ) = await self.collect_output(pid)
+        batch = await self.collect_output(pid)
 
         response_payload = (
-            bytes([status_byte, exit_code])
-            + pack_u16(len(stdout_chunk))
-            + pack_u16(len(stderr_chunk))
-            + stdout_chunk
-            + stderr_chunk
+            bytes([batch.status_byte, batch.exit_code])
+            + pack_u16(len(batch.stdout_chunk))
+            + pack_u16(len(batch.stderr_chunk))
+            + batch.stdout_chunk
+            + batch.stderr_chunk
         )
         await self.ctx.send_frame(
             Command.CMD_PROCESS_POLL_RESP.value, response_payload
         )
 
-        await self.publish_poll_result(
-            pid,
-            status_byte,
-            exit_code,
-            stdout_chunk,
-            stderr_chunk,
-            stdout_truncated,
-            stderr_truncated,
-            finished,
-        )
-        if finished:
+        await self.publish_poll_result(pid, batch)
+        if batch.finished:
             logger.debug("Sent final output for finished process PID %d", pid)
         return True
 
@@ -416,16 +412,22 @@ class ProcessComponent:
     def _tokenize_command(self, command: str) -> tuple[str, ...]:
         return tokenize_shell_command(command)
 
-    async def collect_output(
-        self, pid: int
-    ) -> tuple[int, int, bytes, bytes, bool, bool, bool]:
+    async def collect_output(self, pid: int) -> ProcessOutputBatch:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
             proc = slot.handle if slot is not None else None
 
         if slot is None:
             logger.debug("PROCESS_POLL received for unknown PID %d", pid)
-            return Status.ERROR.value, 0xFF, b"", b"", False, False, False
+            return ProcessOutputBatch(
+                status_byte=Status.ERROR.value,
+                exit_code=0xFF,
+                stdout_chunk=b"",
+                stderr_chunk=b"",
+                finished=False,
+                stdout_truncated=False,
+                stderr_truncated=False,
+            )
 
         stdout_chunk = b""
         stderr_chunk = b""
@@ -461,7 +463,15 @@ class ProcessComponent:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
             if slot is None:
-                return Status.ERROR.value, 0xFF, b"", b"", False, False, False
+                return ProcessOutputBatch(
+                    status_byte=Status.ERROR.value,
+                    exit_code=0xFF,
+                    stdout_chunk=b"",
+                    stderr_chunk=b"",
+                    finished=False,
+                    stdout_truncated=False,
+                    stderr_truncated=False,
+                )
 
             if stdout_chunk or stderr_chunk:
                 trunc_out, trunc_err = slot.append_output(
@@ -508,14 +518,14 @@ class ProcessComponent:
                 exit_value,
             )
 
-        return (
-            Status.OK.value,
-            exit_value & 0xFF,
-            stdout_payload,
-            stderr_payload,
-            finished_flag,
-            stdout_truncated_limit,
-            stderr_truncated_limit,
+        return ProcessOutputBatch(
+            status_byte=Status.OK.value,
+            exit_code=exit_value & 0xFF,
+            stdout_chunk=stdout_payload,
+            stderr_chunk=stderr_payload,
+            finished=finished_flag,
+            stdout_truncated=stdout_truncated_limit,
+            stderr_truncated=stderr_truncated_limit,
         )
 
     async def _consume_stream(
@@ -674,13 +684,7 @@ class ProcessComponent:
     async def publish_poll_result(
         self,
         pid: int,
-        status_byte: int,
-        exit_code: int,
-        stdout_chunk: bytes,
-        stderr_chunk: bytes,
-        stdout_truncated: bool,
-        stderr_truncated: bool,
-        finished: bool,
+        batch: ProcessOutputBatch,
     ) -> None:
         topic = topic_path(
             self.state.mqtt_topic_prefix,
@@ -691,19 +695,23 @@ class ProcessComponent:
         )
         payload = json.dumps(
             {
-                "status": status_byte,
-                "exit_code": exit_code,
-                "stdout": stdout_chunk.decode("utf-8", errors="replace"),
-                "stderr": stderr_chunk.decode("utf-8", errors="replace"),
-                "stdout_base64": base64.b64encode(stdout_chunk).decode(
+                "status": batch.status_byte,
+                "exit_code": batch.exit_code,
+                "stdout": batch.stdout_chunk.decode(
+                    "utf-8", errors="replace"
+                ),
+                "stderr": batch.stderr_chunk.decode(
+                    "utf-8", errors="replace"
+                ),
+                "stdout_base64": base64.b64encode(batch.stdout_chunk).decode(
                     "ascii"
                 ),
-                "stderr_base64": base64.b64encode(stderr_chunk).decode(
+                "stderr_base64": base64.b64encode(batch.stderr_chunk).decode(
                     "ascii"
                 ),
-                "stdout_truncated": stdout_truncated,
-                "stderr_truncated": stderr_truncated,
-                "finished": finished,
+                "stdout_truncated": batch.stdout_truncated,
+                "stderr_truncated": batch.stderr_truncated,
+                "finished": batch.finished,
             }
         ).encode("utf-8")
         message = QueuedPublish(
@@ -864,4 +872,4 @@ class ProcessComponent:
             pass
 
 
-__all__ = ["ProcessComponent"]
+__all__ = ["ProcessComponent", "ProcessOutputBatch"]

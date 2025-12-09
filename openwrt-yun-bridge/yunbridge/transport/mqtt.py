@@ -8,10 +8,11 @@ import ssl
 from typing import Any
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
 
-from yunbridge.common import build_mqtt_properties
+from yunbridge.common import (
+    apply_mqtt_connect_properties,
+    build_mqtt_properties,
+)
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
 from yunbridge.mqtt.inbound import topic_name
@@ -20,35 +21,6 @@ from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
 
 logger = logging.getLogger("yunbridge")
-
-def _set_mqtt_property(props: Properties, camel_name: str, value: Any) -> None:
-    try:
-        setattr(props, camel_name, value)
-    except AttributeError:
-        # Some older paho builds may lack these attributes; ignore gracefully.
-        pass
-
-
-def _build_mqtt_connect_properties() -> Properties:
-    props = Properties(PacketTypes.CONNECT)
-    _set_mqtt_property(props, "SessionExpiryInterval", 0)
-    _set_mqtt_property(props, "RequestResponseInformation", 1)
-    _set_mqtt_property(props, "RequestProblemInformation", 1)
-    return props
-
-
-def _apply_connect_properties(client: MqttClient) -> None:
-    try:
-        props = _build_mqtt_connect_properties()
-        raw_client = getattr(client, "_client", None)
-        native = getattr(raw_client, "_client", raw_client)
-        if native is not None and hasattr(native, "_connect_properties"):
-            setattr(native, "_connect_properties", props)
-    except Exception:
-        logger.debug(
-            "Unable to apply MQTT CONNECT properties; continuing without",
-            exc_info=True,
-        )
 
 
 async def _mqtt_publisher_loop(
@@ -176,7 +148,7 @@ async def mqtt_task(
         try:
             client_cm = MqttClient(**client_kwargs)
             async with client_cm as client:
-                _apply_connect_properties(client)
+                apply_mqtt_connect_properties(client)
                 logger.info("Connected to MQTT broker.")
 
                 prefix = state.mqtt_topic_prefix

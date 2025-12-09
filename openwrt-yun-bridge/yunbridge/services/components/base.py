@@ -5,7 +5,7 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any, Protocol
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig

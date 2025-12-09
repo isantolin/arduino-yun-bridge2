@@ -1,10 +1,10 @@
 """Helper utilities for working with inbound aiomqtt messages."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 from collections.abc import Iterable
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 
 __all__ = [
     "MQTTMessage",
@@ -60,7 +60,13 @@ def correlation_data(message: MQTTMessage) -> bytes | None:
     if properties is None:
         return None
     data = getattr(properties, "CorrelationData", None)
-    return data if isinstance(data, (bytes, bytearray)) else None
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, bytearray):
+        return bytes(data)
+    if isinstance(data, memoryview):
+        return data.tobytes()
+    return None
 
 
 def user_properties(message: MQTTMessage) -> tuple[tuple[str, str], ...]:
@@ -74,10 +80,12 @@ def user_properties(message: MQTTMessage) -> tuple[tuple[str, str], ...]:
         return ()
     normalized: list[tuple[str, str]] = []
     for entry in raw_props:
-        if isinstance(entry, Iterable):
-            items = list(entry)
-            if len(items) >= 2:
-                normalized.append((str(items[0]), str(items[1])))
+        if not isinstance(entry, Iterable) or isinstance(entry, (bytes, str)):
+            continue
+        iterable_entry = cast(Iterable[Any], entry)
+        entry_items = tuple(str(part) for part in iterable_entry)
+        if len(entry_items) >= 2:
+            normalized.append((entry_items[0], entry_items[1]))
     return tuple(normalized)
 
 

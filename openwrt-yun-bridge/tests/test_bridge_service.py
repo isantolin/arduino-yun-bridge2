@@ -7,7 +7,7 @@ import logging
 import struct
 
 import pytest
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.policy import AllowedCommandPolicy, TopicAuthorization

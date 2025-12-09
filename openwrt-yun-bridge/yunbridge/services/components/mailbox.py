@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import logging
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
 from ...common import encode_status_reason, pack_u16, unpack_u16

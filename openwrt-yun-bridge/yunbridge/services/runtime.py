@@ -18,7 +18,7 @@ from typing import Any
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import replace
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ..config.settings import RuntimeConfig
@@ -43,6 +43,7 @@ from .components import (
     MailboxComponent,
     PinComponent,
     ProcessComponent,
+    ProcessOutputBatch,
     ShellComponent,
     SystemComponent,
 )
@@ -665,7 +666,7 @@ class BridgeService:
 
     async def _collect_process_output(
         self, pid: int
-    ) -> tuple[int, int, bytes, bytes, bool, bool, bool]:
+    ) -> ProcessOutputBatch:
         return await self._process.collect_output(pid)
 
     def _trim_process_buffers(
@@ -716,10 +717,11 @@ class BridgeService:
         if not self._is_topic_action_allowed(route.topic, identifier):
             await self._reject_topic_action(inbound, route.topic, identifier)
             return True
+        payload = self._payload_bytes(inbound.payload)
         await self._file.handle_mqtt(
             identifier,
             list(route.remainder),
-            inbound.payload,
+            payload,
             inbound,
         )
         return True
@@ -735,7 +737,8 @@ class BridgeService:
         if not self._is_topic_action_allowed(Topic.CONSOLE, action):
             await self._reject_topic_action(inbound, Topic.CONSOLE, action)
             return True
-        await self._console.handle_mqtt_input(inbound.payload, inbound)
+        payload = self._payload_bytes(inbound.payload)
+        await self._console.handle_mqtt_input(payload, inbound)
         return True
 
     async def _handle_datastore_topic(
@@ -749,7 +752,7 @@ class BridgeService:
         if not self._is_topic_action_allowed(route.topic, identifier):
             await self._reject_topic_action(inbound, route.topic, identifier)
             return True
-        payload = inbound.payload
+        payload = self._payload_bytes(inbound.payload)
         payload_str = payload.decode("utf-8", errors="ignore")
         await self._datastore.handle_mqtt(
             identifier,
@@ -771,7 +774,8 @@ class BridgeService:
         ):
             await self._reject_topic_action(inbound, route.topic, identifier)
             return True
-        await self._mailbox.handle_mqtt(identifier, inbound.payload, inbound)
+        payload = self._payload_bytes(inbound.payload)
+        await self._mailbox.handle_mqtt(identifier, payload, inbound)
         return True
 
     async def _handle_shell_topic(
@@ -785,9 +789,10 @@ class BridgeService:
         ):
             await self._reject_topic_action(inbound, route.topic, identifier)
             return True
+        payload = self._payload_bytes(inbound.payload)
         await self._shell.handle_mqtt(
             route.raw.split("/"),
-            inbound.payload,
+            payload,
             inbound,
         )
         return True
@@ -797,7 +802,8 @@ class BridgeService:
         route: TopicRoute,
         inbound: MQTTMessage,
     ) -> bool:
-        payload_str = inbound.payload.decode("utf-8", errors="ignore")
+        payload = self._payload_bytes(inbound.payload)
+        payload_str = payload.decode("utf-8", errors="ignore")
         parts = route.raw.split("/")
         action = self._pin_action_from_parts(parts)
         if action and not self._is_topic_action_allowed(route.topic, action):
@@ -837,6 +843,22 @@ class BridgeService:
         if not handled:
             logger.debug("Unhandled MQTT system topic %s", route.raw)
         return handled
+
+    @staticmethod
+    def _payload_bytes(payload: Any) -> bytes:
+        if isinstance(payload, bytes):
+            return payload
+        if isinstance(payload, bytearray):
+            return bytes(payload)
+        if isinstance(payload, memoryview):
+            return payload.tobytes()
+        if payload is None:
+            return b""
+        if isinstance(payload, str):
+            return payload.encode("utf-8")
+        if isinstance(payload, (int, float)):
+            return str(payload).encode("utf-8")
+        raise TypeError(f"Unsupported MQTT payload type: {type(payload)!r}")
 
     async def _handle_bridge_topic(
         self,

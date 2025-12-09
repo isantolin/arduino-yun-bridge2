@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.protocol.topics import Topic, TopicRoute
 
 McuHandler = Callable[[bytes], Awaitable[bool | None]]

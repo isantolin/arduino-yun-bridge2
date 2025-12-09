@@ -6,7 +6,7 @@ import logging
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from yunbridge.const import (
     ACTION_FILE_READ,

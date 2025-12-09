@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import struct
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status
 
 from ...protocol.topics import Topic, topic_path

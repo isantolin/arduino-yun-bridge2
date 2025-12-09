@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 
 from cobs import cobs
 

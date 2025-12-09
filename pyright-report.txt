@@ -1,0 +1,27 @@
+Loading configuration file at /home/ignaciosantolin/arduino-yun-bridge2/pyrightconfig.json
+Assuming Python version 3.14.2.final.0
+Found 52 source files
+[FG] Long operation: analyzing: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/__init__.py (2770ms)
+[FG] Long operation: checking: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/common.py (2670ms)
+[FG] Long operation: analyzing: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/common.py (2819ms)
+[FG] Long operation: checking: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/daemon.py (4579ms)
+[FG] Long operation: analyzing: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/daemon.py (4629ms)
+[FG] Long operation: checking: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/metrics.py (2150ms)
+[FG] Long operation: analyzing: file:///home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-bridge/yunbridge/metrics.py (2155ms)
+pyright 1.1.407
+0 errors, 0 warnings, 0 informations
+Completed in 22.292sec
+
+Analysis stats
+Total files parsed and bound: 236
+Total files checked: 52
+
+Timing stats
+Find Source Files:    0.03sec
+Read Source Files:    0.17sec
+Tokenize:             2.22sec
+Parse:                2.77sec
+Resolve Imports:      0.75sec
+Bind:                 3.9sec
+Check:                11.58sec
+Detect Cycles:        0sec

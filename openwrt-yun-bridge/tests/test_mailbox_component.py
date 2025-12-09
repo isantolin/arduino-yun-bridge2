@@ -8,7 +8,7 @@ from typing import Any, Protocol
 from collections.abc import Awaitable, Coroutine
 
 import pytest
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig

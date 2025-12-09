@@ -13,10 +13,10 @@ from typing import Any, TypedDict, cast
 from collections.abc import Iterable, Sequence
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from aiomqtt.client import Message as MQTTMessage
-from yunbridge.mqtt import QOSLevel
+from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.types import PayloadType
 from yunbridge.mqtt.inbound import correlation_data, topic_name
-from yunbridge.mqtt.messages import QueuedPublish
+from yunbridge.mqtt.messages import QOSLevel, QueuedPublish
 from yunbridge.common import build_mqtt_properties
 from yunbridge.const import (
     DEFAULT_MQTT_HOST,
@@ -56,6 +56,18 @@ def _format_shell_command(parts: Sequence[str]) -> str:
     if not parts:
         raise ValueError("command_parts must not be empty")
     return shlex.join(parts)
+
+
+def _payload_bytes(payload: PayloadType) -> bytes:
+    if isinstance(payload, bytes):
+        return payload
+    if isinstance(payload, bytearray):
+        return bytes(payload)
+    if payload is None:
+        return b""
+    if isinstance(payload, str):
+        return payload.encode("utf-8")
+    return str(payload).encode("utf-8")
 
 
 class Bridge:
@@ -167,10 +179,12 @@ class Bridge:
         if not topic:
             return
 
+        payload = _payload_bytes(message.payload)
+
         logger.debug(
             "MQTT message observed topic=%s size=%d qos=%d",
             topic,
-            len(message.payload),
+            len(payload),
             int(message.qos),
         )
 
@@ -190,7 +204,7 @@ class Bridge:
                 self._safe_queue_put(queue, message, drop_oldest=drop_oldest)
 
         if not handled:
-            preview = message.payload[:128]
+            preview = payload[:128]
             text = preview.decode("utf-8", errors="ignore")
             logger.debug(
                 "Received unhandled MQTT message: %s -> %s",
@@ -313,7 +327,7 @@ class Bridge:
             delivered = await asyncio.wait_for(
                 response_queue.get(), timeout=timeout
             )
-            return delivered.payload
+            return _payload_bytes(delivered.payload)
         finally:
             self._correlation_routes.pop(correlation, None)
             for topic in topics:
@@ -500,7 +514,8 @@ class Bridge:
             logger.exception("Error reading from console queue")
             return None
 
-        return message.payload.decode("utf-8", errors="ignore")
+        payload = _payload_bytes(message.payload)
+        return payload.decode("utf-8", errors="ignore")
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
         incoming_topic = f"{self.topic_prefix}/mailbox/incoming"

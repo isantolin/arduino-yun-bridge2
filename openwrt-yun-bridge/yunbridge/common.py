@@ -35,6 +35,16 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
+def _set_mqtt_property(props: Any, camel_name: str, value: Any) -> None:
+    if props is None:
+        return
+    try:
+        setattr(props, camel_name, value)
+    except AttributeError:
+        # Some paho builds omit optional fields; ignore quietly.
+        pass
+
+
 class _UciCursor(Protocol):
     def __enter__(self) -> Self:
         ...
@@ -156,6 +166,39 @@ def build_mqtt_properties(message: Any) -> Any | None:
     return props
 
 
+def build_mqtt_connect_properties() -> Any | None:
+    """Return default CONNECT properties for aiomqtt/paho clients."""
+    if Properties is None or PacketTypes is None:
+        return None
+
+    props = Properties(PacketTypes.CONNECT)
+    _set_mqtt_property(props, "SessionExpiryInterval", 0)
+    _set_mqtt_property(props, "RequestResponseInformation", 1)
+    _set_mqtt_property(props, "RequestProblemInformation", 1)
+    return props
+
+
+def apply_mqtt_connect_properties(client: Any) -> None:
+    """Best-effort application of CONNECT properties onto paho clients."""
+    if client is None:
+        return
+
+    try:
+        props = build_mqtt_connect_properties()
+        if props is None:
+            return
+
+        raw_client = getattr(client, "_client", None)
+        native = getattr(raw_client, "_client", raw_client)
+        if native is not None and hasattr(native, "_connect_properties"):
+            setattr(native, "_connect_properties", props)
+    except Exception:
+        logger.debug(
+            "Unable to apply MQTT CONNECT properties; continuing without",
+            exc_info=True,
+        )
+
+
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
     try:
@@ -253,5 +296,7 @@ __all__: Final[tuple[str, ...]] = (
     "encode_status_reason",
     "get_default_config",
     "get_uci_config",
+    "apply_mqtt_connect_properties",
+    "build_mqtt_connect_properties",
     "build_mqtt_properties",
 )

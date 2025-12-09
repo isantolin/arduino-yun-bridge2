@@ -6,7 +6,7 @@ from .datastore import DatastoreComponent
 from .file import FileComponent
 from .mailbox import MailboxComponent
 from .pin import PinComponent
-from .process import ProcessComponent
+from .process import ProcessComponent, ProcessOutputBatch
 from .system import SystemComponent
 from .shell import ShellComponent
 
@@ -17,6 +17,7 @@ __all__ = [
     "MailboxComponent",
     "PinComponent",
     "ProcessComponent",
+    "ProcessOutputBatch",
     "SystemComponent",
     "ShellComponent",
 ]

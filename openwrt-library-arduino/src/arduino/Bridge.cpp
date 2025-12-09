@@ -451,6 +451,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         const size_t response_length =
             static_cast<size_t>(nonce_length) +
             (has_secret ? kHandshakeTagSize : 0);
+        // NOTE: Keeping this aligned with rpc::MAX_PAYLOAD_SIZE preserves
+        // protocol compatibility with the Linux daemon at the cost of a
+        // ~256-byte SRAM buffer. Do not shrink it without coordinating both
+        // sides of the transport, or we risk corrupting handshake frames.
         if (response_length > rpc::MAX_PAYLOAD_SIZE) {
           sendFrame(STATUS_MALFORMED, nullptr, 0);
           command_processed_internally = true;

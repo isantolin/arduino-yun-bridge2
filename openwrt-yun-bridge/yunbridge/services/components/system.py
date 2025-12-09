@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import collections
 import logging
-from collections.abc import Deque
+from typing import Deque
 
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command
 
 from ...mqtt.messages import QueuedPublish

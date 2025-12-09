@@ -1,7 +1,7 @@
 """Utilities for building aiomqtt messages in tests."""
 from __future__ import annotations
 
-from aiomqtt.client import Message
+from aiomqtt.message import Message
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 

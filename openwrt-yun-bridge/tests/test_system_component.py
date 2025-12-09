@@ -6,7 +6,7 @@ from collections.abc import Coroutine
 from typing import Any
 
 import pytest
-from aiomqtt.client import Message as MQTTMessage
+from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish

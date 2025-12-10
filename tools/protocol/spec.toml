@@ -183,7 +183,7 @@ direction = "mcu_to_linux"
 name = "CMD_MAILBOX_PUSH"
 value = 0x43
 category = "mailbox"
-direction = "mcu_to_linux"
+direction = "bidirectional"
 [[commands]]
 name = "CMD_MAILBOX_READ_RESP"
 value = 0x90

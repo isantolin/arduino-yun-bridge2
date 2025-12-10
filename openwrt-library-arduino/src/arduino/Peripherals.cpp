@@ -31,7 +31,10 @@ void DataStoreClass::put(const char* key, const char* value) {
   const size_t payload_len = 2 + key_len + value_len;
   if (payload_len > MAX_PAYLOAD_SIZE) return;
 
-  uint8_t payload[MAX_PAYLOAD_SIZE];
+  // [OPTIMIZATION] Use shared scratch buffer instead of stack allocation
+  // Original: uint8_t payload[MAX_PAYLOAD_SIZE];
+  uint8_t* payload = Bridge.getScratchBuffer();
+  
   payload[0] = static_cast<uint8_t>(key_len);
   memcpy(payload + 1, key, key_len);
   payload[1 + key_len] = static_cast<uint8_t>(value_len);
@@ -49,7 +52,9 @@ void DataStoreClass::requestGet(const char* key) {
   if (key_info.length == 0 || key_info.overflowed) return;
   const size_t key_len = key_info.length;
 
-  uint8_t payload[1 + 255];
+  // [OPTIMIZATION] Use shared scratch buffer
+  uint8_t* payload = Bridge.getScratchBuffer();
+  
   payload[0] = static_cast<uint8_t>(key_len);
   memcpy(payload + 1, key, key_len);
 
@@ -58,7 +63,6 @@ void DataStoreClass::requestGet(const char* key) {
     return;
   }
 
-  // Linux responde con CommandId::CMD_DATASTORE_GET_RESP usando únicamente su caché.
   Bridge.sendFrame(
       CommandId::CMD_DATASTORE_GET,
       BufferView(payload, static_cast<uint16_t>(key_len + 1)));
@@ -88,7 +92,9 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
     length = max_payload;
   }
 
-  uint8_t payload[MAX_PAYLOAD_SIZE];
+  // [OPTIMIZATION] Use shared scratch buffer
+  uint8_t* payload = Bridge.getScratchBuffer();
+  
   write_u16_be(payload, static_cast<uint16_t>(length));
   memcpy(payload + 2, data, length);
   Bridge.sendFrame(
@@ -117,7 +123,9 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
     length = max_data;
   }
 
-  uint8_t payload[MAX_PAYLOAD_SIZE];
+  // [OPTIMIZATION] Use shared scratch buffer
+  uint8_t* payload = Bridge.getScratchBuffer();
+  
   payload[0] = static_cast<uint8_t>(path_len);
   memcpy(payload + 1, filePath, path_len);
   write_u16_be(payload + 1 + path_len, static_cast<uint16_t>(length));
@@ -137,7 +145,9 @@ void FileSystemClass::remove(const char* filePath) {
   if (path_info.length == 0 || path_info.overflowed) return;
   const size_t path_len = path_info.length;
 
-  uint8_t payload[1 + 255];
+  // [OPTIMIZATION] Use shared scratch buffer
+  uint8_t* payload = Bridge.getScratchBuffer();
+  
   payload[0] = static_cast<uint8_t>(path_len);
   memcpy(payload + 1, filePath, path_len);
   Bridge.sendFrame(
@@ -151,4 +161,6 @@ void ProcessClass::kill(int pid) {
   uint8_t pid_payload[2];
   write_u16_be(pid_payload, static_cast<uint16_t>(pid));
   Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, BufferView(pid_payload, 2));
+}
+
 }

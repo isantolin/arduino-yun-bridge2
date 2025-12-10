@@ -7,17 +7,12 @@ import logging
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, cast
+from typing import Callable, cast
 from collections.abc import Awaitable
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    retry_if_exception_type,
-    stop_never,
-)
+# REMOVED: tenacity import. We use native asyncio loops for OpenWrt efficiency.
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
@@ -55,45 +50,6 @@ class _SupervisedTaskSpec:
     max_backoff: float = 30.0
 
 
-class _RetryableSupervisorError(Exception):
-    """Sentinel exception to request another supervisor attempt."""
-
-    def __init__(
-        self,
-        original: BaseException,
-        *,
-        reset_backoff: bool,
-    ) -> None:
-        super().__init__(str(original))
-        self.original = original
-        self.reset_backoff = reset_backoff
-
-
-class _SupervisorWait:
-    """Stateful wait strategy that allows backoff resets."""
-
-    def __init__(self, *, min_delay: float, max_delay: float) -> None:
-        self._min = max(0.1, min_delay)
-        self._max = max(self._min, max_delay)
-        self._streak = 0
-
-    def __call__(self, retry_state: RetryCallState) -> float:
-        outcome = retry_state.outcome
-        reset_requested = False
-        if outcome is not None and outcome.failed:
-            exc = outcome.exception()
-            if isinstance(exc, _RetryableSupervisorError):
-                reset_requested = exc.reset_backoff
-
-        if reset_requested or self._streak <= 0:
-            self._streak = 1
-        else:
-            self._streak += 1
-
-        delay = min(self._max, self._min * (2 ** (self._streak - 1)))
-        return delay
-
-
 async def _supervise_task(
     name: str,
     coro_factory: Callable[[], Awaitable[None]],
@@ -105,115 +61,95 @@ async def _supervise_task(
     max_restarts: int | None = None,
     restart_interval: float = 60.0,
 ) -> None:
-    """Run *coro_factory* restarting it on failures."""
+    """Run *coro_factory* restarting it on failures using native loops."""
 
-    restart_window = max(1.0, restart_interval)
+    current_backoff = min_backoff
+    restart_window_start = time.monotonic()
     restarts_in_window = 0
-    window_started = time.monotonic()
+    restart_window_duration = max(1.0, restart_interval)
 
-    wait_strategy = _SupervisorWait(
-        min_delay=min_backoff,
-        max_delay=max_backoff,
-    )
-
-    def _before_sleep(retry_state: RetryCallState) -> None:
-        outcome: Any = retry_state.outcome
-        next_action: Any = retry_state.next_action
-        if outcome is None or not getattr(outcome, "failed", False):
-            return
-        exc = outcome.exception()
-        if not isinstance(exc, _RetryableSupervisorError):
-            return
-        sleep_value = None
-        if next_action is not None:
-            sleep_value = getattr(next_action, "sleep", None)
-        delay = (
-            float(sleep_value)
-            if sleep_value is not None
-            else max(0.1, min_backoff)
-        )
-        logger.warning(
-            "%s task crashed; restarting in %.1fs",
-            name,
-            delay,
-        )
-        if state is not None:
-            state.record_supervisor_failure(
+    while True:
+        # Loop implementation replaces 'tenacity' for lower memory footprint
+        try:
+            # Reset backoff on successful start (if it runs for a while, logic below handles crashes)
+            # Actually, typically we reset backoff if it runs successfully for 'some time'.
+            # Here we just run it.
+            start_time = time.monotonic()
+            
+            await coro_factory()
+            
+            # If we get here, the task exited cleanly.
+            logger.warning(
+                "%s task exited cleanly; supervisor exiting",
                 name,
-                backoff=delay,
-                exc=exc.original,
             )
+            if state is not None:
+                state.mark_supervisor_healthy(name)
+            return
 
-    retryer = AsyncRetrying(
-        retry=retry_if_exception_type(_RetryableSupervisorError),
-        wait=wait_strategy,
-        stop=stop_never,
-        reraise=True,
-        before_sleep=_before_sleep,
-    )
-
-    async for attempt in retryer:
-        with attempt:
-            started = time.monotonic()
-            try:
-                await coro_factory()
-                logger.warning(
-                    "%s task exited cleanly; supervisor exiting",
+        except asyncio.CancelledError:
+            logger.debug("%s supervisor cancelled", name)
+            raise
+        except fatal_exceptions as exc:
+            logger.critical("%s task hit fatal error: %s", name, exc)
+            if state is not None:
+                state.record_supervisor_failure(
                     name,
+                    backoff=0.0,
+                    exc=exc,
+                    fatal=True,
                 )
-                if state is not None:
-                    state.mark_supervisor_healthy(name)
-                return
-            except asyncio.CancelledError:
-                logger.debug("%s supervisor cancelled", name)
-                raise
-            except fatal_exceptions as exc:
-                logger.critical("%s task hit fatal error: %s", name, exc)
-                if state is not None:
+            raise
+        except Exception as exc:
+            now = time.monotonic()
+            uptime = now - start_time
+            
+            # If it ran for a while (e.g. > max_backoff), reset the backoff
+            if uptime > max_backoff:
+                current_backoff = min_backoff
+
+            # Windowed restart check
+            window_age = now - restart_window_start
+            if window_age > restart_window_duration:
+                # New window
+                restart_window_start = now
+                restarts_in_window = 0
+            
+            restarts_in_window += 1
+            
+            if max_restarts is not None and restarts_in_window > max_restarts:
+                 logger.critical(
+                    "%s task exceeded %d restarts within %.1fs; aborting",
+                    name,
+                    max_restarts,
+                    window_age,
+                )
+                 if state is not None:
                     state.record_supervisor_failure(
                         name,
                         backoff=0.0,
                         exc=exc,
                         fatal=True,
                     )
-                raise
-            except Exception as exc:
-                logger.exception("%s task crashed", name)
+                 raise
 
-                restarts_in_window += 1
-                now = time.monotonic()
-                window_age = now - window_started
-                if window_age > restart_window:
-                    window_started = now
-                    restarts_in_window = 1
-                    window_age = 0.0
+            logger.exception("%s task crashed; restarting in %.1fs", name, current_backoff)
+            
+            if state is not None:
+                state.record_supervisor_failure(
+                    name,
+                    backoff=current_backoff,
+                    exc=exc,
+                )
+            
+            try:
+                await asyncio.sleep(current_backoff)
+            except asyncio.CancelledError:
+                 logger.debug("%s supervisor cancelled during backoff", name)
+                 raise
 
-                if (
-                    max_restarts is not None
-                    and max_restarts > 0
-                    and restarts_in_window > max_restarts
-                ):
-                    logger.critical(
-                        "%s task exceeded %d restarts within %.1fs; aborting",
-                        name,
-                        max_restarts,
-                        window_age,
-                    )
-                    if state is not None:
-                        state.record_supervisor_failure(
-                            name,
-                            backoff=0.0,
-                            exc=exc,
-                            fatal=True,
-                        )
-                    raise
-
-                elapsed = now - started
-                reset_backoff = elapsed > max_backoff
-                raise _RetryableSupervisorError(
-                    exc,
-                    reset_backoff=reset_backoff,
-                ) from exc
+            # Exponential backoff
+            current_backoff = min(max_backoff, current_backoff * 2)
 
 
 async def main_async(config: RuntimeConfig) -> None:

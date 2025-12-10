@@ -1,7 +1,6 @@
 """Utility helpers shared across Yun Bridge packages."""
 from __future__ import annotations
 
-import importlib
 import logging
 from collections.abc import Iterable, Mapping as MappingABC, Sequence
 from dataclasses import dataclass, field, fields
@@ -16,9 +15,9 @@ from typing import (
 )
 from collections.abc import Mapping
 
-# [MODERNIZATION] Removed more_itertools dependency if possible or kept if standard in environment.
-# Assuming standard lib or existing deps. 
-from more_itertools import chunked, unique_everseen
+# REMOVED: importlib (simplified UCI logic)
+# REMOVED: more_itertools (native implementation provided)
+
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -57,21 +56,11 @@ from .const import (
     DEFAULT_STATUS_INTERVAL,
 )
 
-try:
-    import tomllib  # type: ignore
-except ImportError:
-    try:
-        import tomli as tomllib  # type: ignore
-    except ImportError:
-        tomllib = None  # Handle gracefully if neither exists
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-# ... (Rest of the file content preserved but imports modernized)
-# [NOTE] Since I must output the full file, I will replicate the original logic 
-# but ensure tomllib is available for future config expansion.
 
 def pack_u16(value: int) -> bytes:
     """Pack ``value`` as big-endian unsigned 16-bit."""
@@ -96,7 +85,8 @@ def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
         raise ValueError("max_size must be positive")
     if not data:
         return tuple()
-    return tuple(bytes(chunk) for chunk in chunked(data, max_size))
+    # Optimized: Native slicing is faster and removes 'more_itertools' dependency
+    return tuple(data[i : i + max_size] for i in range(0, len(data), max_size))
 
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
@@ -119,7 +109,14 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
 
 def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
     """Return ``sequence`` without duplicates, preserving order."""
-    return tuple(unique_everseen(sequence))
+    # Optimized: Native set tracking removes 'more_itertools' dependency
+    seen = set()
+    result = []
+    for item in sequence:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return tuple(result)
 
 
 def encode_status_reason(reason: str | None) -> bytes:
@@ -196,47 +193,28 @@ def apply_mqtt_connect_properties(client: Any) -> None:
             exc_info=True,
         )
 
-def _load_uci_bindings() -> tuple[Any | None, type[BaseException]]:
-    """Return the python3-uci entry points if the module is available."""
-
-    try:
-        module = importlib.import_module("uci")
-    except ModuleNotFoundError:
-        return None, RuntimeError
-
-    factory = getattr(module, "Uci", None) or getattr(module, "UCI", None)
-    if factory is None:
-        return None, RuntimeError
-
-    exc_type = getattr(module, "UciException", RuntimeError)
-    if not isinstance(exc_type, type) or not issubclass(exc_type, Exception):
-        exc_type = RuntimeError
-    return factory, exc_type
-
 
 def get_uci_config() -> dict[str, str]:
-    """Read Yun Bridge configuration from OpenWrt's UCI system."""
-    cursor_factory, binding_error = _load_uci_bindings()
-    if cursor_factory is None:
-        # Fallback logic could be extended here to use TOML via tomllib if needed
-        # but for now we stick to UCI/defaults as primary source.
+    """Read Yun Bridge configuration directly from OpenWrt's UCI system."""
+    # Modernization: Direct import preferred. Fail fast or fallback silently.
+    try:
+        from uci import Uci  # type: ignore
+    except ImportError:
         logger.warning(
-            "python3-uci bindings unavailable; using default configuration."
+            "UCI module not found (not running on OpenWrt?); using default configuration."
         )
         return get_default_config()
 
     try:
-        with cursor_factory() as cursor:
-            section: Any = cursor.get_all("yunbridge", "general")
-    except binding_error as exc:
+        with Uci() as cursor:
+            # We assume 'yunbridge' package and 'general' section type/name
+            # Typically config is in /etc/config/yunbridge
+            # We fetch all sections of type 'general' (or named 'general')
+            # Assuming standard OpenWrt config structure: config general
+            section = cursor.get_all("yunbridge", "general")
+    except Exception as exc:
         logger.warning(
-            "Failed to load UCI configuration via python3-uci: %s",
-            exc,
-        )
-        return get_default_config()
-    except Exception as exc:  # pragma: no cover - defensive catch-all
-        logger.exception(
-            "Unexpected error while reading UCI configuration: %s",
+            "Failed to load UCI configuration: %s",
             exc,
         )
         return get_default_config()
@@ -244,9 +222,10 @@ def get_uci_config() -> dict[str, str]:
     options: dict[str, Any] = _extract_uci_options(section)
     if not options:
         logger.warning(
-            "python3-uci returned no options for 'yunbridge'; using defaults."
+            "UCI returned no options for 'yunbridge'; using defaults."
         )
         return get_default_config()
+    
     return UciConfigModel.from_mapping(options).as_dict()
 
 
@@ -260,39 +239,44 @@ def _as_option_dict(candidate: Mapping[Any, Any]) -> dict[str, Any]:
 def _extract_uci_options(section: Any) -> dict[str, Any]:
     """Normalise python3-uci section structures into a flat options dict."""
     if not isinstance(section, MappingABC) or not section:
-        empty: dict[str, Any] = {}
-        return empty
+        return {}
 
     typed_section = _as_option_dict(cast(Mapping[Any, Any], section))
+    
+    # Fast path: if it's already a flat dict of values, return it
+    # Check for UCI specific metadata keys
+    if ".name" in typed_section or ".type" in typed_section:
+        flattened: dict[str, Any] = {}
+        for key, value in typed_section.items():
+            if key.startswith("."):
+                continue
+            flattened[key] = value
+        return flattened
+
+    # If it is nested (e.g. from uci.get_all returning complex structs)
+    # We attempt to unwrap it.
     stack: list[dict[str, Any]] = [typed_section]
     while stack:
         current = stack.pop()
+        
+        # Check for standard UCI python binding nesting
         for key in ("options", "values"):
             nested = current.get(key)
             if isinstance(nested, MappingABC) and nested:
                 return _as_option_dict(cast(Mapping[Any, Any], nested))
 
-        flattened: dict[str, Any] = {}
+        # Flatten current
+        flattened = {}
         for key, value in current.items():
-            if (
-                key in {"name", "type", ".name", ".type"}
-                or key.startswith("@")
-            ):
+            if str(key).startswith(".") or str(key).startswith("@"):
                 continue
-            if not isinstance(value, dict) or any(
-                nested_key in value for nested_key in ("value", "values")
-            ):
-                flattened[str(key)] = value
-
+            if not isinstance(value, dict):
+                 flattened[str(key)] = value
+        
         if flattened:
             return flattened
-
-        for nested in current.values():
-            if isinstance(nested, MappingABC) and nested:
-                stack.append(_as_option_dict(cast(Mapping[Any, Any], nested)))
-
-    empty: dict[str, Any] = {}
-    return empty
+            
+    return {}
 
 
 def _stringify_iterable(values: Iterable[Any]) -> str:
@@ -305,27 +289,8 @@ def _stringify_value(value: Any) -> str:
         return _stringify_value(attr_value)
 
     if isinstance(value, Mapping):
-        mapping_items = cast(
-            TypingIterable[tuple[Any, Any]],
-            value.items(),
-        )
-        dict_value: dict[str, Any] = {
-            str(key): entry for key, entry in mapping_items
-        }
-        if "value" in dict_value:
-            return _stringify_value(dict_value["value"])
-        values_candidate = dict_value.get("values")
-        if isinstance(values_candidate, Iterable):
-            iterable_values = cast(
-                TypingIterable[Any],
-                values_candidate,
-            )
-            return _stringify_iterable(iterable_values)
-        dict_values_iter = cast(
-            TypingIterable[Any],
-            dict_value.values(),
-        )
-        return _stringify_iterable(dict_values_iter)
+        # Flatten simple dicts if they appear in config
+        return str(value)
 
     if isinstance(value, (tuple, list, set)):
         iterable_value = cast(TypingIterable[Any], value)
@@ -341,6 +306,8 @@ def _extras_default() -> dict[str, str]:
 @dataclass(slots=True)
 class UciConfigModel:
     """Structured representation of UCI options with sane defaults."""
+    # Note: Logic logic moved to typed parsing in uci_model.py or kept simple here.
+    # This class mirrors the properties of config.settings.RuntimeConfig but as strings/raw.
 
     mqtt_host: str = DEFAULT_MQTT_HOST
     mqtt_port: str = str(DEFAULT_MQTT_PORT)

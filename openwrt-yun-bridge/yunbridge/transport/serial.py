@@ -5,7 +5,7 @@ import asyncio
 import logging
 import struct
 from builtins import BaseExceptionGroup
-from typing import Any, TypeGuard
+from typing import Any, Sized, TypeGuard, cast
 
 import serial
 import serial_asyncio
@@ -48,7 +48,8 @@ BinaryPacket = bytes | bytearray | memoryview
 def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
     if not isinstance(candidate, (bytes, bytearray, memoryview)):
         return False
-    length = len(candidate)
+    sized_candidate = cast(Sized, candidate)
+    length = len(sized_candidate)
     if length == 0:
         return False
     return length <= MAX_SERIAL_PACKET_BYTES

@@ -108,7 +108,7 @@ def configure_logging(config: RuntimeConfig) -> None:
             },
             "handlers": {
                 "yunbridge": {
-                    "()": "yunbridge.config.logging._build_handler",
+                    "()": _build_handler,
                     "level": level_name,
                     "formatter": "structured",
                 }

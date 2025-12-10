@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC, Mapping as MappingABC
 from dataclasses import dataclass, field, fields
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping, cast
 
 from ..const import (
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
@@ -69,19 +69,26 @@ def _stringify_option(value: Any) -> str:
 
     if isinstance(value, MappingABC):
         if "value" in value:
-            return _stringify_option(value["value"])
+            nested_value: Any = value["value"]
+            return _stringify_option(nested_value)
         if "values" in value:
-            nested = value["values"]
-            if isinstance(nested, IterableABC) and not isinstance(
-                nested, (str, bytes, bytearray)
+            nested_values: Any = value["values"]
+            if isinstance(nested_values, IterableABC) and not isinstance(
+                nested_values,
+                (str, bytes, bytearray),
             ):
-                return " ".join(_stringify_option(item) for item in nested)
-            return _stringify_option(nested)
+                iterable_values = cast(Iterable[Any], nested_values)
+                return " ".join(
+                    _stringify_option(item) for item in iterable_values
+                )
+            return _stringify_option(nested_values)
 
     if isinstance(value, IterableABC) and not isinstance(
-        value, (str, bytes, bytearray)
+        value,
+        (str, bytes, bytearray),
     ):
-        return " ".join(_stringify_option(item) for item in value)
+        iterable_items = cast(Iterable[Any], value)
+        return " ".join(_stringify_option(item) for item in iterable_items)
 
     if value is None:
         return ""
@@ -168,15 +175,17 @@ class UciConfigModel:
         init_args: dict[str, Any] = {}
         extras: dict[str, str] = {}
 
-        try:
-            iterator = mapping.items()  # type: ignore[attr-defined]
-        except AttributeError:
+        items_iter: Iterable[tuple[Any, Any]]
+        if isinstance(mapping, MappingABC):
+            items_iter = mapping.items()
+        else:
             try:
-                iterator = dict(mapping).items()  # type: ignore[arg-type]
+                typed_iterable = cast(Iterable[tuple[Any, Any]], mapping)
+                items_iter = dict(typed_iterable).items()
             except Exception:
                 return cls()
 
-        for key, value in iterator:
+        for key, value in items_iter:
             key_str = str(key)
             if key_str not in known_fields:
                 extras[key_str] = _stringify_option(value)

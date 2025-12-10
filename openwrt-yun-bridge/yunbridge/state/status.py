@@ -51,6 +51,16 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                     if state.mqtt_spool is not None
                     else 0
                 ),
+                "file_storage_root": state.file_system_root,
+                "file_storage_bytes_used": state.file_storage_bytes_used,
+                "file_storage_quota_bytes": state.file_storage_quota_bytes,
+                "file_write_max_bytes": state.file_write_max_bytes,
+                "file_write_limit_rejections": (
+                    state.file_write_limit_rejections
+                ),
+                "file_storage_limit_rejections": (
+                    state.file_storage_limit_rejections
+                ),
                 "datastore_keys": list(state.datastore.keys()),
                 "mailbox_size": len(state.mailbox_queue),
                 "mailbox_bytes": state.mailbox_queue_bytes,
@@ -91,6 +101,10 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "handshake_last_unix": state.last_handshake_unix,
                 "bridge": state.build_bridge_snapshot(),
                 "serial_flow": state.serial_flow_stats.as_dict(),
+                "supervisors": {
+                    name: stats.as_dict()
+                    for name, stats in state.supervisor_stats.items()
+                },
                 "heartbeat_unix": time.time(),
                 "mcu_version": (
                     {

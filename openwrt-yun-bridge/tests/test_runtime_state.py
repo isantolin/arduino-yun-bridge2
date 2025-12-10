@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 from collections.abc import Iterator
 import logging
 from typing import cast
@@ -369,6 +370,36 @@ def test_flush_mqtt_spool_handles_pop_failure(
         assert state.mqtt_spool_failure_reason == "pop_failed"
         assert state.mqtt_spool_last_error is not None
         assert "pop_failed" in state.mqtt_spool_last_error
+
+    asyncio.run(_run())
+
+
+def test_spool_fallback_updates_state(
+    runtime_config: RuntimeConfig,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def _run() -> None:
+        state = create_runtime_state(runtime_config)
+        spool = state.mqtt_spool
+        assert spool is not None
+
+        queue = getattr(spool, "_disk_queue")
+
+        def _boom(_record: object) -> None:
+            raise OSError(errno.ENOSPC, "disk full")
+
+        monkeypatch.setattr(queue, "append", _boom)
+
+        stored = await state.stash_mqtt_message(
+            QueuedPublish(topic_name="br/test", payload=b"{}")
+        )
+
+        assert stored is True
+        assert state.mqtt_spool is not None
+        assert state.mqtt_spool_degraded is True
+        assert state.mqtt_spool_failure_reason == "disk_full"
+        assert state.mqtt_spool_last_error == "disk_full"
+        assert state.mqtt_spool_errors >= 1
 
     asyncio.run(_run())
 

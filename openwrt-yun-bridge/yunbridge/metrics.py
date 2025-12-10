@@ -63,6 +63,14 @@ def _build_metrics_message(
             mqtt_spool_failure or "unknown",
         )
 
+    file_status = _file_status_property(snapshot)
+    if file_status is not None:
+        message = _with_user_property(
+            message,
+            "bridge-files",
+            file_status,
+        )
+
     if snapshot.get("watchdog_enabled") is not None:
         enabled = bool(snapshot.get("watchdog_enabled"))
         message = _with_user_property(
@@ -90,6 +98,18 @@ def _with_user_property(
         message,
         user_properties=message.user_properties + ((key, value),),
     )
+
+
+def _file_status_property(snapshot: dict[str, Any]) -> str | None:
+    if _is_positive_number(snapshot.get("file_storage_limit_rejections")):
+        return "quota-blocked"
+    if _is_positive_number(snapshot.get("file_write_limit_rejections")):
+        return "write-limit"
+    return None
+
+
+def _is_positive_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and value > 0
 
 
 async def publish_metrics(

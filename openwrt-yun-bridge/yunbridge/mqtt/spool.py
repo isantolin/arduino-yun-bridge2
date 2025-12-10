@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import Deque as TypingDeque, Protocol, cast
+from typing import Deque as TypingDeque, Protocol, Callable, cast
 
 from diskcache import Deque as DiskDeque
 
@@ -48,7 +48,13 @@ class MQTTSpoolError(RuntimeError):
 class MQTTPublishSpool:
     """Hybrid spool that degrades to memory if disk I/O fails."""
 
-    def __init__(self, directory: str, limit: int) -> None:
+    def __init__(
+        self,
+        directory: str,
+        limit: int,
+        *,
+        on_fallback: Callable[[str], None] | None = None,
+    ) -> None:
         self.directory = Path(directory)
         self.limit = max(0, limit)
         self._lock = threading.Lock()
@@ -60,6 +66,7 @@ class MQTTPublishSpool:
         self._last_trim_unix = 0.0
         self._corrupt_dropped = 0
         self._fallback_active = False
+        self._fallback_hook = on_fallback
 
         if self._use_disk:
             try:
@@ -76,7 +83,7 @@ class MQTTPublishSpool:
                     directory,
                     exc,
                 )
-                self._activate_fallback()
+                self._activate_fallback("initialization_failed")
 
         if self.limit > 0:
             with self._lock:
@@ -192,7 +199,7 @@ class MQTTPublishSpool:
             "fallback_active": 1 if self._fallback_active else 0,
         }
 
-    def _activate_fallback(self) -> None:
+    def _activate_fallback(self, reason: str = "fallback_activated") -> None:
         self._use_disk = False
         self._fallback_active = True
         if self._disk_queue is not None:
@@ -203,6 +210,14 @@ class MQTTPublishSpool:
             except Exception:
                 pass
             self._disk_queue = None
+        if self._fallback_hook is not None:
+            try:
+                self._fallback_hook(reason)
+            except Exception:
+                logger.debug(
+                    "Fallback hook raised an exception",
+                    exc_info=True,
+                )
 
     def _handle_disk_error(self, exc: Exception, op: str) -> None:
         reason = (
@@ -215,7 +230,7 @@ class MQTTPublishSpool:
             "Switching to memory-only mode (reason=%s)."
         )
         logger.error(message, op, exc, reason)
-        self._activate_fallback()
+        self._activate_fallback(reason)
         # We don't raise MQTTSpoolError anymore; we handle it by degrading.
 
     def _trim_locked(self) -> None:
@@ -241,7 +256,7 @@ class MQTTPublishSpool:
                     continue
             except Exception:
                 # Disk failure during trim, degrade
-                self._activate_fallback()
+                self._activate_fallback("trim_failed")
 
             if self._memory_queue:
                 self._memory_queue.popleft()

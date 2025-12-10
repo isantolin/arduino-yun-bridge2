@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import difflib
+import sys
 from dataclasses import dataclass
 import struct
 import textwrap
@@ -338,22 +340,31 @@ def generate_cpp(
         else 0
     )
     categories = _categorize(commands)
-    status_lines = "\n".join(
-        f"#define STATUS_{status.name} {_format_hex(status.value)}"
-        for status in statuses
-    )
 
     def _escape_cpp(value: str) -> str:
         return value.replace("\\", "\\\\").replace('"', '\\"')
 
-    sections: list[str] = []
+    status_lines = [
+        f"STATUS_{status.name} = {_format_hex(status.value)},"
+        for status in statuses
+    ]
+    status_entries = "\n".join(f"    {line}" for line in status_lines)
+
+    command_sections: list[str] = []
+    category_labels = {
+        "gpio": "GPIO",
+    }
     for category, entries in categories.items():
-        header = f"// {category.replace('_', ' ').title()}"
-        body = "\n".join(
-            f"#define {command.name} {_format_hex(command.value)}"
-            for command in entries
+        label = category_labels.get(
+            category, category.replace("_", " ").title()
         )
-        sections.append(f"{header}\n{body}")
+        header = f"// {label}"
+        entry_lines = [
+            f"{command.name} = {_format_hex(command.value)},"
+            for command in entries
+        ]
+        body_block = "\n".join(f"    {line}" for line in entry_lines)
+        command_sections.append(f"    {header}\n{body_block}")
 
     handshake_struct_block = ""
     if handshake_config_size:
@@ -374,67 +385,94 @@ def generate_cpp(
             """
         )
 
-    cpp_template = textwrap.dedent(
+    helpers_block = textwrap.dedent(
         """\
-        /*
-        {license_block}
-         */
-        #ifndef RPC_PROTOCOL_H
-        #define RPC_PROTOCOL_H
+        template <typename Enum>
+        constexpr auto to_underlying(Enum value) noexcept ->
+            typename std::underlying_type<Enum>::type {
+            static_assert(std::is_enum<Enum>::value, "Enum required");
+            return static_cast<typename std::underlying_type<Enum>::type>(value);
+        }
 
-        #include <cstddef>
+        constexpr bool is_status_frame(uint16_t command_id) noexcept {
+            return command_id <= to_underlying(StatusCode::STATUS_ACK);
+        }
 
-        #include "rpc_frame.h"
-
-        static_assert(
-            rpc::PROTOCOL_VERSION == {protocol_version},
-            "Protocol version mismatch with spec.toml"
-        );
-        static_assert(
-            rpc::MAX_PAYLOAD_SIZE == {max_payload},
-            "Max payload size mismatch with spec.toml"
-        );
-        static_assert(
-            rpc::CRC_TRAILER_SIZE == {crc_trailer},
-            "CRC trailer size mismatch with spec.toml"
-        );
-
-        constexpr unsigned int RPC_BUFFER_SIZE = {rpc_buffer};
-        constexpr std::size_t RPC_HANDSHAKE_NONCE_LENGTH = {nonce_len}u;
-        constexpr std::size_t RPC_HANDSHAKE_TAG_LENGTH = {tag_len}u;
-        constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] =
-            "{tag_algo}";
-        constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] =
-            "{tag_desc}";
-        constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] =
-            "{config_format}";
-        constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] =
-            "{config_desc}";
-        constexpr std::size_t RPC_HANDSHAKE_CONFIG_SIZE = {config_size}u;
-        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS =
-            {ack_min};
-        constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS =
-            {ack_max};
-        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS =
-            {resp_min};
-        constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS =
-            {resp_max};
-        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN =
-            {retry_min};
-        constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX =
-            {retry_max};
-
-        {handshake_struct_block}
-
-        // Status Codes
-        {status_definitions}
-
-        // Command Identifiers
-        {command_definitions}
-
-        #endif  // RPC_PROTOCOL_H
+        constexpr bool is_command_frame(uint16_t command_id) noexcept {
+            return command_id > to_underlying(StatusCode::STATUS_ACK);
+        }
         """
-    )
+    ).strip()
+
+    cpp_template = """\
+/*
+{license_block}
+ */
+#ifndef RPC_PROTOCOL_H
+#define RPC_PROTOCOL_H
+
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
+#include "rpc_frame.h"
+
+static_assert(
+    rpc::PROTOCOL_VERSION == {protocol_version},
+    "Protocol version mismatch with spec.toml"
+);
+static_assert(
+    rpc::MAX_PAYLOAD_SIZE == {max_payload},
+    "Max payload size mismatch with spec.toml"
+);
+static_assert(
+    rpc::CRC_TRAILER_SIZE == {crc_trailer},
+    "CRC trailer size mismatch with spec.toml"
+);
+
+constexpr unsigned int RPC_BUFFER_SIZE = {rpc_buffer};
+constexpr std::size_t RPC_HANDSHAKE_NONCE_LENGTH = {nonce_len}u;
+constexpr std::size_t RPC_HANDSHAKE_TAG_LENGTH = {tag_len}u;
+constexpr const char RPC_HANDSHAKE_TAG_ALGORITHM[] =
+    "{tag_algo}";
+constexpr const char RPC_HANDSHAKE_TAG_DESCRIPTION[] =
+    "{tag_desc}";
+constexpr const char RPC_HANDSHAKE_CONFIG_FORMAT[] =
+    "{config_format}";
+constexpr const char RPC_HANDSHAKE_CONFIG_DESCRIPTION[] =
+    "{config_desc}";
+constexpr std::size_t RPC_HANDSHAKE_CONFIG_SIZE = {config_size}u;
+constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS =
+    {ack_min};
+constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS =
+    {ack_max};
+constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS =
+    {resp_min};
+constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS =
+    {resp_max};
+constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN =
+    {retry_min};
+constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX =
+    {retry_max};
+
+{handshake_struct_block}
+
+namespace rpc {{
+
+enum class StatusCode : uint8_t {{
+{status_entries}
+}};
+
+enum class CommandId : uint16_t {{
+{command_sections}
+}};
+
+{helpers_block}
+
+}}  // namespace rpc
+
+#endif  // RPC_PROTOCOL_H
+"""
 
     return cpp_template.format(
         license_block=textwrap.indent(LICENSE_HEADER.strip(), " * "),
@@ -456,9 +494,29 @@ def generate_cpp(
         retry_min=handshake.retry_limit_min,
         retry_max=handshake.retry_limit_max,
         handshake_struct_block=handshake_struct_block.rstrip(),
-        status_definitions=status_lines,
-        command_definitions="\n\n".join(sections),
+        status_entries=status_entries,
+        command_sections="\n\n".join(command_sections),
+        helpers_block=helpers_block,
     ).strip() + "\n"
+
+
+def _compare_contents(path: Path, expected: str) -> tuple[bool, str]:
+    try:
+        current = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return False, f"{path} is missing"
+    if current == expected:
+        return True, ""
+    diff = "\n".join(
+        difflib.unified_diff(
+            current.splitlines(),
+            expected.splitlines(),
+            fromfile=str(path),
+            tofile=f"{path} (regenerated)",
+            lineterm="",
+        )
+    )
+    return False, diff or f"{path} differs"
 
 
 def main() -> None:
@@ -483,32 +541,60 @@ def main() -> None:
         default=CPP_OUTPUT,
         help="Destination for the generated C++ header",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "Compare regenerated artifacts with the existing files and "
+            "exit non-zero if they differ"
+        ),
+    )
     args = parser.parse_args()
 
     constants, data_formats, handshake, statuses, commands = load_spec(
         args.spec
     )
 
-    args.python_output.write_text(
-        generate_python(
-            constants,
-            data_formats,
-            handshake,
-            statuses,
-            commands,
-        ),
-        encoding="utf-8",
+    python_contents = generate_python(
+        constants,
+        data_formats,
+        handshake,
+        statuses,
+        commands,
     )
-    args.cpp_output.write_text(
-        generate_cpp(
-            constants,
-            data_formats,
-            handshake,
-            statuses,
-            commands,
-        ),
-        encoding="utf-8",
+    cpp_contents = generate_cpp(
+        constants,
+        data_formats,
+        handshake,
+        statuses,
+        commands,
     )
+
+    if args.check:
+        failures: list[str] = []
+        for path, contents in (
+            (args.python_output, python_contents),
+            (args.cpp_output, cpp_contents),
+        ):
+            matches, detail = _compare_contents(path, contents)
+            if not matches:
+                failures.append(str(path))
+                if detail:
+                    print(detail, file=sys.stderr)
+        if failures:
+            joined = ", ".join(failures)
+            print(
+                (
+                    f"Protocol artifacts out of date: {joined}. "
+                    "Re-run tools/protocol/generate.py to refresh."
+                ),
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        return
+
+    args.python_output.write_text(python_contents, encoding="utf-8")
+    args.cpp_output.write_text(cpp_contents, encoding="utf-8")
 
 
 if __name__ == "__main__":

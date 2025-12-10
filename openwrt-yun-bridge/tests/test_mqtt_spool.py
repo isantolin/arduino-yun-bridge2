@@ -129,6 +129,32 @@ def test_spool_fallback_on_disk_full(
     assert msg2.topic_name == "topic/memory"
 
 
+def test_spool_fallback_invokes_hook(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reasons: list[str] = []
+
+    spool = MQTTPublishSpool(
+        tmp_path.as_posix(),
+        limit=2,
+        on_fallback=reasons.append,
+    )
+
+    queue: Any = getattr(spool, "_disk_queue")
+
+    def _boom(_record: object) -> None:
+        raise OSError(errno.ENOSPC, "disk full")
+
+    monkeypatch.setattr(queue, "append", _boom)
+
+    spool.append(_make_message("topic/hook"))
+
+    assert reasons
+    assert reasons[-1] == "disk_full"
+    assert spool.is_degraded
+
+
 def test_spool_fallback_on_init_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -18,6 +18,8 @@ from ..common import (
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+    DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
@@ -72,6 +74,8 @@ class RuntimeConfig:
     allowed_commands: tuple[str, ...]
     file_system_root: str
     process_timeout: int
+    file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
+    file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
     allowed_policy: AllowedCommandPolicy = field(init=False)
 
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
@@ -217,11 +221,19 @@ class RuntimeConfig:
             "process_max_output_bytes",
             "process_max_concurrent",
             "serial_handshake_fatal_failures",
+            "file_write_max_bytes",
+            "file_storage_quota_bytes",
         )
         for field_name in positive_int_fields:
             value = getattr(self, field_name)
             validated = self._require_positive(field_name, int(value))
             setattr(self, field_name, validated)
+
+        if self.file_storage_quota_bytes < self.file_write_max_bytes:
+            raise ValueError(
+                "file_storage_quota_bytes must be greater than or equal to "
+                "file_write_max_bytes"
+            )
 
         if self.watchdog_enabled:
             interval = self._require_positive_float(
@@ -528,6 +540,20 @@ def load_runtime_config() -> RuntimeConfig:
         allowed_commands=allowed_commands,
         file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
         process_timeout=_get_int("process_timeout", DEFAULT_PROCESS_TIMEOUT),
+        file_write_max_bytes=max(
+            1,
+            _get_int(
+                "file_write_max_bytes",
+                DEFAULT_FILE_WRITE_MAX_BYTES,
+            ),
+        ),
+        file_storage_quota_bytes=max(
+            1,
+            _get_int(
+                "file_storage_quota_bytes",
+                DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+            ),
+        ),
         mqtt_queue_limit=max(
             1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
         ),

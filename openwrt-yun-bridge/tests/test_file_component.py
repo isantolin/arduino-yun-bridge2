@@ -63,6 +63,11 @@ def file_component(
     return component, bridge
 
 
+def _build_write_payload(filename: str, data: bytes) -> bytes:
+    encoded = filename.encode("utf-8")
+    return bytes([len(encoded)]) + encoded + len(data).to_bytes(2, "big") + data
+
+
 @pytest.mark.asyncio
 async def test_handle_write_and_read_roundtrip(
     file_component: tuple[FileComponent, DummyBridge],
@@ -135,6 +140,66 @@ async def test_handle_write_invalid_path(
     await component.handle_write(payload)
 
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
+
+
+@pytest.mark.asyncio
+async def test_handle_write_rejects_per_write_limit(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    component.state.file_write_max_bytes = 2
+    component.state.file_storage_quota_bytes = 64
+    payload = _build_write_payload("big.txt", b"abcd")
+
+    await component.handle_write(payload)
+
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert bridge.sent_frames[-1][1].decode() == "write_limit_exceeded"
+    assert component.state.file_write_limit_rejections == 1
+    assert component.state.file_storage_bytes_used == 0
+    root = Path(component.state.file_system_root)
+    assert not (root / "big.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_handle_write_enforces_storage_quota(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    component.state.file_write_max_bytes = 4
+    component.state.file_storage_quota_bytes = 4
+
+    first_payload = _build_write_payload("alpha.txt", b"xy")
+    assert await component.handle_write(first_payload)
+    root = Path(component.state.file_system_root)
+    assert (root / "alpha.txt").exists()
+    assert component.state.file_storage_bytes_used == 2
+
+    second_payload = _build_write_payload("bravo.txt", b"xyz")
+    await component.handle_write(second_payload)
+
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert bridge.sent_frames[-1][1].decode() == "storage_quota_exceeded"
+    assert component.state.file_storage_limit_rejections == 1
+    assert component.state.file_storage_bytes_used == 2
+    assert not (root / "bravo.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_handle_remove_updates_usage(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, _ = file_component
+    component.state.file_write_max_bytes = 16
+    payload = _build_write_payload("temp.txt", b"abc")
+    assert await component.handle_write(payload)
+    assert component.state.file_storage_bytes_used == 3
+
+    remove_payload = bytes([8]) + b"temp.txt"
+    assert await component.handle_remove(remove_payload)
+    assert component.state.file_storage_bytes_used == 0
+    root = Path(component.state.file_system_root)
+    assert not (root / "temp.txt").exists()
 
 
 SAFE_FILENAME_CHARS = (

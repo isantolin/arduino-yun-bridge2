@@ -6,7 +6,7 @@ from typing import cast
 import pytest
 
 from yunbridge.policy import AllowedCommandPolicy
-from yunbridge.state.context import RuntimeState
+from yunbridge.state.context import RuntimeState, SupervisorStats
 from yunbridge.state import status as status_module
 from yunbridge.mqtt.spool import MQTTPublishSpool
 
@@ -57,6 +57,15 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state.handshake_attempts = 2
         state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
         state.mcu_version = (2, 5)
+        state.file_system_root = "/tmp/bridge"
+        state.file_storage_bytes_used = 2048
+        state.file_storage_quota_bytes = 4096
+        state.file_write_max_bytes = 512
+        state.file_write_limit_rejections = 1
+        state.file_storage_limit_rejections = 2
+        state.supervisor_stats = {
+            "file": SupervisorStats(restarts=3),
+        }
         state.mqtt_spooled_messages = 10
         state.mqtt_spooled_replayed = 4
         state.mqtt_spool_errors = 2
@@ -112,6 +121,12 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["allowed_commands"] == ["ls"]
         assert payload["link_synchronised"] is True
         assert payload["mcu_version"] == {"major": 2, "minor": 5}
+        assert payload["file_storage_root"] == "/tmp/bridge"
+        assert payload["file_storage_bytes_used"] == 2048
+        assert payload["file_storage_quota_bytes"] == 4096
+        assert payload["file_write_max_bytes"] == 512
+        assert payload["file_write_limit_rejections"] == 1
+        assert payload["file_storage_limit_rejections"] == 2
         assert "bridge" in payload
         bridge_snapshot = cast(dict[str, object], payload["bridge"])
         handshake_snapshot = cast(
@@ -133,6 +148,15 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["watchdog_interval"] == 7.5
         assert payload["watchdog_beats"] == 11
         assert payload["watchdog_last_beat"] == 101.0
+        assert payload["supervisors"] == {
+            "file": {
+                "restarts": 3,
+                "last_failure_unix": 0.0,
+                "last_exception": None,
+                "backoff_seconds": 0.0,
+                "fatal": False,
+            }
+        }
 
         assert status_path.exists()
         file_payload = json.loads(status_path.read_text())

@@ -36,6 +36,7 @@ async def test_publish_metrics_publishes_snapshot(
         "mqtt_spool_failure_reason": "disk-full",
         "watchdog_enabled": True,
         "watchdog_interval": 7.5,
+        "file_storage_limit_rejections": 1,
     }
 
     def _snapshot(self: RuntimeState) -> dict[str, object]:
@@ -68,6 +69,7 @@ async def test_publish_metrics_publishes_snapshot(
     assert message.payload == expected_payload
     assert message.content_type == "application/json"
     assert ("bridge-spool", "disk-full") in message.user_properties
+    assert ("bridge-files", "quota-blocked") in message.user_properties
     assert ("bridge-watchdog-enabled", "1") in message.user_properties
     assert ("bridge-watchdog-interval", "7.5") in message.user_properties
 

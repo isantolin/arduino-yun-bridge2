@@ -28,7 +28,9 @@ from .const import (
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_METRICS_HOST,
@@ -329,6 +331,8 @@ class UciConfigModel:
     debug: str = "0"
     allowed_commands: str = ""
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
+    file_write_max_bytes: str = str(DEFAULT_FILE_WRITE_MAX_BYTES)
+    file_storage_quota_bytes: str = str(DEFAULT_FILE_STORAGE_QUOTA_BYTES)
     process_timeout: str = str(DEFAULT_PROCESS_TIMEOUT)
     process_max_output_bytes: str = str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
     process_max_concurrent: str = str(DEFAULT_PROCESS_MAX_CONCURRENT)

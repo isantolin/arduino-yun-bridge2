@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
@@ -36,6 +37,9 @@ class FileComponent:
         self.config = config
         self.state = state
         self.ctx = ctx
+        self._storage_lock = asyncio.Lock()
+        self._usage_seeded = False
+        self._ensure_usage_seeded()
 
     async def handle_write(self, payload: bytes) -> bool:
         if len(payload) < 3:
@@ -260,12 +264,12 @@ class FileComponent:
             )
             return False, None, "unsafe_path"
 
+        self._ensure_usage_seeded()
+
         try:
             if operation == ACTION_FILE_WRITE:
                 assert data is not None
-                await asyncio.to_thread(self._write_file_sync, safe_path, data)
-                logger.info("Wrote %d bytes to %s", len(data), safe_path)
-                return True, None, "ok"
+                return await self._write_with_quota(safe_path, data)
 
             if operation == ACTION_FILE_READ:
                 content = await asyncio.to_thread(
@@ -275,9 +279,7 @@ class FileComponent:
                 return True, content, "ok"
 
             if operation == ACTION_FILE_REMOVE:
-                await asyncio.to_thread(safe_path.unlink)
-                logger.info("Removed file %s", safe_path)
-                return True, None, "ok"
+                return await self._remove_with_tracking(safe_path)
 
         except OSError as exc:
             logger.exception(
@@ -289,13 +291,8 @@ class FileComponent:
         return False, None, "unknown_operation"
 
     def _get_safe_path(self, filename: str) -> Path | None:
-        base_dir = Path(self.state.file_system_root).expanduser().resolve()
-        try:
-            base_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.exception(
-                "Failed to create base directory for files: %s", base_dir
-            )
+        base_dir = self._get_base_dir()
+        if base_dir is None:
             return None
 
         normalised = self._normalise_filename(filename)
@@ -349,6 +346,144 @@ class FileComponent:
             return None
 
         return PurePosixPath(*cleaned_parts)
+
+    async def _write_with_quota(
+        self,
+        path: Path,
+        data: bytes,
+    ) -> tuple[bool, bytes | None, str | None]:
+        payload_size = len(data)
+        async with self._storage_lock:
+            limit = max(1, self.state.file_write_max_bytes)
+            if payload_size > limit:
+                self.state.file_write_limit_rejections += 1
+                logger.warning(
+                    (
+                        "Rejecting %d-byte file write to %s: exceeds "
+                        "per-write limit of %d byte(s)."
+                    ),
+                    payload_size,
+                    path,
+                    limit,
+                )
+                return False, None, "write_limit_exceeded"
+
+            current_usage = self.state.file_storage_bytes_used
+            previous_size = self._existing_file_size(path)
+            if previous_size > current_usage:
+                current_usage = self._refresh_storage_usage()
+                previous_size = min(previous_size, current_usage)
+
+            projected_usage = current_usage - previous_size + payload_size
+            quota = max(limit, self.state.file_storage_quota_bytes)
+            if projected_usage > quota:
+                self.state.file_storage_limit_rejections += 1
+                logger.warning(
+                    (
+                        "Rejecting file write to %s: projected usage %d "
+                        "byte(s) exceeds quota of %d byte(s)."
+                    ),
+                    path,
+                    projected_usage,
+                    quota,
+                )
+                return False, None, "storage_quota_exceeded"
+
+            await asyncio.to_thread(self._write_file_sync, path, data)
+            self.state.file_storage_bytes_used = projected_usage
+            logger.info("Wrote %d bytes to %s", payload_size, path)
+            return True, None, "ok"
+
+    async def _remove_with_tracking(
+        self,
+        path: Path,
+    ) -> tuple[bool, bytes | None, str | None]:
+        async with self._storage_lock:
+            removed_bytes = self._existing_file_size(path)
+            await asyncio.to_thread(path.unlink)
+            self._decrement_storage_usage(removed_bytes)
+            logger.info("Removed file %s", path)
+            return True, None, "ok"
+
+    def _ensure_usage_seeded(self) -> None:
+        if self._usage_seeded:
+            return
+        self._refresh_storage_usage()
+        self._usage_seeded = True
+
+    def _refresh_storage_usage(self) -> int:
+        base_dir = self._get_base_dir()
+        if base_dir is None:
+            self.state.file_storage_bytes_used = 0
+            return 0
+        usage = self._scan_directory_size(base_dir)
+        self.state.file_storage_bytes_used = max(0, usage)
+        return self.state.file_storage_bytes_used
+
+    @staticmethod
+    def _scan_directory_size(root: Path) -> int:
+        total = 0
+        stack: list[Path] = [root]
+        while stack:
+            current = stack.pop()
+            try:
+                with os.scandir(current) as iterator:
+                    for entry in iterator:
+                        if entry.is_symlink():
+                            continue
+                        try:
+                            if entry.is_dir(follow_symlinks=False):
+                                stack.append(Path(entry.path))
+                                continue
+                            if entry.is_file(follow_symlinks=False):
+                                total += entry.stat(
+                                    follow_symlinks=False
+                                ).st_size
+                        except OSError as exc:
+                            logger.debug(
+                                "Failed to inspect %s during quota scan: %s",
+                                entry.path,
+                                exc,
+                            )
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                logger.warning(
+                    "Unable to scan %s for quota tracking: %s",
+                    current,
+                    exc,
+                )
+        return total
+
+    def _get_base_dir(self) -> Path | None:
+        base_dir = Path(self.state.file_system_root).expanduser()
+        try:
+            base_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.exception(
+                "Failed to create base directory for files: %s", base_dir
+            )
+            return None
+        try:
+            return base_dir.resolve()
+        except OSError:
+            logger.exception(
+                "Failed to resolve base directory for files: %s", base_dir
+            )
+            return None
+
+    @staticmethod
+    def _existing_file_size(path: Path) -> int:
+        try:
+            return path.stat().st_size
+        except FileNotFoundError:
+            return 0
+
+    def _decrement_storage_usage(self, bytes_removed: int) -> None:
+        if bytes_removed <= 0:
+            return
+        remaining = self.state.file_storage_bytes_used - bytes_removed
+        self.state.file_storage_bytes_used = max(0, remaining)
 
     @staticmethod
     def _write_file_sync(path: Path, data: bytes) -> None:

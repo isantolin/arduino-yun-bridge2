@@ -17,6 +17,8 @@ from tenacity import wait_exponential
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+    DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_PENDING_PIN_REQUESTS,
@@ -281,6 +283,11 @@ class RuntimeState:
     )
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
+    file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
+    file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+    file_storage_bytes_used: int = 0
+    file_write_limit_rejections: int = 0
+    file_storage_limit_rejections: int = 0
     mqtt_topic_prefix: str = DEFAULT_MQTT_TOPIC
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
@@ -353,6 +360,11 @@ class RuntimeState:
         self.allowed_policy = config.allowed_policy
         self.process_timeout = config.process_timeout
         self.file_system_root = config.file_system_root
+        self.file_write_max_bytes = config.file_write_max_bytes
+        self.file_storage_quota_bytes = config.file_storage_quota_bytes
+        self.file_storage_bytes_used = 0
+        self.file_write_limit_rejections = 0
+        self.file_storage_limit_rejections = 0
         self.mqtt_topic_prefix = config.mqtt_topic
         self.console_queue_limit_bytes = config.console_queue_limit_bytes
         self.mailbox_queue_limit = config.mailbox_queue_limit
@@ -746,6 +758,7 @@ class RuntimeState:
             self.mqtt_spool = MQTTPublishSpool(
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
+                on_fallback=self._on_spool_fallback,
             )
             self.mqtt_spool_degraded = False
             self.mqtt_spool_failure_reason = None
@@ -769,6 +782,7 @@ class RuntimeState:
                 MQTTPublishSpool,
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
+                on_fallback=self._on_spool_fallback,
             )
         except Exception as exc:
             self._handle_mqtt_spool_failure(
@@ -834,6 +848,12 @@ class RuntimeState:
         self.mqtt_spool_errors += 1
         self.mqtt_spool_last_error = detail
         self._disable_mqtt_spool(reason)
+
+    def _on_spool_fallback(self, reason: str) -> None:
+        self.mqtt_spool_degraded = True
+        self.mqtt_spool_failure_reason = reason
+        self.mqtt_spool_last_error = reason
+        self.mqtt_spool_errors += 1
 
     async def stash_mqtt_message(
         self, message: QueuedPublish
@@ -954,6 +974,14 @@ class RuntimeState:
             "mqtt_spool_backoff_until": self.mqtt_spool_backoff_until,
             "mqtt_spool_last_error": self.mqtt_spool_last_error,
             "mqtt_spool_recoveries": self.mqtt_spool_recoveries,
+            "file_storage_root": self.file_system_root,
+            "file_storage_bytes_used": self.file_storage_bytes_used,
+            "file_storage_quota_bytes": self.file_storage_quota_bytes,
+            "file_write_max_bytes": self.file_write_max_bytes,
+            "file_write_limit_rejections": self.file_write_limit_rejections,
+            "file_storage_limit_rejections": (
+                self.file_storage_limit_rejections
+            ),
             "handshake_attempts": self.handshake_attempts,
             "handshake_successes": self.handshake_successes,
             "handshake_failures": self.handshake_failures,

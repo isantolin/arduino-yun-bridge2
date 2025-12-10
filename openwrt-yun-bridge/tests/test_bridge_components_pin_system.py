@@ -8,6 +8,7 @@ from unittest.mock import patch
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status
 
+from yunbridge.common import encode_status_reason
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.services.runtime import BridgeService
@@ -200,6 +201,36 @@ def test_mqtt_analog_read_tracks_pending_queue(
         assert payload == struct.pack(">B", 2)
         pending = runtime_state.pending_analog_reads[-1]
         assert pending.pin == 2
+
+    asyncio.run(_run())
+
+
+def test_mcu_digital_read_request_yields_not_implemented(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mcu_frame(
+            Command.CMD_DIGITAL_READ.value,
+            bytes([9]),
+        )
+
+        assert sent_frames == [
+            (
+                Status.NOT_IMPLEMENTED.value,
+                encode_status_reason("linux_gpio_read_not_available"),
+            )
+        ]
 
     asyncio.run(_run())
 

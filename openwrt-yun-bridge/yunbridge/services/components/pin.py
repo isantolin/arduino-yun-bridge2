@@ -11,6 +11,7 @@ from ...protocol.topics import Topic, topic_path
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import PendingPinRequest, RuntimeState
+from ...common import encode_status_reason
 from .base import BridgeContext
 
 logger = logging.getLogger("yunbridge.pin")
@@ -28,6 +29,31 @@ class PinComponent:
         self.config = config
         self.state = state
         self.ctx = ctx
+
+    async def handle_unexpected_mcu_request(
+        self,
+        command: Command,
+        payload: bytes,
+    ) -> bool:
+        """Reject MCU-initiated Linux pin operations that are unsupported."""
+
+        if command == Command.CMD_DIGITAL_READ:
+            reason = "linux_gpio_read_not_available"
+        elif command == Command.CMD_ANALOG_READ:
+            reason = "linux_adc_read_not_available"
+        else:
+            reason = "pin_request_not_supported"
+
+        logger.warning(
+            "MCU requested unsupported pin command %s payload=%s",
+            command.name,
+            payload.hex(),
+        )
+        await self.ctx.send_frame(
+            Status.NOT_IMPLEMENTED.value,
+            encode_status_reason(reason),
+        )
+        return False
 
     async def handle_digital_read_resp(self, payload: bytes) -> None:
         if len(payload) != 1:

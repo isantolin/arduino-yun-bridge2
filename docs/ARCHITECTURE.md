@@ -17,7 +17,7 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 	Además, `tests/test_protocol_contract.py` incluye pruebas que fijan el layout binario `>HBI` y un vector de referencia HMAC para detectar inmediatamente cualquier deriva entre Python y la librería Arduino.
 3. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se vuelve a aplicar en `ProcessComponent` y `ShellComponent` mediante el sanitizador compartido de `yunbridge.policy`.
 4. **Topics sensibles**: `TopicAuthorization` gobierna los toggles `mqtt_allow_*` para archivos, datastore, mailbox, shell, consola y pines digitales/analógicos (`mqtt_allow_console_input`, `mqtt_allow_digital_write`, etc.). Cualquier combinación topic/acción no declarada queda denegada automáticamente, así que los nuevos topics requieren añadir un flag explícito antes de exponerse.
-5. **Sandbox de archivos**: `FileComponent` normaliza las rutas con `PurePosixPath`, evita saltos (`..`) y obliga a permanecer bajo `file_system_root`.
+5. **Sandbox de archivos**: `FileComponent` normaliza las rutas con `PurePosixPath`, evita saltos (`..`) y obliga a permanecer bajo `file_system_root`. Además, aplica los límites configurables `file_write_max_bytes` (tamaño máximo por frame) y `file_storage_quota_bytes` (cuota total bajo el sandbox). Si se superan, devuelve `write_limit_exceeded` o `storage_quota_exceeded`, incrementa los contadores en `RuntimeState` y registra la causa en los snapshots para que LuCI/Prometheus puedan alertar.
 
 ## Observabilidad
 
@@ -27,6 +27,7 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 - Los snapshots publicados (prometheus, status JSON y MQTT) incluyen `mqtt_spool_*` y `watchdog_*`, y además `br/system/metrics` adjunta propiedades MQTT `bridge-spool`, `bridge-watchdog-enabled` e `bridge-watchdog-interval` para que la UI o los brokers puedan alertar sin parsear JSON.
 - **Snapshot del enlace (`br/system/bridge/*`)**: cualquier cliente puede pedir `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` y recibirá un JSON con el estado del handshake, la versión del MCU, el pipeline serial (comando en vuelo y último resultado) y el flujo de métricas del enlace. Es la misma estructura que ahora aparece embebida en `/tmp/yunbridge_status.json`, `br/system/status` y el exportador Prometheus bajo la clave `bridge`.
 - **Status Writer**: `status_writer()` mantiene `/tmp/yunbridge_status.json` como snapshot local para depuración rápida y para scripts de LuCI.
+- **Cuotas de archivos visibles**: `RuntimeState` añade `file_storage_bytes_used`, `file_write_limit_rejections` y `file_storage_limit_rejections` en cada snapshot (`/tmp/yunbridge_status.json`, `br/system/status`, `br/system/metrics`) para monitorear cuánta cuota resta y cuántas operaciones se bloquearon por superar los límites.
 
 ## Configuración relevante
 
@@ -37,6 +38,8 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 | `metrics_port` | Puerto TCP del exportador/text format. | `9130` |
 | `debug_logging` | Fuerza nivel `DEBUG` en los logs JSON. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` (ninguno) |
+| `file_write_max_bytes` | Máximo de bytes aceptados por cada operación `CMD_FILE_WRITE`/MQTT write. | `262144` (256 KiB) |
+| `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`; rechaza nuevas escrituras al superarse. | `4194304` (4 MiB) |
 
 Puedes definirlas vía UCI (`uci set yunbridge.general.metrics_enabled='1'`) o con variables de entorno `YUNBRIDGE_METRICS_*` antes de iniciar el servicio (`procd`/`systemd`).
 

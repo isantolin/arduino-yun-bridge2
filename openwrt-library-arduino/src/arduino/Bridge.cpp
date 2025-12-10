@@ -6,6 +6,7 @@
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/pgmspace.h>
 #include <avr/wdt.h>
+#include <avr/eeprom.h> 
 #endif
 
 #include <string.h> 
@@ -120,6 +121,7 @@ BridgeClass::BridgeClass(Stream& stream)
       , _tx_debug{}
 #endif
       , _awaiting_ack(false),
+      _flow_paused(false), // Initialize Flow Control State
       _last_command_id(0),
       _last_cobs_frame{},
       _last_cobs_length(0),
@@ -168,6 +170,7 @@ void BridgeClass::begin(
   memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
 
   _awaiting_ack = false;
+  _flow_paused = false;
   _last_command_id = 0;
   _last_cobs_length = 0;
   _retry_count = 0;
@@ -260,6 +263,20 @@ void BridgeClass::process() {
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
   wdt_reset();
 #endif
+
+  // --- Point 1: Flow Control Logic (High/Low Water Mark) ---
+  int available_bytes = _stream.available();
+  
+  if (!_flow_paused && available_bytes >= kRxHighWaterMark) {
+      // Buffer getting full, pause sender
+      sendFrame(CommandId::CMD_XOFF);
+      _flow_paused = true;
+  } else if (_flow_paused && available_bytes <= kRxLowWaterMark) {
+      // Buffer drained enough, resume sender
+      sendFrame(CommandId::CMD_XON);
+      _flow_paused = false;
+  }
+
   while (_stream.available()) {
     int byte_read = _stream.read(); // Use int to check -1
     if (byte_read >= 0) {
@@ -575,8 +592,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
-    // --- NUEVO: Soporte para Push desde Linux (Simetria) ---
-    // Moved to Command Switch to ensure ACKs are sent
     case CommandId::CMD_MAILBOX_PUSH:
       if (_mailbox_handler && payload_length >= 2 && payload_data != nullptr) {
         uint16_t message_len = rpc::read_u16_be(payload_data);
@@ -591,13 +606,65 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       requires_ack = true;
       break;
 
+    // --- Point 2: File Write Logic (Virtual EEPROM) ---
+    case CommandId::CMD_FILE_WRITE:
+      {
+        // Protocol: [len_path (1B)][path...][data...]
+        if (payload_length > 1 && payload_data) {
+           uint8_t path_len = payload_data[0];
+           if (payload_length >= 1 + path_len) {
+               // We don't allocate path buffer to save stack, we inspect in place
+               const char* path_start = reinterpret_cast<const char*>(payload_data + 1);
+               const uint8_t* data_ptr = payload_data + 1 + path_len;
+               size_t data_len = payload_length - 1 - path_len;
+
+               // Check if writing to special path "/eeprom/"
+               // Path is not null terminated in buffer, be careful
+               const char prefix[] = "/eeprom/";
+               const size_t prefix_len = sizeof(prefix) - 1;
+               
+               bool is_eeprom = false;
+               if (path_len >= prefix_len) {
+                   if (strncmp(path_start, prefix, prefix_len) == 0) {
+                       is_eeprom = true;
+                   }
+               }
+
+#if defined(ARDUINO_ARCH_AVR)
+               if (is_eeprom && data_len > 0) {
+                   // Parse offset from filename? e.g. /eeprom/0
+                   // Or just assume raw sequential write from 0? 
+                   // Let's parse offset from remainder of path
+                   int offset = 0;
+                   if (path_len > prefix_len) {
+                       // We need a temp buffer to parse integer or use custom parser
+                       // Since we can't use atoi directly on non-null term string easily
+                       char offset_buf[8];
+                       size_t num_len = path_len - prefix_len;
+                       if (num_len >= sizeof(offset_buf)) num_len = sizeof(offset_buf) - 1;
+                       memcpy(offset_buf, path_start + prefix_len, num_len);
+                       offset_buf[num_len] = '\0';
+                       offset = atoi(offset_buf);
+                   }
+                   
+                   for (size_t i = 0; i < data_len; i++) {
+                       eeprom_update_byte((uint8_t*)(offset + i), data_ptr[i]);
+                   }
+               }
+#endif
+           }
+        }
+        command_processed_internally = true;
+        requires_ack = true;
+      }
+      break;
+
     case CommandId::CMD_CONSOLE_WRITE:
       Console._push(BufferView(frame.payload, frame.header.payload_length));
       command_processed_internally = true; 
       requires_ack = true;
       break;
     case CommandId::CMD_DATASTORE_PUT: 
-    case CommandId::CMD_FILE_WRITE:
     case CommandId::CMD_FILE_REMOVE:
     case CommandId::CMD_PROCESS_KILL:
       requires_ack = true; 
@@ -954,6 +1021,7 @@ void BridgeClass::_resetLinkState() {
   for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
     _pending_process_pids[i] = 0;
   }
+  _flow_paused = false;
 }
 
 void BridgeClass::_flushPendingTxQueue() {

@@ -1,6 +1,7 @@
 """Utility helpers shared across Yun Bridge packages."""
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Iterable, Mapping as MappingABC, Sequence
 from dataclasses import dataclass, field, fields
@@ -14,8 +15,6 @@ from typing import (
     cast,
 )
 from collections.abc import Mapping
-
-import uci
 
 from more_itertools import chunked, unique_everseen
 from paho.mqtt.packettypes import PacketTypes
@@ -185,13 +184,37 @@ def apply_mqtt_connect_properties(client: Any) -> None:
             exc_info=True,
         )
 
+def _load_uci_bindings() -> tuple[Any | None, type[BaseException]]:
+    """Return the python3-uci entry points if the module is available."""
+
+    try:
+        module = importlib.import_module("uci")
+    except ModuleNotFoundError:
+        return None, RuntimeError
+
+    factory = getattr(module, "Uci", None) or getattr(module, "UCI", None)
+    if factory is None:
+        return None, RuntimeError
+
+    exc_type = getattr(module, "UciException", RuntimeError)
+    if not isinstance(exc_type, type) or not issubclass(exc_type, Exception):
+        exc_type = RuntimeError
+    return factory, exc_type
+
 
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration from OpenWrt's UCI system."""
+    cursor_factory, binding_error = _load_uci_bindings()
+    if cursor_factory is None:
+        logger.warning(
+            "python3-uci bindings unavailable; using default configuration."
+        )
+        return get_default_config()
+
     try:
-        with uci.Uci() as cursor:
+        with cursor_factory() as cursor:
             section: Any = cursor.get_all("yunbridge", "general")
-    except uci.UciException as exc:
+    except binding_error as exc:
         logger.warning(
             "Failed to load UCI configuration via python3-uci: %s",
             exc,

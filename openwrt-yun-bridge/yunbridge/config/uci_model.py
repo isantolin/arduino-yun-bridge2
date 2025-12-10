@@ -1,6 +1,7 @@
 """Dataclass-based normalisation for UCI key/value pairs."""
 from __future__ import annotations
 
+from collections.abc import Iterable as IterableABC, Mapping as MappingABC
 from dataclasses import dataclass, field, fields
 from typing import Any, Mapping
 
@@ -62,6 +63,29 @@ def _parse_float(value: Any, default: float) -> float:
         return float(value)
     except (ValueError, TypeError):
         return default
+
+def _stringify_option(value: Any) -> str:
+    """Normalise nested option payloads into a flat string."""
+
+    if isinstance(value, MappingABC):
+        if "value" in value:
+            return _stringify_option(value["value"])
+        if "values" in value:
+            nested = value["values"]
+            if isinstance(nested, IterableABC) and not isinstance(
+                nested, (str, bytes, bytearray)
+            ):
+                return " ".join(_stringify_option(item) for item in nested)
+            return _stringify_option(nested)
+
+    if isinstance(value, IterableABC) and not isinstance(
+        value, (str, bytes, bytearray)
+    ):
+        return " ".join(_stringify_option(item) for item in value)
+
+    if value is None:
+        return ""
+    return str(value)
 
 
 @dataclass(slots=True)
@@ -135,16 +159,27 @@ class UciConfigModel:
     extras: dict[str, str] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, mapping: Mapping[str, Any]) -> UciConfigModel:
+    def from_mapping(
+        cls,
+        mapping: Mapping[str, Any] | IterableABC[tuple[Any, Any]] | Any,
+    ) -> UciConfigModel:
         """Create config model from a mapping, converting types appropriately."""
         known_fields = {f.name: f for f in fields(cls) if f.name != "extras"}
         init_args: dict[str, Any] = {}
         extras: dict[str, str] = {}
 
-        for key, value in mapping.items():
+        try:
+            iterator = mapping.items()  # type: ignore[attr-defined]
+        except AttributeError:
+            try:
+                iterator = dict(mapping).items()  # type: ignore[arg-type]
+            except Exception:
+                return cls()
+
+        for key, value in iterator:
             key_str = str(key)
             if key_str not in known_fields:
-                extras[key_str] = str(value) if value is not None else ""
+                extras[key_str] = _stringify_option(value)
                 continue
 
             field_info = known_fields[key_str]
@@ -161,8 +196,8 @@ class UciConfigModel:
                 default = field_info.default if isinstance(field_info.default, (int, float)) else 0.0
                 init_args[key_str] = _parse_float(value, default)
             else:
-                # Default to string
-                init_args[key_str] = str(value) if value is not None else ""
+                # Default to string with nested handling
+                init_args[key_str] = _stringify_option(value)
 
         return cls(extras=extras, **init_args)
 

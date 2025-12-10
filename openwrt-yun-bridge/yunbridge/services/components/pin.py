@@ -37,12 +37,14 @@ class PinComponent:
     ) -> bool:
         """Reject MCU-initiated Linux pin operations that are unsupported."""
 
+        origin = "pin-read-origin-mcu"
         if command == Command.CMD_DIGITAL_READ:
-            reason = "linux_gpio_read_not_available"
+            detail = "linux_gpio_read_not_available"
         elif command == Command.CMD_ANALOG_READ:
-            reason = "linux_adc_read_not_available"
+            detail = "linux_adc_read_not_available"
         else:
-            reason = "pin_request_not_supported"
+            detail = "pin_request_not_supported"
+        reason = f"{origin}:{detail}"
 
         logger.warning(
             "MCU requested unsupported pin command %s payload=%s",

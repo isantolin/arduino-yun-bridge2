@@ -228,7 +228,9 @@ def test_mcu_digital_read_request_yields_not_implemented(
         assert sent_frames == [
             (
                 Status.NOT_IMPLEMENTED.value,
-                encode_status_reason("linux_gpio_read_not_available"),
+                encode_status_reason(
+                    "pin-read-origin-mcu:linux_gpio_read_not_available"
+                ),
             )
         ]
 

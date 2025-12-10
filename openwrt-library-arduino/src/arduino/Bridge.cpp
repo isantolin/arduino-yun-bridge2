@@ -276,6 +276,8 @@ void BridgeClass::process() {
     }
   }
   _processAckTimeout();
+  // Retry queued frames after transient send failures.
+  _flushPendingTxQueue();
   // Also pump console to flush partial buffers
   Console.flush(); 
 }

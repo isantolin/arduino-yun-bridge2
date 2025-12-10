@@ -5,18 +5,11 @@ import asyncio
 import logging
 import struct
 from builtins import BaseExceptionGroup
-from typing import Any, Sized, TypeGuard, cast
+from typing import Sized, TypeGuard, cast
 
 import serial
 import serial_asyncio
 from cobs import cobs
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    retry_if_exception_type,
-    stop_never,
-    wait_exponential,
-)
 
 from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig
@@ -61,28 +54,6 @@ def _coerce_packet(candidate: BinaryPacket) -> bytes:
     return bytes(candidate)
 
 
-def _unwrap_retryable_exception_group(
-    group: BaseExceptionGroup[BaseException],
-    retry_types: tuple[type[BaseException], ...],
-) -> BaseException | None:
-    collected: list[BaseException] = []
-
-    def _collect(
-        exc: BaseException | BaseExceptionGroup[BaseException],
-    ) -> bool:
-        if isinstance(exc, BaseExceptionGroup):
-            members = tuple(exc.exceptions)  # type: ignore[attr-defined]
-            return all(_collect(inner) for inner in members)
-        if isinstance(exc, retry_types):
-            collected.append(exc)
-            return True
-        return False
-
-    if _collect(group) and collected:
-        return collected[0]
-    return None
-
-
 async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     logger.warning(
         "Serial disconnected; dropping frame 0x%02X",
@@ -94,84 +65,47 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
 async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """Establish serial connection with native exponential backoff."""
     base_delay = float(max(1, config.reconnect_delay))
     max_delay = base_delay * 8
-    retry_types: tuple[type[BaseException], ...] = (
-        serial.SerialException,
-        ConnectionResetError,
-        OSError,
-    )
+    current_delay = base_delay
+    
     action = f"Serial connection to {config.serial_port}"
-
-    def _before(_: RetryCallState) -> None:
-        logger.info(
-            "Connecting to serial port %s at %d baud...",
-            config.serial_port,
-            config.serial_baud,
-        )
-
-    def _before_sleep(retry_state: RetryCallState) -> None:
-        exc: BaseException | None = None
-        outcome = retry_state.outcome
-        if outcome is not None:
-            exc = outcome.exception()
-
-        next_action: Any = retry_state.next_action
-        sleep_for = base_delay
-        if (
-            next_action is not None
-            and getattr(next_action, "sleep", None) is not None
-        ):
-            sleep_for = float(next_action.sleep)
-
-        logger.warning(
-            "%s failed (%s); retrying in %.1fs.",
-            action,
-            exc,
-            sleep_for,
-        )
-
-    retryer = AsyncRetrying(
-        retry=retry_if_exception_type(retry_types),
-        wait=wait_exponential(
-            multiplier=base_delay,
-            min=base_delay,
-            max=max_delay,
-        ),
-        stop=stop_never,
-        reraise=True,
-        before=_before,
-        before_sleep=_before_sleep,
+    logger.info(
+        "Connecting to serial port %s at %d baud...",
+        config.serial_port,
+        config.serial_baud,
     )
 
-    async def _connect_once() -> tuple[
-        asyncio.StreamReader,
-        asyncio.StreamWriter,
-    ]:
+    while True:
         try:
             return await OPEN_SERIAL_CONNECTION(
                 url=config.serial_port,
                 baudrate=config.serial_baud,
                 exclusive=True,
             )
-        except BaseExceptionGroup as exc_group:
-            flattened = _unwrap_retryable_exception_group(
-                exc_group,
-                retry_types,
+        except (serial.SerialException, OSError) as exc:
+            logger.warning(
+                "%s failed (%s); retrying in %.1fs.",
+                action,
+                exc,
+                current_delay,
             )
-            if flattened is not None:
-                raise flattened from exc_group
+            try:
+                await asyncio.sleep(current_delay)
+            except asyncio.CancelledError:
+                logger.debug("%s retry loop cancelled", action)
+                raise
+            
+            # Exponential backoff
+            current_delay = min(max_delay, current_delay * 2)
+            
+        except asyncio.CancelledError:
+            logger.debug("%s cancelled", action)
             raise
-
-    try:
-        async for attempt in retryer:
-            with attempt:
-                return await _connect_once()
-    except asyncio.CancelledError:
-        logger.debug("%s retry loop cancelled", action)
-        raise
-
-    raise RuntimeError(f"{action} retry loop terminated unexpectedly")
+        except Exception:
+            logger.critical("Unexpected error during serial connection", exc_info=True)
+            raise
 
 
 async def _send_serial_frame(

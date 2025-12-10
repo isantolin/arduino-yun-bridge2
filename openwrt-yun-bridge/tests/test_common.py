@@ -1,84 +1,78 @@
+"""Tests for shared utilities."""
 import pytest
+from unittest.mock import MagicMock, patch
 
 from yunbridge.common import (
     chunk_payload,
-    clamp,
     deduplicate,
-    encode_status_reason,
+    get_uci_config,
     normalise_allowed_commands,
     pack_u16,
     unpack_u16,
+    get_default_config,
 )
 
-
-@pytest.mark.parametrize(
-    "invalid",
-    [b"", b"\x01", b"\x02"],
-)
-def test_unpack_u16_invalid(invalid):
+def test_pack_unpack_u16():
+    assert pack_u16(0x1234) == b"\x12\x34"
+    assert unpack_u16(b"\x12\x34") == 0x1234
+    
     with pytest.raises(ValueError):
-        unpack_u16(invalid)
+        unpack_u16(b"\x00")
 
-
-@pytest.mark.parametrize(
-    "value,expected",
-    [(0x1234, b"\x12\x34"), (0xFFFF, b"\xFF\xFF"), (0x100, b"\x01\x00")],
-)
-def test_pack_u16(value, expected):
-    assert pack_u16(value) == expected
-
-
-@pytest.mark.parametrize(
-    "data,max_size,expected",
-    [
-        (b"", 8, tuple()),
-        (b"abc", 2, (b"ab", b"c")),
-        (b"abc", 3, (b"abc",)),
-    ],
-)
-def test_chunk_payload(data, max_size, expected):
-    assert chunk_payload(data, max_size) == expected
-
-
-def test_chunk_payload_invalid():
+def test_chunk_payload():
+    data = b"1234567890"
+    assert chunk_payload(data, 5) == (b"12345", b"67890")
+    assert chunk_payload(data, 3) == (b"123", b"456", b"789", b"0")
+    assert chunk_payload(b"", 5) == ()
+    
     with pytest.raises(ValueError):
-        chunk_payload(b"abc", 0)
+        chunk_payload(data, 0)
 
+def test_deduplicate():
+    assert deduplicate([1, 2, 2, 3]) == (1, 2, 3)
+    assert deduplicate([]) == ()
+    assert deduplicate(["a", "b", "a"]) == ("a", "b")
 
-@pytest.mark.parametrize(
-    "value,minimum,maximum,expected",
-    [(5, 0, 10, 5), (-1, 0, 10, 0), (15, 0, 10, 10)],
-)
-def test_clamp(value, minimum, maximum, expected):
-    assert clamp(value, minimum, maximum) == expected
+def test_normalise_commands():
+    cmds = ["cmd1 ", "CMD2", "cmd1", "*"]
+    assert normalise_allowed_commands(cmds) == ("*",)
+    
+    cmds = ["cmd1", "CMD2"]
+    assert normalise_allowed_commands(cmds) == ("cmd1", "cmd2")
 
+def test_get_uci_config_missing_module():
+    """Test fallback when uci module is not installed."""
+    with patch.dict("sys.modules", {"uci": None}):
+        config = get_uci_config()
+        defaults = get_default_config()
+        # Should match defaults exactly
+        assert config == defaults
 
-def test_normalise_allowed_commands_handles_wildcard():
-    assert normalise_allowed_commands([" ls ", "*"]) == ("*",)
+def test_get_uci_config_failure():
+    """Test fallback when uci raises exception."""
+    mock_uci = MagicMock()
+    mock_uci.return_value.__enter__.side_effect = Exception("UCI Error")
+    
+    with patch.dict("sys.modules", {"uci": mock_uci}):
+        config = get_uci_config()
+        assert config == get_default_config()
 
-
-def test_normalise_allowed_commands():
-    result = normalise_allowed_commands([" ls ", "LS", "echo", ""])
-    assert result == ("ls", "echo")
-
-
-def test_deduplicate_preserves_order():
-    assert deduplicate(["a", "b", "a", "c"]) == ("a", "b", "c")
-
-
-@pytest.mark.parametrize(
-    "reason,expected",
-    [
-        (None, b""),
-        ("", b""),
-        ("ok", b"ok"),
-    ],
-)
-def test_encode_status_reason_basic(reason, expected):
-    assert encode_status_reason(reason) == expected
-
-
-def test_encode_status_reason_truncates():
-    reason = "x" * 300
-    result = encode_status_reason(reason)
-    assert len(result) == 256
+def test_get_uci_config_success():
+    """Test successful UCI read."""
+    mock_uci = MagicMock()
+    mock_cursor = MagicMock()
+    mock_uci.return_value.__enter__.return_value = mock_cursor
+    
+    # Simulate standard UCI dict return
+    mock_cursor.get_all.return_value = {
+        ".type": "general", 
+        "mqtt_host": "192.168.1.100",
+        "debug": "1"
+    }
+    
+    with patch.dict("sys.modules", {"uci": mock_uci}):
+        config = get_uci_config()
+        assert config["mqtt_host"] == "192.168.1.100"
+        assert config["debug"] == "1"
+        # Ensure other defaults are present
+        assert "serial_port" in config

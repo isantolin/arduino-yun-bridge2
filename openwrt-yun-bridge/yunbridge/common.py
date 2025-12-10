@@ -15,9 +15,6 @@ from typing import (
 )
 from collections.abc import Mapping
 
-# REMOVED: importlib (simplified UCI logic)
-# REMOVED: more_itertools (native implementation provided)
-
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -85,7 +82,6 @@ def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
         raise ValueError("max_size must be positive")
     if not data:
         return tuple()
-    # Optimized: Native slicing is faster and removes 'more_itertools' dependency
     return tuple(data[i : i + max_size] for i in range(0, len(data), max_size))
 
 
@@ -109,7 +105,6 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
 
 def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
     """Return ``sequence`` without duplicates, preserving order."""
-    # Optimized: Native set tracking removes 'more_itertools' dependency
     seen = set()
     result = []
     for item in sequence:
@@ -129,7 +124,6 @@ def encode_status_reason(reason: str | None) -> bytes:
 
 def build_mqtt_properties(message: Any) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
-    # Check if we have any property to set
     has_props = any([
         message.content_type,
         message.payload_format_indicator is not None,
@@ -196,7 +190,6 @@ def apply_mqtt_connect_properties(client: Any) -> None:
 
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration directly from OpenWrt's UCI system."""
-    # Modernization: Direct import preferred. Fail fast or fallback silently.
     try:
         from uci import Uci  # type: ignore
     except ImportError:
@@ -207,23 +200,15 @@ def get_uci_config() -> dict[str, str]:
 
     try:
         with Uci() as cursor:
-            # We assume 'yunbridge' package and 'general' section type/name
-            # Typically config is in /etc/config/yunbridge
-            # We fetch all sections of type 'general' (or named 'general')
-            # Assuming standard OpenWrt config structure: config general
+            # Assume 'yunbridge' package and 'general' section
             section = cursor.get_all("yunbridge", "general")
     except Exception as exc:
-        logger.warning(
-            "Failed to load UCI configuration: %s",
-            exc,
-        )
+        logger.warning("Failed to load UCI configuration: %s", exc)
         return get_default_config()
 
-    options: dict[str, Any] = _extract_uci_options(section)
+    options = _extract_uci_options(section)
     if not options:
-        logger.warning(
-            "UCI returned no options for 'yunbridge'; using defaults."
-        )
+        logger.warning("UCI returned no options for 'yunbridge'; using defaults.")
         return get_default_config()
     
     return UciConfigModel.from_mapping(options).as_dict()
@@ -243,8 +228,7 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
 
     typed_section = _as_option_dict(cast(Mapping[Any, Any], section))
     
-    # Fast path: if it's already a flat dict of values, return it
-    # Check for UCI specific metadata keys
+    # Direct Key-Value dictionary (Simple case)
     if ".name" in typed_section or ".type" in typed_section:
         flattened: dict[str, Any] = {}
         for key, value in typed_section.items():
@@ -253,29 +237,9 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
             flattened[key] = value
         return flattened
 
-    # If it is nested (e.g. from uci.get_all returning complex structs)
-    # We attempt to unwrap it.
-    stack: list[dict[str, Any]] = [typed_section]
-    while stack:
-        current = stack.pop()
-        
-        # Check for standard UCI python binding nesting
-        for key in ("options", "values"):
-            nested = current.get(key)
-            if isinstance(nested, MappingABC) and nested:
-                return _as_option_dict(cast(Mapping[Any, Any], nested))
-
-        # Flatten current
-        flattened = {}
-        for key, value in current.items():
-            if str(key).startswith(".") or str(key).startswith("@"):
-                continue
-            if not isinstance(value, dict):
-                 flattened[str(key)] = value
-        
-        if flattened:
-            return flattened
-            
+    # Attempt to handle nested or complex responses (legacy shim fallback removed)
+    # We now strictly expect a valid UCI section dict or we fail to defaults.
+    
     return {}
 
 
@@ -289,7 +253,6 @@ def _stringify_value(value: Any) -> str:
         return _stringify_value(attr_value)
 
     if isinstance(value, Mapping):
-        # Flatten simple dicts if they appear in config
         return str(value)
 
     if isinstance(value, (tuple, list, set)):
@@ -306,8 +269,6 @@ def _extras_default() -> dict[str, str]:
 @dataclass(slots=True)
 class UciConfigModel:
     """Structured representation of UCI options with sane defaults."""
-    # Note: Logic logic moved to typed parsing in uci_model.py or kept simple here.
-    # This class mirrors the properties of config.settings.RuntimeConfig but as strings/raw.
 
     mqtt_host: str = DEFAULT_MQTT_HOST
     mqtt_port: str = str(DEFAULT_MQTT_PORT)

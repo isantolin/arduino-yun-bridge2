@@ -37,7 +37,7 @@ struct DatastoreHandlerState {
 DatastoreHandlerState* DatastoreHandlerState::instance = nullptr;
 
 void datastore_handler_trampoline(
-    const char* key, const uint8_t* value, uint8_t length) {
+    const char* key, const uint8_t* value, uint16_t length) {
   auto* state = DatastoreHandlerState::instance;
   if (!state) {
     return;
@@ -57,7 +57,7 @@ struct MailboxHandlerState {
 
 MailboxHandlerState* MailboxHandlerState::instance = nullptr;
 
-void mailbox_handler_trampoline(const uint8_t* buffer, size_t size) {
+void mailbox_handler_trampoline(const uint8_t* buffer, uint16_t size) {
   auto* state = MailboxHandlerState::instance;
   if (!state) {
     return;
@@ -235,17 +235,19 @@ void test_datastore_queue_rejects_overflow() {
   RecordingStream stream;
   BridgeClass bridge(stream);
 
-  bool first = bridge._trackPendingDatastoreKey("alpha");
-  assert(first);
+  // Fill the queue (capacity 4)
+  assert(bridge._trackPendingDatastoreKey("1"));
+  assert(bridge._trackPendingDatastoreKey("2"));
+  assert(bridge._trackPendingDatastoreKey("3"));
+  assert(bridge._trackPendingDatastoreKey("4"));
 
-  bool second = bridge._trackPendingDatastoreKey("beta");
-  assert(!second);
+  // Should fail now
+  bool overflow = bridge._trackPendingDatastoreKey("overflow");
+  assert(!overflow);
 
+  // Pop one
   const char* key = bridge._popPendingDatastoreKey();
-  assert(std::strcmp(key, "alpha") == 0);
-
-  const char* empty = bridge._popPendingDatastoreKey();
-  assert(empty[0] == '\0');
+  assert(std::strcmp(key, "1") == 0);
 }
 
 void test_console_write_and_flow_control() {
@@ -342,7 +344,13 @@ void test_datastore_put_and_request_behavior() {
   Bridge._handleAck(command_value(CommandId::CMD_DATASTORE_GET));
   stream.clear();
 
-  DataStore.requestGet("other");
+  // Fill the rest of the queue (capacity 4, 1 used)
+  DataStore.requestGet("2");
+  DataStore.requestGet("3");
+  DataStore.requestGet("4");
+  stream.clear();
+
+  DataStore.requestGet("overflow");
   auto status_frames = decode_frames(stream.data());
   assert(!status_frames.empty());
   const Frame& status_frame = status_frames.back();

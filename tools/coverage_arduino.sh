@@ -17,6 +17,8 @@ COMPILE_FLAGS=(
   -pedantic
   -DBRIDGE_HOST_TEST=1
   -DBRIDGE_SERIAL_SHARED_SECRET=\"host_test_secret\"
+  -DBRIDGE_FIRMWARE_VERSION_MAJOR=2
+  -DBRIDGE_FIRMWARE_VERSION_MINOR=0
   -fprofile-arcs
   -ftest-coverage
   -I"${SRC_ROOT}"
@@ -74,6 +76,8 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
 fi
 
 echo "[coverage_arduino] Ejecutando tests host..." >&2
+ls -l "${BUILD_DIR}/test_bridge_components"
+ls -l "${TEST_ROOT}/test_bridge_components.cpp"
 "${BUILD_DIR}/test_protocol"
 "${BUILD_DIR}/test_bridge_components"
 

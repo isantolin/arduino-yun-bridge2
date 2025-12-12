@@ -9,7 +9,9 @@
 #include <Stream.h>
 
 #include "arduino/ArduinoCompat.h"
+#include "arduino/BufferView.h"
 #include "protocol/rpc_frame.h"
+#include "protocol/rpc_protocol.h"
 
 // --- Configuration ---
 #define BRIDGE_BAUDRATE 250000
@@ -17,6 +19,10 @@
 #define BRIDGE_DEBUG_IO 0
 
 class BridgeClass {
+  friend class DataStoreClass;
+  friend class MailboxClass;
+  friend class FileSystemClass;
+  friend class ProcessClass;
  public:
   // Constants
   static constexpr size_t kMaxFilePathLength = 64;
@@ -83,9 +89,10 @@ class BridgeClass {
   void onStatus(StatusHandler handler);
 
   // Internal / Lower Level
-  bool sendFrame(rpc::CommandId command_id, rpc::BufferView payload = {});
-  bool sendFrame(rpc::StatusCode status_code, rpc::BufferView payload = {});
+  bool sendFrame(rpc::CommandId command_id, BufferView payload = {});
+  bool sendFrame(rpc::StatusCode status_code, BufferView payload = {});
   void flushStream();
+  uint8_t* getScratchBuffer() { return _scratch_payload; }
 
 #if BRIDGE_DEBUG_FRAMES
   struct FrameDebugSnapshot {
@@ -115,9 +122,9 @@ class BridgeClass {
   rpc::FrameParser _parser;
   rpc::FrameBuilder _builder;
   rpc::Frame _rx_frame;
-  uint8_t _raw_frame_buffer[rpc::RPC_BUFFER_SIZE];
-  uint8_t _last_cobs_frame[rpc::RPC_BUFFER_SIZE + 32];
-  uint8_t _scratch_payload[rpc::RPC_BUFFER_SIZE];
+  uint8_t _raw_frame_buffer[rpc::MAX_RAW_FRAME_SIZE];
+  uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
+  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE];
 
   // State
   bool _awaiting_ack;
@@ -171,8 +178,8 @@ class BridgeClass {
 
   // Methods
   void dispatch(const rpc::Frame& frame);
-  bool _sendFrame(uint16_t command_id, rpc::BufferView payload);
-  bool _sendFrameImmediate(uint16_t command_id, rpc::BufferView payload);
+  bool _sendFrame(uint16_t command_id, BufferView payload);
+  bool _sendFrameImmediate(uint16_t command_id, BufferView payload);
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   size_t _writeFrameBytes(const uint8_t* data, size_t length);
   bool _requiresAck(uint16_t command_id) const;
@@ -183,11 +190,11 @@ class BridgeClass {
   void _handleMalformed(uint16_t command_id);
   void _resetLinkState();
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
-  void _applyTimingConfig(rpc::BufferView payload);
+  void _applyTimingConfig(BufferView payload);
 
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
-  bool _enqueuePendingTx(uint16_t command_id, rpc::BufferView payload);
+  bool _enqueuePendingTx(uint16_t command_id, BufferView payload);
   bool _dequeuePendingTx(PendingTxFrame& frame);
 
   bool _trackPendingDatastoreKey(const char* key);
@@ -200,45 +207,75 @@ class BridgeClass {
 extern BridgeClass Bridge;
 
 // These classes are wrappers around Bridge calls usually
+#define CONSOLE_TX_BUFFER_SIZE 64
+#define CONSOLE_RX_BUFFER_SIZE 64
+#define CONSOLE_BUFFER_LOW_WATER 16
+#define CONSOLE_BUFFER_HIGH_WATER 48
+
 class ConsoleClass : public Print {
  public:
-  void begin() {}
+  ConsoleClass();
+  void begin();
   void end() {}
   void buffer(uint8_t size) {}
   void noBuffer() {}
   bool connected() { return true; }
   
-  virtual size_t write(uint8_t c) { return write(&c, 1); }
-  virtual size_t write(const uint8_t *buffer, size_t size) {
-    if (size > 0) {
-      Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, rpc::BufferView(buffer, size));
-      return size;
-    }
-    return 0;
-  }
+  virtual size_t write(uint8_t c);
+  virtual size_t write(const uint8_t *buffer, size_t size);
   
-  // Internal method for loopback testing/receiving console data
-  void _push(rpc::BufferView data) {
-      // Typically Console is Output only from MCU perspective in this Bridge version,
-      // but if we supported input, we'd buffer it here.
-  }
+  void _push(BufferView data);
   
-  int available() { return 0; }
-  int read() { return -1; }
-  int peek() { return -1; }
-  void flush() { Bridge.flushStream(); }
+  int available();
+  int read();
+  int peek();
+  void flush();
+  
+  operator bool() { return connected(); }
+
+ private:
+  bool _begun;
+  size_t _rx_buffer_head;
+  size_t _rx_buffer_tail;
+  size_t _tx_buffer_pos;
+  bool _xoff_sent;
+  uint8_t _rx_buffer[CONSOLE_RX_BUFFER_SIZE];
+  uint8_t _tx_buffer[CONSOLE_TX_BUFFER_SIZE];
 };
 extern ConsoleClass Console;
 
 // Placeholder classes to satisfy dependencies if they were used in sketches
 // In a full implementation these would have methods mapping to Bridge calls
-class DataStoreClass {};
+class DataStoreClass {
+ public:
+  DataStoreClass();
+  void put(const char* key, const char* value);
+  void requestGet(const char* key);
+};
 extern DataStoreClass DataStore;
-class MailboxClass {};
+
+class MailboxClass {
+ public:
+  MailboxClass();
+  void send(const char* message);
+  void send(const uint8_t* data, size_t length);
+  void requestRead();
+  void requestAvailable();
+};
 extern MailboxClass Mailbox;
-class FileSystemClass {};
+
+class FileSystemClass {
+ public:
+  void write(const char* filePath, const uint8_t* data, size_t length);
+  void remove(const char* filePath);
+};
 extern FileSystemClass FileSystem;
-class ProcessClass {};
+
+class ProcessClass {
+ public:
+  ProcessClass();
+  void kill(int pid);
+};
 extern ProcessClass Process;
 
 #endif

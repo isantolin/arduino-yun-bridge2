@@ -162,5 +162,3 @@ void ProcessClass::kill(int pid) {
   write_u16_be(pid_payload, static_cast<uint16_t>(pid));
   Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, BufferView(pid_payload, 2));
 }
-
-}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from typing import TypeGuard
+from typing import Sized, TypeGuard, cast
 
 import serial
 import serial_asyncio
@@ -37,7 +37,7 @@ BinaryPacket = bytes | bytearray | memoryview
 def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
     if not isinstance(candidate, (bytes, bytearray, memoryview)):
         return False
-    length = len(candidate)
+    length = len(cast(Sized, candidate))
     if length == 0:
         return False
     return length <= MAX_SERIAL_PACKET_BYTES

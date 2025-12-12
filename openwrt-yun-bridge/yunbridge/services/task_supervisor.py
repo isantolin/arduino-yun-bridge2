@@ -50,10 +50,9 @@ async def supervise_task(
     restart_window_duration = max(1.0, restart_interval)
 
     while True:
+        start_time = time.monotonic()
         try:
             # Reset backoff on successful start (if it runs for a while, logic below handles crashes)
-            start_time = time.monotonic()
-
             await coro_factory()
 
             # If we get here, the task exited cleanly.

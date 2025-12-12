@@ -32,6 +32,7 @@ CRC_FORMAT: Final[str] = ">I"
 CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)
 MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
 
+
 class Status(IntEnum):
     OK = 0  # Operation completed successfully.
     ERROR = 1  # Generic failure.
@@ -41,6 +42,7 @@ class Status(IntEnum):
     TIMEOUT = 5  # Operation timed out.
     NOT_IMPLEMENTED = 6  # Command defined but not supported.
     ACK = 7  # Generic acknowledgement for fire-and-forget commands.
+
 
 class Command(IntEnum):
     CMD_GET_VERSION = 0

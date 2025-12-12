@@ -70,9 +70,9 @@ class FrameParser {
   FrameParser();
   // Consumes a byte. If a full packet is received (ending in 0x00),
   // it decodes, validates, and populates out_frame, returning true.
-  bool consume(uint8_t byte, Frame& out_frame);
+  [[nodiscard]] bool consume(uint8_t byte, Frame& out_frame);
   void reset();
-  bool overflowed() const;
+  [[nodiscard]] bool overflowed() const;
 
  private:
   uint8_t _rx_buffer[COBS_BUFFER_SIZE];
@@ -85,7 +85,7 @@ class FrameBuilder {
   FrameBuilder();
   // Builds a raw frame into a buffer. Returns the length of the raw frame.
   // SAFETY: Now requires the buffer size to prevent overflows.
-  size_t build(uint8_t* buffer,
+  [[nodiscard]] size_t build(uint8_t* buffer,
                size_t buffer_size,
                uint16_t command_id,
                const uint8_t* payload,

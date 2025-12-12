@@ -44,6 +44,9 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         f"static_assert(rpc::PROTOCOL_VERSION == {consts['protocol_version']}, \"Version mismatch\");\n"
     )
     out.write(
+        f"constexpr unsigned long RPC_DEFAULT_BAUDRATE = {consts['default_baudrate']};\n"
+    )
+    out.write(
         f"constexpr unsigned int RPC_BUFFER_SIZE = {consts['rpc_buffer_size']};\n\n"
     )
 
@@ -99,6 +102,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     out.write(PY_HEADER + "\n")
     consts = spec["constants"]
     out.write(f"PROTOCOL_VERSION: Final[int] = {consts['protocol_version']}\n")
+    out.write(f"DEFAULT_BAUDRATE: Final[int] = {consts['default_baudrate']}\n")
     out.write(f"MAX_PAYLOAD_SIZE: Final[int] = {consts['max_payload_size']}\n")
     out.write(f"RPC_BUFFER_SIZE: Final[int] = {consts['rpc_buffer_size']}\n\n")
 

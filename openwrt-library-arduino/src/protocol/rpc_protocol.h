@@ -12,6 +12,7 @@
 #include "rpc_frame.h"
 
 static_assert(rpc::PROTOCOL_VERSION == 2, "Version mismatch");
+constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
 constexpr unsigned int RPC_BUFFER_SIZE = 256;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;

@@ -5,6 +5,7 @@ from enum import IntEnum
 from typing import Final
 
 PROTOCOL_VERSION: Final[int] = 2
+DEFAULT_BAUDRATE: Final[int] = 115200
 MAX_PAYLOAD_SIZE: Final[int] = 256
 RPC_BUFFER_SIZE: Final[int] = 256
 

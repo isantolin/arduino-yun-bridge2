@@ -17,7 +17,12 @@ from builtins import BaseExceptionGroup, ExceptionGroup
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
+from yunbridge.const import (
+    DEFAULT_SERIAL_SHARED_SECRET,
+    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
+    SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    SUPERVISOR_DEFAULT_MAX_BACKOFF,
+)
 from yunbridge.metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,
@@ -47,9 +52,9 @@ class _SupervisedTaskSpec:
     factory: Callable[[], Awaitable[None]]
     fatal_exceptions: tuple[type[BaseException], ...] = ()
     max_restarts: int | None = None
-    restart_interval: float = 60.0
-    min_backoff: float = 1.0
-    max_backoff: float = 30.0
+    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
+    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
+    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
 
 
 async def _supervise_task(
@@ -57,11 +62,11 @@ async def _supervise_task(
     coro_factory: Callable[[], Awaitable[None]],
     *,
     fatal_exceptions: tuple[type[BaseException], ...] = (),
-    min_backoff: float = 1.0,
-    max_backoff: float = 30.0,
+    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     state: RuntimeState | None = None,
     max_restarts: int | None = None,
-    restart_interval: float = 60.0,
+    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 ) -> None:
     """Run *coro_factory* restarting it on failures using native loops."""
 
@@ -307,9 +312,12 @@ def main() -> None:
     )
 
     if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
-        logger.warning(
-            "SECURITY WARNING: Using default serial shared secret! "
-            "Please run 'yunbridge-rotate-credentials' immediately."
+        logger.critical(
+            "****************************************************************\n"
+            " SECURITY CRITICAL: Using default serial shared secret!\n"
+            " This device is VULNERABLE to local attacks.\n"
+            " Please run 'yunbridge-rotate-credentials' IMMEDIATELY.\n"
+            "****************************************************************"
         )
 
     try:

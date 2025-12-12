@@ -137,6 +137,65 @@ static void test_parser_overflow_guard() {
   assert(!parser.consume(0x00, frame));
 }
 
+static void test_parser_noise_handling() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+
+  const uint16_t command_id = 0x55AA;
+  const uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
+
+  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
+
+  uint8_t encoded[COBS_BUFFER_SIZE] = {0};
+  size_t encoded_len = cobs::encode(raw, raw_len, encoded);
+
+  // Inject noise before the frame
+  const uint8_t noise[] = {0x11, 0x22, 0x00, 0x33, 0x44}; 
+  for (uint8_t b : noise) {
+    assert(!parser.consume(b, frame));
+  }
+
+  // Now feed the valid frame
+  bool parsed = false;
+  for (size_t i = 0; i < encoded_len; ++i) {
+    if (parser.consume(encoded[i], frame)) {
+        parsed = true;
+    }
+  }
+  // The last byte (0x00) should trigger the parse
+  parsed = parser.consume(0x00, frame);
+  
+  assert(parsed);
+  assert(frame.header.command_id == command_id);
+}
+
+static void test_parser_fragmentation() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+
+  const uint16_t command_id = 0x9988;
+  const uint8_t payload[] = {0x01, 0x02, 0x03};
+
+  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
+
+  uint8_t encoded[COBS_BUFFER_SIZE] = {0};
+  size_t encoded_len = cobs::encode(raw, raw_len, encoded);
+
+  // Feed byte by byte with "delays" (logic check only)
+  bool parsed = false;
+  for (size_t i = 0; i < encoded_len; ++i) {
+      parsed = parser.consume(encoded[i], frame);
+      assert(!parsed); // Should not be done until 0x00
+  }
+  parsed = parser.consume(0x00, frame);
+  assert(parsed);
+  assert(frame.header.command_id == command_id);
+}
+
 int main() {
   test_endianness_helpers();
   test_crc_helpers();
@@ -146,5 +205,7 @@ int main() {
   test_parser_crc_failure();
   test_parser_overflow_guard();
   test_parser_header_validation();
+  test_parser_noise_handling();
+  test_parser_fragmentation();
   return 0;
 }

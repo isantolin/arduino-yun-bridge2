@@ -8,13 +8,15 @@
 #include <Arduino.h>
 #include <Stream.h>
 
+#ifndef ARDUINO
 #include "arduino/ArduinoCompat.h"
+#endif
 #include "arduino/BufferView.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 
 // --- Configuration ---
-#define BRIDGE_BAUDRATE 250000
+#define BRIDGE_BAUDRATE RPC_DEFAULT_BAUDRATE
 #define BRIDGE_DEBUG_FRAMES 0
 #define BRIDGE_DEBUG_IO 0
 
@@ -53,8 +55,8 @@ class BridgeClass {
   using GetFreeMemoryHandler = void (*)(uint16_t);
   using StatusHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t);
 
-  BridgeClass(HardwareSerial& serial);
-  BridgeClass(Stream& stream);
+  explicit BridgeClass(HardwareSerial& serial);
+  explicit BridgeClass(Stream& stream);
 
   void begin(unsigned long baudrate = BRIDGE_BAUDRATE,
              const char* secret = nullptr, size_t secret_len = 0);
@@ -89,8 +91,8 @@ class BridgeClass {
   void onStatus(StatusHandler handler);
 
   // Internal / Lower Level
-  bool sendFrame(rpc::CommandId command_id, BufferView payload = {});
-  bool sendFrame(rpc::StatusCode status_code, BufferView payload = {});
+  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, BufferView payload = {});
+  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, BufferView payload = {});
   void flushStream();
   uint8_t* getScratchBuffer() { return _scratch_payload; }
 
@@ -212,7 +214,7 @@ extern BridgeClass Bridge;
 #define CONSOLE_BUFFER_LOW_WATER 16
 #define CONSOLE_BUFFER_HIGH_WATER 48
 
-class ConsoleClass : public Print {
+class ConsoleClass : public Stream {
  public:
   ConsoleClass();
   void begin();
@@ -221,15 +223,15 @@ class ConsoleClass : public Print {
   void noBuffer() {}
   bool connected() { return true; }
   
-  virtual size_t write(uint8_t c);
-  virtual size_t write(const uint8_t *buffer, size_t size);
+  size_t write(uint8_t c) override;
+  size_t write(const uint8_t *buffer, size_t size) override;
   
   void _push(BufferView data);
   
-  int available();
-  int read();
-  int peek();
-  void flush();
+  int available() override;
+  int read() override;
+  int peek() override;
+  void flush() override;
   
   operator bool() { return connected(); }
 

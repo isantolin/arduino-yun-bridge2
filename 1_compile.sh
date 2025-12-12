@@ -205,7 +205,10 @@ fi
 echo "[INFO] Dependency manifests regenerated successfully."
 
 echo "[INFO] Regenerating protocol files from spec..."
-if ! python3 "$REPO_ROOT/tools/protocol/generate.py"; then
+if ! python3 "$REPO_ROOT/tools/protocol/generate.py" \
+    --spec "$REPO_ROOT/tools/protocol/spec.toml" \
+    --py "$REPO_ROOT/openwrt-yun-bridge/yunbridge/rpc/protocol.py" \
+    --cpp "$REPO_ROOT/openwrt-library-arduino/src/protocol/rpc_protocol.h"; then
     echo "[ERROR] Failed to regenerate protocol files. Aborting." >&2
     exit 1
 fi
@@ -373,12 +376,6 @@ else
 fi
 
 
-echo "[INFO] Regenerating protocol files from spec..."
-if ! python3 "$REPO_ROOT/tools/protocol/generate.py"; then
-    echo "[ERROR] Failed to regenerate protocol files. Aborting." >&2
-    exit 1
-fi
-
 echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
@@ -392,8 +389,8 @@ if [ ! -d "$SDK_DIR" ]; then
     MAX_RETRIES=5
     RETRY=0
     SUCCESS=0
-    while [ $RETRY -lt $MAX_RETRIES ]; do
-        RETRY_COUNT=$(expr $RETRY + 1)
+    while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+        RETRY_COUNT=$((RETRY + 1))
         echo "[INFO] Downloading OpenWRT SDK (attempt $RETRY_COUNT/$MAX_RETRIES)..."
         wget -O sdk.tar.zst "$OPENWRT_URL"
         echo "[INFO] Extracting SDK..."
@@ -407,7 +404,7 @@ if [ ! -d "$SDK_DIR" ]; then
             rm -f sdk.tar.zst
             # Clean up any partial extraction
             rm -rf openwrt-sdk-*
-            RETRY=$(expr $RETRY + 1)
+            RETRY=$((RETRY + 1))
             sleep 2
         fi
     done
@@ -484,20 +481,20 @@ if [ -d "$LOCAL_FEED_PATH" ]; then
 fi
 
 # Ensure OpenWRT SDK detects new packages (refresh package index)
-pushd "$SDK_DIR"
+cd "$SDK_DIR" || exit 1
 echo "[INFO] Updating feeds..."
 MAX_RETRIES=5
 RETRY=0
 SUCCESS=0
-while [ $RETRY -lt $MAX_RETRIES ]; do
-    RETRY_COUNT=$(expr $RETRY + 1)
+while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
+    RETRY_COUNT=$((RETRY + 1))
     echo "[INFO] Updating feeds (attempt $RETRY_COUNT/$MAX_RETRIES)..."
     if ./scripts/feeds update -a; then
         SUCCESS=1
         break
     else
         echo "[WARN] Feeds update failed. Retrying..."
-        RETRY=$(expr $RETRY + 1)
+        RETRY=$((RETRY + 1))
         sleep 2
     fi
 done
@@ -575,7 +572,7 @@ if [ $CONFIG_CHANGED -eq 1 ]; then
 else
     echo "[INFO] Required packages and dependencies already enabled in SDK .config."
 fi
-popd
+cd "$REPO_ROOT" || exit 1
 
 
 # 3. Compilar los paquetes OpenWRT en el SDK
@@ -583,7 +580,7 @@ popd
 echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
 find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
 
-pushd "$SDK_DIR"
+cd "$SDK_DIR" || exit 1
 for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     echo "[BUILD] Building $pkg (.ipk) in SDK..."
     make package/$pkg/clean V=s || true
@@ -591,7 +588,7 @@ for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     # Copiar artefactos .ipk al bin local
     find bin/packages/ -name "$pkg*_*.ipk" -exec cp {} ../$BIN_DIR/ \;
 done
-popd
+cd "$REPO_ROOT" || exit 1
 
 
 if ls "$BIN_DIR"/*.ipk >/dev/null 2>&1; then

@@ -16,7 +16,6 @@ from collections.abc import Iterable, Sequence
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
 from aiomqtt.message import Message as MQTTMessage
 from aiomqtt.types import PayloadType
-from yunbridge.mqtt.inbound import correlation_data, topic_name
 from yunbridge.mqtt.messages import QOSLevel, QueuedPublish
 from yunbridge.common import build_mqtt_properties
 from yunbridge.const import (
@@ -170,7 +169,7 @@ class Bridge:
             logger.exception("Unexpected error in MQTT listener")
 
     async def _handle_inbound_message(self, message: MQTTMessage) -> None:
-        topic = topic_name(message)
+        topic = str(message.topic)
         if not topic:
             return
 
@@ -184,7 +183,8 @@ class Bridge:
         )
 
         handled = False
-        correlation = correlation_data(message)
+        props = getattr(message, "properties", None)
+        correlation = getattr(props, "CorrelationData", None) if props else None
         if correlation is not None:
             queue = self._correlation_routes.pop(correlation, None)
             if queue is not None:

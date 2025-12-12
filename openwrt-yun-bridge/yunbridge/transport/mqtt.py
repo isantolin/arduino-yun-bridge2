@@ -16,7 +16,6 @@ from yunbridge.common import (
 )
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
-from yunbridge.mqtt.inbound import topic_name
 from yunbridge.protocol import Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
@@ -89,7 +88,7 @@ async def _mqtt_subscriber_loop(
 
         async with messages_cm as stream:
             async for message in stream:
-                topic = topic_name(message)
+                topic = str(message.topic)
                 if not topic:
                     continue
                 try:

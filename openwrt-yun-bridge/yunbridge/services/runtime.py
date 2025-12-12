@@ -30,11 +30,6 @@ from ..protocol.topics import (
     parse_topic,
     topic_path,
 )
-from ..mqtt.inbound import (
-    correlation_data,
-    response_topic,
-    topic_name,
-)
 from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 from .components import (
@@ -343,7 +338,7 @@ class BridgeService:
             )
 
     async def handle_mqtt_message(self, inbound: MQTTMessage) -> None:
-        inbound_topic = topic_name(inbound)
+        inbound_topic = str(inbound.topic)
         try:
             await self._dispatch_mqtt_message(inbound)
         except Exception:
@@ -361,19 +356,21 @@ class BridgeService:
         queue = self.state.mqtt_publish_queue
         message_to_queue = message
         if reply_context is not None:
-            target_topic = response_topic(reply_context) or message.topic_name
+            props = getattr(reply_context, "properties", None)
+            resp_topic = getattr(props, "ResponseTopic", None) if props else None
+            target_topic = resp_topic or message.topic_name
             if target_topic != message_to_queue.topic_name:
                 message_to_queue = replace(
                     message_to_queue,
                     topic_name=target_topic,
                 )
-            reply_correlation = correlation_data(reply_context)
+            reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
                 message_to_queue = replace(
                     message_to_queue,
                     correlation_data=reply_correlation,
                 )
-            origin_topic = topic_name(reply_context)
+            origin_topic = str(reply_context.topic)
             message_to_queue = replace(
                 message_to_queue,
                 user_properties=(
@@ -639,7 +636,7 @@ class BridgeService:
     # ------------------------------------------------------------------
 
     async def _handle_mqtt_topic(self, inbound: MQTTMessage) -> None:
-        inbound_topic = topic_name(inbound)
+        inbound_topic = str(inbound.topic)
         route = parse_topic(self.state.mqtt_topic_prefix, inbound_topic)
         if route is None:
             logger.debug(
@@ -875,7 +872,7 @@ class BridgeService:
             "Blocked MQTT action topic=%s action=%s (message topic=%s)",
             topic_value,
             action or "<missing>",
-            topic_name(inbound),
+            str(inbound.topic),
         )
         payload = json.dumps(
             {

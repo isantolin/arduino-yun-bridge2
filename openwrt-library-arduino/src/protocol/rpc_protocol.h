@@ -9,6 +9,7 @@
 
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 #include "rpc_frame.h"
 
 static_assert(rpc::PROTOCOL_VERSION == 2, "Version mismatch");
@@ -83,7 +84,11 @@ enum class CommandId : uint16_t {
 
 template <typename Enum>
 constexpr auto to_underlying(Enum value) noexcept -> typename std::underlying_type<Enum>::type {
+#if __cplusplus >= 202302L
+    return std::to_underlying(value);
+#else
     return static_cast<typename std::underlying_type<Enum>::type>(value);
+#endif
 }
 } // namespace rpc
 #endif

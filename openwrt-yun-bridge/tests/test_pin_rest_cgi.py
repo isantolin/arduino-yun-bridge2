@@ -67,22 +67,55 @@ class _FakeAsyncClient:
         self.published.append((topic, payload, qos, retain))
 
 
+class MockInfo:
+    def is_published(self) -> bool:
+        return True
+
+class CapturingFakeClient:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.tls_kwargs: dict[str, Any] = {}
+        self.auth_args: tuple[Any, ...] = ()
+        self.published: list[tuple[str, str | bytes, int]] = []
+        # captured_clients.append(self)  <-- This needs to be handled
+
+    def tls_set(self, **kwargs: Any) -> None:
+        self.tls_kwargs = kwargs
+
+    def username_pw_set(self, *args: Any) -> None:
+        self.auth_args = args
+
+    def connect(self, *args: Any, **kwargs: Any) -> None:
+        pass
+
+    def loop_start(self) -> None:
+        pass
+
+    def loop_stop(self) -> None:
+        pass
+
+    def disconnect(self) -> None:
+        pass
+
+    def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
+        self.published.append((topic, payload, qos))
+        return MockInfo()
+
 def test_publish_with_retries_configures_tls(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured_clients = []
+    captured_clients: list[CapturingFakeClient] = []
 
-    class CapturingFakeClient(_FakeAsyncClient):
+    class TestClient(CapturingFakeClient):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
             captured_clients.append(self)
 
-    # Mock aiomqtt.Client
-    import aiomqtt
-
-    monkeypatch.setattr(aiomqtt, "Client", CapturingFakeClient)
+    import paho.mqtt.client as mqtt
+    monkeypatch.setattr(mqtt, "Client", TestClient)
 
     # Mock ssl to avoid file not found errors
     import ssl
@@ -93,6 +126,7 @@ def test_publish_with_retries_configures_tls(
 
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"
+    runtime_config.mqtt_tls = True
 
     pin_rest_module.publish_with_retries(
         topic="br/d/13",
@@ -105,14 +139,11 @@ def test_publish_with_retries_configures_tls(
     assert len(captured_clients) == 1
     fake_client = captured_clients[0]
 
-    assert fake_client.kwargs["username"] == "user"
-    assert fake_client.kwargs["password"] == "secret"
-    assert fake_client.kwargs["tls_context"] == "FAKE_TLS_CONTEXT"
-    assert fake_client.kwargs["hostname"] == runtime_config.mqtt_host
-    assert fake_client.kwargs["port"] == runtime_config.mqtt_port
+    assert fake_client.auth_args == ("user", "secret")
+    assert fake_client.tls_kwargs["ca_certs"] == "/tmp/test-ca.pem"
 
     assert len(fake_client.published) == 1
-    assert fake_client.published[0] == ("br/d/13", b"1", 1, False)
+    assert fake_client.published[0] == ("br/d/13", "1", 1)
 
 
 def test_publish_with_retries_times_out(
@@ -121,37 +152,51 @@ def test_publish_with_retries_times_out(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    # Mock aiomqtt.Client to raise TimeoutError
-    import yunbridge.mqtt.publisher
+    import paho.mqtt.client as mqtt
+
+    class MockInfo:
+        def is_published(self) -> bool:
+            return False
 
     class TimeoutClient:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self):
-            raise asyncio.TimeoutError()
-
-        async def __aexit__(self, *args):
+        def tls_set(self, *args: Any, **kwargs: Any) -> None:
             pass
 
-    monkeypatch.setattr(
-        yunbridge.mqtt.publisher.aiomqtt,
-        "Client",
-        TimeoutClient,
-    )
+        def username_pw_set(self, *args: Any) -> None:
+            pass
 
-    pin_rest_module.publish_with_retries(
-        topic="br/d/2",
-        payload="0",
-        config=runtime_config,
-        retries=1,
-        publish_timeout=0.0,
-    )
+        def connect(self, *args: Any, **kwargs: Any) -> None:
+            pass
 
-    assert "Failed to publish message after retries" in caplog.text
+        def loop_start(self) -> None:
+            pass
+
+        def loop_stop(self) -> None:
+            pass
+
+        def disconnect(self) -> None:
+            pass
+
+        def publish(self, *args: Any, **kwargs: Any) -> Any:
+            return MockInfo()
+
+    monkeypatch.setattr(mqtt, "Client", TimeoutClient)
+
+    with pytest.raises(RuntimeError, match="Failed to publish"):
+        pin_rest_module.publish_with_retries(
+            topic="br/d/2",
+            payload="0",
+            config=runtime_config,
+            retries=1,
+            publish_timeout=0.01,
+            poll_interval=0.001,
+        )
 
 
-def test_main_successful_publication(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_pin_rest_cgi()
 
     fake_config = SimpleNamespace(

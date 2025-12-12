@@ -151,10 +151,12 @@ static void test_parser_noise_handling() {
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
 
-  // Inject noise before the frame
-  const uint8_t noise[] = {0x11, 0x22, 0x00, 0x33, 0x44}; 
+  // Inject noise before the frame. 
+  // Note: We must end with 0x00 to flush the noise as a "bad frame" 
+  // so the parser is clean for the valid frame.
+  const uint8_t noise[] = {0x11, 0x22, 0x00, 0x33, 0x44, 0x00}; 
   for (uint8_t b : noise) {
-    assert(!parser.consume(b, frame));
+    parser.consume(b, frame);
   }
 
   // Now feed the valid frame

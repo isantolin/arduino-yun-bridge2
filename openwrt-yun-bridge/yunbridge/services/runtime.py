@@ -115,6 +115,18 @@ class BridgeService:
             logger_=logger,
         )
 
+    async def __aenter__(self) -> BridgeService:
+        await self._task_supervisor.__aenter__()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        await self._task_supervisor.__aexit__(exc_type, exc_val, exc_tb)
+
     def _register_mcu_handlers(self) -> None:
         handler_sets = (
             self._gpio_mcu_handlers(),
@@ -244,7 +256,7 @@ class BridgeService:
     ) -> asyncio.Task[Any]:
         """Schedule *coroutine* under the supervisor."""
 
-        return await self._task_supervisor.start(coroutine, name=name)
+        return self._task_supervisor.start(coroutine, name=name)
 
     async def cancel_background_tasks(self) -> None:
         await self._task_supervisor.cancel()

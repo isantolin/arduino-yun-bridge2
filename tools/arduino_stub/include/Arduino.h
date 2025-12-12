@@ -39,8 +39,10 @@ using std::uint64_t;
 #endif
 
 #ifndef F
-#define F(x) (x)
+#define F(x) (reinterpret_cast<const __FlashStringHelper*>(x))
 #endif
+
+class __FlashStringHelper;
 
 #ifndef pgm_read_byte
 #define pgm_read_byte(addr) (*(addr))

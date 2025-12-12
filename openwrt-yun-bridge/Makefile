@@ -52,8 +52,11 @@ define Package/$(PKG_NAME)/description
 endef
 
 define Build/Compile
-	$(PYTHON3) -m compileall -q -b $(PKG_BUILD_DIR)
-	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
+	# Compile Python source to bytecode to optimize startup time and save RAM
+	# on the target. We use -b to generate legacy .pyc files (no __pycache__ dir)
+	# which is often preferred for simple packaging, or standard compileall.
+	# OpenWrt python3 package usually handles this via hooks, but explicit is safer.
+	$(PYTHON3) -m compileall -b -f $(PKG_BUILD_DIR)/yunbridge
 endef
 
 define Build/Prepare
@@ -68,9 +71,13 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/yunbridge
 	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/etc/init.d
+	# Copy both source (.py) and bytecode (.pyc)
 	$(CP) $(PKG_BUILD_DIR)/yunbridge $(1)/usr/libexec/yunbridge/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.sh $(1)/usr/bin/yunbridge
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/yunbridge.init $(1)/etc/init.d/yunbridge
+	
+	# Cleanup any __pycache__ directories if they were created by accident
+	find $(1)/usr/libexec/yunbridge -name "__pycache__" -type d -exec rm -rf {} +
 endef
 
 define Package/$(PKG_NAME)/clean

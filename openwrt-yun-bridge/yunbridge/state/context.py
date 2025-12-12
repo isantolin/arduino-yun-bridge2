@@ -717,6 +717,15 @@ class RuntimeState:
         stats.backoff_seconds = 0.0
         stats.fatal = False
 
+    def mark_supervisor_unhealthy(self, name: str, reason: str) -> None:
+        stats = self.supervisor_stats.get(name)
+        if stats is None:
+            stats = SupervisorStats()
+            self.supervisor_stats[name] = stats
+        stats.last_exception = reason
+        stats.last_failure_unix = time.time()
+        stats.restarts += 1
+
     def configure_spool(self, directory: str, limit: int) -> None:
         self.mqtt_spool_dir = directory
         self.mqtt_spool_limit = max(0, limit)

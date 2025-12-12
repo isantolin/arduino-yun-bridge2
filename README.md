@@ -93,7 +93,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - Si el dispositivo no tenía `pip3`, el instalador añade automáticamente `python3-pip` antes de continuar.
 - Si la instalación falla por certificados o espacio en disco, puedes repetir el paso manualmente:
 	```sh
-	python3 -m pip install --no-cache-dir --upgrade "aiomqtt>=2.4,<3.0" "paho-mqtt>=2.1,<3.0"
+	python3 -m pip install --no-cache-dir --upgrade "aiomqtt>=2.4,<3.0"
 	```
 	Vuelve a lanzar `./3_install.sh` cuando el comando termine con éxito.
 - Para limpiar restos de IPKs antiguos, ejecuta `opkg remove python3-aiomqtt python3-paho-mqtt` antes de iniciar el instalador.

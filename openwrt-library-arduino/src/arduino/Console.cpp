@@ -59,7 +59,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
         remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
     if (!Bridge.sendFrame(
             CommandId::CMD_CONSOLE_WRITE,
-            BufferView(buffer + offset, chunk_size))) {
+            std::span<const uint8_t>(buffer + offset, chunk_size))) {
       break;
     }
     offset += chunk_size;
@@ -98,7 +98,7 @@ int ConsoleClass::read() {
   _rx_buffer_tail = (_rx_buffer_tail + 1) % CONSOLE_RX_BUFFER_SIZE;
 
   if (_xoff_sent && available() < CONSOLE_BUFFER_LOW_WATER) {
-    Bridge.sendFrame(CommandId::CMD_XON);
+    (void)Bridge.sendFrame(CommandId::CMD_XON);
     _xoff_sent = false;
   }
 
@@ -117,7 +117,7 @@ void ConsoleClass::flush() {
       size_t chunk = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
       if (!Bridge.sendFrame(
               CommandId::CMD_CONSOLE_WRITE,
-              BufferView(_tx_buffer + offset, chunk))) {
+              std::span<const uint8_t>(_tx_buffer + offset, chunk))) {
         break;
       }
       offset += chunk;
@@ -129,9 +129,9 @@ void ConsoleClass::flush() {
   Bridge.flushStream();
 }
 
-void ConsoleClass::_push(BufferView chunk) {
+void ConsoleClass::_push(std::span<const uint8_t> chunk) {
   const size_t capacity = CONSOLE_RX_BUFFER_SIZE;
-  if (capacity == 0 || chunk.empty() || !chunk.valid()) {
+  if (capacity == 0 || chunk.empty()) {
     return;
   }
 
@@ -145,7 +145,7 @@ void ConsoleClass::_push(BufferView chunk) {
   }
 
   if (!_xoff_sent && available() > CONSOLE_BUFFER_HIGH_WATER) {
-    Bridge.sendFrame(CommandId::CMD_XOFF);
+    (void)Bridge.sendFrame(CommandId::CMD_XOFF);
     _xoff_sent = true;
   }
 }

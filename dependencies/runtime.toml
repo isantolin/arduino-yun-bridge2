@@ -32,12 +32,6 @@ pip = "aiomqtt==2.4.0"
 rationale = "Async MQTT v5 client used for runtime telemetry"
 
 [[dependency]]
-name = "paho-mqtt"
-openwrt = ""
-pip = "paho-mqtt==2.1.0"
-rationale = "Paho helpers still power low-level MQTT handshake logic"
-
-[[dependency]]
 name = "pyserial"
 openwrt = "python3-pyserial"
 pip = "pyserial==3.5"
@@ -72,12 +66,6 @@ name = "aiocron"
 openwrt = ""
 pip = "aiocron==2.1"
 rationale = "Cron-style scheduling for periodic metrics publication"
-
-[[dependency]]
-name = "diskcache"
-openwrt = ""
-pip = "diskcache==5.6.3"
-rationale = "Durable filesystem-backed queue powering the MQTT spool"
 
 [[dependency]]
 name = "typer"

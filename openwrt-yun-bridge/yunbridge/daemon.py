@@ -32,6 +32,7 @@ from yunbridge.services.runtime import (
     BridgeService,
     SerialHandshakeFatal,
 )
+from yunbridge.services.task_supervisor import SupervisedTaskSpec, supervise_task
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.transport import (
@@ -44,123 +45,6 @@ from yunbridge.watchdog import WatchdogKeepalive
 
 
 logger = logging.getLogger("yunbridge")
-
-
-@dataclass(slots=True)
-class _SupervisedTaskSpec:
-    name: str
-    factory: Callable[[], Awaitable[None]]
-    fatal_exceptions: tuple[type[BaseException], ...] = ()
-    max_restarts: int | None = None
-    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
-    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
-    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
-
-
-async def _supervise_task(
-    name: str,
-    coro_factory: Callable[[], Awaitable[None]],
-    *,
-    fatal_exceptions: tuple[type[BaseException], ...] = (),
-    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
-    state: RuntimeState | None = None,
-    max_restarts: int | None = None,
-    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL,
-) -> None:
-    """Run *coro_factory* restarting it on failures using native loops."""
-
-    current_backoff = min_backoff
-    restart_window_start = time.monotonic()
-    restarts_in_window = 0
-    restart_window_duration = max(1.0, restart_interval)
-
-    while True:
-        start_time = time.monotonic()
-        # Loop implementation replaces 'tenacity' for lower memory footprint
-        try:
-            # Reset backoff on successful start (if it runs for a while, logic below handles crashes)
-            # Actually, typically we reset backoff if it runs successfully for 'some time'.
-            # Here we just run it.
-            start_time = time.monotonic()
-
-            await coro_factory()
-
-            # If we get here, the task exited cleanly.
-            logger.warning(
-                "%s task exited cleanly; supervisor exiting",
-                name,
-            )
-            if state is not None:
-                state.mark_supervisor_healthy(name)
-            return
-
-        except asyncio.CancelledError:
-            logger.debug("%s supervisor cancelled", name)
-            raise
-        except fatal_exceptions as exc:
-            logger.critical("%s task hit fatal error: %s", name, exc)
-            if state is not None:
-                state.record_supervisor_failure(
-                    name,
-                    backoff=0.0,
-                    exc=exc,
-                    fatal=True,
-                )
-            raise
-        except Exception as exc:
-            now = time.monotonic()
-            uptime = now - start_time
-
-            # If it ran for a while (e.g. > max_backoff), reset the backoff
-            if uptime > max_backoff:
-                current_backoff = min_backoff
-
-            # Windowed restart check
-            window_age = now - restart_window_start
-            if window_age > restart_window_duration:
-                # New window
-                restart_window_start = now
-                restarts_in_window = 0
-
-            restarts_in_window += 1
-
-            if max_restarts is not None and restarts_in_window > max_restarts:
-                logger.critical(
-                    "%s task exceeded %d restarts within %.1fs; aborting",
-                    name,
-                    max_restarts,
-                    window_age,
-                )
-                if state is not None:
-                    state.record_supervisor_failure(
-                        name,
-                        backoff=0.0,
-                        exc=exc,
-                        fatal=True,
-                    )
-                raise
-
-            logger.exception(
-                "%s task crashed; restarting in %.1fs", name, current_backoff
-            )
-
-            if state is not None:
-                state.record_supervisor_failure(
-                    name,
-                    backoff=current_backoff,
-                    exc=exc,
-                )
-
-            try:
-                await asyncio.sleep(current_backoff)
-            except asyncio.CancelledError:
-                logger.debug("%s supervisor cancelled during backoff", name)
-                raise
-
-            # Exponential backoff
-            current_backoff = min(max_backoff, current_backoff * 2)
-
 
 async def main_async(config: RuntimeConfig) -> None:
     state = create_runtime_state(config)
@@ -196,24 +80,24 @@ async def main_async(config: RuntimeConfig) -> None:
             handshake_interval=float(config.bridge_handshake_interval),
         )
 
-    supervised_tasks: list[_SupervisedTaskSpec] = [
-        _SupervisedTaskSpec(
+    supervised_tasks: list[SupervisedTaskSpec] = [
+        SupervisedTaskSpec(
             name="serial-link",
             factory=_serial_runner,
             fatal_exceptions=(SerialHandshakeFatal,),
         ),
-        _SupervisedTaskSpec(
+        SupervisedTaskSpec(
             name="mqtt-link",
             factory=_mqtt_runner,
         ),
-        _SupervisedTaskSpec(
+        SupervisedTaskSpec(
             name="status-writer",
             factory=_status_runner,
             max_restarts=5,
             restart_interval=120.0,
             max_backoff=10.0,
         ),
-        _SupervisedTaskSpec(
+        SupervisedTaskSpec(
             name="metrics-publisher",
             factory=_metrics_runner,
             max_restarts=5,
@@ -224,7 +108,7 @@ async def main_async(config: RuntimeConfig) -> None:
 
     if config.bridge_summary_interval > 0.0 or config.bridge_handshake_interval > 0.0:
         supervised_tasks.append(
-            _SupervisedTaskSpec(
+            SupervisedTaskSpec(
                 name="bridge-snapshots",
                 factory=_bridge_snapshots_runner,
                 max_restarts=5,
@@ -243,7 +127,7 @@ async def main_async(config: RuntimeConfig) -> None:
             config.watchdog_interval,
         )
         supervised_tasks.append(
-            _SupervisedTaskSpec(
+            SupervisedTaskSpec(
                 name="watchdog",
                 factory=watchdog.run,
                 max_restarts=5,
@@ -260,7 +144,7 @@ async def main_async(config: RuntimeConfig) -> None:
             config.metrics_port,
         )
         supervised_tasks.append(
-            _SupervisedTaskSpec(
+            SupervisedTaskSpec(
                 name="prometheus-exporter",
                 factory=exporter.run,
                 max_restarts=5,
@@ -269,20 +153,21 @@ async def main_async(config: RuntimeConfig) -> None:
         )
 
     try:
-        async with asyncio.TaskGroup() as task_group:
-            for spec in supervised_tasks:
-                task_group.create_task(
-                    _supervise_task(
-                        spec.name,
-                        spec.factory,
-                        fatal_exceptions=spec.fatal_exceptions,
-                        min_backoff=spec.min_backoff,
-                        max_backoff=spec.max_backoff,
-                        state=state,
-                        max_restarts=spec.max_restarts,
-                        restart_interval=spec.restart_interval,
+        async with service:
+            async with asyncio.TaskGroup() as task_group:
+                for spec in supervised_tasks:
+                    task_group.create_task(
+                        supervise_task(
+                            spec.name,
+                            spec.factory,
+                            fatal_exceptions=spec.fatal_exceptions,
+                            min_backoff=spec.min_backoff,
+                            max_backoff=spec.max_backoff,
+                            state=state,
+                            max_restarts=spec.max_restarts,
+                            restart_interval=spec.restart_interval,
+                        )
                     )
-                )
     except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")
     except* Exception as exc_group:
@@ -294,7 +179,6 @@ async def main_async(config: RuntimeConfig) -> None:
             )
         raise
     finally:
-        await service.cancel_background_tasks()
         cleanup_status_file()
         logger.info("Yun Bridge daemon stopped.")
 

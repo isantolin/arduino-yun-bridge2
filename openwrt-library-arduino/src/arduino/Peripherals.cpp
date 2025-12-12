@@ -40,9 +40,9 @@ void DataStoreClass::put(const char* key, const char* value) {
   payload[1 + key_len] = static_cast<uint8_t>(value_len);
   memcpy(payload + 2 + key_len, value, value_len);
 
-  Bridge.sendFrame(
+  (void)Bridge.sendFrame(
       CommandId::CMD_DATASTORE_PUT,
-      BufferView(payload, static_cast<uint16_t>(payload_len)));
+      std::span<const uint8_t>(payload, static_cast<uint16_t>(payload_len)));
 }
 
 void DataStoreClass::requestGet(const char* key) {
@@ -63,9 +63,9 @@ void DataStoreClass::requestGet(const char* key) {
     return;
   }
 
-  Bridge.sendFrame(
+  (void)Bridge.sendFrame(
       CommandId::CMD_DATASTORE_GET,
-      BufferView(payload, static_cast<uint16_t>(key_len + 1)));
+      std::span<const uint8_t>(payload, static_cast<uint16_t>(key_len + 1)));
 }
 
 MailboxClass::MailboxClass() {}
@@ -97,17 +97,17 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
   
   write_u16_be(payload, static_cast<uint16_t>(length));
   memcpy(payload + 2, data, length);
-  Bridge.sendFrame(
+  (void)Bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH,
-      BufferView(payload, static_cast<uint16_t>(length + 2)));
+      std::span<const uint8_t>(payload, static_cast<uint16_t>(length + 2)));
 }
 
 void MailboxClass::requestRead() {
-  Bridge.sendFrame(CommandId::CMD_MAILBOX_READ);
+  (void)Bridge.sendFrame(CommandId::CMD_MAILBOX_READ);
 }
 
 void MailboxClass::requestAvailable() {
-  Bridge.sendFrame(CommandId::CMD_MAILBOX_AVAILABLE);
+  (void)Bridge.sendFrame(CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
 void FileSystemClass::write(const char* filePath, const uint8_t* data,
@@ -133,9 +133,9 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
     memcpy(payload + 3 + path_len, data, length);
   }
 
-  Bridge.sendFrame(
+  (void)Bridge.sendFrame(
       CommandId::CMD_FILE_WRITE,
-      BufferView(payload, static_cast<uint16_t>(path_len + length + 3)));
+      std::span<const uint8_t>(payload, static_cast<uint16_t>(path_len + length + 3)));
 }
 
 void FileSystemClass::remove(const char* filePath) {
@@ -150,9 +150,9 @@ void FileSystemClass::remove(const char* filePath) {
   
   payload[0] = static_cast<uint8_t>(path_len);
   memcpy(payload + 1, filePath, path_len);
-  Bridge.sendFrame(
+  (void)Bridge.sendFrame(
       CommandId::CMD_FILE_REMOVE,
-      BufferView(payload, static_cast<uint16_t>(path_len + 1)));
+      std::span<const uint8_t>(payload, static_cast<uint16_t>(path_len + 1)));
 }
 
 ProcessClass::ProcessClass() {}
@@ -160,5 +160,5 @@ ProcessClass::ProcessClass() {}
 void ProcessClass::kill(int pid) {
   uint8_t pid_payload[2];
   write_u16_be(pid_payload, static_cast<uint16_t>(pid));
-  Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, BufferView(pid_payload, 2));
+  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, std::span<const uint8_t>(pid_payload, 2));
 }

@@ -164,7 +164,7 @@ direction = "bidirectional"
 name = "CMD_DATASTORE_PUT"
 value = 0x30
 category = "datastore"
-direction = "linux_to_mcu"
+direction = "bidirectional"
 [[commands]]
 name = "CMD_DATASTORE_GET"
 value = 0x31
@@ -219,7 +219,7 @@ direction = "mcu_to_linux"
 name = "CMD_FILE_REMOVE"
 value = 0x52
 category = "filesystem"
-direction = "linux_to_mcu"
+direction = "bidirectional"
 [[commands]]
 name = "CMD_FILE_READ_RESP"
 value = 0xA1
@@ -244,7 +244,7 @@ direction = "mcu_to_linux"
 name = "CMD_PROCESS_KILL"
 value = 0x63
 category = "process"
-direction = "linux_to_mcu"
+direction = "bidirectional"
 [[commands]]
 name = "CMD_PROCESS_RUN_RESP"
 value = 0xB0

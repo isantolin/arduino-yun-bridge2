@@ -11,7 +11,7 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/coverage/arduino}"
 SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 COMPILE_FLAGS=(
-  -std=c++17
+  -std=c++23
   -Wall
   -Wextra
   -pedantic

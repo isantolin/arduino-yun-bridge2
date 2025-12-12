@@ -5,14 +5,14 @@ from __future__ import annotations
 import collections
 import errno
 import logging
+import pickle
+import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Deque as TypingDeque, Protocol, Callable, cast
+from typing import Deque as TypingDeque, Protocol, Callable, cast, Any
 
-from diskcache import Deque as DiskDeque
-
-from .messages import QueuedPublish, SpoolRecord
+from .messages import SpoolRecord, QueuedPublish
 
 logger = logging.getLogger("yunbridge.mqtt.spool")
 
@@ -29,6 +29,80 @@ class DiskQueue(Protocol):
     def clear(self) -> None: ...
 
     def __len__(self) -> int: ...
+
+
+class SqliteDeque:
+    """Persistent deque implementation using SQLite."""
+
+    def __init__(self, directory: str) -> None:
+        self._db_path = Path(directory) / "spool.db"
+        self._conn = sqlite3.connect(
+            self._db_path,
+            check_same_thread=False,
+            isolation_level=None,  # Autocommit mode
+        )
+        self._create_table()
+
+    def _create_table(self) -> None:
+        with self._conn:
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS queue (
+                    id INTEGER PRIMARY KEY,
+                    data BLOB
+                )
+                """
+            )
+            # Ensure indices if needed, but PRIMARY KEY is already indexed.
+
+    def append(self, item: SpoolRecord) -> None:
+        data = pickle.dumps(item)
+        with self._conn:
+            # Use a subquery to find the next ID.
+            # If table is empty, we can start at 1.
+            # If not empty, max(id) + 1.
+            # Note: This is not race-condition free if multiple processes access it,
+            # but here we are single-process (daemon).
+            cursor = self._conn.execute("SELECT MAX(id) FROM queue")
+            row = cursor.fetchone()
+            next_id = (row[0] if row[0] is not None else 0) + 1
+            self._conn.execute(
+                "INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data)
+            )
+
+    def appendleft(self, item: SpoolRecord) -> None:
+        data = pickle.dumps(item)
+        with self._conn:
+            cursor = self._conn.execute("SELECT MIN(id) FROM queue")
+            row = cursor.fetchone()
+            next_id = (row[0] if row[0] is not None else 1) - 1
+            self._conn.execute(
+                "INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data)
+            )
+
+    def popleft(self) -> SpoolRecord:
+        with self._conn:
+            cursor = self._conn.execute(
+                "SELECT id, data FROM queue ORDER BY id ASC LIMIT 1"
+            )
+            row = cursor.fetchone()
+            if row is None:
+                raise IndexError("pop from an empty deque")
+            item_id, data = row
+            self._conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
+            return cast(SpoolRecord, pickle.loads(data))
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def clear(self) -> None:
+        with self._conn:
+            self._conn.execute("DELETE FROM queue")
+
+    def __len__(self) -> int:
+        cursor = self._conn.execute("SELECT COUNT(*) FROM queue")
+        row = cursor.fetchone()
+        return row[0] if row else 0
 
 
 class MQTTSpoolError(RuntimeError):
@@ -72,9 +146,9 @@ class MQTTPublishSpool:
         if self._use_disk:
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
-                queue_dir = self.directory / "queue"
-                queue_dir.mkdir(parents=True, exist_ok=True)
-                self._disk_queue = cast(DiskQueue, DiskDeque(directory=str(queue_dir)))
+                # queue_dir = self.directory / "queue" # No longer needed for sqlite
+                # queue_dir.mkdir(parents=True, exist_ok=True)
+                self._disk_queue = cast(DiskQueue, SqliteDeque(directory=str(self.directory)))
             except Exception as exc:
                 logger.warning(
                     "Failed to initialize disk spool at %s; falling back "

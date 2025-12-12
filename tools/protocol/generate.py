@@ -10,14 +10,8 @@ import argparse
 import sys
 from pathlib import Path
 from typing import Any, TextIO
+import tomllib
 
-try:
-    import tomllib  # type: ignore
-except ImportError:
-    try:
-        import tomli as tomllib  # type: ignore
-    except ImportError:
-        sys.exit("Error: Python 3.11+ or 'tomli' is required.")
 
 HEADER = """/*
  * This file is part of Arduino Yun Ecosystem v2.
@@ -37,7 +31,7 @@ from typing import Final
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
-    out.write('#include <cstdint>\n#include <type_traits>\n#include "rpc_frame.h"\n\n')
+    out.write('#include <cstdint>\n#include <type_traits>\n#include <utility>\n#include "rpc_frame.h"\n\n')
 
     consts = spec["constants"]
     out.write(
@@ -92,7 +86,11 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
 
     out.write("""template <typename Enum>
 constexpr auto to_underlying(Enum value) noexcept -> typename std::underlying_type<Enum>::type {
+#if __cplusplus >= 202302L
+    return std::to_underlying(value);
+#else
     return static_cast<typename std::underlying_type<Enum>::type>(value);
+#endif
 }
 """)
     out.write("} // namespace rpc\n#endif\n")

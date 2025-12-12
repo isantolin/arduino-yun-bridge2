@@ -7,11 +7,11 @@
 
 #include <Arduino.h>
 #include <Stream.h>
+#include <string_view>
+#include <array>
+#include <optional>
+#include <span>
 
-#ifndef ARDUINO
-#include "arduino/ArduinoCompat.h"
-#endif
-#include "arduino/BufferView.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 
@@ -44,8 +44,6 @@ class BridgeClass {
   using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
   using MailboxHandler = void (*)(const uint8_t*, uint16_t);
   using MailboxAvailableHandler = void (*)(uint16_t);
-  using DigitalReadHandler = void (*)(int);
-  using AnalogReadHandler = void (*)(int);
   using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
                                      const uint8_t*, uint16_t);
   using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
@@ -70,10 +68,10 @@ class BridgeClass {
   // Request Methods
   void requestDigitalRead(uint8_t pin);
   void requestAnalogRead(uint8_t pin);
-  void requestProcessRun(const char* command);
-  void requestProcessRunAsync(const char* command);
+  void requestProcessRun(std::string_view command);
+  void requestProcessRunAsync(std::string_view command);
   void requestProcessPoll(int pid);
-  void requestFileSystemRead(const char* filePath);
+  void requestFileSystemRead(std::string_view filePath);
   void requestGetFreeMemory();
 
   // Events
@@ -81,8 +79,6 @@ class BridgeClass {
   void onDataStoreGetResponse(DataStoreGetHandler handler);
   void onMailboxMessage(MailboxHandler handler);
   void onMailboxAvailableResponse(MailboxAvailableHandler handler);
-  void onDigitalReadResponse(DigitalReadHandler handler);
-  void onAnalogReadResponse(AnalogReadHandler handler);
   void onProcessRunResponse(ProcessRunHandler handler);
   void onProcessPollResponse(ProcessPollHandler handler);
   void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
@@ -91,8 +87,8 @@ class BridgeClass {
   void onStatus(StatusHandler handler);
 
   // Internal / Lower Level
-  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, BufferView payload = {});
-  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, BufferView payload = {});
+  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, std::span<const uint8_t> payload = {});
+  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, std::span<const uint8_t> payload = {});
   void flushStream();
   uint8_t* getScratchBuffer() { return _scratch_payload; }
 
@@ -146,8 +142,6 @@ class BridgeClass {
   DataStoreGetHandler _datastore_get_handler;
   MailboxHandler _mailbox_handler;
   MailboxAvailableHandler _mailbox_available_handler;
-  DigitalReadHandler _digital_read_handler;
-  AnalogReadHandler _analog_read_handler;
   ProcessRunHandler _process_run_handler;
   ProcessPollHandler _process_poll_handler;
   ProcessRunAsyncHandler _process_run_async_handler;
@@ -180,9 +174,10 @@ class BridgeClass {
 
   // Methods
   void dispatch(const rpc::Frame& frame);
-  bool _sendFrame(uint16_t command_id, BufferView payload);
-  bool _sendFrameImmediate(uint16_t command_id, BufferView payload);
+  bool _sendFrame(uint16_t command_id, std::span<const uint8_t> payload);
+  bool _sendFrameImmediate(uint16_t command_id, std::span<const uint8_t> payload);
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
+  void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
   size_t _writeFrameBytes(const uint8_t* data, size_t length);
   bool _requiresAck(uint16_t command_id) const;
   void _recordLastFrame(uint16_t command_id, const uint8_t* cobs_frame, size_t cobs_len);
@@ -192,11 +187,11 @@ class BridgeClass {
   void _handleMalformed(uint16_t command_id);
   void _resetLinkState();
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
-  void _applyTimingConfig(BufferView payload);
+  void _applyTimingConfig(std::span<const uint8_t> payload);
 
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
-  bool _enqueuePendingTx(uint16_t command_id, BufferView payload);
+  bool _enqueuePendingTx(uint16_t command_id, std::span<const uint8_t> payload);
   bool _dequeuePendingTx(PendingTxFrame& frame);
 
   bool _trackPendingDatastoreKey(const char* key);
@@ -226,7 +221,7 @@ class ConsoleClass : public Stream {
   size_t write(uint8_t c) override;
   size_t write(const uint8_t *buffer, size_t size) override;
   
-  void _push(BufferView data);
+  void _push(std::span<const uint8_t> data);
   
   int available() override;
   int read() override;

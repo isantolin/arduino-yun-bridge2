@@ -37,8 +37,7 @@ BinaryPacket = bytes | bytearray | memoryview
 def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
     if not isinstance(candidate, (bytes, bytearray, memoryview)):
         return False
-    sized_candidate = cast(Sized, candidate)
-    length = len(sized_candidate)
+    length = len(candidate)
     if length == 0:
         return False
     return length <= MAX_SERIAL_PACKET_BYTES

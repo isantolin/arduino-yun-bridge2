@@ -127,7 +127,12 @@ async def test_serial_reader_task_reconnects():
         b"",
         asyncio.CancelledError(),
     ]  # First EOF, then exit loop via cancel
-    mock_writer = AsyncMock()
+    
+    # StreamWriter has mixed sync/async methods
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.wait_closed = AsyncMock()
+    mock_writer.is_closing.return_value = False
 
     # Mock connect to return our stream mocks
     mock_connect = AsyncMock(return_value=(mock_reader, mock_writer))

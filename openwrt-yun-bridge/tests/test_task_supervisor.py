@@ -23,11 +23,12 @@ def test_task_supervisor_tracks_lifecycle(
             await asyncio.sleep(0)
             completed.set()
 
-        await supervisor.start(worker(), name="worker")
-        await asyncio.wait_for(completed.wait(), timeout=1)
-        await asyncio.sleep(0)
-        assert supervisor.active_count == 0
-        await supervisor.cancel()
+        async with supervisor:
+            await supervisor.start(worker(), name="worker")
+            await asyncio.wait_for(completed.wait(), timeout=1)
+            await asyncio.sleep(0)
+            assert supervisor.active_count == 0
+            await supervisor.cancel()
 
     asyncio.run(_run())
 
@@ -42,11 +43,12 @@ def test_task_supervisor_logs_failures(
         async def boom() -> None:
             raise RuntimeError("boom")
 
-        await supervisor.start(boom(), name="boom-task")
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        assert supervisor.active_count == 0
-        await supervisor.cancel()
+        async with supervisor:
+            await supervisor.start(boom(), name="boom-task")
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert supervisor.active_count == 0
+            await supervisor.cancel()
 
     asyncio.run(_run())
     assert "boom" in caplog.text
@@ -65,10 +67,11 @@ def test_task_supervisor_logs_exception_groups(
                 [RuntimeError("boom-1"), RuntimeError("boom-2")],
             )
 
-        await supervisor.start(cascaded(), name="cascade")
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-        await supervisor.cancel()
+        async with supervisor:
+            await supervisor.start(cascaded(), name="cascade")
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            await supervisor.cancel()
 
     asyncio.run(_run())
     assert "boom-1" in caplog.text
@@ -110,9 +113,13 @@ def test_task_supervisor_logs_group_exceptions(
             lambda: _ExplodingTaskGroup(),
         )
         supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
-        await supervisor.start(asyncio.sleep(0))
-        await asyncio.sleep(0)
-        await supervisor.cancel()
+        try:
+            async with supervisor:
+                await supervisor.start(asyncio.sleep(0))
+                await asyncio.sleep(0)
+                await supervisor.cancel()
+        except ExceptionGroup:
+            pass
 
     asyncio.run(_run())
     assert "group-boom" in caplog.text

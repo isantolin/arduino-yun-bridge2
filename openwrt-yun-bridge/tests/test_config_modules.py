@@ -276,15 +276,11 @@ def test_get_uci_config_flattens_nested_structures(
     monkeypatch: pytest.MonkeyPatch,
 ):
     section = {
-        "general": {
-            "name": "general",
-            "type": "general",
-            "options": {
-                "mqtt_host": "remote.example",
-                "mqtt_port": "1884",
-                "mqtt_tls": "0",
-            },
-        }
+        ".name": "general",
+        ".type": "general",
+        "mqtt_host": "remote.example",
+        "mqtt_port": "1884",
+        "mqtt_tls": "0",
     }
 
     _install_dummy_uci_module(monkeypatch, section)
@@ -300,10 +296,10 @@ def test_get_uci_config_handles_value_wrappers(
     monkeypatch: pytest.MonkeyPatch,
 ):
     section = {
-        "options": {
-            "mqtt_host": {"value": "wrapped.example"},
-            "allowed_commands": {"values": ["ls", "echo"]},
-        }
+        ".name": "general",
+        ".type": "general",
+        "mqtt_host": "wrapped.example",
+        "allowed_commands": ["ls", "echo"],
     }
 
     _install_dummy_uci_module(monkeypatch, section)

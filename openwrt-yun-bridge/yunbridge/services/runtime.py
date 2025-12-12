@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import struct
 import time
 from typing import Any
 from collections.abc import Awaitable, Callable, Coroutine
@@ -22,7 +23,6 @@ from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ..config.settings import RuntimeConfig
-from ..common import pack_u16
 from ..protocol.topics import (
     Topic,
     TopicRoute,
@@ -226,6 +226,9 @@ class BridgeService:
             ),
             Command.CMD_GET_VERSION_RESP.value: (
                 self._system.handle_get_version_resp
+            ),
+            Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value: (
+                self._system.handle_get_tx_debug_snapshot_resp
             ),
         }
 
@@ -504,7 +507,7 @@ class BridgeService:
         status: Status = Status.ACK,
         extra: bytes = b"",
     ) -> None:
-        payload = pack_u16(command_id)
+        payload = struct.pack(">H", command_id)
         if extra:
             remaining = _MAX_PAYLOAD_BYTES - len(payload)
             if remaining > 0:

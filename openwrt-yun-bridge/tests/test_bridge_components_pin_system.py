@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import struct
 from unittest.mock import patch
 
@@ -469,5 +470,82 @@ def test_mqtt_shell_kill_invokes_process_component(
                     False,
                 )
             ]
+
+    asyncio.run(_run())
+
+def test_mqtt_get_tx_debug_requests_mcu_snapshot(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        # Simulate MQTT request: .../system/tx_debug/get
+        topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "tx_debug",
+            "get",
+        )
+        inbound = make_inbound_message(topic, b"")
+        
+        await service.handle_mqtt_message(inbound)
+
+        # Verify MCU request sent
+        assert len(sent_frames) == 1
+        cmd_id, payload = sent_frames[0]
+        assert cmd_id == Command.CMD_GET_TX_DEBUG_SNAPSHOT.value
+        assert payload == b""
+
+    asyncio.run(_run())
+
+
+def test_mcu_tx_debug_response_publishes_to_mqtt(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        # Construct response payload (9 bytes)
+        # pending_tx_count=5, awaiting_ack=1, retry_count=2, last_cmd=0x1234, last_millis=0xDEADBEEF
+        payload = struct.pack(">BBBHI", 5, 1, 2, 0x1234, 0xDEADBEEF)
+        
+        await service.handle_mcu_frame(
+            Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value,
+            payload,
+        )
+
+        # Verify MQTT publication
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.SYSTEM,
+            "tx_debug",
+            "value",
+        )
+        assert queued.topic_name == expected_topic
+        data = json.loads(queued.payload)
+        assert data["pending_tx_count"] == 5
+        assert data["awaiting_ack"] is True
+        assert data["retry_count"] == 2
+        assert data["last_command_id"] == 0x1234
+        assert data["last_send_millis"] == 0xDEADBEEF
+        
+        runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())

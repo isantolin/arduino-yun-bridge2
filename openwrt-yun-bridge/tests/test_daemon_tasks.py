@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import struct
 from collections import deque
 from dataclasses import dataclass
 from types import MethodType
@@ -15,7 +16,6 @@ from aiomqtt.message import Message as MQTTMessage
 
 from cobs import cobs
 
-from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.rpc.frame import Frame
@@ -270,7 +270,7 @@ def test_serial_reader_task_limits_packet_size(
         assert reported
         status_id, payload = reported.pop()
         assert status_id == Status.MALFORMED.value
-        assert payload[:2] == pack_u16(0xFFFF)
+        assert payload[:2] == struct.pack(">H", 0xFFFF)
 
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

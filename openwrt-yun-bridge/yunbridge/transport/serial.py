@@ -4,14 +4,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from builtins import BaseExceptionGroup
 from typing import Sized, TypeGuard, cast
 
 import serial
 import serial_asyncio
 from cobs import cobs
 
-from yunbridge.common import pack_u16
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import SERIAL_TERMINATOR
 from yunbridge.rpc import protocol
@@ -84,7 +82,12 @@ async def _open_serial_connection_with_retry(
                 baudrate=config.serial_baud,
                 exclusive=True,
             )
-        except (serial.SerialException, OSError) as exc:
+        except (serial.SerialException, OSError, ExceptionGroup) as exc:
+            if isinstance(exc, ExceptionGroup):
+                _, remainder = exc.split((serial.SerialException, OSError))
+                if remainder:
+                    raise remainder
+
             logger.warning(
                 "%s failed (%s); retrying in %.1fs.",
                 action,
@@ -170,7 +173,7 @@ async def _process_serial_packet(
             type(encoded_packet).__name__,
         )
         state.record_serial_decode_error()
-        payload = pack_u16(0xFFFF)
+        payload = struct.pack(">H", 0xFFFF)
         try:
             await service.send_frame(Status.MALFORMED.value, payload)
         except Exception:  # pragma: no cover - defensive logging
@@ -200,7 +203,7 @@ async def _process_serial_packet(
             )
         state.record_serial_decode_error()
         truncated = packet_bytes[:32]
-        payload = pack_u16(0xFFFF) + truncated
+        payload = struct.pack(">H", 0xFFFF) + truncated
         try:
             await service.send_frame(Status.MALFORMED.value, payload)
         except Exception:  # pragma: no cover - defensive logging
@@ -233,7 +236,7 @@ async def _process_serial_packet(
                 raw_frame[: protocol.CRC_COVERED_HEADER_SIZE],
             )
         truncated = raw_frame[:32]
-        payload = pack_u16(command_hint) + truncated
+        payload = struct.pack(">H", command_hint) + truncated
         try:
             await service.send_frame(status.value, payload)
         except Exception:  # pragma: no cover - defensive logging
@@ -339,7 +342,7 @@ async def serial_reader_task(
                             "requesting retransmit.",
                             MAX_SERIAL_PACKET_BYTES,
                         )
-                        payload = pack_u16(0xFFFF) + snapshot
+                        payload = struct.pack(">H", 0xFFFF) + snapshot
                         try:
                             await service.send_frame(
                                 Status.MALFORMED.value,

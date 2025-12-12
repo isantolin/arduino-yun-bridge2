@@ -4,7 +4,6 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable, Mapping as MappingABC, Sequence
 from dataclasses import dataclass, field, fields
-from struct import pack as struct_pack, unpack as struct_unpack
 from typing import (
     Any,
     Final,
@@ -59,18 +58,6 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def pack_u16(value: int) -> bytes:
-    """Pack ``value`` as big-endian unsigned 16-bit."""
-    return struct_pack(">H", value & 0xFFFF)
-
-
-def unpack_u16(data: bytes) -> int:
-    """Decode the first two bytes of ``data`` as big-endian unsigned 16-bit."""
-    if len(data) < 2:
-        raise ValueError("payload shorter than 2 bytes for u16 unpack")
-    return struct_unpack(">H", data[:2])[0]
-
-
 def clamp(value: int, minimum: int, maximum: int) -> int:
     """Return *value* constrained to the ``[minimum, maximum]`` range."""
     return max(minimum, min(maximum, value))
@@ -105,8 +92,8 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
 
 def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
     """Return ``sequence`` without duplicates, preserving order."""
-    seen = set()
-    result = []
+    seen: set[T] = set()
+    result: list[T] = []
     for item in sequence:
         if item not in seen:
             seen.add(item)
@@ -226,7 +213,7 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
     if not isinstance(section, MappingABC) or not section:
         return {}
 
-    typed_section = _as_option_dict(cast(Mapping[Any, Any], section))
+    typed_section = _as_option_dict(cast(Mapping[str, Any], section))
     
     # Direct Key-Value dictionary (Simple case)
     if ".name" in typed_section or ".type" in typed_section:
@@ -253,7 +240,7 @@ def _stringify_value(value: Any) -> str:
         return _stringify_value(attr_value)
 
     if isinstance(value, Mapping):
-        return str(value)
+        return str(cast(Mapping[Any, Any], value))
 
     if isinstance(value, (tuple, list, set)):
         iterable_value = cast(TypingIterable[Any], value)
@@ -378,8 +365,6 @@ def get_default_config() -> dict[str, str]:
 
 __all__: Final[tuple[str, ...]] = (
     "normalise_allowed_commands",
-    "pack_u16",
-    "unpack_u16",
     "clamp",
     "chunk_payload",
     "deduplicate",

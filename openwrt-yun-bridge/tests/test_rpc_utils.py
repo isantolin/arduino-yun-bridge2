@@ -45,6 +45,8 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
             return self._payload
 
     payload = {
+        ".name": "general",
+        ".type": "yunbridge",
         "serial_port": "uci-port",
         "allowed_commands": ("ls", "echo"),
         "mqtt_queue_limit": 42,

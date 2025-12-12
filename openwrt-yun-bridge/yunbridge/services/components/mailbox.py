@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
-from ...common import encode_status_reason, pack_u16, unpack_u16
+from ...common import encode_status_reason
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -43,7 +44,7 @@ class MailboxComponent:
         )
         message_id: int | None = None
         if len(payload) >= 2:
-            message_id = unpack_u16(payload)
+            message_id = struct.unpack(">H", payload[:2])[0]
 
         if message_id is not None:
             body = json.dumps({"message_id": message_id}).encode("utf-8")
@@ -63,7 +64,7 @@ class MailboxComponent:
             )
             return False
 
-        msg_len = unpack_u16(payload)
+        msg_len = struct.unpack(">H", payload[:2])[0]
         data = payload[2:2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
@@ -130,7 +131,7 @@ class MailboxComponent:
             message_payload = message_payload[: MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
-        response_payload = pack_u16(msg_len) + message_payload
+        response_payload = struct.pack(">H", msg_len) + message_payload
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,

@@ -57,8 +57,11 @@ async def test_supervisor_limits_restarts(
         attempts += 1
         raise RuntimeError(f"boom-{attempts}")
 
+    original_sleep = asyncio.sleep
+
     async def fast_sleep(delay: float) -> None:
         sleep_calls.append(delay)
+        await original_sleep(0)
 
     monkeypatch.setattr("yunbridge.daemon.asyncio.sleep", fast_sleep)
 
@@ -97,8 +100,10 @@ async def test_supervisor_marks_recovery(
         if attempts == 1:
             raise RuntimeError("boom")
 
+    original_sleep = asyncio.sleep
+
     async def fast_sleep(_: float) -> None:
-        return None
+        await original_sleep(0)
 
     monkeypatch.setattr("yunbridge.daemon.asyncio.sleep", fast_sleep)
 

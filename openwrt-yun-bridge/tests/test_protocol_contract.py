@@ -87,16 +87,16 @@ def test_protocol_spec_matches_generated_bindings() -> None:
     for status in statuses:
         enum_member = rpc_protocol.Status[status.name]
         assert enum_member.value == status.value
-        macro = f"#define STATUS_{status.name} 0x{status.value:02X}"
-        enum_entry = f"{status.name} = 0x{status.value:02X}"
-        assert macro in header_text or enum_entry in header_text
+        # Check for enum class entry: STATUS_NAME = VALUE,
+        enum_entry = f"STATUS_{status.name} = {status.value},"
+        assert enum_entry in header_text
 
     for command in commands:
         enum_member = rpc_protocol.Command[command.name]
         assert enum_member.value == command.value
-        macro = f"#define {command.name} 0x{command.value:02X}"
-        enum_entry = f"{command.name} = 0x{command.value:02X}"
-        assert macro in header_text or enum_entry in header_text
+        # Check for enum class entry: NAME = VALUE,
+        enum_entry = f"{command.name} = {command.value},"
+        assert enum_entry in header_text
 
     assert handshake["nonce_length"] == const.SERIAL_NONCE_LENGTH
     assert handshake["tag_length"] == const.SERIAL_HANDSHAKE_TAG_LEN
@@ -142,7 +142,7 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
 
     header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
     match = re.search(
-        r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u", header_text
+        r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u?", header_text
     )
     assert match, "RPC_HANDSHAKE_CONFIG_SIZE missing in header"
     assert int(match.group(1)) == packed_size

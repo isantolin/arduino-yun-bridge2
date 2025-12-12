@@ -12,7 +12,6 @@ from typing import Any, Deque, cast
 from collections.abc import Mapping
 
 from aiomqtt.message import Message as MQTTMessage
-from tenacity import wait_exponential
 
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -48,6 +47,19 @@ SpoolSnapshot = dict[str, int | float]
 
 def _mqtt_queue_factory() -> asyncio.Queue[QueuedPublish]:
     return asyncio.Queue()
+
+
+class _ExponentialBackoff:
+    def __init__(self, min_val: float, max_val: float, multiplier: float) -> None:
+        self.min = min_val
+        self.max = max_val
+        self.multiplier = multiplier
+
+    def __call__(self, retry_state: Any) -> float:
+        attempt = getattr(retry_state, "attempt_number", 1)
+        # Simple exponential backoff: multiplier * 2^(attempt-1)
+        delay = self.multiplier * (2 ** (attempt - 1))
+        return max(self.min, min(delay, self.max))
 
 
 def _command_name(command_id: int) -> str:
@@ -248,10 +260,10 @@ class RuntimeState:
         repr=False,
     )
     _spool_wait_strategy: Any = field(
-        default_factory=lambda: wait_exponential(
+        default_factory=lambda: _ExponentialBackoff(
             multiplier=5.0,
-            min=5.0,
-            max=60.0,
+            min_val=5.0,
+            max_val=60.0,
         ),
         init=False,
         repr=False,
@@ -1043,6 +1055,12 @@ class RuntimeState:
             mqtt_spool_trim_events=self.mqtt_spool_trim_events,
             mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
             mqtt_spool_corrupt_dropped=self.mqtt_spool_corrupt_dropped,
+            mqtt_spool_degraded=self.mqtt_spool_degraded,
+            mqtt_spool_failure_reason=self.mqtt_spool_failure_reason,
+            mqtt_spool_retry_attempts=self.mqtt_spool_retry_attempts,
+            mqtt_spool_backoff_until=self.mqtt_spool_backoff_until,
+            mqtt_spool_last_error=self.mqtt_spool_last_error,
+            mqtt_spool_recoveries=self.mqtt_spool_recoveries,
         )
         snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
         return snapshot

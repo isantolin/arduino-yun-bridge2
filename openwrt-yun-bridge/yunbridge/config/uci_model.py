@@ -68,11 +68,12 @@ def _stringify_option(value: Any) -> str:
     """Normalise nested option payloads into a flat string."""
 
     if isinstance(value, MappingABC):
-        if "value" in value:
-            nested_value: Any = value["value"]
+        typed_map = cast(Mapping[str, Any], value)
+        if "value" in typed_map:
+            nested_value: Any = typed_map["value"]
             return _stringify_option(nested_value)
-        if "values" in value:
-            nested_values: Any = value["values"]
+        if "values" in typed_map:
+            nested_values: Any = typed_map["values"]
             if isinstance(nested_values, IterableABC) and not isinstance(
                 nested_values,
                 (str, bytes, bytearray),
@@ -163,7 +164,7 @@ class UciConfigModel:
     metrics_port: int = DEFAULT_METRICS_PORT
 
     # Extras to preserve unknown keys
-    extras: dict[str, str] = field(default_factory=dict)
+    extras: dict[str, str] = field(default_factory=lambda: cast(dict[str, str], {}))
 
     @classmethod
     def from_mapping(
@@ -177,7 +178,7 @@ class UciConfigModel:
 
         items_iter: Iterable[tuple[Any, Any]]
         if isinstance(mapping, MappingABC):
-            items_iter = mapping.items()
+            items_iter = cast(Iterable[tuple[Any, Any]], mapping.items())
         else:
             try:
                 typed_iterable = cast(Iterable[tuple[Any, Any]], mapping)

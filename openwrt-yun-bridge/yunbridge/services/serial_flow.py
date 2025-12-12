@@ -8,15 +8,6 @@ from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Awaitable, Callable
 
-from tenacity import (
-    AsyncRetrying,
-    RetryCallState,
-    RetryError,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_fixed,
-)
-
 from yunbridge.const import (
     SERIAL_ACK_ONLY_COMMANDS,
     SERIAL_FAILURE_STATUS_CODES,
@@ -238,44 +229,36 @@ class SerialFlowController:
         payload: bytes,
         sender: SendFrameCallable,
     ) -> bool:
-        def _before_sleep(retry_state: RetryCallState) -> None:
-            self._emit_metric("retry")
-            attempt_num = retry_state.attempt_number
-            self._logger.warning(
-                "Timeout waiting for MCU response to 0x%02X (attempt %d/%d)",
-                pending.command_id,
-                attempt_num,
-                self._max_attempts,
-            )
-
-        retryer = AsyncRetrying(
-            reraise=False,
-            stop=stop_after_attempt(self._max_attempts),
-            retry=retry_if_exception_type(self._RetryableSerialError),
-            wait=wait_fixed(0),
-            before_sleep=_before_sleep,
-        )
-
-        try:
-            async for attempt in retryer:
-                with attempt:
-                    pending.attempts = attempt.retry_state.attempt_number
-                    self._notify_pipeline("start", pending)
-                    self._reset_pending_state(pending)
-                    await self._send_and_wait(pending, payload, sender)
-                    self._emit_metric("ack")
-                    self._notify_pipeline("success", pending)
-                    return True
-        except self._FatalSerialError as exc:
-            pending.mark_failure(exc.status)
-            self._notify_pipeline("failure", pending, status=exc.status)
-        except RetryError:
-            pending.mark_failure(Status.TIMEOUT.value)
-            self._notify_pipeline(
-                "failure",
-                pending,
-                status=Status.TIMEOUT.value,
-            )
+        for attempt_num in range(1, self._max_attempts + 1):
+            try:
+                pending.attempts = attempt_num
+                self._notify_pipeline("start", pending)
+                self._reset_pending_state(pending)
+                await self._send_and_wait(pending, payload, sender)
+                self._emit_metric("ack")
+                self._notify_pipeline("success", pending)
+                return True
+            except self._RetryableSerialError:
+                if attempt_num < self._max_attempts:
+                    self._emit_metric("retry")
+                    self._logger.warning(
+                        "Timeout waiting for MCU response to 0x%02X (attempt %d/%d)",
+                        pending.command_id,
+                        attempt_num,
+                        self._max_attempts,
+                    )
+                    continue
+                else:
+                    pending.mark_failure(Status.TIMEOUT.value)
+                    self._notify_pipeline(
+                        "failure",
+                        pending,
+                        status=Status.TIMEOUT.value,
+                    )
+            except self._FatalSerialError as exc:
+                pending.mark_failure(exc.status)
+                self._notify_pipeline("failure", pending, status=exc.status)
+                break
 
         self._emit_metric("failure")
         return False

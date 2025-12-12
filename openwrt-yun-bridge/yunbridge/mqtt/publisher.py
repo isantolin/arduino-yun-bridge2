@@ -10,15 +10,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
-import time
+from typing import Any
 
 import aiomqtt
-from tenacity import (
-    AsyncRetrying,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from ..config.settings import RuntimeConfig
 from ..config.tls import resolve_tls_material
@@ -28,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 async def _publish_async(
     topic: str,
-    payload: str | bytes,
+    payload: bytes,
     config: RuntimeConfig,
     retries: int = 3,
     timeout: float = 5.0,
@@ -51,36 +45,39 @@ async def _publish_async(
             tls_context.load_cert_chain(material.certfile, material.keyfile)
         tls_params = tls_context
 
-    retryer = AsyncRetrying(
-        reraise=True,
-        stop=stop_after_attempt(retries),
-        wait=wait_exponential(multiplier=base_delay, min=base_delay, max=5.0),
-        retry=retry_if_exception_type(Exception),
-    )
-
-    async for attempt in retryer:
-        with attempt:
-            try:
-                async with aiomqtt.Client(
-                    hostname=config.mqtt_host,
-                    port=config.mqtt_port,
-                    username=config.mqtt_user,
-                    password=config.mqtt_pass,
-                    tls_context=tls_params,
-                    timeout=timeout,
-                ) as client:
-                    await client.publish(topic, payload, qos=1)
-                    logger.info("Published to %s (len=%d)", topic, len(payload))
-            except Exception as exc:
-                logger.warning(
-                    "MQTT publish attempt failed: %s", exc
-                )
-                raise
+    # Manual retry loop replacing tenacity
+    last_exc = None
+    for attempt in range(1, retries + 2):
+        try:
+            async with aiomqtt.Client(
+                hostname=config.mqtt_host,
+                port=config.mqtt_port,
+                username=config.mqtt_user,
+                password=config.mqtt_pass,
+                tls_context=tls_params,
+            ) as client:
+                await client.publish(topic, payload, qos=1, retain=False)
+                logger.info("Published to %s (len=%d)", topic, len(payload))
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt > retries:
+                break
+            
+            logger.warning(
+                "MQTT publish attempt %d failed: %s", attempt, exc
+            )
+            # Exponential backoff: base_delay * 2^(attempt-1), capped at 5.0s
+            delay = min(5.0, base_delay * (2 ** (attempt - 1)))
+            await asyncio.sleep(delay)
+    
+    if last_exc:
+        raise last_exc
 
 
 def publish_with_retries(
     topic: str,
-    payload: str | bytes,
+    payload: Any,
     config: RuntimeConfig,
     *,
     logger: logging.Logger = logger,
@@ -99,9 +96,11 @@ def publish_with_retries(
     clean asyncio.run() call wrapping aiomqtt.
     """
     
-    # Ensure payload is bytes or str
-    if not isinstance(payload, (str, bytes)):
-        payload = str(payload)
+    # Ensure payload is bytes
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    elif not isinstance(payload, bytes):
+        payload = str(payload).encode("utf-8")
 
     try:
         asyncio.run(

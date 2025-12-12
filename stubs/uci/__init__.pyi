@@ -26,8 +26,4 @@ def UciCursor() -> Uci:
     ...
 
 
-def Uci() -> Uci:
-    ...
-
-
 __all__ = ["Uci", "UciException"]

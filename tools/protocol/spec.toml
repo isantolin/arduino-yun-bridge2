@@ -80,6 +80,16 @@ value = 0x82
 category = "system"
 direction = "mcu_to_linux"
 [[commands]]
+name = "CMD_GET_TX_DEBUG_SNAPSHOT"
+value = 0x04
+category = "system"
+direction = "linux_to_mcu"
+[[commands]]
+name = "CMD_GET_TX_DEBUG_SNAPSHOT_RESP"
+value = 0x85
+category = "system"
+direction = "mcu_to_linux"
+[[commands]]
 name = "CMD_LINK_SYNC"
 value = 0x02
 category = "system"

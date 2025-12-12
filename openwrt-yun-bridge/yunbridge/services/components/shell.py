@@ -2,22 +2,19 @@
 from __future__ import annotations
 
 import logging
+import struct
 from contextlib import AsyncExitStack
 
 from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.rpc.protocol import Status
 from yunbridge.const import (
-    ACTION_SHELL_RUN,
     ACTION_SHELL_RUN_ASYNC,
-    ACTION_SHELL_POLL,
-    ACTION_SHELL_KILL,
 )
 
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
-from ...common import pack_u16
 from ...protocol.topics import Topic, topic_path
 from ...policy import CommandValidationError
 from ..payloads import (
@@ -54,31 +51,36 @@ class ShellComponent:
     ) -> None:
         action = parts[2] if len(parts) >= 3 else ""
 
-        if action == ACTION_SHELL_RUN:
-            payload_model = self._parse_shell_command(payload, action)
-            if payload_model is None:
-                return
-            await self._handle_shell_run(payload_model, inbound)
-        elif action == ACTION_SHELL_RUN_ASYNC:
-            payload_model = self._parse_shell_command(payload, action)
-            if payload_model is None:
-                return
-            await self._handle_run_async(payload_model, inbound)
-        elif action == ACTION_SHELL_POLL and len(parts) == 4:
-            pid_model = self._parse_shell_pid(parts[3], action)
-            if pid_model is None:
-                return
-            await self._handle_poll(pid_model)
-        elif action == ACTION_SHELL_KILL and len(parts) == 4:
-            pid_model = self._parse_shell_pid(parts[3], action)
-            if pid_model is None:
-                return
-            await self._handle_kill(pid_model)
-        else:
-            logger.debug(
-                "Ignoring shell topic action: %s",
-                "/".join(parts),
-            )
+        match action:
+            case "run":
+                payload_model = self._parse_shell_command(payload, action)
+                if payload_model is None:
+                    return
+                await self._handle_shell_run(payload_model, inbound)
+            
+            case "run_async":
+                payload_model = self._parse_shell_command(payload, action)
+                if payload_model is None:
+                    return
+                await self._handle_run_async(payload_model, inbound)
+            
+            case "poll" if len(parts) == 4:
+                pid_model = self._parse_shell_pid(parts[3], action)
+                if pid_model is None:
+                    return
+                await self._handle_poll(pid_model)
+            
+            case "kill" if len(parts) == 4:
+                pid_model = self._parse_shell_pid(parts[3], action)
+                if pid_model is None:
+                    return
+                await self._handle_kill(pid_model)
+            
+            case _:
+                logger.debug(
+                    "Ignoring shell topic action: %s",
+                    "/".join(parts),
+                )
 
     async def _handle_shell_run(
         self,
@@ -201,7 +203,7 @@ class ShellComponent:
 
     async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
         await self.process.handle_kill(
-            pack_u16(pid_model.pid),
+            struct.pack(">H", pid_model.pid),
             send_ack=False,
         )
 

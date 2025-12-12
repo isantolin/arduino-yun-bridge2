@@ -5,6 +5,7 @@ import asyncio
 import base64
 import json
 import logging
+import struct
 import subprocess
 from asyncio import StreamReader
 from asyncio.subprocess import Process as AsyncioProcess
@@ -13,7 +14,7 @@ from dataclasses import dataclass, field
 
 import psutil
 
-from ...common import encode_status_reason, pack_u16, unpack_u16
+from ...common import encode_status_reason
 from ...protocol.topics import Topic, topic_path
 from ...mqtt.messages import QueuedPublish
 from ...state.context import ManagedProcess, RuntimeState
@@ -134,7 +135,7 @@ class ProcessComponent:
                 return
             case _:
                 await self.ctx.send_frame(
-                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value, pack_u16(pid)
+                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(">H", pid)
                 )
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
@@ -175,17 +176,17 @@ class ProcessComponent:
                 Command.CMD_PROCESS_POLL_RESP.value,
                 bytes(
                     [Status.MALFORMED.value, 0xFF]
-                ) + pack_u16(0) + pack_u16(0),
+                ) + struct.pack(">H", 0) + struct.pack(">H", 0),
             )
             return False
 
-        pid = unpack_u16(payload)
+        pid = struct.unpack(">H", payload[:2])[0]
         batch = await self.collect_output(pid)
 
         response_payload = (
             bytes([batch.status_byte, batch.exit_code])
-            + pack_u16(len(batch.stdout_chunk))
-            + pack_u16(len(batch.stderr_chunk))
+            + struct.pack(">H", len(batch.stdout_chunk))
+            + struct.pack(">H", len(batch.stderr_chunk))
             + batch.stdout_chunk
             + batch.stderr_chunk
         )
@@ -209,7 +210,7 @@ class ProcessComponent:
             )
             return False
 
-        pid = unpack_u16(payload)
+        pid = struct.unpack(">H", payload[:2])[0]
 
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
@@ -840,9 +841,9 @@ class ProcessComponent:
         stderr_trim = stderr_bytes[:remaining]
         return (
             bytes([status & 0xFF])
-            + pack_u16(len(stdout_trim))
+            + struct.pack(">H", len(stdout_trim))
             + stdout_trim
-            + pack_u16(len(stderr_trim))
+            + struct.pack(">H", len(stderr_trim))
             + stderr_trim
         )
 

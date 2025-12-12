@@ -16,6 +16,7 @@ from builtins import BaseExceptionGroup, ExceptionGroup
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
+from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 from yunbridge.metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,
@@ -69,6 +70,7 @@ async def _supervise_task(
     restart_window_duration = max(1.0, restart_interval)
 
     while True:
+        start_time = time.monotonic()
         # Loop implementation replaces 'tenacity' for lower memory footprint
         try:
             # Reset backoff on successful start (if it runs for a while, logic below handles crashes)
@@ -303,6 +305,12 @@ def main() -> None:
         config.mqtt_host,
         config.mqtt_port,
     )
+
+    if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
+        logger.warning(
+            "SECURITY WARNING: Using default serial shared secret! "
+            "Please run 'yunbridge-rotate-credentials' immediately."
+        )
 
     try:
         asyncio.run(main_async(config))

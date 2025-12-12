@@ -7,17 +7,8 @@ from yunbridge.common import (
     deduplicate,
     get_uci_config,
     normalise_allowed_commands,
-    pack_u16,
-    unpack_u16,
     get_default_config,
 )
-
-def test_pack_unpack_u16():
-    assert pack_u16(0x1234) == b"\x12\x34"
-    assert unpack_u16(b"\x12\x34") == 0x1234
-    
-    with pytest.raises(ValueError):
-        unpack_u16(b"\x00")
 
 def test_chunk_payload():
     data = b"1234567890"
@@ -59,9 +50,11 @@ def test_get_uci_config_failure():
 
 def test_get_uci_config_success():
     """Test successful UCI read."""
-    mock_uci = MagicMock()
+    mock_module = MagicMock()
+    mock_uci_class = MagicMock()
+    mock_module.Uci = mock_uci_class
     mock_cursor = MagicMock()
-    mock_uci.return_value.__enter__.return_value = mock_cursor
+    mock_uci_class.return_value.__enter__.return_value = mock_cursor
     
     # Simulate standard UCI dict return
     mock_cursor.get_all.return_value = {
@@ -70,7 +63,7 @@ def test_get_uci_config_success():
         "debug": "1"
     }
     
-    with patch.dict("sys.modules", {"uci": mock_uci}):
+    with patch.dict("sys.modules", {"uci": mock_module}):
         config = get_uci_config()
         assert config["mqtt_host"] == "192.168.1.100"
         assert config["debug"] == "1"

@@ -56,12 +56,6 @@ pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
 
 [[dependency]]
-name = "tenacity"
-openwrt = ""
-pip = "tenacity==9.1.2"
-rationale = "Retry/backoff utilities for serial and MQTT paths"
-
-[[dependency]]
 name = "psutil"
 openwrt = "python3-psutil"
 pip = "psutil==7.1.3"

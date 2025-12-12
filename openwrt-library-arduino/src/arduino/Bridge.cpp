@@ -12,6 +12,8 @@
 #include <string.h> 
 #include <stdlib.h> 
 #include <stdint.h>
+#include <algorithm>
+#include <iterator>
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -193,7 +195,7 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
-  memcpy(out_tag, digest, kHandshakeTagSize);
+  std::copy(digest, digest + kHandshakeTagSize, out_tag);
 }
 
 void BridgeClass::_applyTimingConfig(BufferView payload) {
@@ -478,6 +480,23 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       }
       break;
 
+    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
+      {
+        if (payload_length != 0) {
+          break;
+        }
+        uint8_t resp[9];
+        resp[0] = _pending_tx_count;
+        resp[1] = _awaiting_ack ? 1 : 0;
+        resp[2] = _retry_count;
+        rpc::write_u16_be(&resp[3], _last_command_id);
+        rpc::write_u32_be(&resp[5], static_cast<uint32_t>(_last_send_millis));
+        
+        sendFrame(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP, BufferView(resp, sizeof(resp)));
+        command_processed_internally = true;
+      }
+      break;
+
     case CommandId::CMD_LINK_SYNC:
       {
         const size_t nonce_length = payload_length;
@@ -501,11 +520,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         if (payload_data == nullptr) {
           break;
         }
-        memcpy(response, payload_data, nonce_length);
+        std::copy(payload_data, payload_data + nonce_length, response);
         if (has_secret) {
           uint8_t tag[kHandshakeTagSize];
           _computeHandshakeTag(payload_data, nonce_length, tag);
-          memcpy(&response[nonce_length], tag, kHandshakeTagSize);
+          std::copy(tag, tag + kHandshakeTagSize, &response[nonce_length]);
         }
 
         sendFrame(
@@ -642,7 +661,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                        char offset_buf[8];
                        size_t num_len = path_len - prefix_len;
                        if (num_len >= sizeof(offset_buf)) num_len = sizeof(offset_buf) - 1;
-                       memcpy(offset_buf, path_start + prefix_len, num_len);
+                       std::copy(path_start + prefix_len, path_start + prefix_len + num_len, offset_buf);
                        offset_buf[num_len] = '\0';
                        offset = atoi(offset_buf);
                    }
@@ -928,7 +947,7 @@ void BridgeClass::_recordLastFrame(uint16_t command_id,
     cobs_len = sizeof(_last_cobs_frame);
   }
   if (cobs_frame != _last_cobs_frame) {
-    memcpy(_last_cobs_frame, cobs_frame, cobs_len);
+    std::copy(cobs_frame, cobs_frame + cobs_len, _last_cobs_frame);
   }
   _last_cobs_length = static_cast<uint16_t>(cobs_len);
   _last_command_id = command_id;
@@ -1064,10 +1083,10 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, BufferView payload) {
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    memcpy(
-        _pending_tx_frames[tail].payload,
+    std::copy(
         payload.data(),
-        payload_len);
+        payload.data() + payload_len,
+        _pending_tx_frames[tail].payload);
   }
   _pending_tx_count++;
   return true;
@@ -1163,7 +1182,7 @@ void BridgeClass::requestFileSystemRead(const char* filePath) {
 
   uint8_t* payload = _scratch_payload;
   payload[0] = static_cast<uint8_t>(info.length);
-  memcpy(payload + kFileReadLengthPrefix, filePath, info.length);
+  std::copy(filePath, filePath + info.length, payload + kFileReadLengthPrefix);
   const uint16_t total = static_cast<uint16_t>(
       info.length + kFileReadLengthPrefix);
   sendFrame(CommandId::CMD_FILE_READ, BufferView(payload, total));
@@ -1191,7 +1210,7 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   uint8_t slot =
       (_pending_datastore_head + _pending_datastore_count) %
       kMaxPendingDatastore;
-  memcpy(_pending_datastore_keys[slot], key, length);
+  std::copy(key, key + length, _pending_datastore_keys[slot]);
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
@@ -1210,7 +1229,10 @@ const char* BridgeClass::_popPendingDatastoreKey() {
   if (length > kMaxDatastoreKeyLength) {
     length = kMaxDatastoreKeyLength;
   }
-  memcpy(key_buffer, _pending_datastore_keys[slot], length);
+  std::copy(
+      _pending_datastore_keys[slot],
+      _pending_datastore_keys[slot] + length,
+      key_buffer);
   key_buffer[length] = '\0';
 
   _pending_datastore_head =

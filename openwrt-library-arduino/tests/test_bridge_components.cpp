@@ -283,7 +283,7 @@ void test_console_write_and_flow_control() {
   Console.begin();
 
   std::vector<uint8_t> inbound(CONSOLE_BUFFER_HIGH_WATER + 2, 0x34);
-  Console._push(std::span<const uint8_t>(inbound.data(), inbound.size()));
+  Console._push(inbound.data(), inbound.size());
   assert(Console.available() == static_cast<int>(inbound.size()));
   int peeked = Console.peek();
   assert(peeked == 0x34);
@@ -598,14 +598,14 @@ void test_ack_flushes_pending_queue_after_response() {
   const uint8_t first_payload[] = {0x42};
   bool sent = bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE,
-      std::span<const uint8_t>(first_payload, sizeof(first_payload)));
+      first_payload, sizeof(first_payload));
   assert(sent);
   assert(bridge._awaiting_ack);
 
   const uint8_t queued_payload[] = {0xAA, 0xBB};
     bool enqueued = bridge._enqueuePendingTx(
       command_value(CommandId::CMD_MAILBOX_PUSH),
-      std::span<const uint8_t>(queued_payload, sizeof(queued_payload)));
+      queued_payload, sizeof(queued_payload));
   assert(enqueued);
   assert(bridge._pending_tx_count == 1);
 
@@ -635,7 +635,7 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
 
   const uint8_t payload[] = {0x55};
   bool sent = bridge.sendFrame(
-      CommandId::CMD_CONSOLE_WRITE, std::span<const uint8_t>(payload, sizeof(payload)));
+      CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload));
   assert(sent);
   assert(bridge._awaiting_ack);
 
@@ -699,7 +699,7 @@ void test_malformed_status_triggers_retransmit() {
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   bool sent = bridge.sendFrame(
-      CommandId::CMD_MAILBOX_PUSH, std::span<const uint8_t>(payload, sizeof(payload)));
+      CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
   assert(sent);
   assert(bridge._awaiting_ack);
 
@@ -792,7 +792,7 @@ void test_ack_timeout_emits_status_and_resets_state() {
 
   const uint8_t payload[] = {0x99};
   bool sent = bridge.sendFrame(
-      CommandId::CMD_MAILBOX_PUSH, std::span<const uint8_t>(payload, sizeof(payload)));
+      CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
   assert(sent);
   assert(bridge._awaiting_ack);
 
@@ -847,7 +847,7 @@ void test_apply_timing_config_accepts_valid_payload() {
   payload[2] = retry_limit;
   rpc::write_u32_be(payload + 3, response_timeout);
 
-  bridge._applyTimingConfig(std::span<const uint8_t>(payload, sizeof(payload)));
+  bridge._applyTimingConfig(payload, sizeof(payload));
 
   assert(bridge._ack_timeout_ms == ack_timeout);
   assert(bridge._ack_retry_limit == retry_limit);
@@ -868,7 +868,7 @@ void test_apply_timing_config_rejects_invalid_payload() {
   payload[2] = invalid_retry_limit;
   rpc::write_u32_be(payload + 3, invalid_response_timeout);
 
-  bridge._applyTimingConfig(std::span<const uint8_t>(payload, sizeof(payload)));
+  bridge._applyTimingConfig(payload, sizeof(payload));
 
   assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
   assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
@@ -877,7 +877,7 @@ void test_apply_timing_config_rejects_invalid_payload() {
   bridge._ack_timeout_ms = 1;
   bridge._ack_retry_limit = 1;
   bridge._response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
-  bridge._applyTimingConfig(std::span<const uint8_t>(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1));
+  bridge._applyTimingConfig(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1);
 
   assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
   assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);

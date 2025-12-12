@@ -7,10 +7,6 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-#include <string_view>
-#include <array>
-#include <optional>
-#include <span>
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -68,10 +64,10 @@ class BridgeClass {
   // Request Methods
   void requestDigitalRead(uint8_t pin);
   void requestAnalogRead(uint8_t pin);
-  void requestProcessRun(std::string_view command);
-  void requestProcessRunAsync(std::string_view command);
+  void requestProcessRun(const char* command);
+  void requestProcessRunAsync(const char* command);
   void requestProcessPoll(int pid);
-  void requestFileSystemRead(std::string_view filePath);
+  void requestFileSystemRead(const char* filePath);
   void requestGetFreeMemory();
 
   // Events
@@ -87,8 +83,8 @@ class BridgeClass {
   void onStatus(StatusHandler handler);
 
   // Internal / Lower Level
-  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, std::span<const uint8_t> payload = {});
-  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, std::span<const uint8_t> payload = {});
+  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
+  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
   void flushStream();
   uint8_t* getScratchBuffer() { return _scratch_payload; }
 
@@ -174,8 +170,8 @@ class BridgeClass {
 
   // Methods
   void dispatch(const rpc::Frame& frame);
-  bool _sendFrame(uint16_t command_id, std::span<const uint8_t> payload);
-  bool _sendFrameImmediate(uint16_t command_id, std::span<const uint8_t> payload);
+  bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
+  bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload, size_t length);
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
   size_t _writeFrameBytes(const uint8_t* data, size_t length);
@@ -187,11 +183,11 @@ class BridgeClass {
   void _handleMalformed(uint16_t command_id);
   void _resetLinkState();
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
-  void _applyTimingConfig(std::span<const uint8_t> payload);
+  void _applyTimingConfig(const uint8_t* payload, size_t length);
 
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
-  bool _enqueuePendingTx(uint16_t command_id, std::span<const uint8_t> payload);
+  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _dequeuePendingTx(PendingTxFrame& frame);
 
   bool _trackPendingDatastoreKey(const char* key);
@@ -221,7 +217,7 @@ class ConsoleClass : public Stream {
   size_t write(uint8_t c) override;
   size_t write(const uint8_t *buffer, size_t size) override;
   
-  void _push(std::span<const uint8_t> data);
+  void _push(const uint8_t* data, size_t length);
   
   int available() override;
   int read() override;

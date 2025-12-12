@@ -209,7 +209,7 @@ direction = "linux_to_mcu"
 name = "CMD_FILE_WRITE"
 value = 0x50
 category = "filesystem"
-direction = "linux_to_mcu"
+direction = "bidirectional"
 [[commands]]
 name = "CMD_FILE_READ"
 value = 0x51

@@ -68,7 +68,7 @@ void test_bridge_send_frame() {
     stream.tx_buffer.clear(); // Clear handshake frames
 
     uint8_t payload[] = {0x01, 0x02, 0x03};
-    bool result = bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, std::span<const uint8_t>(payload, 3));
+    bool result = bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, 3);
     
     assert(result == true);
     assert(stream.tx_buffer.size() > 0);
@@ -104,11 +104,62 @@ void test_bridge_request_digital_read_no_op() {
     assert(stream.tx_buffer.size() == 0);
 }
 
+void test_bridge_file_write_incoming() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    stream.tx_buffer.clear();
+
+    // Construct a fake CMD_FILE_WRITE frame
+    // Payload: [path_len(1)][path...][data...]
+    // Path: "/tmp/test" (9 bytes)
+    // Data: "hello" (5 bytes)
+    uint8_t payload[] = {
+        9, 
+        '/', 't', 'm', 'p', '/', 't', 'e', 's', 't',
+        'h', 'e', 'l', 'l', 'o'
+    };
+    
+    rpc::Frame frame;
+    frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
+    frame.header.payload_length = sizeof(payload);
+    std::memcpy(frame.payload, payload, sizeof(payload));
+
+    // Dispatch directly
+    bridge.dispatch(frame);
+
+    // Expect an ACK response
+    // ACK frame: [CMD_ACK][LEN=2][CMD_ID_ACKED]
+    assert(stream.tx_buffer.size() > 0);
+    // We can't easily decode the output here without a full decoder, 
+    // but we verified that it triggered a response.
+}
+
+void test_bridge_malformed_frame() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    stream.tx_buffer.clear();
+
+    // Inject garbage data into the stream to trigger malformed/overflow logic
+    // This tests the parser's resilience
+    std::vector<uint8_t> garbage(300, 0xFF); 
+    stream.inject_rx(garbage);
+    stream.inject_rx({0x00}); // Terminator
+
+    bridge.process();
+    
+    // Should have sent a STATUS_MALFORMED or similar error frame
+    assert(stream.tx_buffer.size() > 0);
+}
+
 int main() {
     test_bridge_begin();
     test_bridge_send_frame();
     test_bridge_process_rx();
     test_bridge_request_digital_read_no_op();
+    test_bridge_file_write_incoming();
+    test_bridge_malformed_frame();
     
     std::cout << "Bridge Core Tests Passed" << std::endl;
     return 0;

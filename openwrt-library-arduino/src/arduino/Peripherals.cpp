@@ -42,7 +42,7 @@ void DataStoreClass::put(const char* key, const char* value) {
 
   (void)Bridge.sendFrame(
       CommandId::CMD_DATASTORE_PUT,
-      std::span<const uint8_t>(payload, static_cast<uint16_t>(payload_len)));
+      payload, static_cast<uint16_t>(payload_len));
 }
 
 void DataStoreClass::requestGet(const char* key) {
@@ -65,7 +65,7 @@ void DataStoreClass::requestGet(const char* key) {
 
   (void)Bridge.sendFrame(
       CommandId::CMD_DATASTORE_GET,
-      std::span<const uint8_t>(payload, static_cast<uint16_t>(key_len + 1)));
+      payload, static_cast<uint16_t>(key_len + 1));
 }
 
 MailboxClass::MailboxClass() {}
@@ -99,7 +99,7 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
   memcpy(payload + 2, data, length);
   (void)Bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH,
-      std::span<const uint8_t>(payload, static_cast<uint16_t>(length + 2)));
+      payload, static_cast<uint16_t>(length + 2));
 }
 
 void MailboxClass::requestRead() {
@@ -135,7 +135,7 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
 
   (void)Bridge.sendFrame(
       CommandId::CMD_FILE_WRITE,
-      std::span<const uint8_t>(payload, static_cast<uint16_t>(path_len + length + 3)));
+      payload, static_cast<uint16_t>(path_len + length + 3));
 }
 
 void FileSystemClass::remove(const char* filePath) {
@@ -152,7 +152,7 @@ void FileSystemClass::remove(const char* filePath) {
   memcpy(payload + 1, filePath, path_len);
   (void)Bridge.sendFrame(
       CommandId::CMD_FILE_REMOVE,
-      std::span<const uint8_t>(payload, static_cast<uint16_t>(path_len + 1)));
+      payload, static_cast<uint16_t>(path_len + 1));
 }
 
 ProcessClass::ProcessClass() {}
@@ -160,5 +160,5 @@ ProcessClass::ProcessClass() {}
 void ProcessClass::kill(int pid) {
   uint8_t pid_payload[2];
   write_u16_be(pid_payload, static_cast<uint16_t>(pid));
-  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, std::span<const uint8_t>(pid_payload, 2));
+  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, pid_payload, 2);
 }

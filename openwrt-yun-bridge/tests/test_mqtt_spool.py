@@ -178,3 +178,88 @@ def test_spool_fallback_on_init_failure(
     popped = spool.pop_next()
     assert popped is not None
     assert popped.topic_name == "topic/fallback"
+
+
+def test_spool_requeue_success(tmp_path: Path) -> None:
+    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
+    message = _make_message("topic/requeue")
+    spool.append(message)
+
+    popped = spool.pop_next()
+    assert popped is not None
+    assert popped.topic_name == "topic/requeue"
+
+    spool.requeue(popped)
+    assert spool.pending == 1
+
+    popped_again = spool.pop_next()
+    assert popped_again is not None
+    assert popped_again.topic_name == "topic/requeue"
+
+
+def test_spool_requeue_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
+    message = _make_message("topic/requeue_fail")
+
+    # Mock disk queue appendleft to fail
+    queue: Any = getattr(spool, "_disk_queue")
+
+    def _boom(_record: object) -> None:
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(queue, "appendleft", _boom)
+
+    spool.requeue(message)
+
+    assert spool.is_degraded
+    assert spool.pending == 1
+
+    # Should be in memory now
+    popped = spool.pop_next()
+    assert popped is not None
+    assert popped.topic_name == "topic/requeue_fail"
+
+
+def test_spool_pop_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
+    spool.append(_make_message("topic/pop_fail"))
+
+    # Mock disk queue popleft to fail
+    queue: Any = getattr(spool, "_disk_queue")
+
+    def _boom() -> None:
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(queue, "popleft", _boom)
+
+    # pop_next should trigger fallback and return None (since memory is empty initially)
+    assert spool.pop_next() is None
+    assert spool.is_degraded
+
+
+def test_spool_trim_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spool = MQTTPublishSpool(tmp_path.as_posix(), limit=2)
+    spool.append(_make_message("topic/1"))
+    spool.append(_make_message("topic/2"))
+
+    # Mock disk queue popleft (used in trim) to fail
+    queue: Any = getattr(spool, "_disk_queue")
+
+    def _boom() -> None:
+        raise OSError(errno.EIO, "disk error")
+
+    monkeypatch.setattr(queue, "popleft", _boom)
+
+    # Append 3rd item, triggering trim
+    spool.append(_make_message("topic/3"))
+
+    assert spool.is_degraded

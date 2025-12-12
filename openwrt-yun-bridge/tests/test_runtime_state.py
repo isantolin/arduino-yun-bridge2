@@ -1,4 +1,5 @@
 """Unit tests for RuntimeState helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -58,12 +59,8 @@ def test_enqueue_console_chunk_trims_and_drops(
     assert runtime_state.console_dropped_bytes == 64
 
     warnings = [record.getMessage() for record in handler.records]
-    assert any(
-        "Console chunk truncated" in message for message in warnings
-    )
-    assert any(
-        "Dropping oldest console chunk" in message for message in warnings
-    )
+    assert any("Console chunk truncated" in message for message in warnings)
+    assert any("Dropping oldest console chunk" in message for message in warnings)
 
 
 def test_enqueue_mailbox_message_respects_limits(
@@ -87,12 +84,8 @@ def test_enqueue_mailbox_message_respects_limits(
     assert runtime_state.mailbox_dropped_bytes == 32
 
     warnings = [record.getMessage() for record in handler.records]
-    assert any(
-        "Mailbox message truncated" in message for message in warnings
-    )
-    assert any(
-        "Dropping oldest mailbox message" in message for message in warnings
-    )
+    assert any("Mailbox message truncated" in message for message in warnings)
+    assert any("Dropping oldest mailbox message" in message for message in warnings)
 
 
 def test_enqueue_mailbox_incoming_respects_limits(
@@ -115,13 +108,9 @@ def test_enqueue_mailbox_incoming_respects_limits(
     assert runtime_state.mailbox_incoming_dropped_bytes == 32
 
     warnings = [record.getMessage() for record in handler.records]
+    assert any("Mailbox incoming message truncated" in message for message in warnings)
     assert any(
-        "Mailbox incoming message truncated" in message
-        for message in warnings
-    )
-    assert any(
-        "Dropping oldest mailbox incoming message" in message
-        for message in warnings
+        "Dropping oldest mailbox incoming message" in message for message in warnings
     )
 
 
@@ -142,10 +131,7 @@ def test_mqtt_queue_respects_config(
     runtime_state: RuntimeState,
     runtime_config: RuntimeConfig,
 ) -> None:
-    assert (
-        runtime_state.mqtt_publish_queue.maxsize
-        == runtime_config.mqtt_queue_limit
-    )
+    assert runtime_state.mqtt_publish_queue.maxsize == runtime_config.mqtt_queue_limit
     assert runtime_state.mqtt_queue_limit == runtime_config.mqtt_queue_limit
 
 
@@ -409,9 +395,7 @@ def test_ensure_spool_recovers_after_disable(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> None:
     async def _run() -> None:
-        runtime_config.mqtt_spool_dir = str(
-            tmp_path_factory.mktemp("spool")
-        )
+        runtime_config.mqtt_spool_dir = str(tmp_path_factory.mktemp("spool"))
         state = create_runtime_state(runtime_config)
         assert state.mqtt_spool is not None
         state.mqtt_spool.close()

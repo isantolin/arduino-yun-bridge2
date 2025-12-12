@@ -4,6 +4,7 @@ The daemon now stores secrets directly in UCI and environment variables.
 This module only provides ``lookup_credential`` to consolidate the lookup
 order used throughout the codebase.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping

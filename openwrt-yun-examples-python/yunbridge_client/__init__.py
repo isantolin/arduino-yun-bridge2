@@ -1,4 +1,5 @@
 """Async MQTT helpers for Yun Bridge example scripts."""
+
 from __future__ import annotations
 
 import asyncio
@@ -118,9 +119,7 @@ class Bridge:
         self._digital_modes.clear()
         self._response_routes.clear()
         self._correlation_routes.clear()
-        self._reply_topic = (
-            f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
-        )
+        self._reply_topic = f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
         try:
             await self._client.subscribe(
                 self._reply_topic,
@@ -153,9 +152,7 @@ class Bridge:
     def _ensure_client(self) -> MqttClient:
         client = self._client
         if client is None:
-            raise ConnectionError(
-                "MQTT client not connected. Call connect() first."
-            )
+            raise ConnectionError("MQTT client not connected. Call connect() first.")
         return client
 
     async def _message_listener(self) -> None:
@@ -172,9 +169,7 @@ class Bridge:
         except Exception:
             logger.exception("Unexpected error in MQTT listener")
 
-    async def _handle_inbound_message(
-        self, message: MQTTMessage
-    ) -> None:
+    async def _handle_inbound_message(self, message: MQTTMessage) -> None:
         topic = topic_name(message)
         if not topic:
             return
@@ -282,9 +277,7 @@ class Bridge:
         if not topics:
             raise ValueError("resp_topic must contain at least one topic")
 
-        response_queue: asyncio.Queue[MQTTMessage] = asyncio.Queue(
-            maxsize=1
-        )
+        response_queue: asyncio.Queue[MQTTMessage] = asyncio.Queue(maxsize=1)
         correlation = secrets.token_bytes(12)
         subscribed = False
         try:
@@ -324,9 +317,7 @@ class Bridge:
                 properties=props,
             )
 
-            delivered = await asyncio.wait_for(
-                response_queue.get(), timeout=timeout
-            )
+            delivered = await asyncio.wait_for(response_queue.get(), timeout=timeout)
             return _payload_bytes(delivered.payload)
         finally:
             self._correlation_routes.pop(correlation, None)
@@ -384,9 +375,7 @@ class Bridge:
         )
         return int(response.decode("utf-8"))
 
-    async def set_digital_mode(
-        self, pin: int, mode: int | str
-    ) -> None:
+    async def set_digital_mode(self, pin: int, mode: int | str) -> None:
         if isinstance(mode, str):
             normalized = mode.strip().lower()
             mode_map = {
@@ -441,8 +430,7 @@ class Bridge:
     ) -> bytes:
         command_str = _format_shell_command(command_parts)
         logger.warning(
-            "run_sketch_command falls back to a synchronous shell "
-            "command via MQTT."
+            "run_sketch_command falls back to a synchronous shell " "command via MQTT."
         )
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run",
@@ -537,9 +525,7 @@ class Bridge:
 
         return payload
 
-    async def file_write(
-        self, filename: str, content: str | bytes
-    ) -> None:
+    async def file_write(self, filename: str, content: str | bytes) -> None:
         topic = f"{self.topic_prefix}/file/write/{filename}"
         await self._publish_simple(topic, content)
         logger.debug("file_write('%s', %d bytes)", filename, len(content))

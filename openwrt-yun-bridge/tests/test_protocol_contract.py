@@ -1,4 +1,5 @@
 """Contract tests keeping protocol spec and bindings in sync."""
+
 from __future__ import annotations
 
 import hashlib
@@ -16,9 +17,7 @@ from yunbridge.services.handshake import SerialHandshakeManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "tools/protocol/spec.toml"
-CPP_HEADER_PATH = (
-    REPO_ROOT / "openwrt-library-arduino/src/protocol/rpc_protocol.h"
-)
+CPP_HEADER_PATH = REPO_ROOT / "openwrt-library-arduino/src/protocol/rpc_protocol.h"
 
 
 @dataclass(frozen=True)
@@ -33,9 +32,9 @@ class _CommandSpec:
     value: int
 
 
-def _load_spec() -> tuple[
-    dict[str, int], list[_StatusSpec], list[_CommandSpec], dict[str, object]
-]:
+def _load_spec() -> (
+    tuple[dict[str, int], list[_StatusSpec], list[_CommandSpec], dict[str, object]]
+):
     raw = tomllib.loads(SPEC_PATH.read_text(encoding="utf-8"))
     constants = {
         "PROTOCOL_VERSION": int(raw["constants"]["protocol_version"]),
@@ -58,12 +57,8 @@ def _load_spec() -> tuple[
         "tag_description": handshake_data.get("tag_description", ""),
         "config_format": handshake_data.get("config_format", ""),
         "config_description": handshake_data.get("config_description", ""),
-        "ack_timeout_min_ms": int(
-            handshake_data.get("ack_timeout_min_ms", 0)
-        ),
-        "ack_timeout_max_ms": int(
-            handshake_data.get("ack_timeout_max_ms", 0)
-        ),
+        "ack_timeout_min_ms": int(handshake_data.get("ack_timeout_min_ms", 0)),
+        "ack_timeout_max_ms": int(handshake_data.get("ack_timeout_max_ms", 0)),
         "response_timeout_min_ms": int(
             handshake_data.get("response_timeout_min_ms", 0)
         ),
@@ -101,35 +96,14 @@ def test_protocol_spec_matches_generated_bindings() -> None:
     assert handshake["nonce_length"] == const.SERIAL_NONCE_LENGTH
     assert handshake["tag_length"] == const.SERIAL_HANDSHAKE_TAG_LEN
     assert handshake["tag_algorithm"] == const.SERIAL_HANDSHAKE_TAG_ALGORITHM
-    assert (
-        handshake["tag_description"]
-        == const.SERIAL_HANDSHAKE_TAG_DESCRIPTION
-    )
-    assert (
-        handshake["config_format"] == const.SERIAL_HANDSHAKE_CONFIG_FORMAT
-    )
-    assert (
-        handshake["ack_timeout_min_ms"]
-        == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MIN_MS
-    )
-    assert (
-        handshake["ack_timeout_max_ms"]
-        == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MAX_MS
-    )
-    assert (
-        handshake["response_timeout_min_ms"]
-        == const.SERIAL_RESPONSE_TIMEOUT_MIN_MS
-    )
-    assert (
-        handshake["response_timeout_max_ms"]
-        == const.SERIAL_RESPONSE_TIMEOUT_MAX_MS
-    )
-    assert (
-        handshake["retry_limit_min"] == const.SERIAL_RETRY_LIMIT_MIN
-    )
-    assert (
-        handshake["retry_limit_max"] == const.SERIAL_RETRY_LIMIT_MAX
-    )
+    assert handshake["tag_description"] == const.SERIAL_HANDSHAKE_TAG_DESCRIPTION
+    assert handshake["config_format"] == const.SERIAL_HANDSHAKE_CONFIG_FORMAT
+    assert handshake["ack_timeout_min_ms"] == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    assert handshake["ack_timeout_max_ms"] == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MAX_MS
+    assert handshake["response_timeout_min_ms"] == const.SERIAL_RESPONSE_TIMEOUT_MIN_MS
+    assert handshake["response_timeout_max_ms"] == const.SERIAL_RESPONSE_TIMEOUT_MAX_MS
+    assert handshake["retry_limit_min"] == const.SERIAL_RETRY_LIMIT_MIN
+    assert handshake["retry_limit_max"] == const.SERIAL_RETRY_LIMIT_MAX
 
 
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
@@ -141,9 +115,7 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     assert packed_size == rpc_protocol.HANDSHAKE_CONFIG_SIZE
 
     header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
-    match = re.search(
-        r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u?", header_text
-    )
+    match = re.search(r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u?", header_text)
     assert match, "RPC_HANDSHAKE_CONFIG_SIZE missing in header"
     assert int(match.group(1)) == packed_size
 

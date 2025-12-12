@@ -19,13 +19,11 @@ class Frame:
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(
-                    f"Payload too large ({payload_len} bytes); "
-                    f"max is {protocol.MAX_PAYLOAD_SIZE}"
+                f"Payload too large ({payload_len} bytes); "
+                f"max is {protocol.MAX_PAYLOAD_SIZE}"
             )
         if not 0 <= command_id <= 0xFFFF:
-            raise ValueError(
-                f"Command id {command_id} outside 16-bit range"
-            )
+            raise ValueError(f"Command id {command_id} outside 16-bit range")
 
         # Pack the header that will be part of the CRC calculation
         crc_covered_header = struct.pack(
@@ -56,9 +54,9 @@ class Frame:
         # 1. Verify minimum size
         if len(raw_frame_buffer) < protocol.MIN_FRAME_SIZE:
             raise ValueError(
-                    "Incomplete frame: size "
-                    f"{len(raw_frame_buffer)} is less than minimum "
-                    f"{protocol.MIN_FRAME_SIZE}"
+                "Incomplete frame: size "
+                f"{len(raw_frame_buffer)} is less than minimum "
+                f"{protocol.MIN_FRAME_SIZE}"
             )
 
         # 2. Extract and verify CRC
@@ -74,8 +72,8 @@ class Frame:
 
         if received_crc != calculated_crc:
             raise ValueError(
-                    f"CRC mismatch. Expected {calculated_crc:08X}, "
-                    f"got {received_crc:08X}"
+                f"CRC mismatch. Expected {calculated_crc:08X}, "
+                f"got {received_crc:08X}"
             )
 
         # 3. Extract and validate header
@@ -89,22 +87,20 @@ class Frame:
 
         if version != protocol.PROTOCOL_VERSION:
             raise ValueError(
-                    "Invalid version. Expected "
-                    f"{protocol.PROTOCOL_VERSION}, got {version}"
+                "Invalid version. Expected "
+                f"{protocol.PROTOCOL_VERSION}, got {version}"
             )
 
         # 4. Validate payload length against actual data length
-        actual_payload_len = (
-            len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
-        )
+        actual_payload_len = len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
         if payload_len != actual_payload_len:
             raise ValueError(
-                    "Payload length mismatch. Header says "
-                    f"{payload_len}, but got {actual_payload_len}"
+                "Payload length mismatch. Header says "
+                f"{payload_len}, but got {actual_payload_len}"
             )
 
         # 5. Extract payload
-        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE:]
+        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE :]
 
         return command_id, payload
 

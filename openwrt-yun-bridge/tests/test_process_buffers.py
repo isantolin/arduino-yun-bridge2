@@ -1,4 +1,5 @@
 """Unit tests for async process buffering semantics."""
+
 from __future__ import annotations
 
 import asyncio

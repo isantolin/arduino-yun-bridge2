@@ -1,4 +1,5 @@
 """Serial transport helpers for the Yun Bridge daemon."""
+
 from __future__ import annotations
 
 import asyncio
@@ -27,10 +28,7 @@ logger = logging.getLogger("yunbridge")
 OPEN_SERIAL_CONNECTION = serial_asyncio.open_serial_connection
 
 MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE
-    + protocol.MAX_PAYLOAD_SIZE
-    + protocol.CRC_SIZE
-    + 4
+    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE + 4
 )
 
 BinaryPacket = bytes | bytearray | memoryview
@@ -67,7 +65,7 @@ async def _open_serial_connection_with_retry(
     base_delay = float(max(1, config.reconnect_delay))
     max_delay = base_delay * 8
     current_delay = base_delay
-    
+
     action = f"Serial connection to {config.serial_port}"
     logger.info(
         "Connecting to serial port %s at %d baud...",
@@ -99,10 +97,10 @@ async def _open_serial_connection_with_retry(
             except asyncio.CancelledError:
                 logger.debug("%s retry loop cancelled", action)
                 raise
-            
+
             # Exponential backoff
             current_delay = min(max_delay, current_delay * 2)
-            
+
         except asyncio.CancelledError:
             logger.debug("%s cancelled", action)
             raise
@@ -140,9 +138,7 @@ async def _send_serial_frame(
         logger.debug("LINUX > %s payload=%s", command_name, payload.hex())
         return True
     except ValueError as exc:
-        logger.error(
-            "Refusing to send frame 0x%02X: %s", command_id, exc
-        )
+        logger.error("Refusing to send frame 0x%02X: %s", command_id, exc)
         return False
     except ConnectionResetError:
         logger.error(
@@ -177,9 +173,7 @@ async def _process_serial_packet(
         try:
             await service.send_frame(Status.MALFORMED.value, payload)
         except Exception:  # pragma: no cover - defensive logging
-            logger.exception(
-                "Failed to notify MCU about non-binary serial payload"
-            )
+            logger.exception("Failed to notify MCU about non-binary serial payload")
         return
 
     packet_bytes = _coerce_packet(encoded_packet)
@@ -207,9 +201,7 @@ async def _process_serial_packet(
         try:
             await service.send_frame(Status.MALFORMED.value, payload)
         except Exception:  # pragma: no cover - defensive logging
-            logger.exception(
-                "Failed to request MCU retransmission after decode error"
-            )
+            logger.exception("Failed to request MCU retransmission after decode error")
         return
 
     try:
@@ -217,9 +209,7 @@ async def _process_serial_packet(
     except ValueError as exc:
         header_hex = raw_frame[: protocol.CRC_COVERED_HEADER_SIZE].hex()
         logger.warning(
-            (
-                "Frame parse error %s for raw %s (len=%d header=%s)"
-            ),
+            ("Frame parse error %s for raw %s (len=%d header=%s)"),
             exc,
             raw_frame.hex(),
             len(raw_frame),
@@ -240,9 +230,7 @@ async def _process_serial_packet(
         try:
             await service.send_frame(status.value, payload)
         except Exception:  # pragma: no cover - defensive logging
-            logger.exception(
-                "Failed to notify MCU about frame parse error"
-            )
+            logger.exception("Failed to notify MCU about frame parse error")
         return
     except Exception:
         logger.exception("Unhandled error processing MCU frame")
@@ -294,9 +282,7 @@ async def serial_reader_task(
                     try:
                         await prior_sender(cmd, data)
                     except Exception:  # pragma: no cover - defensive
-                        logger.exception(
-                            "Serial sender hook raised an exception"
-                        )
+                        logger.exception("Serial sender hook raised an exception")
                     return await _registered_sender(cmd, data)
 
                 service.register_serial_sender(_chained_sender)
@@ -310,9 +296,7 @@ async def serial_reader_task(
                 logger.critical("%s", exc)
                 raise
             except Exception:
-                logger.exception(
-                    "Error running post-connect hooks for serial link"
-                )
+                logger.exception("Error running post-connect hooks for serial link")
 
             buffer = bytearray()
             while True:
@@ -350,8 +334,7 @@ async def serial_reader_task(
                             )
                         except Exception:
                             logger.exception(
-                                "Failed to notify MCU about oversized "
-                                "serial packet"
+                                "Failed to notify MCU about oversized " "serial packet"
                             )
         except (serial.SerialException, asyncio.IncompleteReadError) as exc:
             logger.error("Serial communication error: %s", exc)
@@ -373,9 +356,7 @@ async def serial_reader_task(
                     writer.close()
                     await writer.wait_closed()
                 except Exception:
-                    logger.exception(
-                        "Error closing serial writer during cleanup."
-                    )
+                    logger.exception("Error closing serial writer during cleanup.")
             state.serial_writer = None
             try:
                 await service.on_serial_disconnected()

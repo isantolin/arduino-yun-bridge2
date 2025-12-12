@@ -1,4 +1,5 @@
 """Periodic metrics publisher and Prometheus exporter for Yun Bridge."""
+
 from __future__ import annotations
 
 import asyncio
@@ -425,9 +426,7 @@ class PrometheusExporter:
             f"Content-Length: {len(body)}\r\n"
             "Connection: close\r\n\r\n"
         )
-        writer.write(
-            status_line.encode("ascii") + headers.encode("ascii") + body
-        )
+        writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
         await writer.drain()
 
     def _render_metrics(self) -> bytes:

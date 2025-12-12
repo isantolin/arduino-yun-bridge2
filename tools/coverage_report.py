@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Aggregate Python and Arduino coverage results into a single summary."""
+
 from __future__ import annotations
 
 import argparse
@@ -58,20 +59,12 @@ def _read_python_metrics(path: Path) -> CoverageMetrics | None:
     lines_total = _get("lines-valid")
     lines_covered = _get("lines-covered")
     line_rate = attr.get("line-rate")
-    line_percent = (
-        float(line_rate) * 100
-        if line_rate is not None
-        else None
-    )
+    line_percent = float(line_rate) * 100 if line_rate is not None else None
 
     branches_total = _get("branches-valid")
     branches_covered = _get("branches-covered")
     branch_rate = attr.get("branch-rate")
-    branch_percent = (
-        float(branch_rate) * 100
-        if branch_rate is not None
-        else None
-    )
+    branch_percent = float(branch_rate) * 100 if branch_rate is not None else None
 
     return CoverageMetrics(
         suite="Python",
@@ -111,29 +104,17 @@ def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
         percent = summary.get("percent", {})
         line_counts = count.get("lines", {})
         branch_counts = count.get("branches", {})
-        lines_total = int(
-            line_counts.get("found")
-            or line_counts.get("total")
-            or 0
-        )
-        lines_covered = int(
-            line_counts.get("hit")
-            or line_counts.get("covered")
-            or 0
-        )
+        lines_total = int(line_counts.get("found") or line_counts.get("total") or 0)
+        lines_covered = int(line_counts.get("hit") or line_counts.get("covered") or 0)
         line_percent = percent.get("lines")
         if line_percent is None:
             line_percent = _safe_percent(lines_covered, lines_total)
 
         branches_total = int(
-            branch_counts.get("found")
-            or branch_counts.get("total")
-            or 0
+            branch_counts.get("found") or branch_counts.get("total") or 0
         )
         branches_covered = int(
-            branch_counts.get("hit")
-            or branch_counts.get("covered")
-            or 0
+            branch_counts.get("hit") or branch_counts.get("covered") or 0
         )
         branch_percent = percent.get("branches")
         if branch_percent is None:
@@ -189,8 +170,7 @@ def _build_combined_metrics(
 
 def _render_markdown(rows: list[CoverageMetrics]) -> str:
     header = (
-        "| Suite | Lines (hit/total) | Line % | "
-        "Branches (hit/total) | Branch % |"
+        "| Suite | Lines (hit/total) | Line % | " "Branches (hit/total) | Branch % |"
     )
     separator = "| --- | --- | --- | --- | --- |"
     body = []
@@ -206,8 +186,7 @@ def _render_markdown(rows: list[CoverageMetrics]) -> str:
         )
         body.append(line)
     artifact_list = "\n".join(
-        f"- `{row.suite}` artifacts: {row.artifact_hint}"
-        for row in rows
+        f"- `{row.suite}` artifacts: {row.artifact_hint}" for row in rows
     )
     return "\n".join([header, separator, *body, "", artifact_list])
 
@@ -259,11 +238,7 @@ def main(argv: list[str]) -> int:
     python_metrics = _read_python_metrics(Path(args.python_xml))
     arduino_metrics = _read_arduino_metrics(Path(args.arduino_summary))
 
-    rows = [
-        row
-        for row in [python_metrics, arduino_metrics]
-        if row is not None
-    ]
+    rows = [row for row in [python_metrics, arduino_metrics] if row is not None]
     combined = _build_combined_metrics(rows)
     if combined is not None:
         rows.append(combined)

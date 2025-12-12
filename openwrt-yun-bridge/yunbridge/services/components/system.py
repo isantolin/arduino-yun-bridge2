@@ -1,4 +1,5 @@
 """System component handling MCU system requests and MQTT interactions."""
+
 from __future__ import annotations
 
 import collections
@@ -41,9 +42,7 @@ class SystemComponent:
 
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
-            logger.warning(
-                "Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex()
-            )
+            logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
             return
 
         free_memory = int.from_bytes(payload, "big")
@@ -71,9 +70,7 @@ class SystemComponent:
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
-            logger.warning(
-                "Malformed GET_VERSION_RESP payload: %s", payload.hex()
-            )
+            logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
             return
 
         major, minor = payload[0], payload[1]
@@ -104,8 +101,9 @@ class SystemComponent:
             "last_command_id": last_command_id,
             "last_send_millis": last_send_millis,
         }
-        
+
         import json
+
         payload_json = json.dumps(data).encode("utf-8")
 
         topic = topic_path(
@@ -120,11 +118,11 @@ class SystemComponent:
             message_expiry_interval=10,
             content_type="application/json",
         )
-        
+
         reply_context = None
         if self._pending_tx_debug:
             reply_context = self._pending_tx_debug.popleft()
-            
+
         if reply_context is not None:
             await self.ctx.enqueue_mqtt(
                 message,

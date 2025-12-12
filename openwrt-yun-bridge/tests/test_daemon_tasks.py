@@ -1,4 +1,5 @@
 """Integration-style tests for daemon async tasks."""
+
 from __future__ import annotations
 
 import asyncio
@@ -73,9 +74,7 @@ class _SerialServiceStub:
         self.received_frames: Deque[tuple[int, bytes]] = deque()
         self.serial_connected = asyncio.Event()
         self.serial_disconnected = asyncio.Event()
-        self._serial_sender: None | (
-            Callable[[int, bytes], Awaitable[bool]]
-        ) = None
+        self._serial_sender: None | (Callable[[int, bytes], Awaitable[bool]]) = None
 
     def register_serial_sender(
         self, sender: Callable[[int, bytes], Awaitable[bool]]
@@ -116,9 +115,7 @@ class _MQTTServiceStub:
         self.state = state
         self.handled = asyncio.Event()
 
-    async def handle_mqtt_message(
-        self, inbound: MQTTMessage
-    ) -> None:
+    async def handle_mqtt_message(self, inbound: MQTTMessage) -> None:
         self.handled.set()
 
     async def schedule_background(
@@ -217,8 +214,7 @@ def test_serial_reader_task_emits_crc_mismatch(
         assert not service.received_frames
         assert status_frames
         assert any(
-            command_id == Status.CRC_MISMATCH.value
-            for command_id, _ in status_frames
+            command_id == Status.CRC_MISMATCH.value for command_id, _ in status_frames
         )
 
         task.cancel()
@@ -247,7 +243,7 @@ def test_serial_reader_task_limits_packet_size(
 
         service.send_frame = MethodType(_capture_send_frame, service)
 
-        oversized = b"\xAA" * (MAX_SERIAL_PACKET_BYTES + 16)
+        oversized = b"\xaa" * (MAX_SERIAL_PACKET_BYTES + 16)
         reader = _FakeStreamReader(oversized + SERIAL_TERMINATOR, b"")
         writer = _FakeStreamWriter()
 

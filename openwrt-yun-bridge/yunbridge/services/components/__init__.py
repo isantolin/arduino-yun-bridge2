@@ -1,4 +1,5 @@
 """Composable service components for YunBridge."""
+
 from __future__ import annotations
 
 from .console import ConsoleComponent

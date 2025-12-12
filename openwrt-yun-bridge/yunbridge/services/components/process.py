@@ -1,4 +1,5 @@
 """Process management component for YunBridge."""
+
 from __future__ import annotations
 
 import asyncio
@@ -169,14 +170,12 @@ class ProcessComponent:
 
     async def handle_poll(self, payload: bytes) -> bool:
         if len(payload) != 2:
-            logger.warning(
-                "Invalid PROCESS_POLL payload: %s", payload.hex()
-            )
+            logger.warning("Invalid PROCESS_POLL payload: %s", payload.hex())
             await self.ctx.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value,
-                bytes(
-                    [Status.MALFORMED.value, 0xFF]
-                ) + struct.pack(">H", 0) + struct.pack(">H", 0),
+                bytes([Status.MALFORMED.value, 0xFF])
+                + struct.pack(">H", 0)
+                + struct.pack(">H", 0),
             )
             return False
 
@@ -190,18 +189,14 @@ class ProcessComponent:
             + batch.stdout_chunk
             + batch.stderr_chunk
         )
-        await self.ctx.send_frame(
-            Command.CMD_PROCESS_POLL_RESP.value, response_payload
-        )
+        await self.ctx.send_frame(Command.CMD_PROCESS_POLL_RESP.value, response_payload)
 
         await self.publish_poll_result(pid, batch)
         if batch.finished:
             logger.debug("Sent final output for finished process PID %d", pid)
         return True
 
-    async def handle_kill(
-        self, payload: bytes, *, send_ack: bool = True
-    ) -> bool:
+    async def handle_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
         if len(payload) != 2:
             logger.warning(
                 "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
@@ -244,9 +239,7 @@ class ProcessComponent:
                         released_slot = True
                     slot.handle = None
                     slot.exit_code = (
-                        proc.returncode
-                        if proc.returncode is not None
-                        else 0xFF
+                        proc.returncode if proc.returncode is not None else 0xFF
                     )
                     if slot.is_drained():
                         self.state.running_processes.pop(pid, None)
@@ -255,9 +248,7 @@ class ProcessComponent:
 
         return send_ack
 
-    async def run_sync(
-        self, command: str
-    ) -> tuple[int, bytes, bytes, int | None]:
+    async def run_sync(self, command: str) -> tuple[int, bytes, bytes, int | None]:
         try:
             tokens = self._prepare_command(command)
         except CommandValidationError as exc:
@@ -405,9 +396,7 @@ class ProcessComponent:
         tokens = self._tokenize_command(command)
         head = tokens[0]
         if not self.ctx.is_command_allowed(head):
-            raise CommandValidationError(
-                f"Command '{head}' not allowed"
-            )
+            raise CommandValidationError(f"Command '{head}' not allowed")
         return tokens
 
     def _tokenize_command(self, command: str) -> tuple[str, ...]:
@@ -502,9 +491,7 @@ class ProcessComponent:
             else:
                 finished_flag = slot.handle is None
 
-            exit_value = (
-                slot.exit_code if slot.exit_code is not None else 0xFF
-            )
+            exit_value = slot.exit_code if slot.exit_code is not None else 0xFF
 
             if slot.handle is None and slot.is_drained():
                 self.state.running_processes.pop(pid, None)
@@ -698,18 +685,10 @@ class ProcessComponent:
             {
                 "status": batch.status_byte,
                 "exit_code": batch.exit_code,
-                "stdout": batch.stdout_chunk.decode(
-                    "utf-8", errors="replace"
-                ),
-                "stderr": batch.stderr_chunk.decode(
-                    "utf-8", errors="replace"
-                ),
-                "stdout_base64": base64.b64encode(batch.stdout_chunk).decode(
-                    "ascii"
-                ),
-                "stderr_base64": base64.b64encode(batch.stderr_chunk).decode(
-                    "ascii"
-                ),
+                "stdout": batch.stdout_chunk.decode("utf-8", errors="replace"),
+                "stderr": batch.stderr_chunk.decode("utf-8", errors="replace"),
+                "stdout_base64": base64.b64encode(batch.stdout_chunk).decode("ascii"),
+                "stderr_base64": base64.b64encode(batch.stderr_chunk).decode("ascii"),
                 "stdout_truncated": batch.stdout_truncated,
                 "stderr_truncated": batch.stderr_truncated,
                 "finished": batch.finished,
@@ -738,9 +717,7 @@ class ProcessComponent:
         logger.error("No async process slots available; all PIDs in use")
         return 0xFFFF
 
-    async def _terminate_process_tree(
-        self, proc: AsyncioProcess
-    ) -> None:
+    async def _terminate_process_tree(self, proc: AsyncioProcess) -> None:
         if proc.returncode is not None:
             return
         pid_value = getattr(proc, "pid", None)
@@ -761,9 +738,7 @@ class ProcessComponent:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception(
-                "Error while awaiting async process PID %d", pid
-            )
+            logger.exception("Error while awaiting async process PID %d", pid)
             return
         await self._finalize_async_process(pid, proc)
 

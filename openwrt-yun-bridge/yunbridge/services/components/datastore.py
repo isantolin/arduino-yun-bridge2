@@ -1,4 +1,5 @@
 """Datastore component for MCU/Linux interactions."""
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,7 @@ class DatastoreComponent:
             )
             return False
 
-        key_bytes = payload[cursor:cursor + key_len]
+        key_bytes = payload[cursor : cursor + key_len]
         cursor += key_len
         value_len = payload[cursor]
         cursor += DATASTORE_VALUE_LEN_SIZE
@@ -62,7 +63,7 @@ class DatastoreComponent:
             )
             return False
 
-        value_bytes = payload[cursor:cursor + value_len]
+        value_bytes = payload[cursor : cursor + value_len]
         key = key_bytes.decode("utf-8", errors="ignore")
         value = value_bytes.decode("utf-8", errors="ignore")
 
@@ -91,7 +92,7 @@ class DatastoreComponent:
             await self.ctx.send_frame(Status.MALFORMED.value, b"data_get_key")
             return False
 
-        key_bytes = payload[1:1 + key_len]
+        key_bytes = payload[1 : 1 + key_len]
         key = key_bytes.decode("utf-8", errors="ignore")
         value = self.state.datastore.get(key, "")
         value_bytes = value.encode("utf-8")
@@ -103,10 +104,13 @@ class DatastoreComponent:
             )
             value_bytes = value_bytes[:255]
 
-        response_payload = struct.pack(
-            DATASTORE_VALUE_LEN_FORMAT,
-            len(value_bytes),
-        ) + value_bytes
+        response_payload = (
+            struct.pack(
+                DATASTORE_VALUE_LEN_FORMAT,
+                len(value_bytes),
+            )
+            + value_bytes
+        )
 
         send_ok = await self.ctx.send_frame(
             Command.CMD_DATASTORE_GET_RESP.value,
@@ -195,9 +199,7 @@ class DatastoreComponent:
                     error_reason="datastore-miss",
                 )
             else:
-                logger.debug(
-                    "Datastore GET for '%s' has no cached value", key
-                )
+                logger.debug("Datastore GET for '%s' has no cached value", key)
             return
 
         await self._publish_value(
@@ -221,9 +223,7 @@ class DatastoreComponent:
             "get",
             *key_segments,
         )
-        properties: list[tuple[str, str]] = [
-            ("bridge-datastore-key", key)
-        ]
+        properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]
         if error_reason:
             properties.append(("bridge-error", error_reason))
         message = QueuedPublish(

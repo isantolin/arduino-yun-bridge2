@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Coordinate YunBridge hardware smoke tests across multiple devices."""
+
 from __future__ import annotations
 
 import asyncio
@@ -120,28 +121,20 @@ def load_manifest(path: Path) -> list[Target]:
         local = bool(entry.get("local", False))
         host = entry.get("host")
         if not local and not host:
-            raise ValueError(
-                f"Target {name} must define 'host' or set local=true"
-            )
+            raise ValueError(f"Target {name} must define 'host' or set local=true")
 
         user = entry.get("user", default_user)
         ssh_value = entry.get("ssh")
         ssh_args = (
-            _coerce_list(ssh_value)
-            if ssh_value is not None
-            else list(default_ssh)
+            _coerce_list(ssh_value) if ssh_value is not None else list(default_ssh)
         )
         tags = default_tags | _coerce_tags(entry.get("tags"))
         extra_value = entry.get("extra_args")
-        extra_args = (
-            _coerce_list(extra_value) if extra_value is not None else []
-        )
+        extra_args = _coerce_list(extra_value) if extra_value is not None else []
         timeout_value = entry.get("timeout")
         if timeout_value is None:
             timeout_val = (
-                float(default_timeout)
-                if default_timeout is not None
-                else None
+                float(default_timeout) if default_timeout is not None else None
             )
         else:
             timeout_val = float(timeout_value)
@@ -247,9 +240,7 @@ async def run_target(
     overall_stdout: list[str] = []
     overall_stderr: list[str] = []
     total_duration = 0.0
-    timeout = (
-        timeout_override if timeout_override is not None else target.timeout
-    )
+    timeout = timeout_override if timeout_override is not None else target.timeout
 
     while True:
         attempts += 1
@@ -305,8 +296,7 @@ def format_summary(results: Sequence[Result]) -> str:
     timestamp = datetime.now().isoformat(timespec="seconds")
     lines = [f"{len(results)} target(s) processed at {timestamp}"]
     header = (
-        f"{'STATUS':8} {'TARGET':20} {'HOST':22} "
-        f"{'ATTEMPTS':8} {'DURATION':10}"
+        f"{'STATUS':8} {'TARGET':20} {'HOST':22} " f"{'ATTEMPTS':8} {'DURATION':10}"
     )
     lines.append(header)
     lines.append("-" * len(header))

@@ -1,4 +1,5 @@
 """Tests for daemon connection resilience and retry logic."""
+
 from __future__ import annotations
 
 from builtins import ExceptionGroup

@@ -1,4 +1,5 @@
 """MQTT message helpers used by the daemon runtime."""
+
 from __future__ import annotations
 
 import base64
@@ -22,9 +23,7 @@ class QOSLevel(IntEnum):
 
 
 def _is_iterable_sequence(value: Any) -> TypeGuard[IterableAny]:
-    return isinstance(value, IterableABC) and not isinstance(
-        value, (bytes, str)
-    )
+    return isinstance(value, IterableABC) and not isinstance(value, (bytes, str))
 
 
 def _normalize_user_properties(

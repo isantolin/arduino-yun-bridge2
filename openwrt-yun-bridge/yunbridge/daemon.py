@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Async orchestrator for the Arduino Yun Bridge v2 daemon."""
+
 from __future__ import annotations
 
 import asyncio
@@ -77,9 +78,9 @@ async def _supervise_task(
             # Actually, typically we reset backoff if it runs successfully for 'some time'.
             # Here we just run it.
             start_time = time.monotonic()
-            
+
             await coro_factory()
-            
+
             # If we get here, the task exited cleanly.
             logger.warning(
                 "%s task exited cleanly; supervisor exiting",
@@ -105,7 +106,7 @@ async def _supervise_task(
         except Exception as exc:
             now = time.monotonic()
             uptime = now - start_time
-            
+
             # If it ran for a while (e.g. > max_backoff), reset the backoff
             if uptime > max_backoff:
                 current_backoff = min_backoff
@@ -116,39 +117,41 @@ async def _supervise_task(
                 # New window
                 restart_window_start = now
                 restarts_in_window = 0
-            
+
             restarts_in_window += 1
-            
+
             if max_restarts is not None and restarts_in_window > max_restarts:
-                 logger.critical(
+                logger.critical(
                     "%s task exceeded %d restarts within %.1fs; aborting",
                     name,
                     max_restarts,
                     window_age,
                 )
-                 if state is not None:
+                if state is not None:
                     state.record_supervisor_failure(
                         name,
                         backoff=0.0,
                         exc=exc,
                         fatal=True,
                     )
-                 raise
+                raise
 
-            logger.exception("%s task crashed; restarting in %.1fs", name, current_backoff)
-            
+            logger.exception(
+                "%s task crashed; restarting in %.1fs", name, current_backoff
+            )
+
             if state is not None:
                 state.record_supervisor_failure(
                     name,
                     backoff=current_backoff,
                     exc=exc,
                 )
-            
+
             try:
                 await asyncio.sleep(current_backoff)
             except asyncio.CancelledError:
-                 logger.debug("%s supervisor cancelled during backoff", name)
-                 raise
+                logger.debug("%s supervisor cancelled during backoff", name)
+                raise
 
             # Exponential backoff
             current_backoff = min(max_backoff, current_backoff * 2)
@@ -214,10 +217,7 @@ async def main_async(config: RuntimeConfig) -> None:
         ),
     ]
 
-    if (
-        config.bridge_summary_interval > 0.0
-        or config.bridge_handshake_interval > 0.0
-    ):
+    if config.bridge_summary_interval > 0.0 or config.bridge_handshake_interval > 0.0:
         supervised_tasks.append(
             _SupervisedTaskSpec(
                 name="bridge-snapshots",

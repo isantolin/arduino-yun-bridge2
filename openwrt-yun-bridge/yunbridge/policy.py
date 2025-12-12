@@ -1,4 +1,5 @@
 """Security policies for YunBridge components."""
+
 from __future__ import annotations
 
 import shlex
@@ -37,13 +38,9 @@ def tokenize_shell_command(command: str) -> tuple[str, ...]:
         if not token:
             raise CommandValidationError("Malformed command syntax")
         if any(char in _FORBIDDEN_COMMAND_CHARS for char in token):
-            raise CommandValidationError(
-                "Illegal shell control characters detected"
-            )
+            raise CommandValidationError("Illegal shell control characters detected")
         if any(seq in token for seq in _FORBIDDEN_COMMAND_SUBSTRINGS):
-            raise CommandValidationError(
-                "Illegal shell control characters detected"
-            )
+            raise CommandValidationError("Illegal shell control characters detected")
     return tokens
 
 

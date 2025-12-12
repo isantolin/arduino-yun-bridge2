@@ -1,4 +1,5 @@
 """MQTT topic helpers shared across YunBridge components."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

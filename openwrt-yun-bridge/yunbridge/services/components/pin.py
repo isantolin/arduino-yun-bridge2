@@ -1,4 +1,5 @@
 """Pin management component for MCU and MQTT interactions."""
+
 from __future__ import annotations
 
 import logging
@@ -70,9 +71,7 @@ class PinComponent:
         if self.state.pending_digital_reads:
             request = self.state.pending_digital_reads.popleft()
         else:
-            logger.warning(
-                "Received DIGITAL_READ_RESP without pending request."
-            )
+            logger.warning("Received DIGITAL_READ_RESP without pending request.")
 
         pin_value = request.pin if request else None
         topic = self._build_pin_topic(Topic.DIGITAL, pin_value)
@@ -101,9 +100,7 @@ class PinComponent:
         if self.state.pending_analog_reads:
             request = self.state.pending_analog_reads.popleft()
         else:
-            logger.warning(
-                "Received ANALOG_READ_RESP without pending request."
-            )
+            logger.warning("Received ANALOG_READ_RESP without pending request.")
 
         pin_value = request.pin if request else None
         topic = self._build_pin_topic(Topic.ANALOG, pin_value)
@@ -125,16 +122,14 @@ class PinComponent:
         # Currently, we maintain protocol symmetry but acknowledge missing HW support.
         logger.info("MCU requested DIGITAL_READ on Linux pin (unsupported).")
         await self.ctx.send_frame(
-            Status.NOT_IMPLEMENTED.value,
-            b"Linux GPIO read not available"
+            Status.NOT_IMPLEMENTED.value, b"Linux GPIO read not available"
         )
 
     async def handle_analog_read(self, payload: bytes) -> None:
         """Handle request from MCU to read a Linux ADC channel."""
         logger.info("MCU requested ANALOG_READ on Linux pin (unsupported).")
         await self.ctx.send_frame(
-            Status.NOT_IMPLEMENTED.value,
-            b"Linux ADC read not available"
+            Status.NOT_IMPLEMENTED.value, b"Linux ADC read not available"
         )
 
     async def handle_mqtt(
@@ -167,9 +162,7 @@ class PinComponent:
             elif subtopic == "read":
                 await self._handle_read_command(topic_enum, pin, inbound)
             else:
-                logger.debug(
-                    "Unknown pin subtopic for %s: %s", pin_str, subtopic
-                )
+                logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
             return
 
         if len(parts) == 3:
@@ -217,8 +210,7 @@ class PinComponent:
         )
         if len(queue) >= queue_limit:
             logger.warning(
-                "Pending %s read queue saturated (limit=%d); "
-                "dropping pin %s",
+                "Pending %s read queue saturated (limit=%d); " "dropping pin %s",
                 topic_type,
                 queue_limit,
                 pin,
@@ -273,9 +265,7 @@ class PinComponent:
             return int(pin_str)
         return -1
 
-    def _parse_pin_value(
-        self, topic_type: Topic, payload_str: str
-    ) -> int | None:
+    def _parse_pin_value(self, topic_type: Topic, payload_str: str) -> int | None:
         if not payload_str:
             return 0
         try:

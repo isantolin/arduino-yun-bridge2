@@ -1,4 +1,5 @@
 """Helper utilities for working with inbound aiomqtt messages."""
+
 from __future__ import annotations
 
 from typing import Any, cast

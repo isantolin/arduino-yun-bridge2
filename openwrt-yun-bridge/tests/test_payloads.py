@@ -1,4 +1,5 @@
 """Tests for payload validation helpers."""
+
 from __future__ import annotations
 
 import pytest
@@ -48,6 +49,7 @@ def test_shell_pid_payload_rejects_invalid(segment: str) -> None:
 
 
 # --- Property-based tests ---
+
 
 @given(command=st.text(min_size=1, max_size=512))
 def test_shell_command_payload_accepts_valid_utf8(command: str) -> None:

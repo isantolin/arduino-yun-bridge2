@@ -1,4 +1,5 @@
 """Utilities for building aiomqtt messages in tests."""
+
 from __future__ import annotations
 
 from aiomqtt.message import Message

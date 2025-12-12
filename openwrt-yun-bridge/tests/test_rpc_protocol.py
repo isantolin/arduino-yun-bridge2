@@ -1,4 +1,5 @@
 """Regression tests for RPC protocol helpers."""
+
 import pytest
 
 from yunbridge.rpc import frame, protocol
@@ -15,11 +16,7 @@ def test_frame_build_appends_crc_bytes() -> None:
         protocol.Command.CMD_LINK_RESET.value,
         payload,
     ).to_bytes()
-    expected_len = (
-        protocol.CRC_COVERED_HEADER_SIZE
-        + len(payload)
-        + protocol.CRC_SIZE
-    )
+    expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
     assert len(raw) == expected_len
 
 
@@ -31,15 +28,13 @@ def test_frame_build_masks_crc_to_protocol_size(
     monkeypatch.setattr(frame.protocol, "CRC_FORMAT", ">H", raising=False)
     monkeypatch.setattr(frame.protocol, "CRC_SIZE", 2, raising=False)
 
-    payload = b"\xAA" * 4
+    payload = b"\xaa" * 4
     raw = frame.Frame(
         protocol.Command.CMD_LINK_RESET.value,
         payload,
     ).to_bytes()
 
     expected_len = (
-        protocol.CRC_COVERED_HEADER_SIZE
-        + len(payload)
-        + frame.protocol.CRC_SIZE
+        protocol.CRC_COVERED_HEADER_SIZE + len(payload) + frame.protocol.CRC_SIZE
     )
     assert len(raw) == expected_len

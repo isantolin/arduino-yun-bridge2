@@ -4,6 +4,7 @@ This module centralises configuration loading from UCI and environment
 variables so the rest of the code can depend on a strongly typed
 RuntimeConfig instance.
 """
+
 from __future__ import annotations
 
 import logging
@@ -89,17 +90,11 @@ class RuntimeConfig:
     serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
     serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
     serial_retry_attempts: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
-    serial_handshake_min_interval: float = (
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    )
-    serial_handshake_fatal_failures: int = (
-        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    )
+    serial_handshake_min_interval: float = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: TopicAuthorization = field(
-        default_factory=TopicAuthorization
-    )
+    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
     serial_shared_secret: bytes = field(repr=False, default=b"")
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -115,9 +110,7 @@ class RuntimeConfig:
         return self.mqtt_tls and bool(self.mqtt_cafile)
 
     def __post_init__(self) -> None:
-        self.allowed_policy = AllowedCommandPolicy.from_iterable(
-            self.allowed_commands
-        )
+        self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.serial_response_timeout = max(
             self.serial_response_timeout, self.serial_retry_timeout * 2
         )
@@ -134,28 +127,21 @@ class RuntimeConfig:
                 "will be sent in plaintext."
             )
         elif not self.mqtt_cafile:
-            raise ValueError(
-                "MQTT TLS is enabled but 'mqtt_cafile' is not configured"
-            )
+            raise ValueError("MQTT TLS is enabled but 'mqtt_cafile' is not configured")
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
             raise ValueError(
-                "serial_shared_secret must be at least %d bytes" %
-                MIN_SERIAL_SHARED_SECRET_LEN
+                "serial_shared_secret must be at least %d bytes"
+                % MIN_SERIAL_SHARED_SECRET_LEN
             )
         if self.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
-            raise ValueError(
-                "serial_shared_secret placeholder is insecure"
-            )
-        self.pending_pin_request_limit = max(
-            1, self.pending_pin_request_limit
-        )
+            raise ValueError("serial_shared_secret placeholder is insecure")
+        self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
             raise ValueError(
-                "serial_shared_secret must contain at least "
-                "four distinct bytes"
+                "serial_shared_secret must contain at least " "four distinct bytes"
             )
         self._validate_queue_limits()
         self._normalize_topic_prefix()
@@ -374,9 +360,7 @@ def load_runtime_config() -> RuntimeConfig:
         debug_logging = True
 
     allowed_commands_raw = raw.get("allowed_commands", "")
-    allowed_commands = normalise_allowed_commands(
-        allowed_commands_raw.split()
-    )
+    allowed_commands = normalise_allowed_commands(allowed_commands_raw.split())
 
     watchdog_enabled, watchdog_interval = _resolve_watchdog_settings()
 
@@ -554,9 +538,7 @@ def load_runtime_config() -> RuntimeConfig:
                 DEFAULT_FILE_STORAGE_QUOTA_BYTES,
             ),
         ),
-        mqtt_queue_limit=max(
-            1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
-        ),
+        mqtt_queue_limit=max(1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)),
         reconnect_delay=_get_int("reconnect_delay", DEFAULT_RECONNECT_DELAY),
         status_interval=_get_int("status_interval", DEFAULT_STATUS_INTERVAL),
         debug_logging=debug_logging,

@@ -1,4 +1,5 @@
 """Interactive console helper for the Arduino bridge."""
+
 import asyncio
 import logging
 
@@ -16,9 +17,7 @@ async def main() -> None:
     bridge = Bridge()
     await bridge.connect()
 
-    logging.info(
-        "Enter text to send to the Arduino console. Type 'exit' to quit."
-    )
+    logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
 
     try:
         # Start a task to listen for console messages
@@ -30,9 +29,7 @@ async def main() -> None:
                 else:
                     await asyncio.sleep(0.1)
 
-        listener_task: asyncio.Task[None] = asyncio.create_task(
-            console_listener()
-        )
+        listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
         while True:
             try:

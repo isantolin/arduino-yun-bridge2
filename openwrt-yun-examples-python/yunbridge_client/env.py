@@ -1,4 +1,5 @@
 """Helpers to introspect environment variables for the Yun bridge client."""
+
 from __future__ import annotations
 
 import logging

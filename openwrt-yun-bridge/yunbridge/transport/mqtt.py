@@ -1,4 +1,5 @@
 """MQTT transport helpers for the Yun Bridge daemon."""
+
 from __future__ import annotations
 
 import asyncio
@@ -114,9 +115,7 @@ def build_mqtt_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
         material = resolve_tls_material(config)
         context = build_tls_context(material)
         if material.certfile and material.keyfile:
-            logger.info(
-                "Using MQTT TLS with client certificate authentication."
-            )
+            logger.info("Using MQTT TLS with client certificate authentication.")
         else:
             logger.info("Using MQTT TLS with CA verification only.")
         return context
@@ -184,12 +183,8 @@ async def mqtt_task(
                 logger.info("Subscribed to %d MQTT topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:
-                    task_group.create_task(
-                        _mqtt_publisher_loop(client, state)
-                    )
-                    task_group.create_task(
-                        _mqtt_subscriber_loop(client, service)
-                    )
+                    task_group.create_task(_mqtt_publisher_loop(client, state))
+                    task_group.create_task(_mqtt_subscriber_loop(client, service))
 
         except* MqttError as exc_group:
             for exc in exc_group.exceptions:

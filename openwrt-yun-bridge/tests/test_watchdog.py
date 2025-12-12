@@ -1,4 +1,5 @@
 """Tests for watchdog keepalive behaviour."""
+
 from __future__ import annotations
 
 import asyncio

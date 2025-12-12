@@ -1,4 +1,5 @@
 """Base interfaces for service components."""
+
 from __future__ import annotations
 
 import asyncio
@@ -17,27 +18,23 @@ class BridgeContext(Protocol):
     config: RuntimeConfig
     state: RuntimeState
 
-    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
-        ...
+    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool: ...
 
     async def enqueue_mqtt(
         self,
         message: QueuedPublish,
         *,
         reply_context: MQTTMessage | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    def is_command_allowed(self, command: str) -> bool:
-        ...
+    def is_command_allowed(self, command: str) -> bool: ...
 
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
         *,
         name: str | None = None,
-    ) -> asyncio.Task[Any]:
-        ...
+    ) -> asyncio.Task[Any]: ...
 
 
 __all__ = ["BridgeContext"]

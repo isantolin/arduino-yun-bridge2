@@ -1,4 +1,5 @@
 """Pytest configuration for Yun Bridge tests."""
+
 from __future__ import annotations
 
 import asyncio

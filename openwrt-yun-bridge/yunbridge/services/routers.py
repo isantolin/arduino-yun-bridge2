@@ -1,4 +1,5 @@
 """Dispatcher helpers shared across YunBridge services."""
+
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable

@@ -1,4 +1,5 @@
 """Unit tests for the SystemComponent publishing logic."""
+
 from __future__ import annotations
 
 import asyncio
@@ -22,9 +23,7 @@ class DummyContext:
         self.config = config
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
-        self.published: list[
-            tuple[QueuedPublish, MQTTMessage | None]
-        ] = []
+        self.published: list[tuple[QueuedPublish, MQTTMessage | None]] = []
         self.scheduled: list[Coroutine[Any, Any, None]] = []
         self.send_result: bool = True
 

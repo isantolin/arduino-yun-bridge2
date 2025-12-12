@@ -1,4 +1,5 @@
 """Pin/system component integration tests for BridgeService."""
+
 from __future__ import annotations
 
 import asyncio
@@ -73,9 +74,7 @@ def test_mcu_digital_read_response_publishes_to_mqtt(
         assert sent_frames
         ack_id, ack_payload = sent_frames[-1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(
-            ">H", Command.CMD_DIGITAL_READ_RESP.value
-        )
+        assert ack_payload == struct.pack(">H", Command.CMD_DIGITAL_READ_RESP.value)
 
     asyncio.run(_run())
 
@@ -118,9 +117,7 @@ def test_mcu_analog_read_response_publishes_to_mqtt(
         assert sent_frames
         ack_id, ack_payload = sent_frames[-1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(
-            ">H", Command.CMD_ANALOG_READ_RESP.value
-        )
+        assert ack_payload == struct.pack(">H", Command.CMD_ANALOG_READ_RESP.value)
 
     asyncio.run(_run())
 
@@ -272,9 +269,7 @@ def test_mcu_free_memory_response_enqueues_value(
         assert sent_frames
         ack_id, ack_payload = sent_frames[-1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(
-            ">H", Command.CMD_GET_FREE_MEMORY_RESP.value
-        )
+        assert ack_payload == struct.pack(">H", Command.CMD_GET_FREE_MEMORY_RESP.value)
 
     asyncio.run(_run())
 
@@ -394,8 +389,7 @@ def test_mqtt_shell_run_async_handles_not_allowed(
             return 0xFFFF
 
         with patch(
-            "yunbridge.services.components.process."
-            "ProcessComponent.start_async",
+            "yunbridge.services.components.process." "ProcessComponent.start_async",
             new=fake_start,
         ):
             await service.handle_mqtt_message(
@@ -448,8 +442,7 @@ def test_mqtt_shell_kill_invokes_process_component(
             return True
 
         with patch(
-            "yunbridge.services.components.process."
-            "ProcessComponent.handle_kill",
+            "yunbridge.services.components.process." "ProcessComponent.handle_kill",
             new=fake_kill,
         ):
             await service.handle_mqtt_message(
@@ -473,6 +466,7 @@ def test_mqtt_shell_kill_invokes_process_component(
 
     asyncio.run(_run())
 
+
 def test_mqtt_get_tx_debug_requests_mcu_snapshot(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -495,7 +489,7 @@ def test_mqtt_get_tx_debug_requests_mcu_snapshot(
             "get",
         )
         inbound = make_inbound_message(topic, b"")
-        
+
         await service.handle_mqtt_message(inbound)
 
         # Verify MCU request sent
@@ -524,7 +518,7 @@ def test_mcu_tx_debug_response_publishes_to_mqtt(
         # Construct response payload (9 bytes)
         # pending_tx_count=5, awaiting_ack=1, retry_count=2, last_cmd=0x1234, last_millis=0xDEADBEEF
         payload = struct.pack(">BBBHI", 5, 1, 2, 0x1234, 0xDEADBEEF)
-        
+
         await service.handle_mcu_frame(
             Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value,
             payload,
@@ -545,7 +539,7 @@ def test_mcu_tx_debug_response_publishes_to_mqtt(
         assert data["retry_count"] == 2
         assert data["last_command_id"] == 0x1234
         assert data["last_send_millis"] == 0xDEADBEEF
-        
+
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())

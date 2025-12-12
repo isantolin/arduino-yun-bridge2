@@ -1,4 +1,5 @@
 """Shell MQTT component coordinating with ProcessComponent."""
+
 from __future__ import annotations
 
 import logging
@@ -57,25 +58,25 @@ class ShellComponent:
                 if payload_model is None:
                     return
                 await self._handle_shell_run(payload_model, inbound)
-            
+
             case "run_async":
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
                     return
                 await self._handle_run_async(payload_model, inbound)
-            
+
             case "poll" if len(parts) == 4:
                 pid_model = self._parse_shell_pid(parts[3], action)
                 if pid_model is None:
                     return
                 await self._handle_poll(pid_model)
-            
+
             case "kill" if len(parts) == 4:
                 pid_model = self._parse_shell_pid(parts[3], action)
                 if pid_model is None:
                     return
                 await self._handle_kill(pid_model)
-            
+
             case _:
                 logger.debug(
                     "Ignoring shell topic action: %s",
@@ -106,9 +107,7 @@ class ShellComponent:
         async with AsyncExitStack() as stack:
             stack.push_async_callback(
                 self.ctx.enqueue_mqtt,
-                _build_response(
-                    b"Error: shell handler failed unexpectedly"
-                ),
+                _build_response(b"Error: shell handler failed unexpectedly"),
                 reply_context=inbound,
             )
             (

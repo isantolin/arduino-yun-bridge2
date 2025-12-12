@@ -1,4 +1,5 @@
 """Tests for daemon metrics publisher."""
+
 from __future__ import annotations
 
 import asyncio
@@ -114,9 +115,7 @@ async def test_publish_metrics_marks_unknown_spool_reason(
 
     message = captured["message"]
     assert ("bridge-spool", "unknown") in message.user_properties
-    assert any(
-        key == "bridge-watchdog-enabled" for key, _ in message.user_properties
-    )
+    assert any(key == "bridge-watchdog-enabled" for key, _ in message.user_properties)
 
 
 def test_cron_expression_from_interval_rounds_up() -> None:
@@ -170,11 +169,7 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     topics = {message.topic_name for message in messages}
     assert "br/system/bridge/summary/value" in topics
     assert "br/system/bridge/handshake/value" in topics
-    properties = [
-        prop
-        for message in messages
-        for prop in message.user_properties
-    ]
+    properties = [prop for message in messages for prop in message.user_properties]
     assert ("bridge-snapshot", "summary") in properties
     assert ("bridge-snapshot", "handshake") in properties
 

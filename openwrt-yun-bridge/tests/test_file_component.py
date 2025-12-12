@@ -1,4 +1,5 @@
 """Tests for FileComponent MCU/MQTT behaviour."""
+
 from __future__ import annotations
 
 import asyncio
@@ -99,7 +100,7 @@ async def test_handle_read_truncated_payload(
 
 @pytest.mark.asyncio
 async def test_handle_remove_missing_file(
-    file_component: tuple[FileComponent, DummyBridge]
+    file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
     payload = bytes([7]) + b"missing"
@@ -133,7 +134,7 @@ async def test_handle_mqtt_write_and_read(
 
 @pytest.mark.asyncio
 async def test_handle_write_invalid_path(
-    file_component: tuple[FileComponent, DummyBridge]
+    file_component: tuple[FileComponent, DummyBridge],
 ) -> None:
     component, bridge = file_component
     payload = bytes([2]) + b".." + (1).to_bytes(2, "big") + b"x"
@@ -202,9 +203,7 @@ async def test_handle_remove_updates_usage(
     assert not (root / "temp.txt").exists()
 
 
-SAFE_FILENAME_CHARS = (
-    string.ascii_letters + string.digits + "/._- " + "\\"
-)
+SAFE_FILENAME_CHARS = string.ascii_letters + string.digits + "/._- " + "\\"
 FILENAME_INPUTS = st.text(SAFE_FILENAME_CHARS, min_size=0, max_size=64)
 
 

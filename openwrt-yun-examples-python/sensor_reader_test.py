@@ -1,4 +1,5 @@
 """Poll sensor values via the async bridge client."""
+
 import asyncio
 import logging
 

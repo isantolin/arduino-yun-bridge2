@@ -5,6 +5,7 @@ This module provides a synchronous entry point (`publish_with_retries`)
 that spins up a temporary asyncio event loop to perform a robust,
 retrying publish using the modern aiomqtt library.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,7 +30,7 @@ async def _publish_async(
     base_delay: float = 0.5,
 ) -> None:
     """Async implementation of the publishing logic using aiomqtt."""
-    
+
     tls_params = None
     if config.mqtt_tls:
         material = resolve_tls_material(config)
@@ -37,9 +38,9 @@ async def _publish_async(
         # We construct a TLSContext-like dict or pass SSLContext directly
         # For simplicity here, we assume standard TLS context creation
         import ssl
+
         tls_context = ssl.create_default_context(
-            purpose=ssl.Purpose.SERVER_AUTH,
-            cafile=material.cafile
+            purpose=ssl.Purpose.SERVER_AUTH, cafile=material.cafile
         )
         if material.certfile and material.keyfile:
             tls_context.load_cert_chain(material.certfile, material.keyfile)
@@ -63,14 +64,12 @@ async def _publish_async(
             last_exc = exc
             if attempt > retries:
                 break
-            
-            logger.warning(
-                "MQTT publish attempt %d failed: %s", attempt, exc
-            )
+
+            logger.warning("MQTT publish attempt %d failed: %s", attempt, exc)
             # Exponential backoff: base_delay * 2^(attempt-1), capped at 5.0s
             delay = min(5.0, base_delay * (2 ** (attempt - 1)))
             await asyncio.sleep(delay)
-    
+
     if last_exc:
         raise last_exc
 
@@ -91,11 +90,11 @@ def publish_with_retries(
     client_module: Any | None = None,
 ) -> None:
     """Publish payload to topic using a temporary async loop.
-    
-    This function replaces the old paho-mqtt loop handling with a 
+
+    This function replaces the old paho-mqtt loop handling with a
     clean asyncio.run() call wrapping aiomqtt.
     """
-    
+
     # Ensure payload is bytes
     if isinstance(payload, str):
         payload = payload.encode("utf-8")
@@ -115,9 +114,10 @@ def publish_with_retries(
         )
     except Exception as exc:
         logger.error("Failed to publish message after retries: %s", exc)
-        # We swallow the error to mimic legacy fire-and-forget behavior 
-        # unless strict error handling is required, but usually scripts 
+        # We swallow the error to mimic legacy fire-and-forget behavior
+        # unless strict error handling is required, but usually scripts
         # just log and exit.
+
 
 __all__ = [
     "publish_with_retries",

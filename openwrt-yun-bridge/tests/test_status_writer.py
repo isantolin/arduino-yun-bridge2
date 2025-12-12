@@ -12,7 +12,6 @@ from yunbridge.mqtt.spool import MQTTPublishSpool
 
 
 def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
-
     async def run() -> None:
         status_path = tmp_path / "status.json"
         writes: list[dict[str, object]] = []

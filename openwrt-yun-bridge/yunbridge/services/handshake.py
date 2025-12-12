@@ -1,4 +1,5 @@
 """Serial handshake coordination utilities for BridgeService."""
+
 from __future__ import annotations
 
 import asyncio
@@ -134,18 +135,14 @@ class SerialHandshakeManager:
             self._reset_payload,
         )
         if not reset_ok:
-            self._logger.warning(
-                "Failed to emit LINK_RESET during handshake"
-            )
+            self._logger.warning("Failed to emit LINK_RESET during handshake")
             self._clear_handshake_expectations()
             await self._handle_handshake_failure("link_reset_send_failed")
             return False
         await asyncio.sleep(0.05)
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce)
         if not sync_ok:
-            self._logger.warning(
-                "Failed to emit LINK_SYNC during handshake"
-            )
+            self._logger.warning("Failed to emit LINK_SYNC during handshake")
             self._clear_handshake_expectations()
             await self._handle_handshake_failure("link_sync_send_failed")
             return False
@@ -165,9 +162,7 @@ class SerialHandshakeManager:
     async def handle_link_sync_resp(self, payload: bytes) -> bool:
         expected = self._state.link_handshake_nonce
         if expected is None:
-            self._logger.warning(
-                "Unexpected LINK_SYNC_RESP without pending nonce"
-            )
+            self._logger.warning("Unexpected LINK_SYNC_RESP without pending nonce")
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 status=Status.MALFORMED,
@@ -183,10 +178,7 @@ class SerialHandshakeManager:
             now = time.monotonic()
             if now < self._state.handshake_rate_limit_until:
                 self._logger.warning(
-                    (
-                        "LINK_SYNC_RESP throttled due to rate limit "
-                        "(remaining=%.2fs)"
-                    ),
+                    ("LINK_SYNC_RESP throttled due to rate limit " "(remaining=%.2fs)"),
                     self._state.handshake_rate_limit_until - now,
                 )
                 await self._acknowledge_frame(
@@ -249,9 +241,7 @@ class SerialHandshakeManager:
         return True
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:
-        self._logger.info(
-            "MCU link reset acknowledged (payload=%s)", payload.hex()
-        )
+        self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
         self._state.link_is_synchronized = False
         return True
 
@@ -277,8 +267,7 @@ class SerialHandshakeManager:
             "BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
         raise SerialHandshakeFatal(
-                "MCU rejected the serial shared secret "
-                f"(reason={reason}). {hint}"
+            "MCU rejected the serial shared secret " f"(reason={reason}). {hint}"
         )
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
@@ -412,9 +401,7 @@ class SerialHandshakeManager:
             extra=extra,
         )
 
-    def _maybe_schedule_handshake_backoff(
-        self, reason: str
-    ) -> float | None:
+    def _maybe_schedule_handshake_backoff(self, reason: str) -> float | None:
         streak = max(1, self._state.handshake_failure_streak)
         fatal = self._is_immediate_fatal(reason)
         threshold = 1 if fatal else 3
@@ -423,7 +410,7 @@ class SerialHandshakeManager:
         power = max(0, streak - threshold)
         delay = min(
             SERIAL_HANDSHAKE_BACKOFF_MAX,
-            SERIAL_HANDSHAKE_BACKOFF_BASE * (2 ** power),
+            SERIAL_HANDSHAKE_BACKOFF_BASE * (2**power),
         )
         self._state.handshake_backoff_until = time.monotonic() + delay
         return delay
@@ -434,9 +421,7 @@ class SerialHandshakeManager:
         return None
 
     @staticmethod
-    def calculate_handshake_tag(
-        secret: bytes | None, nonce: bytes
-    ) -> bytes:
+    def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
         """Return the truncated HMAC tag defined by the serial spec."""
         if not secret:
             return b""

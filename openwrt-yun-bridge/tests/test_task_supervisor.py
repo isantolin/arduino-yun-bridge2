@@ -16,9 +16,7 @@ def test_task_supervisor_tracks_lifecycle(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.DEBUG, logger="test.supervisor")
-        supervisor = TaskSupervisor(
-            logger=logging.getLogger("test.supervisor")
-        )
+        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
         completed = asyncio.Event()
 
         async def worker() -> None:
@@ -39,9 +37,7 @@ def test_task_supervisor_logs_failures(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.ERROR, logger="test.supervisor")
-        supervisor = TaskSupervisor(
-            logger=logging.getLogger("test.supervisor")
-        )
+        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
 
         async def boom() -> None:
             raise RuntimeError("boom")
@@ -61,9 +57,7 @@ def test_task_supervisor_logs_exception_groups(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.ERROR, logger="test.supervisor")
-        supervisor = TaskSupervisor(
-            logger=logging.getLogger("test.supervisor")
-        )
+        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
 
         async def cascaded() -> None:
             raise ExceptionGroup(
@@ -115,9 +109,7 @@ def test_task_supervisor_logs_group_exceptions(
             "TaskGroup",
             lambda: _ExplodingTaskGroup(),
         )
-        supervisor = TaskSupervisor(
-            logger=logging.getLogger("test.supervisor")
-        )
+        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
         await supervisor.start(asyncio.sleep(0))
         await asyncio.sleep(0)
         await supervisor.cancel()

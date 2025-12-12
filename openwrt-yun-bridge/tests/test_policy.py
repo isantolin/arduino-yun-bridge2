@@ -1,4 +1,5 @@
 """Tests for security policy objects."""
+
 from __future__ import annotations
 
 import pytest
@@ -10,9 +11,7 @@ from yunbridge.protocol.topics import Topic
 class TestAllowedCommandPolicy:
     def test_allow_all_wildcard(self) -> None:
         """Verify the wildcard allows any command."""
-        policy = AllowedCommandPolicy.from_iterable(
-            ["/bin/ls", "*", "cat"]
-        )
+        policy = AllowedCommandPolicy.from_iterable(["/bin/ls", "*", "cat"])
         assert policy.allow_all
         assert policy.is_allowed("/usr/bin/python -c 'import os'")
         assert policy.is_allowed("anything")
@@ -20,9 +19,7 @@ class TestAllowedCommandPolicy:
 
     def test_specific_commands_are_normalized(self) -> None:
         """Verify commands are lowercased and matched correctly."""
-        policy = AllowedCommandPolicy.from_iterable(["/bin/ls",
-                                                     "CAT",
-                                                     "dmesg "])
+        policy = AllowedCommandPolicy.from_iterable(["/bin/ls", "CAT", "dmesg "])
         assert not policy.allow_all
         assert policy.is_allowed("/bin/ls -la")
         assert policy.is_allowed("cat /etc/passwd")

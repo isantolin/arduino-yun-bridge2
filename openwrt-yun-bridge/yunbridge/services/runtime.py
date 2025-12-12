@@ -8,6 +8,7 @@ By concentrating the behaviour inside BridgeService we enable the
 transport layer (serial and MQTT) to focus purely on moving bytes while
 this service operates on validated payloads.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -57,6 +58,7 @@ from .handshake import (
 from .serial_flow import SerialFlowController
 from .task_supervisor import TaskSupervisor
 from .routers import MCUHandlerRegistry, MQTTRouter, McuHandler
+
 logger = logging.getLogger("yunbridge.service")
 
 STATUS_VALUES = {status.value for status in Status}
@@ -96,9 +98,7 @@ class BridgeService:
         self._register_mqtt_routes()
 
         state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
-        state.serial_response_timeout_ms = (
-            self._serial_timing.response_timeout_ms
-        )
+        state.serial_response_timeout_ms = self._serial_timing.response_timeout_ms
         state.serial_retry_limit = self._serial_timing.retry_limit
 
         self._serial_flow = SerialFlowController(
@@ -108,9 +108,7 @@ class BridgeService:
             logger=logger,
         )
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
-        self._serial_flow.set_pipeline_observer(
-            state.record_serial_pipeline_event
-        )
+        self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
 
         self._handshake = SerialHandshakeManager(
             config=config,
@@ -151,12 +149,8 @@ class BridgeService:
 
     def _gpio_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
-            Command.CMD_DIGITAL_READ_RESP.value: (
-                self._pin.handle_digital_read_resp
-            ),
-            Command.CMD_ANALOG_READ_RESP.value: (
-                self._pin.handle_analog_read_resp
-            ),
+            Command.CMD_DIGITAL_READ_RESP.value: (self._pin.handle_digital_read_resp),
+            Command.CMD_ANALOG_READ_RESP.value: (self._pin.handle_analog_read_resp),
             Command.CMD_DIGITAL_READ.value: (
                 lambda payload, cmd=Command.CMD_DIGITAL_READ: (
                     self._pin.handle_unexpected_mcu_request(cmd, payload)
@@ -179,21 +173,15 @@ class BridgeService:
     def _datastore_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_DATASTORE_PUT.value: self._datastore.handle_put,
-            Command.CMD_DATASTORE_GET.value: (
-                self._datastore.handle_get_request
-            ),
+            Command.CMD_DATASTORE_GET.value: (self._datastore.handle_get_request),
         }
 
     def _mailbox_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_MAILBOX_PUSH.value: self._mailbox.handle_push,
-            Command.CMD_MAILBOX_AVAILABLE.value: (
-                self._mailbox.handle_available
-            ),
+            Command.CMD_MAILBOX_AVAILABLE.value: (self._mailbox.handle_available),
             Command.CMD_MAILBOX_READ.value: self._mailbox.handle_read,
-            Command.CMD_MAILBOX_PROCESSED.value: (
-                self._mailbox.handle_processed
-            ),
+            Command.CMD_MAILBOX_PROCESSED.value: (self._mailbox.handle_processed),
         }
 
     def _file_mcu_handlers(self) -> dict[int, McuHandler]:
@@ -206,9 +194,7 @@ class BridgeService:
     def _process_mcu_handlers(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_PROCESS_RUN.value: self._process.handle_run,
-            Command.CMD_PROCESS_RUN_ASYNC.value: (
-                self._process.handle_run_async
-            ),
+            Command.CMD_PROCESS_RUN_ASYNC.value: (self._process.handle_run_async),
             Command.CMD_PROCESS_POLL.value: self._process.handle_poll,
             Command.CMD_PROCESS_KILL.value: self._handle_process_kill,
         }
@@ -218,15 +204,9 @@ class BridgeService:
             Command.CMD_GET_FREE_MEMORY_RESP.value: (
                 self._system.handle_get_free_memory_resp
             ),
-            Command.CMD_LINK_SYNC_RESP.value: (
-                self._handle_link_sync_resp
-            ),
-            Command.CMD_LINK_RESET_RESP.value: (
-                self._handle_link_reset_resp
-            ),
-            Command.CMD_GET_VERSION_RESP.value: (
-                self._system.handle_get_version_resp
-            ),
+            Command.CMD_LINK_SYNC_RESP.value: (self._handle_link_sync_resp),
+            Command.CMD_LINK_RESET_RESP.value: (self._handle_link_reset_resp),
+            Command.CMD_GET_VERSION_RESP.value: (self._system.handle_get_version_resp),
             Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value: (
                 self._system.handle_get_tx_debug_snapshot_resp
             ),
@@ -237,13 +217,9 @@ class BridgeService:
             Status.ACK.value: self._handle_ack,
             Status.OK.value: self._status_handler(Status.OK),
             Status.ERROR.value: self._status_handler(Status.ERROR),
-            Status.CMD_UNKNOWN.value: (
-                self._status_handler(Status.CMD_UNKNOWN)
-            ),
+            Status.CMD_UNKNOWN.value: (self._status_handler(Status.CMD_UNKNOWN)),
             Status.MALFORMED.value: self._status_handler(Status.MALFORMED),
-            Status.CRC_MISMATCH.value: (
-                self._status_handler(Status.CRC_MISMATCH)
-            ),
+            Status.CRC_MISMATCH.value: (self._status_handler(Status.CRC_MISMATCH)),
             Status.TIMEOUT.value: self._status_handler(Status.TIMEOUT),
             Status.NOT_IMPLEMENTED.value: (
                 self._status_handler(Status.NOT_IMPLEMENTED)
@@ -298,26 +274,21 @@ class BridgeService:
         if not handshake_ok:
             self._raise_if_handshake_fatal()
             logger.error(
-                    "Skipping post-connect initialisation because MCU link "
-                    "sync failed"
+                "Skipping post-connect initialisation because MCU link " "sync failed"
             )
             return
 
         try:
             version_ok = await self._system.request_mcu_version()
             if not version_ok:
-                logger.warning(
-                    "Failed to dispatch MCU version request after reconnect"
-                )
+                logger.warning("Failed to dispatch MCU version request after reconnect")
         except Exception:
             logger.exception("Failed to request MCU version after reconnect")
 
         try:
             await self._console.flush_queue()
         except Exception:
-            logger.exception(
-                "Failed to flush console backlog after reconnect"
-            )
+            logger.exception("Failed to flush console backlog after reconnect")
 
     async def on_serial_disconnected(self) -> None:
         """Reset transient MCU tracking when the serial link drops."""
@@ -435,13 +406,10 @@ class BridgeService:
                     )
                     spool_note = f"; spooled_pending={pending}"
                 else:
-                    reason = (
-                        self.state.mqtt_spool_failure_reason or "unknown"
-                    )
+                    reason = self.state.mqtt_spool_failure_reason or "unknown"
                     backoff_remaining = max(
                         0.0,
-                        self.state.mqtt_spool_backoff_until
-                        - time.monotonic(),
+                        self.state.mqtt_spool_backoff_until - time.monotonic(),
                     )
                     spool_note = (
                         "; spool_unavailable reason=%s backoff_remaining=%.1fs"
@@ -456,9 +424,7 @@ class BridgeService:
                     spool_note,
                 )
 
-    async def _enqueue_handshake_message(
-        self, message: QueuedPublish
-    ) -> None:
+    async def _enqueue_handshake_message(self, message: QueuedPublish) -> None:
         await self.enqueue_mqtt(message)
 
     async def sync_link(self) -> bool:
@@ -529,9 +495,7 @@ class BridgeService:
 
     # --- MCU command handlers ---
 
-    async def _dispatch_mcu_frame(
-        self, command_id: int, payload: bytes
-    ) -> None:
+    async def _dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
         handler = self._mcu_handlers.get(command_id)
         command_name: str | None = None
         try:
@@ -554,9 +518,7 @@ class BridgeService:
         else:
             logger.debug("Ignoring MCU response %s", command_name)
 
-        if handled_successfully and self._should_acknowledge_mcu_frame(
-            command_id
-        ):
+        if handled_successfully and self._should_acknowledge_mcu_frame(command_id):
             await self._acknowledge_mcu_frame(command_id)
 
     async def _dispatch_mqtt_message(self, inbound: MQTTMessage) -> None:
@@ -573,9 +535,7 @@ class BridgeService:
         else:
             logger.debug("MCU > ACK received")
 
-    def _status_handler(
-        self, status: Status
-    ) -> Callable[[bytes], Awaitable[None]]:
+    def _status_handler(self, status: Status) -> Callable[[bytes], Awaitable[None]]:
         async def _handler(payload: bytes) -> None:
             await self._handle_status(status, payload)
 
@@ -599,9 +559,7 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        properties: list[tuple[str, str]] = [
-            ("bridge-status", status.name)
-        ]
+        properties: list[tuple[str, str]] = [("bridge-status", status.name)]
         if text:
             properties.append(("bridge-status-message", text))
         message = QueuedPublish(
@@ -615,9 +573,7 @@ class BridgeService:
 
     async def _handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
-            logger.warning(
-                "Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex()
-            )
+            logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
             return
 
         free_memory = int.from_bytes(payload, "big")
@@ -635,9 +591,7 @@ class BridgeService:
 
     async def _handle_get_version_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
-            logger.warning(
-                "Malformed GET_VERSION_RESP payload: %s", payload.hex()
-            )
+            logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
             return
 
         major, minor = payload[0], payload[1]
@@ -667,9 +621,7 @@ class BridgeService:
     ) -> tuple[int, bytes, bytes, int | None]:
         return await self._process.run_sync(command)
 
-    async def _collect_process_output(
-        self, pid: int
-    ) -> ProcessOutputBatch:
+    async def _collect_process_output(self, pid: int) -> ProcessOutputBatch:
         return await self._process.collect_output(pid)
 
     def _trim_process_buffers(
@@ -772,9 +724,7 @@ class BridgeService:
         inbound: MQTTMessage,
     ) -> bool:
         identifier = route.identifier
-        if identifier and not self._is_topic_action_allowed(
-            route.topic, identifier
-        ):
+        if identifier and not self._is_topic_action_allowed(route.topic, identifier):
             await self._reject_topic_action(inbound, route.topic, identifier)
             return True
         payload = self._payload_bytes(inbound.payload)
@@ -787,9 +737,7 @@ class BridgeService:
         inbound: MQTTMessage,
     ) -> bool:
         identifier = route.identifier
-        if identifier and not self._is_topic_action_allowed(
-            route.topic, identifier
-        ):
+        if identifier and not self._is_topic_action_allowed(route.topic, identifier):
             await self._reject_topic_action(inbound, route.topic, identifier)
             return True
         payload = self._payload_bytes(inbound.payload)
@@ -913,9 +861,7 @@ class BridgeService:
     ) -> bool:
         if not action:
             return True
-        topic_value = (
-            topic_type.value if isinstance(topic_type, Topic) else topic_type
-        )
+        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
         return self.state.topic_authorization.allows(topic_value, action)
 
     async def _reject_topic_action(
@@ -924,9 +870,7 @@ class BridgeService:
         topic_type: Topic | str,
         action: str,
     ) -> None:
-        topic_value = (
-            topic_type.value if isinstance(topic_type, Topic) else topic_type
-        )
+        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
         logger.warning(
             "Blocked MQTT action topic=%s action=%s (message topic=%s)",
             topic_value,

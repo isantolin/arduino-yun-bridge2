@@ -1,4 +1,5 @@
 """Filesystem component wrapping MCU and MQTT file operations."""
+
 from __future__ import annotations
 
 import asyncio
@@ -44,31 +45,23 @@ class FileComponent:
 
     async def handle_write(self, payload: bytes) -> bool:
         if len(payload) < 3:
-            logger.warning(
-                "Invalid file write payload length: %d", len(payload)
-            )
+            logger.warning("Invalid file write payload length: %d", len(payload))
             return False
 
         path_len = payload[0]
         cursor = 1
         if len(payload) < cursor + path_len + 2:
-            logger.warning(
-                "Invalid file write payload: missing data section"
-            )
+            logger.warning("Invalid file write payload: missing data section")
             return False
 
-        path = payload[cursor:cursor + path_len].decode(
-            "utf-8", errors="ignore"
-        )
+        path = payload[cursor : cursor + path_len].decode("utf-8", errors="ignore")
         cursor += path_len
-        data_len = int.from_bytes(payload[cursor:cursor + 2], "big")
+        data_len = int.from_bytes(payload[cursor : cursor + 2], "big")
         cursor += 2
 
-        file_data = payload[cursor:cursor + data_len]
+        file_data = payload[cursor : cursor + data_len]
         if len(file_data) != data_len:
-            logger.warning(
-                "File write payload truncated. Expected %d bytes.", data_len
-            )
+            logger.warning("File write payload truncated. Expected %d bytes.", data_len)
             return False
 
         success, _, reason = await self._perform_file_operation(
@@ -85,9 +78,7 @@ class FileComponent:
 
     async def handle_read(self, payload: bytes) -> None:
         if len(payload) < 1:
-            logger.warning(
-                "Invalid file read payload length: %d", len(payload)
-            )
+            logger.warning("Invalid file read payload length: %d", len(payload))
             return
 
         path_len = payload[0]
@@ -95,7 +86,7 @@ class FileComponent:
             logger.warning("Invalid file read payload: missing path bytes")
             return
 
-        filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
+        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
         success, content, reason = await self._perform_file_operation(
             ACTION_FILE_READ, filename
         )
@@ -122,9 +113,7 @@ class FileComponent:
 
     async def handle_remove(self, payload: bytes) -> bool:
         if len(payload) < 1:
-            logger.warning(
-                "Invalid file remove payload length: %d", len(payload)
-            )
+            logger.warning("Invalid file remove payload length: %d", len(payload))
             return False
 
         path_len = payload[0]
@@ -132,7 +121,7 @@ class FileComponent:
             logger.warning("Invalid file remove payload: missing path bytes")
             return False
 
-        filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
+        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
         success, _, reason = await self._perform_file_operation(
             ACTION_FILE_REMOVE, filename
         )
@@ -154,9 +143,7 @@ class FileComponent:
     ) -> None:
         filename = "/".join(path_parts)
         if not filename:
-            logger.warning(
-                "MQTT file action missing filename for %s", action
-            )
+            logger.warning("MQTT file action missing filename for %s", action)
             return
 
         outcome: dict[str, str] = {"status": "ignored"}
@@ -182,7 +169,7 @@ class FileComponent:
                         )
                     else:
                         outcome["status"] = "ok"
-                
+
                 case "read":
                     (
                         success,
@@ -207,11 +194,7 @@ class FileComponent:
                         Topic.FILE,
                         ACTION_FILE_READ,
                         "response",
-                        *tuple(
-                            segment
-                            for segment in filename.split("/")
-                            if segment
-                        ),
+                        *tuple(segment for segment in filename.split("/") if segment),
                     )
                     message = QueuedPublish(
                         topic_name=response_topic,
@@ -224,7 +207,7 @@ class FileComponent:
                         message,
                         reply_context=inbound,
                     )
-                
+
                 case "remove":
                     success, _, reason = await self._perform_file_operation(
                         ACTION_FILE_REMOVE, filename
@@ -238,7 +221,7 @@ class FileComponent:
                         )
                     else:
                         outcome["status"] = "ok"
-                
+
                 case _:
                     logger.debug("Ignoring unknown file action '%s'", action)
 
@@ -278,15 +261,13 @@ class FileComponent:
                     return await self._write_with_quota(safe_path, data)
 
                 case "read":
-                    content = await asyncio.to_thread(
-                        self._read_file_sync, safe_path
-                    )
+                    content = await asyncio.to_thread(self._read_file_sync, safe_path)
                     logger.info("Read %d bytes from %s", len(content), safe_path)
                     return True, content, "ok"
 
                 case "remove":
                     return await self._remove_with_tracking(safe_path)
-                
+
                 case _:
                     return False, None, "unknown_operation"
 
@@ -314,10 +295,7 @@ class FileComponent:
             safe_path.relative_to(base_dir)
         except (OSError, ValueError):
             logger.warning(
-                (
-                    "Path traversal blocked. filename='%s', "
-                    "resolved='%s', base='%s'"
-                ),
+                ("Path traversal blocked. filename='%s', " "resolved='%s', base='%s'"),
                 filename,
                 candidate,
                 base_dir,
@@ -444,9 +422,7 @@ class FileComponent:
                                 stack.append(Path(entry.path))
                                 continue
                             if entry.is_file(follow_symlinks=False):
-                                total += entry.stat(
-                                    follow_symlinks=False
-                                ).st_size
+                                total += entry.stat(follow_symlinks=False).st_size
                         except OSError as exc:
                             logger.debug(
                                 "Failed to inspect %s during quota scan: %s",
@@ -468,16 +444,12 @@ class FileComponent:
         try:
             base_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
-            logger.exception(
-                "Failed to create base directory for files: %s", base_dir
-            )
+            logger.exception("Failed to create base directory for files: %s", base_dir)
             return None
         try:
             return base_dir.resolve()
         except OSError:
-            logger.exception(
-                "Failed to resolve base directory for files: %s", base_dir
-            )
+            logger.exception("Failed to resolve base directory for files: %s", base_dir)
             return None
 
     @staticmethod

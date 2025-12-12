@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Example: Test mailbox feature using the async YunBridge client."""
+
 import asyncio
 import logging
 
@@ -22,9 +23,7 @@ async def main() -> None:
     try:
         logging.info("Sending message to mailbox: '%s'", message_to_send)
         await bridge.mailbox_write(message_to_send)
-        logging.info(
-            "Message sent. A listener would be needed to confirm processing."
-        )
+        logging.info("Message sent. A listener would be needed to confirm processing.")
 
         await asyncio.sleep(3)
 

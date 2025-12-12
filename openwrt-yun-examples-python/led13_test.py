@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Example: Test generic pin control using the async YunBridge client."""
+
 import asyncio
 import logging
 import sys

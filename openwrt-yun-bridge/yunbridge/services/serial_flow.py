@@ -1,4 +1,5 @@
 """Serial flow control for queued MCU commands."""
+
 from __future__ import annotations
 
 import asyncio
@@ -77,9 +78,7 @@ class SerialFlowController:
         self._condition = asyncio.Condition()
         self._current: PendingCommand | None = None
         self._metrics_callback = metrics_callback
-        self._pipeline_observer: Callable[[dict[str, Any]], None] | None = (
-            None
-        )
+        self._pipeline_observer: Callable[[dict[str, Any]], None] | None = None
 
     #  --- Tenacity Helpers ---
     class _RetryableSerialError(Exception):
@@ -97,9 +96,7 @@ class SerialFlowController:
     def set_sender(self, sender: SendFrameCallable) -> None:
         self._sender = sender
 
-    def set_metrics_callback(
-        self, callback: Callable[[str], None] | None
-    ) -> None:
+    def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 
     def set_pipeline_observer(
@@ -211,10 +208,7 @@ class SerialFlowController:
             pending.mark_failure(command_id)
             return
 
-        if (
-            command_id in SERIAL_SUCCESS_STATUS_CODES
-            and not pending.expected_responses
-        ):
+        if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_responses:
             pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:
@@ -290,11 +284,7 @@ class SerialFlowController:
         while True:
             if ack_phase and pending.ack_received:
                 ack_phase = False
-            timeout = (
-                self._ack_timeout
-                if ack_phase
-                else self._response_timeout
-            )
+            timeout = self._ack_timeout if ack_phase else self._response_timeout
             try:
                 await asyncio.wait_for(
                     pending.completion.wait(),

@@ -1,4 +1,5 @@
 """Periodic status writer for the Yun Bridge daemon."""
+
 from __future__ import annotations
 
 import asyncio
@@ -35,32 +36,20 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "mqtt_spooled_replayed": state.mqtt_spooled_replayed,
                 "mqtt_spool_errors": state.mqtt_spool_errors,
                 "mqtt_spool_degraded": state.mqtt_spool_degraded,
-                "mqtt_spool_failure_reason": (
-                    state.mqtt_spool_failure_reason
-                ),
-                "mqtt_spool_retry_attempts": (
-                    state.mqtt_spool_retry_attempts
-                ),
-                "mqtt_spool_backoff_until": (
-                    state.mqtt_spool_backoff_until
-                ),
+                "mqtt_spool_failure_reason": (state.mqtt_spool_failure_reason),
+                "mqtt_spool_retry_attempts": (state.mqtt_spool_retry_attempts),
+                "mqtt_spool_backoff_until": (state.mqtt_spool_backoff_until),
                 "mqtt_spool_last_error": state.mqtt_spool_last_error,
                 "mqtt_spool_recoveries": state.mqtt_spool_recoveries,
                 "mqtt_spool_pending": (
-                    state.mqtt_spool.pending
-                    if state.mqtt_spool is not None
-                    else 0
+                    state.mqtt_spool.pending if state.mqtt_spool is not None else 0
                 ),
                 "file_storage_root": state.file_system_root,
                 "file_storage_bytes_used": state.file_storage_bytes_used,
                 "file_storage_quota_bytes": state.file_storage_quota_bytes,
                 "file_write_max_bytes": state.file_write_max_bytes,
-                "file_write_limit_rejections": (
-                    state.file_write_limit_rejections
-                ),
-                "file_storage_limit_rejections": (
-                    state.file_storage_limit_rejections
-                ),
+                "file_write_limit_rejections": (state.file_write_limit_rejections),
+                "file_storage_limit_rejections": (state.file_storage_limit_rejections),
                 "datastore_keys": list(state.datastore.keys()),
                 "mailbox_size": len(state.mailbox_queue),
                 "mailbox_bytes": state.mailbox_queue_bytes,

@@ -1,4 +1,5 @@
 """Exercise datastore interactions using the bridge client."""
+
 import asyncio
 import logging
 

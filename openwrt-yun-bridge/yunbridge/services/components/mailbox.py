@@ -1,4 +1,5 @@
 """Mailbox component encapsulating MCU/Linux mailbox flows."""
+
 from __future__ import annotations
 
 import json
@@ -51,9 +52,7 @@ class MailboxComponent:
         else:
             body = payload
 
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(topic_name=topic_name, payload=body)
-        )
+        await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic_name, payload=body))
         return True
 
     async def handle_push(self, payload: bytes) -> bool:
@@ -65,7 +64,7 @@ class MailboxComponent:
             return False
 
         msg_len = struct.unpack(">H", payload[:2])[0]
-        data = payload[2:2 + msg_len]
+        data = payload[2 : 2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
                 "MAILBOX_PUSH length mismatch. Expected %d bytes, got %d.",
@@ -77,8 +76,7 @@ class MailboxComponent:
         stored = self.state.enqueue_mailbox_incoming(data, logger)
         if not stored:
             logger.error(
-                "Dropping incoming mailbox message (%d bytes) due to "
-                "queue limits.",
+                "Dropping incoming mailbox message (%d bytes) due to " "queue limits.",
                 len(data),
             )
             await self.ctx.send_frame(
@@ -92,18 +90,14 @@ class MailboxComponent:
             Topic.MAILBOX,
             "incoming",
         )
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(topic_name=topic, payload=data)
-        )
+        await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=data))
 
         await self.ctx.enqueue_mqtt(
             QueuedPublish(
                 topic_name=mailbox_incoming_available_topic(
                     self.state.mqtt_topic_prefix
                 ),
-                payload=str(
-                    len(self.state.mailbox_incoming_queue)
-                ).encode("utf-8"),
+                payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
             )
         )
         return True
@@ -118,9 +112,7 @@ class MailboxComponent:
 
     async def handle_read(self, _: bytes) -> bool:
         original_payload = self.state.pop_mailbox_message()
-        message_payload = (
-            original_payload if original_payload is not None else b""
-        )
+        message_payload = original_payload if original_payload is not None else b""
 
         msg_len = len(message_payload)
         if msg_len > MAX_PAYLOAD_SIZE - 2:
@@ -298,17 +290,13 @@ class MailboxComponent:
 
     async def _publish_incoming_available(self) -> None:
         await self._publish_queue_depth(
-            topic_name=mailbox_incoming_available_topic(
-                self.state.mqtt_topic_prefix
-            ),
+            topic_name=mailbox_incoming_available_topic(self.state.mqtt_topic_prefix),
             length=len(self.state.mailbox_incoming_queue),
         )
 
     async def _publish_outgoing_available(self) -> None:
         await self._publish_queue_depth(
-            topic_name=mailbox_outgoing_available_topic(
-                self.state.mqtt_topic_prefix
-            ),
+            topic_name=mailbox_outgoing_available_topic(self.state.mqtt_topic_prefix),
             length=len(self.state.mailbox_queue),
         )
 

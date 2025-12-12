@@ -1,4 +1,5 @@
 """Console component handling console bridging logic."""
+
 from __future__ import annotations
 
 import logging
@@ -79,8 +80,7 @@ class ConsoleComponent:
                 if remaining:
                     self.state.enqueue_console_chunk(remaining, logger)
                 logger.warning(
-                    "Serial send failed for console input; payload queued for "
-                    "retry",
+                    "Serial send failed for console input; payload queued for " "retry",
                 )
                 break
 
@@ -101,8 +101,7 @@ class ConsoleComponent:
                 if unsent:
                     self.state.requeue_console_chunk_front(unsent)
                 logger.warning(
-                    "Serial send failed while flushing console; chunk "
-                    "requeued",
+                    "Serial send failed while flushing console; chunk " "requeued",
                 )
                 return
 
@@ -114,7 +113,7 @@ class ConsoleComponent:
             return []
         chunk_size = MAX_PAYLOAD_SIZE
         return [
-            payload[index:index + chunk_size]
+            payload[index : index + chunk_size]
             for index in range(0, len(payload), chunk_size)
         ]
 

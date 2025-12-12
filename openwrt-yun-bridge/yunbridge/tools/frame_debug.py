@@ -5,6 +5,7 @@ frames, prints their metadata, and optionally writes them to the MCU
 serial port while decoding responses.  The daemon must be stopped before
 running it because /dev/ttyATH0 cannot be shared.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -68,8 +69,8 @@ def _resolve_command(candidate: str) -> int:
         return Command[normalized].value
     except KeyError as exc:
         raise ValueError(
-                f"Unknown command '{candidate}'. Use hex (e.g. 0x03) "
-                "or a Command enum name."
+            f"Unknown command '{candidate}'. Use hex (e.g. 0x03) "
+            "or a Command enum name."
         ) from exc
 
 
@@ -103,7 +104,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
-    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE:], "big")
+    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE :], "big")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + SERIAL_TERMINATOR
     return FrameDebugSnapshot(
@@ -271,9 +272,7 @@ def main(argv: list[str] | None = None) -> int:
             args.baud,
             args.read_timeout,
         )
-        print(
-            f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud"
-        )
+        print(f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud")
 
     try:
         for iteration in _iter_counts(args.count):
@@ -293,8 +292,7 @@ def main(argv: list[str] | None = None) -> int:
                             response_frame = _decode_frame(encoded_response)
                         except Exception as exc:
                             print(
-                                "[FrameDebug] Failed to decode MCU response: "
-                                f"{exc}"
+                                "[FrameDebug] Failed to decode MCU response: " f"{exc}"
                             )
                         else:
                             _print_response(response_frame)

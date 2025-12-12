@@ -23,9 +23,7 @@ async def main() -> None:
         while True:
             message: bytes | None = await bridge.mailbox_read(timeout=10)
             if message is None:
-                logger.info(
-                    "No mailbox message within timeout; still listening..."
-                )
+                logger.info("No mailbox message within timeout; still listening...")
                 continue
 
             preview = message.decode("utf-8", errors="ignore")

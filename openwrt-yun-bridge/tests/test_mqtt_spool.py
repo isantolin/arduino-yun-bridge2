@@ -1,4 +1,5 @@
 """Tests for MQTT publish spool durability and fallback."""
+
 from __future__ import annotations
 
 import errno

@@ -262,9 +262,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.mqtt_keyfile is None
     assert config.mqtt_queue_limit == 1
     assert config.serial_retry_timeout == const.DEFAULT_SERIAL_RETRY_TIMEOUT
-    assert config.serial_response_timeout == (
-        const.DEFAULT_SERIAL_RETRY_TIMEOUT * 2
-    )
+    assert config.serial_response_timeout == (const.DEFAULT_SERIAL_RETRY_TIMEOUT * 2)
     assert config.serial_retry_attempts == 1
     assert config.allowed_policy.allow_all is True
     assert config.watchdog_enabled is True
@@ -338,9 +336,7 @@ def test_configure_logging_stream_handler(
 
     handler = root_logger.handlers[0]
     assert handler.level == logging.INFO
-    assert isinstance(
-        handler.formatter, logging_module.StructuredLogFormatter
-    )
+    assert isinstance(handler.formatter, logging_module.StructuredLogFormatter)
 
     capture = io.StringIO()
     assert isinstance(handler, logging.StreamHandler)
@@ -451,9 +447,7 @@ def test_configure_logging_syslog_handler(
     assert handler.address == str(socket_path)
     assert handler.facility is DummySysLogHandler.LOG_DAEMON
     assert handler.level == logging.DEBUG
-    assert isinstance(
-        handler.formatter, logging_module.StructuredLogFormatter
-    )
+    assert isinstance(handler.formatter, logging_module.StructuredLogFormatter)
     assert handler.ident == "yunbridge "
 
     logging.getLogger().handlers.clear()

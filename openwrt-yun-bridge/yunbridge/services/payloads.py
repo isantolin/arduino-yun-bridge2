@@ -1,4 +1,5 @@
 """Typed payload models for MQTT-driven actions."""
+
 from __future__ import annotations
 
 import json
@@ -54,9 +55,7 @@ class ShellCommandPayload:
         if not normalized:
             raise PayloadValidationError("Shell command payload is empty")
         if len(normalized) > 512:
-            raise PayloadValidationError(
-                "Command cannot exceed 512 characters"
-            )
+            raise PayloadValidationError("Command cannot exceed 512 characters")
 
         return cls(command=normalized)
 
@@ -72,9 +71,7 @@ class ShellPidPayload:
         try:
             value = int(segment, 10)
         except ValueError as exc:
-            raise PayloadValidationError(
-                "PID segment must be an integer"
-            ) from exc
+            raise PayloadValidationError("PID segment must be an integer") from exc
 
         if value <= 0:
             raise PayloadValidationError("PID must be a positive integer")

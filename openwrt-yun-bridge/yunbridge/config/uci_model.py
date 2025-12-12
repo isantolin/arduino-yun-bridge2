@@ -1,4 +1,5 @@
 """Dataclass-based normalisation for UCI key/value pairs."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable as IterableABC, Mapping as MappingABC
@@ -64,6 +65,7 @@ def _parse_float(value: Any, default: float) -> float:
     except (ValueError, TypeError):
         return default
 
+
 def _stringify_option(value: Any) -> str:
     """Normalise nested option payloads into a flat string."""
 
@@ -79,9 +81,7 @@ def _stringify_option(value: Any) -> str:
                 (str, bytes, bytearray),
             ):
                 iterable_values = cast(Iterable[Any], nested_values)
-                return " ".join(
-                    _stringify_option(item) for item in iterable_values
-                )
+                return " ".join(_stringify_option(item) for item in iterable_values)
             return _stringify_option(nested_values)
 
     if isinstance(value, IterableABC) and not isinstance(
@@ -200,10 +200,16 @@ class UciConfigModel:
                 init_args[key_str] = _parse_bool(value)
             elif target_type is int:
                 # Get default from field or constant if possible for fallback
-                default = field_info.default if isinstance(field_info.default, int) else 0
+                default = (
+                    field_info.default if isinstance(field_info.default, int) else 0
+                )
                 init_args[key_str] = _parse_int(value, default)
             elif target_type is float:
-                default = field_info.default if isinstance(field_info.default, (int, float)) else 0.0
+                default = (
+                    field_info.default
+                    if isinstance(field_info.default, (int, float))
+                    else 0.0
+                )
                 init_args[key_str] = _parse_float(value, default)
             else:
                 # Default to string with nested handling

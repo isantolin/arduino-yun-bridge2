@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Example: Run an async shell command and stream its output via MQTT polls."""
+
 import asyncio
 import logging
 from typing import Any
@@ -85,7 +86,7 @@ async def main() -> None:
         "-c",
         (
             "for i in $(seq 1 4); do "
-            "echo \"tick:$i\"; sleep 0.5; "
+            'echo "tick:$i"; sleep 0.5; '
             "done; >&2 echo 'process complete'"
         ),
     ]

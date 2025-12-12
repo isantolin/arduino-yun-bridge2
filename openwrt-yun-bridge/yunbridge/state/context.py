@@ -1,4 +1,5 @@
 """Runtime state container for the Yun Bridge daemon."""
+
 from __future__ import annotations
 
 import asyncio
@@ -236,9 +237,7 @@ class RuntimeState:
     )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = field(
-        default_factory=_str_int_dict_factory
-    )
+    mqtt_drop_counts: dict[str, int] = field(default_factory=_str_int_dict_factory)
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
@@ -269,13 +268,9 @@ class RuntimeState:
         repr=False,
     )
     datastore: dict[str, str] = field(default_factory=_str_dict_factory)
-    mailbox_queue: BoundedByteDeque = field(
-        default_factory=BoundedByteDeque
-    )
+    mailbox_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
-    console_to_mcu_queue: BoundedByteDeque = field(
-        default_factory=BoundedByteDeque
-    )
+    console_to_mcu_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
@@ -287,12 +282,8 @@ class RuntimeState:
     )
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = field(
-        default_factory=_policy_factory
-    )
-    topic_authorization: TopicAuthorization = field(
-        default_factory=TopicAuthorization
-    )
+    allowed_policy: AllowedCommandPolicy = field(default_factory=_policy_factory)
+    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
@@ -321,9 +312,7 @@ class RuntimeState:
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
-    mailbox_incoming_queue: BoundedByteDeque = field(
-        default_factory=BoundedByteDeque
-    )
+    mailbox_incoming_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
@@ -357,13 +346,9 @@ class RuntimeState:
     serial_decode_errors: int = 0
     serial_crc_errors: int = 0
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
-    serial_response_timeout_ms: int = int(
-        DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000
-    )
+    serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
-    mcu_status_counters: dict[str, int] = field(
-        default_factory=_str_int_dict_factory
-    )
+    mcu_status_counters: dict[str, int] = field(default_factory=_str_int_dict_factory)
     supervisor_stats: dict[str, SupervisorStats] = field(
         default_factory=_supervisor_stats_factory
     )
@@ -405,9 +390,7 @@ class RuntimeState:
     def allowed_commands(self) -> tuple[str, ...]:
         return self.allowed_policy.as_tuple()
 
-    def enqueue_console_chunk(
-        self, chunk: bytes, logger: logging.Logger
-    ) -> None:
+    def enqueue_console_chunk(self, chunk: bytes, logger: logging.Logger) -> None:
         if not chunk:
             return
 
@@ -454,7 +437,7 @@ class RuntimeState:
         chunk_len = len(chunk)
         # The caller should ensure the chunk fits within the configured limit.
         if chunk_len > self.console_queue_limit_bytes:
-            data = bytes(chunk[-self.console_queue_limit_bytes:])
+            data = bytes(chunk[-self.console_queue_limit_bytes :])
             chunk_len = len(data)
         else:
             data = bytes(chunk)
@@ -470,9 +453,7 @@ class RuntimeState:
         if evt.accepted:
             self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
-    def enqueue_mailbox_message(
-        self, payload: bytes, logger: logging.Logger
-    ) -> bool:
+    def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
         self._sync_mailbox_queue_limits()
         evt = self.mailbox_queue.append(payload)
         self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
@@ -496,10 +477,7 @@ class RuntimeState:
             self.mailbox_dropped_bytes += evt.dropped_bytes
         if not evt.accepted:
             logger.error(
-                (
-                    "Mailbox queue overflow; rejecting incoming message "
-                    "(%d bytes)."
-                ),
+                ("Mailbox queue overflow; rejecting incoming message " "(%d bytes)."),
                 len(payload),
             )
             self.mailbox_dropped_messages += 1
@@ -524,20 +502,13 @@ class RuntimeState:
             self.mailbox_dropped_messages += evt.dropped_chunks
             self.mailbox_dropped_bytes += evt.dropped_bytes
 
-    def enqueue_mailbox_incoming(
-        self, payload: bytes, logger: logging.Logger
-    ) -> bool:
+    def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
         self._sync_mailbox_incoming_limits()
         evt = self.mailbox_incoming_queue.append(payload)
-        self.mailbox_incoming_queue_bytes = (
-            self.mailbox_incoming_queue.bytes_used
-        )
+        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
         if evt.truncated_bytes:
             logger.warning(
-                (
-                    "Mailbox incoming message truncated by %d bytes to "
-                    "respect limit."
-                ),
+                ("Mailbox incoming message truncated by %d bytes to " "respect limit."),
                 evt.truncated_bytes,
             )
             self.mailbox_incoming_truncated_messages += 1
@@ -555,10 +526,7 @@ class RuntimeState:
             self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
         if not evt.accepted:
             logger.error(
-                (
-                    "Mailbox incoming queue overflow; rejecting message "
-                    "(%d bytes)."
-                ),
+                ("Mailbox incoming queue overflow; rejecting message " "(%d bytes)."),
                 len(payload),
             )
             self.mailbox_incoming_dropped_messages += 1
@@ -572,9 +540,7 @@ class RuntimeState:
         if not self.mailbox_incoming_queue:
             return None
         message = self.mailbox_incoming_queue.popleft()
-        self.mailbox_incoming_queue_bytes = (
-            self.mailbox_incoming_queue.bytes_used
-        )
+        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
         return message
 
     def _sync_console_queue_limits(self) -> None:
@@ -596,9 +562,7 @@ class RuntimeState:
             max_items=self.mailbox_queue_limit,
             max_bytes=self.mailbox_queue_bytes_limit,
         )
-        self.mailbox_incoming_queue_bytes = (
-            self.mailbox_incoming_queue.bytes_used
-        )
+        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
 
     def record_mqtt_drop(self, topic: str) -> None:
         self.mqtt_dropped_messages += 1
@@ -634,9 +598,7 @@ class RuntimeState:
         self.handshake_last_duration = self._handshake_duration_since_start()
         self._handshake_last_started = 0.0
 
-    def record_handshake_fatal(
-        self, reason: str, detail: str | None = None
-    ) -> None:
+    def record_handshake_fatal(self, reason: str, detail: str | None = None) -> None:
         self.handshake_fatal_count += 1
         self.handshake_fatal_reason = reason
         self.handshake_fatal_detail = detail
@@ -705,8 +667,7 @@ class RuntimeState:
                 completed_unix=timestamp,
                 status_code=status_code,
                 status_name=_status_label(status_code),
-                acknowledged=acked
-                or bool(inflight and inflight.get("acknowledged")),
+                acknowledged=acked or bool(inflight and inflight.get("acknowledged")),
             )
             if inflight is not None:
                 started = inflight.get("started_unix")
@@ -729,9 +690,7 @@ class RuntimeState:
 
     def record_mcu_status(self, status: Status) -> None:
         key = status.name
-        self.mcu_status_counters[key] = (
-            self.mcu_status_counters.get(key, 0) + 1
-        )
+        self.mcu_status_counters[key] = self.mcu_status_counters.get(key, 0) + 1
 
     def record_supervisor_failure(
         self,
@@ -778,9 +737,7 @@ class RuntimeState:
             self.mqtt_spool_backoff_until = 0.0
             self.mqtt_spool_last_error = None
         except Exception as exc:
-            self._handle_mqtt_spool_failure(
-                "initialization_failed", exc=exc
-            )
+            self._handle_mqtt_spool_failure("initialization_failed", exc=exc)
 
     async def ensure_spool(self) -> bool:
         if self.mqtt_spool is not None:
@@ -797,9 +754,7 @@ class RuntimeState:
                 on_fallback=self._on_spool_fallback,
             )
         except Exception as exc:
-            self._handle_mqtt_spool_failure(
-                "reactivation_failed", exc=exc
-            )
+            self._handle_mqtt_spool_failure("reactivation_failed", exc=exc)
             return False
         self.mqtt_spool = spool
         self.mqtt_spool_degraded = False
@@ -854,9 +809,7 @@ class RuntimeState:
         exc: BaseException | None = None,
     ) -> None:
         detail = reason if exc is None else f"{reason}:{exc}"
-        logger.warning(
-            "MQTT spool failure (%s); disabling durable spool.", detail
-        )
+        logger.warning("MQTT spool failure (%s); disabling durable spool.", detail)
         self.mqtt_spool_errors += 1
         self.mqtt_spool_last_error = detail
         self._disable_mqtt_spool(reason)
@@ -867,9 +820,7 @@ class RuntimeState:
         self.mqtt_spool_last_error = reason
         self.mqtt_spool_errors += 1
 
-    async def stash_mqtt_message(
-        self, message: QueuedPublish
-    ) -> bool:
+    async def stash_mqtt_message(self, message: QueuedPublish) -> bool:
         if self.mqtt_spool is None:
             await self.ensure_spool()
         spool = self.mqtt_spool
@@ -907,8 +858,7 @@ class RuntimeState:
                 break
             enriched = replace(
                 message,
-                user_properties=message.user_properties
-                + (("bridge-spooled", "1"),),
+                user_properties=message.user_properties + (("bridge-spooled", "1"),),
             )
             try:
                 self.mqtt_publish_queue.put_nowait(enriched)
@@ -991,9 +941,7 @@ class RuntimeState:
             "file_storage_quota_bytes": self.file_storage_quota_bytes,
             "file_write_max_bytes": self.file_write_max_bytes,
             "file_write_limit_rejections": self.file_write_limit_rejections,
-            "file_storage_limit_rejections": (
-                self.file_storage_limit_rejections
-            ),
+            "file_storage_limit_rejections": (self.file_storage_limit_rejections),
             "handshake_attempts": self.handshake_attempts,
             "handshake_successes": self.handshake_successes,
             "handshake_failures": self.handshake_failures,
@@ -1015,8 +963,7 @@ class RuntimeState:
             "watchdog_beats": self.watchdog_beats,
             "watchdog_last_unix": self.last_watchdog_beat,
             "supervisors": {
-                name: stats.as_dict()
-                for name, stats in self.supervisor_stats.items()
+                name: stats.as_dict() for name, stats in self.supervisor_stats.items()
             },
             "bridge": self.build_bridge_snapshot(),
         }
@@ -1025,32 +972,18 @@ class RuntimeState:
             mailbox_outgoing_bytes=self.mailbox_queue_bytes,
             mailbox_outgoing_dropped_messages=self.mailbox_dropped_messages,
             mailbox_outgoing_dropped_bytes=self.mailbox_dropped_bytes,
-            mailbox_outgoing_truncated_messages=(
-                self.mailbox_truncated_messages
-            ),
-            mailbox_outgoing_truncated_bytes=(
-                self.mailbox_truncated_bytes
-            ),
-            mailbox_outgoing_overflow_events=(
-                self.mailbox_outgoing_overflow_events
-            ),
+            mailbox_outgoing_truncated_messages=(self.mailbox_truncated_messages),
+            mailbox_outgoing_truncated_bytes=(self.mailbox_truncated_bytes),
+            mailbox_outgoing_overflow_events=(self.mailbox_outgoing_overflow_events),
             mailbox_incoming_len=len(self.mailbox_incoming_queue),
             mailbox_incoming_bytes=self.mailbox_incoming_queue_bytes,
-            mailbox_incoming_dropped_messages=(
-                self.mailbox_incoming_dropped_messages
-            ),
-            mailbox_incoming_dropped_bytes=(
-                self.mailbox_incoming_dropped_bytes
-            ),
+            mailbox_incoming_dropped_messages=(self.mailbox_incoming_dropped_messages),
+            mailbox_incoming_dropped_bytes=(self.mailbox_incoming_dropped_bytes),
             mailbox_incoming_truncated_messages=(
                 self.mailbox_incoming_truncated_messages
             ),
-            mailbox_incoming_truncated_bytes=(
-                self.mailbox_incoming_truncated_bytes
-            ),
-            mailbox_incoming_overflow_events=(
-                self.mailbox_incoming_overflow_events
-            ),
+            mailbox_incoming_truncated_bytes=(self.mailbox_incoming_truncated_bytes),
+            mailbox_incoming_overflow_events=(self.mailbox_incoming_overflow_events),
             mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
             mqtt_spool_trim_events=self.mqtt_spool_trim_events,
             mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
@@ -1091,11 +1024,7 @@ class RuntimeState:
             if self.serial_pipeline_inflight
             else None
         )
-        last = (
-            self.serial_pipeline_last.copy()
-            if self.serial_pipeline_last
-            else None
-        )
+        last = self.serial_pipeline_last.copy() if self.serial_pipeline_last else None
         return {
             "inflight": inflight,
             "last_completion": last,

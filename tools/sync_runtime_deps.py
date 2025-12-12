@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate derived dependency files from the runtime manifest."""
+
 from __future__ import annotations
 
 import argparse
@@ -79,8 +80,7 @@ def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
         raise ManifestError(
-            "Makefile is missing dependency markers; "
-            "cannot inject dependencies"
+            "Makefile is missing dependency markers; " "cannot inject dependencies"
         )
     tokens = [f"+{pkg}" for pkg in collect_openwrt_packages(deps)]
     if tokens:

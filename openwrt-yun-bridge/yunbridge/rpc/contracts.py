@@ -1,4 +1,5 @@
 """Shared helpers derived from the generated RPC protocol metadata."""
+
 from __future__ import annotations
 
 from functools import lru_cache

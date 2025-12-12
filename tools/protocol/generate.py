@@ -5,6 +5,7 @@ Reads spec.toml and generates:
 1. Python bindings (yunbridge/rpc/protocol.py)
 2. C++ bindings (openwrt-library-arduino/src/protocol/rpc_protocol.h)
 """
+
 import argparse
 import sys
 from pathlib import Path
@@ -32,29 +33,50 @@ from enum import IntEnum
 from typing import Final
 """
 
+
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
-    out.write("#include <cstdint>\n#include <type_traits>\n#include \"rpc_frame.h\"\n\n")
-    
+    out.write('#include <cstdint>\n#include <type_traits>\n#include "rpc_frame.h"\n\n')
+
     consts = spec["constants"]
-    out.write(f"static_assert(rpc::PROTOCOL_VERSION == {consts['protocol_version']}, \"Version mismatch\");\n")
-    out.write(f"constexpr unsigned int RPC_BUFFER_SIZE = {consts['rpc_buffer_size']};\n\n")
-    
+    out.write(
+        f"static_assert(rpc::PROTOCOL_VERSION == {consts['protocol_version']}, \"Version mismatch\");\n"
+    )
+    out.write(
+        f"constexpr unsigned int RPC_BUFFER_SIZE = {consts['rpc_buffer_size']};\n\n"
+    )
+
     handshake = spec.get("handshake", {})
     if handshake:
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = {handshake['nonce_length']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = {handshake['tag_length']};\n")
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = {handshake['nonce_length']};\n"
+        )
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = {handshake['tag_length']};\n"
+        )
         out.write("constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {handshake['response_timeout_min_ms']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {handshake['response_timeout_max_ms']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {handshake['retry_limit_min']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n\n")
-    
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n"
+        )
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n"
+        )
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {handshake['response_timeout_min_ms']};\n"
+        )
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {handshake['response_timeout_max_ms']};\n"
+        )
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {handshake['retry_limit_min']};\n"
+        )
+        out.write(
+            f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n\n"
+        )
+
     out.write("namespace rpc {\n\n")
-    
+
     out.write("enum class StatusCode : uint8_t {\n")
     for status in spec["statuses"]:
         out.write(f"    STATUS_{status['name']} = {status['value']},\n")
@@ -64,7 +86,7 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     for cmd in spec["commands"]:
         out.write(f"    {cmd['name']} = {cmd['value']},\n")
     out.write("};\n\n")
-    
+
     out.write("""template <typename Enum>
 constexpr auto to_underlying(Enum value) noexcept -> typename std::underlying_type<Enum>::type {
     return static_cast<typename std::underlying_type<Enum>::type>(value);
@@ -72,49 +94,87 @@ constexpr auto to_underlying(Enum value) noexcept -> typename std::underlying_ty
 """)
     out.write("} // namespace rpc\n#endif\n")
 
+
 def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     out.write(PY_HEADER + "\n")
     consts = spec["constants"]
     out.write(f"PROTOCOL_VERSION: Final[int] = {consts['protocol_version']}\n")
     out.write(f"MAX_PAYLOAD_SIZE: Final[int] = {consts['max_payload_size']}\n")
     out.write(f"RPC_BUFFER_SIZE: Final[int] = {consts['rpc_buffer_size']}\n\n")
-    
+
     handshake = spec.get("handshake", {})
     if handshake:
         out.write(f"HANDSHAKE_NONCE_LENGTH: Final[int] = {handshake['nonce_length']}\n")
         out.write(f"HANDSHAKE_TAG_LENGTH: Final[int] = {handshake['tag_length']}\n")
-        out.write(f"HANDSHAKE_TAG_ALGORITHM: Final[str] = \"{handshake['tag_algorithm']}\"\n")
-        out.write(f"HANDSHAKE_TAG_DESCRIPTION: Final[str] = \"{handshake['tag_description']}\"\n")
-        out.write(f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n")
-        out.write(f"HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = \"{handshake['config_description']}\"\n")
-        out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n")
-        out.write(f"HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = {handshake['ack_timeout_min_ms']}\n")
-        out.write(f"HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = {handshake['ack_timeout_max_ms']}\n")
-        out.write(f"HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = {handshake['response_timeout_min_ms']}\n")
-        out.write(f"HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = {handshake['response_timeout_max_ms']}\n")
-        out.write(f"HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = {handshake['retry_limit_min']}\n")
-        out.write(f"HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = {handshake['retry_limit_max']}\n\n")
-    
+        out.write(
+            f"HANDSHAKE_TAG_ALGORITHM: Final[str] = \"{handshake['tag_algorithm']}\"\n"
+        )
+        out.write(
+            f"HANDSHAKE_TAG_DESCRIPTION: Final[str] = \"{handshake['tag_description']}\"\n"
+        )
+        out.write(
+            f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n"
+        )
+        out.write(
+            f"HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = \"{handshake['config_description']}\"\n"
+        )
+        out.write(
+            "HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n"
+        )
+        out.write(
+            f"HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = {handshake['ack_timeout_min_ms']}\n"
+        )
+        out.write(
+            f"HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = {handshake['ack_timeout_max_ms']}\n"
+        )
+        out.write(
+            f"HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = {handshake['response_timeout_min_ms']}\n"
+        )
+        out.write(
+            f"HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = {handshake['response_timeout_max_ms']}\n"
+        )
+        out.write(
+            f"HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = {handshake['retry_limit_min']}\n"
+        )
+        out.write(
+            f"HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = {handshake['retry_limit_max']}\n\n"
+        )
+
     formats = spec.get("data_formats", {})
     if formats:
-        out.write(f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n")
-        out.write("DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n")
-        out.write(f"DATASTORE_VALUE_LEN_FORMAT: Final[str] = \"{formats['datastore_value_len_format']}\"\n")
-        out.write("DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n")
-        out.write(f"CRC_COVERED_HEADER_FORMAT: Final[str] = \"{formats['crc_covered_header_format']}\"\n")
-        out.write("CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n")
+        out.write(
+            f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n"
+        )
+        out.write(
+            "DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n"
+        )
+        out.write(
+            f"DATASTORE_VALUE_LEN_FORMAT: Final[str] = \"{formats['datastore_value_len_format']}\"\n"
+        )
+        out.write(
+            "DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n"
+        )
+        out.write(
+            f"CRC_COVERED_HEADER_FORMAT: Final[str] = \"{formats['crc_covered_header_format']}\"\n"
+        )
+        out.write(
+            "CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n"
+        )
         out.write(f"CRC_FORMAT: Final[str] = \"{formats['crc_format']}\"\n")
         out.write("CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
-        out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n")
+        out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n\n")
 
     out.write("class Status(IntEnum):\n")
     for status in spec["statuses"]:
-        out.write(f"    {status['name']} = {status['value']}  # {status['description']}\n")
-    out.write("\n")
+        out.write(
+            f"    {status['name']} = {status['value']}  # {status['description']}\n"
+        )
+    out.write("\n\n")
 
     out.write("class Command(IntEnum):\n")
     for cmd in spec["commands"]:
         out.write(f"    {cmd['name']} = {cmd['value']}\n")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate protocol bindings")
@@ -135,6 +195,7 @@ def main() -> None:
         with args.py.open("w") as f:
             generate_python(spec, f)
         print(f"Generated {args.py}")
+
 
 if __name__ == "__main__":
     main()

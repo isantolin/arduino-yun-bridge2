@@ -1,4 +1,5 @@
 """Property-based tests for shell command validation policy."""
+
 from __future__ import annotations
 
 import string

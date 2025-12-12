@@ -6,6 +6,7 @@ and connect it via a virtual serial port (socat) to the Python YunBridge daemon.
 
 It serves as the End-to-End test entrypoint.
 """
+
 import sys
 import subprocess
 import logging
@@ -15,9 +16,10 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("emulation-runner")
 
+
 def main():
     logger.info("Starting Emulation Runner...")
-    
+
     # 1. Check for required tools
     required_tools = ["simavr", "socat"]
     for tool in required_tools:
@@ -37,10 +39,11 @@ def main():
     # socat PTY,link=/tmp/ttyBRIDGE0 PTY,link=/tmp/ttyBRIDGE1
     # Bridge daemon connects to ttyBRIDGE0
     # SimAVR connects to ttyBRIDGE1 (via its UART interface)
-    
+
     logger.info("Emulation scaffolding complete.")
     # Real logic would start subprocesses here.
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,4 +1,5 @@
 """Bounded queue helpers for YunBridge runtime state."""
+
 from __future__ import annotations
 
 from collections import deque
@@ -118,12 +119,10 @@ class BoundedByteDeque:
         event = QueueEvent()
 
         if self.max_bytes and len(data) > self.max_bytes:
-            data = data[-self.max_bytes:]
+            data = data[-self.max_bytes :]
             event.truncated_bytes = len(chunk) - len(data)
 
-        dropped_chunks, dropped_bytes = self._make_room_for(
-            len(data), 1
-        )
+        dropped_chunks, dropped_bytes = self._make_room_for(len(data), 1)
         event.dropped_chunks += dropped_chunks
         event.dropped_bytes += dropped_bytes
 
@@ -178,15 +177,9 @@ class BoundedByteDeque:
             return False
         if limit_items is not None and incoming_count > limit_items:
             return False
-        if (
-            limit_items is not None
-            and len(self._queue) + incoming_count > limit_items
-        ):
+        if limit_items is not None and len(self._queue) + incoming_count > limit_items:
             return False
-        if (
-            limit_bytes is not None
-            and self._bytes + incoming_bytes > limit_bytes
-        ):
+        if limit_bytes is not None and self._bytes + incoming_bytes > limit_bytes:
             return False
         return True
 

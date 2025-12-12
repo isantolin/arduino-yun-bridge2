@@ -1,4 +1,5 @@
 """Unit tests for BridgeService lifecycle helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -138,8 +139,7 @@ def test_on_serial_connected_flushes_console_queue(
         ]
         assert Command.CMD_GET_VERSION.value in frame_ids
         assert any(
-            frame_id == Command.CMD_CONSOLE_WRITE.value
-            for frame_id, _ in sent_frames
+            frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames
         )
         assert runtime_state.console_queue_bytes == 0
         assert runtime_state.mcu_version is None
@@ -148,10 +148,7 @@ def test_on_serial_connected_flushes_console_queue(
         assert runtime_state.handshake_failures == 0
         assert runtime_state.serial_link_connected is True
         assert runtime_state.serial_ack_timeout_ms == timing.ack_timeout_ms
-        assert (
-            runtime_state.serial_response_timeout_ms
-            == timing.response_timeout_ms
-        )
+        assert runtime_state.serial_response_timeout_ms == timing.response_timeout_ms
         assert runtime_state.serial_retry_limit == timing.retry_limit
 
     asyncio.run(_run())
@@ -191,9 +188,7 @@ def test_sync_link_rejects_invalid_handshake_tag(
         assert success is False
         assert service.state.link_is_synchronized is False
         assert service.state.link_handshake_nonce is None
-        assert any(
-            frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames
-        )
+        assert any(frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames)
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
         assert runtime_state.handshake_successes == 0
@@ -233,9 +228,7 @@ def test_sync_link_rejects_truncated_response(
         assert success is False
         assert service.state.link_is_synchronized is False
         assert service.state.link_handshake_nonce is None
-        assert any(
-            frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames
-        )
+        assert any(frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames)
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
         assert runtime_state.handshake_fatal_count == 1
@@ -259,9 +252,7 @@ def test_repeated_sync_timeouts_become_fatal(
         await service._handle_handshake_failure("link_sync_timeout")
         assert runtime_state.handshake_fatal_count == 1
         assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
-        assert runtime_state.handshake_fatal_detail == (
-            "failure_streak_exceeded_2"
-        )
+        assert runtime_state.handshake_fatal_detail == ("failure_streak_exceeded_2")
 
     asyncio.run(_run())
 
@@ -308,10 +299,7 @@ def test_link_sync_resp_respects_rate_limit(
         assert rate_limited is False
         assert runtime_state.last_handshake_error == "sync_rate_limited"
         assert runtime_state.handshake_failure_streak >= 1
-        assert any(
-            frame_id == Status.MALFORMED.value
-            for frame_id, _ in sent_frames
-        )
+        assert any(frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames)
 
     asyncio.run(_run())
 
@@ -347,12 +335,8 @@ def test_sync_auth_failure_schedules_backoff(
         nonce_one, tag_one = _prime_handshake(3)
         broken_tag_one = bytearray(tag_one)
         broken_tag_one[0] ^= 0xFF
-        await service._handle_link_sync_resp(
-            nonce_one + bytes(broken_tag_one)
-        )
-        first_delay = (
-            runtime_state.handshake_backoff_until - fake_clock.monotonic()
-        )
+        await service._handle_link_sync_resp(nonce_one + bytes(broken_tag_one))
+        first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert first_delay > 0
         assert runtime_state.last_handshake_error == "sync_auth_mismatch"
         assert runtime_state.handshake_fatal_count == 1
@@ -364,12 +348,8 @@ def test_sync_auth_failure_schedules_backoff(
         nonce_two, tag_two = _prime_handshake(4)
         broken_tag_two = bytearray(tag_two)
         broken_tag_two[-1] ^= 0xFF
-        await service._handle_link_sync_resp(
-            nonce_two + bytes(broken_tag_two)
-        )
-        second_delay = (
-            runtime_state.handshake_backoff_until - fake_clock.monotonic()
-        )
+        await service._handle_link_sync_resp(nonce_two + bytes(broken_tag_two))
+        second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert second_delay > first_delay
         assert runtime_state.handshake_failure_streak >= 2
         assert runtime_state.handshake_fatal_count == 2
@@ -397,18 +377,13 @@ async def test_transient_handshake_failures_eventually_backoff(
         if attempt < 3:
             assert runtime_state.handshake_backoff_until == 0
         else:
-            remaining = (
-                runtime_state.handshake_backoff_until
-                - fake_clock.monotonic()
-            )
+            remaining = runtime_state.handshake_backoff_until - fake_clock.monotonic()
             assert remaining >= SERIAL_HANDSHAKE_BACKOFF_BASE
 
     assert runtime_state.handshake_failure_streak == 3
     assert runtime_state.handshake_fatal_count == 1
     assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
-    assert runtime_state.handshake_fatal_detail == (
-        "failure_streak_exceeded_3"
-    )
+    assert runtime_state.handshake_fatal_detail == ("failure_streak_exceeded_3")
 
 
 def test_derive_serial_timing_clamps_to_spec(
@@ -418,18 +393,9 @@ def test_derive_serial_timing_clamps_to_spec(
     runtime_config.serial_response_timeout = 999.0
     runtime_config.serial_retry_attempts = 99
     timing = derive_serial_timing(runtime_config)
-    assert (
-        timing.ack_timeout_ms
-        == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-    )
-    assert (
-        timing.response_timeout_ms
-        == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-    )
-    assert (
-        timing.retry_limit
-        == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
-    )
+    assert timing.ack_timeout_ms == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    assert timing.response_timeout_ms == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    assert timing.retry_limit == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
 
 
 def test_on_serial_connected_raises_on_secret_mismatch(
@@ -619,9 +585,7 @@ def test_mailbox_read_requeues_on_send_failure(
         assert send_attempts[1][0] == Command.CMD_MAILBOX_READ_RESP.value
         # Final send is the ACK covering the MCU command.
         assert send_attempts[2][0] == Status.ACK.value
-        assert send_attempts[2][1] == struct.pack(
-            ">H", Command.CMD_MAILBOX_READ.value
-        )
+        assert send_attempts[2][1] == struct.pack(">H", Command.CMD_MAILBOX_READ.value)
 
     asyncio.run(_run())
 
@@ -655,9 +619,7 @@ def test_datastore_get_from_mcu_returns_cached_value(
         assert sent_frames[0][0] == Command.CMD_DATASTORE_GET_RESP.value
         assert sent_frames[0][1] == b"\x02" + b"42"
         assert sent_frames[1][0] == Status.ACK.value
-        assert sent_frames[1][1] == struct.pack(
-            ">H", Command.CMD_DATASTORE_GET.value
-        )
+        assert sent_frames[1][1] == struct.pack(">H", Command.CMD_DATASTORE_GET.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(
@@ -746,9 +708,7 @@ def test_datastore_put_from_mcu_updates_cache_and_mqtt(
 
         assert len(sent_frames) == 1
         assert sent_frames[0][0] == Status.ACK.value
-        assert sent_frames[0][1] == struct.pack(
-            ">H", Command.CMD_DATASTORE_PUT.value
-        )
+        assert sent_frames[0][1] == struct.pack(">H", Command.CMD_DATASTORE_PUT.value)
 
     asyncio.run(_run())
 
@@ -814,8 +774,7 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
 
         assert runtime_state.mqtt_publish_queue.qsize() == 2
         topic_payloads = [
-            runtime_state.mqtt_publish_queue.get_nowait()
-            for _ in range(2)
+            runtime_state.mqtt_publish_queue.get_nowait() for _ in range(2)
         ]
         # First message is the payload, second is the availability update.
         assert topic_payloads[0].topic_name == topic_path(
@@ -839,9 +798,7 @@ def test_mqtt_mailbox_write_blocked_when_topic_disabled(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.topic_authorization = TopicAuthorization(
-            mailbox_write=False
-        )
+        runtime_state.topic_authorization = TopicAuthorization(mailbox_write=False)
         service = BridgeService(runtime_config, runtime_state)
 
         await service.handle_mqtt_message(
@@ -914,9 +871,7 @@ def test_mqtt_datastore_put_blocked_when_topic_disabled(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.topic_authorization = TopicAuthorization(
-            datastore_put=False
-        )
+        runtime_state.topic_authorization = TopicAuthorization(datastore_put=False)
         service = BridgeService(runtime_config, runtime_state)
 
         await service.handle_mqtt_message(
@@ -944,9 +899,7 @@ def test_mqtt_datastore_put_blocked_when_topic_disabled(
         assert payload["status"] == "forbidden"
         assert payload["topic"] == "datastore"
         assert payload["action"] == "put"
-        assert ("bridge-error", "topic-action-forbidden") in (
-            queued.user_properties
-        )
+        assert ("bridge-error", "topic-action-forbidden") in (queued.user_properties)
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
@@ -957,9 +910,7 @@ def test_mqtt_shell_run_blocked_when_topic_disabled(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.topic_authorization = TopicAuthorization(
-            shell_run=False
-        )
+        runtime_state.topic_authorization = TopicAuthorization(shell_run=False)
         service = BridgeService(runtime_config, runtime_state)
 
         await service.handle_mqtt_message(
@@ -984,9 +935,7 @@ def test_mqtt_shell_run_blocked_when_topic_disabled(
         assert payload["status"] == "forbidden"
         assert payload["topic"] == Topic.SHELL.value
         assert payload["action"] == "run"
-        assert ("bridge-error", "topic-action-forbidden") in (
-            queued.user_properties
-        )
+        assert ("bridge-error", "topic-action-forbidden") in (queued.user_properties)
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
@@ -1241,9 +1190,7 @@ def test_mqtt_file_write_blocked_when_topic_disabled(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.topic_authorization = TopicAuthorization(
-            file_write=False
-        )
+        runtime_state.topic_authorization = TopicAuthorization(file_write=False)
         service = BridgeService(runtime_config, runtime_state)
 
         await service.handle_mqtt_message(
@@ -1350,9 +1297,7 @@ def test_run_command_respects_allow_list(
         assert status == Status.ERROR.value
         assert b"not allowed" in stderr
 
-        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
-            ["*"]
-        )
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
         service_with_wildcard = BridgeService(runtime_config, runtime_state)
 
         run_command = getattr(service_with_wildcard, "_run_command_sync")
@@ -1369,9 +1314,7 @@ def test_run_command_rejects_shell_metacharacters(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
-            ["*"]
-        )
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
         service = BridgeService(runtime_config, runtime_state)
 
         run_sync = getattr(service, "_run_command_sync")
@@ -1388,9 +1331,7 @@ def test_process_run_async_rejects_unsafe_command(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
-            ["*"]
-        )
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
         service = BridgeService(runtime_config, runtime_state)
 
         sent_frames: list[tuple[int, bytes]] = []
@@ -1520,9 +1461,7 @@ def test_process_run_async_failure_emits_error(
 
         service.register_serial_sender(fake_sender)
 
-        async def failing_start_async(
-            self: ProcessComponent, command: str
-        ) -> int:
+        async def failing_start_async(self: ProcessComponent, command: str) -> int:
             return 0xFFFF
 
         monkeypatch.setattr(
@@ -1543,9 +1482,7 @@ def test_process_run_async_failure_emits_error(
 
         ack_id, ack_payload = sent_frames[1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(
-            ">H", Command.CMD_PROCESS_RUN_ASYNC.value
-        )
+        assert ack_payload == struct.pack(">H", Command.CMD_PROCESS_RUN_ASYNC.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(

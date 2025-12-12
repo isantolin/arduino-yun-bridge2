@@ -1,4 +1,5 @@
 """Durable spool for MQTT publish messages with memory fallback."""
+
 from __future__ import annotations
 
 import collections
@@ -73,9 +74,7 @@ class MQTTPublishSpool:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 queue_dir = self.directory / "queue"
                 queue_dir.mkdir(parents=True, exist_ok=True)
-                self._disk_queue = cast(
-                    DiskQueue, DiskDeque(directory=str(queue_dir))
-                )
+                self._disk_queue = cast(DiskQueue, DiskDeque(directory=str(queue_dir)))
             except Exception as exc:
                 logger.warning(
                     "Failed to initialize disk spool at %s; falling back "
@@ -220,11 +219,7 @@ class MQTTPublishSpool:
                 )
 
     def _handle_disk_error(self, exc: Exception, op: str) -> None:
-        reason = (
-            "disk_full"
-            if getattr(exc, "errno", 0) == errno.ENOSPC
-            else "io_error"
-        )
+        reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
         message = (
             "MQTT Spool disk error during %s: %s. "
             "Switching to memory-only mode (reason=%s)."

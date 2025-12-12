@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Example: Test file I/O using the async YunBridge client."""
+
 import asyncio
 import logging
 
@@ -34,8 +35,7 @@ async def main() -> None:
         if decoded == test_content:
             logging.info("SUCCESS: Read content matches written content.")
         else:
-            logging.error("FAILURE: Read content does not match written "
-                          "content.")
+            logging.error("FAILURE: Read content does not match written " "content.")
 
     except Exception as e:
         logging.error(f"An error occurred: {e}")

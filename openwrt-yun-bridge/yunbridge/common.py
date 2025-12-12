@@ -1,4 +1,5 @@
 """Utility helpers shared across Yun Bridge packages."""
+
 from __future__ import annotations
 
 import logging
@@ -111,14 +112,16 @@ def encode_status_reason(reason: str | None) -> bytes:
 
 def build_mqtt_properties(message: Any) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
-    has_props = any([
-        message.content_type,
-        message.payload_format_indicator is not None,
-        message.message_expiry_interval is not None,
-        message.response_topic,
-        message.correlation_data is not None,
-        message.user_properties,
-    ])
+    has_props = any(
+        [
+            message.content_type,
+            message.payload_format_indicator is not None,
+            message.message_expiry_interval is not None,
+            message.response_topic,
+            message.correlation_data is not None,
+            message.user_properties,
+        ]
+    )
 
     if not has_props:
         return None
@@ -197,7 +200,7 @@ def get_uci_config() -> dict[str, str]:
     if not options:
         logger.warning("UCI returned no options for 'yunbridge'; using defaults.")
         return get_default_config()
-    
+
     return UciConfigModel.from_mapping(options).as_dict()
 
 
@@ -214,7 +217,7 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
         return {}
 
     typed_section = _as_option_dict(cast(Mapping[str, Any], section))
-    
+
     # Direct Key-Value dictionary (Simple case)
     if ".name" in typed_section or ".type" in typed_section:
         flattened: dict[str, Any] = {}
@@ -226,7 +229,7 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
 
     # Attempt to handle nested or complex responses (legacy shim fallback removed)
     # We now strictly expect a valid UCI section dict or we fail to defaults.
-    
+
     return {}
 
 
@@ -274,12 +277,8 @@ class UciConfigModel:
     serial_retry_timeout: str = str(DEFAULT_SERIAL_RETRY_TIMEOUT)
     serial_response_timeout: str = str(DEFAULT_SERIAL_RESPONSE_TIMEOUT)
     serial_retry_attempts: str = str(DEFAULT_SERIAL_RETRY_ATTEMPTS)
-    serial_handshake_min_interval: str = str(
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    )
-    serial_handshake_fatal_failures: str = str(
-        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    )
+    serial_handshake_min_interval: str = str(DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL)
+    serial_handshake_fatal_failures: str = str(DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES)
     debug: str = "0"
     allowed_commands: str = ""
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
@@ -327,8 +326,7 @@ class UciConfigModel:
 
         if self.extras:
             self.extras = {
-                str(key): _stringify_value(value)
-                for key, value in self.extras.items()
+                str(key): _stringify_value(value) for key, value in self.extras.items()
             }
 
     @classmethod

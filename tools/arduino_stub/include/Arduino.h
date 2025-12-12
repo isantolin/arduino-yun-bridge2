@@ -141,8 +141,8 @@ class HardwareSerial : public Stream {
 	void setTimeout(unsigned long) {}
 };
 
-inline HardwareSerial Serial;
-inline HardwareSerial Serial1;
+extern HardwareSerial Serial;
+extern HardwareSerial Serial1;
 
 template <typename T>
 constexpr T constrain(T value, T minimum, T maximum) {

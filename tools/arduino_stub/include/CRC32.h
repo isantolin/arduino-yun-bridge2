@@ -43,13 +43,7 @@ class CRC32 {
 
  private:
   void step(uint8_t byte) {
-    uint32_t idx = (state_ ^ byte) & 0xFFu;
-    state_ = (state_ >> 8) ^ kTable[idx];
-  }
-
-  uint32_t state_;
-
-  static constexpr uint32_t kTable[256] = {
+    static const uint32_t kTable[256] = {
       0x00000000u, 0x77073096u, 0xEE0E612Cu, 0x990951BAu, 0x076DC419u,
       0x706AF48Fu, 0xE963A535u, 0x9E6495A3u, 0x0EDB8832u, 0x79DCB8A4u,
       0xE0D5E91Eu, 0x97D2D988u, 0x09B64C2Bu, 0x7EB17CBDu, 0xE7B82D07u,
@@ -102,4 +96,10 @@ class CRC32 {
       0xCDD70693u, 0x54DE5729u, 0x23D967BFu, 0xB3667A2Eu, 0xC4614AB8u,
       0x5D681B02u, 0x2A6F2B94u, 0xB40BBE37u, 0xC30C8EA1u, 0x5A05DF1Bu,
       0x2D02EF8Du};
+    uint32_t idx = (state_ ^ byte) & 0xFFu;
+    state_ = (state_ >> 8) ^ kTable[idx];
+  }
+
+  uint32_t state_;
+  // static constexpr uint32_t kTable[256] = ... removed from here
 };

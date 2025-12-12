@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <iterator>
 #include <array>
-#include <charconv>
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -639,8 +638,15 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                    int offset = 0;
                    if (path_len > prefix_len) {
                        const char* num_start = path_start + prefix_len;
-                       const char* num_end = path_start + path_len;
-                       std::from_chars(num_start, num_end, offset);
+                       // Simple manual parsing for C++11 compliance (avoiding <charconv>)
+                       for (size_t i = 0; i < (path_len - prefix_len); ++i) {
+                           char c = num_start[i];
+                           if (c >= '0' && c <= '9') {
+                               offset = offset * 10 + (c - '0');
+                           } else {
+                               break;
+                           }
+                       }
                    }
                    
                    for (size_t i = 0; i < data_len; i++) {

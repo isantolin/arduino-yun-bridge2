@@ -83,8 +83,8 @@ class BridgeClass {
   void onStatus(StatusHandler handler);
 
   // Internal / Lower Level
-  [[nodiscard]] bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
-  [[nodiscard]] bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
+  bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
+  bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
   void flushStream();
   uint8_t* getScratchBuffer() { return _scratch_payload; }
 

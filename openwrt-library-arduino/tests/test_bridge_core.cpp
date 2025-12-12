@@ -11,6 +11,10 @@
 
 #include "protocol/rpc_protocol.h"
 
+// Define global Serial instances for the stub
+HardwareSerial Serial;
+HardwareSerial Serial1;
+
 // Mock Stream
 class MockStream : public Stream {
 public:

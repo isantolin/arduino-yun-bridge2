@@ -35,3 +35,6 @@ pythonVersion = "3.11"
 executionEnvironments = [
   { root = "openwrt-yun-bridge/yunbridge" }
 ]
+
+[tool.ruff]
+target-version = "py311"

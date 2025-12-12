@@ -45,7 +45,7 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     if handshake:
         out.write(f"constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = {handshake['nonce_length']};\n")
         out.write(f"constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = {handshake['tag_length']};\n")
-        out.write(f"constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;\n")
+        out.write("constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;\n")
         out.write(f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n")
         out.write(f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n")
         out.write(f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {handshake['response_timeout_min_ms']};\n")
@@ -87,7 +87,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(f"HANDSHAKE_TAG_DESCRIPTION: Final[str] = \"{handshake['tag_description']}\"\n")
         out.write(f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n")
         out.write(f"HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = \"{handshake['config_description']}\"\n")
-        out.write(f"HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n")
+        out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n")
         out.write(f"HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = {handshake['ack_timeout_min_ms']}\n")
         out.write(f"HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = {handshake['ack_timeout_max_ms']}\n")
         out.write(f"HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = {handshake['response_timeout_min_ms']}\n")
@@ -98,14 +98,14 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     formats = spec.get("data_formats", {})
     if formats:
         out.write(f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n")
-        out.write(f"DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n")
+        out.write("DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n")
         out.write(f"DATASTORE_VALUE_LEN_FORMAT: Final[str] = \"{formats['datastore_value_len_format']}\"\n")
-        out.write(f"DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n")
+        out.write("DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n")
         out.write(f"CRC_COVERED_HEADER_FORMAT: Final[str] = \"{formats['crc_covered_header_format']}\"\n")
-        out.write(f"CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n")
+        out.write("CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n")
         out.write(f"CRC_FORMAT: Final[str] = \"{formats['crc_format']}\"\n")
-        out.write(f"CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
-        out.write(f"MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n")
+        out.write("CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
+        out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n")
 
     out.write("class Status(IntEnum):\n")
     for status in spec["statuses"]:

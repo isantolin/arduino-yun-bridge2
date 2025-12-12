@@ -196,13 +196,13 @@ class UciConfigModel:
             target_type = field_info.type
 
             # Type conversion logic
-            if target_type == bool:
+            if target_type is bool:
                 init_args[key_str] = _parse_bool(value)
-            elif target_type == int:
+            elif target_type is int:
                 # Get default from field or constant if possible for fallback
                 default = field_info.default if isinstance(field_info.default, int) else 0
                 init_args[key_str] = _parse_int(value, default)
-            elif target_type == float:
+            elif target_type is float:
                 default = field_info.default if isinstance(field_info.default, (int, float)) else 0.0
                 init_args[key_str] = _parse_float(value, default)
             else:

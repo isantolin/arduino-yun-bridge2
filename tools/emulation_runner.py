@@ -8,7 +8,6 @@ It serves as the End-to-End test entrypoint.
 """
 import sys
 import subprocess
-import time
 import logging
 from pathlib import Path
 

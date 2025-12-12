@@ -127,7 +127,7 @@ async def test_serial_reader_task_reconnects():
         b"",
         asyncio.CancelledError(),
     ]  # First EOF, then exit loop via cancel
-    
+
     # StreamWriter has mixed sync/async methods
     mock_writer = MagicMock()
     mock_writer.drain = AsyncMock()

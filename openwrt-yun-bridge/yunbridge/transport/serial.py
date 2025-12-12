@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from typing import Sized, TypeGuard, cast
+from typing import TypeGuard
 
 import serial
 import serial_asyncio

@@ -46,7 +46,6 @@ async def supervise_task(
     """Run *coro_factory* restarting it on failures using native loops."""
     log = logger or logging.getLogger("yunbridge.supervisor")
     current_backoff = min_backoff
-    restart_window_start = time.monotonic()
     restarts_in_window = 0
     restart_window_duration = max(1.0, restart_interval)
 
@@ -87,13 +86,12 @@ async def supervise_task(
             if runtime > restart_window_duration:
                 # Task ran long enough to be considered healthy
                 restarts_in_window = 0
-                restart_window_start = now
                 current_backoff = min_backoff
                 if state is not None:
                     state.mark_supervisor_healthy(name)
-            
+
             restarts_in_window += 1
-            
+
             if max_restarts is not None and restarts_in_window > max_restarts:
                 log.error(
                     "%s exceeded max restarts (%d) in window; giving up",
@@ -117,7 +115,7 @@ async def supervise_task(
                 state.record_supervisor_failure(
                     name, backoff=current_backoff, exc=exc
                 )
-            
+
             try:
                 await asyncio.sleep(current_backoff)
             except asyncio.CancelledError:
@@ -150,7 +148,7 @@ class TaskSupervisor:
             for task in self._tasks:
                 if not task.done():
                     task.cancel()
-            
+
             try:
                 await self._group.__aexit__(exc_type, exc_val, exc_tb)
             except Exception as exc:

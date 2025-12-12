@@ -7,7 +7,6 @@ Reads spec.toml and generates:
 """
 
 import argparse
-import sys
 from pathlib import Path
 from typing import Any, TextIO
 import tomllib

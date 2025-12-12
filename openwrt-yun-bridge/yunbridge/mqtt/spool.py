@@ -10,7 +10,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Deque as TypingDeque, Protocol, Callable, cast, Any
+from typing import Deque as TypingDeque, Protocol, Callable, cast
 
 from .messages import SpoolRecord, QueuedPublish
 

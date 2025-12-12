@@ -71,6 +71,7 @@ class MockInfo:
     def is_published(self) -> bool:
         return True
 
+
 class CapturingFakeClient:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.args = args
@@ -101,6 +102,7 @@ class CapturingFakeClient:
     def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
         self.published.append((topic, payload, qos))
         return MockInfo()
+
 
 def test_publish_with_retries_configures_tls(
     pin_rest_module: ModuleType,

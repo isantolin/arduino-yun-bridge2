@@ -6,10 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import time
-from dataclasses import dataclass
-from typing import Callable, cast
-from collections.abc import Awaitable
+from typing import cast
 
 from builtins import BaseExceptionGroup, ExceptionGroup
 
@@ -19,9 +16,6 @@ from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
-    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
-    SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    SUPERVISOR_DEFAULT_MAX_BACKOFF,
 )
 from yunbridge.metrics import (
     PrometheusExporter,
@@ -33,7 +27,7 @@ from yunbridge.services.runtime import (
     SerialHandshakeFatal,
 )
 from yunbridge.services.task_supervisor import SupervisedTaskSpec, supervise_task
-from yunbridge.state.context import RuntimeState, create_runtime_state
+from yunbridge.state.context import create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.transport import (
     build_mqtt_tls_context,
@@ -45,6 +39,7 @@ from yunbridge.watchdog import WatchdogKeepalive
 
 
 logger = logging.getLogger("yunbridge")
+
 
 async def main_async(config: RuntimeConfig) -> None:
     state = create_runtime_state(config)

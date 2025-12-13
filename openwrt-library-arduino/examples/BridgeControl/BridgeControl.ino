@@ -38,7 +38,7 @@ void printHexValue(Print& target, uint16_t value, uint8_t width) {
   }
 }
 
-void handleDigitalReadResponse(int value) {
+void handleDigitalReadResponse(uint8_t value) {
   Console.print(F("Respuesta asíncrona de lectura digital: "));
   Console.println(value);
 }
@@ -74,6 +74,8 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
 }
 
 void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
+  (void)payload;
+  (void)length;
   Console.print(F("Estado: 0x"));
   printHexValue(Console, rpc::to_underlying(status_code), 2);
   Console.println();

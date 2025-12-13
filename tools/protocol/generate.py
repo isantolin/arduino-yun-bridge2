@@ -53,16 +53,16 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         )
         out.write("constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;\n")
         out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n"
+            f"constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n"
         )
         out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n"
+            f"constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n"
         )
         out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {handshake['response_timeout_min_ms']};\n"
+            f"constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {handshake['response_timeout_min_ms']};\n"
         )
         out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {handshake['response_timeout_max_ms']};\n"
+            f"constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {handshake['response_timeout_max_ms']};\n"
         )
         out.write(
             f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {handshake['retry_limit_min']};\n"

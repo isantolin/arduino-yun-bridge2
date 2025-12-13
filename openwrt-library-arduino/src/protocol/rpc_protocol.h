@@ -17,10 +17,10 @@ constexpr unsigned int RPC_BUFFER_SIZE = 128;
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;
-constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = 25;
-constexpr unsigned int RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = 60000;
-constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = 100;
-constexpr unsigned int RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = 180000;
+constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = 25;
+constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = 60000;
+constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = 100;
+constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = 180000;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = 1;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = 8;
 

@@ -19,6 +19,7 @@
 // BridgeClass when BRIDGE_DEBUG_FRAMES is enabled.
 
 namespace {
+#if BRIDGE_DEBUG_FRAMES
 const unsigned long kSendIntervalMs = 5000;
 unsigned long last_send_ms = 0;
 
@@ -52,6 +53,7 @@ void clearSnapshotStats() {
   Bridge.resetTxDebugStats();
   Serial.println(F("[FrameDebug] Snapshot cleared"));
 }
+#endif
 }
 
 void setup() {

@@ -74,7 +74,7 @@ uint16_t calculateFreeMemoryBytes() {
   if (free_bytes < 0) {
     free_bytes = 0;
   }
-  if (free_bytes > 0xFFFF) {
+  if (static_cast<size_t>(free_bytes) > 0xFFFF) {
     free_bytes = 0xFFFF;
   }
   return static_cast<uint16_t>(free_bytes);
@@ -99,37 +99,38 @@ BridgeClass::BridgeClass(Stream& stream)
       _parser(),
       _builder(),
       _rx_frame{},
+      _last_cobs_frame{},
+      _awaiting_ack(false),
+      _flow_paused(false),
+      _last_command_id(0),
+      _last_cobs_length(0),
+      _retry_count(0),
+      _last_send_millis(0),
+      _ack_timeout_ms(kAckTimeoutMs),
+      _ack_retry_limit(kMaxAckRetries),
+      _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
       _command_handler(nullptr),
       _datastore_get_handler(nullptr),
       _mailbox_handler(nullptr),
       _mailbox_available_handler(nullptr),
       _process_run_handler(nullptr),
       _process_poll_handler(nullptr),
-      _process_run_async_handler(nullptr),
-      _file_system_read_handler(nullptr),
       _digital_read_handler(nullptr),
       _analog_read_handler(nullptr),
+      _process_run_async_handler(nullptr),
+      _file_system_read_handler(nullptr),
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
+      _pending_tx_head(0),
+      _pending_tx_count(0),
       _pending_datastore_head(0),
       _pending_datastore_count(0),
       _pending_process_poll_head(0),
-      _pending_process_poll_count(0),
-      _pending_tx_head(0),
-      _pending_tx_count(0)
+      _pending_process_poll_count(0)
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
-      , _awaiting_ack(false),
-      _flow_paused(false), // Initialize Flow Control State
-      _last_command_id(0),
-      _last_cobs_frame{},
-      _last_cobs_length(0),
-      _retry_count(0),
-      _last_send_millis(0),
-      _ack_timeout_ms(kAckTimeoutMs),
-      _ack_retry_limit(kMaxAckRetries),
-      _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS) {
+{
   memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
   memset(
       _pending_datastore_key_lengths,
@@ -624,7 +625,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         // Protocol: [len_path (1B)][path...][data...]
         if (payload_length > 1 && payload_data) {
            uint8_t path_len = payload_data[0];
-           if (payload_length >= 1 + path_len) {
+           if (payload_length >= static_cast<size_t>(1 + path_len)) {
                // We don't allocate path buffer to save stack, we inspect in place
                const char* path_start = reinterpret_cast<const char*>(payload_data + 1);
                const uint8_t* data_ptr = payload_data + 1 + path_len;
@@ -665,6 +666,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
                        eeprom_update_byte((uint8_t*)(offset + i), data_ptr[i]);
                    }
                }
+#else
+               (void)data_ptr;
+               (void)data_len;
+               (void)is_eeprom;
 #endif
            }
         }
@@ -1130,11 +1135,13 @@ void BridgeClass::analogWrite(uint8_t pin, int value) {
 void BridgeClass::requestDigitalRead(uint8_t pin) {
   // Deprecated: MCU no longer initiates pin reads.
   // No-op.
+  (void)pin;
 }
 
 void BridgeClass::requestAnalogRead(uint8_t pin) {
   // Deprecated: MCU no longer initiates pin reads.
   // No-op.
+  (void)pin;
 }
 
 void BridgeClass::requestProcessRun(const char* command) {

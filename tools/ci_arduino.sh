@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Ensure we are in the repo root
 cd "$(dirname "$0")/.."
@@ -31,6 +31,7 @@ LIB_PATH="$PWD/openwrt-library-arduino"
 # Compile examples
 FQBN="arduino:avr:yun"
 EXAMPLES_DIR="$LIB_PATH/examples"
+BUILD_OUTPUT_DIR="${1:-}"
 
 echo "Compiling examples for $FQBN..."
 
@@ -41,13 +42,24 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    arduino-cli compile --fqbn "$FQBN" \
-        --library "$LIB_PATH" \
-        --warnings all \
-        "$sketch"
+    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings all"
+    
+    if [ -n "$BUILD_OUTPUT_DIR" ]; then
+        # Create specific output dir for this sketch to avoid overwrites
+        SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/$sketch_name"
+        mkdir -p "$SKETCH_BUILD_DIR"
+        BUILD_FLAGS="$BUILD_FLAGS --build-path $SKETCH_BUILD_DIR"
+    fi
+
+    arduino-cli compile $BUILD_FLAGS "$sketch"
         
-    if [ $? -eq 0 ]; then
-        echo "✓ $sketch_name compiled successfully"
+    if [ $? -ne 0 ]; then
+        echo "✗ $sketch_name failed to compile!"
+        exit 1
+    fi
+    
+    echo "✓ $sketch_name compiled successfully"
+done
     else
         echo "✗ $sketch_name failed to compile"
         exit 1

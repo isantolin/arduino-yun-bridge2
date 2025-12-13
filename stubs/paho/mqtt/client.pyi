@@ -1,75 +1,25 @@
-from typing import Any, Callable, Optional, Union
-from enum import Enum
-from .properties import Properties
+from typing import Any, Callable
 
-MQTTv31: int
-MQTTv311: int
-MQTTv5: int
 
-class CallbackAPIVersion(Enum):
-    VERSION1 = 1
-    VERSION2 = 2
+MQTTv5: int = ...
+
 
 class MQTTMessageInfo:
     mid: int
-    rc: int
     def is_published(self) -> bool: ...
-    def wait_for_publish(self, timeout: float = ...) -> None: ...
+    def wait_for_publish(self) -> None: ...
+
 
 class Client:
-    def __init__(
-        self,
-        client_id: str = "",
-        clean_session: bool | None = None,
-        userdata: Any = None,
-        protocol: int = MQTTv311,
-        transport: str = "tcp",
-        reconnect_on_failure: bool = True,
-        callback_api_version: CallbackAPIVersion = CallbackAPIVersion.VERSION1,
-    ) -> None: ...
-    
-    def tls_set(
-        self,
-        ca_certs: str | None = None,
-        certfile: str | None = None,
-        keyfile: str | None = None,
-        cert_reqs: int | None = None,
-        tls_version: int | None = None,
-        ciphers: str | None = None,
-        keyfile_password: str | None = None,
-    ) -> None: ...
-    
-    def username_pw_set(
-        self,
-        username: str | None = None,
-        password: str | None = None,
-    ) -> None: ...
-    
-    def connect(
-        self,
-        host: str,
-        port: int = 1883,
-        keepalive: int = 60,
-        bind_address: str = "",
-        bind_port: int = 0,
-        clean_start: int = 3,
-        properties: Properties | None = None,
-    ) -> int: ...
-    
+    def __init__(self, client_id: str = ..., clean_session: bool | None = ..., userdata: Any = ..., protocol: int = ..., transport: str = ..., reconnect_on_failure: bool = ..., callback_api_version: Any = ...) -> None: ...
+    def tls_set(self, ca_certs: str | None = ..., certfile: str | None = ..., keyfile: str | None = ..., cert_reqs: Any | None = ..., tls_version: Any | None = ..., ciphers: str | None = ...) -> None: ...
+    def username_pw_set(self, username: str, password: str | None = ...) -> None: ...
+    def connect(self, host: str, port: int = ..., keepalive: int = ..., bind_address: str = ...) -> Any: ...
     def loop_start(self) -> None: ...
-    def loop_stop(self, force: bool = False) -> None: ...
-    
-    def publish(
-        self,
-        topic: str,
-        payload: Any = None,
-        qos: int = 0,
-        retain: bool = False,
-        properties: Properties | None = None,
-    ) -> MQTTMessageInfo: ...
-    
-    def disconnect(
-        self,
-        reasoncode: int | None = None,
-        properties: Properties | None = None,
-    ) -> int: ...
+    def loop_stop(self, force: bool = ...) -> None: ...
+    def publish(self, topic: str, payload: Any = ..., qos: int = ..., retain: bool = ...) -> MQTTMessageInfo: ...
+    def disconnect(self) -> Any: ...
+
+    on_connect: Callable[..., Any] | None
+    on_publish: Callable[..., Any] | None
+    on_disconnect: Callable[..., Any] | None

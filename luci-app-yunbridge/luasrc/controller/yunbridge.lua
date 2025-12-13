@@ -98,13 +98,15 @@ function index()
     -- Configuration and status pages
     entry({"admin", "services", "yunbridge"}, cbi("yunbridge"), "YunBridge", 90).dependent = true
     entry({"admin", "services", "yunbridge", "webui"}, template("yunbridge/webui"), "Web UI", 100).dependent = false
-    entry({"admin", "services", "yunbridge", "status"}, template("yunbridge/status"), "Daemon Status", 110).dependent = false
-    entry({"admin", "services", "yunbridge", "credentials"}, template("yunbridge/credentials"), "Credentials & TLS", 120).dependent = false
+    entry({"admin", "services", "yunbridge", "status"}, template("yunbridge/status"), "Daemon Status", 110)
+        .dependent = false
+    entry({"admin", "services", "yunbridge", "credentials"}, template("yunbridge/credentials"),
+        "Credentials & TLS", 120).dependent = false
 
     -- Internal actions for status page
     entry({"admin", "services", "yunbridge", "status_raw"}, call("action_status")).leaf = true
     -- Logs actions removed
-    
+
     entry({"admin", "services", "yunbridge", "mqtt_ws_auth"}, call("action_mqtt_ws_auth")).leaf = true
     entry({"admin", "services", "yunbridge", "mqtt_ws_url"}, call("action_mqtt_ws_url")).leaf = true
     entry({"admin", "services", "yunbridge", "rotate_credentials"}, call("action_rotate_credentials")).leaf = true
@@ -168,7 +170,7 @@ function action_api(...)
     local payload = (state == "ON") and "1" or "0"
     local topic = string.format("%s/d/%s", topic_prefix, pin_number)
     local client_id = string.format("luci-api-%s-%s", pin_number, os.time())
-    local args = {
+    local pub_args = {
         "mosquitto_pub",
         "-h", host,
         "-p", tostring(port),
@@ -180,14 +182,14 @@ function action_api(...)
 
     if tls == "1" then
         if cafile ~= "" then
-            args[#args + 1] = "--cafile"
-            args[#args + 1] = cafile
+            pub_args[#pub_args + 1] = "--cafile"
+            pub_args[#pub_args + 1] = cafile
         end
-        args[#args + 1] = "--tls-version"
-        args[#args + 1] = "tlsv1.2"
+        pub_args[#pub_args + 1] = "--tls-version"
+        pub_args[#pub_args + 1] = "tlsv1.2"
     end
 
-    local ok, last_error = mosquitto_publish_with_retries(args, 3, 0.5)
+    local ok, last_error = mosquitto_publish_with_retries(pub_args, 3, 0.5)
 
     if ok then
         send_json(200, {
@@ -253,7 +255,8 @@ function action_rotate_credentials()
     local sketch_snippet
     if serial_secret then
         sketch_snippet = string.format(
-            '#define BRIDGE_SERIAL_SHARED_SECRET "%s"\n#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)',
+            '#define BRIDGE_SERIAL_SHARED_SECRET "%s"\n' ..
+            '#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)',
             serial_secret
         )
     end

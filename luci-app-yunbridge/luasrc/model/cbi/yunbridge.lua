@@ -1,6 +1,5 @@
 local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
-local http = require "luci.http"
 
 -- Guarantee the daemon always has a 'general' section to edit.
 local function ensure_general_section()
@@ -31,12 +30,9 @@ local function ensure_general_section()
         return false
     end)
 
-    local changed = false
-
     if fallback_data then
         uci:delete("yunbridge", fallback_name)
         uci:section("yunbridge", "general", "general", fallback_data)
-        changed = true
     else
         uci:section("yunbridge", "general", "general", {
             enabled = "1",
@@ -58,12 +54,9 @@ local function ensure_general_section()
             allowed_commands = "",
             serial_shared_secret = "changeme123",
         })
-        changed = true
     end
 
-    if changed then
-        uci:commit("yunbridge")
-    end
+    uci:commit("yunbridge")
 end
 
 ensure_general_section()
@@ -114,12 +107,14 @@ mqtt_pass.rmempty = true
 local mqtt_tls = s:option(Flag, "mqtt_tls", translate("Enable TLS/SSL"))
 mqtt_tls.rmempty = false
 mqtt_tls.default = "1"
-mqtt_tls.description = translate("Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext.")
+mqtt_tls.description = translate("Strongly recommended. Disabling TLS sends MQTT credentials " ..
+    "and payloads in plaintext.")
 
 local mqtt_cafile = s:option(Value, "mqtt_cafile", translate("CA File Path"))
 mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
 mqtt_cafile:depends("mqtt_tls", "1")
 mqtt_cafile.rmempty = true
+
 local function is_tls_enabled(section)
     local form_value = mqtt_tls:formvalue(section)
     if form_value == nil then
@@ -128,7 +123,7 @@ local function is_tls_enabled(section)
     return tostring(form_value or "0") == "1"
 end
 
-function mqtt_cafile.validate(self, value, section)
+function mqtt_cafile.validate(_, value, section)
     if is_tls_enabled(section) then
         if not value or value == "" then
             return nil, translate("CA file is required when TLS is enabled.")
@@ -151,7 +146,7 @@ local mqtt_topic = s:option(Value, "mqtt_topic", translate("MQTT Topic Prefix"))
 mqtt_topic.placeholder = "br"
 mqtt_topic.rmempty = false
 mqtt_topic.description = translate("Base topic used for bridge messages (for example br/d/<pin>).")
-function mqtt_topic.validate(self, value, section)
+function mqtt_topic.validate(_, value, _)
     if not value or value == "" then
         return nil, translate("Topic prefix cannot be empty.")
     end
@@ -197,87 +192,87 @@ end
 mqtt_acl_option(
     "mqtt_allow_file_read",
     "Allow file reads",
-    "Accept MQTT requests that read files via br/fs/read.",
+    "Accept MQTT requests that read files via br/fs/read."
 )
 mqtt_acl_option(
     "mqtt_allow_file_write",
     "Allow file writes",
-    "Accept MQTT requests that write files via br/fs/write.",
+    "Accept MQTT requests that write files via br/fs/write."
 )
 mqtt_acl_option(
     "mqtt_allow_file_remove",
     "Allow file deletes",
-    "Accept MQTT requests that delete files via br/fs/remove.",
+    "Accept MQTT requests that delete files via br/fs/remove."
 )
 mqtt_acl_option(
     "mqtt_allow_datastore_get",
     "Allow datastore get",
-    "Allow clients to read key/value pairs via br/datastore/get.",
+    "Allow clients to read key/value pairs via br/datastore/get."
 )
 mqtt_acl_option(
     "mqtt_allow_datastore_put",
     "Allow datastore put",
-    "Allow clients to modify key/value pairs via br/datastore/put.",
+    "Allow clients to modify key/value pairs via br/datastore/put."
 )
 mqtt_acl_option(
     "mqtt_allow_mailbox_read",
     "Allow mailbox read",
-    "Permit MQTT reads from the MCU mailbox.",
+    "Permit MQTT reads from the MCU mailbox."
 )
 mqtt_acl_option(
     "mqtt_allow_mailbox_write",
     "Allow mailbox write",
-    "Permit MQTT writes into the MCU mailbox queue.",
+    "Permit MQTT writes into the MCU mailbox queue."
 )
 mqtt_acl_option(
     "mqtt_allow_shell_run",
     "Allow shell run",
-    "Allow synchronous shell execution via br/sh/run.",
+    "Allow synchronous shell execution via br/sh/run."
 )
 mqtt_acl_option(
     "mqtt_allow_shell_run_async",
     "Allow shell run_async",
-    "Allow asynchronous shell execution via br/sh/run_async.",
+    "Allow asynchronous shell execution via br/sh/run_async."
 )
 mqtt_acl_option(
     "mqtt_allow_shell_poll",
     "Allow shell poll",
-    "Allow polling of asynchronous shell jobs via br/sh/poll.",
+    "Allow polling of asynchronous shell jobs via br/sh/poll."
 )
 mqtt_acl_option(
     "mqtt_allow_shell_kill",
     "Allow shell kill",
-    "Allow canceling asynchronous shell jobs via br/sh/kill.",
+    "Allow canceling asynchronous shell jobs via br/sh/kill."
 )
 mqtt_acl_option(
     "mqtt_allow_console_input",
     "Allow console input",
-    "Permit MQTT writes to br/console/in to reach the MCU console.",
+    "Permit MQTT writes to br/console/in to reach the MCU console."
 )
 mqtt_acl_option(
     "mqtt_allow_digital_write",
     "Allow digital write",
-    "Allow MQTT writes to br/d/<pin>/write.",
+    "Allow MQTT writes to br/d/<pin>/write."
 )
 mqtt_acl_option(
     "mqtt_allow_digital_read",
     "Allow digital read",
-    "Allow MQTT reads via br/d/<pin>/read.",
+    "Allow MQTT reads via br/d/<pin>/read."
 )
 mqtt_acl_option(
     "mqtt_allow_digital_mode",
     "Allow digital mode",
-    "Allow MQTT access to br/d/<pin>/mode.",
+    "Allow MQTT access to br/d/<pin>/mode."
 )
 mqtt_acl_option(
     "mqtt_allow_analog_write",
     "Allow analog write",
-    "Allow MQTT writes to br/a/<pin>/write.",
+    "Allow MQTT writes to br/a/<pin>/write."
 )
 mqtt_acl_option(
     "mqtt_allow_analog_read",
     "Allow analog read",
-    "Allow MQTT reads via br/a/<pin>/read.",
+    "Allow MQTT reads via br/a/<pin>/read."
 )
 
 local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("Serial Shared Secret"))
@@ -288,7 +283,7 @@ end
 -- Deleted: Manual required_field_rules table and validation functions.
 -- LuCI handles dependencies (depends) and required fields (rmempty=false) natively.
 
-function m.on_commit(map)
+function m.on_commit(_)
     -- Restart the daemon so changes take effect immediately.
     sys.call("/etc/init.d/yunbridge restart >/dev/null 2>&1")
 end

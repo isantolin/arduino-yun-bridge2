@@ -11,7 +11,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from paho.mqtt.client import CallbackAPIVersion, Client, MQTTv5
+from paho.mqtt.client import Client, MQTTv5
+from paho.mqtt.enums import CallbackAPIVersion
 
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import resolve_tls_material

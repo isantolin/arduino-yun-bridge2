@@ -15,6 +15,10 @@
         "openwrt-yun-bridge"
     ],
     "exclude": [
-        "openwrt-sdk"
+        "openwrt-sdk",
+        "**/__pycache__",
+        "**/node_modules",
+        "**/.*",
+        ".venv_debug"
     ]
 }

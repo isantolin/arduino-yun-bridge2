@@ -1,4 +1,0 @@
-typecheck: commands[0]> pyright
-0 errors, 0 warnings, 0 informations
-  typecheck: OK (11.35=setup[0.17]+cmd[11.18] seconds)
-  congratulations :) (11.53 seconds)

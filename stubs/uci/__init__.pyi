@@ -1,29 +1,17 @@
-from typing import Any, TypeVar
-from collections.abc import Mapping
-
-
-class UciException(Exception):
-    ...
-
-
-_T = TypeVar("_T")
+from typing import Any, Dict, Optional
+from types import TracebackType
 
 
 class Uci:
-    def __enter__(self: _T) -> _T: ...
+    def __init__(self) -> None: ...
+
+    def __enter__(self) -> "Uci": ...
 
     def __exit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        tb: Any | None,
+        exc_type: Optional[type[BaseException]],
+        exc_value: Optional[BaseException],
+        traceback: Optional[TracebackType],
     ) -> None: ...
 
-    def get_all(self, package: str, section: str) -> Mapping[str, Any]: ...
-
-
-def UciCursor() -> Uci:
-    ...
-
-
-__all__ = ["Uci", "UciException"]
+    def get_all(self, package: str, section: str) -> Dict[str, Any]: ...

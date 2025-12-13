@@ -30,9 +30,11 @@ def main():
             sys.exit(0)
 
     # 2. Paths
-    firmware_path = Path("openwrt-library-arduino/build/Bridge.ino.elf")
+    # The CI script now outputs to build/<SketchName>/<SketchName>.ino.elf
+    firmware_path = Path("openwrt-library-arduino/build/Bridge/Bridge.ino.elf")
     if not firmware_path.exists():
-        logger.warning("Firmware ELF not found. Skipping emulation.")
+        logger.warning(f"Firmware ELF not found at {firmware_path}. Skipping emulation.")
+        # In CI this should probably fail, but for now we keep it soft
         sys.exit(0)
 
     # 3. Setup Virtual Serial Port

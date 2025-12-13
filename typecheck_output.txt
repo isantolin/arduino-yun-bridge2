@@ -1,0 +1,8 @@
+typecheck: commands[0]> pyright
+/home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-core/scripts/pin_rest_cgi.py
+  /home/ignaciosantolin/arduino-yun-bridge2/openwrt-yun-core/scripts/pin_rest_cgi.py:86:13 - error: Type of "tls_set" is partially unknown
+    Type of "tls_set" is "(ca_certs: str | None = None, certfile: str | None = None, keyfile: str | None = None, cert_reqs: Unknown | None = None, tls_version: int | None = None, ciphers: str | None = None, keyfile_password: str | None = None, alpn_protocols: list[str] | None = None) -> None" (reportUnknownMemberType)
+1 error, 0 warnings, 0 informations
+typecheck: exit 1 (13.42 seconds) /home/ignaciosantolin/arduino-yun-bridge2> pyright pid=33857
+  typecheck: FAIL code 1 (13.55=setup[0.13]+cmd[13.42] seconds)
+  evaluation failed :( (13.68 seconds)

@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from paho.mqtt import client as mqtt
+from paho.mqtt.client import Client, MQTTv5
 
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import resolve_tls_material
@@ -73,13 +73,13 @@ def publish_with_retries(
 ) -> None:
     """Publish an MQTT message with retry and timeout semantics."""
     tls_material = _resolve_tls_material(config) if config.mqtt_tls else None
-    
+
     last_error: Exception | None = None
 
     for attempt in range(1, retries + 1):
-        client = mqtt.Client(
+        client = Client(
             client_id=f"yunbridge_cgi_{time.time()}",
-            protocol=mqtt.MQTTv5,
+            protocol=MQTTv5,
         )
 
         if tls_material:

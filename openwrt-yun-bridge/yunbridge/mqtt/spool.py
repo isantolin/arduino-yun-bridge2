@@ -41,6 +41,8 @@ class SqliteDeque:
             check_same_thread=False,
             isolation_level=None,  # Autocommit mode
         )
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._create_table()
 
     def _create_table(self) -> None:

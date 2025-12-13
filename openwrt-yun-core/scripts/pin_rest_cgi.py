@@ -16,9 +16,6 @@ from paho.mqtt import client as mqtt
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import resolve_tls_material
 from yunbridge.const import DEFAULT_MQTT_TOPIC
-from yunbridge.mqtt.publisher import (
-    publish_with_retries as _publish_with_retries,
-)
 
 
 logger = logging.getLogger("yunbridge.pin_rest")
@@ -76,20 +73,57 @@ def publish_with_retries(
 ) -> None:
     """Publish an MQTT message with retry and timeout semantics."""
     tls_material = _resolve_tls_material(config) if config.mqtt_tls else None
+    
+    last_error: Exception | None = None
 
-    _publish_with_retries(
-        topic,
-        payload,
-        config,
-        logger=logger,
-        retries=retries,
-        publish_timeout=publish_timeout,
-        base_delay=base_delay,
-        sleep_fn=sleep_fn,
-        poll_interval=poll_interval,
-        tls_material=tls_material,
-        client_module=mqtt,
-    )
+    for attempt in range(1, retries + 1):
+        client = mqtt.Client(
+            client_id=f"yunbridge_cgi_{time.time()}",
+            protocol=mqtt.MQTTv5,
+        )
+
+        if tls_material:
+            client.tls_set(
+                ca_certs=tls_material.cafile,
+                certfile=tls_material.certfile,
+                keyfile=tls_material.keyfile,
+            )
+
+        if config.mqtt_user:
+            client.username_pw_set(config.mqtt_user, config.mqtt_pass)
+
+        try:
+            client.connect(config.mqtt_host, config.mqtt_port, keepalive=10)
+            client.loop_start()
+
+            info = client.publish(topic, payload, qos=1)
+
+            start_time = time.time()
+            while not info.is_published():
+                if time.time() - start_time > publish_timeout:
+                    raise TimeoutError("Publish timed out")
+                sleep_fn(poll_interval)
+
+            client.loop_stop()
+            client.disconnect()
+            return
+
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Publish attempt %d/%d failed: %s",
+                attempt, retries, exc
+            )
+            try:
+                client.loop_stop()
+                client.disconnect()
+            except Exception:
+                pass
+
+            if attempt < retries:
+                sleep_fn(base_delay * (2 ** (attempt - 1)))
+
+    raise RuntimeError(f"Failed to publish after {retries} attempts") from last_error
 
 
 def get_pin_from_path() -> str | None:

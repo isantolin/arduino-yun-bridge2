@@ -95,7 +95,8 @@ async def test_handle_read_truncated_payload(
     await component.handle_read(payload)
 
     assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
-    assert bridge.sent_frames[-1][1].startswith(b"\x00\xfe")
+    # MAX_PAYLOAD_SIZE is 128, so max content is 128 - 2 = 126 bytes (0x7E)
+    assert bridge.sent_frames[-1][1].startswith(b"\x00\x7e")
 
 
 @pytest.mark.asyncio

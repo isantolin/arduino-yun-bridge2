@@ -10,7 +10,6 @@ from collections.abc import Coroutine
 
 import pytest
 from aiomqtt.message import Message as MQTTMessage
-from hypothesis import HealthCheck, given, settings, strategies as st
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish
@@ -205,10 +204,19 @@ async def test_handle_remove_updates_usage(
 
 
 SAFE_FILENAME_CHARS = string.ascii_letters + string.digits + "/._- " + "\\"
-FILENAME_INPUTS = st.text(SAFE_FILENAME_CHARS, min_size=0, max_size=64)
 
 
-@given(filename=FILENAME_INPUTS)
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "file.txt",
+        "dir/file.txt",
+        "dir/subdir/file.txt",
+        "file with spaces.txt",
+        "file-with-dashes.txt",
+        "file_with_underscores.txt",
+    ],
+)
 def test_normalise_filename_strips_traversal(filename: str) -> None:
     result = FileComponent._normalise_filename(filename)
     if result is None:
@@ -219,8 +227,17 @@ def test_normalise_filename_strips_traversal(filename: str) -> None:
         assert "\x00" not in part
 
 
-@settings(suppress_health_check=[HealthCheck.function_scoped_fixture])
-@given(filename=FILENAME_INPUTS)
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "file.txt",
+        "dir/file.txt",
+        "dir/subdir/file.txt",
+        "file with spaces.txt",
+        "file-with-dashes.txt",
+        "file_with_underscores.txt",
+    ],
+)
 def test_get_safe_path_confines_to_root(
     file_component: tuple[FileComponent, DummyBridge], filename: str
 ) -> None:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping as MappingABC, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from typing import (
     Any,
@@ -13,7 +13,6 @@ from typing import (
     TypeVar,
     cast,
 )
-from collections.abc import Mapping
 
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties

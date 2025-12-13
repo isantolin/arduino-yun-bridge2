@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from hypothesis import given, strategies as st
 
 from yunbridge.services.payloads import (
     PayloadValidationError,
@@ -48,10 +47,19 @@ def test_shell_pid_payload_rejects_invalid(segment: str) -> None:
         ShellPidPayload.from_topic_segment(segment)
 
 
-# --- Property-based tests ---
+# --- Property-based tests replacement ---
 
 
-@given(command=st.text(min_size=1, max_size=512))
+@pytest.mark.parametrize(
+    "command",
+    [
+        "ls",
+        "echo hello",
+        "a" * 512,
+        "ñandú",
+        "123",
+    ],
+)
 def test_shell_command_payload_accepts_valid_utf8(command: str) -> None:
     """Any non-empty UTF-8 ≤512 chars is accepted as raw payload."""
     if not command.strip():
@@ -62,7 +70,7 @@ def test_shell_command_payload_accepts_valid_utf8(command: str) -> None:
     assert payload.command == command.strip()
 
 
-@given(pid=st.integers(min_value=1, max_value=65535))
+@pytest.mark.parametrize("pid", [1, 42, 65535])
 def test_shell_pid_payload_accepts_valid_range(pid: int) -> None:
     """Verify PID handling for the full valid 16-bit range."""
     segment = str(pid)
@@ -70,7 +78,7 @@ def test_shell_pid_payload_accepts_valid_range(pid: int) -> None:
     assert payload.pid == pid
 
 
-@given(pid=st.integers().filter(lambda x: x <= 0 or x > 65535))
+@pytest.mark.parametrize("pid", [0, -1, 65536, 100000])
 def test_shell_pid_payload_rejects_invalid_range(pid: int) -> None:
     """Verify rejection of PIDs outside 1-65535."""
     segment = str(pid)

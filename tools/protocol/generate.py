@@ -30,7 +30,7 @@ from typing import Final
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
-    out.write('#include <cstdint>\n#include <type_traits>\n#include <utility>\n#include "rpc_frame.h"\n\n')
+    out.write('#include <stdint.h>\n#include "rpc_frame.h"\n\n')
 
     consts = spec["constants"]
     out.write(
@@ -83,13 +83,13 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(f"    {cmd['name']} = {cmd['value']},\n")
     out.write("};\n\n")
 
-    out.write("""template <typename Enum>
-constexpr auto to_underlying(Enum value) noexcept -> typename std::underlying_type<Enum>::type {
-#if __cplusplus >= 202302L
-    return std::to_underlying(value);
-#else
-    return static_cast<typename std::underlying_type<Enum>::type>(value);
-#endif
+    out.write("""
+constexpr uint8_t to_underlying(StatusCode value) {
+    return static_cast<uint8_t>(value);
+}
+
+constexpr uint16_t to_underlying(CommandId value) {
+    return static_cast<uint16_t>(value);
 }
 """)
     out.write("} // namespace rpc\n#endif\n")

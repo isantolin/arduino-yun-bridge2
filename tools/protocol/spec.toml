@@ -4,8 +4,8 @@
 [constants]
 protocol_version = 0x02
 default_baudrate = 115200
-max_payload_size = 256
-rpc_buffer_size = 256
+max_payload_size = 128
+rpc_buffer_size = 128
 
 [handshake]
 nonce_length = 16

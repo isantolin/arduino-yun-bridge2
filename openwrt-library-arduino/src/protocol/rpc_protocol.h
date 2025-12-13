@@ -7,9 +7,7 @@
 #ifndef RPC_PROTOCOL_H
 #define RPC_PROTOCOL_H
 
-#include <cstdint>
-#include <type_traits>
-#include <utility>
+#include <stdint.h>
 #include "rpc_frame.h"
 
 static_assert(rpc::PROTOCOL_VERSION == 2, "Version mismatch");
@@ -82,13 +80,12 @@ enum class CommandId : uint16_t {
     CMD_PROCESS_POLL_RESP = 178,
 };
 
-template <typename Enum>
-constexpr auto to_underlying(Enum value) noexcept -> typename std::underlying_type<Enum>::type {
-#if __cplusplus >= 202302L
-    return std::to_underlying(value);
-#else
-    return static_cast<typename std::underlying_type<Enum>::type>(value);
-#endif
+constexpr uint8_t to_underlying(StatusCode value) {
+    return static_cast<uint8_t>(value);
+}
+
+constexpr uint16_t to_underlying(CommandId value) {
+    return static_cast<uint16_t>(value);
 }
 } // namespace rpc
 #endif

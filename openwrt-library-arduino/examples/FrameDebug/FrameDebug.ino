@@ -25,7 +25,7 @@ unsigned long last_send_ms = 0;
 void printSnapshot(const BridgeClass::FrameDebugSnapshot &snapshot) {
   Serial.println(F("[FrameDebug] --- TX Snapshot ---"));
   Serial.print(F("cmd_id=0x"));
-  Serial.println(snapshot.command_id, HEX);
+  Serial.println(snapshot.last_command_id, HEX);
   Serial.print(F("payload_len="));
   Serial.println(snapshot.payload_length);
   Serial.print(F("crc=0x"));

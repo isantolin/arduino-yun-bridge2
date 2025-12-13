@@ -13,8 +13,22 @@
 
 // --- Configuration ---
 #define BRIDGE_BAUDRATE RPC_DEFAULT_BAUDRATE
+
+#ifndef BRIDGE_DEBUG_FRAMES
 #define BRIDGE_DEBUG_FRAMES 0
+#endif
+
+#ifndef BRIDGE_DEBUG_IO
 #define BRIDGE_DEBUG_IO 0
+#endif
+
+#ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
+#define BRIDGE_FIRMWARE_VERSION_MAJOR 2
+#endif
+
+#ifndef BRIDGE_FIRMWARE_VERSION_MINOR
+#define BRIDGE_FIRMWARE_VERSION_MINOR 0
+#endif
 
 class BridgeClass {
   friend class DataStoreClass;
@@ -25,9 +39,9 @@ class BridgeClass {
   // Constants
   static constexpr size_t kMaxFilePathLength = 64;
   static constexpr size_t kMaxDatastoreKeyLength = 32;
-  static constexpr uint8_t kMaxPendingDatastore = 4;
-  static constexpr uint8_t kMaxPendingProcessPolls = 4;
-  static constexpr uint8_t kMaxPendingTxFrames = 4;
+  static constexpr uint8_t kMaxPendingDatastore = 2;
+  static constexpr uint8_t kMaxPendingProcessPolls = 2;
+  static constexpr uint8_t kMaxPendingTxFrames = 2;
   static constexpr unsigned int kAckTimeoutMs = 200;
   static constexpr uint8_t kMaxAckRetries = 5;
 
@@ -46,6 +60,8 @@ class BridgeClass {
                                       uint16_t, const uint8_t*, uint16_t);
   using ProcessRunAsyncHandler = void (*)(int);
   using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
+  using DigitalReadHandler = void (*)(uint8_t);
+  using AnalogReadHandler = void (*)(uint16_t);
   using GetFreeMemoryHandler = void (*)(uint16_t);
   using StatusHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t);
 
@@ -79,6 +95,8 @@ class BridgeClass {
   void onProcessPollResponse(ProcessPollHandler handler);
   void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
   void onFileSystemReadResponse(FileSystemReadHandler handler);
+  void onDigitalReadResponse(DigitalReadHandler handler);
+  void onAnalogReadResponse(AnalogReadHandler handler);
   void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
   void onStatus(StatusHandler handler);
 
@@ -88,7 +106,6 @@ class BridgeClass {
   void flushStream();
   uint8_t* getScratchBuffer() { return _scratch_payload; }
 
-#if BRIDGE_DEBUG_FRAMES
   struct FrameDebugSnapshot {
     uint16_t tx_count;
     uint16_t build_failures;
@@ -102,8 +119,13 @@ class BridgeClass {
     uint16_t last_shortfall;
     uint16_t crc;
   };
+
+#if BRIDGE_DEBUG_FRAMES
   FrameDebugSnapshot getTxDebugSnapshot() const;
   void resetTxDebugStats();
+#else
+  FrameDebugSnapshot getTxDebugSnapshot() const { return {}; }
+  void resetTxDebugStats() {}
 #endif
 
  private:
@@ -140,6 +162,8 @@ class BridgeClass {
   MailboxAvailableHandler _mailbox_available_handler;
   ProcessRunHandler _process_run_handler;
   ProcessPollHandler _process_poll_handler;
+  DigitalReadHandler _digital_read_handler;
+  AnalogReadHandler _analog_read_handler;
   ProcessRunAsyncHandler _process_run_async_handler;
   FileSystemReadHandler _file_system_read_handler;
   GetFreeMemoryHandler _get_free_memory_handler;

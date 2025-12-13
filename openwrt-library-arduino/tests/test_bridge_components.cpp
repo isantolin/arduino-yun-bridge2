@@ -15,6 +15,10 @@
 
 #include "protocol/rpc_protocol.h"
 
+// Define global Serial instances for the stub
+HardwareSerial Serial;
+HardwareSerial Serial1;
+
 using namespace rpc;
 
 constexpr uint16_t command_value(CommandId command) {
@@ -235,11 +239,9 @@ void test_datastore_queue_rejects_overflow() {
   RecordingStream stream;
   BridgeClass bridge(stream);
 
-  // Fill the queue (capacity 4)
+  // Fill the queue (capacity 2)
   assert(bridge._trackPendingDatastoreKey("1"));
   assert(bridge._trackPendingDatastoreKey("2"));
-  assert(bridge._trackPendingDatastoreKey("3"));
-  assert(bridge._trackPendingDatastoreKey("4"));
 
   // Should fail now
   bool overflow = bridge._trackPendingDatastoreKey("overflow");

@@ -1,9 +1,6 @@
 #include "rpc_frame.h"
 
-#include <limits>
-#include <cstring>
-#include <algorithm>
-#include <iterator>
+#include <string.h>
 
 namespace rpc {
 
@@ -49,7 +46,7 @@ bool is_cobs_decoded_length_valid(const uint8_t* encoded,
 
 FrameParser::FrameParser() {
   reset();
-  std::fill(std::begin(_rx_buffer), std::end(_rx_buffer), 0);
+  memset(_rx_buffer, 0, sizeof(_rx_buffer));
 }
 
 void FrameParser::reset() {
@@ -124,7 +121,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     // --- Extract Payload ---
     if (out_frame.header.payload_length > 0) {
       // Copy payload from _rx_buffer to the output frame structure
-      std::copy_n(_rx_buffer + sizeof(FrameHeader), out_frame.header.payload_length, out_frame.payload);
+      memcpy(out_frame.payload, _rx_buffer + sizeof(FrameHeader), out_frame.header.payload_length);
     }
 
     return true;  // Successfully parsed a frame.
@@ -153,7 +150,7 @@ size_t FrameBuilder::build(uint8_t* buffer,
                            const uint8_t* payload,
                            size_t payload_len) {
   if (payload_len > MAX_PAYLOAD_SIZE ||
-      payload_len > std::numeric_limits<uint16_t>::max()) {
+      payload_len > UINT16_MAX) {
     return 0;
   }
 
@@ -177,7 +174,7 @@ size_t FrameBuilder::build(uint8_t* buffer,
 
   // Copy payload into the buffer
   if (payload && payload_len > 0) {
-    std::copy_n(payload, payload_len, p);
+    memcpy(p, payload, payload_len);
   }
 
   // --- CRC ---

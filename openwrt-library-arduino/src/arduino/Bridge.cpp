@@ -9,12 +9,9 @@
 #include <avr/eeprom.h> 
 #endif
 
-#include <cstring> 
-#include <cstdlib> 
-#include <cstdint>
-#include <algorithm>
-#include <iterator>
-#include <array>
+#include <string.h> 
+#include <stdlib.h> 
+#include <stdint.h>
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -110,6 +107,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _process_poll_handler(nullptr),
       _process_run_async_handler(nullptr),
       _file_system_read_handler(nullptr),
+      _digital_read_handler(nullptr),
+      _analog_read_handler(nullptr),
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
       _pending_datastore_head(0),
@@ -183,18 +182,18 @@ void BridgeClass::begin(
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
-    std::fill(out_tag, out_tag + kHandshakeTagSize, 0);
+    memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
 
   SHA256 sha256;
-  std::array<uint8_t, kSha256DigestSize> digest;
+  uint8_t digest[kSha256DigestSize];
 
   sha256.resetHMAC(_shared_secret, _shared_secret_len);
   sha256.update(nonce, nonce_len);
-  sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest.data(), kSha256DigestSize);
+  sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
-  std::copy_n(digest.begin(), kHandshakeTagSize, out_tag);
+  memcpy(out_tag, digest, kHandshakeTagSize);
 }
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
@@ -255,6 +254,8 @@ void BridgeClass::onProcessRunResponse(ProcessRunHandler handler) { _process_run
 void BridgeClass::onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
 void BridgeClass::onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
 void BridgeClass::onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
+void BridgeClass::onDigitalReadResponse(DigitalReadHandler handler) { _digital_read_handler = handler; }
+void BridgeClass::onAnalogReadResponse(AnalogReadHandler handler) { _analog_read_handler = handler; }
 void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
@@ -404,6 +405,17 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         _process_run_async_handler((int)pid);
       }
       return;
+    case CommandId::CMD_DIGITAL_READ_RESP:
+      if (_digital_read_handler && payload_length == 1 && payload_data) {
+        _digital_read_handler(payload_data[0]);
+      }
+      return;
+    case CommandId::CMD_ANALOG_READ_RESP:
+      if (_analog_read_handler && payload_length == 2 && payload_data) {
+        uint16_t value = rpc::read_u16_be(payload_data);
+        _analog_read_handler(value);
+      }
+      return;
     case CommandId::CMD_FILE_READ_RESP:
       if (_file_system_read_handler && payload_length >= 2 && payload_data) {
         uint16_t data_len = rpc::read_u16_be(payload_data);
@@ -502,11 +514,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         if (payload_data == nullptr) {
           break;
         }
-        std::copy_n(payload_data, nonce_length, response);
+        memcpy(response, payload_data, nonce_length);
         if (has_secret) {
           uint8_t tag[kHandshakeTagSize];
           _computeHandshakeTag(payload_data, nonce_length, tag);
-          std::copy_n(tag, kHandshakeTagSize, &response[nonce_length]);
+          memcpy(&response[nonce_length], tag, kHandshakeTagSize);
         }
 
         (void)sendFrame(
@@ -953,7 +965,7 @@ void BridgeClass::_recordLastFrame(uint16_t command_id,
     cobs_len = sizeof(_last_cobs_frame);
   }
   if (cobs_frame != _last_cobs_frame) {
-    std::copy_n(cobs_frame, cobs_len, _last_cobs_frame);
+    memcpy(_last_cobs_frame, cobs_frame, cobs_len);
   }
   _last_cobs_length = static_cast<uint16_t>(cobs_len);
   _last_command_id = command_id;
@@ -1086,10 +1098,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    std::copy_n(
-        payload,
-        payload_len,
-        _pending_tx_frames[tail].payload);
+    memcpy(_pending_tx_frames[tail].payload, payload, payload_len);
   }
   _pending_tx_count++;
   return true;
@@ -1185,7 +1194,7 @@ void BridgeClass::requestFileSystemRead(const char* filePath) {
 
   uint8_t* payload = _scratch_payload;
   payload[0] = static_cast<uint8_t>(len);
-  std::copy_n(filePath, len, payload + kFileReadLengthPrefix);
+  memcpy(payload + kFileReadLengthPrefix, filePath, len);
   const uint16_t total = static_cast<uint16_t>(
       len + kFileReadLengthPrefix);
   (void)sendFrame(CommandId::CMD_FILE_READ, payload, total);
@@ -1209,7 +1218,7 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   uint8_t slot =
       (_pending_datastore_head + _pending_datastore_count) %
       kMaxPendingDatastore;
-  std::copy_n(key, length, _pending_datastore_keys[slot]);
+  memcpy(_pending_datastore_keys[slot], key, length);
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
@@ -1228,12 +1237,8 @@ const char* BridgeClass::_popPendingDatastoreKey() {
   if (length > kMaxDatastoreKeyLength) {
     length = kMaxDatastoreKeyLength;
   }
-  std::copy_n(
-      _pending_datastore_keys[slot],
-      length,
-      key_buffer);
+  memcpy(key_buffer, _pending_datastore_keys[slot], length);
   key_buffer[length] = '\0';
-
   _pending_datastore_head =
       (_pending_datastore_head + 1) % kMaxPendingDatastore;
   _pending_datastore_count--;

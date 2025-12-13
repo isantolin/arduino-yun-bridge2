@@ -1,8 +1,8 @@
 #ifndef ARDUINO_STRING_UTILS_H
 #define ARDUINO_STRING_UTILS_H
 
-#include <cstddef>
-#include <cstring>
+#include <stddef.h>
+#include <string.h>
 
 struct BoundedStringInfo {
   size_t length;

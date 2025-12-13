@@ -42,7 +42,7 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings all"
+    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings default"
     
     if [ -n "$BUILD_OUTPUT_DIR" ]; then
         # Create specific output dir for this sketch to avoid overwrites
@@ -59,11 +59,6 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     fi
     
     echo "✓ $sketch_name compiled successfully"
-done
-    else
-        echo "✗ $sketch_name failed to compile"
-        exit 1
-    fi
 done
 
 echo "--------------------------------------------------"

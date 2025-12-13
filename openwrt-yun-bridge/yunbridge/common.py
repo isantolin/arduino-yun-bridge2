@@ -212,7 +212,7 @@ def _as_option_dict(candidate: Mapping[Any, Any]) -> dict[str, Any]:
 
 def _extract_uci_options(section: Any) -> dict[str, Any]:
     """Normalise python3-uci section structures into a flat options dict."""
-    if not isinstance(section, MappingABC) or not section:
+    if not isinstance(section, Mapping) or not section:
         return {}
 
     typed_section = _as_option_dict(cast(Mapping[str, Any], section))

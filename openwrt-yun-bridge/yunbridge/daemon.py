@@ -8,8 +8,6 @@ import logging
 import sys
 from typing import cast
 
-from builtins import BaseExceptionGroup, ExceptionGroup
-
 # REMOVED: tenacity import. We use native asyncio loops for OpenWrt efficiency.
 
 from yunbridge.config.logging import configure_logging

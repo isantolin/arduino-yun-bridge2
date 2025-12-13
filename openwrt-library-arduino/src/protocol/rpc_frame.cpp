@@ -1,6 +1,6 @@
 #include "rpc_frame.h"
 
-#include <string.h>
+#include <cstring>
 
 namespace rpc {
 

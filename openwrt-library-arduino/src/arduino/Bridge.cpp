@@ -9,8 +9,8 @@
 #include <avr/eeprom.h> 
 #endif
 
-#include <string.h> 
-#include <stdlib.h> 
+#include <cstring> 
+#include <cstdlib> 
 #include <stdint.h>
 #include <Crypto.h>
 #include <SHA256.h>

@@ -2,11 +2,13 @@
     "typeCheckingMode": "standard",
     "strict": [
         "openwrt-yun-bridge/yunbridge",
-        "openwrt-yun-examples-python/yunbridge_client"
+        "openwrt-yun-examples-python/yunbridge_client",
+        "openwrt-yun-core/scripts"
     ],
     "include": [
         "openwrt-yun-bridge/yunbridge",
-        "openwrt-yun-examples-python/yunbridge_client"
+        "openwrt-yun-examples-python/yunbridge_client",
+        "openwrt-yun-core/scripts"
     ],
     "stubPath": "stubs",
     "extraPaths": [

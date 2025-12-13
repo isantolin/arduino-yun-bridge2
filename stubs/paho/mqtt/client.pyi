@@ -1,9 +1,14 @@
 from typing import Any, Callable, Optional, Union
+from enum import Enum
 from .properties import Properties
 
 MQTTv31: int
 MQTTv311: int
 MQTTv5: int
+
+class CallbackAPIVersion(Enum):
+    VERSION1 = 1
+    VERSION2 = 2
 
 class MQTTMessageInfo:
     mid: int
@@ -20,6 +25,7 @@ class Client:
         protocol: int = MQTTv311,
         transport: str = "tcp",
         reconnect_on_failure: bool = True,
+        callback_api_version: CallbackAPIVersion = CallbackAPIVersion.VERSION1,
     ) -> None: ...
     
     def tls_set(

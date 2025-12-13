@@ -116,8 +116,7 @@ def test_publish_with_retries_configures_tls(
             super().__init__(*args, **kwargs)
             captured_clients.append(self)
 
-    import paho.mqtt.client as mqtt
-    monkeypatch.setattr(mqtt, "Client", TestClient)
+    monkeypatch.setattr(pin_rest_module, "Client", TestClient)
 
     # Mock ssl to avoid file not found errors
     import ssl
@@ -154,8 +153,6 @@ def test_publish_with_retries_times_out(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    import paho.mqtt.client as mqtt
-
     class MockInfo:
         def is_published(self) -> bool:
             return False
@@ -185,7 +182,7 @@ def test_publish_with_retries_times_out(
         def publish(self, *args: Any, **kwargs: Any) -> Any:
             return MockInfo()
 
-    monkeypatch.setattr(mqtt, "Client", TimeoutClient)
+    monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
 
     with pytest.raises(RuntimeError, match="Failed to publish"):
         pin_rest_module.publish_with_retries(

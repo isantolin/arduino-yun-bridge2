@@ -11,7 +11,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from paho.mqtt.client import Client, MQTTv5
+from paho.mqtt.client import CallbackAPIVersion, Client, MQTTv5
 
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.config.tls import resolve_tls_material
@@ -80,6 +80,7 @@ def publish_with_retries(
         client = Client(
             client_id=f"yunbridge_cgi_{time.time()}",
             protocol=MQTTv5,
+            callback_api_version=CallbackAPIVersion.VERSION2,
         )
 
         if tls_material:

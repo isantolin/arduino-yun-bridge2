@@ -2,7 +2,7 @@
 
 #include "arduino/StringUtils.h"
 
-#include <cstring>
+#include <string.h>
 
 #include "protocol/rpc_protocol.h"
 

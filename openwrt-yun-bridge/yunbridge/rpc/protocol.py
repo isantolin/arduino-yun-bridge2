@@ -6,8 +6,8 @@ from typing import Final
 
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
-MAX_PAYLOAD_SIZE: Final[int] = 256
-RPC_BUFFER_SIZE: Final[int] = 256
+MAX_PAYLOAD_SIZE: Final[int] = 128
+RPC_BUFFER_SIZE: Final[int] = 128
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16

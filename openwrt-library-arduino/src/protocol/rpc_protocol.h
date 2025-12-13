@@ -12,7 +12,7 @@
 
 static_assert(rpc::PROTOCOL_VERSION == 2, "Version mismatch");
 constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
-constexpr unsigned int RPC_BUFFER_SIZE = 256;
+constexpr unsigned int RPC_BUFFER_SIZE = 128;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;
@@ -79,6 +79,7 @@ enum class CommandId : uint16_t {
     CMD_PROCESS_RUN_ASYNC_RESP = 177,
     CMD_PROCESS_POLL_RESP = 178,
 };
+
 
 constexpr uint8_t to_underlying(StatusCode value) {
     return static_cast<uint8_t>(value);

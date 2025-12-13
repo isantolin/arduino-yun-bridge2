@@ -902,6 +902,7 @@ int main() {
   test_ack_flushes_pending_queue_after_response();
   test_status_ack_frame_clears_pending_state_via_dispatch();
   test_status_error_frame_dispatches_handler();
+  test_serial_overflow_emits_status_notification();
   test_malformed_status_triggers_retransmit();
   test_link_sync_generates_tag_and_ack();
   test_link_sync_without_secret_replays_nonce_only();

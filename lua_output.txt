@@ -1,11 +1,11 @@
 lua: commands[0]> hererocks .tox/lua_env -j2.1 -rlatest
-ROOT: [51811] KeyboardInterrupt - teardown started
+ROOT: [53424] KeyboardInterrupt - teardown started
 ROOT: interrupt tox environment: lua
-ROOT: requested interrupt of 51817 from 51811, activate in 0.00
-ROOT: send signal SIGINT(2) to 51817 from 51811 with timeout 0.30
+ROOT: requested interrupt of 53430 from 53424, activate in 0.00
 Fetching LuaJIT 2.1.0-beta3 (cached)
 Verifying SHA256 checksum
 Building LuaJIT 2.1.0-beta3
+ROOT: send signal SIGINT(2) to 53430 from 53424 with timeout 0.30
 Traceback (most recent call last):
   File "/home/ignaciosantolin/arduino-yun-bridge2/.tox/lua/bin/hererocks", line 8, in <module>
     sys.exit(main())
@@ -28,7 +28,7 @@ Traceback (most recent call last):
   File "/usr/lib64/python3.14/subprocess.py", line 1207, in communicate
     stdout = self.stdout.read()
 KeyboardInterrupt
-lua: exit -2 (7.90 seconds) /home/ignaciosantolin/arduino-yun-bridge2> hererocks .tox/lua_env -j2.1 -rlatest pid=51817
+lua: exit -2 (10.53 seconds) /home/ignaciosantolin/arduino-yun-bridge2> hererocks .tox/lua_env -j2.1 -rlatest pid=53430
 ROOT: interrupt finished with success
-  lua: FAIL code -2 (8.01=setup[0.11]+cmd[7.90] seconds)
-  evaluation failed :( (8.13 seconds)
+  lua: FAIL code -2 (10.64=setup[0.10]+cmd[10.53] seconds)
+  evaluation failed :( (10.73 seconds)

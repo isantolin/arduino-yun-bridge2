@@ -66,15 +66,3 @@ name = "aiocron"
 openwrt = ""
 pip = "aiocron==2.1"
 rationale = "Cron-style scheduling for periodic metrics publication"
-
-[[dependency]]
-name = "typer"
-openwrt = ""
-pip = "typer==0.20.0"
-rationale = "Modern CLI ergonomics for developer tooling such as the hardware harness"
-
-[[dependency]]
-name = "more-itertools"
-openwrt = "python3-more-itertools"
-pip = "more-itertools==10.8.0"
-rationale = "Chunk helpers for frame encoding/decoding"

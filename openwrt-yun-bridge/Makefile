@@ -42,8 +42,7 @@ define Package/$(PKG_NAME)
 		+python3-asyncio \
 		+python3-uci \
 		+python3-pyserial \
-		+python3-psutil \
-		+python3-more-itertools
+		+python3-psutil
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

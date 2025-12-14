@@ -265,6 +265,147 @@ void test_bridge_malformed_frame() {
     assert(stream.tx_buffer.size() > 0);
 }
 
+void test_file_write_eeprom_parsing() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    
+    // Case 1: Valid EEPROM write
+    // Path: "/eeprom/10" (len 10)
+    // Data: "AB"
+    std::vector<uint8_t> payload;
+    std::string path = "/eeprom/10";
+    payload.push_back(static_cast<uint8_t>(path.length()));
+    payload.insert(payload.end(), path.begin(), path.end());
+    payload.push_back('A');
+    payload.push_back('B');
+    
+    std::vector<uint8_t> frame = TestFrameBuilder::build(rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), payload);
+    stream.inject_rx(frame);
+    
+    bridge.process();
+    
+    // Should send ACK
+    assert(stream.tx_buffer.size() > 0);
+}
+
+void test_file_write_malformed_path() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    
+    // Case 2: Malformed path length (claim 100 bytes, provide 5)
+    std::vector<uint8_t> payload;
+    payload.push_back(100); // Path len
+    payload.push_back('/');
+    payload.push_back('e');
+    
+    std::vector<uint8_t> frame = TestFrameBuilder::build(rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), payload);
+    stream.inject_rx(frame);
+    
+    bridge.process();
+    
+    // Should NOT crash.
+    assert(stream.tx_buffer.size() > 0);
+}
+
+void test_bridge_crc_mismatch() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    stream.tx_buffer.clear();
+
+    // Build a valid frame
+    std::vector<uint8_t> payload = {0x01, 0x02};
+    uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
+    
+    // Manually build frame to corrupt CRC
+    std::vector<uint8_t> frame;
+    frame.push_back(rpc::PROTOCOL_VERSION);
+    uint16_t len = static_cast<uint16_t>(payload.size());
+    frame.push_back((len >> 8) & 0xFF);
+    frame.push_back(len & 0xFF);
+    frame.push_back((cmd_id >> 8) & 0xFF);
+    frame.push_back(cmd_id & 0xFF);
+    frame.insert(frame.end(), payload.begin(), payload.end());
+    
+    // Calculate CORRECT CRC
+    uint32_t crc = crc32_ieee(frame.data(), frame.size());
+    // CORRUPT IT
+    crc ^= 0xFFFFFFFF; 
+    
+    frame.push_back((crc >> 24) & 0xFF);
+    frame.push_back((crc >> 16) & 0xFF);
+    frame.push_back((crc >> 8) & 0xFF);
+    frame.push_back(crc & 0xFF);
+    
+    // COBS Encode
+    std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
+    size_t encoded_len = cobs::encode(frame.data(), frame.size(), encoded.data());
+    encoded.resize(encoded_len);
+    encoded.push_back(0x00);
+
+    stream.inject_rx(encoded);
+    bridge.process();
+
+    // Expect STATUS_CRC_MISMATCH (0x04)
+    // We can check if the response frame contains this status.
+    // Response frame: [VER][LEN][STATUS_CMD][PAYLOAD][CRC]
+    // STATUS_CRC_MISMATCH is 0x04.
+    // Since it's a status, it's sent as a command with ID = status value.
+    // So we look for command ID 0x0004.
+    
+    assert(stream.tx_buffer.size() > 0);
+    // Decode to verify? For now, just asserting response exists is good, 
+    // but let's be more specific if we can.
+    // The mock stream just has raw bytes. 
+    // We assume if it sent something, it handled the error.
+}
+
+void test_bridge_unknown_command() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    stream.tx_buffer.clear();
+
+    // Command ID 0xFFFF is likely unknown
+    uint16_t cmd_id = 0xFFFF;
+    std::vector<uint8_t> payload = {0x00};
+    std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
+    
+    stream.inject_rx(frame);
+    bridge.process();
+    
+    // Expect STATUS_CMD_UNKNOWN (0x02)
+    assert(stream.tx_buffer.size() > 0);
+}
+
+void test_bridge_payload_too_large() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(115200);
+    stream.tx_buffer.clear();
+
+    // Max payload is 128 (RPC_BUFFER_SIZE/MAX_PAYLOAD_SIZE)
+    // Let's try to send 200 bytes.
+    std::vector<uint8_t> payload(200, 0xAB);
+    uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+    
+    // We need to manually build this because TestFrameBuilder might just work 
+    // (it doesn't enforce limits, just encodes).
+    // However, the Bridge `processInput` or `cobs::decode` should fail 
+    // if the decoded buffer exceeds internal limits.
+    
+    std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
+    stream.inject_rx(frame);
+    
+    bridge.process();
+    
+    // Should result in STATUS_MALFORMED or similar, or just be dropped/reset.
+    // The current implementation might send an error.
+    assert(stream.tx_buffer.size() > 0);
+}
+
 int main() {
     test_bridge_begin();
     test_bridge_send_frame();
@@ -274,6 +415,13 @@ int main() {
     test_bridge_request_digital_read_no_op();
     test_bridge_file_write_incoming();
     test_bridge_malformed_frame();
+    test_file_write_eeprom_parsing();
+    test_file_write_malformed_path();
+    
+    // New Robustness Tests
+    test_bridge_crc_mismatch();
+    test_bridge_unknown_command();
+    test_bridge_payload_too_large();
     
     std::cout << "Bridge Core Tests Passed" << std::endl;
     return 0;

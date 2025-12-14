@@ -44,7 +44,7 @@ bool is_cobs_decoded_length_valid(const uint8_t* encoded,
 
 // --- FrameParser ---
 
-FrameParser::FrameParser() {
+FrameParser::FrameParser() : _last_error(Error::NONE) {
   reset();
   memset(_rx_buffer, 0, sizeof(_rx_buffer));
 }
@@ -71,6 +71,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     if (!is_cobs_decoded_length_valid(_rx_buffer, _rx_buffer_ptr,
                                       decoded_len)) {
       reset();
+      _last_error = Error::MALFORMED;
       return false;  // Would overflow destination buffer.
     }
 
@@ -80,12 +81,14 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     reset();  // Reset index for the next packet; _rx_buffer content remains valid for parsing below.
 
     if (decoded_len == 0 || decoded_len > MAX_RAW_FRAME_SIZE) {
+      _last_error = Error::MALFORMED;
       return false;  // COBS decoding failed or produced oversize frame.
     }
 
     // --- Validate CRC ---
     // The last 4 bytes of the decoded buffer (now in _rx_buffer) are the CRC32.
     if (decoded_len < CRC_TRAILER_SIZE) {
+      _last_error = Error::MALFORMED;
       return false;  // Not even enough data for a CRC.
     }
     size_t crc_start = decoded_len - CRC_TRAILER_SIZE;
@@ -93,12 +96,14 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     uint32_t calculated_crc = crc32_ieee(_rx_buffer, crc_start);
 
     if (received_crc != calculated_crc) {
+      _last_error = Error::CRC_MISMATCH;
       return false;  // CRC mismatch.
     }
 
     // --- Extract Header ---
     size_t data_len = crc_start;  // Length of data part (header + payload)
     if (data_len < sizeof(FrameHeader)) {
+      _last_error = Error::MALFORMED;
       return false;  // Not enough data for a header.
     }
     
@@ -115,6 +120,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     if (out_frame.header.version != PROTOCOL_VERSION ||
         out_frame.header.payload_length > MAX_PAYLOAD_SIZE ||
         (sizeof(FrameHeader) + out_frame.header.payload_length) != data_len) {
+      _last_error = Error::MALFORMED;
       return false;  // Invalid version, payload length, or overall size.
     }
 
@@ -132,6 +138,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
       _rx_buffer[_rx_buffer_ptr++] = byte;
     } else {
       _overflow_detected = true;
+      _last_error = Error::OVERFLOW;
     }
     // If the buffer overflows, the packet will be corrupt and fail COBS/CRC
     // check later.

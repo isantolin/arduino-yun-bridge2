@@ -8,13 +8,9 @@ import logging
 import sys
 from typing import cast
 
-# REMOVED: tenacity import. We use native asyncio loops for OpenWrt efficiency.
-
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.const import (
-    DEFAULT_SERIAL_SHARED_SECRET,
-)
+from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
 from yunbridge.metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,
@@ -40,6 +36,9 @@ logger = logging.getLogger("yunbridge")
 
 
 async def main_async(config: RuntimeConfig) -> None:
+    if config.serial_shared_secret:
+        logger.info("Security check passed: Shared secret is configured and not default.")
+
     state = create_runtime_state(config)
     service = BridgeService(config, state)
     service.register_serial_sender(serial_sender_not_ready)

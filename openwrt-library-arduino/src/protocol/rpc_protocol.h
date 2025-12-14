@@ -31,6 +31,7 @@ enum class StatusCode : uint8_t {
     STATUS_ERROR = 1,
     STATUS_CMD_UNKNOWN = 2,
     STATUS_MALFORMED = 3,
+    STATUS_OVERFLOW = 8,
     STATUS_CRC_MISMATCH = 4,
     STATUS_TIMEOUT = 5,
     STATUS_NOT_IMPLEMENTED = 6,

@@ -22,6 +22,14 @@
 HardwareSerial Serial;
 HardwareSerial Serial1;
 
+// Define Bridge globals here to ensure correct initialization order
+BridgeClass Bridge(Serial1);
+ConsoleClass Console;
+DataStoreClass DataStore;
+MailboxClass Mailbox;
+FileSystemClass FileSystem;
+ProcessClass Process;
+
 using namespace rpc;
 
 constexpr uint16_t command_value(CommandId command) {
@@ -893,6 +901,24 @@ void test_process_run_rejects_oversized_payload() {
   StatusHandlerState::instance = nullptr;
 }
 
+void test_bridge_process_run_success() {
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  const char* command = "ls -la";
+  Bridge.requestProcessRun(command);
+
+  auto frames = decode_frames(stream.data());
+  assert(frames.size() == 1);
+  const Frame& frame = frames.front();
+  assert(frame.header.command_id == command_value(CommandId::CMD_PROCESS_RUN));
+  assert(frame.header.payload_length == std::strlen(command));
+  assert(std::memcmp(frame.payload, command, std::strlen(command)) == 0);
+  
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_RUN));
+  stream.clear();
+}
+
 void test_apply_timing_config_accepts_valid_payload() {
   RecordingStream stream;
   BridgeClass bridge(stream);
@@ -966,6 +992,7 @@ int main() {
   test_link_sync_without_secret_replays_nonce_only();
   test_ack_timeout_emits_status_and_resets_state();
   test_process_run_rejects_oversized_payload();
+  test_bridge_process_run_success();
   test_apply_timing_config_accepts_valid_payload();
   test_apply_timing_config_rejects_invalid_payload();
   return 0;

@@ -73,11 +73,21 @@ class FrameParser {
   bool consume(uint8_t byte, Frame& out_frame);
   void reset();
   bool overflowed() const;
+  
+  enum class Error {
+    NONE,
+    CRC_MISMATCH,
+    MALFORMED,
+    OVERFLOW
+  };
+  Error getError() const { return _last_error; }
+  void clearError() { _last_error = Error::NONE; }
 
  private:
   uint8_t _rx_buffer[COBS_BUFFER_SIZE];
   size_t _rx_buffer_ptr;
   bool _overflow_detected;
+  Error _last_error;
 };
 
 class FrameBuilder {

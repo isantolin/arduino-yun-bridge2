@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <Stream.h>
+#include "bridge_array.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -20,15 +21,21 @@ constexpr unsigned long kBridgeBaudrate = RPC_DEFAULT_BAUDRATE;
 #endif
 
 #ifndef BRIDGE_DEBUG_FRAMES
-#define BRIDGE_DEBUG_FRAMES 0
+constexpr bool kBridgeDebugFrames = false;
+#else
+constexpr bool kBridgeDebugFrames = (BRIDGE_DEBUG_FRAMES != 0);
 #endif
 
 #ifndef BRIDGE_DEBUG_IO
-#define BRIDGE_DEBUG_IO 0
+constexpr bool kBridgeDebugIo = false;
+#else
+constexpr bool kBridgeDebugIo = (BRIDGE_DEBUG_IO != 0);
 #endif
 
 #ifndef BRIDGE_ENABLE_WATCHDOG
-#define BRIDGE_ENABLE_WATCHDOG 1
+constexpr bool kBridgeEnableWatchdog = true;
+#else
+constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
 #endif
 
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
@@ -189,18 +196,18 @@ class BridgeClass {
   struct PendingTxFrame {
     uint16_t command_id;
     uint16_t payload_length;
-    uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
+    bridge::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
-  PendingTxFrame _pending_tx_frames[kMaxPendingTxFrames];
+  bridge::array<PendingTxFrame, kMaxPendingTxFrames> _pending_tx_frames;
   uint8_t _pending_tx_head;
   uint8_t _pending_tx_count;
 
-  char _pending_datastore_keys[kMaxPendingDatastore][kMaxDatastoreKeyLength + 1];
-  uint8_t _pending_datastore_key_lengths[kMaxPendingDatastore];
+  bridge::array<bridge::array<char, kMaxDatastoreKeyLength + 1>, kMaxPendingDatastore> _pending_datastore_keys;
+  bridge::array<uint8_t, kMaxPendingDatastore> _pending_datastore_key_lengths;
   uint8_t _pending_datastore_head;
   uint8_t _pending_datastore_count;
 
-  uint16_t _pending_process_pids[kMaxPendingProcessPolls];
+  bridge::array<uint16_t, kMaxPendingProcessPolls> _pending_process_pids;
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
   bool _synchronized;
@@ -210,6 +217,14 @@ class BridgeClass {
 #endif
 
   // Methods
+  void _handleSystemCommand(const rpc::Frame& frame);
+  void _handleGpioCommand(const rpc::Frame& frame);
+  void _handleConsoleCommand(const rpc::Frame& frame);
+  void _handleDatastoreCommand(const rpc::Frame& frame);
+  void _handleMailboxCommand(const rpc::Frame& frame);
+  void _handleFileSystemCommand(const rpc::Frame& frame);
+  void _handleProcessCommand(const rpc::Frame& frame);
+
   void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload, size_t length);
@@ -271,8 +286,8 @@ class ConsoleClass : public Stream {
   size_t _rx_buffer_tail;
   size_t _tx_buffer_pos;
   bool _xoff_sent;
-  uint8_t _rx_buffer[kRxBufferSize];
-  uint8_t _tx_buffer[kTxBufferSize];
+  bridge::array<uint8_t, kRxBufferSize> _rx_buffer;
+  bridge::array<uint8_t, kTxBufferSize> _tx_buffer;
 };
 extern ConsoleClass Console;
 

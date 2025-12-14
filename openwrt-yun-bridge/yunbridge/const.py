@@ -51,7 +51,7 @@ SERIAL_RETRY_LIMIT_MAX: int = rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
 MIN_SERIAL_SHARED_SECRET_LEN: int = 8
 # SECURITY WARNING: This default secret is for initial setup only.
 # It MUST be rotated using 'yunbridge-rotate-credentials' before production use.
-DEFAULT_SERIAL_SHARED_SECRET: bytes = b"changeme123"
+DEFAULT_SERIAL_SHARED_SECRET: bytes | None = None
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES: int = 3
 SERIAL_MIN_ACK_TIMEOUT: float = 0.05
 SERIAL_ACK_ONLY_COMMANDS: frozenset[int] = frozenset(

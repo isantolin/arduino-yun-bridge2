@@ -218,7 +218,8 @@ class ProcessComponent:
         try:
             await self._terminate_process_tree(proc)
             try:
-                await asyncio.wait_for(proc.wait(), timeout=0.5)
+                async with asyncio.timeout(0.5):
+                    await proc.wait()
             except TimeoutError:
                 logger.warning(
                     "Process PID %d did not terminate after kill signal.",
@@ -280,12 +281,14 @@ class ProcessComponent:
                 await proc.wait()
                 return
             try:
-                await asyncio.wait_for(proc.wait(), timeout=timeout)
+                async with asyncio.timeout(timeout):
+                    await proc.wait()
             except TimeoutError:
                 timed_out = True
                 await self._terminate_process_tree(proc)
                 try:
-                    await asyncio.wait_for(proc.wait(), timeout=1)
+                    async with asyncio.timeout(1):
+                        await proc.wait()
                 except TimeoutError:
                     logger.warning(
                         "Synchronous process PID %d did not exit after kill",

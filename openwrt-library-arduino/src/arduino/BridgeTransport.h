@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <Stream.h>
+#include "../bridge_array.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/cobs.h"
 
@@ -35,6 +36,8 @@ public:
     // Stats/Debug
     bool hasOverflowed() const { return _parser.overflowed(); }
     void clearOverflow() { _parser.reset(); }
+    rpc::FrameParser::Error getLastError() const { return _parser.getError(); }
+    void clearError() { _parser.clearError(); }
     
     // Resets internal state (parser, flow control)
     void reset();
@@ -46,8 +49,8 @@ private:
     rpc::FrameBuilder _builder;
     bool _flow_paused;
     
-    uint8_t _raw_frame_buffer[rpc::MAX_RAW_FRAME_SIZE];
-    uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
+    bridge::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _raw_frame_buffer;
+    bridge::array<uint8_t, rpc::COBS_BUFFER_SIZE> _last_cobs_frame;
     size_t _last_cobs_len;
     
     // Constants for flow control

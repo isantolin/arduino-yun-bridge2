@@ -9,7 +9,10 @@ BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
       _parser(),
       _builder(),
       _flow_paused(false),
-      _last_cobs_len(0) {}
+      _last_cobs_len(0) {
+        _raw_frame_buffer.fill(0);
+        _last_cobs_frame.fill(0);
+      }
 
 void BridgeTransport::begin(unsigned long baudrate) {
     if (_hardware_serial != nullptr) {
@@ -64,8 +67,8 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
 
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
     size_t raw_len = _builder.build(
-        _raw_frame_buffer,
-        sizeof(_raw_frame_buffer),
+        _raw_frame_buffer.data(),
+        _raw_frame_buffer.size(),
         command_id,
         payload,
         length);
@@ -74,15 +77,15 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
         return false;
     }
 
-    size_t cobs_len = cobs::encode(_raw_frame_buffer, raw_len, _last_cobs_frame);
+    size_t cobs_len = cobs::encode(_raw_frame_buffer.data(), raw_len, _last_cobs_frame.data());
     _last_cobs_len = cobs_len;
 
     // Write COBS frame
     size_t written = 0;
     if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(_last_cobs_frame, cobs_len);
+        written = _hardware_serial->write(_last_cobs_frame.data(), cobs_len);
     } else {
-        written = _stream.write(_last_cobs_frame, cobs_len);
+        written = _stream.write(_last_cobs_frame.data(), cobs_len);
     }
 
     if (written != cobs_len) {
@@ -134,9 +137,9 @@ bool BridgeTransport::retransmitLastFrame() {
     
     size_t written = 0;
     if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(_last_cobs_frame, _last_cobs_len);
+        written = _hardware_serial->write(_last_cobs_frame.data(), _last_cobs_len);
     } else {
-        written = _stream.write(_last_cobs_frame, _last_cobs_len);
+        written = _stream.write(_last_cobs_frame.data(), _last_cobs_len);
     }
     
     if (written != _last_cobs_len) return false;

@@ -117,7 +117,7 @@ void ConsoleClass::flush() {
       size_t chunk = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
       if (!Bridge.sendFrame(
               CommandId::CMD_CONSOLE_WRITE,
-              _tx_buffer + offset, chunk)) {
+              _tx_buffer.data() + offset, chunk)) {
         break;
       }
       offset += chunk;

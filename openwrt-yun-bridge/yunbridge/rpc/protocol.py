@@ -39,6 +39,7 @@ class Status(IntEnum):
     ERROR = 1  # Generic failure.
     CMD_UNKNOWN = 2  # Command not recognized.
     MALFORMED = 3  # Payload had invalid structure.
+    OVERFLOW = 8  # Frame exceeded buffer size.
     CRC_MISMATCH = 4  # CRC check failed.
     TIMEOUT = 5  # Operation timed out.
     NOT_IMPLEMENTED = 6  # Command defined but not supported.

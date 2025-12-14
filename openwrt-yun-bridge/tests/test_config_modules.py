@@ -358,7 +358,7 @@ def test_runtime_config_rejects_placeholder_serial_secret() -> None:
     kwargs = _runtime_config_kwargs(
         serial_shared_secret=const.DEFAULT_SERIAL_SHARED_SECRET
     )
-    with pytest.raises(ValueError, match="placeholder"):
+    with pytest.raises(ValueError, match="must be configured"):
         settings.RuntimeConfig(**kwargs)
 
 

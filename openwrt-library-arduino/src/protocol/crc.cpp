@@ -1,13 +1,20 @@
 #include "crc.h"
 
-// CORRECCIÓN: Eliminamos los checks estrictos de __has_include.
-// El usuario debe incluir <CRC32.h> en su sketch.
-
-#include <CRC32.h>
+// Removed dependency on external CRC32 library to ensure consistency
+// and avoid potential library version mismatches.
+// Implements standard IEEE 802.3 CRC32 (polynomial 0xEDB88320 reversed).
 
 uint32_t crc32_ieee(const uint8_t* data, size_t len) {
-  if (!data && len > 0) {
-    return 0;
+  uint32_t crc = 0xFFFFFFFF;
+  for (size_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++) {
+      if (crc & 1) {
+        crc = (crc >> 1) ^ 0xEDB88320;
+      } else {
+        crc = (crc >> 1);
+      }
+    }
   }
-  return CRC32::calculate<uint8_t>(data, len);
+  return ~crc;
 }

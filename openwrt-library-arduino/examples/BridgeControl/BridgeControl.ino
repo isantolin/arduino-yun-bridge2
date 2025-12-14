@@ -8,12 +8,12 @@
 
 // CONFIGURACIÓN DEL SECRETO
 // Este password debe coincidir con el configurado en el lado de Linux (/etc/yun-bridge.conf o similar)
-#define BRIDGE_SECRET "changeme123"
+#define BRIDGE_SECRET "ba8dde66d745f63eb9514d32bba976a92d90136edceea701288e944e85830d94"
 
 // Includes manuales para dependencias
-#include <PacketSerial.h>
-#include <CRC32.h>
-#include <Crypto.h>
+// #include <PacketSerial.h> // Removed: Internal dependency
+// #include <CRC32.h>        // Removed: Internal dependency
+// #include <Crypto.h>       // Removed: Internal dependency
 
 #include <Bridge.h>
 #include <string.h>
@@ -93,7 +93,19 @@ void setup() {
   Bridge.onStatus(handleStatusFrame);
   
   pinMode(ledPin, OUTPUT);
-  delay(2000);
+  // delay(2000); // Removed blocking delay
+
+  // Wait for handshake with non-blocking LED blink
+  long lastBlink = 0;
+  bool ledState = false;
+  while (!Bridge.isSynchronized()) {
+    Bridge.process();
+    if (millis() - lastBlink > 50) {
+      lastBlink = millis();
+      ledState = !ledState;
+      digitalWrite(ledPin, ledState ? HIGH : LOW);
+    }
+  }
   
   Console.println(F("Bridge iniciado con secreto definido en Sketch."));
   Mailbox.requestRead();

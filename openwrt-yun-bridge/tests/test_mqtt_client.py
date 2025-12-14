@@ -28,13 +28,12 @@ async def test_aiomqtt_context_manager_mocking():
 
 @pytest.mark.asyncio
 async def test_aiomqtt_messages_iterator_mocking():
-    """Verify mocking of the messages() async iterator."""
+    """Verify mocking of the messages async iterator."""
     mock_client = AsyncMock(spec=BaseClient)
     mock_messages = AsyncMock()
 
-    # Mock messages() context manager
-    mock_messages.__aenter__.return_value = mock_messages
-    mock_client.messages.return_value = mock_messages
+    # Mock messages property
+    mock_client.messages = mock_messages
 
     # Mock async iterator behavior
     fake_msg = MagicMock()
@@ -47,10 +46,9 @@ async def test_aiomqtt_messages_iterator_mocking():
 
     mock_messages.__aiter__.side_effect = msg_gen
 
-    async with mock_client.messages() as messages:
-        received = []
-        async for msg in messages:
-            received.append(msg)
+    received = []
+    async for msg in mock_client.messages:
+        received.append(msg)
 
     assert len(received) == 1
     assert received[0].topic == "test/in"

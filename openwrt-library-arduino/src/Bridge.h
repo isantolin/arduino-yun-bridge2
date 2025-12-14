@@ -82,6 +82,7 @@ class BridgeClass {
   void begin(unsigned long baudrate = kBridgeBaudrate,
              const char* secret = nullptr, size_t secret_len = 0);
   void process();
+  bool isSynchronized() const { return _synchronized; }
 
   // API
   void pinMode(uint8_t pin, uint8_t mode);
@@ -198,6 +199,7 @@ class BridgeClass {
   uint16_t _pending_process_pids[kMaxPendingProcessPolls];
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
+  bool _synchronized;
 
 #if BRIDGE_DEBUG_FRAMES
   mutable FrameDebugSnapshot _tx_debug;

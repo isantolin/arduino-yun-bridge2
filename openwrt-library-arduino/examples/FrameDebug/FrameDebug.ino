@@ -3,7 +3,7 @@
 #define BRIDGE_ENABLE_DATASTORE 0
 #define BRIDGE_ENABLE_FILESYSTEM 0
 #define BRIDGE_ENABLE_PROCESS 0
-#define BRIDGE_SECRET "changeme123"
+#define BRIDGE_SECRET "ba8dde66d745f63eb9514d32bba976a92d90136edceea701288e944e85830d94"
 
 // When set to 1 the sketch automatically sends CommandId::CMD_GET_FREE_MEMORY frames
 // every kSendIntervalMs milliseconds (behaviour prior to this change).
@@ -70,6 +70,20 @@ void setup() {
 
   Bridge.begin(115200, BRIDGE_SECRET);
   Serial.println(F("[FrameDebug] Bridge initialized with sketch-defined secret"));
+
+  // Wait for handshake with non-blocking LED blink
+  pinMode(13, OUTPUT);
+  long lastBlink = 0;
+  bool ledState = false;
+  while (!Bridge.isSynchronized()) {
+    Bridge.process();
+    if (millis() - lastBlink > 50) {
+      lastBlink = millis();
+      ledState = !ledState;
+      digitalWrite(13, ledState ? HIGH : LOW);
+    }
+  }
+  Serial.println(F("[FrameDebug] Handshake synchronized"));
 }
 
 void loop() {

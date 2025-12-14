@@ -1,0 +1,52 @@
+/*
+  Corrected Smoke Test for Yun Bridge 2.0
+  Waits for Console connection to avoid spamming the bus before handshake.
+*/
+
+#include <Bridge.h>
+// Console is already declared in Bridge.h in this library version
+// #include <Console.h> 
+
+// Secret from UCI (yunbridge.general.serial_shared_secret)
+// Must match the daemon's configuration to pass the handshake.
+#define BRIDGE_SERIAL_SHARED_SECRET "ba8dde66d745f63eb9514d32bba976a92d90136edceea701288e944e85830d94"
+
+void setup() {
+  // Initialize Bridge with the shared secret
+  Bridge.begin(115200, BRIDGE_SERIAL_SHARED_SECRET);
+  
+  // Initialize Console
+  Console.begin();
+  
+  pinMode(13, OUTPUT);
+
+  // CRITICAL: Wait for Console to be ready (Linux handshake complete)
+  // This prevents "Rejecting MCU frame before link synchronisation" errors.
+  // We must call Bridge.process() to handle the handshake frames!
+  // Use non-blocking blink to ensure we process serial data as fast as possible.
+  long lastBlink = 0;
+  bool ledState = false;
+  
+  while (!Bridge.isSynchronized()) {
+    Bridge.process();
+    
+    if (millis() - lastBlink > 50) {
+      lastBlink = millis();
+      ledState = !ledState;
+      digitalWrite(13, ledState ? HIGH : LOW);
+    }
+  }
+
+  Console.println("MCU: Setup complete. Handshake verified.");
+}
+
+void loop() {
+  // CRITICAL: Must call process() frequently to handle incoming commands (heartbeats, RPC)
+  Bridge.process();
+
+  static long lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    lastPrint = millis();
+    Console.println("Estado: 0x05 (Running)");
+  }
+}

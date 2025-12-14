@@ -98,18 +98,17 @@ async def mqtt_task(
 
     async def _subscriber_loop(client: aiomqtt.Client) -> None:
         try:
-            async with client.messages() as stream:
-                async for message in stream:
-                    topic = str(message.topic)
-                    if not topic:
-                        continue
-                    try:
-                        await service.handle_mqtt_message(message)
-                    except Exception:
-                        logger.exception(
-                            "Error processing MQTT topic %s",
-                            topic,
-                        )
+            async for message in client.messages:
+                topic = str(message.topic)
+                if not topic:
+                    continue
+                try:
+                    await service.handle_mqtt_message(message)
+                except Exception:
+                    logger.exception(
+                        "Error processing MQTT topic %s",
+                        topic,
+                    )
         except asyncio.CancelledError:
             logger.info("MQTT subscriber loop cancelled.")
             raise

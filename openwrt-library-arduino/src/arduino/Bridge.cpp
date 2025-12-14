@@ -126,7 +126,8 @@ BridgeClass::BridgeClass(Stream& stream)
       _pending_datastore_head(0),
       _pending_datastore_count(0),
       _pending_process_poll_head(0),
-      _pending_process_poll_count(0)
+      _pending_process_poll_count(0),
+      _synchronized(false)
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
@@ -514,6 +515,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         (void)sendFrame(
           CommandId::CMD_LINK_SYNC_RESP,
           response, response_length);
+        _synchronized = true;
         command_processed_internally = true;
         requires_ack = true;
       }
@@ -1038,6 +1040,7 @@ void BridgeClass::_processAckTimeout() {
 }
 
 void BridgeClass::_resetLinkState() {
+  _synchronized = false;
   _clearAckState();
   _clearPendingTxQueue();
   _parser.reset();

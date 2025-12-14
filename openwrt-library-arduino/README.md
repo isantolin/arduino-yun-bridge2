@@ -24,9 +24,35 @@ This library provides the MCU-side runtime for the Arduino Yun Bridge v2 project
 
 ### External dependencies
 
-- **Crypto**: The installer fetches the [Crypto](https://github.com/rweather/arduinolibs/tree/master/libraries/Crypto) library from `rweather/arduinolibs`. That package exposes the same `<HMAC.h>` / `<SHA256.h>` interfaces, so the bridge keeps using `HMAC<SHA256>` out of the box but you can still swap algorithms by instantiating a different hash class (for example `HMAC<SHA3_256>`) in `Bridge.cpp` if your sketch needs another primitive.
-- **PacketSerial**: For COBS framing we reuse [bakercp/PacketSerial](https://github.com/bakercp/PacketSerial). Only the encoding helpers are used, so the binary protocol (headers + CRC32) stays identical; PacketSerial simply provides the battle-tested framing layer.
-- **CRC32**: Frame checksums are delegated to [bakercp/CRC32](https://github.com/bakercp/CRC32), matching the IEEE 802.3 polynomial so both the Arduino sketch and the Python daemon share the same 32-bit trailer implementation.
+- **Crypto**: The installer fetches the [Crypto](https://github.com/rweather/arduinolibs/tree/master/libraries/Crypto) library from `rweather/arduinolibs`. That package exposes the same `<HMAC.h>` / `<SHA256.h>` interfaces.
+- **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3) to ensure strict binary compatibility with the Python daemon and remove external dependency risks.
+
+## Best Practices
+
+### Non-Blocking Loop
+The Bridge library relies on frequent calls to `Bridge.process()` to handle incoming RPC frames, heartbeats, and handshake messages from the Linux daemon.
+**Avoid using `delay()`** in your `loop()` or `setup()`. Blocking the MCU for more than a few milliseconds can cause the Serial buffer (64 bytes) to overflow, leading to packet corruption and connection instability.
+
+Instead of:
+```cpp
+void loop() {
+  // BAD: Blocks for 1 second, risking buffer overflow
+  delay(1000);
+}
+```
+
+Use non-blocking logic:
+```cpp
+void loop() {
+  Bridge.process(); // Must be called frequently!
+
+  static long lastRun = 0;
+  if (millis() - lastRun > 1000) {
+    lastRun = millis();
+    // Do work...
+  }
+}
+```
 
 ## Building From Source
 

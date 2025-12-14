@@ -158,9 +158,8 @@ class Bridge:
         client = self._ensure_client()
 
         try:
-            async with client.messages() as messages:
-                async for message in messages:
-                    await self._handle_inbound_message(message)
+            async for message in client.messages:
+                await self._handle_inbound_message(message)
         except asyncio.CancelledError:
             raise
         except MqttError as exc:

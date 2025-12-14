@@ -269,7 +269,7 @@ async def serial_reader_task(
             ) -> bool:
                 return await _send_serial_frame(state, writer_ref, cmd, data)
 
-            if previous_sender is not None:
+            if previous_sender is not None and previous_sender is not serial_sender_not_ready:
                 prev_sender: SendFrameCallable = previous_sender
 
                 async def _chained_sender(
@@ -288,53 +288,65 @@ async def serial_reader_task(
             else:
                 service.register_serial_sender(_registered_sender)
             logger.info("Serial port connected successfully.")
+
+            async def _read_loop() -> None:
+                assert reader is not None
+                buffer = bytearray()
+                while True:
+                    byte = await reader.read(1)
+                    if not byte:
+                        logger.warning("Serial stream ended; reconnecting.")
+                        break
+
+                    if byte == SERIAL_TERMINATOR:
+                        if not buffer:
+                            continue
+                        encoded_packet = bytes(buffer)
+                        buffer.clear()
+                        await _process_serial_packet(
+                            encoded_packet,
+                            service,
+                            state,
+                        )
+                    else:
+                        buffer.append(byte[0])
+                        if len(buffer) > MAX_SERIAL_PACKET_BYTES:
+                            snapshot = bytes(buffer[:32])
+                            buffer.clear()
+                            state.record_serial_decode_error()
+                            logger.warning(
+                                "Serial packet exceeded %d bytes; "
+                                "requesting retransmit.",
+                                MAX_SERIAL_PACKET_BYTES,
+                            )
+                            payload = struct.pack(">H", 0xFFFF) + snapshot
+                            try:
+                                await service.send_frame(
+                                    Status.MALFORMED.value,
+                                    payload,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "Failed to notify MCU about oversized " "serial packet"
+                                )
+
+            read_task = asyncio.create_task(_read_loop())
+
             try:
                 await service.on_serial_connected()
             except SerialHandshakeFatal as exc:
                 should_retry = False
                 logger.critical("%s", exc)
+                read_task.cancel()
+                try:
+                    await read_task
+                except asyncio.CancelledError:
+                    pass
                 raise
             except Exception:
                 logger.exception("Error running post-connect hooks for serial link")
 
-            buffer = bytearray()
-            while True:
-                byte = await reader.read(1)
-                if not byte:
-                    logger.warning("Serial stream ended; reconnecting.")
-                    break
-
-                if byte == SERIAL_TERMINATOR:
-                    if not buffer:
-                        continue
-                    encoded_packet = bytes(buffer)
-                    buffer.clear()
-                    await _process_serial_packet(
-                        encoded_packet,
-                        service,
-                        state,
-                    )
-                else:
-                    buffer.append(byte[0])
-                    if len(buffer) > MAX_SERIAL_PACKET_BYTES:
-                        snapshot = bytes(buffer[:32])
-                        buffer.clear()
-                        state.record_serial_decode_error()
-                        logger.warning(
-                            "Serial packet exceeded %d bytes; "
-                            "requesting retransmit.",
-                            MAX_SERIAL_PACKET_BYTES,
-                        )
-                        payload = struct.pack(">H", 0xFFFF) + snapshot
-                        try:
-                            await service.send_frame(
-                                Status.MALFORMED.value,
-                                payload,
-                            )
-                        except Exception:
-                            logger.exception(
-                                "Failed to notify MCU about oversized " "serial packet"
-                            )
+            await read_task
         except (serial.SerialException, asyncio.IncompleteReadError) as exc:
             logger.error("Serial communication error: %s", exc)
         except ConnectionResetError:

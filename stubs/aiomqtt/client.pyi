@@ -8,9 +8,8 @@ import enum
 import logging
 import ssl
 import sys
-import paho.mqtt.client as mqtt
 from types import TracebackType
-from typing import Any, AsyncIterator, Iterable, Literal, Self, TypeVar, Callable, AsyncContextManager
+from typing import Any, AsyncIterator, Iterable, Literal, Self, TypeVar, Callable
 from paho.mqtt.properties import Properties
 from paho.mqtt.reasoncodes import ReasonCode
 from paho.mqtt.subscribeoptions import SubscribeOptions
@@ -129,7 +128,7 @@ class Client:
         websocket_path: The path to use for websockets.
         websocket_headers: The headers to use for websockets.
     """
-    def __init__(self, hostname: str, port: int = ..., *, username: str | None = ..., password: str | None = ..., logger: logging.Logger | None = ..., identifier: str | None = ..., queue_type: type[asyncio.Queue[Message]] | None = ..., protocol: ProtocolVersion | None = ..., will: Will | None = ..., clean_session: bool | None = ..., transport: Literal["tcp", "websockets", "unix"] = ..., timeout: float | None = ..., keepalive: int = ..., bind_address: str = ..., bind_port: int = ..., clean_start: mqtt.CleanStartOption = ..., max_queued_incoming_messages: int | None = ..., max_queued_outgoing_messages: int | None = ..., max_inflight_messages: int | None = ..., max_concurrent_outgoing_calls: int | None = ..., properties: Properties | None = ..., tls_context: ssl.SSLContext | None = ..., tls_params: TLSParameters | None = ..., tls_insecure: bool | None = ..., proxy: ProxySettings | None = ..., socket_options: Iterable[SocketOption] | None = ..., websocket_path: str | None = ..., websocket_headers: WebSocketHeaders | None = ...) -> None:
+    def __init__(self, hostname: str, port: int = ..., *, username: str | None = ..., password: str | None = ..., logger: logging.Logger | None = ..., identifier: str | None = ..., queue_type: type[asyncio.Queue[Message]] | None = ..., protocol: ProtocolVersion | None = ..., will: Will | None = ..., clean_session: bool | None = ..., transport: Literal["tcp", "websockets", "unix"] = ..., timeout: float | None = ..., keepalive: int = ..., bind_address: str = ..., bind_port: int = ..., clean_start: Any = ..., max_queued_incoming_messages: int | None = ..., max_queued_outgoing_messages: int | None = ..., max_inflight_messages: int | None = ..., max_concurrent_outgoing_calls: int | None = ..., properties: Properties | None = ..., tls_context: ssl.SSLContext | None = ..., tls_params: TLSParameters | None = ..., tls_insecure: bool | None = ..., proxy: ProxySettings | None = ..., socket_options: Iterable[SocketOption] | None = ..., websocket_path: str | None = ..., websocket_headers: WebSocketHeaders | None = ...) -> None:
         ...
 
     @property
@@ -141,7 +140,8 @@ class Client:
         """
         ...
 
-    def messages(self) -> AsyncContextManager[AsyncIterator[Message]]:
+    @property
+    def messages(self) -> AsyncIterator[Message]:
         """Dynamic view of the client's message queue."""
         ...
 

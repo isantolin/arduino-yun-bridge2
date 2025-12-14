@@ -54,6 +54,8 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/protocol/crc.cpp" -o "${BUILD_DIR}/crc.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/protocol/rpc_frame.cpp" -o "${BUILD_DIR}/rpc_frame.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Bridge.cpp" -o "${BUILD_DIR}/Bridge.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/BridgeTransport.cpp" -o "${BUILD_DIR}/BridgeTransport.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/HardwareAbstraction.cpp" -o "${BUILD_DIR}/HardwareAbstraction.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Console.cpp" -o "${BUILD_DIR}/Console.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Peripherals.cpp" -o "${BUILD_DIR}/Peripherals.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${TEST_ROOT}/test_protocol.cpp" -o "${BUILD_DIR}/test_protocol.o"
@@ -69,6 +71,8 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
     "${BUILD_DIR}/crc.o" \
     "${BUILD_DIR}/rpc_frame.o" \
     "${BUILD_DIR}/Bridge.o" \
+    "${BUILD_DIR}/BridgeTransport.o" \
+    "${BUILD_DIR}/HardwareAbstraction.o" \
     "${BUILD_DIR}/Console.o" \
     "${BUILD_DIR}/Peripherals.o" \
     "${BUILD_DIR}/test_bridge_components.o" \

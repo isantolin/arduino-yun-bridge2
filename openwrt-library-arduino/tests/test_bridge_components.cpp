@@ -272,6 +272,11 @@ class ScopedBridgeBinding {
   explicit ScopedBridgeBinding(Stream& stream) {
     // FIX SEGFAULT: Destruct existing instance before placement new to avoid memory corruption
     Bridge.~BridgeClass();
+    
+    // FIX SEGFAULT: Zero out the memory region to ensure no stale pointers remain
+    // if the constructor doesn't initialize everything explicitly.
+    std::memset(&Bridge, 0, sizeof(BridgeClass));
+    
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
   }
@@ -279,6 +284,10 @@ class ScopedBridgeBinding {
   ~ScopedBridgeBinding() {
     // FIX SEGFAULT: Destruct mock before restoring original
     Bridge.~BridgeClass();
+    
+    // FIX SEGFAULT: Zero out memory again before restoring global
+    std::memset(&Bridge, 0, sizeof(BridgeClass));
+    
     new (&Bridge) BridgeClass(Serial1);
     Bridge.begin();
   }

@@ -239,47 +239,20 @@ class ScopedBridgeBinding {
  public:
   explicit ScopedBridgeBinding(Stream& stream) {
     TEST_TRACE("ScopedBridgeBinding: Switching to mock stream");
-    TEST_TRACE("  -> Destructing Bridge...");
+    // Destruct
     Bridge.~BridgeClass();
-    
-    // SAFETY: Use memset to zero out memory, but cast to void* to silence compiler warning.
-    // This is necessary because BridgeClass is non-trivial, but we need a clean slate.
-    TEST_TRACE("  -> Wiping Bridge memory...");
-    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
-    
-    TEST_TRACE("  -> Constructing Bridge...");
+    // Construct
     new (&Bridge) BridgeClass(stream);
-    
-    TEST_TRACE("  -> Re-initializing Process...");
-    // Re-initialize Process as well since it might depend on Bridge
-    Process.~ProcessClass();
-    std::memset(reinterpret_cast<void*>(&Process), 0, sizeof(ProcessClass));
-    new (&Process) ProcessClass();
-    
-    TEST_TRACE("  -> Calling Bridge.begin()...");
     Bridge.begin();
-    TEST_TRACE("  -> Switch Complete.");
   }
 
   ~ScopedBridgeBinding() {
     TEST_TRACE("ScopedBridgeBinding: Restoring global serial stream");
-    TEST_TRACE("  -> Destructing Mock Bridge...");
+    // Destruct mock
     Bridge.~BridgeClass();
-    
-    TEST_TRACE("  -> Wiping Bridge memory...");
-    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
-    
-    TEST_TRACE("  -> Constructing Global Bridge...");
+    // Restore global
     new (&Bridge) BridgeClass(Serial1);
-    
-    TEST_TRACE("  -> Restoring Process...");
-    Process.~ProcessClass();
-    std::memset(reinterpret_cast<void*>(&Process), 0, sizeof(ProcessClass));
-    new (&Process) ProcessClass();
-    
-    TEST_TRACE("  -> Calling Bridge.begin()...");
     Bridge.begin();
-    TEST_TRACE("  -> Restore Complete.");
   }
 
   ScopedBridgeBinding(const ScopedBridgeBinding&) = delete;
@@ -303,20 +276,20 @@ std::vector<Frame> decode_frames(const std::vector<uint8_t>& bytes) {
 void test_datastore_get_response_dispatches_handler() {
   TEST_TRACE("START: test_datastore_get_response_dispatches_handler");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local instance
 
-  Bridge._pending_datastore_head = 0;
-  Bridge._pending_datastore_count = 0;
-  Bridge._pending_datastore_key_lengths.fill(0);
-  for (auto& key : Bridge._pending_datastore_keys) {
+  bridge._pending_datastore_head = 0;
+  bridge._pending_datastore_count = 0;
+  bridge._pending_datastore_key_lengths.fill(0);
+  for (auto& key : bridge._pending_datastore_keys) {
     key.fill(0);
   }
 
   DatastoreHandlerState handler_state;
   DatastoreHandlerState::instance = &handler_state;
-  Bridge.onDataStoreGetResponse(datastore_handler_trampoline);
+  bridge.onDataStoreGetResponse(datastore_handler_trampoline);
 
-  bool enqueued = Bridge._trackPendingDatastoreKey("thermostat");
+  bool enqueued = bridge._trackPendingDatastoreKey("thermostat");
   assert(enqueued);
 
   Frame frame{};
@@ -326,7 +299,7 @@ void test_datastore_get_response_dispatches_handler() {
   frame.payload[0] = 5;
   std::memcpy(frame.payload + 1, "23.7C", 5);
 
-  Bridge.dispatch(frame);
+  bridge.dispatch(frame);
 
   assert(handler_state.called);
   assert(handler_state.key == "thermostat");
@@ -338,15 +311,15 @@ void test_datastore_get_response_dispatches_handler() {
 void test_datastore_queue_rejects_overflow() {
   TEST_TRACE("START: test_datastore_queue_rejects_overflow");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local instance
 
-  assert(Bridge._trackPendingDatastoreKey("1"));
-  assert(Bridge._trackPendingDatastoreKey("2"));
+  assert(bridge._trackPendingDatastoreKey("1"));
+  assert(bridge._trackPendingDatastoreKey("2"));
 
-  bool overflow = Bridge._trackPendingDatastoreKey("overflow");
+  bool overflow = bridge._trackPendingDatastoreKey("overflow");
   assert(!overflow);
 
-  const char* key = Bridge._popPendingDatastoreKey();
+  const char* key = bridge._popPendingDatastoreKey();
   assert(std::strcmp(key, "1") == 0);
   TEST_TRACE("PASS: test_datastore_queue_rejects_overflow");
 }
@@ -354,7 +327,7 @@ void test_datastore_queue_rejects_overflow() {
 void test_console_write_and_flow_control() {
   TEST_TRACE("START: test_console_write_and_flow_control");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  ScopedBridgeBinding binding(stream); // Needs global binding due to Console usage
 
   Console.begin();
 
@@ -414,7 +387,7 @@ void test_console_write_and_flow_control() {
 void test_datastore_put_and_request_behavior() {
   TEST_TRACE("START: test_datastore_put_and_request_behavior");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  ScopedBridgeBinding binding(stream); // Needs global binding due to DataStore usage
 
   const char* key = "temp";
   const char* value = "23.5";
@@ -471,7 +444,7 @@ void test_datastore_put_and_request_behavior() {
 void test_mailbox_send_and_requests_emit_commands() {
   TEST_TRACE("START: test_mailbox_send_and_requests_emit_commands");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  ScopedBridgeBinding binding(stream); // Needs global binding due to Mailbox usage
 
   const char* msg = "hello";
   Mailbox.send(msg);
@@ -519,7 +492,7 @@ void test_mailbox_send_and_requests_emit_commands() {
 void test_filesystem_write_and_remove_payloads() {
   TEST_TRACE("START: test_filesystem_write_and_remove_payloads");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  ScopedBridgeBinding binding(stream); // Needs global binding due to FileSystem usage
 
   const char* path = "/tmp/data";
   std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, 0xEE);
@@ -563,7 +536,7 @@ void test_filesystem_write_and_remove_payloads() {
 void test_process_kill_encodes_pid() {
   TEST_TRACE("START: test_process_kill_encodes_pid");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  ScopedBridgeBinding binding(stream); // Needs global binding due to Process usage
 
   Process.kill(0x1234);
   auto frames = decode_frames(stream.data());
@@ -581,12 +554,11 @@ void test_process_kill_encodes_pid() {
 void test_mailbox_read_response_delivers_payload() {
   TEST_TRACE("START: test_mailbox_read_response_delivers_payload");
   RecordingStream stream;
-  // FIX: Use ScopedBridgeBinding
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local instance
 
   MailboxHandlerState mailbox_state;
   MailboxHandlerState::instance = &mailbox_state;
-  Bridge.onMailboxMessage(mailbox_handler_trampoline);
+  bridge.onMailboxMessage(mailbox_handler_trampoline);
 
   const char* payload = "hello-linux";
   const uint16_t payload_len = static_cast<uint16_t>(std::strlen(payload));
@@ -598,7 +570,7 @@ void test_mailbox_read_response_delivers_payload() {
   write_u16_be(frame.payload, payload_len);
   std::memcpy(frame.payload + 2, payload, payload_len);
 
-  Bridge.dispatch(frame);
+  bridge.dispatch(frame);
 
   assert(mailbox_state.called);
   assert(mailbox_state.message == payload);
@@ -609,20 +581,20 @@ void test_mailbox_read_response_delivers_payload() {
 void test_process_poll_response_requeues_on_streaming_output() {
   TEST_TRACE("START: test_process_poll_response_requeues_on_streaming_output");
   RecordingStream stream;
-  // FIX: Use ScopedBridgeBinding so dispatch uses correct bridge/stream
-  ScopedBridgeBinding binding(stream);
+  // FIX: Use LOCAL BridgeClass to avoid segfault from global state corruption
+  BridgeClass bridge(stream);
 
-  Bridge._pending_process_poll_head = 0;
-  Bridge._pending_process_poll_count = 0;
-  Bridge._pending_process_pids.fill(0);
+  bridge._pending_process_poll_head = 0;
+  bridge._pending_process_poll_count = 0;
+  bridge._pending_process_pids.fill(0);
 
   const uint16_t pid = 0x1234;
-  bool enqueued = Bridge._pushPendingProcessPid(pid);
+  bool enqueued = bridge._pushPendingProcessPid(pid);
   assert(enqueued);
 
   ProcessPollHandlerState poll_state;
   ProcessPollHandlerState::instance = &poll_state;
-  Bridge.onProcessPollResponse(process_poll_handler_trampoline);
+  bridge.onProcessPollResponse(process_poll_handler_trampoline);
 
   constexpr uint8_t stdout_text[] = {'o', 'k'};
 
@@ -640,7 +612,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   std::memcpy(cursor, stdout_text, sizeof(stdout_text));
 
   stream.clear();
-  Bridge.dispatch(frame);
+  bridge.dispatch(frame);
 
   assert(poll_state.called);
   assert(poll_state.status == StatusCode::STATUS_OK);
@@ -662,9 +634,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
 void test_begin_preserves_binary_shared_secret_length() {
   TEST_TRACE("START: test_begin_preserves_binary_shared_secret_length");
   RecordingStream stream_explicit;
-  // This test explicitly creates local bridge instances to test constructors
-  // This is safe as long as they don't interact with globals
-  BridgeClass bridge_explicit(stream_explicit);
+  BridgeClass bridge_explicit(stream_explicit); // Local
 
   const uint8_t secret_bytes[] = {0x00, 0x01, 0x02, 0x00, 0x03};
   const char* binary_secret = reinterpret_cast<const char*>(secret_bytes);
@@ -690,7 +660,7 @@ void test_begin_preserves_binary_shared_secret_length() {
   assert(explicit_has_entropy);
 
   RecordingStream stream_default;
-  BridgeClass bridge_default(stream_default);
+  BridgeClass bridge_default(stream_default); // Local
   bridge_default.begin(115200, binary_secret);
 
   uint8_t truncated_tag[16];
@@ -712,28 +682,28 @@ void test_begin_preserves_binary_shared_secret_length() {
 void test_ack_flushes_pending_queue_after_response() {
   TEST_TRACE("START: test_ack_flushes_pending_queue_after_response");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
-  Bridge.begin();
+  bridge.begin();
 
   const uint8_t first_payload[] = {0x42};
-  bool sent = Bridge.sendFrame(
+  bool sent = bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE,
       first_payload, sizeof(first_payload));
   assert(sent);
-  assert(Bridge._awaiting_ack);
+  assert(bridge._awaiting_ack);
 
   const uint8_t queued_payload[] = {0xAA, 0xBB};
-    bool enqueued = Bridge._enqueuePendingTx(
+    bool enqueued = bridge._enqueuePendingTx(
       command_value(CommandId::CMD_MAILBOX_PUSH),
       queued_payload, sizeof(queued_payload));
   assert(enqueued);
-  assert(Bridge._pending_tx_count == 1);
+  assert(bridge._pending_tx_count == 1);
 
   auto before = decode_frames(stream.data());
   size_t before_count = before.size();
 
-  inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
+  inject_ack(stream, bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
 
   auto after = decode_frames(stream.data());
   assert(after.size() == before_count + 1);
@@ -741,26 +711,26 @@ void test_ack_flushes_pending_queue_after_response() {
   assert(flushed.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
   assert(flushed.header.payload_length == sizeof(queued_payload));
   assert(std::memcmp(flushed.payload, queued_payload, sizeof(queued_payload)) == 0);
-  assert(Bridge._pending_tx_count == 0);
-  assert(Bridge._awaiting_ack);
+  assert(bridge._pending_tx_count == 0);
+  assert(bridge._awaiting_ack);
   TEST_TRACE("PASS: test_ack_flushes_pending_queue_after_response");
 }
 
 void test_status_ack_frame_clears_pending_state_via_dispatch() {
   TEST_TRACE("START: test_status_ack_frame_clears_pending_state_via_dispatch");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
-  Bridge.begin();
+  bridge.begin();
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
-  Bridge.onStatus(status_handler_trampoline);
+  bridge.onStatus(status_handler_trampoline);
 
   const uint8_t payload[] = {0x55};
-  bool sent = Bridge.sendFrame(
+  bool sent = bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload));
   assert(sent);
-  assert(Bridge._awaiting_ack);
+  assert(bridge._awaiting_ack);
 
   Frame ack{};
   ack.header.version = PROTOCOL_VERSION;
@@ -768,9 +738,9 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
   ack.header.payload_length = 2;
   write_u16_be(ack.payload, command_value(CommandId::CMD_CONSOLE_WRITE));
 
-  Bridge.dispatch(ack);
+  bridge.dispatch(ack);
 
-  assert(!Bridge._awaiting_ack);
+  assert(!bridge._awaiting_ack);
   assert(status_state.called);
   assert(status_state.status_code == StatusCode::STATUS_ACK);
   StatusHandlerState::instance = nullptr;
@@ -780,11 +750,11 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
 void test_status_error_frame_dispatches_handler() {
   TEST_TRACE("START: test_status_error_frame_dispatches_handler");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
-  Bridge.onStatus(status_handler_trampoline);
+  bridge.onStatus(status_handler_trampoline);
 
   const char* message = "remote_fault";
   Frame frame{};
@@ -793,7 +763,7 @@ void test_status_error_frame_dispatches_handler() {
   frame.header.payload_length = static_cast<uint16_t>(std::strlen(message));
   std::memcpy(frame.payload, message, frame.header.payload_length);
 
-  Bridge.dispatch(frame);
+  bridge.dispatch(frame);
 
   assert(status_state.called);
   assert(status_state.status_code == StatusCode::STATUS_ERROR);
@@ -807,13 +777,13 @@ void test_serial_overflow_emits_status_notification() {
   std::vector<uint8_t> oversized(rpc::COBS_BUFFER_SIZE + 8, 0xAA);
   RecordingStream stream;
   stream.inject_rx(oversized);
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
-  Bridge.onStatus(status_handler_trampoline);
+  bridge.onStatus(status_handler_trampoline);
 
-  Bridge.process();
+  bridge.process();
 
   assert(status_state.called);
   assert(status_state.status_code == StatusCode::STATUS_MALFORMED);
@@ -825,18 +795,18 @@ void test_serial_overflow_emits_status_notification() {
 void test_malformed_status_triggers_retransmit() {
   TEST_TRACE("START: test_malformed_status_triggers_retransmit");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
-  bool sent = Bridge.sendFrame(
+  bool sent = bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
   assert(sent);
-  assert(Bridge._awaiting_ack);
+  assert(bridge._awaiting_ack);
 
   auto before = decode_frames(stream.data());
   assert(before.size() == 1);
 
-  inject_malformed(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
+  inject_malformed(stream, bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
 
   auto after = decode_frames(stream.data());
   assert(after.size() == 2);
@@ -844,17 +814,17 @@ void test_malformed_status_triggers_retransmit() {
   assert(resent.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
   assert(resent.header.payload_length == sizeof(payload));
   assert(std::memcmp(resent.payload, payload, sizeof(payload)) == 0);
-  assert(Bridge._retry_count == 1);
+  assert(bridge._retry_count == 1);
   TEST_TRACE("PASS: test_malformed_status_triggers_retransmit");
 }
 
 void test_link_sync_generates_tag_and_ack() {
   TEST_TRACE("START: test_link_sync_generates_tag_and_ack");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   const char* secret = "unit-test-secret";
-  Bridge.begin(115200, secret);
+  bridge.begin(115200, secret);
 
   const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
       0x01, 0x02, 0x03, 0x04,
@@ -868,7 +838,7 @@ void test_link_sync_generates_tag_and_ack() {
   std::memcpy(frame.payload, nonce, sizeof(nonce));
 
   stream.clear();
-  Bridge.dispatch(frame);
+  bridge.dispatch(frame);
 
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 2);
@@ -877,7 +847,7 @@ void test_link_sync_generates_tag_and_ack() {
   assert(sync.header.payload_length == sizeof(nonce) + 16);
   assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
   uint8_t expected_tag[16];
-  Bridge._computeHandshakeTag(nonce, sizeof(nonce), expected_tag);
+  bridge._computeHandshakeTag(nonce, sizeof(nonce), expected_tag);
   assert(std::memcmp(sync.payload + sizeof(nonce), expected_tag, 16) == 0);
 
   const Frame& ack = frames.back();
@@ -890,9 +860,9 @@ void test_link_sync_generates_tag_and_ack() {
 void test_link_sync_without_secret_replays_nonce_only() {
   TEST_TRACE("START: test_link_sync_without_secret_replays_nonce_only");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
-  Bridge.begin(115200, nullptr);
+  bridge.begin(115200, nullptr);
 
   const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
       0xAA, 0xBB, 0xCC, 0xDD,
@@ -906,7 +876,7 @@ void test_link_sync_without_secret_replays_nonce_only() {
   std::memcpy(frame.payload, nonce, sizeof(nonce));
 
   stream.clear();
-  Bridge.dispatch(frame);
+  bridge.dispatch(frame);
 
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 2);
@@ -920,25 +890,25 @@ void test_link_sync_without_secret_replays_nonce_only() {
 void test_ack_timeout_emits_status_and_resets_state() {
   TEST_TRACE("START: test_ack_timeout_emits_status_and_resets_state");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
-  Bridge.onStatus(status_handler_trampoline);
+  bridge.onStatus(status_handler_trampoline);
 
   const uint8_t payload[] = {0x99};
-  bool sent = Bridge.sendFrame(
+  bool sent = bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
   assert(sent);
-  assert(Bridge._awaiting_ack);
+  assert(bridge._awaiting_ack);
 
-  Bridge._retry_count = BridgeClass::kMaxAckRetries;
-  Bridge._last_send_millis = 1000;
-  Bridge._processAckTimeout();
+  bridge._retry_count = BridgeClass::kMaxAckRetries;
+  bridge._last_send_millis = 1000;
+  bridge._processAckTimeout();
 
   assert(status_state.called);
   assert(status_state.status_code == StatusCode::STATUS_TIMEOUT);
-  assert(!Bridge._awaiting_ack);
+  assert(!bridge._awaiting_ack);
   StatusHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_ack_timeout_emits_status_and_resets_state");
 }
@@ -946,14 +916,14 @@ void test_ack_timeout_emits_status_and_resets_state() {
 void test_process_run_rejects_oversized_payload() {
   TEST_TRACE("START: test_process_run_rejects_oversized_payload");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
-  Bridge.onStatus(status_handler_trampoline);
+  bridge.onStatus(status_handler_trampoline);
 
   std::string huge(rpc::MAX_PAYLOAD_SIZE + 4, 'x');
-  Bridge.requestProcessRun(huge.c_str());
+  bridge.requestProcessRun(huge.c_str());
 
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
@@ -967,7 +937,7 @@ void test_process_run_rejects_oversized_payload() {
   assert(status_state.called);
   assert(status_state.payload == "process_run_payload_too_large");
 
-  inject_ack(stream, Bridge, status_value(StatusCode::STATUS_ERROR));
+  inject_ack(stream, bridge, status_value(StatusCode::STATUS_ERROR));
   stream.clear();
   StatusHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_process_run_rejects_oversized_payload");
@@ -976,7 +946,7 @@ void test_process_run_rejects_oversized_payload() {
 void test_bridge_process_run_success() {
   TEST_TRACE("START: test_bridge_process_run_success");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  ScopedBridgeBinding binding(stream); // Global binding due to Bridge usage
 
   const char* command = "ls -la";
   Bridge.requestProcessRun(command);
@@ -996,7 +966,7 @@ void test_bridge_process_run_success() {
 void test_apply_timing_config_accepts_valid_payload() {
   TEST_TRACE("START: test_apply_timing_config_accepts_valid_payload");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   uint8_t payload[RPC_HANDSHAKE_CONFIG_SIZE] = {};
   const uint16_t ack_timeout = RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS + 5;
@@ -1008,18 +978,18 @@ void test_apply_timing_config_accepts_valid_payload() {
   payload[2] = retry_limit;
   rpc::write_u32_be(payload + 3, response_timeout);
 
-  Bridge._applyTimingConfig(payload, sizeof(payload));
+  bridge._applyTimingConfig(payload, sizeof(payload));
 
-  assert(Bridge._ack_timeout_ms == ack_timeout);
-  assert(Bridge._ack_retry_limit == retry_limit);
-  assert(Bridge._response_timeout_ms == response_timeout);
+  assert(bridge._ack_timeout_ms == ack_timeout);
+  assert(bridge._ack_retry_limit == retry_limit);
+  assert(bridge._response_timeout_ms == response_timeout);
   TEST_TRACE("PASS: test_apply_timing_config_accepts_valid_payload");
 }
 
 void test_apply_timing_config_rejects_invalid_payload() {
   TEST_TRACE("START: test_apply_timing_config_rejects_invalid_payload");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream);
+  BridgeClass bridge(stream); // Local
 
   uint8_t payload[RPC_HANDSHAKE_CONFIG_SIZE] = {};
   const uint16_t invalid_ack_timeout = RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS + 5;
@@ -1031,20 +1001,20 @@ void test_apply_timing_config_rejects_invalid_payload() {
   payload[2] = invalid_retry_limit;
   rpc::write_u32_be(payload + 3, invalid_response_timeout);
 
-  Bridge._applyTimingConfig(payload, sizeof(payload));
+  bridge._applyTimingConfig(payload, sizeof(payload));
 
-  assert(Bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
-  assert(Bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
-  assert(Bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+  assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
+  assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
+  assert(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
 
-  Bridge._ack_timeout_ms = 1;
-  Bridge._ack_retry_limit = 1;
-  Bridge._response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
-  Bridge._applyTimingConfig(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1);
+  bridge._ack_timeout_ms = 1;
+  bridge._ack_retry_limit = 1;
+  bridge._response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
+  bridge._applyTimingConfig(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1);
 
-  assert(Bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
-  assert(Bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
-  assert(Bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+  assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
+  assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
+  assert(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
   TEST_TRACE("PASS: test_apply_timing_config_rejects_invalid_payload");
 }
 

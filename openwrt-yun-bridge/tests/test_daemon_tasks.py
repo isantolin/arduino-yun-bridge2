@@ -180,14 +180,6 @@ def test_serial_reader_task_emits_crc_mismatch(
         state = create_runtime_state(runtime_config)
         service = _SerialServiceStub(runtime_config, state)
 
-        status_frames: Deque[tuple[int, bytes]] = deque()
-
-        async def fake_sender(command_id: int, payload: bytes) -> bool:
-            status_frames.append((command_id, payload))
-            return True
-
-        service.register_serial_sender(fake_sender)
-
         frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, b"\x01").to_bytes()
         corrupted = bytearray(frame)
         corrupted[-1] ^= 0xFF
@@ -212,17 +204,25 @@ def test_serial_reader_task_emits_crc_mismatch(
         await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
 
         assert not service.received_frames
-        assert status_frames
-        assert any(
-            command_id == Status.CRC_MISMATCH.value for command_id, _ in status_frames
-        )
+
+        # Verify response in writer buffer
+        assert writer.buffer
+        packets = writer.buffer.split(SERIAL_TERMINATOR)
+        # Remove empty trailing packet if buffer ended with terminator
+        if not packets[-1]:
+            packets.pop()
+
+        assert packets
+        decoded = cobs.decode(packets[0])
+        response_frame = Frame.from_bytes(decoded)
+
+        assert response_frame.command_id == Status.CRC_MISMATCH.value
 
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
 
     asyncio.run(_run())
-
 
 def test_serial_reader_task_limits_packet_size(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig

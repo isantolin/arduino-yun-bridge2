@@ -56,6 +56,57 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     return False
 
 
+async def _open_serial_connection_with_retry(
+    config: RuntimeConfig,
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """Establish serial connection with native exponential backoff."""
+    base_delay = float(max(1, config.reconnect_delay))
+    max_delay = base_delay * 8
+    current_delay = base_delay
+
+    action = f"Serial connection to {config.serial_port}"
+    logger.info(
+        "Connecting to serial port %s at %d baud...",
+        config.serial_port,
+        config.serial_baud,
+    )
+
+    while True:
+        try:
+            return await OPEN_SERIAL_CONNECTION(
+                url=config.serial_port,
+                baudrate=config.serial_baud,
+                exclusive=True,
+            )
+        except (serial.SerialException, OSError, ExceptionGroup) as exc:
+            if isinstance(exc, ExceptionGroup):
+                _, remainder = exc.split((serial.SerialException, OSError))
+                if remainder:
+                    raise remainder
+
+            logger.warning(
+                "%s failed (%s); retrying in %.1fs.",
+                action,
+                exc,
+                current_delay,
+            )
+            try:
+                await asyncio.sleep(current_delay)
+            except asyncio.CancelledError:
+                logger.debug("%s retry loop cancelled", action)
+                raise
+
+            # Exponential backoff
+            current_delay = min(max_delay, current_delay * 2)
+
+        except asyncio.CancelledError:
+            logger.debug("%s cancelled", action)
+            raise
+        except Exception:
+            logger.critical("Unexpected error during serial connection", exc_info=True)
+            raise
+
+
 class SerialTransport:
     """Manages the serial connection to the MCU."""
 
@@ -128,54 +179,8 @@ class SerialTransport:
                     await asyncio.sleep(reconnect_delay)
 
     async def _connect(self) -> None:
-        """Establish serial connection with native exponential backoff."""
-        base_delay = float(max(1, self.config.reconnect_delay))
-        max_delay = base_delay * 8
-        current_delay = base_delay
-
-        action = f"Serial connection to {self.config.serial_port}"
-        logger.info(
-            "Connecting to serial port %s at %d baud...",
-            self.config.serial_port,
-            self.config.serial_baud,
-        )
-
-        while True:
-            try:
-                self.reader, self.writer = await OPEN_SERIAL_CONNECTION(
-                    url=self.config.serial_port,
-                    baudrate=self.config.serial_baud,
-                    exclusive=True,
-                )
-                self.state.serial_writer = self.writer
-                return
-            except (serial.SerialException, OSError, ExceptionGroup) as exc:
-                if isinstance(exc, ExceptionGroup):
-                    _, remainder = exc.split((serial.SerialException, OSError))
-                    if remainder:
-                        raise remainder
-
-                logger.warning(
-                    "%s failed (%s); retrying in %.1fs.",
-                    action,
-                    exc,
-                    current_delay,
-                )
-                try:
-                    await asyncio.sleep(current_delay)
-                except asyncio.CancelledError:
-                    logger.debug("%s retry loop cancelled", action)
-                    raise
-
-                # Exponential backoff
-                current_delay = min(max_delay, current_delay * 2)
-
-            except asyncio.CancelledError:
-                logger.debug("%s cancelled", action)
-                raise
-            except Exception:
-                logger.critical("Unexpected error during serial connection", exc_info=True)
-                raise
+        self.reader, self.writer = await _open_serial_connection_with_retry(self.config)
+        self.state.serial_writer = self.writer
 
     async def _disconnect(self) -> None:
         if self.writer and not self.writer.is_closing():

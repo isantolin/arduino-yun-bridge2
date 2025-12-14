@@ -235,34 +235,37 @@ void inject_malformed(RecordingStream& stream, BridgeClass& bridge, uint16_t com
 }
 
 // ScopedBridgeBinding using explicit destruction and placement new.
-// We use (void*) cast in memset to silence -Wclass-memaccess, acknowledging we are wiping a non-trivial object.
 class ScopedBridgeBinding {
  public:
   explicit ScopedBridgeBinding(Stream& stream) {
     TEST_TRACE("ScopedBridgeBinding: Switching to mock stream");
-    // 1. Destruct
+    TEST_TRACE("  -> Destructing Bridge...");
     Bridge.~BridgeClass();
     
-    // 2. Wipe memory to 0 to remove stale pointers. 
-    // The cast avoids compiler warnings about non-trivial types.
-    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
+    // NOTE: Removed memset. It caused warnings and potentially segfaults if vtables are present.
+    // Relying on constructor to initialize fields.
+    // If specific fields are not initialized by constructor, they should be fixed in Bridge.cpp, 
+    // or manually cleared in the test.
     
-    // 3. Construct
+    TEST_TRACE("  -> Constructing Bridge...");
     new (&Bridge) BridgeClass(stream);
+    
+    TEST_TRACE("  -> Calling Bridge.begin()...");
     Bridge.begin();
+    TEST_TRACE("  -> Switch Complete.");
   }
 
   ~ScopedBridgeBinding() {
     TEST_TRACE("ScopedBridgeBinding: Restoring global serial stream");
-    // 1. Destruct mock
+    TEST_TRACE("  -> Destructing Mock Bridge...");
     Bridge.~BridgeClass();
     
-    // 2. Wipe memory
-    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
-    
-    // 3. Restore global
+    TEST_TRACE("  -> Constructing Global Bridge...");
     new (&Bridge) BridgeClass(Serial1);
+    
+    TEST_TRACE("  -> Calling Bridge.begin()...");
     Bridge.begin();
+    TEST_TRACE("  -> Restore Complete.");
   }
 
   ScopedBridgeBinding(const ScopedBridgeBinding&) = delete;

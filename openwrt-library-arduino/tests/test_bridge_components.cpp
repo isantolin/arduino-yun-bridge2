@@ -7,11 +7,7 @@
 #include <string>
 #include <vector>
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
 
 #include "protocol/rpc_protocol.h"
 #include "protocol/cobs.h"

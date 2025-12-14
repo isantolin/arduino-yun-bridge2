@@ -42,7 +42,11 @@ public:
     // Resets internal state (parser, flow control)
     void reset();
 
-private:
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
     Stream& _stream;
     HardwareSerial* _hardware_serial;
     rpc::FrameParser _parser;

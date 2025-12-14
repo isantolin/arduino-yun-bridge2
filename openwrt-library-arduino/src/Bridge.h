@@ -158,7 +158,11 @@ class BridgeClass {
   void resetTxDebugStats() {}
 #endif
 
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
  private:
+#endif
   bridge::BridgeTransport _transport;
   const uint8_t* _shared_secret;
   size_t _shared_secret_len;

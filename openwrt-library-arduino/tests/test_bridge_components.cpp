@@ -242,13 +242,15 @@ class ScopedBridgeBinding {
     TEST_TRACE("  -> Destructing Bridge...");
     Bridge.~BridgeClass();
     
-    // NOTE: Removed memset. It caused warnings and potentially segfaults if vtables are present.
-    // Relying on constructor to initialize fields.
-    // If specific fields are not initialized by constructor, they should be fixed in Bridge.cpp, 
-    // or manually cleared in the test.
+    // NOTE: Removed memset based on previous iteration
     
     TEST_TRACE("  -> Constructing Bridge...");
     new (&Bridge) BridgeClass(stream);
+    
+    // FIX SEGFAULT: Re-initialize Process so it binds to the new Bridge instance if needed
+    TEST_TRACE("  -> Re-initializing Process...");
+    Process.~ProcessClass();
+    new (&Process) ProcessClass();
     
     TEST_TRACE("  -> Calling Bridge.begin()...");
     Bridge.begin();
@@ -262,6 +264,11 @@ class ScopedBridgeBinding {
     
     TEST_TRACE("  -> Constructing Global Bridge...");
     new (&Bridge) BridgeClass(Serial1);
+    
+    // FIX SEGFAULT: Restore Process
+    TEST_TRACE("  -> Restoring Process...");
+    Process.~ProcessClass();
+    new (&Process) ProcessClass();
     
     TEST_TRACE("  -> Calling Bridge.begin()...");
     Bridge.begin();

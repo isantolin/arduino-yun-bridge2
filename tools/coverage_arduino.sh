@@ -12,6 +12,8 @@ SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 COMPILE_FLAGS=(
   -std=c++23
+  -g              # Agregado: Simbolos de debug para GDB
+  -O0             # Agregado: Desactivar optimizaciones para debug preciso
   -Wall
   -Wextra
   -pedantic

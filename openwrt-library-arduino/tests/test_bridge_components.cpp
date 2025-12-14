@@ -7,6 +7,11 @@
 #include <string>
 #include <vector>
 
+// SOLUCIÓN INTELLISENSE: Definimos la macro aquí para que el editor
+// sepa que tenemos acceso a los miembros privados, eliminando los errores
+// de "member is inaccessible".
+#define BRIDGE_HOST_TEST 1
+
 // CRITICAL: REMOVED #define private public HACK
 // Access to private members is now handled via BRIDGE_HOST_TEST in the headers
 #include "Bridge.h"
@@ -57,9 +62,14 @@ void datastore_handler_trampoline(
   }
   state->called = true;
   state->key = key ? key : "";
-  state->value.assign(
-      reinterpret_cast<const char*>(value),
-      reinterpret_cast<const char*>(value) + length);
+  // FIX SEGFAULT: Check for null pointers before assigning to std::string
+  if (value && length > 0) {
+      state->value.assign(
+          reinterpret_cast<const char*>(value),
+          reinterpret_cast<const char*>(value) + length);
+  } else {
+      state->value.clear();
+  }
 }
 
 struct MailboxHandlerState {
@@ -76,7 +86,12 @@ void mailbox_handler_trampoline(const uint8_t* buffer, uint16_t size) {
     return;
   }
   state->called = true;
-  state->message.assign(reinterpret_cast<const char*>(buffer), size);
+  // FIX SEGFAULT: Check for null pointers
+  if (buffer && size > 0) {
+      state->message.assign(reinterpret_cast<const char*>(buffer), size);
+  } else {
+      state->message.clear();
+  }
 }
 
 struct ProcessPollHandlerState {
@@ -104,10 +119,21 @@ void process_poll_handler_trampoline(
   state->called = true;
   state->status = status;
   state->exit_code = exit_code;
-  state->stdout_text.assign(
-      reinterpret_cast<const char*>(stdout_data), stdout_len);
-  state->stderr_text.assign(
-      reinterpret_cast<const char*>(stderr_data), stderr_len);
+  
+  // FIX SEGFAULT: Check for null pointers
+  if (stdout_data && stdout_len > 0) {
+      state->stdout_text.assign(
+          reinterpret_cast<const char*>(stdout_data), stdout_len);
+  } else {
+      state->stdout_text.clear();
+  }
+
+  if (stderr_data && stderr_len > 0) {
+      state->stderr_text.assign(
+          reinterpret_cast<const char*>(stderr_data), stderr_len);
+  } else {
+      state->stderr_text.clear();
+  }
 }
 
 struct StatusHandlerState {
@@ -127,9 +153,14 @@ void status_handler_trampoline(
   }
   state->called = true;
   state->status_code = status_code;
-  state->payload.assign(
-      reinterpret_cast<const char*>(payload),
-      reinterpret_cast<const char*>(payload) + length);
+  // FIX SEGFAULT: Check for null pointers
+  if (payload && length > 0) {
+      state->payload.assign(
+          reinterpret_cast<const char*>(payload),
+          reinterpret_cast<const char*>(payload) + length);
+  } else {
+      state->payload.clear();
+  }
 }
 
 // Mock Stream (renamed to RecordingStream for compatibility)
@@ -239,11 +270,15 @@ void inject_malformed(RecordingStream& stream, BridgeClass& bridge, uint16_t com
 class ScopedBridgeBinding {
  public:
   explicit ScopedBridgeBinding(Stream& stream) {
+    // FIX SEGFAULT: Destruct existing instance before placement new to avoid memory corruption
+    Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
   }
 
   ~ScopedBridgeBinding() {
+    // FIX SEGFAULT: Destruct mock before restoring original
+    Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(Serial1);
     Bridge.begin();
   }

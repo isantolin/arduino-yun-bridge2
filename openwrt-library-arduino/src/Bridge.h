@@ -158,6 +158,8 @@ class BridgeClass {
   void resetTxDebugStats() {}
 #endif
 
+// Modificacion CRITICA: Exponer privados solo si se define BRIDGE_HOST_TEST
+// Esto garantiza que el layout de memoria sea consistente entre la libreria y los tests.
 #if defined(BRIDGE_HOST_TEST)
  public:
 #else

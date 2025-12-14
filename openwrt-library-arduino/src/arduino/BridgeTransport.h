@@ -42,6 +42,7 @@ public:
     // Resets internal state (parser, flow control)
     void reset();
 
+// Modificacion CRITICA: Exponer privados solo si se define BRIDGE_HOST_TEST
 #if defined(BRIDGE_HOST_TEST)
  public:
 #else

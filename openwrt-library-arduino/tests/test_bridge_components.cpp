@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+// CRITICAL: REMOVED #define private public HACK
+// Access to private members is now handled via BRIDGE_HOST_TEST in the headers
 #include "Bridge.h"
 
 #include "protocol/rpc_protocol.h"

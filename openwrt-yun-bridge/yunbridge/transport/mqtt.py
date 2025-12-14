@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import ssl
-from typing import Any
 
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
 
@@ -82,11 +80,7 @@ async def _mqtt_subscriber_loop(
     service: BridgeService,
 ) -> None:
     try:
-        messages_cm = client.messages()
-        if inspect.isawaitable(messages_cm):
-            messages_cm = await messages_cm
-
-        async with messages_cm as stream:
+        async with client.messages() as stream:
             async for message in stream:
                 topic = str(message.topic)
                 if not topic:
@@ -131,21 +125,18 @@ async def mqtt_task(
 ) -> None:
     reconnect_delay = max(1, config.reconnect_delay)
 
-    client_kwargs: dict[str, Any] = {
-        "hostname": config.mqtt_host,
-        "port": config.mqtt_port,
-        "username": config.mqtt_user or None,
-        "password": config.mqtt_pass or None,
-        "tls_context": tls_context,
-        "logger": logging.getLogger("yunbridge.mqtt.client"),
-        "protocol": ProtocolVersion.V5,
-        "clean_session": None,
-    }
-
     while True:
         try:
-            client_cm = MqttClient(**client_kwargs)
-            async with client_cm as client:
+            async with MqttClient(
+                hostname=config.mqtt_host,
+                port=config.mqtt_port,
+                username=config.mqtt_user or None,
+                password=config.mqtt_pass or None,
+                tls_context=tls_context,
+                logger=logging.getLogger("yunbridge.mqtt.client"),
+                protocol=ProtocolVersion.V5,
+                clean_session=None,
+            ) as client:
                 apply_mqtt_connect_properties(client)
                 logger.info("Connected to MQTT broker.")
 

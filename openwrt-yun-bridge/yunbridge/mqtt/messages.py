@@ -6,9 +6,22 @@ import base64
 from dataclasses import dataclass
 from enum import IntEnum
 from collections.abc import Iterable as IterableABC
-from typing import Any, Self, TypeGuard
+from typing import Any, Self, TypeGuard, TypedDict
 
-SpoolRecord = dict[str, Any]
+
+class SpoolRecord(TypedDict, total=False):
+    topic_name: str
+    payload: str
+    qos: int
+    retain: bool
+    content_type: str | None
+    payload_format_indicator: int | None
+    message_expiry_interval: int | None
+    response_topic: str | None
+    correlation_data: str | None
+    user_properties: list[Any]
+
+
 UserProperty = tuple[str, str]
 
 IterableAny = IterableABC[Any]

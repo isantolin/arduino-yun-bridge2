@@ -384,7 +384,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           if (
               pid != 0xFFFF && status == StatusCode::STATUS_OK
               && (stdout_len > 0 || stderr_len > 0)) {
-            requestProcessPoll((int)pid);
+            requestProcessPoll(static_cast<int>(pid));
           }
         }
       }
@@ -392,7 +392,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
       if (_process_run_async_handler && payload_length == 2 && payload_data) {
         uint16_t pid = rpc::read_u16_be(payload_data);
-        _process_run_async_handler((int)pid);
+        _process_run_async_handler(static_cast<int>(pid));
       }
       return;
     case CommandId::CMD_DIGITAL_READ_RESP:
@@ -442,8 +442,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         }
         uint8_t version_payload[2] = {
-            (uint8_t)BRIDGE_FIRMWARE_VERSION_MAJOR,
-            (uint8_t)BRIDGE_FIRMWARE_VERSION_MINOR};
+            static_cast<uint8_t>(BridgeClass::kFirmwareVersionMajor),
+            static_cast<uint8_t>(BridgeClass::kFirmwareVersionMinor)};
         (void)sendFrame(
           CommandId::CMD_GET_VERSION_RESP,
           version_payload, sizeof(version_payload));
@@ -1118,7 +1118,7 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 
 void BridgeClass::analogWrite(uint8_t pin, int value) {
   uint8_t val_u8 = constrain(value, 0, 255);
-  ::analogWrite(pin, (int)val_u8);
+  ::analogWrite(pin, static_cast<int>(val_u8));
 }
 
 void BridgeClass::requestDigitalRead(uint8_t pin) {

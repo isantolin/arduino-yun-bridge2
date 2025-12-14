@@ -319,7 +319,7 @@ def test_mqtt_task_handles_incoming_message(
         # Mock messages context manager
         mock_msgs_ctx = AsyncMock()
         mock_msgs_ctx.__aenter__.return_value = mock_msgs_ctx
-        mock_client.messages.return_value = mock_msgs_ctx
+        mock_client.messages = MagicMock(return_value=mock_msgs_ctx)
 
         # Mock iterator
         fake_msg = MagicMock()

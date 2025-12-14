@@ -9,6 +9,7 @@ from typing import (
     Final,
     TypeVar,
     cast,
+    TYPE_CHECKING,
 )
 
 from paho.mqtt.packettypes import PacketTypes
@@ -21,6 +22,9 @@ from .const import (
 
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from yunbridge.mqtt.messages import QueuedPublish
 
 T = TypeVar("T")
 
@@ -79,7 +83,7 @@ def encode_status_reason(reason: str | None) -> bytes:
     return payload[:MAX_PAYLOAD_SIZE]
 
 
-def build_mqtt_properties(message: Any) -> Properties | None:
+def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
     has_props = any(
         [
@@ -128,7 +132,7 @@ def build_mqtt_connect_properties() -> Properties:
     return props
 
 
-def apply_mqtt_connect_properties(client: Any) -> None:
+def apply_mqtt_connect_properties(client: object) -> None:
     """Best-effort application of CONNECT properties onto paho clients."""
     if client is None:
         return

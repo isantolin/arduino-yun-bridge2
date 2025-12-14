@@ -340,7 +340,7 @@ void test_console_write_and_flow_control() {
   Bridge.begin();
   Console.begin();
 
-  std::vector<uint8_t> inbound(CONSOLE_BUFFER_HIGH_WATER + 2, 0x34);
+  std::vector<uint8_t> inbound(ConsoleClass::kBufferHighWater + 2, 0x34);
   Console._push(inbound.data(), inbound.size());
   assert(Console.available() == static_cast<int>(inbound.size()));
   int peeked = Console.peek();

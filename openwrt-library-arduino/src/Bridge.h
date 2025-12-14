@@ -37,6 +37,9 @@ class BridgeClass {
   friend class ProcessClass;
  public:
   // Constants
+  static constexpr uint8_t kFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
+  static constexpr uint8_t kFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
+
   static constexpr size_t kMaxFilePathLength = 64;
   static constexpr size_t kMaxDatastoreKeyLength = 32;
   static constexpr uint8_t kMaxPendingDatastore = 2;
@@ -224,13 +227,13 @@ class BridgeClass {
 extern BridgeClass Bridge;
 
 // These classes are wrappers around Bridge calls usually
-#define CONSOLE_TX_BUFFER_SIZE 64
-#define CONSOLE_RX_BUFFER_SIZE 64
-#define CONSOLE_BUFFER_LOW_WATER 16
-#define CONSOLE_BUFFER_HIGH_WATER 48
-
 class ConsoleClass : public Stream {
  public:
+  static constexpr size_t kTxBufferSize = 64;
+  static constexpr size_t kRxBufferSize = 64;
+  static constexpr size_t kBufferLowWater = 16;
+  static constexpr size_t kBufferHighWater = 48;
+
   ConsoleClass();
   void begin();
   void end() {}
@@ -256,8 +259,8 @@ class ConsoleClass : public Stream {
   size_t _rx_buffer_tail;
   size_t _tx_buffer_pos;
   bool _xoff_sent;
-  uint8_t _rx_buffer[CONSOLE_RX_BUFFER_SIZE];
-  uint8_t _tx_buffer[CONSOLE_TX_BUFFER_SIZE];
+  uint8_t _rx_buffer[kRxBufferSize];
+  uint8_t _tx_buffer[kTxBufferSize];
 };
 extern ConsoleClass Console;
 

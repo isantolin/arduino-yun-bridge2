@@ -24,7 +24,7 @@ void ConsoleClass::begin() {
 size_t ConsoleClass::write(uint8_t c) {
   if (!_begun) return 0;
 
-  const size_t capacity = CONSOLE_TX_BUFFER_SIZE;
+  const size_t capacity = kTxBufferSize;
   if (capacity == 0) {
     return 0;
   }
@@ -70,7 +70,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
 }
 
 int ConsoleClass::available() {
-  const size_t capacity = CONSOLE_RX_BUFFER_SIZE;
+  const size_t capacity = kRxBufferSize;
   if (capacity == 0) {
     return 0;
   }
@@ -95,9 +95,9 @@ int ConsoleClass::peek() {
 int ConsoleClass::read() {
   if (_rx_buffer_head == _rx_buffer_tail) return -1;
   uint8_t c = _rx_buffer[_rx_buffer_tail];
-  _rx_buffer_tail = (_rx_buffer_tail + 1) % CONSOLE_RX_BUFFER_SIZE;
+  _rx_buffer_tail = (_rx_buffer_tail + 1) % kRxBufferSize;
 
-  if (_xoff_sent && available() < CONSOLE_BUFFER_LOW_WATER) {
+  if (_xoff_sent && (size_t)available() < kBufferLowWater) {
     (void)Bridge.sendFrame(CommandId::CMD_XON);
     _xoff_sent = false;
   }
@@ -130,7 +130,7 @@ void ConsoleClass::flush() {
 }
 
 void ConsoleClass::_push(const uint8_t* data, size_t length) {
-  const size_t capacity = CONSOLE_RX_BUFFER_SIZE;
+  const size_t capacity = kRxBufferSize;
   if (capacity == 0 || length == 0) {
     return;
   }
@@ -143,7 +143,7 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     }
   }
 
-  if (!_xoff_sent && available() > CONSOLE_BUFFER_HIGH_WATER) {
+  if (!_xoff_sent && (size_t)available() > kBufferHighWater) {
     (void)Bridge.sendFrame(CommandId::CMD_XOFF);
     _xoff_sent = true;
   }

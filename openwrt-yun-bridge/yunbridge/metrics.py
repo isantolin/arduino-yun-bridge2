@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import math
 import re
@@ -13,6 +12,11 @@ from typing import (
     cast,
 )
 from collections.abc import Awaitable, Callable, Iterator, Sequence
+
+try:
+    import ujson as json
+except ImportError:
+    import json
 
 import aiocron
 from prometheus_client import (

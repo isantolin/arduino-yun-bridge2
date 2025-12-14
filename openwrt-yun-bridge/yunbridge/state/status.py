@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
+
+try:
+    import ujson as json
+except ImportError:
+    import json
 
 from ..const import STATUS_FILE_PATH
 from .context import RuntimeState

@@ -226,7 +226,7 @@ class SupervisorStats:
         }
 
 
-@dataclass
+@dataclass(slots=True)
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers."""
 

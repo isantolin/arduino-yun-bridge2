@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from types import MethodType
+from unittest.mock import patch
 
 import pytest
 
@@ -43,24 +43,23 @@ async def test_publish_metrics_publishes_snapshot(
     def _snapshot(self: RuntimeState) -> dict[str, object]:
         return fake_snapshot
 
-    runtime_state.build_metrics_snapshot = MethodType(
-        _snapshot,
-        runtime_state,
-    )
     runtime_state.mqtt_topic_prefix = "test/prefix"
 
-    task = asyncio.create_task(
-        publish_metrics(
-            runtime_state,
-            fake_enqueue,
-            interval=0.01,
-            min_interval=0.01,
+    with patch.object(
+        RuntimeState, "build_metrics_snapshot", side_effect=_snapshot, autospec=True
+    ):
+        task = asyncio.create_task(
+            publish_metrics(
+                runtime_state,
+                fake_enqueue,
+                interval=0.01,
+                min_interval=0.01,
+            )
         )
-    )
-    await asyncio.wait_for(event.wait(), timeout=0.5)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(event.wait(), timeout=0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     message = captured["message"]
     expected_topic = "test/prefix/system/metrics"
@@ -94,24 +93,26 @@ async def test_publish_metrics_marks_unknown_spool_reason(
             "watchdog_enabled": False,
         }
 
-    runtime_state.build_metrics_snapshot = MethodType(
-        _degraded_snapshot,
-        runtime_state,
-    )
     runtime_state.mqtt_topic_prefix = "br"
 
-    task = asyncio.create_task(
-        publish_metrics(
-            runtime_state,
-            fake_enqueue,
-            interval=0.01,
-            min_interval=0.01,
+    with patch.object(
+        RuntimeState,
+        "build_metrics_snapshot",
+        side_effect=_degraded_snapshot,
+        autospec=True,
+    ):
+        task = asyncio.create_task(
+            publish_metrics(
+                runtime_state,
+                fake_enqueue,
+                interval=0.01,
+                min_interval=0.01,
+            )
         )
-    )
-    await asyncio.wait_for(event.wait(), timeout=0.5)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(event.wait(), timeout=0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     message = captured["message"]
     assert ("bridge-spool", "unknown") in message.user_properties
@@ -142,29 +143,26 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     def _handshake(self: RuntimeState) -> dict[str, object]:
         return {"snapshot": "handshake"}
 
-    runtime_state.build_bridge_snapshot = MethodType(
-        _summary,
-        runtime_state,
-    )
-    runtime_state.build_handshake_snapshot = MethodType(
-        _handshake,
-        runtime_state,
-    )
     runtime_state.mqtt_topic_prefix = "br"
 
-    task = asyncio.create_task(
-        publish_bridge_snapshots(
-            runtime_state,
-            fake_enqueue,
-            summary_interval=0.01,
-            handshake_interval=0.01,
-            min_interval=0.01,
+    with patch.object(
+        RuntimeState, "build_bridge_snapshot", side_effect=_summary, autospec=True
+    ), patch.object(
+        RuntimeState, "build_handshake_snapshot", side_effect=_handshake, autospec=True
+    ):
+        task = asyncio.create_task(
+            publish_bridge_snapshots(
+                runtime_state,
+                fake_enqueue,
+                summary_interval=0.01,
+                handshake_interval=0.01,
+                min_interval=0.01,
+            )
         )
-    )
-    await asyncio.wait_for(event.wait(), timeout=0.5)
-    task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await task
+        await asyncio.wait_for(event.wait(), timeout=0.5)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
     topics = {message.topic_name for message in messages}
     assert "br/system/bridge/summary/value" in topics

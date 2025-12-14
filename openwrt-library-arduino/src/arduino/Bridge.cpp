@@ -12,7 +12,6 @@
 #include <string.h> 
 #include <stdlib.h> 
 #include <stdint.h>
-#include <algorithm>
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -132,18 +131,10 @@ BridgeClass::BridgeClass(Stream& stream)
       , _tx_debug{}
 #endif
 {
-  std::fill(reinterpret_cast<uint8_t*>(_pending_datastore_keys),
-            reinterpret_cast<uint8_t*>(_pending_datastore_keys) + sizeof(_pending_datastore_keys),
-            0);
-  std::fill(reinterpret_cast<uint8_t*>(_pending_datastore_key_lengths),
-            reinterpret_cast<uint8_t*>(_pending_datastore_key_lengths) + sizeof(_pending_datastore_key_lengths),
-            0);
-  std::fill(reinterpret_cast<uint8_t*>(_pending_process_pids),
-            reinterpret_cast<uint8_t*>(_pending_process_pids) + sizeof(_pending_process_pids),
-            0);
-  std::fill(reinterpret_cast<uint8_t*>(_pending_tx_frames),
-            reinterpret_cast<uint8_t*>(_pending_tx_frames) + sizeof(_pending_tx_frames),
-            0);
+  memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
+  memset(_pending_datastore_key_lengths, 0, sizeof(_pending_datastore_key_lengths));
+  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
+  memset(_pending_tx_frames, 0, sizeof(_pending_tx_frames));
 }
 
 void BridgeClass::begin(
@@ -161,18 +152,12 @@ void BridgeClass::begin(
     _shared_secret_len = 0;
   }
 
-  std::fill(reinterpret_cast<uint8_t*>(_pending_datastore_keys),
-            reinterpret_cast<uint8_t*>(_pending_datastore_keys) + sizeof(_pending_datastore_keys),
-            0);
-  std::fill(reinterpret_cast<uint8_t*>(_pending_datastore_key_lengths),
-            reinterpret_cast<uint8_t*>(_pending_datastore_key_lengths) + sizeof(_pending_datastore_key_lengths),
-            0);
+  memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
+  memset(_pending_datastore_key_lengths, 0, sizeof(_pending_datastore_key_lengths));
 
   _pending_process_poll_head = 0;
   _pending_process_poll_count = 0;
-  std::fill(reinterpret_cast<uint8_t*>(_pending_process_pids),
-            reinterpret_cast<uint8_t*>(_pending_process_pids) + sizeof(_pending_process_pids),
-            0);
+  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
 
   _awaiting_ack = false;
   _flow_paused = false;
@@ -187,7 +172,7 @@ void BridgeClass::begin(
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
-    std::fill(out_tag, out_tag + kHandshakeTagSize, 0);
+    memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
 
@@ -198,7 +183,7 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
-  std::copy(digest, digest + kHandshakeTagSize, out_tag);
+  memcpy(out_tag, digest, kHandshakeTagSize);
 }
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
@@ -519,11 +504,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         if (payload_data == nullptr) {
           break;
         }
-        std::copy(payload_data, payload_data + nonce_length, response);
+        memcpy(response, payload_data, nonce_length);
         if (has_secret) {
           uint8_t tag[kHandshakeTagSize];
           _computeHandshakeTag(payload_data, nonce_length, tag);
-          std::copy(tag, tag + kHandshakeTagSize, &response[nonce_length]);
+          memcpy(&response[nonce_length], tag, kHandshakeTagSize);
         }
 
         (void)sendFrame(
@@ -974,7 +959,7 @@ void BridgeClass::_recordLastFrame(uint16_t command_id,
     cobs_len = sizeof(_last_cobs_frame);
   }
   if (cobs_frame != _last_cobs_frame) {
-    std::copy(cobs_frame, cobs_frame + cobs_len, _last_cobs_frame);
+    memcpy(_last_cobs_frame, cobs_frame, cobs_len);
   }
   _last_cobs_length = static_cast<uint16_t>(cobs_len);
   _last_command_id = command_id;
@@ -1107,7 +1092,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    std::copy(payload, payload + payload_len, _pending_tx_frames[tail].payload);
+    memcpy(_pending_tx_frames[tail].payload, payload, payload_len);
   }
   _pending_tx_count++;
   return true;
@@ -1205,7 +1190,7 @@ void BridgeClass::requestFileSystemRead(const char* filePath) {
 
   uint8_t* payload = _scratch_payload;
   payload[0] = static_cast<uint8_t>(len);
-  std::copy(filePath, filePath + len, payload + kFileReadLengthPrefix);
+  memcpy(payload + kFileReadLengthPrefix, filePath, len);
   const uint16_t total = static_cast<uint16_t>(
       len + kFileReadLengthPrefix);
   (void)sendFrame(CommandId::CMD_FILE_READ, payload, total);
@@ -1229,7 +1214,7 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   uint8_t slot =
       (_pending_datastore_head + _pending_datastore_count) %
       kMaxPendingDatastore;
-  std::copy(key, key + length, _pending_datastore_keys[slot]);
+  memcpy(_pending_datastore_keys[slot], key, length);
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
@@ -1248,7 +1233,7 @@ const char* BridgeClass::_popPendingDatastoreKey() {
   if (length > kMaxDatastoreKeyLength) {
     length = kMaxDatastoreKeyLength;
   }
-  std::copy(_pending_datastore_keys[slot], _pending_datastore_keys[slot] + length, key_buffer);
+  memcpy(key_buffer, _pending_datastore_keys[slot], length);
   key_buffer[length] = '\0';
   _pending_datastore_head =
       (_pending_datastore_head + 1) % kMaxPendingDatastore;

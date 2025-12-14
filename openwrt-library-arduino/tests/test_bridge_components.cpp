@@ -14,6 +14,9 @@
 #undef protected
 
 #include "protocol/rpc_protocol.h"
+#include "protocol/cobs.h"
+#include "protocol/crc.h"
+#include "protocol/rpc_frame.h"
 
 // Define global Serial instances for the stub
 HardwareSerial Serial;
@@ -123,55 +126,108 @@ void status_handler_trampoline(
       reinterpret_cast<const char*>(payload) + length);
 }
 
+// Mock Stream (renamed to RecordingStream for compatibility)
 class RecordingStream : public Stream {
- public:
-  size_t write(uint8_t c) override {
-    buffer_.push_back(c);
-    return 1;
-  }
+public:
+    std::vector<uint8_t> tx_buffer;
+    std::vector<uint8_t> rx_buffer;
+    size_t rx_pos = 0;
 
-  size_t write(const uint8_t* data, size_t size) override {
-    if (!data) {
-      return 0;
+    size_t write(uint8_t c) override {
+        tx_buffer.push_back(c);
+        return 1;
     }
-    buffer_.insert(buffer_.end(), data, data + size);
-    return size;
-  }
 
-  void clear() { buffer_.clear(); }
-
-  const std::vector<uint8_t>& data() const { return buffer_; }
-
- private:
-  std::vector<uint8_t> buffer_;
-};
-
-  class ReplayStream : public Stream {
-   public:
-    explicit ReplayStream(std::vector<uint8_t> data)
-        : data_(std::move(data)), index_(0) {}
+    size_t write(const uint8_t* buffer, size_t size) override {
+        tx_buffer.insert(tx_buffer.end(), buffer, buffer + size);
+        return size;
+    }
 
     int available() override {
-      if (index_ >= data_.size()) {
-        return 0;
-      }
-      size_t remaining = data_.size() - index_;
-      return remaining > static_cast<size_t>(INT_MAX)
-                 ? INT_MAX
-                 : static_cast<int>(remaining);
+        return static_cast<int>(rx_buffer.size() - rx_pos);
     }
 
     int read() override {
-      if (index_ >= data_.size()) {
-        return -1;
-      }
-      return data_[index_++];
+        if (rx_pos >= rx_buffer.size()) return -1;
+        return rx_buffer[rx_pos++];
     }
 
-   private:
-    std::vector<uint8_t> data_;
-    size_t index_;
-  };
+    int peek() override {
+        if (rx_pos >= rx_buffer.size()) return -1;
+        return rx_buffer[rx_pos];
+    }
+
+    void flush() override {}
+    
+    // Helper to inject data into RX buffer
+    void inject_rx(const std::vector<uint8_t>& data) {
+        rx_buffer.insert(rx_buffer.end(), data.begin(), data.end());
+    }
+
+    void clear() { tx_buffer.clear(); }
+    const std::vector<uint8_t>& data() const { return tx_buffer; }
+};
+
+class TestFrameBuilder {
+public:
+    static std::vector<uint8_t> build(uint16_t command_id, const std::vector<uint8_t>& payload) {
+        std::vector<uint8_t> frame;
+        
+        // Header
+        frame.push_back(rpc::PROTOCOL_VERSION);
+        
+        // Payload Length (Big Endian)
+        uint16_t len = static_cast<uint16_t>(payload.size());
+        frame.push_back((len >> 8) & 0xFF);
+        frame.push_back(len & 0xFF);
+        
+        // Command ID (Big Endian)
+        frame.push_back((command_id >> 8) & 0xFF);
+        frame.push_back(command_id & 0xFF);
+        
+        // Payload
+        frame.insert(frame.end(), payload.begin(), payload.end());
+        
+        // CRC32
+        uint32_t crc = crc32_ieee(frame.data(), frame.size());
+        frame.push_back((crc >> 24) & 0xFF);
+        frame.push_back((crc >> 16) & 0xFF);
+        frame.push_back((crc >> 8) & 0xFF);
+        frame.push_back(crc & 0xFF);
+        
+        // COBS Encode
+        std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
+        size_t encoded_len = cobs::encode(frame.data(), frame.size(), encoded.data());
+        encoded.resize(encoded_len);
+        
+        // Delimiter
+        encoded.push_back(0x00);
+        
+        return encoded;
+    }
+};
+
+void inject_ack(RecordingStream& stream, BridgeClass& bridge, uint16_t command_id) {
+    uint16_t ack_cmd_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_ACK);
+    std::vector<uint8_t> ack_payload;
+    ack_payload.push_back((command_id >> 8) & 0xFF);
+    ack_payload.push_back(command_id & 0xFF);
+    
+    std::vector<uint8_t> ack_frame = TestFrameBuilder::build(ack_cmd_id, ack_payload);
+    stream.inject_rx(ack_frame);
+    bridge.process();
+}
+
+void inject_malformed(RecordingStream& stream, BridgeClass& bridge, uint16_t command_id) {
+    uint16_t malformed_cmd_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED);
+    std::vector<uint8_t> payload;
+    payload.push_back((command_id >> 8) & 0xFF);
+    payload.push_back(command_id & 0xFF);
+    
+    std::vector<uint8_t> frame = TestFrameBuilder::build(malformed_cmd_id, payload);
+    stream.inject_rx(frame);
+    bridge.process();
+}
 
 // Rebinds the global Bridge instance to a host-side stream while in scope.
 class ScopedBridgeBinding {
@@ -268,7 +324,7 @@ void test_console_write_and_flow_control() {
   assert(console_frame.header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
   assert(console_frame.header.payload_length == sizeof(payload));
   assert(std::memcmp(console_frame.payload, payload, sizeof(payload)) == 0);
-  Bridge._handleAck(command_value(CommandId::CMD_CONSOLE_WRITE));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
   std::vector<uint8_t> large(MAX_PAYLOAD_SIZE + 5, 0x5A);
@@ -278,7 +334,7 @@ void test_console_write_and_flow_control() {
   assert(limited_frames.size() == 1);
   assert(limited_frames[0].header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
   assert(limited_frames[0].header.payload_length == MAX_PAYLOAD_SIZE);
-  Bridge._handleAck(command_value(CommandId::CMD_CONSOLE_WRITE));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
   Bridge.begin();
@@ -293,7 +349,7 @@ void test_console_write_and_flow_control() {
   auto xoff_frames = decode_frames(stream.data());
   assert(!xoff_frames.empty());
   assert(xoff_frames.back().header.command_id == command_value(CommandId::CMD_XOFF));
-  Bridge._handleAck(command_value(CommandId::CMD_XOFF));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_XOFF));
   stream.clear();
 
   for (size_t i = 0; i < inbound.size(); ++i) {
@@ -305,7 +361,7 @@ void test_console_write_and_flow_control() {
   auto xon_frames = decode_frames(stream.data());
   assert(!xon_frames.empty());
   assert(xon_frames.back().header.command_id == command_value(CommandId::CMD_XON));
-  Bridge._handleAck(command_value(CommandId::CMD_XON));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_XON));
 
   Console.flush();
 }
@@ -328,7 +384,7 @@ void test_datastore_put_and_request_behavior() {
   assert(std::memcmp(put_frame.payload + 1, key, key_len) == 0);
   assert(put_frame.payload[1 + key_len] == value_len);
   assert(std::memcmp(put_frame.payload + 2 + key_len, value, value_len) == 0);
-  Bridge._handleAck(command_value(CommandId::CMD_DATASTORE_PUT));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_DATASTORE_PUT));
   stream.clear();
 
   DataStore.put(nullptr, value);
@@ -343,7 +399,7 @@ void test_datastore_put_and_request_behavior() {
   auto get_frames = decode_frames(stream.data());
   assert(get_frames.size() == 1);
   assert(get_frames.front().header.command_id == command_value(CommandId::CMD_DATASTORE_GET));
-  Bridge._handleAck(command_value(CommandId::CMD_DATASTORE_GET));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_DATASTORE_GET));
   stream.clear();
 
   // Fill the rest of the queue (capacity 4, 1 used)
@@ -380,7 +436,7 @@ void test_mailbox_send_and_requests_emit_commands() {
   uint16_t encoded_len = read_u16_be(mailbox_frame.payload);
   assert(encoded_len == msg_len);
   assert(std::memcmp(mailbox_frame.payload + 2, msg, msg_len) == 0);
-  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_PUSH));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
   std::vector<uint8_t> raw(MAX_PAYLOAD_SIZE, 0x41);
@@ -391,7 +447,7 @@ void test_mailbox_send_and_requests_emit_commands() {
   assert(raw_frames[0].header.payload_length == capped_len + 2);
   uint16_t encoded_raw_len = read_u16_be(raw_frames[0].payload);
   assert(encoded_raw_len == capped_len);
-  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_PUSH));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
   Mailbox.requestRead();
@@ -399,7 +455,7 @@ void test_mailbox_send_and_requests_emit_commands() {
   assert(read_frames.size() == 1);
   assert(read_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_READ));
   assert(read_frames[0].header.payload_length == 0);
-  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_READ));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_READ));
   stream.clear();
 
   Mailbox.requestAvailable();
@@ -407,7 +463,7 @@ void test_mailbox_send_and_requests_emit_commands() {
   assert(avail_frames.size() == 1);
   assert(avail_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_AVAILABLE));
   assert(avail_frames[0].header.payload_length == 0);
-  Bridge._handleAck(command_value(CommandId::CMD_MAILBOX_AVAILABLE));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_AVAILABLE));
   stream.clear();
 }
 
@@ -429,7 +485,7 @@ void test_filesystem_write_and_remove_payloads() {
   size_t max_data = MAX_PAYLOAD_SIZE - 3 - path_len;
   assert(encoded_len == max_data);
   assert(write_frame.header.payload_length == path_len + encoded_len + 3);
-  Bridge._handleAck(command_value(CommandId::CMD_FILE_WRITE));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_FILE_WRITE));
   stream.clear();
 
   FileSystem.write(nullptr, blob.data(), blob.size());
@@ -446,7 +502,7 @@ void test_filesystem_write_and_remove_payloads() {
   assert(remove_frame.header.command_id == command_value(CommandId::CMD_FILE_REMOVE));
   assert(remove_frame.payload[0] == path_len);
   assert(std::memcmp(remove_frame.payload + 1, path, path_len) == 0);
-  Bridge._handleAck(command_value(CommandId::CMD_FILE_REMOVE));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_FILE_REMOVE));
   stream.clear();
 
   FileSystem.remove("");
@@ -465,7 +521,7 @@ void test_process_kill_encodes_pid() {
   assert(frame.header.payload_length == 2);
   uint16_t encoded = read_u16_be(frame.payload);
   assert(encoded == 0x1234);
-  Bridge._handleAck(command_value(CommandId::CMD_PROCESS_KILL));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_KILL));
   stream.clear();
 }
 
@@ -614,7 +670,7 @@ void test_ack_flushes_pending_queue_after_response() {
   auto before = decode_frames(stream.data());
   size_t before_count = before.size();
 
-  bridge._handleAck(command_value(CommandId::CMD_CONSOLE_WRITE));
+  inject_ack(stream, bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
 
   auto after = decode_frames(stream.data());
   assert(after.size() == before_count + 1);
@@ -680,7 +736,8 @@ void test_status_error_frame_dispatches_handler() {
 
 void test_serial_overflow_emits_status_notification() {
   std::vector<uint8_t> oversized(rpc::COBS_BUFFER_SIZE + 8, 0xAA);
-  ReplayStream stream(oversized);
+  RecordingStream stream;
+  stream.inject_rx(oversized);
   BridgeClass bridge(stream);
 
   StatusHandlerState status_state;
@@ -708,7 +765,7 @@ void test_malformed_status_triggers_retransmit() {
   auto before = decode_frames(stream.data());
   assert(before.size() == 1);
 
-  bridge._handleMalformed(command_value(CommandId::CMD_MAILBOX_PUSH));
+  inject_malformed(stream, bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
 
   auto after = decode_frames(stream.data());
   assert(after.size() == 2);
@@ -831,7 +888,8 @@ void test_process_run_rejects_oversized_payload() {
   assert(status_state.called);
   assert(status_state.payload == "process_run_payload_too_large");
 
-  bridge._handleAck(status_value(StatusCode::STATUS_ERROR));
+  inject_ack(stream, bridge, status_value(StatusCode::STATUS_ERROR));
+  stream.clear();
   StatusHandlerState::instance = nullptr;
 }
 

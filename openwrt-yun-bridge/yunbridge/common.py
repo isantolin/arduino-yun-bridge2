@@ -15,8 +15,7 @@ from typing import (
 )
 
 from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
-
+from yunbridge.config.uci_model import UciConfigModel
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
 
 from .const import (
@@ -218,7 +217,9 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
     typed_section = _as_option_dict(cast(Mapping[str, Any], section))
 
     # Direct Key-Value dictionary (Simple case)
-    if ".name" in typed_section or ".type" in typed_section:
+    # We accept any non-empty dictionary as a valid section,
+    # filtering out internal UCI metadata (keys starting with dot).
+    if typed_section:
         flattened: dict[str, Any] = {}
         for key, value in typed_section.items():
             if key.startswith("."):
@@ -230,129 +231,6 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
     # We now strictly expect a valid UCI section dict or we fail to defaults.
 
     return {}
-
-
-def _stringify_iterable(values: Iterable[Any]) -> str:
-    return " ".join(str(item) for item in values)
-
-
-def _stringify_value(value: Any) -> str:
-    attr_value = getattr(value, "value", None)
-    if attr_value is not None and not isinstance(value, (str, bytes)):
-        return _stringify_value(attr_value)
-
-    if isinstance(value, Mapping):
-        return str(cast(Mapping[Any, Any], value))
-
-    if isinstance(value, (tuple, list, set)):
-        iterable_value = cast(TypingIterable[Any], value)
-        return _stringify_iterable(iterable_value)
-
-    return str(value) if value is not None else ""
-
-
-def _extras_default() -> dict[str, str]:
-    return {}
-
-
-@dataclass(slots=True)
-class UciConfigModel:
-    """Structured representation of UCI options with sane defaults."""
-
-    mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: str = str(DEFAULT_MQTT_PORT)
-    mqtt_tls: str = "1"
-    mqtt_cafile: str = DEFAULT_MQTT_CAFILE
-    mqtt_certfile: str = ""
-    mqtt_keyfile: str = ""
-    mqtt_user: str = ""
-    mqtt_pass: str = ""
-    mqtt_topic: str = DEFAULT_MQTT_TOPIC
-    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    mqtt_queue_limit: str = str(DEFAULT_MQTT_QUEUE_LIMIT)
-    serial_port: str = DEFAULT_SERIAL_PORT
-    serial_baud: str = str(DEFAULT_SERIAL_BAUD)
-    serial_shared_secret: str = ""
-    serial_retry_timeout: str = str(DEFAULT_SERIAL_RETRY_TIMEOUT)
-    serial_response_timeout: str = str(DEFAULT_SERIAL_RESPONSE_TIMEOUT)
-    serial_retry_attempts: str = str(DEFAULT_SERIAL_RETRY_ATTEMPTS)
-    serial_handshake_min_interval: str = str(DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL)
-    serial_handshake_fatal_failures: str = str(DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES)
-    debug: str = "0"
-    allowed_commands: str = ""
-    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    file_write_max_bytes: str = str(DEFAULT_FILE_WRITE_MAX_BYTES)
-    file_storage_quota_bytes: str = str(DEFAULT_FILE_STORAGE_QUOTA_BYTES)
-    process_timeout: str = str(DEFAULT_PROCESS_TIMEOUT)
-    process_max_output_bytes: str = str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
-    process_max_concurrent: str = str(DEFAULT_PROCESS_MAX_CONCURRENT)
-    console_queue_limit_bytes: str = str(DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES)
-    mailbox_queue_limit: str = str(DEFAULT_MAILBOX_QUEUE_LIMIT)
-    mailbox_queue_bytes_limit: str = str(DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT)
-    pending_pin_request_limit: str = str(DEFAULT_PENDING_PIN_REQUESTS)
-    reconnect_delay: str = str(DEFAULT_RECONNECT_DELAY)
-    status_interval: str = str(DEFAULT_STATUS_INTERVAL)
-    bridge_summary_interval: str = str(DEFAULT_BRIDGE_SUMMARY_INTERVAL)
-    bridge_handshake_interval: str = str(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL)
-    mqtt_allow_file_read: str = "1"
-    mqtt_allow_file_write: str = "1"
-    mqtt_allow_file_remove: str = "1"
-    mqtt_allow_datastore_get: str = "1"
-    mqtt_allow_datastore_put: str = "1"
-    mqtt_allow_mailbox_read: str = "1"
-    mqtt_allow_mailbox_write: str = "1"
-    mqtt_allow_shell_run: str = "1"
-    mqtt_allow_shell_run_async: str = "1"
-    mqtt_allow_shell_poll: str = "1"
-    mqtt_allow_shell_kill: str = "1"
-    mqtt_allow_console_input: str = "1"
-    mqtt_allow_digital_write: str = "1"
-    mqtt_allow_digital_read: str = "1"
-    mqtt_allow_digital_mode: str = "1"
-    mqtt_allow_analog_write: str = "1"
-    mqtt_allow_analog_read: str = "1"
-    metrics_enabled: str = "0"
-    metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: str = str(DEFAULT_METRICS_PORT)
-    extras: dict[str, str] = field(default_factory=_extras_default)
-
-    def __post_init__(self) -> None:
-        for dataclass_field in fields(self):
-            if dataclass_field.name == "extras":
-                continue
-            value = getattr(self, dataclass_field.name)
-            setattr(self, dataclass_field.name, _stringify_value(value))
-
-        if self.extras:
-            self.extras = {
-                str(key): _stringify_value(value) for key, value in self.extras.items()
-            }
-
-    @classmethod
-    def from_mapping(cls, mapping: Mapping[str, Any]) -> Self:
-        known = cls._known_fields()
-        kwargs: dict[str, Any] = {}
-        extras: dict[str, str] = {}
-        for key, value in mapping.items():
-            key_str = str(key)
-            if key_str in known:
-                kwargs[key_str] = value
-            else:
-                extras[key_str] = _stringify_value(value)
-        return cls(extras=extras, **kwargs)
-
-    def as_dict(self) -> dict[str, str]:
-        values = {name: getattr(self, name) for name in self._known_fields()}
-        values.update(self.extras)
-        return values
-
-    @classmethod
-    def defaults(cls) -> dict[str, str]:
-        return cls().as_dict()
-
-    @classmethod
-    def _known_fields(cls) -> set[str]:
-        return {f.name for f in fields(cls) if f.name != "extras"}
 
 
 def get_default_config() -> dict[str, str]:

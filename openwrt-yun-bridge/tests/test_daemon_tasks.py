@@ -224,6 +224,7 @@ def test_serial_reader_task_emits_crc_mismatch(
 
     asyncio.run(_run())
 
+
 def test_serial_reader_task_limits_packet_size(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:

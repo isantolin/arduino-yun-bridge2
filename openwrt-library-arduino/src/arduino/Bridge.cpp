@@ -251,6 +251,13 @@ void BridgeClass::process() {
   rpc::Frame frame;
   if (_transport.processInput(frame)) {
     dispatch(frame);
+  } else if (_transport.hasOverflowed()) {
+    if (_status_handler) {
+      const char* msg = "serial_rx_overflow";
+      _status_handler(rpc::StatusCode::STATUS_MALFORMED,
+                      reinterpret_cast<const uint8_t*>(msg), strlen(msg));
+    }
+    _transport.clearOverflow();
   }
 
   _processAckTimeout();

@@ -15,6 +15,9 @@ from ..common import (
     get_default_config,
     get_uci_config,
     normalise_allowed_commands,
+    parse_bool,
+    parse_float,
+    parse_int,
 )
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -279,35 +282,11 @@ def _load_raw_config() -> dict[str, str]:
     return get_default_config()
 
 
-def _to_bool(value: str | None) -> bool:
-    if value is None:
-        return False
-    return value.strip() in {"1", "true", "True", "yes", "on"}
-
-
 def _optional_path(path: str | None) -> str | None:
     if not path:
         return None
     candidate = path.strip()
     return candidate or None
-
-
-def _coerce_int(value: str | None, default: int) -> int:
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _coerce_float(value: str | None, default: float) -> float:
-    if value is None:
-        return default
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
 
 
 def _resolve_watchdog_settings() -> tuple[bool, float]:
@@ -349,13 +328,13 @@ def load_runtime_config() -> RuntimeConfig:
     raw = _load_raw_config()
 
     def _get_int(key: str, default: int) -> int:
-        return _coerce_int(raw.get(key), default)
+        return parse_int(raw.get(key), default)
 
     def _get_bool(key: str, default: bool) -> bool:
         value = raw.get(key)
-        return _to_bool(value) if value is not None else default
+        return parse_bool(value) if value is not None else default
 
-    debug_logging = _to_bool(raw.get("debug"))
+    debug_logging = parse_bool(raw.get("debug"))
     if os.environ.get("YUNBRIDGE_DEBUG") == "1":
         debug_logging = True
 
@@ -365,7 +344,7 @@ def load_runtime_config() -> RuntimeConfig:
     watchdog_enabled, watchdog_interval = _resolve_watchdog_settings()
 
     mqtt_tls_value = raw.get("mqtt_tls")
-    mqtt_tls = _to_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
+    mqtt_tls = parse_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
 
     credentials_map: dict[str, str] = {}
 
@@ -482,32 +461,23 @@ def load_runtime_config() -> RuntimeConfig:
     metrics_port = _get_int("metrics_port", DEFAULT_METRICS_PORT)
     env_metrics_port = os.environ.get("YUNBRIDGE_METRICS_PORT")
     if env_metrics_port:
-        try:
-            metrics_port = int(env_metrics_port)
-        except ValueError:
-            metrics_port = DEFAULT_METRICS_PORT
+        metrics_port = parse_int(env_metrics_port, DEFAULT_METRICS_PORT)
 
-    summary_interval = _coerce_float(
+    summary_interval = parse_float(
         raw.get("bridge_summary_interval"),
         float(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
     )
     env_summary = os.environ.get("YUNBRIDGE_BRIDGE_SUMMARY_INTERVAL")
     if env_summary:
-        try:
-            summary_interval = float(env_summary)
-        except ValueError:
-            summary_interval = float(DEFAULT_BRIDGE_SUMMARY_INTERVAL)
+        summary_interval = parse_float(env_summary, float(DEFAULT_BRIDGE_SUMMARY_INTERVAL))
 
-    handshake_interval = _coerce_float(
+    handshake_interval = parse_float(
         raw.get("bridge_handshake_interval"),
         float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
     )
     env_handshake = os.environ.get("YUNBRIDGE_BRIDGE_HANDSHAKE_INTERVAL")
     if env_handshake:
-        try:
-            handshake_interval = float(env_handshake)
-        except ValueError:
-            handshake_interval = float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL)
+        handshake_interval = parse_float(env_handshake, float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL))
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
@@ -555,10 +525,10 @@ def load_runtime_config() -> RuntimeConfig:
             "pending_pin_request_limit",
             DEFAULT_PENDING_PIN_REQUESTS,
         ),
-        serial_retry_timeout=_coerce_float(
+        serial_retry_timeout=parse_float(
             raw.get("serial_retry_timeout"), DEFAULT_SERIAL_RETRY_TIMEOUT
         ),
-        serial_response_timeout=_coerce_float(
+        serial_response_timeout=parse_float(
             raw.get("serial_response_timeout"), DEFAULT_SERIAL_RESPONSE_TIMEOUT
         ),
         serial_retry_attempts=max(
@@ -566,7 +536,7 @@ def load_runtime_config() -> RuntimeConfig:
         ),
         serial_handshake_min_interval=max(
             0.0,
-            _coerce_float(
+            parse_float(
                 raw.get("serial_handshake_min_interval"),
                 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
             ),

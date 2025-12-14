@@ -1,31 +1,46 @@
 """Tests for shared utilities."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 from yunbridge.common import (
-    chunk_payload,
-    deduplicate,
     get_uci_config,
     normalise_allowed_commands,
     get_default_config,
+    parse_bool,
+    parse_int,
+    parse_float,
 )
 
 
-def test_chunk_payload():
-    data = b"1234567890"
-    assert chunk_payload(data, 5) == (b"12345", b"67890")
-    assert chunk_payload(data, 3) == (b"123", b"456", b"789", b"0")
-    assert chunk_payload(b"", 5) == ()
+def test_parse_bool():
+    assert parse_bool(True) is True
+    assert parse_bool(False) is False
+    assert parse_bool(1) is True
+    assert parse_bool(0) is False
+    assert parse_bool("1") is True
+    assert parse_bool("0") is False
+    assert parse_bool("true") is True
+    assert parse_bool("False") is False
+    assert parse_bool("yes") is True
+    assert parse_bool("on") is True
+    assert parse_bool("enabled") is True
+    assert parse_bool(None) is False
+    assert parse_bool("random") is False
 
-    with pytest.raises(ValueError):
-        chunk_payload(data, 0)
+
+def test_parse_int():
+    assert parse_int(10, 0) == 10
+    assert parse_int("10", 0) == 10
+    assert parse_int("10.5", 0) == 10
+    assert parse_int(None, 5) == 5
+    assert parse_int("invalid", 5) == 5
 
 
-def test_deduplicate():
-    assert deduplicate([1, 2, 2, 3]) == (1, 2, 3)
-    assert deduplicate([]) == ()
-    assert deduplicate(["a", "b", "a"]) == ("a", "b")
+def test_parse_float():
+    assert parse_float(10.5, 0.0) == 10.5
+    assert parse_float("10.5", 0.0) == 10.5
+    assert parse_float(None, 1.0) == 1.0
+    assert parse_float("invalid", 1.0) == 1.0
 
 
 def test_normalise_commands():

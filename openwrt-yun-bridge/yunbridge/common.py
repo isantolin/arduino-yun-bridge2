@@ -3,52 +3,20 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from collections.abc import Iterable, Mapping
 from typing import (
     Any,
     Final,
-    Iterable as TypingIterable,
-    Self,
     TypeVar,
     cast,
 )
 
 from paho.mqtt.packettypes import PacketTypes
-from yunbridge.config.uci_model import UciConfigModel
+from paho.mqtt.properties import Properties
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
-    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-    DEFAULT_FILE_SYSTEM_ROOT,
-    DEFAULT_FILE_WRITE_MAX_BYTES,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-    DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_METRICS_HOST,
-    DEFAULT_METRICS_PORT,
-    DEFAULT_MQTT_CAFILE,
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_QUEUE_LIMIT,
-    DEFAULT_MQTT_SPOOL_DIR,
-    DEFAULT_MQTT_TOPIC,
-    DEFAULT_PENDING_PIN_REQUESTS,
-    DEFAULT_PROCESS_MAX_CONCURRENT,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-    DEFAULT_SERIAL_PORT,
-    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_ATTEMPTS,
-    DEFAULT_SERIAL_RETRY_TIMEOUT,
-    DEFAULT_STATUS_INTERVAL,
 )
 
 
@@ -57,18 +25,32 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-def clamp(value: int, minimum: int, maximum: int) -> int:
-    """Return *value* constrained to the ``[minimum, maximum]`` range."""
-    return max(minimum, min(maximum, value))
+def parse_bool(value: Any) -> bool:
+    """Parse a boolean value safely from various types."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if value is None:
+        return False
+    s = str(value).lower().strip()
+    return s in ("1", "yes", "on", "true", "enable", "enabled")
 
 
-def chunk_payload(data: bytes, max_size: int) -> tuple[bytes, ...]:
-    """Split *data* in chunks of at most ``max_size`` bytes."""
-    if max_size <= 0:
-        raise ValueError("max_size must be positive")
-    if not data:
-        return tuple()
-    return tuple(data[i : i + max_size] for i in range(0, len(data), max_size))
+def parse_int(value: Any, default: int) -> int:
+    """Parse an integer value safely, handling floats and strings."""
+    try:
+        return int(float(value))
+    except (ValueError, TypeError):
+        return default
+
+
+def parse_float(value: Any, default: float) -> float:
+    """Parse a float value safely."""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
 
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
@@ -87,17 +69,6 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
         seen.add(lowered)
         normalised.append(lowered)
     return tuple(normalised)
-
-
-def deduplicate(sequence: Sequence[T]) -> tuple[T, ...]:
-    """Return ``sequence`` without duplicates, preserving order."""
-    seen: set[T] = set()
-    result: list[T] = []
-    for item in sequence:
-        if item not in seen:
-            seen.add(item)
-            result.append(item)
-    return tuple(result)
 
 
 def encode_status_reason(reason: str | None) -> bytes:
@@ -178,6 +149,8 @@ def apply_mqtt_connect_properties(client: Any) -> None:
 
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration directly from OpenWrt's UCI system."""
+    from yunbridge.config.uci_model import UciConfigModel
+
     try:
         from uci import Uci  # type: ignore
     except ImportError:
@@ -235,14 +208,16 @@ def _extract_uci_options(section: Any) -> dict[str, Any]:
 
 def get_default_config() -> dict[str, str]:
     """Provide default Yun Bridge configuration values."""
+    from yunbridge.config.uci_model import UciConfigModel
+
     return UciConfigModel.defaults()
 
 
 __all__: Final[tuple[str, ...]] = (
     "normalise_allowed_commands",
-    "clamp",
-    "chunk_payload",
-    "deduplicate",
+    "parse_bool",
+    "parse_int",
+    "parse_float",
     "encode_status_reason",
     "get_default_config",
     "get_uci_config",

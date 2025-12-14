@@ -6,6 +6,8 @@ from collections.abc import Iterable as IterableABC, Mapping as MappingABC
 from dataclasses import dataclass, field, fields
 from typing import Any, Iterable, Mapping, cast
 
+from yunbridge.common import parse_bool, parse_float, parse_int
+
 from ..const import (
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
@@ -35,35 +37,6 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
 )
-
-
-def _parse_bool(value: Any) -> bool:
-    """Parse a UCI boolean value safely."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if value is None:
-        return False
-    s = str(value).lower().strip()
-    return s in ("1", "yes", "on", "true", "enable", "enabled")
-
-
-def _parse_int(value: Any, default: int) -> int:
-    """Parse a UCI integer value safely."""
-    try:
-        # Handle cases like "10.0" being passed as string
-        return int(float(value))
-    except (ValueError, TypeError):
-        return default
-
-
-def _parse_float(value: Any, default: float) -> float:
-    """Parse a UCI float value safely."""
-    try:
-        return float(value)
-    except (ValueError, TypeError):
-        return default
 
 
 def _stringify_option(value: Any) -> str:
@@ -197,20 +170,20 @@ class UciConfigModel:
 
             # Type conversion logic
             if target_type is bool:
-                init_args[key_str] = _parse_bool(value)
+                init_args[key_str] = parse_bool(value)
             elif target_type is int:
                 # Get default from field or constant if possible for fallback
                 default = (
                     field_info.default if isinstance(field_info.default, int) else 0
                 )
-                init_args[key_str] = _parse_int(value, default)
+                init_args[key_str] = parse_int(value, default)
             elif target_type is float:
                 default = (
                     field_info.default
                     if isinstance(field_info.default, (int, float))
                     else 0.0
                 )
-                init_args[key_str] = _parse_float(value, default)
+                init_args[key_str] = parse_float(value, default)
             else:
                 # Default to string with nested handling
                 init_args[key_str] = _stringify_option(value)

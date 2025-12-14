@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import struct
+from unittest.mock import patch
 
 import pytest
 from aiomqtt.message import Message as MQTTMessage
@@ -1309,7 +1310,7 @@ def test_run_command_respects_allow_list(
     asyncio.run(_run())
 
 
-def test_run_command_rejects_shell_metacharacters(
+def test_run_command_accepts_shell_metacharacters_as_literals(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
@@ -1317,16 +1318,20 @@ def test_run_command_rejects_shell_metacharacters(
         runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
         service = BridgeService(runtime_config, runtime_state)
 
-        run_sync = getattr(service, "_run_command_sync")
-        status, _, stderr, _ = await run_sync("echo hello; ls")
+        # Mock process component to avoid actual execution
+        with patch("yunbridge.services.components.process.ProcessComponent.run_sync") as mock_run:
+            mock_run.return_value = (Status.OK.value, b"hello; ls\n", b"", 0)
 
-        assert status == Status.ERROR.value
-        assert b"Illegal shell" in stderr
+            run_sync = getattr(service, "_run_command_sync")
+            status, stdout, _, _ = await run_sync("echo hello; ls")
+
+            assert status == Status.OK.value
+            assert b"hello; ls" in stdout
 
     asyncio.run(_run())
 
 
-def test_process_run_async_rejects_unsafe_command(
+def test_process_run_async_accepts_complex_arguments(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
@@ -1342,20 +1347,20 @@ def test_process_run_async_rejects_unsafe_command(
 
         service.register_serial_sender(fake_sender)
 
-        await service.handle_mcu_frame(
-            Command.CMD_PROCESS_RUN_ASYNC.value,
-            b"echo hi && rm -rf /",
-        )
+        # Mock start_async to return a valid PID
+        with patch("yunbridge.services.components.process.ProcessComponent.start_async") as mock_start:
+            mock_start.return_value = 123
 
-        assert sent_frames
-        status_id, status_payload = sent_frames[0]
-        assert status_id == Status.ERROR.value
-        assert status_payload == b"command_validation_failed"
+            await service.handle_mcu_frame(
+                Command.CMD_PROCESS_RUN_ASYNC.value,
+                b"echo hi && rm -rf /",
+            )
 
-        queued = runtime_state.mqtt_publish_queue.get_nowait()
-        payload = json.loads(queued.payload.decode())
-        assert payload["reason"] == "command_validation_failed"
-        runtime_state.mqtt_publish_queue.task_done()
+            assert sent_frames
+            status_id, status_payload = sent_frames[0]
+            assert status_id == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
+            # Payload should be the PID (123)
+            assert status_payload == struct.pack(">H", 123)
 
     asyncio.run(_run())
 

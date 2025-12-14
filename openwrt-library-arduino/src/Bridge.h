@@ -12,7 +12,11 @@
 #include "protocol/rpc_protocol.h"
 
 // --- Configuration ---
-#define BRIDGE_BAUDRATE RPC_DEFAULT_BAUDRATE
+#ifdef BRIDGE_BAUDRATE
+constexpr unsigned long kBridgeBaudrate = BRIDGE_BAUDRATE;
+#else
+constexpr unsigned long kBridgeBaudrate = RPC_DEFAULT_BAUDRATE;
+#endif
 
 #ifndef BRIDGE_DEBUG_FRAMES
 #define BRIDGE_DEBUG_FRAMES 0
@@ -22,12 +26,16 @@
 #define BRIDGE_DEBUG_IO 0
 #endif
 
-#ifndef BRIDGE_FIRMWARE_VERSION_MAJOR
-#define BRIDGE_FIRMWARE_VERSION_MAJOR 2
+#ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
+constexpr uint8_t kDefaultFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
+#else
+constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
 #endif
 
-#ifndef BRIDGE_FIRMWARE_VERSION_MINOR
-#define BRIDGE_FIRMWARE_VERSION_MINOR 0
+#ifdef BRIDGE_FIRMWARE_VERSION_MINOR
+constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
+#else
+constexpr uint8_t kDefaultFirmwareVersionMinor = 0;
 #endif
 
 class BridgeClass {
@@ -37,8 +45,8 @@ class BridgeClass {
   friend class ProcessClass;
  public:
   // Constants
-  static constexpr uint8_t kFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
-  static constexpr uint8_t kFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
+  static constexpr uint8_t kFirmwareVersionMajor = kDefaultFirmwareVersionMajor;
+  static constexpr uint8_t kFirmwareVersionMinor = kDefaultFirmwareVersionMinor;
 
   static constexpr size_t kMaxFilePathLength = 64;
   static constexpr size_t kMaxDatastoreKeyLength = 32;
@@ -71,7 +79,7 @@ class BridgeClass {
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
 
-  void begin(unsigned long baudrate = BRIDGE_BAUDRATE,
+  void begin(unsigned long baudrate = kBridgeBaudrate,
              const char* secret = nullptr, size_t secret_len = 0);
   void process();
 

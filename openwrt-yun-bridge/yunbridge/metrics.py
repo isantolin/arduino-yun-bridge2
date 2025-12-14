@@ -14,7 +14,7 @@ from typing import (
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 
 try:
-    import ujson as json
+    import ujson as json  # type: ignore
 except ImportError:
     import json
 

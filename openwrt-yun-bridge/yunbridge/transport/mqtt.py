@@ -6,10 +6,10 @@ import asyncio
 import logging
 import ssl
 
-from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
+import aiomqtt
 
 from yunbridge.common import (
-    apply_mqtt_connect_properties,
+    build_mqtt_connect_properties,
     build_mqtt_properties,
 )
 from yunbridge.config.settings import RuntimeConfig
@@ -19,85 +19,6 @@ from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
 
 logger = logging.getLogger("yunbridge")
-
-
-async def _mqtt_publisher_loop(
-    client: MqttClient,
-    state: RuntimeState,
-) -> None:
-    while True:
-        await state.flush_mqtt_spool()
-        message_to_publish = await state.mqtt_publish_queue.get()
-        topic_name = message_to_publish.topic_name
-
-        props = build_mqtt_properties(message_to_publish)
-
-        try:
-            await client.publish(
-                topic_name,
-                message_to_publish.payload,
-                qos=int(message_to_publish.qos),
-                retain=message_to_publish.retain,
-                properties=props,
-            )
-        except asyncio.CancelledError:
-            logger.info("MQTT publisher loop cancelled.")
-            try:
-                state.mqtt_publish_queue.put_nowait(message_to_publish)
-            except asyncio.QueueFull:
-                logger.debug(
-                    "MQTT publish queue full while cancelling; dropping %s",
-                    topic_name,
-                )
-            raise
-        except MqttError as exc:
-            logger.warning(
-                "MQTT publish failed for %s; broker unavailable (%s)",
-                topic_name,
-                exc,
-            )
-            try:
-                state.mqtt_publish_queue.put_nowait(message_to_publish)
-            except asyncio.QueueFull:
-                logger.error(
-                    "MQTT publish queue full; dropping message for %s",
-                    topic_name,
-                )
-            raise
-        except Exception:
-            logger.exception(
-                "Failed to publish MQTT message for topic %s",
-                topic_name,
-            )
-            raise
-        finally:
-            state.mqtt_publish_queue.task_done()
-            await state.flush_mqtt_spool()
-
-
-async def _mqtt_subscriber_loop(
-    client: MqttClient,
-    service: BridgeService,
-) -> None:
-    try:
-        async with client.messages() as stream:
-            async for message in stream:
-                topic = str(message.topic)
-                if not topic:
-                    continue
-                try:
-                    await service.handle_mqtt_message(message)
-                except Exception:
-                    logger.exception(
-                        "Error processing MQTT topic %s",
-                        topic,
-                    )
-    except asyncio.CancelledError:
-        logger.info("MQTT subscriber loop cancelled.")
-        raise
-    except MqttError as exc:
-        logger.warning("MQTT subscriber loop stopped: %s", exc)
-        raise
 
 
 def build_mqtt_tls_context(config: RuntimeConfig) -> ssl.SSLContext | None:
@@ -125,19 +46,91 @@ async def mqtt_task(
 ) -> None:
     reconnect_delay = max(1, config.reconnect_delay)
 
+    async def _publisher_loop(client: aiomqtt.Client) -> None:
+        while True:
+            await state.flush_mqtt_spool()
+            message_to_publish = await state.mqtt_publish_queue.get()
+            topic_name = message_to_publish.topic_name
+
+            props = build_mqtt_properties(message_to_publish)
+
+            try:
+                await client.publish(
+                    topic_name,
+                    message_to_publish.payload,
+                    qos=int(message_to_publish.qos),
+                    retain=message_to_publish.retain,
+                    properties=props,
+                )
+            except asyncio.CancelledError:
+                logger.info("MQTT publisher loop cancelled.")
+                try:
+                    state.mqtt_publish_queue.put_nowait(message_to_publish)
+                except asyncio.QueueFull:
+                    logger.debug(
+                        "MQTT publish queue full while cancelling; dropping %s",
+                        topic_name,
+                    )
+                raise
+            except aiomqtt.MqttError as exc:
+                logger.warning(
+                    "MQTT publish failed for %s; broker unavailable (%s)",
+                    topic_name,
+                    exc,
+                )
+                try:
+                    state.mqtt_publish_queue.put_nowait(message_to_publish)
+                except asyncio.QueueFull:
+                    logger.error(
+                        "MQTT publish queue full; dropping message for %s",
+                        topic_name,
+                    )
+                raise
+            except Exception:
+                logger.exception(
+                    "Failed to publish MQTT message for topic %s",
+                    topic_name,
+                )
+                raise
+            finally:
+                state.mqtt_publish_queue.task_done()
+                await state.flush_mqtt_spool()
+
+    async def _subscriber_loop(client: aiomqtt.Client) -> None:
+        try:
+            async with client.messages() as stream:
+                async for message in stream:
+                    topic = str(message.topic)
+                    if not topic:
+                        continue
+                    try:
+                        await service.handle_mqtt_message(message)
+                    except Exception:
+                        logger.exception(
+                            "Error processing MQTT topic %s",
+                            topic,
+                        )
+        except asyncio.CancelledError:
+            logger.info("MQTT subscriber loop cancelled.")
+            raise
+        except aiomqtt.MqttError as exc:
+            logger.warning("MQTT subscriber loop stopped: %s", exc)
+            raise
+
     while True:
         try:
-            async with MqttClient(
+            connect_props = build_mqtt_connect_properties()
+            async with aiomqtt.Client(
                 hostname=config.mqtt_host,
                 port=config.mqtt_port,
                 username=config.mqtt_user or None,
                 password=config.mqtt_pass or None,
                 tls_context=tls_context,
                 logger=logging.getLogger("yunbridge.mqtt.client"),
-                protocol=ProtocolVersion.V5,
+                protocol=aiomqtt.ProtocolVersion.V5,
                 clean_session=None,
+                properties=connect_props,
             ) as client:
-                apply_mqtt_connect_properties(client)
                 logger.info("Connected to MQTT broker.")
 
                 prefix = state.mqtt_topic_prefix
@@ -173,10 +166,10 @@ async def mqtt_task(
                 logger.info("Subscribed to %d MQTT topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:
-                    task_group.create_task(_mqtt_publisher_loop(client, state))
-                    task_group.create_task(_mqtt_subscriber_loop(client, service))
+                    task_group.create_task(_publisher_loop(client))
+                    task_group.create_task(_subscriber_loop(client))
 
-        except* MqttError as exc_group:
+        except* aiomqtt.MqttError as exc_group:
             for exc in exc_group.exceptions:
                 logger.error("MQTT error: %s", exc)
         except* (OSError, asyncio.TimeoutError) as exc_group:

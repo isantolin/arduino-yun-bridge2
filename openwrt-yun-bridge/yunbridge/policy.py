@@ -10,9 +10,6 @@ from .common import normalise_allowed_commands
 from .const import ALLOWED_COMMAND_WILDCARD
 from .protocol.topics import Topic
 
-_FORBIDDEN_COMMAND_CHARS = frozenset({";", "&", "|", ">", "<", "`"})
-_FORBIDDEN_COMMAND_SUBSTRINGS: tuple[str, ...] = ("$(", "${", "&&", "||")
-
 
 class CommandValidationError(Exception):
     """Raised when an inbound command string is unsafe or malformed."""
@@ -23,7 +20,13 @@ class CommandValidationError(Exception):
 
 
 def tokenize_shell_command(command: str) -> tuple[str, ...]:
-    """Split and validate a shell command string with YunBridge policy."""
+    """Split and validate a shell command string with YunBridge policy.
+
+    We use shlex to split the command into tokens, respecting quotes.
+    We do NOT forbid shell metacharacters like ';' or '&' because we use
+    asyncio.create_subprocess_exec (execve) which does not invoke a shell.
+    Therefore, these characters are treated as literal arguments, which is safe.
+    """
 
     stripped = command.strip()
     if not stripped:
@@ -37,10 +40,7 @@ def tokenize_shell_command(command: str) -> tuple[str, ...]:
     for token in tokens:
         if not token:
             raise CommandValidationError("Malformed command syntax")
-        if any(char in _FORBIDDEN_COMMAND_CHARS for char in token):
-            raise CommandValidationError("Illegal shell control characters detected")
-        if any(seq in token for seq in _FORBIDDEN_COMMAND_SUBSTRINGS):
-            raise CommandValidationError("Illegal shell control characters detected")
+        # REMOVED: Forbidden char checks. Safe due to execve usage.
     return tokens
 
 

@@ -335,7 +335,7 @@ def test_mqtt_task_handles_incoming_message(
         mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
         monkeypatch.setattr(
-            "yunbridge.transport.mqtt.MqttClient",
+            "yunbridge.transport.mqtt.aiomqtt.Client",
             lambda **kw: mock_client,
         )
 

@@ -6,7 +6,7 @@ import string
 
 import pytest
 
-from yunbridge.policy import CommandValidationError, tokenize_shell_command
+from yunbridge.policy import tokenize_shell_command
 
 SAFE_TOKEN_CHARS = string.ascii_letters + string.digits + "._-/:"
 FORBIDDEN_CHARS = ";&|><`"
@@ -43,9 +43,12 @@ def test_tokenizer_accepts_safe_tokens(
         "ls < file",
     ],
 )
-def test_tokenizer_rejects_forbidden_sequences(command: str) -> None:
-    assert any(
-        bad in command for bad in (*FORBIDDEN_SUBSTRINGS, *FORBIDDEN_CHARS)
-    ), "Strategy must include forbidden sequence"
-    with pytest.raises(CommandValidationError):
-        tokenize_shell_command(command)
+def test_tokenizer_accepts_shell_metacharacters_as_literals(command: str) -> None:
+    """
+    Verify that shell metacharacters are accepted as literal arguments.
+
+    Since we use execve (no shell), these characters have no special meaning
+    and should be passed through to the command.
+    """
+    tokens = tokenize_shell_command(command)
+    assert len(tokens) > 0

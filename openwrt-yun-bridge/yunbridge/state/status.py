@@ -10,7 +10,7 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 try:
-    import ujson as json
+    import ujson as json  # type: ignore
 except ImportError:
     import json
 

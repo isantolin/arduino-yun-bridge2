@@ -132,25 +132,6 @@ def build_mqtt_connect_properties() -> Properties:
     return props
 
 
-def apply_mqtt_connect_properties(client: object) -> None:
-    """Best-effort application of CONNECT properties onto paho clients."""
-    if client is None:
-        return
-
-    try:
-        props = build_mqtt_connect_properties()
-
-        raw_client = getattr(client, "_client", None)
-        native = getattr(raw_client, "_client", raw_client)
-        if native is not None and hasattr(native, "_connect_properties"):
-            setattr(native, "_connect_properties", props)
-    except Exception:
-        logger.debug(
-            "Unable to apply MQTT CONNECT properties; continuing without",
-            exc_info=True,
-        )
-
-
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration directly from OpenWrt's UCI system."""
     from yunbridge.config.uci_model import UciConfigModel
@@ -225,7 +206,6 @@ __all__: Final[tuple[str, ...]] = (
     "encode_status_reason",
     "get_default_config",
     "get_uci_config",
-    "apply_mqtt_connect_properties",
     "build_mqtt_connect_properties",
     "build_mqtt_properties",
 )

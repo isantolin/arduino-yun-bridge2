@@ -272,10 +272,10 @@ void test_datastore_get_response_dispatches_handler() {
 
   bridge._pending_datastore_head = 0;
   bridge._pending_datastore_count = 0;
-  std::memset(bridge._pending_datastore_key_lengths, 0,
-              sizeof(bridge._pending_datastore_key_lengths));
-  std::memset(bridge._pending_datastore_keys, 0,
-              sizeof(bridge._pending_datastore_keys));
+  bridge._pending_datastore_key_lengths.fill(0);
+  for (auto& key : bridge._pending_datastore_keys) {
+    key.fill(0);
+  }
 
   DatastoreHandlerState handler_state;
   DatastoreHandlerState::instance = &handler_state;
@@ -564,8 +564,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
 
   bridge._pending_process_poll_head = 0;
   bridge._pending_process_poll_count = 0;
-  std::memset(bridge._pending_process_pids, 0,
-              sizeof(bridge._pending_process_pids));
+  bridge._pending_process_pids.fill(0);
 
   const uint16_t pid = 0x1234;
   bool enqueued = bridge._pushPendingProcessPid(pid);

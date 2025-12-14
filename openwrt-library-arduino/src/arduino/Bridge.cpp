@@ -593,7 +593,7 @@ void BridgeClass::_handleProcessCommand(const rpc::Frame& frame) {
         if (payload_length >= 5) {
             uint16_t stdout_len = rpc::read_u16_be(payload_data + 1);
             const uint8_t* stdout_ptr = payload_data + 3;
-            if (payload_length >= 3 + stdout_len + 2) {
+            if (payload_length >= static_cast<size_t>(3 + stdout_len + 2)) {
                 uint16_t stderr_len = rpc::read_u16_be(payload_data + 3 + stdout_len);
                 const uint8_t* stderr_ptr = payload_data + 3 + stdout_len + 2;
                 _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
@@ -614,7 +614,7 @@ void BridgeClass::_handleProcessCommand(const rpc::Frame& frame) {
         if (payload_length >= 6) {
              uint16_t stdout_len = rpc::read_u16_be(payload_data + 2);
              const uint8_t* stdout_ptr = payload_data + 4;
-             if (payload_length >= 4 + stdout_len + 2) {
+             if (payload_length >= static_cast<size_t>(4 + stdout_len + 2)) {
                  uint16_t stderr_len = rpc::read_u16_be(payload_data + 4 + stdout_len);
                  const uint8_t* stderr_ptr = payload_data + 4 + stdout_len + 2;
                  _process_poll_handler(status, running, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
@@ -720,6 +720,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       case StatusCode::STATUS_CRC_MISMATCH:
       case StatusCode::STATUS_TIMEOUT:
       case StatusCode::STATUS_NOT_IMPLEMENTED:
+      case StatusCode::STATUS_OVERFLOW:
       case StatusCode::STATUS_OK:
         if (_status_handler) {
           _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));

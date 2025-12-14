@@ -242,14 +242,18 @@ class ScopedBridgeBinding {
     TEST_TRACE("  -> Destructing Bridge...");
     Bridge.~BridgeClass();
     
-    // NOTE: Removed memset based on previous iteration
+    // SAFETY: Use memset to zero out memory, but cast to void* to silence compiler warning.
+    // This is necessary because BridgeClass is non-trivial, but we need a clean slate.
+    TEST_TRACE("  -> Wiping Bridge memory...");
+    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
     
     TEST_TRACE("  -> Constructing Bridge...");
     new (&Bridge) BridgeClass(stream);
     
-    // FIX SEGFAULT: Re-initialize Process so it binds to the new Bridge instance if needed
     TEST_TRACE("  -> Re-initializing Process...");
+    // Re-initialize Process as well since it might depend on Bridge
     Process.~ProcessClass();
+    std::memset(reinterpret_cast<void*>(&Process), 0, sizeof(ProcessClass));
     new (&Process) ProcessClass();
     
     TEST_TRACE("  -> Calling Bridge.begin()...");
@@ -262,12 +266,15 @@ class ScopedBridgeBinding {
     TEST_TRACE("  -> Destructing Mock Bridge...");
     Bridge.~BridgeClass();
     
+    TEST_TRACE("  -> Wiping Bridge memory...");
+    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
+    
     TEST_TRACE("  -> Constructing Global Bridge...");
     new (&Bridge) BridgeClass(Serial1);
     
-    // FIX SEGFAULT: Restore Process
     TEST_TRACE("  -> Restoring Process...");
     Process.~ProcessClass();
+    std::memset(reinterpret_cast<void*>(&Process), 0, sizeof(ProcessClass));
     new (&Process) ProcessClass();
     
     TEST_TRACE("  -> Calling Bridge.begin()...");

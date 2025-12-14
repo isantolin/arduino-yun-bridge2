@@ -10,6 +10,7 @@
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "arduino/BridgeTransport.h"
 
 // --- Configuration ---
 #ifdef BRIDGE_BAUDRATE
@@ -24,6 +25,16 @@ constexpr unsigned long kBridgeBaudrate = RPC_DEFAULT_BAUDRATE;
 
 #ifndef BRIDGE_DEBUG_IO
 #define BRIDGE_DEBUG_IO 0
+#endif
+
+#ifndef BRIDGE_ENABLE_WATCHDOG
+#define BRIDGE_ENABLE_WATCHDOG 1
+#endif
+
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+#ifndef BRIDGE_WATCHDOG_TIMEOUT
+#define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
+#endif
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
@@ -141,24 +152,17 @@ class BridgeClass {
 #endif
 
  private:
-  Stream& _stream;
-  HardwareSerial* _hardware_serial;
+  bridge::BridgeTransport _transport;
   const uint8_t* _shared_secret;
   size_t _shared_secret_len;
 
   // Protocol Engine
-  rpc::FrameParser _parser;
-  rpc::FrameBuilder _builder;
   rpc::Frame _rx_frame;
-  uint8_t _raw_frame_buffer[rpc::MAX_RAW_FRAME_SIZE];
-  uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
   uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE];
 
   // State
   bool _awaiting_ack;
-  bool _flow_paused; // New: Flow Control State
   uint16_t _last_command_id;
-  uint16_t _last_cobs_length;
   uint8_t _retry_count;
   unsigned long _last_send_millis;
 
@@ -211,9 +215,7 @@ class BridgeClass {
   bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload, size_t length);
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
-  size_t _writeFrameBytes(const uint8_t* data, size_t length);
   bool _requiresAck(uint16_t command_id) const;
-  void _recordLastFrame(uint16_t command_id, const uint8_t* cobs_frame, size_t cobs_len);
   void _retransmitLastFrame();
   void _processAckTimeout();
   void _handleAck(uint16_t command_id);

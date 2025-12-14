@@ -1,9 +1,9 @@
 import binascii
-import struct
-import os
+
 
 def crc32(data):
     return binascii.crc32(data) & 0xFFFFFFFF
+
 
 # Constants
 PROTOCOL_VERSION = 2

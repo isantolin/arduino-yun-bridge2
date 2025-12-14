@@ -16,9 +16,10 @@ from collections.abc import Iterable, Sequence
 from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
 from aiomqtt.message import Message as MQTTMessage
 from aiomqtt.types import PayloadType
-from yunbridge.mqtt.messages import QOSLevel, QueuedPublish
-from yunbridge.common import build_mqtt_properties
-from yunbridge.const import (
+from .definitions import (
+    QOSLevel,
+    QueuedPublish,
+    build_mqtt_properties,
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,

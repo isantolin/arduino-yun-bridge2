@@ -104,7 +104,7 @@ void test_bridge_begin() {
     
     // Verify initial state
     assert(bridge._awaiting_ack == false);
-    assert(bridge._flow_paused == false);
+    assert(bridge._transport.isFlowPaused() == false);
 }
 
 void test_bridge_send_frame() {

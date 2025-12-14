@@ -2,11 +2,10 @@
  * This file is part of Arduino Yun Ecosystem v2.
  */
 #include "Bridge.h"
+#include "arduino/HardwareAbstraction.h"
 
-#if defined(ARDUINO_ARCH_AVR)
-#include <avr/pgmspace.h>
+#ifdef ARDUINO_ARCH_AVR
 #include <avr/wdt.h>
-#include <avr/eeprom.h> 
 #endif
 
 #include <string.h> 
@@ -21,27 +20,12 @@
 
 using namespace rpc;
 
-#ifndef BRIDGE_ENABLE_WATCHDOG
-#define BRIDGE_ENABLE_WATCHDOG 1
-#endif
-
-#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
-#ifndef BRIDGE_WATCHDOG_TIMEOUT
-#define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
-#endif
-#endif
-
 BridgeClass Bridge(Serial1);
 ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
-
-#if defined(ARDUINO_ARCH_AVR)
-extern "C" char __heap_start;
-extern "C" char* __brkval;
-#endif
 
 #if BRIDGE_DEBUG_IO
 template <typename ActionText>
@@ -65,45 +49,56 @@ static_assert(
 constexpr size_t kSha256DigestSize = 32;
 constexpr size_t kFileReadLengthPrefix = 1;
 const char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
-
-#if defined(ARDUINO_ARCH_AVR)
-uint16_t calculateFreeMemoryBytes() {
-  char stack_top;
-  char* heap_end = __brkval ? __brkval : &__heap_start;
-  intptr_t free_bytes = &stack_top - heap_end;
-  if (free_bytes < 0) {
-    free_bytes = 0;
-  }
-  if (static_cast<size_t>(free_bytes) > 0xFFFF) {
-    free_bytes = 0xFFFF;
-  }
-  return static_cast<uint16_t>(free_bytes);
-}
-#else
-uint16_t calculateFreeMemoryBytes() {
-  return 0;
-}
-#endif
 }
 
 BridgeClass::BridgeClass(HardwareSerial& serial)
-    : BridgeClass(static_cast<Stream&>(serial)) {
-  _hardware_serial = &serial;
+    : _transport(serial, &serial),
+      _shared_secret(nullptr),
+      _shared_secret_len(0),
+      _rx_frame{},
+      _awaiting_ack(false),
+      _last_command_id(0),
+      _retry_count(0),
+      _last_send_millis(0),
+      _ack_timeout_ms(kAckTimeoutMs),
+      _ack_retry_limit(kMaxAckRetries),
+      _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
+      _command_handler(nullptr),
+      _datastore_get_handler(nullptr),
+      _mailbox_handler(nullptr),
+      _mailbox_available_handler(nullptr),
+      _process_run_handler(nullptr),
+      _process_poll_handler(nullptr),
+      _digital_read_handler(nullptr),
+      _analog_read_handler(nullptr),
+      _process_run_async_handler(nullptr),
+      _file_system_read_handler(nullptr),
+      _get_free_memory_handler(nullptr),
+      _status_handler(nullptr),
+      _pending_tx_head(0),
+      _pending_tx_count(0),
+      _pending_datastore_head(0),
+      _pending_datastore_count(0),
+      _pending_process_poll_head(0),
+      _pending_process_poll_count(0),
+      _synchronized(false)
+#if BRIDGE_DEBUG_FRAMES
+      , _tx_debug{}
+#endif
+{
+  memset(_pending_datastore_keys, 0, sizeof(_pending_datastore_keys));
+  memset(_pending_datastore_key_lengths, 0, sizeof(_pending_datastore_key_lengths));
+  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
+  memset(_pending_tx_frames, 0, sizeof(_pending_tx_frames));
 }
 
 BridgeClass::BridgeClass(Stream& stream)
-    : _stream(stream),
-      _hardware_serial(nullptr),
+    : _transport(stream, nullptr),
       _shared_secret(nullptr),
       _shared_secret_len(0),
-      _parser(),
-      _builder(),
       _rx_frame{},
-      _last_cobs_frame{},
       _awaiting_ack(false),
-      _flow_paused(false),
       _last_command_id(0),
-      _last_cobs_length(0),
       _retry_count(0),
       _last_send_millis(0),
       _ack_timeout_ms(kAckTimeoutMs),
@@ -140,9 +135,7 @@ BridgeClass::BridgeClass(Stream& stream)
 
 void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
-  if (_hardware_serial != nullptr) {
-    _hardware_serial->begin(baudrate);
-  }
+  _transport.begin(baudrate);
 
   _shared_secret = reinterpret_cast<const uint8_t*>(secret);
   if (_shared_secret && secret_len > 0) {
@@ -161,9 +154,8 @@ void BridgeClass::begin(
   memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
 
   _awaiting_ack = false;
-  _flow_paused = false;
+  // _flow_paused = false; // Handled by transport
   _last_command_id = 0;
-  _last_cobs_length = 0;
   _retry_count = 0;
   _last_send_millis = 0;
 #if BRIDGE_DEBUG_FRAMES
@@ -255,34 +247,12 @@ void BridgeClass::process() {
   wdt_reset();
 #endif
 
-  // --- Point 1: Flow Control Logic (High/Low Water Mark) ---
-  int available_bytes = _stream.available();
-  
-  if (!_flow_paused && available_bytes >= kRxHighWaterMark) {
-      // Buffer getting full, pause sender
-      (void)sendFrame(CommandId::CMD_XOFF);
-      _flow_paused = true;
-  } else if (_flow_paused && available_bytes <= kRxLowWaterMark) {
-      // Buffer drained enough, resume sender
-      (void)sendFrame(CommandId::CMD_XON);
-      _flow_paused = false;
+  // Handle incoming data via transport
+  rpc::Frame frame;
+  if (_transport.processInput(frame)) {
+    dispatch(frame);
   }
 
-  while (_stream.available()) {
-    int byte_read = _stream.read(); // Use int to check -1
-    if (byte_read >= 0) {
-      uint8_t byte = static_cast<uint8_t>(byte_read);
-      bool parsed = _parser.consume(byte, _rx_frame);
-      if (_parser.overflowed()) {
-        _parser.reset();
-        _emitStatus(StatusCode::STATUS_MALFORMED, reinterpret_cast<const __FlashStringHelper*>(kSerialOverflowMessage));
-        continue;
-      }
-      if (parsed) {
-        dispatch(_rx_frame);
-      }
-    }
-  }
   _processAckTimeout();
   // Retry queued frames after transient send failures.
   _flushPendingTxQueue();
@@ -291,11 +261,7 @@ void BridgeClass::process() {
 }
 
 void BridgeClass::flushStream() {
-  if (_hardware_serial != nullptr) {
-    _hardware_serial->flush();
-    return;
-  }
-  _stream.flush();
+  _transport.flush();
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
@@ -456,7 +422,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         if (payload_length != 0) {
           break;
         }
-        uint16_t free_mem = calculateFreeMemoryBytes();
+        uint16_t free_mem = bridge::hardware::getFreeMemory();
         uint8_t resp_payload[2];
         resp_payload[0] = (free_mem >> 8) & 0xFF;
         resp_payload[1] = free_mem & 0xFF;
@@ -812,135 +778,19 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
 
 bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
                                       const uint8_t* payload, size_t length) {
-  uint8_t* raw_frame_buf = _raw_frame_buffer;
-  const size_t raw_capacity = sizeof(_raw_frame_buffer);
-  const uint8_t* payload_ptr = payload;
-  const size_t payload_len = length;
+  bool success = _transport.sendFrame(command_id, payload, length);
 
-  // Use safe build method with buffer size
-  size_t raw_len =
-      _builder.build(
-          raw_frame_buf,
-          raw_capacity,
-          command_id,
-          payload_ptr,
-          payload_len);
-
-  if (raw_len == 0) {
-#if BRIDGE_DEBUG_FRAMES
-    _tx_debug.build_failures++;
-#endif
-    return false;
-  }
-
-#if BRIDGE_DEBUG_FRAMES
-  _tx_debug.command_id = command_id;
-  _tx_debug.payload_length = static_cast<uint16_t>(payload_len);
-  _tx_debug.raw_length = static_cast<uint16_t>(raw_len);
-#endif
-
-  uint8_t* cobs_buf = _last_cobs_frame;
-  size_t cobs_len = cobs::encode(raw_frame_buf, raw_len, cobs_buf);
-
-  size_t written = _writeFrameBytes(cobs_buf, cobs_len);
-  if (written == cobs_len) {
-    const uint8_t terminator = 0x00;
-    written += _writeFrameBytes(&terminator, 1);
-  }
-
-#if BRIDGE_DEBUG_FRAMES
-  _tx_debug.cobs_length = static_cast<uint16_t>(cobs_len);
-  _tx_debug.expected_serial_bytes =
-      static_cast<uint16_t>(cobs_len + 1);
-  _tx_debug.last_write_return = static_cast<uint16_t>(written);
-  if (raw_len >= sizeof(uint16_t)) {
-    uint16_t crc = rpc::read_u16_be(
-        raw_frame_buf + raw_len - sizeof(uint16_t));
-    _tx_debug.crc = crc;
-  } else {
-    _tx_debug.crc = 0;
-  }
-  _tx_debug.tx_count++;
-  if (written != static_cast<size_t>(cobs_len + 1)) {
-    _tx_debug.write_shortfall_events++;
-    uint16_t expected = static_cast<uint16_t>(cobs_len + 1);
-    _tx_debug.last_shortfall =
-        expected > _tx_debug.last_write_return
-            ? expected - _tx_debug.last_write_return
-            : 0;
-  } else {
-    _tx_debug.last_shortfall = 0;
-  }
-#endif
-
-  const bool success = written == (cobs_len + 1);
-  if (!success) {
-    return false;
-  }
-
-  if (_requiresAck(command_id)) {
-    _recordLastFrame(command_id, cobs_buf, cobs_len);
+  if (success && _requiresAck(command_id)) {
     _awaiting_ack = true;
     _retry_count = 0;
     _last_send_millis = millis();
+    _last_command_id = command_id;
   }
 
-  return true;
+  return success;
 }
 
-size_t BridgeClass::_writeFrameBytes(const uint8_t* data, size_t length) {
-  if (data == nullptr || length == 0) {
-    return 0;
-  }
 
-#if !defined(ARDUINO)
-  // Host builds rely on the injected Stream stub; fall back to a single write
-  // so we do not depend on HardwareSerial extensions like availableForWrite().
-  (void)_hardware_serial;
-  return _stream.write(data, length);
-#else
-  if (_hardware_serial == nullptr) {
-    return _stream.write(data, length);
-  }
-
-  size_t total_written = 0;
-  unsigned long last_progress = millis();
-  unsigned long timeout = _response_timeout_ms;
-  if (timeout == 0) {
-    timeout = 1;
-  }
-
-  while (total_written < length) {
-    size_t available = _hardware_serial->availableForWrite();
-    if (available == 0) {
-      if ((millis() - last_progress) >= timeout) {
-        break;
-      }
-      yield();
-      continue;
-    }
-
-    size_t chunk = length - total_written;
-    if (chunk > available) {
-      chunk = available;
-    }
-
-    size_t wrote = _hardware_serial->write(data + total_written, chunk);
-    if (wrote == 0) {
-      if ((millis() - last_progress) >= timeout) {
-        break;
-      }
-      yield();
-      continue;
-    }
-
-    total_written += wrote;
-    last_progress = millis();
-  }
-
-  return total_written;
-#endif
-}
 
 #if BRIDGE_DEBUG_FRAMES
 BridgeClass::FrameDebugSnapshot BridgeClass::getTxDebugSnapshot() const {
@@ -954,23 +804,9 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
   return command_id > rpc::to_underlying(StatusCode::STATUS_ACK);
 }
 
-void BridgeClass::_recordLastFrame(uint16_t command_id,
-                                   const uint8_t* cobs_frame,
-                                   size_t cobs_len) {
-  if (cobs_len > sizeof(_last_cobs_frame)) {
-    cobs_len = sizeof(_last_cobs_frame);
-  }
-  if (cobs_frame != _last_cobs_frame) {
-    memcpy(_last_cobs_frame, cobs_frame, cobs_len);
-  }
-  _last_cobs_length = static_cast<uint16_t>(cobs_len);
-  _last_command_id = command_id;
-}
-
 void BridgeClass::_clearAckState() {
   _awaiting_ack = false;
   _retry_count = 0;
-  _last_cobs_length = 0;
 }
 
 void BridgeClass::_handleAck(uint16_t command_id) {
@@ -984,40 +820,20 @@ void BridgeClass::_handleAck(uint16_t command_id) {
 }
 
 void BridgeClass::_handleMalformed(uint16_t command_id) {
-  if (!_last_cobs_length) {
-    return;
-  }
   if (command_id == 0xFFFF || command_id == _last_command_id) {
     _retransmitLastFrame();
   }
 }
 
 void BridgeClass::_retransmitLastFrame() {
-  if (!_awaiting_ack || !_last_cobs_length) {
+  if (!_awaiting_ack) {
     return;
   }
-  size_t written = _writeFrameBytes(_last_cobs_frame, _last_cobs_length);
-  if (written == _last_cobs_length) {
-    const uint8_t terminator = 0x00;
-    written += _writeFrameBytes(&terminator, 1);
+  
+  if (_transport.retransmitLastFrame()) {
+    _retry_count++;
+    _last_send_millis = millis();
   }
-#if BRIDGE_DEBUG_FRAMES
-  _tx_debug.tx_count++;
-  _tx_debug.last_write_return = static_cast<uint16_t>(written);
-  uint16_t expected = static_cast<uint16_t>(_last_cobs_length + 1);
-  _tx_debug.expected_serial_bytes = expected;
-  if (written != expected) {
-    _tx_debug.write_shortfall_events++;
-    _tx_debug.last_shortfall =
-        expected > _tx_debug.last_write_return
-            ? expected - _tx_debug.last_write_return
-            : 0;
-  } else {
-    _tx_debug.last_shortfall = 0;
-  }
-#endif
-  _retry_count++;
-  _last_send_millis = millis();
 }
 
 void BridgeClass::_processAckTimeout() {
@@ -1043,7 +859,7 @@ void BridgeClass::_resetLinkState() {
   _synchronized = false;
   _clearAckState();
   _clearPendingTxQueue();
-  _parser.reset();
+  _transport.reset();
   _pending_datastore_head = 0;
   _pending_datastore_count = 0;
   for (uint8_t i = 0; i < kMaxPendingDatastore; ++i) {
@@ -1055,7 +871,7 @@ void BridgeClass::_resetLinkState() {
   for (uint8_t i = 0; i < kMaxPendingProcessPolls; ++i) {
     _pending_process_pids[i] = 0;
   }
-  _flow_paused = false;
+  // _flow_paused = false; // Handled by transport.reset()
 }
 
 void BridgeClass::_flushPendingTxQueue() {

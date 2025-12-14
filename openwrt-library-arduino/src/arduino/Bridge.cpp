@@ -1139,7 +1139,7 @@ void BridgeClass::requestProcessRun(const char* command) {
   }
   size_t len = strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
-    _emitStatus(StatusCode::STATUS_ERROR, "process_run_payload_too_large");
+    _emitStatus(StatusCode::STATUS_ERROR, F("process_run_payload_too_large"));
     return;
   }
   (void)sendFrame(
@@ -1154,7 +1154,7 @@ void BridgeClass::requestProcessRunAsync(const char* command) {
   }
   size_t len = strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
-    _emitStatus(StatusCode::STATUS_ERROR, "process_run_async_payload_too_large");
+    _emitStatus(StatusCode::STATUS_ERROR, F("process_run_async_payload_too_large"));
     return;
   }
   (void)sendFrame(
@@ -1170,7 +1170,7 @@ void BridgeClass::requestProcessPoll(int pid) {
 
   const uint16_t pid_u16 = static_cast<uint16_t>(pid);
   if (!_pushPendingProcessPid(pid_u16)) {
-    _emitStatus(StatusCode::STATUS_ERROR, "process_poll_queue_full");
+    _emitStatus(StatusCode::STATUS_ERROR, F("process_poll_queue_full"));
     return;
   }
 

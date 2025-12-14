@@ -286,10 +286,8 @@ class SerialFlowController:
                 ack_phase = False
             timeout = self._ack_timeout if ack_phase else self._response_timeout
             try:
-                await asyncio.wait_for(
-                    pending.completion.wait(),
-                    timeout=timeout,
-                )
+                async with asyncio.timeout(timeout):
+                    await pending.completion.wait()
                 break
             except TimeoutError:
                 if pending.completion.is_set():

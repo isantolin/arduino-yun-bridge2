@@ -234,23 +234,33 @@ void inject_malformed(RecordingStream& stream, BridgeClass& bridge, uint16_t com
     bridge.process();
 }
 
-// ScopedBridgeBinding without memset, purely RAII
+// ScopedBridgeBinding using explicit destruction and placement new.
+// We use (void*) cast in memset to silence -Wclass-memaccess, acknowledging we are wiping a non-trivial object.
 class ScopedBridgeBinding {
  public:
   explicit ScopedBridgeBinding(Stream& stream) {
     TEST_TRACE("ScopedBridgeBinding: Switching to mock stream");
-    // Destruct the current global instance
+    // 1. Destruct
     Bridge.~BridgeClass();
-    // Construct new instance with the mock stream
+    
+    // 2. Wipe memory to 0 to remove stale pointers. 
+    // The cast avoids compiler warnings about non-trivial types.
+    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
+    
+    // 3. Construct
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
   }
 
   ~ScopedBridgeBinding() {
     TEST_TRACE("ScopedBridgeBinding: Restoring global serial stream");
-    // Destruct the mock instance
+    // 1. Destruct mock
     Bridge.~BridgeClass();
-    // Restore the original global instance
+    
+    // 2. Wipe memory
+    std::memset(reinterpret_cast<void*>(&Bridge), 0, sizeof(BridgeClass));
+    
+    // 3. Restore global
     new (&Bridge) BridgeClass(Serial1);
     Bridge.begin();
   }
@@ -276,7 +286,6 @@ std::vector<Frame> decode_frames(const std::vector<uint8_t>& bytes) {
 void test_datastore_get_response_dispatches_handler() {
   TEST_TRACE("START: test_datastore_get_response_dispatches_handler");
   RecordingStream stream;
-  // FIX: Use ScopedBridgeBinding instead of local BridgeClass
   ScopedBridgeBinding binding(stream);
 
   Bridge._pending_datastore_head = 0;
@@ -312,7 +321,6 @@ void test_datastore_get_response_dispatches_handler() {
 void test_datastore_queue_rejects_overflow() {
   TEST_TRACE("START: test_datastore_queue_rejects_overflow");
   RecordingStream stream;
-  // FIX: Use ScopedBridgeBinding
   ScopedBridgeBinding binding(stream);
 
   assert(Bridge._trackPendingDatastoreKey("1"));
@@ -423,6 +431,7 @@ void test_datastore_put_and_request_behavior() {
   inject_ack(stream, Bridge, command_value(CommandId::CMD_DATASTORE_GET));
   stream.clear();
 
+  // Fill the rest of the queue (capacity 4, 1 used)
   DataStore.requestGet("2");
   DataStore.requestGet("3");
   DataStore.requestGet("4");

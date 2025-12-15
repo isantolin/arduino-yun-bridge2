@@ -11,9 +11,9 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/coverage/arduino}"
 SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 COMPILE_FLAGS=(
-  -std=c++23
-  -g              # Agregado: Simbolos de debug para GDB
-  -O0             # Agregado: Desactivar optimizaciones para debug preciso
+  -std=c++11      # Updated to C++11 as requested
+  -g              # Debug symbols enabled
+  -O0             # Disable optimizations
   -Wall
   -Wextra
   -pedantic

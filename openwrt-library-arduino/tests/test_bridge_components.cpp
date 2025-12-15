@@ -241,18 +241,28 @@ class ScopedBridgeBinding {
     TEST_TRACE("ScopedBridgeBinding: Switching to mock stream");
     // Destruct
     Bridge.~BridgeClass();
+    
     // Construct
     new (&Bridge) BridgeClass(stream);
+    
+    // Re-initialize Process as well since it might depend on Bridge
+    Process.~ProcessClass();
+    new (&Process) ProcessClass();
+    
     Bridge.begin();
+    TEST_TRACE("ScopedBridgeBinding: Switch Complete.");
   }
 
   ~ScopedBridgeBinding() {
     TEST_TRACE("ScopedBridgeBinding: Restoring global serial stream");
-    // Destruct mock
     Bridge.~BridgeClass();
-    // Restore global
     new (&Bridge) BridgeClass(Serial1);
+    
+    Process.~ProcessClass();
+    new (&Process) ProcessClass();
+    
     Bridge.begin();
+    TEST_TRACE("ScopedBridgeBinding: Restore Complete.");
   }
 
   ScopedBridgeBinding(const ScopedBridgeBinding&) = delete;
@@ -327,7 +337,7 @@ void test_datastore_queue_rejects_overflow() {
 void test_console_write_and_flow_control() {
   TEST_TRACE("START: test_console_write_and_flow_control");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream); // Needs global binding due to Console usage
+  ScopedBridgeBinding binding(stream);
 
   Console.begin();
 
@@ -387,7 +397,7 @@ void test_console_write_and_flow_control() {
 void test_datastore_put_and_request_behavior() {
   TEST_TRACE("START: test_datastore_put_and_request_behavior");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream); // Needs global binding due to DataStore usage
+  ScopedBridgeBinding binding(stream);
 
   const char* key = "temp";
   const char* value = "23.5";
@@ -444,7 +454,7 @@ void test_datastore_put_and_request_behavior() {
 void test_mailbox_send_and_requests_emit_commands() {
   TEST_TRACE("START: test_mailbox_send_and_requests_emit_commands");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream); // Needs global binding due to Mailbox usage
+  ScopedBridgeBinding binding(stream);
 
   const char* msg = "hello";
   Mailbox.send(msg);
@@ -492,7 +502,7 @@ void test_mailbox_send_and_requests_emit_commands() {
 void test_filesystem_write_and_remove_payloads() {
   TEST_TRACE("START: test_filesystem_write_and_remove_payloads");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream); // Needs global binding due to FileSystem usage
+  ScopedBridgeBinding binding(stream);
 
   const char* path = "/tmp/data";
   std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, 0xEE);
@@ -536,7 +546,7 @@ void test_filesystem_write_and_remove_payloads() {
 void test_process_kill_encodes_pid() {
   TEST_TRACE("START: test_process_kill_encodes_pid");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream); // Needs global binding due to Process usage
+  ScopedBridgeBinding binding(stream);
 
   Process.kill(0x1234);
   auto frames = decode_frames(stream.data());
@@ -580,8 +590,8 @@ void test_mailbox_read_response_delivers_payload() {
 
 void test_process_poll_response_requeues_on_streaming_output() {
   TEST_TRACE("START: test_process_poll_response_requeues_on_streaming_output");
+  // Use LOCAL INSTANCE
   RecordingStream stream;
-  // FIX: Use LOCAL BridgeClass to avoid segfault from global state corruption
   BridgeClass bridge(stream);
 
   bridge._pending_process_poll_head = 0;
@@ -628,6 +638,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   assert(resend.header.payload_length == 2);
   uint16_t encoded_pid = read_u16_be(resend.payload);
   assert(encoded_pid == pid);
+  
   TEST_TRACE("PASS: test_process_poll_response_requeues_on_streaming_output");
 }
 
@@ -946,7 +957,7 @@ void test_process_run_rejects_oversized_payload() {
 void test_bridge_process_run_success() {
   TEST_TRACE("START: test_bridge_process_run_success");
   RecordingStream stream;
-  ScopedBridgeBinding binding(stream); // Global binding due to Bridge usage
+  ScopedBridgeBinding binding(stream);
 
   const char* command = "ls -la";
   Bridge.requestProcessRun(command);

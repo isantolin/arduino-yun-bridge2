@@ -33,8 +33,9 @@ using word = uint16_t;
 // Stub functions
 inline unsigned long millis() { return 0; }
 inline void delay(unsigned long) {}
-inline void delayMicroseconds(unsigned int us) {} // Added missing stub
-inline void yield() {} // Added missing stub
+// Fix: Comment out unused parameter name to avoid compiler warning
+inline void delayMicroseconds(unsigned int /*us*/) {} 
+inline void yield() {} 
 inline void pinMode(uint8_t, uint8_t) {}
 inline void digitalWrite(uint8_t, uint8_t) {}
 inline int digitalRead(uint8_t) { return LOW; }

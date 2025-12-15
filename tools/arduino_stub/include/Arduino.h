@@ -1,162 +1,121 @@
 #pragma once
 
 #include <cstdint>
-#include <cstddef>
-#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <cmath>
+#include <string> // Added for std::string
+#include <algorithm> // For std::min, std::max
 
-using byte = std::uint8_t;
+// Basic types
 using boolean = bool;
+using byte = uint8_t;
+using word = uint16_t;
 
-using std::size_t;
-using std::uint8_t;
-using std::uint16_t;
-using std::uint32_t;
-using std::uint64_t;
+// Constants
+#define HIGH 1
+#define LOW 0
+#define INPUT 0
+#define OUTPUT 1
+#define INPUT_PULLUP 2
+#define LED_BUILTIN 13
 
-#ifndef HIGH
-#define HIGH 0x1
+// Math macros
+#define abs(x) ((x) > 0 ? (x) : -(x))
+#ifndef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
-
-#ifndef LOW
-#define LOW 0x0
+#ifndef max
+#define max(a, b) ((a) > (b) ? (a) : (b))
 #endif
+#define round(x) ((x) >= 0 ? (long)((x) + 0.5) : (long)((x) - 0.5))
 
-#ifndef INPUT
-#define INPUT 0x0
-#endif
-
-#ifndef OUTPUT
-#define OUTPUT 0x1
-#endif
-
-#ifndef INPUT_PULLUP
-#define INPUT_PULLUP 0x2
-#endif
-
-#ifndef PROGMEM
-#define PROGMEM
-#endif
-
-#ifndef F
-#define F(x) (reinterpret_cast<const __FlashStringHelper*>(x))
-#endif
-
-class __FlashStringHelper;
-
-#ifndef pgm_read_byte
-#define pgm_read_byte(addr) (*(addr))
-#endif
-
+// Stub functions
 inline unsigned long millis() { return 0; }
 inline void delay(unsigned long) {}
-inline void delayMicroseconds(unsigned int) {}
+inline void pinMode(uint8_t, uint8_t) {}
+inline void digitalWrite(uint8_t, uint8_t) {}
+inline int digitalRead(uint8_t) { return LOW; }
 
+// Helper class for string manipulation (minimal stub)
+class String {
+public:
+    String(const char* s = "") : _data(s ? s : "") {}
+    String(int v) : _data(std::to_string(v)) {}
+    
+    const char* c_str() const { return _data.c_str(); }
+    size_t length() const { return _data.length(); }
+    
+    // Minimal operators needed for tests
+    bool operator==(const String& other) const { return _data == other._data; }
+    bool operator==(const char* other) const { return _data == (other ? other : ""); }
+    
+private:
+    std::string _data;
+};
+
+// F macro for Flash strings (no-op on host)
+class __FlashStringHelper;
+#define F(str) (reinterpret_cast<const __FlashStringHelper*>(str))
+
+// PROGMEM macros (no-op on host)
+#define PROGMEM
+#define PSTR(s) (s)
+#define pgm_read_byte(p) (*(const uint8_t*)(p))
+#define pgm_read_word(p) (*(const uint16_t*)(p))
+
+// Base classes needed for HardwareSerial
 class Print {
- public:
-	virtual ~Print() = default;
-
-	virtual std::size_t write(std::uint8_t c) = 0;
-
-	virtual std::size_t write(const std::uint8_t* buffer, std::size_t size) {
-		if (!buffer) return 0;
-		std::size_t written = 0;
-		while (written < size) {
-			if (write(buffer[written]) == 0) break;
-			++written;
-		}
-		return written;
-	}
-
-	std::size_t write(const char* str) {
-		if (!str) return 0;
-		return write(
-				reinterpret_cast<const std::uint8_t*>(str),
-				std::strlen(str));
-	}
-
-	std::size_t print(const char* str) { return write(str); }
-
-	std::size_t print(int value) {
-		char buf[16];
-		int len = std::snprintf(buf, sizeof(buf), "%d", value);
-		if (len <= 0) return 0;
-		if (static_cast<std::size_t>(len) >= sizeof(buf)) {
-			len = static_cast<int>(sizeof(buf) - 1);
-		}
-		return write(
-				reinterpret_cast<const std::uint8_t*>(buf),
-				static_cast<std::size_t>(len));
-	}
-
-	std::size_t println(const char* str) {
-		std::size_t n = print(str);
-		n += println();
-		return n;
-	}
-
-	std::size_t println(int value) {
-		std::size_t n = print(value);
-		n += println();
-		return n;
-	}
-
-	std::size_t println() {
-		const std::uint8_t newline[2] = {'\r', '\n'};
-		return write(newline, 2);
-	}
+public:
+    virtual size_t write(uint8_t) = 0;
+    virtual size_t write(const uint8_t *buffer, size_t size) {
+        size_t n = 0;
+        while (size--) {
+            if (write(*buffer++)) n++;
+            else break;
+        }
+        return n;
+    }
+    // Stub print methods
+    size_t print(const char[]) { return 0; }
+    size_t print(char) { return 0; }
+    size_t print(int, int = 10) { return 0; }
+    size_t println(const char[]) { return 0; }
+    size_t println(int, int = 10) { return 0; }
+    size_t println(void) { return 0; }
+    size_t print(const __FlashStringHelper *) { return 0; }
 };
 
 class Stream : public Print {
- public:
-	Stream() = default;
-	~Stream() override = default;
-
-	virtual int available() { return 0; }
-	virtual int read() { return -1; }
-	virtual int peek() { return -1; }
-	virtual void flush() {}
-
-	using Print::write;
-
-	std::size_t write(std::uint8_t c) override {
-		(void)c;
-		return 1;
-	}
-
-	std::size_t write(const std::uint8_t* buffer, std::size_t size) override {
-		if (!buffer) {
-			return 0;
-		}
-		return Print::write(buffer, size);
-	}
+public:
+    virtual int available() = 0;
+    virtual int read() = 0;
+    virtual int peek() = 0;
+    virtual void flush() = 0;
 };
 
+// HardwareSerial stub
 class HardwareSerial : public Stream {
- public:
-	HardwareSerial() = default;
-
-	void begin(unsigned long) {}
-	void end() {}
-	void setTimeout(unsigned long) {}
+public:
+    void begin(unsigned long) {}
+    size_t write(uint8_t) override { return 1; }
+    int available() override { return 0; }
+    int read() override { return -1; }
+    int peek() override { return -1; }
+    void flush() override {}
 };
 
 extern HardwareSerial Serial;
 extern HardwareSerial Serial1;
 
+// C++11 compatible constexpr constrain
 template <typename T>
 constexpr T constrain(T value, T minimum, T maximum) {
-	if (value < minimum) {
-		return minimum;
-	}
-	if (value > maximum) {
-		return maximum;
-	}
-	return value;
+    return (value < minimum) ? minimum : ((value > maximum) ? maximum : value);
 }
 
-inline void pinMode(uint8_t, uint8_t) {}
-inline void digitalWrite(uint8_t, uint8_t) {}
-inline int digitalRead(uint8_t) { return 0; }
-inline void analogWrite(uint8_t, int) {}
-inline int analogRead(uint8_t) { return 0; }
+// Bit manipulation macros
+#define bitRead(value, bit) (((value) >> (bit)) & 0x01)
+#define bitSet(value, bit) ((value) |= (1UL << (bit)))
+#define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
+#define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))

@@ -101,7 +101,12 @@ serial_baud:value("1000000")
 serial_baud.default = "115200"
 serial_baud.rmempty = false
 
-local serial_safe_baud = s:option(ListValue, "serial_safe_baud", translate("Safe Serial Baud Rate"), translate("Initial baudrate for negotiation. Use 115200 for safety."))
+local serial_safe_baud = s:option(
+    ListValue,
+    "serial_safe_baud",
+    translate("Safe Serial Baud Rate"),
+    translate("Initial baudrate for negotiation. Use 115200 for safety.")
+)
 serial_safe_baud:value("2400")
 serial_safe_baud:value("4800")
 serial_safe_baud:value("9600")

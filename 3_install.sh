@@ -715,6 +715,7 @@ luci-compat \
 luci-lua-runtime \
 luaposix \
 luci \
+avrdude \
 ${LUA_RUNTIME}"
 
 for pkg in $ESSENTIAL_PACKAGES; do

@@ -620,9 +620,10 @@ void test_process_poll_response_requeues_on_streaming_output() {
   *cursor++ = 0x7F;
   write_u16_be(cursor, sizeof(stdout_text));
   cursor += 2;
+  std::memcpy(cursor, stdout_text, sizeof(stdout_text));
+  cursor += sizeof(stdout_text);
   write_u16_be(cursor, 0);
   cursor += 2;
-  std::memcpy(cursor, stdout_text, sizeof(stdout_text));
 
   stream.clear();
   bridge.dispatch(frame);

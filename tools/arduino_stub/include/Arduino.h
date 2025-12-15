@@ -33,6 +33,8 @@ using word = uint16_t;
 // Stub functions
 inline unsigned long millis() { return 0; }
 inline void delay(unsigned long) {}
+inline void delayMicroseconds(unsigned int us) {} // Added missing stub
+inline void yield() {} // Added missing stub
 inline void pinMode(uint8_t, uint8_t) {}
 inline void digitalWrite(uint8_t, uint8_t) {}
 inline int digitalRead(uint8_t) { return LOW; }
@@ -72,6 +74,8 @@ class __FlashStringHelper;
 // Base classes needed for HardwareSerial
 class Print {
 public:
+    virtual ~Print() = default; // Added virtual destructor for safety
+
     virtual size_t write(uint8_t) = 0;
     virtual size_t write(const uint8_t *buffer, size_t size) {
         size_t n = 0;
@@ -93,6 +97,8 @@ public:
 
 class Stream : public Print {
 public:
+    virtual ~Stream() = default; // Added virtual destructor for safety
+
     virtual int available() = 0;
     virtual int read() = 0;
     virtual int peek() = 0;

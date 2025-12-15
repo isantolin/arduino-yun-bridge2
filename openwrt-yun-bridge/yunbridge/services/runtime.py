@@ -50,7 +50,6 @@ from .handshake import (
     derive_serial_timing,
 )
 from .serial_flow import SerialFlowController
-from .task_supervisor import SupervisedTaskSpec
 from .routers import MCUHandlerRegistry, MQTTRouter
 from .dispatcher import BridgeDispatcher
 

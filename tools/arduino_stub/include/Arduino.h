@@ -1,7 +1,3 @@
-/**
- * ARCHIVO: tools/arduino_stub/include/Arduino.h
- * ACCIÓN: Añadir stubs faltantes para analogWrite/analogRead
- */
 #pragma once
 
 #include <cstdint>
@@ -107,6 +103,10 @@ public:
 class HardwareSerial : public Stream {
 public:
     void begin(unsigned long) {}
+    
+    // Fix: Unhide base class write(const uint8_t*, size_t)
+    using Print::write;
+    
     size_t write(uint8_t) override { return 1; }
     int available() override { return 0; }
     int read() override { return -1; }

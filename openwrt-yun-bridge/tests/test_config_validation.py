@@ -19,6 +19,7 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "serial_port": "/dev/null",
         "serial_baud": DEFAULT_SERIAL_BAUD,
+        "serial_safe_baud": 115200,
         "mqtt_host": "localhost",
         "mqtt_port": DEFAULT_MQTT_PORT,
         "mqtt_user": None,

@@ -18,6 +18,7 @@ async def test_open_serial_connection_retry_success():
     config = RuntimeConfig(
         serial_port="/dev/test0",
         serial_baud=115200,
+        serial_safe_baud=115200,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,
@@ -62,6 +63,7 @@ async def test_open_serial_connection_cancelled():
     config = RuntimeConfig(
         serial_port="/dev/test0",
         serial_baud=115200,
+        serial_safe_baud=115200,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,
@@ -101,6 +103,7 @@ async def test_serial_reader_task_reconnects():
     config = RuntimeConfig(
         serial_port="/dev/test0",
         serial_baud=115200,
+        serial_safe_baud=115200,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,

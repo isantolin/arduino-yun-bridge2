@@ -40,6 +40,18 @@ class SystemComponent:
             self.state.mcu_version = None
         return send_ok
 
+    async def request_baudrate_change(self, new_baud: int) -> bool:
+        payload = new_baud.to_bytes(4, "big")
+        logger.info("Requesting MCU baudrate change to %d", new_baud)
+        return await self.ctx.send_frame(Command.CMD_SET_BAUDRATE.value, payload)
+
+    async def handle_set_baudrate_resp(self, payload: bytes) -> None:
+        logger.info("MCU acknowledged baudrate change. Switching local UART...")
+        # We need to signal the transport layer to change baudrate.
+        # This is a bit of a layer violation or needs a callback.
+        if hasattr(self.ctx, "on_baudrate_change_ack"):
+             await self.ctx.on_baudrate_change_ack()
+
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
             logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())

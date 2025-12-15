@@ -110,6 +110,7 @@ public:
 class HardwareSerial : public Stream {
 public:
     void begin(unsigned long) {}
+    void end() {}
     
     // Fix: Unhide base class write(const uint8_t*, size_t)
     using Print::write;

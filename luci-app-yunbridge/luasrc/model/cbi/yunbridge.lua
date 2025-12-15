@@ -39,6 +39,7 @@ local function ensure_general_section()
             debug = "0",
             serial_port = "/dev/ttyATH0",
             serial_baud = "115200",
+            serial_safe_baud = "115200",
             mqtt_host = "127.0.0.1",
             mqtt_port = "8883",
             mqtt_topic = "br",
@@ -83,10 +84,39 @@ local serial_port = s:option(Value, "serial_port", translate("Serial Port"))
 serial_port.placeholder = "/dev/ttyATH0"
 serial_port.rmempty = false
 
-local serial_baud = s:option(Value, "serial_baud", translate("Serial Baud Rate"))
-serial_baud.datatype = "uinteger"
-serial_baud.placeholder = "115200"
+local serial_baud = s:option(ListValue, "serial_baud", translate("Serial Baud Rate"))
+serial_baud:value("2400")
+serial_baud:value("4800")
+serial_baud:value("9600")
+serial_baud:value("19200")
+serial_baud:value("38400")
+serial_baud:value("57600")
+serial_baud:value("115200")
+serial_baud:value("230400")
+serial_baud:value("250000")
+serial_baud:value("460800")
+serial_baud:value("500000")
+serial_baud:value("921600")
+serial_baud:value("1000000")
+serial_baud.default = "115200"
 serial_baud.rmempty = false
+
+local serial_safe_baud = s:option(ListValue, "serial_safe_baud", translate("Safe Serial Baud Rate"), translate("Initial baudrate for negotiation. Use 115200 for safety."))
+serial_safe_baud:value("2400")
+serial_safe_baud:value("4800")
+serial_safe_baud:value("9600")
+serial_safe_baud:value("19200")
+serial_safe_baud:value("38400")
+serial_safe_baud:value("57600")
+serial_safe_baud:value("115200")
+serial_safe_baud:value("230400")
+serial_safe_baud:value("250000")
+serial_safe_baud:value("460800")
+serial_safe_baud:value("500000")
+serial_safe_baud:value("921600")
+serial_safe_baud:value("1000000")
+serial_safe_baud.default = "115200"
+serial_safe_baud.rmempty = false
 
 local mqtt_host = s:option(Value, "mqtt_host", translate("MQTT Host"))
 mqtt_host.placeholder = "127.0.0.1"
@@ -279,6 +309,10 @@ local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("S
 function serial_secret.cfgvalue()
     return translate("Managed via UCI. Use the Credentials & TLS tab to rotate secrets.")
 end
+
+-- Helper script to toggle MQTT port based on TLS setting
+local script_s = m:section(SimpleSection)
+script_s.template = "yunbridge/mqtt_port_helper"
 
 -- Deleted: Manual required_field_rules table and validation functions.
 -- LuCI handles dependencies (depends) and required fields (rmempty=false) natively.

@@ -19,6 +19,7 @@ def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "serial_port": "/dev/ttyUSB0",
         "serial_baud": 9600,
+        "serial_safe_baud": 115200,
         "mqtt_host": "localhost",
         "mqtt_port": 1883,
         "mqtt_user": None,
@@ -423,6 +424,7 @@ def test_configure_logging_syslog_handler(
     config = settings.RuntimeConfig(
         serial_port="/dev/ttyUSB0",
         serial_baud=9600,
+        serial_safe_baud=115200,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,

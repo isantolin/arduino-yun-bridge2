@@ -14,6 +14,7 @@ public:
     explicit BridgeTransport(Stream& stream, HardwareSerial* hwSerial = nullptr);
     
     void begin(unsigned long baudrate);
+    void setBaudrate(unsigned long baudrate);
     void flush();
     
     // Returns true if a frame was parsed and is ready in rxFrame

@@ -62,6 +62,49 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     return False
 
 
+async def _negotiate_baudrate(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+    target_baud: int,
+) -> bool:
+    """Negotiate a baudrate switch with the MCU."""
+    logger.info("Negotiating baudrate switch to %d...", target_baud)
+
+    # Construct CMD_SET_BAUDRATE frame
+    payload = struct.pack(">I", target_baud)
+    frame = Frame(
+        command_id=Command.CMD_SET_BAUDRATE,
+        payload=payload,
+    )
+    encoded = cobs.encode(frame.pack()) + b"\x00"
+
+    try:
+        writer.write(encoded)
+        await writer.drain()
+
+        # Wait for ACK (CMD_SET_BAUDRATE_RESP)
+        # We expect a quick response.
+        response_data = await asyncio.wait_for(reader.readuntil(b"\x00"), timeout=2.0)
+
+        # Decode and verify
+        decoded = cobs.decode(response_data[:-1])
+        resp_frame = Frame.unpack(decoded)
+
+        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
+            logger.info("Baudrate negotiation accepted by MCU.")
+            return True
+        else:
+            logger.warning(
+                "Unexpected response during baudrate negotiation: 0x%02X",
+                resp_frame.command_id,
+            )
+            return False
+
+    except (asyncio.TimeoutError, cobs.DecodeError, Exception) as e:
+        logger.error("Baudrate negotiation failed: %s", e)
+        return False
+
+
 async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
@@ -70,18 +113,29 @@ async def _open_serial_connection_with_retry(
     max_delay = base_delay * 8
     current_delay = base_delay
 
+    target_baud = config.serial_baud
+    initial_baud = config.serial_safe_baud
+
+    # If safe baud is not configured or same as target, just use target
+    if initial_baud <= 0 or initial_baud == target_baud:
+        initial_baud = target_baud
+        negotiation_needed = False
+    else:
+        negotiation_needed = True
+
     action = f"Serial connection to {config.serial_port}"
     logger.info(
-        "Connecting to serial port %s at %d baud...",
+        "Connecting to serial port %s at %d baud (target: %d)...",
         config.serial_port,
-        config.serial_baud,
+        initial_baud,
+        target_baud,
     )
 
     while True:
         try:
             reader, writer = await OPEN_SERIAL_CONNECTION(
                 url=config.serial_port,
-                baudrate=config.serial_baud,
+                baudrate=initial_baud,
                 exclusive=True,
             )
 
@@ -103,6 +157,41 @@ async def _open_serial_connection_with_retry(
                             logger.debug("Forced raw mode (no echo) on %s", config.serial_port)
                 except Exception as e:
                     logger.warning("Failed to force raw mode on serial port: %s", e)
+
+            if negotiation_needed:
+                success = await _negotiate_baudrate(reader, writer, target_baud)
+                if success:
+                    logger.info("Switching to target baudrate %d...", target_baud)
+                    writer.close()
+                    await writer.wait_closed()
+                    # Small delay to let MCU switch
+                    await asyncio.sleep(0.1)
+                    
+                    # Reopen at target baud
+                    reader, writer = await OPEN_SERIAL_CONNECTION(
+                        url=config.serial_port,
+                        baudrate=target_baud,
+                        exclusive=True,
+                    )
+                    # Re-apply raw mode (omitted for brevity, but ideally should be a helper)
+                    # For now, we assume the previous raw mode setting persists or we re-apply it.
+                    # Actually, closing and reopening might reset termios.
+                    # So we should re-apply raw mode.
+                    if termios and tty:
+                         try:
+                            transport = cast(Any, writer.transport)
+                            if hasattr(transport, "serial"):
+                                ser = transport.serial
+                                if hasattr(ser, "fd") and ser.fd is not None:
+                                    tty.setraw(ser.fd)
+                                    attrs = termios.tcgetattr(ser.fd)
+                                    attrs[3] = attrs[3] & ~termios.ECHO
+                                    termios.tcsetattr(ser.fd, termios.TCSANOW, attrs)
+                         except Exception:
+                             pass
+                else:
+                    logger.warning("Negotiation failed; falling back to safe baudrate %d", initial_baud)
+                    # We continue with initial_baud (safe)
 
             return reader, writer
         except (serial.SerialException, OSError, ExceptionGroup) as exc:

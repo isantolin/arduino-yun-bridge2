@@ -27,6 +27,7 @@ async def console_component() -> ConsoleComponent:
     config = RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_SERIAL_BAUD,
+        serial_safe_baud=115200,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,

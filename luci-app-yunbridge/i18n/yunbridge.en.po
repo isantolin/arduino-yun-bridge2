@@ -51,3 +51,9 @@ msgstr "Paste this snippet into your sketch (before including Bridge.h) so the M
 
 msgid "Copy snippet"
 msgstr "Copy snippet"
+
+msgid "Safe Serial Baud Rate"
+msgstr "Safe Serial Baud Rate"
+
+msgid "Initial baudrate for negotiation. Use 115200 for safety."
+msgstr "Initial baudrate for negotiation. Use 115200 for safety."

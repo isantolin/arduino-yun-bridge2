@@ -42,6 +42,7 @@ from ..const import (
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_BAUD,
+    DEFAULT_SERIAL_SAFE_BAUD,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_PORT,
@@ -65,6 +66,7 @@ class RuntimeConfig:
 
     serial_port: str
     serial_baud: int
+    serial_safe_baud: int
     mqtt_host: str
     mqtt_port: int
     mqtt_user: str | None
@@ -481,6 +483,7 @@ def load_runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
         serial_baud=_get_int("serial_baud", DEFAULT_SERIAL_BAUD),
+        serial_safe_baud=_get_int("serial_safe_baud", DEFAULT_SERIAL_SAFE_BAUD),
         mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
         mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
         mqtt_user=_optional_path(mqtt_user),

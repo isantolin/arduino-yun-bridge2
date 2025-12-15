@@ -22,6 +22,14 @@ void BridgeTransport::begin(unsigned long baudrate) {
     _parser.reset();
 }
 
+void BridgeTransport::setBaudrate(unsigned long baudrate) {
+    if (_hardware_serial != nullptr) {
+        _hardware_serial->flush();
+        _hardware_serial->end();
+        _hardware_serial->begin(baudrate);
+    }
+}
+
 void BridgeTransport::flush() {
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();

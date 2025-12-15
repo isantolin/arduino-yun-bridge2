@@ -207,48 +207,35 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
 }
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
-  if (length < RPC_HANDSHAKE_CONFIG_SIZE) {
-    _ack_timeout_ms = kAckTimeoutMs;
-    _ack_retry_limit = kMaxAckRetries;
-    _response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
-    return;
+  // Default values
+  uint16_t ack_timeout_ms = kAckTimeoutMs;
+  uint8_t retry_limit = kMaxAckRetries;
+  uint32_t response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+
+  if (payload != nullptr && length >= RPC_HANDSHAKE_CONFIG_SIZE) {
+    const uint8_t* cursor = payload;
+    ack_timeout_ms = rpc::read_u16_be(cursor);
+    cursor += 2;
+    retry_limit = *cursor++;
+    response_timeout_ms = rpc::read_u32_be(cursor);
   }
 
-  const uint8_t* cursor = payload;
-  if (cursor == nullptr) {
-    _ack_timeout_ms = kAckTimeoutMs;
-    _ack_retry_limit = kMaxAckRetries;
-    _response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
-    return;
-  }
-  uint16_t ack_timeout_ms = rpc::read_u16_be(cursor);
-  cursor += 2;
-  uint8_t retry_limit = *cursor++;
-  uint32_t response_timeout_ms = rpc::read_u32_be(cursor);
+  // Apply with validation
+  _ack_timeout_ms = (ack_timeout_ms >= RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
+                     ack_timeout_ms <= RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS)
+                        ? ack_timeout_ms
+                        : kAckTimeoutMs;
 
-  if (
-      ack_timeout_ms >= RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
-      ack_timeout_ms <= RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS) {
-    _ack_timeout_ms = ack_timeout_ms;
-  } else {
-    _ack_timeout_ms = kAckTimeoutMs;
-  }
+  _ack_retry_limit = (retry_limit >= RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
+                      retry_limit <= RPC_HANDSHAKE_RETRY_LIMIT_MAX)
+                         ? retry_limit
+                         : kMaxAckRetries;
 
-  if (
-      retry_limit >= RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
-      retry_limit <= RPC_HANDSHAKE_RETRY_LIMIT_MAX) {
-    _ack_retry_limit = retry_limit;
-  } else {
-    _ack_retry_limit = kMaxAckRetries;
-  }
-
-  if (
-      response_timeout_ms >= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
-      response_timeout_ms <= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS) {
-    _response_timeout_ms = response_timeout_ms;
-  } else {
-    _response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
-  }
+  _response_timeout_ms =
+      (response_timeout_ms >= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
+       response_timeout_ms <= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)
+          ? response_timeout_ms
+          : RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
 }
 
 void BridgeClass::onMailboxMessage(MailboxHandler handler) {
@@ -344,6 +331,16 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         rpc::write_u16_be(&resp[3], _last_command_id);
         rpc::write_u32_be(&resp[5], static_cast<uint32_t>(_last_send_millis));
         (void)sendFrame(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP, resp, sizeof(resp));
+      }
+      break;
+    case CommandId::CMD_SET_BAUDRATE:
+      if (payload_length == 4) {
+        uint32_t new_baud = rpc::read_u32_be(payload_data);
+        // Send ACK at current baudrate
+        (void)sendFrame(CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
+        _transport.flush();
+        delay(50); // Give time for the ACK to leave the UART buffer
+        _transport.setBaudrate(new_baud);
       }
       break;
     case CommandId::CMD_LINK_SYNC:
@@ -666,8 +663,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CommandId::CMD_GET_VERSION:
     case CommandId::CMD_GET_FREE_MEMORY:
     case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
+    case CommandId::CMD_SET_BAUDRATE:
     case CommandId::CMD_LINK_RESET:
-      if (frame.header.payload_length > 0) {
+      if (frame.header.payload_length > 0 && command != CommandId::CMD_SET_BAUDRATE) {
          // Collision with STATUS codes. If payload exists, treat as Status.
          command_processed_internally = false;
       } else {

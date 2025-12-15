@@ -3,7 +3,6 @@
 
 import asyncio
 import logging
-import sys
 import argparse
 
 from yunbridge_client import Bridge, dump_client_env

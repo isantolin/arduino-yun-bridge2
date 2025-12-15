@@ -10,6 +10,15 @@ Esta nota resume cómo se articula el daemon, qué garantías de seguridad ofrec
 - **MCU Firmware (openwrt-library-arduino)**: implementa el protocolo binario descrito en `tools/protocol/spec.toml` y vela por el secreto compartido del enlace serie.
 - **Instrumentación**: el daemon escribe `/tmp/yunbridge_status.json`, publica métricas en `br/system/metrics` y, a partir de esta versión, mantiene un exportador HTTP opcional compatible con Prometheus.
 
+## Arquitectura de la Librería Arduino (C++)
+
+En la versión 2.0, la librería Arduino ha sido refactorizada para eliminar el patrón "God Object" de la clase `Bridge`.
+
+- **Desacoplamiento**: La lógica de negocio se ha movido de `Bridge.cpp` a clases especializadas: `DataStoreClass`, `ProcessClass`, `MailboxClass`, `FileSystemClass` y `ConsoleClass`.
+- **Enrutamiento**: La clase `Bridge` actúa ahora principalmente como un router. Su método `dispatch()` recibe los frames del puerto serie y los deriva a la instancia del componente correspondiente (por ejemplo, `DataStore.handleResponse()`).
+- **Gestión de Estado**: Cada componente gestiona su propio estado interno (colas de procesos, buffers, etc.), lo que facilita las pruebas unitarias y el mantenimiento.
+- **Compatibilidad**: Se mantiene la API pública original (`Bridge.put()`, `Process.run()`, etc.) para garantizar la compatibilidad con los sketches existentes, pero internamente estas llamadas delegan en los nuevos componentes.
+
 ## Seguridad
 
 1. **TLS recomendado**: por defecto `mqtt_tls=1` y se exige `mqtt_cafile` para levantar el contexto TLS. Puedes desactivar TLS explícitamente (por ejemplo desde LuCI) para entornos de depuración, pero el daemon lo registra como advertencia y todo el tráfico MQTT —incluyendo credenciales— viaja en texto plano.

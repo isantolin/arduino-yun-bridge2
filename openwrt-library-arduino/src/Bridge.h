@@ -68,8 +68,6 @@ class BridgeClass {
 
   static constexpr size_t kMaxFilePathLength = 64;
   static constexpr size_t kMaxDatastoreKeyLength = 32;
-  static constexpr uint8_t kMaxPendingDatastore = 2;
-  static constexpr uint8_t kMaxPendingProcessPolls = 2;
   static constexpr uint8_t kMaxPendingTxFrames = 2;
   static constexpr unsigned int kAckTimeoutMs = 200;
   static constexpr uint8_t kMaxAckRetries = 5;
@@ -80,15 +78,6 @@ class BridgeClass {
 
   // Callbacks
   using CommandHandler = void (*)(const rpc::Frame&);
-  using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
-  using MailboxHandler = void (*)(const uint8_t*, uint16_t);
-  using MailboxAvailableHandler = void (*)(uint16_t);
-  using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
-                                     const uint8_t*, uint16_t);
-  using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
-                                      uint16_t, const uint8_t*, uint16_t);
-  using ProcessRunAsyncHandler = void (*)(int);
-  using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
   using DigitalReadHandler = void (*)(uint8_t);
   using AnalogReadHandler = void (*)(uint16_t);
   using GetFreeMemoryHandler = void (*)(uint16_t);
@@ -110,21 +99,10 @@ class BridgeClass {
   // Request Methods
   void requestDigitalRead(uint8_t pin);
   void requestAnalogRead(uint8_t pin);
-  void requestProcessRun(const char* command);
-  void requestProcessRunAsync(const char* command);
-  void requestProcessPoll(int pid);
-  void requestFileSystemRead(const char* filePath);
   void requestGetFreeMemory();
 
   // Events
   void onCommand(CommandHandler handler);
-  void onDataStoreGetResponse(DataStoreGetHandler handler);
-  void onMailboxMessage(MailboxHandler handler);
-  void onMailboxAvailableResponse(MailboxAvailableHandler handler);
-  void onProcessRunResponse(ProcessRunHandler handler);
-  void onProcessPollResponse(ProcessPollHandler handler);
-  void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
-  void onFileSystemReadResponse(FileSystemReadHandler handler);
   void onDigitalReadResponse(DigitalReadHandler handler);
   void onAnalogReadResponse(AnalogReadHandler handler);
   void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
@@ -135,6 +113,8 @@ class BridgeClass {
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
   void flushStream();
   uint8_t* getScratchBuffer() { return _scratch_payload; }
+  void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
+  void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
   struct FrameDebugSnapshot {
     uint16_t tx_count;
@@ -158,8 +138,6 @@ class BridgeClass {
   void resetTxDebugStats() {}
 #endif
 
-// Modificacion CRITICA: Exponer privados solo si se define BRIDGE_HOST_TEST
-// Esto garantiza que el layout de memoria sea consistente entre la libreria y los tests.
 #if defined(BRIDGE_HOST_TEST)
  public:
 #else
@@ -186,15 +164,8 @@ class BridgeClass {
 
   // Handlers
   CommandHandler _command_handler;
-  DataStoreGetHandler _datastore_get_handler;
-  MailboxHandler _mailbox_handler;
-  MailboxAvailableHandler _mailbox_available_handler;
-  ProcessRunHandler _process_run_handler;
-  ProcessPollHandler _process_poll_handler;
   DigitalReadHandler _digital_read_handler;
   AnalogReadHandler _analog_read_handler;
-  ProcessRunAsyncHandler _process_run_async_handler;
-  FileSystemReadHandler _file_system_read_handler;
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
@@ -207,15 +178,6 @@ class BridgeClass {
   bridge::array<PendingTxFrame, kMaxPendingTxFrames> _pending_tx_frames;
   uint8_t _pending_tx_head;
   uint8_t _pending_tx_count;
-
-  bridge::array<bridge::array<char, kMaxDatastoreKeyLength + 1>, kMaxPendingDatastore> _pending_datastore_keys;
-  bridge::array<uint8_t, kMaxPendingDatastore> _pending_datastore_key_lengths;
-  uint8_t _pending_datastore_head;
-  uint8_t _pending_datastore_count;
-
-  bridge::array<uint16_t, kMaxPendingProcessPolls> _pending_process_pids;
-  uint8_t _pending_process_poll_head;
-  uint8_t _pending_process_poll_count;
   bool _synchronized;
 
 #if BRIDGE_DEBUG_FRAMES
@@ -226,16 +188,10 @@ class BridgeClass {
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
   void _handleConsoleCommand(const rpc::Frame& frame);
-  void _handleDatastoreCommand(const rpc::Frame& frame);
-  void _handleMailboxCommand(const rpc::Frame& frame);
-  void _handleFileSystemCommand(const rpc::Frame& frame);
-  void _handleProcessCommand(const rpc::Frame& frame);
 
   void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload, size_t length);
-  void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
-  void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
   bool _requiresAck(uint16_t command_id) const;
   void _retransmitLastFrame();
   void _processAckTimeout();
@@ -249,17 +205,11 @@ class BridgeClass {
   void _clearPendingTxQueue();
   bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _dequeuePendingTx(PendingTxFrame& frame);
-
-  bool _trackPendingDatastoreKey(const char* key);
-  const char* _popPendingDatastoreKey();
-  bool _pushPendingProcessPid(uint16_t pid);
-  uint16_t _popPendingProcessPid();
   void _clearAckState();
 };
 
 extern BridgeClass Bridge;
 
-// These classes are wrappers around Bridge calls usually
 class ConsoleClass : public Stream {
  public:
   static constexpr size_t kTxBufferSize = 64;
@@ -297,37 +247,111 @@ class ConsoleClass : public Stream {
 };
 extern ConsoleClass Console;
 
-// Placeholder classes to satisfy dependencies if they were used in sketches
-// In a full implementation these would have methods mapping to Bridge calls
 class DataStoreClass {
  public:
+  static constexpr uint8_t kMaxPendingDatastore = 2;
+  using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
+
   DataStoreClass();
   void put(const char* key, const char* value);
   void requestGet(const char* key);
+  void handleResponse(const rpc::Frame& frame);
+  void onDataStoreGetResponse(DataStoreGetHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  bool _trackPendingDatastoreKey(const char* key);
+  const char* _popPendingDatastoreKey();
+
+  bridge::array<bridge::array<char, BridgeClass::kMaxDatastoreKeyLength + 1>, kMaxPendingDatastore> _pending_datastore_keys;
+  bridge::array<uint8_t, kMaxPendingDatastore> _pending_datastore_key_lengths;
+  uint8_t _pending_datastore_head;
+  uint8_t _pending_datastore_count;
+  DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;
 
 class MailboxClass {
  public:
+  using MailboxHandler = void (*)(const uint8_t*, uint16_t);
+  using MailboxAvailableHandler = void (*)(uint16_t);
+
   MailboxClass();
   void send(const char* message);
   void send(const uint8_t* data, size_t length);
   void requestRead();
   void requestAvailable();
+  void handleResponse(const rpc::Frame& frame);
+  void onMailboxMessage(MailboxHandler handler);
+  void onMailboxAvailableResponse(MailboxAvailableHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  MailboxHandler _mailbox_handler;
+  MailboxAvailableHandler _mailbox_available_handler;
 };
 extern MailboxClass Mailbox;
 
 class FileSystemClass {
  public:
+  using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
+
   void write(const char* filePath, const uint8_t* data, size_t length);
   void remove(const char* filePath);
+  void read(const char* filePath);
+  void handleResponse(const rpc::Frame& frame);
+  void onFileSystemReadResponse(FileSystemReadHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  FileSystemReadHandler _file_system_read_handler;
 };
 extern FileSystemClass FileSystem;
 
 class ProcessClass {
  public:
+  static constexpr uint8_t kMaxPendingProcessPolls = 2;
+  using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
+                                     const uint8_t*, uint16_t);
+  using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
+                                      uint16_t, const uint8_t*, uint16_t);
+  using ProcessRunAsyncHandler = void (*)(int);
+
   ProcessClass();
+  void run(const char* command);
+  void runAsync(const char* command);
+  void poll(int pid);
   void kill(int pid);
+  void handleResponse(const rpc::Frame& frame);
+  
+  void onProcessRunResponse(ProcessRunHandler handler);
+  void onProcessPollResponse(ProcessPollHandler handler);
+  void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  bool _pushPendingProcessPid(uint16_t pid);
+  uint16_t _popPendingProcessPid();
+
+  bridge::array<uint16_t, kMaxPendingProcessPolls> _pending_process_pids;
+  uint8_t _pending_process_poll_head;
+  uint8_t _pending_process_poll_count;
+  
+  ProcessRunHandler _process_run_handler;
+  ProcessPollHandler _process_poll_handler;
+  ProcessRunAsyncHandler _process_run_async_handler;
 };
 extern ProcessClass Process;
 

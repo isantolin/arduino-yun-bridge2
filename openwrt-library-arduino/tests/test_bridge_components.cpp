@@ -94,7 +94,6 @@ struct ProcessPollHandlerState {
   uint8_t exit_code = 0xFF;
   std::string stdout_text;
   std::string stderr_text;
-  BridgeClass* bridge = nullptr;
   int pid_to_requeue = -1;
 };
 
@@ -127,8 +126,8 @@ void process_poll_handler_trampoline(
       state->stderr_text.clear();
   }
 
-  if (state->bridge && state->pid_to_requeue >= 0 && exit_code == 0x7F) {
-      state->bridge->requestProcessPoll(state->pid_to_requeue);
+  if (state->pid_to_requeue >= 0 && exit_code == 0x7F) {
+      Process.poll(state->pid_to_requeue);
   }
 }
 
@@ -251,9 +250,18 @@ class ScopedBridgeBinding {
     // Construct
     new (&Bridge) BridgeClass(stream);
     
-    // Re-initialize Process as well since it might depend on Bridge
+    // Re-initialize components
     Process.~ProcessClass();
     new (&Process) ProcessClass();
+
+    DataStore.~DataStoreClass();
+    new (&DataStore) DataStoreClass();
+
+    Mailbox.~MailboxClass();
+    new (&Mailbox) MailboxClass();
+
+    FileSystem.~FileSystemClass();
+    new (&FileSystem) FileSystemClass();
     
     Bridge.begin();
     TEST_TRACE("ScopedBridgeBinding: Switch Complete.");
@@ -266,6 +274,15 @@ class ScopedBridgeBinding {
     
     Process.~ProcessClass();
     new (&Process) ProcessClass();
+
+    DataStore.~DataStoreClass();
+    new (&DataStore) DataStoreClass();
+
+    Mailbox.~MailboxClass();
+    new (&Mailbox) MailboxClass();
+
+    FileSystem.~FileSystemClass();
+    new (&FileSystem) FileSystemClass();
     
     Bridge.begin();
     TEST_TRACE("ScopedBridgeBinding: Restore Complete.");
@@ -292,20 +309,20 @@ std::vector<Frame> decode_frames(const std::vector<uint8_t>& bytes) {
 void test_datastore_get_response_dispatches_handler() {
   TEST_TRACE("START: test_datastore_get_response_dispatches_handler");
   RecordingStream stream;
-  BridgeClass bridge(stream); // Local instance
+  ScopedBridgeBinding binding(stream);
 
-  bridge._pending_datastore_head = 0;
-  bridge._pending_datastore_count = 0;
-  bridge._pending_datastore_key_lengths.fill(0);
-  for (auto& key : bridge._pending_datastore_keys) {
+  DataStore._pending_datastore_head = 0;
+  DataStore._pending_datastore_count = 0;
+  DataStore._pending_datastore_key_lengths.fill(0);
+  for (auto& key : DataStore._pending_datastore_keys) {
     key.fill(0);
   }
 
   DatastoreHandlerState handler_state;
   DatastoreHandlerState::instance = &handler_state;
-  bridge.onDataStoreGetResponse(datastore_handler_trampoline);
+  DataStore.onDataStoreGetResponse(datastore_handler_trampoline);
 
-  bool enqueued = bridge._trackPendingDatastoreKey("thermostat");
+  bool enqueued = DataStore._trackPendingDatastoreKey("thermostat");
   assert(enqueued);
 
   Frame frame{};
@@ -315,7 +332,7 @@ void test_datastore_get_response_dispatches_handler() {
   frame.payload[0] = 5;
   std::memcpy(frame.payload + 1, "23.7C", 5);
 
-  bridge.dispatch(frame);
+  Bridge.dispatch(frame);
 
   assert(handler_state.called);
   assert(handler_state.key == "thermostat");
@@ -327,15 +344,15 @@ void test_datastore_get_response_dispatches_handler() {
 void test_datastore_queue_rejects_overflow() {
   TEST_TRACE("START: test_datastore_queue_rejects_overflow");
   RecordingStream stream;
-  BridgeClass bridge(stream); // Local instance
+  ScopedBridgeBinding binding(stream);
 
-  assert(bridge._trackPendingDatastoreKey("1"));
-  assert(bridge._trackPendingDatastoreKey("2"));
+  assert(DataStore._trackPendingDatastoreKey("1"));
+  assert(DataStore._trackPendingDatastoreKey("2"));
 
-  bool overflow = bridge._trackPendingDatastoreKey("overflow");
+  bool overflow = DataStore._trackPendingDatastoreKey("overflow");
   assert(!overflow);
 
-  const char* key = bridge._popPendingDatastoreKey();
+  const char* key = DataStore._popPendingDatastoreKey();
   assert(std::strcmp(key, "1") == 0);
   TEST_TRACE("PASS: test_datastore_queue_rejects_overflow");
 }
@@ -478,7 +495,7 @@ void test_datastore_put_and_request_behavior() {
       reinterpret_cast<const char*>(status_frame.payload) +
           status_frame.header.payload_length);
   assert(status_message == "datastore_queue_full");
-  (void)Bridge._popPendingDatastoreKey();
+  (void)DataStore._popPendingDatastoreKey();
   TEST_TRACE("PASS: test_datastore_put_and_request_behavior");
 }
 
@@ -604,11 +621,11 @@ void test_process_kill_encodes_pid() {
 void test_mailbox_read_response_delivers_payload() {
   TEST_TRACE("START: test_mailbox_read_response_delivers_payload");
   RecordingStream stream;
-  BridgeClass bridge(stream); // Local instance
+  ScopedBridgeBinding binding(stream);
 
   MailboxHandlerState mailbox_state;
   MailboxHandlerState::instance = &mailbox_state;
-  bridge.onMailboxMessage(mailbox_handler_trampoline);
+  Mailbox.onMailboxMessage(mailbox_handler_trampoline);
 
   const char* payload = "hello-linux";
   const uint16_t payload_len = static_cast<uint16_t>(std::strlen(payload));
@@ -620,7 +637,7 @@ void test_mailbox_read_response_delivers_payload() {
   write_u16_be(frame.payload, payload_len);
   std::memcpy(frame.payload + 2, payload, payload_len);
 
-  bridge.dispatch(frame);
+  Bridge.dispatch(frame);
 
   assert(mailbox_state.called);
   assert(mailbox_state.message == payload);
@@ -630,27 +647,25 @@ void test_mailbox_read_response_delivers_payload() {
 
 void test_process_poll_response_requeues_on_streaming_output() {
   TEST_TRACE("START: test_process_poll_response_requeues_on_streaming_output");
-  // USE LOCAL INSTANCE to avoid global state segfaults
   RecordingStream stream;
-  BridgeClass bridge(stream);
-  bridge._synchronized = true; // Manually sync for test
+  ScopedBridgeBinding binding(stream);
+  Bridge._synchronized = true; // Manually sync for test
 
-  bridge._pending_process_poll_head = 0;
-  bridge._pending_process_poll_count = 0;
+  Process._pending_process_poll_head = 0;
+  Process._pending_process_poll_count = 0;
   // Manually clear instead of fill(0) just in case
-  for(size_t i=0; i<bridge._pending_process_pids.size(); i++) {
-      bridge._pending_process_pids[i] = 0;
+  for(size_t i=0; i<Process._pending_process_pids.size(); i++) {
+      Process._pending_process_pids[i] = 0;
   }
 
   const uint16_t pid = 0x1234;
-  bool enqueued = bridge._pushPendingProcessPid(pid);
+  bool enqueued = Process._pushPendingProcessPid(pid);
   assert(enqueued);
 
   ProcessPollHandlerState poll_state;
   ProcessPollHandlerState::instance = &poll_state;
-  poll_state.bridge = &bridge;
   poll_state.pid_to_requeue = pid;
-  bridge.onProcessPollResponse(process_poll_handler_trampoline);
+  Process.onProcessPollResponse(process_poll_handler_trampoline);
 
   constexpr uint8_t stdout_text[] = {'o', 'k'};
 
@@ -669,7 +684,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   cursor += 2;
 
   stream.clear();
-  bridge.dispatch(frame);
+  Bridge.dispatch(frame);
 
   assert(poll_state.called);
   assert(poll_state.status == StatusCode::STATUS_OK);
@@ -988,7 +1003,7 @@ void test_process_run_rejects_oversized_payload() {
   Bridge.onStatus(status_handler_trampoline);
 
   std::string huge(rpc::MAX_PAYLOAD_SIZE + 4, 'x');
-  Bridge.requestProcessRun(huge.c_str());
+  Process.run(huge.c_str());
 
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
@@ -1017,7 +1032,7 @@ void test_bridge_process_run_success() {
   Bridge._synchronized = true; // Manually sync for test
 
   const char* command = "ls -la";
-  Bridge.requestProcessRun(command);
+  Process.run(command);
 
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);

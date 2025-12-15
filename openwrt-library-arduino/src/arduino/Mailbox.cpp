@@ -5,7 +5,9 @@
 
 using namespace rpc;
 
-MailboxClass::MailboxClass() {}
+MailboxClass::MailboxClass() 
+  : _mailbox_handler(nullptr),
+    _mailbox_available_handler(nullptr) {}
 
 void MailboxClass::send(const char* message) {
   if (!message) return;
@@ -45,4 +47,55 @@ void MailboxClass::requestRead() {
 
 void MailboxClass::requestAvailable() {
   (void)Bridge.sendFrame(CommandId::CMD_MAILBOX_AVAILABLE);
+}
+
+void MailboxClass::handleResponse(const rpc::Frame& frame) {
+  const CommandId command = static_cast<CommandId>(frame.header.command_id);
+  const size_t payload_length = frame.header.payload_length;
+  const uint8_t* payload_data = frame.payload;
+
+  switch (command) {
+    case CommandId::CMD_MAILBOX_READ_RESP:
+      if (_mailbox_handler && payload_length >= 2 && payload_data != nullptr) {
+        uint16_t message_len = rpc::read_u16_be(payload_data);
+        const size_t expected = static_cast<size_t>(2 + message_len);
+        if (payload_length >= expected) {
+          const uint8_t* body_ptr = payload_data + 2;
+          _mailbox_handler(body_ptr, message_len);
+        }
+      }
+      break;
+    case CommandId::CMD_MAILBOX_AVAILABLE_RESP:
+      if (_mailbox_available_handler && payload_length == 1 && payload_data) {
+        uint8_t count = payload_data[0];
+        _mailbox_available_handler(count);
+      }
+      break;
+    case CommandId::CMD_MAILBOX_PUSH:
+      if (_mailbox_handler && payload_length >= 2 && payload_data != nullptr) {
+        uint16_t message_len = rpc::read_u16_be(payload_data);
+        const size_t expected = static_cast<size_t>(2 + message_len);
+        if (payload_length >= expected) {
+          const uint8_t* body_ptr = payload_data + 2;
+          _mailbox_handler(body_ptr, message_len);
+        }
+      }
+      break;
+    case CommandId::CMD_MAILBOX_AVAILABLE:
+       if (_mailbox_available_handler && payload_length == 1 && payload_data) {
+        uint8_t count = payload_data[0];
+        _mailbox_available_handler(count);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void MailboxClass::onMailboxMessage(MailboxHandler handler) {
+  _mailbox_handler = handler;
+}
+
+void MailboxClass::onMailboxAvailableResponse(MailboxAvailableHandler handler) {
+  _mailbox_available_handler = handler;
 }

@@ -274,21 +274,20 @@ void BridgeClass::process() {
   } else {
     rpc::FrameParser::Error error = _transport.getLastError();
     if (error != rpc::FrameParser::Error::NONE) {
-      rpc::StatusCode status = rpc::StatusCode::STATUS_ERROR;
       switch (error) {
         case rpc::FrameParser::Error::CRC_MISMATCH:
-          status = rpc::StatusCode::STATUS_CRC_MISMATCH;
+          _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
           break;
         case rpc::FrameParser::Error::MALFORMED:
-          status = rpc::StatusCode::STATUS_MALFORMED;
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
           break;
         case rpc::FrameParser::Error::OVERFLOW:
-          status = rpc::StatusCode::STATUS_OVERFLOW;
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, reinterpret_cast<const __FlashStringHelper*>(kSerialOverflowMessage));
           break;
         default:
+          _emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
           break;
       }
-      (void)sendFrame(status);
       _transport.clearError();
       _transport.clearOverflow(); // Ensure overflow flag is also cleared if set
     }
@@ -650,11 +649,27 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CommandId::CMD_GET_VERSION:
     case CommandId::CMD_GET_FREE_MEMORY:
     case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
-    case CommandId::CMD_LINK_SYNC:
     case CommandId::CMD_LINK_RESET:
-      _handleSystemCommand(frame);
-      command_processed_internally = true;
-      requires_ack = (command == CommandId::CMD_LINK_SYNC || command == CommandId::CMD_LINK_RESET);
+      if (frame.header.payload_length > 0) {
+         // Collision with STATUS codes. If payload exists, treat as Status.
+         command_processed_internally = false;
+      } else {
+         _handleSystemCommand(frame);
+         command_processed_internally = true;
+         requires_ack = (command == CommandId::CMD_LINK_RESET);
+      }
+      break;
+    case CommandId::CMD_LINK_SYNC:
+      // Collision with STATUS_CMD_UNKNOWN (2).
+      // CMD_LINK_SYNC has payload of size RPC_HANDSHAKE_NONCE_LENGTH (16).
+      // STATUS_CMD_UNKNOWN usually has payload of size 2 (command ID).
+      if (frame.header.payload_length == RPC_HANDSHAKE_NONCE_LENGTH) {
+          _handleSystemCommand(frame);
+          command_processed_internally = true;
+          requires_ack = true;
+      } else {
+          command_processed_internally = false;
+      }
       break;
     case CommandId::CMD_SET_PIN_MODE:
     case CommandId::CMD_DIGITAL_WRITE:

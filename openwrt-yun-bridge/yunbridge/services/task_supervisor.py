@@ -117,5 +117,3 @@ async def supervise_task(
                 raise
 
             current_backoff = min(current_backoff * 2, max_backoff)
-
-

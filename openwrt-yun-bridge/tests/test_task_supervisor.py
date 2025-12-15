@@ -13,7 +13,7 @@ def test_supervise_task_exits_cleanly(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.WARNING, logger="yunbridge.supervisor")
-        
+
         async def worker() -> None:
             await asyncio.sleep(0.01)
 
@@ -28,7 +28,7 @@ def test_supervise_task_fatal_exception(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.CRITICAL, logger="yunbridge.supervisor")
-        
+
         async def fatal_worker() -> None:
             raise ValueError("fatal error")
 
@@ -48,9 +48,9 @@ def test_supervise_task_restarts_on_failure(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.ERROR, logger="yunbridge.supervisor")
-        
+
         attempts = 0
-        
+
         async def flaky_worker() -> None:
             nonlocal attempts
             attempts += 1
@@ -65,7 +65,7 @@ def test_supervise_task_restarts_on_failure(
             min_backoff=0.01,
             max_restarts=5,
         )
-        
+
         assert attempts == 3
 
     asyncio.run(_run())
@@ -77,7 +77,7 @@ def test_supervise_task_max_restarts_exceeded(
 ) -> None:
     async def _run() -> None:
         caplog.set_level(logging.ERROR, logger="yunbridge.supervisor")
-        
+
         async def broken_worker() -> None:
             raise RuntimeError("broken")
 
@@ -87,7 +87,7 @@ def test_supervise_task_max_restarts_exceeded(
                 broken_worker,
                 min_backoff=0.01,
                 max_restarts=2,
-                restart_interval=0.1, # Short window
+                restart_interval=0.1,  # Short window
             )
 
     asyncio.run(_run())

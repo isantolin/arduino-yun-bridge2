@@ -8,9 +8,9 @@
 #include <avr/wdt.h>
 #endif
 
-#include <string.h> 
-#include <stdlib.h> 
-#include <stdint.h>
+#include <cstring> 
+#include <cstdlib> 
+#include <cstdint>
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -157,7 +157,7 @@ void BridgeClass::begin(
   if (_shared_secret && secret_len > 0) {
     _shared_secret_len = secret_len;
   } else if (_shared_secret) {
-    _shared_secret_len = strlen(secret);
+    _shared_secret_len = std::strlen(secret);
   } else {
     _shared_secret_len = 0;
   }
@@ -183,7 +183,7 @@ void BridgeClass::begin(
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
-    memset(out_tag, 0, kHandshakeTagSize);
+    std::memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
 
@@ -194,7 +194,7 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
-  memcpy(out_tag, digest, kHandshakeTagSize);
+  std::memcpy(out_tag, digest, kHandshakeTagSize);
 }
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
@@ -354,11 +354,11 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
         uint8_t* response = _scratch_payload;
         if (payload_data) {
-          memcpy(response, payload_data, nonce_length);
+          std::memcpy(response, payload_data, nonce_length);
           if (has_secret) {
             uint8_t tag[kHandshakeTagSize];
             _computeHandshakeTag(payload_data, nonce_length, tag);
-            memcpy(&response[nonce_length], tag, kHandshakeTagSize);
+            std::memcpy(&response[nonce_length], tag, kHandshakeTagSize);
           }
           (void)sendFrame(CommandId::CMD_LINK_SYNC_RESP, response, response_length);
           _synchronized = true;
@@ -543,7 +543,7 @@ void BridgeClass::_handleFileSystemCommand(const rpc::Frame& frame) {
                const char prefix[] = "/eeprom/";
                const size_t prefix_len = sizeof(prefix) - 1;
                if (path_len >= prefix_len) {
-                   if (strncmp(path_start, prefix, prefix_len) == 0) {
+                   if (std::strncmp(path_start, prefix, prefix_len) == 0) {
                        is_eeprom = true;
                    }
                }
@@ -972,7 +972,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
+    std::memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
   }
   _pending_tx_count++;
   return true;
@@ -1017,7 +1017,7 @@ void BridgeClass::requestProcessRun(const char* command) {
   if (!command || !*command) {
     return;
   }
-  size_t len = strlen(command);
+  size_t len = std::strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
     _emitStatus(StatusCode::STATUS_ERROR, F("process_run_payload_too_large"));
     return;
@@ -1032,7 +1032,7 @@ void BridgeClass::requestProcessRunAsync(const char* command) {
   if (!command || !*command) {
     return;
   }
-  size_t len = strlen(command);
+  size_t len = std::strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
     _emitStatus(StatusCode::STATUS_ERROR, F("process_run_async_payload_too_large"));
     return;
@@ -1063,14 +1063,14 @@ void BridgeClass::requestFileSystemRead(const char* filePath) {
   if (!filePath || !*filePath) {
     return;
   }
-  size_t len = strlen(filePath);
+  size_t len = std::strlen(filePath);
   if (len > BridgeClass::kMaxFilePathLength) {
     return;
   }
 
   uint8_t* payload = _scratch_payload;
   payload[0] = static_cast<uint8_t>(len);
-  memcpy(payload + kFileReadLengthPrefix, filePath, len);
+  std::memcpy(payload + kFileReadLengthPrefix, filePath, len);
   const uint16_t total = static_cast<uint16_t>(
       len + kFileReadLengthPrefix);
   (void)sendFrame(CommandId::CMD_FILE_READ, payload, total);
@@ -1094,7 +1094,7 @@ bool BridgeClass::_trackPendingDatastoreKey(const char* key) {
   uint8_t slot =
       (_pending_datastore_head + _pending_datastore_count) %
       kMaxPendingDatastore;
-  memcpy(_pending_datastore_keys[slot].data(), key, length);
+  std::memcpy(_pending_datastore_keys[slot].data(), key, length);
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
@@ -1113,7 +1113,7 @@ const char* BridgeClass::_popPendingDatastoreKey() {
   if (length > kMaxDatastoreKeyLength) {
     length = kMaxDatastoreKeyLength;
   }
-  memcpy(key_buffer, _pending_datastore_keys[slot].data(), length);
+  std::memcpy(key_buffer, _pending_datastore_keys[slot].data(), length);
   key_buffer[length] = '\0';
   _pending_datastore_head =
       (_pending_datastore_head + 1) % kMaxPendingDatastore;

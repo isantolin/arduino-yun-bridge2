@@ -163,8 +163,7 @@ async def main_async(config: RuntimeConfig) -> None:
     except* asyncio.CancelledError:
         logger.info("Main task cancelled; shutting down.")
     except* Exception as exc_group:
-        group_exc = cast(BaseExceptionGroup[BaseException], exc_group)
-        for exc in getattr(group_exc, "exceptions", ()):  # pragma: no branch
+        for exc in exc_group.exceptions:
             logger.critical(
                 "Unhandled exception in main task group",
                 exc_info=exc,
@@ -204,8 +203,7 @@ def main() -> None:
         logger.critical("Startup aborted: %s", exc)
         sys.exit(1)
     except ExceptionGroup as exc_group:
-        typed_exc_group = cast(BaseExceptionGroup[BaseException], exc_group)
-        for exc in typed_exc_group.exceptions:
+        for exc in exc_group.exceptions:
             logger.critical("Fatal error in main execution", exc_info=exc)
     except Exception:
         logger.critical("Fatal error in main execution", exc_info=True)

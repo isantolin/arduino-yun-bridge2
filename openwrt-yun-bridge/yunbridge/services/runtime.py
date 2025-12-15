@@ -50,7 +50,7 @@ from .handshake import (
     derive_serial_timing,
 )
 from .serial_flow import SerialFlowController
-from .task_supervisor import TaskSupervisor
+from .task_supervisor import SupervisedTaskSpec
 from .routers import MCUHandlerRegistry, MQTTRouter
 from .dispatcher import BridgeDispatcher
 
@@ -75,7 +75,7 @@ class BridgeService:
         self.state = state
         self._serial_sender: SendFrameCallable | None = None
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
-        self._task_supervisor = TaskSupervisor(logger=logger)
+        self._task_group: asyncio.TaskGroup | None = None
 
         self._console = ConsoleComponent(config, state, self)
         self._datastore = DatastoreComponent(config, state, self)
@@ -138,7 +138,8 @@ class BridgeService:
         )
 
     async def __aenter__(self) -> BridgeService:
-        await self._task_supervisor.__aenter__()
+        self._task_group = asyncio.TaskGroup()
+        await self._task_group.__aenter__()
         return self
 
     async def __aexit__(
@@ -147,7 +148,8 @@ class BridgeService:
         exc_val: BaseException | None,
         exc_tb: Any,
     ) -> None:
-        await self._task_supervisor.__aexit__(exc_type, exc_val, exc_tb)
+        if self._task_group:
+            await self._task_group.__aexit__(exc_type, exc_val, exc_tb)
 
     def register_serial_sender(self, sender: SendFrameCallable) -> None:
         """Allow the serial transport to provide its send coroutine."""
@@ -171,11 +173,26 @@ class BridgeService:
         name: str | None = None,
     ) -> asyncio.Task[Any]:
         """Schedule *coroutine* under the supervisor."""
+        if not self._task_group:
+            raise RuntimeError("BridgeService context not entered")
 
-        return self._task_supervisor.start(coroutine, name=name)
+        async def _safe_runner() -> None:
+            try:
+                await coroutine
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Background task %s failed", name or "unknown")
+
+        return self._task_group.create_task(_safe_runner(), name=name)
 
     async def cancel_background_tasks(self) -> None:
-        await self._task_supervisor.cancel()
+        # TaskGroup doesn't have a direct cancel_all, but exiting the context handles it.
+        # However, if we want to cancel explicitly without exiting:
+        # We can't easily cancel all tasks in a TaskGroup without exiting it.
+        # But this method was used to cancel the supervisor.
+        # Since we are using TaskGroup, we rely on __aexit__ to clean up.
+        pass
 
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""

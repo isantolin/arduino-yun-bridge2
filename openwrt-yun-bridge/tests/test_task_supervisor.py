@@ -2,124 +2,95 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from builtins import ExceptionGroup
-from collections.abc import Coroutine
+import time
 from typing import Any
 
 import pytest
 
-from yunbridge.services.task_supervisor import TaskSupervisor
+from yunbridge.services.task_supervisor import supervise_task
 
 
-def test_task_supervisor_tracks_lifecycle(
+def test_supervise_task_exits_cleanly(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def _run() -> None:
-        caplog.set_level(logging.DEBUG, logger="test.supervisor")
-        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
-        completed = asyncio.Event()
-
+        caplog.set_level(logging.WARNING, logger="yunbridge.supervisor")
+        
         async def worker() -> None:
-            await asyncio.sleep(0)
-            completed.set()
+            await asyncio.sleep(0.01)
 
-        async with supervisor:
-            await supervisor.start(worker(), name="worker")
-            await asyncio.wait_for(completed.wait(), timeout=1)
-            await asyncio.sleep(0)
-            assert supervisor.active_count == 0
-            await supervisor.cancel()
+        await supervise_task("clean-worker", worker)
 
     asyncio.run(_run())
+    assert "exited cleanly" in caplog.text
 
 
-def test_task_supervisor_logs_failures(
+def test_supervise_task_fatal_exception(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def _run() -> None:
-        caplog.set_level(logging.ERROR, logger="test.supervisor")
-        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
+        caplog.set_level(logging.CRITICAL, logger="yunbridge.supervisor")
+        
+        async def fatal_worker() -> None:
+            raise ValueError("fatal error")
 
-        async def boom() -> None:
-            raise RuntimeError("boom")
-
-        async with supervisor:
-            await supervisor.start(boom(), name="boom-task")
-            await asyncio.sleep(0)
-            await asyncio.sleep(0)
-            assert supervisor.active_count == 0
-            await supervisor.cancel()
-
-    asyncio.run(_run())
-    assert "boom" in caplog.text
-
-
-def test_task_supervisor_logs_exception_groups(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    async def _run() -> None:
-        caplog.set_level(logging.ERROR, logger="test.supervisor")
-        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
-
-        async def cascaded() -> None:
-            raise ExceptionGroup(
-                "cascade",
-                [RuntimeError("boom-1"), RuntimeError("boom-2")],
+        with pytest.raises(ValueError, match="fatal error"):
+            await supervise_task(
+                "fatal-worker",
+                fatal_worker,
+                fatal_exceptions=(ValueError,),
             )
 
-        async with supervisor:
-            await supervisor.start(cascaded(), name="cascade")
-            await asyncio.sleep(0)
-            await asyncio.sleep(0)
-            await supervisor.cancel()
-
     asyncio.run(_run())
-    assert "boom-1" in caplog.text
-    assert "boom-2" in caplog.text
+    assert "failed with fatal exception" in caplog.text
 
 
-def test_task_supervisor_logs_group_exceptions(
+def test_supervise_task_restarts_on_failure(
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _ExplodingTaskGroup:
-        def __init__(self) -> None:
-            self._tasks: list[asyncio.Task[None]] = []
-
-        async def __aenter__(self) -> _ExplodingTaskGroup:
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb) -> None:
-            raise ExceptionGroup(
-                "group-closing",
-                [RuntimeError("group-boom")],
-            )
-
-        def create_task(
-            self,
-            coroutine: Coroutine[Any, Any, Any],
-            *,
-            name: str | None = None,
-        ) -> asyncio.Task[Any]:
-            task = asyncio.create_task(coroutine, name=name)
-            self._tasks.append(task)
-            return task
-
     async def _run() -> None:
-        caplog.set_level(logging.ERROR, logger="test.supervisor")
-        monkeypatch.setattr(
-            asyncio,
-            "TaskGroup",
-            lambda: _ExplodingTaskGroup(),
+        caplog.set_level(logging.ERROR, logger="yunbridge.supervisor")
+        
+        attempts = 0
+        
+        async def flaky_worker() -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts < 3:
+                raise RuntimeError("flaky")
+            await asyncio.sleep(0.01)
+
+        # Should restart 2 times and then succeed
+        await supervise_task(
+            "flaky-worker",
+            flaky_worker,
+            min_backoff=0.01,
+            max_restarts=5,
         )
-        supervisor = TaskSupervisor(logger=logging.getLogger("test.supervisor"))
-        try:
-            async with supervisor:
-                await supervisor.start(asyncio.sleep(0))
-                await asyncio.sleep(0)
-                await supervisor.cancel()
-        except ExceptionGroup:
-            pass
+        
+        assert attempts == 3
 
     asyncio.run(_run())
-    assert "group-boom" in caplog.text
+    assert "failed (flaky); restarting" in caplog.text
+
+
+def test_supervise_task_max_restarts_exceeded(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    async def _run() -> None:
+        caplog.set_level(logging.ERROR, logger="yunbridge.supervisor")
+        
+        async def broken_worker() -> None:
+            raise RuntimeError("broken")
+
+        with pytest.raises(RuntimeError, match="broken"):
+            await supervise_task(
+                "broken-worker",
+                broken_worker,
+                min_backoff=0.01,
+                max_restarts=2,
+                restart_interval=0.1, # Short window
+            )
+
+    asyncio.run(_run())
+    assert "exceeded max restarts" in caplog.text

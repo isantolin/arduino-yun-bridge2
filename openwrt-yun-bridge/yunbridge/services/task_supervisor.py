@@ -5,10 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from builtins import BaseExceptionGroup
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar, Self, cast
 
 from yunbridge.const import (
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
@@ -16,8 +14,6 @@ from yunbridge.const import (
     SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 )
 from yunbridge.state.context import RuntimeState
-
-_T = TypeVar("_T")
 
 
 @dataclass(slots=True)
@@ -122,107 +118,6 @@ async def supervise_task(
 
             current_backoff = min(current_backoff * 2, max_backoff)
 
-
-class TaskSupervisor:
-    """Track background coroutines under a dedicated TaskGroup anchor."""
-
-    def __init__(self, *, logger: logging.Logger | None = None) -> None:
-        self._logger = logger or logging.getLogger("yunbridge.tasks")
-        self._group: asyncio.TaskGroup | None = None
-        self._tasks: set[asyncio.Task[Any]] = set()
-
-    async def __aenter__(self) -> Self:
-        self._group = asyncio.TaskGroup()
-        await self._group.__aenter__()
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: Any,
-    ) -> None:
-        if self._group:
-            # Cancel all tracked tasks to ensure we don't hang on exit
-            for task in self._tasks:
-                if not task.done():
-                    task.cancel()
-
-            try:
-                await self._group.__aexit__(exc_type, exc_val, exc_tb)
-            except Exception as exc:
-                # Log the exception before propagating
-                self._log_task_exception(exc, name="TaskGroup")
-                # Propagate exceptions from the group
-                raise
-            finally:
-                self._group = None
-                self._tasks.clear()
-
-    def start(
-        self,
-        coroutine: Coroutine[Any, Any, _T],
-        *,
-        name: str | None = None,
-    ) -> asyncio.Task[_T | None]:
-        """Schedule *coroutine* and keep track of its lifecycle."""
-        if self._group is None:
-            raise RuntimeError("TaskSupervisor context not entered")
-
-        task = self._group.create_task(
-            self._wrap_coroutine(coroutine, name=name),
-            name=name,
-        )
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
-        return task
-
-    @property
-    def active_count(self) -> int:
-        """Return the number of currently tracked tasks."""
-        return len(self._tasks)
-
-    async def cancel(self) -> None:
-        """Cancel all tracked tasks."""
-        for task in self._tasks:
-            if not task.done():
-                task.cancel()
-
-    def _wrap_coroutine(
-        self,
-        coroutine: Coroutine[Any, Any, _T],
-        *,
-        name: str | None,
-    ) -> Coroutine[Any, Any, _T | None]:
-        async def runner() -> _T | None:
-            try:
-                return await coroutine
-            except asyncio.CancelledError:
-                raise
-            except BaseException as exc:
-                self._log_task_exception(exc, name=name, coroutine=coroutine)
-                return None
-
-        return runner()
-
-    def _log_task_exception(
-        self,
-        exc: BaseException,
-        *,
-        name: str | None,
-        coroutine: Coroutine[Any, Any, _T] | None = None,
-    ) -> None:
-        if isinstance(exc, BaseExceptionGroup):
-            group_exc = cast(BaseExceptionGroup, exc)
-            exceptions = cast(tuple[BaseException, ...], group_exc.exceptions)
-            for inner in exceptions:
-                self._log_task_exception(inner, name=name, coroutine=coroutine)
-            return
-        self._logger.exception(
-            "Background task %s failed",
-            name or (hex(id(coroutine)) if coroutine else "unknown"),
-            exc_info=exc,
-        )
 
 
 __all__ = ["TaskSupervisor"]

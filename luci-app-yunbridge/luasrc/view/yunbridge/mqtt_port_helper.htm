@@ -1,0 +1,27 @@
+<script type="text/javascript">
+//<![CDATA[
+    (function() {
+        // Wait for the DOM to be fully loaded
+        window.addEventListener('load', function() {
+            var tls = document.getElementById('cbid.yunbridge.general.mqtt_tls');
+            var port = document.getElementById('cbid.yunbridge.general.mqtt_port');
+
+            if (tls && port) {
+                tls.addEventListener('change', function() {
+                    if (tls.checked) {
+                        // SSL enabled: 1883 -> 8883
+                        if (port.value === '1883') {
+                            port.value = '8883';
+                        }
+                    } else {
+                        // SSL disabled: 8883 -> 1883
+                        if (port.value === '8883') {
+                            port.value = '1883';
+                        }
+                    }
+                });
+            }
+        });
+    })();
+//]]>
+</script>

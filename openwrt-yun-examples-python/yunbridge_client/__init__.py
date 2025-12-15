@@ -8,6 +8,7 @@ import logging
 import os
 import secrets
 import shlex
+import ssl
 import uuid
 from contextlib import AsyncExitStack
 from typing import Any, TypedDict, cast
@@ -81,12 +82,14 @@ class Bridge:
         topic_prefix: str = MQTT_TOPIC_PREFIX,
         username: str | None = MQTT_USER,
         password: str | None = MQTT_PASS,
+        tls_context: ssl.SSLContext | None = None,
     ) -> None:
         self.host = host
         self.port = port
         self.topic_prefix = topic_prefix
         self.username = username
         self.password = password
+        self.tls_context = tls_context
         self._client: MqttClient | None = None
         self._response_routes: dict[
             str,
@@ -112,6 +115,7 @@ class Bridge:
             password=self.password,
             logger=logging.getLogger("yunbridge.examples.bridge"),
             protocol=ProtocolVersion.V5,
+            tls_context=self.tls_context,
         )
         await self._exit_stack.enter_async_context(self._client)
 

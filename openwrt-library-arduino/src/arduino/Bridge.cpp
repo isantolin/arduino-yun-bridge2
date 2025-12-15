@@ -179,6 +179,15 @@ void BridgeClass::begin(
 #if BRIDGE_DEBUG_FRAMES
   _tx_debug = {};
 #endif
+
+  // Blocking wait for synchronization
+  // This ensures the handshake is complete before the sketch continues,
+  // preventing race conditions and ensuring the daemon is ready.
+#ifndef BRIDGE_TEST_NO_GLOBALS
+  while (!_synchronized) {
+    process();
+  }
+#endif
 }
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
@@ -819,6 +828,17 @@ bool BridgeClass::sendFrame(StatusCode status_code, const uint8_t* payload, size
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
+  if (!_synchronized) {
+    // Allow handshake commands (0-7) and specific responses
+    bool allowed = (command_id <= 7) ||
+                   (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
+                   (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
+                   (command_id == rpc::to_underlying(CommandId::CMD_LINK_RESET_RESP));
+    if (!allowed) {
+      return false;
+    }
+  }
+
   if (!_requiresAck(command_id)) {
     return _sendFrameImmediate(command_id, payload, length);
   }

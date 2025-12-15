@@ -96,8 +96,10 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
     const uint8_t terminator = 0x00;
     if (_hardware_serial != nullptr) {
         written += _hardware_serial->write(&terminator, 1);
+        _hardware_serial->flush(); // Force physical transmission
     } else {
         written += _stream.write(&terminator, 1);
+        _stream.flush();
     }
 
     return written == (cobs_len + 1);
@@ -147,8 +149,10 @@ bool BridgeTransport::retransmitLastFrame() {
     const uint8_t terminator = 0x00;
     if (_hardware_serial != nullptr) {
         written += _hardware_serial->write(&terminator, 1);
+        _hardware_serial->flush();
     } else {
         written += _stream.write(&terminator, 1);
+        _stream.flush();
     }
     
     return written == (_last_cobs_len + 1);

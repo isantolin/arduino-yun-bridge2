@@ -5,6 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
+try:
+    import termios
+    import tty
+except ImportError:
+    termios = None  # type: ignore
+    tty = None  # type: ignore
 from typing import Sized, TypeGuard, cast
 
 import serial
@@ -73,11 +79,32 @@ async def _open_serial_connection_with_retry(
 
     while True:
         try:
-            return await OPEN_SERIAL_CONNECTION(
+            reader, writer = await OPEN_SERIAL_CONNECTION(
                 url=config.serial_port,
                 baudrate=config.serial_baud,
                 exclusive=True,
             )
+
+            # Force raw mode to disable ECHO and other processing that might confuse the protocol
+            if termios and tty:
+                try:
+                    transport = writer.transport
+                    if hasattr(transport, "serial"):
+                        ser = transport.serial
+                        if hasattr(ser, "fd") and ser.fd is not None:
+                            # tty.setraw disables ECHO, ICANON, ISIG, and sets CS8
+                            tty.setraw(ser.fd)
+                            
+                            # Explicitly ensure ECHO is off (setraw should do it, but be sure)
+                            attrs = termios.tcgetattr(ser.fd)
+                            attrs[3] = attrs[3] & ~termios.ECHO
+                            termios.tcsetattr(ser.fd, termios.TCSANOW, attrs)
+                            
+                            logger.debug("Forced raw mode (no echo) on %s", config.serial_port)
+                except Exception as e:
+                    logger.warning("Failed to force raw mode on serial port: %s", e)
+
+            return reader, writer
         except (serial.SerialException, OSError, ExceptionGroup) as exc:
             if isinstance(exc, ExceptionGroup):
                 _, remainder = exc.split((serial.SerialException, OSError))

@@ -55,3 +55,15 @@ luci-app-yunbridge/dist/
 packages_dump_tab_separated.csv
 .hypothesis/
 .tox/
+output.txt
+pyright_output.txt
+pyright-output.json
+python_test_output.txt
+test_bridge_components
+test_bridge_core
+test_bridge_refactor
+tox_output.txt
+/build_*.txt
+PHASE_3_REPORT.md
+/test_*.txttest_bridge_components
+test_bridge_core

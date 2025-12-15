@@ -346,6 +346,7 @@ void test_console_write_and_flow_control() {
   ScopedBridgeBinding binding(stream);
 
   Console.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   const uint8_t payload[] = {0xAA, 0xBB, 0xCC};
   size_t written = Console.write(payload, sizeof(payload));
@@ -372,6 +373,7 @@ void test_console_write_and_flow_control() {
 
   Bridge.begin();
   Console.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   std::vector<uint8_t> inbound(ConsoleClass::kBufferHighWater + 2, 0x34);
   Console._push(inbound.data(), inbound.size());
@@ -400,10 +402,33 @@ void test_console_write_and_flow_control() {
   TEST_TRACE("PASS: test_console_write_and_flow_control");
 }
 
+void test_console_write_blocked_when_not_synced() {
+  TEST_TRACE("START: test_console_write_blocked_when_not_synced");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  Bridge.begin();
+  Console.begin();
+
+  const uint8_t payload[] = {0xAA, 0xBB, 0xCC};
+  size_t written = Console.write(payload, sizeof(payload));
+  
+  // Should be 0 because sendFrame returns false when not synced
+  assert(written == 0);
+
+  auto frames = decode_frames(stream.data());
+  assert(frames.empty());
+
+  TEST_TRACE("PASS: test_console_write_blocked_when_not_synced");
+}
+
 void test_datastore_put_and_request_behavior() {
   TEST_TRACE("START: test_datastore_put_and_request_behavior");
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
+
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   const char* key = "temp";
   const char* value = "23.5";
@@ -462,6 +487,9 @@ void test_mailbox_send_and_requests_emit_commands() {
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
 
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
+
   const char* msg = "hello";
   Mailbox.send(msg);
   auto frames = decode_frames(stream.data());
@@ -510,6 +538,9 @@ void test_filesystem_write_and_remove_payloads() {
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
 
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
+
   const char* path = "/tmp/data";
   std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, 0xEE);
   FileSystem.write(path, blob.data(), blob.size());
@@ -553,6 +584,9 @@ void test_process_kill_encodes_pid() {
   TEST_TRACE("START: test_process_kill_encodes_pid");
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
+
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   Process.kill(0x1234);
   auto frames = decode_frames(stream.data());
@@ -599,6 +633,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   // USE LOCAL INSTANCE to avoid global state segfaults
   RecordingStream stream;
   BridgeClass bridge(stream);
+  bridge._synchronized = true; // Manually sync for test
 
   bridge._pending_process_poll_head = 0;
   bridge._pending_process_poll_count = 0;
@@ -708,6 +743,7 @@ void test_ack_flushes_pending_queue_after_response() {
   ScopedBridgeBinding binding(stream);
 
   Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   const uint8_t first_payload[] = {0x42};
   bool sent = Bridge.sendFrame(
@@ -745,6 +781,7 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
   ScopedBridgeBinding binding(stream);
 
   Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
   Bridge.onStatus(status_handler_trampoline);
@@ -819,6 +856,9 @@ void test_malformed_status_triggers_retransmit() {
   TEST_TRACE("START: test_malformed_status_triggers_retransmit");
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
+
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   bool sent = Bridge.sendFrame(
@@ -915,6 +955,8 @@ void test_ack_timeout_emits_status_and_resets_state() {
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
 
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
   StatusHandlerState status_state;
   StatusHandlerState::instance = &status_state;
   Bridge.onStatus(status_handler_trampoline);
@@ -970,6 +1012,9 @@ void test_bridge_process_run_success() {
   TEST_TRACE("START: test_bridge_process_run_success");
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
+
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
 
   const char* command = "ls -la";
   Bridge.requestProcessRun(command);
@@ -1048,6 +1093,7 @@ int main() {
   test_datastore_get_response_dispatches_handler();
   test_datastore_queue_rejects_overflow();
   test_console_write_and_flow_control();
+  test_console_write_blocked_when_not_synced();
   test_datastore_put_and_request_behavior();
   test_mailbox_send_and_requests_emit_commands();
   test_filesystem_write_and_remove_payloads();

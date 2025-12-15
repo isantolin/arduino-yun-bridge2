@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import sys
+import argparse
 
 from yunbridge_client import Bridge, dump_client_env
 
@@ -15,17 +16,34 @@ logging.basicConfig(
 
 async def main() -> None:
     """Run main test logic."""
+    parser = argparse.ArgumentParser(description="Test generic pin control.")
+    parser.add_argument("pin", type=int, nargs="?", default=13, help="Pin number (default: 13)")
+    parser.add_argument("--host", default=None, help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    args = parser.parse_args()
+
     dump_client_env(logging.getLogger(__name__))
-    bridge = Bridge()
+    
+    # Build arguments dict, only including provided values to allow Bridge defaults (env vars) to work
+    bridge_args = {}
+    if args.host:
+        bridge_args["host"] = args.host
+    if args.port:
+        bridge_args["port"] = args.port
+    if args.user:
+        bridge_args["username"] = args.user
+    if args.password:
+        bridge_args["password"] = args.password
+
+    # Opcion 2: Pasar credenciales al constructor
+    # Si son None, la libreria intentara usar las variables de entorno
+    bridge = Bridge(**bridge_args)
+    
     await bridge.connect()
 
-    pin: int = 13
-    if len(sys.argv) > 1:
-        try:
-            pin = int(sys.argv[1])
-        except ValueError:
-            logging.error(f"Invalid pin number: {sys.argv[1]}")
-            return
+    pin: int = args.pin
 
     try:
         logging.info(f"Turning pin {pin} ON")

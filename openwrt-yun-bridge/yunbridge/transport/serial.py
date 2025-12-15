@@ -76,6 +76,7 @@ async def _negotiate_baudrate(
         command_id=Command.CMD_SET_BAUDRATE,
         payload=payload,
     )
+    # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
     encoded = cobs.encode(frame.pack()) + b"\x00"
 
     try:
@@ -88,14 +89,17 @@ async def _negotiate_baudrate(
 
         # Decode and verify
         decoded = cobs.decode(response_data[:-1])
+        # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
         resp_frame = Frame.unpack(decoded)
 
+        # pyright: ignore[reportUnknownMemberType]
         if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
             logger.info("Baudrate negotiation accepted by MCU.")
             return True
         else:
             logger.warning(
                 "Unexpected response during baudrate negotiation: 0x%02X",
+                # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
                 resp_frame.command_id,
             )
             return False
@@ -178,7 +182,7 @@ async def _open_serial_connection_with_retry(
                     # Actually, closing and reopening might reset termios.
                     # So we should re-apply raw mode.
                     if termios and tty:
-                         try:
+                        try:
                             transport = cast(Any, writer.transport)
                             if hasattr(transport, "serial"):
                                 ser = transport.serial
@@ -187,8 +191,8 @@ async def _open_serial_connection_with_retry(
                                     attrs = termios.tcgetattr(ser.fd)
                                     attrs[3] = attrs[3] & ~termios.ECHO
                                     termios.tcsetattr(ser.fd, termios.TCSANOW, attrs)
-                         except Exception:
-                             pass
+                        except Exception:
+                            pass
                 else:
                     logger.warning("Negotiation failed; falling back to safe baudrate %d", initial_baud)
                     # We continue with initial_baud (safe)

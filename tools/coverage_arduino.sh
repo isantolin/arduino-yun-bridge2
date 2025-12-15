@@ -60,6 +60,10 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/BridgeTransport.cpp" -o "${BUILD_DIR}/BridgeTransport.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/HardwareAbstraction.cpp" -o "${BUILD_DIR}/HardwareAbstraction.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Console.cpp" -o "${BUILD_DIR}/Console.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/DataStore.cpp" -o "${BUILD_DIR}/DataStore.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Mailbox.cpp" -o "${BUILD_DIR}/Mailbox.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/FileSystem.cpp" -o "${BUILD_DIR}/FileSystem.o"
+  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Process.cpp" -o "${BUILD_DIR}/Process.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Peripherals.cpp" -o "${BUILD_DIR}/Peripherals.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${TEST_ROOT}/test_protocol.cpp" -o "${BUILD_DIR}/test_protocol.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${TEST_ROOT}/test_bridge_components.cpp" -o "${BUILD_DIR}/test_bridge_components.o"
@@ -77,6 +81,10 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
     "${BUILD_DIR}/BridgeTransport.o" \
     "${BUILD_DIR}/HardwareAbstraction.o" \
     "${BUILD_DIR}/Console.o" \
+    "${BUILD_DIR}/DataStore.o" \
+    "${BUILD_DIR}/Mailbox.o" \
+    "${BUILD_DIR}/FileSystem.o" \
+    "${BUILD_DIR}/Process.o" \
     "${BUILD_DIR}/Peripherals.o" \
     "${BUILD_DIR}/test_bridge_components.o" \
     -o "${BUILD_DIR}/test_bridge_components"

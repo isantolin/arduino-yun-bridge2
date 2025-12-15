@@ -50,7 +50,8 @@ class SystemComponent:
         # We need to signal the transport layer to change baudrate.
         # This is a bit of a layer violation or needs a callback.
         if hasattr(self.ctx, "on_baudrate_change_ack"):
-             await self.ctx.on_baudrate_change_ack()
+            # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            await self.ctx.on_baudrate_change_ack()
 
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:

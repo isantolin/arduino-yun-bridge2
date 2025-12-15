@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from typing import cast
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config

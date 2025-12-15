@@ -681,6 +681,16 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       command_processed_internally = true;
       requires_ack = true;
       break;
+    // Explicitly mark responses as processed to avoid STATUS_CMD_UNKNOWN
+    case CommandId::CMD_DATASTORE_GET_RESP:
+    case CommandId::CMD_MAILBOX_READ_RESP:
+    case CommandId::CMD_FILE_READ_RESP:
+    case CommandId::CMD_PROCESS_RUN_RESP:
+    case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
+    case CommandId::CMD_PROCESS_POLL_RESP:
+    case CommandId::CMD_LINK_SYNC_RESP:
+      command_processed_internally = true;
+      break;
     default:
       break;
   }

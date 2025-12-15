@@ -531,15 +531,22 @@ void BridgeClass::_handleFileSystemCommand(const rpc::Frame& frame) {
                const uint8_t* data_ptr = payload_data + 1 + path_len;
                size_t data_len = payload_length - 1 - path_len;
 
+               bool is_eeprom = false;
+#if defined(ARDUINO_ARCH_AVR)
+               if (path_len >= 8) { // "/eeprom/" length is 8
+                   if (strncmp_P(path_start, PSTR("/eeprom/"), 8) == 0) {
+                       is_eeprom = true;
+                   }
+               }
+#else
                const char prefix[] = "/eeprom/";
                const size_t prefix_len = sizeof(prefix) - 1;
-               
-               bool is_eeprom = false;
                if (path_len >= prefix_len) {
                    if (strncmp(path_start, prefix, prefix_len) == 0) {
                        is_eeprom = true;
                    }
                }
+#endif
 
 #if defined(ARDUINO_ARCH_AVR)
                if (is_eeprom && data_len > 0) {

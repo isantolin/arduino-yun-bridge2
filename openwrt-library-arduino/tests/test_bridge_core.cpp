@@ -407,20 +407,33 @@ void test_bridge_payload_too_large() {
 }
 
 int main() {
+    std::cout << "Running test_bridge_begin..." << std::endl;
     test_bridge_begin();
+    std::cout << "Running test_bridge_send_frame..." << std::endl;
     test_bridge_send_frame();
+    std::cout << "Running test_bridge_process_rx..." << std::endl;
     test_bridge_process_rx();
+    std::cout << "Running test_bridge_handshake..." << std::endl;
     test_bridge_handshake();
+    std::cout << "Running test_bridge_flow_control..." << std::endl;
     test_bridge_flow_control();
+    std::cout << "Running test_bridge_request_digital_read_no_op..." << std::endl;
     test_bridge_request_digital_read_no_op();
+    std::cout << "Running test_bridge_file_write_incoming..." << std::endl;
     test_bridge_file_write_incoming();
+    std::cout << "Running test_bridge_malformed_frame..." << std::endl;
     test_bridge_malformed_frame();
+    std::cout << "Running test_file_write_eeprom_parsing..." << std::endl;
     test_file_write_eeprom_parsing();
+    std::cout << "Running test_file_write_malformed_path..." << std::endl;
     test_file_write_malformed_path();
     
     // New Robustness Tests
+    std::cout << "Running test_bridge_crc_mismatch..." << std::endl;
     test_bridge_crc_mismatch();
+    std::cout << "Running test_bridge_unknown_command..." << std::endl;
     test_bridge_unknown_command();
+    std::cout << "Running test_bridge_payload_too_large..." << std::endl;
     test_bridge_payload_too_large();
     
     std::cout << "Bridge Core Tests Passed" << std::endl;

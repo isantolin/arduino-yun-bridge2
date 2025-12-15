@@ -1,0 +1,34 @@
+coverage: commands[0]> ./tools/coverage_python.sh
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0
+cachedir: .tox/coverage/.pytest_cache
+rootdir: /home/ignaciosantolin/arduino-yun-bridge2
+configfile: pytest.ini
+plugins: cov-7.0.0, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 320 items
+
+openwrt-yun-bridge/tests/test_bridge_components_pin_system.py .......... [  3%]
+..                                                                       [  3%]
+openwrt-yun-bridge/tests/test_bridge_service.py ........................ [ 11%]
+...............                                                          [ 15%]
+openwrt-yun-bridge/tests/test_common.py .......                          [ 18%]
+openwrt-yun-bridge/tests/test_config_modules.py ..................       [ 23%]
+openwrt-yun-bridge/tests/test_config_validation.py .....                 [ 25%]
+openwrt-yun-bridge/tests/test_console_component.py ......                [ 27%]
+openwrt-yun-bridge/tests/test_credentials.py ..                          [ 27%]
+openwrt-yun-bridge/tests/test_daemon_entry.py .                          [ 28%]
+openwrt-yun-bridge/tests/test_daemon_resilience.py .....                 [ 29%]
+openwrt-yun-bridge/tests/test_daemon_serial.py ...                       [ 30%]
+openwrt-yun-bridge/tests/test_daemon_tasks.py .....                      [ 32%]
+openwrt-yun-bridge/tests/test_datastore_component.py ....                [ 33%]
+openwrt-yun-bridge/tests/test_file_component.py ....................     [ 39%]
+openwrt-yun-bridge/tests/test_frame_debug.py ............ROOT: [1153956] KeyboardInterrupt - teardown started
+ROOT: interrupt tox environment: coverage
+ROOT: requested interrupt of 1153973 from 1153956, activate in 0.00
+ROOT: send signal SIGINT(2) to 1153973 from 1153956 with timeout 0.30
+ROOT: send signal SIGTERM(15) to 1153973 from 1153956 with timeout 0.20
+ROOT: interrupt finished with success
+coverage: exit -15 (17.12 seconds) /home/ignaciosantolin/arduino-yun-bridge2> ./tools/coverage_python.sh pid=1153973
+  coverage: FAIL code -15 (17.30=setup[0.18]+cmd[17.12] seconds)
+  evaluation failed :( (17.55 seconds)

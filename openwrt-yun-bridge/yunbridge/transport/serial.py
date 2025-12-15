@@ -76,8 +76,7 @@ async def _negotiate_baudrate(
         command_id=Command.CMD_SET_BAUDRATE,
         payload=payload,
     )
-    # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
-    encoded = cobs.encode(frame.pack()) + b"\x00"
+    encoded = cobs.encode(frame.pack()) + b"\x00"  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
 
     try:
         writer.write(encoded)
@@ -89,18 +88,15 @@ async def _negotiate_baudrate(
 
         # Decode and verify
         decoded = cobs.decode(response_data[:-1])
-        # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-        resp_frame = Frame.unpack(decoded)
+        resp_frame = Frame.unpack(decoded)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
-        # pyright: ignore[reportUnknownMemberType]
-        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
+        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:  # pyright: ignore[reportUnknownMemberType]
             logger.info("Baudrate negotiation accepted by MCU.")
             return True
         else:
             logger.warning(
                 "Unexpected response during baudrate negotiation: 0x%02X",
-                # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-                resp_frame.command_id,
+                resp_frame.command_id,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
             )
             return False
 
@@ -170,7 +166,7 @@ async def _open_serial_connection_with_retry(
                     await writer.wait_closed()
                     # Small delay to let MCU switch
                     await asyncio.sleep(0.1)
-                    
+
                     # Reopen at target baud
                     reader, writer = await OPEN_SERIAL_CONNECTION(
                         url=config.serial_port,

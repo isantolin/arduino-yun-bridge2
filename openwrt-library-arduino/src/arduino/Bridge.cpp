@@ -533,8 +533,9 @@ void BridgeClass::_handleFileSystemCommand(const rpc::Frame& frame) {
 
                bool is_eeprom = false;
 #if defined(ARDUINO_ARCH_AVR)
-               if (path_len >= 8) { // "/eeprom/" length is 8
-                   if (strncmp_P(path_start, PSTR("/eeprom/"), 8) == 0) {
+               const size_t prefix_len = 8; // "/eeprom/" length
+               if (path_len >= prefix_len) {
+                   if (strncmp_P(path_start, PSTR("/eeprom/"), prefix_len) == 0) {
                        is_eeprom = true;
                    }
                }

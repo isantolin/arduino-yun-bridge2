@@ -24,7 +24,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     dump_client_env(logging.getLogger(__name__))
-    
+
     # Build arguments dict, only including provided values to allow Bridge defaults (env vars) to work
     bridge_args = {}
     if args.host:
@@ -39,7 +39,7 @@ async def main() -> None:
     # Opcion 2: Pasar credenciales al constructor
     # Si son None, la libreria intentara usar las variables de entorno
     bridge = Bridge(**bridge_args)
-    
+
     await bridge.connect()
 
     pin: int = args.pin

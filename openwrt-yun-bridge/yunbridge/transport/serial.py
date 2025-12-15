@@ -76,7 +76,7 @@ async def _negotiate_baudrate(
         command_id=Command.CMD_SET_BAUDRATE,
         payload=payload,
     )
-    encoded = cobs.encode(frame.pack()) + b"\x00"  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportAttributeAccessIssue]
+    encoded = cobs.encode(frame.to_bytes()) + b"\x00"
 
     try:
         writer.write(encoded)
@@ -88,15 +88,15 @@ async def _negotiate_baudrate(
 
         # Decode and verify
         decoded = cobs.decode(response_data[:-1])
-        resp_frame = Frame.unpack(decoded)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        resp_frame = Frame.from_bytes(decoded)
 
-        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:  # pyright: ignore[reportUnknownMemberType]
+        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
             logger.info("Baudrate negotiation accepted by MCU.")
             return True
         else:
             logger.warning(
                 "Unexpected response during baudrate negotiation: 0x%02X",
-                resp_frame.command_id,  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                resp_frame.command_id,
             )
             return False
 

@@ -94,6 +94,8 @@ struct ProcessPollHandlerState {
   uint8_t exit_code = 0xFF;
   std::string stdout_text;
   std::string stderr_text;
+  BridgeClass* bridge = nullptr;
+  int pid_to_requeue = -1;
 };
 
 ProcessPollHandlerState* ProcessPollHandlerState::instance = nullptr;
@@ -123,6 +125,10 @@ void process_poll_handler_trampoline(
           reinterpret_cast<const char*>(stderr_data), stderr_len);
   } else {
       state->stderr_text.clear();
+  }
+
+  if (state->bridge && state->pid_to_requeue >= 0 && exit_code == 0x7F) {
+      state->bridge->requestProcessPoll(state->pid_to_requeue);
   }
 }
 
@@ -607,6 +613,8 @@ void test_process_poll_response_requeues_on_streaming_output() {
 
   ProcessPollHandlerState poll_state;
   ProcessPollHandlerState::instance = &poll_state;
+  poll_state.bridge = &bridge;
+  poll_state.pid_to_requeue = pid;
   bridge.onProcessPollResponse(process_poll_handler_trampoline);
 
   constexpr uint8_t stdout_text[] = {'o', 'k'};

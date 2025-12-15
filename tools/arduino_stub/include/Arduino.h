@@ -1,3 +1,7 @@
+/**
+ * ARCHIVO: tools/arduino_stub/include/Arduino.h
+ * ACCIÓN: Añadir stubs faltantes para analogWrite/analogRead
+ */
 #pragma once
 
 #include <cstdint>
@@ -36,6 +40,11 @@ inline void delay(unsigned long) {}
 inline void pinMode(uint8_t, uint8_t) {}
 inline void digitalWrite(uint8_t, uint8_t) {}
 inline int digitalRead(uint8_t) { return LOW; }
+
+// --- FIXED: Missing Analog Stubs ---
+inline void analogWrite(uint8_t, int) {}
+inline int analogRead(uint8_t) { return 0; }
+// -----------------------------------
 
 // Helper class for string manipulation (minimal stub)
 class String {

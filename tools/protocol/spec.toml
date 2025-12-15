@@ -27,6 +27,84 @@ datastore_value_len_format = ">B"
 crc_covered_header_format = ">BHH"
 crc_format = ">I"
 
+[[topics]]
+name = "ANALOG"
+value = "a"
+description = "Analog pin operations"
+[[topics]]
+name = "CONSOLE"
+value = "console"
+description = "Remote console"
+[[topics]]
+name = "DATASTORE"
+value = "datastore"
+description = "Key-value storage"
+[[topics]]
+name = "DIGITAL"
+value = "d"
+description = "Digital pin operations"
+[[topics]]
+name = "FILE"
+value = "file"
+description = "File system operations"
+[[topics]]
+name = "MAILBOX"
+value = "mailbox"
+description = "Message passing"
+[[topics]]
+name = "SHELL"
+value = "sh"
+description = "Shell command execution"
+[[topics]]
+name = "STATUS"
+value = "status"
+description = "System status reporting"
+[[topics]]
+name = "SYSTEM"
+value = "system"
+description = "System control and info"
+
+[[actions]]
+name = "FILE_READ"
+value = "read"
+description = "Read file content"
+[[actions]]
+name = "FILE_WRITE"
+value = "write"
+description = "Write file content"
+[[actions]]
+name = "FILE_REMOVE"
+value = "remove"
+description = "Remove file"
+[[actions]]
+name = "SHELL_RUN"
+value = "run"
+description = "Run shell command"
+[[actions]]
+name = "SHELL_RUN_ASYNC"
+value = "run_async"
+description = "Run shell command asynchronously"
+[[actions]]
+name = "SHELL_POLL"
+value = "poll"
+description = "Poll shell command status"
+[[actions]]
+name = "SHELL_KILL"
+value = "kill"
+description = "Kill shell command"
+[[actions]]
+name = "MAILBOX_WRITE"
+value = "write"
+description = "Write to mailbox"
+[[actions]]
+name = "DATASTORE_GET"
+value = "get"
+description = "Get datastore value"
+[[actions]]
+name = "DATASTORE_PUT"
+value = "put"
+description = "Put datastore value"
+
 [[statuses]]
 name = "OK"
 value = 0x00

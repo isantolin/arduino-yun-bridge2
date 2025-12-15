@@ -277,7 +277,7 @@ class MailboxComponent:
         ).encode("utf-8")
         properties: tuple[tuple[str, str], ...]
         if inbound is not None:
-            properties = (("bridge-error", "mailbox"),)
+            properties = (("bridge-error", Topic.MAILBOX.value),)
         else:
             properties = ()
         message = QueuedPublish(

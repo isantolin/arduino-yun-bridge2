@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from ssl import TLSVersion
 
 from .protocol.topics import Topic
@@ -88,30 +89,14 @@ TOPIC_DATASTORE: str = Topic.DATASTORE.value
 TOPIC_DIGITAL: str = Topic.DIGITAL.value
 TOPIC_FILE: str = Topic.FILE.value
 TOPIC_MAILBOX: str = Topic.MAILBOX.value
-TOPIC_MAILBOX_INCOMING_AVAILABLE: str = "mailbox/incoming_available"
-TOPIC_MAILBOX_OUTGOING_AVAILABLE: str = "mailbox/outgoing_available"
+TOPIC_MAILBOX_INCOMING_AVAILABLE: str = f"{Topic.MAILBOX.value}/incoming_available"
+TOPIC_MAILBOX_OUTGOING_AVAILABLE: str = f"{Topic.MAILBOX.value}/outgoing_available"
 TOPIC_SHELL: str = Topic.SHELL.value
 TOPIC_STATUS: str = Topic.STATUS.value
 TOPIC_SYSTEM: str = Topic.SYSTEM.value
 
 WATCHDOG_TRIGGER_TOKEN: bytes = b"WATCHDOG=trigger\n"
 DEFAULT_WATCHDOG_INTERVAL: float = 5.0
-
-# --- Component Actions ---
-ACTION_FILE_READ = "read"
-ACTION_FILE_WRITE = "write"
-ACTION_FILE_REMOVE = "remove"
-
-ACTION_SHELL_RUN = "run"
-ACTION_SHELL_RUN_ASYNC = "run_async"
-ACTION_SHELL_POLL = "poll"
-ACTION_SHELL_KILL = "kill"
-
-ACTION_MAILBOX_READ = "read"
-ACTION_MAILBOX_WRITE = "write"
-
-ACTION_DATASTORE_GET = "get"
-ACTION_DATASTORE_PUT = "put"
 
 SUPERVISOR_DEFAULT_RESTART_INTERVAL: float = 60.0
 SUPERVISOR_DEFAULT_MIN_BACKOFF: float = 1.0
@@ -183,17 +168,6 @@ __all__ = [
     "TOPIC_SYSTEM",
     "WATCHDOG_TRIGGER_TOKEN",
     "DEFAULT_WATCHDOG_INTERVAL",
-    "ACTION_FILE_READ",
-    "ACTION_FILE_WRITE",
-    "ACTION_FILE_REMOVE",
-    "ACTION_SHELL_RUN",
-    "ACTION_SHELL_RUN_ASYNC",
-    "ACTION_SHELL_POLL",
-    "ACTION_SHELL_KILL",
-    "ACTION_MAILBOX_READ",
-    "ACTION_MAILBOX_WRITE",
-    "ACTION_DATASTORE_GET",
-    "ACTION_DATASTORE_PUT",
     "SUPERVISOR_DEFAULT_RESTART_INTERVAL",
     "SUPERVISOR_DEFAULT_MIN_BACKOFF",
     "SUPERVISOR_DEFAULT_MAX_BACKOFF",

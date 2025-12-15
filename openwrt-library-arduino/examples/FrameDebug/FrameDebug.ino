@@ -3,7 +3,7 @@
 #define BRIDGE_ENABLE_DATASTORE 0
 #define BRIDGE_ENABLE_FILESYSTEM 0
 #define BRIDGE_ENABLE_PROCESS 0
-#define BRIDGE_SECRET "ba8dde66d745f63eb9514d32bba976a92d90136edceea701288e944e85830d94"
+#define BRIDGE_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 
 // When set to 1 the sketch automatically sends CommandId::CMD_GET_FREE_MEMORY frames
 // every kSendIntervalMs milliseconds (behaviour prior to this change).

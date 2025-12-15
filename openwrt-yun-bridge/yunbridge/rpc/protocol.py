@@ -1,7 +1,7 @@
 """Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
 import struct
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Final
 
 PROTOCOL_VERSION: Final[int] = 2
@@ -32,6 +32,31 @@ CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)
 CRC_FORMAT: Final[str] = ">I"
 CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)
 MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
+
+
+class Topic(StrEnum):
+    ANALOG = "a"  # Analog pin operations
+    CONSOLE = "console"  # Remote console
+    DATASTORE = "datastore"  # Key-value storage
+    DIGITAL = "d"  # Digital pin operations
+    FILE = "file"  # File system operations
+    MAILBOX = "mailbox"  # Message passing
+    SHELL = "sh"  # Shell command execution
+    STATUS = "status"  # System status reporting
+    SYSTEM = "system"  # System control and info
+
+
+class Action(StrEnum):
+    FILE_READ = "read"  # Read file content
+    FILE_WRITE = "write"  # Write file content
+    FILE_REMOVE = "remove"  # Remove file
+    SHELL_RUN = "run"  # Run shell command
+    SHELL_RUN_ASYNC = "run_async"  # Run shell command asynchronously
+    SHELL_POLL = "poll"  # Poll shell command status
+    SHELL_KILL = "kill"  # Kill shell command
+    MAILBOX_WRITE = "write"  # Write to mailbox
+    DATASTORE_GET = "get"  # Get datastore value
+    DATASTORE_PUT = "put"  # Put datastore value
 
 
 class Status(IntEnum):

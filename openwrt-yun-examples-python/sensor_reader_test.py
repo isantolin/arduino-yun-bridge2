@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Poll sensor values via the async bridge client."""
 
 import asyncio

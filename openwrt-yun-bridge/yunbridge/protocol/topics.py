@@ -3,21 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 
-
-class Topic(StrEnum):
-    """Top-level MQTT topic segments reserved for YunBridge."""
-
-    ANALOG = "a"
-    CONSOLE = "console"
-    DATASTORE = "datastore"
-    DIGITAL = "d"
-    FILE = "file"
-    MAILBOX = "mailbox"
-    SHELL = "sh"
-    STATUS = "status"
-    SYSTEM = "system"
+from yunbridge.rpc.protocol import Topic
 
 
 @dataclass(frozen=True)
@@ -90,14 +77,6 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
 
 
 _HANDSHAKE_SEGMENT = "handshake"
-_MAILBOX_INCOMING_AVAILABLE_SEGMENTS: tuple[str, ...] = (
-    "mailbox",
-    "incoming_available",
-)
-_MAILBOX_OUTGOING_AVAILABLE_SEGMENTS: tuple[str, ...] = (
-    "mailbox",
-    "outgoing_available",
-)
 
 
 def handshake_topic(prefix: str) -> str:
@@ -109,15 +88,13 @@ def handshake_topic(prefix: str) -> str:
 def mailbox_incoming_available_topic(prefix: str) -> str:
     """Topic path that reports queued MCU->Linux mailbox messages."""
 
-    first, *rest = _MAILBOX_INCOMING_AVAILABLE_SEGMENTS
-    return topic_path(prefix, first, *rest)
+    return topic_path(prefix, Topic.MAILBOX, "incoming_available")
 
 
 def mailbox_outgoing_available_topic(prefix: str) -> str:
     """Topic path that reports queued Linux->MCU mailbox messages."""
 
-    first, *rest = _MAILBOX_OUTGOING_AVAILABLE_SEGMENTS
-    return topic_path(prefix, first, *rest)
+    return topic_path(prefix, Topic.MAILBOX, "outgoing_available")
 
 
 __all__ = [

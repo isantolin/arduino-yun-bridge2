@@ -10,12 +10,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
 from aiomqtt.message import Message as MQTTMessage
-from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
-from yunbridge.const import (
-    ACTION_FILE_READ,
-    ACTION_FILE_WRITE,
-    ACTION_FILE_REMOVE,
-)
+from yunbridge.rpc.protocol import Action, Command, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
 from ...mqtt.messages import QueuedPublish
@@ -65,7 +60,7 @@ class FileComponent:
             return False
 
         success, _, reason = await self._perform_file_operation(
-            ACTION_FILE_WRITE, path, file_data
+            Action.FILE_WRITE, path, file_data
         )
         if success:
             return True
@@ -88,7 +83,7 @@ class FileComponent:
 
         filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
         success, content, reason = await self._perform_file_operation(
-            ACTION_FILE_READ, filename
+            Action.FILE_READ, filename
         )
 
         if not success:
@@ -123,7 +118,7 @@ class FileComponent:
 
         filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
         success, _, reason = await self._perform_file_operation(
-            ACTION_FILE_REMOVE, filename
+            Action.FILE_REMOVE, filename
         )
         if success:
             return True
@@ -158,7 +153,7 @@ class FileComponent:
             match action:
                 case "write":
                     success, _, reason = await self._perform_file_operation(
-                        ACTION_FILE_WRITE, filename, payload
+                        Action.FILE_WRITE, filename, payload
                     )
                     if not success:
                         outcome["status"] = reason or "write_failed"
@@ -176,7 +171,7 @@ class FileComponent:
                         content,
                         reason,
                     ) = await self._perform_file_operation(
-                        ACTION_FILE_READ,
+                        Action.FILE_READ,
                         filename,
                     )
                     if not success:
@@ -192,7 +187,7 @@ class FileComponent:
                     response_topic = topic_path(
                         self.state.mqtt_topic_prefix,
                         Topic.FILE,
-                        ACTION_FILE_READ,
+                        Action.FILE_READ,
                         "response",
                         *tuple(segment for segment in filename.split("/") if segment),
                     )
@@ -210,7 +205,7 @@ class FileComponent:
 
                 case "remove":
                     success, _, reason = await self._perform_file_operation(
-                        ACTION_FILE_REMOVE, filename
+                        Action.FILE_REMOVE, filename
                     )
                     if not success:
                         outcome["status"] = reason or "remove_failed"

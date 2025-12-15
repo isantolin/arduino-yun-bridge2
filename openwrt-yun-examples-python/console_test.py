@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Interactive console helper for the Arduino bridge."""
 
 import asyncio

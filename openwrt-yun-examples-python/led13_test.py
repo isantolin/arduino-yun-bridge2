@@ -36,8 +36,8 @@ async def main() -> None:
     if args.password:
         bridge_args["password"] = args.password
 
-    # Opcion 2: Pasar credenciales al constructor
-    # Si son None, la libreria intentara usar las variables de entorno
+    # Option 2: Pass credentials to the constructor
+    # If None, the library will try to use environment variables
     bridge = Bridge(**bridge_args)
 
     await bridge.connect()

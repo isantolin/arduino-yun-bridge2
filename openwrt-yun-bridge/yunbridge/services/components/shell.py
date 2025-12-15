@@ -8,10 +8,7 @@ from contextlib import AsyncExitStack
 
 from aiomqtt.message import Message as MQTTMessage
 
-from yunbridge.rpc.protocol import Status
-from yunbridge.const import (
-    ACTION_SHELL_RUN_ASYNC,
-)
+from yunbridge.rpc.protocol import Action, Status
 
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
@@ -156,7 +153,7 @@ class ShellComponent:
             response_topic = topic_path(
                 self.state.mqtt_topic_prefix,
                 Topic.SHELL,
-                ACTION_SHELL_RUN_ASYNC,
+                Action.SHELL_RUN_ASYNC,
                 "error",
             )
             await self.ctx.enqueue_mqtt(
@@ -171,7 +168,7 @@ class ShellComponent:
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
-            ACTION_SHELL_RUN_ASYNC,
+            Action.SHELL_RUN_ASYNC,
             "response",
         )
 

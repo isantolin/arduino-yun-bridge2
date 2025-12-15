@@ -9,7 +9,7 @@
 
 // Secret from UCI (yunbridge.general.serial_shared_secret)
 // Must match the daemon's configuration to pass the handshake.
-#define BRIDGE_SERIAL_SHARED_SECRET "ba8dde66d745f63eb9514d32bba976a92d90136edceea701288e944e85830d94"
+#define BRIDGE_SERIAL_SHARED_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 
 void setup() {
   // Initialize Bridge with the shared secret
@@ -44,9 +44,12 @@ void loop() {
   // CRITICAL: Must call process() frequently to handle incoming commands (heartbeats, RPC)
   Bridge.process();
 
+  // Removed debug print to prevent serial collisions with RPC protocol
+  /*
   static long lastPrint = 0;
   if (millis() - lastPrint > 1000) {
     lastPrint = millis();
     Console.println("Estado: 0x05 (Running)");
   }
+  */
 }

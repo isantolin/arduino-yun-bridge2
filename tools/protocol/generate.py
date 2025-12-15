@@ -22,7 +22,7 @@ HEADER = """/*
 PY_HEADER = """\"\"\"Auto-generated protocol bindings. Do not edit manually.\"\"\"
 from __future__ import annotations
 import struct
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 from typing import Final
 """
 
@@ -164,6 +164,22 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(f"CRC_FORMAT: Final[str] = \"{formats['crc_format']}\"\n")
         out.write("CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
         out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n\n")
+
+    if "topics" in spec:
+        out.write("class Topic(StrEnum):\n")
+        for topic in spec["topics"]:
+            out.write(
+                f"    {topic['name']} = \"{topic['value']}\"  # {topic['description']}\n"
+            )
+        out.write("\n\n")
+
+    if "actions" in spec:
+        out.write("class Action(StrEnum):\n")
+        for action in spec["actions"]:
+            out.write(
+                f"    {action['name']} = \"{action['value']}\"  # {action['description']}\n"
+            )
+        out.write("\n\n")
 
     out.write("class Status(IntEnum):\n")
     for status in spec["statuses"]:

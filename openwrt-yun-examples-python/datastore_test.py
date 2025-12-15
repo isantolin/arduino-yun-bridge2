@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Exercise datastore interactions using the bridge client."""
 
 import asyncio

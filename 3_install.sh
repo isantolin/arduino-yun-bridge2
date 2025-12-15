@@ -668,6 +668,9 @@ else
     echo "[INFO] No conflicting packages detected."
 fi
 
+#  --- Stop Existing Daemon ---
+stop_daemon
+
 echo "[STEP 3/6] Updating system packages..."
 opkg update
 
@@ -724,8 +727,6 @@ done
 
 install_manifest_pip_requirements
 
-#  --- Stop Existing Daemon ---
-stop_daemon
 # --- Install Prebuilt Packages ---
 echo "[STEP 5/6] Installing project .ipk packages..."
 project_ipk_globs=${YUNBRIDGE_PROJECT_IPK_GLOBS:-$PROJECT_IPK_PATTERNS}

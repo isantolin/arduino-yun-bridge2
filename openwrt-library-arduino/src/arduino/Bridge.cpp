@@ -2,7 +2,6 @@
  * This file is part of Arduino Yun Ecosystem v2.
  */
 #include "Bridge.h"
-#include "arduino/HardwareAbstraction.h"
 
 #ifdef ARDUINO_ARCH_AVR
 #include <avr/wdt.h>
@@ -51,6 +50,29 @@ static_assert(
 );
 constexpr size_t kSha256DigestSize = 32;
 const char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
+
+#if defined(ARDUINO_ARCH_AVR)
+extern "C" char __heap_start;
+extern "C" char* __brkval;
+#endif
+
+uint16_t getFreeMemory() {
+#if defined(ARDUINO_ARCH_AVR)
+  char stack_top;
+  char* heap_end = __brkval ? __brkval : &__heap_start;
+  intptr_t free_bytes = &stack_top - heap_end;
+  if (free_bytes < 0) {
+    free_bytes = 0;
+  }
+  if (static_cast<size_t>(free_bytes) > 0xFFFF) {
+    free_bytes = 0xFFFF;
+  }
+  return static_cast<uint16_t>(free_bytes);
+#else
+  return 0;
+#endif
+}
+
 }
 
 BridgeClass::BridgeClass(HardwareSerial& serial)
@@ -257,7 +279,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
       break;
     case CommandId::CMD_GET_FREE_MEMORY:
       if (payload_length == 0) {
-        uint16_t free_mem = bridge::hardware::getFreeMemory();
+        uint16_t free_mem = getFreeMemory();
         uint8_t resp_payload[2];
         rpc::write_u16_be(resp_payload, free_mem);
         (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);

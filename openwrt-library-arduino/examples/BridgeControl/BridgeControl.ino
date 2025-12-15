@@ -89,7 +89,7 @@ void setup() {
 
   Bridge.onDigitalReadResponse(handleDigitalReadResponse);
   Bridge.onCommand(handleCommand);
-  Bridge.onMailboxMessage(handleMailboxMessage);
+  Mailbox.onMailboxMessage(handleMailboxMessage);
   Bridge.onStatus(handleStatusFrame);
   
   pinMode(ledPin, OUTPUT);

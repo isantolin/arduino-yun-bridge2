@@ -45,12 +45,17 @@ if [[ "${FORCE_REBUILD:-0}" -eq 1 ]]; then
   RUN_BUILD=1
 fi
 
+# Always clean up old coverage data to prevent stale references
+find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
+find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
+
 if [[ ! -x "${BUILD_DIR}/test_protocol" || ! -x "${BUILD_DIR}/test_bridge_components" ]]; then
   RUN_BUILD=1
 fi
 
 if [[ ${RUN_BUILD} -eq 1 ]]; then
   echo "[coverage_arduino] Compilando harness de protocolo con flags de cobertura..." >&2
+  # Cleanup is already done above, but we keep this for safety if logic changes
   find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
   find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
 
@@ -58,13 +63,11 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/protocol/rpc_frame.cpp" -o "${BUILD_DIR}/rpc_frame.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Bridge.cpp" -o "${BUILD_DIR}/Bridge.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/BridgeTransport.cpp" -o "${BUILD_DIR}/BridgeTransport.o"
-  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/HardwareAbstraction.cpp" -o "${BUILD_DIR}/HardwareAbstraction.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Console.cpp" -o "${BUILD_DIR}/Console.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/DataStore.cpp" -o "${BUILD_DIR}/DataStore.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Mailbox.cpp" -o "${BUILD_DIR}/Mailbox.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/FileSystem.cpp" -o "${BUILD_DIR}/FileSystem.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Process.cpp" -o "${BUILD_DIR}/Process.o"
-  g++ "${COMPILE_FLAGS[@]}" -c "${SRC_ROOT}/arduino/Peripherals.cpp" -o "${BUILD_DIR}/Peripherals.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${TEST_ROOT}/test_protocol.cpp" -o "${BUILD_DIR}/test_protocol.o"
   g++ "${COMPILE_FLAGS[@]}" -c "${TEST_ROOT}/test_bridge_components.cpp" -o "${BUILD_DIR}/test_bridge_components.o"
 
@@ -79,13 +82,11 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
     "${BUILD_DIR}/rpc_frame.o" \
     "${BUILD_DIR}/Bridge.o" \
     "${BUILD_DIR}/BridgeTransport.o" \
-    "${BUILD_DIR}/HardwareAbstraction.o" \
     "${BUILD_DIR}/Console.o" \
     "${BUILD_DIR}/DataStore.o" \
     "${BUILD_DIR}/Mailbox.o" \
     "${BUILD_DIR}/FileSystem.o" \
     "${BUILD_DIR}/Process.o" \
-    "${BUILD_DIR}/Peripherals.o" \
     "${BUILD_DIR}/test_bridge_components.o" \
     -o "${BUILD_DIR}/test_bridge_components"
 fi

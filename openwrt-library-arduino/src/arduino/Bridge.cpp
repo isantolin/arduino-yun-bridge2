@@ -617,10 +617,19 @@ void BridgeClass::_handleProcessCommand(const rpc::Frame& frame) {
              if (payload_length >= static_cast<size_t>(4 + stdout_len + 2)) {
                  uint16_t stderr_len = rpc::read_u16_be(payload_data + 4 + stdout_len);
                  const uint8_t* stderr_ptr = payload_data + 4 + stdout_len + 2;
+                 
+                 // CRITICAL FIX: Ensure pending PID is popped BEFORE callback invocation.
+                 // This prevents stack overflow if the handler immediately re-calls requestProcessPoll(),
+                 // which would otherwise see the queue as full or potentially recurse infinitely depending on state.
+                 _popPendingProcessPid(); 
+                 
                  _process_poll_handler(status, running, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
+             } else {
+                 _popPendingProcessPid(); // Ensure pop even on malformed size
              }
+        } else {
+            _popPendingProcessPid(); // Ensure pop even on short payload
         }
-        _popPendingProcessPid();
       }
       break;
     default:

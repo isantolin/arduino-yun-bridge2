@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from ssl import TLSVersion
 
 from .protocol.topics import Topic

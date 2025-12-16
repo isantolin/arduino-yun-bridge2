@@ -346,6 +346,9 @@ def test_mqtt_task_handles_incoming_message(
         await asyncio.wait_for(service.handled.wait(), timeout=1)
 
         task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
     asyncio.run(_run())

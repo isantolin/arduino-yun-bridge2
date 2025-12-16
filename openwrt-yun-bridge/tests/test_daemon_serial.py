@@ -146,8 +146,9 @@ async def test_serial_reader_task_reconnects():
         # Run the task, it should connect, read EOF, warn, then try to connect again
         # We raise CancelledError on 2nd read attempt to break the infinite loop for test
         try:
-            await serial_reader_task(config, state, service)
-        except asyncio.CancelledError:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(serial_reader_task(config, state, service))
+        except* asyncio.CancelledError:
             pass
 
     # Verify behavior

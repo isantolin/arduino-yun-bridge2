@@ -226,7 +226,11 @@ void BridgeClass::process() {
   }
 #endif
 
-  // Handle incoming data via transport
+  // Priority 1: Check timeouts and retries
+  _processAckTimeout();
+  _flushPendingTxQueue();
+
+  // Priority 2: Handle incoming frames
   rpc::Frame frame;
   if (_transport.processInput(frame)) {
     dispatch(frame);
@@ -248,14 +252,10 @@ void BridgeClass::process() {
           break;
       }
       _transport.clearError();
-      _transport.clearOverflow(); // Ensure overflow flag is also cleared if set
+      _transport.clearOverflow();
     }
   }
-
-  _processAckTimeout();
-  // Retry queued frames after transient send failures.
-  _flushPendingTxQueue();
-  // Also pump console to flush partial buffers
+  
   Console.flush(); 
 }
 
@@ -708,7 +708,6 @@ void BridgeClass::_resetLinkState() {
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
-  // _flow_paused = false; // Handled by transport.reset()
 }
 
 void BridgeClass::_flushPendingTxQueue() {

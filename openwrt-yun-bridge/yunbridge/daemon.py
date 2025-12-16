@@ -36,7 +36,9 @@ logger = logging.getLogger("yunbridge")
 
 async def main_async(config: RuntimeConfig) -> None:
     if config.serial_shared_secret:
-        logger.info("Security check passed: Shared secret is configured and not default.")
+        logger.info(
+            "Security check passed: Shared secret is configured and not default."
+        )
 
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -97,7 +99,10 @@ async def main_async(config: RuntimeConfig) -> None:
         ),
     ]
 
-    if config.bridge_summary_interval > 0.0 or config.bridge_handshake_interval > 0.0:
+    if (
+        config.bridge_summary_interval > 0.0
+        or config.bridge_handshake_interval > 0.0
+    ):
         supervised_tasks.append(
             SupervisedTaskSpec(
                 name="bridge-snapshots",
@@ -160,14 +165,25 @@ async def main_async(config: RuntimeConfig) -> None:
                         )
                     )
     except* asyncio.CancelledError:
-        logger.info("Main task cancelled; shutting down.")
+        logger.info("Main task group cancelled; shutting down.")
     except* Exception as exc_group:
-        for exc in exc_group.exceptions:
-            logger.critical(
-                "Unhandled exception in main task group",
-                exc_info=exc,
+        # Filter out CancelledError from the exception group
+        exceptions = exc_group.exceptions
+        non_cancelled = [
+            e for e in exceptions if not isinstance(e, asyncio.CancelledError)
+        ]
+
+        if non_cancelled:
+            for exc in non_cancelled:
+                logger.critical(
+                    "Unhandled exception in main task group",
+                    exc_info=exc,
+                )
+            # Re-raise the filtered group if it's not empty
+            raise ExceptionGroup(
+                "Unhandled exceptions in main loop", non_cancelled
             )
-        raise
+
     finally:
         cleanup_status_file()
         logger.info("Yun Bridge daemon stopped.")

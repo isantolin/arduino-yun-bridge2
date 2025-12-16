@@ -8,6 +8,11 @@ PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
 MAX_PAYLOAD_SIZE: Final[int] = 128
 RPC_BUFFER_SIZE: Final[int] = 128
+MAX_FILEPATH_LENGTH: Final[int] = 64
+MAX_DATASTORE_KEY_LENGTH: Final[int] = 32
+DEFAULT_ACK_TIMEOUT_MS: Final[int] = 200
+DEFAULT_RETRY_LIMIT: Final[int] = 5
+MAX_PENDING_TX_FRAMES: Final[int] = 2
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16
@@ -114,3 +119,12 @@ class Command(IntEnum):
     CMD_PROCESS_RUN_RESP = 176
     CMD_PROCESS_RUN_ASYNC_RESP = 177
     CMD_PROCESS_POLL_RESP = 178
+
+
+ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
+    Command.CMD_SET_PIN_MODE.value,
+    Command.CMD_DIGITAL_WRITE.value,
+    Command.CMD_ANALOG_WRITE.value,
+    Command.CMD_CONSOLE_WRITE.value,
+    Command.CMD_DATASTORE_PUT.value,
+})

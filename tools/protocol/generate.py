@@ -32,9 +32,11 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
     out.write('#include <stdint.h>\n#include "rpc_frame.h"\n\n')
 
+    out.write("namespace rpc {\n\n")
+
     consts = spec["constants"]
     out.write(
-        f"static_assert(rpc::PROTOCOL_VERSION == {consts['protocol_version']}, \"Version mismatch\");\n"
+        f"static_assert(PROTOCOL_VERSION == {consts['protocol_version']}, \"Version mismatch\");\n"
     )
     out.write(
         f"constexpr unsigned long RPC_DEFAULT_BAUDRATE = {consts['default_baudrate']};\n"
@@ -42,6 +44,27 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(
         f"constexpr unsigned int RPC_BUFFER_SIZE = {consts['rpc_buffer_size']};\n\n"
     )
+    if "max_filepath_length" in consts:
+        out.write(
+            f"constexpr size_t RPC_MAX_FILEPATH_LENGTH = {consts['max_filepath_length']};\n"
+        )
+    if "max_datastore_key_length" in consts:
+        out.write(
+            f"constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = {consts['max_datastore_key_length']};\n"
+        )
+    if "default_ack_timeout_ms" in consts:
+        out.write(
+            f"constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = {consts['default_ack_timeout_ms']};\n"
+        )
+    if "default_retry_limit" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = {consts['default_retry_limit']};\n"
+        )
+    if "max_pending_tx_frames" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = {consts['max_pending_tx_frames']};\n"
+        )
+    out.write("\n")
 
     handshake = spec.get("handshake", {})
     if handshake:
@@ -71,8 +94,6 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
             f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n\n"
         )
 
-    out.write("namespace rpc {\n\n")
-
     out.write("enum class StatusCode : uint8_t {\n")
     for status in spec["statuses"]:
         out.write(f"    STATUS_{status['name']} = {status['value']},\n")
@@ -101,7 +122,28 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"PROTOCOL_VERSION: Final[int] = {consts['protocol_version']}\n")
     out.write(f"DEFAULT_BAUDRATE: Final[int] = {consts['default_baudrate']}\n")
     out.write(f"MAX_PAYLOAD_SIZE: Final[int] = {consts['max_payload_size']}\n")
-    out.write(f"RPC_BUFFER_SIZE: Final[int] = {consts['rpc_buffer_size']}\n\n")
+    out.write(f"RPC_BUFFER_SIZE: Final[int] = {consts['rpc_buffer_size']}\n")
+    if "max_filepath_length" in consts:
+        out.write(
+            f"MAX_FILEPATH_LENGTH: Final[int] = {consts['max_filepath_length']}\n"
+        )
+    if "max_datastore_key_length" in consts:
+        out.write(
+            f"MAX_DATASTORE_KEY_LENGTH: Final[int] = {consts['max_datastore_key_length']}\n"
+        )
+    if "default_ack_timeout_ms" in consts:
+        out.write(
+            f"DEFAULT_ACK_TIMEOUT_MS: Final[int] = {consts['default_ack_timeout_ms']}\n"
+        )
+    if "default_retry_limit" in consts:
+        out.write(
+            f"DEFAULT_RETRY_LIMIT: Final[int] = {consts['default_retry_limit']}\n"
+        )
+    if "max_pending_tx_frames" in consts:
+        out.write(
+            f"MAX_PENDING_TX_FRAMES: Final[int] = {consts['max_pending_tx_frames']}\n"
+        )
+    out.write("\n")
 
     handshake = spec.get("handshake", {})
     if handshake:
@@ -189,8 +231,17 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     out.write("\n\n")
 
     out.write("class Command(IntEnum):\n")
+    ack_only_commands = []
     for cmd in spec["commands"]:
         out.write(f"    {cmd['name']} = {cmd['value']}\n")
+        if cmd.get("requires_ack", False):
+            ack_only_commands.append(f"Command.{cmd['name']}.value")
+    
+    if ack_only_commands:
+        out.write("\n\nACK_ONLY_COMMANDS: frozenset[int] = frozenset({\n")
+        for cmd_val in ack_only_commands:
+            out.write(f"    {cmd_val},\n")
+        out.write("})\n")
 
 
 def main() -> None:

@@ -97,14 +97,19 @@ public:
 };
 
 void test_bridge_begin() {
+    std::cout << "  [DEBUG] Creating MockStream" << std::endl;
     MockStream stream;
+    std::cout << "  [DEBUG] Creating BridgeClass" << std::endl;
     BridgeClass bridge(stream);
     
+    std::cout << "  [DEBUG] Calling bridge.begin" << std::endl;
     bridge.begin(115200);
+    std::cout << "  [DEBUG] bridge.begin returned" << std::endl;
     
     // Verify initial state
     assert(bridge._awaiting_ack == false);
     assert(bridge._transport.isFlowPaused() == false);
+    std::cout << "  [DEBUG] test_bridge_begin assertions passed" << std::endl;
 }
 
 void test_bridge_send_frame() {

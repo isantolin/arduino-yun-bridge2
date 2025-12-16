@@ -49,7 +49,7 @@ static_assert(
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
 );
 constexpr size_t kSha256DigestSize = 32;
-const char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
+constexpr char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;

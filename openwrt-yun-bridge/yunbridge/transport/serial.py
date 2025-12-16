@@ -253,20 +253,15 @@ class SerialTransport:
                 self.service.register_serial_sender(self.send_frame)
                 logger.info("Serial port connected successfully.")
 
-                read_task = asyncio.create_task(self._read_loop())
-
                 try:
-                    await self.service.on_serial_connected()
-                except SerialHandshakeFatal as exc:
+                    async with asyncio.TaskGroup() as tg:
+                        tg.create_task(self._read_loop())
+                        await self.service.on_serial_connected()
+                except* SerialHandshakeFatal as exc:
                     should_retry = False
-                    logger.critical("%s", exc)
-                    read_task.cancel()
-                    try:
-                        await read_task
-                    except asyncio.CancelledError:
-                        pass
-                    raise
-                except Exception:
+                    logger.critical("%s", exc.exceptions[0])
+                    raise exc
+                except* Exception:
                     logger.exception("Error running post-connect hooks for serial link")
 
                 await read_task

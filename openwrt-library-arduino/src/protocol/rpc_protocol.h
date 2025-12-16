@@ -10,9 +10,17 @@
 #include <stdint.h>
 #include "rpc_frame.h"
 
-static_assert(rpc::PROTOCOL_VERSION == 2, "Version mismatch");
+namespace rpc {
+
+static_assert(PROTOCOL_VERSION == 2, "Version mismatch");
 constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
 constexpr unsigned int RPC_BUFFER_SIZE = 128;
+
+constexpr size_t RPC_MAX_FILEPATH_LENGTH = 64;
+constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = 32;
+constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = 200;
+constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = 5;
+constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = 2;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;
@@ -23,8 +31,6 @@ constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = 100;
 constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = 180000;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = 1;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = 8;
-
-namespace rpc {
 
 enum class StatusCode : uint8_t {
     STATUS_OK = 0,

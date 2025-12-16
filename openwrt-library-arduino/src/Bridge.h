@@ -17,7 +17,7 @@
 #ifdef BRIDGE_BAUDRATE
 constexpr unsigned long kBridgeBaudrate = BRIDGE_BAUDRATE;
 #else
-constexpr unsigned long kBridgeBaudrate = RPC_DEFAULT_BAUDRATE;
+constexpr unsigned long kBridgeBaudrate = rpc::RPC_DEFAULT_BAUDRATE;
 #endif
 
 #ifndef BRIDGE_DEBUG_FRAMES
@@ -66,11 +66,11 @@ class BridgeClass {
   static constexpr uint8_t kFirmwareVersionMajor = kDefaultFirmwareVersionMajor;
   static constexpr uint8_t kFirmwareVersionMinor = kDefaultFirmwareVersionMinor;
 
-  static constexpr size_t kMaxFilePathLength = 64;
-  static constexpr size_t kMaxDatastoreKeyLength = 32;
-  static constexpr uint8_t kMaxPendingTxFrames = 2;
-  static constexpr unsigned int kAckTimeoutMs = 200;
-  static constexpr uint8_t kMaxAckRetries = 5;
+  static constexpr size_t kMaxFilePathLength = rpc::RPC_MAX_FILEPATH_LENGTH;
+  static constexpr size_t kMaxDatastoreKeyLength = rpc::RPC_MAX_DATASTORE_KEY_LENGTH;
+  static constexpr uint8_t kMaxPendingTxFrames = rpc::RPC_MAX_PENDING_TX_FRAMES;
+  static constexpr unsigned int kAckTimeoutMs = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
+  static constexpr uint8_t kMaxAckRetries = rpc::RPC_DEFAULT_RETRY_LIMIT;
 
   // Flow Control Thresholds (assuming 64 byte hardware buffer)
   static constexpr int kRxHighWaterMark = 48; // 75% full -> Send XOFF

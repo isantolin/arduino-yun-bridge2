@@ -51,6 +51,9 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./luasrc/view/yunbridge/status.htm $(1)/usr/lib/lua/luci/view/yunbridge/
 	$(CP) ./luasrc/view/yunbridge/webui.htm $(1)/usr/lib/lua/luci/view/yunbridge/
 	$(CP) ./luasrc/view/yunbridge/credentials.htm $(1)/usr/lib/lua/luci/view/yunbridge/
+	# ESTA ES LA LÍNEA QUE FALTABA:
+	$(CP) ./luasrc/view/yunbridge/mqtt_port_helper.htm $(1)/usr/lib/lua/luci/view/yunbridge/
+	
 	$(CP) -r ./root/etc/config/yunbridge $(1)/etc/config/
 	[ -d ./root/www/yunbridge ] && $(CP) -r ./root/www/yunbridge $(1)/www/ || true
 	$(INSTALL_DIR) $(1)/www/yunbridge

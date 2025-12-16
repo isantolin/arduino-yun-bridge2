@@ -7,6 +7,7 @@ import logging
 import struct
 
 from aiomqtt.message import Message as MQTTMessage
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 
 from ...common import encode_status_reason
@@ -123,7 +124,9 @@ class MailboxComponent:
             message_payload = message_payload[: MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
-        response_payload = struct.pack(">H", msg_len) + message_payload
+        response_payload = (
+            struct.pack(protocol.UINT16_FORMAT, msg_len) + message_payload
+        )
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,

@@ -10,6 +10,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
 from aiomqtt.message import Message as MQTTMessage
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Action, Command, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
@@ -103,7 +104,7 @@ class FileComponent:
                 filename,
             )
             data = data[:max_payload]
-        response = struct.pack(">H", len(data)) + data
+        response = struct.pack(protocol.UINT16_FORMAT, len(data)) + data
         await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
 
     async def handle_remove(self, payload: bytes) -> bool:

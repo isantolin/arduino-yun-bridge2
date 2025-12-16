@@ -8,7 +8,8 @@ import struct
 
 import pytest
 
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc import protocol
+from yunbridge.rpc.protocol import Command, Status, UINT16_FORMAT
 from yunbridge.services.serial_flow import SerialFlowController, _status_name
 from yunbridge.state.context import RuntimeState
 
@@ -27,7 +28,7 @@ async def _send_ack(
         await asyncio.sleep(delay)
     controller.on_frame_received(
         Status.ACK.value,
-        struct.pack(">H", command_id),
+        struct.pack(UINT16_FORMAT, command_id),
     )
 
 
@@ -259,7 +260,7 @@ def test_serial_flow_handles_response_after_ack(
                 )
                 controller.on_frame_received(
                     Command.CMD_DIGITAL_READ_RESP.value,
-                    b"\x01",
+                    bytes([protocol.DIGITAL_HIGH]),
                 )
 
             loop.call_soon(emit_frames)

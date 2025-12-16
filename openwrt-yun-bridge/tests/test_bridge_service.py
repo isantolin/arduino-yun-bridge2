@@ -95,7 +95,7 @@ def test_on_serial_connected_flushes_console_queue(
             elif command_id == Command.CMD_CONSOLE_WRITE.value:
                 flow.on_frame_received(
                     Status.ACK.value,
-                    struct.pack(">H", Command.CMD_CONSOLE_WRITE.value),
+                    struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_CONSOLE_WRITE.value),
                 )
             return True
 
@@ -476,7 +476,7 @@ def test_mcu_frame_before_sync_is_rejected(
         status_id, status_payload = sent_frames[-1]
         assert status_id == Status.MALFORMED.value
         assert status_payload[:2] == struct.pack(
-            ">H",
+            rpc_protocol.UINT16_FORMAT,
             Command.CMD_MAILBOX_PUSH.value,
         )
         assert runtime_state.mailbox_incoming_queue_bytes == 0
@@ -514,7 +514,7 @@ def test_mailbox_available_flow(
         # Final frame should be ACK referencing the original command.
         assert frame_ids[-1] == Status.ACK.value
         assert sent_frames[-1][1] == struct.pack(
-            ">H", Command.CMD_MAILBOX_AVAILABLE.value
+            rpc_protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
         )
 
     asyncio.run(_run())
@@ -536,7 +536,7 @@ def test_mailbox_push_overflow_returns_error(
 
         service.register_serial_sender(fake_sender)
 
-        payload = struct.pack(">H", 3) + b"abc"
+        payload = struct.pack(rpc_protocol.UINT16_FORMAT, 3) + b"abc"
         await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, payload)
 
         assert runtime_state.mailbox_incoming_queue_bytes == 0
@@ -586,7 +586,7 @@ def test_mailbox_read_requeues_on_send_failure(
         assert send_attempts[1][0] == Command.CMD_MAILBOX_READ_RESP.value
         # Final send is the ACK covering the MCU command.
         assert send_attempts[2][0] == Status.ACK.value
-        assert send_attempts[2][1] == struct.pack(">H", Command.CMD_MAILBOX_READ.value)
+        assert send_attempts[2][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_MAILBOX_READ.value)
 
     asyncio.run(_run())
 
@@ -620,7 +620,7 @@ def test_datastore_get_from_mcu_returns_cached_value(
         assert sent_frames[0][0] == Command.CMD_DATASTORE_GET_RESP.value
         assert sent_frames[0][1] == b"\x02" + b"42"
         assert sent_frames[1][0] == Status.ACK.value
-        assert sent_frames[1][1] == struct.pack(">H", Command.CMD_DATASTORE_GET.value)
+        assert sent_frames[1][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_DATASTORE_GET.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(
@@ -709,7 +709,7 @@ def test_datastore_put_from_mcu_updates_cache_and_mqtt(
 
         assert len(sent_frames) == 1
         assert sent_frames[0][0] == Status.ACK.value
-        assert sent_frames[0][1] == struct.pack(">H", Command.CMD_DATASTORE_PUT.value)
+        assert sent_frames[0][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_DATASTORE_PUT.value)
 
     asyncio.run(_run())
 
@@ -1360,7 +1360,7 @@ def test_process_run_async_accepts_complex_arguments(
             status_id, status_payload = sent_frames[0]
             assert status_id == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
             # Payload should be the PID (123)
-            assert status_payload == struct.pack(">H", 123)
+            assert status_payload == struct.pack(rpc_protocol.UINT16_FORMAT, 123)
 
     asyncio.run(_run())
 
@@ -1467,7 +1467,7 @@ def test_process_run_async_failure_emits_error(
         service.register_serial_sender(fake_sender)
 
         async def failing_start_async(self: ProcessComponent, command: str) -> int:
-            return 0xFFFF
+            return rpc_protocol.UNKNOWN_COMMAND_ID
 
         monkeypatch.setattr(
             ProcessComponent,
@@ -1487,7 +1487,7 @@ def test_process_run_async_failure_emits_error(
 
         ack_id, ack_payload = sent_frames[1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(">H", Command.CMD_PROCESS_RUN_ASYNC.value)
+        assert ack_payload == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_PROCESS_RUN_ASYNC.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(

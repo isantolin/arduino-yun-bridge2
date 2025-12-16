@@ -25,6 +25,7 @@ from yunbridge.transport.serial import (
     MAX_SERIAL_PACKET_BYTES,
     serial_reader_task,
 )
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 from yunbridge.services.runtime import SerialHandshakeFatal
@@ -139,7 +140,7 @@ def test_serial_reader_task_processes_frame(
         state = create_runtime_state(runtime_config)
         service = _SerialServiceStub(runtime_config, state)
 
-        payload = b"\x01"
+        payload = bytes([protocol.DIGITAL_HIGH])
         frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, payload).to_bytes()
         encoded = cobs.encode(frame) + SERIAL_TERMINATOR
 
@@ -180,7 +181,7 @@ def test_serial_reader_task_emits_crc_mismatch(
         state = create_runtime_state(runtime_config)
         service = _SerialServiceStub(runtime_config, state)
 
-        frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, b"\x01").to_bytes()
+        frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, bytes([protocol.DIGITAL_HIGH])).to_bytes()
         corrupted = bytearray(frame)
         corrupted[-1] ^= 0xFF
         encoded = cobs.encode(bytes(corrupted)) + SERIAL_TERMINATOR
@@ -267,7 +268,9 @@ def test_serial_reader_task_limits_packet_size(
         assert reported
         status_id, payload = reported.pop()
         assert status_id == Status.MALFORMED.value
-        assert payload[:2] == struct.pack(">H", 0xFFFF)
+        assert payload[:2] == struct.pack(
+            protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID
+        )
 
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -348,7 +351,7 @@ def test_mqtt_task_handles_incoming_message(
         task.cancel()
         try:
             await task
-        except asyncio.CancelledError:
+        except* asyncio.CancelledError:
             pass
 
     asyncio.run(_run())

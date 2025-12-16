@@ -10,6 +10,7 @@ from yunbridge.transport.serial import (
     _open_serial_connection_with_retry,
     serial_reader_task,
 )
+from yunbridge.services.runtime import SerialHandshakeFatal
 
 
 @pytest.mark.asyncio
@@ -83,7 +84,8 @@ async def test_open_serial_connection_cancelled():
     mock_connect = AsyncMock()
     mock_connect.side_effect = serial.SerialException("Permanent Fail")
 
-    with patch("yunbridge.transport.serial.OPEN_SERIAL_CONNECTION", mock_connect):
+    with patch("yunbridge.transport.serial.OPEN_SERIAL_CONNECTION", mock_connect), \
+         patch("asyncio.sleep", AsyncMock()):
         # Create a task that we will cancel
         task = asyncio.create_task(_open_serial_connection_with_retry(config))
 
@@ -92,6 +94,11 @@ async def test_open_serial_connection_cancelled():
         for _ in range(10):
             if mock_connect.call_count > 0:
                 break
+            # We can't use asyncio.sleep(0.1) if we mocked it globally!
+            # But we mocked it inside the context manager.
+            # So calling asyncio.sleep inside the context manager calls the mock.
+            # So we need a way to yield control without sleeping for real time?
+            # Or just await the mock?
             await asyncio.sleep(0.1)
 
         task.cancel()
@@ -128,8 +135,8 @@ async def test_serial_reader_task_reconnects():
     mock_reader = AsyncMock()
     mock_reader.read.side_effect = [
         b"",
-        asyncio.CancelledError(),
-    ]  # First EOF, then exit loop via cancel
+        SerialHandshakeFatal("Stop test"),
+    ]  # First EOF, then exit loop via fatal error
 
     # StreamWriter has mixed sync/async methods
     mock_writer = MagicMock()
@@ -142,15 +149,18 @@ async def test_serial_reader_task_reconnects():
 
     with patch(
         "yunbridge.transport.serial._open_serial_connection_with_retry", mock_connect
-    ):
+    ), patch("asyncio.sleep", AsyncMock()) as mock_sleep:
         # Run the task, it should connect, read EOF, warn, then try to connect again
-        # We raise CancelledError on 2nd read attempt to break the infinite loop for test
+        # We raise SerialHandshakeFatal on 2nd read attempt to break the infinite loop for test
+        # SerialHandshakeFatal sets should_retry=False in SerialTransport.run
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(serial_reader_task(config, state, service))
-        except* asyncio.CancelledError:
+        except* SerialHandshakeFatal:
             pass
 
     # Verify behavior
     assert service.on_serial_connected.called
     assert service.on_serial_disconnected.called
+    # Should have slept at least once (after first disconnect)
+    assert mock_sleep.called

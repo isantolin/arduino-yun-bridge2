@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import replace
 
 from aiomqtt.message import Message as MQTTMessage
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ..config.settings import RuntimeConfig
@@ -394,7 +395,7 @@ class BridgeService:
         status: Status = Status.ACK,
         extra: bytes = b"",
     ) -> None:
-        payload = struct.pack(">H", command_id)
+        payload = struct.pack(protocol.UINT16_FORMAT, command_id)
         if extra:
             remaining = _MAX_PAYLOAD_BYTES - len(payload)
             if remaining > 0:

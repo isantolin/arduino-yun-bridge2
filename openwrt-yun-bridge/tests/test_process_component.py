@@ -18,6 +18,7 @@ from yunbridge.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from yunbridge.policy import CommandValidationError
+from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.process import ProcessComponent, ProcessOutputBatch
@@ -142,7 +143,7 @@ async def test_handle_run_async_success(
 
         mock_start.assert_awaited_once_with("sleep 10")
         mock_context.send_frame.assert_awaited_once_with(
-            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(">H", 123)
+            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(rpc_protocol.UINT16_FORMAT, 123)
         )
         # Should also enqueue MQTT message
         mock_context.enqueue_mqtt.assert_awaited_once()
@@ -155,7 +156,7 @@ async def test_handle_run_async_failure(
     with patch.object(
         ProcessComponent, "start_async", new_callable=AsyncMock
     ) as mock_start:
-        mock_start.return_value = 0xFFFF
+        mock_start.return_value = rpc_protocol.UNKNOWN_COMMAND_ID
 
         await process_component.handle_run_async(b"fail")
 
@@ -169,7 +170,7 @@ async def test_handle_poll_success(
     process_component: ProcessComponent, mock_context: AsyncMock
 ) -> None:
     pid = 123
-    payload = struct.pack(">H", pid)
+    payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
 
     batch = ProcessOutputBatch(
         status_byte=1,  # Running

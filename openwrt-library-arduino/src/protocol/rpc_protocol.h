@@ -21,6 +21,10 @@ constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = 32;
 constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = 200;
 constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = 5;
 constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = 2;
+constexpr uint16_t RPC_UNKNOWN_COMMAND_ID = 65535;
+constexpr uint8_t RPC_SERIAL_TERMINATOR = 0;
+constexpr uint8_t RPC_DIGITAL_LOW = 0;
+constexpr uint8_t RPC_DIGITAL_HIGH = 1;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;

@@ -64,6 +64,22 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = {consts['max_pending_tx_frames']};\n"
         )
+    if "unknown_command_id" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_UNKNOWN_COMMAND_ID = {consts['unknown_command_id']};\n"
+        )
+    if "serial_terminator" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_SERIAL_TERMINATOR = {consts['serial_terminator']};\n"
+        )
+    if "digital_low" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_DIGITAL_LOW = {consts['digital_low']};\n"
+        )
+    if "digital_high" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_DIGITAL_HIGH = {consts['digital_high']};\n"
+        )
     out.write("\n")
 
     handshake = spec.get("handshake", {})
@@ -143,6 +159,22 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"MAX_PENDING_TX_FRAMES: Final[int] = {consts['max_pending_tx_frames']}\n"
         )
+    if "unknown_command_id" in consts:
+        out.write(
+            f"UNKNOWN_COMMAND_ID: Final[int] = {consts['unknown_command_id']}\n"
+        )
+    if "serial_terminator" in consts:
+        out.write(
+            f"SERIAL_TERMINATOR: Final[bytes] = bytes([{consts['serial_terminator']}])\n"
+        )
+    if "digital_low" in consts:
+        out.write(
+            f"DIGITAL_LOW: Final[int] = {consts['digital_low']}\n"
+        )
+    if "digital_high" in consts:
+        out.write(
+            f"DIGITAL_HIGH: Final[int] = {consts['digital_high']}\n"
+        )
     out.write("\n")
 
     handshake = spec.get("handshake", {})
@@ -185,6 +217,16 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
 
     formats = spec.get("data_formats", {})
     if formats:
+        if "uint8_format" in formats:
+            out.write(f"UINT8_FORMAT: Final[str] = \"{formats['uint8_format']}\"\n")
+        if "uint16_format" in formats:
+            out.write(f"UINT16_FORMAT: Final[str] = \"{formats['uint16_format']}\"\n")
+        if "uint32_format" in formats:
+            out.write(f"UINT32_FORMAT: Final[str] = \"{formats['uint32_format']}\"\n")
+        if "pin_read_format" in formats:
+            out.write(f"PIN_READ_FORMAT: Final[str] = \"{formats['pin_read_format']}\"\n")
+        if "pin_write_format" in formats:
+            out.write(f"PIN_WRITE_FORMAT: Final[str] = \"{formats['pin_write_format']}\"\n")
         out.write(
             f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n"
         )

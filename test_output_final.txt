@@ -1,0 +1,258 @@
+py311: commands[0]> pytest openwrt-yun-bridge/tests
+============================= test session starts ==============================
+platform linux -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0
+cachedir: .tox/py311/.pytest_cache
+rootdir: /home/ignaciosantolin/arduino-yun-bridge2
+configfile: pytest.ini
+plugins: asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collected 320 items
+
+openwrt-yun-bridge/tests/test_bridge_components_pin_system.py .F........ [  3%]
+..                                                                       [  3%]
+openwrt-yun-bridge/tests/test_bridge_service.py ........................ [ 11%]
+...............                                                          [ 15%]
+openwrt-yun-bridge/tests/test_common.py .......                          [ 18%]
+openwrt-yun-bridge/tests/test_config_modules.py ..................       [ 23%]
+openwrt-yun-bridge/tests/test_config_validation.py .....                 [ 25%]
+openwrt-yun-bridge/tests/test_console_component.py ......                [ 27%]
+openwrt-yun-bridge/tests/test_credentials.py ..                          [ 27%]
+openwrt-yun-bridge/tests/test_daemon_entry.py .                          [ 28%]
+openwrt-yun-bridge/tests/test_daemon_resilience.py .....                 [ 29%]
+openwrt-yun-bridge/tests/test_daemon_serial.py ...                       [ 30%]
+openwrt-yun-bridge/tests/test_daemon_tasks.py .....                      [ 32%]
+openwrt-yun-bridge/tests/test_datastore_component.py ....                [ 33%]
+openwrt-yun-bridge/tests/test_file_component.py ....................     [ 39%]
+openwrt-yun-bridge/tests/test_frame_debug.py ...............             [ 44%]
+openwrt-yun-bridge/tests/test_mailbox_component.py FFFF.......           [ 47%]
+openwrt-yun-bridge/tests/test_metrics.py .....                           [ 49%]
+openwrt-yun-bridge/tests/test_mqtt_client.py ..                          [ 50%]
+openwrt-yun-bridge/tests/test_mqtt_spool.py ...........                  [ 53%]
+openwrt-yun-bridge/tests/test_payloads.py .......................        [ 60%]
+openwrt-yun-bridge/tests/test_pin_rest_cgi.py ....                       [ 61%]
+openwrt-yun-bridge/tests/test_policy.py ................................ [ 71%]
+                                                                         [ 71%]
+openwrt-yun-bridge/tests/test_policy_commands.py .............           [ 75%]
+openwrt-yun-bridge/tests/test_process_buffers.py .....                   [ 77%]
+openwrt-yun-bridge/tests/test_process_component.py .......               [ 79%]
+openwrt-yun-bridge/tests/test_prometheus_exporter.py .                   [ 80%]
+openwrt-yun-bridge/tests/test_protocol_contract.py ...                   [ 80%]
+openwrt-yun-bridge/tests/test_rpc_contracts.py ..                        [ 81%]
+openwrt-yun-bridge/tests/test_rpc_frame.py ......                        [ 83%]
+openwrt-yun-bridge/tests/test_rpc_protocol.py ...                        [ 84%]
+openwrt-yun-bridge/tests/test_rpc_utils.py ...                           [ 85%]
+openwrt-yun-bridge/tests/test_runtime_state.py ................          [ 90%]
+openwrt-yun-bridge/tests/test_serial_flow.py .............               [ 94%]
+openwrt-yun-bridge/tests/test_status_writer.py ..                        [ 95%]
+openwrt-yun-bridge/tests/test_system_component.py ........               [ 97%]
+openwrt-yun-bridge/tests/test_task_supervisor.py ....                    [ 98%]
+openwrt-yun-bridge/tests/test_watchdog.py ....                           [100%]
+
+=================================== FAILURES ===================================
+_______________ test_mcu_analog_read_response_publishes_to_mqtt ________________
+
+runtime_config = RuntimeConfig(serial_port='/dev/null', serial_baud=115200, serial_safe_baud=115200, mqtt_host='localhost', mqtt_port=8...bled=False, metrics_host='127.0.0.1', metrics_port=9130, bridge_summary_interval=60.0, bridge_handshake_interval=300.0)
+runtime_state = RuntimeState(serial_writer=None, serial_link_connected=False, mqtt_publish_queue=<Queue at 0x7f6691eaa150 maxsize=8>, ..._ack_timeout_ms=25, serial_response_timeout_ms=3000, serial_retry_limit=1, mcu_status_counters={}, supervisor_stats={})
+
+    def test_mcu_analog_read_response_publishes_to_mqtt(
+        runtime_config: RuntimeConfig,
+        runtime_state: RuntimeState,
+    ) -> None:
+        async def _run() -> None:
+            service = BridgeService(runtime_config, runtime_state)
+    
+            sent_frames: list[tuple[int, bytes]] = []
+    
+            async def fake_sender(command_id: int, payload: bytes) -> bool:
+                sent_frames.append((command_id, payload))
+                return True
+    
+            service.register_serial_sender(fake_sender)
+    
+            runtime_state.pending_analog_reads.append(
+                PendingPinRequest(pin=3, reply_context=None)
+            )
+    
+            await service.handle_mcu_frame(
+                Command.CMD_ANALOG_READ_RESP.value,
+                bytes([0, 0x7F]),
+            )
+    
+            queued = runtime_state.mqtt_publish_queue.get_nowait()
+            expected_topic = topic_path(
+                runtime_state.mqtt_topic_prefix,
+                Topic.ANALOG,
+                "3",
+                "value",
+            )
+            assert queued.topic_name == expected_topic
+            assert queued.payload == b"127"
+            runtime_state.mqtt_publish_queue.task_done()
+    
+            assert sent_frames
+            ack_id, ack_payload = sent_frames[-1]
+            assert ack_id == Status.ACK.value
+            assert ack_payload == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_ANALOG_READ_RESP.value)
+    
+>       asyncio.run(_run())
+
+openwrt-yun-bridge/tests/test_bridge_components_pin_system.py:125: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib64/python3.11/asyncio/runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib64/python3.11/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib64/python3.11/asyncio/base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+    
+        sent_frames: list[tuple[int, bytes]] = []
+    
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+    
+        service.register_serial_sender(fake_sender)
+    
+        runtime_state.pending_analog_reads.append(
+            PendingPinRequest(pin=3, reply_context=None)
+        )
+    
+        await service.handle_mcu_frame(
+            Command.CMD_ANALOG_READ_RESP.value,
+            bytes([0, 0x7F]),
+        )
+    
+        queued = runtime_state.mqtt_publish_queue.get_nowait()
+        expected_topic = topic_path(
+            runtime_state.mqtt_topic_prefix,
+            Topic.ANALOG,
+            "3",
+            "value",
+        )
+        assert queued.topic_name == expected_topic
+        assert queued.payload == b"127"
+        runtime_state.mqtt_publish_queue.task_done()
+    
+        assert sent_frames
+        ack_id, ack_payload = sent_frames[-1]
+        assert ack_id == Status.ACK.value
+>       assert ack_payload == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_ANALOG_READ_RESP.value)
+                                          ^^^^^^^^^^^^
+E       NameError: name 'rpc_protocol' is not defined
+
+openwrt-yun-bridge/tests/test_bridge_components_pin_system.py:123: NameError
+------------------------------ Captured log call -------------------------------
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-systemd-resolved.service-WBTq09 for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-systemd-resolved.service-WBTq09'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-dbus-broker.service-RSTalB for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-dbus-broker.service-RSTalB'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-abrtd.service-DDI1SR for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-abrtd.service-DDI1SR'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-bluetooth.service-PirT6T for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-bluetooth.service-PirT6T'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-irqbalance.service-ZrAZVn for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-irqbalance.service-ZrAZVn'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-chronyd.service-oJloKo for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-chronyd.service-oJloKo'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-low-memory-monitor.service-aWMCku for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-low-memory-monitor.service-aWMCku'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-polkit.service-5bVYur for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-polkit.service-5bVYur'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-rtkit-daemon.service-FwD9EU for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-rtkit-daemon.service-FwD9EU'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-switcheroo-control.service-JKMNao for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-switcheroo-control.service-JKMNao'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-upower.service-d6G42b for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-upower.service-d6G42b'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-systemd-logind.service-oJRTOB for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-systemd-logind.service-oJRTOB'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-ModemManager.service-IZC6Hz for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-ModemManager.service-IZC6Hz'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-colord.service-TTSsjt for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-colord.service-TTSsjt'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-pcscd.service-xL3LUY for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-pcscd.service-xL3LUY'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-geoclue.service-GMGXhg for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-geoclue.service-GMGXhg'
+WARNING  yunbridge.file:file.py:431 Unable to scan /tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-passim.service-fJ6ATd for quota tracking: [Errno 13] Permission denied: '/tmp/systemd-private-ff21bf9e538242ab8e09185c42d2bc6d-passim.service-fJ6ATd'
+_____________________ test_handle_processed_publishes_json _____________________
+
+mailbox_component = (<yunbridge.services.components.mailbox.MailboxComponent object at 0x7f6682567310>, <tests.test_mailbox_component.DummyBridge object at 0x7f66825672d0>)
+runtime_state = RuntimeState(serial_writer=None, serial_link_connected=False, mqtt_publish_queue=<Queue at 0x7f6682566ed0 maxsize=8>, ...ack_timeout_ms=750, serial_response_timeout_ms=3000, serial_retry_limit=5, mcu_status_counters={}, supervisor_stats={})
+
+    def test_handle_processed_publishes_json(
+        mailbox_component: tuple[MailboxComponent, DummyBridge],
+        runtime_state: RuntimeState,
+    ) -> None:
+        component, bridge = mailbox_component
+>       payload = struct.pack(protocol.UINT16_FORMAT, 0x1234)
+                              ^^^^^^^^
+E       NameError: name 'protocol' is not defined
+
+openwrt-yun-bridge/tests/test_mailbox_component.py:100: NameError
+____________________ test_handle_push_stores_incoming_queue ____________________
+
+mailbox_component = (<yunbridge.services.components.mailbox.MailboxComponent object at 0x7f66825c01d0>, <tests.test_mailbox_component.DummyBridge object at 0x7f66825c0210>)
+runtime_state = RuntimeState(serial_writer=None, serial_link_connected=False, mqtt_publish_queue=<Queue at 0x7f66825c0090 maxsize=8>, ...ack_timeout_ms=750, serial_response_timeout_ms=3000, serial_retry_limit=5, mcu_status_counters={}, supervisor_stats={})
+
+    def test_handle_push_stores_incoming_queue(
+        mailbox_component: tuple[MailboxComponent, DummyBridge],
+        runtime_state: RuntimeState,
+    ) -> None:
+        component, bridge = mailbox_component
+>       payload = struct.pack(protocol.UINT16_FORMAT, 5) + b"hello"
+                              ^^^^^^^^
+E       NameError: name 'protocol' is not defined
+
+openwrt-yun-bridge/tests/test_mailbox_component.py:118: NameError
+____________________ test_handle_push_overflow_sends_error _____________________
+
+mailbox_component = (<yunbridge.services.components.mailbox.MailboxComponent object at 0x7f668256d650>, <tests.test_mailbox_component.DummyBridge object at 0x7f668256cd50>)
+runtime_state = RuntimeState(serial_writer=None, serial_link_connected=False, mqtt_publish_queue=<Queue at 0x7f668256cb10 maxsize=8>, ...ack_timeout_ms=750, serial_response_timeout_ms=3000, serial_retry_limit=5, mcu_status_counters={}, supervisor_stats={})
+
+    def test_handle_push_overflow_sends_error(
+        mailbox_component: tuple[MailboxComponent, DummyBridge],
+        runtime_state: RuntimeState,
+    ) -> None:
+        component, bridge = mailbox_component
+        runtime_state.mailbox_queue_limit = 0
+>       payload = struct.pack(protocol.UINT16_FORMAT, 1) + b"A"
+                              ^^^^^^^^
+E       NameError: name 'protocol' is not defined
+
+openwrt-yun-bridge/tests/test_mailbox_component.py:137: NameError
+_________________ test_handle_read_success_publishes_available _________________
+
+mailbox_component = (<yunbridge.services.components.mailbox.MailboxComponent object at 0x7f66825d2790>, <tests.test_mailbox_component.DummyBridge object at 0x7f66825d2450>)
+runtime_state = RuntimeState(serial_writer=None, serial_link_connected=False, mqtt_publish_queue=<Queue at 0x7f66825d0bd0 maxsize=8>, ...ack_timeout_ms=750, serial_response_timeout_ms=3000, serial_retry_limit=5, mcu_status_counters={}, supervisor_stats={})
+mailbox_logger = <Logger test.mailbox (DEBUG)>
+
+    def test_handle_read_success_publishes_available(
+        mailbox_component: tuple[MailboxComponent, DummyBridge],
+        runtime_state: RuntimeState,
+        mailbox_logger: logging.Logger,
+    ) -> None:
+        component, bridge = mailbox_component
+        runtime_state.enqueue_mailbox_message(b"payload", mailbox_logger)
+    
+        result = asyncio.run(component.handle_read(b""))
+        assert result is True
+    
+        command_id, payload = bridge.sent_frames[-1]
+        assert command_id == Command.CMD_MAILBOX_READ_RESP.value
+>       assert payload == struct.pack(protocol.UINT16_FORMAT, 7) + b"payload"
+                                      ^^^^^^^^
+E       NameError: name 'protocol' is not defined
+
+openwrt-yun-bridge/tests/test_mailbox_component.py:157: NameError
+------------------------------ Captured log call -------------------------------
+DEBUG    asyncio:selector_events.py:54 Using selector: EpollSelector
+=============================== warnings summary ===============================
+openwrt-yun-bridge/tests/test_daemon_serial.py::test_open_serial_connection_retry_success
+  /usr/lib64/python3.11/tty.py:20: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    mode = tcgetattr(fd)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED openwrt-yun-bridge/tests/test_bridge_components_pin_system.py::test_mcu_analog_read_response_publishes_to_mqtt
+FAILED openwrt-yun-bridge/tests/test_mailbox_component.py::test_handle_processed_publishes_json
+FAILED openwrt-yun-bridge/tests/test_mailbox_component.py::test_handle_push_stores_incoming_queue
+FAILED openwrt-yun-bridge/tests/test_mailbox_component.py::test_handle_push_overflow_sends_error
+FAILED openwrt-yun-bridge/tests/test_mailbox_component.py::test_handle_read_success_publishes_available
+=================== 5 failed, 315 passed, 1 warning in 7.73s ===================
+py311: exit 1 (10.97 seconds) /home/ignaciosantolin/arduino-yun-bridge2> pytest openwrt-yun-bridge/tests pid=347128
+  py311: FAIL code 1 (11.98=setup[1.01]+cmd[10.97] seconds)
+  evaluation failed :( (12.22 seconds)

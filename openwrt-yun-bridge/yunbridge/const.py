@@ -9,7 +9,7 @@ from .rpc import protocol as rpc_protocol
 from .rpc.protocol import Status
 
 
-SERIAL_TERMINATOR: bytes = b"\x00"
+SERIAL_TERMINATOR: bytes = rpc_protocol.SERIAL_TERMINATOR
 STATUS_FILE_PATH: str = "/tmp/yunbridge_status.json"
 ALLOWED_COMMAND_WILDCARD: str = "*"
 MQTT_TLS_MIN_VERSION: TLSVersion = TLSVersion.TLSv1_2

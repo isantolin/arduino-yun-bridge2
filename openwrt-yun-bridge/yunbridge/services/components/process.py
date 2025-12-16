@@ -22,6 +22,7 @@ from ...state.context import ManagedProcess, RuntimeState
 from ...config.settings import RuntimeConfig
 from ...policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 logger = logging.getLogger("yunbridge.process")
@@ -136,7 +137,8 @@ class ProcessComponent:
                 return
             case _:
                 await self.ctx.send_frame(
-                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(">H", pid)
+                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
+                    struct.pack(protocol.UINT16_FORMAT, pid),
                 )
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
@@ -174,18 +176,18 @@ class ProcessComponent:
             await self.ctx.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value,
                 bytes([Status.MALFORMED.value, 0xFF])
-                + struct.pack(">H", 0)
-                + struct.pack(">H", 0),
+                + struct.pack(protocol.UINT16_FORMAT, 0)
+                + struct.pack(protocol.UINT16_FORMAT, 0),
             )
             return False
 
-        pid = struct.unpack(">H", payload[:2])[0]
+        pid = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
         batch = await self.collect_output(pid)
 
         response_payload = (
             bytes([batch.status_byte, batch.exit_code])
-            + struct.pack(">H", len(batch.stdout_chunk))
-            + struct.pack(">H", len(batch.stderr_chunk))
+            + struct.pack(protocol.UINT16_FORMAT, len(batch.stdout_chunk))
+            + struct.pack(protocol.UINT16_FORMAT, len(batch.stderr_chunk))
             + batch.stdout_chunk
             + batch.stderr_chunk
         )
@@ -819,9 +821,9 @@ class ProcessComponent:
         stderr_trim = stderr_bytes[:remaining]
         return (
             bytes([status & 0xFF])
-            + struct.pack(">H", len(stdout_trim))
+            + struct.pack(protocol.UINT16_FORMAT, len(stdout_trim))
             + stdout_trim
-            + struct.pack(">H", len(stderr_trim))
+            + struct.pack(protocol.UINT16_FORMAT, len(stderr_trim))
             + stderr_trim
         )
 

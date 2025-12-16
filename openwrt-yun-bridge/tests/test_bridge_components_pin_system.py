@@ -8,6 +8,7 @@ import struct
 from unittest.mock import patch
 
 from aiomqtt.message import Message as MQTTMessage
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, Status
 
 from yunbridge.common import encode_status_reason
@@ -74,7 +75,9 @@ def test_mcu_digital_read_response_publishes_to_mqtt(
         assert sent_frames
         ack_id, ack_payload = sent_frames[-1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(">H", Command.CMD_DIGITAL_READ_RESP.value)
+        assert ack_payload == struct.pack(
+            protocol.UINT16_FORMAT, Command.CMD_DIGITAL_READ_RESP.value
+        )
 
     asyncio.run(_run())
 
@@ -117,7 +120,7 @@ def test_mcu_analog_read_response_publishes_to_mqtt(
         assert sent_frames
         ack_id, ack_payload = sent_frames[-1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(">H", Command.CMD_ANALOG_READ_RESP.value)
+        assert ack_payload == struct.pack(protocol.UINT16_FORMAT, Command.CMD_ANALOG_READ_RESP.value)
 
     asyncio.run(_run())
 
@@ -136,7 +139,7 @@ def test_mqtt_digital_write_sends_frame(
             sent_frames.append((command_id, payload))
             flow.on_frame_received(
                 Status.ACK.value,
-                struct.pack(">H", command_id),
+                struct.pack(protocol.UINT16_FORMAT, command_id),
             )
             return True
 
@@ -269,7 +272,9 @@ def test_mcu_free_memory_response_enqueues_value(
         assert sent_frames
         ack_id, ack_payload = sent_frames[-1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(">H", Command.CMD_GET_FREE_MEMORY_RESP.value)
+        assert ack_payload == struct.pack(
+            protocol.UINT16_FORMAT, Command.CMD_GET_FREE_MEMORY_RESP.value
+        )
 
     asyncio.run(_run())
 
@@ -459,7 +464,7 @@ def test_mqtt_shell_kill_invokes_process_component(
             assert calls == [
                 (
                     service._process,  # pyright: ignore[reportPrivateUsage]
-                    struct.pack(">H", 21),
+                    struct.pack(protocol.UINT16_FORMAT, 21),
                     False,
                 )
             ]
@@ -517,7 +522,14 @@ def test_mcu_tx_debug_response_publishes_to_mqtt(
 
         # Construct response payload (9 bytes)
         # pending_tx_count=5, awaiting_ack=1, retry_count=2, last_cmd=0x1234, last_millis=0xDEADBEEF
-        payload = struct.pack(">BBBHI", 5, 1, 2, 0x1234, 0xDEADBEEF)
+        payload = struct.pack(
+            ">BBB" + protocol.UINT16_FORMAT[1] + protocol.UINT32_FORMAT[1],
+            5,
+            1,
+            2,
+            0x1234,
+            0xDEADBEEF,
+        )
 
         await service.handle_mcu_frame(
             Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value,

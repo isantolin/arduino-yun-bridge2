@@ -71,12 +71,12 @@ async def _negotiate_baudrate(
     logger.info("Negotiating baudrate switch to %d...", target_baud)
 
     # Construct CMD_SET_BAUDRATE frame
-    payload = struct.pack(">I", target_baud)
+    payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
     frame = Frame(
         command_id=Command.CMD_SET_BAUDRATE,
         payload=payload,
     )
-    encoded = cobs.encode(frame.to_bytes()) + b"\x00"
+    encoded = cobs.encode(frame.to_bytes()) + SERIAL_TERMINATOR
 
     try:
         writer.write(encoded)
@@ -84,7 +84,7 @@ async def _negotiate_baudrate(
 
         # Wait for ACK (CMD_SET_BAUDRATE_RESP)
         # We expect a quick response.
-        response_data = await asyncio.wait_for(reader.readuntil(b"\x00"), timeout=2.0)
+        response_data = await asyncio.wait_for(reader.readuntil(SERIAL_TERMINATOR), timeout=2.0)
 
         # Decode and verify
         decoded = cobs.decode(response_data[:-1])
@@ -260,7 +260,7 @@ class SerialTransport:
                 except* SerialHandshakeFatal as exc:
                     should_retry = False
                     logger.critical("%s", exc.exceptions[0])
-                    raise exc
+                    raise exc.exceptions[0]
                 except* Exception:
                     logger.exception("Error running post-connect hooks for serial link")
 
@@ -280,12 +280,16 @@ class SerialTransport:
                 )
             finally:
                 await self._disconnect()
-                if should_retry:
-                    logger.warning(
-                        "Serial port disconnected. Retrying in %d seconds...",
-                        reconnect_delay,
-                    )
-                    await asyncio.sleep(reconnect_delay)
+
+            if should_retry:
+                logger.warning(
+                    "Serial port disconnected. Retrying in %d seconds...",
+                    reconnect_delay,
+                )
+                await asyncio.sleep(reconnect_delay)
+            else:
+                logger.info("Serial transport stopping (should_retry=False).")
+                break
 
     async def _connect(self) -> None:
         self.reader, self.writer = await _open_serial_connection_with_retry(self.config)
@@ -332,7 +336,10 @@ class SerialTransport:
                         "Serial packet exceeded %d bytes; requesting retransmit.",
                         MAX_SERIAL_PACKET_BYTES,
                     )
-                    payload = struct.pack(">H", 0xFFFF) + snapshot
+                    payload = (
+                        struct.pack(protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID)
+                        + snapshot
+                    )
                     try:
                         await self.service.send_frame(
                             Status.MALFORMED.value,
@@ -387,7 +394,9 @@ class SerialTransport:
                 type(encoded_packet).__name__,
             )
             self.state.record_serial_decode_error()
-            payload = struct.pack(">H", 0xFFFF)
+            payload = struct.pack(
+                protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID
+            )
             try:
                 await self.service.send_frame(Status.MALFORMED.value, payload)
             except Exception:
@@ -415,7 +424,10 @@ class SerialTransport:
                 )
             self.state.record_serial_decode_error()
             truncated = packet_bytes[:32]
-            payload = struct.pack(">H", 0xFFFF) + truncated
+            payload = (
+                struct.pack(protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID)
+                + truncated
+            )
             try:
                 await self.service.send_frame(Status.MALFORMED.value, payload)
             except Exception:
@@ -437,14 +449,14 @@ class SerialTransport:
             if "crc mismatch" in str(exc).lower():
                 status = Status.CRC_MISMATCH
                 self.state.record_serial_crc_error()
-            command_hint = 0xFFFF
+            command_hint = protocol.UNKNOWN_COMMAND_ID
             if len(raw_frame) >= protocol.CRC_COVERED_HEADER_SIZE:
                 _, _, command_hint = struct.unpack(
                     protocol.CRC_COVERED_HEADER_FORMAT,
                     raw_frame[: protocol.CRC_COVERED_HEADER_SIZE],
                 )
             truncated = raw_frame[:32]
-            payload = struct.pack(">H", command_hint) + truncated
+            payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated
             try:
                 await self.service.send_frame(status.value, payload)
             except Exception:

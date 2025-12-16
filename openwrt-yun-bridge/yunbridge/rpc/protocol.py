@@ -13,6 +13,10 @@ MAX_DATASTORE_KEY_LENGTH: Final[int] = 32
 DEFAULT_ACK_TIMEOUT_MS: Final[int] = 200
 DEFAULT_RETRY_LIMIT: Final[int] = 5
 MAX_PENDING_TX_FRAMES: Final[int] = 2
+UNKNOWN_COMMAND_ID: Final[int] = 65535
+SERIAL_TERMINATOR: Final[bytes] = bytes([0])
+DIGITAL_LOW: Final[int] = 0
+DIGITAL_HIGH: Final[int] = 1
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16
@@ -28,6 +32,11 @@ HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = 180000
 HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = 1
 HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = 8
 
+UINT8_FORMAT: Final[str] = ">B"
+UINT16_FORMAT: Final[str] = ">H"
+UINT32_FORMAT: Final[str] = ">I"
+PIN_READ_FORMAT: Final[str] = ">B"
+PIN_WRITE_FORMAT: Final[str] = ">BB"
 DATASTORE_KEY_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)
 DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"

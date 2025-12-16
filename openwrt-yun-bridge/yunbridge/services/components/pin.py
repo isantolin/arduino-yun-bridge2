@@ -7,6 +7,8 @@ import struct
 
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc import protocol
+
 
 from ...protocol.topics import Topic, topic_path
 from ...mqtt.messages import QueuedPublish
@@ -188,7 +190,7 @@ class PinComponent:
 
         await self.ctx.send_frame(
             Command.CMD_SET_PIN_MODE.value,
-            struct.pack(">BB", pin, mode),
+            struct.pack(protocol.PIN_WRITE_FORMAT, pin, mode),
         )
 
     async def _handle_read_command(
@@ -224,7 +226,7 @@ class PinComponent:
 
         send_ok = await self.ctx.send_frame(
             command.value,
-            struct.pack(">B", pin),
+            struct.pack(protocol.PIN_READ_FORMAT, pin),
         )
         if send_ok:
             if command == Command.CMD_DIGITAL_READ:

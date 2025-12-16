@@ -11,6 +11,10 @@ max_datastore_key_length = 32
 default_ack_timeout_ms = 200
 default_retry_limit = 5
 max_pending_tx_frames = 2
+unknown_command_id = 0xFFFF
+serial_terminator = 0x00
+digital_low = 0x00
+digital_high = 0x01
 
 [handshake]
 nonce_length = 16
@@ -31,6 +35,11 @@ datastore_key_len_format = ">B"
 datastore_value_len_format = ">B"
 crc_covered_header_format = ">BHH"
 crc_format = ">I"
+uint8_format = ">B"
+uint16_format = ">H"
+uint32_format = ">I"
+pin_read_format = ">B"
+pin_write_format = ">BB"
 
 [[topics]]
 name = "ANALOG"

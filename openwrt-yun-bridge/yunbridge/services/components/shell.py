@@ -8,6 +8,7 @@ from contextlib import AsyncExitStack
 
 from aiomqtt.message import Message as MQTTMessage
 
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Action, Status
 
 from ...mqtt.messages import QueuedPublish
@@ -199,7 +200,7 @@ class ShellComponent:
 
     async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
         await self.process.handle_kill(
-            struct.pack(">H", pid_model.pid),
+            struct.pack(protocol.UINT16_FORMAT, pid_model.pid),
             send_ack=False,
         )
 

@@ -264,8 +264,6 @@ class SerialTransport:
                 except* Exception:
                     logger.exception("Error running post-connect hooks for serial link")
 
-                await read_task
-
             except (serial.SerialException, asyncio.IncompleteReadError) as exc:
                 logger.error("Serial communication error: %s", exc)
             except ConnectionResetError:

@@ -6,7 +6,7 @@ from ssl import TLSVersion
 
 from .protocol.topics import Topic
 from .rpc import protocol as rpc_protocol
-from .rpc.protocol import Command, Status
+from .rpc.protocol import Status
 
 
 SERIAL_TERMINATOR: bytes = b"\x00"

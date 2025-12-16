@@ -1,8 +1,8 @@
 /*
- * Bridge.h - Cabeçalho principal para o Ecossistema Arduino Yun v2.
+ * Bridge.h - Main header for the Arduino Yun Ecosystem v2.
  *
- * Este cabeçalho define a API pública para a biblioteca Bridge e seus componentes.
- * Inclui declarações para BridgeClass, ConsoleClass, ProcessClass e outros.
+ * This header defines the public API for the Bridge library and its components.
+ * It includes declarations for BridgeClass, ConsoleClass, ProcessClass, and others.
  *
  * Copyright (c) 2024 Arduino Yun Ecosystem v2
  */
@@ -10,17 +10,16 @@
 #ifndef BRIDGE_H_
 #define BRIDGE_H_
 
-#include <array>
 #include "Arduino.h"
 #include "Stream.h"
 #include "arduino/StringUtils.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 
-// Forward declarations de dependências de mock/teste
-// Numa build real, estes seriam cabeçalhos da biblioteca padrão ou específicos da plataforma.
+// Forward declarations of mock/test dependencies
+// In a real build, these would be standard library headers or platform specific.
 
-// Constantes para configuração
+// Constants for configuration
 #ifndef BRIDGE_BAUDRATE
 #define BRIDGE_BAUDRATE 250000
 #endif
@@ -28,71 +27,71 @@
 namespace rpc {
 // Forward declaration
 struct Frame;
-// Definir tamanho máximo local do frame se não estiver no protocolo
-// Payload + Cabeçalho (4) + CRC (4) + Overhead COBS (~1 + len/254) + 2 (0x00 delimitadores)
+// Define local max frame size if not in protocol
+// Payload + Header (4) + CRC (4) + COBS Overhead (~1 + len/254) + 2 (0x00 delimiters)
 constexpr size_t K_FRAME_OVERHEAD = 16;
 constexpr size_t K_MAX_FRAME_BUFFER_SIZE = MAX_PAYLOAD_SIZE + K_FRAME_OVERHEAD;
 }
 
 /*
  * BridgeClass
- * Gere a ligação série para o lado OpenWrt.
- * Lida com enquadramento, despacho e detalhes do protocolo de baixo nível.
+ * Manages the serial link to the OpenWrt side.
+ * Handles framing, dispatching, and low-level protocol details.
  */
 class BridgeClass {
  public:
   static constexpr uint8_t kFirmwareVersionMajor = 2;
   static constexpr uint8_t kFirmwareVersionMinor = 0;
 
-  // Construtores
+  // Constructors
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
 
-  // Inicialização
+  // Initialization
   void begin(unsigned long baudrate = BRIDGE_BAUDRATE,
              const char* secret = nullptr, size_t secret_len = 0);
   
-  // Tarefa do loop principal - DEVE ser chamada frequentemente
+  // Main loop task - MUST be called frequently
   void process();
 
-  // Envio de frame de baixo nível
+  // Low-level frame sending
   bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr,
                  size_t length = 0);
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr,
                  size_t length = 0);
 
-  // Shims da API Arduino
+  // Arduino API shims
   void put(const char* key, const char* value);
   unsigned int get(const char* key, uint8_t* buff, unsigned int size);
 
-  // Suporte API Depreciada / Legado (mapeada para novo protocolo quando possível)
+  // Deprecated / Legacy API support (mapped to new protocol where possible)
   void pinMode(uint8_t pin, uint8_t mode);
   void digitalWrite(uint8_t pin, uint8_t value);
   int digitalRead(uint8_t pin);
   void analogWrite(uint8_t pin, int value);
   int analogRead(uint8_t pin);
   
-  // Bridge.transfer não é suportado na v2 pois era transferência raw eficiente.
-  // Use componentes específicos em vez disso.
+  // Bridge.transfer is not supported in v2 as it was raw efficient transfer.
+  // Use specific components instead.
 
-  // Tipos de Callback
+  // Callback types
   typedef void (*CommandHandler)(const rpc::Frame& frame);
   typedef void (*DigitalReadHandler)(uint8_t pin, int value);
   typedef void (*AnalogReadHandler)(uint8_t pin, int value);
   typedef void (*GetFreeMemoryHandler)(uint16_t free_memory);
   typedef void (*StatusHandler)(rpc::StatusCode code, const uint8_t* msg, uint16_t len);
 
-  // Registo para callbacks
+  // Registration for callbacks
   void onCommand(CommandHandler handler);
   void onDigitalReadResponse(DigitalReadHandler handler);
   void onAnalogReadResponse(AnalogReadHandler handler);
   void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
   void onStatus(StatusHandler handler);
   
-  // Auxiliares Internos ou Avançados
-  void flushStream(); // Limpar o stream de transporte subjacente
+  // Internal or Advanced helpers
+  void flushStream(); // Flush the underlying transport stream
   
-  // Métodos de Pedido (MCU -> Linux)
+  // Request methods (MCU -> Linux)
   void requestDigitalRead(uint8_t pin);
   void requestAnalogRead(uint8_t pin);
   void requestGetFreeMemory();
@@ -111,13 +110,13 @@ class BridgeClass {
   void resetTxDebugStats();
 #endif
   
-  // Auxiliar interno para emitir estados facilmente
+  // Internal helper to emit statuses easily
   void _emitStatus(rpc::StatusCode status_code, const char* message);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
 
  private:
-  // Camada de Transporte
+  // Transport Layer
   class BridgeTransport {
    public:
     BridgeTransport(Stream& stream, HardwareSerial* hw_serial);
@@ -129,7 +128,7 @@ class BridgeClass {
     void reset();
     void flush();
     
-    // Tratamento de erros
+    // Error handling
     void clearError();
     void clearOverflow();
     rpc::FrameParser::Error getLastError() const;
@@ -139,17 +138,17 @@ class BridgeClass {
     HardwareSerial* _hw_serial;
     rpc::FrameParser _parser;
     uint8_t _tx_buffer[rpc::K_MAX_FRAME_BUFFER_SIZE];
-    uint8_t _rx_buffer[rpc::K_MAX_FRAME_BUFFER_SIZE]; // Apenas se necessário pelo parser, o parser pode possuí-lo
+    uint8_t _rx_buffer[rpc::K_MAX_FRAME_BUFFER_SIZE]; // Only if needed by parser, parser might own it
   };
 
   BridgeTransport _transport;
   const uint8_t* _shared_secret;
   size_t _shared_secret_len;
 
-  // Estado RX/TX
-  rpc::Frame _rx_frame; // Frame atual a ser processado
+  // RX/TX State
+  rpc::Frame _rx_frame; // Current frame being processed
   
-  // Lógica de ACK / Retransmissão
+  // ACK / Retransmission Logic
   static constexpr uint16_t kAckTimeoutMs = 200;
   static constexpr uint8_t kMaxAckRetries = 3;
   
@@ -168,26 +167,29 @@ class BridgeClass {
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
-  // Fila de TX Pendente (para quando se aguarda ACK)
+  // Pending TX Queue (for when awaiting ACK)
   static constexpr uint8_t kMaxPendingTxFrames = 4;
+  
+  // Replacement for std::array<uint8_t, size> to avoid STL dependency
   struct PendingTxFrame {
       uint16_t command_id;
       uint16_t payload_length;
-      std::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+      uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
   };
+  
   PendingTxFrame _pending_tx_frames[kMaxPendingTxFrames];
   uint8_t _pending_tx_head;
   uint8_t _pending_tx_count;
 
-  // Estado do Handshake
+  // Handshake State
   bool _synchronized;
-  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE]; // Buffer temporário para construir payloads
+  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE]; // Temp buffer for constructing payloads
 
 #if BRIDGE_DEBUG_FRAMES
   FrameDebugSnapshot _tx_debug;
 #endif
 
-  // Auxiliares Internos
+  // Internal Helpers
   void dispatch(const rpc::Frame& frame);
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
@@ -215,7 +217,7 @@ class BridgeClass {
 
 /*
  * ConsoleClass
- * Fornece uma interface tipo Serial sobre a Bridge.
+ * Provides a Serial-like interface over the Bridge.
  */
 class ConsoleClass : public Stream {
  public:
@@ -224,7 +226,7 @@ class ConsoleClass : public Stream {
   void begin();
   void end();
 
-  // Implementação Stream
+  // Stream implementation
   virtual int available(void);
   virtual int peek(void);
   virtual int read(void);
@@ -232,10 +234,10 @@ class ConsoleClass : public Stream {
   virtual size_t write(uint8_t c);
   virtual size_t write(const uint8_t *buffer, size_t size);
   
-  // Hook da Bridge
+  // Bridge hook
   void _push(const uint8_t* data, size_t len);
 
-  // Permitir verificação bool estilo C++ "if (Console)"
+  // Allow C++ style bool check "if (Console)"
   operator bool();
 
  private:
@@ -248,19 +250,19 @@ class ConsoleClass : public Stream {
 
 /*
  * ProcessClass
- * Lança e controla processos no lado Linux.
+ * Launches and controls processes on the Linux side.
  */
 class ProcessClass {
  public:
   ProcessClass();
   
-  // API Básica
-  void run(const char* command);     // Execução bloqueante (espera pela conclusão)
-  void runAsync(const char* command); // Fire and forget (ou esperar por output assíncrono)
-  void poll(int pid);                 // Pedir output para um PID
-  void kill(int pid);                 // Matar um PID
+  // Basic API
+  void run(const char* command);     // Blocking run (wait for completion)
+  void runAsync(const char* command); // Fire and forget (or wait for async output)
+  void poll(int pid);                 // Request output for a PID
+  void kill(int pid);                 // Kill a PID
 
-  // Despacho Interno
+  // Internal dispatch
   void handleResponse(const rpc::Frame& frame);
 
   // Callbacks
@@ -285,19 +287,19 @@ class ProcessClass {
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
   
-  // Auxiliar para tratamento de contrapressão
+  // Helper for backpressure handling
   bool _sendWithRetry(rpc::CommandId cmd, const uint8_t* payload, size_t len);
 };
 
 /*
  * DataStoreClass
- * Interface de armazenamento Chave-Valor.
+ * Key-Value store interface.
  */
 class DataStoreClass {
-  // Implementação simplista por agora, espelhando Bridge.put/get básico
+  // Simplistic implementation for now, mirroring basic Bridge.put/get
  public:
   void put(const char* key, const char* value);
-  // Get é assíncrono neste protocolo, por isso pedimos e fornecemos um callback
+  // Get is async in this protocol, so we request it and provide a callback
   void get(const char* key); 
   
   typedef void (*DataStoreGetHandler)(const char* key, const char* value);
@@ -311,13 +313,13 @@ class DataStoreClass {
 
 /*
  * FileSystemClass
- * Operações básicas de ficheiros.
+ * Basic file operations.
  */
 class FileSystemClass {
  public:
-  // Escrever conteúdo num ficheiro. Modo pode ser "w" (sobrescrever) ou "a" (acrescentar).
+  // Write content to a file. Mode can be "w" (overwrite) or "a" (append).
   void write(const char* path, const char* content, const char* mode = "w");
-  void read(const char* path); // Pedir conteúdo do ficheiro
+  void read(const char* path); // Request file content
 
   typedef void (*FileReadHandler)(const char* path, const uint8_t* content, uint16_t len);
   void onRead(FileReadHandler handler);
@@ -330,12 +332,12 @@ class FileSystemClass {
 
 /*
  * MailboxClass
- * Interface de passagem de mensagens.
+ * Message passing interface.
  */
 class MailboxClass {
  public:
   void write(const char* message);
-  void read(); // Verificar mensagens
+  void read(); // Check for messages
 
   typedef void (*MailboxReadHandler)(const char* message, uint16_t len);
   void onRead(MailboxReadHandler handler);
@@ -346,7 +348,7 @@ class MailboxClass {
   MailboxReadHandler _read_handler;
 };
 
-// Instâncias Globais
+// Global Instances
 extern BridgeClass Bridge;
 extern ConsoleClass Console;
 extern ProcessClass Process;

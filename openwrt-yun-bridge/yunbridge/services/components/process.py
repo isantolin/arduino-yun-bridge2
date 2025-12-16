@@ -1,4 +1,4 @@
-"""Componente de gestão de processos para YunBridge."""
+"""Process management component for YunBridge."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ _PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
 
 @dataclass(slots=True)
 class ProcessOutputBatch:
-    """Payload estruturado descrevendo resultados de PROCESS_POLL."""
+    """Structured payload describing PROCESS_POLL results."""
 
     status_byte: int
     exit_code: int
@@ -45,7 +45,7 @@ class ProcessOutputBatch:
 
 @dataclass(slots=True)
 class ProcessComponent:
-    """Encapsula interações de shell/processo para BridgeService."""
+    """Encapsulates shell/process interactions for BridgeService."""
 
     config: RuntimeConfig
     state: RuntimeState
@@ -66,7 +66,7 @@ class ProcessComponent:
 
         if not await self._try_acquire_process_slot():
             logger.warning(
-                "Limite de processos concorrentes atingido (%d) para comando sync",
+                "Concurrent process limit reached (%d) for sync command",
                 self.state.process_max_concurrent,
             )
             await self.ctx.send_frame(
@@ -94,7 +94,7 @@ class ProcessComponent:
                         Command.CMD_PROCESS_RUN_RESP.value, response
                     )
                     logger.debug(
-                        "Enviado PROCESS_RUN_RESP status=%d exit=%s",
+                        "Sent PROCESS_RUN_RESP status=%d exit=%s",
                         status,
                         exit_code,
                     )
@@ -105,7 +105,7 @@ class ProcessComponent:
                     )
                 except Exception:
                     logger.exception(
-                        "Falha ao executar comando síncrono de processo '%s'",
+                        "Failed to execute synchronous process command '%s'",
                         command,
                     )
                     await self.ctx.send_frame(
@@ -120,7 +120,7 @@ class ProcessComponent:
         try:
             pid = await self.start_async(command)
         except CommandValidationError as exc:
-            logger.warning("Comando assíncrono rejeitado '%s': %s", command, exc)
+            logger.warning("Rejected async command '%s': %s", command, exc)
             await self.ctx.send_frame(
                 Status.ERROR.value,
                 encode_status_reason("command_validation_failed"),
@@ -172,7 +172,7 @@ class ProcessComponent:
 
     async def handle_poll(self, payload: bytes) -> bool:
         if len(payload) != 2:
-            logger.warning("Payload PROCESS_POLL inválido: %s", payload.hex())
+            logger.warning("Invalid PROCESS_POLL payload: %s", payload.hex())
             await self.ctx.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value,
                 bytes([Status.MALFORMED.value, 0xFF])
@@ -197,7 +197,7 @@ class ProcessComponent:
 
         await self.publish_poll_result(pid, batch)
         if batch.finished:
-            logger.debug("Enviado output final para processo terminado PID %d", pid)
+            logger.debug("Sent final output for finished process PID %d", pid)
         return True
 
     async def handle_kill(
@@ -205,7 +205,7 @@ class ProcessComponent:
     ) -> bool:
         if len(payload) != 2:
             logger.warning(
-                "Payload PROCESS_KILL inválido. Esperados 2 bytes, obtidos %d: %s",
+                "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
                 len(payload),
                 payload.hex(),
             )
@@ -221,7 +221,7 @@ class ProcessComponent:
                 proc = slot.handle if slot is not None else None
 
             if proc is None:
-                logger.warning("Tentativa de matar PID inexistente: %d", pid)
+                logger.warning("Attempted to kill non-existent PID: %d", pid)
                 return send_ack
 
             try:
@@ -231,18 +231,18 @@ class ProcessComponent:
                         await proc.wait()
                 except TimeoutError:
                     logger.warning(
-                        "O processo PID %d não terminou imediatamente.",
+                        "Process PID %d did not terminate immediately.",
                         pid,
                     )
                 else:
-                    logger.info("Processo morto com PID %d", pid)
+                    logger.info("Killed process with PID %d", pid)
             except ProcessLookupError:
-                logger.info("O processo PID %d já saiu antes de matar.", pid)
+                logger.info("Process PID %d already exited before kill.", pid)
             except Exception:
-                logger.exception("Erro ao matar o processo PID %d", pid)
+                logger.exception("Error killing process PID %d", pid)
 
         finally:
-            # Garantir que limpamos o estado mesmo se algo falhar acima
+            # Ensure we clean up state even if something fails above
             async with self.state.process_lock:
                 slot = self.state.running_processes.get(pid)
                 if slot is not None:
@@ -250,11 +250,11 @@ class ProcessComponent:
                         released_slot = True
                         slot.handle = None
 
-                    # Atualizar código de saída se objeto processo existir e tiver um
+                    # Update exit code if process object exists and has one
                     if proc and proc.returncode is not None:
                         slot.exit_code = proc.returncode
                     elif slot.exit_code is None:
-                        # Fallback se não soubermos código de saída mas o matámos forçadamente
+                        # Fallback if we don't know exit code but force killed it
                         slot.exit_code = 0xFF
 
                     if slot.is_drained():
@@ -271,7 +271,7 @@ class ProcessComponent:
         try:
             tokens = self._prepare_command(command)
         except CommandValidationError as exc:
-            logger.warning("Comando rejeitado '%s': %s", command, exc)
+            logger.warning("Rejected command '%s': %s", command, exc)
             return Status.ERROR.value, b"", exc.message.encode("utf-8"), None
 
         try:
@@ -309,7 +309,7 @@ class ProcessComponent:
                         await proc.wait()
                 except TimeoutError:
                     logger.warning(
-                        "Processo síncrono PID %d não saiu após matar",
+                        "Synchronous process PID %d did not exit after kill",
                         pid_hint,
                     )
 
@@ -332,7 +332,7 @@ class ProcessComponent:
                 tg.create_task(_wait_for_completion())
         except Exception:
             logger.exception(
-                "Erro inesperado ao executar comando '%s'",
+                "Unexpected error executing command '%s'",
                 command,
             )
             await self._terminate_process_tree(proc)
@@ -340,7 +340,7 @@ class ProcessComponent:
                 await proc.wait()
             except Exception:
                 pass
-            return Status.ERROR.value, b"", b"Erro interno", None
+            return Status.ERROR.value, b"", b"Internal error", None
 
         stdout_bytes = bytes(stdout_buffer)
         stderr_bytes = bytes(stderr_buffer)
@@ -348,7 +348,7 @@ class ProcessComponent:
         stderr_bytes, stderr_truncated = self._limit_sync_payload(stderr_bytes)
         if stdout_truncated or stderr_truncated:
             logger.warning(
-                "Saída do comando síncrono '%s' truncada para %d bytes",
+                "Synchronous command '%s' output truncated to %d bytes",
                 command,
                 self.state.process_output_limit,
             )
@@ -364,11 +364,11 @@ class ProcessComponent:
         try:
             tokens = self._prepare_command(command)
         except CommandValidationError as exc:
-            logger.warning("Comando assíncrono rejeitado '%s': %s", command, exc)
+            logger.warning("Rejected async command '%s': %s", command, exc)
             raise
         if not await self._try_acquire_process_slot():
             logger.warning(
-                "Limite de processos concorrentes atingido (%d)",
+                "Concurrent process limit reached (%d)",
                 self.state.process_max_concurrent,
             )
             return 0xFFFF
@@ -388,14 +388,14 @@ class ProcessComponent:
                 )
             except OSError as exc:
                 logger.warning(
-                    "Falha ao iniciar processo assíncrono '%s': %s",
+                    "Failed to start async process '%s': %s",
                     command,
                     exc,
                 )
                 return 0xFFFF
             except Exception:
                 logger.exception(
-                    "Erro inesperado ao iniciar processo assíncrono '%s'",
+                    "Unexpected error starting async process '%s'",
                     command,
                 )
                 return 0xFFFF
@@ -410,14 +410,15 @@ class ProcessComponent:
             self._monitor_async_process(pid, proc),
             name=f"process-monitor-{pid}",
         )
-        logger.info("Iniciado processo assíncrono '%s' com PID %d", command, pid)
+        logger.info("Started async process '%s' with PID %d", command, pid)
         return pid
 
     def _prepare_command(self, command: str) -> tuple[str, ...]:
         tokens = self._tokenize_command(command)
         head = tokens[0]
         if not self.ctx.is_command_allowed(head):
-            raise CommandValidationError(f"Comando '{head}' não permitido")
+            # FIXED: Revert message to English to match existing tests
+            raise CommandValidationError(f"Command '{head}' not allowed")
         return tokens
 
     def _tokenize_command(self, command: str) -> tuple[str, ...]:
@@ -429,7 +430,7 @@ class ProcessComponent:
             proc = slot.handle if slot is not None else None
 
         if slot is None:
-            logger.debug("PROCESS_POLL recebido para PID desconhecido %d", pid)
+            logger.debug("PROCESS_POLL received for unknown PID %d", pid)
             return ProcessOutputBatch(
                 status_byte=Status.ERROR.value,
                 exit_code=0xFF,
@@ -522,7 +523,7 @@ class ProcessComponent:
 
         if log_finished:
             logger.info(
-                "Processo assíncrono %d terminado com código de saída %d",
+                "Async process %d finished with exit code %d",
                 pid,
                 exit_value,
             )
@@ -552,14 +553,14 @@ class ProcessComponent:
                 chunk = await reader.read(chunk_size)
             except (OSError, ValueError, BrokenPipeError, RuntimeError):
                 logger.debug(
-                    "Erro ao ler pipe de processo para PID %d",
+                    "Error reading process pipe for PID %d",
                     pid,
                     exc_info=True,
                 )
                 break
             except Exception:
                 logger.debug(
-                    "Erro ao ler pipe de processo para PID %d",
+                    "Error reading process pipe for PID %d",
                     pid,
                     exc_info=True,
                 )
@@ -632,14 +633,14 @@ class ProcessComponent:
             RuntimeError,
         ):
             logger.debug(
-                "Erro ao ler pipe de processo para PID %d",
+                "Error reading process pipe for PID %d",
                 pid,
                 exc_info=True,
             )
             return b""
         except Exception:
             logger.debug(
-                "Erro inesperado ao ler pipe para PID %d",
+                "Unexpected error reading pipe for PID %d",
                 pid,
                 exc_info=True,
             )
@@ -739,7 +740,7 @@ class ProcessComponent:
                     continue
                 if candidate not in self.state.running_processes:
                     return candidate
-        logger.error("Sem slots de processo assíncrono disponíveis; todos os PIDs em uso")
+        logger.error("No async process slots available; all PIDs in use")
         return 0xFFFF
 
     async def _terminate_process_tree(self, proc: AsyncioProcess) -> None:
@@ -763,7 +764,7 @@ class ProcessComponent:
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Erro ao aguardar processo assíncrono PID %d", pid)
+            logger.exception("Error while awaiting async process PID %d", pid)
             return
         await self._finalize_async_process(pid, proc)
 
@@ -807,7 +808,7 @@ class ProcessComponent:
         if release_slot:
             self._release_process_slot()
             logger.info(
-                "Processo assíncrono %d terminado com código de saída %d",
+                "Async process %d finished with exit code %d",
                 pid,
                 exit_value,
             )

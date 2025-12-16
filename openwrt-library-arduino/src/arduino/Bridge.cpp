@@ -102,7 +102,8 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
   for (auto& frame : _pending_tx_frames) {
     frame.command_id = 0;
     frame.payload_length = 0;
-    frame.payload.fill(0);
+    // Removed .fill(0) as it's now a C array
+    memset(frame.payload, 0, rpc::MAX_PAYLOAD_SIZE);
   }
 }
 
@@ -133,7 +134,7 @@ BridgeClass::BridgeClass(Stream& stream)
   for (auto& frame : _pending_tx_frames) {
     frame.command_id = 0;
     frame.payload_length = 0;
-    frame.payload.fill(0);
+    memset(frame.payload, 0, rpc::MAX_PAYLOAD_SIZE);
   }
 }
 
@@ -720,7 +721,7 @@ void BridgeClass::_flushPendingTxQueue() {
   }
     if (!_sendFrameImmediate(
       frame.command_id,
-      frame.payload.data(), frame.payload_length)) {
+      frame.payload, frame.payload_length)) { // Fixed .payload.data() call
     uint8_t previous_head =
         (_pending_tx_head + kMaxPendingTxFrames - 1) % kMaxPendingTxFrames;
     _pending_tx_head = previous_head;
@@ -747,7 +748,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
+    memcpy(_pending_tx_frames[tail].payload, payload, payload_len); // Fixed .payload.data()
   }
   _pending_tx_count++;
   return true;

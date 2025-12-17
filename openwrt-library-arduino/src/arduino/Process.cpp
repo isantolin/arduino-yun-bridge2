@@ -3,38 +3,13 @@
 
 using namespace rpc;
 
-namespace {
-// Timeout para esperar por um slot TX (tratamento de contrapressão)
-constexpr unsigned long kTxTimeoutMs = 1000;
-}
-
 ProcessClass::ProcessClass() 
   : _pending_process_poll_head(0),
     _pending_process_poll_count(0),
     _process_run_handler(nullptr),
     _process_poll_handler(nullptr),
     _process_run_async_handler(nullptr) {
-  // Correção: Inicialização de array estilo C via loop (sem método .fill)
-  for (auto& pid : _pending_process_pids) {
-    pid = 0;
-  }
-}
-
-// Auxiliar para enviar frame com tratamento de contrapressão
-bool ProcessClass::_sendWithRetry(CommandId cmd, const uint8_t* payload, size_t len) {
-  unsigned long start = millis();
-  while (!Bridge.sendFrame(cmd, payload, len)) {
-    // Se a fila estiver cheia, DEVEMOS bombear a bridge para processar ACKs e libertar slots
-    Bridge.process();
-    
-    if (millis() - start > kTxTimeoutMs) {
-      Bridge._emitStatus(StatusCode::STATUS_ERROR, F("process_tx_timeout"));
-      return false;
-    }
-    // Ceder ligeiramente
-    delay(1); 
-  }
-  return true;
+  _pending_process_pids.fill(0);
 }
 
 void ProcessClass::run(const char* command) {
@@ -46,12 +21,10 @@ void ProcessClass::run(const char* command) {
     Bridge._emitStatus(StatusCode::STATUS_ERROR, F("process_run_payload_too_large"));
     return;
   }
-  
-  _sendWithRetry(
+  (void)Bridge.sendFrame(
       CommandId::CMD_PROCESS_RUN,
       reinterpret_cast<const uint8_t*>(command),
-      len
-  );
+      len);
 }
 
 void ProcessClass::runAsync(const char* command) {
@@ -63,12 +36,10 @@ void ProcessClass::runAsync(const char* command) {
     Bridge._emitStatus(StatusCode::STATUS_ERROR, F("process_run_async_payload_too_large"));
     return;
   }
-  
-  _sendWithRetry(
+  (void)Bridge.sendFrame(
       CommandId::CMD_PROCESS_RUN_ASYNC,
       reinterpret_cast<const uint8_t*>(command),
-      len
-  );
+      len);
 }
 
 void ProcessClass::poll(int pid) {
@@ -84,18 +55,13 @@ void ProcessClass::poll(int pid) {
 
   uint8_t pid_payload[2];
   rpc::write_u16_be(pid_payload, pid_u16);
-  
-  if (!_sendWithRetry(CommandId::CMD_PROCESS_POLL, pid_payload, 2)) {
-     // Se o envio falhou, verificar se não libertamos o slot pendente?
-     // Na verdade _pushPendingProcessPid já avançou a fila. 
-     // Num mundo perfeito faríamos rollback, mas por agora o erro de timeout é suficiente.
-  }
+  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_POLL, pid_payload, 2);
 }
 
 void ProcessClass::kill(int pid) {
   uint8_t pid_payload[2];
   write_u16_be(pid_payload, static_cast<uint16_t>(pid));
-  _sendWithRetry(CommandId::CMD_PROCESS_KILL, pid_payload, 2);
+  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, pid_payload, 2);
 }
 
 void ProcessClass::handleResponse(const rpc::Frame& frame) {
@@ -110,14 +76,10 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
         if (payload_length >= 5) {
             uint16_t stdout_len = rpc::read_u16_be(payload_data + 1);
             const uint8_t* stdout_ptr = payload_data + 3;
-            // Validar limites para prevenir overread do buffer
             if (payload_length >= static_cast<size_t>(3 + stdout_len + 2)) {
                 uint16_t stderr_len = rpc::read_u16_be(payload_data + 3 + stdout_len);
                 const uint8_t* stderr_ptr = payload_data + 3 + stdout_len + 2;
-                // Verificação final de limites
-                if (payload_length >= static_cast<size_t>(3 + stdout_len + 2 + stderr_len)) {
-                    _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
-                }
+                _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
             }
         }
       }
@@ -141,9 +103,7 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
              if (payload_length >= static_cast<size_t>(4 + stdout_len + 2)) {
                  uint16_t stderr_len = rpc::read_u16_be(payload_data + 4 + stdout_len);
                  const uint8_t* stderr_ptr = payload_data + 4 + stdout_len + 2;
-                 if (payload_length >= static_cast<size_t>(4 + stdout_len + 2 + stderr_len)) {
-                    _process_poll_handler(status, running, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
-                 }
+                 _process_poll_handler(status, running, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
              }
         }
       }

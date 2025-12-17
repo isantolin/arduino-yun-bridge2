@@ -67,3 +67,6 @@ tox_output.txt
 PHASE_3_REPORT.md
 /test_*.txttest_bridge_components
 test_bridge_core
+
+.gemini/
+gha-creds-*.json

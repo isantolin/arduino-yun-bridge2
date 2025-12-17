@@ -191,18 +191,14 @@ class ProcessComponent:
             + batch.stdout_chunk
             + batch.stderr_chunk
         )
-        await self.ctx.send_frame(
-            Command.CMD_PROCESS_POLL_RESP.value, response_payload
-        )
+        await self.ctx.send_frame(Command.CMD_PROCESS_POLL_RESP.value, response_payload)
 
         await self.publish_poll_result(pid, batch)
         if batch.finished:
             logger.debug("Sent final output for finished process PID %d", pid)
         return True
 
-    async def handle_kill(
-        self, payload: bytes, *, send_ack: bool = True
-    ) -> bool:
+    async def handle_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
         if len(payload) != 2:
             logger.warning(
                 "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
@@ -212,62 +208,50 @@ class ProcessComponent:
             return False
 
         pid = struct.unpack(">H", payload[:2])[0]
-        released_slot = False
-        proc = None
+
+        async with self.state.process_lock:
+            slot = self.state.running_processes.get(pid)
+            proc = slot.handle if slot is not None else None
+
+        if proc is None:
+            logger.warning("Attempted to kill non-existent PID: %d", pid)
+            return send_ack
 
         try:
-            async with self.state.process_lock:
-                slot = self.state.running_processes.get(pid)
-                proc = slot.handle if slot is not None else None
-
-            if proc is None:
-                logger.warning("Attempted to kill non-existent PID: %d", pid)
-                return send_ack
-
+            await self._terminate_process_tree(proc)
             try:
-                await self._terminate_process_tree(proc)
-                try:
-                    async with asyncio.timeout(0.5):
-                        await proc.wait()
-                except TimeoutError:
-                    logger.warning(
-                        "Process PID %d did not terminate immediately.",
-                        pid,
-                    )
-                else:
-                    logger.info("Killed process with PID %d", pid)
-            except ProcessLookupError:
-                logger.info("Process PID %d already exited before kill.", pid)
-            except Exception:
-                logger.exception("Error killing process PID %d", pid)
-
+                async with asyncio.timeout(0.5):
+                    await proc.wait()
+            except TimeoutError:
+                logger.warning(
+                    "Process PID %d did not terminate after kill signal.",
+                    pid,
+                )
+            else:
+                logger.info("Killed process with PID %d", pid)
+        except ProcessLookupError:
+            logger.info("Process PID %d already exited before kill.", pid)
+        except Exception:
+            logger.exception("Error killing process PID %d", pid)
         finally:
-            # Ensure we clean up state even if something fails above
+            released_slot = False
             async with self.state.process_lock:
                 slot = self.state.running_processes.get(pid)
                 if slot is not None:
                     if slot.handle is not None:
                         released_slot = True
-                        slot.handle = None
-
-                    # Update exit code if process object exists and has one
-                    if proc and proc.returncode is not None:
-                        slot.exit_code = proc.returncode
-                    elif slot.exit_code is None:
-                        # Fallback if we don't know exit code but force killed it
-                        slot.exit_code = 0xFF
-
+                    slot.handle = None
+                    slot.exit_code = (
+                        proc.returncode if proc.returncode is not None else 0xFF
+                    )
                     if slot.is_drained():
                         self.state.running_processes.pop(pid, None)
-
             if released_slot:
                 self._release_process_slot()
 
         return send_ack
 
-    async def run_sync(
-        self, command: str
-    ) -> tuple[int, bytes, bytes, int | None]:
+    async def run_sync(self, command: str) -> tuple[int, bytes, bytes, int | None]:
         try:
             tokens = self._prepare_command(command)
         except CommandValidationError as exc:
@@ -417,7 +401,6 @@ class ProcessComponent:
         tokens = self._tokenize_command(command)
         head = tokens[0]
         if not self.ctx.is_command_allowed(head):
-            # FIXED: Revert message to English to match existing tests
             raise CommandValidationError(f"Command '{head}' not allowed")
         return tokens
 
@@ -709,12 +692,8 @@ class ProcessComponent:
                 "exit_code": batch.exit_code,
                 "stdout": batch.stdout_chunk.decode("utf-8", errors="replace"),
                 "stderr": batch.stderr_chunk.decode("utf-8", errors="replace"),
-                "stdout_base64": base64.b64encode(batch.stdout_chunk).decode(
-                    "ascii"
-                ),
-                "stderr_base64": base64.b64encode(batch.stderr_chunk).decode(
-                    "ascii"
-                ),
+                "stdout_base64": base64.b64encode(batch.stdout_chunk).decode("ascii"),
+                "stderr_base64": base64.b64encode(batch.stderr_chunk).decode("ascii"),
                 "stdout_truncated": batch.stdout_truncated,
                 "stderr_truncated": batch.stderr_truncated,
                 "finished": batch.finished,

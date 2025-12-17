@@ -102,8 +102,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
   for (auto& frame : _pending_tx_frames) {
     frame.command_id = 0;
     frame.payload_length = 0;
-    // Removed .fill(0) as it's now a C array
-    memset(frame.payload, 0, rpc::MAX_PAYLOAD_SIZE);
+    frame.payload.fill(0);
   }
 }
 
@@ -134,7 +133,7 @@ BridgeClass::BridgeClass(Stream& stream)
   for (auto& frame : _pending_tx_frames) {
     frame.command_id = 0;
     frame.payload_length = 0;
-    memset(frame.payload, 0, rpc::MAX_PAYLOAD_SIZE);
+    frame.payload.fill(0);
   }
 }
 
@@ -227,11 +226,7 @@ void BridgeClass::process() {
   }
 #endif
 
-  // Priority 1: Check timeouts and retries
-  _processAckTimeout();
-  _flushPendingTxQueue();
-
-  // Priority 2: Handle incoming frames
+  // Handle incoming data via transport
   rpc::Frame frame;
   if (_transport.processInput(frame)) {
     dispatch(frame);
@@ -253,10 +248,14 @@ void BridgeClass::process() {
           break;
       }
       _transport.clearError();
-      _transport.clearOverflow();
+      _transport.clearOverflow(); // Ensure overflow flag is also cleared if set
     }
   }
-  
+
+  _processAckTimeout();
+  // Retry queued frames after transient send failures.
+  _flushPendingTxQueue();
+  // Also pump console to flush partial buffers
   Console.flush(); 
 }
 
@@ -709,6 +708,7 @@ void BridgeClass::_resetLinkState() {
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
+  // _flow_paused = false; // Handled by transport.reset()
 }
 
 void BridgeClass::_flushPendingTxQueue() {
@@ -721,7 +721,7 @@ void BridgeClass::_flushPendingTxQueue() {
   }
     if (!_sendFrameImmediate(
       frame.command_id,
-      frame.payload, frame.payload_length)) { // Fixed .payload.data() call
+      frame.payload.data(), frame.payload_length)) {
     uint8_t previous_head =
         (_pending_tx_head + kMaxPendingTxFrames - 1) % kMaxPendingTxFrames;
     _pending_tx_head = previous_head;
@@ -748,7 +748,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload, payload, payload_len); // Fixed .payload.data()
+    memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
   }
   _pending_tx_count++;
   return true;

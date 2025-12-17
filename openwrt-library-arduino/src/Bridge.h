@@ -1,359 +1,358 @@
 /*
- * Bridge.h - Main header for the Arduino Yun Ecosystem v2.
- *
- * This header defines the public API for the Bridge library and its components.
- * It includes declarations for BridgeClass, ConsoleClass, ProcessClass, and others.
- *
- * Copyright (c) 2024 Arduino Yun Ecosystem v2
+ * This file is part of Arduino Yun Ecosystem v2.
+ * (C) 2025 Ignacio Santolin
  */
+#ifndef BRIDGE_H
+#define BRIDGE_H
 
-#ifndef BRIDGE_H_
-#define BRIDGE_H_
+#include <Arduino.h>
+#include <Stream.h>
+#include "bridge_array.h"
 
-#include "Arduino.h"
-#include "Stream.h"
-#include "arduino/StringUtils.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "arduino/BridgeTransport.h"
 
-// Forward declarations of mock/test dependencies
-// In a real build, these would be standard library headers or platform specific.
-
-// Constants for configuration
-#ifndef BRIDGE_BAUDRATE
-#define BRIDGE_BAUDRATE 250000
+// --- Configuration ---
+#ifdef BRIDGE_BAUDRATE
+constexpr unsigned long kBridgeBaudrate = BRIDGE_BAUDRATE;
+#else
+constexpr unsigned long kBridgeBaudrate = rpc::RPC_DEFAULT_BAUDRATE;
 #endif
 
-namespace rpc {
-// Forward declaration
-struct Frame;
-// Define local max frame size if not in protocol
-// Payload + Header (4) + CRC (4) + COBS Overhead (~1 + len/254) + 2 (0x00 delimiters)
-constexpr size_t K_FRAME_OVERHEAD = 16;
-constexpr size_t K_MAX_FRAME_BUFFER_SIZE = MAX_PAYLOAD_SIZE + K_FRAME_OVERHEAD;
-}
+#ifndef BRIDGE_DEBUG_FRAMES
+constexpr bool kBridgeDebugFrames = false;
+#else
+constexpr bool kBridgeDebugFrames = (BRIDGE_DEBUG_FRAMES != 0);
+#endif
 
-/*
- * BridgeClass
- * Manages the serial link to the OpenWrt side.
- * Handles framing, dispatching, and low-level protocol details.
- */
+#ifndef BRIDGE_DEBUG_IO
+constexpr bool kBridgeDebugIo = false;
+#else
+constexpr bool kBridgeDebugIo = (BRIDGE_DEBUG_IO != 0);
+#endif
+
+#ifndef BRIDGE_ENABLE_WATCHDOG
+constexpr bool kBridgeEnableWatchdog = true;
+#else
+constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
+#endif
+
+#if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
+#ifndef BRIDGE_WATCHDOG_TIMEOUT
+#define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
+#endif
+#endif
+
+#ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
+constexpr uint8_t kDefaultFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
+#else
+constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
+#endif
+
+#ifdef BRIDGE_FIRMWARE_VERSION_MINOR
+constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
+#else
+constexpr uint8_t kDefaultFirmwareVersionMinor = 0;
+#endif
+
 class BridgeClass {
+  friend class DataStoreClass;
+  friend class MailboxClass;
+  friend class FileSystemClass;
+  friend class ProcessClass;
  public:
-  static constexpr uint8_t kFirmwareVersionMajor = 2;
-  static constexpr uint8_t kFirmwareVersionMinor = 0;
+  // Constants
+  static constexpr uint8_t kFirmwareVersionMajor = kDefaultFirmwareVersionMajor;
+  static constexpr uint8_t kFirmwareVersionMinor = kDefaultFirmwareVersionMinor;
 
-  // Constructors
+  static constexpr size_t kMaxFilePathLength = rpc::RPC_MAX_FILEPATH_LENGTH;
+  static constexpr size_t kMaxDatastoreKeyLength = rpc::RPC_MAX_DATASTORE_KEY_LENGTH;
+  static constexpr uint8_t kMaxPendingTxFrames = rpc::RPC_MAX_PENDING_TX_FRAMES;
+  static constexpr unsigned int kAckTimeoutMs = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
+  static constexpr uint8_t kMaxAckRetries = rpc::RPC_DEFAULT_RETRY_LIMIT;
+
+  // Flow Control Thresholds (assuming 64 byte hardware buffer)
+  static constexpr int kRxHighWaterMark = 48; // 75% full -> Send XOFF
+  static constexpr int kRxLowWaterMark = 16;  // 25% full -> Send XON
+
+  // Callbacks
+  using CommandHandler = void (*)(const rpc::Frame&);
+  using DigitalReadHandler = void (*)(uint8_t);
+  using AnalogReadHandler = void (*)(uint16_t);
+  using GetFreeMemoryHandler = void (*)(uint16_t);
+  using StatusHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t);
+
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
 
-  // Initialization
-  void begin(unsigned long baudrate = BRIDGE_BAUDRATE,
+  void begin(unsigned long baudrate = kBridgeBaudrate,
              const char* secret = nullptr, size_t secret_len = 0);
-  
-  // Main loop task - MUST be called frequently
   void process();
+  bool isSynchronized() const { return _synchronized; }
 
-  // Low-level frame sending
-  bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr,
-                 size_t length = 0);
-  bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr,
-                 size_t length = 0);
-
-  // Arduino API shims
-  void put(const char* key, const char* value);
-  unsigned int get(const char* key, uint8_t* buff, unsigned int size);
-
-  // Deprecated / Legacy API support (mapped to new protocol where possible)
+  // API
   void pinMode(uint8_t pin, uint8_t mode);
   void digitalWrite(uint8_t pin, uint8_t value);
-  int digitalRead(uint8_t pin);
   void analogWrite(uint8_t pin, int value);
-  int analogRead(uint8_t pin);
   
-  // Bridge.transfer is not supported in v2 as it was raw efficient transfer.
-  // Use specific components instead.
+  // Request Methods
+  void requestDigitalRead(uint8_t pin);
+  void requestAnalogRead(uint8_t pin);
+  void requestGetFreeMemory();
 
-  // Callback types
-  typedef void (*CommandHandler)(const rpc::Frame& frame);
-  typedef void (*DigitalReadHandler)(uint8_t pin, int value);
-  typedef void (*AnalogReadHandler)(uint8_t pin, int value);
-  typedef void (*GetFreeMemoryHandler)(uint16_t free_memory);
-  typedef void (*StatusHandler)(rpc::StatusCode code, const uint8_t* msg, uint16_t len);
-
-  // Registration for callbacks
+  // Events
   void onCommand(CommandHandler handler);
   void onDigitalReadResponse(DigitalReadHandler handler);
   void onAnalogReadResponse(AnalogReadHandler handler);
   void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
   void onStatus(StatusHandler handler);
-  
-  // Internal or Advanced helpers
-  void flushStream(); // Flush the underlying transport stream
-  
-  // Request methods (MCU -> Linux)
-  void requestDigitalRead(uint8_t pin);
-  void requestAnalogRead(uint8_t pin);
-  void requestGetFreeMemory();
 
-#if BRIDGE_DEBUG_FRAMES
-  struct FrameDebugSnapshot {
-      uint32_t rx_frames;
-      uint32_t tx_frames;
-      uint32_t rx_bytes;
-      uint32_t tx_bytes;
-      uint32_t crc_errors;
-      uint32_t framing_errors;
-      uint32_t serial_overflows;
-  };
-  FrameDebugSnapshot getTxDebugSnapshot() const;
-  void resetTxDebugStats();
-#endif
-  
-  // Internal helper to emit statuses easily
-  void _emitStatus(rpc::StatusCode status_code, const char* message);
+  // Internal / Lower Level
+  bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
+  bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
+  void flushStream();
+  uint8_t* getScratchBuffer() { return _scratch_payload; }
+  void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
-
- private:
-  // Transport Layer
-  class BridgeTransport {
-   public:
-    BridgeTransport(Stream& stream, HardwareSerial* hw_serial);
-    void begin(unsigned long baudrate);
-    void setBaudrate(unsigned long baudrate);
-    bool processInput(rpc::Frame& out_frame);
-    bool sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
-    bool retransmitLastFrame();
-    void reset();
-    void flush();
-    
-    // Error handling
-    void clearError();
-    void clearOverflow();
-    rpc::FrameParser::Error getLastError() const;
-
-   private:
-    Stream& _stream;
-    HardwareSerial* _hw_serial;
-    rpc::FrameParser _parser;
-    uint8_t _tx_buffer[rpc::K_MAX_FRAME_BUFFER_SIZE];
-    uint8_t _rx_buffer[rpc::K_MAX_FRAME_BUFFER_SIZE]; // Only if needed by parser, parser might own it
+  struct FrameDebugSnapshot {
+    uint16_t tx_count;
+    uint16_t build_failures;
+    uint16_t write_shortfall_events;
+    uint16_t last_command_id;
+    uint16_t payload_length;
+    uint16_t raw_length;
+    uint16_t cobs_length;
+    uint16_t expected_serial_bytes;
+    uint16_t last_write_return;
+    uint16_t last_shortfall;
+    uint16_t crc;
   };
 
-  BridgeTransport _transport;
+#if BRIDGE_DEBUG_FRAMES
+  FrameDebugSnapshot getTxDebugSnapshot() const;
+  void resetTxDebugStats();
+#else
+  FrameDebugSnapshot getTxDebugSnapshot() const { return {}; }
+  void resetTxDebugStats() {}
+#endif
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  bridge::BridgeTransport _transport;
   const uint8_t* _shared_secret;
   size_t _shared_secret_len;
 
-  // RX/TX State
-  rpc::Frame _rx_frame; // Current frame being processed
-  
-  // ACK / Retransmission Logic
-  static constexpr uint16_t kAckTimeoutMs = 200;
-  static constexpr uint8_t kMaxAckRetries = 3;
-  
+  // Protocol Engine
+  rpc::Frame _rx_frame;
+  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+
+  // State
   bool _awaiting_ack;
   uint16_t _last_command_id;
   uint8_t _retry_count;
   unsigned long _last_send_millis;
+
+  // Config
   uint16_t _ack_timeout_ms;
   uint8_t _ack_retry_limit;
   uint32_t _response_timeout_ms;
 
-  // Callbacks
+  // Handlers
   CommandHandler _command_handler;
   DigitalReadHandler _digital_read_handler;
   AnalogReadHandler _analog_read_handler;
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
-  // Pending TX Queue (for when awaiting ACK)
-  static constexpr uint8_t kMaxPendingTxFrames = 4;
-  
-  // Replacement for std::array<uint8_t, size> to avoid STL dependency
+  // Pending Queues
   struct PendingTxFrame {
-      uint16_t command_id;
-      uint16_t payload_length;
-      uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
+    uint16_t command_id;
+    uint16_t payload_length;
+    bridge::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
-  
-  PendingTxFrame _pending_tx_frames[kMaxPendingTxFrames];
+  bridge::array<PendingTxFrame, kMaxPendingTxFrames> _pending_tx_frames;
   uint8_t _pending_tx_head;
   uint8_t _pending_tx_count;
-
-  // Handshake State
   bool _synchronized;
-  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE]; // Temp buffer for constructing payloads
 
 #if BRIDGE_DEBUG_FRAMES
-  FrameDebugSnapshot _tx_debug;
+  mutable FrameDebugSnapshot _tx_debug;
 #endif
 
-  // Internal Helpers
-  void dispatch(const rpc::Frame& frame);
+  // Methods
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
   void _handleConsoleCommand(const rpc::Frame& frame);
-  
+
+  void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload, size_t length);
-  
   bool _requiresAck(uint16_t command_id) const;
-  void _handleAck(uint16_t command_id);
-  void _handleMalformed(uint16_t command_id);
   void _retransmitLastFrame();
   void _processAckTimeout();
-  
+  void _handleAck(uint16_t command_id);
+  void _handleMalformed(uint16_t command_id);
   void _resetLinkState();
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
   void _applyTimingConfig(const uint8_t* payload, size_t length);
 
-  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length);
-  bool _dequeuePendingTx(PendingTxFrame& frame);
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
+  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length);
+  bool _dequeuePendingTx(PendingTxFrame& frame);
   void _clearAckState();
 };
 
-/*
- * ConsoleClass
- * Provides a Serial-like interface over the Bridge.
- */
+extern BridgeClass Bridge;
+
 class ConsoleClass : public Stream {
  public:
+  static constexpr size_t kTxBufferSize = 64;
+  static constexpr size_t kRxBufferSize = 64;
+  static constexpr size_t kBufferLowWater = 16;
+  static constexpr size_t kBufferHighWater = 48;
+
   ConsoleClass();
-
   void begin();
-  void end();
-
-  // Stream implementation
-  virtual int available(void);
-  virtual int peek(void);
-  virtual int read(void);
-  virtual void flush(void);
-  virtual size_t write(uint8_t c);
-  virtual size_t write(const uint8_t *buffer, size_t size);
+  void end() {}
+  void buffer(uint8_t size) { (void)size; }
+  void noBuffer() {}
+  bool connected() { return true; }
   
-  // Bridge hook
-  void _push(const uint8_t* data, size_t len);
-
-  // Allow C++ style bool check "if (Console)"
-  operator bool();
+  size_t write(uint8_t c) override;
+  size_t write(const uint8_t *buffer, size_t size) override;
+  
+  void _push(const uint8_t* data, size_t length);
+  
+  int available() override;
+  int read() override;
+  int peek() override;
+  void flush() override;
+  
+  operator bool() { return connected(); }
 
  private:
-  static constexpr size_t kRxBufferSize = 64;
-  uint8_t _rx_buffer[kRxBufferSize];
-  uint16_t _rx_head;
-  uint16_t _rx_tail;
-  bool _connected;
+  bool _begun;
+  size_t _rx_buffer_head;
+  size_t _rx_buffer_tail;
+  size_t _tx_buffer_pos;
+  bool _xoff_sent;
+  bridge::array<uint8_t, kRxBufferSize> _rx_buffer;
+  bridge::array<uint8_t, kTxBufferSize> _tx_buffer;
 };
+extern ConsoleClass Console;
 
-/*
- * ProcessClass
- * Launches and controls processes on the Linux side.
- */
+class DataStoreClass {
+ public:
+  static constexpr uint8_t kMaxPendingDatastore = 2;
+  using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
+
+  DataStoreClass();
+  void put(const char* key, const char* value);
+  void requestGet(const char* key);
+  void handleResponse(const rpc::Frame& frame);
+  void onDataStoreGetResponse(DataStoreGetHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  bool _trackPendingDatastoreKey(const char* key);
+  const char* _popPendingDatastoreKey();
+
+  bridge::array<bridge::array<char, BridgeClass::kMaxDatastoreKeyLength + 1>, kMaxPendingDatastore> _pending_datastore_keys;
+  bridge::array<uint8_t, kMaxPendingDatastore> _pending_datastore_key_lengths;
+  uint8_t _pending_datastore_head;
+  uint8_t _pending_datastore_count;
+  DataStoreGetHandler _datastore_get_handler;
+};
+extern DataStoreClass DataStore;
+
+class MailboxClass {
+ public:
+  using MailboxHandler = void (*)(const uint8_t*, uint16_t);
+  using MailboxAvailableHandler = void (*)(uint16_t);
+
+  MailboxClass();
+  void send(const char* message);
+  void send(const uint8_t* data, size_t length);
+  void requestRead();
+  void requestAvailable();
+  void handleResponse(const rpc::Frame& frame);
+  void onMailboxMessage(MailboxHandler handler);
+  void onMailboxAvailableResponse(MailboxAvailableHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  MailboxHandler _mailbox_handler;
+  MailboxAvailableHandler _mailbox_available_handler;
+};
+extern MailboxClass Mailbox;
+
+class FileSystemClass {
+ public:
+  using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
+
+  void write(const char* filePath, const uint8_t* data, size_t length);
+  void remove(const char* filePath);
+  void read(const char* filePath);
+  void handleResponse(const rpc::Frame& frame);
+  void onFileSystemReadResponse(FileSystemReadHandler handler);
+
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ private:
+#endif
+  FileSystemReadHandler _file_system_read_handler;
+};
+extern FileSystemClass FileSystem;
+
 class ProcessClass {
  public:
+  static constexpr uint8_t kMaxPendingProcessPolls = 2;
+  using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
+                                     const uint8_t*, uint16_t);
+  using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
+                                      uint16_t, const uint8_t*, uint16_t);
+  using ProcessRunAsyncHandler = void (*)(int);
+
   ProcessClass();
-  
-  // Basic API
-  void run(const char* command);     // Blocking run (wait for completion)
-  void runAsync(const char* command); // Fire and forget (or wait for async output)
-  void poll(int pid);                 // Request output for a PID
-  void kill(int pid);                 // Kill a PID
-
-  // Internal dispatch
+  void run(const char* command);
+  void runAsync(const char* command);
+  void poll(int pid);
+  void kill(int pid);
   void handleResponse(const rpc::Frame& frame);
-
-  // Callbacks
-  typedef void (*ProcessRunHandler)(rpc::StatusCode status, const uint8_t* stdout_data, uint16_t stdout_len, const uint8_t* stderr_data, uint16_t stderr_len);
-  typedef void (*ProcessRunAsyncHandler)(int pid);
-  typedef void (*ProcessPollHandler)(rpc::StatusCode status, uint8_t running, const uint8_t* stdout_data, uint16_t stdout_len, const uint8_t* stderr_data, uint16_t stderr_len);
-
+  
   void onProcessRunResponse(ProcessRunHandler handler);
-  void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
   void onProcessPollResponse(ProcessPollHandler handler);
+  void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
 
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
  private:
-  static constexpr uint8_t kMaxPendingProcessPolls = 8;
-  uint16_t _pending_process_pids[kMaxPendingProcessPolls];
+#endif
+  bool _pushPendingProcessPid(uint16_t pid);
+  uint16_t _popPendingProcessPid();
+
+  bridge::array<uint16_t, kMaxPendingProcessPolls> _pending_process_pids;
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
-
+  
   ProcessRunHandler _process_run_handler;
   ProcessPollHandler _process_poll_handler;
   ProcessRunAsyncHandler _process_run_async_handler;
-
-  bool _pushPendingProcessPid(uint16_t pid);
-  uint16_t _popPendingProcessPid();
-  
-  // Helper for backpressure handling
-  bool _sendWithRetry(rpc::CommandId cmd, const uint8_t* payload, size_t len);
 };
-
-/*
- * DataStoreClass
- * Key-Value store interface.
- */
-class DataStoreClass {
-  // Simplistic implementation for now, mirroring basic Bridge.put/get
- public:
-  void put(const char* key, const char* value);
-  // Get is async in this protocol, so we request it and provide a callback
-  void get(const char* key); 
-  
-  typedef void (*DataStoreGetHandler)(const char* key, const char* value);
-  void onGet(DataStoreGetHandler handler);
-  
-  void handleResponse(const rpc::Frame& frame);
- 
- private:
-  DataStoreGetHandler _get_handler;
-};
-
-/*
- * FileSystemClass
- * Basic file operations.
- */
-class FileSystemClass {
- public:
-  // Write content to a file. Mode can be "w" (overwrite) or "a" (append).
-  void write(const char* path, const char* content, const char* mode = "w");
-  void read(const char* path); // Request file content
-
-  typedef void (*FileReadHandler)(const char* path, const uint8_t* content, uint16_t len);
-  void onRead(FileReadHandler handler);
-
-  void handleResponse(const rpc::Frame& frame);
-
- private:
-  FileReadHandler _read_handler;
-};
-
-/*
- * MailboxClass
- * Message passing interface.
- */
-class MailboxClass {
- public:
-  void write(const char* message);
-  void read(); // Check for messages
-
-  typedef void (*MailboxReadHandler)(const char* message, uint16_t len);
-  void onRead(MailboxReadHandler handler);
-  
-  void handleResponse(const rpc::Frame& frame);
-
- private:
-  MailboxReadHandler _read_handler;
-};
-
-// Global Instances
-extern BridgeClass Bridge;
-extern ConsoleClass Console;
 extern ProcessClass Process;
-extern DataStoreClass DataStore;
-extern FileSystemClass FileSystem;
-extern MailboxClass Mailbox;
 
-#endif // BRIDGE_H_
+#endif

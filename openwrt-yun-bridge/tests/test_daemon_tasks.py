@@ -133,225 +133,225 @@ class _FatalSerialServiceStub(_SerialServiceStub):
         raise SerialHandshakeFatal("fatal-handshake")
 
 
-def test_serial_reader_task_processes_frame(
+@pytest.mark.asyncio
+async def test_serial_reader_task_processes_frame(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        service = _SerialServiceStub(runtime_config, state)
+    state = create_runtime_state(runtime_config)
+    service = _SerialServiceStub(runtime_config, state)
 
-        payload = bytes([protocol.DIGITAL_HIGH])
-        frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, payload).to_bytes()
-        encoded = cobs.encode(frame) + SERIAL_TERMINATOR
+    payload = bytes([protocol.DIGITAL_HIGH])
+    frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, payload).to_bytes()
+    encoded = cobs.encode(frame) + SERIAL_TERMINATOR
 
-        reader = _FakeStreamReader(encoded, b"")
-        writer = _FakeStreamWriter()
+    reader = _FakeStreamReader(encoded, b"")
+    writer = _FakeStreamWriter()
 
-        async def _fake_open(*_: object, **__: object):
-            return reader, writer
+    async def _fake_open(*_: object, **__: object):
+        return reader, writer
 
-        monkeypatch.setattr(
-            "yunbridge.transport.serial._open_serial_connection_with_retry",
-            _fake_open,
-        )
+    monkeypatch.setattr(
+        "yunbridge.transport.serial._open_serial_connection_with_retry",
+        _fake_open,
+    )
 
-        task = asyncio.create_task(
-            serial_reader_task(runtime_config, state, cast(Any, service))
-        )
+    task = asyncio.create_task(
+        serial_reader_task(runtime_config, state, cast(Any, service))
+    )
 
-        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-        await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
+    await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+    await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
 
-        assert service.received_frames
-        command_id, received_payload = service.received_frames[0]
-        assert command_id == Command.CMD_DIGITAL_READ_RESP.value
-        assert received_payload == payload
+    assert service.received_frames
+    command_id, received_payload = service.received_frames[0]
+    assert command_id == Command.CMD_DIGITAL_READ_RESP.value
+    assert received_payload == payload
 
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as exc:
+        pytest.fail(f"Expected CancelledError, got {type(exc)}")
 
-    asyncio.run(_run())
 
-
-def test_serial_reader_task_emits_crc_mismatch(
+@pytest.mark.asyncio
+async def test_serial_reader_task_emits_crc_mismatch(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        service = _SerialServiceStub(runtime_config, state)
+    state = create_runtime_state(runtime_config)
+    service = _SerialServiceStub(runtime_config, state)
 
-        frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, bytes([protocol.DIGITAL_HIGH])).to_bytes()
-        corrupted = bytearray(frame)
-        corrupted[-1] ^= 0xFF
-        encoded = cobs.encode(bytes(corrupted)) + SERIAL_TERMINATOR
+    frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, bytes([protocol.DIGITAL_HIGH])).to_bytes()
+    corrupted = bytearray(frame)
+    corrupted[-1] ^= 0xFF
+    encoded = cobs.encode(bytes(corrupted)) + SERIAL_TERMINATOR
 
-        reader = _FakeStreamReader(encoded, b"")
-        writer = _FakeStreamWriter()
+    reader = _FakeStreamReader(encoded, b"")
+    writer = _FakeStreamWriter()
 
-        async def _fake_open(*_: object, **__: object):
-            return reader, writer
+    async def _fake_open(*_: object, **__: object):
+        return reader, writer
 
-        monkeypatch.setattr(
-            "yunbridge.transport.serial._open_serial_connection_with_retry",
-            _fake_open,
-        )
+    monkeypatch.setattr(
+        "yunbridge.transport.serial._open_serial_connection_with_retry",
+        _fake_open,
+    )
 
-        task = asyncio.create_task(
-            serial_reader_task(runtime_config, state, cast(Any, service))
-        )
+    task = asyncio.create_task(
+        serial_reader_task(runtime_config, state, cast(Any, service))
+    )
 
-        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-        await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
+    await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+    await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
 
-        assert not service.received_frames
+    assert not service.received_frames
 
-        # Verify response in writer buffer
-        assert writer.buffer
-        packets = writer.buffer.split(SERIAL_TERMINATOR)
-        # Remove empty trailing packet if buffer ended with terminator
-        if not packets[-1]:
-            packets.pop()
+    # Verify response in writer buffer
+    assert writer.buffer
+    packets = writer.buffer.split(SERIAL_TERMINATOR)
+    # Remove empty trailing packet if buffer ended with terminator
+    if not packets[-1]:
+        packets.pop()
 
-        assert packets
-        decoded = cobs.decode(packets[0])
-        response_frame = Frame.from_bytes(decoded)
+    assert packets
+    decoded = cobs.decode(packets[0])
+    response_frame = Frame.from_bytes(decoded)
 
-        assert response_frame.command_id == Status.CRC_MISMATCH.value
+    assert response_frame.command_id == Status.CRC_MISMATCH.value
 
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-    asyncio.run(_run())
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
-def test_serial_reader_task_limits_packet_size(
+@pytest.mark.asyncio
+async def test_serial_reader_task_limits_packet_size(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        service = _SerialServiceStub(runtime_config, state)
+    state = create_runtime_state(runtime_config)
+    service = _SerialServiceStub(runtime_config, state)
 
-        reported: Deque[tuple[int, bytes]] = deque()
+    reported: Deque[tuple[int, bytes]] = deque()
 
-        async def _capture_send_frame(
-            self: _SerialServiceStub,
-            command_id: int,
-            payload: bytes,
-        ) -> bool:
-            reported.append((command_id, payload))
-            return True
+    async def _capture_send_frame(
+        self: _SerialServiceStub,
+        command_id: int,
+        payload: bytes,
+    ) -> bool:
+        reported.append((command_id, payload))
+        return True
 
-        service.send_frame = MethodType(_capture_send_frame, service)
+    service.send_frame = MethodType(_capture_send_frame, service)
 
-        oversized = b"\xaa" * (MAX_SERIAL_PACKET_BYTES + 16)
-        reader = _FakeStreamReader(oversized + SERIAL_TERMINATOR, b"")
-        writer = _FakeStreamWriter()
+    oversized = b"\xaa" * (MAX_SERIAL_PACKET_BYTES + 16)
+    reader = _FakeStreamReader(oversized + SERIAL_TERMINATOR, b"")
+    writer = _FakeStreamWriter()
 
-        async def _fake_open(*_: object, **__: object):
-            return reader, writer
+    async def _fake_open(*_: object, **__: object):
+        return reader, writer
 
-        monkeypatch.setattr(
-            "yunbridge.transport.serial._open_serial_connection_with_retry",
-            _fake_open,
-        )
+    monkeypatch.setattr(
+        "yunbridge.transport.serial._open_serial_connection_with_retry",
+        _fake_open,
+    )
 
-        task = asyncio.create_task(
-            serial_reader_task(runtime_config, state, cast(Any, service))
-        )
+    task = asyncio.create_task(
+        serial_reader_task(runtime_config, state, cast(Any, service))
+    )
 
-        await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-        await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
+    await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
+    await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
 
-        assert not service.received_frames
-        assert reported
-        status_id, payload = reported.pop()
-        assert status_id == Status.MALFORMED.value
-        assert payload[:2] == struct.pack(
-            protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID
-        )
+    assert not service.received_frames
+    assert reported
+    status_id, payload = reported.pop()
+    assert status_id == Status.MALFORMED.value
+    assert payload[:2] == struct.pack(
+        protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID
+    )
 
-        task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-
-    asyncio.run(_run())
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
 
 
-def test_serial_reader_task_propagates_handshake_fatal(
+@pytest.mark.asyncio
+async def test_serial_reader_task_propagates_handshake_fatal(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        service = _FatalSerialServiceStub(runtime_config, state)
+    state = create_runtime_state(runtime_config)
+    service = _FatalSerialServiceStub(runtime_config, state)
 
-        reader = _FakeStreamReader(b"")
-        writer = _FakeStreamWriter()
+    reader = _FakeStreamReader(b"")
+    writer = _FakeStreamWriter()
 
-        async def _fake_open(*_: object, **__: object):
-            return reader, writer
+    async def _fake_open(*_: object, **__: object):
+        return reader, writer
 
-        monkeypatch.setattr(
-            "yunbridge.transport.serial._open_serial_connection_with_retry",
-            _fake_open,
-        )
+    monkeypatch.setattr(
+        "yunbridge.transport.serial._open_serial_connection_with_retry",
+        _fake_open,
+    )
 
-        task = asyncio.create_task(
-            serial_reader_task(runtime_config, state, cast(Any, service))
-        )
+    task = asyncio.create_task(
+        serial_reader_task(runtime_config, state, cast(Any, service))
+    )
 
-        with pytest.raises(SerialHandshakeFatal):
-            await task
+    try:
+        await task
+    except SerialHandshakeFatal:
+        pass
+    except Exception as exc:
+        pytest.fail(f"Expected SerialHandshakeFatal, got {type(exc)}")
+    else:
+        pytest.fail("Did not raise SerialHandshakeFatal")
 
-    asyncio.run(_run())
 
-
-def test_mqtt_task_handles_incoming_message(
+@pytest.mark.asyncio
+async def test_mqtt_task_handles_incoming_message(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
-    async def _run() -> None:
-        state = create_runtime_state(runtime_config)
-        state.mqtt_topic_prefix = runtime_config.mqtt_topic
-        service = _MQTTServiceStub(state)
+    state = create_runtime_state(runtime_config)
+    state.mqtt_topic_prefix = runtime_config.mqtt_topic
+    service = _MQTTServiceStub(state)
 
-        # Mock aiomqtt Client
-        mock_client = AsyncMock()
-        mock_client.__aenter__.return_value = mock_client
-        mock_client.__aexit__.return_value = None
+    # Mock aiomqtt Client
+    mock_client = AsyncMock()
+    mock_client.__aenter__.return_value = mock_client
+    mock_client.__aexit__.return_value = None
 
-        # Mock messages iterator
-        mock_msgs_ctx = AsyncMock()
-        mock_client.messages = mock_msgs_ctx
+    # Mock messages iterator
+    mock_msgs_ctx = AsyncMock()
+    mock_client.messages = mock_msgs_ctx
 
-        # Mock iterator
-        fake_msg = MagicMock()
-        fake_msg.topic = f"{state.mqtt_topic_prefix}/console/in"
-        fake_msg.payload = b"hi"
-        fake_msg.qos = 0
-        fake_msg.retain = False
-        fake_msg.properties = None
+    # Mock iterator
+    fake_msg = MagicMock()
+    fake_msg.topic = f"{state.mqtt_topic_prefix}/console/in"
+    fake_msg.payload = b"hi"
+    fake_msg.qos = 0
+    fake_msg.retain = False
+    fake_msg.properties = None
 
-        async def msg_gen():
-            yield fake_msg
+    async def msg_gen():
+        yield fake_msg
 
-        mock_msgs_ctx.__aiter__.side_effect = msg_gen
+    mock_msgs_ctx.__aiter__.side_effect = msg_gen
 
-        monkeypatch.setattr(
-            "yunbridge.transport.mqtt.aiomqtt.Client",
-            lambda **kw: mock_client,
-        )
+    monkeypatch.setattr(
+        "yunbridge.transport.mqtt.aiomqtt.Client",
+        lambda **kw: mock_client,
+    )
 
-        task = asyncio.create_task(
-            mqtt_task(runtime_config, state, cast(Any, service), None)
-        )
+    task = asyncio.create_task(
+        mqtt_task(runtime_config, state, cast(Any, service), None)
+    )
 
-        await asyncio.wait_for(service.handled.wait(), timeout=1)
+    await asyncio.wait_for(service.handled.wait(), timeout=1)
 
-        task.cancel()
-        try:
-            await task
-        except* asyncio.CancelledError:
-            pass
-
-    asyncio.run(_run())
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass

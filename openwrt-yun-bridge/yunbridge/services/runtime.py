@@ -1,14 +1,3 @@
-"""High-level service layer for the Yun Bridge daemon.
-
-This module encapsulates the business logic that previously lived in the
-monolithic daemon.py file: command handlers for MCU frames,
-reactions to MQTT messages, filesystem helpers, and process management.
-
-By concentrating the behaviour inside BridgeService we enable the
-transport layer (serial and MQTT) to focus purely on moving bytes while
-this service operates on validated payloads.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -16,21 +5,19 @@ import json
 import logging
 import struct
 import time
-from typing import Any
 from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import replace
+from typing import Any
 
 from aiomqtt.message import Message as MQTTMessage
-from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 
 from ..config.settings import RuntimeConfig
-from ..protocol.topics import (
-    Topic,
-    parse_topic,
-    topic_path,
-)
+from ..const import TOPIC_FORBIDDEN_REASON
 from ..mqtt.messages import QueuedPublish
+from ..protocol.topics import Topic, parse_topic, topic_path
+from ..rpc import protocol
+from ..rpc.protocol import Status  # Only Status from rpc.protocol needed
+
 from ..state.context import RuntimeState
 from .components import (
     ConsoleComponent,
@@ -43,6 +30,7 @@ from .components import (
     ShellComponent,
     SystemComponent,
 )
+from .dispatcher import BridgeDispatcher
 from .handshake import (
     SerialHandshakeFatal,
     SerialHandshakeManager,
@@ -50,25 +38,39 @@ from .handshake import (
     SendFrameCallable,
     derive_serial_timing,
 )
-from .serial_flow import SerialFlowController
 from .routers import MCUHandlerRegistry, MQTTRouter
-from .dispatcher import BridgeDispatcher
+from .serial_flow import SerialFlowController
 
 logger = logging.getLogger("yunbridge.service")
 
 STATUS_VALUES = {status.value for status in Status}
 _PRE_SYNC_ALLOWED_COMMANDS = {
-    Command.CMD_LINK_SYNC_RESP.value,
-    Command.CMD_LINK_RESET_RESP.value,
+    protocol.Command.CMD_LINK_SYNC_RESP.value,
+    protocol.Command.CMD_LINK_RESET_RESP.value,
 }
-_TOPIC_FORBIDDEN_REASON = "topic-action-forbidden"
 
-_MAX_PAYLOAD_BYTES = int(MAX_PAYLOAD_SIZE)
+_MAX_PAYLOAD_BYTES = int(protocol.MAX_PAYLOAD_SIZE)
 _STATUS_PAYLOAD_WINDOW = max(0, _MAX_PAYLOAD_BYTES - 2)
 
 
 class BridgeService:
-    """Service façade orchestrating MCU and MQTT interactions."""
+    """Service façade orchestrating MCU and MQTT interactions.
+
+    This class acts as the central business logic layer for the Yun Bridge daemon,
+    decoupling the transport mechanisms (serial and MQTT) from the command
+    processing and state management. It handles:
+
+    -   Dispatching incoming MCU frames to appropriate component handlers.
+    -   Routing incoming MQTT messages to their respective handlers.
+    -   Managing the serial link handshake and flow control.
+    -   Orchestrating various components (Console, Datastore, File, Mailbox, Pin, Process, Shell, System)
+        by providing them with necessary context and a communication channel.
+    -   Managing background tasks related to the bridge's operation.
+
+    It relies on `RuntimeConfig` for configuration, `RuntimeState` for
+    managing transient and persistent state, and various component classes
+    to encapsulate specific functionalities.
+    """
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config
@@ -288,6 +290,19 @@ class BridgeService:
         *,
         reply_context: MQTTMessage | None = None,
     ) -> None:
+        """Enqueues an MQTT message for publishing.
+
+        This method adds a `QueuedPublish` message to the internal MQTT publish queue.
+        It handles optional `reply_context` to infer response topics and correlation data
+        for MQTT 5 response-request patterns. If the queue is saturated, it implements
+        a dropping strategy: the oldest message is dropped and, if possible, spooled
+        to persistent storage to prevent data loss during temporary broker unavailability.
+
+        Args:
+            message: The `QueuedPublish` object to enqueue.
+            reply_context: An optional `MQTTMessage` that triggered this publish,
+                           used to derive `ResponseTopic` and `CorrelationData` for replies.
+        """
         queue = self.state.mqtt_publish_queue
         message_to_queue = message
         if reply_context is not None:
@@ -592,6 +607,6 @@ class BridgeService:
             payload=payload,
             content_type="application/json",
             message_expiry_interval=30,
-            user_properties=(("bridge-error", _TOPIC_FORBIDDEN_REASON),),
+            user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
         )
         await self.enqueue_mqtt(message, reply_context=inbound)

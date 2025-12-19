@@ -33,7 +33,17 @@ _STATUS_PAYLOAD_WINDOW = 126  # max(0, _MAX_PAYLOAD_BYTES - 2)
 
 
 class BridgeDispatcher:
-    """Decoupled dispatch logic for MCU frames and MQTT messages."""
+    """Decoupled dispatch logic for MCU frames and MQTT messages.
+
+    This class is responsible for routing incoming MCU frames (from the Arduino)
+    and MQTT messages (from the network) to the appropriate handling components
+    or system-level functions. It acts as a central hub for command processing,
+    ensuring that each command/message is directed to the correct handler based
+    on its ID (for MCU frames) or topic (for MQTT messages).
+
+    It registers various service components and system handlers to
+    manage the interaction between the Linux side and the MCU.
+    """
 
     def __init__(
         self,

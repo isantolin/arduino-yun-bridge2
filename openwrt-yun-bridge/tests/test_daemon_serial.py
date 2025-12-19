@@ -10,7 +10,6 @@ from yunbridge.transport.serial import (
     _open_serial_connection_with_retry,
     serial_reader_task,
 )
-from yunbridge.services.runtime import SerialHandshakeFatal
 
 
 @pytest.mark.asyncio
@@ -133,7 +132,7 @@ async def test_serial_reader_task_reconnects():
 
     # Mock the reader to return EOF immediately to trigger reconnect
     mock_reader = AsyncMock()
-    mock_reader.read.return_value = b"" # Always return EOF to simulate disconnect
+    mock_reader.read.return_value = b""  # Always return EOF to simulate disconnect
 
     # StreamWriter has mixed sync/async methods
     mock_writer = MagicMock()

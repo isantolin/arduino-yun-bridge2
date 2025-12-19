@@ -353,5 +353,5 @@ async def test_mqtt_task_handles_incoming_message(
     task.cancel()
     try:
         await task
-    except asyncio.CancelledError:
+    except* asyncio.CancelledError:
         pass

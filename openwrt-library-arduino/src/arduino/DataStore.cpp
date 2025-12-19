@@ -1,7 +1,6 @@
 #include "Bridge.h"
 #include "arduino/StringUtils.h"
 #include <string.h>
-#include <algorithm>
 #include "protocol/rpc_protocol.h"
 
 using namespace rpc;
@@ -11,9 +10,9 @@ DataStoreClass::DataStoreClass()
     _pending_datastore_count(0),
     _datastore_get_handler(nullptr) {
   for (auto& key : _pending_datastore_keys) {
-    key.fill(0);
+    memset(key.data(), 0, key.size());
   }
-  _pending_datastore_key_lengths.fill(0);
+  memset(_pending_datastore_key_lengths.data(), 0, _pending_datastore_key_lengths.size());
 }
 
 void DataStoreClass::put(const char* key, const char* value) {
@@ -41,9 +40,9 @@ void DataStoreClass::put(const char* key, const char* value) {
   uint8_t* payload = Bridge.getScratchBuffer();
   
   payload[0] = static_cast<uint8_t>(key_len);
-  std::copy(key, key + key_len, payload + 1);
+  memcpy(payload + 1, key, key_len);
   payload[1 + key_len] = static_cast<uint8_t>(value_len);
-  std::copy(value, value + value_len, payload + 2 + key_len);
+  memcpy(payload + 2 + key_len, value, value_len);
 
   (void)Bridge.sendFrame(
       CommandId::CMD_DATASTORE_PUT,
@@ -61,7 +60,7 @@ void DataStoreClass::requestGet(const char* key) {
   uint8_t* payload = Bridge.getScratchBuffer();
   
   payload[0] = static_cast<uint8_t>(key_len);
-  std::copy(key, key + key_len, payload + 1);
+  memcpy(payload + 1, key, key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
     Bridge._emitStatus(StatusCode::STATUS_ERROR, "datastore_queue_full");
@@ -115,7 +114,7 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
   uint8_t slot =
       (_pending_datastore_head + _pending_datastore_count) %
       kMaxPendingDatastore;
-  std::copy(key, key + length, _pending_datastore_keys[slot].data());
+  memcpy(_pending_datastore_keys[slot].data(), key, length);
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
@@ -134,7 +133,7 @@ const char* DataStoreClass::_popPendingDatastoreKey() {
   if (length > BridgeClass::kMaxDatastoreKeyLength) {
     length = BridgeClass::kMaxDatastoreKeyLength;
   }
-  std::copy(_pending_datastore_keys[slot].data(), _pending_datastore_keys[slot].data() + length, key_buffer);
+  memcpy(key_buffer, _pending_datastore_keys[slot].data(), length);
   key_buffer[length] = '\0';
   _pending_datastore_head =
       (_pending_datastore_head + 1) % kMaxPendingDatastore;

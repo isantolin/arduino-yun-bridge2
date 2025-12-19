@@ -1,7 +1,6 @@
 #include "Bridge.h"
 #include "arduino/StringUtils.h"
 #include <string.h>
-#include <algorithm>
 #include "protocol/rpc_protocol.h"
 
 using namespace rpc;
@@ -23,10 +22,10 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
   uint8_t* payload = Bridge.getScratchBuffer();
   
   payload[0] = static_cast<uint8_t>(path_len);
-  std::copy(filePath, filePath + path_len, payload + 1);
+  memcpy(payload + 1, filePath, path_len);
   write_u16_be(payload + 1 + path_len, static_cast<uint16_t>(length));
   if (length > 0) {
-    std::copy(data, data + length, payload + 3 + path_len);
+    memcpy(payload + 3 + path_len, data, length);
   }
 
   (void)Bridge.sendFrame(
@@ -45,7 +44,7 @@ void FileSystemClass::remove(const char* filePath) {
   uint8_t* payload = Bridge.getScratchBuffer();
   
   payload[0] = static_cast<uint8_t>(path_len);
-  std::copy(filePath, filePath + path_len, payload + 1);
+  memcpy(payload + 1, filePath, path_len);
   (void)Bridge.sendFrame(
       CommandId::CMD_FILE_REMOVE,
       payload, static_cast<uint16_t>(path_len + 1));
@@ -62,7 +61,7 @@ void FileSystemClass::read(const char* filePath) {
 
   uint8_t* payload = Bridge.getScratchBuffer();
   payload[0] = static_cast<uint8_t>(len);
-  std::copy(filePath, filePath + len, payload + 1);
+  memcpy(payload + 1, filePath, len);
   const uint16_t total = static_cast<uint16_t>(
       len + 1);
   (void)Bridge.sendFrame(CommandId::CMD_FILE_READ, payload, total);

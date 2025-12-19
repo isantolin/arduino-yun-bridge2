@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import collections
+import json
 import logging
 from typing import Deque
 
@@ -113,8 +114,6 @@ class SystemComponent:
             "last_command_id": last_command_id,
             "last_send_millis": last_send_millis,
         }
-
-        import json
 
         payload_json = json.dumps(data).encode("utf-8")
 

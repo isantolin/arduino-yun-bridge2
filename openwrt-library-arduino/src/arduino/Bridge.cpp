@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <algorithm> // Added for std::copy, std::fill
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -167,7 +168,7 @@ void BridgeClass::begin(
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
-    memset(out_tag, 0, kHandshakeTagSize);
+    std::fill(out_tag, out_tag + kHandshakeTagSize, 0);
     return;
   }
 
@@ -178,7 +179,7 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
-  memcpy(out_tag, digest, kHandshakeTagSize);
+  std::copy(digest, digest + kHandshakeTagSize, out_tag);
 }
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
@@ -323,11 +324,11 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
         uint8_t* response = _scratch_payload;
         if (payload_data) {
-          memcpy(response, payload_data, nonce_length);
+          std::copy(payload_data, payload_data + nonce_length, response);
           if (has_secret) {
             uint8_t tag[kHandshakeTagSize];
             _computeHandshakeTag(payload_data, nonce_length, tag);
-            memcpy(&response[nonce_length], tag, kHandshakeTagSize);
+            std::copy(tag, tag + kHandshakeTagSize, response + nonce_length);
           }
           (void)sendFrame(CommandId::CMD_LINK_SYNC_RESP, response, response_length);
           _synchronized = true;
@@ -748,7 +749,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
+    std::copy(payload, payload + payload_len, _pending_tx_frames[tail].payload.data());
   }
   _pending_tx_count++;
   return true;

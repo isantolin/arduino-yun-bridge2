@@ -10,7 +10,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <algorithm> // Added for std::copy, std::fill
 #include <Crypto.h>
 #include <SHA256.h>
 
@@ -103,7 +102,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
   for (auto& frame : _pending_tx_frames) {
     frame.command_id = 0;
     frame.payload_length = 0;
-    frame.payload.fill(0);
+    memset(frame.payload.data(), 0, frame.payload.size());
   }
 }
 
@@ -134,7 +133,7 @@ BridgeClass::BridgeClass(Stream& stream)
   for (auto& frame : _pending_tx_frames) {
     frame.command_id = 0;
     frame.payload_length = 0;
-    frame.payload.fill(0);
+    memset(frame.payload.data(), 0, frame.payload.size());
   }
 }
 
@@ -168,7 +167,7 @@ void BridgeClass::begin(
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
-    std::fill(out_tag, out_tag + kHandshakeTagSize, 0);
+    memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
 
@@ -179,7 +178,7 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
-  std::copy(digest, digest + kHandshakeTagSize, out_tag);
+  memcpy(out_tag, digest, kHandshakeTagSize);
 }
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
@@ -324,11 +323,11 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
         uint8_t* response = _scratch_payload;
         if (payload_data) {
-          std::copy(payload_data, payload_data + nonce_length, response);
+          memcpy(response, payload_data, nonce_length);
           if (has_secret) {
             uint8_t tag[kHandshakeTagSize];
             _computeHandshakeTag(payload_data, nonce_length, tag);
-            std::copy(tag, tag + kHandshakeTagSize, response + nonce_length);
+            memcpy(response + nonce_length, tag, kHandshakeTagSize);
           }
           (void)sendFrame(CommandId::CMD_LINK_SYNC_RESP, response, response_length);
           _synchronized = true;
@@ -749,7 +748,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    std::copy(payload, payload + payload_len, _pending_tx_frames[tail].payload.data());
+    memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
   }
   _pending_tx_count++;
   return true;

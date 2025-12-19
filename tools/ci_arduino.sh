@@ -23,7 +23,7 @@ arduino-cli core install arduino:avr
 
 # Install dependencies
 echo "Installing libraries..."
-arduino-cli lib install PacketSerial CRC32 Crypto ArduinoSTL
+arduino-cli lib install PacketSerial CRC32 Crypto
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/openwrt-library-arduino"

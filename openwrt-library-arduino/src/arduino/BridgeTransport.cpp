@@ -10,8 +10,8 @@ BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
       _builder(),
       _flow_paused(false),
       _last_cobs_len(0) {
-        _raw_frame_buffer.fill(0);
-        _last_cobs_frame.fill(0);
+        memset(_raw_frame_buffer.data(), 0, _raw_frame_buffer.size());
+        memset(_last_cobs_frame.data(), 0, _last_cobs_frame.size());
       }
 
 void BridgeTransport::begin(unsigned long baudrate) {

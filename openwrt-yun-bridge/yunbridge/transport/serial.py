@@ -184,7 +184,7 @@ async def _open_serial_connection_with_retry(
                         baudrate=target_baud,
                         exclusive=True,
                     )
-                    
+
                     # Re-apply raw mode
                     try:
                         transport = cast(Any, writer.transport)

@@ -54,6 +54,32 @@ def _coerce_packet(candidate: BinaryPacket) -> bytes:
     return bytes(candidate)
 
 
+def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
+    """Encapsulate frame creation and COBS encoding."""
+    raw_frame = Frame(command_id, payload).to_bytes()
+    return cobs.encode(raw_frame) + SERIAL_TERMINATOR
+
+
+def _ensure_raw_mode(serial_obj: Any, port_name: str) -> None:
+    """Force raw mode on the serial file descriptor if possible."""
+    if not (termios and tty):
+        return
+
+    try:
+        if hasattr(serial_obj, "fd") and serial_obj.fd is not None:
+            # tty.setraw disables ECHO, ICANON, ISIG, and sets CS8
+            tty.setraw(serial_obj.fd)
+
+            # Explicitly ensure ECHO is off
+            attrs = termios.tcgetattr(serial_obj.fd)
+            attrs[3] = attrs[3] & ~termios.ECHO
+            termios.tcsetattr(serial_obj.fd, termios.TCSANOW, attrs)
+
+            logger.debug("Forced raw mode (no echo) on %s", port_name)
+    except Exception as e:
+        logger.warning("Failed to force raw mode on serial port: %s", e)
+
+
 async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     logger.warning(
         "Serial disconnected; dropping frame 0x%02X",
@@ -72,11 +98,7 @@ async def _negotiate_baudrate(
 
     # Construct CMD_SET_BAUDRATE frame
     payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
-    frame = Frame(
-        command_id=Command.CMD_SET_BAUDRATE,
-        payload=payload,
-    )
-    encoded = cobs.encode(frame.to_bytes()) + SERIAL_TERMINATOR
+    encoded = _encode_frame_bytes(Command.CMD_SET_BAUDRATE, payload)
 
     try:
         writer.write(encoded)
@@ -139,24 +161,13 @@ async def _open_serial_connection_with_retry(
                 exclusive=True,
             )
 
-            # Force raw mode to disable ECHO and other processing that might confuse the protocol
-            if termios and tty:
-                try:
-                    transport = cast(Any, writer.transport)
-                    if hasattr(transport, "serial"):
-                        ser = transport.serial
-                        if hasattr(ser, "fd") and ser.fd is not None:
-                            # tty.setraw disables ECHO, ICANON, ISIG, and sets CS8
-                            tty.setraw(ser.fd)
-
-                            # Explicitly ensure ECHO is off (setraw should do it, but be sure)
-                            attrs = termios.tcgetattr(ser.fd)
-                            attrs[3] = attrs[3] & ~termios.ECHO
-                            termios.tcsetattr(ser.fd, termios.TCSANOW, attrs)
-
-                            logger.debug("Forced raw mode (no echo) on %s", config.serial_port)
-                except Exception as e:
-                    logger.warning("Failed to force raw mode on serial port: %s", e)
+            # Force raw mode
+            try:
+                transport = cast(Any, writer.transport)
+                if hasattr(transport, "serial"):
+                    _ensure_raw_mode(transport.serial, config.serial_port)
+            except Exception as e:
+                logger.warning("Failed to access serial transport for raw mode: %s", e)
 
             if negotiation_needed:
                 success = await _negotiate_baudrate(reader, writer, target_baud)
@@ -173,22 +184,14 @@ async def _open_serial_connection_with_retry(
                         baudrate=target_baud,
                         exclusive=True,
                     )
-                    # Re-apply raw mode (omitted for brevity, but ideally should be a helper)
-                    # For now, we assume the previous raw mode setting persists or we re-apply it.
-                    # Actually, closing and reopening might reset termios.
-                    # So we should re-apply raw mode.
-                    if termios and tty:
-                        try:
-                            transport = cast(Any, writer.transport)
-                            if hasattr(transport, "serial"):
-                                ser = transport.serial
-                                if hasattr(ser, "fd") and ser.fd is not None:
-                                    tty.setraw(ser.fd)
-                                    attrs = termios.tcgetattr(ser.fd)
-                                    attrs[3] = attrs[3] & ~termios.ECHO
-                                    termios.tcsetattr(ser.fd, termios.TCSANOW, attrs)
-                        except Exception:
-                            pass
+                    
+                    # Re-apply raw mode
+                    try:
+                        transport = cast(Any, writer.transport)
+                        if hasattr(transport, "serial"):
+                            _ensure_raw_mode(transport.serial, config.serial_port)
+                    except Exception:
+                        pass
                 else:
                     logger.warning("Negotiation failed; falling back to safe baudrate %d", initial_baud)
                     # We continue with initial_baud (safe)
@@ -359,8 +362,7 @@ class SerialTransport:
             return False
 
         try:
-            raw_frame = Frame(command_id, payload).to_bytes()
-            encoded_frame = cobs.encode(raw_frame) + SERIAL_TERMINATOR
+            encoded_frame = _encode_frame_bytes(command_id, payload)
             self.writer.write(encoded_frame)
             await self.writer.drain()
 
@@ -472,18 +474,8 @@ class SerialTransport:
             logger.exception("Unhandled error processing MCU frame")
 
 
-async def serial_reader_task(
-    config: RuntimeConfig,
-    state: RuntimeState,
-    service: BridgeService,
-) -> None:
-    """Legacy wrapper for SerialTransport."""
-    transport = SerialTransport(config, state, service)
-    await transport.run()
-
-
 __all__ = [
     "MAX_SERIAL_PACKET_BYTES",
-    "serial_reader_task",
+    "SerialTransport",
     "serial_sender_not_ready",
 ]

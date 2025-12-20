@@ -23,9 +23,9 @@ from yunbridge.services.task_supervisor import SupervisedTaskSpec, supervise_tas
 from yunbridge.state.context import create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.transport import (
+    SerialTransport,
     build_mqtt_tls_context,
     mqtt_task,
-    serial_reader_task,
     serial_sender_not_ready,
 )
 from yunbridge.watchdog import WatchdogKeepalive
@@ -48,7 +48,8 @@ async def main_async(config: RuntimeConfig) -> None:
         raise RuntimeError(f"TLS configuration invalid: {exc}") from exc
 
     async def _serial_runner() -> None:
-        await serial_reader_task(config, state, service)
+        transport = SerialTransport(config, state, service)
+        await transport.run()
 
     async def _mqtt_runner() -> None:
         await mqtt_task(config, state, service, tls_context)

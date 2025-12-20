@@ -8,7 +8,7 @@ import serial
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.transport.serial import (
     _open_serial_connection_with_retry,
-    serial_reader_task,
+    SerialTransport,
 )
 
 
@@ -36,11 +36,16 @@ async def test_open_serial_connection_retry_success():
     )
 
     # Mock OPEN_SERIAL_CONNECTION to fail twice then succeed
+    success_reader = AsyncMock()
+    success_writer = AsyncMock()
+    # Prevent _ensure_raw_mode from receiving an AsyncMock as fd
+    success_writer.transport.serial.fd = None
+
     mock_connect = AsyncMock()
     mock_connect.side_effect = [
         serial.SerialException("Fail 1"),
         OSError("Fail 2"),
-        (AsyncMock(), AsyncMock()),  # Success
+        (success_reader, success_writer),  # Success
     ]
 
     with (
@@ -153,8 +158,9 @@ async def test_serial_reader_task_reconnects():
         "yunbridge.transport.serial._open_serial_connection_with_retry", mock_connect
     ), patch("asyncio.sleep", mock_sleep):
         # Run the task. It will connect, disconnect, sleep, reconnect, disconnect, sleep (BOOM)
+        transport = SerialTransport(config, state, service)
         try:
-            await serial_reader_task(config, state, service)
+            await transport.run()
         except RuntimeError as e:
             assert str(e) == "Break Loop"
 

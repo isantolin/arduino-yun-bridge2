@@ -109,7 +109,7 @@ read_swap_total_with_fallback() {
 
 install_dependency() {
     pkg="$1"
-    if opkg list-installed "$pkg" >/dev/null 2>&1; then
+    if opkg list-installed "$pkg" | grep -q "^$pkg"; then
         echo "[INFO] Package $pkg already installed."
         return 0
     fi
@@ -704,6 +704,7 @@ fi
 
 #  Install essential packages with local fallbacks when feeds lack them.
 ESSENTIAL_PACKAGES="\
+python3 \
 python3-asyncio \
 python3-uci \
 python3-pyserial \

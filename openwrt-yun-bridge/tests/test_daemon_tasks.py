@@ -23,7 +23,7 @@ from yunbridge.rpc.frame import Frame
 from yunbridge.transport.mqtt import mqtt_task
 from yunbridge.transport.serial import (
     MAX_SERIAL_PACKET_BYTES,
-    serial_reader_task,
+    SerialTransport,
 )
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, Status
@@ -155,9 +155,8 @@ async def test_serial_reader_task_processes_frame(
         _fake_open,
     )
 
-    task = asyncio.create_task(
-        serial_reader_task(runtime_config, state, cast(Any, service))
-    )
+    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    task = asyncio.create_task(transport.run())
 
     await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
     await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
@@ -199,9 +198,8 @@ async def test_serial_reader_task_emits_crc_mismatch(
         _fake_open,
     )
 
-    task = asyncio.create_task(
-        serial_reader_task(runtime_config, state, cast(Any, service))
-    )
+    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    task = asyncio.create_task(transport.run())
 
     await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
     await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
@@ -257,9 +255,8 @@ async def test_serial_reader_task_limits_packet_size(
         _fake_open,
     )
 
-    task = asyncio.create_task(
-        serial_reader_task(runtime_config, state, cast(Any, service))
-    )
+    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    task = asyncio.create_task(transport.run())
 
     await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
     await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
@@ -295,9 +292,8 @@ async def test_serial_reader_task_propagates_handshake_fatal(
         _fake_open,
     )
 
-    task = asyncio.create_task(
-        serial_reader_task(runtime_config, state, cast(Any, service))
-    )
+    transport = SerialTransport(runtime_config, state, cast(Any, service))
+    task = asyncio.create_task(transport.run())
 
     try:
         await task

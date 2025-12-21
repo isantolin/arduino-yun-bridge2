@@ -156,7 +156,7 @@ async def test_handle_run_async_failure(
     with patch.object(
         ProcessComponent, "start_async", new_callable=AsyncMock
     ) as mock_start:
-        mock_start.return_value = rpc_protocol.UNKNOWN_COMMAND_ID
+        mock_start.return_value = rpc_protocol.INVALID_ID_SENTINEL
 
         await process_component.handle_run_async(b"fail")
 

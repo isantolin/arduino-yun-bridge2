@@ -9,7 +9,7 @@ from .rpc import protocol as rpc_protocol
 from .rpc.protocol import Status
 
 
-SERIAL_TERMINATOR: bytes = rpc_protocol.SERIAL_TERMINATOR
+FRAME_DELIMITER: bytes = rpc_protocol.FRAME_DELIMITER
 STATUS_FILE_PATH: str = "/tmp/yunbridge_status.json"
 ALLOWED_COMMAND_WILDCARD: str = "*"
 MQTT_TLS_MIN_VERSION: TLSVersion = TLSVersion.TLSv1_2
@@ -96,7 +96,7 @@ SUPERVISOR_DEFAULT_MAX_BACKOFF: float = 30.0
 TOPIC_FORBIDDEN_REASON: str = "topic-action-forbidden"
 
 __all__ = [
-    "SERIAL_TERMINATOR",
+    "FRAME_DELIMITER",
     "STATUS_FILE_PATH",
     "ALLOWED_COMMAND_WILDCARD",
     "MQTT_TLS_MIN_VERSION",

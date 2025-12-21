@@ -64,13 +64,29 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = {consts['max_pending_tx_frames']};\n"
         )
-    if "unknown_command_id" in consts:
+    if "invalid_id_sentinel" in consts:
         out.write(
-            f"constexpr uint16_t RPC_UNKNOWN_COMMAND_ID = {consts['unknown_command_id']};\n"
+            f"constexpr uint16_t RPC_INVALID_ID_SENTINEL = {consts['invalid_id_sentinel']};\n"
         )
-    if "serial_terminator" in consts:
+    if "response_offset" in consts:
         out.write(
-            f"constexpr uint8_t RPC_SERIAL_TERMINATOR = {consts['serial_terminator']};\n"
+            f"constexpr uint8_t RPC_RESPONSE_OFFSET = {consts['response_offset']};\n"
+        )
+    if "uint8_mask" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_UINT8_MASK = {consts['uint8_mask']};\n"
+        )
+    if "process_default_exit_code" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = {consts['process_default_exit_code']};\n"
+        )
+    if "crc32_mask" in consts:
+        out.write(
+            f"constexpr uint32_t RPC_CRC32_MASK = {consts['crc32_mask']};\n"
+        )
+    if "frame_delimiter" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_FRAME_DELIMITER = {consts['frame_delimiter']};\n"
         )
     if "digital_low" in consts:
         out.write(
@@ -159,13 +175,29 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"MAX_PENDING_TX_FRAMES: Final[int] = {consts['max_pending_tx_frames']}\n"
         )
-    if "unknown_command_id" in consts:
+    if "invalid_id_sentinel" in consts:
         out.write(
-            f"UNKNOWN_COMMAND_ID: Final[int] = {consts['unknown_command_id']}\n"
+            f"INVALID_ID_SENTINEL: Final[int] = {consts['invalid_id_sentinel']}\n"
         )
-    if "serial_terminator" in consts:
+    if "response_offset" in consts:
         out.write(
-            f"SERIAL_TERMINATOR: Final[bytes] = bytes([{consts['serial_terminator']}])\n"
+            f"RESPONSE_OFFSET: Final[int] = {consts['response_offset']}\n"
+        )
+    if "uint8_mask" in consts:
+        out.write(
+            f"UINT8_MASK: Final[int] = {consts['uint8_mask']}\n"
+        )
+    if "process_default_exit_code" in consts:
+        out.write(
+            f"PROCESS_DEFAULT_EXIT_CODE: Final[int] = {consts['process_default_exit_code']}\n"
+        )
+    if "crc32_mask" in consts:
+        out.write(
+            f"CRC32_MASK: Final[int] = {consts['crc32_mask']}\n"
+        )
+    if "frame_delimiter" in consts:
+        out.write(
+            f"FRAME_DELIMITER: Final[bytes] = bytes([{consts['frame_delimiter']}])\n"
         )
     if "digital_low" in consts:
         out.write(

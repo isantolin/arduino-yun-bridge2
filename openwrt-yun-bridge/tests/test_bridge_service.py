@@ -1467,7 +1467,7 @@ def test_process_run_async_failure_emits_error(
         service.register_serial_sender(fake_sender)
 
         async def failing_start_async(self: ProcessComponent, command: str) -> int:
-            return rpc_protocol.UNKNOWN_COMMAND_ID
+            return rpc_protocol.INVALID_ID_SENTINEL
 
         monkeypatch.setattr(
             ProcessComponent,

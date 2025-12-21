@@ -18,7 +18,7 @@ import serial_asyncio
 from cobs import cobs
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.const import SERIAL_TERMINATOR
+from yunbridge.const import FRAME_DELIMITER
 from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status
@@ -57,7 +57,7 @@ def _coerce_packet(candidate: BinaryPacket) -> bytes:
 def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
     """Encapsulate frame creation and COBS encoding."""
     raw_frame = Frame(command_id, payload).to_bytes()
-    return cobs.encode(raw_frame) + SERIAL_TERMINATOR
+    return cobs.encode(raw_frame) + FRAME_DELIMITER
 
 
 def _ensure_raw_mode(serial_obj: Any, port_name: str) -> None:
@@ -106,7 +106,7 @@ async def _negotiate_baudrate(
 
         # Wait for ACK (CMD_SET_BAUDRATE_RESP)
         # We expect a quick response.
-        response_data = await asyncio.wait_for(reader.readuntil(SERIAL_TERMINATOR), timeout=2.0)
+        response_data = await asyncio.wait_for(reader.readuntil(FRAME_DELIMITER), timeout=2.0)
 
         # Decode and verify
         decoded = cobs.decode(response_data[:-1])
@@ -323,7 +323,7 @@ class SerialTransport:
                 logger.warning("Serial stream ended; reconnecting.")
                 break
 
-            if byte == SERIAL_TERMINATOR:
+            if byte == FRAME_DELIMITER:
                 if not buffer:
                     continue
                 encoded_packet = bytes(buffer)
@@ -340,7 +340,7 @@ class SerialTransport:
                         MAX_SERIAL_PACKET_BYTES,
                     )
                     payload = (
-                        struct.pack(protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID)
+                        struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL)
                         + snapshot
                     )
                     try:
@@ -397,7 +397,7 @@ class SerialTransport:
             )
             self.state.record_serial_decode_error()
             payload = struct.pack(
-                protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID
+                protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL
             )
             try:
                 await self.service.send_frame(Status.MALFORMED.value, payload)
@@ -417,7 +417,7 @@ class SerialTransport:
                 len(packet_bytes),
             )
             if logger.isEnabledFor(logging.DEBUG):
-                appended = packet_bytes + SERIAL_TERMINATOR
+                appended = packet_bytes + FRAME_DELIMITER
                 human_hex = " ".join(f"{byte:02x}" for byte in appended)
                 logger.debug(
                     "Decode error raw bytes (len=%d): %s",
@@ -427,7 +427,7 @@ class SerialTransport:
             self.state.record_serial_decode_error()
             truncated = packet_bytes[:32]
             payload = (
-                struct.pack(protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID)
+                struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL)
                 + truncated
             )
             try:
@@ -451,7 +451,7 @@ class SerialTransport:
             if "crc mismatch" in str(exc).lower():
                 status = Status.CRC_MISMATCH
                 self.state.record_serial_crc_error()
-            command_hint = protocol.UNKNOWN_COMMAND_ID
+            command_hint = protocol.INVALID_ID_SENTINEL
             if len(raw_frame) >= protocol.CRC_COVERED_HEADER_SIZE:
                 _, _, command_hint = struct.unpack(
                     protocol.CRC_COVERED_HEADER_FORMAT,

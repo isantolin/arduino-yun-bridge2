@@ -13,8 +13,12 @@ MAX_DATASTORE_KEY_LENGTH: Final[int] = 32
 DEFAULT_ACK_TIMEOUT_MS: Final[int] = 200
 DEFAULT_RETRY_LIMIT: Final[int] = 5
 MAX_PENDING_TX_FRAMES: Final[int] = 2
-UNKNOWN_COMMAND_ID: Final[int] = 65535
-SERIAL_TERMINATOR: Final[bytes] = bytes([0])
+INVALID_ID_SENTINEL: Final[int] = 65535
+RESPONSE_OFFSET: Final[int] = 128
+UINT8_MASK: Final[int] = 255
+PROCESS_DEFAULT_EXIT_CODE: Final[int] = 255
+CRC32_MASK: Final[int] = 4294967295
+FRAME_DELIMITER: Final[bytes] = bytes([0])
 DIGITAL_LOW: Final[int] = 0
 DIGITAL_HIGH: Final[int] = 1
 

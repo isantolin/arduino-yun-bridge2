@@ -19,7 +19,7 @@ import serial
 from cobs import cobs
 from yunbridge.const import (
     DEFAULT_SERIAL_BAUD,
-    SERIAL_TERMINATOR,
+    FRAME_DELIMITER,
 )
 from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.frame import Frame
@@ -106,7 +106,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
     crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE :], "big")
     encoded_body = cobs.encode(raw_frame)
-    encoded_packet = encoded_body + SERIAL_TERMINATOR
+    encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
         command_id=command_id,
         command_name=_name_for_command(command_id),
@@ -143,7 +143,7 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
         chunk = device.read(1)
         if not chunk:
             continue
-        if chunk == SERIAL_TERMINATOR:
+        if chunk == FRAME_DELIMITER:
             if buffer:
                 return bytes(buffer)
             continue

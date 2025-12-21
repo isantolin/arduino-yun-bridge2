@@ -9,6 +9,7 @@ import struct
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
+    MAX_PAYLOAD_SIZE,
     UINT8_MASK,
     Command,
     Status,

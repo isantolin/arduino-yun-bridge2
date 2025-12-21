@@ -18,7 +18,7 @@ from aiomqtt.message import Message as MQTTMessage
 from cobs import cobs
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.const import SERIAL_TERMINATOR
+from yunbridge.const import FRAME_DELIMITER
 from yunbridge.rpc.frame import Frame
 from yunbridge.transport.mqtt import mqtt_task
 from yunbridge.transport.serial import (
@@ -142,7 +142,7 @@ async def test_serial_reader_task_processes_frame(
 
     payload = bytes([protocol.DIGITAL_HIGH])
     frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, payload).to_bytes()
-    encoded = cobs.encode(frame) + SERIAL_TERMINATOR
+    encoded = cobs.encode(frame) + FRAME_DELIMITER
 
     reader = _FakeStreamReader(encoded, b"")
     writer = _FakeStreamWriter()
@@ -183,9 +183,9 @@ async def test_serial_reader_task_emits_crc_mismatch(
     service = _SerialServiceStub(runtime_config, state)
 
     frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, bytes([protocol.DIGITAL_HIGH])).to_bytes()
-    corrupted = bytearray(frame)
-    corrupted[-1] ^= 0xFF
-    encoded = cobs.encode(bytes(corrupted)) + SERIAL_TERMINATOR
+    corrupted = bytearray(cobs.encode(frame))
+    corrupted[0] = 0xFF  # Invalid COBS code
+    encoded = cobs.encode(bytes(corrupted)) + FRAME_DELIMITER
 
     reader = _FakeStreamReader(encoded, b"")
     writer = _FakeStreamWriter()
@@ -208,7 +208,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
     # Verify response in writer buffer
     assert writer.buffer
-    packets = writer.buffer.split(SERIAL_TERMINATOR)
+    packets = writer.buffer.split(FRAME_DELIMITER)
     # Remove empty trailing packet if buffer ended with terminator
     if not packets[-1]:
         packets.pop()
@@ -244,7 +244,8 @@ async def test_serial_reader_task_limits_packet_size(
     service.send_frame = MethodType(_capture_send_frame, service)
 
     oversized = b"\xaa" * (MAX_SERIAL_PACKET_BYTES + 16)
-    reader = _FakeStreamReader(oversized + SERIAL_TERMINATOR, b"")
+    # reader will produce oversized content then a terminator
+    reader = _FakeStreamReader(oversized + FRAME_DELIMITER, b"")
     writer = _FakeStreamWriter()
 
     async def _fake_open(*_: object, **__: object):
@@ -266,7 +267,7 @@ async def test_serial_reader_task_limits_packet_size(
     status_id, payload = reported.pop()
     assert status_id == Status.MALFORMED.value
     assert payload[:2] == struct.pack(
-        protocol.UINT16_FORMAT, protocol.UNKNOWN_COMMAND_ID
+        protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL
     )
 
     task.cancel()

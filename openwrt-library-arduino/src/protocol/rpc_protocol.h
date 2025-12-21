@@ -21,8 +21,12 @@ constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = 32;
 constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = 200;
 constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = 5;
 constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = 2;
-constexpr uint16_t RPC_UNKNOWN_COMMAND_ID = 65535;
-constexpr uint8_t RPC_SERIAL_TERMINATOR = 0;
+constexpr uint16_t RPC_INVALID_ID_SENTINEL = 65535;
+constexpr uint8_t RPC_RESPONSE_OFFSET = 128;
+constexpr uint8_t RPC_UINT8_MASK = 255;
+constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = 255;
+constexpr uint32_t RPC_CRC32_MASK = 4294967295;
+constexpr uint8_t RPC_FRAME_DELIMITER = 0;
 constexpr uint8_t RPC_DIGITAL_LOW = 0;
 constexpr uint8_t RPC_DIGITAL_HIGH = 1;
 

@@ -53,13 +53,13 @@ class FileComponent:
             cursor = 1 + path_len
             data_len = struct.unpack(UINT16_FORMAT, payload[cursor : cursor + 2])[0]
             cursor += 2
-            
+
             if len(payload) < cursor + data_len:
                 return False
-                
+
             data = payload[cursor : cursor + data_len]
             relative_path = path_bytes.decode("utf-8", errors="ignore")
-            
+
             target_path = self._get_safe_path(relative_path)
             if not target_path:
                 logger.warning("Blocked unsafe file write path: %s", relative_path)
@@ -79,7 +79,7 @@ class FileComponent:
             # Write async
             async with aiofiles.open(target_path, "wb") as f:
                 await f.write(data)
-                
+
             logger.debug("Wrote %d bytes to %s", len(data), target_path)
             return True
 
@@ -100,14 +100,14 @@ class FileComponent:
             path_len = payload[0]
             if len(payload) < 1 + path_len:
                 return False
-                
+
             path_str = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
             target_path = self._get_safe_path(path_str)
-            
+
             if target_path and target_path.exists() and target_path.is_file():
                 os.remove(target_path)
                 logger.debug("Removed file %s", target_path)
-            
+
             return True
         except Exception:
             logger.exception("Error handling CMD_FILE_REMOVE")
@@ -131,7 +131,7 @@ class FileComponent:
     async def _handle_mqtt_write(self, segments: list[str], payload: bytes) -> None:
         if not segments:
             return
-        
+
         rel_path = "/".join(segments)
         target_path = self._get_safe_path(rel_path)
         if not target_path:
@@ -157,21 +157,21 @@ class FileComponent:
     async def _handle_mqtt_read(self, segments: list[str]) -> None:
         if not segments:
             return
-            
+
         rel_path = "/".join(segments)
         target_path = self._get_safe_path(rel_path)
-        
+
         if not target_path or not target_path.exists() or not target_path.is_file():
             return
 
         try:
             async with aiofiles.open(target_path, "rb") as f:
                 content = await f.read()
-            
+
             # Limit read size for MQTT
             if len(content) > self.write_max_bytes:
                 content = content[:self.write_max_bytes]
-            
+
             response_topic = f"{Topic.FILE}/read/{rel_path}"
             await self.publish_mqtt(response_topic, content, False)
         except Exception as e:
@@ -180,10 +180,10 @@ class FileComponent:
     async def _handle_mqtt_remove(self, segments: list[str]) -> None:
         if not segments:
             return
-            
+
         rel_path = "/".join(segments)
         target_path = self._get_safe_path(rel_path)
-        
+
         if target_path and target_path.exists():
             try:
                 if target_path.is_dir():
@@ -200,7 +200,7 @@ class FileComponent:
         clean_rel = relative_path.lstrip("/\\")
         if not clean_rel:
             return None
-            
+
         try:
             candidate = (self.root / clean_rel).resolve()
             if not str(candidate).startswith(str(self.root)):
@@ -213,7 +213,7 @@ class FileComponent:
         """Check if adding bytes would exceed quota."""
         if self.storage_quota_bytes <= 0:
             return True
-            
+
         current_usage = self._calculate_usage()
         return (current_usage + pending_bytes) <= self.storage_quota_bytes
 

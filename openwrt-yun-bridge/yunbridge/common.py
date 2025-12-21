@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from typing import (
-    Any,
     Final,
     TypeVar,
-    cast,
     TYPE_CHECKING,
 )
 

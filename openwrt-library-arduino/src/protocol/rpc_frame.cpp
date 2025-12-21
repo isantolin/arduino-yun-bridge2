@@ -52,6 +52,9 @@ FrameParser::FrameParser() : _last_error(Error::NONE) {
 void FrameParser::reset() {
   _rx_buffer_ptr = 0;
   _overflow_detected = false;
+  // [SECURITY] Secure Wipe: Limpiar residuos de frames anteriores para evitar data leakage
+  // en caso de errores de puntero. Costo mínimo en RAM, ganancia alta en seguridad.
+  memset(_rx_buffer, 0, sizeof(_rx_buffer));
 }
 
 bool FrameParser::overflowed() const { return _overflow_detected; }

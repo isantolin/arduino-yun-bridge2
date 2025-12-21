@@ -56,6 +56,10 @@ extern "C" char __heap_start;
 extern "C" char* __brkval;
 #endif
 
+// [HARDENING] Variables estáticas para gestión no bloqueante del cambio de baudrate
+static uint32_t s_pending_baudrate = 0;
+static unsigned long s_baudrate_change_timestamp = 0;
+
 uint16_t getFreeMemory() {
 #if defined(ARDUINO_ARCH_AVR)
   char stack_top;
@@ -220,6 +224,14 @@ void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_f
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
+// [HARDENING] Máquina de estados para cambio de baudrate NO BLOQUEANTE
+  if (s_pending_baudrate > 0) {
+    if (millis() - s_baudrate_change_timestamp > 50) {
+      _transport.setBaudrate(s_pending_baudrate);
+      s_pending_baudrate = 0;
+    }
+  }
+
 #if defined(ARDUINO_ARCH_AVR)
   if (kBridgeEnableWatchdog) {
     wdt_reset();
@@ -301,11 +313,14 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
     case CommandId::CMD_SET_BAUDRATE:
       if (payload_length == 4) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
-        // Send ACK at current baudrate
+        // [OPTIMIZATION] Enviar ACK y programar cambio diferido sin bloquear la CPU
         (void)sendFrame(CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         _transport.flush();
-        delay(50); // Give time for the ACK to leave the UART buffer
-        _transport.setBaudrate(new_baud);
+        
+        // Iniciamos el temporizador para cambiar la velocidad en el próximo ciclo process()
+        // dando tiempo a que el ACK salga físicamente del UART.
+        s_pending_baudrate = new_baud;
+        s_baudrate_change_timestamp = millis();
       }
       break;
     case CommandId::CMD_LINK_SYNC:

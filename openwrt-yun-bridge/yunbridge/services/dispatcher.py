@@ -14,7 +14,8 @@ from yunbridge.protocol.topics import Topic, TopicRoute
 from .routers import MCUHandlerRegistry, MQTTRouter
 
 if TYPE_CHECKING:
-    from aiomqtt.message import Message as MQTTMessage
+    # [FIX] Pylance: Simplificamos import para evitar reportMissingModuleSource
+    from aiomqtt import Message as MQTTMessage
     from .components import (
         ConsoleComponent,
         DatastoreComponent,
@@ -166,12 +167,21 @@ class BridgeDispatcher:
             self.mcu_registry.register(status.value, status_handler_factory(status))
 
     async def dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
+        """
+        Route an incoming frame from the MCU to the appropriate registered handler.
+        
+        This method acts as a Firewall/Router. It enforces pre-sync validation
+        and wraps handler execution in a safety try/except block to prevent
+        service crashes due to component failures.
+        """
+        # 1. Security Check: Link Synchronization
         if not self._is_frame_allowed_pre_sync(command_id):
             logger.warning(
-                "Rejecting MCU frame 0x%02X before link synchronisation",
+                "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
                 command_id,
             )
             if command_id < RESPONSE_OFFSET:
+                # Politely tell the MCU to stop talking until sync
                 await self.acknowledge_frame(
                     command_id,
                     status=Status.MALFORMED,
@@ -179,30 +189,52 @@ class BridgeDispatcher:
                 )
             return
 
+        # 2. Handler Resolution
         handler = self.mcu_registry.get(command_id)
-        command_name: str | None = None
-        try:
-            command_name = Command(command_id).name
-        except ValueError:
-            try:
-                command_name = Status(command_id).name
-            except ValueError:
-                command_name = f"UNKNOWN_CMD_ID(0x{command_id:02X})"
+        command_name = self._resolve_command_name(command_id)
 
+        # 3. Safe Execution Strategy
         handled_successfully = False
 
         if handler:
-            logger.debug("MCU > %s payload=%s", command_name, payload.hex())
-            result = await handler(payload)
-            handled_successfully = result is not False
+            # [LOGGING] Debug level only to keep production logs clean
+            logger.debug("MCU > %s [%d bytes]", command_name, len(payload))
+            
+            try:
+                # Execute the component handler
+                result = await handler(payload)
+                handled_successfully = result is not False
+            except Exception: # [FIX] Eliminado 'as exc' (unused variable)
+                # [RESILIENCE] Catch component crashes (e.g., Datastore error)
+                # so the Dispatcher stays alive for other components.
+                logger.exception(
+                    "Critical: Exception in handler for command %s", command_name
+                )
+                # Optionally send an error status back to MCU if it was a request
+                if command_id < RESPONSE_OFFSET:
+                     # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
+                     await self.send_frame(Status.ERROR.value, b"Internal Error")
+
         elif command_id < RESPONSE_OFFSET:
-            logger.warning("Unhandled MCU command %s", command_name)
+            logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:
-            logger.debug("Ignoring MCU response %s", command_name)
+            # It's a response ID but no one was waiting for it (or it arrived late)
+            logger.debug("Protocol: Ignoring orphaned MCU response %s", command_name)
 
+        # 4. Auto-Acknowledgement (if applicable)
         if handled_successfully and self._should_acknowledge_mcu_frame(command_id):
             await self.acknowledge_frame(command_id)
+
+    def _resolve_command_name(self, command_id: int) -> str:
+        """Helper to get a human-readable name for any ID."""
+        try:
+            return Command(command_id).name
+        except ValueError:
+            try:
+                return Status(command_id).name
+            except ValueError:
+                return f"UNKNOWN(0x{command_id:02X})"
 
     async def dispatch_mqtt_message(
         self,

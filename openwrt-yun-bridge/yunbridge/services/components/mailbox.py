@@ -8,7 +8,11 @@ import struct
 
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
+from yunbridge.rpc.protocol import (
+    UINT8_MASK,
+    Command,
+    Status,
+)
 
 from ...common import encode_status_reason
 from ...mqtt.messages import QueuedPublish
@@ -103,13 +107,16 @@ class MailboxComponent:
         )
         return True
 
-    async def handle_available(self, _: bytes) -> None:
-        queue_len = len(self.state.mailbox_queue) & 0xFF
-        count_payload = bytes((queue_len & 0xFF,))
+    async def handle_available(self, payload: bytes) -> bool:
+        """Handle CMD_MAILBOX_AVAILABLE."""
+        # Just return the count of messages in queue
+        queue_len = len(self.state.mailbox_queue) & UINT8_MASK
+        count_payload = bytes((queue_len & UINT8_MASK,))
         await self.ctx.send_frame(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             count_payload,
         )
+        return True
 
     async def handle_read(self, _: bytes) -> bool:
         original_payload = self.state.pop_mailbox_message()

@@ -5,7 +5,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc.protocol import (
+    RESPONSE_OFFSET,
+    Command,
+    Status,
+)
 from yunbridge.protocol.topics import Topic, TopicRoute
 from .routers import MCUHandlerRegistry, MQTTRouter
 
@@ -167,7 +171,7 @@ class BridgeDispatcher:
                 "Rejecting MCU frame 0x%02X before link synchronisation",
                 command_id,
             )
-            if command_id < 0x80:
+            if command_id < RESPONSE_OFFSET:
                 await self.acknowledge_frame(
                     command_id,
                     status=Status.MALFORMED,
@@ -191,7 +195,7 @@ class BridgeDispatcher:
             logger.debug("MCU > %s payload=%s", command_name, payload.hex())
             result = await handler(payload)
             handled_successfully = result is not False
-        elif command_id < 0x80:
+        elif command_id < RESPONSE_OFFSET:
             logger.warning("Unhandled MCU command %s", command_name)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:

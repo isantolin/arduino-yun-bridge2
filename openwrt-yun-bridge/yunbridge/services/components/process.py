@@ -23,7 +23,13 @@ from ...config.settings import RuntimeConfig
 from ...policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
+from yunbridge.rpc.protocol import (
+    PROCESS_DEFAULT_EXIT_CODE,
+    UINT8_MASK,
+    Command,
+    MAX_PAYLOAD_SIZE,
+    Status,
+)
 
 logger = logging.getLogger("yunbridge.process")
 
@@ -175,7 +181,7 @@ class ProcessComponent:
             logger.warning("Invalid PROCESS_POLL payload: %s", payload.hex())
             await self.ctx.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value,
-                bytes([Status.MALFORMED.value, 0xFF])
+                bytes([Status.MALFORMED.value, PROCESS_DEFAULT_EXIT_CODE])
                 + struct.pack(protocol.UINT16_FORMAT, 0)
                 + struct.pack(protocol.UINT16_FORMAT, 0),
             )
@@ -242,7 +248,7 @@ class ProcessComponent:
                         released_slot = True
                     slot.handle = None
                     slot.exit_code = (
-                        proc.returncode if proc.returncode is not None else 0xFF
+                        proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
                     )
                     if slot.is_drained():
                         self.state.running_processes.pop(pid, None)
@@ -416,7 +422,7 @@ class ProcessComponent:
             logger.debug("PROCESS_POLL received for unknown PID %d", pid)
             return ProcessOutputBatch(
                 status_byte=Status.ERROR.value,
-                exit_code=0xFF,
+                exit_code=PROCESS_DEFAULT_EXIT_CODE,
                 stdout_chunk=b"",
                 stderr_chunk=b"",
                 finished=False,
@@ -460,7 +466,7 @@ class ProcessComponent:
             if slot is None:
                 return ProcessOutputBatch(
                     status_byte=Status.ERROR.value,
-                    exit_code=0xFF,
+                    exit_code=PROCESS_DEFAULT_EXIT_CODE,
                     stdout_chunk=b"",
                     stderr_chunk=b"",
                     finished=False,
@@ -496,7 +502,7 @@ class ProcessComponent:
             else:
                 finished_flag = slot.handle is None
 
-            exit_value = slot.exit_code if slot.exit_code is not None else 0xFF
+            exit_value = slot.exit_code if slot.exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
 
             if slot.handle is None and slot.is_drained():
                 self.state.running_processes.pop(pid, None)
@@ -513,7 +519,7 @@ class ProcessComponent:
 
         return ProcessOutputBatch(
             status_byte=Status.OK.value,
-            exit_code=exit_value & 0xFF,
+            exit_code=exit_value & UINT8_MASK,
             stdout_chunk=stdout_payload,
             stderr_chunk=stderr_payload,
             finished=finished_flag,
@@ -765,7 +771,7 @@ class ProcessComponent:
             )
 
         release_slot = False
-        exit_value = proc.returncode if proc.returncode is not None else 0xFF
+        exit_value = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
         async with self.state.process_lock:
             current_slot = self.state.running_processes.get(pid)
             if current_slot is None or current_slot is not slot:
@@ -820,7 +826,7 @@ class ProcessComponent:
         remaining = max_payload - len(stdout_trim)
         stderr_trim = stderr_bytes[:remaining]
         return (
-            bytes([status & 0xFF])
+            bytes([status & UINT8_MASK])
             + struct.pack(protocol.UINT16_FORMAT, len(stdout_trim))
             + stdout_trim
             + struct.pack(protocol.UINT16_FORMAT, len(stderr_trim))

@@ -64,5 +64,5 @@ rationale = "Expose runtime metrics via the Prometheus Python client"
 [[dependency]]
 name = "aiofiles"
 openwrt = "python3-aiofiles"
-pip = "aiofiles==23.2.1"
+pip = "aiofiles==25.1.0"
 rationale = "Async file I/O for file component"

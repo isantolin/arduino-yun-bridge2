@@ -18,7 +18,6 @@ from yunbridge.state.context import RuntimeState
 MAX_WRITE = 1024
 QUOTA = 2048
 
-
 class DummyBridge:
     def __init__(self, config: RuntimeConfig, state: RuntimeState) -> None:
         self.config = config

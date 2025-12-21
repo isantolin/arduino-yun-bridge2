@@ -68,13 +68,11 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
 
     // [OPTIMIZATION] In-place decoding (10/10 RAM Efficiency).
     // We decode directly into _rx_buffer because COBS decoded size <= encoded size.
-    // This eliminates the need for a secondary 'decoded_buffer' on the stack (~260 bytes saved).
     
-// [HARDENING] Security Critical: Pre-validation of COBS structure.
-    // We calculate the exact decoded size strictly BEFORE modifying the buffer.
+    // [HARDENING] Security Critical: Pre-validation of COBS structure.
     size_t decoded_len = 0;
     
-    // Check 1: Validate COBS structure and calculate potential size without writing
+    // Check 1: Validate COBS structure
     if (!is_cobs_decoded_length_valid(_rx_buffer, _rx_buffer_ptr, decoded_len)) {
       reset();
       _last_error = Error::MALFORMED;
@@ -84,33 +82,36 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     // Check 2: Bounds Safety Assertion
     if (decoded_len > MAX_RAW_FRAME_SIZE) {
         reset();
-        _last_error = Error::MALFORMED; // Prevent potential stack overflow upstream
+        _last_error = Error::MALFORMED; 
         return false;
     }
 
     // Check 3: Safe Decoding
-    // We use the checked length. cobs::decode returns the actual bytes written.
     size_t actual_written = cobs::decode(_rx_buffer, _rx_buffer_ptr, _rx_buffer);
     
     // Check 4: Integrity Verification
     if (actual_written != decoded_len) {
-        // This should mathematically never happen if is_cobs_decoded_length_valid passed,
-        // but in embedded systems (radiation, voltage glitch), we trust nothing.
         reset();
         _last_error = Error::MALFORMED;
         return false;
     }
 
-    reset();  // Reset index for the next packet; _rx_buffer content remains valid for parsing below.
+    // [FIX CRITICAL] Do NOT call reset() here. It now does a secure wipe (memset 0),
+    // which would destroy the data we just decoded before we can check the CRC.
+    // We manually reset the pointers to prepare logically for the next frame.
+    _rx_buffer_ptr = 0;
+    _overflow_detected = false;
 
     if (decoded_len == 0 || decoded_len > MAX_RAW_FRAME_SIZE) {
+      reset(); // Now we can wipe safely as we are erroring out
       _last_error = Error::MALFORMED;
-      return false;  // COBS decoding failed or produced oversize frame.
+      return false;
     }
 
     // --- Validate CRC ---
     // The last 4 bytes of the decoded buffer (now in _rx_buffer) are the CRC32.
     if (decoded_len < CRC_TRAILER_SIZE) {
+      reset(); // Security Wipe
       _last_error = Error::MALFORMED;
       return false;  // Not even enough data for a CRC.
     }
@@ -119,6 +120,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     uint32_t calculated_crc = crc32_ieee(_rx_buffer, crc_start);
 
     if (received_crc != calculated_crc) {
+      reset(); // Security Wipe
       _last_error = Error::CRC_MISMATCH;
       return false;  // CRC mismatch.
     }
@@ -126,11 +128,12 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     // --- Extract Header ---
     size_t data_len = crc_start;  // Length of data part (header + payload)
     if (data_len < sizeof(FrameHeader)) {
+      reset(); // Security Wipe
       _last_error = Error::MALFORMED;
       return false;  // Not enough data for a header.
     }
     
-    // Read header fields manually to ensure correct endianness
+    // Read header fields manually
     const uint8_t* p = _rx_buffer;
     out_frame.header.version = *p++;
     out_frame.header.payload_length = read_u16_be(p);
@@ -138,22 +141,24 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     out_frame.header.command_id = read_u16_be(p);
     p += 2;
 
-
     // --- Validate Header ---
     if (out_frame.header.version != PROTOCOL_VERSION ||
         out_frame.header.payload_length > MAX_PAYLOAD_SIZE ||
         (sizeof(FrameHeader) + out_frame.header.payload_length) != data_len) {
+      reset(); // Security Wipe
       _last_error = Error::MALFORMED;
-      return false;  // Invalid version, payload length, or overall size.
+      return false;
     }
 
     // --- Extract Payload ---
     if (out_frame.header.payload_length > 0) {
-      // Copy payload from _rx_buffer to the output frame structure
-      // REPLACED: memcpy with std::copy
       const uint8_t* payload_src = _rx_buffer + sizeof(FrameHeader);
       memcpy(out_frame.payload, payload_src, out_frame.header.payload_length);
     }
+
+    // [SECURITY] Secure Wipe: Now that we have extracted the data, we wipe the buffer
+    // to prevent any residual data from staying in RAM longer than necessary.
+    memset(_rx_buffer, 0, sizeof(_rx_buffer));
 
     return true;  // Successfully parsed a frame.
 
@@ -165,8 +170,6 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
       _overflow_detected = true;
       _last_error = Error::OVERFLOW;
     }
-    // If the buffer overflows, the packet will be corrupt and fail COBS/CRC
-    // check later.
   }
 
   return false;

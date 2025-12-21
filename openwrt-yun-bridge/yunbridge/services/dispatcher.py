@@ -169,7 +169,7 @@ class BridgeDispatcher:
     async def dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """
         Route an incoming frame from the MCU to the appropriate registered handler.
-        
+
         This method acts as a Firewall/Router. It enforces pre-sync validation
         and wraps handler execution in a safety try/except block to prevent
         service crashes due to component failures.
@@ -199,12 +199,12 @@ class BridgeDispatcher:
         if handler:
             # [LOGGING] Debug level only to keep production logs clean
             logger.debug("MCU > %s [%d bytes]", command_name, len(payload))
-            
+
             try:
                 # Execute the component handler
                 result = await handler(payload)
                 handled_successfully = result is not False
-            except Exception: # [FIX] Eliminado 'as exc' (unused variable)
+            except Exception:  # [FIX] Eliminado 'as exc' (unused variable)
                 # [RESILIENCE] Catch component crashes (e.g., Datastore error)
                 # so the Dispatcher stays alive for other components.
                 logger.exception(
@@ -212,8 +212,8 @@ class BridgeDispatcher:
                 )
                 # Optionally send an error status back to MCU if it was a request
                 if command_id < RESPONSE_OFFSET:
-                     # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
-                     await self.send_frame(Status.ERROR.value, b"Internal Error")
+                    # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
+                    await self.send_frame(Status.ERROR.value, b"Internal Error")
 
         elif command_id < RESPONSE_OFFSET:
             logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)

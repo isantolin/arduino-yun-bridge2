@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import struct
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -11,12 +10,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.rpc.protocol import Command, UINT16_FORMAT
+from yunbridge.rpc.protocol import UINT16_FORMAT
 from yunbridge.services.components.file import FileComponent
 from yunbridge.state.context import RuntimeState
-
-if TYPE_CHECKING:
-    from collections.abc import Awaitable
 
 # Constants for test config
 MAX_WRITE = 1024

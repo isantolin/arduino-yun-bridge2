@@ -1,9 +1,5 @@
 /*
  * This file is part of Arduino Yun Ecosystem v2.
- * * [AUDIT CERTIFICATION]
- * - Memory Optimization: CONFIRMED (Flash vs SRAM usage optimized via F() and PROGMEM).
- * - Safety: CONFIRMED (Secure wipe, bounds checking).
- * - Compliance: C++11 Embedded Standard.
  */
 #include "Bridge.h"
 

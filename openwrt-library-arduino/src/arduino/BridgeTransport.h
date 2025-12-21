@@ -62,10 +62,6 @@ public:
     // Constants for flow control
     static constexpr int kRxHighWaterMark = 48;
     static constexpr int kRxLowWaterMark = 16;
-    // [PROTOCOL 10/10] Anti-Starvation Limit
-    // Limita el numero de bytes procesados por llamada a process() para
-    // evitar que el Bridge monopolice la CPU si hay trafico intenso.
-    static constexpr int kMaxBytesPerYield = 64;
 };
 
 } // namespace bridge

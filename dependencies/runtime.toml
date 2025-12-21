@@ -60,9 +60,3 @@ name = "prometheus-client"
 openwrt = ""
 pip = "prometheus-client==0.23.1"
 rationale = "Expose runtime metrics via the Prometheus Python client"
-
-[[dependency]]
-name = "aiofiles"
-openwrt = "python3-aiofiles"
-pip = "aiofiles==25.1.0"
-rationale = "Async file I/O for file component"

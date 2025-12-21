@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
-from yunbridge.protocol.topics import Topic, TopicRoute
 from yunbridge.rpc.protocol import (
     RESPONSE_OFFSET,
     Command,
     Status,
 )
+from yunbridge.protocol.topics import Topic, TopicRoute
 from .routers import MCUHandlerRegistry, MQTTRouter
 
 if TYPE_CHECKING:
+    # [FIX] Pylance: Simplificamos import para evitar reportMissingModuleSource
     from aiomqtt import Message as MQTTMessage
-
     from .components import (
         ConsoleComponent,
         DatastoreComponent,
@@ -39,7 +38,17 @@ _STATUS_PAYLOAD_WINDOW = 126  # max(0, _MAX_PAYLOAD_BYTES - 2)
 
 
 class BridgeDispatcher:
-    """Decoupled dispatch logic for MCU frames and MQTT messages."""
+    """Decoupled dispatch logic for MCU frames and MQTT messages.
+
+    This class is responsible for routing incoming MCU frames (from the Arduino)
+    and MQTT messages (from the network) to the appropriate handling components
+    or system-level functions. It acts as a central hub for command processing,
+    ensuring that each command/message is directed to the correct handler based
+    on its ID (for MCU frames) or topic (for MQTT messages).
+
+    It registers various service components and system handlers to
+    manage the interaction between the Linux side and the MCU.
+    """
 
     def __init__(
         self,
@@ -120,6 +129,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_PROCESS_RUN.value, process.handle_run)
         self.mcu_registry.register(Command.CMD_PROCESS_RUN_ASYNC.value, process.handle_run_async)
         self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
+        # CMD_PROCESS_KILL is handled via register_system_handlers or manually if needed
 
         # Shell (MQTT only)
         self.mqtt_router.register(Topic.SHELL, self._handle_shell_topic)
@@ -127,14 +137,8 @@ class BridgeDispatcher:
         # Pin (GPIO)
         self.mcu_registry.register(Command.CMD_DIGITAL_READ_RESP.value, pin.handle_digital_read_resp)
         self.mcu_registry.register(Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp)
-        self.mcu_registry.register(
-            Command.CMD_DIGITAL_READ.value,
-            lambda p: pin.handle_unexpected_mcu_request(Command.CMD_DIGITAL_READ, p)
-        )
-        self.mcu_registry.register(
-            Command.CMD_ANALOG_READ.value,
-            lambda p: pin.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, p)
-        )
+        self.mcu_registry.register(Command.CMD_DIGITAL_READ.value, lambda p: pin.handle_unexpected_mcu_request(Command.CMD_DIGITAL_READ, p))
+        self.mcu_registry.register(Command.CMD_ANALOG_READ.value, lambda p: pin.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, p))
         self.mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)
         self.mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)
 
@@ -163,12 +167,21 @@ class BridgeDispatcher:
             self.mcu_registry.register(status.value, status_handler_factory(status))
 
     async def dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
+        """
+        Route an incoming frame from the MCU to the appropriate registered handler.
+
+        This method acts as a Firewall/Router. It enforces pre-sync validation
+        and wraps handler execution in a safety try/except block to prevent
+        service crashes due to component failures.
+        """
+        # 1. Security Check: Link Synchronization
         if not self._is_frame_allowed_pre_sync(command_id):
             logger.warning(
                 "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
                 command_id,
             )
             if command_id < RESPONSE_OFFSET:
+                # Politely tell the MCU to stop talking until sync
                 await self.acknowledge_frame(
                     command_id,
                     status=Status.MALFORMED,
@@ -176,30 +189,45 @@ class BridgeDispatcher:
                 )
             return
 
+        # 2. Handler Resolution
         handler = self.mcu_registry.get(command_id)
         command_name = self._resolve_command_name(command_id)
+
+        # 3. Safe Execution Strategy
         handled_successfully = False
 
         if handler:
+            # [LOGGING] Debug level only to keep production logs clean
             logger.debug("MCU > %s [%d bytes]", command_name, len(payload))
+
             try:
+                # Execute the component handler
                 result = await handler(payload)
                 handled_successfully = result is not False
-            except Exception:
-                logger.exception("Critical: Exception in handler for command %s", command_name)
+            except Exception:  # [FIX] Eliminado 'as exc' (unused variable)
+                # [RESILIENCE] Catch component crashes (e.g., Datastore error)
+                # so the Dispatcher stays alive for other components.
+                logger.exception(
+                    "Critical: Exception in handler for command %s", command_name
+                )
+                # Optionally send an error status back to MCU if it was a request
                 if command_id < RESPONSE_OFFSET:
+                    # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
                     await self.send_frame(Status.ERROR.value, b"Internal Error")
 
         elif command_id < RESPONSE_OFFSET:
             logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:
+            # It's a response ID but no one was waiting for it (or it arrived late)
             logger.debug("Protocol: Ignoring orphaned MCU response %s", command_name)
 
+        # 4. Auto-Acknowledgement (if applicable)
         if handled_successfully and self._should_acknowledge_mcu_frame(command_id):
             await self.acknowledge_frame(command_id)
 
     def _resolve_command_name(self, command_id: int) -> str:
+        """Helper to get a human-readable name for any ID."""
         try:
             return Command(command_id).name
         except ValueError:
@@ -214,9 +242,13 @@ class BridgeDispatcher:
         parse_topic_func: Callable[[str], TopicRoute | None],
     ) -> None:
         inbound_topic = str(inbound.topic)
+        # We need parse_topic_func passed in or imported
         route = parse_topic_func(inbound_topic)
         if route is None:
-            logger.debug("Ignoring MQTT message with unexpected prefix: %s", inbound_topic)
+            logger.debug(
+                "Ignoring MQTT message with unexpected prefix: %s",
+                inbound_topic,
+            )
             return
 
         if not route.segments:
@@ -241,6 +273,8 @@ class BridgeDispatcher:
         if command_id in STATUS_VALUES:
             return True
         return command_id in _PRE_SYNC_ALLOWED_COMMANDS
+
+    # --- MQTT Handlers ---
 
     async def _handle_file_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
         if len(route.segments) < 2:

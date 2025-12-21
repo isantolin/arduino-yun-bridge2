@@ -51,6 +51,7 @@ async def mqtt_task(
             await state.flush_mqtt_spool()
             message_to_publish = await state.mqtt_publish_queue.get()
             topic_name = message_to_publish.topic_name
+
             props = build_mqtt_properties(message_to_publish)
 
             try:
@@ -66,17 +67,30 @@ async def mqtt_task(
                 try:
                     state.mqtt_publish_queue.put_nowait(message_to_publish)
                 except asyncio.QueueFull:
-                    logger.debug("MQTT publish queue full while cancelling; dropping %s", topic_name)
+                    logger.debug(
+                        "MQTT publish queue full while cancelling; dropping %s",
+                        topic_name,
+                    )
                 raise
             except aiomqtt.MqttError as exc:
-                logger.warning("MQTT publish failed for %s; broker unavailable (%s)", topic_name, exc)
+                logger.warning(
+                    "MQTT publish failed for %s; broker unavailable (%s)",
+                    topic_name,
+                    exc,
+                )
                 try:
                     state.mqtt_publish_queue.put_nowait(message_to_publish)
                 except asyncio.QueueFull:
-                    logger.error("MQTT publish queue full; dropping message for %s", topic_name)
+                    logger.error(
+                        "MQTT publish queue full; dropping message for %s",
+                        topic_name,
+                    )
                 raise
             except Exception:
-                logger.exception("Failed to publish MQTT message for topic %s", topic_name)
+                logger.exception(
+                    "Failed to publish MQTT message for topic %s",
+                    topic_name,
+                )
                 raise
             finally:
                 state.mqtt_publish_queue.task_done()
@@ -91,7 +105,10 @@ async def mqtt_task(
                 try:
                     await service.handle_mqtt_message(message)
                 except Exception:
-                    logger.exception("Error processing MQTT topic %s", topic)
+                    logger.exception(
+                        "Error processing MQTT topic %s",
+                        topic,
+                    )
         except asyncio.CancelledError:
             logger.info("MQTT subscriber loop cancelled.")
             raise
@@ -135,8 +152,22 @@ async def mqtt_task(
                     (_sub_path(Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
                     (_sub_path(Topic.SHELL, Action.SHELL_POLL, "#"), 0),
                     (_sub_path(Topic.SHELL, Action.SHELL_KILL, "#"), 0),
-                    (_sub_path(Topic.SYSTEM, Action.SYSTEM_FREE_MEMORY, Action.SYSTEM_GET), 0),
-                    (_sub_path(Topic.SYSTEM, Action.SYSTEM_VERSION, Action.SYSTEM_GET), 0),
+                    (
+                        _sub_path(
+                            Topic.SYSTEM,
+                            Action.SYSTEM_FREE_MEMORY,
+                            Action.SYSTEM_GET,
+                        ),
+                        0,
+                    ),
+                    (
+                        _sub_path(
+                            Topic.SYSTEM,
+                            Action.SYSTEM_VERSION,
+                            Action.SYSTEM_GET,
+                        ),
+                        0,
+                    ),
                     (_sub_path(Topic.FILE, Action.FILE_WRITE, "#"), 0),
                     (_sub_path(Topic.FILE, Action.FILE_READ, "#"), 0),
                     (_sub_path(Topic.FILE, Action.FILE_REMOVE, "#"), 0),
@@ -162,13 +193,20 @@ async def mqtt_task(
             raise
         except* Exception as exc_group:
             for exc in exc_group.exceptions:
-                logger.critical("Unhandled exception in mqtt_task", exc_info=exc)
-        logger.warning("Waiting %d seconds before MQTT reconnect...", reconnect_delay)
+                logger.critical(
+                    "Unhandled exception in mqtt_task",
+                    exc_info=exc,
+                )
+        logger.warning(
+            "Waiting %d seconds before MQTT reconnect...",
+            reconnect_delay,
+        )
         try:
             await asyncio.sleep(reconnect_delay)
         except asyncio.CancelledError:
             logger.info("MQTT task cancelled during backoff.")
             raise
+
 
 __all__ = [
     "build_mqtt_tls_context",

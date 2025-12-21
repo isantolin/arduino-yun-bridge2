@@ -858,14 +858,7 @@ void test_serial_overflow_emits_status_notification() {
   StatusHandlerState::instance = &status_state;
   Bridge.onStatus(status_handler_trampoline);
 
-  // Consume stream using updated anti-starvation logic
-  while (stream.available() > 0 && !status_state.called) {
-    Bridge.process();
-  }
-  // If status not called yet (error on last byte), process once more
-  if (!status_state.called) {
-      Bridge.process();
-  }
+  Bridge.process();
 
   assert(status_state.called);
   assert(status_state.status_code == StatusCode::STATUS_MALFORMED);

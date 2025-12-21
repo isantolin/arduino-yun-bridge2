@@ -120,7 +120,7 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_PROCESS_RUN.value, process.handle_run)
         self.mcu_registry.register(Command.CMD_PROCESS_RUN_ASYNC.value, process.handle_run_async)
         self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
-        
+
         # Shell (MQTT only)
         self.mqtt_router.register(Topic.SHELL, self._handle_shell_topic)
 
@@ -128,11 +128,11 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_DIGITAL_READ_RESP.value, pin.handle_digital_read_resp)
         self.mcu_registry.register(Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp)
         self.mcu_registry.register(
-            Command.CMD_DIGITAL_READ.value, 
+            Command.CMD_DIGITAL_READ.value,
             lambda p: pin.handle_unexpected_mcu_request(Command.CMD_DIGITAL_READ, p)
         )
         self.mcu_registry.register(
-            Command.CMD_ANALOG_READ.value, 
+            Command.CMD_ANALOG_READ.value,
             lambda p: pin.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, p)
         )
         self.mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)

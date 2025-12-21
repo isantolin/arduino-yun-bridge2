@@ -16,6 +16,7 @@ MAX_PENDING_TX_FRAMES: Final[int] = 2
 INVALID_ID_SENTINEL: Final[int] = 65535
 RESPONSE_OFFSET: Final[int] = 128
 UINT8_MASK: Final[int] = 255
+UINT16_MAX: Final[int] = 65535
 PROCESS_DEFAULT_EXIT_CODE: Final[int] = 255
 CRC32_MASK: Final[int] = 4294967295
 FRAME_DELIMITER: Final[bytes] = bytes([0])
@@ -75,6 +76,13 @@ class Action(StrEnum):
     MAILBOX_WRITE = "write"  # Write to mailbox
     DATASTORE_GET = "get"  # Get datastore value
     DATASTORE_PUT = "put"  # Put datastore value
+    PIN_MODE = "mode"  # Set pin mode
+    PIN_READ = "read"  # Read pin value
+    CONSOLE_IN = "in"  # Console input
+    MAILBOX_READ = "read"  # Read from mailbox
+    SYSTEM_FREE_MEMORY = "free_memory"  # System free memory
+    SYSTEM_VERSION = "version"  # System version
+    SYSTEM_GET = "get"  # Get system info
 
 
 class Status(IntEnum):

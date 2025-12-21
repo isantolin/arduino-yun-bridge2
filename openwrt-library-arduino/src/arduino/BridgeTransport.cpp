@@ -101,7 +101,7 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
     }
 
     // Write terminator
-    const uint8_t terminator = 0x00;
+    const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
     if (_hardware_serial != nullptr) {
         written += _hardware_serial->write(&terminator, 1);
         _hardware_serial->flush(); // Force physical transmission
@@ -132,7 +132,7 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
     
     if (written != cobs_len) return false;
     
-    const uint8_t terminator = 0x00;
+    const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
     if (_hardware_serial != nullptr) {
         written += _hardware_serial->write(&terminator, 1);
     } else {
@@ -154,7 +154,7 @@ bool BridgeTransport::retransmitLastFrame() {
     
     if (written != _last_cobs_len) return false;
     
-    const uint8_t terminator = 0x00;
+    const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
     if (_hardware_serial != nullptr) {
         written += _hardware_serial->write(&terminator, 1);
         _hardware_serial->flush();

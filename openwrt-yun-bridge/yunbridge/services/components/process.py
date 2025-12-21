@@ -24,8 +24,10 @@ from ...policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
+    INVALID_ID_SENTINEL,
     PROCESS_DEFAULT_EXIT_CODE,
     UINT8_MASK,
+    UINT16_MAX,
     Command,
     MAX_PAYLOAD_SIZE,
     Status,
@@ -134,7 +136,7 @@ class ProcessComponent:
             await self._publish_run_async_error("command_validation_failed")
             return
         match pid:
-            case 0xFFFF:
+            case protocol.INVALID_ID_SENTINEL:
                 await self.ctx.send_frame(
                     Status.ERROR.value,
                     encode_status_reason("process_run_async_failed"),
@@ -361,14 +363,14 @@ class ProcessComponent:
                 "Concurrent process limit reached (%d)",
                 self.state.process_max_concurrent,
             )
-            return 0xFFFF
+            return INVALID_ID_SENTINEL
 
         async with AsyncExitStack() as stack:
             stack.callback(self._release_process_slot)
 
             pid = await self._allocate_pid()
-            if pid == 0xFFFF:
-                return 0xFFFF
+            if pid == INVALID_ID_SENTINEL:
+                return INVALID_ID_SENTINEL
 
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -382,13 +384,13 @@ class ProcessComponent:
                     command,
                     exc,
                 )
-                return 0xFFFF
+                return INVALID_ID_SENTINEL
             except Exception:
                 logger.exception(
                     "Unexpected error starting async process '%s'",
                     command,
                 )
-                return 0xFFFF
+                return INVALID_ID_SENTINEL
 
             stack.pop_all()
 
@@ -716,9 +718,9 @@ class ProcessComponent:
 
     async def _allocate_pid(self) -> int:
         async with self.state.process_lock:
-            for _ in range(0xFFFF):
-                candidate = self.state.next_pid & 0xFFFF
-                self.state.next_pid = (candidate + 1) & 0xFFFF
+            for _ in range(UINT16_MAX):
+                candidate = self.state.next_pid & UINT16_MAX
+                self.state.next_pid = (candidate + 1) & UINT16_MAX
                 if self.state.next_pid == 0:
                     self.state.next_pid = 1
                 if candidate == 0:
@@ -726,7 +728,7 @@ class ProcessComponent:
                 if candidate not in self.state.running_processes:
                     return candidate
         logger.error("No async process slots available; all PIDs in use")
-        return 0xFFFF
+        return INVALID_ID_SENTINEL
 
     async def _terminate_process_tree(self, proc: AsyncioProcess) -> None:
         if proc.returncode is not None:

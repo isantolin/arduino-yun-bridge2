@@ -9,7 +9,6 @@ import struct
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
-    MAX_PAYLOAD_SIZE,
     UINT8_MASK,
     Command,
     Status,
@@ -124,12 +123,12 @@ class MailboxComponent:
         message_payload = original_payload if original_payload is not None else b""
 
         msg_len = len(message_payload)
-        if msg_len > MAX_PAYLOAD_SIZE - 2:
+        if msg_len > protocol.MAX_PAYLOAD_SIZE - 2:
             logger.warning(
                 "Mailbox message too long (%d bytes), truncating.",
                 msg_len,
             )
-            message_payload = message_payload[: MAX_PAYLOAD_SIZE - 2]
+            message_payload = message_payload[: protocol.MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
         response_payload = (

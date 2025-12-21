@@ -14,7 +14,7 @@ from typing import (
 
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
-from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE
+from yunbridge.rpc import protocol
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -28,8 +28,14 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
+_TRUE_STRINGS: Final[frozenset[str]] = frozenset(
+    {"1", "yes", "on", "true", "enable", "enabled"}
+)
+_UCI_PACKAGE: Final[str] = "yunbridge"
+_UCI_SECTION: Final[str] = "general"
 
-def parse_bool(value: Any) -> bool:
+
+def parse_bool(value: object) -> bool:
     """Parse a boolean value safely from various types."""
     if isinstance(value, bool):
         return value
@@ -38,21 +44,21 @@ def parse_bool(value: Any) -> bool:
     if value is None:
         return False
     s = str(value).lower().strip()
-    return s in ("1", "yes", "on", "true", "enable", "enabled")
+    return s in _TRUE_STRINGS
 
 
-def parse_int(value: Any, default: int) -> int:
+def parse_int(value: object, default: int) -> int:
     """Parse an integer value safely, handling floats and strings."""
     try:
-        return int(float(value))
+        return int(float(value))  # type: ignore
     except (ValueError, TypeError):
         return default
 
 
-def parse_float(value: Any, default: float) -> float:
+def parse_float(value: object, default: float) -> float:
     """Parse a float value safely."""
     try:
-        return float(value)
+        return float(value)  # type: ignore
     except (ValueError, TypeError):
         return default
 
@@ -80,7 +86,7 @@ def encode_status_reason(reason: str | None) -> bytes:
     if not reason:
         return b""
     payload = reason.encode("utf-8", errors="ignore")
-    return payload[:MAX_PAYLOAD_SIZE]
+    return payload[: protocol.MAX_PAYLOAD_SIZE]
 
 
 def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
@@ -146,15 +152,14 @@ def get_uci_config() -> dict[str, str]:
 
     try:
         with Uci() as cursor:
-            # Assume 'yunbridge' package and 'general' section
-            section = cursor.get_all("yunbridge", "general")
+            section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
     except Exception as exc:
         logger.warning("Failed to load UCI configuration: %s", exc)
         return get_default_config()
 
     options = _extract_uci_options(section)
     if not options:
-        logger.warning("UCI returned no options for 'yunbridge'; using defaults.")
+        logger.warning("UCI returned no options for '%s'; using defaults.", _UCI_PACKAGE)
         return get_default_config()
 
     return UciConfigModel.from_mapping(options).as_dict()

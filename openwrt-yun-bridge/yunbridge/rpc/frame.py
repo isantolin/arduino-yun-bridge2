@@ -22,7 +22,7 @@ class Frame:
                 f"Payload too large ({payload_len} bytes); "
                 f"max is {protocol.MAX_PAYLOAD_SIZE}"
             )
-        if not 0 <= command_id <= 0xFFFF:
+        if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
         # Pack the header that will be part of the CRC calculation

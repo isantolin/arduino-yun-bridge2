@@ -76,6 +76,10 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_UINT8_MASK = {consts['uint8_mask']};\n"
         )
+    if "uint16_max" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_UINT16_MAX = {consts['uint16_max']};\n"
+        )
     if "process_default_exit_code" in consts:
         out.write(
             f"constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = {consts['process_default_exit_code']};\n"
@@ -186,6 +190,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if "uint8_mask" in consts:
         out.write(
             f"UINT8_MASK: Final[int] = {consts['uint8_mask']}\n"
+        )
+    if "uint16_max" in consts:
+        out.write(
+            f"UINT16_MAX: Final[int] = {consts['uint16_max']}\n"
         )
     if "process_default_exit_code" in consts:
         out.write(

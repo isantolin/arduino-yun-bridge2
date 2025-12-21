@@ -24,6 +24,7 @@ constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = 2;
 constexpr uint16_t RPC_INVALID_ID_SENTINEL = 65535;
 constexpr uint8_t RPC_RESPONSE_OFFSET = 128;
 constexpr uint8_t RPC_UINT8_MASK = 255;
+constexpr uint16_t RPC_UINT16_MAX = 65535;
 constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = 255;
 constexpr uint32_t RPC_CRC32_MASK = 4294967295;
 constexpr uint8_t RPC_FRAME_DELIMITER = 0;

@@ -4,7 +4,6 @@ import sys
 import tomllib
 from pathlib import Path
 
-# Add the project root to sys.path so we can import tools
 PROJECT_ROOT = Path(__file__).parents[2]
 sys.path.append(str(PROJECT_ROOT))
 

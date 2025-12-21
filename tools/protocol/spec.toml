@@ -14,6 +14,7 @@ max_pending_tx_frames = 2
 invalid_id_sentinel = 0xFFFF
 response_offset = 0x80
 uint8_mask = 0xFF
+uint16_max = 0xFFFF
 process_default_exit_code = 0xFF
 crc32_mask = 0xFFFFFFFF
 frame_delimiter = 0x00
@@ -122,6 +123,34 @@ description = "Get datastore value"
 name = "DATASTORE_PUT"
 value = "put"
 description = "Put datastore value"
+[[actions]]
+name = "PIN_MODE"
+value = "mode"
+description = "Set pin mode"
+[[actions]]
+name = "PIN_READ"
+value = "read"
+description = "Read pin value"
+[[actions]]
+name = "CONSOLE_IN"
+value = "in"
+description = "Console input"
+[[actions]]
+name = "MAILBOX_READ"
+value = "read"
+description = "Read from mailbox"
+[[actions]]
+name = "SYSTEM_FREE_MEMORY"
+value = "free_memory"
+description = "System free memory"
+[[actions]]
+name = "SYSTEM_VERSION"
+value = "version"
+description = "System version"
+[[actions]]
+name = "SYSTEM_GET"
+value = "get"
+description = "Get system info"
 
 [[statuses]]
 name = "OK"

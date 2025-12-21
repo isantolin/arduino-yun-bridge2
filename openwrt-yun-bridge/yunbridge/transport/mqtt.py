@@ -14,7 +14,7 @@ from yunbridge.common import (
 )
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.config.tls import build_tls_context, resolve_tls_material
-from yunbridge.protocol import Topic, topic_path
+from yunbridge.protocol import Action, Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
 
@@ -138,25 +138,39 @@ async def mqtt_task(
                     return topic_path(prefix, top, *segs)
 
                 topics = [
-                    (_sub_path(Topic.DIGITAL, "+", "mode"), 0),
-                    (_sub_path(Topic.DIGITAL, "+", "read"), 0),
+                    (_sub_path(Topic.DIGITAL, "+", Action.PIN_MODE), 0),
+                    (_sub_path(Topic.DIGITAL, "+", Action.PIN_READ), 0),
                     (_sub_path(Topic.DIGITAL, "+"), 0),
-                    (_sub_path(Topic.ANALOG, "+", "read"), 0),
+                    (_sub_path(Topic.ANALOG, "+", Action.PIN_READ), 0),
                     (_sub_path(Topic.ANALOG, "+"), 0),
-                    (_sub_path(Topic.CONSOLE, "in"), 0),
-                    (_sub_path(Topic.DATASTORE, "put", "#"), 0),
-                    (_sub_path(Topic.DATASTORE, "get", "#"), 0),
-                    (_sub_path(Topic.MAILBOX, "write"), 0),
-                    (_sub_path(Topic.MAILBOX, "read"), 0),
-                    (_sub_path(Topic.SHELL, "run"), 0),
-                    (_sub_path(Topic.SHELL, "run_async"), 0),
-                    (_sub_path(Topic.SHELL, "poll", "#"), 0),
-                    (_sub_path(Topic.SHELL, "kill", "#"), 0),
-                    (_sub_path(Topic.SYSTEM, "free_memory", "get"), 0),
-                    (_sub_path(Topic.SYSTEM, "version", "get"), 0),
-                    (_sub_path(Topic.FILE, "write", "#"), 0),
-                    (_sub_path(Topic.FILE, "read", "#"), 0),
-                    (_sub_path(Topic.FILE, "remove", "#"), 0),
+                    (_sub_path(Topic.CONSOLE, Action.CONSOLE_IN), 0),
+                    (_sub_path(Topic.DATASTORE, Action.DATASTORE_PUT, "#"), 0),
+                    (_sub_path(Topic.DATASTORE, Action.DATASTORE_GET, "#"), 0),
+                    (_sub_path(Topic.MAILBOX, Action.MAILBOX_WRITE), 0),
+                    (_sub_path(Topic.MAILBOX, Action.MAILBOX_READ), 0),
+                    (_sub_path(Topic.SHELL, Action.SHELL_RUN), 0),
+                    (_sub_path(Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
+                    (_sub_path(Topic.SHELL, Action.SHELL_POLL, "#"), 0),
+                    (_sub_path(Topic.SHELL, Action.SHELL_KILL, "#"), 0),
+                    (
+                        _sub_path(
+                            Topic.SYSTEM,
+                            Action.SYSTEM_FREE_MEMORY,
+                            Action.SYSTEM_GET,
+                        ),
+                        0,
+                    ),
+                    (
+                        _sub_path(
+                            Topic.SYSTEM,
+                            Action.SYSTEM_VERSION,
+                            Action.SYSTEM_GET,
+                        ),
+                        0,
+                    ),
+                    (_sub_path(Topic.FILE, Action.FILE_WRITE, "#"), 0),
+                    (_sub_path(Topic.FILE, Action.FILE_READ, "#"), 0),
+                    (_sub_path(Topic.FILE, Action.FILE_REMOVE, "#"), 0),
                 ]
 
                 for topic, qos in topics:

@@ -67,16 +67,36 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     // We decode directly into _rx_buffer because COBS decoded size <= encoded size.
     // This eliminates the need for a secondary 'decoded_buffer' on the stack (~260 bytes saved).
     
+// [HARDENING] Security Critical: Pre-validation of COBS structure.
+    // We calculate the exact decoded size strictly BEFORE modifying the buffer.
     size_t decoded_len = 0;
-    if (!is_cobs_decoded_length_valid(_rx_buffer, _rx_buffer_ptr,
-                                      decoded_len)) {
+    
+    // Check 1: Validate COBS structure and calculate potential size without writing
+    if (!is_cobs_decoded_length_valid(_rx_buffer, _rx_buffer_ptr, decoded_len)) {
       reset();
       _last_error = Error::MALFORMED;
-      return false;  // Would overflow destination buffer.
+      return false; 
     }
 
-    // In-place decoding: Source and Destination are the same.
-    decoded_len = cobs::decode(_rx_buffer, _rx_buffer_ptr, _rx_buffer);
+    // Check 2: Bounds Safety Assertion
+    if (decoded_len > MAX_RAW_FRAME_SIZE) {
+        reset();
+        _last_error = Error::MALFORMED; // Prevent potential stack overflow upstream
+        return false;
+    }
+
+    // Check 3: Safe Decoding
+    // We use the checked length. cobs::decode returns the actual bytes written.
+    size_t actual_written = cobs::decode(_rx_buffer, _rx_buffer_ptr, _rx_buffer);
+    
+    // Check 4: Integrity Verification
+    if (actual_written != decoded_len) {
+        // This should mathematically never happen if is_cobs_decoded_length_valid passed,
+        // but in embedded systems (radiation, voltage glitch), we trust nothing.
+        reset();
+        _last_error = Error::MALFORMED;
+        return false;
+    }
 
     reset();  // Reset index for the next packet; _rx_buffer content remains valid for parsing below.
 

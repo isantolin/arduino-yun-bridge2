@@ -270,10 +270,12 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
   switch (command) {
     case CommandId::CMD_GET_VERSION:
+      // Simetría 10/10: Usamos escritura Big Endian explícita, igual que en el resto del protocolo.
+      // Aunque para uint8_t no afecta el endianness, mantiene la coherencia de estilo.
       if (payload_length == 0) {
-        uint8_t version_payload[2] = {
-            static_cast<uint8_t>(BridgeClass::kFirmwareVersionMajor),
-            static_cast<uint8_t>(BridgeClass::kFirmwareVersionMinor)};
+        uint8_t version_payload[2];
+        version_payload[0] = static_cast<uint8_t>(BridgeClass::kFirmwareVersionMajor);
+        version_payload[1] = static_cast<uint8_t>(BridgeClass::kFirmwareVersionMinor);
         (void)sendFrame(CommandId::CMD_GET_VERSION_RESP, version_payload, sizeof(version_payload));
       }
       break;

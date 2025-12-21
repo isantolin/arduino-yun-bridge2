@@ -152,48 +152,25 @@ def get_uci_config() -> dict[str, str]:
 
     try:
         with Uci() as cursor:
+            # OpenWrt's python3-uci returns a native dict in modern versions.
+            # We strictly expect the package 'yunbridge' and section 'general'.
             section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
+            
+            if not section:
+                logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
+                return get_default_config()
+
+            # Clean internal UCI metadata (keys starting with dot/underscore)
+            clean_config = {
+                k: v for k, v in section.items() 
+                if isinstance(k, str) and not k.startswith((".", "_"))
+            }
+            
+            return UciConfigModel.from_mapping(clean_config).as_dict()
+
     except Exception as exc:
         logger.warning("Failed to load UCI configuration: %s", exc)
         return get_default_config()
-
-    options = _extract_uci_options(section)
-    if not options:
-        logger.warning("UCI returned no options for '%s'; using defaults.", _UCI_PACKAGE)
-        return get_default_config()
-
-    return UciConfigModel.from_mapping(options).as_dict()
-
-
-def _as_option_dict(candidate: Mapping[Any, Any]) -> dict[str, Any]:
-    typed: dict[str, Any] = {}
-    for key, value in candidate.items():
-        typed[str(key)] = value
-    return typed
-
-
-def _extract_uci_options(section: Any) -> dict[str, Any]:
-    """Normalise python3-uci section structures into a flat options dict."""
-    if not isinstance(section, Mapping) or not section:
-        return {}
-
-    typed_section = _as_option_dict(cast(Mapping[str, Any], section))
-
-    # Direct Key-Value dictionary (Simple case)
-    # We accept any non-empty dictionary as a valid section,
-    # filtering out internal UCI metadata (keys starting with dot).
-    if typed_section:
-        flattened: dict[str, Any] = {}
-        for key, value in typed_section.items():
-            if key.startswith("."):
-                continue
-            flattened[key] = value
-        return flattened
-
-    # Attempt to handle nested or complex responses (legacy shim fallback removed)
-    # We now strictly expect a valid UCI section dict or we fail to defaults.
-
-    return {}
 
 
 def get_default_config() -> dict[str, str]:

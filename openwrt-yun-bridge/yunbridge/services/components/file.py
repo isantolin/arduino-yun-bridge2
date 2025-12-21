@@ -51,20 +51,28 @@ class FileComponent:
             return False
 
         path = payload[cursor : cursor + path_len].decode("utf-8", errors="ignore")
-        
+
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
         # Bloqueamos explícitamente rutas absolutas o relativas peligrosas antes de procesar datos.
         # Esto actúa como primera línea de defensa (Fail Fast).
         clean_path = os.path.normpath(path)
         path_parts = clean_path.split(os.path.sep)
-        
+
         if ".." in path_parts:
             logger.warning("Security Alert: Path traversal attempt blocked: %s", path)
-            return False 
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason("invalid_path"),
+            )
+            return False
 
         if os.path.isabs(clean_path):
-             logger.warning("Security Alert: Absolute paths not allowed: %s", path)
-             return False
+            logger.warning("Security Alert: Absolute paths not allowed: %s", path)
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason("invalid_path"),
+            )
+            return False
 
         cursor += path_len
         data_len = int.from_bytes(payload[cursor : cursor + 2], "big")

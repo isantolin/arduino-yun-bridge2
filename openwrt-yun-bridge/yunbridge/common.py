@@ -153,17 +153,17 @@ def get_uci_config() -> dict[str, str]:
             # OpenWrt's python3-uci returns a native dict in modern versions.
             # We strictly expect the package 'yunbridge' and section 'general'.
             section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
-            
+
             if not section:
                 logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
                 return get_default_config()
 
             # Clean internal UCI metadata (keys starting with dot/underscore)
             clean_config = {
-                k: v for k, v in section.items() 
-                if isinstance(k, str) and not k.startswith((".", "_"))
+                k: v for k, v in section.items()
+                if not k.startswith((".", "_"))
             }
-            
+
             return UciConfigModel.from_mapping(clean_config).as_dict()
 
     except Exception as exc:

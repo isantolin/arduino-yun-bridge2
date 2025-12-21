@@ -60,9 +60,3 @@ name = "prometheus-client"
 openwrt = ""
 pip = "prometheus-client==0.23.1"
 rationale = "Expose runtime metrics via the Prometheus Python client"
-
-[[dependency]]
-name = "aiocron"
-openwrt = ""
-pip = "aiocron==2.1"
-rationale = "Cron-style scheduling for periodic metrics publication"

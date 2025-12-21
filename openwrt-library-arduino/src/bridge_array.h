@@ -20,6 +20,15 @@ struct array {
     T& operator[](size_t i) { return _elements[i]; }
     const T& operator[](size_t i) const { return _elements[i]; }
 
+    T& at(size_t i) {
+        if (i >= N) i = N - 1; // Safety clamping
+        return _elements[i];
+    }
+    const T& at(size_t i) const {
+        if (i >= N) i = N - 1; // Safety clamping
+        return _elements[i];
+    }
+
     T* data() { return _elements; }
     const T* data() const { return _elements; }
 

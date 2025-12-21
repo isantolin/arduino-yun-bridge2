@@ -18,7 +18,6 @@ try:
 except ImportError:
     import json
 
-import aiocron
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     CollectorRegistry,
@@ -141,41 +140,28 @@ async def publish_metrics(
             )
         )
 
-    async def _tick() -> None:
-        try:
-            await _emit_snapshot()
-        except asyncio.CancelledError:
-            logger.info("Metrics publisher cancelled.")
-            raise
-        except Exception:
-            logger.exception("Failed to publish metrics payload")
-
-    cron: aiocron.Cron | None = None
-    blocker = asyncio.Event()
-    cron_spec = _cron_expression_from_interval(tick_seconds)
-
+    # Initial emit
     try:
-        await _tick()
-        cron = aiocron.crontab(
-            cron_spec,
-            func=_tick,
-            start=False,
-            loop=asyncio.get_running_loop(),
-        )
-        cron.start()
-        await blocker.wait()
+        await _emit_snapshot()
     except asyncio.CancelledError:
+        logger.info("Metrics publisher cancelled.")
         raise
-    finally:
-        if cron is not None:
-            cron.stop()
+    except Exception:
+        logger.exception("Failed to publish initial metrics payload")
 
-
-def _cron_expression_from_interval(seconds: float) -> str:
-    """Render a 6-field cron expression that fires every *seconds*."""
-
-    rounded = max(1, int(math.ceil(seconds)))
-    return f"*/{rounded} * * * * *"
+    # Loop
+    try:
+        while True:
+            await asyncio.sleep(tick_seconds)
+            try:
+                await _emit_snapshot()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Failed to publish metrics payload")
+    except asyncio.CancelledError:
+        logger.info("Metrics publisher cancelled.")
+        raise
 
 
 async def publish_bridge_snapshots(
@@ -192,16 +178,22 @@ async def publish_bridge_snapshots(
     handshake_seconds = _normalize_interval(handshake_interval, min_interval)
 
     if summary_seconds is None and handshake_seconds is None:
-        logger.info("Bridge snapshot cron disabled; awaiting cancellation.")
-        blocker = asyncio.Event()
-        try:
-            await blocker.wait()
-        except asyncio.CancelledError:
-            raise
+        logger.info("Bridge snapshot loops disabled; awaiting cancellation.")
+        # Equivalent to waiting forever until cancelled
+        await asyncio.Event().wait()
         return
 
-    crons: list[aiocron.Cron] = []
-    blocker = asyncio.Event()
+    async def _loop(flavor: str, seconds: int) -> None:
+        # Initial emit
+        try:
+            await _emit(flavor)
+        except Exception:
+            # Already logged in _emit, just continue loop
+            pass
+
+        while True:
+            await asyncio.sleep(seconds)
+            await _emit(flavor)
 
     async def _emit(flavor: str) -> None:
         try:
@@ -225,34 +217,20 @@ async def publish_bridge_snapshots(
                 extra={"flavor": flavor},
             )
 
-    def _tick_factory(flavor: str) -> Callable[[], Awaitable[None]]:
-        async def _tick() -> None:
-            await _emit(flavor)
-
-        return _tick
-
-    async def _schedule(flavor: str, seconds: int) -> None:
-        await _emit(flavor)
-        cron = aiocron.crontab(
-            _cron_expression_from_interval(seconds),
-            func=_tick_factory(flavor),
-            start=False,
-            loop=asyncio.get_running_loop(),
-        )
-        cron.start()
-        crons.append(cron)
-
     try:
-        if summary_seconds is not None:
-            await _schedule("summary", summary_seconds)
-        if handshake_seconds is not None:
-            await _schedule("handshake", handshake_seconds)
-        await blocker.wait()
-    except asyncio.CancelledError:
+        async with asyncio.TaskGroup() as tg:
+            if summary_seconds is not None:
+                tg.create_task(_loop("summary", summary_seconds))
+            if handshake_seconds is not None:
+                tg.create_task(_loop("handshake", handshake_seconds))
+    except* asyncio.CancelledError:
+        logger.info("Bridge snapshot publisher cancelled.")
         raise
-    finally:
-        for cron in crons:
-            cron.stop()
+    except* Exception:
+        # Individual loop errors are caught inside _emit/_loop, but if something
+        # escapes or TaskGroup raises, we log it.
+        logger.critical("Fatal error in bridge snapshot publisher", exc_info=True)
+        raise
 
 
 class _RuntimeStateCollector(Collector):

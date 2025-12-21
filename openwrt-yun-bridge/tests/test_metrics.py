@@ -11,7 +11,6 @@ import pytest
 from yunbridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
-    _cron_expression_from_interval,
 )
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.state.context import RuntimeState
@@ -119,12 +118,6 @@ async def test_publish_metrics_marks_unknown_spool_reason(
     assert any(key == "bridge-watchdog-enabled" for key, _ in message.user_properties)
 
 
-def test_cron_expression_from_interval_rounds_up() -> None:
-    assert _cron_expression_from_interval(0.1) == "*/1 * * * * *"
-    assert _cron_expression_from_interval(2.4) == "*/3 * * * * *"
-    assert _cron_expression_from_interval(60.0) == "*/60 * * * * *"
-
-
 @pytest.mark.asyncio
 async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     runtime_state: RuntimeState,
@@ -161,7 +154,7 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         )
         await asyncio.wait_for(event.wait(), timeout=0.5)
         task.cancel()
-        with pytest.raises(asyncio.CancelledError):
+        with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
             await task
 
     topics = {message.topic_name for message in messages}

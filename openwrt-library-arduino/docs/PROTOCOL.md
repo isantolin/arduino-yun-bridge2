@@ -12,14 +12,14 @@ La comunicación sigue un modelo de RPC: normalmente el MPU inicia las peticione
 
 Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada frame codificado termina en `0x00`.
 
-- `MAX_PAYLOAD_SIZE = 256` bytes. Todo payload que exceda ese tamaño es truncado por la implementación antes de enviarse.
+- `MAX_PAYLOAD_SIZE = 128` bytes. Todo payload que exceda ese tamaño es truncado por la implementación antes de enviarse.
 - Todos los enteros multi-byte se codifican en **Big Endian**.
 
 ## 3. Formato de frame (antes de COBS)
 
 ```
 +--------------------------+---------------------+----------+
-|   Cabecera (5 bytes)     |   Payload (0-256)   |   CRC32  |
+|   Cabecera (5 bytes)     |   Payload (0-128)   |   CRC32  |
 +--------------------------+---------------------+----------+
 ```
 
@@ -89,7 +89,7 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
 ### 5.3 Consola (0x20)
 
 - **`0x20` CMD_CONSOLE_WRITE (bidireccional)**
-  - Payload: `chunk: byte[]` (máx. 256 bytes). No se envía prefijo de longitud; los datos se segmentan en bloques de hasta `MAX_PAYLOAD_SIZE`.
+  - Payload: `chunk: byte[]` (máx. 128 bytes). No se envía prefijo de longitud; los datos se segmentan en bloques de hasta `MAX_PAYLOAD_SIZE`.
 
 - **`0x30` CMD_DATASTORE_PUT (MCU → Linux)**: `[key_len: u8, key: char[], value_len: u8, value: char[]]`.
 - **`0x31` CMD_DATASTORE_GET (MCU → Linux)**: `[key_len: u8, key: char[]]`. El MCU solicita al daemon el último valor conocido para la clave indicada; el demonio responde inmediatamente usando su caché local (alimentada por `CMD_DATASTORE_PUT` y fuentes externas).
@@ -123,7 +123,7 @@ En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Lin
 
 - **`0x60` CMD_PROCESS_RUN (MCU → Linux)**
   - Payload: `command: UTF-8 bytes` (sin prefijo de longitud). El demonio aplica la lista blanca y timeout configurados.
-  - Respuesta `0xB0 CMD_PROCESS_RUN_RESP (Linux → MCU)`: `[status: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`. Las longitudes son Big Endian y se limitan para que el total no supere 256 bytes.
+  - Respuesta `0xB0 CMD_PROCESS_RUN_RESP (Linux → MCU)`: `[status: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`. Las longitudes son Big Endian y se limitan para que el total no supere 128 bytes.
 
 - **`0x61` CMD_PROCESS_RUN_ASYNC (MCU → Linux)**
   - Payload: `command: UTF-8 bytes` (sin prefijo de longitud).

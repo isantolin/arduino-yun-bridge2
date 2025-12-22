@@ -486,16 +486,26 @@ echo "[INFO] Updating feeds..."
 MAX_RETRIES=5
 RETRY=0
 SUCCESS=0
+# (Bloque CORREGIDO)
 while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     RETRY_COUNT=$((RETRY + 1))
     echo "[INFO] Updating feeds (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+    
+    # Intentamos actualizar
     if ./scripts/feeds update -a; then
         SUCCESS=1
         break
     else
-        echo "[WARN] Feeds update failed. Retrying..."
+        echo "[WARN] Feeds update failed."
+        
+        # FIX: Si falla, borramos los directorios descargados para forzar un clonado limpio
+        # Esto soluciona el error "You are not currently on a branch" y archivos corruptos por SSL error
+        echo "[FIX] Cleaning corrupted feed directories before retrying..."
+        rm -rf feeds/base feeds/packages feeds/luci feeds/routing feeds/telephony
+        
         RETRY=$((RETRY + 1))
-        sleep 2
+        echo "[INFO] Waiting 5 seconds before retry..."
+        sleep 5
     fi
 done
 if [ $SUCCESS -ne 1 ]; then

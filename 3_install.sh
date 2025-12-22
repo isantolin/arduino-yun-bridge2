@@ -57,8 +57,8 @@ if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN_USER_SET" = "0" ]; then
     FORCE_TLS_REGEN="0"
 fi
 PROJECT_IPK_PATTERNS="\
-openwrt-yun-bridge_*.ipk \
 openwrt-yun-core_*.ipk \
+openwrt-yun-bridge_*.ipk \
 luci-app-yunbridge_*.ipk"
 UCI_GENERAL_DIRTY=0
 #  --- Helper Functions ---

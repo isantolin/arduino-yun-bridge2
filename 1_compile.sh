@@ -556,7 +556,7 @@ done
 # Enable required Yun packages and dependencies automatically
 MANIFEST_DEPS="$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | paste -sd ' ' -)"
 if [ -z "$MANIFEST_DEPS" ]; then
-    echo "[ERROR] Unable to collect runtime dependencies from dependencies/runtime.toml" >&2
+    echo "[ERROR] Unable to collect runtime dependencies from requirements/runtime.toml" >&2
     exit 1
 fi
 REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"

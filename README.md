@@ -191,7 +191,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad y observabilidad? Revisa [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) para obtener un desglose actualizado.
 
-> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`, salvo las bibliotecas que solo existen en PyPI (`aiomqtt==2.4.0`, `paho-mqtt==2.1.0`, `pyserial-asyncio==0.6`, `cobs==1.2.2`, `tenacity==9.1.2`, `prometheus-client==0.23.1`, `persist-queue==1.1.0`, `attrs==24.2.0`). Esos paquetes se obtienen automáticamente de PyPI durante `3_install.sh`, que ahora lee `dependencies/runtime.toml` y aplica los mismos pines usados por `requirements/runtime.txt`. El resto (`python3-pyserial==3.5`, `python3-psutil==5.9.8`, `python3-more-itertools==10.8.0`, etc.) sigue llegando como IPKs tradicionales. El inventario completo vive en `dependencies/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt`, refrescar el `Makefile` e instruir a `1_compile.sh`.
+> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`, salvo las bibliotecas que solo existen en PyPI (`aiomqtt==2.4.0`, `paho-mqtt==2.1.0`, `pyserial-asyncio==0.6`, `cobs==1.2.2`, `tenacity==9.1.2`, `prometheus-client==0.23.1`, `persist-queue==1.1.0`, `attrs==24.2.0`). Esos paquetes se obtienen automáticamente de PyPI durante `3_install.sh`, que ahora lee requirements/runtime.tomly aplica los mismos pines usados por `requirements/runtime.txt`. El resto (`python3-pyserial==3.5`, `python3-psutil==5.9.8`, `python3-more-itertools==10.8.0`, etc.) sigue llegando como IPKs tradicionales. El inventario completo vive en `dependencies/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt`, refrescar el `Makefile` e instruir a `1_compile.sh`.
 
 ### Flujo reproducible con PyPI
 
@@ -201,7 +201,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	```
 	Esto usa exactamente los pines publicados en `dependencies/runtime.toml`, por lo que cualquier entorno virtual replica al daemon.
 - **Valida que los pines sigan disponibles en PyPI:** con `pip>=24.2` puedes hacer un chequeo sin modificar tu entorno usando `python3 -m pip install --dry-run -r requirements/runtime.txt`. En versiones anteriores de `pip`, ejecuta el mismo comando sin `--dry-run` dentro de un entorno temporal.
-- **Dispositivos OpenWrt:** `3_install.sh` ahora genera una lista temporal a partir de `dependencies/runtime.toml` e instala exclusivamente los paquetes que NO tienen contraparte `opkg`, garantizando que el sistema embebido y tu entorno local comparten versiones.
+- **Dispositivos OpenWrt:** `3_install.sh` ahora genera una lista temporal a partir de requirements/runtime.tomle instala exclusivamente los paquetes que NO tienen contraparte `opkg`, garantizando que el sistema embebido y tu entorno local comparten versiones.
 - **Automatiza las revisiones:** añade `./tools/sync_runtime_deps.py --check` a tus pipelines para asegurar que ningún commit olvida actualizar los artefactos derivados.
 - **Pruebas locales:** los entornos de `tox` consumen `requirements/runtime.txt`, así que `tox -e py311,py312` siempre valida contra el mismo conjunto de librerías que se usan en producción.
 
@@ -210,7 +210,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 1.  **Compilar:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes IPK de OpenWRT.
 2.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software y las dependencias.
 	- El script pedirá confirmación antes de lanzar `opkg upgrade`. Exporta `YUNBRIDGE_AUTO_UPGRADE=1` si necesitas ejecución no interactiva.
-	> **Nota:** `3_install.sh` combina `opkg` (IPKs tradicionales) con una instalación controlada vía `pip3` para los paquetes que solo existen en PyPI. Si se interrumpe esa fase, verifica la conectividad TLS y ejecuta `python3 -m pip install --no-cache-dir --upgrade -r requirements/runtime.txt` antes de relanzar el instalador para asegurarte de que cada pin declarado en `dependencies/runtime.toml` quedó aplicado.
+	> **Nota:** `3_install.sh` combina `opkg` (IPKs tradicionales) con una instalación controlada vía `pip3` para los paquetes que solo existen en PyPI. Si se interrumpe esa fase, verifica la conectividad TLS y ejecuta `python3 -m pip install --no-cache-dir --upgrade -r requirements/runtime.txt` antes de relanzar el instalador para asegurarte de que cada pin declarado en requirements/runtime.tomlquedó aplicado.
 3.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `tools/rotate_credentials.sh --host <yun>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
 4.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
 

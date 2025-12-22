@@ -12,7 +12,7 @@ import tomllib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = ROOT / "dependencies" / "runtime.toml"
+MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
 MAKEFILE_PATH = ROOT / "openwrt-yun-bridge" / "Makefile"
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"

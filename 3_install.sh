@@ -4,7 +4,7 @@ set -eu
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_ROOT"
 # Required metadata paths relative to the repository root.
-DEPENDENCY_MANIFEST="$PROJECT_ROOT/dependencies/runtime.toml"
+DEPENDENCY_MANIFEST="$PROJECT_ROOT/requirements/runtime.toml"
 
 # This file is part of Arduino Yun Ecosystem v2.
 # Copyright (C) 2025 Ignacio Santolin and contributors
@@ -210,7 +210,7 @@ PY
         exit 1
     fi
 
-    echo "[INFO] Installing pinned PyPI dependencies defined in dependencies/runtime.toml..."
+    echo "[INFO] Installing pinned PyPI dependencies defined in requirements/runtime.toml..."
     if ! python3 -m pip install --no-cache-dir --upgrade --pre -r "$tmp_requirements"; then
         echo "[ERROR] Failed to install pinned PyPI dependencies." >&2
         rm -f "$tmp_requirements"

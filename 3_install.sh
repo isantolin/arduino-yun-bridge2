@@ -30,7 +30,7 @@ REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
 MIN_DISK_KB=51200 # 50MB free required
 export TMPDIR=/overlay/upper/tmp
-LOCAL_IPK_INSTALL_FLAGS="--force-reinstall --force-downgrade --force-overwrite --force-depends --nodeps"
+LOCAL_APK_INSTALL_FLAGS="--force-reinstall --force-downgrade --force-overwrite --force-depends --nodeps"
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 DEFAULT_TLS_DIR="/etc/yunbridge/tls"
@@ -56,10 +56,10 @@ if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN_USER_SET" = "0" ]; then
     # Allow YUNBRIDGE_SKIP_TLS_AUTOGEN alone to disable regeneration when user did not override the force flag.
     FORCE_TLS_REGEN="0"
 fi
-PROJECT_IPK_PATTERNS="\
-openwrt-yun-core_*.ipk \
-openwrt-yun-bridge_*.ipk \
-luci-app-yunbridge_*.ipk"
+PROJECT_APK_PATTERNS="\
+openwrt-yun-core_*.apk \
+openwrt-yun-bridge_*.apk \
+luci-app-yunbridge_*.apk"
 UCI_GENERAL_DIRTY=0
 #  --- Helper Functions ---
 mkdir -p "$TMPDIR"
@@ -109,28 +109,28 @@ read_swap_total_with_fallback() {
 
 install_dependency() {
     pkg="$1"
-    if opkg list-installed "$pkg" | grep -q "^$pkg"; then
+    if apk list "$pkg" | grep -q "^$pkg"; then
         echo "[INFO] Package $pkg already installed."
         return 0
     fi
 
-    local local_ipk=""
-    for candidate in "bin/${pkg}"_*.ipk; do
+    local local_apk=""
+    for candidate in "bin/${pkg}"_*.apk; do
         if [ -f "$candidate" ]; then
-            local_ipk="$candidate"
+            local_apk="$candidate"
             break
         fi
     done
 
-    if [ -n "$local_ipk" ]; then
-        echo "[INFO] Installing $pkg from bundled IPK ($local_ipk)."
-        if opkg install $LOCAL_IPK_INSTALL_FLAGS "./$local_ipk"; then
+    if [ -n "$local_apk" ]; then
+        echo "[INFO] Installing $pkg from bundled APK ($local_apk)."
+        if apk add $LOCAL_APK_INSTALL_FLAGS "./$local_apk"; then
             return 0
         fi
-        echo "[WARN] Failed to install $pkg from bundled IPK; trying configured feeds." >&2
+        echo "[WARN] Failed to install $pkg from bundled APK; trying configured feeds." >&2
     fi
 
-    if opkg install "$pkg"; then
+    if apk add "$pkg"; then
         echo "[INFO] Installed $pkg from configured feeds."
         return 0
     fi
@@ -631,7 +631,7 @@ echo "[STEP 2/6] Checking for conflicting PPP/DHCP packages..."
 CONFLICT_PKGS="ppp ppp-mod-pppoe pppoe odhcp6c odhcpd"
 found_conflicts=""
 for pkg in $CONFLICT_PKGS; do
-    if opkg list-installed "$pkg" >/dev/null 2>&1; then
+    if apk list "$pkg" >/dev/null 2>&1; then
         found_conflicts="$found_conflicts $pkg"
     fi
 done
@@ -650,7 +650,7 @@ if [ -n "$found_conflicts" ]; then
     echo "[WARN] The following packages can lock the serial port:$found_conflicts"
     if [ "$REMOVE_CONFLICTS_SETTING" = "auto-remove" ]; then
         echo "[INFO] YUNBRIDGE_REMOVE_PPP signals automatic removal."
-        opkg remove $found_conflicts --force-depends || true
+        apk del $found_conflicts --force-depends || true
     elif [ "$REMOVE_CONFLICTS_SETTING" = "skip" ]; then
         echo "[INFO] Skipping removal as requested via YUNBRIDGE_REMOVE_PPP=0."
     else
@@ -658,7 +658,7 @@ if [ -n "$found_conflicts" ]; then
         read remove_answer || remove_answer=""
         case "$remove_answer" in
             y|Y)
-                opkg remove $found_conflicts --force-depends || true
+                apk del $found_conflicts --force-depends || true
                 ;;
             *)
                 echo "[INFO] Keeping existing PPP/DHCP packages. Ensure ttyATH0 is free before running YunBridge." ;;
@@ -672,32 +672,32 @@ fi
 stop_daemon
 
 echo "[STEP 3/6] Updating system packages..."
-opkg update
+apk update
 
 AUTO_UPGRADE="${YUNBRIDGE_AUTO_UPGRADE:-0}"
 if [ "$AUTO_UPGRADE" = "1" ]; then
-    echo "[INFO] YUNBRIDGE_AUTO_UPGRADE=1: ejecutando opkg upgrade sin prompt."
-    opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
+    echo "[INFO] YUNBRIDGE_AUTO_UPGRADE=1: ejecutando apk upgrade sin prompt."
+    apk list-upgradable | cut -f 1 -d ' ' | xargs -r apk upgrade
 else
-    printf "¿Deseas ejecutar 'opkg upgrade' para todos los paquetes? [y/N]: "
+    printf "¿Deseas ejecutar 'apk upgrade' para todos los paquetes? [y/N]: "
     read upgrade_answer || upgrade_answer=""
     case "$upgrade_answer" in
         y|Y)
-            opkg list-upgradable | cut -f 1 -d ' ' | xargs -r opkg upgrade
+            apk list-upgradable | cut -f 1 -d ' ' | xargs -r apk upgrade
             ;;
         *)
-            echo "[INFO] Se omitió 'opkg upgrade'." ;;
+            echo "[INFO] Se omitió 'apk upgrade'." ;;
     esac
 fi
 
 echo "[STEP 4/6] Installing essential dependencies..."
 #  Determine Lua runtime package name (varies across OpenWrt releases).
-if opkg info lua >/dev/null 2>&1; then
+if apk info lua >/dev/null 2>&1; then
     LUA_RUNTIME="lua"
-elif opkg info lua5.1 >/dev/null 2>&1; then
+elif apk info lua5.1 >/dev/null 2>&1; then
     LUA_RUNTIME="lua5.1"
 else
-    echo "[ERROR] No Lua runtime package (lua or lua5.1) available in opkg feeds." >&2
+    echo "[ERROR] No Lua runtime package (lua or lua5.1) available in apk feeds." >&2
     echo "[HINT] Ensure the base and packages feeds are up to date before rerunning this installer." >&2
     exit 1
 fi
@@ -729,24 +729,24 @@ done
 install_manifest_pip_requirements
 
 # --- Install Prebuilt Packages ---
-echo "[STEP 5/6] Installing project .ipk packages..."
-project_ipk_globs=${YUNBRIDGE_PROJECT_IPK_GLOBS:-$PROJECT_IPK_PATTERNS}
-project_ipk_installed=0
-for glob in $project_ipk_globs; do
-    for ipk in bin/$glob; do
-        [ -e "$ipk" ] || continue
-        pkg_name=$(basename "$ipk")
+echo "[STEP 5/6] Installing project .apk packages..."
+project_apk_globs=${YUNBRIDGE_PROJECT_APK_GLOBS:-$PROJECT_APK_PATTERNS}
+project_apk_installed=0
+for glob in $project_apk_globs; do
+    for apk in bin/$glob; do
+        [ -e "$apk" ] || continue
+        pkg_name=$(basename "$apk")
         echo "[INFO] Installing $pkg_name from ./bin"
-        if ! opkg install $LOCAL_IPK_INSTALL_FLAGS "./$ipk"; then
-            echo "[ERROR] Failed to install $pkg_name from ./bin." >&2
+        if ! apk add $LOCAL_APK_INSTALL_FLAGS "./$apk"; then
+            echo "[ERROR] Failed to add $pkg_name from ./bin." >&2
             exit 1
         fi
-        project_ipk_installed=1
+        project_apk_installed=1
     done
 done
 
-if [ "$project_ipk_installed" -eq 0 ]; then
-    echo "[INFO] No project-specific .ipk files found in bin/. Skipping Step 5."
+if [ "$project_apk_installed" -eq 0 ]; then
+    echo "[INFO] No project-specific .apk files found in bin/. Skipping Step 5."
 fi
 
 ensure_secure_serial_secret

@@ -607,40 +607,40 @@ cd "$REPO_ROOT" || exit 1
 
 
 # 3. Compilar los paquetes OpenWRT en el SDK
-# Limpiar .ipk viejos de openwrt-yun-bridge antes de copiar los nuevos
-echo "[CLEANUP] Removing old openwrt-yun-bridge .ipk files from $BIN_DIR..."
-find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.ipk' -delete
+# Limpiar .apk viejos de openwrt-yun-bridge antes de copiar los nuevos
+echo "[CLEANUP] Removing old openwrt-yun-bridge .apk files from $BIN_DIR..."
+find "$BIN_DIR" -type f -name 'openwrt-yun-bridge*_*.apk' -delete
 
 cd "$SDK_DIR" || exit 1
 for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
-    echo "[BUILD] Building $pkg (.ipk) in SDK..."
+    echo "[BUILD] Building $pkg (.apk) in SDK..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s
-    # Copiar artefactos .ipk al bin local
-    find bin/packages/ -name "$pkg*_*.ipk" -exec cp {} ../$BIN_DIR/ \;
+    # Copiar artefactos .apk al bin local
+    find bin/packages/ -name "$pkg*_*.apk" -exec cp {} ../$BIN_DIR/ \;
 done
 cd "$REPO_ROOT" || exit 1
 
 
-if ls "$BIN_DIR"/*.ipk >/dev/null 2>&1; then
+if ls "$BIN_DIR"/*.apk >/dev/null 2>&1; then
     if command -v sha256sum >/dev/null 2>&1; then
         echo "[INFO] Generating SHA256SUMS manifest in $BIN_DIR..."
-        (cd "$BIN_DIR" && sha256sum *.ipk > SHA256SUMS)
+        (cd "$BIN_DIR" && sha256sum *.apk > SHA256SUMS)
     else
         echo "[WARN] sha256sum command not found; skipping checksum manifest generation."
     fi
 else
-    echo "[WARN] No .ipk artifacts detected in $BIN_DIR; skipping SHA256SUMS generation."
+    echo "[WARN] No .apk artifacts detected in $BIN_DIR; skipping SHA256SUMS generation."
 fi
 
 
 
 
-# 4. Compilar openwrt-yun-bridge como .ipk (no .whl)
+# 4. Compilar openwrt-yun-bridge como .apk (no .whl)
 
-# openwrt-yun-bridge .ipk is built in the SDK, not locally. Do not run make in the package directory.
+# openwrt-yun-bridge .apk is built in the SDK, not locally. Do not run make in the package directory.
 if [ -d "openwrt-yun-bridge" ]; then
-    echo "[INFO] openwrt-yun-bridge .ipk is built in the SDK. Skipping local make."
+    echo "[INFO] openwrt-yun-bridge .apk is built in the SDK. Skipping local make."
 else
     echo "[WARN] Package openwrt-yun-bridge not found."
 fi
@@ -649,7 +649,7 @@ fi
 
 
 
-echo "\n[OK] Build finished. Find the .ipk and .whl artifacts in the bin/ directory."
+echo "\n[OK] Build finished. Find the .apk and .whl artifacts in the bin/ directory."
 echo "[HINT] Antes de ejecutar 3_install.sh puedes exportar"
 echo "       YUNBRIDGE_SERIAL_RETRY_TIMEOUT / YUNBRIDGE_SERIAL_RETRY_ATTEMPTS"
 echo "       para personalizar el control de flujo serie por defecto."

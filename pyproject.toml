@@ -1,6 +1,6 @@
 [tool.black]
 line-length = 88
-target-version = ['py311']
+target-version = ['py313']
 include = '\.pyi?$'
 exclude = '''
 /(
@@ -31,10 +31,10 @@ exclude = ["**/__pycache__", "**/node_modules", "**/.*", ".venv_debug"]
 venv = ".venv"
 reportMissingImports = true
 reportMissingTypeStubs = false
-pythonVersion = "3.11"
+pythonVersion = "3.13"
 executionEnvironments = [
   { root = "openwrt-yun-bridge/yunbridge" }
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py313"

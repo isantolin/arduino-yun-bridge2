@@ -483,35 +483,45 @@ fi
 # Ensure OpenWRT SDK detects new packages (refresh package index)
 cd "$SDK_DIR" || exit 1
 echo "[INFO] Updating feeds..."
+
+# REEMPLAZA el bloque while loop completo por este más robusto:
 MAX_RETRIES=5
 RETRY=0
 SUCCESS=0
-# (Bloque CORREGIDO)
 while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     RETRY_COUNT=$((RETRY + 1))
     echo "[INFO] Updating feeds (attempt $RETRY_COUNT/$MAX_RETRIES)..."
     
-    # Intentamos actualizar
+    # Bypass uboot-ath79 issue by pre-emptively removing it if it exists
+    # This prevents 'make prereq' from failing on unrelated packages
+    if [ -d "package/feeds/base/uboot-ath79" ]; then
+        echo "[FIX] Removing problematic package/feeds/base/uboot-ath79..."
+        rm -rf package/feeds/base/uboot-ath79
+    fi
+
     if ./scripts/feeds update -a; then
         SUCCESS=1
         break
     else
         echo "[WARN] Feeds update failed."
-        
-        # FIX: Si falla, borramos los directorios descargados para forzar un clonado limpio
-        # Esto soluciona el error "You are not currently on a branch" y archivos corruptos por SSL error
         echo "[FIX] Cleaning corrupted feed directories before retrying..."
         rm -rf feeds/base feeds/packages feeds/luci feeds/routing feeds/telephony
-        
         RETRY=$((RETRY + 1))
-        echo "[INFO] Waiting 5 seconds before retry..."
         sleep 5
     fi
 done
+
+# Agrega esto INMEDIATAMENTE DESPUÉS del loop, antes de instalar feeds:
 if [ $SUCCESS -ne 1 ]; then
     echo "[ERROR] Failed to update feeds after $MAX_RETRIES attempts. Exiting."
     exit 1
 fi
+
+# Elimina explícitamente uboot-ath79 OTRA VEZ después del update, por seguridad
+if [ -d "feeds/base/package/boot/uboot-ath79" ]; then
+    rm -rf feeds/base/package/boot/uboot-ath79
+fi
+
 echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then

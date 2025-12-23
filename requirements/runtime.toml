@@ -14,12 +14,6 @@ pip = ""
 rationale = "Base interpreter shipped on the target image"
 
 [[dependency]]
-name = "python3-asyncio"
-openwrt = "python3-asyncio"
-pip = ""
-rationale = "Asyncio stdlib backport packaged separately on OpenWrt"
-
-[[dependency]]
 name = "python3-uci"
 openwrt = "python3-uci"
 pip = "uci==1.0.6"

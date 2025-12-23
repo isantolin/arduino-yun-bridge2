@@ -39,7 +39,6 @@ define Package/$(PKG_NAME)
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
 	DEPENDS+= \
 		+python3 \
-		+python3-asyncio \
 		+python3-uci \
 		+python3-aiomqtt \
 		+python3-pyserial \

@@ -53,10 +53,10 @@ def load_manifest() -> list[dict]:
 def collect_pip_specs(deps: Sequence[dict]) -> list[str]:
     # 1. Recolectar especificaciones crudas
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
-    
+
     # 2. Filtrar paquetes marcados como SYSTEM_ONLY
     filtered = {
-        s for s in specs 
+        s for s in specs
         if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)
     }
     return sorted(filtered)

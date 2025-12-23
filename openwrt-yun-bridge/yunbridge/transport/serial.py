@@ -84,34 +84,39 @@ class SerialProtocol(asyncio.Protocol):
     def __init__(self) -> None:
         self.transport: asyncio.Transport | None = None
         self.reader: asyncio.StreamReader = asyncio.StreamReader()
-        
+
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self.transport = cast(asyncio.Transport, transport)
         self.reader.set_transport(transport)
-        
+
     def data_received(self, data: bytes) -> None:
         self.reader.feed_data(data)
-        
+
     def connection_lost(self, exc: Exception | None) -> None:
         self.reader.feed_eof()
 
 
 async def _open_serial_connection(
-    url: str, baudrate: int
+    url: str, baudrate: int, **kwargs: Any
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """
     Open a serial connection using native asyncio.
     Replaces pyserial-asyncio to ensure Python 3.13+ compatibility.
     """
     loop = asyncio.get_running_loop()
-    
+
     # Create the pyserial instance in a non-blocking way
     ser = serial.serial_for_url(url, baudrate=baudrate, do_not_open=True)
-    ser.exclusive = True
-    
+
+    # Handle exclusive flag if passed (compatibility with old calls)
+    if kwargs.get("exclusive", False):
+        ser.exclusive = True
+
     def _open_hardware() -> None:
         try:
             ser.open()
+            if ser.fd is None:
+                raise serial.SerialException("Serial port opened but no fd available")
             # Set non-blocking on the file descriptor
             os.set_blocking(ser.fd, False)
         except Exception:
@@ -120,14 +125,23 @@ async def _open_serial_connection(
             raise
 
     await loop.run_in_executor(None, _open_hardware)
-    
+
     transport, protocol_instance = await loop.connect_read_pipe(
-        SerialProtocol, 
+        SerialProtocol,
         ser
     )
-    
-    writer = asyncio.StreamWriter(transport, protocol_instance, None, loop)
+
+    writer = asyncio.StreamWriter(
+        cast(asyncio.WriteTransport, transport),
+        protocol_instance,
+        None,
+        loop
+    )
     return protocol_instance.reader, writer
+
+
+# Alias required for tests that mock 'yunbridge.transport.serial.OPEN_SERIAL_CONNECTION'
+OPEN_SERIAL_CONNECTION = _open_serial_connection
 
 
 async def _negotiate_baudrate(
@@ -158,7 +172,7 @@ async def _negotiate_baudrate(
         return False
 
 
-async def _open_serial_with_retry(
+async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     base_delay = float(max(1, config.reconnect_delay))
@@ -178,18 +192,20 @@ async def _open_serial_with_retry(
 
     while True:
         try:
-            reader, writer = await _open_serial_connection(
+            # Use OPEN_SERIAL_CONNECTION alias to allow mocking in tests
+            reader, writer = await OPEN_SERIAL_CONNECTION(
                 url=config.serial_port,
                 baudrate=initial_baud,
+                exclusive=True
             )
 
             # Access underlying serial object to force raw mode
             try:
                 transport = writer.transport
-                if hasattr(transport, "_serial"): # Standard asyncio pipe transport
-                    _ensure_raw_mode(transport._serial, config.serial_port) # type: ignore
-                elif hasattr(transport, "serial"): # Some other transports
-                    _ensure_raw_mode(transport.serial, config.serial_port) # type: ignore
+                if hasattr(transport, "_serial"):  # Standard asyncio pipe transport
+                    _ensure_raw_mode(transport._serial, config.serial_port)  # type: ignore
+                elif hasattr(transport, "serial"):  # Some other transports
+                    _ensure_raw_mode(transport.serial, config.serial_port)  # type: ignore
             except Exception as e:
                 logger.debug("Could not set raw mode (might be ignored): %s", e)
 
@@ -200,10 +216,11 @@ async def _open_serial_with_retry(
                     writer.close()
                     await writer.wait_closed()
                     await asyncio.sleep(0.2)
-                    
-                    reader, writer = await _open_serial_connection(
+
+                    reader, writer = await OPEN_SERIAL_CONNECTION(
                         url=config.serial_port,
                         baudrate=target_baud,
+                        exclusive=True
                     )
                 else:
                     logger.warning("Negotiation failed; staying at %d baud", initial_baud)
@@ -211,6 +228,13 @@ async def _open_serial_with_retry(
             return reader, writer
 
         except (serial.SerialException, OSError, ExceptionGroup) as exc:
+            # CRITICAL: Filter out fatal exceptions from ExceptionGroups
+            if isinstance(exc, ExceptionGroup):
+                _, remainder = exc.split((serial.SerialException, OSError))
+                if remainder:
+                    # Propagate non-recoverable exceptions (like ValueError in tests)
+                    raise remainder
+
             logger.warning("%s failed (%s); retrying in %.1fs.", action, exc, current_delay)
             await asyncio.sleep(current_delay)
             current_delay = min(max_delay, current_delay * 2)
@@ -240,7 +264,7 @@ class SerialTransport:
         while True:
             should_retry = True
             try:
-                self.reader, self.writer = await _open_serial_with_retry(self.config)
+                self.reader, self.writer = await _open_serial_connection_with_retry(self.config)
                 self.state.serial_writer = self.writer
                 self.service.register_serial_sender(self.send_frame)
                 logger.info("Serial port connected successfully.")
@@ -295,35 +319,42 @@ class SerialTransport:
     async def _read_loop(self) -> None:
         assert self.reader is not None
         buffer = bytearray()
+        discarding = False  # Ignore bytes until next delimiter if packet was too large
+
         while True:
             try:
-                # Read byte-by-byte for simplicity with COBS
                 byte = await self.reader.read(1)
             except (OSError, asyncio.IncompleteReadError):
                 break
-                
+
             if not byte:
                 break
 
             if byte == FRAME_DELIMITER:
-                if buffer:
+                if discarding:
+                    # End of the discarded packet
+                    discarding = False
+                    buffer.clear()
+                elif buffer:
                     encoded_packet = bytes(buffer)
                     buffer.clear()
                     await self._process_packet(encoded_packet)
-                    # Yield to event loop to allow processing
                     await asyncio.sleep(0)
             else:
-                buffer.append(byte[0])
-                if len(buffer) > MAX_SERIAL_PACKET_BYTES:
-                    # Flush and warn
-                    buffer.clear()
-                    self.state.record_serial_decode_error()
-                    logger.warning("Serial packet too large, flushed.")
-                    try:
-                        payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL)
-                        await self.service.send_frame(Status.MALFORMED.value, payload)
-                    except Exception:
-                        pass
+                if not discarding:
+                    buffer.append(byte[0])
+                    if len(buffer) > MAX_SERIAL_PACKET_BYTES:
+                        # Flush, warn, and start discarding tail
+                        snapshot = bytes(buffer[:32])
+                        buffer.clear()
+                        discarding = True
+                        self.state.record_serial_decode_error()
+                        logger.warning("Serial packet too large, flushed.")
+                        try:
+                            payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL) + snapshot
+                            await self.service.send_frame(Status.MALFORMED.value, payload)
+                        except Exception:
+                            pass
 
     async def send_frame(self, command_id: int, payload: bytes) -> bool:
         if self.writer is None or self.writer.is_closing():
@@ -332,7 +363,7 @@ class SerialTransport:
             encoded = _encode_frame_bytes(command_id, payload)
             self.writer.write(encoded)
             await self.writer.drain()
-            
+
             # Debug logging
             if logger.isEnabledFor(logging.DEBUG):
                 try:
@@ -346,19 +377,63 @@ class SerialTransport:
             return False
 
     async def _process_packet(self, encoded_packet: bytes) -> None:
-        # Same processing logic as before, just kept concise here
         if not _is_binary_packet(encoded_packet):
+            # Send Malformed notification for non-binary garbage
+            self.state.record_serial_decode_error()
+            payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL)
+            try:
+                await self.service.send_frame(Status.MALFORMED.value, payload)
+            except Exception:
+                logger.exception("Failed to notify MCU about non-binary serial payload")
             return
 
+        packet_bytes = _coerce_packet(encoded_packet)
+        raw_frame: bytes | None = None  # Init to satisfy unbound variable check
+
         try:
-            packet_bytes = _coerce_packet(encoded_packet)
             raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
-        except (cobs.DecodeError, ValueError) as e:
-            logger.warning("Frame decode error: %s", e)
+
+        except (cobs.DecodeError, ValueError) as exc:
+            # Combined handling for COBS errors and Frame Parse errors (CRC, etc)
             self.state.record_serial_decode_error()
+
+            # Extract what we can for the error payload
+            error_data = raw_frame if raw_frame is not None else packet_bytes
+
+            header_hex = error_data[: protocol.CRC_COVERED_HEADER_SIZE].hex()
+            logger.warning(
+                "Frame parse error %s for raw %s (len=%d header=%s)",
+                exc,
+                error_data.hex(),
+                len(error_data),
+                header_hex,
+            )
+
+            status = Status.MALFORMED
+            if "crc mismatch" in str(exc).lower():
+                status = Status.CRC_MISMATCH
+                self.state.record_serial_crc_error()
+
+            command_hint = protocol.INVALID_ID_SENTINEL
+            if len(error_data) >= protocol.CRC_COVERED_HEADER_SIZE:
+                try:
+                    _, _, command_hint = struct.unpack(
+                        protocol.CRC_COVERED_HEADER_FORMAT,
+                        error_data[: protocol.CRC_COVERED_HEADER_SIZE],
+                    )
+                except Exception:
+                    pass
+
+            truncated = error_data[:32]
+            payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated
+            try:
+                await self.service.send_frame(status.value, payload)
+            except Exception:
+                logger.exception("Failed to notify MCU about frame parse error")
         except Exception:
             logger.exception("Error processing frame")
 
-__all__ = ["SerialTransport", "serial_sender_not_ready"]
+
+__all__ = ["SerialTransport", "serial_sender_not_ready", "_open_serial_connection_with_retry"]

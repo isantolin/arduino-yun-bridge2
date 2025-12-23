@@ -294,7 +294,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         for key, value in mqtt_suffixes.items():
             name = f"MQTT_SUFFIX_{key.upper()}"
             out.write(f'{name}: Final[str] = "{value}"\n')
-        out.write("\n")
+        out.write("\n\n")
 
     if "topics" in spec:
         out.write("class Topic(StrEnum):\n")

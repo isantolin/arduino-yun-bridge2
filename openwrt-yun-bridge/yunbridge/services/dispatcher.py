@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
     RESPONSE_OFFSET,
     Command,
@@ -213,7 +214,7 @@ class BridgeDispatcher:
                 # Optionally send an error status back to MCU if it was a request
                 if command_id < RESPONSE_OFFSET:
                     # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
-                    await self.send_frame(Status.ERROR.value, b"Internal Error")
+                    await self.send_frame(Status.ERROR.value, protocol.ERROR_REASON_INTERNAL_ERROR.encode())
 
         elif command_id < RESPONSE_OFFSET:
             logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)

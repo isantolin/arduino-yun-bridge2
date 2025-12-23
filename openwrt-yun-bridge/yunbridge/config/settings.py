@@ -40,7 +40,9 @@ from ..const import (
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
+    DEFAULT_RECONNECT_INITIAL_DELAY,
+    DEFAULT_RECONNECT_MAX_DELAY,
+    DEFAULT_RECONNECT_MULTIPLIER,
     DEFAULT_SERIAL_BAUD,
     DEFAULT_SERIAL_SAFE_BAUD,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
@@ -84,7 +86,9 @@ class RuntimeConfig:
     allowed_policy: AllowedCommandPolicy = field(init=False)
 
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    reconnect_delay: int = DEFAULT_RECONNECT_DELAY
+    reconnect_initial_delay: int = DEFAULT_RECONNECT_INITIAL_DELAY
+    reconnect_max_delay: int = DEFAULT_RECONNECT_MAX_DELAY
+    reconnect_multiplier: float = DEFAULT_RECONNECT_MULTIPLIER
     status_interval: int = DEFAULT_STATUS_INTERVAL
     debug_logging: bool = False
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
@@ -511,7 +515,9 @@ def load_runtime_config() -> RuntimeConfig:
             ),
         ),
         mqtt_queue_limit=max(1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)),
-        reconnect_delay=_get_int("reconnect_delay", DEFAULT_RECONNECT_DELAY),
+        reconnect_initial_delay=_get_int("reconnect_initial_delay", DEFAULT_RECONNECT_INITIAL_DELAY),
+        reconnect_max_delay=_get_int("reconnect_max_delay", DEFAULT_RECONNECT_MAX_DELAY),
+        reconnect_multiplier=parse_float("reconnect_multiplier", DEFAULT_RECONNECT_MULTIPLIER),
         status_interval=_get_int("status_interval", DEFAULT_STATUS_INTERVAL),
         debug_logging=debug_logging,
         console_queue_limit_bytes=_get_int(

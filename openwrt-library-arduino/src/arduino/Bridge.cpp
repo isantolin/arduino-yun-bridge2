@@ -49,7 +49,6 @@ static_assert(
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
 );
 constexpr size_t kSha256DigestSize = 32;
-constexpr char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;
@@ -253,7 +252,7 @@ void BridgeClass::process() {
           _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
           break;
         case rpc::FrameParser::Error::OVERFLOW:
-          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, reinterpret_cast<const __FlashStringHelper*>(kSerialOverflowMessage));
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, rpc::kErrorReasonSerialRxOverflow);
           break;
         default:
           _emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);

@@ -20,6 +20,7 @@ crc32_mask = 0xFFFFFFFF
 frame_delimiter = 0x00
 digital_low = 0x00
 digital_high = 0x01
+process_poll_header_size = 6
 
 [handshake]
 nonce_length = 16
@@ -34,6 +35,28 @@ response_timeout_min_ms = 100
 response_timeout_max_ms = 180000
 retry_limit_min = 1
 retry_limit_max = 8
+
+[error_reasons]
+serial_rx_overflow = "serial_rx_overflow"
+internal_error = "Internal Error"
+data_get_short = "data_get_short"
+data_get_key = "data_get_key"
+datastore_queue_full = "datastore_queue_full"
+process_run_payload_too_large = "process_run_payload_too_large"
+process_run_async_payload_too_large = "process_run_async_payload_too_large"
+process_poll_queue_full = "process_poll_queue_full"
+process_limit_reached = "process_limit_reached"
+process_run_internal_error = "process_run_internal_error"
+command_validation_failed = "command_validation_failed"
+process_run_async_failed = "process_run_async_failed"
+invalid_path = "invalid_path"
+write_limit_exceeded = "write_limit_exceeded"
+storage_quota_exceeded = "storage_quota_exceeded"
+write_failed = "write_failed"
+read_failed = "read_failed"
+remove_failed = "remove_failed"
+unsafe_path = "unsafe_path"
+datastore_miss = "datastore-miss"
 
 [data_formats]
 datastore_key_len_format = ">B"

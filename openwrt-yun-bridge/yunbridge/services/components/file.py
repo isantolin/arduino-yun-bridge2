@@ -62,7 +62,7 @@ class FileComponent:
             logger.warning("Security Alert: Path traversal attempt blocked: %s", path)
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("invalid_path"),
+                encode_status_reason(protocol.ERROR_REASON_INVALID_PATH),
             )
             return False
 
@@ -70,7 +70,7 @@ class FileComponent:
             logger.warning("Security Alert: Absolute paths not allowed: %s", path)
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("invalid_path"),
+                encode_status_reason(protocol.ERROR_REASON_INVALID_PATH),
             )
             return False
 
@@ -91,7 +91,7 @@ class FileComponent:
 
         await self.ctx.send_frame(
             Status.ERROR.value,
-            encode_status_reason(reason or "write_failed"),
+            encode_status_reason(reason or protocol.ERROR_REASON_WRITE_FAILED),
         )
         return False
 
@@ -113,7 +113,7 @@ class FileComponent:
         if not success:
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason(reason or "read_failed"),
+                encode_status_reason(reason or protocol.ERROR_REASON_READ_FAILED),
             )
             return
 
@@ -149,7 +149,7 @@ class FileComponent:
 
         await self.ctx.send_frame(
             Status.ERROR.value,
-            encode_status_reason(reason or "remove_failed"),
+            encode_status_reason(reason or protocol.ERROR_REASON_REMOVE_FAILED),
         )
         return False
 
@@ -180,7 +180,7 @@ class FileComponent:
                         Action.FILE_WRITE, filename, payload
                     )
                     if not success:
-                        outcome["status"] = reason or "write_failed"
+                        outcome["status"] = reason or protocol.ERROR_REASON_WRITE_FAILED
                         logger.error(
                             "MQTT file write failed for %s: %s",
                             filename,
@@ -199,7 +199,7 @@ class FileComponent:
                         filename,
                     )
                     if not success:
-                        outcome["status"] = reason or "read_failed"
+                        outcome["status"] = reason or protocol.ERROR_REASON_READ_FAILED
                         logger.error(
                             "MQTT file read failed for %s: %s",
                             filename,
@@ -232,7 +232,7 @@ class FileComponent:
                         Action.FILE_REMOVE, filename
                     )
                     if not success:
-                        outcome["status"] = reason or "remove_failed"
+                        outcome["status"] = reason or protocol.ERROR_REASON_REMOVE_FAILED
                         logger.error(
                             "MQTT file remove failed for %s: %s",
                             filename,
@@ -269,7 +269,7 @@ class FileComponent:
                 "File operation rejected due to unsafe path: %s",
                 filename,
             )
-            return False, None, "unsafe_path"
+            return False, None, protocol.ERROR_REASON_UNSAFE_PATH
 
         self._ensure_usage_seeded()
 
@@ -371,7 +371,7 @@ class FileComponent:
                     path,
                     limit,
                 )
-                return False, None, "write_limit_exceeded"
+                return False, None, protocol.ERROR_REASON_WRITE_LIMIT_EXCEEDED
 
             current_usage = self.state.file_storage_bytes_used
             previous_size = self._existing_file_size(path)
@@ -392,7 +392,7 @@ class FileComponent:
                     projected_usage,
                     quota,
                 )
-                return False, None, "storage_quota_exceeded"
+                return False, None, protocol.ERROR_REASON_STORAGE_QUOTA_EXCEEDED
 
             await asyncio.to_thread(self._write_file_sync, path, data)
             self.state.file_storage_bytes_used = projected_usage

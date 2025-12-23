@@ -100,7 +100,21 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_DIGITAL_HIGH = {consts['digital_high']};\n"
         )
+    if "process_poll_header_size" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_PROCESS_POLL_HEADER_SIZE = {consts['process_poll_header_size']};\n"
+        )
     out.write("\n")
+
+    error_reasons = spec.get("error_reasons", {})
+    if error_reasons:
+        out.write("// Standardized Error Reasons\n")
+        for key, value in error_reasons.items():
+            # Convert snake_case key to CamelCase for C++ constant name
+            # e.g. serial_rx_overflow -> SerialRxOverflow
+            camel_name = "".join(x.title() for x in key.split("_"))
+            out.write(f'constexpr char kErrorReason{camel_name}[] = "{value}";\n')
+        out.write("\n")
 
     handshake = spec.get("handshake", {})
     if handshake:
@@ -215,7 +229,19 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"DIGITAL_HIGH: Final[int] = {consts['digital_high']}\n"
         )
+    if "process_poll_header_size" in consts:
+        out.write(
+            f"PROCESS_POLL_HEADER_SIZE: Final[int] = {consts['process_poll_header_size']}\n"
+        )
     out.write("\n")
+
+    error_reasons = spec.get("error_reasons", {})
+    if error_reasons:
+        for key, value in error_reasons.items():
+            # Convert snake_case key to UPPER_CASE for Python constant name
+            upper_name = key.upper()
+            out.write(f'ERROR_REASON_{upper_name}: Final[str] = "{value}"\n')
+        out.write("\n")
 
     handshake = spec.get("handshake", {})
     if handshake:

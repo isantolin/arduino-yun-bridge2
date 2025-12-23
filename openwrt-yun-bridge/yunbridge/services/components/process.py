@@ -35,7 +35,7 @@ from yunbridge.rpc.protocol import (
 
 logger = logging.getLogger("yunbridge.process")
 
-_PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
+_PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - protocol.PROCESS_POLL_HEADER_SIZE
 
 
 @dataclass(slots=True)
@@ -79,7 +79,7 @@ class ProcessComponent:
             )
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("process_limit_reached"),
+                encode_status_reason(protocol.ERROR_REASON_PROCESS_LIMIT_REACHED),
             )
             return
 
@@ -118,7 +118,7 @@ class ProcessComponent:
                     )
                     await self.ctx.send_frame(
                         Status.ERROR.value,
-                        b"process_run_internal_error",
+                        protocol.ERROR_REASON_PROCESS_RUN_INTERNAL_ERROR.encode(),
                     )
 
         await self.ctx.schedule_background(_execute())
@@ -131,17 +131,17 @@ class ProcessComponent:
             logger.warning("Rejected async command '%s': %s", command, exc)
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("command_validation_failed"),
+                encode_status_reason(protocol.ERROR_REASON_COMMAND_VALIDATION_FAILED),
             )
-            await self._publish_run_async_error("command_validation_failed")
+            await self._publish_run_async_error(protocol.ERROR_REASON_COMMAND_VALIDATION_FAILED)
             return
         match pid:
             case protocol.INVALID_ID_SENTINEL:
                 await self.ctx.send_frame(
                     Status.ERROR.value,
-                    encode_status_reason("process_run_async_failed"),
+                    encode_status_reason(protocol.ERROR_REASON_PROCESS_RUN_ASYNC_FAILED),
                 )
-                await self._publish_run_async_error("process_run_async_failed")
+                await self._publish_run_async_error(protocol.ERROR_REASON_PROCESS_RUN_ASYNC_FAILED)
                 return
             case _:
                 await self.ctx.send_frame(

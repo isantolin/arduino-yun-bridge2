@@ -11,6 +11,7 @@ from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
 from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
     DATASTORE_VALUE_LEN_FORMAT,
     DATASTORE_VALUE_LEN_SIZE,
@@ -80,7 +81,7 @@ class DatastoreComponent:
             )
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
-                b"data_get_short",
+                protocol.ERROR_REASON_DATA_GET_SHORT.encode(),
             )
             return False
 
@@ -89,7 +90,7 @@ class DatastoreComponent:
             logger.warning(
                 "Malformed DATASTORE_GET payload: missing key bytes",
             )
-            await self.ctx.send_frame(Status.MALFORMED.value, b"data_get_key")
+            await self.ctx.send_frame(Status.MALFORMED.value, protocol.ERROR_REASON_DATA_GET_KEY.encode())
             return False
 
         key_bytes = payload[1 : 1 + key_len]
@@ -196,7 +197,7 @@ class DatastoreComponent:
                     key,
                     b"",
                     reply_context=inbound,
-                    error_reason="datastore-miss",
+                    error_reason=protocol.ERROR_REASON_DATASTORE_MISS,
                 )
             else:
                 logger.debug("Datastore GET for '%s' has no cached value", key)

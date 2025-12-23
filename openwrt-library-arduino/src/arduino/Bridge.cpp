@@ -10,7 +10,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <Crypto.h>
+#if __has_include(<Crypto.h>)
+  #include <Crypto.h>
+#else
+  #error "Dependencia faltante: Crypto. Ejecute tools/install.sh primero."
+#endif
 #include <SHA256.h>
 
 #include "arduino/StringUtils.h"

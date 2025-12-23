@@ -9,600 +9,180 @@ from pathlib import Path
 
 import aiomqtt
 
-from yunbridge.common import (
-    build_mqtt_connect_properties,
-    build_mqtt_properties,
-)
+from yunbridge.common import build_mqtt_connect_properties, build_mqtt_properties
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.const import MQTT_TLS_MIN_VERSION
 from yunbridge.protocol import Action, Topic, topic_path
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
-from yunbridge.const import MQTT_TLS_MIN_VERSION
 
 logger = logging.getLogger("yunbridge")
 
 
 def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
-
-
     if not config.tls_enabled:
-
-
         return None
 
-
-
-
-
     if not config.mqtt_cafile or not Path(config.mqtt_cafile).exists():
-
-
         raise RuntimeError(f"MQTT TLS CA file missing: {config.mqtt_cafile}")
 
-
-
-
-
     try:
-
-
         context = ssl.create_default_context(
-
-
-            ssl.Purpose.SERVER_AUTH,
-
-
-            cafile=config.mqtt_cafile
-
-
+            ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile
         )
-
-
         context.minimum_version = MQTT_TLS_MIN_VERSION
-
-
-        
-
-
         if config.mqtt_certfile and config.mqtt_keyfile:
-
-
             context.load_cert_chain(config.mqtt_certfile, config.mqtt_keyfile)
 
-
-            
-
-
         return context
-
-
     except Exception as exc:
-
-
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
 
 
-
-
-
-
-
-
 async def mqtt_task(
-
-
     config: RuntimeConfig,
-
-
     state: RuntimeState,
-
-
     service: BridgeService,
-
-
 ) -> None:
-
-
     tls_context = _configure_tls(config)
-
-
     reconnect_delay = max(1, config.reconnect_delay)
 
-
-
-
-
     async def _publisher_loop(client: aiomqtt.Client) -> None:
-
-
         while True:
-
-
             await state.flush_mqtt_spool()
-
-
-            message_to_publish = await state.mqtt_publish_queue.get()
-
-
-            topic_name = message_to_publish.topic_name
-
-
-
-
-
-            props = build_mqtt_properties(message_to_publish)
-
-
-
-
+            message = await state.mqtt_publish_queue.get()
+            topic_name = message.topic_name
+            props = build_mqtt_properties(message)
 
             try:
-
-
                 await client.publish(
-
-
                     topic_name,
-
-
-                    message_to_publish.payload,
-
-
-                    qos=int(message_to_publish.qos),
-
-
-                    retain=message_to_publish.retain,
-
-
+                    message.payload,
+                    qos=int(message.qos),
+                    retain=message.retain,
                     properties=props,
-
-
                 )
-
-
             except asyncio.CancelledError:
-
-
                 logger.info("MQTT publisher loop cancelled.")
-
-
                 try:
-
-
-                    state.mqtt_publish_queue.put_nowait(message_to_publish)
-
-
+                    state.mqtt_publish_queue.put_nowait(message)
                 except asyncio.QueueFull:
-
-
                     logger.debug(
-
-
                         "MQTT publish queue full while cancelling; dropping %s",
-
-
                         topic_name,
-
-
                     )
-
-
                 raise
-
-
             except aiomqtt.MqttError as exc:
-
-
                 logger.warning(
-
-
                     "MQTT publish failed for %s; broker unavailable (%s)",
-
-
                     topic_name,
-
-
                     exc,
-
-
                 )
-
-
                 try:
-
-
-                    state.mqtt_publish_queue.put_nowait(message_to_publish)
-
-
+                    state.mqtt_publish_queue.put_nowait(message)
                 except asyncio.QueueFull:
-
-
                     logger.error(
-
-
                         "MQTT publish queue full; dropping message for %s",
-
-
                         topic_name,
-
-
                     )
-
-
                 raise
-
-
             except Exception:
-
-
-                logger.exception(
-
-
-                    "Failed to publish MQTT message for topic %s",
-
-
-                    topic_name,
-
-
-                )
-
-
+                logger.exception("Failed to publish MQTT message for topic %s", topic_name)
                 raise
-
-
             finally:
-
-
                 state.mqtt_publish_queue.task_done()
-
-
                 await state.flush_mqtt_spool()
 
-
-
-
-
     async def _subscriber_loop(client: aiomqtt.Client) -> None:
-
-
         try:
-
-
             async for message in client.messages:
-
-
                 topic = str(message.topic)
-
-
                 if not topic:
-
-
                     continue
-
-
                 try:
-
-
                     await service.handle_mqtt_message(message)
-
-
                 except Exception:
-
-
-                    logger.exception(
-
-
-                        "Error processing MQTT topic %s",
-
-
-                        topic,
-
-
-                    )
-
-
+                    logger.exception("Error processing MQTT topic %s", topic)
         except asyncio.CancelledError:
-
-
             logger.info("MQTT subscriber loop cancelled.")
-
-
             raise
-
-
         except aiomqtt.MqttError as exc:
-
-
             logger.warning("MQTT subscriber loop stopped: %s", exc)
-
-
             raise
-
-
-
-
 
     while True:
-
-
         try:
-
-
             connect_props = build_mqtt_connect_properties()
-
-
             async with aiomqtt.Client(
-
-
                 hostname=config.mqtt_host,
-
-
                 port=config.mqtt_port,
-
-
                 username=config.mqtt_user or None,
-
-
                 password=config.mqtt_pass or None,
-
-
                 tls_context=tls_context,
-
-
                 logger=logging.getLogger("yunbridge.mqtt.client"),
-
-
                 protocol=aiomqtt.ProtocolVersion.V5,
-
-
                 clean_session=None,
-
-
                 properties=connect_props,
-
-
             ) as client:
-
-
                 logger.info("Connected to MQTT broker.")
-
-
-
-
 
                 prefix = state.mqtt_topic_prefix
 
-
-
-
-
-                def _sub_path(top: Topic | str, *segs: str) -> str:
-
-
+                def _sub(top: Topic | str, *segs: str) -> str:
                     return topic_path(prefix, top, *segs)
 
-
-
-
-
+                # fmt: off
                 topics = [
-
-
-                    (_sub_path(Topic.DIGITAL, "+", Action.PIN_MODE), 0),
-
-
-                    (_sub_path(Topic.DIGITAL, "+", Action.PIN_READ), 0),
-
-
-                    (_sub_path(Topic.DIGITAL, "+"), 0),
-
-
-                    (_sub_path(Topic.ANALOG, "+", Action.PIN_READ), 0),
-
-
-                    (_sub_path(Topic.ANALOG, "+"), 0),
-
-
-                    (_sub_path(Topic.CONSOLE, Action.CONSOLE_IN), 0),
-
-
-                    (_sub_path(Topic.DATASTORE, Action.DATASTORE_PUT, "#"), 0),
-
-
-                    (_sub_path(Topic.DATASTORE, Action.DATASTORE_GET, "#"), 0),
-
-
-                    (_sub_path(Topic.MAILBOX, Action.MAILBOX_WRITE), 0),
-
-
-                    (_sub_path(Topic.MAILBOX, Action.MAILBOX_READ), 0),
-
-
-                    (_sub_path(Topic.SHELL, Action.SHELL_RUN), 0),
-
-
-                    (_sub_path(Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
-
-
-                    (_sub_path(Topic.SHELL, Action.SHELL_POLL, "#"), 0),
-
-
-                    (_sub_path(Topic.SHELL, Action.SHELL_KILL, "#"), 0),
-
-
-                    (
-
-
-                        _sub_path(
-
-
-                            Topic.SYSTEM,
-
-
-                            Action.SYSTEM_FREE_MEMORY,
-
-
-                            Action.SYSTEM_GET,
-
-
-                        ),
-
-
-                        0,
-
-
-                    ),
-
-
-                    (
-
-
-                        _sub_path(
-
-
-                            Topic.SYSTEM,
-
-
-                            Action.SYSTEM_VERSION,
-
-
-                            Action.SYSTEM_GET,
-
-
-                        ),
-
-
-                        0,
-
-
-                    ),
-
-
-                    (_sub_path(Topic.FILE, Action.FILE_WRITE, "#"), 0),
-
-
-                    (_sub_path(Topic.FILE, Action.FILE_READ, "#"), 0),
-
-
-                    (_sub_path(Topic.FILE, Action.FILE_REMOVE, "#"), 0),
-
-
+                    (_sub(Topic.DIGITAL, "+", Action.PIN_MODE), 0),
+                    (_sub(Topic.DIGITAL, "+", Action.PIN_READ), 0),
+                    (_sub(Topic.DIGITAL, "+"), 0),
+                    (_sub(Topic.ANALOG, "+", Action.PIN_READ), 0),
+                    (_sub(Topic.ANALOG, "+"), 0),
+                    (_sub(Topic.CONSOLE, Action.CONSOLE_IN), 0),
+                    (_sub(Topic.DATASTORE, Action.DATASTORE_PUT, "#"), 0),
+                    (_sub(Topic.DATASTORE, Action.DATASTORE_GET, "#"), 0),
+                    (_sub(Topic.MAILBOX, Action.MAILBOX_WRITE), 0),
+                    (_sub(Topic.MAILBOX, Action.MAILBOX_READ), 0),
+                    (_sub(Topic.SHELL, Action.SHELL_RUN), 0),
+                    (_sub(Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
+                    (_sub(Topic.SHELL, Action.SHELL_POLL, "#"), 0),
+                    (_sub(Topic.SHELL, Action.SHELL_KILL, "#"), 0),
+                    (_sub(Topic.SYSTEM, Action.SYSTEM_FREE_MEMORY, Action.SYSTEM_GET), 0),
+                    (_sub(Topic.SYSTEM, Action.SYSTEM_VERSION, Action.SYSTEM_GET), 0),
+                    (_sub(Topic.FILE, Action.FILE_WRITE, "#"), 0),
+                    (_sub(Topic.FILE, Action.FILE_READ, "#"), 0),
+                    (_sub(Topic.FILE, Action.FILE_REMOVE, "#"), 0),
                 ]
-
-
-
-
+                # fmt: on
 
                 for topic, qos in topics:
-
-
                     await client.subscribe(topic, qos=qos)
-
-
-
-
 
                 logger.info("Subscribed to %d MQTT topics.", len(topics))
 
-
-
-
-
                 async with asyncio.TaskGroup() as task_group:
-
-
                     task_group.create_task(_publisher_loop(client))
-
-
                     task_group.create_task(_subscriber_loop(client))
 
-
-
-
-
         except* aiomqtt.MqttError as exc_group:
-
-
             for exc in exc_group.exceptions:
-
-
                 logger.error("MQTT error: %s", exc)
-
-
         except* (OSError, asyncio.TimeoutError) as exc_group:
-
-
             for exc in exc_group.exceptions:
-
-
                 logger.error("MQTT connection error: %s", exc)
-
-
         except* asyncio.CancelledError:
-
-
             logger.info("MQTT task cancelled.")
-
-
             raise
-
-
         except* Exception as exc_group:
-
-
             for exc in exc_group.exceptions:
+                logger.critical("Unhandled exception in mqtt_task", exc_info=exc)
 
-
-                logger.critical(
-
-
-                    "Unhandled exception in mqtt_task",
-
-
-                    exc_info=exc,
-
-
-                )
-
-
-        logger.warning(
-
-
-            "Waiting %d seconds before MQTT reconnect...",
-
-
-            reconnect_delay,
-
-
-        )
-
-
+        logger.warning("Waiting %d seconds before MQTT reconnect...", reconnect_delay)
         try:
-
-
             await asyncio.sleep(reconnect_delay)
-
-
         except asyncio.CancelledError:
-
-
             logger.info("MQTT task cancelled during backoff.")
-
-
             raise
 
 
-
-
-
-
-
-
-__all__ = [
-
-
-    "mqtt_task",
-
-
-]
-
+__all__ = ["mqtt_task"]

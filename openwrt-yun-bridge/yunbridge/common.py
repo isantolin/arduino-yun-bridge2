@@ -8,6 +8,7 @@ from typing import (
     Final,
     TypeVar,
     TYPE_CHECKING,
+    cast,
 )
 
 from paho.mqtt.packettypes import PacketTypes
@@ -19,9 +20,7 @@ from .const import (
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
-    DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_METRICS_HOST,
@@ -191,7 +190,9 @@ def get_uci_config() -> dict[str, str]:
                 if k.startswith((".", "_")):
                     continue
                 if isinstance(v, (list, tuple)):
-                    clean_config[k] = " ".join(str(item) for item in v)
+                    # Explicitly cast v to Iterable to help type checker
+                    items = cast(Iterable[object], v)
+                    clean_config[k] = " ".join(str(item) for item in items)
                 else:
                     clean_config[k] = str(v)
 

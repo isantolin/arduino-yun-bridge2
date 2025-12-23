@@ -472,4 +472,3 @@ def test_structured_formatter_trims_prefix_and_serialises_extra():
     assert payload["logger"] == "sub"
     assert payload["message"] == "hello"
     assert payload["extra"]["custom"] == "value"
-

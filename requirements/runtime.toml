@@ -1,11 +1,4 @@
 # Single source of truth for YunBridge daemon dependencies.
-#
-# Each entry is consumed by tooling that renders pip requirements and
-# OpenWrt package dependency lists. Fields:
-#   name      - Human readable identifier used for documentation.
-#   openwrt   - Package name as published in the OpenWrt feeds (without '+').
-#   pip       - Optional PEP 508 requirement string for pip/venv workflows.
-#   rationale - Short note explaining why the dependency is needed.
 
 [[dependency]]
 name = "python3"

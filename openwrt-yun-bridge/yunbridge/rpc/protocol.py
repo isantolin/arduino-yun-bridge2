@@ -57,6 +57,7 @@ MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
 MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
 MQTT_SUFFIX_RESPONSE: Final[str] = "response"
 
+
 class Topic(StrEnum):
     ANALOG = "a"  # Analog pin operations
     CONSOLE = "console"  # Remote console

@@ -30,29 +30,6 @@ constexpr uint32_t RPC_CRC32_MASK = 4294967295;
 constexpr uint8_t RPC_FRAME_DELIMITER = 0;
 constexpr uint8_t RPC_DIGITAL_LOW = 0;
 constexpr uint8_t RPC_DIGITAL_HIGH = 1;
-constexpr uint8_t RPC_PROCESS_POLL_HEADER_SIZE = 6;
-
-// Standardized Error Reasons
-constexpr char kErrorReasonSerialRxOverflow[] = "serial_rx_overflow";
-constexpr char kErrorReasonInternalError[] = "Internal Error";
-constexpr char kErrorReasonDataGetShort[] = "data_get_short";
-constexpr char kErrorReasonDataGetKey[] = "data_get_key";
-constexpr char kErrorReasonDatastoreQueueFull[] = "datastore_queue_full";
-constexpr char kErrorReasonProcessRunPayloadTooLarge[] = "process_run_payload_too_large";
-constexpr char kErrorReasonProcessRunAsyncPayloadTooLarge[] = "process_run_async_payload_too_large";
-constexpr char kErrorReasonProcessPollQueueFull[] = "process_poll_queue_full";
-constexpr char kErrorReasonProcessLimitReached[] = "process_limit_reached";
-constexpr char kErrorReasonProcessRunInternalError[] = "process_run_internal_error";
-constexpr char kErrorReasonCommandValidationFailed[] = "command_validation_failed";
-constexpr char kErrorReasonProcessRunAsyncFailed[] = "process_run_async_failed";
-constexpr char kErrorReasonInvalidPath[] = "invalid_path";
-constexpr char kErrorReasonWriteLimitExceeded[] = "write_limit_exceeded";
-constexpr char kErrorReasonStorageQuotaExceeded[] = "storage_quota_exceeded";
-constexpr char kErrorReasonWriteFailed[] = "write_failed";
-constexpr char kErrorReasonReadFailed[] = "read_failed";
-constexpr char kErrorReasonRemoveFailed[] = "remove_failed";
-constexpr char kErrorReasonUnsafePath[] = "unsafe_path";
-constexpr char kErrorReasonDatastoreMiss[] = "datastore-miss";
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;

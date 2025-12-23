@@ -63,7 +63,7 @@ void DataStoreClass::requestGet(const char* key) {
   memcpy(payload + 1, key, key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(StatusCode::STATUS_ERROR, rpc::kErrorReasonDatastoreQueueFull);
+    Bridge._emitStatus(StatusCode::STATUS_ERROR, "datastore_queue_full");
     return;
   }
 

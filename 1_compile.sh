@@ -529,6 +529,17 @@ if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     ./scripts/feeds install -f -p yunbridge -a
 fi
 
+# ==============================================================================
+# [FIX CRÍTICO] ELIMINACIÓN QUIRÚRGICA DE U-BOOT
+# OpenWrt instala 'uboot-ath79' automáticamente con 'install -a'.
+# Lo borramos AHORA para que 'make prereq' no lo vea y no falle por Python 3.14.
+# ==============================================================================
+if [ -d "package/feeds/base/uboot-ath79" ]; then
+    echo "[FIX] Eliminando uboot-ath79 instalado para evitar error de compilación..."
+    rm -rf package/feeds/base/uboot-ath79
+fi
+# ==============================================================================
+
 FEEDS_PACKAGES_OVERLAY_DIR="$REPO_ROOT/openwrt-overlays/feeds/packages"
 if [ -d "$FEEDS_PACKAGES_OVERLAY_DIR" ]; then
     echo "[INFO] Applying feeds/packages overlay (host pip requirements, etc.)..."

@@ -52,6 +52,23 @@ from ..const import (
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
     MIN_SERIAL_SHARED_SECRET_LEN,
+    ENV_SERIAL_SECRET,
+    ENV_MQTT_CAFILE,
+    ENV_MQTT_CERTFILE,
+    ENV_MQTT_KEYFILE,
+    ENV_MQTT_USER,
+    ENV_MQTT_PASS,
+    ENV_METRICS_ENABLED,
+    ENV_METRICS_HOST,
+    ENV_METRICS_PORT,
+    ENV_DISABLE_WATCHDOG,
+    ENV_WATCHDOG_INTERVAL,
+    ENV_PROCD_WATCHDOG,
+    ENV_PROCD_WATCHDOG_MS,
+    ENV_DEBUG,
+    ENV_MQTT_SPOOL_DIR,
+    ENV_BRIDGE_SUMMARY_INTERVAL,
+    ENV_BRIDGE_HANDSHAKE_INTERVAL,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from .credentials import lookup_credential
@@ -291,7 +308,7 @@ def _optional_path(path: str | None) -> str | None:
 
 
 def _resolve_watchdog_settings() -> tuple[bool, float]:
-    disable_flag = os.environ.get("YUNBRIDGE_DISABLE_WATCHDOG")
+    disable_flag = os.environ.get(ENV_DISABLE_WATCHDOG)
     if disable_flag and disable_flag.strip().lower() in {
         "1",
         "true",
@@ -300,7 +317,7 @@ def _resolve_watchdog_settings() -> tuple[bool, float]:
     }:
         return False, DEFAULT_WATCHDOG_INTERVAL
 
-    env_interval = os.environ.get("YUNBRIDGE_WATCHDOG_INTERVAL")
+    env_interval = os.environ.get(ENV_WATCHDOG_INTERVAL)
     if env_interval:
         try:
             interval = max(0.5, float(env_interval))
@@ -308,8 +325,8 @@ def _resolve_watchdog_settings() -> tuple[bool, float]:
             interval = DEFAULT_WATCHDOG_INTERVAL
         return True, interval
 
-    procd_raw = os.environ.get("PROCD_WATCHDOG") or os.environ.get(
-        "YUNBRIDGE_PROCD_WATCHDOG_MS"
+    procd_raw = os.environ.get(ENV_PROCD_WATCHDOG) or os.environ.get(
+        ENV_PROCD_WATCHDOG_MS
     )
     if procd_raw:
         try:
@@ -336,7 +353,7 @@ def load_runtime_config() -> RuntimeConfig:
         return parse_bool(value) if value is not None else default
 
     debug_logging = parse_bool(raw.get("debug"))
-    if os.environ.get("YUNBRIDGE_DEBUG") == "1":
+    if os.environ.get(ENV_DEBUG) == "1":
         debug_logging = True
 
     allowed_commands_raw = raw.get("allowed_commands", "")
@@ -351,7 +368,7 @@ def load_runtime_config() -> RuntimeConfig:
 
     serial_secret_str = lookup_credential(
         (
-            "YUNBRIDGE_SERIAL_SECRET",
+            ENV_SERIAL_SECRET,
             "SERIAL_SHARED_SECRET",
             "serial_shared_secret",
         ),
@@ -363,7 +380,7 @@ def load_runtime_config() -> RuntimeConfig:
         serial_secret_str.encode("utf-8") if serial_secret_str else b""
     )
 
-    spool_dir = os.environ.get("YUNBRIDGE_MQTT_SPOOL_DIR") or raw.get(
+    spool_dir = os.environ.get(ENV_MQTT_SPOOL_DIR) or raw.get(
         "mqtt_spool_dir",
         DEFAULT_MQTT_SPOOL_DIR,
     )
@@ -373,7 +390,7 @@ def load_runtime_config() -> RuntimeConfig:
 
     mqtt_cafile = lookup_credential(
         (
-            "YUNBRIDGE_MQTT_CAFILE",
+            ENV_MQTT_CAFILE,
             "MQTT_CAFILE",
             "mqtt_cafile",
         ),
@@ -387,7 +404,7 @@ def load_runtime_config() -> RuntimeConfig:
 
     mqtt_certfile = lookup_credential(
         (
-            "YUNBRIDGE_MQTT_CERTFILE",
+            ENV_MQTT_CERTFILE,
             "MQTT_CERTFILE",
             "mqtt_certfile",
         ),
@@ -397,7 +414,7 @@ def load_runtime_config() -> RuntimeConfig:
     )
     mqtt_keyfile = lookup_credential(
         (
-            "YUNBRIDGE_MQTT_KEYFILE",
+            ENV_MQTT_KEYFILE,
             "MQTT_KEYFILE",
             "mqtt_keyfile",
         ),
@@ -408,7 +425,7 @@ def load_runtime_config() -> RuntimeConfig:
 
     mqtt_user = lookup_credential(
         (
-            "YUNBRIDGE_MQTT_USER",
+            ENV_MQTT_USER,
             "MQTT_USERNAME",
             "mqtt_user",
         ),
@@ -418,7 +435,7 @@ def load_runtime_config() -> RuntimeConfig:
     )
     mqtt_pass = lookup_credential(
         (
-            "YUNBRIDGE_MQTT_PASS",
+            ENV_MQTT_PASS,
             "MQTT_PASSWORD",
             "mqtt_pass",
         ),
@@ -447,20 +464,20 @@ def load_runtime_config() -> RuntimeConfig:
         analog_read=_get_bool("mqtt_allow_analog_read", True),
     )
     metrics_enabled = _get_bool("metrics_enabled", False)
-    if os.environ.get("YUNBRIDGE_METRICS_ENABLED") == "1":
+    if os.environ.get(ENV_METRICS_ENABLED) == "1":
         metrics_enabled = True
 
     metrics_host = raw.get("metrics_host", DEFAULT_METRICS_HOST).strip()
     if not metrics_host:
         metrics_host = DEFAULT_METRICS_HOST
-    env_metrics_host = os.environ.get("YUNBRIDGE_METRICS_HOST")
+    env_metrics_host = os.environ.get(ENV_METRICS_HOST)
     if env_metrics_host:
         candidate_host = env_metrics_host.strip()
         if candidate_host:
             metrics_host = candidate_host
 
     metrics_port = _get_int("metrics_port", DEFAULT_METRICS_PORT)
-    env_metrics_port = os.environ.get("YUNBRIDGE_METRICS_PORT")
+    env_metrics_port = os.environ.get(ENV_METRICS_PORT)
     if env_metrics_port:
         metrics_port = parse_int(env_metrics_port, DEFAULT_METRICS_PORT)
 
@@ -468,7 +485,7 @@ def load_runtime_config() -> RuntimeConfig:
         raw.get("bridge_summary_interval"),
         float(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
     )
-    env_summary = os.environ.get("YUNBRIDGE_BRIDGE_SUMMARY_INTERVAL")
+    env_summary = os.environ.get(ENV_BRIDGE_SUMMARY_INTERVAL)
     if env_summary:
         summary_interval = parse_float(env_summary, float(DEFAULT_BRIDGE_SUMMARY_INTERVAL))
 
@@ -476,7 +493,7 @@ def load_runtime_config() -> RuntimeConfig:
         raw.get("bridge_handshake_interval"),
         float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
     )
-    env_handshake = os.environ.get("YUNBRIDGE_BRIDGE_HANDSHAKE_INTERVAL")
+    env_handshake = os.environ.get(ENV_BRIDGE_HANDSHAKE_INTERVAL)
     if env_handshake:
         handshake_interval = parse_float(env_handshake, float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL))
 

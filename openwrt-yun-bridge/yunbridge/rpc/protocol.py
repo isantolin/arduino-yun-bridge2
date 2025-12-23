@@ -53,6 +53,10 @@ CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)
 MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
 
 
+MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
+MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
+MQTT_SUFFIX_RESPONSE: Final[str] = "response"
+
 class Topic(StrEnum):
     ANALOG = "a"  # Analog pin operations
     CONSOLE = "console"  # Remote console

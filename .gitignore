@@ -26,6 +26,7 @@ coverage.xml
 # Python venvs
 pyenv/
 .venv/
+.venv_test/
 venv/
 # Editor/OS files
 .DS_Store

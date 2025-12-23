@@ -91,7 +91,7 @@ class ShellComponent:
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
-            "response",
+            protocol.MQTT_SUFFIX_RESPONSE,
         )
 
         def _build_response(payload_bytes: bytes) -> QueuedPublish:
@@ -170,7 +170,7 @@ class ShellComponent:
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
             Action.SHELL_RUN_ASYNC,
-            "response",
+            protocol.MQTT_SUFFIX_RESPONSE,
         )
 
         def _build_response(payload_bytes: bytes) -> QueuedPublish:

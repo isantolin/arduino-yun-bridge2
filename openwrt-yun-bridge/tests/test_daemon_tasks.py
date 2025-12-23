@@ -341,8 +341,10 @@ async def test_mqtt_task_handles_incoming_message(
         lambda **kw: mock_client,
     )
 
+    runtime_config.mqtt_tls = False
+
     task = asyncio.create_task(
-        mqtt_task(runtime_config, state, cast(Any, service), None)
+        mqtt_task(runtime_config, state, cast(Any, service))
     )
 
     await asyncio.wait_for(service.handled.wait(), timeout=1)

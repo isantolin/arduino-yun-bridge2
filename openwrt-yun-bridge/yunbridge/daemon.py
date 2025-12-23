@@ -24,7 +24,6 @@ from yunbridge.state.context import create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
 from yunbridge.transport import (
     SerialTransport,
-    build_mqtt_tls_context,
     mqtt_task,
     serial_sender_not_ready,
 )
@@ -42,17 +41,12 @@ async def main_async(config: RuntimeConfig) -> None:
     service = BridgeService(config, state)
     service.register_serial_sender(serial_sender_not_ready)
 
-    try:
-        tls_context = build_mqtt_tls_context(config)
-    except Exception as exc:
-        raise RuntimeError(f"TLS configuration invalid: {exc}") from exc
-
     async def _serial_runner() -> None:
         transport = SerialTransport(config, state, service)
         await transport.run()
 
     async def _mqtt_runner() -> None:
-        await mqtt_task(config, state, service, tls_context)
+        await mqtt_task(config, state, service)
 
     async def _status_runner() -> None:
         await status_writer(state, config.status_interval)

@@ -16,6 +16,35 @@ from yunbridge.rpc import protocol
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
+    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_FILE_WRITE_MAX_BYTES,
+    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+    DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_METRICS_HOST,
+    DEFAULT_METRICS_PORT,
+    DEFAULT_MQTT_CAFILE,
+    DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_SPOOL_DIR,
+    DEFAULT_MQTT_TOPIC,
+    DEFAULT_PENDING_PIN_REQUESTS,
+    DEFAULT_PROCESS_MAX_CONCURRENT,
+    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+    DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_RECONNECT_DELAY,
+    DEFAULT_SERIAL_BAUD,
+    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+    DEFAULT_SERIAL_PORT,
+    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+    DEFAULT_SERIAL_RETRY_ATTEMPTS,
+    DEFAULT_SERIAL_RETRY_TIMEOUT,
+    DEFAULT_STATUS_INTERVAL,
 )
 
 
@@ -138,8 +167,6 @@ def build_mqtt_connect_properties() -> Properties:
 
 def get_uci_config() -> dict[str, str]:
     """Read Yun Bridge configuration directly from OpenWrt's UCI system."""
-    from yunbridge.config.uci_model import UciConfigModel
-
     try:
         from uci import Uci  # type: ignore
     except ImportError:
@@ -159,12 +186,16 @@ def get_uci_config() -> dict[str, str]:
                 return get_default_config()
 
             # Clean internal UCI metadata (keys starting with dot/underscore)
-            clean_config = {
-                k: v for k, v in section.items()
-                if not k.startswith((".", "_"))
-            }
+            clean_config = get_default_config()
+            for k, v in section.items():
+                if k.startswith((".", "_")):
+                    continue
+                if isinstance(v, (list, tuple)):
+                    clean_config[k] = " ".join(str(item) for item in v)
+                else:
+                    clean_config[k] = str(v)
 
-            return UciConfigModel.from_mapping(clean_config).as_dict()
+            return clean_config
 
     except Exception as exc:
         logger.warning("Failed to load UCI configuration: %s", exc)
@@ -173,9 +204,61 @@ def get_uci_config() -> dict[str, str]:
 
 def get_default_config() -> dict[str, str]:
     """Provide default Yun Bridge configuration values."""
-    from yunbridge.config.uci_model import UciConfigModel
-
-    return UciConfigModel.defaults()
+    return {
+        "mqtt_host": DEFAULT_MQTT_HOST,
+        "mqtt_port": str(DEFAULT_MQTT_PORT),
+        "mqtt_tls": "1",
+        "mqtt_cafile": DEFAULT_MQTT_CAFILE,
+        "mqtt_certfile": "",
+        "mqtt_keyfile": "",
+        "mqtt_user": "",
+        "mqtt_pass": "",
+        "mqtt_topic": DEFAULT_MQTT_TOPIC,
+        "mqtt_spool_dir": DEFAULT_MQTT_SPOOL_DIR,
+        "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
+        "serial_port": DEFAULT_SERIAL_PORT,
+        "serial_baud": str(DEFAULT_SERIAL_BAUD),
+        "serial_shared_secret": "",
+        "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
+        "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
+        "serial_retry_attempts": str(DEFAULT_SERIAL_RETRY_ATTEMPTS),
+        "serial_handshake_min_interval": str(DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL),
+        "serial_handshake_fatal_failures": str(DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES),
+        "debug": "0",
+        "allowed_commands": "",
+        "file_system_root": DEFAULT_FILE_SYSTEM_ROOT,
+        "process_timeout": str(DEFAULT_PROCESS_TIMEOUT),
+        "process_max_output_bytes": str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES),
+        "process_max_concurrent": str(DEFAULT_PROCESS_MAX_CONCURRENT),
+        "console_queue_limit_bytes": str(DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES),
+        "mailbox_queue_limit": str(DEFAULT_MAILBOX_QUEUE_LIMIT),
+        "mailbox_queue_bytes_limit": str(DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT),
+        "pending_pin_request_limit": str(DEFAULT_PENDING_PIN_REQUESTS),
+        "reconnect_delay": str(DEFAULT_RECONNECT_DELAY),
+        "status_interval": str(DEFAULT_STATUS_INTERVAL),
+        "bridge_summary_interval": str(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
+        "bridge_handshake_interval": str(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
+        "mqtt_allow_file_read": "1",
+        "mqtt_allow_file_write": "1",
+        "mqtt_allow_file_remove": "1",
+        "mqtt_allow_datastore_get": "1",
+        "mqtt_allow_datastore_put": "1",
+        "mqtt_allow_mailbox_read": "1",
+        "mqtt_allow_mailbox_write": "1",
+        "mqtt_allow_shell_run": "1",
+        "mqtt_allow_shell_run_async": "1",
+        "mqtt_allow_shell_poll": "1",
+        "mqtt_allow_shell_kill": "1",
+        "mqtt_allow_console_input": "1",
+        "mqtt_allow_digital_write": "1",
+        "mqtt_allow_digital_read": "1",
+        "mqtt_allow_digital_mode": "1",
+        "mqtt_allow_analog_write": "1",
+        "mqtt_allow_analog_read": "1",
+        "metrics_enabled": "0",
+        "metrics_host": DEFAULT_METRICS_HOST,
+        "metrics_port": str(DEFAULT_METRICS_PORT),
+    }
 
 
 __all__: Final[tuple[str, ...]] = (

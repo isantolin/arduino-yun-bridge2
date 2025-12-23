@@ -289,6 +289,13 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write("CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
         out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n\n")
 
+    mqtt_suffixes = spec.get("mqtt_suffixes", {})
+    if mqtt_suffixes:
+        for key, value in mqtt_suffixes.items():
+            name = f"MQTT_SUFFIX_{key.upper()}"
+            out.write(f'{name}: Final[str] = "{value}"\n')
+        out.write("\n")
+
     if "topics" in spec:
         out.write("class Topic(StrEnum):\n")
         for topic in spec["topics"]:

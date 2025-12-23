@@ -152,7 +152,7 @@ class ProcessComponent:
                     self.state.mqtt_topic_prefix,
                     Topic.SHELL,
                     "run_async",
-                    "response",
+                    protocol.MQTT_SUFFIX_RESPONSE,
                 )
                 await self.ctx.enqueue_mqtt(
                     QueuedPublish(
@@ -692,7 +692,7 @@ class ProcessComponent:
             Topic.SHELL,
             "poll",
             str(pid),
-            "response",
+            protocol.MQTT_SUFFIX_RESPONSE,
         )
         payload = json.dumps(
             {

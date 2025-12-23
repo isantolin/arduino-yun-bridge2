@@ -175,8 +175,8 @@ async def _open_serial_connection_with_retry(
                     logger.info("Switching to target baudrate %d...", target_baud)
                     writer.close()
                     await writer.wait_closed()
-                    # Small delay to let MCU switch
-                    await asyncio.sleep(0.1)
+                    # Small delay to let MCU switch UART configuration
+                    await asyncio.sleep(0.2)
 
                     # Reopen at target baud
                     reader, writer = await OPEN_SERIAL_CONNECTION(
@@ -329,6 +329,7 @@ class SerialTransport:
                 encoded_packet = bytes(buffer)
                 buffer.clear()
                 await self._process_packet(encoded_packet)
+                await asyncio.sleep(0)
             else:
                 buffer.append(byte[0])
                 if len(buffer) > MAX_SERIAL_PACKET_BYTES:

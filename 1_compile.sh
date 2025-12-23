@@ -94,10 +94,10 @@ done
 set -- "${POSITIONAL[@]}"
 
 # Default OpenWRT version and target, can be overridden by the first and second arguments
-OPENWRT_VERSION=${1:-"24.10.5"}
+OPENWRT_VERSION=${1:-"25.12.0-rc1"}
 OPENWRT_TARGET=${2:-"ath79/generic"}
 
-OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
 SDK_DIR="openwrt-sdk"
 BIN_DIR="bin"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

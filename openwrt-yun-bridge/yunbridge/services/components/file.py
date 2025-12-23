@@ -212,7 +212,7 @@ class FileComponent:
                         self.state.mqtt_topic_prefix,
                         Topic.FILE,
                         Action.FILE_READ,
-                        "response",
+                        protocol.MQTT_SUFFIX_RESPONSE,
                         *tuple(segment for segment in filename.split("/") if segment),
                     )
                     message = QueuedPublish(
@@ -487,7 +487,8 @@ class FileComponent:
     @staticmethod
     def _write_file_sync(path: Path, data: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        with path.open("ab") as f:
+            f.write(data)
 
     @staticmethod
     def _read_file_sync(path: Path) -> bytes:

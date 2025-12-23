@@ -27,7 +27,7 @@ rationale = "Load daemon configuration from UCI"
 
 [[dependency]]
 name = "aiomqtt"
-openwrt = ""
+openwrt = "python3-aiomqtt"
 pip = "aiomqtt==2.4.0"
 rationale = "Async MQTT v5 client used for runtime telemetry"
 
@@ -39,13 +39,13 @@ rationale = "Serial I/O with the MCU"
 
 [[dependency]]
 name = "pyserial-asyncio"
-openwrt = ""
+openwrt = "python3-pyserial-asyncio"
 pip = "pyserial-asyncio==0.6"
 rationale = "Asyncio transport wrapper around pyserial"
 
 [[dependency]]
 name = "python-cobs"
-openwrt = ""
+openwrt = "python3-cobs"
 pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
 
@@ -57,6 +57,6 @@ rationale = "Process supervision and zombie cleanup"
 
 [[dependency]]
 name = "prometheus-client"
-openwrt = ""
+openwrt = "python3-prometheus-client"
 pip = "prometheus-client==0.23.1"
 rationale = "Expose runtime metrics via the Prometheus Python client"

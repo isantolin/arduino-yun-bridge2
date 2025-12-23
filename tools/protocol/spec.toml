@@ -46,6 +46,11 @@ uint32_format = ">I"
 pin_read_format = ">B"
 pin_write_format = ">BB"
 
+[mqtt_suffixes]
+incoming_available = "incoming_available"
+outgoing_available = "outgoing_available"
+response = "response"
+
 [[topics]]
 name = "ANALOG"
 value = "a"

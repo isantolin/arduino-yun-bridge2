@@ -11,11 +11,12 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from types import SimpleNamespace
+
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.config.tls import resolve_tls_material
 from yunbridge.const import DEFAULT_MQTT_TOPIC
 
 
@@ -49,16 +50,15 @@ DEFAULT_BACKOFF_BASE = _env_float("YUNBRIDGE_MQTT_BACKOFF", 0.5, 0.0)
 DEFAULT_POLL_INTERVAL = _env_float("YUNBRIDGE_MQTT_POLL_INTERVAL", 0.05, 0.001)
 
 
-def _resolve_tls_material(config: RuntimeConfig):
-    env_cert = os.environ.get("YUNBRIDGE_PIN_CERTFILE") or None
-    env_key = os.environ.get("YUNBRIDGE_PIN_KEYFILE") or None
-    env_cafile = os.environ.get("YUNBRIDGE_PIN_CAFILE") or None
+def _resolve_tls_material(config: RuntimeConfig) -> SimpleNamespace | None:
+    cafile = os.environ.get("YUNBRIDGE_PIN_CAFILE") or config.mqtt_cafile
+    if not cafile:
+        return None
 
-    return resolve_tls_material(
-        config,
-        cafile_override=env_cafile,
-        cert_override=env_cert,
-        key_override=env_key,
+    return SimpleNamespace(
+        cafile=cafile,
+        certfile=os.environ.get("YUNBRIDGE_PIN_CERTFILE") or config.mqtt_certfile,
+        keyfile=os.environ.get("YUNBRIDGE_PIN_KEYFILE") or config.mqtt_keyfile,
     )
 
 
@@ -84,7 +84,7 @@ def publish_with_retries(
             callback_api_version=CallbackAPIVersion.VERSION2,
         )
 
-        if tls_material:
+        if tls_material and tls_material.cafile:
             client.tls_set(
                 ca_certs=tls_material.cafile,
                 certfile=tls_material.certfile,

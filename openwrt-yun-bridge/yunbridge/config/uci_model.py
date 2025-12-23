@@ -27,7 +27,6 @@ from ..const import (
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_BAUD,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
@@ -107,7 +106,6 @@ class UciConfigModel:
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
-    reconnect_delay: float = DEFAULT_RECONNECT_DELAY
     status_interval: float = DEFAULT_STATUS_INTERVAL
     bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
     bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL

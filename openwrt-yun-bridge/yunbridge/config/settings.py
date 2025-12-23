@@ -209,7 +209,6 @@ class RuntimeConfig:
 
     def _validate_operational_limits(self) -> None:
         positive_int_fields = (
-            "reconnect_delay",
             "status_interval",
             "process_timeout",
             "process_max_output_bytes",

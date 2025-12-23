@@ -5,13 +5,20 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from typing import (
+    Any,
     Final,
     TypeVar,
     TYPE_CHECKING,
 )
 
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
+try:
+    from paho.mqtt.packettypes import PacketTypes
+    from paho.mqtt.properties import Properties
+except ImportError:
+    # Fallback for environments where paho-mqtt or its stubs are missing
+    PacketTypes = Any  # type: ignore
+    Properties = Any   # type: ignore
+
 from yunbridge.rpc import protocol
 
 from .const import (
@@ -87,7 +94,7 @@ def encode_status_reason(reason: str | None) -> bytes:
     return payload[: protocol.MAX_PAYLOAD_SIZE]
 
 
-def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
+def build_mqtt_properties(message: QueuedPublish) -> Any:
     """Construct Paho MQTT v5 properties from a message object."""
     has_props = any(
         [
@@ -126,7 +133,7 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
     return props
 
 
-def build_mqtt_connect_properties() -> Properties:
+def build_mqtt_connect_properties() -> Any:
     """Return default CONNECT properties for aiomqtt/paho clients."""
 
     props = Properties(PacketTypes.CONNECT)

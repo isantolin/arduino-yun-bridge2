@@ -131,9 +131,9 @@ async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """Establish serial connection with native exponential backoff."""
-    base_delay = float(max(1, config.reconnect_delay))
-    max_delay = base_delay * 8
-    current_delay = base_delay
+    current_delay = float(max(1, config.reconnect_initial_delay))
+    max_delay = float(max(current_delay, config.reconnect_max_delay))
+    multiplier = max(1.0, config.reconnect_multiplier)
 
     target_baud = config.serial_baud
     initial_baud = config.serial_safe_baud
@@ -216,7 +216,7 @@ async def _open_serial_connection_with_retry(
                 raise
 
             # Exponential backoff
-            current_delay = min(max_delay, current_delay * 2)
+            current_delay = min(max_delay, current_delay * multiplier)
 
         except asyncio.CancelledError:
             logger.debug("%s cancelled", action)
@@ -243,7 +243,7 @@ class SerialTransport:
 
     async def run(self) -> None:
         """Main loop for the serial transport."""
-        reconnect_delay = max(1, self.config.reconnect_delay)
+        reconnect_delay = float(max(1, self.config.reconnect_initial_delay))
 
         while True:
             should_retry = True

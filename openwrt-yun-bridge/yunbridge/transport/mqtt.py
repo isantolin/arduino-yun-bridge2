@@ -44,7 +44,9 @@ async def mqtt_task(
     service: BridgeService,
     tls_context: ssl.SSLContext | None,
 ) -> None:
-    reconnect_delay = max(1, config.reconnect_delay)
+    current_delay = float(max(1, config.reconnect_initial_delay))
+    max_delay = float(max(current_delay, config.reconnect_max_delay))
+    multiplier = max(1.0, config.reconnect_multiplier)
 
     async def _publisher_loop(client: aiomqtt.Client) -> None:
         while True:
@@ -55,7 +57,8 @@ async def mqtt_task(
             props = build_mqtt_properties(message_to_publish)
 
             try:
-                await client.publish(
+                # Ignore partial unknown type due to incomplete aiomqtt stubs
+                await client.publish(  # pyright: ignore[reportUnknownMemberType]
                     topic_name,
                     message_to_publish.payload,
                     qos=int(message_to_publish.qos),
@@ -131,6 +134,8 @@ async def mqtt_task(
                 properties=connect_props,
             ) as client:
                 logger.info("Connected to MQTT broker.")
+                # Reset backoff on successful connection
+                current_delay = float(max(1, config.reconnect_initial_delay))
 
                 prefix = state.mqtt_topic_prefix
 
@@ -174,7 +179,8 @@ async def mqtt_task(
                 ]
 
                 for topic, qos in topics:
-                    await client.subscribe(topic, qos=qos)
+                    # Ignore partial unknown type due to incomplete aiomqtt stubs
+                    await client.subscribe(topic, qos=qos)  # pyright: ignore[reportUnknownMemberType]
 
                 logger.info("Subscribed to %d MQTT topics.", len(topics))
 
@@ -199,10 +205,12 @@ async def mqtt_task(
                 )
         logger.warning(
             "Waiting %d seconds before MQTT reconnect...",
-            reconnect_delay,
+            current_delay,
         )
         try:
-            await asyncio.sleep(reconnect_delay)
+            await asyncio.sleep(current_delay)
+            # Apply backoff for next attempt
+            current_delay = min(max_delay, current_delay * multiplier)
         except asyncio.CancelledError:
             logger.info("MQTT task cancelled during backoff.")
             raise

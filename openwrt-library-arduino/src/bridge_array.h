@@ -7,58 +7,63 @@
 
 #include <stddef.h>
 
-// AVR toolchain (avr-gcc < 4.7 or configured without STL) lacks <array>
-#if defined(ARDUINO_ARCH_AVR) || defined(__AVR__)
-
 namespace bridge {
 
+/*
+ * Implementation of std::array compliant structure for Embedded Systems.
+ * STRICT REQUIREMENT: NO STL Dependency (<array> is FORBIDDEN).
+ * This ensures compatibility with AVR, SAMD, ESP32 and Linux hosts 
+ * without relying on libstdc++.
+ */
 template<typename T, size_t N>
 struct array {
     T _elements[N];
 
-    // Element access
-    T& operator[](size_t i) { return _elements[i]; }
-    const T& operator[](size_t i) const { return _elements[i]; }
+    // --- Element access ---
+    
+    T& operator[](size_t i) { 
+        return _elements[i]; 
+    }
+    
+    const T& operator[](size_t i) const { 
+        return _elements[i]; 
+    }
 
     T& at(size_t i) {
-        if (i >= N) i = N - 1; // Safety clamping
+        // Safety clamping: unlike std::at, we don't throw exceptions.
+        if (i >= N) i = N - 1; 
         return _elements[i];
     }
+    
     const T& at(size_t i) const {
-        if (i >= N) i = N - 1; // Safety clamping
+        if (i >= N) i = N - 1;
         return _elements[i];
     }
 
     T* data() { return _elements; }
     const T* data() const { return _elements; }
 
-    // Capacity
+    // --- Capacity ---
+    
     constexpr size_t size() const { return N; }
 
-    // Operations
+    // --- Operations ---
+    
     void fill(const T& value) {
         for (size_t i = 0; i < N; ++i) {
             _elements[i] = value;
         }
     }
 
-    // Iterators
+    // --- Iterators ---
+    
     T* begin() { return _elements; }
     const T* begin() const { return _elements; }
+    
     T* end() { return _elements + N; }
     const T* end() const { return _elements + N; }
 };
 
 } // namespace bridge
-
-#else
-
-#include <array>
-
-namespace bridge {
-    using std::array;
-}
-
-#endif
 
 #endif // BRIDGE_ARRAY_H

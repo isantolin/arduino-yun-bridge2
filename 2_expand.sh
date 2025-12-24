@@ -123,8 +123,8 @@ echo "1. Checking and installing required packages..." | tee -a $LOG_FILE
 # Revisión corregida: Comprueba la herramienta más importante (mkfs.ext4)
 if ! command -v mkfs.ext4 > /dev/null; then
     echo "   [FAIL] mkfs.ext4 not found. Installing e2fsprogs and dependencies..." | tee -a $LOG_FILE
-    opkg update 2>&1 | tee -a $LOG_FILE
-    opkg install block-mount kmod-fs-ext4 e2fsprogs mount-utils parted kmod-usb-storage 2>&1 | tee -a $LOG_FILE
+    apk update 2>&1 | tee -a $LOG_FILE
+    apk add block-mount kmod-fs-ext4 e2fsprogs mount-utils parted kmod-usb-storage 2>&1 | tee -a $LOG_FILE
 
     if [ $? -ne 0 ]; then
         echo "ERROR! Package installation failed. Aborting." | tee -a $LOG_FILE

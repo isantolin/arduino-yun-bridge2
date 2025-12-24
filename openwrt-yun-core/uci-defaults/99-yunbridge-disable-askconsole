@@ -1,0 +1,11 @@
+#!/bin/sh
+# Disable askconsole on ttyATH0 to allow Bridge full control
+# This script runs once on first boot (uci-defaults).
+
+if grep -q "::askconsole:" /etc/inittab; then
+    sed -i -e '/::askconsole:/d' /etc/inittab
+    # We don't restart init here to avoid killing the boot process, 
+    # but the change will persist for the next reboot or init reload.
+fi
+
+exit 0

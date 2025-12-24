@@ -38,23 +38,47 @@ fi
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --install-host-deps) INSTALL_HOST_DEPS=1; shift ;;
-        --skip-host-deps)    INSTALL_HOST_DEPS=0; shift ;;
-        -h|--help)           usage; exit 0 ;;
-        --) shift; while [[ $# -gt 0 ]]; do POSITIONAL+=("$1"); shift; done; break ;;
-        -* ) echo "[ERROR] Unknown option: $1" >&2; usage; exit 1 ;;
-        * )  POSITIONAL+=("$1"); shift ;;
+        --install-host-deps)
+            INSTALL_HOST_DEPS=1
+            shift
+            ;;
+        --skip-host-deps)
+            INSTALL_HOST_DEPS=0
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            while [[ $# -gt 0 ]]; do
+                POSITIONAL+=("$1")
+                shift
+            done
+            break
+            ;;
+        -* )
+            echo "[ERROR] Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+        * )
+            POSITIONAL+=("$1")
+            shift
+            ;;
     esac
 done
+
 set -- "${POSITIONAL[@]}"
 
-# [CONFIG] Target Final OpenWrt 25.12.0
-OPENWRT_VERSION=${1:-"25.12.0"}
+# [CONFIG] Target Final OpenWrt 25.12.0-rc1
+OPENWRT_VERSION=${1:-"25.12.0-rc1"}
 OPENWRT_TARGET=${2:-"ath79/generic"}
 
 OPENWRT_URL="https://downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
 
-# [FIX] Rutas Absolutas para evitar errores de 'cd'
+# Asegurar rutas absolutas
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SDK_DIR="$REPO_ROOT/openwrt-sdk"
 BIN_DIR="$REPO_ROOT/bin"
@@ -142,7 +166,8 @@ check_python_module() {
 
 check_python_module "setuptools"
 
-# Bootstrap helpers
+# ... (Funciones bootstrap auxiliares simplificadas para ejecución) ...
+# Para asegurar éxito, incluimos lógica básica de bootstrap aquí si falla el entorno
 bootstrap_python_module_into_prefix() {
     local python_bin="$1"
     local prefix_dir="$2"
@@ -162,7 +187,6 @@ else echo "[ERROR] zstd not found."; exit 1; fi
 echo "[INFO] Preparing build environment..."
 mkdir -p "$BIN_DIR"
 
-# Basic SDK dir check
 if [ -d "$SDK_DIR" ] && [ ! -f "$SDK_DIR/scripts/feeds" ]; then
     rm -rf "$SDK_DIR"
 fi
@@ -193,30 +217,19 @@ for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     fi
 done
 
-# --- FEEDS SETUP (GITHUB MIRRORS) ---
+# --- FEEDS SETUP (FIXED FLAT STRUCTURE) ---
 LOCAL_FEED_ENABLED=0
+# [FIX] Ahora apunta a feeds/ directamente (estructura plana)
 LOCAL_FEED_PATH="$REPO_ROOT/feeds"
 
 if [ -d "$LOCAL_FEED_PATH" ]; then
-    # Sync overlay
+    # Sync overlay first
     [ -x "$REPO_ROOT/tools/sync_feed_overlay.sh" ] && "$REPO_ROOT/tools/sync_feed_overlay.sh" --dest "$LOCAL_FEED_PATH"
     
     FEEDS_CONF="$SDK_DIR/feeds.conf"
+    [ ! -f "$FEEDS_CONF" ] && cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
     
-    # Si no existe feeds.conf, copiamos el default
-    if [ ! -f "$FEEDS_CONF" ]; then
-        cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
-    fi
-    
-    # [OPTIMIZATION] Aplicar Mirrors de GitHub para velocidad y estabilidad
-    echo "[INFO] Switching feeds to GitHub mirrors..."
-    sed -i 's|https://git.openwrt.org/openwrt/openwrt.git|https://github.com/openwrt/openwrt.git|g' "$FEEDS_CONF"
-    sed -i 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' "$FEEDS_CONF"
-    sed -i 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' "$FEEDS_CONF"
-    sed -i 's|https://git.openwrt.org/feed/routing.git|https://github.com/openwrt/routing.git|g' "$FEEDS_CONF"
-    sed -i 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' "$FEEDS_CONF"
-
-    # Limpiar configuración antigua para evitar duplicados del feed local
+    # [FIX] Limpiar configuración antigua para forzar la ruta nueva
     if grep -q "src-link yunbridge" "$FEEDS_CONF"; then
         sed -i '/src-link yunbridge/d' "$FEEDS_CONF"
     fi
@@ -227,8 +240,7 @@ if [ -d "$LOCAL_FEED_PATH" ]; then
 fi
 
 # Update Feeds
-cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK directory at $SDK_DIR"; exit 1; }
-
+cd "$SDK_DIR" || exit 1
 MAX_RETRIES=5; RETRY=0; SUCCESS=0
 while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     # [FIX] Pre-emptive cleanup of uboot-ath79
@@ -237,38 +249,39 @@ while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
     if ./scripts/feeds update -a; then
         SUCCESS=1; break
     else
-        echo "[WARN] Feeds update failed. Retrying..."
         rm -rf feeds/base feeds/packages feeds/luci feeds/routing feeds/telephony
         RETRY=$((RETRY+1)); sleep 5
     fi
 done
 [ $SUCCESS -ne 1 ] && exit 1
 
-# Install Feeds
+# Install Feeds & Manage Conflicts
 echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     echo "[INFO] Installing yunbridge feed overrides..."
-    # [FIX] Conflict Management: Remove system paho
+    
+    # [FIX] Eliminar conflicto Paho MQTT (System vs Local)
     if [ -d "package/feeds/packages/python-paho-mqtt" ]; then
-        echo "[FIX] Removing upstream python-paho-mqtt to prioritize local version..."
+        echo "[FIX] Removing upstream python-paho-mqtt (v1.6) to prioritize local yunbridge version (v2.1)..."
         rm -rf package/feeds/packages/python-paho-mqtt
     fi
+    
     ./scripts/feeds install -f -p yunbridge -a
 fi
 
 # [FIX] Cleanup uboot again
 [ -d "package/feeds/base/uboot-ath79" ] && rm -rf package/feeds/base/uboot-ath79
 
-# Overlays
+# Apply Overlays
 FEEDS_PACKAGES_OVERLAY_DIR="$REPO_ROOT/openwrt-overlays/feeds/packages"
 if [ -d "$FEEDS_PACKAGES_OVERLAY_DIR" ]; then
     mkdir -p feeds/packages
     cp -a "$FEEDS_PACKAGES_OVERLAY_DIR/." feeds/packages/
 fi
 
-# Kernel Stubs Stripping
+# Kernel Stubs Stripping (para evitar warnings)
 USB_MODULES_MK="package/kernel/linux/modules/usb.mk"
 if [ -f "$USB_MODULES_MK" ]; then
     if grep -q "kmod-phy-bcm-ns-usb" "$USB_MODULES_MK"; then
@@ -279,6 +292,7 @@ fi
 
 # Enable Packages
 REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
+# [FIX] Dependencias explícitas para asegurar selección en .config
 REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt mosquitto-client luaposix"
 
 for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do
@@ -292,20 +306,22 @@ make defconfig
 echo "[CLEANUP] Removing old .apk files..."
 find "$BIN_DIR" -type f -name '*.apk' -delete
 
-# Ensure we are in SDK dir (redundant but safe)
-cd "$SDK_DIR" || exit 1
+# [FIX] Asegurar que estamos en el SDK antes de compilar
+cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
-# [FIX] Orden de compilación: Librerías primero
+# [FIX] Orden de compilación: Primero librerías críticas
+# Nota: Ahora están en el feed 'yunbridge' que apunta a 'feeds/' plano
 for lib in python3-paho-mqtt python3-aiomqtt; do
     echo "[BUILD] Building library $lib..."
     make package/feeds/yunbridge/$lib/compile V=s
 done
 
-# Main Packages
+# Luego paquetes principales
 for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s
+    
     # [FIX] Copiar artefactos .apk
     find bin/packages/ -name "$pkg*_*.apk" -exec cp {} "$BIN_DIR/" \;
 done
@@ -314,11 +330,11 @@ cd "$REPO_ROOT" || exit 1
 # Checksums
 if ls "$BIN_DIR"/*.apk >/dev/null 2>&1; then
     if command -v sha256sum >/dev/null 2>&1; then
-        echo "[INFO] Generating SHA256SUMS..."
+        echo "[INFO] Generating SHA256SUMS manifest..."
         (cd "$BIN_DIR" && sha256sum *.apk > SHA256SUMS)
     fi
 else
-    echo "[WARN] No .apk artifacts detected."
+    echo "[WARN] No .apk artifacts detected in $BIN_DIR."
 fi
 
 echo "\n[OK] Build finished. Check the bin/ directory."

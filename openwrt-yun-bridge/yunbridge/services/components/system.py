@@ -146,7 +146,7 @@ class SystemComponent:
         identifier: str,
         remainder: list[str],
         inbound: MQTTMessage | None = None,
-    ) -> None:
+    ) -> bool:
         if identifier == Action.SYSTEM_FREE_MEMORY and remainder and remainder[0] == Action.SYSTEM_GET:
             if inbound is not None:
                 self._pending_free_memory.append(inbound)

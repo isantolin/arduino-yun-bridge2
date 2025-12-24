@@ -6,13 +6,14 @@ PKG_RELEASE:=1
 
 PYPI_NAME:=paho-mqtt
 PKG_SOURCE:=paho_mqtt-$(PKG_VERSION).tar.gz
-PKG_HASH:=3602ce9d1ada58b063f2052ff013ff8cdd06d66cef918d5f6d048b6f68ccf049
+# HASH ACTUALIZADO: El log detectó 12d6e7511d4137555a3f6ea167ae846af2c7357b10bc6fa4f7c3968fc1723834
+PKG_HASH:=12d6e7511d4137555a3f6ea167ae846af2c7357b10bc6fa4f7c3968fc1723834
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=EPL-2.0
 PKG_LICENSE_FILES:=LICENSE.txt
 
-include $(INCLUDE_DIR)/package.mk
+# ORDEN CORRECTO DE INCLUSIÓN
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
@@ -30,7 +31,8 @@ endef
 define Package/python3-paho-mqtt/description
   This code provides a client class which enable applications to connect to an
   MQTT broker to publish messages, and to subscribe to topics and receive
-  published messages. Supports MQTT v5.0 and Callback API v2.
+  published messages.
+  Supports MQTT v5.0 and Callback API v2.
 endef
 
 $(eval $(call Py3Package,python3-paho-mqtt))

@@ -5,13 +5,13 @@ PKG_VERSION:=2.4.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiomqtt
+PKG_SOURCE:=aiomqtt-$(PKG_VERSION).tar.gz
 PKG_HASH:=ab0f18fc5b7ffaa57451c407417d674db837b00a9c7d953cccd02be64f046c17
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE
 
-include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk

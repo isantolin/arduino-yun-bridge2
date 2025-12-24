@@ -25,12 +25,6 @@ pip = "pyserial==3.5"
 rationale = "Serial I/O with the MCU"
 
 [[dependency]]
-name = "pyserial-asyncio"
-openwrt = "python3-pyserial-asyncio"
-pip = "pyserial-asyncio==0.6"
-rationale = "Asyncio transport wrapper around pyserial"
-
-[[dependency]]
 name = "python-cobs"
 openwrt = "python3-cobs"
 pip = "cobs==1.2.2"

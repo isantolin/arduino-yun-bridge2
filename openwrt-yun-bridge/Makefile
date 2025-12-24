@@ -42,7 +42,6 @@ define Package/$(PKG_NAME)
 		+python3-uci \
 		+python3-aiomqtt \
 		+python3-pyserial \
-		+python3-pyserial-asyncio \
 		+python3-cobs \
 		+python3-psutil \
 		+python3-prometheus-client

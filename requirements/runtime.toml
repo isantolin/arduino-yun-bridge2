@@ -19,6 +19,12 @@ pip = "aiomqtt==2.4.0"
 rationale = "Async MQTT v5 client used for runtime telemetry"
 
 [[dependency]]
+name = "paho-mqtt"
+openwrt = "python3-paho-mqtt"
+pip = "paho-mqtt==2.1.0"
+rationale = "Synchronous MQTT client for legacy CGI scripts"
+
+[[dependency]]
 name = "pyserial"
 openwrt = "python3-pyserial"
 pip = "pyserial==3.5"

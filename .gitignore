@@ -33,14 +33,6 @@ venv/
 *.bak
 *~
 # Exclude OpenWRT build output
-openwrt-yun-core/bin/
-luci-app-yunbridge/bin/
-YunBridge-v2/bin/
-Bridge-v2/bin/
-openwrt-yun-core/build/
-luci-app-yunbridge/build/
-YunBridge-v2/build/
-Bridge-v2/build/
 openwrt-library-arduino/build-coverage/
 # Python dist folders
 openwrt-yun-client-python/dist/
@@ -48,8 +40,8 @@ YunBridge-v2/dist/
 Bridge-v2/dist/
 luci-app-yunbridge/dist/
 **/dist/
-# Exclude any .ipk or .deb anywhere
-**/*.ipk
+# Exclude any .apk or .deb anywhere
+**/*.apk
 **/*.deb
 **/*.whl
 .vscode
@@ -71,3 +63,6 @@ test_bridge_core
 
 .gemini/
 gha-creds-*.json
+feeds/luci-app-yunbridge
+feeds/openwrt-yun-bridge
+feeds/openwrt-yun-core

@@ -51,25 +51,25 @@ class ShellComponent:
         action = parts[2] if len(parts) >= 3 else ""
 
         match action:
-            case "run":
+            case Action.SHELL_RUN:
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
                     return
                 await self._handle_shell_run(payload_model, inbound)
 
-            case "run_async":
+            case Action.SHELL_RUN_ASYNC:
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
                     return
                 await self._handle_run_async(payload_model, inbound)
 
-            case "poll" if len(parts) == 4:
+            case Action.SHELL_POLL if len(parts) == 4:
                 pid_model = self._parse_shell_pid(parts[3], action)
                 if pid_model is None:
                     return
                 await self._handle_poll(pid_model)
 
-            case "kill" if len(parts) == 4:
+            case Action.SHELL_KILL if len(parts) == 4:
                 pid_model = self._parse_shell_pid(parts[3], action)
                 if pid_model is None:
                     return

@@ -10,6 +10,7 @@ from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
     UINT8_MASK,
+    Action,
     Command,
     Status,
 )
@@ -161,9 +162,9 @@ class MailboxComponent:
         inbound: MQTTMessage | None = None,
     ) -> None:
         match action:
-            case "write":
+            case Action.MAILBOX_WRITE:
                 await self._handle_mqtt_write(payload, inbound)
-            case "read":
+            case Action.MAILBOX_READ:
                 await self._handle_mqtt_read(inbound)
             case _:
                 logger.debug("Ignoring mailbox action '%s'", action)

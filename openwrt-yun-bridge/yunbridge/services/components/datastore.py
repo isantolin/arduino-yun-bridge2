@@ -14,6 +14,7 @@ from .base import BridgeContext
 from yunbridge.rpc.protocol import (
     DATASTORE_VALUE_LEN_FORMAT,
     DATASTORE_VALUE_LEN_SIZE,
+    Action,
     Command,
     Status,
 )
@@ -130,19 +131,19 @@ class DatastoreComponent:
     ) -> None:
         is_request = False
         parts = remainder.copy()
-        if identifier == "get" and parts and parts[-1] == "request":
+        if identifier == Action.DATASTORE_GET and parts and parts[-1] == "request":
             parts = parts[:-1]
             is_request = True
 
         key = "/".join(parts)
-        if identifier == "put":
+        if identifier == Action.DATASTORE_PUT:
             if not parts:
                 logger.debug("Ignoring datastore put without key")
                 return
             await self._handle_mqtt_put(key, payload_str, inbound)
             return
 
-        if identifier == "get":
+        if identifier == Action.DATASTORE_GET:
             if not key:
                 logger.debug("Ignoring datastore get without key")
                 return

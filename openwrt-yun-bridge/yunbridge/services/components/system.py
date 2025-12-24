@@ -8,7 +8,7 @@ import logging
 from typing import Deque
 
 from aiomqtt.message import Message as MQTTMessage
-from yunbridge.rpc.protocol import Command
+from yunbridge.rpc.protocol import Action, Command
 
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
@@ -146,20 +146,20 @@ class SystemComponent:
         identifier: str,
         remainder: list[str],
         inbound: MQTTMessage | None = None,
-    ) -> bool:
-        if identifier == "free_memory" and remainder and remainder[0] == "get":
+    ) -> None:
+        if identifier == Action.SYSTEM_FREE_MEMORY and remainder and remainder[0] == Action.SYSTEM_GET:
             if inbound is not None:
                 self._pending_free_memory.append(inbound)
             await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
             return True
 
-        if identifier == "tx_debug" and remainder and remainder[0] == "get":
+        if identifier == "tx_debug" and remainder and remainder[0] == Action.SYSTEM_GET:
             if inbound is not None:
                 self._pending_tx_debug.append(inbound)
             await self.ctx.send_frame(Command.CMD_GET_TX_DEBUG_SNAPSHOT.value, b"")
             return True
 
-        if identifier == "version" and remainder and remainder[0] == "get":
+        if identifier == Action.SYSTEM_VERSION and remainder and remainder[0] == Action.SYSTEM_GET:
             cached_version = self.state.mcu_version
             if cached_version is not None and inbound is not None:
                 await self._publish_version(cached_version, inbound)

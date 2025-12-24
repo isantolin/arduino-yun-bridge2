@@ -175,7 +175,7 @@ class FileComponent:
                 outcome,
             )
             match action:
-                case "write":
+                case Action.FILE_WRITE:
                     success, _, reason = await self._perform_file_operation(
                         Action.FILE_WRITE, filename, payload
                     )
@@ -189,7 +189,7 @@ class FileComponent:
                     else:
                         outcome["status"] = "ok"
 
-                case "read":
+                case Action.FILE_READ:
                     (
                         success,
                         content,
@@ -227,7 +227,7 @@ class FileComponent:
                         reply_context=inbound,
                     )
 
-                case "remove":
+                case Action.FILE_REMOVE:
                     success, _, reason = await self._perform_file_operation(
                         Action.FILE_REMOVE, filename
                     )
@@ -275,16 +275,16 @@ class FileComponent:
 
         try:
             match operation:
-                case "write":
+                case Action.FILE_WRITE:
                     assert data is not None
                     return await self._write_with_quota(safe_path, data)
 
-                case "read":
+                case Action.FILE_READ:
                     content = await asyncio.to_thread(self._read_file_sync, safe_path)
                     logger.info("Read %d bytes from %s", len(content), safe_path)
                     return True, content, "ok"
 
-                case "remove":
+                case Action.FILE_REMOVE:
                     return await self._remove_with_tracking(safe_path)
 
                 case _:

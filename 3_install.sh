@@ -778,11 +778,7 @@ if [ -f /etc/config/uhttpd ]; then
         [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd reload
     fi
 fi
-#  Remove serial console login to free up the port for the bridge
-if grep -q '::askconsole:/usr/libexec/login.sh' /etc/inittab; then
-    echo "[INFO] Removing serial console login from /etc/inittab."
-    sed -i '/::askconsole:\/usr\/libexec\/login.sh/d' /etc/inittab
-fi
+
 #  Restart services to apply changes and load the new LuCI app
 echo "[INFO] Restarting uhttpd and rpcd for LuCI..."
 [ -f /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart

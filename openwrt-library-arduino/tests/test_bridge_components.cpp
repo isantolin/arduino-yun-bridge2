@@ -313,9 +313,10 @@ void test_datastore_get_response_dispatches_handler() {
 
   DataStore._pending_datastore_head = 0;
   DataStore._pending_datastore_count = 0;
-  DataStore._pending_datastore_key_lengths.fill(0);
+  // FIXED: Use memset for raw arrays
+  std::memset(DataStore._pending_datastore_key_lengths, 0, sizeof(DataStore._pending_datastore_key_lengths));
   for (auto& key : DataStore._pending_datastore_keys) {
-    key.fill(0);
+     std::memset(key, 0, sizeof(key));
   }
 
   DatastoreHandlerState handler_state;
@@ -654,9 +655,8 @@ void test_process_poll_response_requeues_on_streaming_output() {
   Process._pending_process_poll_head = 0;
   Process._pending_process_poll_count = 0;
   // Manually clear instead of fill(0) just in case
-  for(size_t i=0; i<Process._pending_process_pids.size(); i++) {
-      Process._pending_process_pids[i] = 0;
-  }
+  // FIXED: Use memset for raw arrays
+  std::memset(Process._pending_process_pids, 0, sizeof(Process._pending_process_pids));
 
   const uint16_t pid = 0x1234;
   bool enqueued = Process._pushPendingProcessPid(pid);

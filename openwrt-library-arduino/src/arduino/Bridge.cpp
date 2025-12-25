@@ -794,7 +794,7 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 }
 
 void BridgeClass::analogWrite(uint8_t pin, int value) {
-  uint8_t val_u8 = constrain(value, rpc::RPC_DIGITAL_LOW, rpc::RPC_UINT8_MASK);
+  uint8_t val_u8 = static_cast<uint8_t>(constrain(value, static_cast<int>(rpc::RPC_DIGITAL_LOW), static_cast<int>(rpc::RPC_UINT8_MASK)));
   ::analogWrite(pin, static_cast<int>(val_u8));
 }
 

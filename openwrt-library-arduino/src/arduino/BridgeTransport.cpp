@@ -10,8 +10,9 @@ BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
       _builder(),
       _flow_paused(false),
       _last_cobs_len(0) {
-        memset(_raw_frame_buffer.data(), 0, _raw_frame_buffer.size());
-        memset(_last_cobs_frame.data(), 0, _last_cobs_frame.size());
+        // [MODIFIED] Native array initialization
+        memset(_raw_frame_buffer, 0, sizeof(_raw_frame_buffer));
+        memset(_last_cobs_frame, 0, sizeof(_last_cobs_frame));
       }
 
 void BridgeTransport::begin(unsigned long baudrate) {
@@ -60,12 +61,7 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
             if (parsed) {
                 return true;
             }
-            // If overflowed, the caller can check hasOverflowed()
             if (_parser.overflowed()) {
-                // We don't return true here, but the caller might want to know about the error
-                // For now, we just let the parser state reflect it.
-                // The original code emitted a status immediately.
-                // We might need to handle that in the caller.
                 return false; 
             }
         }
@@ -74,9 +70,10 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
 }
 
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
+    // [MODIFIED] Use native array pointer and sizeof
     size_t raw_len = _builder.build(
-        _raw_frame_buffer.data(),
-        _raw_frame_buffer.size(),
+        _raw_frame_buffer,
+        sizeof(_raw_frame_buffer),
         command_id,
         payload,
         length);
@@ -85,15 +82,16 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
         return false;
     }
 
-    size_t cobs_len = cobs::encode(_raw_frame_buffer.data(), raw_len, _last_cobs_frame.data());
+    // [MODIFIED] Use native array pointer
+    size_t cobs_len = cobs::encode(_raw_frame_buffer, raw_len, _last_cobs_frame);
     _last_cobs_len = cobs_len;
 
     // Write COBS frame
     size_t written = 0;
     if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(_last_cobs_frame.data(), cobs_len);
+        written = _hardware_serial->write(_last_cobs_frame, cobs_len);
     } else {
-        written = _stream.write(_last_cobs_frame.data(), cobs_len);
+        written = _stream.write(_last_cobs_frame, cobs_len);
     }
 
     if (written != cobs_len) {
@@ -147,9 +145,10 @@ bool BridgeTransport::retransmitLastFrame() {
     
     size_t written = 0;
     if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(_last_cobs_frame.data(), _last_cobs_len);
+        // [MODIFIED] Use native array pointer
+        written = _hardware_serial->write(_last_cobs_frame, _last_cobs_len);
     } else {
-        written = _stream.write(_last_cobs_frame.data(), _last_cobs_len);
+        written = _stream.write(_last_cobs_frame, _last_cobs_len);
     }
     
     if (written != _last_cobs_len) return false;

@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-#include "../bridge_array.h"
+// [REMOVED] #include "../bridge_array.h" -> Deleted file
 #include "protocol/rpc_frame.h"
 #include "protocol/cobs.h"
 
@@ -43,7 +43,6 @@ public:
     // Resets internal state (parser, flow control)
     void reset();
 
-// Modificacion CRITICA: Exponer privados solo si se define BRIDGE_HOST_TEST
 #if defined(BRIDGE_HOST_TEST)
  public:
 #else
@@ -55,8 +54,9 @@ public:
     rpc::FrameBuilder _builder;
     bool _flow_paused;
     
-    bridge::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _raw_frame_buffer;
-    bridge::array<uint8_t, rpc::COBS_BUFFER_SIZE> _last_cobs_frame;
+    // [MODIFIED] Native C Arrays instead of bridge::array
+    uint8_t _raw_frame_buffer[rpc::MAX_RAW_FRAME_SIZE];
+    uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
     size_t _last_cobs_len;
     
     // Constants for flow control

@@ -9,7 +9,7 @@ ProcessClass::ProcessClass()
     _process_run_handler(nullptr),
     _process_poll_handler(nullptr),
     _process_run_async_handler(nullptr) {
-  _pending_process_pids.fill(0);
+  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
 }
 
 void ProcessClass::run(const char* command) {

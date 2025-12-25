@@ -9,10 +9,10 @@ DataStoreClass::DataStoreClass()
   : _pending_datastore_head(0),
     _pending_datastore_count(0),
     _datastore_get_handler(nullptr) {
-  for (auto& key : _pending_datastore_keys) {
-    memset(key.data(), 0, key.size());
+  for (int i = 0; i < kMaxPendingDatastore; i++) {
+      memset(_pending_datastore_keys[i], 0, BridgeClass::kMaxDatastoreKeyLength + 1);
   }
-  memset(_pending_datastore_key_lengths.data(), 0, _pending_datastore_key_lengths.size());
+  memset(_pending_datastore_key_lengths, 0, kMaxPendingDatastore);
 }
 
 void DataStoreClass::put(const char* key, const char* value) {
@@ -114,7 +114,7 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
   uint8_t slot =
       (_pending_datastore_head + _pending_datastore_count) %
       kMaxPendingDatastore;
-  memcpy(_pending_datastore_keys[slot].data(), key, length);
+  memcpy(_pending_datastore_keys[slot], key, length);
   _pending_datastore_keys[slot][length] = '\0';
   _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
   _pending_datastore_count++;
@@ -133,7 +133,7 @@ const char* DataStoreClass::_popPendingDatastoreKey() {
   if (length > BridgeClass::kMaxDatastoreKeyLength) {
     length = BridgeClass::kMaxDatastoreKeyLength;
   }
-  memcpy(key_buffer, _pending_datastore_keys[slot].data(), length);
+  memcpy(key_buffer, _pending_datastore_keys[slot], length);
   key_buffer[length] = '\0';
   _pending_datastore_head =
       (_pending_datastore_head + 1) % kMaxPendingDatastore;

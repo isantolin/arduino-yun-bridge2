@@ -107,10 +107,10 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
       , _tx_debug{}
 #endif
 {
-  for (auto& frame : _pending_tx_frames) {
-    frame.command_id = 0;
-    frame.payload_length = 0;
-    memset(frame.payload.data(), 0, frame.payload.size());
+  for (int i = 0; i < kMaxPendingTxFrames; i++) {
+    _pending_tx_frames[i].command_id = 0;
+    _pending_tx_frames[i].payload_length = 0;
+    memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
   }
 }
 
@@ -138,10 +138,10 @@ BridgeClass::BridgeClass(Stream& stream)
       , _tx_debug{}
 #endif
 {
-  for (auto& frame : _pending_tx_frames) {
-    frame.command_id = 0;
-    frame.payload_length = 0;
-    memset(frame.payload.data(), 0, frame.payload.size());
+  for (int i = 0; i < kMaxPendingTxFrames; i++) {
+    _pending_tx_frames[i].command_id = 0;
+    _pending_tx_frames[i].payload_length = 0;
+    memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
   }
 }
 
@@ -286,8 +286,6 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
   switch (command) {
     case CommandId::CMD_GET_VERSION:
-      // Simetría 10/10: Usamos escritura Big Endian explícita, igual que en el resto del protocolo.
-      // Aunque para uint8_t no afecta el endianness, mantiene la coherencia de estilo.
       if (payload_length == 0) {
         uint8_t version_payload[2];
         version_payload[0] = static_cast<uint8_t>(BridgeClass::kFirmwareVersionMajor);
@@ -742,7 +740,7 @@ void BridgeClass::_flushPendingTxQueue() {
   }
     if (!_sendFrameImmediate(
       frame.command_id,
-      frame.payload.data(), frame.payload_length)) {
+      frame.payload, frame.payload_length)) {
     uint8_t previous_head =
         (_pending_tx_head + kMaxPendingTxFrames - 1) % kMaxPendingTxFrames;
     _pending_tx_head = previous_head;
@@ -769,7 +767,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload,
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
   if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload.data(), payload, payload_len);
+    memcpy(_pending_tx_frames[tail].payload, payload, payload_len);
   }
   _pending_tx_count++;
   return true;

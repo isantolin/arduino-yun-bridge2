@@ -7,7 +7,6 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-#include "bridge_array.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -173,9 +172,9 @@ class BridgeClass {
   struct PendingTxFrame {
     uint16_t command_id;
     uint16_t payload_length;
-    bridge::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+    uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
   };
-  bridge::array<PendingTxFrame, kMaxPendingTxFrames> _pending_tx_frames;
+  PendingTxFrame _pending_tx_frames[kMaxPendingTxFrames];
   uint8_t _pending_tx_head;
   uint8_t _pending_tx_count;
   bool _synchronized;
@@ -242,8 +241,8 @@ class ConsoleClass : public Stream {
   size_t _rx_buffer_tail;
   size_t _tx_buffer_pos;
   bool _xoff_sent;
-  bridge::array<uint8_t, kRxBufferSize> _rx_buffer;
-  bridge::array<uint8_t, kTxBufferSize> _tx_buffer;
+  uint8_t _rx_buffer[kRxBufferSize];
+  uint8_t _tx_buffer[kTxBufferSize];
 };
 extern ConsoleClass Console;
 
@@ -266,8 +265,8 @@ class DataStoreClass {
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
-  bridge::array<bridge::array<char, BridgeClass::kMaxDatastoreKeyLength + 1>, kMaxPendingDatastore> _pending_datastore_keys;
-  bridge::array<uint8_t, kMaxPendingDatastore> _pending_datastore_key_lengths;
+  char _pending_datastore_keys[kMaxPendingDatastore][BridgeClass::kMaxDatastoreKeyLength + 1];
+  uint8_t _pending_datastore_key_lengths[kMaxPendingDatastore];
   uint8_t _pending_datastore_head;
   uint8_t _pending_datastore_count;
   DataStoreGetHandler _datastore_get_handler;
@@ -345,7 +344,7 @@ class ProcessClass {
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 
-  bridge::array<uint16_t, kMaxPendingProcessPolls> _pending_process_pids;
+  uint16_t _pending_process_pids[kMaxPendingProcessPolls];
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
   

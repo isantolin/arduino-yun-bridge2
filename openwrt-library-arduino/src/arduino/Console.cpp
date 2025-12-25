@@ -10,8 +10,11 @@ ConsoleClass::ConsoleClass()
     : _begun(false),
       _rx_buffer_head(0),
       _rx_buffer_tail(0),
-  _tx_buffer_pos(0),
-  _xoff_sent(false) {}
+      _tx_buffer_pos(0),
+      _xoff_sent(false) {
+      memset(_rx_buffer, 0, kRxBufferSize);
+      memset(_tx_buffer, 0, kTxBufferSize);
+}
 
 void ConsoleClass::begin() {
   _begun = true;
@@ -19,6 +22,8 @@ void ConsoleClass::begin() {
   _rx_buffer_tail = 0;
   _xoff_sent = false;
   _tx_buffer_pos = 0;
+  memset(_rx_buffer, 0, kRxBufferSize);
+  memset(_tx_buffer, 0, kTxBufferSize);
 }
 
 size_t ConsoleClass::write(uint8_t c) {
@@ -117,7 +122,7 @@ void ConsoleClass::flush() {
       size_t chunk = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
       if (!Bridge.sendFrame(
               CommandId::CMD_CONSOLE_WRITE,
-              _tx_buffer.data() + offset, chunk)) {
+              _tx_buffer + offset, chunk)) {
         break;
       }
       offset += chunk;

@@ -21,8 +21,6 @@ from yunbridge.const import (
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
-pytest_plugins = ("pytest_asyncio",)
-
 
 @pytest.fixture()
 def event_loop() -> Iterator[asyncio.AbstractEventLoop]:

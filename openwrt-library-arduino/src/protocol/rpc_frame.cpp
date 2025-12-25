@@ -209,7 +209,7 @@ size_t FrameBuilder::build(uint8_t* buffer,
 
   // Copy payload into the buffer
   if (payload && payload_len > 0) {
-    // REPLACED: memcpy with std::copy
+    // using memcpy for raw buffer copy (No STL dependency)
     memcpy(p, payload, payload_len);
   }
 

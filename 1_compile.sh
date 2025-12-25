@@ -259,6 +259,15 @@ done
 echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 
+# [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
+PYTHON_UCI_MAKEFILE="feeds/packages/lang/python/python-uci/Makefile"
+if [ -f "$PYTHON_UCI_MAKEFILE" ]; then
+    echo "[FIX] Patching python-uci build dependencies..."
+    if ! grep -q "PKG_BUILD_DEPENDS:=python3-setuptools" "$PYTHON_UCI_MAKEFILE"; then
+        sed -i '/PKG_LICENSE_FILES:=LICENSE/a PKG_BUILD_DEPENDS:=python3-setuptools' "$PYTHON_UCI_MAKEFILE"
+    fi
+fi
+
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     echo "[INFO] Installing yunbridge feed overrides..."
     

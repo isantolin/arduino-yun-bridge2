@@ -112,13 +112,21 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
     echo "[INFO] Host dependency auto-install enabled."
     if [ "$(uname -s)" = "Linux" ]; then
         if [ -f /etc/debian_version ]; then
-            CMD_PREFIX=()
-            [ "$EUID" -ne 0 ] && command -v sudo >/dev/null 2>&1 && CMD_PREFIX=(sudo)
-            
-            if [ ${#CMD_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1; then
+                    PKG_PREFIX=(sudo)
+                else
+                    echo "[WARN] sudo not found and not running as root; skipping automatic apt-get install."
+                    PKG_PREFIX=()
+                fi
+            else
+                PKG_PREFIX=()
+            fi
+
+            if [ ${#PKG_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
                 echo "[INFO] Installing packages for Ubuntu/Debian..."
-                "${CMD_PREFIX[@]}" apt-get update
-                "${CMD_PREFIX[@]}" apt-get install -y \
+                "${PKG_PREFIX[@]}" apt-get update
+                "${PKG_PREFIX[@]}" apt-get install -y \
                     build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling \
                     git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev \
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
@@ -127,8 +135,40 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     uuid-dev liblzma-dev libbluetooth-dev libbsd-dev binutils-dev asciidoctor \
                     g++-multilib gcc-mingw-w64-x86-64 binutils-mingw-w64-x86-64
             fi
+        elif [ -f /etc/fedora-release ]; then
+            if [ "$EUID" -ne 0 ]; then
+                if command -v sudo >/dev/null 2>&1; then
+                    PKG_PREFIX=(sudo)
+                else
+                    echo "[WARN] sudo not found and not running as root; skipping automatic dnf install."
+                    PKG_PREFIX=()
+                fi
+            else
+                PKG_PREFIX=()
+            fi
+
+            if [ ${#PKG_PREFIX[@]} -ne 0 ] || [ "$EUID" -eq 0 ]; then
+                echo "[INFO] Installing packages for Fedora..."
+                "${PKG_PREFIX[@]}" dnf install -y \
+                    make automake gcc gcc-c++ kernel-devel \
+                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling \
+                    git unzip tar gzip bzip2 xz coreutils ncurses-devel zstd wget \
+                    python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
+                    libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
+                    libxcrypt-devel libb2-devel bzip2-devel gdbm-devel libnsl2-devel \
+                    tk-devel tcl-devel libuuid-devel xz-devel \
+                    bluez-libs-devel libbsd-devel binutils-devel asciidoctor \
+                    glibc-devel.i686 libstdc++-devel.i686 \
+                    mingw64-gcc mingw64-binutils
+            fi
+        else
+            echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."
         fi
+    else
+        echo "[WARN] Operating system not supported for automatic dependency installation."
     fi
+else
+    echo "[INFO] Host dependency auto-install disabled. Ensure prerequisites are installed or rerun with --install-host-deps."
 fi
 
 # --- PROTOCOL & DEPS SYNC ---
@@ -228,6 +268,14 @@ if [ -d "$LOCAL_FEED_PATH" ]; then
     
     FEEDS_CONF="$SDK_DIR/feeds.conf"
     [ ! -f "$FEEDS_CONF" ] && cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
+
+    # [OPTIMIZATION] Aplicar Mirrors de GitHub para velocidad y estabilidad
+    echo "[INFO] Switching feeds to GitHub mirrors..."
+    sed -i 's|https://git.openwrt.org/openwrt/openwrt.git|https://github.com/openwrt/openwrt.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/feed/packages.git|https://github.com/openwrt/packages.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/project/luci.git|https://github.com/openwrt/luci.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/feed/routing.git|https://github.com/openwrt/routing.git|g' "$FEEDS_CONF"
+    sed -i 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' "$FEEDS_CONF"
     
     # [FIX] Limpiar configuración antigua para forzar la ruta nueva
     if grep -q "src-link yunbridge" "$FEEDS_CONF"; then

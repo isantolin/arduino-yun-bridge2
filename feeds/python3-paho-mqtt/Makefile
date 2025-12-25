@@ -17,6 +17,9 @@ PKG_LICENSE_FILES:=LICENSE.txt
 # Fuerza la entrada en la subcarpeta correcta tras la extracción
 PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/$(PYPI_SOURCE_NAME)-$(PKG_VERSION)
 
+# Dependencia CRÍTICA de Host: Hatchling es el build-backend
+PKG_BUILD_DEPENDS:=python3-hatchling/host
+
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
@@ -30,14 +33,14 @@ define Package/python3-paho-mqtt
   DEPENDS:=+python3-light +python3-uuid +python3-logging +python3-openssl
 endef
 
-# ESTA LÍNEA ES LA CLAVE: Hatchling es obligatorio para la compilación en el host
-PYTHON3_PKG_BUILD_DEPENDS:=hatchling
+# Aseguramos que el entorno de Python sepa que necesitamos hatchling
+PYTHON3_PKG_BUILD_DEPENDS:=python3-hatchling
 
 define Package/python3-paho-mqtt/description
   This code provides a client class which enable applications to connect to an
-  MQTT broker to publish messages. Supports MQTT v5.0 and Callback API v2.
+  MQTT broker to publish messages.
+  Supports MQTT v5.0 and Callback API v2.
 endef
 
 $(eval $(call Py3Package,python3-paho-mqtt))
 $(eval $(call BuildPackage,python3-paho-mqtt))
-$(eval $(call BuildPackage,python3-paho-mqtt-src))

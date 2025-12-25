@@ -41,6 +41,7 @@ define Package/$(PKG_NAME)
 		+python3 \
 		+python3-uci \
 		+python3-aiomqtt \
+		+python3-paho-mqtt \
 		+python3-pyserial \
 		+python3-cobs \
 		+python3-psutil \

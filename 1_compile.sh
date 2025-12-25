@@ -206,7 +206,7 @@ if [ ! -d "$SDK_DIR" ]; then
 fi
 
 # Bootstrap build deps inside SDK
-bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/host/bin/python3" "$SDK_DIR/staging_dir/host" "hatchling" "hatchling==1.18.0"
+bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling==1.18.0"
 
 # 2. Sync Packages to SDK
 for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do

@@ -213,9 +213,14 @@ bootstrap_python_module_into_prefix() {
     local prefix_dir="$2"
     local module="$3"
     local package_spec="${4:-$module}"
-    if [ -x "$python_bin" ] && ! "$python_bin" -c "import ${module}" >/dev/null 2>&1; then
-        echo "[INFO] Bootstrapping $module in SDK..."
-        "$python_bin" -m pip install --upgrade --prefix "$prefix_dir" "$package_spec" || true
+    if [ -x "$python_bin" ]; then
+        if ! "$python_bin" -c "import ${module}" >/dev/null 2>&1; then
+            echo "[INFO] Bootstrapping $module in SDK..."
+            if ! "$python_bin" -m pip install --upgrade --prefix "$prefix_dir" "$package_spec"; then
+                echo "[ERROR] Failed to bootstrap $module"
+                exit 1
+            fi
+        fi
     fi
 }
 

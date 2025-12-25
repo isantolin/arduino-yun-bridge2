@@ -46,16 +46,26 @@ def main():
             sys.exit(0)
 
     # 2. Paths
-    firmware_path = Path("openwrt-library-arduino/build/Bridge/Bridge.ino.elf")
+    # FIX: Point to the actual sketch name 'BridgeControl' used in examples
+    base_build_path = Path("openwrt-library-arduino/build")
+    firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
+
+    # Fallback/Debug: List available ELFs if specific one is missing
     if not firmware_path.exists():
-        # Fallback for local testing if built manually
-        firmware_path = Path("test_bridge_core")  # Not an ELF for AVR, but just checking existence logic
-        # Real path check
-        firmware_path = Path("openwrt-library-arduino/build/Bridge/Bridge.ino.elf")
+        logger.warning(f"Firmware ELF not found at {firmware_path}")
+        if base_build_path.exists():
+            logger.info("Available ELFs in build dir:")
+            found_elfs = list(base_build_path.glob("**/*.elf"))
+            for elf in found_elfs:
+                logger.info(f" - {elf}")
+                # Auto-select the first BridgeControl looking elf if found in slightly different path
+                if "BridgeControl" in str(elf) and not firmware_path.exists():
+                    firmware_path = elf
+                    logger.info(f"Auto-selected firmware: {firmware_path}")
 
     if not firmware_path.exists():
-        logger.warning(f"Firmware ELF not found at {firmware_path}. Skipping emulation.")
-        sys.exit(0)
+        logger.error("CRITICAL: No valid firmware ELF found. Compilation might have failed or path is wrong.")
+        sys.exit(1)
 
     # 3. Setup Virtual Serial Port
     logger.info("Starting socat...")
@@ -95,20 +105,7 @@ def main():
             "-f", "16000000",
             str(firmware_path)
         ]
-        # We need to redirect simavr UART to SOCAT_PORT1.
-        # SimAVR doesn't always support direct PTY attachment via flag easily without custom bridge.
-        # However, if we use a wrapper or if simavr supports it.
-        # Standard simavr prints UART to stdout/stdin.
-        # So we can connect simavr stdio to socat?
-        # Or use -u if supported.
-        # For this implementation, we assume simavr is patched or we use a wrapper that connects UART to PTY.
-        # Alternatively, we can run simavr and pipe to socat, but we already have a PTY pair.
-
-        # Let's assume we pass the PTY to the firmware via some mechanism or simavr supports it.
-        # If simavr doesn't support -u directly for PTY, we might need to use `picocom` or similar,
-        # but that's getting complex.
-        # For now, we'll launch it and assume it works for the sake of the script structure.
-
+        
         simavr_proc = subprocess.Popen(simavr_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # 5. Start Python Daemon (Test Mode)

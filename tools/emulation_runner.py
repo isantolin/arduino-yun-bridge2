@@ -46,8 +46,15 @@ def main():
             sys.exit(0)
 
     # 2. Paths
-    # FIX: Point to the actual sketch name 'BridgeControl' used in examples
-    base_build_path = Path("openwrt-library-arduino/build")
+    # Script is in tools/, so up one level is root
+    script_dir = Path(__file__).resolve().parent
+    repo_root = script_dir.parent
+    
+    # Path to the Python package source (CRITICAL FIX for ModuleNotFoundError)
+    package_root = repo_root / "openwrt-yun-bridge"
+
+    # Path to Firmware
+    base_build_path = repo_root / "openwrt-library-arduino/build"
     firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
 
     # Fallback/Debug: List available ELFs if specific one is missing
@@ -96,9 +103,7 @@ def main():
     try:
         # 4. Start SimAVR
         logger.info(f"Starting simavr with {firmware_path}...")
-        # simavr -m atmega32u4 -f 16000000 -u <uart_port> <elf>
-        # Note: simavr UART flag might vary by version, usually -u or via trace
-        # Assuming standard simavr usage for UART attachment
+        
         simavr_cmd = [
             "simavr",
             "-m", "atmega32u4",
@@ -110,8 +115,12 @@ def main():
 
         # 5. Start Python Daemon (Test Mode)
         logger.info("Starting Bridge Daemon (Test Mode)...")
-        # We run a simplified client or the actual daemon in debug mode
+        
+        # FIX: Inject openwrt-yun-bridge into PYTHONPATH
         daemon_env = os.environ.copy()
+        current_pythonpath = daemon_env.get("PYTHONPATH", "")
+        daemon_env["PYTHONPATH"] = f"{str(package_root)}{os.pathsep}{current_pythonpath}"
+        
         daemon_env["YUNBRIDGE_PORT"] = SOCAT_PORT0
         daemon_env["YUNBRIDGE_BAUDRATE"] = "115200"
 

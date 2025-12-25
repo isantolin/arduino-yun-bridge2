@@ -18,7 +18,7 @@ PKG_LICENSE_FILES:=LICENSE.txt
 PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/$(PYPI_SOURCE_NAME)-$(PKG_VERSION)
 
 # Dependencia CRÍTICA de Host: Hatchling es el build-backend
-PKG_BUILD_DEPENDS:=python3-hatchling/host
+PKG_BUILD_DEPENDS:=python-hatchling/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

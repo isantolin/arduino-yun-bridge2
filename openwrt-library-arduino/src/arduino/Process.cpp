@@ -132,7 +132,7 @@ bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
 
 uint16_t ProcessClass::_popPendingProcessPid() {
   if (_pending_process_poll_count == 0) {
-    return 0xFFFF;
+    return rpc::RPC_INVALID_ID_SENTINEL;
   }
 
   uint8_t slot = _pending_process_poll_head;

@@ -72,8 +72,8 @@ uint16_t getFreeMemory() {
   if (free_bytes < 0) {
     free_bytes = 0;
   }
-  if (static_cast<size_t>(free_bytes) > 0xFFFF) {
-    free_bytes = 0xFFFF;
+  if (static_cast<size_t>(free_bytes) > rpc::RPC_UINT16_MAX) {
+    free_bytes = rpc::RPC_UINT16_MAX;
   }
   return static_cast<uint16_t>(free_bytes);
 #else
@@ -408,7 +408,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
         #endif
-        uint8_t resp_payload = static_cast<uint8_t>(value & 0xFF);
+        uint8_t resp_payload = static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK);
         (void)sendFrame(CommandId::CMD_DIGITAL_READ_RESP, &resp_payload, 1);
       }
       break;
@@ -420,7 +420,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);
         #endif
         uint8_t resp_payload[2];
-        rpc::write_u16_be(resp_payload, static_cast<uint16_t>(value & 0xFFFF));
+        rpc::write_u16_be(resp_payload, static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
         (void)sendFrame(CommandId::CMD_ANALOG_READ_RESP, resp_payload, sizeof(resp_payload));
       }
       break;
@@ -528,7 +528,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     const uint8_t* payload_data = frame.payload;
     switch (status) {
       case StatusCode::STATUS_ACK: {
-        uint16_t ack_id = 0xFFFF;
+        uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
         if (payload_length >= 2 && payload_data) {
           ack_id = rpc::read_u16_be(payload_data);
         }
@@ -539,7 +539,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         return;
       }
       case StatusCode::STATUS_MALFORMED: {
-        uint16_t malformed_id = 0xFFFF;
+        uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
         if (payload_length >= 2 && payload_data) {
           malformed_id = rpc::read_u16_be(payload_data);
         }
@@ -682,14 +682,14 @@ void BridgeClass::_handleAck(uint16_t command_id) {
   if (!_awaiting_ack) {
     return;
   }
-  if (command_id == 0xFFFF || command_id == _last_command_id) {
+  if (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id) {
     _clearAckState();
     _flushPendingTxQueue();
   }
 }
 
 void BridgeClass::_handleMalformed(uint16_t command_id) {
-  if (command_id == 0xFFFF || command_id == _last_command_id) {
+  if (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id) {
     _retransmitLastFrame();
   }
 }
@@ -794,7 +794,7 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 }
 
 void BridgeClass::analogWrite(uint8_t pin, int value) {
-  uint8_t val_u8 = constrain(value, 0, 255);
+  uint8_t val_u8 = constrain(value, rpc::RPC_DIGITAL_LOW, rpc::RPC_UINT8_MASK);
   ::analogWrite(pin, static_cast<int>(val_u8));
 }
 

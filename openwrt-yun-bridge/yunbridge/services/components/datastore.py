@@ -221,7 +221,7 @@ class DatastoreComponent:
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.DATASTORE,
-            "get",
+            Action.DATASTORE_GET,
             *key_segments,
         )
         properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]

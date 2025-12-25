@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from .common import normalise_allowed_commands
 from .const import ALLOWED_COMMAND_WILDCARD
 from .protocol.topics import Topic
+from .rpc.protocol import Action
 
 
 class CommandValidationError(Exception):
@@ -103,23 +104,23 @@ class TopicAuthorization:
         topic_key = topic.lower()
         action_key = action.lower()
         mapping = {
-            (Topic.FILE.value, "read"): self.file_read,
-            (Topic.FILE.value, "write"): self.file_write,
-            (Topic.FILE.value, "remove"): self.file_remove,
-            (Topic.DATASTORE.value, "get"): self.datastore_get,
-            (Topic.DATASTORE.value, "put"): self.datastore_put,
-            (Topic.MAILBOX.value, "read"): self.mailbox_read,
-            (Topic.MAILBOX.value, "write"): self.mailbox_write,
-            (Topic.SHELL.value, "run"): self.shell_run,
-            (Topic.SHELL.value, "run_async"): self.shell_run_async,
-            (Topic.SHELL.value, "poll"): self.shell_poll,
-            (Topic.SHELL.value, "kill"): self.shell_kill,
-            (Topic.CONSOLE.value, "input"): self.console_input,
-            (Topic.DIGITAL.value, "write"): self.digital_write,
-            (Topic.DIGITAL.value, "read"): self.digital_read,
-            (Topic.DIGITAL.value, "mode"): self.digital_mode,
-            (Topic.ANALOG.value, "write"): self.analog_write,
-            (Topic.ANALOG.value, "read"): self.analog_read,
+            (Topic.FILE.value, Action.FILE_READ.value): self.file_read,
+            (Topic.FILE.value, Action.FILE_WRITE.value): self.file_write,
+            (Topic.FILE.value, Action.FILE_REMOVE.value): self.file_remove,
+            (Topic.DATASTORE.value, Action.DATASTORE_GET.value): self.datastore_get,
+            (Topic.DATASTORE.value, Action.DATASTORE_PUT.value): self.datastore_put,
+            (Topic.MAILBOX.value, Action.MAILBOX_READ.value): self.mailbox_read,
+            (Topic.MAILBOX.value, Action.MAILBOX_WRITE.value): self.mailbox_write,
+            (Topic.SHELL.value, Action.SHELL_RUN.value): self.shell_run,
+            (Topic.SHELL.value, Action.SHELL_RUN_ASYNC.value): self.shell_run_async,
+            (Topic.SHELL.value, Action.SHELL_POLL.value): self.shell_poll,
+            (Topic.SHELL.value, Action.SHELL_KILL.value): self.shell_kill,
+            (Topic.CONSOLE.value, Action.CONSOLE_INPUT.value): self.console_input,
+            (Topic.DIGITAL.value, Action.DIGITAL_WRITE.value): self.digital_write,
+            (Topic.DIGITAL.value, Action.DIGITAL_READ.value): self.digital_read,
+            (Topic.DIGITAL.value, Action.PIN_MODE.value): self.digital_mode,
+            (Topic.ANALOG.value, Action.ANALOG_WRITE.value): self.analog_write,
+            (Topic.ANALOG.value, Action.ANALOG_READ.value): self.analog_read,
         }
         return mapping.get((topic_key, action_key), False)
 

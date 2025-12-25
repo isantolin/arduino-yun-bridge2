@@ -88,6 +88,12 @@ class Action(StrEnum):
     SYSTEM_FREE_MEMORY = "free_memory"  # System free memory
     SYSTEM_VERSION = "version"  # System version
     SYSTEM_GET = "get"  # Get system info
+    DIGITAL_WRITE = "write"  # Digital write
+    DIGITAL_READ = "read"  # Digital read
+    DIGITAL_MODE = "mode"  # Digital mode
+    ANALOG_WRITE = "write"  # Analog write
+    ANALOG_READ = "read"  # Analog read
+    CONSOLE_INPUT = "input"  # Console input action
 
 
 class Status(IntEnum):

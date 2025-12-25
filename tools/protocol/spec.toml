@@ -156,6 +156,30 @@ description = "System version"
 name = "SYSTEM_GET"
 value = "get"
 description = "Get system info"
+[[actions]]
+name = "DIGITAL_WRITE"
+value = "write"
+description = "Digital write"
+[[actions]]
+name = "DIGITAL_READ"
+value = "read"
+description = "Digital read"
+[[actions]]
+name = "DIGITAL_MODE"
+value = "mode"
+description = "Digital mode"
+[[actions]]
+name = "ANALOG_WRITE"
+value = "write"
+description = "Analog write"
+[[actions]]
+name = "ANALOG_READ"
+value = "read"
+description = "Analog read"
+[[actions]]
+name = "CONSOLE_INPUT"
+value = "input"
+description = "Console input action"
 
 [[statuses]]
 name = "OK"

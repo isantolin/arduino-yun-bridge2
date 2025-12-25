@@ -118,23 +118,23 @@ def main():
         
         daemon_env = os.environ.copy()
         
-        # [FIX CRITICAL] Inject openwrt-yun-bridge into PYTHONPATH
+        # Inject openwrt-yun-bridge into PYTHONPATH
         current_pythonpath = daemon_env.get("PYTHONPATH", "")
         daemon_env["PYTHONPATH"] = f"{str(package_root)}{os.pathsep}{current_pythonpath}"
         
-        # [FIX CRITICAL] Configuration injection to pass RuntimeConfig validation
+        # Configuration injection to pass RuntimeConfig validation
         daemon_env["YUNBRIDGE_PORT"] = SOCAT_PORT0
         daemon_env["YUNBRIDGE_BAUDRATE"] = "115200"
         
         # Security & Transport settings for Test Environment
-        # Must match MIN_SERIAL_SHARED_SECRET_LEN (usually 8) + unique chars constraint
         daemon_env["SERIAL_SHARED_SECRET"] = "emulation_test_secret_xyz" 
         
-        # Disable MQTT TLS to avoid "mqtt_cafile not configured" error in tests
+        # Disable MQTT TLS and watchdog for tests
         daemon_env["MQTT_TLS"] = "0"
-        
-        # Optional: Disable watchdog to prevent timeouts during slow emulation
         daemon_env["DISABLE_WATCHDOG"] = "1"
+        
+        # [NEW] Suppress UCI missing warning (since we are not on OpenWrt)
+        daemon_env["YUNBRIDGE_NO_UCI_WARNING"] = "1"
 
         daemon_cmd = [
             sys.executable,

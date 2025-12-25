@@ -260,12 +260,22 @@ echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 
 # [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
-PYTHON_UCI_MAKEFILE="feeds/packages/lang/python/python-uci/Makefile"
+# Must target the file inside the SDK package structure after feed installation
+PYTHON_UCI_MAKEFILE="package/feeds/packages/python-uci/Makefile"
 if [ -f "$PYTHON_UCI_MAKEFILE" ]; then
-    echo "[FIX] Patching python-uci build dependencies..."
+    echo "[FIX] Patching python-uci build dependencies in $PYTHON_UCI_MAKEFILE..."
     if ! grep -q "PKG_BUILD_DEPENDS:=python3-setuptools" "$PYTHON_UCI_MAKEFILE"; then
-        sed -i '/PKG_LICENSE_FILES:=LICENSE/a PKG_BUILD_DEPENDS:=python3-setuptools' "$PYTHON_UCI_MAKEFILE"
+        # Insert dependency. python3-setuptools is required on host for build backend.
+        # OpenWrt's python3-package.mk usually handles host deps if configured, but 
+        # explicitly adding it to PKG_BUILD_DEPENDS ensures it's built.
+        # We append it to the end of the file or after a known line.
+        # Using simple sed to append to the Package definition area or global vars.
+        # Safest is probably adding it after PKG_NAME or similar, or just before include.
+        # Let's try inserting after PKG_SOURCE_VERSION since that's standard.
+        sed -i '/PKG_SOURCE_VERSION:=/a PKG_BUILD_DEPENDS:=python3-setuptools/host python3-build/host' "$PYTHON_UCI_MAKEFILE"
     fi
+else 
+    echo "[WARN] python-uci Makefile not found at $PYTHON_UCI_MAKEFILE"
 fi
 
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then

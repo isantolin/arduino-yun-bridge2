@@ -107,6 +107,16 @@ sanitize_path() {
 
 sanitize_path
 
+# ==============================================================================
+# [FIX CRITICO] Compatibilidad Python 3.13 + Rust (PyO3)
+# ==============================================================================
+# Muchas librerías de Python (bcrypt, cryptography) usan una versión de PyO3
+# que aún no reconoce oficialmente Python 3.13.
+# Esta variable fuerza al compilador Rust a usar la ABI estable (ABI3) y
+# permite que la compilación continúe sin errores.
+export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+# ==============================================================================
+
 # --- HOST DEPENDENCIES ---
 if [ "$INSTALL_HOST_DEPS" = "1" ]; then
     echo "[INFO] Host dependency auto-install enabled."
@@ -313,23 +323,47 @@ echo "[INFO] Installing feeds..."
 ./scripts/feeds install -a
 
 # [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
-# Must target the file inside the SDK package structure after feed installation
 PYTHON_UCI_MAKEFILE="package/feeds/packages/python-uci/Makefile"
 if [ -f "$PYTHON_UCI_MAKEFILE" ]; then
     echo "[FIX] Patching python-uci build dependencies in $PYTHON_UCI_MAKEFILE..."
     if ! grep -q "PKG_BUILD_DEPENDS:=python3-setuptools" "$PYTHON_UCI_MAKEFILE"; then
-        # Insert dependency. python3-setuptools is required on host for build backend.
-        # OpenWrt's python3-package.mk usually handles host deps if configured, but 
-        # explicitly adding it to PKG_BUILD_DEPENDS ensures it's built.
-        # We append it to the end of the file or after a known line.
-        # Using simple sed to append to the Package definition area or global vars.
-        # Safest is probably adding it after PKG_NAME or similar, or just before include.
-        # Let's try inserting after PKG_SOURCE_VERSION since that's standard.
         sed -i '/PKG_SOURCE_VERSION:=/a PKG_BUILD_DEPENDS:=python3-setuptools/host python3-build/host' "$PYTHON_UCI_MAKEFILE"
     fi
 else 
     echo "[WARN] python-uci Makefile not found at $PYTHON_UCI_MAKEFILE"
 fi
+
+# ==============================================================================
+# [FIX CRITICO] Patch python-cryptography para Cross-Compilation
+# ==============================================================================
+PYTHON_CRYPTO_MAKEFILE="package/feeds/packages/python-cryptography/Makefile"
+if [ -f "$PYTHON_CRYPTO_MAKEFILE" ]; then
+    echo "[FIX] Patching python-cryptography build flags in $PYTHON_CRYPTO_MAKEFILE..."
+    if ! grep -q "TARGET_CFLAGS += -I\$(STAGING_DIR)" "$PYTHON_CRYPTO_MAKEFILE"; then
+        sed -i '/include .*python3-package.mk/a TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)' "$PYTHON_CRYPTO_MAKEFILE"
+    fi
+else
+    echo "[WARN] python-cryptography Makefile not found at $PYTHON_CRYPTO_MAKEFILE"
+fi
+
+# ==============================================================================
+# [FIX CRITICO] Patch python-pyopenssl para Wheel Name Mismatch
+# ==============================================================================
+# PyOpenSSL genera un wheel en minúsculas (pyopenssl-*.whl), pero OpenWrt
+# espera MixedCase (pyOpenSSL-*.whl) basado en el nombre de PyPI.
+# Este parche fuerza el nombre esperado a minúsculas.
+PYTHON_OPENSSL_MAKEFILE="package/feeds/packages/python-pyopenssl/Makefile"
+if [ -f "$PYTHON_OPENSSL_MAKEFILE" ]; then
+    echo "[FIX] Patching python-pyopenssl wheel name in $PYTHON_OPENSSL_MAKEFILE..."
+    if ! grep -q "PYTHON3_PKG_WHEEL_NAME:=pyopenssl" "$PYTHON_OPENSSL_MAKEFILE"; then
+        # Insertamos la redefinición después de PKG_NAME
+        sed -i '/PKG_NAME:=/a PYTHON3_PKG_WHEEL_NAME:=pyopenssl' "$PYTHON_OPENSSL_MAKEFILE"
+    fi
+else
+    echo "[WARN] python-pyopenssl Makefile not found at $PYTHON_OPENSSL_MAKEFILE"
+fi
+# ==============================================================================
+
 
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     echo "[INFO] Installing yunbridge feed overrides..."

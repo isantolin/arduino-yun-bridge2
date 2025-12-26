@@ -179,7 +179,7 @@ class ShellComponent:
                 payload=payload_bytes,
             )
 
-        if pid == 0xFFFF:
+        if pid == protocol.INVALID_ID_SENTINEL:
             await self.ctx.enqueue_mqtt(
                 _build_response(b"error:not_allowed"),
                 reply_context=inbound,

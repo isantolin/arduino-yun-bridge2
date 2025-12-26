@@ -13,6 +13,12 @@ PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE
 
+# [FIX 1] Definir explícitamente el directorio de construcción para coincidir con el tarball de PyPI
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PYPI_NAME)-$(PKG_VERSION)
+
+# [FIX 2] Forzar el nombre del wheel para evitar el error "FileNotFoundError" al instalar
+PYTHON3_PKG_WHEEL_NAME:=$(PYPI_NAME)
+
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/../feeds/packages/lang/python/python3-package.mk
 

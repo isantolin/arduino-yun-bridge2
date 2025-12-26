@@ -420,6 +420,9 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 for lib in python3-paho-mqtt python3-aiomqtt; do
     echo "[BUILD] Building library $lib..."
     make package/feeds/yunbridge/$lib/compile V=s
+    
+    # [FIX] Copiar artefactos .apk de librerías
+    find bin/packages/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 
 # Luego paquetes principales
@@ -428,8 +431,8 @@ for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s
     
-    # [FIX] Copiar artefactos .apk
-    find bin/packages/ -name "$pkg*_*.apk" -exec cp {} "$BIN_DIR/" \;
+    # [FIX] Copiar artefactos .apk (Patrón corregido para formato APK: nombre-ver-rel.apk)
+    find bin/packages/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 cd "$REPO_ROOT" || exit 1
 

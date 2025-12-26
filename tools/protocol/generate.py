@@ -88,6 +88,14 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint32_t RPC_CRC32_MASK = {consts['crc32_mask']};\n"
         )
+    if "crc_initial" in consts:
+        out.write(
+            f"constexpr uint32_t RPC_CRC_INITIAL = {consts['crc_initial']};\n"
+        )
+    if "crc_polynomial" in consts:
+        out.write(
+            f"constexpr uint32_t RPC_CRC_POLYNOMIAL = {consts['crc_polynomial']};\n"
+        )
     if "frame_delimiter" in consts:
         out.write(
             f"constexpr uint8_t RPC_FRAME_DELIMITER = {consts['frame_delimiter']};\n"
@@ -202,6 +210,14 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if "crc32_mask" in consts:
         out.write(
             f"CRC32_MASK: Final[int] = {consts['crc32_mask']}\n"
+        )
+    if "crc_initial" in consts:
+        out.write(
+            f"CRC_INITIAL: Final[int] = {consts['crc_initial']}\n"
+        )
+    if "crc_polynomial" in consts:
+        out.write(
+            f"CRC_POLYNOMIAL: Final[int] = {consts['crc_polynomial']}\n"
         )
     if "frame_delimiter" in consts:
         out.write(

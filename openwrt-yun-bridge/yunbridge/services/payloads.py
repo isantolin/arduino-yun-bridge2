@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any, cast
 
+from yunbridge.rpc.protocol import UINT16_MAX
+
 __all__ = [
     "PayloadValidationError",
     "ShellCommandPayload",
@@ -75,6 +77,6 @@ class ShellPidPayload:
 
         if value <= 0:
             raise PayloadValidationError("PID must be a positive integer")
-        if value > 0xFFFF:
+        if value > UINT16_MAX:
             raise PayloadValidationError("PID cannot exceed 65535")
         return cls(pid=value)

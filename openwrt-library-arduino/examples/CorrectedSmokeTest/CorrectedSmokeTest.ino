@@ -13,7 +13,7 @@
 
 void setup() {
   // Initialize Bridge with the shared secret
-  Bridge.begin(115200, BRIDGE_SERIAL_SHARED_SECRET);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
   
   // Initialize Console
   Console.begin();

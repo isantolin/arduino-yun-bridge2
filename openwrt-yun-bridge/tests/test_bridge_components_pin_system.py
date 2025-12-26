@@ -391,7 +391,7 @@ def test_mqtt_shell_run_async_handles_not_allowed(
 
         async def fake_start(self: object, command: str) -> int:
             calls.append((self, command))
-            return 0xFFFF
+            return protocol.INVALID_ID_SENTINEL
 
         with patch(
             "yunbridge.services.components.process." "ProcessComponent.start_async",
@@ -521,14 +521,17 @@ def test_mcu_tx_debug_response_publishes_to_mqtt(
         service.register_serial_sender(fake_sender)
 
         # Construct response payload (9 bytes)
-        # pending_tx_count=5, awaiting_ack=1, retry_count=2, last_cmd=0x1234, last_millis=0xDEADBEEF
+        # pending_tx_count=5, awaiting_ack=1, retry_count=2
+        TEST_LAST_CMD = 0x1234
+        TEST_LAST_MILLIS = 0xDEADBEEF
+
         payload = struct.pack(
             ">BBB" + protocol.UINT16_FORMAT[1] + protocol.UINT32_FORMAT[1],
             5,
             1,
             2,
-            0x1234,
-            0xDEADBEEF,
+            TEST_LAST_CMD,
+            TEST_LAST_MILLIS,
         )
 
         await service.handle_mcu_frame(
@@ -549,8 +552,8 @@ def test_mcu_tx_debug_response_publishes_to_mqtt(
         assert data["pending_tx_count"] == 5
         assert data["awaiting_ack"] is True
         assert data["retry_count"] == 2
-        assert data["last_command_id"] == 0x1234
-        assert data["last_send_millis"] == 0xDEADBEEF
+        assert data["last_command_id"] == TEST_LAST_CMD
+        assert data["last_send_millis"] == TEST_LAST_MILLIS
 
         runtime_state.mqtt_publish_queue.task_done()
 

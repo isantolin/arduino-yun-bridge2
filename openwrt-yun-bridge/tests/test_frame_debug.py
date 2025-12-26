@@ -11,9 +11,9 @@ from yunbridge.tools import frame_debug
 
 
 def test_resolve_command_hex() -> None:
-    assert frame_debug._resolve_command("0x03") == 3
+    assert frame_debug._resolve_command("0x03") == Command.CMD_LINK_RESET.value
     assert frame_debug._resolve_command("0XFF") == 255
-    assert frame_debug._resolve_command("10") == 16
+    assert frame_debug._resolve_command("10") == Command.CMD_SET_PIN_MODE.value
 
 
 def test_resolve_command_name() -> None:
@@ -67,7 +67,7 @@ def test_name_for_command() -> None:
 
 def test_snapshot_render() -> None:
     snapshot = frame_debug.FrameDebugSnapshot(
-        command_id=3,
+        command_id=Command.CMD_GET_VERSION.value,
         command_name="CMD_GET_VERSION",
         payload_length=5,
         crc=0x12345678,
@@ -79,7 +79,7 @@ def test_snapshot_render() -> None:
         encoded_hex="0304",
     )
     rendered = snapshot.render()
-    assert "cmd_id=0x03 (CMD_GET_VERSION)" in rendered
+    assert "cmd_id=0x00 (CMD_GET_VERSION)" in rendered
     assert "crc=0x12345678" in rendered
     assert "raw_frame=0102" in rendered
 
@@ -158,8 +158,7 @@ def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10
 
-    # Simulate reading a valid frame: 0x02 0x00 (COBS encoded empty frame with command 0x02?)
-    # Let's construct a valid response frame
+    # Simulate reading a valid frame (COBS encoded)
     # Frame(cmd=OK, payload=b"") -> raw: 0x00 ... CRC
     # Let's just use a simple mocked read sequence
     # read(1) -> b'\x01', b'\x00' (terminator)

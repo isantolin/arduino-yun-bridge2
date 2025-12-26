@@ -68,7 +68,7 @@ void setup() {
 
   Serial.println(F("[FrameDebug] Starting"));
 
-  Bridge.begin(115200, BRIDGE_SECRET);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
   Serial.println(F("[FrameDebug] Bridge initialized with sketch-defined secret"));
 
   // Wait for handshake with non-blocking LED blink

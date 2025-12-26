@@ -17,6 +17,7 @@ from yunbridge.const import (
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_BAUD,
+    DEFAULT_SERIAL_SAFE_BAUD,
     DEFAULT_STATUS_INTERVAL,
 )
 from yunbridge.state.context import RuntimeState, create_runtime_state
@@ -62,7 +63,7 @@ def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_SERIAL_BAUD,
-        serial_safe_baud=115200,
+        serial_safe_baud=DEFAULT_SERIAL_SAFE_BAUD,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,

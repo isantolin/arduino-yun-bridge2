@@ -6,6 +6,7 @@ from typing import Final
 
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
+DEFAULT_SAFE_BAUDRATE: Final[int] = 115200
 MAX_PAYLOAD_SIZE: Final[int] = 128
 RPC_BUFFER_SIZE: Final[int] = 128
 MAX_FILEPATH_LENGTH: Final[int] = 64

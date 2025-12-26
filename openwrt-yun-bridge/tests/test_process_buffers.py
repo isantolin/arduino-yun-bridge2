@@ -28,6 +28,7 @@ from yunbridge.services.components.process import (
     ProcessOutputBatch,
 )
 from yunbridge.state.context import ManagedProcess, create_runtime_state
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import MAX_PAYLOAD_SIZE, Status
 from yunbridge.policy import AllowedCommandPolicy
 
@@ -148,7 +149,7 @@ def test_start_async_respects_concurrency_limit(
                 cast(AsyncioProcess, object()),
             )
         result = await process_component.start_async("/bin/true")
-        assert result == 0xFFFF
+        assert result == protocol.INVALID_ID_SENTINEL
 
     asyncio.run(_run())
 

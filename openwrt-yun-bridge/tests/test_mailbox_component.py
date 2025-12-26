@@ -98,7 +98,8 @@ def test_handle_processed_publishes_json(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    payload = struct.pack(protocol.UINT16_FORMAT, 0x1234)
+    TEST_MSG_ID = 0x1234
+    payload = struct.pack(protocol.UINT16_FORMAT, TEST_MSG_ID)
     asyncio.run(component.handle_processed(payload))
 
     assert bridge.published
@@ -108,7 +109,7 @@ def test_handle_processed_publishes_json(
         Topic.MAILBOX,
         "processed",
     )
-    assert json.loads(message.payload) == {"message_id": 0x1234}
+    assert json.loads(message.payload) == {"message_id": TEST_MSG_ID}
 
 
 def test_handle_push_stores_incoming_queue(

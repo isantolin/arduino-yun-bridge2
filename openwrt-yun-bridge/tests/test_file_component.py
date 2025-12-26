@@ -13,7 +13,7 @@ from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
 from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.file import FileComponent
 from yunbridge.state.context import RuntimeState
@@ -94,8 +94,9 @@ async def test_handle_read_truncated_payload(
     await component.handle_read(payload)
 
     assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
-    # MAX_PAYLOAD_SIZE is 128, so max content is 128 - 2 = 126 bytes (0x7E)
-    assert bridge.sent_frames[-1][1].startswith(b"\x00\x7e")
+    # MAX_PAYLOAD_SIZE is 128, so max content is 128 - 2 = 126 bytes
+    expected_len = MAX_PAYLOAD_SIZE - 2
+    assert bridge.sent_frames[-1][1].startswith(bytes([0, expected_len]))
 
 
 @pytest.mark.asyncio

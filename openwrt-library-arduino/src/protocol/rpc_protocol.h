@@ -14,6 +14,7 @@ namespace rpc {
 
 static_assert(PROTOCOL_VERSION == 2, "Version mismatch");
 constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
+constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = 115200;
 constexpr unsigned int RPC_BUFFER_SIZE = 128;
 
 constexpr size_t RPC_MAX_FILEPATH_LENGTH = 64;

@@ -26,7 +26,8 @@ define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./yunbridge.files $(PKG_BUILD_DIR)/
-	$(CP) ./99-yunbridge-disable-askconsole $(PKG_BUILD_DIR)/
+	# CORRECCIÓN: Apuntar a la carpeta uci-defaults
+	$(CP) ./uci-defaults/99-yunbridge-disable-askconsole $(PKG_BUILD_DIR)/
 	$(CP) ./99-yunbridge-ttyath0.conf $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/
 endef

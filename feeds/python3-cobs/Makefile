@@ -9,9 +9,14 @@ PKG_HASH:=dbdd5e32111d72786f83d0c269215dcd6ac629b1ac1962c6878221f3b2ca98da
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://files.pythonhosted.org/packages/source/c/cobs/
 
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PYPI_NAME)-$(PKG_VERSION)
+
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
+
+# CORRECCIÓN: Forzar el nombre del wheel para que coincida con el output del build
+PYTHON3_PKG_WHEEL_NAME:=$(PYPI_NAME)
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/../feeds/packages/lang/python/python3-package.mk

@@ -30,13 +30,13 @@ from typing import Final
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
-    out.write('#include <stdint.h>\n#include "rpc_frame.h"\n\n')
+    out.write('#include <stdint.h>\n\n')
 
     out.write("namespace rpc {\n\n")
 
     consts = spec["constants"]
     out.write(
-        f"static_assert(PROTOCOL_VERSION == {consts['protocol_version']}, \"Version mismatch\");\n"
+        f"constexpr uint8_t PROTOCOL_VERSION = {consts['protocol_version']};\n"
     )
     out.write(
         f"constexpr unsigned long RPC_DEFAULT_BAUDRATE = {consts['default_baudrate']};\n"

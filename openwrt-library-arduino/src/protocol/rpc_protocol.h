@@ -8,11 +8,10 @@
 #define RPC_PROTOCOL_H
 
 #include <stdint.h>
-#include "rpc_frame.h"
 
 namespace rpc {
 
-static_assert(PROTOCOL_VERSION == 2, "Version mismatch");
+constexpr uint8_t PROTOCOL_VERSION = 2;
 constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
 constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = 115200;
 constexpr unsigned int RPC_BUFFER_SIZE = 128;

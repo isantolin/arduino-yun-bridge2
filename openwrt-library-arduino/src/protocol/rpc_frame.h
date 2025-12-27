@@ -5,6 +5,7 @@
 
 #include "cobs.h"
 #include "crc.h"
+#include "rpc_protocol.h"
 
 namespace rpc {
 
@@ -17,8 +18,8 @@ inline uint16_t read_u16_be(const uint8_t* buffer) {
 
 // Writes a uint16_t to a Big Endian buffer.
 inline void write_u16_be(uint8_t* buffer, uint16_t value) {
-  buffer[0] = (value >> 8) & 0xFF;
-  buffer[1] = value & 0xFF;
+  buffer[0] = (value >> 8) & RPC_UINT8_MASK;
+  buffer[1] = value & RPC_UINT8_MASK;
 }
 
 // Reads a uint32_t from a Big Endian buffer.
@@ -31,13 +32,12 @@ inline uint32_t read_u32_be(const uint8_t* buffer) {
 
 // Writes a uint32_t to a Big Endian buffer.
 inline void write_u32_be(uint8_t* buffer, uint32_t value) {
-  buffer[0] = static_cast<uint8_t>((value >> 24) & 0xFF);
-  buffer[1] = static_cast<uint8_t>((value >> 16) & 0xFF);
-  buffer[2] = static_cast<uint8_t>((value >> 8) & 0xFF);
-  buffer[3] = static_cast<uint8_t>(value & 0xFF);
+  buffer[0] = static_cast<uint8_t>((value >> 24) & RPC_UINT8_MASK);
+  buffer[1] = static_cast<uint8_t>((value >> 16) & RPC_UINT8_MASK);
+  buffer[2] = static_cast<uint8_t>((value >> 8) & RPC_UINT8_MASK);
+  buffer[3] = static_cast<uint8_t>(value & RPC_UINT8_MASK);
 }
 
-constexpr uint8_t PROTOCOL_VERSION = 0x02;
 constexpr size_t MAX_PAYLOAD_SIZE = 128;
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 

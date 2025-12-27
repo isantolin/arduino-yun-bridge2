@@ -85,7 +85,7 @@ void setup() {
   // AHORA PASAMOS EL SECRETO AQUÍ
   // Argumento 1: Baudrate (por defecto 115200)
   // Argumento 2: El secreto compartido
-  Bridge.begin(115200, BRIDGE_SECRET);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
 
   Bridge.onDigitalReadResponse(handleDigitalReadResponse);
   Bridge.onCommand(handleCommand);

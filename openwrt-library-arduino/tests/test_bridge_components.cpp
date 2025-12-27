@@ -711,7 +711,7 @@ void test_begin_preserves_binary_shared_secret_length() {
 
   const uint8_t secret_bytes[] = {0x00, 0x01, 0x02, 0x00, 0x03};
   const char* binary_secret = reinterpret_cast<const char*>(secret_bytes);
-  bridge_explicit.begin(115200, binary_secret, sizeof(secret_bytes));
+  bridge_explicit.begin(rpc::RPC_DEFAULT_BAUDRATE, binary_secret, sizeof(secret_bytes));
 
   assert(
       reinterpret_cast<const void*>(bridge_explicit._shared_secret) ==
@@ -734,7 +734,7 @@ void test_begin_preserves_binary_shared_secret_length() {
 
   RecordingStream stream_default;
   BridgeClass bridge_default(stream_default); // Local
-  bridge_default.begin(115200, binary_secret);
+  bridge_default.begin(rpc::RPC_DEFAULT_BAUDRATE, binary_secret);
 
   uint8_t truncated_tag[16];
   bridge_default._computeHandshakeTag(
@@ -902,7 +902,7 @@ void test_link_sync_generates_tag_and_ack() {
   ScopedBridgeBinding binding(stream);
 
   const char* secret = "unit-test-secret";
-  Bridge.begin(115200, secret);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
       0x01, 0x02, 0x03, 0x04,
@@ -940,7 +940,7 @@ void test_link_sync_without_secret_replays_nonce_only() {
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
 
-  Bridge.begin(115200, nullptr);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, nullptr);
 
   const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
       0xAA, 0xBB, 0xCC, 0xDD,

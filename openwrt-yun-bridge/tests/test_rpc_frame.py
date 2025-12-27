@@ -40,7 +40,7 @@ def test_parse_rejects_short_frame() -> None:
 def test_parse_detects_crc_mismatch() -> None:
     payload = b"valid"
     raw = Frame.build(protocol.Command.CMD_CONSOLE_WRITE, payload)
-    corrupted = raw[:-1] + bytes([raw[-1] ^ 0xFF])
+    corrupted = raw[:-1] + bytes([raw[-1] ^ protocol.UINT8_MASK])
 
     with pytest.raises(ValueError):
         Frame.parse(corrupted)

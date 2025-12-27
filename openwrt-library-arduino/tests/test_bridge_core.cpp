@@ -67,22 +67,22 @@ public:
         
         // Payload Length (Big Endian)
         uint16_t len = static_cast<uint16_t>(payload.size());
-        frame.push_back((len >> 8) & 0xFF);
-        frame.push_back(len & 0xFF);
+        frame.push_back((len >> 8) & rpc::RPC_UINT8_MASK);
+        frame.push_back(len & rpc::RPC_UINT8_MASK);
         
         // Command ID (Big Endian)
-        frame.push_back((command_id >> 8) & 0xFF);
-        frame.push_back(command_id & 0xFF);
+        frame.push_back((command_id >> 8) & rpc::RPC_UINT8_MASK);
+        frame.push_back(command_id & rpc::RPC_UINT8_MASK);
         
         // Payload
         frame.insert(frame.end(), payload.begin(), payload.end());
         
         // CRC32
         uint32_t crc = crc32_ieee(frame.data(), frame.size());
-        frame.push_back((crc >> 24) & 0xFF);
-        frame.push_back((crc >> 16) & 0xFF);
-        frame.push_back((crc >> 8) & 0xFF);
-        frame.push_back(crc & 0xFF);
+        frame.push_back((crc >> 24) & rpc::RPC_UINT8_MASK);
+        frame.push_back((crc >> 16) & rpc::RPC_UINT8_MASK);
+        frame.push_back((crc >> 8) & rpc::RPC_UINT8_MASK);
+        frame.push_back(crc & rpc::RPC_UINT8_MASK);
         
         // COBS Encode
         std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
@@ -90,7 +90,7 @@ public:
         encoded.resize(encoded_len);
         
         // Delimiter
-        encoded.push_back(0x00);
+        encoded.push_back(rpc::RPC_FRAME_DELIMITER);
         
         return encoded;
     }
@@ -196,8 +196,8 @@ void test_bridge_flow_control() {
     uint16_t xoff_cmd_id = static_cast<uint16_t>(rpc::CommandId::CMD_XOFF);
     
     std::vector<uint8_t> ack_payload;
-    ack_payload.push_back((xoff_cmd_id >> 8) & 0xFF);
-    ack_payload.push_back(xoff_cmd_id & 0xFF);
+    ack_payload.push_back((xoff_cmd_id >> 8) & rpc::RPC_UINT8_MASK);
+    ack_payload.push_back(xoff_cmd_id & rpc::RPC_UINT8_MASK);
     
     std::vector<uint8_t> ack_frame = TestFrameBuilder::build(ack_cmd_id, ack_payload);
     stream.inject_rx(ack_frame);
@@ -328,27 +328,27 @@ void test_bridge_crc_mismatch() {
     std::vector<uint8_t> frame;
     frame.push_back(rpc::PROTOCOL_VERSION);
     uint16_t len = static_cast<uint16_t>(payload.size());
-    frame.push_back((len >> 8) & 0xFF);
-    frame.push_back(len & 0xFF);
-    frame.push_back((cmd_id >> 8) & 0xFF);
-    frame.push_back(cmd_id & 0xFF);
+    frame.push_back((len >> 8) & rpc::RPC_UINT8_MASK);
+    frame.push_back(len & rpc::RPC_UINT8_MASK);
+    frame.push_back((cmd_id >> 8) & rpc::RPC_UINT8_MASK);
+    frame.push_back(cmd_id & rpc::RPC_UINT8_MASK);
     frame.insert(frame.end(), payload.begin(), payload.end());
     
     // Calculate CORRECT CRC
     uint32_t crc = crc32_ieee(frame.data(), frame.size());
     // CORRUPT IT
-    crc ^= 0xFFFFFFFF; 
+    crc ^= rpc::RPC_CRC_INITIAL; 
     
-    frame.push_back((crc >> 24) & 0xFF);
-    frame.push_back((crc >> 16) & 0xFF);
-    frame.push_back((crc >> 8) & 0xFF);
-    frame.push_back(crc & 0xFF);
+    frame.push_back((crc >> 24) & rpc::RPC_UINT8_MASK);
+    frame.push_back((crc >> 16) & rpc::RPC_UINT8_MASK);
+    frame.push_back((crc >> 8) & rpc::RPC_UINT8_MASK);
+    frame.push_back(crc & rpc::RPC_UINT8_MASK);
     
     // COBS Encode
     std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
     size_t encoded_len = cobs::encode(frame.data(), frame.size(), encoded.data());
     encoded.resize(encoded_len);
-    encoded.push_back(0x00);
+    encoded.push_back(rpc::RPC_FRAME_DELIMITER);
 
     stream.inject_rx(encoded);
     bridge.process();
@@ -374,7 +374,7 @@ void test_bridge_unknown_command() {
     stream.tx_buffer.clear();
 
     // Command ID 0xFFFF is likely unknown
-    uint16_t cmd_id = 0xFFFF;
+    uint16_t cmd_id = rpc::RPC_INVALID_ID_SENTINEL;
     std::vector<uint8_t> payload = {0x00};
     std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
     

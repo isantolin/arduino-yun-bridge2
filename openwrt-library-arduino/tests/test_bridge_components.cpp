@@ -91,7 +91,7 @@ struct ProcessPollHandlerState {
   static ProcessPollHandlerState* instance;
   bool called = false;
   StatusCode status = StatusCode::STATUS_ERROR;
-  uint8_t exit_code = 0xFF;
+  uint8_t exit_code = rpc::RPC_PROCESS_DEFAULT_EXIT_CODE;
   std::string stdout_text;
   std::string stderr_text;
   int pid_to_requeue = -1;
@@ -201,20 +201,20 @@ public:
         std::vector<uint8_t> frame;
         frame.push_back(rpc::PROTOCOL_VERSION);
         uint16_t len = static_cast<uint16_t>(payload.size());
-        frame.push_back((len >> 8) & 0xFF);
-        frame.push_back(len & 0xFF);
-        frame.push_back((command_id >> 8) & 0xFF);
-        frame.push_back(command_id & 0xFF);
+        frame.push_back((len >> 8) & rpc::RPC_UINT8_MASK);
+        frame.push_back(len & rpc::RPC_UINT8_MASK);
+        frame.push_back((command_id >> 8) & rpc::RPC_UINT8_MASK);
+        frame.push_back(command_id & rpc::RPC_UINT8_MASK);
         frame.insert(frame.end(), payload.begin(), payload.end());
         uint32_t crc = crc32_ieee(frame.data(), frame.size());
-        frame.push_back((crc >> 24) & 0xFF);
-        frame.push_back((crc >> 16) & 0xFF);
-        frame.push_back((crc >> 8) & 0xFF);
-        frame.push_back(crc & 0xFF);
+        frame.push_back((crc >> 24) & rpc::RPC_UINT8_MASK);
+        frame.push_back((crc >> 16) & rpc::RPC_UINT8_MASK);
+        frame.push_back((crc >> 8) & rpc::RPC_UINT8_MASK);
+        frame.push_back(crc & rpc::RPC_UINT8_MASK);
         std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
         size_t encoded_len = cobs::encode(frame.data(), frame.size(), encoded.data());
         encoded.resize(encoded_len);
-        encoded.push_back(0x00);
+        encoded.push_back(rpc::RPC_FRAME_DELIMITER);
         return encoded;
     }
 };
@@ -222,8 +222,8 @@ public:
 void inject_ack(RecordingStream& stream, BridgeClass& bridge, uint16_t command_id) {
     uint16_t ack_cmd_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_ACK);
     std::vector<uint8_t> ack_payload;
-    ack_payload.push_back((command_id >> 8) & 0xFF);
-    ack_payload.push_back(command_id & 0xFF);
+    ack_payload.push_back((command_id >> 8) & rpc::RPC_UINT8_MASK);
+    ack_payload.push_back(command_id & rpc::RPC_UINT8_MASK);
     std::vector<uint8_t> ack_frame = TestFrameBuilder::build(ack_cmd_id, ack_payload);
     stream.inject_rx(ack_frame);
     bridge.process();
@@ -232,8 +232,8 @@ void inject_ack(RecordingStream& stream, BridgeClass& bridge, uint16_t command_i
 void inject_malformed(RecordingStream& stream, BridgeClass& bridge, uint16_t command_id) {
     uint16_t malformed_cmd_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED);
     std::vector<uint8_t> payload;
-    payload.push_back((command_id >> 8) & 0xFF);
-    payload.push_back(command_id & 0xFF);
+    payload.push_back((command_id >> 8) & rpc::RPC_UINT8_MASK);
+    payload.push_back(command_id & rpc::RPC_UINT8_MASK);
     std::vector<uint8_t> frame = TestFrameBuilder::build(malformed_cmd_id, payload);
     stream.inject_rx(frame);
     bridge.process();

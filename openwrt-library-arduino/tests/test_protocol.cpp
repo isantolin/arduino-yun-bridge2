@@ -29,7 +29,7 @@ static void test_builder_roundtrip() {
   Frame frame{};
 
   const uint16_t command_id = 0x42AB;
-  const uint8_t payload[] = {0x00, 0x01, 0xFF, 0x02, 0x00};
+  const uint8_t payload[] = {0x00, 0x01, RPC_UINT8_MASK, 0x02, 0x00};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
     size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
@@ -82,7 +82,7 @@ static void test_parser_crc_failure() {
   size_t raw_len = builder.build(raw, sizeof(raw), 0x1111, payload, sizeof(payload));
   assert(raw_len > 0);
 
-  raw[sizeof(FrameHeader)] ^= 0xFF;  // Corrupt payload without fixing CRC.
+  raw[sizeof(FrameHeader)] ^= RPC_UINT8_MASK;  // Corrupt payload without fixing CRC.
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
@@ -122,7 +122,7 @@ static void test_parser_overflow_guard() {
 
   size_t generated = 0;
   while (generated + 254 <= MAX_RAW_FRAME_SIZE) {
-    encoded.push_back(0xFF);
+    encoded.push_back(RPC_UINT8_MASK);
     encoded.insert(encoded.end(), 254, 0x55);
     generated += 254;
   }

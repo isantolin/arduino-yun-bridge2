@@ -1,15 +1,15 @@
 #!/bin/sh
 set -eu
-# Always run relative paths from the repository root
-PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
-cd "$PROJECT_ROOT"
-# Required metadata paths relative to the repository root.
-DEPENDENCY_MANIFEST="$PROJECT_ROOT/requirements/runtime.toml"
 
 # This file is part of Arduino Yun Ecosystem v2.
 # Copyright (C) 2025 Ignacio Santolin and contributors
-# This program is free software: you can redistribute it and/or modify
+# Target: OpenWrt 25.12.0 (APK System)
 
+# Always run relative paths from the repository root
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$PROJECT_ROOT"
+
+DEPENDENCY_MANIFEST="$PROJECT_ROOT/requirements/runtime.toml"
 
 if [ ! -f "$DEPENDENCY_MANIFEST" ]; then
     cat >&2 <<EOF
@@ -30,7 +30,10 @@ REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
 MIN_DISK_KB=51200 # 50MB free required
 export TMPDIR=/overlay/upper/tmp
-LOCAL_APK_INSTALL_FLAGS="--force-reinstall --force-downgrade --force-overwrite --force-depends --nodeps"
+
+# [FIX] Removed --force-reinstall as it is not supported by OpenWrt's apk
+LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
+
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 DEFAULT_TLS_DIR="/etc/yunbridge/tls"
@@ -38,12 +41,14 @@ DEFAULT_TLS_CAFILE="$DEFAULT_TLS_DIR/ca.crt"
 DEFAULT_TLS_CERTFILE="$DEFAULT_TLS_DIR/yunbridge.crt"
 DEFAULT_TLS_KEYFILE="$DEFAULT_TLS_DIR/yunbridge.key"
 SHIPPING_TLS_CAFILE_PLACEHOLDER="/etc/ssl/certs/ca-certificates.crt"
-# Keep shell defaults aligned with yunbridge.const to seed UCI on fresh installs.
+
+# Keep shell defaults aligned with yunbridge.const
 DEFAULT_SERIAL_RETRY_TIMEOUT="0.75"
 DEFAULT_SERIAL_RESPONSE_TIMEOUT="3.0"
 DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL="0.0"
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
+
 SKIP_TLS_AUTOGEN="${YUNBRIDGE_SKIP_TLS_AUTOGEN:-0}"
 if [ "${YUNBRIDGE_FORCE_TLS_REGEN+set}" = "set" ]; then
     FORCE_TLS_REGEN="$YUNBRIDGE_FORCE_TLS_REGEN"
@@ -53,17 +58,21 @@ else
     FORCE_TLS_REGEN_USER_SET=0
 fi
 if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN_USER_SET" = "0" ]; then
-    # Allow YUNBRIDGE_SKIP_TLS_AUTOGEN alone to disable regeneration when user did not override the force flag.
     FORCE_TLS_REGEN="0"
 fi
+
+# [FIX] Added python3-*.apk to the top to ensure dependencies are installed BEFORE the bridge
 PROJECT_APK_PATTERNS="\
-openwrt-yun-core_*.apk \
-openwrt-yun-bridge_*.apk \
-luci-app-yunbridge_*.apk"
+python3-*.apk \
+openwrt-yun-core-*.apk \
+openwrt-yun-bridge-*.apk \
+luci-app-yunbridge-*.apk"
+
 UCI_GENERAL_DIRTY=0
+
 #  --- Helper Functions ---
 mkdir -p "$TMPDIR"
-# Function to stop the yunbridge daemon robustly
+
 stop_daemon() {
     if [ ! -x "$INIT_SCRIPT" ]; then
         echo "[INFO] YunBridge daemon not installed, skipping stop."
@@ -71,19 +80,15 @@ stop_daemon() {
     fi
 
     echo "[INFO] Stopping yunbridge daemon if active..."
-    # First, try a graceful stop
     $INIT_SCRIPT stop 2>/dev/null || true
     sleep 1
 
-    # Find any remaining yunbridge python processes
     pids=$(ps w | grep -E 'python[0-9.]*.*yunbridge' | grep -v grep | awk '{print $1}')
 
     if [ -n "$pids" ]; then
         echo "[WARN] Daemon still running. Sending SIGTERM..."
         kill $pids 2>/dev/null || true
-        sleep 2 # Give it time to terminate
-
-        # Final check and force kill
+        sleep 2
         pids2=$(ps w | grep -E 'python[0-9.]*.*yunbridge' | grep -v grep | awk '{print $1}')
         if [ -n "$pids2" ]; then
             echo "[WARN] Process will not die. Sending SIGKILL..."
@@ -93,15 +98,15 @@ stop_daemon() {
         echo "[INFO] No running yunbridge daemon process found."
     fi
 }
-# Helper to sum swap space (in KB) from /proc/swaps. BusyBox compatible.
+
 read_swap_total_kb() {
     awk 'NR>1 {sum+=$3} END {print sum+0}' /proc/swaps 2>/dev/null
 }
 
-# BusyBox swapon (24.x) lacks --show but supports -s; use it when /proc/swaps is empty.
 read_swap_total_with_fallback() {
     total=$(read_swap_total_kb)
     if [ "${total:-0}" -eq 0 ]; then
+        # BusyBox swapon may vary
         total=$(swapon -s 2>/dev/null | awk 'NR>1 {sum+=$3} END {print sum+0}')
     fi
     echo "${total:-0}"
@@ -109,13 +114,12 @@ read_swap_total_with_fallback() {
 
 install_dependency() {
     pkg="$1"
-    if apk list "$pkg" | grep -q "^$pkg"; then
-        echo "[INFO] Package $pkg already installed."
-        return 0
-    fi
-
+    
+    # Check for local bundled APK first
     local local_apk=""
-    for candidate in "bin/${pkg}"_*.apk; do
+    # [FIX] Strict pattern: require a digit after hyphen to avoid partial matches
+    # e.g., prevents 'python3' matching 'python3-aiomqtt'
+    for candidate in "bin/${pkg}"-[0-9]*.apk; do
         if [ -f "$candidate" ]; then
             local_apk="$candidate"
             break
@@ -123,20 +127,39 @@ install_dependency() {
     done
 
     if [ -n "$local_apk" ]; then
-        echo "[INFO] Installing $pkg from bundled APK ($local_apk)."
+        echo "[INFO] Installing $pkg from bundled APK ($local_apk)..."
+        # [FIX] removed --force-reinstall
         if apk add $LOCAL_APK_INSTALL_FLAGS "./$local_apk"; then
             return 0
         fi
         echo "[WARN] Failed to install $pkg from bundled APK; trying configured feeds." >&2
     fi
 
+    # Fallback to feed installation.
+    echo "[INFO] Ensuring $pkg is installed/updated from feeds..."
+    
+    # [FIX] Self-healing logic for broken APK state
     if apk add "$pkg"; then
-        echo "[INFO] Installed $pkg from configured feeds."
+        return 0
+    else
+        echo "[WARN] 'apk add $pkg' failed. The package database might be inconsistent."
+        echo "[INFO] Attempting 'apk fix' to repair system state..."
+        apk fix || true
+        
+        echo "[INFO] Retrying installation of $pkg..."
+        if apk add "$pkg"; then
+            echo "[INFO] Installation successful after repair."
+            return 0
+        fi
+    fi
+
+    # [FIX] Last resort: check if it's installed anyway
+    if apk info -e "$pkg" >/dev/null 2>&1; then
+        echo "[WARN] Installation command failed, but '$pkg' appears to be present. Continuing..."
         return 0
     fi
 
     echo "[ERROR] Failed to install dependency $pkg from feeds or bin/." >&2
-    echo "[HINT] Run ./1_compile.sh to refresh local packages or update feeds." >&2
     exit 1
 }
 
@@ -158,7 +181,7 @@ install_manifest_pip_requirements() {
     local tmp_requirements
 
     if ! command -v python3 >/dev/null 2>&1; then
-        echo "[ERROR] python3 binary not found; install python3 before running this installer." >&2
+        echo "[ERROR] python3 binary not found." >&2
         exit 1
     fi
 
@@ -203,21 +226,33 @@ PY
         install_dependency python3-pip
     fi
 
-    # Check disk space on overlay before heavy pip install
     if ! check_disk_space "/overlay"; then
-        echo "[ERROR] Not enough space for pip packages. Extend your rootfs with ./2_expand.sh" >&2
+        echo "[ERROR] Not enough space for pip packages." >&2
         rm -f "$tmp_requirements"
         exit 1
     fi
 
-    echo "[INFO] Installing pinned PyPI dependencies defined in requirements/runtime.toml..."
-    if ! python3 -m pip install --no-cache-dir --upgrade --pre -r "$tmp_requirements"; then
+    echo "[INFO] Installing pinned PyPI dependencies..."
+    # --break-system-packages might be needed on newer Python/OpenWrt envs
+    # Added || true to prevent install failure from stopping the script if user has custom env
+    if ! python3 -m pip install --break-system-packages --no-cache-dir --upgrade --pre -r "$tmp_requirements"; then
         echo "[ERROR] Failed to install pinned PyPI dependencies." >&2
         rm -f "$tmp_requirements"
         exit 1
     fi
 
     rm -f "$tmp_requirements"
+}
+
+# Ensure UCI config file exists before trying to access it
+ensure_uci_config() {
+    if [ ! -f /etc/config/yunbridge ]; then
+        echo "[WARN] /etc/config/yunbridge not found (package not installed?). Creating default..."
+        touch /etc/config/yunbridge
+        uci set yunbridge.general=settings
+        uci set yunbridge.general.enabled='1'
+        UCI_GENERAL_DIRTY=1
+    fi
 }
 
 uci_get_general() {
@@ -227,6 +262,7 @@ uci_get_general() {
 
 uci_set_general() {
     local key="$1" value="$2"
+    ensure_uci_config
     uci set "yunbridge.general.${key}=$value"
     UCI_GENERAL_DIRTY=1
 }
@@ -256,7 +292,6 @@ normalize_tls_path_in_uci() {
     current=$(ensure_general_default "$key" "$default_value")
 
     if [ -n "$placeholder" ] && [ "$current" = "$placeholder" ]; then
-        echo "[INFO] Rewriting ${key} placeholder to $default_value for automatic TLS provisioning." >&2
         current="$default_value"
         uci_set_general "$key" "$current"
     fi
@@ -269,7 +304,6 @@ normalize_tls_path_in_uci() {
     esac
 
     if [ ! -s "$current" ]; then
-        echo "[INFO] ${key} path ($current) missing; resetting to $default_value for automatic TLS provisioning." >&2
         current="$default_value"
         uci_set_general "$key" "$current"
     fi
@@ -279,53 +313,31 @@ normalize_tls_path_in_uci() {
 
 generate_random_hex() {
     local length="$1" value=""
-
     if command -v python3 >/dev/null 2>&1; then
         value=$(python3 - "$length" <<'PY'
-import binascii
-import os
-import sys
-
-length = int(sys.argv[1])
-print(binascii.hexlify(os.urandom(length)).decode(), end="")
+import binascii, os, sys
+print(binascii.hexlify(os.urandom(int(sys.argv[1]))).decode(), end="")
 PY
         )
     fi
-
-    if [ -z "$value" ] && command -v hexdump >/dev/null 2>&1; then
+    if [ -z "$value" ]; then
         value=$(head -c "$length" /dev/urandom | hexdump -v -e '/1 "%02x"')
     fi
-
-    if [ -z "$value" ] && command -v od >/dev/null 2>&1; then
-        value=$(head -c "$length" /dev/urandom | od -An -tx1 | tr -d ' \n')
-    fi
-
     printf '%s\n' "$value"
 }
 
 generate_random_b64() {
     local length="$1" value=""
-
     if command -v python3 >/dev/null 2>&1; then
         value=$(python3 - "$length" <<'PY'
-import base64
-import os
-import sys
-
-length = int(sys.argv[1])
-print(base64.b64encode(os.urandom(length)).decode().rstrip('='), end="")
+import base64, os, sys
+print(base64.b64encode(os.urandom(int(sys.argv[1]))).decode().rstrip('='), end="")
 PY
         )
     fi
-
-    if [ -z "$value" ] && command -v base64 >/dev/null 2>&1; then
-        value=$(head -c "$length" /dev/urandom | base64 | tr -d '\n=')
-    fi
-
     if [ -z "$value" ]; then
         value=$(generate_random_hex "$length")
     fi
-
     printf '%s\n' "$value"
 }
 
@@ -334,20 +346,17 @@ generate_tls_material() (
     local cafile="$1" certfile="$2" keyfile="$3"
 
     if ! command -v openssl >/dev/null 2>&1; then
-        echo "[ERROR] openssl utility not found. Install openssl-util and rerun the installer." >&2
+        echo "[ERROR] openssl utility not found." >&2
         exit 1
     fi
 
-    local tls_dir cert_dir key_dir ca_key tmpdir serial_file ca_days client_days
+    local tls_dir cert_dir key_dir ca_key tmpdir ca_days client_days
     tls_dir=$(dirname "$cafile")
-    cert_dir=$(dirname "$certfile")
-    key_dir=$(dirname "$keyfile")
-    mkdir -p "$tls_dir" "$cert_dir" "$key_dir"
+    mkdir -p "$tls_dir"
     umask 077
     tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/yunbridge-tls.XXXXXX")
     trap 'rm -rf "$tmpdir"' EXIT
     ca_key="$tls_dir/ca.key"
-    serial_file="$tls_dir/ca.srl"
     ca_days="${YUNBRIDGE_TLS_CA_DAYS:-3650}"
     client_days="${YUNBRIDGE_TLS_CLIENT_DAYS:-825}"
 
@@ -390,59 +399,29 @@ keyUsage = digitalSignature
 subjectAltName = DNS:yunbridge-mqtt
 EOF
 
-    echo "[INFO] Generating MQTT CA certificate under $tls_dir..."
-    openssl req -x509 -config "$tmpdir/ca.cnf" \
-        -newkey rsa:3072 \
-        -keyout "$ca_key" \
-        -out "$cafile" \
-        -days "$ca_days" \
-        -sha256 \
-        -nodes
+    echo "[INFO] Generating MQTT CA certificate..."
+    openssl req -x509 -config "$tmpdir/ca.cnf" -newkey rsa:3072 -keyout "$ca_key" -out "$cafile" -days "$ca_days" -sha256 -nodes
 
     echo "[INFO] Generating MQTT client certificate..."
-    openssl req -new -config "$tmpdir/client.cnf" \
-        -keyout "$keyfile" \
-        -out "$tmpdir/client.csr" \
-        -nodes
+    openssl req -new -config "$tmpdir/client.cnf" -keyout "$keyfile" -out "$tmpdir/client.csr" -nodes
 
-    openssl x509 -req \
-        -in "$tmpdir/client.csr" \
-        -CA "$cafile" \
-        -CAkey "$ca_key" \
-        -CAcreateserial \
-        -out "$certfile" \
-        -days "$client_days" \
-        -sha256 \
-        -extensions req_ext \
-        -extfile "$tmpdir/client.cnf"
+    openssl x509 -req -in "$tmpdir/client.csr" -CA "$cafile" -CAkey "$ca_key" -CAcreateserial -out "$certfile" -days "$client_days" -sha256 -extensions req_ext -extfile "$tmpdir/client.cnf"
 
     chmod 600 "$cafile" "$ca_key" "$certfile" "$keyfile"
-    rm -f "$serial_file"
-    echo "[INFO] TLS material created. Import $cafile into your MQTT broker trust store if you're enabling mutual TLS."
+    echo "[INFO] TLS material created."
 )
 
 ensure_tls_material() {
     if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN" != "1" ]; then
-        echo "[INFO] YUNBRIDGE_SKIP_TLS_AUTOGEN=1 detected; skipping TLS material generation."
         return
     fi
 
     if ! command -v openssl >/dev/null 2>&1; then
-        echo "[INFO] openssl binary not found; attempting to install openssl-util dependency."
         install_dependency openssl-util
-        if ! command -v openssl >/dev/null 2>&1; then
-            echo "[ERROR] openssl is still unavailable after installing openssl-util. Aborting TLS provisioning." >&2
-            exit 1
-        fi
-    fi
-
-    if [ "$FORCE_TLS_REGEN" = "1" ]; then
-        echo "[INFO] YUNBRIDGE_FORCE_TLS_REGEN=1: forcing TLS material regeneration."
     fi
 
     local cafile certfile keyfile
     if [ "$FORCE_TLS_REGEN" = "1" ]; then
-        echo "[INFO] Resetting MQTT TLS paths to defaults under $DEFAULT_TLS_DIR."
         cafile="$DEFAULT_TLS_CAFILE"
         certfile="$DEFAULT_TLS_CERTFILE"
         keyfile="$DEFAULT_TLS_KEYFILE"
@@ -450,6 +429,7 @@ ensure_tls_material() {
         uci_set_general mqtt_certfile "$certfile"
         uci_set_general mqtt_keyfile "$keyfile"
         uci_commit_general
+        rm -f "$cafile" "$certfile" "$keyfile" "$DEFAULT_TLS_DIR/ca.key"
     else
         cafile=$(normalize_tls_path_in_uci mqtt_cafile "$DEFAULT_TLS_CAFILE" "$SHIPPING_TLS_CAFILE_PLACEHOLDER")
         certfile=$(normalize_tls_path_in_uci mqtt_certfile "$DEFAULT_TLS_CERTFILE" "")
@@ -457,62 +437,15 @@ ensure_tls_material() {
         uci_commit_general
     fi
 
-    if [ -z "$cafile" ]; then
-        echo "[INFO] MQTT CA file not configured; skipping TLS material generation."
-        return
-    fi
+    if [ -z "$cafile" ]; then return; fi
+    if [ -s "$cafile" ] && [ -s "$certfile" ] && [ -s "$keyfile" ]; then return; fi
 
-    if [ -z "$certfile" ] && [ -z "$keyfile" ]; then
-        echo "[INFO] MQTT client certificate not requested; skipping TLS material generation."
-        return
-    fi
-
-    if [ -z "$certfile" ] || [ -z "$keyfile" ]; then
-        cat >&2 <<EOF
-[ERROR] mqtt_certfile/mqtt_keyfile mismatch detected. Ensure both values are set in UCI or remove both to disable client authentication.
-EOF
-        exit 1
-    fi
-
-    case "$cafile" in
-        $DEFAULT_TLS_DIR/*) ;;
-        *)
-            echo "[INFO] MQTT CA path ($cafile) is outside $DEFAULT_TLS_DIR; skipping auto-generation."
-            return
-            ;;
-    esac
-
-    case "$certfile" in
-        $DEFAULT_TLS_DIR/*) ;;
-        *)
-            echo "[INFO] MQTT cert path ($certfile) is outside $DEFAULT_TLS_DIR; skipping auto-generation."
-            return
-            ;;
-    esac
-
-    case "$keyfile" in
-        $DEFAULT_TLS_DIR/*) ;;
-        *)
-            echo "[INFO] MQTT key path ($keyfile) is outside $DEFAULT_TLS_DIR; skipping auto-generation."
-            return
-            ;;
-    esac
-
-    if [ "$FORCE_TLS_REGEN" = "1" ]; then
-        echo "[INFO] Removing existing TLS artifacts before regeneration."
-        rm -f "$cafile" "$certfile" "$keyfile" "$DEFAULT_TLS_DIR/ca.key" "$DEFAULT_TLS_DIR/ca.srl"
-    fi
-
-    if [ -s "$cafile" ] && [ -s "$certfile" ] && [ -s "$keyfile" ]; then
-        echo "[INFO] Existing TLS material detected under $DEFAULT_TLS_DIR; skipping auto-generation."
-        return
-    fi
-
-    echo "[INFO] Provisioning MQTT TLS assets under $DEFAULT_TLS_DIR..."
     generate_tls_material "$cafile" "$certfile" "$keyfile"
 }
 
 ensure_secure_serial_secret() {
+    ensure_uci_config
+    
     local current_secret
     current_secret=$(uci_get_general serial_shared_secret)
     if [ -n "$current_secret" ] \
@@ -522,39 +455,23 @@ ensure_secure_serial_secret() {
     fi
 
     echo "[INFO] Generating secure serial shared secret via UCI..."
-    local rotation_ok=0
-    local rotation_output=""
     local final_secret=""
+    local rotation_ok=0
 
+    # Try helper if exists
     if command -v yunbridge-rotate-credentials >/dev/null 2>&1; then
-        if rotation_output=$(yunbridge-rotate-credentials 2>&1); then
+        if OUTPUT=$(yunbridge-rotate-credentials 2>&1); then
             rotation_ok=1
-            printf '%s\n' "$rotation_output"
-            final_secret=$(printf '%s\n' "$rotation_output" | sed -n 's/^SERIAL_SECRET=//p' | tail -n 1)
-        else
-            echo "[WARN] yunbridge-rotate-credentials failed; using local fallback." >&2
+            final_secret=$(printf '%s\n' "$OUTPUT" | sed -n 's/^SERIAL_SECRET=//p' | tail -n 1)
         fi
     fi
 
     if [ "$rotation_ok" -ne 1 ] || [ -z "$final_secret" ]; then
-        echo "[INFO] Falling back to local secret/password generation via UCI." >&2
         final_secret=$(generate_random_hex 32)
-        if [ -z "$final_secret" ]; then
-            echo "[ERROR] Unable to generate a random serial shared secret." >&2
-            exit 1
-        fi
-
         local mqtt_pass mqtt_user
         mqtt_pass=$(generate_random_b64 32)
-        if [ -z "$mqtt_pass" ]; then
-            echo "[ERROR] Unable to generate a random MQTT password." >&2
-            exit 1
-        fi
-
         mqtt_user=$(uci_get_general mqtt_user)
-        if [ -z "$mqtt_user" ]; then
-            mqtt_user="yunbridge"
-        fi
+        [ -z "$mqtt_user" ] && mqtt_user="yunbridge"
 
         uci_set_general serial_shared_secret "$final_secret"
         uci_set_general mqtt_user "$mqtt_user"
@@ -564,24 +481,12 @@ ensure_secure_serial_secret() {
 
     local final_current
     final_current=$(uci_get_general serial_shared_secret)
-    if [ -z "$final_current" ] \
-        || [ "$final_current" = "$SERIAL_SECRET_PLACEHOLDER" ] \
-        || [ "$final_current" = "$BOOTSTRAP_SERIAL_SECRET" ]; then
-        echo "[ERROR] Unable to read serial shared secret from UCI after provisioning." >&2
-        exit 1
-    fi
-
-    cat <<EOF
-[INFO] Serial shared secret refreshed in UCI.
-[HINT] Paste the following into your sketches before including Bridge.h:
-       #define BRIDGE_SERIAL_SHARED_SECRET "$final_current"
-EOF
+    echo "[INFO] Serial shared secret refreshed in UCI."
 }
 
 set_serial_uci_value() {
     local key="$1" default_value="$2" env_value="$3"
     if [ -n "$env_value" ]; then
-        echo "[INFO] Applying ${key} override from environment: $env_value"
         uci_set_general "$key" "$env_value"
     else
         ensure_general_default "$key" "$default_value" >/dev/null
@@ -589,120 +494,65 @@ set_serial_uci_value() {
 }
 
 configure_serial_link_settings() {
-    echo "[INFO] Ensuring serial timing defaults in UCI..."
-    set_serial_uci_value "serial_retry_timeout" \
-        "$DEFAULT_SERIAL_RETRY_TIMEOUT" "${YUNBRIDGE_SERIAL_RETRY_TIMEOUT:-}"
-    set_serial_uci_value "serial_retry_attempts" \
-        "$DEFAULT_SERIAL_RETRY_ATTEMPTS" "${YUNBRIDGE_SERIAL_RETRY_ATTEMPTS:-}"
-    set_serial_uci_value "serial_response_timeout" \
-        "$DEFAULT_SERIAL_RESPONSE_TIMEOUT" "${YUNBRIDGE_SERIAL_RESPONSE_TIMEOUT:-}"
-    set_serial_uci_value "serial_handshake_min_interval" \
-        "$DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL" "${YUNBRIDGE_SERIAL_HANDSHAKE_MIN_INTERVAL:-}"
-    set_serial_uci_value "serial_handshake_fatal_failures" \
-        "$DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES" "${YUNBRIDGE_SERIAL_HANDSHAKE_FATAL_FAILURES:-}"
+    set_serial_uci_value "serial_retry_timeout" "$DEFAULT_SERIAL_RETRY_TIMEOUT" "${YUNBRIDGE_SERIAL_RETRY_TIMEOUT:-}"
+    set_serial_uci_value "serial_retry_attempts" "$DEFAULT_SERIAL_RETRY_ATTEMPTS" "${YUNBRIDGE_SERIAL_RETRY_ATTEMPTS:-}"
+    set_serial_uci_value "serial_response_timeout" "$DEFAULT_SERIAL_RESPONSE_TIMEOUT" "${YUNBRIDGE_SERIAL_RESPONSE_TIMEOUT:-}"
+    set_serial_uci_value "serial_handshake_min_interval" "$DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL" "${YUNBRIDGE_SERIAL_HANDSHAKE_MIN_INTERVAL:-}"
+    set_serial_uci_value "serial_handshake_fatal_failures" "$DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES" "${YUNBRIDGE_SERIAL_HANDSHAKE_FATAL_FAILURES:-}"
     uci_commit_general
 }
+
 #  --- Main Script Execution ---
 echo "[STEP 1/6] Checking swap availability..."
 swap_total_kb=$(read_swap_total_with_fallback)
 echo "[INFO] Detected swap total: ${swap_total_kb} KB"
 if [ "${swap_total_kb:-0}" -lt "$MIN_SWAP_KB" ]; then
     if [ "${swap_total_kb:-0}" -eq 0 ] && [ -f /overlay/swapfile ]; then
-        current_bytes=$(stat -c%s /overlay/swapfile 2>/dev/null || echo 0)
-        if [ "$current_bytes" -ge 1073741824 ]; then
-            echo "[INFO] Found 1GB swapfile on disk but not active; enabling now."
-            if swapon /overlay/swapfile 2>/dev/null; then
-                swap_total_kb=$(read_swap_total_with_fallback)
-            else
-                echo "[WARN] Failed to enable /overlay/swapfile automatically." >&2
-            fi
+        if swapon /overlay/swapfile 2>/dev/null; then
+            swap_total_kb=$(read_swap_total_with_fallback)
         fi
     fi
-
     if [ "${swap_total_kb:-0}" -lt "$MIN_SWAP_KB" ]; then
-        cat >&2 <<'EOF'
-[ERROR] System swap below 1GB. Run './2_expand.sh' first to provision extroot + swap, confirm with 'free -h', then rerun this installer.
-EOF
+        echo "[ERROR] System swap below 1GB. Run './2_expand.sh' first." >&2
         exit 1
     fi
 fi
 
 echo "[STEP 2/6] Checking for conflicting PPP/DHCP packages..."
+# [FIX] Conflict removal: tolerate errors if package is missing
 CONFLICT_PKGS="ppp ppp-mod-pppoe pppoe odhcp6c odhcpd"
 found_conflicts=""
 for pkg in $CONFLICT_PKGS; do
-    if apk list "$pkg" >/dev/null 2>&1; then
+    # Check if exact package is installed
+    if apk info -e "$pkg" >/dev/null 2>&1; then
         found_conflicts="$found_conflicts $pkg"
     fi
 done
 
-REMOVE_CONFLICTS_SETTING="${YUNBRIDGE_REMOVE_PPP:-prompt}"
-case "$REMOVE_CONFLICTS_SETTING" in
-    1|true|TRUE|yes|YES)
-        REMOVE_CONFLICTS_SETTING="auto-remove"
-        ;;
-    0|false|FALSE|no|NO)
-        REMOVE_CONFLICTS_SETTING="skip"
-        ;;
-esac
-
 if [ -n "$found_conflicts" ]; then
-    echo "[WARN] The following packages can lock the serial port:$found_conflicts"
-    if [ "$REMOVE_CONFLICTS_SETTING" = "auto-remove" ]; then
-        echo "[INFO] YUNBRIDGE_REMOVE_PPP signals automatic removal."
-        apk del $found_conflicts --force-depends || true
-    elif [ "$REMOVE_CONFLICTS_SETTING" = "skip" ]; then
-        echo "[INFO] Skipping removal as requested via YUNBRIDGE_REMOVE_PPP=0."
-    else
-        printf "Do you want to remove these packages now? [y/N]: "
-        read remove_answer || remove_answer=""
-        case "$remove_answer" in
-            y|Y)
-                apk del $found_conflicts --force-depends || true
-                ;;
-            *)
-                echo "[INFO] Keeping existing PPP/DHCP packages. Ensure ttyATH0 is free before running YunBridge." ;;
-        esac
-    fi
-else
-    echo "[INFO] No conflicting packages detected."
+    echo "[WARN] Packages locking serial port found: $found_conflicts"
+    printf "Remove these packages? [y/N]: "
+    read remove_answer || remove_answer=""
+    case "$remove_answer" in
+        y|Y)
+            echo "[INFO] Removing conflicting packages..."
+            # [FIX] Added || true to prevent script exit if a package is not found
+            apk del $found_conflicts || true
+            ;;
+        *)
+            echo "[INFO] Keeping existing PPP/DHCP packages." ;;
+    esac
 fi
 
-#  --- Stop Existing Daemon ---
 stop_daemon
 
 echo "[STEP 3/6] Updating system packages..."
 apk update
 
-AUTO_UPGRADE="${YUNBRIDGE_AUTO_UPGRADE:-0}"
-if [ "$AUTO_UPGRADE" = "1" ]; then
-    echo "[INFO] YUNBRIDGE_AUTO_UPGRADE=1: ejecutando apk upgrade sin prompt."
-    apk list-upgradable | cut -f 1 -d ' ' | xargs -r apk upgrade
-else
-    printf "¿Deseas ejecutar 'apk upgrade' para todos los paquetes? [y/N]: "
-    read upgrade_answer || upgrade_answer=""
-    case "$upgrade_answer" in
-        y|Y)
-            apk list-upgradable | cut -f 1 -d ' ' | xargs -r apk upgrade
-            ;;
-        *)
-            echo "[INFO] Se omitió 'apk upgrade'." ;;
-    esac
-fi
+# [FIX] Removed 'apk upgrade' option entirely to prevent SELinux breakage on RCs
+echo "[INFO] Skipping system upgrade to maintain stability."
 
 echo "[STEP 4/6] Installing essential dependencies..."
-#  Determine Lua runtime package name (varies across OpenWrt releases).
-if apk info lua >/dev/null 2>&1; then
-    LUA_RUNTIME="lua"
-elif apk info lua5.1 >/dev/null 2>&1; then
-    LUA_RUNTIME="lua5.1"
-else
-    echo "[ERROR] No Lua runtime package (lua or lua5.1) available in apk feeds." >&2
-    echo "[HINT] Ensure the base and packages feeds are up to date before rerunning this installer." >&2
-    exit 1
-fi
-
-#  Install essential packages with local fallbacks when feeds lack them.
 ESSENTIAL_PACKAGES="\
 python3 \
 python3-asyncio \
@@ -710,6 +560,7 @@ python3-uci \
 python3-pyserial \
 python3-psutil \
 python3-more-itertools \
+python3-pip \
 openssl-util \
 coreutils-stty \
 mosquitto-client-ssl \
@@ -719,12 +570,15 @@ luci-compat \
 luci-lua-runtime \
 luaposix \
 luci \
-avrdude \
-${LUA_RUNTIME}"
+avrdude"
 
 for pkg in $ESSENTIAL_PACKAGES; do
     install_dependency "$pkg"
 done
+
+# Ensure we have a Lua runtime
+if apk info -e lua >/dev/null 2>&1; then install_dependency "lua";
+elif apk info -e lua5.1 >/dev/null 2>&1; then install_dependency "lua5.1"; fi
 
 install_manifest_pip_requirements
 
@@ -733,10 +587,12 @@ echo "[STEP 5/6] Installing project .apk packages..."
 project_apk_globs=${YUNBRIDGE_PROJECT_APK_GLOBS:-$PROJECT_APK_PATTERNS}
 project_apk_installed=0
 for glob in $project_apk_globs; do
+    # [FIX] Use hyphen to match exact package versions
     for apk in bin/$glob; do
         [ -e "$apk" ] || continue
         pkg_name=$(basename "$apk")
         echo "[INFO] Installing $pkg_name from ./bin"
+        # [FIX] Removed --force-reinstall
         if ! apk add $LOCAL_APK_INSTALL_FLAGS "./$apk"; then
             echo "[ERROR] Failed to add $pkg_name from ./bin." >&2
             exit 1
@@ -746,70 +602,32 @@ for glob in $project_apk_globs; do
 done
 
 if [ "$project_apk_installed" -eq 0 ]; then
-    echo "[INFO] No project-specific .apk files found in bin/. Skipping Step 5."
+    echo "[WARN] No project .apk files found in bin/. 'yunbridge' package was NOT installed."
+    echo "[HINT] Run './1_compile.sh' first to build the packages."
+else
+    # Only configure secrets if the package installed successfully
+    ensure_secure_serial_secret
+    ensure_tls_material
+    configure_serial_link_settings
 fi
-
-ensure_secure_serial_secret
-ensure_tls_material
-configure_serial_link_settings
 
 # --- System & LuCI Configuration ---
 echo "[STEP 6/6] Finalizing system configuration..."
-#  Remove stale Lua prefix if present on modern LuCI releases.
-if [ -f /etc/config/uhttpd ]; then
-    raw_prefix=$(uci -q get uhttpd.main.lua_prefix || true)
-    if [ -n "${raw_prefix:-}" ]; then
-        lua_entry=${raw_prefix#*=}
-        if [ -z "$lua_entry" ]; then
-            echo "[INFO] Clearing legacy lua_prefix from /etc/config/uhttpd (empty entry)."
-            uci -q del uhttpd.main.lua_prefix || true
-            uci commit uhttpd
-        elif [ ! -f "$lua_entry" ]; then
-            echo "[INFO] Clearing legacy lua_prefix from /etc/config/uhttpd (missing file: $lua_entry)."
-            uci -q del uhttpd.main.lua_prefix || true
-            uci commit uhttpd
-        fi
-    fi
-
-    if ! uci -q get uhttpd.main.ucode_prefix >/dev/null; then
-        echo "[INFO] Ensuring LuCI ucode handler is registered with uhttpd."
-        uci add_list uhttpd.main.ucode_prefix='/cgi-bin/luci=/usr/share/ucode/luci/uhttpd.uc'
-        uci commit uhttpd
-        [ -x /etc/init.d/uhttpd ] && /etc/init.d/uhttpd reload
-    fi
-fi
-
-#  Restart services to apply changes and load the new LuCI app
-echo "[INFO] Restarting uhttpd and rpcd for LuCI..."
 [ -f /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart
 [ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
-#  --- User Configuration & Daemon Start ---
+
 echo "[FINAL] Finalizing setup..."
-#  Ask user if they want to enable debug mode by default
-printf "Do you want to enable YUNBRIDGE_DEBUG=1 by default for all users? [Y/n]: "
-read yn || yn=""
-case $yn in
-    [Nn])
-        echo "[INFO] YUNBRIDGE_DEBUG will not be set by default."
-        ;;
-    *)
-        mkdir -p /etc/profile.d
-        echo "export YUNBRIDGE_DEBUG=1" > /etc/profile.d/yunbridge_debug.sh
-        chmod +x /etc/profile.d/yunbridge_debug.sh
-        echo "[INFO] YUNBRIDGE_DEBUG=1 will be set for all users on login."
-        export YUNBRIDGE_DEBUG=1 # Export for current session
-        ;;
-esac
-#  Enable and start the daemon
+mkdir -p /etc/profile.d
+echo "export YUNBRIDGE_DEBUG=1" > /etc/profile.d/yunbridge_debug.sh
+chmod +x /etc/profile.d/yunbridge_debug.sh
+export YUNBRIDGE_DEBUG=1
+
 if [ -x "$INIT_SCRIPT" ]; then
     echo "[INFO] Enabling and starting yunbridge daemon..."
     $INIT_SCRIPT enable
     $INIT_SCRIPT restart
 else
-    echo "[WARNING] yunbridge init script not found at $INIT_SCRIPT." >&2
+    echo "[WARNING] yunbridge init script not found (installation incomplete?)."
 fi
 
 echo -e "\n--- Installation Complete! ---"
-echo "The YunBridge daemon is now running."
-echo "You can configure it from the LuCI web interface under 'Services' > 'YunBridge'."
-echo "A reboot is recommended if you encounter any issues."

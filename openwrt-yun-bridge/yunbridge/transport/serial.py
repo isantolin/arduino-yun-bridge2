@@ -79,29 +79,12 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     return False
 
 
-class SerialProtocol(asyncio.Protocol):
-    """Native asyncio Protocol for Serial communication."""
-    def __init__(self) -> None:
-        self.transport: asyncio.Transport | None = None
-        self.reader: asyncio.StreamReader = asyncio.StreamReader()
-
-    def connection_made(self, transport: asyncio.BaseTransport) -> None:
-        self.transport = cast(asyncio.Transport, transport)
-        self.reader.set_transport(transport)
-
-    def data_received(self, data: bytes) -> None:
-        self.reader.feed_data(data)
-
-    def connection_lost(self, exc: Exception | None) -> None:
-        self.reader.feed_eof()
-
-
 async def _open_serial_connection(
     url: str, baudrate: int, **kwargs: Any
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """
-    Open a serial connection using native asyncio.
-    Replaces pyserial-asyncio to ensure Python 3.13+ compatibility.
+    Open a serial connection using native asyncio pipes.
+    Uses StreamReaderProtocol to ensure flow control (drain) works correctly.
     """
     loop = asyncio.get_running_loop()
 
@@ -119,6 +102,8 @@ async def _open_serial_connection(
                 raise serial.SerialException("Serial port opened but no fd available")
             # Set non-blocking on the file descriptor
             os.set_blocking(ser.fd, False)
+            # Ensure raw mode immediately upon open
+            _ensure_raw_mode(ser, url)
         except Exception:
             if ser.is_open:
                 ser.close()
@@ -126,18 +111,24 @@ async def _open_serial_connection(
 
     await loop.run_in_executor(None, _open_hardware)
 
-    transport, protocol_instance = await loop.connect_read_pipe(
-        SerialProtocol,
-        ser
-    )
+    # [FIX] Read Pipeline: Use standard asyncio.StreamReaderProtocol
+    reader = asyncio.StreamReader()
+    read_protocol = asyncio.StreamReaderProtocol(reader)
+    await loop.connect_read_pipe(lambda: read_protocol, ser)
+
+    # [FIX] Write Pipeline: Needs a protocol with _drain_helper support.
+    # We use another StreamReaderProtocol with a dummy reader just to satisfy the API.
+    # This ensures writer.drain() works without "no attribute _drain_helper" error.
+    write_protocol = asyncio.StreamReaderProtocol(asyncio.StreamReader())
+    write_transport, _ = await loop.connect_write_pipe(lambda: write_protocol, ser)
 
     writer = asyncio.StreamWriter(
-        cast(asyncio.WriteTransport, transport),
-        protocol_instance,
-        None,
+        cast(asyncio.WriteTransport, write_transport),
+        write_protocol,
+        reader,
         loop
     )
-    return protocol_instance.reader, writer
+    return reader, writer
 
 
 # Alias required for tests that mock 'yunbridge.transport.serial.OPEN_SERIAL_CONNECTION'
@@ -199,15 +190,7 @@ async def _open_serial_connection_with_retry(
                 exclusive=True
             )
 
-            # Access underlying serial object to force raw mode
-            try:
-                transport = writer.transport
-                if hasattr(transport, "_serial"):  # Standard asyncio pipe transport
-                    _ensure_raw_mode(transport._serial, config.serial_port)  # type: ignore
-                elif hasattr(transport, "serial"):  # Some other transports
-                    _ensure_raw_mode(transport.serial, config.serial_port)  # type: ignore
-            except Exception as e:
-                logger.debug("Could not set raw mode (might be ignored): %s", e)
+            # NOTE: Raw mode is now ensured inside _open_serial_connection
 
             if negotiation_needed:
                 success = await _negotiate_baudrate(reader, writer, target_baud)

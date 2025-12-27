@@ -398,7 +398,8 @@ fi
 
 # Enable Packages
 REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
-# [FIX] Dependencias explícitas para asegurar selección en .config
+# [FIX] Dependencias explícitas para asegurar selección en .config.
+# Se ELIMINÓ python3-twisted porque prometheus_client ha sido optimizado para no usarlo.
 REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt mosquitto-client luaposix"
 
 for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do

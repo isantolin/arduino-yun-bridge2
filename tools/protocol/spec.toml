@@ -276,6 +276,7 @@ name = "CMD_LINK_RESET"
 value = 0x03
 category = "system"
 direction = "linux_to_mcu"
+description = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
 [[commands]]
 name = "CMD_LINK_RESET_RESP"
 value = 0x84

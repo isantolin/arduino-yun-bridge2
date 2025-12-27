@@ -49,7 +49,7 @@ void loop() {
   static long lastPrint = 0;
   if (millis() - lastPrint > 1000) {
     lastPrint = millis();
-    Console.println("Estado: 0x05 (Running)");
+    Console.println("Estado: 0x05 (TIMEOUT)");
   }
   */
 }

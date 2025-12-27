@@ -1,4 +1,5 @@
 #include "rpc_frame.h"
+#include "rpc_protocol.h"
 
 #include <string.h>
 
@@ -29,7 +30,7 @@ bool is_cobs_decoded_length_valid(const uint8_t* encoded,
     index += static_cast<size_t>(code) - 1;
 
     const bool has_more = index < encoded_len;
-    if (code < 0xFF && has_more) {
+    if (code < RPC_UINT8_MASK && has_more) {
       if (decoded_len >= MAX_RAW_FRAME_SIZE) {
         return false;
       }
@@ -61,7 +62,7 @@ bool FrameParser::overflowed() const { return _overflow_detected; }
 
 bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
   // If we receive a zero byte, the packet is complete.
-  if (byte == 0) {
+  if (byte == RPC_FRAME_DELIMITER) {
     if (_rx_buffer_ptr == 0) {
       return false;  // Empty packet, ignore.
     }

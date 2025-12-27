@@ -243,9 +243,8 @@ void BridgeClass::process() {
 #endif
 
   // Handle incoming data via transport
-  rpc::Frame frame;
-  if (_transport.processInput(frame)) {
-    dispatch(frame);
+  if (_transport.processInput(_rx_frame)) {
+    dispatch(_rx_frame);
   } else {
     rpc::FrameParser::Error error = _transport.getLastError();
     if (error != rpc::FrameParser::Error::NONE) {

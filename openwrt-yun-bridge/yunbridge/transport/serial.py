@@ -12,7 +12,7 @@ try:
 except ImportError:
     termios = None  # type: ignore
     tty = None  # type: ignore
-from typing import Any, Sized, TypeGuard, cast
+from typing import Any, Sized, TypeGuard, cast, Final
 
 import serial
 from cobs import cobs
@@ -30,8 +30,11 @@ from yunbridge.state.context import RuntimeState
 
 logger = logging.getLogger("yunbridge")
 
+# Explicit framing overhead: 1 code byte + 1 delimiter + ~1 byte/254 overhead + safety margin
+FRAMING_OVERHEAD: Final[int] = 4
+
 MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE + 4
+    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE + FRAMING_OVERHEAD
 )
 
 BinaryPacket = bytes | bytearray | memoryview

@@ -1,3 +1,35 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openwrt-yun-bridge"
+version = "2.0.0"
+description = "Arduino Yun Bridge Protocol for OpenWrt (Python 3.13)"
+requires-python = ">=3.13"
+dependencies = [
+    "pyserial==3.5",
+    "paho-mqtt==2.1.0",
+    "aiomqtt==2.4.0",
+    "cobs==1.2.2",
+    "psutil==7.2.0",
+    "prometheus-client==0.23.1"
+]
+
+[tool.setuptools]
+packages = ["openwrt_yun_bridge"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --asyncio-mode=auto"
+testpaths = [
+    "openwrt-yun-bridge/tests",
+]
+pythonpath = [
+    ".",
+    "openwrt-yun-bridge"
+]
+
 [tool.black]
 line-length = 88
 target-version = ['py313']

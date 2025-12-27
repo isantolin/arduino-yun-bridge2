@@ -79,12 +79,29 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     return False
 
 
+class SerialProtocol(asyncio.Protocol):
+    """Native asyncio Protocol for Serial communication."""
+    def __init__(self) -> None:
+        self.transport: asyncio.Transport | None = None
+        self.reader: asyncio.StreamReader = asyncio.StreamReader()
+
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        self.transport = cast(asyncio.Transport, transport)
+        self.reader.set_transport(transport)
+
+    def data_received(self, data: bytes) -> None:
+        self.reader.feed_data(data)
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        self.reader.feed_eof()
+
+
 async def _open_serial_connection(
     url: str, baudrate: int, **kwargs: Any
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """
-    Open a serial connection using native asyncio pipes.
-    Uses StreamReaderProtocol to ensure flow control (drain) works correctly.
+    Open a serial connection using native asyncio.
+    Replaces pyserial-asyncio to ensure Python 3.13+ compatibility.
     """
     loop = asyncio.get_running_loop()
 
@@ -111,24 +128,28 @@ async def _open_serial_connection(
 
     await loop.run_in_executor(None, _open_hardware)
 
-    # [FIX] Read Pipeline: Use standard asyncio.StreamReaderProtocol
-    reader = asyncio.StreamReader()
-    read_protocol = asyncio.StreamReaderProtocol(reader)
-    await loop.connect_read_pipe(lambda: read_protocol, ser)
+    # [FIX] Separate Read and Write transports for bidirectional pipe support
+    read_protocol = SerialProtocol()
+    # connect_read_pipe returns (ReadTransport, Protocol)
+    await loop.connect_read_pipe(
+        lambda: read_protocol,
+        ser
+    )
 
-    # [FIX] Write Pipeline: Needs a protocol with _drain_helper support.
-    # We use another StreamReaderProtocol with a dummy reader just to satisfy the API.
-    # This ensures writer.drain() works without "no attribute _drain_helper" error.
-    write_protocol = asyncio.StreamReaderProtocol(asyncio.StreamReader())
-    write_transport, _ = await loop.connect_write_pipe(lambda: write_protocol, ser)
+    # Use a basic protocol for the write side just to satisfy the API
+    # connect_write_pipe returns (WriteTransport, Protocol)
+    write_transport, _ = await loop.connect_write_pipe(
+        lambda: asyncio.BaseProtocol(),
+        ser
+    )
 
     writer = asyncio.StreamWriter(
-        cast(asyncio.WriteTransport, write_transport),
-        write_protocol,
-        reader,
+        write_transport,  # [FIX] Removed unnecessary cast to fix Pyright error
+        read_protocol,
+        read_protocol.reader,
         loop
     )
-    return reader, writer
+    return read_protocol.reader, writer
 
 
 # Alias required for tests that mock 'yunbridge.transport.serial.OPEN_SERIAL_CONNECTION'

@@ -456,87 +456,96 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool command_processed_internally = false;
   bool requires_ack = false;
 
+  // [FIX] Detect Collision between System Commands and Status Codes
+  // IDs 0-7 are shared. We distinguish by payload or explicit ID check.
+  bool is_system_command = false;
+  
   switch (command) {
-    case CommandId::CMD_GET_VERSION:
-    case CommandId::CMD_GET_FREE_MEMORY:
-    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
-    case CommandId::CMD_SET_BAUDRATE:
-    case CommandId::CMD_LINK_RESET:
-      // [FIX] Logic to distinguish commands from Status frames which might share ID values
-      if (frame.header.payload_length > 0 && 
-          command != CommandId::CMD_SET_BAUDRATE && 
-          command != CommandId::CMD_LINK_RESET) {
-         // Collision with STATUS codes. If payload exists, treat as Status.
-         command_processed_internally = false;
-      } else {
-         if (command == CommandId::CMD_LINK_RESET) {
-             // [FIX] Enviar ACK inmediatamente antes de resetear el estado del enlace
-             // Esto soluciona el problema de que el MCU se resetea y borra el buffer antes de enviar el ACK.
-             uint8_t ack_payload[2];
-             rpc::write_u16_be(ack_payload, raw_command);
-             (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
-             _transport.flush(); // Forzar salida física
-             
-             _handleSystemCommand(frame);
-             command_processed_internally = true;
-             requires_ack = false; // Ya enviado manualmente
-         } else {
-             _handleSystemCommand(frame);
-             command_processed_internally = true;
-             // Otros comandos de sistema no requieren ACK en la lógica original (excepto Reset)
-             requires_ack = false;
-         }
+    case CommandId::CMD_GET_VERSION: // 0
+    case CommandId::CMD_GET_FREE_MEMORY: // 1
+    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT: // 4
+      // These system commands have 0 payload length in request.
+      // If payload > 0, it must be a Status code (e.g. MALFORMED=4 has 2 bytes).
+      if (frame.header.payload_length == 0) {
+          is_system_command = true;
       }
       break;
-    case CommandId::CMD_LINK_SYNC:
-      // Collision with STATUS_CMD_UNKNOWN (2).
-      // CMD_LINK_SYNC has payload of size RPC_HANDSHAKE_NONCE_LENGTH (16).
-      // STATUS_CMD_UNKNOWN usually has payload of size 2 (command ID).
+    case CommandId::CMD_LINK_SYNC: // 2
+      // LINK_SYNC has 16 bytes. STATUS_CMD_UNKNOWN (2) has 2 bytes.
       if (frame.header.payload_length == RPC_HANDSHAKE_NONCE_LENGTH) {
-          _handleSystemCommand(frame);
-          command_processed_internally = true;
-          requires_ack = true;
-      } else {
-          command_processed_internally = false;
+          is_system_command = true;
       }
       break;
-    case CommandId::CMD_SET_PIN_MODE:
-    case CommandId::CMD_DIGITAL_WRITE:
-    case CommandId::CMD_ANALOG_WRITE:
-    case CommandId::CMD_DIGITAL_READ:
-    case CommandId::CMD_ANALOG_READ:
-      _handleGpioCommand(frame);
-      command_processed_internally = true;
-      requires_ack = (command != CommandId::CMD_DIGITAL_READ && command != CommandId::CMD_ANALOG_READ);
+    case CommandId::CMD_LINK_RESET: // 3
+      // LINK_RESET has 0 or 7 bytes. STATUS_ERROR (3) has variable length string.
+      // Ambiguity exists if ERROR string is empty or 7 chars.
+      // However, host sends config on reset.
+      if (frame.header.payload_length == 0 || frame.header.payload_length == RPC_HANDSHAKE_CONFIG_SIZE) {
+          is_system_command = true;
+      }
       break;
-    case CommandId::CMD_CONSOLE_WRITE:
-      _handleConsoleCommand(frame);
-      command_processed_internally = true;
-      requires_ack = true;
-      break;
-    case CommandId::CMD_MAILBOX_PUSH:
-    case CommandId::CMD_MAILBOX_AVAILABLE:
-      Mailbox.handleResponse(frame); // Actually handleCommand, but method name is handleResponse for now
-      command_processed_internally = true;
-      requires_ack = true;
-      break;
-    case CommandId::CMD_FILE_WRITE:
-      FileSystem.handleResponse(frame); // Actually handleCommand
-      command_processed_internally = true;
-      requires_ack = true;
-      break;
-    // Explicitly mark responses as processed to avoid STATUS_CMD_UNKNOWN
-    case CommandId::CMD_DATASTORE_GET_RESP:
-    case CommandId::CMD_MAILBOX_READ_RESP:
-    case CommandId::CMD_FILE_READ_RESP:
-    case CommandId::CMD_PROCESS_RUN_RESP:
-    case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-    case CommandId::CMD_PROCESS_POLL_RESP:
-    case CommandId::CMD_LINK_SYNC_RESP:
-      command_processed_internally = true;
+    case CommandId::CMD_SET_BAUDRATE: // 5
+      if (frame.header.payload_length == 4) {
+          is_system_command = true;
+      }
       break;
     default:
+      // High IDs (GPIO, Console, etc) don't collide with Status (0-8)
+      if (raw_command > 8) {
+          is_system_command = true;
+      }
       break;
+  }
+
+  if (is_system_command) {
+      if (command == CommandId::CMD_LINK_RESET) {
+          // [FIX] Send ACK immediately before reset destroys state
+          uint8_t ack_payload[2];
+          rpc::write_u16_be(ack_payload, raw_command);
+          (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+          _transport.flush();
+          
+          _handleSystemCommand(frame);
+          command_processed_internally = true;
+          requires_ack = false;
+      } else if (raw_command <= 8) {
+          // Other low-ID system commands
+          _handleSystemCommand(frame);
+          command_processed_internally = true;
+          requires_ack = false;
+      } else {
+          // High-ID commands (GPIO, etc)
+          switch(command) {
+            case CommandId::CMD_SET_PIN_MODE:
+            case CommandId::CMD_DIGITAL_WRITE:
+            case CommandId::CMD_ANALOG_WRITE:
+            case CommandId::CMD_DIGITAL_READ:
+            case CommandId::CMD_ANALOG_READ:
+              _handleGpioCommand(frame);
+              command_processed_internally = true;
+              requires_ack = (command != CommandId::CMD_DIGITAL_READ && command != CommandId::CMD_ANALOG_READ);
+              break;
+            case CommandId::CMD_CONSOLE_WRITE:
+              _handleConsoleCommand(frame);
+              command_processed_internally = true;
+              requires_ack = true;
+              break;
+            case CommandId::CMD_MAILBOX_PUSH:
+            case CommandId::CMD_MAILBOX_AVAILABLE:
+              Mailbox.handleResponse(frame); 
+              command_processed_internally = true;
+              requires_ack = true;
+              break;
+            case CommandId::CMD_FILE_WRITE:
+              FileSystem.handleResponse(frame);
+              command_processed_internally = true;
+              requires_ack = true;
+              break;
+            default:
+              // Responses logic handles others
+              break;
+          }
+      }
   }
 
   if (requires_ack) {
@@ -545,53 +554,49 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
   }
 
-  if (!command_processed_internally &&
-      raw_command <= rpc::to_underlying(StatusCode::STATUS_ACK)) {
-    const StatusCode status = static_cast<StatusCode>(raw_command);
-    const size_t payload_length = frame.header.payload_length;
-    const uint8_t* payload_data = frame.payload;
-    switch (status) {
-      case StatusCode::STATUS_ACK: {
-        uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
-        if (payload_length >= 2 && payload_data) {
-          ack_id = rpc::read_u16_be(payload_data);
+  // Handle Status/Error frames (when not a system command)
+  if (!command_processed_internally) {
+      // Check if it's a valid status code range (e.g., 0-8)
+      if (raw_command <= rpc::to_underlying(StatusCode::STATUS_OVERFLOW)) {
+        const StatusCode status = static_cast<StatusCode>(raw_command);
+        const size_t payload_length = frame.header.payload_length;
+        const uint8_t* payload_data = frame.payload;
+        
+        switch (status) {
+          case StatusCode::STATUS_ACK: {
+            uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
+            if (payload_length >= 2 && payload_data) {
+              ack_id = rpc::read_u16_be(payload_data);
+            }
+            _handleAck(ack_id);
+            break;
+          }
+          case StatusCode::STATUS_MALFORMED: {
+            uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
+            if (payload_length >= 2 && payload_data) {
+              malformed_id = rpc::read_u16_be(payload_data);
+            }
+            _handleMalformed(malformed_id);
+            break;
+          }
+          default:
+            break;
         }
-        _handleAck(ack_id);
+        
         if (_status_handler) {
           _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
         }
-        return;
+        return; // Done handling status
       }
-      case StatusCode::STATUS_MALFORMED: {
-        uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
-        if (payload_length >= 2 && payload_data) {
-          malformed_id = rpc::read_u16_be(payload_data);
-        }
-        _handleMalformed(malformed_id);
-        if (_status_handler) {
-          _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
-        }
-        return;
-      }
-      case StatusCode::STATUS_ERROR:
-      case StatusCode::STATUS_CMD_UNKNOWN:
-      case StatusCode::STATUS_CRC_MISMATCH:
-      case StatusCode::STATUS_TIMEOUT:
-      case StatusCode::STATUS_NOT_IMPLEMENTED:
-      case StatusCode::STATUS_OVERFLOW:
-      case StatusCode::STATUS_OK:
-        if (_status_handler) {
-          _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
-        }
-        return;
-    }
   }
 
+  // Unknown command
   if (!command_processed_internally && _command_handler) {
     _command_handler(frame);
   } else if (!command_processed_internally) {
-    if (raw_command > rpc::to_underlying(StatusCode::STATUS_ACK)) {
-      (void)sendFrame(StatusCode::STATUS_CMD_UNKNOWN);
+    // Only send UNKNOWN if it's not a response we recognized
+    if (raw_command > 8) { // Don't reply UNKNOWN to Status codes
+        (void)sendFrame(StatusCode::STATUS_CMD_UNKNOWN);
     }
   }
 }
@@ -641,7 +646,6 @@ bool BridgeClass::sendFrame(StatusCode status_code, const uint8_t* payload, size
 
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
   if (!_synchronized) {
-    // Allow handshake commands (0-7) and specific responses
     bool allowed = (command_id <= 7) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
@@ -651,7 +655,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
     }
   }
 
-  // [FIX] No encolar comandos que no requieren ACK (como XON/XOFF)
+  // [FIX] No encolar comandos que no requieren ACK (como XON/XOFF o Status)
   if (!_requiresAck(command_id)) {
     return _sendFrameImmediate(command_id, payload, length);
   }
@@ -693,10 +697,9 @@ void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
 #endif
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  // [FIX] XON y XOFF son "fire-and-forget" para control de flujo prioritario
-  if (command_id == rpc::to_underlying(CommandId::CMD_XON) || 
-      command_id == rpc::to_underlying(CommandId::CMD_XOFF)) {
-      return false;
+  // [FIX] Status codes (0-8) and Flow Control do NOT require ACK
+  if (command_id <= 8) { 
+      return false; 
   }
   return command_id > rpc::to_underlying(StatusCode::STATUS_ACK);
 }
@@ -757,7 +760,6 @@ void BridgeClass::_resetLinkState() {
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
-  // _flow_paused = false; // Handled by transport.reset()
 }
 
 void BridgeClass::_flushPendingTxQueue() {
@@ -809,8 +811,6 @@ bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
   }
   frame = _pending_tx_frames[_pending_tx_head];
   _pending_tx_head = (_pending_tx_head + 1) % kMaxPendingTxFrames;
-  
-  // [CORREGIDO] Debe ser --, no ++
   _pending_tx_count--; 
   return true;
 }
@@ -829,14 +829,10 @@ void BridgeClass::analogWrite(uint8_t pin, int value) {
 }
 
 void BridgeClass::requestDigitalRead(uint8_t pin) {
-  // Deprecated: MCU no longer initiates pin reads.
-  // No-op.
   (void)pin;
 }
 
 void BridgeClass::requestAnalogRead(uint8_t pin) {
-  // Deprecated: MCU no longer initiates pin reads.
-  // No-op.
   (void)pin;
 }
 

@@ -39,10 +39,7 @@ void BridgeTransport::flush() {
     }
 }
 
-// [NEW] Implementation of RX Flush
 void BridgeTransport::flushRx() {
-    // HardwareSerial and Stream both support available/read.
-    // Since _stream is a reference to the active stream, we can use it directly.
     while (_stream.available() > 0) {
         _stream.read();
     }
@@ -54,11 +51,13 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
     
     if (!_flow_paused && available_bytes >= kRxHighWaterMark) {
         // Buffer getting full, pause sender
-        sendFrame(rpc::to_underlying(rpc::CommandId::CMD_XOFF), nullptr, 0);
+        // [FIX] Use sendControlFrame to avoid clobbering retransmission buffer
+        sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XOFF));
         _flow_paused = true;
     } else if (_flow_paused && available_bytes <= kRxLowWaterMark) {
         // Buffer drained enough, resume sender
-        sendFrame(rpc::to_underlying(rpc::CommandId::CMD_XON), nullptr, 0);
+        // [FIX] Use sendControlFrame
+        sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XON));
         _flow_paused = false;
     }
 

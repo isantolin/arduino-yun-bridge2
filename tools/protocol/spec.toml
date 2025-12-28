@@ -221,9 +221,11 @@ name = "ACK"
 value = 0x07
 description = "Generic acknowledgement for fire-and-forget commands."
 
+# [FIX] System Commands moved to 0x0A-0x0F range to avoid collision with Status codes (0x00-0x08)
+
 [[commands]]
 name = "CMD_GET_VERSION"
-value = 0x00
+value = 0x0A
 category = "system"
 direction = "linux_to_mcu"
 [[commands]]
@@ -233,7 +235,7 @@ category = "system"
 direction = "mcu_to_linux"
 [[commands]]
 name = "CMD_GET_FREE_MEMORY"
-value = 0x01
+value = 0x0B
 category = "system"
 direction = "linux_to_mcu"
 [[commands]]
@@ -243,7 +245,7 @@ category = "system"
 direction = "mcu_to_linux"
 [[commands]]
 name = "CMD_GET_TX_DEBUG_SNAPSHOT"
-value = 0x04
+value = 0x0E
 category = "system"
 direction = "linux_to_mcu"
 [[commands]]
@@ -253,7 +255,7 @@ category = "system"
 direction = "mcu_to_linux"
 [[commands]]
 name = "CMD_SET_BAUDRATE"
-value = 0x05
+value = 0x0F
 category = "system"
 direction = "linux_to_mcu"
 [[commands]]
@@ -263,7 +265,7 @@ category = "system"
 direction = "mcu_to_linux"
 [[commands]]
 name = "CMD_LINK_SYNC"
-value = 0x02
+value = 0x0C
 category = "system"
 direction = "linux_to_mcu"
 [[commands]]
@@ -273,7 +275,7 @@ category = "system"
 direction = "mcu_to_linux"
 [[commands]]
 name = "CMD_LINK_RESET"
-value = 0x03
+value = 0x0D
 category = "system"
 direction = "linux_to_mcu"
 description = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."

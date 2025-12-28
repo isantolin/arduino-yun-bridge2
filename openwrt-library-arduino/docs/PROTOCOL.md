@@ -17,11 +17,8 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 
 ## 3. Formato de frame (antes de COBS)
 
-```
-+--------------------------+---------------------+----------+
-|   Cabecera (5 bytes)     |   Payload (0-128)   |   CRC32  |
-+--------------------------+---------------------+----------+
-```
++--------------------------+---------------------+----------+ | Cabecera (5 bytes) | Payload (0-128) | CRC32 | +--------------------------+---------------------+----------+
+
 
 ### 3.1 Cabecera
 
@@ -33,9 +30,11 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 
 ### 3.2 CRC
 
-El CRC (4 bytes, Big Endian) cubre cabecera + payload y utiliza CRC-32 IEEE 802.3 (polinomio reflejado `0x04C11DB7`, estado inicial `0xFFFFFFFF`, XOR final `0xFFFFFFFF`).
+El CRC (4 bytes, Big Endian) cubre cabecera + payload y utiliza CRC-32 IEEE 802.3 (polinomio reflejado `0x04C11DB7` / normal `0xEDB88320`, estado inicial `0xFFFFFFFF`, XOR final `0xFFFFFFFF`).
 
 ## 4. Códigos de estado (`Status`)
+
+Los códigos de estado ocupan el rango `0x00` - `0x08`.
 
 | Código | Nombre             | Uso típico                                         |
 | ------ | ------------------ | -------------------------------------------------- |
@@ -47,106 +46,94 @@ El CRC (4 bytes, Big Endian) cubre cabecera + payload y utiliza CRC-32 IEEE 802.
 | `0x05` | `STATUS_TIMEOUT`   | Timeout al ejecutar la operación.                 |
 | `0x06` | `STATUS_NOT_IMPLEMENTED` | Comando definido pero no soportado.         |
 | `0x07` | `STATUS_ACK`       | Acknowledgement genérico para operaciones fire-and-forget. |
+| `0x08` | `STATUS_OVERFLOW`  | El frame recibido excede el tamaño del buffer interno. |
 
-> Nota: los `STATUS_*` pueden incluir un payload opcional en UTF-8 con una
-> descripción breve del error (por ejemplo, `"not_found"`). El sketch del MCU
-> debe registrar un callback de estado para reaccionar ante estos avisos.
+> Nota: los `STATUS_*` pueden incluir un payload opcional en UTF-8 con una descripción breve del error.
 
 ## 5. Comandos
 
-En cada comando se indica la dirección principal (`Linux → MCU`, `MCU → Linux` o bidireccional) y la estructura de payload real utilizada por la implementación.
+### 5.1 Sistema y control de flujo (0x08 – 0x0F)
 
-### 5.1 Sistema y control de flujo (0x00 – 0x0F)
+Los comandos de sistema se han reasignado al rango `0x0A` en adelante para evitar colisiones con los códigos de estado.
 
-- **`0x00` GET_VERSION (Linux → MCU)**
+- **`0x0A` CMD_GET_VERSION (Linux → MCU)**
   - Petición: sin payload.
-  - Respuesta (`0x80 GET_VERSION_RESP`): `[version_major: u8, version_minor: u8]`.
-  - El daemon `yunbridge/daemon.py` envía automáticamente este comando tras establecer la conexión serie y publica la respuesta en el tópico MQTT `br/system/version/value` con el formato `MAJOR.MINOR`.
+  - Respuesta (`0x80 CMD_GET_VERSION_RESP`): `[version_major: u8, version_minor: u8]`.
 
-- **`0x01` GET_FREE_MEMORY (Linux → MCU)**
+- **`0x0B` CMD_GET_FREE_MEMORY (Linux → MCU)**
   - Petición: sin payload.
-  - Respuesta (`0x82 GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
+  - Respuesta (`0x82 CMD_GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
 
-- **`0x02` CMD_LINK_SYNC (Linux → MCU)**
-  - Petición: `nonce: byte[16]`. Durante el handshake inicial el demonio genera un nonce criptográficamente aleatorio y lo envía al MCU.
-  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`. El MCU replica el nonce recibido y adjunta `tag = HMAC-SHA256(secret, nonce)` truncado a 16 bytes usando el mismo secreto compartido que el demonio. Si el secreto no coincide o el tag es inválido, el demonio rechaza el enlace con `STATUS_MALFORMED` y reinicia el proceso de sincronización.
+- **`0x0C` CMD_LINK_SYNC (Linux → MCU)**
+  - Petición: `nonce: byte[16]`. Handshake de seguridad.
+  - Respuesta (`0x83 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`. Donde `tag = HMAC-SHA256(secret, nonce)` (16 bytes).
 
-- **`0x03` CMD_LINK_RESET (Linux → MCU)**
-  - Petición: sin payload. Restablece cualquier estado interno asociado al enlace serie (colas pendientes, buffers de procesos, etc.).
-  - Respuesta (`0x84 CMD_LINK_RESET_RESP`, MCU → Linux): sin payload. El MCU confirma que restableció el estado local y está listo para un nuevo handshake.
+- **`0x0D` CMD_LINK_RESET (Linux → MCU)**
+  - Petición: opcionalmente `[ack_timeout: u16, retry_limit: u8, response_timeout: u32]` para reconfigurar timeouts.
+  - Respuesta (`0x84 CMD_LINK_RESET_RESP`): sin payload.
+
+- **`0x0E` CMD_GET_TX_DEBUG_SNAPSHOT (Linux → MCU)**
+  - Petición: sin payload.
+  - Respuesta (`0x85 CMD_GET_TX_DEBUG_SNAPSHOT_RESP`): `[pending_count: u8, awaiting_ack: u8, retry_count: u8, last_cmd_id: u16, last_send_ms: u32]`. Diagnóstico del estado interno del transporte.
+
+- **`0x0F` CMD_SET_BAUDRATE (Linux → MCU)**
+  - Petición: `[baudrate: u32]`. Cambia la velocidad del puerto serie en caliente.
+  - Respuesta (`0x86 CMD_SET_BAUDRATE_RESP`): sin payload (confirmación antes del cambio).
 
 - **`0x08` CMD_XOFF (MCU → Linux)** / **`0x09` CMD_XON (MCU → Linux)**
-  - Sin payload. Controlan el flujo de datos de consola.
+  - Sin payload. Controlan el flujo de datos de la consola para evitar desbordamientos en el MCU. Nota: `0x08` comparte valor con `STATUS_OVERFLOW`.
 
 ### 5.2 GPIO (0x10 – 0x1F)
 
 - **`0x10` CMD_SET_PIN_MODE (Linux → MCU)**: `[pin: u8, mode: u8]` (`mode`: 0=INPUT, 1=OUTPUT, 2=INPUT_PULLUP).
 - **`0x11` CMD_DIGITAL_WRITE (Linux → MCU)**: `[pin: u8, value: u8]`.
 - **`0x12` CMD_ANALOG_WRITE (Linux → MCU)**: `[pin: u8, value: u8]`.
-- **`0x13` CMD_DIGITAL_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x15 CMD_DIGITAL_READ_RESP` (MCU → Linux): `[value: u8]`.
-- **`0x14` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x16 CMD_ANALOG_READ_RESP` (MCU → Linux): `[value: u16]`.
+- **`0x13` CMD_DIGITAL_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x15 CMD_DIGITAL_READ_RESP`: `[value: u8]`.
+- **`0x14` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x16 CMD_ANALOG_READ_RESP`: `[value: u16]`.
 
 ### 5.3 Consola (0x20)
 
 - **`0x20` CMD_CONSOLE_WRITE (bidireccional)**
-  - Payload: `chunk: byte[]` (máx. 128 bytes). No se envía prefijo de longitud; los datos se segmentan en bloques de hasta `MAX_PAYLOAD_SIZE`.
+  - Payload: `chunk: byte[]` (máx. 128 bytes). Datos crudos de la consola serie virtual.
+
+### 5.4 Datastore (0x30 – 0x3F)
 
 - **`0x30` CMD_DATASTORE_PUT (MCU → Linux)**: `[key_len: u8, key: char[], value_len: u8, value: char[]]`.
-- **`0x31` CMD_DATASTORE_GET (MCU → Linux)**: `[key_len: u8, key: char[]]`. El MCU solicita al daemon el último valor conocido para la clave indicada; el demonio responde inmediatamente usando su caché local (alimentada por `CMD_DATASTORE_PUT` y fuentes externas).
-- **`0x81` CMD_DATASTORE_GET_RESP (Linux → MCU)**: `[value_len: u8, value: char[]]`. El MCU recibe la respuesta solicitada; si la clave no existe el payload contiene `value_len = 0`.
-
-  - MQTT: las escrituras se publican en `br/datastore/put/<clave>` y el demonio replica el valor resultante en `br/datastore/get/<clave>`. Para solicitar un valor vía MQTT, los clientes publican un mensaje vacío en `br/datastore/get/<clave>/request`. El demonio responde siempre en `br/datastore/get/<clave>` reutilizando únicamente la caché local (payload vacío + `bridge-error=datastore-miss` si la clave no existe), evitando round-trips con el MCU y que el cliente consuma su propio mensaje.
+- **`0x31` CMD_DATASTORE_GET (MCU → Linux)**: `[key_len: u8, key: char[]]`.
+- **`0x81` CMD_DATASTORE_GET_RESP (Linux → MCU)**: `[value_len: u8, value: char[]]`.
 
 ### 5.5 Mailbox (0x40 – 0x4F)
 
-- **`0x40` CMD_MAILBOX_READ (MCU → Linux)**: sin payload. Respuesta `0x90 CMD_MAILBOX_READ_RESP (Linux → MCU)` con `[message_len: u16, message: byte[]]` (truncado si supera 254 bytes).
-- **`0x41` CMD_MAILBOX_PROCESSED (MCU → Linux)**: payload opcional.
-  - `[message_id: u16]` si se dispone de identificador; puede enviarse vacío y el demonio lo interpreta como confirmación genérica.
-- **`0x42` CMD_MAILBOX_AVAILABLE (MCU → Linux)**: sin payload. Respuesta `0x92 CMD_MAILBOX_AVAILABLE_RESP (Linux → MCU)` con `[count: u8]`.
-  - La librería Arduino expone esta consulta mediante `Mailbox.requestAvailable()` y entrega el resultado en `Bridge.onMailboxAvailableResponse`.
-- **`0x43` CMD_MAILBOX_PUSH (MCU → Linux)**: `[message_len: u16, message: byte[]]`. El MCU publica datos hacia Linux; el demonio responde con `STATUS_ACK` independiente (frame `0x07`).
-
-#### MQTT relacionado con Mailbox
-
-- El demonio publica cada mensaje que llega desde el MCU en `br/mailbox/incoming` y mantiene una cola persistente (`mailbox_incoming_queue`) para que los clientes MQTT puedan consultarla posteriormente.
-- Los clientes externos pueden solicitar el siguiente mensaje disponible publicando en `br/mailbox/read`; el demonio atiende primero la cola proveniente del MCU y, si está vacía, entrega el siguiente mensaje pendiente destinado al MCU (útil para pruebas cuando el sketch no está ejecutándose).
-- `br/mailbox/incoming_available` expone el número de mensajes pendientes en la cola orientada a los clientes MQTT.
-- Los mensajes publicados por MQTT en `br/mailbox/write` se encolan para el MCU. Mientras existan mensajes pendientes, el demonio publica la profundidad de esa cola en `br/mailbox/outgoing_available` y el firmware puede recuperarlos mediante `CMD_MAILBOX_READ`.
+- **`0x40` CMD_MAILBOX_READ (MCU → Linux)**: sin payload. Respuesta `0x90 CMD_MAILBOX_READ_RESP` con `[message_len: u16, message: byte[]]`.
+- **`0x41` CMD_MAILBOX_PROCESSED (MCU → Linux)**: `[message_id: u16]` (opcional).
+- **`0x42` CMD_MAILBOX_AVAILABLE (MCU → Linux)**: sin payload. Respuesta `0x92 CMD_MAILBOX_AVAILABLE_RESP` con `[count: u8]`.
+- **`0x43` CMD_MAILBOX_PUSH (MCU → Linux)**: `[message_len: u16, message: byte[]]`. Mensaje hacia Linux.
 
 ### 5.6 Sistema de archivos (0x50 – 0x5F)
 
-- **`0x50` CMD_FILE_WRITE (MCU → Linux)**: `[path_len: u8, path: char[], data_len: u16, data: byte[]]`. Tras escribir, Linux responde con `STATUS_ACK` o `STATUS_ERROR`.
-- **`0x51` CMD_FILE_READ (MCU → Linux)**: `[path_len: u8, path: char[]]`. Respuesta `0xA1 CMD_FILE_READ_RESP (Linux → MCU)` con `[data_len: u16, data: byte[]]`, truncada a 254 bytes si es necesario. Si la lectura falla, Linux envía `STATUS_ERROR` con un mensaje corto.
-- **`0x52` CMD_FILE_REMOVE (MCU → Linux)**: `[path_len: u8, path: char[]]`. El demonio contesta con `STATUS_ACK` o `STATUS_ERROR`.
+- **`0x50` CMD_FILE_WRITE (MCU → Linux)**: `[path_len: u8, path: char[], data_len: u16, data: byte[]]`.
+- **`0x51` CMD_FILE_READ (MCU → Linux)**: `[path_len: u8, path: char[]]`. Respuesta `0xA1 CMD_FILE_READ_RESP` con `[data_len: u16, data: byte[]]`.
+- **`0x52` CMD_FILE_REMOVE (MCU → Linux)**: `[path_len: u8, path: char[]]`.
 
 ### 5.7 Gestión de procesos (0x60 – 0x6F)
 
 - **`0x60` CMD_PROCESS_RUN (MCU → Linux)**
-  - Payload: `command: UTF-8 bytes` (sin prefijo de longitud). El demonio aplica la lista blanca y timeout configurados.
-  - Respuesta `0xB0 CMD_PROCESS_RUN_RESP (Linux → MCU)`: `[status: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`. Las longitudes son Big Endian y se limitan para que el total no supere 128 bytes.
+  - Payload: `command: char[]` (UTF-8). Ejecución bloqueante.
+  - Respuesta `0xB0 CMD_PROCESS_RUN_RESP`: `[status: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`.
 
 - **`0x61` CMD_PROCESS_RUN_ASYNC (MCU → Linux)**
-  - Payload: `command: UTF-8 bytes` (sin prefijo de longitud).
-  - Respuesta `0xB1 CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)`: `[process_id: u16]`. El valor `0xFFFF` indica fallo al lanzar el proceso.
+  - Payload: `command: char[]` (UTF-8). Ejecución no bloqueante.
+  - Respuesta `0xB1 CMD_PROCESS_RUN_ASYNC_RESP`: `[process_id: u16]`.
 
 - **`0x62` CMD_PROCESS_POLL (MCU → Linux)**
   - Petición: `[process_id: u16]`.
-  - Respuesta `0xB2 CMD_PROCESS_POLL_RESP (Linux → MCU)`: `[status: u8, exit_code: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`.
-    - `exit_code = 0xFF` cuando el proceso sigue en ejecución.
-    - El daemon mantiene buffers persistentes por PID, por lo que lecturas consecutivas entregan datos sin duplicados hasta que ambos buffers quedan vacíos. El `exit_code` real se conserva y se sigue enviando hasta que el MCU confirma la lectura total (ambos `len = 0`).
-    - En paralelo, se publica un mensaje MQTT con campos `stdout`/`stderr` en UTF-8 (caracteres inválidos se reemplazan) y `stdout_base64`/`stderr_base64` con la salida codificada sin pérdidas, además de los flags `stdout_truncated`/`stderr_truncated` que indican si aún quedan bytes pendientes en los buffers internos.
-    - La librería Arduino reenvía automáticamente `CMD_PROCESS_POLL` cuando un fragmento contiene datos (`stdout_len > 0` o `stderr_len > 0`), garantizando que el sketch reciba toda la salida sin intervención manual.
-     - El firmware del MCU acepta hasta 16 consultas pendientes simultáneas; si la cola está llena responde con `STATUS_ERROR` y el payload ASCII `process_poll_queue_full`.
+  - Respuesta `0xB2 CMD_PROCESS_POLL_RESP`: `[status: u8, exit_code: u8, stdout_len: u16, stdout: byte[], stderr_len: u16, stderr: byte[]]`.
 
 - **`0x63` CMD_PROCESS_KILL (MCU → Linux)**
   - Payload: `[process_id: u16]`.
-  - Respuesta: `STATUS_ACK` (`0x07`).
 
 ## 6. Consideraciones adicionales
 
-- Todos los comandos que generan `STATUS_ACK` lo hacen mediante un frame independiente (comando `0x07`).
-- Cuando se superan los límites de `MAX_PAYLOAD_SIZE`, los datos se truncan de forma silenciosa; esto aplica especialmente a `CMD_FILE_READ_RESP` y `CMD_PROCESS_*_RESP`. Los clientes deben manejar esta posibilidad y, si es necesario, solicitar reintentos segmentados.
-- Las cadenas se intercambian en UTF-8 y pueden contener bytes nulos solo si la semántica del comando lo permite (por ejemplo, binarios en mailbox o archivos).
-- El demonio publica en MQTT cualquier respuesta asíncrona relevante (por ejemplo, resultado de `CMD_PROCESS_POLL_RESP`) para que los clientes externos reciban el mismo estado que el MCU sin requerir frames adicionales.
-- El daemon persiste los buffers `stdout`/`stderr` de cada proceso hasta que se consumen por completo. Los clientes deben seguir invocando `CMD_PROCESS_POLL` hasta recibir ambos tamaños en cero, momento en el que el PID se recicla.
-- Las publicaciones MQTT resultantes admiten las extensiones de MQTT v5: si la petición original especifica `response_topic` y `correlation_data`, el daemon los reenvía intactos para correlacionar respuestas. Además, cada servicio adjunta `user_properties` (por ejemplo `bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`) y un `message_expiry_interval` apropiado para que los consumidores filtren información obsoleta.
+- **Truncado de datos:** Si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
+- **Buffers de Procesos:** Linux mantiene los buffers de `stdout`/`stderr` hasta que son leídos completamente (longitud 0).
+- **MQTT:** El demonio expone la mayoría de estas operaciones en tópicos MQTT (`br/gpio`, `br/process`, `br/datastore`, etc.) facilitando la integración externa.

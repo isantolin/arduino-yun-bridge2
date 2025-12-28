@@ -461,34 +461,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool is_system_command = false;
   
   switch (command) {
-    case CommandId::CMD_GET_VERSION: // 0
-    case CommandId::CMD_GET_FREE_MEMORY: // 1
-    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT: // 4
-      // These system commands have 0 payload length in request.
-      // If payload > 0, it must be a Status code (e.g. MALFORMED=4 has 2 bytes).
-      if (frame.header.payload_length == 0) {
-          is_system_command = true;
-      }
-      break;
-    case CommandId::CMD_LINK_SYNC: // 2
-      // LINK_SYNC has 16 bytes. STATUS_CMD_UNKNOWN (2) has 2 bytes.
-      if (frame.header.payload_length == RPC_HANDSHAKE_NONCE_LENGTH) {
-          is_system_command = true;
-      }
-      break;
-    case CommandId::CMD_LINK_RESET: // 3
-      // LINK_RESET has 0 or 7 bytes. STATUS_ERROR (3) has variable length string.
-      // Ambiguity exists if ERROR string is empty or 7 chars.
-      // However, host sends config on reset.
-      if (frame.header.payload_length == 0 || frame.header.payload_length == RPC_HANDSHAKE_CONFIG_SIZE) {
-          is_system_command = true;
-      }
-      break;
-    case CommandId::CMD_SET_BAUDRATE: // 5
-      if (frame.header.payload_length == 4) {
-          is_system_command = true;
-      }
-      break;
+    case CommandId::CMD_GET_VERSION: // 0x0A
+    case CommandId::CMD_GET_FREE_MEMORY: // 0x0B
+    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT: // 0x0E
+    case CommandId::CMD_SET_BAUDRATE: // 0x0F
+    case CommandId::CMD_LINK_SYNC: // 0x0C
+    case CommandId::CMD_LINK_RESET: // 0x0D
+        is_system_command = true;
+        break;
     default:
       // High IDs (GPIO, Console, etc) don't collide with Status (0-8)
       if (raw_command > 8) {
@@ -508,8 +488,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           _handleSystemCommand(frame);
           command_processed_internally = true;
           requires_ack = false;
-      } else if (raw_command <= 8) {
-          // Other low-ID system commands
+      } else if (raw_command <= 0x0F) { // Updated range for new System IDs
+          // Other system commands
           _handleSystemCommand(frame);
           command_processed_internally = true;
           requires_ack = false;
@@ -542,7 +522,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
               requires_ack = true;
               break;
             default:
-              // Responses logic handles others
               break;
           }
       }
@@ -646,7 +625,7 @@ bool BridgeClass::sendFrame(StatusCode status_code, const uint8_t* payload, size
 
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
   if (!_synchronized) {
-    bool allowed = (command_id <= 7) ||
+    bool allowed = (command_id <= 0x0F) || // [FIX] Updated range for new System IDs (0x00-0x0F)
                    (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_RESET_RESP));

@@ -1,6 +1,7 @@
 #include "Bridge.h"
 
 #include <limits.h>
+#include <string.h> // Agregado para asegurar memset
 
 #include "protocol/rpc_protocol.h"
 
@@ -102,9 +103,12 @@ int ConsoleClass::read() {
   uint8_t c = _rx_buffer[_rx_buffer_tail];
   _rx_buffer_tail = (_rx_buffer_tail + 1) % kRxBufferSize;
 
+  // [FIX] Only clear _xoff_sent flag if XON was successfully sent (or queued).
+  // Otherwise, we might get stuck in XOFF state if the send fails temporarily.
   if (_xoff_sent && (size_t)available() < kBufferLowWater) {
-    (void)Bridge.sendFrame(CommandId::CMD_XON);
-    _xoff_sent = false;
+    if (Bridge.sendFrame(CommandId::CMD_XON)) {
+      _xoff_sent = false;
+    }
   }
 
   return c;
@@ -148,8 +152,17 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     }
   }
 
+  // [FIX] Check return of sendFrame? 
+  // XOFF is critical. Ideally we should retry, but in _push context (ISR or poll)
+  // we can't block easily. For now, we assume best effort, but we set the flag
+  // ONLY if we attempted to send.
+  // Actually, if we fail to send XOFF, the host might overrun us. 
+  // We should definitely set _xoff_sent = true to ensure we try to recover later
+  // via XON logic, even if the XOFF frame dropped (though that's bad).
+  // Current logic:
   if (!_xoff_sent && (size_t)available() > kBufferHighWater) {
-    (void)Bridge.sendFrame(CommandId::CMD_XOFF);
-    _xoff_sent = true;
+    if (Bridge.sendFrame(CommandId::CMD_XOFF)) {
+        _xoff_sent = true;
+    }
   }
 }

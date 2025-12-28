@@ -149,12 +149,15 @@ void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
   _transport.begin(baudrate);
 
+// CORRECCIÓN AQUI: Omitir delay en tests de host
+#ifndef BRIDGE_HOST_TEST
   // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise.
   // Uses the new transport-level flushRx() method.
   unsigned long start = millis();
   while (millis() - start < 100) {
     _transport.flushRx();
   }
+#endif
 
   _shared_secret = reinterpret_cast<const uint8_t*>(secret);
   if (_shared_secret && secret_len > 0) {

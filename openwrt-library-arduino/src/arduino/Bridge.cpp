@@ -447,6 +447,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   const CommandId command = static_cast<CommandId>(raw_command);
   
   // 1. Handle Responses (Linux -> MCU)
+  // These calls update internal state but do not set 'command_processed_internally' automatically here.
   DataStore.handleResponse(frame);
   Mailbox.handleResponse(frame);
   FileSystem.handleResponse(frame);
@@ -521,6 +522,21 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
               command_processed_internally = true;
               requires_ack = true;
               break;
+            
+            // [FIX CRITICO] Agregar casos para las RESPUESTAS (Linux -> MCU)
+            // para marcarlas como procesadas y evitar CMD_UNKNOWN.
+            case CommandId::CMD_DATASTORE_GET_RESP:
+            case CommandId::CMD_MAILBOX_READ_RESP:
+            case CommandId::CMD_MAILBOX_AVAILABLE_RESP:
+            case CommandId::CMD_FILE_READ_RESP:
+            case CommandId::CMD_PROCESS_RUN_RESP:
+            case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
+            case CommandId::CMD_PROCESS_POLL_RESP:
+            case CommandId::CMD_LINK_SYNC_RESP:
+              command_processed_internally = true;
+              requires_ack = false; // Las respuestas no suelen requerir ACK
+              break;
+
             default:
               break;
           }

@@ -11,7 +11,8 @@ from yunbridge.tools import frame_debug
 
 
 def test_resolve_command_hex() -> None:
-    assert frame_debug._resolve_command("0x03") == Command.CMD_LINK_RESET.value
+    # [FIX] Updated ID: CMD_LINK_RESET is now 0x0D (13)
+    assert frame_debug._resolve_command("0x0D") == Command.CMD_LINK_RESET.value
     assert frame_debug._resolve_command("0XFF") == 255
     assert frame_debug._resolve_command("10") == Command.CMD_SET_PIN_MODE.value
 
@@ -59,8 +60,8 @@ def test_name_for_command() -> None:
         frame_debug._name_for_command(Command.CMD_GET_VERSION.value)
         == "CMD_GET_VERSION"
     )
-    # Status.OK (0) overlaps with CMD_GET_VERSION (0), so it returns the Command name.
-    # Use a Status value that doesn't overlap with Command (e.g. TIMEOUT=5, ACK=7)
+    # Status.OK (0) no longer overlaps with CMD_GET_VERSION (0x0A)
+    # But let's keep testing Status resolution
     assert frame_debug._name_for_command(Status.ACK.value) == "ACK"
     assert frame_debug._name_for_command(0xFF) == "UNKNOWN(0xFF)"
 
@@ -79,7 +80,8 @@ def test_snapshot_render() -> None:
         encoded_hex="0304",
     )
     rendered = snapshot.render()
-    assert "cmd_id=0x00 (CMD_GET_VERSION)" in rendered
+    # [FIX] Updated ID: CMD_GET_VERSION is now 0x0A
+    assert "cmd_id=0x0A (CMD_GET_VERSION)" in rendered
     assert "crc=0x12345678" in rendered
     assert "raw_frame=0102" in rendered
 

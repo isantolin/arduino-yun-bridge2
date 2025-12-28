@@ -6,12 +6,13 @@
 #include "protocol/cobs.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_frame.h"
+#include "test_constants.h"
 
 using namespace rpc;
 
 static void test_endianness_helpers() {
   uint8_t buffer[2] = {0x12, 0x34};
-  assert(read_u16_be(buffer) == 0x1234);
+  assert(read_u16_be(buffer) == TEST_CMD_ID);
   write_u16_be(buffer, 0xCDEF);
   assert(buffer[0] == 0xCD && buffer[1] == 0xEF);
 }
@@ -28,7 +29,7 @@ static void test_builder_roundtrip() {
   FrameParser parser;
   Frame frame{};
 
-  const uint16_t command_id = 0x42AB;
+  const uint16_t command_id = TEST_CMD_ID;
   const uint8_t payload[] = {0x00, 0x01, RPC_UINT8_MASK, 0x02, 0x00};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
@@ -59,7 +60,7 @@ static void test_builder_payload_limit() {
   FrameBuilder builder;
   std::vector<uint8_t> payload(MAX_PAYLOAD_SIZE + 1, 0x01);
   uint8_t buffer[MAX_RAW_FRAME_SIZE] = {0};
-  size_t len = builder.build(buffer, sizeof(buffer), 0x1234, payload.data(), payload.size());
+  size_t len = builder.build(buffer, sizeof(buffer), TEST_CMD_ID, payload.data(), payload.size());
   assert(len == 0);
 }
 

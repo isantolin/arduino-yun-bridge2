@@ -80,8 +80,8 @@ Los comandos de sistema se han reasignado al rango `0x0A` en adelante para evita
   - Petición: `[baudrate: u32]`. Cambia la velocidad del puerto serie en caliente.
   - Respuesta (`0x86 CMD_SET_BAUDRATE_RESP`): sin payload (confirmación antes del cambio).
 
-- **`0x08` CMD_XOFF (MCU → Linux)** / **`0x09` CMD_XON (MCU → Linux)**
-  - Sin payload. Controlan el flujo de datos de la consola para evitar desbordamientos en el MCU. Nota: `0x08` comparte valor con `STATUS_OVERFLOW`.
+- **`0x70` CMD_XOFF (MCU → Linux)** / **`0x71` CMD_XON (MCU → Linux)**
+  - Sin payload. Controlan el flujo de datos de la consola para evitar desbordamientos en el MCU.
 
 ### 5.2 GPIO (0x10 – 0x1F)
 

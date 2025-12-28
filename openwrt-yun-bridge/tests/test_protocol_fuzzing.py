@@ -5,16 +5,16 @@ import pytest
 from cobs import cobs
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import CRC_COVERED_HEADER_SIZE
+from tests.test_constants import TEST_RANDOM_SEED
 
 # Deterministic seed for reproducibility
-RANDOM_SEED = 0xDEADBEEF
 FUZZ_ITERATIONS = 5000
 
 
 @pytest.mark.fuzz
 def test_frame_parsing_resilience_to_fuzzing():
     """Fuzzing test to ensure Frame.from_bytes never crashes with unhandled exceptions."""
-    random.seed(RANDOM_SEED)
+    random.seed(TEST_RANDOM_SEED)
 
     valid_exceptions = (ValueError, struct.error, cobs.DecodeError)
 
@@ -38,7 +38,7 @@ def test_frame_parsing_resilience_to_fuzzing():
 @pytest.mark.fuzz
 def test_cobs_decoding_resilience():
     """Fuzzing test for COBS decoding wrapper."""
-    random.seed(RANDOM_SEED)
+    random.seed(TEST_RANDOM_SEED)
 
     for i in range(FUZZ_ITERATIONS):
         length = random.randint(0, 200)
@@ -56,7 +56,7 @@ def test_cobs_decoding_resilience():
 @pytest.mark.fuzz
 def test_frame_header_parsing_resilience():
     """Specifically target the header parsing logic."""
-    random.seed(RANDOM_SEED)
+    random.seed(TEST_RANDOM_SEED)
 
     for i in range(FUZZ_ITERATIONS):
         # Header is usually small, let's fuzz around that size

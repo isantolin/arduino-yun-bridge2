@@ -16,6 +16,7 @@
 #include "protocol/cobs.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_frame.h"
+#include "test_constants.h"
 
 // Debug trace macro
 #define TEST_TRACE(msg) std::cout << "[TEST] " << msg << std::endl;
@@ -126,7 +127,7 @@ void process_poll_handler_trampoline(
       state->stderr_text.clear();
   }
 
-  if (state->pid_to_requeue >= 0 && exit_code == 0x7F) {
+  if (state->pid_to_requeue >= 0 && exit_code == TEST_EXIT_CODE) {
       Process.poll(state->pid_to_requeue);
   }
 }
@@ -606,14 +607,14 @@ void test_process_kill_encodes_pid() {
   Bridge.begin();
   Bridge._synchronized = true; // Manually sync for test
 
-  Process.kill(0x1234);
+  Process.kill(TEST_CMD_ID);
   auto frames = decode_frames(stream.data());
   assert(frames.size() == 1);
   const Frame& frame = frames.front();
   assert(frame.header.command_id == command_value(CommandId::CMD_PROCESS_KILL));
   assert(frame.header.payload_length == 2);
   uint16_t encoded = read_u16_be(frame.payload);
-  assert(encoded == 0x1234);
+  assert(encoded == TEST_CMD_ID);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_KILL));
   stream.clear();
   TEST_TRACE("PASS: test_process_kill_encodes_pid");
@@ -658,7 +659,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   // FIXED: Use memset for raw arrays
   std::memset(Process._pending_process_pids, 0, sizeof(Process._pending_process_pids));
 
-  const uint16_t pid = 0x1234;
+  const uint16_t pid = TEST_CMD_ID;
   bool enqueued = Process._pushPendingProcessPid(pid);
   assert(enqueued);
 
@@ -675,7 +676,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
   frame.header.payload_length = 6 + sizeof(stdout_text);
   uint8_t* cursor = frame.payload;
   *cursor++ = status_value(StatusCode::STATUS_OK);
-  *cursor++ = 0x7F;
+  *cursor++ = TEST_EXIT_CODE;
   write_u16_be(cursor, sizeof(stdout_text));
   cursor += 2;
   std::memcpy(cursor, stdout_text, sizeof(stdout_text));
@@ -688,7 +689,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
 
   assert(poll_state.called);
   assert(poll_state.status == StatusCode::STATUS_OK);
-  assert(poll_state.exit_code == 0x7F);
+  assert(poll_state.exit_code == TEST_EXIT_CODE);
   assert(poll_state.stdout_text == "ok");
   assert(poll_state.stderr_text.empty());
   ProcessPollHandlerState::instance = nullptr;

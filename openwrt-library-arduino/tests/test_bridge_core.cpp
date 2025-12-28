@@ -13,10 +13,22 @@
 #include "protocol/cobs.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_frame.h"
+#include "test_constants.h"
 
 // Define global Serial instances for the stub
 HardwareSerial Serial;
 HardwareSerial Serial1;
+
+// Global instances required by Bridge.cpp linkage
+ConsoleClass Console;
+DataStoreClass DataStore;
+MailboxClass Mailbox;
+FileSystemClass FileSystem;
+ProcessClass Process;
+// Note: Bridge instance is NOT defined globally here to allow local instantiation in tests,
+// BUT Bridge.cpp/Console.cpp might refer to 'Bridge'. 
+// We need a global 'Bridge' for Console.cpp to link.
+BridgeClass Bridge(Serial1);
 
 // Mock Stream
 class MockStream : public Stream {
@@ -174,7 +186,7 @@ void test_bridge_flow_control() {
     stream.tx_buffer.clear();
     
     // Inject enough bytes to trigger XOFF (High Water Mark = 48)
-    std::vector<uint8_t> data(50, 0xAA);
+    std::vector<uint8_t> data(50, TEST_PAYLOAD_BYTE);
     data.push_back(0x00); // Delimiter to flush garbage so parser resets
     stream.inject_rx(data);
     
@@ -260,7 +272,7 @@ void test_bridge_malformed_frame() {
 
     // Inject garbage data into the stream to trigger malformed/overflow logic
     // This tests the parser's resilience
-    std::vector<uint8_t> garbage(300, 0xFF); 
+    std::vector<uint8_t> garbage(300, rpc::RPC_UINT8_MASK); 
     stream.inject_rx(garbage);
     stream.inject_rx({0x00}); // Terminator
 

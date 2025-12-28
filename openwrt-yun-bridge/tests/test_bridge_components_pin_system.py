@@ -20,6 +20,7 @@ from yunbridge.state.context import (
     RuntimeState,
 )
 from .mqtt_helpers import make_inbound_message
+from tests.test_constants import TEST_CMD_ID, TEST_RANDOM_SEED
 
 
 def _make_inbound(
@@ -522,8 +523,8 @@ def test_mcu_tx_debug_response_publishes_to_mqtt(
 
         # Construct response payload (9 bytes)
         # pending_tx_count=5, awaiting_ack=1, retry_count=2
-        TEST_LAST_CMD = 0x1234
-        TEST_LAST_MILLIS = 0xDEADBEEF
+        TEST_LAST_CMD = TEST_CMD_ID
+        TEST_LAST_MILLIS = TEST_RANDOM_SEED
 
         payload = struct.pack(
             ">BBB" + protocol.UINT16_FORMAT[1] + protocol.UINT32_FORMAT[1],

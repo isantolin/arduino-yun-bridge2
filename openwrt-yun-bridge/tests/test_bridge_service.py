@@ -174,7 +174,7 @@ def test_sync_link_rejects_invalid_handshake_tag(
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
-                    tag[0] ^= 0xFF
+                    tag[0] ^= rpc_protocol.UINT8_MASK
                 response = nonce + bytes(tag)
                 await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
@@ -335,7 +335,7 @@ def test_sync_auth_failure_schedules_backoff(
 
         nonce_one, tag_one = _prime_handshake(3)
         broken_tag_one = bytearray(tag_one)
-        broken_tag_one[0] ^= 0xFF
+        broken_tag_one[0] ^= rpc_protocol.UINT8_MASK
         await service._handle_link_sync_resp(nonce_one + bytes(broken_tag_one))
         first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert first_delay > 0
@@ -348,7 +348,7 @@ def test_sync_auth_failure_schedules_backoff(
         fake_clock.advance(first_delay + 0.5)
         nonce_two, tag_two = _prime_handshake(4)
         broken_tag_two = bytearray(tag_two)
-        broken_tag_two[-1] ^= 0xFF
+        broken_tag_two[-1] ^= rpc_protocol.UINT8_MASK
         await service._handle_link_sync_resp(nonce_two + bytes(broken_tag_two))
         second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert second_delay > first_delay
@@ -416,7 +416,7 @@ def test_on_serial_connected_raises_on_secret_mismatch(
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
-                    tag[0] ^= 0xFF
+                    tag[0] ^= rpc_protocol.UINT8_MASK
                 await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     nonce + bytes(tag),

@@ -2,11 +2,11 @@ import pytest
 
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc import protocol
+from tests.test_constants import TEST_CMD_ID
 
 
 def test_build_and_parse_round_trip() -> None:
     payload = b"\x01\x02\x03"
-    TEST_CMD_ID = 0x1234
     raw = Frame.build(TEST_CMD_ID, payload)
 
     assert (

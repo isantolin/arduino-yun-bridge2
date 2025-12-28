@@ -6,14 +6,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc.protocol import Command, Status, UINT8_MASK
 from yunbridge.tools import frame_debug
+from tests.test_constants import TEST_BROKEN_CRC
 
 
 def test_resolve_command_hex() -> None:
     # [FIX] Updated ID: CMD_LINK_RESET is now 0x0D (13)
     assert frame_debug._resolve_command("0x0D") == Command.CMD_LINK_RESET.value
-    assert frame_debug._resolve_command("0XFF") == 255
+    assert frame_debug._resolve_command("0XFF") == UINT8_MASK
     assert frame_debug._resolve_command("10") == Command.CMD_SET_PIN_MODE.value
 
 
@@ -63,7 +64,7 @@ def test_name_for_command() -> None:
     # Status.OK (0) no longer overlaps with CMD_GET_VERSION (0x0A)
     # But let's keep testing Status resolution
     assert frame_debug._name_for_command(Status.ACK.value) == "ACK"
-    assert frame_debug._name_for_command(0xFF) == "UNKNOWN(0xFF)"
+    assert frame_debug._name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
 
 
 def test_snapshot_render() -> None:
@@ -71,7 +72,7 @@ def test_snapshot_render() -> None:
         command_id=Command.CMD_GET_VERSION.value,
         command_name="CMD_GET_VERSION",
         payload_length=5,
-        crc=0x12345678,
+        crc=TEST_BROKEN_CRC,
         raw_length=10,
         cobs_length=12,
         expected_serial_bytes=13,
@@ -82,7 +83,7 @@ def test_snapshot_render() -> None:
     rendered = snapshot.render()
     # [FIX] Updated ID: CMD_GET_VERSION is now 0x0A
     assert "cmd_id=0x0A (CMD_GET_VERSION)" in rendered
-    assert "crc=0x12345678" in rendered
+    assert f"crc=0x{TEST_BROKEN_CRC:08X}" in rendered
     assert "raw_frame=0102" in rendered
 
 

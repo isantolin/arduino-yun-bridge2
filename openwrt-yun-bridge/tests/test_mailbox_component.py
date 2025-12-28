@@ -25,6 +25,7 @@ from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.mailbox import MailboxComponent
 from yunbridge.state.context import RuntimeState
+from tests.test_constants import TEST_MSG_ID
 
 
 class EnqueueHook(Protocol):
@@ -98,7 +99,6 @@ def test_handle_processed_publishes_json(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    TEST_MSG_ID = 0x1234
     payload = struct.pack(protocol.UINT16_FORMAT, TEST_MSG_ID)
     asyncio.run(component.handle_processed(payload))
 

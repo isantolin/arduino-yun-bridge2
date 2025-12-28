@@ -149,7 +149,6 @@ void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
   _transport.begin(baudrate);
 
-// [CORRECCIÓN] Omitir el delay de purgado en los tests de host para evitar bucles infinitos
 #ifndef BRIDGE_HOST_TEST
   // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise.
   // Uses the new transport-level flushRx() method.
@@ -792,7 +791,9 @@ bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
   }
   frame = _pending_tx_frames[_pending_tx_head];
   _pending_tx_head = (_pending_tx_head + 1) % kMaxPendingTxFrames;
-  _pending_tx_count++;
+  
+  // [CORREGIDO] Debe ser --, no ++
+  _pending_tx_count--; 
   return true;
 }
 

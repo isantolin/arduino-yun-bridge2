@@ -447,6 +447,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   const CommandId command = static_cast<CommandId>(raw_command);
   
   // 1. Handle Responses (Linux -> MCU)
+  // These calls update internal state but do not set 'command_processed_internally' automatically here.
   DataStore.handleResponse(frame);
   Mailbox.handleResponse(frame);
   FileSystem.handleResponse(frame);
@@ -471,6 +472,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         break;
     default:
       // High IDs (GPIO, Console, etc) don't collide with Status (0-8)
+      // [FIX] XON (0x09) is also a system/flow command, so we use > 8
       if (raw_command > 8) {
           is_system_command = true;
       }
@@ -697,8 +699,8 @@ void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
 #endif
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  // [FIX] Status codes (0-8) and Flow Control do NOT require ACK
-  if (command_id <= 8) { 
+  // [FIX] Status codes (0-8) and Flow Control (XON=9) do NOT require ACK
+  if (command_id <= 9) { 
       return false; 
   }
   return command_id > rpc::to_underlying(StatusCode::STATUS_ACK);
@@ -839,3 +841,4 @@ void BridgeClass::requestAnalogRead(uint8_t pin) {
 void BridgeClass::requestGetFreeMemory() {
   (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY);
 }
+

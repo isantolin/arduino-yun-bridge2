@@ -149,6 +149,15 @@ void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
   _transport.begin(baudrate);
 
+  // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise
+  // This prevents the first frame (CMD_LINK_RESET) from being read as MALFORMED due to prefix bytes.
+  unsigned long start = millis();
+  while (millis() - start < 100) {
+    while (_transport.available()) {
+      _transport.read();
+    }
+  }
+
   _shared_secret = reinterpret_cast<const uint8_t*>(secret);
   if (_shared_secret && secret_len > 0) {
     _shared_secret_len = secret_len;
@@ -778,7 +787,7 @@ bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
   }
   frame = _pending_tx_frames[_pending_tx_head];
   _pending_tx_head = (_pending_tx_head + 1) % kMaxPendingTxFrames;
-  _pending_tx_count--;
+  _pending_tx_count++;
   return true;
 }
 

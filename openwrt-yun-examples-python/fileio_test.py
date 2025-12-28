@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import argparse
 
 from yunbridge_client import Bridge, dump_client_env
 
@@ -14,8 +15,26 @@ logging.basicConfig(
 
 async def main() -> None:
     """Run main test logic."""
+    parser = argparse.ArgumentParser(description="File I/O feature test.")
+    parser.add_argument("--host", default=None, help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    args = parser.parse_args()
+
     dump_client_env(logging.getLogger(__name__))
-    bridge = Bridge()
+
+    bridge_args = {}
+    if args.host:
+        bridge_args["host"] = args.host
+    if args.port:
+        bridge_args["port"] = args.port
+    if args.user:
+        bridge_args["username"] = args.user
+    if args.password:
+        bridge_args["password"] = args.password
+
+    bridge = Bridge(**bridge_args)
     await bridge.connect()
 
     test_filename: str = "/tmp/test_file.txt"

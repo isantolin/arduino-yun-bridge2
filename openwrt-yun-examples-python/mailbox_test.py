@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+import argparse
 
 from yunbridge_client import Bridge, dump_client_env
 
@@ -14,18 +15,41 @@ logging.basicConfig(
 
 async def main() -> None:
     """Run main test logic."""
-    dump_client_env(logging.getLogger(__name__))
-    bridge = Bridge()
-    await bridge.connect()
+    parser = argparse.ArgumentParser(description="Test mailbox feature.")
+    parser.add_argument("--host", default=None, help="MQTT Broker Host")
+    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
+    parser.add_argument("--user", default=None, help="MQTT Username")
+    parser.add_argument("--password", default=None, help="MQTT Password")
+    args = parser.parse_args()
 
-    message_to_send: str = "hello_from_async_client"
+    dump_client_env(logging.getLogger(__name__))
+
+    # Build arguments dict
+    bridge_args = {}
+    if args.host:
+        bridge_args["host"] = args.host
+    if args.port:
+        bridge_args["port"] = args.port
+    if args.user:
+        bridge_args["username"] = args.user
+    if args.password:
+        bridge_args["password"] = args.password
+
+    # Pass credentials to the constructor
+    bridge = Bridge(**bridge_args)
 
     try:
-        logging.info("Sending message to mailbox: '%s'", message_to_send)
-        await bridge.mailbox_write(message_to_send)
-        logging.info("Message sent. A listener would be needed to confirm processing.")
+        await bridge.connect()
 
-        await asyncio.sleep(3)
+        message_to_send: str = "hello_from_async_client"
+        logging.info("Sending message to mailbox: '%s'", message_to_send)
+        
+        # Send the message
+        await bridge.mailbox_write(message_to_send)
+        logging.info("Message sent successfully.")
+
+        # Keep connection open briefly to ensure transmission
+        await asyncio.sleep(2)
 
     except Exception as e:
         logging.error(f"An error occurred: {e}")
@@ -37,3 +61,4 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
+    

@@ -10,7 +10,7 @@ BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
       _builder(),
       _flow_paused(false),
       _last_cobs_len(0) {
-        // [MODIFIED] Native array initialization
+        // Native array initialization
         memset(_raw_frame_buffer, 0, sizeof(_raw_frame_buffer));
         memset(_last_cobs_frame, 0, sizeof(_last_cobs_frame));
       }
@@ -36,6 +36,15 @@ void BridgeTransport::flush() {
         _hardware_serial->flush();
     } else {
         _stream.flush();
+    }
+}
+
+// [NEW] Implementation of RX Flush
+void BridgeTransport::flushRx() {
+    // HardwareSerial and Stream both support available/read.
+    // Since _stream is a reference to the active stream, we can use it directly.
+    while (_stream.available() > 0) {
+        _stream.read();
     }
 }
 
@@ -70,7 +79,6 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
 }
 
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
-    // [MODIFIED] Use native array pointer and sizeof
     size_t raw_len = _builder.build(
         _raw_frame_buffer,
         sizeof(_raw_frame_buffer),
@@ -82,7 +90,6 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
         return false;
     }
 
-    // [MODIFIED] Use native array pointer
     size_t cobs_len = cobs::encode(_raw_frame_buffer, raw_len, _last_cobs_frame);
     _last_cobs_len = cobs_len;
 
@@ -145,7 +152,6 @@ bool BridgeTransport::retransmitLastFrame() {
     
     size_t written = 0;
     if (_hardware_serial != nullptr) {
-        // [MODIFIED] Use native array pointer
         written = _hardware_serial->write(_last_cobs_frame, _last_cobs_len);
     } else {
         written = _stream.write(_last_cobs_frame, _last_cobs_len);
@@ -182,4 +188,4 @@ void BridgeTransport::reset() {
     _parser.reset();
     _flow_paused = false;
 }
-} // namespace bridge
+}

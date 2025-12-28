@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include <Stream.h>
-// [REMOVED] #include "../bridge_array.h" -> Deleted file
 #include "protocol/rpc_frame.h"
 #include "protocol/cobs.h"
 
@@ -15,7 +14,8 @@ public:
     
     void begin(unsigned long baudrate);
     void setBaudrate(unsigned long baudrate);
-    void flush();
+    void flush();     // Flushes TX
+    void flushRx();   // [NEW] Flushes RX (drops input buffer)
     
     // Returns true if a frame was parsed and is ready in rxFrame
     bool processInput(rpc::Frame& rxFrame);
@@ -54,7 +54,7 @@ public:
     rpc::FrameBuilder _builder;
     bool _flow_paused;
     
-    // [MODIFIED] Native C Arrays instead of bridge::array
+    // Native C Arrays instead of bridge::array
     uint8_t _raw_frame_buffer[rpc::MAX_RAW_FRAME_SIZE];
     uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
     size_t _last_cobs_len;

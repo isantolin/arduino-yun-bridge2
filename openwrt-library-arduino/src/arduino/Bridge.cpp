@@ -60,7 +60,7 @@ extern "C" char __heap_start;
 extern "C" char* __brkval;
 #endif
 
-// [HARDENING] Variables estáticas para gestión no bloqueante del cambio de baudrate
+// Variables estáticas para gestión no bloqueante del cambio de baudrate
 static uint32_t s_pending_baudrate = 0;
 static unsigned long s_baudrate_change_timestamp = 0;
 
@@ -149,13 +149,11 @@ void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
   _transport.begin(baudrate);
 
-  // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise
-  // This prevents the first frame (CMD_LINK_RESET) from being read as MALFORMED due to prefix bytes.
+  // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise.
+  // Uses the new transport-level flushRx() method.
   unsigned long start = millis();
   while (millis() - start < 100) {
-    while (_transport.available()) {
-      _transport.read();
-    }
+    _transport.flushRx();
   }
 
   _shared_secret = reinterpret_cast<const uint8_t*>(secret);
@@ -664,8 +662,6 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
 
   return success;
 }
-
-
 
 #if BRIDGE_DEBUG_FRAMES
 BridgeClass::FrameDebugSnapshot BridgeClass::getTxDebugSnapshot() const {

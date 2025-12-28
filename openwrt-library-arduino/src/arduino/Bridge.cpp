@@ -149,6 +149,7 @@ void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
   _transport.begin(baudrate);
 
+// [FIX] Omitir el delay de purgado en los tests de host
 #ifndef BRIDGE_HOST_TEST
   // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise.
   // Uses the new transport-level flushRx() method.
@@ -461,13 +462,30 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
     case CommandId::CMD_SET_BAUDRATE:
     case CommandId::CMD_LINK_RESET:
-      if (frame.header.payload_length > 0 && command != CommandId::CMD_SET_BAUDRATE) {
+      // [FIX] Logic to distinguish commands from Status frames which might share ID values
+      if (frame.header.payload_length > 0 && 
+          command != CommandId::CMD_SET_BAUDRATE && 
+          command != CommandId::CMD_LINK_RESET) {
          // Collision with STATUS codes. If payload exists, treat as Status.
          command_processed_internally = false;
       } else {
-         _handleSystemCommand(frame);
-         command_processed_internally = true;
-         requires_ack = (command == CommandId::CMD_LINK_RESET);
+         if (command == CommandId::CMD_LINK_RESET) {
+             // [FIX] Enviar ACK inmediatamente antes de resetear el estado del enlace
+             // Esto soluciona el problema de que el MCU se resetea y borra el buffer antes de enviar el ACK.
+             uint8_t ack_payload[2];
+             rpc::write_u16_be(ack_payload, raw_command);
+             (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+             _transport.flush(); // Forzar salida física
+             
+             _handleSystemCommand(frame);
+             command_processed_internally = true;
+             requires_ack = false; // Ya enviado manualmente
+         } else {
+             _handleSystemCommand(frame);
+             command_processed_internally = true;
+             // Otros comandos de sistema no requieren ACK en la lógica original (excepto Reset)
+             requires_ack = false;
+         }
       }
       break;
     case CommandId::CMD_LINK_SYNC:
@@ -633,7 +651,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
     }
   }
 
-  // [CORRECCIÓN] No encolar comandos que no requieren ACK
+  // [FIX] No encolar comandos que no requieren ACK (como XON/XOFF)
   if (!_requiresAck(command_id)) {
     return _sendFrameImmediate(command_id, payload, length);
   }
@@ -675,7 +693,7 @@ void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
 #endif
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  // [CORRECCIÓN] XON y XOFF son "fire-and-forget" para control de flujo prioritario
+  // [FIX] XON y XOFF son "fire-and-forget" para control de flujo prioritario
   if (command_id == rpc::to_underlying(CommandId::CMD_XON) || 
       command_id == rpc::to_underlying(CommandId::CMD_XOFF)) {
       return false;

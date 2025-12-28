@@ -32,6 +32,9 @@ constexpr uint32_t RPC_CRC_POLYNOMIAL = 3988292384;
 constexpr uint8_t RPC_FRAME_DELIMITER = 0;
 constexpr uint8_t RPC_DIGITAL_LOW = 0;
 constexpr uint8_t RPC_DIGITAL_HIGH = 1;
+constexpr uint8_t RPC_TEST_PAYLOAD_BYTE = 170;
+constexpr uint8_t RPC_TEST_MARKER_BYTE = 85;
+constexpr uint8_t RPC_TEST_EXIT_CODE = 127;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;

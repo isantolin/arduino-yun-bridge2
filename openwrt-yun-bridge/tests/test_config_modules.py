@@ -10,6 +10,7 @@ import pytest
 
 from yunbridge import common
 from yunbridge import const
+from yunbridge.rpc import protocol
 from yunbridge.config import logging as logging_module
 from yunbridge.config import settings
 
@@ -18,7 +19,7 @@ def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "serial_port": "/dev/ttyUSB0",
         "serial_baud": 9600,
-        "serial_safe_baud": 115200,
+        "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
         "mqtt_host": "localhost",
         "mqtt_port": 1883,
         "mqtt_user": None,
@@ -143,7 +144,7 @@ def test_load_runtime_config_applies_env_and_defaults(
 def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
     raw_config = {
         "serial_port": "/dev/ttyS1",
-        "serial_baud": "115200",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
         "mqtt_host": "broker",
         "mqtt_port": "8883",
         "mqtt_tls": "1",
@@ -423,7 +424,7 @@ def test_configure_logging_syslog_handler(
     config = settings.RuntimeConfig(
         serial_port="/dev/ttyUSB0",
         serial_baud=9600,
-        serial_safe_baud=115200,
+        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,

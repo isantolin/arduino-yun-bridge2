@@ -23,6 +23,9 @@ crc_polynomial = 0xEDB88320
 frame_delimiter = 0x00
 digital_low = 0x00
 digital_high = 0x01
+test_payload_byte = 0xAA
+test_marker_byte = 0x55
+test_exit_code = 0x7F
 
 [handshake]
 nonce_length = 16

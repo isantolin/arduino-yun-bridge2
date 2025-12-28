@@ -53,6 +53,10 @@ def main():
     # Path to the Python package source (Required for PYTHONPATH)
     package_root = repo_root / "openwrt-yun-bridge"
 
+    # Add package to sys.path for direct imports in this script
+    sys.path.insert(0, str(package_root))
+    from yunbridge.rpc import protocol
+
     # Path to Firmware
     base_build_path = repo_root / "openwrt-library-arduino/build"
     firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
@@ -124,7 +128,7 @@ def main():
         
         # Configuration injection to pass RuntimeConfig validation
         daemon_env["YUNBRIDGE_PORT"] = SOCAT_PORT0
-        daemon_env["YUNBRIDGE_BAUDRATE"] = "115200"
+        daemon_env["YUNBRIDGE_BAUDRATE"] = str(protocol.DEFAULT_BAUDRATE)
         
         # Security & Transport settings for Test Environment
         daemon_env["SERIAL_SHARED_SECRET"] = "emulation_test_secret_xyz" 

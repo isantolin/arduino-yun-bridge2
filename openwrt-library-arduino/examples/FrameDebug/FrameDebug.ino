@@ -57,7 +57,7 @@ void clearSnapshotStats() {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(rpc::RPC_DEFAULT_BAUDRATE);
   // NOTE: Removed blocking wait for Serial to allow daemon handshake
   // independent of USB connection.
   /*

@@ -2,11 +2,12 @@
 #define TEST_CONSTANTS_H
 
 #include <stdint.h>
+#include "protocol/rpc_protocol.h"
 
 constexpr uint16_t TEST_CMD_ID = 0x1234;
 constexpr uint32_t TEST_RANDOM_SEED = 0xDEADBEEF;
-constexpr uint8_t TEST_PAYLOAD_BYTE = 0xAA;
-constexpr uint8_t TEST_MARKER_BYTE = 0x55;
-constexpr uint8_t TEST_EXIT_CODE = 0x7F;
+constexpr uint8_t TEST_PAYLOAD_BYTE = rpc::RPC_TEST_PAYLOAD_BYTE;
+constexpr uint8_t TEST_MARKER_BYTE = rpc::RPC_TEST_MARKER_BYTE;
+constexpr uint8_t TEST_EXIT_CODE = rpc::RPC_TEST_EXIT_CODE;
 
 #endif // TEST_CONSTANTS_H

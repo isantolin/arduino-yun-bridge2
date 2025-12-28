@@ -38,7 +38,7 @@ def runtime_service() -> BridgeService:
     config = RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_SERIAL_BAUD,
-        serial_safe_baud=115200,
+        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,

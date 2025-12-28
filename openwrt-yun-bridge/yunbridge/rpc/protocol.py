@@ -25,6 +25,9 @@ CRC_POLYNOMIAL: Final[int] = 3988292384
 FRAME_DELIMITER: Final[bytes] = bytes([0])
 DIGITAL_LOW: Final[int] = 0
 DIGITAL_HIGH: Final[int] = 1
+TEST_PAYLOAD_BYTE: Final[int] = 170
+TEST_MARKER_BYTE: Final[int] = 85
+TEST_EXIT_CODE: Final[int] = 127
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16

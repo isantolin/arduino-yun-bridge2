@@ -115,7 +115,7 @@ void test_bridge_begin() {
     BridgeClass bridge(stream);
     
     std::cout << "  [DEBUG] Calling bridge.begin" << std::endl;
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     std::cout << "  [DEBUG] bridge.begin returned" << std::endl;
     
     // Verify initial state
@@ -127,7 +127,7 @@ void test_bridge_begin() {
 void test_bridge_send_frame() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear(); // Clear handshake frames
 
     uint8_t payload[] = {0x01, 0x02, 0x03};
@@ -141,7 +141,7 @@ void test_bridge_send_frame() {
 void test_bridge_process_rx() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Construct a valid frame (CMD_GET_VERSION)
     std::vector<uint8_t> payload = {0x01, 0x02, 0x03};
@@ -160,7 +160,7 @@ void test_bridge_handshake() {
     BridgeClass bridge(stream);
     
     const char* secret = "secret";
-    bridge.begin(115200, secret, strlen(secret));
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret, strlen(secret));
     stream.tx_buffer.clear();
     
     // Create a 16-byte nonce
@@ -182,7 +182,7 @@ void test_bridge_handshake() {
 void test_bridge_flow_control() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
     
     // Inject enough bytes to trigger XOFF (High Water Mark = 48)
@@ -224,7 +224,7 @@ void test_bridge_flow_control() {
 void test_bridge_request_digital_read_no_op() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear(); // Clear handshake frames
 
     bridge.requestDigitalRead(13);
@@ -236,7 +236,7 @@ void test_bridge_request_digital_read_no_op() {
 void test_bridge_file_write_incoming() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
     // Construct a fake CMD_FILE_WRITE frame
@@ -267,7 +267,7 @@ void test_bridge_file_write_incoming() {
 void test_bridge_malformed_frame() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
     // Inject garbage data into the stream to trigger malformed/overflow logic
@@ -285,7 +285,7 @@ void test_bridge_malformed_frame() {
 void test_file_write_eeprom_parsing() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Case 1: Valid EEPROM write
     // Path: "/eeprom/10" (len 10)
@@ -309,7 +309,7 @@ void test_file_write_eeprom_parsing() {
 void test_file_write_malformed_path() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Case 2: Malformed path length (claim 100 bytes, provide 5)
     std::vector<uint8_t> payload;
@@ -329,7 +329,7 @@ void test_file_write_malformed_path() {
 void test_bridge_crc_mismatch() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
     // Build a valid frame
@@ -382,7 +382,7 @@ void test_bridge_crc_mismatch() {
 void test_bridge_unknown_command() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
     // Command ID 0xFFFF is likely unknown
@@ -400,7 +400,7 @@ void test_bridge_unknown_command() {
 void test_bridge_payload_too_large() {
     MockStream stream;
     BridgeClass bridge(stream);
-    bridge.begin(115200);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
     // Max payload is 128 (RPC_BUFFER_SIZE/MAX_PAYLOAD_SIZE)

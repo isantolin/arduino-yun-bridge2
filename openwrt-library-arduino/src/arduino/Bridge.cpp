@@ -149,7 +149,7 @@ void BridgeClass::begin(
     unsigned long baudrate, const char* secret, size_t secret_len) {
   _transport.begin(baudrate);
 
-// CORRECCIÓN AQUI: Omitir delay en tests de host
+// [CORRECCIÓN] Omitir el delay de purgado en los tests de host para evitar bucles infinitos
 #ifndef BRIDGE_HOST_TEST
   // [HARDENING] Flush RX buffer to remove bootloader garbage or Linux console noise.
   // Uses the new transport-level flushRx() method.
@@ -634,6 +634,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
     }
   }
 
+  // [CORRECCIÓN] No encolar comandos que no requieren ACK
   if (!_requiresAck(command_id)) {
     return _sendFrameImmediate(command_id, payload, length);
   }
@@ -675,6 +676,11 @@ void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
 #endif
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
+  // [CORRECCIÓN] XON y XOFF son "fire-and-forget" para control de flujo prioritario
+  if (command_id == rpc::to_underlying(CommandId::CMD_XON) || 
+      command_id == rpc::to_underlying(CommandId::CMD_XOFF)) {
+      return false;
+  }
   return command_id > rpc::to_underlying(StatusCode::STATUS_ACK);
 }
 

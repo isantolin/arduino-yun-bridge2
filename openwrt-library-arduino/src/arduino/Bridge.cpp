@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdio.h> // Added for debug prints
 #if __has_include(<Crypto.h>)
   #include <Crypto.h>
 #else
@@ -647,6 +648,9 @@ bool BridgeClass::sendFrame(StatusCode status_code, const uint8_t* payload, size
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
+#ifdef BRIDGE_HOST_TEST
+  printf("[Bridge] _sendFrame ID=%u AwaitingAck=%d PendingCount=%d\n", command_id, _awaiting_ack, _pending_tx_count);
+#endif
   if (!_synchronized) {
     bool allowed = (command_id <= 0x0F) || // [FIX] Updated range for new System IDs (0x00-0x0F)
                    (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
@@ -659,10 +663,16 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
 
   // [FIX] No encolar comandos que no requieren ACK (como XON/XOFF o Status)
   if (!_requiresAck(command_id)) {
+#ifdef BRIDGE_HOST_TEST
+    printf("[Bridge] _sendFrame: No ACK required for ID=%u, sending immediate\n", command_id);
+#endif
     return _sendFrameImmediate(command_id, payload, length);
   }
 
   if (_awaiting_ack) {
+#ifdef BRIDGE_HOST_TEST
+    printf("[Bridge] _sendFrame: Awaiting ACK, enqueuing ID=%u\n", command_id);
+#endif
     if (_enqueuePendingTx(command_id, payload, length)) {
       return true;
     }
@@ -685,6 +695,9 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
     _retry_count = 0;
     _last_send_millis = millis();
     _last_command_id = command_id;
+#ifdef BRIDGE_HOST_TEST
+    printf("[Bridge] _sendFrameImmediate: ID=%u sent, set _awaiting_ack=true\n", command_id);
+#endif
   }
 
   return success;

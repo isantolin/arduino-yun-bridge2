@@ -47,7 +47,8 @@ fi
 
 # Always clean up old coverage data to prevent stale references
 find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
-find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
+# .gcno files are generated during compilation, so we should ONLY delete them if we are rebuilding.
+# find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
 
 if [[ ! -x "${BUILD_DIR}/test_protocol" || ! -x "${BUILD_DIR}/test_bridge_components" ]]; then
   RUN_BUILD=1

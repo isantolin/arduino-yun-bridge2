@@ -1,8 +1,12 @@
-#include <cassert>
+#include <iostream>
+#include <cstdlib>
+#define TEST_ASSERT(cond) if(!(cond)) { std::cerr << "[FATAL] Assertion failed at line " << __LINE__ << ": " << #cond << std::endl; std::abort(); }
+
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <cassert>
 #include <new>
 #include <string>
 #include <vector>
@@ -304,9 +308,6 @@ std::vector<Frame> decode_frames(const std::vector<uint8_t>& bytes) {
     } else if (parser.getError() != FrameParser::Error::NONE) {
         TEST_TRACE("FrameParser Error: " << (int)parser.getError());
     }
-    if (byte == 0) {
-        TEST_TRACE("Consumed 0. Result: " << res << " Error: " << (int)parser.getError());
-    }
   }
   return frames;
 }
@@ -331,7 +332,7 @@ void test_datastore_get_response_dispatches_handler() {
   DataStore.onDataStoreGetResponse(datastore_handler_trampoline);
 
   bool enqueued = DataStore._trackPendingDatastoreKey("thermostat");
-  assert(enqueued);
+  TEST_ASSERT(enqueued);
 
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
@@ -342,9 +343,9 @@ void test_datastore_get_response_dispatches_handler() {
 
   Bridge.dispatch(frame);
 
-  assert(handler_state.called);
-  assert(handler_state.key == "thermostat");
-  assert(handler_state.value == "23.7C");
+  TEST_ASSERT(handler_state.called);
+  TEST_ASSERT(handler_state.key == "thermostat");
+  TEST_ASSERT(handler_state.value == "23.7C");
   DatastoreHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_datastore_get_response_dispatches_handler");
 }
@@ -354,14 +355,14 @@ void test_datastore_queue_rejects_overflow() {
   RecordingStream stream;
   ScopedBridgeBinding binding(stream);
 
-  assert(DataStore._trackPendingDatastoreKey("1"));
-  assert(DataStore._trackPendingDatastoreKey("2"));
+  TEST_ASSERT(DataStore._trackPendingDatastoreKey("1"));
+  TEST_ASSERT(DataStore._trackPendingDatastoreKey("2"));
 
   bool overflow = DataStore._trackPendingDatastoreKey("overflow");
-  assert(!overflow);
+  TEST_ASSERT(!overflow);
 
   const char* key = DataStore._popPendingDatastoreKey();
-  assert(std::strcmp(key, "1") == 0);
+  TEST_ASSERT(std::strcmp(key, "1") == 0);
   TEST_TRACE("PASS: test_datastore_queue_rejects_overflow");
 }
 
@@ -375,24 +376,24 @@ void test_console_write_and_flow_control() {
 
   const uint8_t payload[] = {0xAA, 0xBB, 0xCC};
   size_t written = Console.write(payload, sizeof(payload));
-  assert(written == sizeof(payload));
+  TEST_ASSERT(written == sizeof(payload));
 
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 1);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 1);
   const Frame& console_frame = frames.front();
-  assert(console_frame.header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
-  assert(console_frame.header.payload_length == sizeof(payload));
-  assert(std::memcmp(console_frame.payload, payload, sizeof(payload)) == 0);
+  TEST_ASSERT(console_frame.header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
+  TEST_ASSERT(console_frame.header.payload_length == sizeof(payload));
+  TEST_ASSERT(std::memcmp(console_frame.payload, payload, sizeof(payload)) == 0);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
   std::vector<uint8_t> large(MAX_PAYLOAD_SIZE + 5, 0x5A);
   size_t large_written = Console.write(large.data(), large.size());
-  assert(large_written == large.size());
+  TEST_ASSERT(large_written == large.size());
   auto limited_frames = decode_frames(stream.data());
-  assert(limited_frames.size() == 1);
-  assert(limited_frames[0].header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
-  assert(limited_frames[0].header.payload_length == MAX_PAYLOAD_SIZE);
+  TEST_ASSERT(limited_frames.size() == 1);
+  TEST_ASSERT(limited_frames[0].header.command_id == command_value(CommandId::CMD_CONSOLE_WRITE));
+  TEST_ASSERT(limited_frames[0].header.payload_length == MAX_PAYLOAD_SIZE);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
@@ -402,25 +403,25 @@ void test_console_write_and_flow_control() {
 
   std::vector<uint8_t> inbound(ConsoleClass::kBufferHighWater + 2, 0x34);
   Console._push(inbound.data(), inbound.size());
-  assert(Console.available() == static_cast<int>(inbound.size()));
+  TEST_ASSERT(Console.available() == static_cast<int>(inbound.size()));
   int peeked = Console.peek();
-  assert(peeked == 0x34);
+  TEST_ASSERT(peeked == 0x34);
 
   auto xoff_frames = decode_frames(stream.data());
-  assert(!xoff_frames.empty());
-  assert(xoff_frames.back().header.command_id == command_value(CommandId::CMD_XOFF));
+  TEST_ASSERT(!xoff_frames.empty());
+  TEST_ASSERT(xoff_frames.back().header.command_id == command_value(CommandId::CMD_XOFF));
   inject_ack(stream, Bridge, command_value(CommandId::CMD_XOFF));
   stream.clear();
 
   for (size_t i = 0; i < inbound.size(); ++i) {
     int value = Console.read();
-    assert(value == 0x34);
+    TEST_ASSERT(value == 0x34);
   }
-  assert(Console.read() == -1);
+  TEST_ASSERT(Console.read() == -1);
 
   auto xon_frames = decode_frames(stream.data());
-  assert(!xon_frames.empty());
-  assert(xon_frames.back().header.command_id == command_value(CommandId::CMD_XON));
+  TEST_ASSERT(!xon_frames.empty());
+  TEST_ASSERT(xon_frames.back().header.command_id == command_value(CommandId::CMD_XON));
   inject_ack(stream, Bridge, command_value(CommandId::CMD_XON));
 
   Console.flush();
@@ -439,10 +440,10 @@ void test_console_write_blocked_when_not_synced() {
   size_t written = Console.write(payload, sizeof(payload));
   
   // Should be 0 because sendFrame returns false when not synced
-  assert(written == 0);
+  TEST_ASSERT(written == 0);
 
-  auto frames = decode_frames(stream.data());
-  assert(frames.empty());
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.empty());
 
   TEST_TRACE("PASS: test_console_write_blocked_when_not_synced");
 }
@@ -460,15 +461,15 @@ void test_datastore_put_and_request_behavior() {
 
   DataStore.put(key, value);
   auto put_frames = decode_frames(stream.data());
-  assert(put_frames.size() == 1);
+  TEST_ASSERT(put_frames.size() == 1);
   const Frame& put_frame = put_frames.front();
-  assert(put_frame.header.command_id == command_value(CommandId::CMD_DATASTORE_PUT));
+  TEST_ASSERT(put_frame.header.command_id == command_value(CommandId::CMD_DATASTORE_PUT));
   uint8_t key_len = static_cast<uint8_t>(std::strlen(key));
   uint8_t value_len = static_cast<uint8_t>(std::strlen(value));
-  assert(put_frame.payload[0] == key_len);
-  assert(std::memcmp(put_frame.payload + 1, key, key_len) == 0);
-  assert(put_frame.payload[1 + key_len] == value_len);
-  assert(std::memcmp(put_frame.payload + 2 + key_len, value, value_len) == 0);
+  TEST_ASSERT(put_frame.payload[0] == key_len);
+  TEST_ASSERT(std::memcmp(put_frame.payload + 1, key, key_len) == 0);
+  TEST_ASSERT(put_frame.payload[1 + key_len] == value_len);
+  TEST_ASSERT(std::memcmp(put_frame.payload + 2 + key_len, value, value_len) == 0);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_DATASTORE_PUT));
   stream.clear();
 
@@ -478,12 +479,12 @@ void test_datastore_put_and_request_behavior() {
   DataStore.put(oversized_key.c_str(), value);
   std::string oversized_value(BridgeClass::kMaxDatastoreKeyLength + 1, 'v');
   DataStore.put(key, oversized_value.c_str());
-  assert(stream.data().empty());
+  TEST_ASSERT(stream.data().empty());
 
   DataStore.requestGet(key);
   auto get_frames = decode_frames(stream.data());
-  assert(get_frames.size() == 1);
-  assert(get_frames.front().header.command_id == command_value(CommandId::CMD_DATASTORE_GET));
+  TEST_ASSERT(get_frames.size() == 1);
+  TEST_ASSERT(get_frames.front().header.command_id == command_value(CommandId::CMD_DATASTORE_GET));
   inject_ack(stream, Bridge, command_value(CommandId::CMD_DATASTORE_GET));
   stream.clear();
 
@@ -495,14 +496,14 @@ void test_datastore_put_and_request_behavior() {
 
   DataStore.requestGet("overflow");
   auto status_frames = decode_frames(stream.data());
-  assert(!status_frames.empty());
+  TEST_ASSERT(!status_frames.empty());
   const Frame& status_frame = status_frames.back();
-  assert(status_frame.header.command_id == status_value(StatusCode::STATUS_ERROR));
+  TEST_ASSERT(status_frame.header.command_id == status_value(StatusCode::STATUS_ERROR));
   std::string status_message(
       reinterpret_cast<const char*>(status_frame.payload),
       reinterpret_cast<const char*>(status_frame.payload) +
           status_frame.header.payload_length);
-  assert(status_message == "datastore_queue_full");
+  TEST_ASSERT(status_message == "datastore_queue_full");
   (void)DataStore._popPendingDatastoreKey();
   TEST_TRACE("PASS: test_datastore_put_and_request_behavior");
 }
@@ -517,42 +518,42 @@ void test_mailbox_send_and_requests_emit_commands() {
 
   const char* msg = "hello";
   Mailbox.send(msg);
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 1);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 1);
   const Frame& mailbox_frame = frames.front();
-  assert(mailbox_frame.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
+  TEST_ASSERT(mailbox_frame.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
   size_t msg_len = std::strlen(msg);
-  assert(mailbox_frame.header.payload_length == msg_len + 2);
+  TEST_ASSERT(mailbox_frame.header.payload_length == msg_len + 2);
   uint16_t encoded_len = read_u16_be(mailbox_frame.payload);
-  assert(encoded_len == msg_len);
-  assert(std::memcmp(mailbox_frame.payload + 2, msg, msg_len) == 0);
+  TEST_ASSERT(encoded_len == msg_len);
+  TEST_ASSERT(std::memcmp(mailbox_frame.payload + 2, msg, msg_len) == 0);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
   std::vector<uint8_t> raw(MAX_PAYLOAD_SIZE, 0x41);
   Mailbox.send(raw.data(), raw.size());
   auto raw_frames = decode_frames(stream.data());
-  assert(raw_frames.size() == 1);
+  TEST_ASSERT(raw_frames.size() == 1);
   size_t capped_len = MAX_PAYLOAD_SIZE - 2;
-  assert(raw_frames[0].header.payload_length == capped_len + 2);
+  TEST_ASSERT(raw_frames[0].header.payload_length == capped_len + 2);
   uint16_t encoded_raw_len = read_u16_be(raw_frames[0].payload);
-  assert(encoded_raw_len == capped_len);
+  TEST_ASSERT(encoded_raw_len == capped_len);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
   Mailbox.requestRead();
   auto read_frames = decode_frames(stream.data());
-  assert(read_frames.size() == 1);
-  assert(read_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_READ));
-  assert(read_frames[0].header.payload_length == 0);
+  TEST_ASSERT(read_frames.size() == 1);
+  TEST_ASSERT(read_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_READ));
+  TEST_ASSERT(read_frames[0].header.payload_length == 0);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_READ));
   stream.clear();
 
   Mailbox.requestAvailable();
   auto avail_frames = decode_frames(stream.data());
-  assert(avail_frames.size() == 1);
-  assert(avail_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_AVAILABLE));
-  assert(avail_frames[0].header.payload_length == 0);
+  TEST_ASSERT(avail_frames.size() == 1);
+  TEST_ASSERT(avail_frames[0].header.command_id == command_value(CommandId::CMD_MAILBOX_AVAILABLE));
+  TEST_ASSERT(avail_frames[0].header.payload_length == 0);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_AVAILABLE));
   stream.clear();
   TEST_TRACE("PASS: test_mailbox_send_and_requests_emit_commands");
@@ -570,16 +571,16 @@ void test_filesystem_write_and_remove_payloads() {
   std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, 0xEE);
   FileSystem.write(path, blob.data(), blob.size());
   auto write_frames = decode_frames(stream.data());
-  assert(write_frames.size() == 1);
+  TEST_ASSERT(write_frames.size() == 1);
   const Frame& write_frame = write_frames.front();
-  assert(write_frame.header.command_id == command_value(CommandId::CMD_FILE_WRITE));
+  TEST_ASSERT(write_frame.header.command_id == command_value(CommandId::CMD_FILE_WRITE));
   uint8_t path_len = static_cast<uint8_t>(std::strlen(path));
-  assert(write_frame.payload[0] == path_len);
-  assert(std::memcmp(write_frame.payload + 1, path, path_len) == 0);
+  TEST_ASSERT(write_frame.payload[0] == path_len);
+  TEST_ASSERT(std::memcmp(write_frame.payload + 1, path, path_len) == 0);
   uint16_t encoded_len = read_u16_be(write_frame.payload + 1 + path_len);
   size_t max_data = MAX_PAYLOAD_SIZE - 3 - path_len;
-  assert(encoded_len == max_data);
-  assert(write_frame.header.payload_length == path_len + encoded_len + 3);
+  TEST_ASSERT(encoded_len == max_data);
+  TEST_ASSERT(write_frame.header.payload_length == path_len + encoded_len + 3);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_FILE_WRITE));
   stream.clear();
 
@@ -588,20 +589,20 @@ void test_filesystem_write_and_remove_payloads() {
   FileSystem.write("", blob.data(), blob.size());
   std::string long_path(300, 'a');
   FileSystem.write(long_path.c_str(), blob.data(), blob.size());
-  assert(stream.data().empty());
+  TEST_ASSERT(stream.data().empty());
 
   FileSystem.remove(path);
   auto remove_frames = decode_frames(stream.data());
-  assert(remove_frames.size() == 1);
+  TEST_ASSERT(remove_frames.size() == 1);
   const Frame& remove_frame = remove_frames.front();
-  assert(remove_frame.header.command_id == command_value(CommandId::CMD_FILE_REMOVE));
-  assert(remove_frame.payload[0] == path_len);
-  assert(std::memcmp(remove_frame.payload + 1, path, path_len) == 0);
+  TEST_ASSERT(remove_frame.header.command_id == command_value(CommandId::CMD_FILE_REMOVE));
+  TEST_ASSERT(remove_frame.payload[0] == path_len);
+  TEST_ASSERT(std::memcmp(remove_frame.payload + 1, path, path_len) == 0);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_FILE_REMOVE));
   stream.clear();
 
   FileSystem.remove("");
-  assert(stream.data().empty());
+  TEST_ASSERT(stream.data().empty());
   TEST_TRACE("PASS: test_filesystem_write_and_remove_payloads");
 }
 
@@ -614,13 +615,13 @@ void test_process_kill_encodes_pid() {
   Bridge._synchronized = true; // Manually sync for test
 
   Process.kill(TEST_CMD_ID);
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 1);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 1);
   const Frame& frame = frames.front();
-  assert(frame.header.command_id == command_value(CommandId::CMD_PROCESS_KILL));
-  assert(frame.header.payload_length == 2);
+  TEST_ASSERT(frame.header.command_id == command_value(CommandId::CMD_PROCESS_KILL));
+  TEST_ASSERT(frame.header.payload_length == 2);
   uint16_t encoded = read_u16_be(frame.payload);
-  assert(encoded == TEST_CMD_ID);
+  TEST_ASSERT(encoded == TEST_CMD_ID);
   inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_KILL));
   stream.clear();
   TEST_TRACE("PASS: test_process_kill_encodes_pid");
@@ -647,8 +648,8 @@ void test_mailbox_read_response_delivers_payload() {
 
   Bridge.dispatch(frame);
 
-  assert(mailbox_state.called);
-  assert(mailbox_state.message == payload);
+  TEST_ASSERT(mailbox_state.called);
+  TEST_ASSERT(mailbox_state.message == payload);
   MailboxHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_mailbox_read_response_delivers_payload");
 }
@@ -667,7 +668,7 @@ void test_process_poll_response_requeues_on_streaming_output() {
 
   const uint16_t pid = TEST_CMD_ID;
   bool enqueued = Process._pushPendingProcessPid(pid);
-  assert(enqueued);
+  TEST_ASSERT(enqueued);
 
   ProcessPollHandlerState poll_state;
   ProcessPollHandlerState::instance = &poll_state;
@@ -693,20 +694,20 @@ void test_process_poll_response_requeues_on_streaming_output() {
   stream.clear();
   Bridge.dispatch(frame);
 
-  assert(poll_state.called);
-  assert(poll_state.status == StatusCode::STATUS_OK);
-  assert(poll_state.exit_code == TEST_EXIT_CODE);
-  assert(poll_state.stdout_text == "ok");
-  assert(poll_state.stderr_text.empty());
+  TEST_ASSERT(poll_state.called);
+  TEST_ASSERT(poll_state.status == StatusCode::STATUS_OK);
+  TEST_ASSERT(poll_state.exit_code == TEST_EXIT_CODE);
+  TEST_ASSERT(poll_state.stdout_text == "ok");
+  TEST_ASSERT(poll_state.stderr_text.empty());
   ProcessPollHandlerState::instance = nullptr;
 
-  const auto frames = decode_frames(stream.data());
-  assert(!frames.empty());
+  const auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
   const Frame& resend = frames.back();
-  assert(resend.header.command_id == command_value(CommandId::CMD_PROCESS_POLL));
-  assert(resend.header.payload_length == 2);
+  TEST_ASSERT(resend.header.command_id == command_value(CommandId::CMD_PROCESS_POLL));
+  TEST_ASSERT(resend.header.payload_length == 2);
   uint16_t encoded_pid = read_u16_be(resend.payload);
-  assert(encoded_pid == pid);
+  TEST_ASSERT(encoded_pid == pid);
   
   TEST_TRACE("PASS: test_process_poll_response_requeues_on_streaming_output");
 }
@@ -723,7 +724,7 @@ void test_begin_preserves_binary_shared_secret_length() {
   assert(
       reinterpret_cast<const void*>(bridge_explicit._shared_secret) ==
       reinterpret_cast<const void*>(binary_secret));
-  assert(bridge_explicit._shared_secret_len == sizeof(secret_bytes));
+  TEST_ASSERT(bridge_explicit._shared_secret_len == sizeof(secret_bytes));
 
   const uint8_t nonce[] = {0x10, 0x11, 0x12, 0x13};
   uint8_t explicit_tag[16];
@@ -737,7 +738,7 @@ void test_begin_preserves_binary_shared_secret_length() {
       break;
     }
   }
-  assert(explicit_has_entropy);
+  TEST_ASSERT(explicit_has_entropy);
 
   RecordingStream stream_default;
   BridgeClass bridge_default(stream_default); // Local
@@ -754,8 +755,8 @@ void test_begin_preserves_binary_shared_secret_length() {
       break;
     }
   }
-  assert(truncated_all_zero);
-  assert(std::memcmp(explicit_tag, truncated_tag, sizeof(explicit_tag)) != 0);
+  TEST_ASSERT(truncated_all_zero);
+  TEST_ASSERT(std::memcmp(explicit_tag, truncated_tag, sizeof(explicit_tag)) != 0);
   TEST_TRACE("PASS: test_begin_preserves_binary_shared_secret_length");
 }
 
@@ -771,15 +772,15 @@ void test_ack_flushes_pending_queue_after_response() {
   bool sent = Bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE,
       first_payload, sizeof(first_payload));
-  assert(sent);
-  assert(Bridge._awaiting_ack);
+  TEST_ASSERT(sent);
+  TEST_ASSERT(Bridge._awaiting_ack);
 
   const uint8_t queued_payload[] = {0xAA, 0xBB};
     bool enqueued = Bridge._enqueuePendingTx(
       command_value(CommandId::CMD_MAILBOX_PUSH),
       queued_payload, sizeof(queued_payload));
-  assert(enqueued);
-  assert(Bridge._pending_tx_count == 1);
+  TEST_ASSERT(enqueued);
+  TEST_ASSERT(Bridge._pending_tx_count == 1);
 
   auto before = decode_frames(stream.data());
   size_t before_count = before.size();
@@ -787,13 +788,13 @@ void test_ack_flushes_pending_queue_after_response() {
   inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
 
   auto after = decode_frames(stream.data());
-  assert(after.size() == before_count + 1);
+  TEST_ASSERT(after.size() == before_count + 1);
   const Frame& flushed = after.back();
-  assert(flushed.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
-  assert(flushed.header.payload_length == sizeof(queued_payload));
-  assert(std::memcmp(flushed.payload, queued_payload, sizeof(queued_payload)) == 0);
-  assert(Bridge._pending_tx_count == 0);
-  assert(Bridge._awaiting_ack);
+  TEST_ASSERT(flushed.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
+  TEST_ASSERT(flushed.header.payload_length == sizeof(queued_payload));
+  TEST_ASSERT(std::memcmp(flushed.payload, queued_payload, sizeof(queued_payload)) == 0);
+  TEST_ASSERT(Bridge._pending_tx_count == 0);
+  TEST_ASSERT(Bridge._awaiting_ack);
   TEST_TRACE("PASS: test_ack_flushes_pending_queue_after_response");
 }
 
@@ -811,8 +812,8 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
   const uint8_t payload[] = {0x55};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload));
-  assert(sent);
-  assert(Bridge._awaiting_ack);
+  TEST_ASSERT(sent);
+  TEST_ASSERT(Bridge._awaiting_ack);
 
   Frame ack{};
   ack.header.version = PROTOCOL_VERSION;
@@ -822,9 +823,9 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
 
   Bridge.dispatch(ack);
 
-  assert(!Bridge._awaiting_ack);
-  assert(status_state.called);
-  assert(status_state.status_code == StatusCode::STATUS_ACK);
+  TEST_ASSERT(!Bridge._awaiting_ack);
+  TEST_ASSERT(status_state.called);
+  TEST_ASSERT(status_state.status_code == StatusCode::STATUS_ACK);
   StatusHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_status_ack_frame_clears_pending_state_via_dispatch");
 }
@@ -847,9 +848,9 @@ void test_status_error_frame_dispatches_handler() {
 
   Bridge.dispatch(frame);
 
-  assert(status_state.called);
-  assert(status_state.status_code == StatusCode::STATUS_ERROR);
-  assert(status_state.payload == message);
+  TEST_ASSERT(status_state.called);
+  TEST_ASSERT(status_state.status_code == StatusCode::STATUS_ERROR);
+  TEST_ASSERT(status_state.payload == message);
   StatusHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_status_error_frame_dispatches_handler");
 }
@@ -867,9 +868,9 @@ void test_serial_overflow_emits_status_notification() {
 
   Bridge.process();
 
-  assert(status_state.called);
-  assert(status_state.status_code == StatusCode::STATUS_MALFORMED);
-  assert(status_state.payload == "serial_rx_overflow");
+  TEST_ASSERT(status_state.called);
+  TEST_ASSERT(status_state.status_code == StatusCode::STATUS_MALFORMED);
+  TEST_ASSERT(status_state.payload == "serial_rx_overflow");
   StatusHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_serial_overflow_emits_status_notification");
 }
@@ -885,21 +886,21 @@ void test_malformed_status_triggers_retransmit() {
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
-  assert(sent);
-  assert(Bridge._awaiting_ack);
+  TEST_ASSERT(sent);
+  TEST_ASSERT(Bridge._awaiting_ack);
 
   auto before = decode_frames(stream.data());
-  assert(before.size() == 1);
+  TEST_ASSERT(before.size() == 1);
 
   inject_malformed(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
 
   auto after = decode_frames(stream.data());
-  assert(after.size() == 2);
+  TEST_ASSERT(after.size() == 2);
   const Frame& resent = after.back();
-  assert(resent.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
-  assert(resent.header.payload_length == sizeof(payload));
-  assert(std::memcmp(resent.payload, payload, sizeof(payload)) == 0);
-  assert(Bridge._retry_count == 1);
+  TEST_ASSERT(resent.header.command_id == command_value(CommandId::CMD_MAILBOX_PUSH));
+  TEST_ASSERT(resent.header.payload_length == sizeof(payload));
+  TEST_ASSERT(std::memcmp(resent.payload, payload, sizeof(payload)) == 0);
+  TEST_ASSERT(Bridge._retry_count == 1);
   TEST_TRACE("PASS: test_malformed_status_triggers_retransmit");
 }
 
@@ -925,20 +926,20 @@ void test_link_sync_generates_tag_and_ack() {
   stream.clear();
   Bridge.dispatch(frame);
 
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 2);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 2);
   const Frame& sync = frames.front();
-  assert(sync.header.command_id == command_value(CommandId::CMD_LINK_SYNC_RESP));
-  assert(sync.header.payload_length == sizeof(nonce) + 16);
-  assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
+  TEST_ASSERT(sync.header.command_id == command_value(CommandId::CMD_LINK_SYNC_RESP));
+  TEST_ASSERT(sync.header.payload_length == sizeof(nonce) + 16);
+  TEST_ASSERT(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
   uint8_t expected_tag[16];
   Bridge._computeHandshakeTag(nonce, sizeof(nonce), expected_tag);
-  assert(std::memcmp(sync.payload + sizeof(nonce), expected_tag, 16) == 0);
+  TEST_ASSERT(std::memcmp(sync.payload + sizeof(nonce), expected_tag, 16) == 0);
 
   const Frame& ack = frames.back();
-  assert(ack.header.command_id == status_value(StatusCode::STATUS_ACK));
-  assert(ack.header.payload_length == 2);
-  assert(read_u16_be(ack.payload) == command_value(CommandId::CMD_LINK_SYNC));
+  TEST_ASSERT(ack.header.command_id == status_value(StatusCode::STATUS_ACK));
+  TEST_ASSERT(ack.header.payload_length == 2);
+  TEST_ASSERT(read_u16_be(ack.payload) == command_value(CommandId::CMD_LINK_SYNC));
   TEST_TRACE("PASS: test_link_sync_generates_tag_and_ack");
 }
 
@@ -963,12 +964,12 @@ void test_link_sync_without_secret_replays_nonce_only() {
   stream.clear();
   Bridge.dispatch(frame);
 
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 2);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 2);
   const Frame& sync = frames.front();
-  assert(sync.header.command_id == command_value(CommandId::CMD_LINK_SYNC_RESP));
-  assert(sync.header.payload_length == sizeof(nonce));
-  assert(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
+  TEST_ASSERT(sync.header.command_id == command_value(CommandId::CMD_LINK_SYNC_RESP));
+  TEST_ASSERT(sync.header.payload_length == sizeof(nonce));
+  TEST_ASSERT(std::memcmp(sync.payload, nonce, sizeof(nonce)) == 0);
   TEST_TRACE("PASS: test_link_sync_without_secret_replays_nonce_only");
 }
 
@@ -986,16 +987,16 @@ void test_ack_timeout_emits_status_and_resets_state() {
   const uint8_t payload[] = {0x99};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
-  assert(sent);
-  assert(Bridge._awaiting_ack);
+  TEST_ASSERT(sent);
+  TEST_ASSERT(Bridge._awaiting_ack);
 
   Bridge._retry_count = BridgeClass::kMaxAckRetries;
   Bridge._last_send_millis = 1000;
   Bridge._processAckTimeout();
 
-  assert(status_state.called);
-  assert(status_state.status_code == StatusCode::STATUS_TIMEOUT);
-  assert(!Bridge._awaiting_ack);
+  TEST_ASSERT(status_state.called);
+  TEST_ASSERT(status_state.status_code == StatusCode::STATUS_TIMEOUT);
+  TEST_ASSERT(!Bridge._awaiting_ack);
   StatusHandlerState::instance = nullptr;
   TEST_TRACE("PASS: test_ack_timeout_emits_status_and_resets_state");
 }
@@ -1012,17 +1013,17 @@ void test_process_run_rejects_oversized_payload() {
   std::string huge(rpc::MAX_PAYLOAD_SIZE + 4, 'x');
   Process.run(huge.c_str());
 
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 1);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 1);
   const Frame& status_frame = frames.front();
-  assert(status_frame.header.command_id == status_value(StatusCode::STATUS_ERROR));
+  TEST_ASSERT(status_frame.header.command_id == status_value(StatusCode::STATUS_ERROR));
   std::string message(
       reinterpret_cast<const char*>(status_frame.payload),
       reinterpret_cast<const char*>(status_frame.payload) +
           status_frame.header.payload_length);
-  assert(message == "process_run_payload_too_large");
-  assert(status_state.called);
-  assert(status_state.payload == "process_run_payload_too_large");
+  TEST_ASSERT(message == "process_run_payload_too_large");
+  TEST_ASSERT(status_state.called);
+  TEST_ASSERT(status_state.payload == "process_run_payload_too_large");
 
   inject_ack(stream, Bridge, status_value(StatusCode::STATUS_ERROR));
   stream.clear();
@@ -1041,12 +1042,12 @@ void test_bridge_process_run_success() {
   const char* command = "ls -la";
   Process.run(command);
 
-  auto frames = decode_frames(stream.data());
-  assert(frames.size() == 1);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  TEST_ASSERT(frames.size() == 1);
   const Frame& frame = frames.front();
-  assert(frame.header.command_id == command_value(CommandId::CMD_PROCESS_RUN));
-  assert(frame.header.payload_length == std::strlen(command));
-  assert(std::memcmp(frame.payload, command, std::strlen(command)) == 0);
+  TEST_ASSERT(frame.header.command_id == command_value(CommandId::CMD_PROCESS_RUN));
+  TEST_ASSERT(frame.header.payload_length == std::strlen(command));
+  TEST_ASSERT(std::memcmp(frame.payload, command, std::strlen(command)) == 0);
   
   inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_RUN));
   stream.clear();
@@ -1070,9 +1071,9 @@ void test_apply_timing_config_accepts_valid_payload() {
 
   bridge._applyTimingConfig(payload, sizeof(payload));
 
-  assert(bridge._ack_timeout_ms == ack_timeout);
-  assert(bridge._ack_retry_limit == retry_limit);
-  assert(bridge._response_timeout_ms == response_timeout);
+  TEST_ASSERT(bridge._ack_timeout_ms == ack_timeout);
+  TEST_ASSERT(bridge._ack_retry_limit == retry_limit);
+  TEST_ASSERT(bridge._response_timeout_ms == response_timeout);
   TEST_TRACE("PASS: test_apply_timing_config_accepts_valid_payload");
 }
 
@@ -1093,18 +1094,18 @@ void test_apply_timing_config_rejects_invalid_payload() {
 
   bridge._applyTimingConfig(payload, sizeof(payload));
 
-  assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
-  assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
-  assert(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+  TEST_ASSERT(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
+  TEST_ASSERT(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
+  TEST_ASSERT(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
 
   bridge._ack_timeout_ms = 1;
   bridge._ack_retry_limit = 1;
   bridge._response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
   bridge._applyTimingConfig(payload, RPC_HANDSHAKE_CONFIG_SIZE - 1);
 
-  assert(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
-  assert(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
-  assert(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+  TEST_ASSERT(bridge._ack_timeout_ms == BridgeClass::kAckTimeoutMs);
+  TEST_ASSERT(bridge._ack_retry_limit == BridgeClass::kMaxAckRetries);
+  TEST_ASSERT(bridge._response_timeout_ms == RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
   TEST_TRACE("PASS: test_apply_timing_config_rejects_invalid_payload");
 }
 
@@ -1150,9 +1151,9 @@ void test_filesystem_handle_read_response() {
 
   Bridge.dispatch(frame);
 
-  assert(state.called);
-  assert(state.data.size() == content_len);
-  assert(std::memcmp(state.data.data(), content, content_len) == 0);
+  TEST_ASSERT(state.called);
+  TEST_ASSERT(state.data.size() == content_len);
+  TEST_ASSERT(std::memcmp(state.data.data(), content, content_len) == 0);
   
   FileReadState::instance = nullptr;
   TEST_TRACE("PASS: test_filesystem_handle_read_response");
@@ -1231,10 +1232,10 @@ void test_process_methods() {
   Process.runAsync(cmd);
   TEST_TRACE("After runAsync. Stream size: " << stream.data().size());
   TEST_TRACE("Bridge synchronized: " << Bridge.isSynchronized());
-  auto frames = decode_frames(stream.data());
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
   TEST_TRACE("Frames size: " << frames.size());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == command_value(CommandId::CMD_PROCESS_RUN_ASYNC));
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == command_value(CommandId::CMD_PROCESS_RUN_ASYNC));
   inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_RUN_ASYNC));
   stream.clear();
 
@@ -1244,16 +1245,16 @@ void test_process_methods() {
   // Expect STATUS_ERROR
   frames = decode_frames(stream.data());
   TEST_TRACE("Step 2 frames: " << frames.size());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
   stream.clear();
 
   // 3. runAsync oversized
   Process.runAsync(huge.c_str());
   frames = decode_frames(stream.data());
   TEST_TRACE("Step 3 frames: " << frames.size());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
   stream.clear();
 
   // 4. poll queue full
@@ -1263,8 +1264,8 @@ void test_process_methods() {
   stream.clear();
   Process.poll(12); // Should fail
   frames = decode_frames(stream.data());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
   stream.clear();
 
   // 5. handleResponse dispatch
@@ -1278,15 +1279,15 @@ void test_process_methods() {
   write_u16_be(resp.payload+1, 0); // stdout len
   write_u16_be(resp.payload+3, 0); // stderr len
   Bridge.dispatch(resp);
-  assert(state.run_called);
+  TEST_ASSERT(state.run_called);
 
   // CMD_PROCESS_RUN_ASYNC_RESP
   resp.header.command_id = command_value(CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   resp.header.payload_length = 2;
   write_u16_be(resp.payload, 123);
   Bridge.dispatch(resp);
-  assert(state.async_called);
-  assert(state.async_pid == 123);
+  TEST_ASSERT(state.async_called);
+  TEST_ASSERT(state.async_pid == 123);
 
   // CMD_PROCESS_POLL_RESP
   // Need to clear pending pid to receive poll response? 
@@ -1299,7 +1300,7 @@ void test_process_methods() {
   write_u16_be(resp.payload+2, 0);
   write_u16_be(resp.payload+4, 0);
   Bridge.dispatch(resp);
-  assert(state.poll_called);
+  TEST_ASSERT(state.poll_called);
 
   ProcessState::instance = nullptr;
   TEST_TRACE("PASS: test_process_methods");
@@ -1336,7 +1337,7 @@ void test_mailbox_methods() {
   Mailbox.send("");
   Mailbox.send((const uint8_t*)nullptr, 10);
   Mailbox.send((const uint8_t*)"data", 0);
-  assert(stream.data().empty());
+  TEST_ASSERT(stream.data().empty());
 
   // 2. CMD_MAILBOX_AVAILABLE_RESP
   Frame resp{};
@@ -1345,8 +1346,8 @@ void test_mailbox_methods() {
   resp.header.payload_length = 1;
   resp.payload[0] = 5;
   Bridge.dispatch(resp);
-  assert(state.avail_called);
-  assert(state.avail_count == 5);
+  TEST_ASSERT(state.avail_called);
+  TEST_ASSERT(state.avail_count == 5);
   state.avail_called = false;
 
   // 3. CMD_MAILBOX_PUSH (Incoming)
@@ -1355,7 +1356,7 @@ void test_mailbox_methods() {
   write_u16_be(resp.payload, 1);
   resp.payload[2] = 'A';
   Bridge.dispatch(resp);
-  assert(state.msg_called);
+  TEST_ASSERT(state.msg_called);
   state.msg_called = false;
 
   // 4. CMD_MAILBOX_AVAILABLE (Incoming)
@@ -1363,8 +1364,8 @@ void test_mailbox_methods() {
   resp.header.payload_length = 1;
   resp.payload[0] = 3;
   Bridge.dispatch(resp);
-  assert(state.avail_called);
-  assert(state.avail_count == 3);
+  TEST_ASSERT(state.avail_called);
+  TEST_ASSERT(state.avail_count == 3);
 
   MailboxState::instance = nullptr;
   TEST_TRACE("PASS: test_mailbox_methods");
@@ -1401,32 +1402,41 @@ void test_system_commands() {
   }
   std::cout << std::dec << std::endl;
   
-  auto frames = decode_frames(stream.data());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == command_value(CommandId::CMD_GET_VERSION_RESP));
-  assert(frames.back().header.payload_length == 2);
-  assert(frames.back().payload[0] == BridgeClass::kFirmwareVersionMajor);
-  assert(frames.back().payload[1] == BridgeClass::kFirmwareVersionMinor);
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == command_value(CommandId::CMD_GET_VERSION_RESP));
+  TEST_ASSERT(frames.back().header.payload_length == 2);
+  TEST_ASSERT(frames.back().payload[0] == BridgeClass::kFirmwareVersionMajor);
+  TEST_ASSERT(frames.back().payload[1] == BridgeClass::kFirmwareVersionMinor);
+  
+  // Inject ACK for GET_VERSION_RESP
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_GET_VERSION_RESP));
   stream.clear();
 
   // CMD_GET_FREE_MEMORY
   frame.header.command_id = command_value(CommandId::CMD_GET_FREE_MEMORY);
   Bridge.dispatch(frame);
   frames = decode_frames(stream.data());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == command_value(CommandId::CMD_GET_FREE_MEMORY_RESP));
-  assert(frames.back().header.payload_length == 2);
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == command_value(CommandId::CMD_GET_FREE_MEMORY_RESP));
+  TEST_ASSERT(frames.back().header.payload_length == 2);
   // Expect 0 in host test
-  assert(frames.back().payload[0] == 0);
-  assert(frames.back().payload[1] == 0);
+  TEST_ASSERT(frames.back().payload[0] == 0);
+  TEST_ASSERT(frames.back().payload[1] == 0);
+  
+  // Inject ACK for GET_FREE_MEMORY_RESP
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_GET_FREE_MEMORY_RESP));
   stream.clear();
   
   // CMD_GET_TX_DEBUG_SNAPSHOT
   frame.header.command_id = command_value(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT);
   Bridge.dispatch(frame);
   frames = decode_frames(stream.data());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == command_value(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP));
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == command_value(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP));
+  
+  // Inject ACK for GET_TX_DEBUG_SNAPSHOT_RESP
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP));
   stream.clear();
   
   // CMD_SET_BAUDRATE
@@ -1435,8 +1445,11 @@ void test_system_commands() {
   write_u32_be(frame.payload, 57600);
   Bridge.dispatch(frame);
   frames = decode_frames(stream.data());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == command_value(CommandId::CMD_SET_BAUDRATE_RESP));
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == command_value(CommandId::CMD_SET_BAUDRATE_RESP));
+  
+  // Inject ACK for SET_BAUDRATE_RESP
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_SET_BAUDRATE_RESP));
   stream.clear();
   
   TEST_TRACE("PASS: test_system_commands");
@@ -1472,9 +1485,9 @@ void test_bridge_process_input_errors() {
   Bridge.process();
   
   // Check output frame for STATUS_CRC_MISMATCH
-  auto frames = decode_frames(stream.data());
-  assert(!frames.empty());
-  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_CRC_MISMATCH));
+  auto frames = decode_frames(stream.data()); std::cerr << "[DEBUG] Frames Size: " << frames.size() << std::endl; 
+  if(frames.empty()) { std::cerr << "FATAL: No frames decoded!" << std::endl; std::abort(); }
+  TEST_ASSERT(frames.back().header.command_id == status_value(StatusCode::STATUS_CRC_MISMATCH));
   stream.clear();
   
   TEST_TRACE("PASS: test_bridge_process_input_errors");

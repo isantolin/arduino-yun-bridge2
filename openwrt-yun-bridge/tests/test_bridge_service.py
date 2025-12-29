@@ -561,7 +561,7 @@ def test_mailbox_read_requeues_on_send_failure(
         assert stored
         original_bytes = runtime_state.mailbox_queue_bytes
 
-        send_results = [False, True]
+        send_results = [False, True, True]
         send_attempts: list[tuple[int, bytes]] = []
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:

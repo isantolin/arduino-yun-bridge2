@@ -298,8 +298,14 @@ std::vector<Frame> decode_frames(const std::vector<uint8_t>& bytes) {
   Frame frame{};
   std::vector<Frame> frames;
   for (uint8_t byte : bytes) {
-    if (parser.consume(byte, frame)) {
+    bool res = parser.consume(byte, frame);
+    if (res) {
       frames.push_back(frame);
+    } else if (parser.getError() != FrameParser::Error::NONE) {
+        TEST_TRACE("FrameParser Error: " << (int)parser.getError());
+    }
+    if (byte == 0) {
+        TEST_TRACE("Consumed 0. Result: " << res << " Error: " << (int)parser.getError());
     }
   }
   return frames;
@@ -1102,6 +1108,378 @@ void test_apply_timing_config_rejects_invalid_payload() {
   TEST_TRACE("PASS: test_apply_timing_config_rejects_invalid_payload");
 }
 
+
+struct FileReadState {
+  static FileReadState* instance;
+  bool called = false;
+  std::vector<uint8_t> data;
+};
+FileReadState* FileReadState::instance = nullptr;
+
+void test_filesystem_handle_read_response() {
+  TEST_TRACE("START: test_filesystem_handle_read_response");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  FileReadState state;
+  FileReadState::instance = &state;
+
+  auto handler = [](const uint8_t* data, uint16_t len) {
+    if (FileReadState::instance) {
+      FileReadState::instance->called = true;
+      FileReadState::instance->data.assign(data, data + len);
+    }
+  };
+
+  FileSystem.onFileSystemReadResponse(handler);
+
+  const char* content = "file content";
+  uint16_t content_len = strlen(content);
+  
+  // payload: [len_hi, len_lo, ...data...]
+  std::vector<uint8_t> payload;
+  payload.push_back((content_len >> 8) & 0xFF);
+  payload.push_back(content_len & 0xFF);
+  payload.insert(payload.end(), content, content + content_len);
+
+  Frame frame{};
+  frame.header.version = PROTOCOL_VERSION;
+  frame.header.command_id = command_value(CommandId::CMD_FILE_READ_RESP);
+  frame.header.payload_length = payload.size();
+  std::memcpy(frame.payload, payload.data(), payload.size());
+
+  Bridge.dispatch(frame);
+
+  assert(state.called);
+  assert(state.data.size() == content_len);
+  assert(std::memcmp(state.data.data(), content, content_len) == 0);
+  
+  FileReadState::instance = nullptr;
+  TEST_TRACE("PASS: test_filesystem_handle_read_response");
+}
+
+void test_filesystem_handle_write_request() {
+  TEST_TRACE("START: test_filesystem_handle_write_request");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  // Simulate an incoming CMD_FILE_WRITE.
+  // Although on host we don't write to EEPROM, we should ensure the code path is parsing correctly.
+  // The implementation checks for "/eeprom/" prefix.
+  
+  const char* path = "/eeprom/10";
+  const char* data = "val";
+  uint8_t path_len = strlen(path);
+  uint16_t data_len = strlen(data);
+
+  std::vector<uint8_t> payload;
+  payload.push_back(path_len);
+  payload.insert(payload.end(), path, path + path_len);
+  payload.insert(payload.end(), data, data + data_len);
+
+  Frame frame{};
+  frame.header.version = PROTOCOL_VERSION;
+  frame.header.command_id = command_value(CommandId::CMD_FILE_WRITE);
+  frame.header.payload_length = payload.size();
+  std::memcpy(frame.payload, payload.data(), payload.size());
+
+  // Dispatch should process it without crashing or erroring
+  Bridge.dispatch(frame);
+
+  // Test with invalid payload (short)
+  frame.header.payload_length = 1;
+  Bridge.dispatch(frame);
+
+  TEST_TRACE("PASS: test_filesystem_handle_write_request");
+}
+
+struct ProcessState {
+  static ProcessState* instance;
+  bool run_called = false;
+  bool async_called = false;
+  bool poll_called = false;
+  int async_pid = -1;
+};
+ProcessState* ProcessState::instance = nullptr;
+
+void test_process_methods() {
+  TEST_TRACE("START: test_process_methods");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  Bridge.begin();
+  Bridge._synchronized = true; // Manually sync for test
+
+  ProcessState state;
+  ProcessState::instance = &state;
+
+  Process.onProcessRunResponse([](StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t) {
+    if (ProcessState::instance) ProcessState::instance->run_called = true;
+  });
+  Process.onProcessRunAsyncResponse([](int pid) {
+    if (ProcessState::instance) {
+      ProcessState::instance->async_called = true;
+      ProcessState::instance->async_pid = pid;
+    }
+  });
+  Process.onProcessPollResponse([](StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t) {
+    if (ProcessState::instance) ProcessState::instance->poll_called = true;
+  });
+
+  // 1. runAsync success
+  const char* cmd = "sleep 1";
+  Process.runAsync(cmd);
+  TEST_TRACE("After runAsync. Stream size: " << stream.data().size());
+  TEST_TRACE("Bridge synchronized: " << Bridge.isSynchronized());
+  auto frames = decode_frames(stream.data());
+  TEST_TRACE("Frames size: " << frames.size());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == command_value(CommandId::CMD_PROCESS_RUN_ASYNC));
+  inject_ack(stream, Bridge, command_value(CommandId::CMD_PROCESS_RUN_ASYNC));
+  stream.clear();
+
+  // 2. run oversized
+  std::string huge(MAX_PAYLOAD_SIZE + 5, 'a');
+  Process.run(huge.c_str());
+  // Expect STATUS_ERROR
+  frames = decode_frames(stream.data());
+  TEST_TRACE("Step 2 frames: " << frames.size());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
+  stream.clear();
+
+  // 3. runAsync oversized
+  Process.runAsync(huge.c_str());
+  frames = decode_frames(stream.data());
+  TEST_TRACE("Step 3 frames: " << frames.size());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
+  stream.clear();
+
+  // 4. poll queue full
+  // Capacity is 2
+  Process.poll(10);
+  Process.poll(11);
+  stream.clear();
+  Process.poll(12); // Should fail
+  frames = decode_frames(stream.data());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_ERROR));
+  stream.clear();
+
+  // 5. handleResponse dispatch
+  // CMD_PROCESS_RUN_RESP
+  Frame resp{};
+  resp.header.version = PROTOCOL_VERSION;
+  resp.header.command_id = command_value(CommandId::CMD_PROCESS_RUN_RESP);
+  resp.header.payload_length = 5; 
+  // status(1) + stdout_len(2) + stderr_len(2) -> minimal
+  resp.payload[0] = status_value(StatusCode::STATUS_OK);
+  write_u16_be(resp.payload+1, 0); // stdout len
+  write_u16_be(resp.payload+3, 0); // stderr len
+  Bridge.dispatch(resp);
+  assert(state.run_called);
+
+  // CMD_PROCESS_RUN_ASYNC_RESP
+  resp.header.command_id = command_value(CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
+  resp.header.payload_length = 2;
+  write_u16_be(resp.payload, 123);
+  Bridge.dispatch(resp);
+  assert(state.async_called);
+  assert(state.async_pid == 123);
+
+  // CMD_PROCESS_POLL_RESP
+  // Need to clear pending pid to receive poll response? 
+  // We filled the queue earlier (10, 11). So it expects a response for 10.
+  resp.header.command_id = command_value(CommandId::CMD_PROCESS_POLL_RESP);
+  resp.header.payload_length = 6;
+  // status(1) + running(1) + stdout_len(2) + stderr_len(2)
+  resp.payload[0] = status_value(StatusCode::STATUS_OK);
+  resp.payload[1] = 1; // running
+  write_u16_be(resp.payload+2, 0);
+  write_u16_be(resp.payload+4, 0);
+  Bridge.dispatch(resp);
+  assert(state.poll_called);
+
+  ProcessState::instance = nullptr;
+  TEST_TRACE("PASS: test_process_methods");
+}
+
+struct MailboxState {
+  static MailboxState* instance;
+  bool msg_called = false;
+  bool avail_called = false;
+  uint8_t avail_count = 0;
+};
+MailboxState* MailboxState::instance = nullptr;
+
+void test_mailbox_methods() {
+  TEST_TRACE("START: test_mailbox_methods");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+
+  MailboxState state;
+  MailboxState::instance = &state;
+
+  Mailbox.onMailboxMessage([](const uint8_t*, uint16_t){
+    if (MailboxState::instance) MailboxState::instance->msg_called = true;
+  });
+  Mailbox.onMailboxAvailableResponse([](uint16_t c){
+    if (MailboxState::instance) {
+      MailboxState::instance->avail_called = true;
+      MailboxState::instance->avail_count = (uint8_t)c;
+    }
+  });
+
+  // 1. send empty
+  Mailbox.send((const char*)nullptr);
+  Mailbox.send("");
+  Mailbox.send((const uint8_t*)nullptr, 10);
+  Mailbox.send((const uint8_t*)"data", 0);
+  assert(stream.data().empty());
+
+  // 2. CMD_MAILBOX_AVAILABLE_RESP
+  Frame resp{};
+  resp.header.version = PROTOCOL_VERSION;
+  resp.header.command_id = command_value(CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+  resp.header.payload_length = 1;
+  resp.payload[0] = 5;
+  Bridge.dispatch(resp);
+  assert(state.avail_called);
+  assert(state.avail_count == 5);
+  state.avail_called = false;
+
+  // 3. CMD_MAILBOX_PUSH (Incoming)
+  resp.header.command_id = command_value(CommandId::CMD_MAILBOX_PUSH);
+  resp.header.payload_length = 3;
+  write_u16_be(resp.payload, 1);
+  resp.payload[2] = 'A';
+  Bridge.dispatch(resp);
+  assert(state.msg_called);
+  state.msg_called = false;
+
+  // 4. CMD_MAILBOX_AVAILABLE (Incoming)
+  resp.header.command_id = command_value(CommandId::CMD_MAILBOX_AVAILABLE);
+  resp.header.payload_length = 1;
+  resp.payload[0] = 3;
+  Bridge.dispatch(resp);
+  assert(state.avail_called);
+  assert(state.avail_count == 3);
+
+  MailboxState::instance = nullptr;
+  TEST_TRACE("PASS: test_mailbox_methods");
+}
+
+void test_bridge_hardware_serial_constructor() {
+  TEST_TRACE("START: test_bridge_hardware_serial_constructor");
+  // Instantiate Bridge with HardwareSerial to cover that constructor
+  BridgeClass hwBridge(Serial);
+  // We can't really do much with it without interfering with the global instance if we were running on a real board,
+  // but here it's just a test instance.
+  // Just verifying it constructs and destructs.
+  TEST_TRACE("PASS: test_bridge_hardware_serial_constructor");
+}
+
+void test_system_commands() {
+  TEST_TRACE("START: test_system_commands");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+  Bridge.begin();
+  Bridge._synchronized = true;
+
+  // CMD_GET_VERSION
+  Frame frame{};
+  frame.header.version = PROTOCOL_VERSION;
+  frame.header.command_id = command_value(CommandId::CMD_GET_VERSION);
+  frame.header.payload_length = 0;
+  Bridge.dispatch(frame);
+  
+  TEST_TRACE("After dispatch GET_VERSION. Stream size: " << stream.data().size());
+  std::cout << "Stream data: ";
+  for (uint8_t b : stream.data()) {
+      std::cout << std::hex << (int)b << " ";
+  }
+  std::cout << std::dec << std::endl;
+  
+  auto frames = decode_frames(stream.data());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == command_value(CommandId::CMD_GET_VERSION_RESP));
+  assert(frames.back().header.payload_length == 2);
+  assert(frames.back().payload[0] == BridgeClass::kFirmwareVersionMajor);
+  assert(frames.back().payload[1] == BridgeClass::kFirmwareVersionMinor);
+  stream.clear();
+
+  // CMD_GET_FREE_MEMORY
+  frame.header.command_id = command_value(CommandId::CMD_GET_FREE_MEMORY);
+  Bridge.dispatch(frame);
+  frames = decode_frames(stream.data());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == command_value(CommandId::CMD_GET_FREE_MEMORY_RESP));
+  assert(frames.back().header.payload_length == 2);
+  // Expect 0 in host test
+  assert(frames.back().payload[0] == 0);
+  assert(frames.back().payload[1] == 0);
+  stream.clear();
+  
+  // CMD_GET_TX_DEBUG_SNAPSHOT
+  frame.header.command_id = command_value(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT);
+  Bridge.dispatch(frame);
+  frames = decode_frames(stream.data());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == command_value(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP));
+  stream.clear();
+  
+  // CMD_SET_BAUDRATE
+  frame.header.command_id = command_value(CommandId::CMD_SET_BAUDRATE);
+  frame.header.payload_length = 4;
+  write_u32_be(frame.payload, 57600);
+  Bridge.dispatch(frame);
+  frames = decode_frames(stream.data());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == command_value(CommandId::CMD_SET_BAUDRATE_RESP));
+  stream.clear();
+  
+  TEST_TRACE("PASS: test_system_commands");
+}
+
+void test_bridge_process_input_errors() {
+  TEST_TRACE("START: test_bridge_process_input_errors");
+  RecordingStream stream;
+  ScopedBridgeBinding binding(stream);
+  Bridge.begin();
+
+  // Construct a valid frame
+  std::vector<uint8_t> frame_data;
+  frame_data.push_back(PROTOCOL_VERSION);
+  frame_data.push_back(0); frame_data.push_back(0); // Len 0
+  frame_data.push_back(0); frame_data.push_back(10); // CMD_GET_VERSION
+  
+  // Add Bad CRC
+  frame_data.push_back(0xDE);
+  frame_data.push_back(0xAD);
+  frame_data.push_back(0xBE);
+  frame_data.push_back(0xEF);
+  
+  // Encode COBS
+  std::vector<uint8_t> cobs_data(frame_data.size() + 5); 
+  size_t cobs_len = cobs::encode(frame_data.data(), frame_data.size(), cobs_data.data());
+  cobs_data.resize(cobs_len);
+  cobs_data.push_back(0x00); // Delimiter
+  
+  stream.inject_rx(cobs_data);
+  
+  // Process
+  Bridge.process();
+  
+  // Check output frame for STATUS_CRC_MISMATCH
+  auto frames = decode_frames(stream.data());
+  assert(!frames.empty());
+  assert(frames.back().header.command_id == status_value(StatusCode::STATUS_CRC_MISMATCH));
+  stream.clear();
+  
+  TEST_TRACE("PASS: test_bridge_process_input_errors");
+}
+
 }  // namespace
 
 int main() {
@@ -1113,6 +1491,8 @@ int main() {
   test_datastore_put_and_request_behavior();
   test_mailbox_send_and_requests_emit_commands();
   test_filesystem_write_and_remove_payloads();
+  test_filesystem_handle_read_response();
+  test_filesystem_handle_write_request();
   test_process_kill_encodes_pid();
   test_mailbox_read_response_delivers_payload();
   test_process_poll_response_requeues_on_streaming_output();
@@ -1129,6 +1509,11 @@ int main() {
   test_bridge_process_run_success();
   test_apply_timing_config_accepts_valid_payload();
   test_apply_timing_config_rejects_invalid_payload();
+  test_process_methods();
+  test_mailbox_methods();
+  test_bridge_hardware_serial_constructor();
+  test_system_commands();
+  test_bridge_process_input_errors();
   TEST_TRACE("All tests passed");
   return 0;
 }

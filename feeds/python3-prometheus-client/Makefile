@@ -15,7 +15,8 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PYPI_NAME)-$(PKG_VERSION)
+# [FIX] Agregar '/pypi/' a la ruta de construcción para cumplir con pypi.mk
+PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/$(PYPI_NAME)-$(PKG_VERSION)
 
 define Package/python3-prometheus-client
   SECTION:=lang
@@ -23,7 +24,7 @@ define Package/python3-prometheus-client
   SUBMENU:=Python
   TITLE:=Prometheus instrumentation library for Python
   URL:=https://github.com/prometheus/client_python
-  # [OPTIMIZATION] Eliminado +python3-twisted (ahorra espacio y evita errores)
+  # [OPTIMIZATION] Eliminado +python3-twisted
   DEPENDS:=+python3-light
 endef
 

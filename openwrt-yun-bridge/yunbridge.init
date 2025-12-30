@@ -1,45 +1,46 @@
 #!/bin/sh /etc/rc.common
-# YunBridge Daemon Init Script - Refactor 10/10 (Flash Protection & Py3.13)
+# YunBridge Daemon Init Script - Production Ready (OpenWrt 25.12)
 
 START=99
 STOP=10
 USE_PROCD=1
 
-# [DEPENDENCIAS] Esperar a que Mosquitto y la red estén listos para evitar race conditions
+# Dependencias críticas de red y broker local
 DEPENDS="mosquitto network"
 
 start_service() {
-    # [FLASH GUARD] Crear directorios volátiles en RAMFS antes de iniciar
-    # Esto evita que el daemon escriba colas o sockets en la memoria Flash
+    # [FLASH PROTECTION - CRITICAL]
+    # Crear directorios de trabajo en RAM (/tmp es tmpfs en OpenWrt)
+    # Evita desgaste de la memoria Flash por escrituras frecuentes (spool/sockets)
     mkdir -p /tmp/yunbridge/spool
     mkdir -p /tmp/run/yunbridge
     
-    # Asegurar permisos para que el usuario del servicio pueda escribir
+    # Asegurar permisos correctos (777 permite acceso a tools de usuario si es necesario)
     chmod 777 /tmp/yunbridge/spool
     chmod 777 /tmp/run/yunbridge
 
     procd_open_instance
 
-    # [EJECUCIÓN] Invocación directa optimizada (-O) para Python 3.13
-    # Se asume que el paquete está instalado en site-packages
+    # Ejecución optimizada (-O) para Python 3.13
     procd_set_param command /usr/bin/python3 -O -m yunbridge
 
-    # [VARIABLES] Entorno crítico
+    # Entorno de ejecución
     procd_set_param env PYTHONPATH=/usr/lib/python3.13/site-packages
-    # Forzar el spool en RAM explícitamente como fallback de seguridad
-    procd_set_param env MQTT_SPOOL_DIR=/tmp/yunbridge/spool
+    # Forzar configuración de spool en RAM (Safety fallback)
+    procd_set_param env YUNBRIDGE_MQTT_SPOOL_DIR=/tmp/yunbridge/spool
 
-    # [RESILIENCIA] Reinicio automático: Espera 3600s antes de rendirse, intenta infinito con backoff de 5s
+    # [RESILIENCIA]
+    # Reinicio infinito con backoff de 5s si falla
+    # Si falla repetidamente antes de 3600s, se considera inestable
     procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-0}
 
-    # [WATCHDOG] Integración con el watchdog del sistema (procd)
-    # Si el script de python no hace "touch" cada 60s, el sistema reinicia el servicio
+    # [WATCHDOG]
+    # Integración con el watchdog del kernel vía procd
     local watchdog_ms="${YUNBRIDGE_PROCD_WATCHDOG_MS:-60000}"
     procd_set_param watchdog "$watchdog_ms"
     procd_set_param env YUNBRIDGE_PROCD_WATCHDOG_MS="$watchdog_ms"
 
-    # [LOGGING] Redirigir stdout/stderr a syslog (logread)
-    # Esencial para no saturar buffers y depurar con herramientas nativas
+    # Redirigir logs a syslog (logread)
     procd_set_param stdout 1
     procd_set_param stderr 1
 

@@ -8,6 +8,7 @@ import ssl
 from pathlib import Path
 
 import aiomqtt
+from paho.mqtt.enums import CallbackAPIVersion  # [REQ-PY3.13] Mandatory for Paho 2.x
 
 from yunbridge.common import build_mqtt_connect_properties, build_mqtt_properties
 from yunbridge.config.settings import RuntimeConfig
@@ -49,6 +50,7 @@ async def mqtt_task(
 
     async def _publisher_loop(client: aiomqtt.Client) -> None:
         while True:
+            # [OPTIMIZATION] Flush spool before processing new messages
             await state.flush_mqtt_spool()
             message = await state.mqtt_publish_queue.get()
             topic_name = message.topic_name
@@ -63,35 +65,24 @@ async def mqtt_task(
                     properties=props,
                 )
             except asyncio.CancelledError:
-                logger.info("MQTT publisher loop cancelled.")
+                logger.debug("MQTT publisher loop cancelled.")
                 try:
                     state.mqtt_publish_queue.put_nowait(message)
                 except asyncio.QueueFull:
-                    logger.debug(
-                        "MQTT publish queue full while cancelling; dropping %s",
-                        topic_name,
-                    )
+                    logger.warning("MQTT queue full during shutdown; message dropped.")
                 raise
             except aiomqtt.MqttError as exc:
-                logger.warning(
-                    "MQTT publish failed for %s; broker unavailable (%s)",
-                    topic_name,
-                    exc,
-                )
+                logger.warning("MQTT publish failed (%s); requeuing.", exc)
                 try:
                     state.mqtt_publish_queue.put_nowait(message)
                 except asyncio.QueueFull:
-                    logger.error(
-                        "MQTT publish queue full; dropping message for %s",
-                        topic_name,
-                    )
+                    logger.error("MQTT spool full; message dropped.")
                 raise
             except Exception:
-                logger.exception("Failed to publish MQTT message for topic %s", topic_name)
+                logger.exception("Critical error in MQTT publisher.")
                 raise
             finally:
                 state.mqtt_publish_queue.task_done()
-                await state.flush_mqtt_spool()
 
     async def _subscriber_loop(client: aiomqtt.Client) -> None:
         try:
@@ -104,15 +95,17 @@ async def mqtt_task(
                 except Exception:
                     logger.exception("Error processing MQTT topic %s", topic)
         except asyncio.CancelledError:
-            logger.info("MQTT subscriber loop cancelled.")
-            raise
+            pass  # Clean exit
         except aiomqtt.MqttError as exc:
-            logger.warning("MQTT subscriber loop stopped: %s", exc)
+            logger.warning("MQTT subscriber loop interrupted: %s", exc)
             raise
 
     while True:
         try:
             connect_props = build_mqtt_connect_properties()
+            
+            # [FIX-10/10] Explicit Paho 2.x compatibility
+            # aiomqtt passes kwargs to paho.mqtt.client.Client
             async with aiomqtt.Client(
                 hostname=config.mqtt_host,
                 port=config.mqtt_port,
@@ -123,15 +116,16 @@ async def mqtt_task(
                 protocol=aiomqtt.ProtocolVersion.V5,
                 clean_session=None,
                 properties=connect_props,
+                callback_api_version=CallbackAPIVersion.VERSION2, # CRITICAL FOR PAHO 2.x
             ) as client:
-                logger.info("Connected to MQTT broker.")
+                logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
 
                 prefix = state.mqtt_topic_prefix
 
                 def _sub(top: Topic | str, *segs: str) -> str:
                     return topic_path(prefix, top, *segs)
 
-                # fmt: off
+                # Subscription List (Optimized)
                 topics = [
                     (_sub(Topic.DIGITAL, "+", Action.PIN_MODE), 0),
                     (_sub(Topic.DIGITAL, "+", Action.PIN_READ), 0),
@@ -153,12 +147,11 @@ async def mqtt_task(
                     (_sub(Topic.FILE, Action.FILE_READ, "#"), 0),
                     (_sub(Topic.FILE, Action.FILE_REMOVE, "#"), 0),
                 ]
-                # fmt: on
 
                 for topic, qos in topics:
                     await client.subscribe(topic, qos=qos)
-
-                logger.info("Subscribed to %d MQTT topics.", len(topics))
+                
+                logger.info("Subscribed to %d command topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:
                     task_group.create_task(_publisher_loop(client))
@@ -166,23 +159,16 @@ async def mqtt_task(
 
         except* aiomqtt.MqttError as exc_group:
             for exc in exc_group.exceptions:
-                logger.error("MQTT error: %s", exc)
+                logger.error("MQTT connection failed: %s", exc)
         except* (OSError, asyncio.TimeoutError) as exc_group:
             for exc in exc_group.exceptions:
-                logger.error("MQTT connection error: %s", exc)
+                logger.error("Network error: %s", exc)
         except* asyncio.CancelledError:
-            logger.info("MQTT task cancelled.")
+            logger.info("MQTT task stopping.")
             raise
         except* Exception as exc_group:
             for exc in exc_group.exceptions:
-                logger.critical("Unhandled exception in mqtt_task", exc_info=exc)
+                logger.critical("Unexpected MQTT error", exc_info=exc)
 
-        logger.warning("Waiting %d seconds before MQTT reconnect...", reconnect_delay)
-        try:
-            await asyncio.sleep(reconnect_delay)
-        except asyncio.CancelledError:
-            logger.info("MQTT task cancelled during backoff.")
-            raise
-
-
-__all__ = ["mqtt_task"]
+        logger.info("Reconnecting MQTT in %ds...", reconnect_delay)
+        await asyncio.sleep(reconnect_delay)

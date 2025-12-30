@@ -4,16 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openwrt-yun-bridge"
-version = "2.0.0"
+version = "2.0.1"
 description = "Arduino Yun Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
-    "pyserial==3.5",
-    "paho-mqtt==2.1.0",
-    "aiomqtt==2.4.0",
-    "cobs==1.2.2",
-    "psutil==7.2.0",
-    "prometheus-client==0.23.1"
+    "pyserial>=3.5",
+    "paho-mqtt==2.1.0",      # STRICT: Required for CallbackAPIVersion.VERSION2
+    "aiomqtt==2.3.0",        # STRICT: Validated against paho 2.1.0
+    "cobs>=1.2.2",
+    "psutil>=6.0.0",
+    "prometheus-client>=0.21.0"
 ]
 
 [tool.setuptools]

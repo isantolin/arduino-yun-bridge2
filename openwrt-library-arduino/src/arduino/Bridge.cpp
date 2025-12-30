@@ -3,6 +3,15 @@
  */
 #include "Bridge.h"
 
+// --- [SAFETY GUARD START] ---
+// CRITICAL: Prevent accidental STL usage on AVR targets (memory fragmentation risk)
+#if defined(ARDUINO_ARCH_AVR)
+  #if defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING)
+    #error "CRITICAL: STL detected in AVR build. Use standard arrays/pointers only to prevent heap fragmentation."
+  #endif
+#endif
+// --- [SAFETY GUARD END] ---
+
 #ifdef ARDUINO_ARCH_AVR
 #include <avr/wdt.h>
 #endif
@@ -854,4 +863,3 @@ void BridgeClass::requestAnalogRead(uint8_t pin) {
 void BridgeClass::requestGetFreeMemory() {
   (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY);
 }
-

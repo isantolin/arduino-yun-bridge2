@@ -67,7 +67,8 @@ SERIAL_FAILURE_STATUS_CODES: frozenset[int] = frozenset(
     }
 )
 SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({Status.OK.value})
-DEFAULT_MQTT_SPOOL_DIR: str = "/root/.yunbridge/mqtt_spool"
+# [CRITICAL CHANGE] Moved to RAM (/tmp) to prevent flash wear
+DEFAULT_MQTT_SPOOL_DIR: str = "/tmp/yunbridge/mqtt_spool"
 DEFAULT_PROCESS_MAX_OUTPUT_BYTES: int = 65536
 DEFAULT_PROCESS_MAX_CONCURRENT: int = 4
 DEFAULT_METRICS_HOST: str = "127.0.0.1"

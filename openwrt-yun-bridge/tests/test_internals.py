@@ -3,7 +3,6 @@ test_internals.py.
 
 Objetivo: Ejecución quirúrgica de bucles internos y manejo de errores.
 """
-import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from yunbridge.transport.serial import SerialTransport

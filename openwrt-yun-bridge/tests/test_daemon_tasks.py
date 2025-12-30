@@ -18,7 +18,7 @@ from aiomqtt.message import Message as MQTTMessage
 from cobs import cobs
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.const import FRAME_DELIMITER
+from yunbridge.rpc.protocol import FRAME_DELIMITER
 from yunbridge.rpc.frame import Frame
 from yunbridge.transport.mqtt import mqtt_task
 from yunbridge.transport.serial import (

@@ -19,7 +19,6 @@ from yunbridge.const import (
     DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_BAUD,
     DEFAULT_STATUS_INTERVAL,
 )
 from yunbridge.services.runtime import BridgeService
@@ -37,7 +36,7 @@ from yunbridge.policy import AllowedCommandPolicy
 def runtime_service() -> BridgeService:
     config = RuntimeConfig(
         serial_port="/dev/null",
-        serial_baud=DEFAULT_SERIAL_BAUD,
+        serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,

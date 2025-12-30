@@ -10,11 +10,11 @@ from typing import Any
 from collections.abc import Awaitable, Callable
 
 from yunbridge.const import (
-    SERIAL_ACK_ONLY_COMMANDS,
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
+from yunbridge.rpc.protocol import ACK_ONLY_COMMANDS as SERIAL_ACK_ONLY_COMMANDS
 from yunbridge.rpc.contracts import expected_responses, response_to_request
 from yunbridge.rpc.protocol import Status
 

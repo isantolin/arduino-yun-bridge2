@@ -18,7 +18,7 @@ import serial
 from cobs import cobs
 
 from yunbridge.config.settings import RuntimeConfig
-from yunbridge.const import FRAME_DELIMITER
+from yunbridge.rpc.protocol import FRAME_DELIMITER
 from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status

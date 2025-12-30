@@ -18,8 +18,6 @@ from ..config.settings import RuntimeConfig
 from ..const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
-    SERIAL_HANDSHAKE_TAG_LEN,
-    SERIAL_NONCE_LENGTH,
 )
 from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import handshake_topic
@@ -123,7 +121,7 @@ class SerialHandshakeManager:
 
     async def synchronize(self) -> bool:
         await self._respect_handshake_backoff()
-        nonce_length = SERIAL_NONCE_LENGTH
+        nonce_length = rpc_protocol.HANDSHAKE_NONCE_LENGTH
         self._state.record_handshake_attempt()
         nonce = os.urandom(nonce_length)
         self._state.link_handshake_nonce = nonce
@@ -172,7 +170,7 @@ class SerialHandshakeManager:
             return False
 
         nonce_length = self._state.link_nonce_length or len(expected)
-        required_length = nonce_length + SERIAL_HANDSHAKE_TAG_LEN
+        required_length = nonce_length + rpc_protocol.HANDSHAKE_TAG_LENGTH
         rate_limit = self._config.serial_handshake_min_interval
         if rate_limit > 0:
             now = time.monotonic()
@@ -213,7 +211,7 @@ class SerialHandshakeManager:
         if (
             nonce != expected
             or expected_tag is None
-            or len(tag_bytes) != SERIAL_HANDSHAKE_TAG_LEN
+            or len(tag_bytes) != rpc_protocol.HANDSHAKE_TAG_LENGTH
             or not hmac.compare_digest(tag_bytes, recalculated_tag)
         ):
             self._logger.warning(
@@ -426,7 +424,7 @@ class SerialHandshakeManager:
         if not secret:
             return b""
         digest = hmac.new(secret, nonce, hashlib.sha256).digest()
-        return digest[:SERIAL_HANDSHAKE_TAG_LEN]
+        return digest[: rpc_protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
         return self._compute_handshake_tag(nonce)

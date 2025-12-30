@@ -14,13 +14,16 @@ from yunbridge.const import (
     DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_SAFE_BAUD,
     DEFAULT_STATUS_INTERVAL,
 )
 from yunbridge.policy import CommandValidationError
 from yunbridge.rpc import protocol as rpc_protocol
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc.protocol import (
+    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
+    DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
+    Command,
+    Status,
+)
 from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.process import ProcessComponent, ProcessOutputBatch
 from yunbridge.state.context import create_runtime_state

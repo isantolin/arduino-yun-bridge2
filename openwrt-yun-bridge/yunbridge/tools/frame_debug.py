@@ -17,8 +17,8 @@ from collections.abc import Iterable
 import serial
 
 from cobs import cobs
-from yunbridge.const import (
-    DEFAULT_SERIAL_BAUD,
+from yunbridge.rpc.protocol import (
+    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     FRAME_DELIMITER,
 )
 from yunbridge.rpc import protocol as rpc_protocol

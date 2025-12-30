@@ -93,17 +93,17 @@ def test_protocol_spec_matches_generated_bindings() -> None:
         enum_entry = f"{command.name} = {command.value},"
         assert enum_entry in header_text
 
-    assert handshake["nonce_length"] == const.SERIAL_NONCE_LENGTH
-    assert handshake["tag_length"] == const.SERIAL_HANDSHAKE_TAG_LEN
-    assert handshake["tag_algorithm"] == const.SERIAL_HANDSHAKE_TAG_ALGORITHM
-    assert handshake["tag_description"] == const.SERIAL_HANDSHAKE_TAG_DESCRIPTION
-    assert handshake["config_format"] == const.SERIAL_HANDSHAKE_CONFIG_FORMAT
-    assert handshake["ack_timeout_min_ms"] == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MIN_MS
-    assert handshake["ack_timeout_max_ms"] == const.SERIAL_HANDSHAKE_ACK_TIMEOUT_MAX_MS
-    assert handshake["response_timeout_min_ms"] == const.SERIAL_RESPONSE_TIMEOUT_MIN_MS
-    assert handshake["response_timeout_max_ms"] == const.SERIAL_RESPONSE_TIMEOUT_MAX_MS
-    assert handshake["retry_limit_min"] == const.SERIAL_RETRY_LIMIT_MIN
-    assert handshake["retry_limit_max"] == const.SERIAL_RETRY_LIMIT_MAX
+    assert handshake["nonce_length"] == rpc_protocol.HANDSHAKE_NONCE_LENGTH
+    assert handshake["tag_length"] == rpc_protocol.HANDSHAKE_TAG_LENGTH
+    assert handshake["tag_algorithm"] == rpc_protocol.HANDSHAKE_TAG_ALGORITHM
+    assert handshake["tag_description"] == rpc_protocol.HANDSHAKE_TAG_DESCRIPTION
+    assert handshake["config_format"] == rpc_protocol.HANDSHAKE_CONFIG_FORMAT
+    assert handshake["ack_timeout_min_ms"] == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    assert handshake["ack_timeout_max_ms"] == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
+    assert handshake["response_timeout_min_ms"] == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
+    assert handshake["response_timeout_max_ms"] == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    assert handshake["retry_limit_min"] == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MIN
+    assert handshake["retry_limit_max"] == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
 
 
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
@@ -125,9 +125,9 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
 
 def test_handshake_tag_reference_vector_matches_spec() -> None:
     secret = b"yunbridge-shared"
-    nonce = bytes(range(const.SERIAL_NONCE_LENGTH))
+    nonce = bytes(range(rpc_protocol.HANDSHAKE_NONCE_LENGTH))
     expected = hmac.new(secret, nonce, hashlib.sha256).digest()[
-        : const.SERIAL_HANDSHAKE_TAG_LEN
+        : rpc_protocol.HANDSHAKE_TAG_LENGTH
     ]
     computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     assert computed == expected

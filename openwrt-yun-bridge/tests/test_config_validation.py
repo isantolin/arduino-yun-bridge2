@@ -11,16 +11,15 @@ from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_SAFE_BAUD,
 )
+from yunbridge.rpc import protocol
 
 
 def _config_kwargs(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "serial_port": "/dev/null",
-        "serial_baud": DEFAULT_SERIAL_BAUD,
-        "serial_safe_baud": DEFAULT_SERIAL_SAFE_BAUD,
+        "serial_baud": protocol.DEFAULT_BAUDRATE,
+        "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
         "mqtt_host": "localhost",
         "mqtt_port": DEFAULT_MQTT_PORT,
         "mqtt_user": None,

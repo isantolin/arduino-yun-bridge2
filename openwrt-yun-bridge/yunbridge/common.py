@@ -15,6 +15,10 @@ from typing import (
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from yunbridge.rpc import protocol
+from yunbridge.rpc.protocol import (
+    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
+    DEFAULT_RETRY_LIMIT as DEFAULT_SERIAL_RETRY_ATTEMPTS,
+)
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -37,12 +41,10 @@ from .const import (
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_BAUD,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_ATTEMPTS,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
 )

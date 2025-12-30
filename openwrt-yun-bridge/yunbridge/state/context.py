@@ -14,6 +14,12 @@ from collections.abc import Mapping
 
 from aiomqtt.message import Message as MQTTMessage
 
+from ..mqtt.messages import QueuedPublish
+from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
+from ..policy import AllowedCommandPolicy, TopicAuthorization
+from .queues import BoundedByteDeque
+from ..config.settings import RuntimeConfig
+
 from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
@@ -29,17 +35,14 @@ from ..const import (
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_ATTEMPTS,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
-from ..mqtt.messages import QueuedPublish
-from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
-from .queues import BoundedByteDeque
-
-from ..config.settings import RuntimeConfig
-from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..rpc.protocol import Command, Status
+from ..rpc.protocol import (
+    Command,
+    Status,
+    DEFAULT_RETRY_LIMIT as DEFAULT_SERIAL_RETRY_ATTEMPTS,
+)
 
 logger = logging.getLogger("yunbridge.state")
 

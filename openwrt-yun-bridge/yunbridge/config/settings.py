@@ -20,14 +20,14 @@ from ..common import (
     parse_int,
 )
 from ..const import (
+    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_METRICS_HOST,
     DEFAULT_METRICS_PORT,
     DEFAULT_MQTT_CAFILE,
@@ -41,36 +41,34 @@ from ..const import (
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_BAUD,
-    DEFAULT_SERIAL_SAFE_BAUD,
-    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_ATTEMPTS,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
-    MIN_SERIAL_SHARED_SECRET_LEN,
-    ENV_SERIAL_SECRET,
-    ENV_MQTT_CAFILE,
-    ENV_MQTT_CERTFILE,
-    ENV_MQTT_KEYFILE,
-    ENV_MQTT_USER,
-    ENV_MQTT_PASS,
+    ENV_BRIDGE_HANDSHAKE_INTERVAL,
+    ENV_BRIDGE_SUMMARY_INTERVAL,
+    ENV_DEBUG,
+    ENV_DISABLE_WATCHDOG,
     ENV_METRICS_ENABLED,
     ENV_METRICS_HOST,
     ENV_METRICS_PORT,
-    ENV_DISABLE_WATCHDOG,
-    ENV_WATCHDOG_INTERVAL,
+    ENV_MQTT_CAFILE,
+    ENV_MQTT_CERTFILE,
+    ENV_MQTT_KEYFILE,
+    ENV_MQTT_PASS,
+    ENV_MQTT_SPOOL_DIR,
+    ENV_MQTT_USER,
     ENV_PROCD_WATCHDOG,
     ENV_PROCD_WATCHDOG_MS,
-    ENV_DEBUG,
-    ENV_MQTT_SPOOL_DIR,
-    ENV_BRIDGE_SUMMARY_INTERVAL,
-    ENV_BRIDGE_HANDSHAKE_INTERVAL,
+    ENV_SERIAL_SECRET,
+    ENV_WATCHDOG_INTERVAL,
+    MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
+from ..rpc.protocol import DEFAULT_BAUDRATE, DEFAULT_RETRY_LIMIT, DEFAULT_SAFE_BAUDRATE
 from .credentials import lookup_credential
 
 
@@ -110,7 +108,7 @@ class RuntimeConfig:
     pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
     serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
     serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
-    serial_retry_attempts: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
+    serial_retry_attempts: int = DEFAULT_RETRY_LIMIT
     serial_handshake_min_interval: float = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
     serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     watchdog_enabled: bool = False
@@ -499,8 +497,8 @@ def load_runtime_config() -> RuntimeConfig:
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
-        serial_baud=_get_int("serial_baud", DEFAULT_SERIAL_BAUD),
-        serial_safe_baud=_get_int("serial_safe_baud", DEFAULT_SERIAL_SAFE_BAUD),
+        serial_baud=_get_int("serial_baud", DEFAULT_BAUDRATE),
+        serial_safe_baud=_get_int("serial_safe_baud", DEFAULT_SAFE_BAUDRATE),
         mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
         mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
         mqtt_user=_optional_path(mqtt_user),
@@ -551,7 +549,7 @@ def load_runtime_config() -> RuntimeConfig:
             raw.get("serial_response_timeout"), DEFAULT_SERIAL_RESPONSE_TIMEOUT
         ),
         serial_retry_attempts=max(
-            1, _get_int("serial_retry_attempts", DEFAULT_SERIAL_RETRY_ATTEMPTS)
+            1, _get_int("serial_retry_attempts", DEFAULT_RETRY_LIMIT)
         ),
         serial_handshake_min_interval=max(
             0.0,

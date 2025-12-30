@@ -7,6 +7,7 @@ import pytest
 
 from yunbridge import common as utils
 from yunbridge import const
+from yunbridge.rpc import protocol
 
 
 def test_get_default_config_matches_constants():
@@ -15,8 +16,8 @@ def test_get_default_config_matches_constants():
     assert config["mqtt_host"] == const.DEFAULT_MQTT_HOST
     assert config["mqtt_port"] == str(const.DEFAULT_MQTT_PORT)
     assert config["serial_port"] == const.DEFAULT_SERIAL_PORT
-    assert config["serial_baud"] == str(const.DEFAULT_SERIAL_BAUD)
-    assert config["serial_retry_attempts"] == str(const.DEFAULT_SERIAL_RETRY_ATTEMPTS)
+    assert config["serial_baud"] == str(protocol.DEFAULT_BAUDRATE)
+    assert config["serial_retry_attempts"] == str(protocol.DEFAULT_RETRY_LIMIT)
     assert config["serial_retry_timeout"] == str(const.DEFAULT_SERIAL_RETRY_TIMEOUT)
     assert config["serial_response_timeout"] == str(
         const.DEFAULT_SERIAL_RESPONSE_TIMEOUT

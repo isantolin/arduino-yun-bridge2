@@ -254,7 +254,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     config = settings.load_runtime_config()
 
     assert config.serial_port == "/dev/default"
-    assert config.serial_baud == const.DEFAULT_SERIAL_BAUD
+    assert config.serial_baud == protocol.DEFAULT_BAUDRATE
     assert config.mqtt_tls is True
     assert config.mqtt_user is None
     assert config.mqtt_pass is None

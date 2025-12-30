@@ -26,7 +26,6 @@ from yunbridge.state.context import (
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_NONCE_LENGTH,
 )
 from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.protocol import Command, Status
@@ -282,7 +281,7 @@ def test_link_sync_resp_respects_rate_limit(
         )
 
         def _prime_handshake(seed: int) -> bytes:
-            nonce = bytes([seed]) * SERIAL_NONCE_LENGTH
+            nonce = bytes([seed]) * rpc_protocol.HANDSHAKE_NONCE_LENGTH
             tag = service._compute_handshake_tag(nonce)
             runtime_state.link_is_synchronized = False
             runtime_state.link_handshake_nonce = nonce
@@ -325,7 +324,7 @@ def test_sync_auth_failure_schedules_backoff(
         )
 
         def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
-            nonce = bytes([seed]) * SERIAL_NONCE_LENGTH
+            nonce = bytes([seed]) * rpc_protocol.HANDSHAKE_NONCE_LENGTH
             tag = service._compute_handshake_tag(nonce)
             runtime_state.link_is_synchronized = False
             runtime_state.link_handshake_nonce = nonce

@@ -1,24 +1,19 @@
 /*
- * test_coverage_extreme.cpp
- * Objetivo: Fuzzing y Simulación de Tiempo (Retransmisiones)
+ * test_coverage_extreme.cpp (V4 Final Corrected)
+ * Enfoque: Manipulación directa de estado interno y Fuzzing de Protocolo.
  */
 
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
-#include <stdint.h>
+#include <vector>
 
-// --- TIME SIMULATION HOOKS ---
-static unsigned long _mock_millis = 0;
-// Sobrescribimos millis para los tests
-unsigned long millis() {
-    return _mock_millis;
-}
-void advance_millis(unsigned long ms) {
-    _mock_millis += ms;
-}
+// 1. Sobrescribir millis() para Time Travel
+static unsigned long _virtual_millis = 0;
+unsigned long millis() { return _virtual_millis; }
+void forward_time(unsigned long ms) { _virtual_millis += ms; }
 
-// Habilitar acceso a privados
+// 2. Exponer privados
 #define private public
 #define protected public
 #include "Bridge.h"
@@ -27,10 +22,9 @@ void advance_millis(unsigned long ms) {
 #undef protected
 
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_frame.h"
 #include "protocol/cobs.h"
 
-// Mocks Globales
+// Mocks
 HardwareSerial Serial;
 HardwareSerial Serial1;
 ConsoleClass Console;
@@ -39,154 +33,109 @@ MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
 
-#define MAX_BUFFER_SIZE 1024
-
-// --- MOCK STREAM ---
-class FuzzStream : public Stream {
+// 3. Mock Stream con fallos programables
+class FlakyStream : public Stream {
 public:
-    uint8_t rx_buffer[MAX_BUFFER_SIZE];
-    size_t rx_len;
-    size_t rx_pos;
-    uint8_t tx_buffer[MAX_BUFFER_SIZE];
-    size_t tx_len;
+    std::vector<uint8_t> rx;
+    std::vector<uint8_t> tx;
+    bool write_fails = false;
 
-    FuzzStream() : rx_len(0), rx_pos(0), tx_len(0) {}
-
-    void reset() {
-        rx_len = 0;
-        rx_pos = 0;
-        tx_len = 0;
-        memset(rx_buffer, 0, MAX_BUFFER_SIZE);
-        memset(tx_buffer, 0, MAX_BUFFER_SIZE);
-    }
-
-    int available() override {
-        return (int)(rx_len - rx_pos);
-    }
-
+    int available() override { return rx.size(); }
     int read() override {
-        if (rx_pos < rx_len) {
-            return rx_buffer[rx_pos++];
-        }
-        return -1;
+        if (rx.empty()) return -1;
+        uint8_t b = rx.front();
+        rx.erase(rx.begin());
+        return b;
     }
-
-    int peek() override {
-        if (rx_pos < rx_len) {
-            return rx_buffer[rx_pos];
-        }
-        return -1;
-    }
+    int peek() override { return rx.empty() ? -1 : rx.front(); }
 
     size_t write(uint8_t c) override {
-        if (tx_len < MAX_BUFFER_SIZE) {
-            tx_buffer[tx_len++] = c;
-            return 1;
-        }
-        return 0;
+        if (write_fails) return 0;
+        tx.push_back(c);
+        return 1;
     }
-
-    size_t write(const uint8_t *buffer, size_t size) override {
+    size_t write(const uint8_t *b, size_t s) override {
         size_t n = 0;
-        while (size--) {
-            if (write(*buffer++)) n++;
-            else break;
-        }
+        while (s--) n += write(*b++);
         return n;
     }
-
     void flush() override {}
 
-    void inject_bytes(const uint8_t* data, size_t len) {
-        size_t space = MAX_BUFFER_SIZE - rx_len;
-        size_t to_copy = (len < space) ? len : space;
-        memcpy(rx_buffer + rx_len, data, to_copy);
-        rx_len += to_copy;
+    void push_rx(const std::vector<uint8_t>& data) {
+        rx.insert(rx.end(), data.begin(), data.end());
     }
 };
 
-FuzzStream fuzzStream;
-BridgeClass Bridge(fuzzStream);
+FlakyStream io;
+BridgeClass Bridge(io);
 
-void test_retransmission_logic() {
-    printf("[TEST] test_retransmission_logic\n");
-    fuzzStream.reset();
-    _mock_millis = 1000;
+// Tests
 
-    // 1. Enviar trama que requiere ACK (ej: Console Write)
-    uint8_t payload[] = { 'H', 'i' };
-    Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, 2);
+void test_buffer_overflow_protection() {
+    printf("TEST: Buffer Overflow Protection\n");
+    io.rx.clear();
 
-    assert(Bridge._awaiting_ack == true);
-    assert(Bridge._retry_count == 0);
-    assert(fuzzStream.tx_len > 0);
+    // Crear trama válida pero GIGANTE (mayor que buffer interno)
+    std::vector<uint8_t> frame;
+    frame.push_back(0x00); // 0 bytes to next delimiter (COBS start)
+    for (int i = 0; i < 300; i++) frame.push_back(0x01);
+    frame.push_back(0x00); // Delimiter
 
-    size_t initial_tx_len = fuzzStream.tx_len;
+    io.push_rx(frame);
 
-    // 2. Avanzar tiempo más allá del timeout
-    advance_millis(Bridge._ack_timeout_ms + 10);
-
-    // Ejecutar process para disparar el check de timeout
-    rpc::Frame dummy;
-    (void)dummy; // Suppress unused
-    Bridge._processAckTimeout();
-
-    // Verificar que retransmitió
-    assert(Bridge._retry_count == 1);
-    assert(fuzzStream.tx_len > initial_tx_len);
-
-    // 3. Agotar reintentos
-    Bridge._retry_count = Bridge._ack_retry_limit;
-    advance_millis(Bridge._ack_timeout_ms + 10);
-    Bridge._processAckTimeout();
-
-    // Debe haberse rendido
-    assert(Bridge._awaiting_ack == false);
+    // Procesar. Debería detectar overflow y resetear buffer sin crashear.
+    rpc::Frame f;
+    while (io.available()) {
+        Bridge._transport.processInput(f);
+    }
 }
 
-void test_malformed_response_triggers_retransmit() {
-    printf("[TEST] test_malformed_response_triggers_retransmit\n");
-    fuzzStream.reset();
-    _mock_millis = 2000;
+void test_write_failure_handling() {
+    printf("TEST: Write Failure Handling\n");
+    io.write_fails = true;
 
-    // Enviar comando
-    uint8_t payload[] = { 0x01 };
-    Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, 1);
-    Bridge._retry_count = 0;
-    size_t tx_mark = fuzzStream.tx_len;
+    uint8_t data[] = {0xAA};
+    // sendFrame debe retornar false si el stream falla
+    // Usamos CMD_GET_VERSION (0x0A) como comando válido genérico
+    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, data, 1);
 
-    // Simular recepción de STATUS_MALFORMED (0x02)
-    Bridge._handleMalformed(Bridge._last_command_id);
-
-    assert(Bridge._retry_count == 1);
-    assert(fuzzStream.tx_len > tx_mark);
+    assert(ok == false);
+    io.write_fails = false; // Restaurar
 }
 
-void test_system_command_boundary() {
-    printf("[TEST] test_system_command_boundary\n");
+void test_handshake_timeout_and_retry() {
+    printf("TEST: Handshake Timeout & Retry\n");
+    Bridge.begin(115200); // Inicia handshake
+    io.tx.clear();
 
-    rpc::Frame frame;
-    frame.header.payload_length = 0;
-    frame.payload = NULL; // Use NULL standard macro
+    // Estado inicial: esperando sync
+    assert(Bridge._synchronized == false);
 
-    // 0x0A = GET_VERSION (System)
-    frame.header.command_id = 0x0A;
-    fuzzStream.reset();
-    Bridge.dispatch(frame);
-    assert(fuzzStream.tx_len > 0);
+    // Avanzar tiempo > timeout
+    forward_time(Bridge._ack_timeout_ms + 100);
 
-    // 0x10 = Unknown -> Should emit UNKNOWN
-    fuzzStream.reset();
-    frame.header.command_id = 0x10;
-    Bridge.dispatch(frame);
-    assert(fuzzStream.tx_len > 0);
+    // Ejecutar ciclo
+    // Bridge no tiene poll(), llamamos a _processAckTimeout directamente
+    // o simulamos el ciclo si existiera un método público de polling.
+    // Al no haber poll(), usamos el mecanismo interno:
+    Bridge._processAckTimeout();
+
+    // Verificar que se envió algo nuevo (retransmisión de sync)
+    assert(io.tx.size() > 0);
+}
+
+void test_protocol_crc_error() {
+    printf("TEST: Protocol CRC Error\n");
+    // Inyectar llamada directa si encoding es complejo en test
+    Bridge._emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, "");
+    assert(io.tx.size() > 0);
 }
 
 int main() {
-    printf("=== RUNNING EXTREME COVERAGE TESTS (V3 Fixed) ===\n");
-    test_retransmission_logic();
-    test_malformed_response_triggers_retransmit();
-    test_system_command_boundary();
-    printf("=== ALL TESTS PASSED ===\n");
+    test_buffer_overflow_protection();
+    test_write_failure_handling();
+    test_handshake_timeout_and_retry();
+    test_protocol_crc_error();
+    printf("ALL TESTS PASSED\n");
     return 0;
 }

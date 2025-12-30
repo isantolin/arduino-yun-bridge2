@@ -24,7 +24,7 @@ def test_daemon_task_setup_logic():
     mock_config.serial_shared_secret = "secret"
     mock_config.watchdog_enabled = True
     mock_config.metrics_enabled = True
-    
+
     # Valores numéricos explícitos para evitar TypeError en comparaciones
     mock_config.bridge_summary_interval = 10.0
     mock_config.bridge_handshake_interval = 10.0
@@ -54,7 +54,7 @@ async def test_daemon_run_lifecycle():
     # Desactivar features opcionales para simplificar
     mock_config.watchdog_enabled = False
     mock_config.metrics_enabled = False
-    
+
     # Valores numéricos explícitos (0.0 para desactivar lógica de intervalos)
     mock_config.bridge_summary_interval = 0.0
     mock_config.bridge_handshake_interval = 0.0

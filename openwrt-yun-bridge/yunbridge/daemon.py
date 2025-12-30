@@ -51,7 +51,7 @@ class BridgeDaemon:
 
     def _setup_supervision(self) -> list[SupervisedTaskSpec]:
         """Prepare the list of tasks to be supervised."""
-        
+
         # 1. Define Core Tasks (Inner functions to capture 'self')
         async def _serial_runner() -> None:
             transport = SerialTransport(self.config, self.state, self.service)
@@ -148,7 +148,7 @@ class BridgeDaemon:
     async def run(self) -> None:
         """Main async entry point."""
         supervised_tasks = self._setup_supervision()
-        
+
         try:
             async with self.service:
                 async with asyncio.TaskGroup() as task_group:
@@ -174,7 +174,6 @@ class BridgeDaemon:
         finally:
             cleanup_status_file()
             logger.info("Yun Bridge daemon stopped.")
-
 
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
     config = load_runtime_config()
@@ -214,7 +213,6 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
     except Exception:
         logger.critical("Fatal error in main execution", exc_info=True)
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

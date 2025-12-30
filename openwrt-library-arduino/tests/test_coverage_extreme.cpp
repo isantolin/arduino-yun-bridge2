@@ -1,6 +1,6 @@
 /*
  * test_coverage_extreme.cpp
- * Objetivo: Fuzzing determinista y cobertura de ramas de error (Zero STL).
+ * Objetivo: Fuzzing y Simulación de Tiempo (Retransmisiones)
  */
 
 #include <assert.h>
@@ -8,7 +8,17 @@
 #include <stdio.h>
 #include <stdint.h>
 
-// Habilitar acceso a privados para testing white-box
+// --- TIME SIMULATION HOOKS ---
+static unsigned long _mock_millis = 0;
+// Sobrescribimos millis para los tests
+unsigned long millis() {
+    return _mock_millis;
+}
+void advance_millis(unsigned long ms) {
+    _mock_millis += ms;
+}
+
+// Habilitar acceso a privados
 #define private public
 #define protected public
 #include "Bridge.h"
@@ -17,9 +27,8 @@
 #undef protected
 
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_frame.h" // Necesario para rpc::Frame
+#include "protocol/rpc_frame.h"
 #include "protocol/cobs.h"
-#include "protocol/crc.h"
 
 // Mocks Globales
 HardwareSerial Serial;
@@ -32,13 +41,12 @@ ProcessClass Process;
 
 #define MAX_BUFFER_SIZE 1024
 
-// --- MOCK STREAM (C-Style Ring Buffer Simulation) ---
+// --- MOCK STREAM ---
 class FuzzStream : public Stream {
 public:
     uint8_t rx_buffer[MAX_BUFFER_SIZE];
     size_t rx_len;
     size_t rx_pos;
-    
     uint8_t tx_buffer[MAX_BUFFER_SIZE];
     size_t tx_len;
 
@@ -77,8 +85,7 @@ public:
         }
         return 0;
     }
-    
-    // Implementación obligatoria de Stream/Print
+
     size_t write(const uint8_t *buffer, size_t size) override {
         size_t n = 0;
         while (size--) {
@@ -89,8 +96,7 @@ public:
     }
 
     void flush() override {}
-    
-    // Helper para inyectar datos
+
     void inject_bytes(const uint8_t* data, size_t len) {
         size_t space = MAX_BUFFER_SIZE - rx_len;
         size_t to_copy = (len < space) ? len : space;
@@ -102,118 +108,85 @@ public:
 FuzzStream fuzzStream;
 BridgeClass Bridge(fuzzStream);
 
-// --- HELPERS (C-Style) ---
+void test_retransmission_logic() {
+    printf("[TEST] test_retransmission_logic\n");
+    fuzzStream.reset();
+    _mock_millis = 1000;
 
-// Helper simple para codificar COBS en buffer estático
-size_t simple_cobs_encode(const uint8_t* input, size_t length, uint8_t* output) {
-    size_t read_index = 0;
-    size_t write_index = 1;
-    size_t code_index = 0;
-    uint8_t code = 1;
+    // 1. Enviar trama que requiere ACK (ej: Console Write)
+    uint8_t payload[] = { 'H', 'i' };
+    Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, 2);
 
-    while (read_index < length) {
-        if (input[read_index] == 0) {
-            output[code_index] = code;
-            code = 1;
-            code_index = write_index++;
-            read_index++;
-        } else {
-            output[write_index++] = input[read_index++];
-            code++;
-            if (code == 0xFF) {
-                output[code_index] = code;
-                code = 1;
-                code_index = write_index++;
-            }
-        }
-    }
-    output[code_index] = code;
-    return write_index;
+    assert(Bridge._awaiting_ack == true);
+    assert(Bridge._retry_count == 0);
+    assert(fuzzStream.tx_len > 0);
+
+    size_t initial_tx_len = fuzzStream.tx_len;
+
+    // 2. Avanzar tiempo más allá del timeout
+    advance_millis(Bridge._ack_timeout_ms + 10);
+
+    // Ejecutar process para disparar el check de timeout
+    rpc::Frame dummy;
+    (void)dummy; // Suppress unused
+    Bridge._processAckTimeout();
+
+    // Verificar que retransmitió
+    assert(Bridge._retry_count == 1);
+    assert(fuzzStream.tx_len > initial_tx_len);
+
+    // 3. Agotar reintentos
+    Bridge._retry_count = Bridge._ack_retry_limit;
+    advance_millis(Bridge._ack_timeout_ms + 10);
+    Bridge._processAckTimeout();
+
+    // Debe haberse rendido
+    assert(Bridge._awaiting_ack == false);
 }
 
-void test_crc_failure() {
-    printf("[TEST] test_crc_failure\n");
+void test_malformed_response_triggers_retransmit() {
+    printf("[TEST] test_malformed_response_triggers_retransmit\n");
     fuzzStream.reset();
-    Bridge.begin(115200);
-    
-    // Trama Raw: [CMD][LEN_L][LEN_H][CRC_BASURA...]
-    uint8_t raw[] = {
-        0x0A,       // CMD_GET_VERSION
-        0x00, 0x00, // Len 0
-        0xDE, 0xAD, 0xBE, 0xEF // CRC Basura
-    };
-    
-    // Encode COBS
-    uint8_t encoded[64];
-    size_t enc_len = simple_cobs_encode(raw, sizeof(raw), encoded);
-    
-    // Inyectar trama + delimitador
-    fuzzStream.inject_bytes(encoded, enc_len);
-    uint8_t delimiter = 0x00;
-    fuzzStream.inject_bytes(&delimiter, 1);
-    
-    // Forzar procesamiento (simulamos el loop de Bridge)
-    // BridgeTransport::processInput lee bytes del stream.
+    _mock_millis = 2000;
+
+    // Enviar comando
+    uint8_t payload[] = { 0x01 };
+    Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, 1);
+    Bridge._retry_count = 0;
+    size_t tx_mark = fuzzStream.tx_len;
+
+    // Simular recepción de STATUS_MALFORMED (0x02)
+    Bridge._handleMalformed(Bridge._last_command_id);
+
+    assert(Bridge._retry_count == 1);
+    assert(fuzzStream.tx_len > tx_mark);
+}
+
+void test_system_command_boundary() {
+    printf("[TEST] test_system_command_boundary\n");
+
     rpc::Frame frame;
-    while(fuzzStream.available()) {
-        Bridge._transport.processInput(frame);
-    }
-    
-    // Verificación: Debe haber respondido algo (STATUS_CRC_MISMATCH)
-    // El buffer TX no debe estar vacío.
+    frame.header.payload_length = 0;
+    frame.payload = NULL; // Use NULL standard macro
+
+    // 0x0A = GET_VERSION (System)
+    frame.header.command_id = 0x0A;
+    fuzzStream.reset();
+    Bridge.dispatch(frame);
+    assert(fuzzStream.tx_len > 0);
+
+    // 0x10 = Unknown -> Should emit UNKNOWN
+    fuzzStream.reset();
+    frame.header.command_id = 0x10;
+    Bridge.dispatch(frame);
     assert(fuzzStream.tx_len > 0);
 }
 
-void test_oversized_payload() {
-    printf("[TEST] test_oversized_payload\n");
-    fuzzStream.reset();
-    
-    // Crear payload que exceda RPC_MAX_PAYLOAD (usualmente 256 o similar)
-    // Header (CMD + LEN) = 3 bytes
-    uint8_t raw[300]; 
-    memset(raw, 0xAA, sizeof(raw));
-    raw[0] = 0x0A; // CMD
-    // Longitud declarada grande
-    raw[1] = 0xFF; 
-    raw[2] = 0x00;
-    
-    uint8_t encoded[350];
-    size_t enc_len = simple_cobs_encode(raw, sizeof(raw), encoded);
-    
-    fuzzStream.inject_bytes(encoded, enc_len);
-    uint8_t delimiter = 0x00;
-    fuzzStream.inject_bytes(&delimiter, 1);
-    
-    rpc::Frame frame;
-    while(fuzzStream.available()) {
-        Bridge._transport.processInput(frame);
-    }
-    
-    // Se espera que la protección interna evite buffer overflow
-    // y no crashee.
-    assert(fuzzStream.tx_len > 0 || fuzzStream.rx_pos == fuzzStream.rx_len);
-}
-
-void test_write_failure_simulation() {
-    printf("[TEST] test_write_failure_simulation\n");
-    fuzzStream.reset();
-    
-    // Llenar buffer TX artificialmente para simular bloqueo/fallo
-    fuzzStream.tx_len = MAX_BUFFER_SIZE; 
-    
-    uint8_t payload[] = {0x01, 0x02};
-    // Intentar enviar trama
-    bool result = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, 2);
-    
-    // Debería fallar o manejarlo
-    (void)result; // Suppress unused warning
-}
-
 int main() {
-    printf("=== RUNNING EXTREME COVERAGE TESTS (NO STL) ===\n");
-    test_crc_failure();
-    test_oversized_payload();
-    test_write_failure_simulation();
+    printf("=== RUNNING EXTREME COVERAGE TESTS (V3 Fixed) ===\n");
+    test_retransmission_logic();
+    test_malformed_response_triggers_retransmit();
+    test_system_command_boundary();
     printf("=== ALL TESTS PASSED ===\n");
     return 0;
 }

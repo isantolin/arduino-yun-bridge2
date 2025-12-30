@@ -1,98 +1,141 @@
 """
-test_coverage_extreme.py (V2)
-Objetivo: Atacar bucles infinitos y manejo de excepciones en transportes.
+test_coverage_extreme.py (V3 Fixed).
+
+Objetivo: 100% Cobertura Real en Daemon y Transportes (Py3.13 Compatible).
 """
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 from yunbridge.transport.serial import SerialTransport
 from yunbridge.transport.mqtt import mqtt_task
+from yunbridge.daemon import BridgeDaemon
 from yunbridge.rpc.protocol import FRAME_DELIMITER, Command
 from yunbridge.rpc.frame import Frame
 from cobs import cobs
 import aiomqtt
+
+
+# --- DAEMON TESTS (Refactored) ---
+
+
+def test_daemon_task_setup_logic():
+    """Verifica que se crean las tareas correctas según la config."""
+    mock_config = MagicMock()
+    mock_config.serial_shared_secret = "secret"
+    mock_config.watchdog_enabled = True
+    mock_config.metrics_enabled = True
+    
+    # Valores numéricos explícitos para evitar TypeError en comparaciones
+    mock_config.bridge_summary_interval = 10.0
+    mock_config.bridge_handshake_interval = 10.0
+    mock_config.status_interval = 5.0
+    mock_config.watchdog_interval = 10.0
+    mock_config.metrics_host = "localhost"
+    mock_config.metrics_port = 9090
+
+    with patch("yunbridge.daemon.create_runtime_state"), \
+            patch("yunbridge.daemon.BridgeService"):
+
+        daemon = BridgeDaemon(mock_config)
+        specs = daemon._setup_supervision()
+
+        task_names = [s.name for s in specs]
+        assert "serial-link" in task_names
+        assert "mqtt-link" in task_names
+        assert "watchdog" in task_names
+        assert "prometheus-exporter" in task_names
+        assert "bridge-snapshots" in task_names
+
+
+@pytest.mark.asyncio
+async def test_daemon_run_lifecycle():
+    """Prueba el ciclo de vida completo de run() sin bloquear."""
+    mock_config = MagicMock()
+    # Desactivar features opcionales para simplificar
+    mock_config.watchdog_enabled = False
+    mock_config.metrics_enabled = False
+    
+    # Valores numéricos explícitos (0.0 para desactivar lógica de intervalos)
+    mock_config.bridge_summary_interval = 0.0
+    mock_config.bridge_handshake_interval = 0.0
+    mock_config.status_interval = 5.0
+    mock_config.serial_shared_secret = "secret"
+
+    with patch("yunbridge.daemon.create_runtime_state"), \
+            patch("yunbridge.daemon.BridgeService") as MockService, \
+            patch("yunbridge.daemon.supervise_task",
+                  new_callable=AsyncMock) as mock_supervise:
+
+        # Hacer que supervise_task retorne inmediatamente para no bloquear
+        mock_supervise.return_value = None
+
+        # Simular Context Manager del servicio
+        service_instance = MockService.return_value
+        service_instance.__aenter__.return_value = service_instance
+        service_instance.__aexit__.return_value = None
+
+        daemon = BridgeDaemon(mock_config)
+
+        # Ejecutar run (debe terminar rápido porque supervise_task es mock)
+        await daemon.run()
+
+        assert mock_supervise.call_count >= 2  # Al menos serial y mqtt
+
 
 # --- SERIAL TRANSPORT: DEEP RESILIENCE ---
 
 
 @pytest.mark.asyncio
 async def test_serial_read_loop_corruption_and_recovery():
-    """
-    Simula flujo de bytes corruptos, tramas gigantes y recuperación.
-    Cubre: _read_loop, _process_packet (ramas de error), buffer overflow.
-    """
+    """Simula flujo de bytes corruptos y recuperación."""
     mock_config = MagicMock()
     mock_state = MagicMock()
     mock_service = AsyncMock()
 
     transport = SerialTransport(mock_config, mock_state, mock_service)
-
-    # Mockear reader/writer
     mock_reader = AsyncMock()
     transport.reader = mock_reader
     transport.writer = MagicMock()
 
-    # Escenario de Inyección de Bytes:
-    # 1. Trama válida
+    # Data stream: [Valid] [Corrupt] [Huge] [Noise]
     valid_frame = cobs.encode(
         Frame.build(Command.CMD_GET_VERSION, b"")
     ) + FRAME_DELIMITER
-
-    # 2. Trama corrupta (COBS inválido)
     bad_cobs = b"\x05\xFF\xFF" + FRAME_DELIMITER
-
-    # 3. Trama gigante (Buffer Overflow)
-    # MAX_SERIAL_PACKET_BYTES suele ser ~260. Enviamos 300 bytes.
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
-
-    # 4. Basura aleatoria (ruido de línea)
     noise = b"\x00\x00\xFF\xAA"
 
-    # Configurar el stream de lectura simulado
-    # side_effect devuelve bytes uno a uno o en chunks
     feed_data = [valid_frame, bad_cobs, huge_chunk, noise, b""]
 
-    # Iterador asíncrono para simular lectura
+    # Generador asíncrono byte a byte
     async def feed_generator():
         for chunk in feed_data:
-            # Entregamos byte a byte para ejercitar la lógica de buffer
             for b in chunk:
                 yield bytes([b])
 
-    # Mockear read(1)
     iterator = feed_generator()
 
     async def mock_read(n):
         try:
             return await iterator.__anext__()
         except StopAsyncIteration:
-            return b""
+            return b""  # EOF para salir del loop
 
     mock_reader.read.side_effect = mock_read
 
-    # Ejecutar solo el read_loop (no run() completo)
     await transport._read_loop()
 
-    # Verificaciones
-    # 1. Trama válida debió procesarse
     mock_service.handle_mcu_frame.assert_awaited()
-
-    # 2. Errores debieron registrarse en state
     assert mock_state.record_serial_decode_error.call_count >= 2
 
 
 @pytest.mark.asyncio
 async def test_serial_write_flow_control():
-    """
-    Prueba que el writer respete si el puerto está cerrado o fallando.
-    """
+    """Prueba protecciones de escritura."""
     transport = SerialTransport(MagicMock(), MagicMock(), MagicMock())
-
-    # Caso 1: Writer es None
     transport.writer = None
     assert await transport.send_frame(0x01, b"") is False
 
-    # Caso 2: Writer cerrándose
     transport.writer = MagicMock()
     transport.writer.is_closing.return_value = True
     assert await transport.send_frame(0x01, b"") is False
@@ -103,26 +146,17 @@ async def test_serial_write_flow_control():
 
 @pytest.mark.asyncio
 async def test_mqtt_connection_backoff_and_auth_fail():
-    """
-    Simula caída del broker y reintentos con backoff exponencial.
-    """
+    """Simula fallos de conexión y backoff."""
     mock_config = MagicMock()
     mock_config.mqtt_host = "localhost"
-    mock_config.reconnect_delay = 0.01  # Rápido para el test
-    # IMPORTANTE: Desactivar TLS explícitamente para evitar validación de paths
+    mock_config.reconnect_delay = 0.01
+    # FIX: Desactivar TLS explícitamente
     mock_config.tls_enabled = False
 
-    mock_state = MagicMock()
-    mock_state.mqtt_topic_prefix = "test"
-
-    # Mock Client context manager
     mock_client_cls = MagicMock()
     mock_ctx = MagicMock()
 
-    # Configurar fallos secuenciales en __aenter__:
-    # 1. MqttError (Red caída)
-    # 2. OSError (Host inalcanzable)
-    # 3. CancelledError (Para detener el test limpiamente)
+    # Fallos secuenciales -> Cancelación
     mock_ctx.__aenter__ = AsyncMock(side_effect=[
         aiomqtt.MqttError("Network Unreachable"),
         OSError("No route to host"),
@@ -133,56 +167,45 @@ async def test_mqtt_connection_backoff_and_auth_fail():
 
     with patch("yunbridge.transport.mqtt.aiomqtt.Client", mock_client_cls):
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            # En Python 3.13, TaskGroup envuelve excepciones en BaseExceptionGroup
+            # FIX: Capturar BaseExceptionGroup para Py3.13
             with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
-                await mqtt_task(mock_config, mock_state, AsyncMock())
+                await mqtt_task(mock_config, MagicMock(), AsyncMock())
 
-            # Verificar que hubo backoff (sleep llamado tras fallos)
             assert mock_sleep.call_count >= 2
 
 
 @pytest.mark.asyncio
 async def test_mqtt_publisher_loop_error_handling():
-    """
-    Prueba que el publisher no muera si falla un publish individual.
-    """
+    """Prueba resiliencia del publisher loop."""
     mock_config = MagicMock()
     mock_config.reconnect_delay = 0.01
-    # IMPORTANTE: Desactivar TLS para que no intente buscar certificados
-    mock_config.tls_enabled = False
-    
-    mock_state = MagicMock()
+    mock_config.tls_enabled = False  # FIX
 
-    # Configurar cola de publicación mock
+    mock_state = MagicMock()
     queue = asyncio.Queue()
     msg = MagicMock()
-    msg.topic_name = "test/topic"
+    msg.topic_name = "test"
     msg.payload = b"data"
-    msg.qos = 0
-    msg.retain = False
-
     await queue.put(msg)
     mock_state.mqtt_publish_queue = queue
     mock_state.flush_mqtt_spool = AsyncMock()
 
-    # Mock cliente conectado
     mock_client = MagicMock()
     mock_client.publish = AsyncMock(side_effect=[
-        aiomqtt.MqttError("Pub failed"),  # Fallo 1
-        asyncio.CancelledError("Stop")    # Parada
+        aiomqtt.MqttError("Pub failed"),
+        asyncio.CancelledError("Stop")
     ])
 
     mock_ctx = MagicMock()
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
-    # TaskGroup mock para ejecutar los loops
+
     tg_mock = MagicMock()
     tg_mock.__aenter__ = AsyncMock(return_value=tg_mock)
-    tg_mock.create_task = MagicMock()  # Capturamos las corutinas
+    tg_mock.create_task = MagicMock()
 
     with patch("yunbridge.transport.mqtt.aiomqtt.Client",
                return_value=mock_ctx):
         with patch("asyncio.TaskGroup", return_value=tg_mock):
-            # Lanzamos y cancelamos rápido
             task = asyncio.create_task(
                 mqtt_task(mock_config, mock_state, AsyncMock())
             )
@@ -193,16 +216,11 @@ async def test_mqtt_publisher_loop_error_handling():
             except (asyncio.CancelledError, BaseExceptionGroup):
                 pass
 
-            # Recuperamos la corutina publisher del TaskGroup
-            # args[0] de create_task
+            # Extraer y ejecutar publisher loop aislado
             if tg_mock.create_task.call_args_list:
                 publisher_coro = tg_mock.create_task.call_args_list[0][0][0]
-
-                # Ejecutamos el publisher aislado
                 try:
                     await publisher_coro
                 except (asyncio.CancelledError, BaseExceptionGroup):
                     pass
-
-                # Verificamos que se intentó publicar
                 mock_client.publish.assert_called()

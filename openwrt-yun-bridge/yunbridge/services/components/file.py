@@ -489,6 +489,8 @@ class FileComponent:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("ab") as f:
             f.write(data)
+            if f.tell() > 1048576:  # 1MB warning
+                logger.warning("File %s is growing large (>1MB) in RAM!", path)
 
     @staticmethod
     def _read_file_sync(path: Path) -> bytes:

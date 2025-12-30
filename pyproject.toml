@@ -17,7 +17,8 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["openwrt_yun_bridge"]
+packages = ["yunbridge"]
+package-dir = {"" = "openwrt-yun-bridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"

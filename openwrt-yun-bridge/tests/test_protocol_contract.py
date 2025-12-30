@@ -11,7 +11,6 @@ from pathlib import Path
 
 import tomllib
 
-from yunbridge import const
 from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.services.handshake import SerialHandshakeManager
 

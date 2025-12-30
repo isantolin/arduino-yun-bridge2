@@ -14,8 +14,6 @@ from __future__ import annotations
 
 from ssl import TLSVersion
 
-from .protocol.topics import Topic
-from .rpc import protocol as rpc_protocol
 from .rpc.protocol import Status
 
 # ==============================================================================

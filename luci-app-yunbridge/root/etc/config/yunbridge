@@ -1,17 +1,28 @@
 config general 'general'
     option enabled '1'
+    
+    # [PRODUCCION] Debug desactivado
     option debug '0'
+
+    # [SERIAL] Velocidad estándar (Legacy Compatibility)
     option serial_port '/dev/ttyATH0'
     option serial_baud '115200'
+    
+    # [SEGURIDAD] Secreto compartido
+    option serial_shared_secret 'changeme123'
+
+    # [MQTT] Configuración del broker local
     option mqtt_host '127.0.0.1'
     option mqtt_port '8883'
     option mqtt_tls '1'
     option mqtt_cafile '/etc/ssl/certs/ca-certificates.crt'
     option mqtt_topic 'br'
-    option file_system_root '/root/yun_files'
-    option process_timeout '10'
-    option serial_shared_secret 'changeme123'  # CHANGE THIS TO A UNIQUE VALUE
-#	option mqtt_user ''
-#	option mqtt_pass ''
-#	option mqtt_ws_port '9001'
-#	option allowed_commands 'date uptime'
+
+    # [FLASH GUARD] Mantenemos esta mejora CRÍTICA (RAMFS)
+    option mqtt_spool_dir '/tmp/yunbridge/spool'
+
+    # [ALMACENAMIENTO]
+    option file_system_root '/mnt/sda1'
+
+    # [TIMEOUTS]
+    option process_timeout '15'

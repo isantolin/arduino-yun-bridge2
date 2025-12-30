@@ -1,50 +1,47 @@
 #!/bin/sh /etc/rc.common
-# YunBridge Daemon Init Script
-# Adapted from bridge-v2.init
-#
-# NOTE: The daemon is started using the system Python. No virtual environment is required.
+# YunBridge Daemon Init Script - Refactor 10/10 (Flash Protection & Py3.13)
 
-# Set the service start order
-START=99 
-# Set the service stop order
+START=99
 STOP=10
+USE_PROCD=1
 
-# Delegate control (start/stop/restart) to procd.
-USE_PROCD=1 
+# [DEPENDENCIAS] Esperar a que Mosquitto y la red estén listos para evitar race conditions
+DEPENDS="mosquitto network"
 
 start_service() {
+    # [FLASH GUARD] Crear directorios volátiles en RAMFS antes de iniciar
+    # Esto evita que el daemon escriba colas o sockets en la memoria Flash
+    mkdir -p /tmp/yunbridge/spool
+    mkdir -p /tmp/run/yunbridge
+    
+    # Asegurar permisos para que el usuario del servicio pueda escribir
+    chmod 777 /tmp/yunbridge/spool
+    chmod 777 /tmp/run/yunbridge
+
     procd_open_instance
 
-    procd_set_param env PYTHONPATH=/usr/libexec/yunbridge
-    procd_set_param command /usr/bin/yunbridge
+    # [EJECUCIÓN] Invocación directa optimizada (-O) para Python 3.13
+    # Se asume que el paquete está instalado en site-packages
+    procd_set_param command /usr/bin/python3 -O -m yunbridge
 
-    local respawn_threshold="${YUNBRIDGE_RESPAWN_THRESHOLD:-5}"
-    local respawn_window="${YUNBRIDGE_RESPAWN_WINDOW:-30}"
-    local respawn_retry="${YUNBRIDGE_RESPAWN_RETRY:-5}"
-    procd_set_param respawn "$respawn_threshold" "$respawn_window" "$respawn_retry"
+    # [VARIABLES] Entorno crítico
+    procd_set_param env PYTHONPATH=/usr/lib/python3.13/site-packages
+    # Forzar el spool en RAM explícitamente como fallback de seguridad
+    procd_set_param env MQTT_SPOOL_DIR=/tmp/yunbridge/spool
 
-    local watchdog_disabled="${YUNBRIDGE_DISABLE_PROCD_WATCHDOG:-0}"
-    local watchdog_ms="${YUNBRIDGE_PROCD_WATCHDOG_MS:-10000}"
+    # [RESILIENCIA] Reinicio automático: Espera 3600s antes de rendirse, intenta infinito con backoff de 5s
+    procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-0}
 
-    case "$(printf '%s' "$watchdog_disabled" | tr '[:upper:]' '[:lower:]')" in
-        1|true|yes|on)
-            procd_set_param env YUNBRIDGE_DISABLE_WATCHDOG="1"
-            ;;
-        *)
-            # procd exports PROCD_WATCHDOG to the daemon when this parameter is set.
-            # We also forward the raw window (ms) so the Python process can fall back
-            # if that export is missing.
-            procd_set_param watchdog "$watchdog_ms"
-            procd_set_param env YUNBRIDGE_PROCD_WATCHDOG_MS="$watchdog_ms"
-            ;;
-    esac
+    # [WATCHDOG] Integración con el watchdog del sistema (procd)
+    # Si el script de python no hace "touch" cada 60s, el sistema reinicia el servicio
+    local watchdog_ms="${YUNBRIDGE_PROCD_WATCHDOG_MS:-60000}"
+    procd_set_param watchdog "$watchdog_ms"
+    procd_set_param env YUNBRIDGE_PROCD_WATCHDOG_MS="$watchdog_ms"
+
+    # [LOGGING] Redirigir stdout/stderr a syslog (logread)
+    # Esencial para no saturar buffers y depurar con herramientas nativas
     procd_set_param stdout 1
     procd_set_param stderr 1
 
     procd_close_instance
 }
-
-# --- IMPORTANT ---
-# All custom stop_service, restart_service, and reload_service functions 
-# must be omitted from the script to prevent the "service: missing argument" error
-# in this specific BusyBox environment.

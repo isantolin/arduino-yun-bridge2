@@ -8,7 +8,7 @@ import ssl
 from pathlib import Path
 
 import aiomqtt
-from paho.mqtt.enums import CallbackAPIVersion  # [REQ-PY3.13] Mandatory for Paho 2.x
+# [REQ-PY3.13] Paho 2.x is used by aiomqtt internally, but aiomqtt > 2.0 handles the callback versioning.
 
 from yunbridge.common import build_mqtt_connect_properties, build_mqtt_properties
 from yunbridge.config.settings import RuntimeConfig
@@ -103,9 +103,9 @@ async def mqtt_task(
     while True:
         try:
             connect_props = build_mqtt_connect_properties()
-            
-            # [FIX-10/10] Explicit Paho 2.x compatibility
-            # aiomqtt passes kwargs to paho.mqtt.client.Client
+
+            # [FIX-10/10] aiomqtt 2.x wraps Paho 2.x and handles CallbackAPIVersion internally.
+            # Passing callback_api_version explicitly is not supported in aiomqtt constructor.
             async with aiomqtt.Client(
                 hostname=config.mqtt_host,
                 port=config.mqtt_port,
@@ -116,7 +116,6 @@ async def mqtt_task(
                 protocol=aiomqtt.ProtocolVersion.V5,
                 clean_session=None,
                 properties=connect_props,
-                callback_api_version=CallbackAPIVersion.VERSION2, # CRITICAL FOR PAHO 2.x
             ) as client:
                 logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
 
@@ -150,7 +149,7 @@ async def mqtt_task(
 
                 for topic, qos in topics:
                     await client.subscribe(topic, qos=qos)
-                
+
                 logger.info("Subscribed to %d command topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:

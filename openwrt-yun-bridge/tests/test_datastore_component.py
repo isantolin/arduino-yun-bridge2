@@ -1,26 +1,44 @@
-"""Tests for the DatastoreComponent."""
-
-from __future__ import annotations
-
-import struct
-from unittest.mock import AsyncMock, patch
-
 import pytest
 import pytest_asyncio
+from unittest.mock import MagicMock, AsyncMock
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
+    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
+    DEFAULT_FILE_WRITE_MAX_BYTES,
+    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+    DEFAULT_MAILBOX_QUEUE_LIMIT,
+    DEFAULT_METRICS_HOST,
+    DEFAULT_METRICS_PORT,
+    DEFAULT_MQTT_CAFILE,
+    DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
+    DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TOPIC,
+    DEFAULT_PENDING_PIN_REQUESTS,
+    DEFAULT_PROCESS_MAX_CONCURRENT,
+    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
+    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+    DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
+    DEFAULT_WATCHDOG_INTERVAL,
+    SUPERVISOR_DEFAULT_MAX_BACKOFF,
+    SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 )
+from yunbridge.protocol import Command
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Command
-from yunbridge.services.components.base import BridgeContext
 from yunbridge.services.components.datastore import DatastoreComponent
-from yunbridge.state.context import create_runtime_state
+from yunbridge.state.context import RuntimeState
 
 
 @pytest_asyncio.fixture
@@ -29,100 +47,99 @@ async def datastore_component() -> DatastoreComponent:
         serial_port="/dev/null",
         serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
+        serial_shared_secret=b"testsecret",
+        serial_retry_timeout=DEFAULT_SERIAL_RETRY_TIMEOUT,
+        serial_response_timeout=DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+        serial_retry_attempts=1,
+        serial_handshake_min_interval=DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+        serial_handshake_fatal_failures=DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_user=None,
-        mqtt_pass=None,
         mqtt_tls=False,
-        mqtt_cafile=None,
+        mqtt_cafile=DEFAULT_MQTT_CAFILE,
         mqtt_certfile=None,
         mqtt_keyfile=None,
+        mqtt_user=None,
+        mqtt_pass=None,
         mqtt_topic=DEFAULT_MQTT_TOPIC,
-        allowed_commands=(),
-        file_system_root="/tmp",
+        mqtt_spool_dir=DEFAULT_MQTT_SPOOL_DIR,
+        mqtt_queue_limit=DEFAULT_MQTT_QUEUE_LIMIT,
+        file_system_root=DEFAULT_FILE_SYSTEM_ROOT,
+        file_write_max_bytes=DEFAULT_FILE_WRITE_MAX_BYTES,
+        file_storage_quota_bytes=DEFAULT_FILE_STORAGE_QUOTA_BYTES,
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
+        process_max_output_bytes=DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+        process_max_concurrent=DEFAULT_PROCESS_MAX_CONCURRENT,
+        console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+        mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
+        mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+        pending_pin_request_limit=DEFAULT_PENDING_PIN_REQUESTS,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
-        serial_shared_secret=b"testsecret",
+        bridge_summary_interval=DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+        bridge_handshake_interval=DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+        debug_logging=False,
+        allowed_commands=(),
+        metrics_enabled=False,
+        metrics_host=DEFAULT_METRICS_HOST,
+        metrics_port=DEFAULT_METRICS_PORT,
+        watchdog_enabled=False,
+        watchdog_interval=DEFAULT_WATCHDOG_INTERVAL,
+        supervisor_restart_interval=SUPERVISOR_DEFAULT_RESTART_INTERVAL,
+        supervisor_min_backoff=SUPERVISOR_DEFAULT_MIN_BACKOFF,
+        supervisor_max_backoff=SUPERVISOR_DEFAULT_MAX_BACKOFF,
     )
-    state = create_runtime_state(config)
-    ctx = AsyncMock(spec=BridgeContext)
-
-    # Mock schedule_background to just await the coroutine immediately for testing
-    async def _schedule(coro):
-        await coro
-
-    ctx.schedule_background.side_effect = _schedule
-
-    component = DatastoreComponent(config, state, ctx)
+    state = RuntimeState(config)
+    component = DatastoreComponent(config, state)
+    component.bind_mqtt_client(AsyncMock())
+    component.bind_serial_writer(MagicMock())
     return component
 
 
 @pytest.mark.asyncio
 async def test_handle_put_success(datastore_component: DatastoreComponent) -> None:
-    key = b"key1"
-    value = b"value1"
-    # Payload: key_len (1 byte) + key + value_len (1 byte) + value
-    payload = struct.pack("B", len(key)) + key + struct.pack("B", len(value)) + value
-
-    # Mock _publish_value
-    with patch.object(
-        datastore_component, "_publish_value", new_callable=AsyncMock
-    ) as mock_pub:
-        result = await datastore_component.handle_put(payload)
-
-        assert result is True
-        assert datastore_component.state.datastore["key1"] == "value1"
-        mock_pub.assert_awaited_once_with("key1", value)
+    # Key length (1 byte) + Key + Content
+    key = b"key"
+    value = b"value"
+    payload = bytes([len(key)]) + key + value
+    
+    await datastore_component.handle_put(payload)
+    
+    assert datastore_component.state.datastore.get("key") == "value"
+    # Should publish to MQTT
+    datastore_component._mqtt_client.publish.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> None:
-    # Too short
-    assert await datastore_component.handle_put(b"") is False
-
-    # Missing value length
-    key = b"k"
-    payload = struct.pack("B", len(key)) + key
-    assert await datastore_component.handle_put(payload) is False
+    # Payload too short
+    await datastore_component.handle_put(b"\x05key") 
+    # Should simply not crash/raise
+    assert len(datastore_component.state.datastore) == 0
 
 
 @pytest.mark.asyncio
-async def test_handle_get_request_success(
-    datastore_component: DatastoreComponent,
-) -> None:
-    # Pre-populate datastore
-    datastore_component.state.datastore["key1"] = "value1"
-
-    key = b"key1"
-    payload = struct.pack("B", len(key)) + key
-
-    await datastore_component.handle_get_request(payload)
-
-    datastore_component.ctx.send_frame.assert_awaited_once()
-    args = datastore_component.ctx.send_frame.call_args[0]
-    assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
-
-    # Response: value_len (1 byte) + value
-    resp = args[1]
-    assert resp[0] == len("value1")
-    assert resp[1:] == b"value1"
+async def test_handle_get_request_success(datastore_component: DatastoreComponent) -> None:
+    datastore_component.state.datastore["key"] = "value"
+    payload = b"key"
+    
+    await datastore_component.handle_get(payload)
+    
+    writer = datastore_component._serial_writer
+    writer.send_frame.assert_called_once()
+    frame = writer.send_frame.call_args[0][0]
+    assert frame.command_id == Command.CMD_DATASTORE_GET_RESP.value
+    # Response format: Key len + Key + Value
+    assert frame.payload == b"\x03keyvalue"
 
 
 @pytest.mark.asyncio
-async def test_handle_get_request_missing(
-    datastore_component: DatastoreComponent,
-) -> None:
-    key = b"missing"
-    payload = struct.pack("B", len(key)) + key
+async def test_handle_get_request_missing(datastore_component: DatastoreComponent) -> None:
+    payload = b"missing"
+    await datastore_component.handle_get(payload)
 
-    await datastore_component.handle_get_request(payload)
-
-    datastore_component.ctx.send_frame.assert_awaited_once()
-    args = datastore_component.ctx.send_frame.call_args[0]
-    assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
-
-    # Should return empty string
-    resp = args[1]
-    assert resp[0] == 0
-    assert len(resp) == 1
+    writer = datastore_component._serial_writer
+    writer.send_frame.assert_called_once()
+    frame = writer.send_frame.call_args[0][0]
+    # Should return key + empty value
+    assert frame.payload == b"\x07missing"

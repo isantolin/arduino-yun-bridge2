@@ -187,7 +187,7 @@ void test_bridge_flow_control() {
     
     // Inject enough bytes to trigger XOFF (High Water Mark = 48)
     std::vector<uint8_t> data(50, TEST_PAYLOAD_BYTE);
-    data.push_back(0x00); // Delimiter to flush garbage so parser resets
+    data.push_back(rpc::RPC_FRAME_DELIMITER); // Delimiter to flush garbage so parser resets
     stream.inject_rx(data);
     
     // First process(): sees 50 bytes, sends XOFF, reads all bytes
@@ -274,7 +274,7 @@ void test_bridge_malformed_frame() {
     // This tests the parser's resilience
     std::vector<uint8_t> garbage(300, rpc::RPC_UINT8_MASK); 
     stream.inject_rx(garbage);
-    stream.inject_rx({0x00}); // Terminator
+    stream.inject_rx({rpc::RPC_FRAME_DELIMITER}); // Terminator
 
     bridge.process();
     
@@ -387,7 +387,7 @@ void test_bridge_unknown_command() {
 
     // Command ID 0xFFFF is likely unknown
     uint16_t cmd_id = rpc::RPC_INVALID_ID_SENTINEL;
-    std::vector<uint8_t> payload = {0x00};
+    std::vector<uint8_t> payload = {0};
     std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
     
     stream.inject_rx(frame);

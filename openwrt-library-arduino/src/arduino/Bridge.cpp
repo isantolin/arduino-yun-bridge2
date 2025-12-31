@@ -661,7 +661,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
   printf("[Bridge] _sendFrame ID=%u AwaitingAck=%d PendingCount=%d\n", command_id, _awaiting_ack, _pending_tx_count);
 #endif
   if (!_synchronized) {
-    bool allowed = (command_id <= 0x0F) || // [FIX] Updated range for new System IDs (0x00-0x0F)
+    bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) || // [FIX] Updated range for new System IDs (0x00-0x0F)
                    (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_RESET_RESP));

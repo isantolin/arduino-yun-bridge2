@@ -717,7 +717,7 @@ void test_begin_preserves_binary_shared_secret_length() {
   RecordingStream stream_explicit;
   BridgeClass bridge_explicit(stream_explicit); // Local
 
-  const uint8_t secret_bytes[] = {0x00, 0x01, 0x02, 0x00, 0x03};
+  const uint8_t secret_bytes[] = {0, 0x01, 0x02, 0, 0x03};
   const char* binary_secret = reinterpret_cast<const char*>(secret_bytes);
   bridge_explicit.begin(rpc::RPC_DEFAULT_BAUDRATE, binary_secret, sizeof(secret_bytes));
 
@@ -1465,7 +1465,7 @@ void test_bridge_process_input_errors() {
   std::vector<uint8_t> frame_data;
   frame_data.push_back(PROTOCOL_VERSION);
   frame_data.push_back(0); frame_data.push_back(0); // Len 0
-  frame_data.push_back(0); frame_data.push_back(10); // CMD_GET_VERSION
+  frame_data.push_back(0); frame_data.push_back(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)); // CMD_GET_VERSION
   
   // Add Bad CRC
   frame_data.push_back(0xDE);
@@ -1477,7 +1477,7 @@ void test_bridge_process_input_errors() {
   std::vector<uint8_t> cobs_data(frame_data.size() + 5); 
   size_t cobs_len = cobs::encode(frame_data.data(), frame_data.size(), cobs_data.data());
   cobs_data.resize(cobs_len);
-  cobs_data.push_back(0x00); // Delimiter
+  cobs_data.push_back(rpc::RPC_FRAME_DELIMITER); // Delimiter
   
   stream.inject_rx(cobs_data);
   

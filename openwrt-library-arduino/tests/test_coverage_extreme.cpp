@@ -77,9 +77,9 @@ void test_buffer_overflow_protection() {
 
     // Crear trama válida pero GIGANTE (mayor que buffer interno)
     std::vector<uint8_t> frame;
-    frame.push_back(0x00); // 0 bytes to next delimiter (COBS start)
+    frame.push_back(rpc::RPC_FRAME_DELIMITER); // 0 bytes to next delimiter (COBS start)
     for (int i = 0; i < 300; i++) frame.push_back(0x01);
-    frame.push_back(0x00); // Delimiter
+    frame.push_back(rpc::RPC_FRAME_DELIMITER); // Delimiter
 
     io.push_rx(frame);
 
@@ -105,7 +105,7 @@ void test_write_failure_handling() {
 
 void test_handshake_timeout_and_retry() {
     printf("TEST: Handshake Timeout & Retry\n");
-    Bridge.begin(115200); // Inicia handshake
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE); // Inicia handshake
     io.tx.clear();
 
     // Estado inicial: esperando sync

@@ -26,6 +26,7 @@ digital_high = 0x01
 test_payload_byte = 0xAA
 test_marker_byte = 0x55
 test_exit_code = 0x7F
+system_command_max = 0x0F
 
 [handshake]
 nonce_length = 16

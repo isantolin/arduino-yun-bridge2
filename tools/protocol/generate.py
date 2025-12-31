@@ -124,6 +124,10 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_TEST_EXIT_CODE = {consts['test_exit_code']};\n"
         )
+    if "system_command_max" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = {consts['system_command_max']};\n"
+        )
     out.write("\n")
 
     handshake = spec.get("handshake", {})
@@ -262,6 +266,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if "test_exit_code" in consts:
         out.write(
             f"TEST_EXIT_CODE: Final[int] = {consts['test_exit_code']}\n"
+        )
+    if "system_command_max" in consts:
+        out.write(
+            f"SYSTEM_COMMAND_MAX: Final[int] = {consts['system_command_max']}\n"
         )
     out.write("\n")
 

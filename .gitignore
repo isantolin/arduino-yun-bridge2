@@ -66,3 +66,4 @@ gha-creds-*.json
 feeds/luci-app-yunbridge
 feeds/openwrt-yun-bridge
 feeds/openwrt-yun-core
+test_protocol_bin

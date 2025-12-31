@@ -55,7 +55,7 @@ def test_parse_validates_version_and_length() -> None:
         Frame.parse(bytes(raw))
 
     raw = bytearray(Frame.build(protocol.Command.CMD_DATASTORE_GET, payload))
-    raw[1] = 0x00
-    raw[2] = 0x00
+    raw[1] = 0
+    raw[2] = 0
     with pytest.raises(ValueError):
         Frame.parse(bytes(raw))

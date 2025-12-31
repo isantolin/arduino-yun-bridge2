@@ -30,7 +30,7 @@ static void test_builder_roundtrip() {
   Frame frame{};
 
   const uint16_t command_id = TEST_CMD_ID;
-  const uint8_t payload[] = {0x00, 0x01, RPC_UINT8_MASK, 0x02, 0x00};
+  const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, 0x01, RPC_UINT8_MASK, 0x02, rpc::RPC_FRAME_DELIMITER};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
     size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
@@ -48,7 +48,7 @@ static void test_builder_roundtrip() {
   for (size_t i = 0; i < encoded_len; ++i) {
     assert(!parser.consume(encoded[i], frame));
   }
-  parsed = parser.consume(0x00, frame);
+  parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
   assert(parsed);
   assert(frame.header.version == PROTOCOL_VERSION);
   assert(frame.header.command_id == command_id);
@@ -70,7 +70,7 @@ static void test_parser_incomplete_packets() {
   assert(!parser.consume(0x11, frame));
   assert(!parser.consume(0x22, frame));
   // Reset and provide terminating zero with no data -> should be ignored.
-  assert(!parser.consume(0x00, frame));
+  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_crc_failure() {
@@ -90,7 +90,7 @@ static void test_parser_crc_failure() {
   for (size_t i = 0; i < encoded_len; ++i) {
     assert(!parser.consume(encoded[i], frame));
   }
-  assert(!parser.consume(0x00, frame));
+  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_header_validation() {
@@ -111,7 +111,7 @@ static void test_parser_header_validation() {
   for (size_t i = 0; i < encoded_len; ++i) {
     assert(!parser.consume(encoded[i], frame));
   }
-  assert(!parser.consume(0x00, frame));
+  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_overflow_guard() {
@@ -135,7 +135,7 @@ static void test_parser_overflow_guard() {
   for (uint8_t byte : encoded) {
     assert(!parser.consume(byte, frame));
   }
-  assert(!parser.consume(0x00, frame));
+  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_noise_handling() {
@@ -153,9 +153,9 @@ static void test_parser_noise_handling() {
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
 
   // Inject noise before the frame. 
-  // Note: We must end with 0x00 to flush the noise as a "bad frame" 
+  // Note: We must end with RPC_FRAME_DELIMITER to flush the noise as a "bad frame" 
   // so the parser is clean for the valid frame.
-  const uint8_t noise[] = {0x11, 0x22, 0x00, 0x33, 0x44, 0x00}; 
+  const uint8_t noise[] = {0x11, 0x22, rpc::RPC_FRAME_DELIMITER, 0x33, 0x44, rpc::RPC_FRAME_DELIMITER}; 
   for (uint8_t b : noise) {
     parser.consume(b, frame);
   }
@@ -167,8 +167,8 @@ static void test_parser_noise_handling() {
         parsed = true;
     }
   }
-  // The last byte (0x00) should trigger the parse
-  parsed = parser.consume(0x00, frame);
+  // The last byte (RPC_FRAME_DELIMITER) should trigger the parse
+  parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
   
   assert(parsed);
   assert(frame.header.command_id == command_id);
@@ -192,9 +192,9 @@ static void test_parser_fragmentation() {
   bool parsed = false;
   for (size_t i = 0; i < encoded_len; ++i) {
       parsed = parser.consume(encoded[i], frame);
-      assert(!parsed); // Should not be done until 0x00
+      assert(!parsed); // Should not be done until RPC_FRAME_DELIMITER
   }
-  parsed = parser.consume(0x00, frame);
+  parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
   assert(parsed);
   assert(frame.header.command_id == command_id);
 }

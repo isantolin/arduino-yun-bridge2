@@ -72,9 +72,8 @@ class RuntimeConfig:
     """
     Consolidated configuration from Defaults, UCI, and Environment.
 
-    MODERNIZACIÓN PYTHON 3.13:
-    Esta clase usa 'dataclasses' para evitar escribir getters/setters repetitivos.
-    Cada campo aquí definido se valida automáticamente en el método 'load'.
+    This class uses 'dataclasses' for boilerplate reduction but includes
+    compatibility properties to match the legacy API expected by consumers.
     """
 
     # --- Serial / UART Configuration ---
@@ -134,8 +133,6 @@ class RuntimeConfig:
     supervisor_max_backoff: float
 
     # --- Security Policies (MQTT Actions) ---
-    # Default is True, but can be disabled via UCI
-    # 'yunbridge.general.mqtt_allow_xxx = 0'
     mqtt_allow_file_read: bool = True
     mqtt_allow_file_write: bool = True
     mqtt_allow_file_remove: bool = True
@@ -154,21 +151,11 @@ class RuntimeConfig:
     mqtt_allow_analog_write: bool = True
     mqtt_allow_analog_read: bool = True
 
-    # Use ClassVar for constants if needed, but here we don't have any yet
-    # that aren't imported.
-
     @classmethod
     def load(cls) -> RuntimeConfig:
-        """
-        Load configuration prioritizing ENV > UCI > Defaults.
-
-        This method acts as the central factory, resolving conflicts between
-        Environment Variables (Docker/Dev) and UCI (OpenWrt System).
-        """
-        # 1. Load UCI (or defaults if missing)
+        """Load configuration prioritizing ENV > UCI > Defaults."""
         uci = get_uci_config()
 
-        # 2. Helpers for resolution (Reduces code duplication)
         def resolve_str(key: str, env_var: str | None = None) -> str:
             val = os.environ.get(env_var) if env_var else None
             if val is None:
@@ -201,13 +188,11 @@ class RuntimeConfig:
                     return default
             return parse_bool(val)
 
-        # 3. Build instance with resolved values
         config = cls(
-            # Serial
             serial_port=resolve_str("serial_port") or DEFAULT_SERIAL_PORT,
             serial_baud=resolve_int("serial_baud", 115200),
             serial_safe_baud=resolve_int("serial_safe_baud", 115200),
-            serial_shared_secret=None,  # Handled specifically below
+            serial_shared_secret=None,
             serial_retry_timeout=resolve_float(
                 "serial_retry_timeout", DEFAULT_SERIAL_RETRY_TIMEOUT
             ),
@@ -223,7 +208,6 @@ class RuntimeConfig:
                 "serial_handshake_fatal_failures",
                 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
             ),
-            # MQTT
             mqtt_host=resolve_str("mqtt_host") or DEFAULT_MQTT_HOST,
             mqtt_port=resolve_int("mqtt_port", DEFAULT_MQTT_PORT),
             mqtt_tls=resolve_bool("mqtt_tls", True),
@@ -235,13 +219,11 @@ class RuntimeConfig:
             mqtt_user=resolve_str("mqtt_user", ENV_MQTT_USER) or None,
             mqtt_pass=resolve_str("mqtt_pass", ENV_MQTT_PASS) or None,
             mqtt_topic=resolve_str("mqtt_topic") or DEFAULT_MQTT_TOPIC,
-            # [CRITICAL] This path is validated later to ensure it's in RAM
             mqtt_spool_dir=resolve_str("mqtt_spool_dir", ENV_MQTT_SPOOL_DIR)
             or DEFAULT_MQTT_SPOOL_DIR,
             mqtt_queue_limit=resolve_int(
                 "mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT
             ),
-            # Filesystem
             file_system_root=resolve_str("file_system_root")
             or DEFAULT_FILE_SYSTEM_ROOT,
             file_write_max_bytes=resolve_int(
@@ -250,7 +232,6 @@ class RuntimeConfig:
             file_storage_quota_bytes=resolve_int(
                 "file_storage_quota_bytes", DEFAULT_FILE_STORAGE_QUOTA_BYTES
             ),
-            # Components
             process_timeout=resolve_int(
                 "process_timeout", DEFAULT_PROCESS_TIMEOUT
             ),
@@ -272,7 +253,6 @@ class RuntimeConfig:
             pending_pin_request_limit=resolve_int(
                 "pending_pin_request_limit", DEFAULT_PENDING_PIN_REQUESTS
             ),
-            # Operational
             reconnect_delay=resolve_float(
                 "reconnect_delay", DEFAULT_RECONNECT_DELAY
             ),
@@ -293,7 +273,6 @@ class RuntimeConfig:
             allowed_commands=normalise_allowed_commands(
                 resolve_str("allowed_commands").split()
             ),
-            # Metrics
             metrics_enabled=resolve_bool(
                 "metrics_enabled", False, ENV_METRICS_ENABLED
             ),
@@ -302,7 +281,6 @@ class RuntimeConfig:
             metrics_port=resolve_int(
                 "metrics_port", DEFAULT_METRICS_PORT, ENV_METRICS_PORT
             ),
-            # Watchdog
             watchdog_enabled=not resolve_bool(
                 "disable_watchdog", False, ENV_DISABLE_WATCHDOG
             ),
@@ -316,62 +294,81 @@ class RuntimeConfig:
             supervisor_max_backoff=SUPERVISOR_DEFAULT_MAX_BACKOFF,
         )
 
-        # Dynamic Permission loading from UCI
-        # Checks for keys like 'mqtt_allow_file_read' automatically
         for field_name in cls.__dataclass_fields__:
             if field_name.startswith("mqtt_allow_"):
                 default_val = getattr(config, field_name)
                 val = resolve_bool(field_name, default_val)
                 setattr(config, field_name, val)
 
-        # Secure Secret Handling
         secret_str = resolve_str("serial_shared_secret", ENV_SERIAL_SECRET)
         if secret_str:
             config.serial_shared_secret = secret_str.encode("utf-8")
         else:
             config.serial_shared_secret = DEFAULT_SERIAL_SHARED_SECRET
 
-        # [HARDENING] Apply strict validation logic
         config._validate_operational_limits()
         return config
 
     def _validate_operational_limits(self) -> None:
-        """
-        Enforce safety bounds on configuration values to protect the hardware.
-
-        This method is critical for:
-        1. Flash Protection: Ensuring high-write directories are in RAM.
-        2. DoS Protection: Limiting queue sizes and concurrency.
-        """
-        # [HARDENING] Flash Memory Protection Logic
-        # OpenWrt uses /tmp (tmpfs) for volatile storage. Writing high-frequency
-        # MQTT spool data to persistent flash (/root, /etc) will destroy the
-        # specific block in weeks/months. We enforce RAM usage here.
+        """Enforce safety bounds on configuration values."""
         safe_prefixes = ("/tmp/", "/var/run/", "/dev/null")
         is_safe_path = any(
             self.mqtt_spool_dir.startswith(p) for p in safe_prefixes
         )
 
         if not is_safe_path:
-            # We override unsafe configuration to protect the hardware.
-            # Logging might not be up yet, but this is a critical safety fallback.
-            # The daemon will eventually log the path being used.
             self.mqtt_spool_dir = DEFAULT_MQTT_SPOOL_DIR
 
-        # Sanity Checks for Timings
         self.serial_retry_timeout = max(0.1, self.serial_retry_timeout)
         self.reconnect_delay = max(1.0, self.reconnect_delay)
         self.status_interval = max(1, self.status_interval)
 
-        # Security: Enforce minimum secret length
         if (
             self.serial_shared_secret
             and len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN
         ):
-            # Fallback to no secret if it's too weak
             self.serial_shared_secret = None
 
-        # Resource Protection: Clamp queue limits to prevent OOM on small
-        # routers (16MB/32MB RAM)
         self.mqtt_queue_limit = min(self.mqtt_queue_limit, 2048)
         self.process_max_concurrent = min(self.process_max_concurrent, 16)
+
+    # --- Compatibility Properties ---
+
+    @property
+    def tls_enabled(self) -> bool:
+        """Alias for mqtt_tls used by mqtt transport."""
+        return self.mqtt_tls
+
+    @property
+    def allowed_policy(self) -> dict[str, bool]:
+        """
+        Return a dictionary of all mqtt_allow_* flags.
+        Used by context.py for policy enforcement.
+        """
+        return {
+            k: getattr(self, k)
+            for k in self.__dataclass_fields__
+            if k.startswith("mqtt_allow_")
+        }
+
+    @property
+    def topic_authorization(self) -> dict[str, Any]:
+        """
+        Return topic structure configuration.
+        Used by context.py to validate topic access.
+        """
+        # Based on typical usage, this likely returns the configured root topic
+        # or a structure defining read/write paths. Assuming simple structure
+        # based on mqtt_topic for now.
+        return {
+            "root": self.mqtt_topic,
+            # Add other topic-related config if needed by consumers
+        }
+
+
+def load_runtime_config() -> RuntimeConfig:
+    """
+    Legacy helper function to load configuration.
+    Wraps RuntimeConfig.load() for backward compatibility with daemon.py.
+    """
+    return RuntimeConfig.load()

@@ -1,6 +1,7 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 import pytest_asyncio
-from unittest.mock import MagicMock, AsyncMock
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
@@ -96,35 +97,42 @@ async def datastore_component() -> DatastoreComponent:
 
 
 @pytest.mark.asyncio
-async def test_handle_put_success(datastore_component: DatastoreComponent) -> None:
+async def test_handle_put_success(
+    datastore_component: DatastoreComponent,
+) -> None:
     # Key length (1 byte) + Key + Content
     key = b"key"
     value = b"value"
     payload = bytes([len(key)]) + key + value
-    
+
     await datastore_component.handle_put(payload)
-    
+
     assert datastore_component.state.datastore.get("key") == "value"
     # Should publish to MQTT
-    datastore_component._mqtt_client.publish.assert_called_once()
+    datastore_component._mqtt_client.publish.assert_called_once()  # pyright: ignore [reportOptionalMemberAccess]
 
 
 @pytest.mark.asyncio
-async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> None:
+async def test_handle_put_malformed(
+    datastore_component: DatastoreComponent,
+) -> None:
     # Payload too short
-    await datastore_component.handle_put(b"\x05key") 
+    await datastore_component.handle_put(b"\x05key")
     # Should simply not crash/raise
     assert len(datastore_component.state.datastore) == 0
 
 
 @pytest.mark.asyncio
-async def test_handle_get_request_success(datastore_component: DatastoreComponent) -> None:
+async def test_handle_get_request_success(
+    datastore_component: DatastoreComponent,
+) -> None:
     datastore_component.state.datastore["key"] = "value"
     payload = b"key"
-    
+
     await datastore_component.handle_get(payload)
-    
+
     writer = datastore_component._serial_writer
+    assert writer is not None
     writer.send_frame.assert_called_once()
     frame = writer.send_frame.call_args[0][0]
     assert frame.command_id == Command.CMD_DATASTORE_GET_RESP.value
@@ -133,11 +141,14 @@ async def test_handle_get_request_success(datastore_component: DatastoreComponen
 
 
 @pytest.mark.asyncio
-async def test_handle_get_request_missing(datastore_component: DatastoreComponent) -> None:
+async def test_handle_get_request_missing(
+    datastore_component: DatastoreComponent,
+) -> None:
     payload = b"missing"
     await datastore_component.handle_get(payload)
 
     writer = datastore_component._serial_writer
+    assert writer is not None
     writer.send_frame.assert_called_once()
     frame = writer.send_frame.call_args[0][0]
     # Should return key + empty value

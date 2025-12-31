@@ -109,8 +109,8 @@ def file_component(
     )
     state = RuntimeState(config)
     component = FileComponent(config, state)
-    component.bind_serial_writer(bridge)
-    component.bind_mqtt_client(bridge)
+    component.bind_serial_writer(bridge)  # pyright: ignore
+    component.bind_mqtt_client(bridge)  # pyright: ignore
     return component, bridge
 
 
@@ -264,5 +264,6 @@ def test_get_safe_path_confines_to_root(
 ) -> None:
     component, _ = file_component
     path = component._get_safe_path(filename)
+    assert path is not None  # Ensure path is resolved
     root = Path(component.state.file_system_root).resolve()
     assert path.resolve().is_relative_to(root)

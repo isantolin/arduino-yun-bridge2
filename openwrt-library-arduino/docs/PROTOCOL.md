@@ -10,7 +10,7 @@ La comunicación sigue un modelo de RPC: normalmente el MPU inicia las peticione
 
 ## 2. Transporte
 
-Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada frame codificado termina en `0x00`.
+Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada frame codificado termina en `0x00` (definido como `RPC_FRAME_DELIMITER`).
 
 - `MAX_PAYLOAD_SIZE = 128` bytes. Todo payload que exceda ese tamaño es truncado por la implementación antes de enviarse.
 - Todos los enteros multi-byte se codifican en **Big Endian**.

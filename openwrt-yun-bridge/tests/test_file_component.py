@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-import pytest_asyncio
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
@@ -10,14 +9,12 @@ from yunbridge.const import (
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-    DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_METRICS_HOST,
     DEFAULT_METRICS_PORT,
     DEFAULT_MQTT_CAFILE,
-    DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_SPOOL_DIR,

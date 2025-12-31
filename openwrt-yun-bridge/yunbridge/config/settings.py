@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from typing import Any
 
 from ..common import (
     get_uci_config,

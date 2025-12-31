@@ -1,13 +1,18 @@
-"""Runtime configuration management with Flash protection."""
+"""Settings loader for the Yun Bridge daemon.
+
+This module centralises configuration loading from UCI and environment
+variables so the rest of the code can depend on a strongly typed
+RuntimeConfig instance.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
 
 from ..common import (
+    get_default_config,
     get_uci_config,
     normalise_allowed_commands,
     parse_bool,
@@ -41,7 +46,6 @@ from ..const import (
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
-    DEFAULT_SERIAL_SHARED_SECRET,
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
     ENV_BRIDGE_HANDSHAKE_INTERVAL,
@@ -57,319 +61,532 @@ from ..const import (
     ENV_MQTT_PASS,
     ENV_MQTT_SPOOL_DIR,
     ENV_MQTT_USER,
+    ENV_PROCD_WATCHDOG,
+    ENV_PROCD_WATCHDOG_MS,
     ENV_SERIAL_SECRET,
     ENV_WATCHDOG_INTERVAL,
     MIN_SERIAL_SHARED_SECRET_LEN,
-    SUPERVISOR_DEFAULT_MAX_BACKOFF,
-    SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 )
+from ..policy import AllowedCommandPolicy, TopicAuthorization
+from ..rpc.protocol import DEFAULT_BAUDRATE, DEFAULT_RETRY_LIMIT, DEFAULT_SAFE_BAUDRATE
+from .credentials import lookup_credential
+
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(slots=True)
 class RuntimeConfig:
-    """
-    Consolidated configuration from Defaults, UCI, and Environment.
+    """Strongly typed configuration for the daemon."""
 
-    This class uses 'dataclasses' for boilerplate reduction but includes
-    compatibility properties to match the legacy API expected by consumers.
-    """
-
-    # --- Serial / UART Configuration ---
     serial_port: str
     serial_baud: int
     serial_safe_baud: int
-    serial_shared_secret: bytes | None
-    serial_retry_timeout: float
-    serial_response_timeout: float
-    serial_retry_attempts: int
-    serial_handshake_min_interval: float
-    serial_handshake_fatal_failures: int
-
-    # --- MQTT Broker Configuration ---
     mqtt_host: str
     mqtt_port: int
-    mqtt_tls: bool
-    mqtt_cafile: str
-    mqtt_certfile: str | None
-    mqtt_keyfile: str | None
     mqtt_user: str | None
     mqtt_pass: str | None
+    mqtt_tls: bool
+    mqtt_cafile: str | None
+    mqtt_certfile: str | None
+    mqtt_keyfile: str | None
     mqtt_topic: str
-    mqtt_spool_dir: str
-    mqtt_queue_limit: int
-
-    # --- Filesystem & Components Limits ---
-    file_system_root: str
-    file_write_max_bytes: int
-    file_storage_quota_bytes: int
-    process_timeout: int
-    process_max_output_bytes: int
-    process_max_concurrent: int
-    console_queue_limit_bytes: int
-    mailbox_queue_limit: int
-    mailbox_queue_bytes_limit: int
-    pending_pin_request_limit: int
-
-    # --- Operational Parameters ---
-    reconnect_delay: float
-    status_interval: int
-    bridge_summary_interval: int
-    bridge_handshake_interval: int
-    debug_logging: bool
     allowed_commands: tuple[str, ...]
+    file_system_root: str
+    process_timeout: int
+    file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
+    file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+    allowed_policy: AllowedCommandPolicy = field(init=False)
 
-    # --- Telemetry / Metrics ---
-    metrics_enabled: bool
-    metrics_host: str
-    metrics_port: int
-
-    # --- Watchdog & Supervision ---
-    watchdog_enabled: bool
-    watchdog_interval: float
-    supervisor_restart_interval: float
-    supervisor_min_backoff: float
-    supervisor_max_backoff: float
-
-    # --- Security Policies (MQTT Actions) ---
-    mqtt_allow_file_read: bool = True
-    mqtt_allow_file_write: bool = True
-    mqtt_allow_file_remove: bool = True
-    mqtt_allow_datastore_get: bool = True
-    mqtt_allow_datastore_put: bool = True
-    mqtt_allow_mailbox_read: bool = True
-    mqtt_allow_mailbox_write: bool = True
-    mqtt_allow_shell_run: bool = True
-    mqtt_allow_shell_run_async: bool = True
-    mqtt_allow_shell_poll: bool = True
-    mqtt_allow_shell_kill: bool = True
-    mqtt_allow_console_input: bool = True
-    mqtt_allow_digital_write: bool = True
-    mqtt_allow_digital_read: bool = True
-    mqtt_allow_digital_mode: bool = True
-    mqtt_allow_analog_write: bool = True
-    mqtt_allow_analog_read: bool = True
-
-    @classmethod
-    def load(cls) -> RuntimeConfig:
-        """Load configuration prioritizing ENV > UCI > Defaults."""
-        uci = get_uci_config()
-
-        def resolve_str(key: str, env_var: str | None = None) -> str:
-            val = os.environ.get(env_var) if env_var else None
-            if val is None:
-                val = uci.get(key, "")
-            return val
-
-        def resolve_int(
-            key: str, default: int, env_var: str | None = None
-        ) -> int:
-            val = os.environ.get(env_var) if env_var else None
-            if val is None:
-                val = uci.get(key)
-            return parse_int(val, default)
-
-        def resolve_float(
-            key: str, default: float, env_var: str | None = None
-        ) -> float:
-            val = os.environ.get(env_var) if env_var else None
-            if val is None:
-                val = uci.get(key)
-            return parse_float(val, default)
-
-        def resolve_bool(
-            key: str, default: bool = False, env_var: str | None = None
-        ) -> bool:
-            val = os.environ.get(env_var) if env_var else None
-            if val is None:
-                val = uci.get(key)
-                if val is None:
-                    return default
-            return parse_bool(val)
-
-        config = cls(
-            serial_port=resolve_str("serial_port") or DEFAULT_SERIAL_PORT,
-            serial_baud=resolve_int("serial_baud", 115200),
-            serial_safe_baud=resolve_int("serial_safe_baud", 115200),
-            serial_shared_secret=None,
-            serial_retry_timeout=resolve_float(
-                "serial_retry_timeout", DEFAULT_SERIAL_RETRY_TIMEOUT
-            ),
-            serial_response_timeout=resolve_float(
-                "serial_response_timeout", DEFAULT_SERIAL_RESPONSE_TIMEOUT
-            ),
-            serial_retry_attempts=resolve_int("serial_retry_attempts", 5),
-            serial_handshake_min_interval=resolve_float(
-                "serial_handshake_min_interval",
-                DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-            ),
-            serial_handshake_fatal_failures=resolve_int(
-                "serial_handshake_fatal_failures",
-                DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-            ),
-            mqtt_host=resolve_str("mqtt_host") or DEFAULT_MQTT_HOST,
-            mqtt_port=resolve_int("mqtt_port", DEFAULT_MQTT_PORT),
-            mqtt_tls=resolve_bool("mqtt_tls", True),
-            mqtt_cafile=resolve_str("mqtt_cafile", ENV_MQTT_CAFILE)
-            or DEFAULT_MQTT_CAFILE,
-            mqtt_certfile=resolve_str("mqtt_certfile", ENV_MQTT_CERTFILE)
-            or None,
-            mqtt_keyfile=resolve_str("mqtt_keyfile", ENV_MQTT_KEYFILE) or None,
-            mqtt_user=resolve_str("mqtt_user", ENV_MQTT_USER) or None,
-            mqtt_pass=resolve_str("mqtt_pass", ENV_MQTT_PASS) or None,
-            mqtt_topic=resolve_str("mqtt_topic") or DEFAULT_MQTT_TOPIC,
-            mqtt_spool_dir=resolve_str("mqtt_spool_dir", ENV_MQTT_SPOOL_DIR)
-            or DEFAULT_MQTT_SPOOL_DIR,
-            mqtt_queue_limit=resolve_int(
-                "mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT
-            ),
-            file_system_root=resolve_str("file_system_root")
-            or DEFAULT_FILE_SYSTEM_ROOT,
-            file_write_max_bytes=resolve_int(
-                "file_write_max_bytes", DEFAULT_FILE_WRITE_MAX_BYTES
-            ),
-            file_storage_quota_bytes=resolve_int(
-                "file_storage_quota_bytes", DEFAULT_FILE_STORAGE_QUOTA_BYTES
-            ),
-            process_timeout=resolve_int(
-                "process_timeout", DEFAULT_PROCESS_TIMEOUT
-            ),
-            process_max_output_bytes=resolve_int(
-                "process_max_output_bytes", DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-            ),
-            process_max_concurrent=resolve_int(
-                "process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT
-            ),
-            console_queue_limit_bytes=resolve_int(
-                "console_queue_limit_bytes", DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-            ),
-            mailbox_queue_limit=resolve_int(
-                "mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT
-            ),
-            mailbox_queue_bytes_limit=resolve_int(
-                "mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-            ),
-            pending_pin_request_limit=resolve_int(
-                "pending_pin_request_limit", DEFAULT_PENDING_PIN_REQUESTS
-            ),
-            reconnect_delay=resolve_float(
-                "reconnect_delay", DEFAULT_RECONNECT_DELAY
-            ),
-            status_interval=resolve_int(
-                "status_interval", DEFAULT_STATUS_INTERVAL
-            ),
-            bridge_summary_interval=resolve_int(
-                "bridge_summary_interval",
-                DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-                ENV_BRIDGE_SUMMARY_INTERVAL,
-            ),
-            bridge_handshake_interval=resolve_int(
-                "bridge_handshake_interval",
-                DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-                ENV_BRIDGE_HANDSHAKE_INTERVAL,
-            ),
-            debug_logging=resolve_bool("debug", False, ENV_DEBUG),
-            allowed_commands=normalise_allowed_commands(
-                resolve_str("allowed_commands").split()
-            ),
-            metrics_enabled=resolve_bool(
-                "metrics_enabled", False, ENV_METRICS_ENABLED
-            ),
-            metrics_host=resolve_str("metrics_host", ENV_METRICS_HOST)
-            or DEFAULT_METRICS_HOST,
-            metrics_port=resolve_int(
-                "metrics_port", DEFAULT_METRICS_PORT, ENV_METRICS_PORT
-            ),
-            watchdog_enabled=not resolve_bool(
-                "disable_watchdog", False, ENV_DISABLE_WATCHDOG
-            ),
-            watchdog_interval=resolve_float(
-                "watchdog_interval",
-                DEFAULT_WATCHDOG_INTERVAL,
-                ENV_WATCHDOG_INTERVAL,
-            ),
-            supervisor_restart_interval=SUPERVISOR_DEFAULT_RESTART_INTERVAL,
-            supervisor_min_backoff=SUPERVISOR_DEFAULT_MIN_BACKOFF,
-            supervisor_max_backoff=SUPERVISOR_DEFAULT_MAX_BACKOFF,
-        )
-
-        for field_name in cls.__dataclass_fields__:
-            if field_name.startswith("mqtt_allow_"):
-                default_val = getattr(config, field_name)
-                val = resolve_bool(field_name, default_val)
-                setattr(config, field_name, val)
-
-        secret_str = resolve_str("serial_shared_secret", ENV_SERIAL_SECRET)
-        if secret_str:
-            config.serial_shared_secret = secret_str.encode("utf-8")
-        else:
-            config.serial_shared_secret = DEFAULT_SERIAL_SHARED_SECRET
-
-        config._validate_operational_limits()
-        return config
-
-    def _validate_operational_limits(self) -> None:
-        """Enforce safety bounds on configuration values."""
-        safe_prefixes = ("/tmp/", "/var/run/", "/dev/null")
-        is_safe_path = any(
-            self.mqtt_spool_dir.startswith(p) for p in safe_prefixes
-        )
-
-        if not is_safe_path:
-            self.mqtt_spool_dir = DEFAULT_MQTT_SPOOL_DIR
-
-        self.serial_retry_timeout = max(0.1, self.serial_retry_timeout)
-        self.reconnect_delay = max(1.0, self.reconnect_delay)
-        self.status_interval = max(1, self.status_interval)
-
-        if (
-            self.serial_shared_secret
-            and len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN
-        ):
-            self.serial_shared_secret = None
-
-        self.mqtt_queue_limit = min(self.mqtt_queue_limit, 2048)
-        self.process_max_concurrent = min(self.process_max_concurrent, 16)
-
-    # --- Compatibility Properties ---
+    mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
+    reconnect_delay: int = DEFAULT_RECONNECT_DELAY
+    status_interval: int = DEFAULT_STATUS_INTERVAL
+    debug_logging: bool = False
+    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
+    serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    serial_retry_attempts: int = DEFAULT_RETRY_LIMIT
+    serial_handshake_min_interval: float = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    watchdog_enabled: bool = False
+    watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
+    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
+    serial_shared_secret: bytes = field(repr=False, default=b"")
+    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
+    process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
+    metrics_enabled: bool = False
+    metrics_host: str = DEFAULT_METRICS_HOST
+    metrics_port: int = DEFAULT_METRICS_PORT
+    bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
 
     @property
     def tls_enabled(self) -> bool:
-        """Alias for mqtt_tls used by mqtt transport."""
-        return self.mqtt_tls
+        return self.mqtt_tls and bool(self.mqtt_cafile)
 
-    @property
-    def allowed_policy(self) -> Any:
-        """
-        Return a dictionary of all mqtt_allow_* flags.
-        Used by context.py for policy enforcement.
-        """
-        return {
-            k: getattr(self, k)
-            for k in self.__dataclass_fields__
-            if k.startswith("mqtt_allow_")
-        }
+    def __post_init__(self) -> None:
+        self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
+        self.serial_response_timeout = max(
+            self.serial_response_timeout, self.serial_retry_timeout * 2
+        )
+        self.serial_handshake_min_interval = max(
+            0.0, self.serial_handshake_min_interval
+        )
+        self.serial_handshake_fatal_failures = self._require_positive(
+            "serial_handshake_fatal_failures",
+            int(self.serial_handshake_fatal_failures),
+        )
+        if not self.mqtt_tls:
+            logger.warning(
+                "MQTT TLS is disabled; MQTT credentials and payloads "
+                "will be sent in plaintext."
+            )
+        elif not self.mqtt_cafile:
+            raise ValueError("MQTT TLS is enabled but 'mqtt_cafile' is not configured")
+        if not self.serial_shared_secret:
+            raise ValueError("serial_shared_secret must be configured")
+        if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
+            raise ValueError(
+                "serial_shared_secret must be at least %d bytes"
+                % MIN_SERIAL_SHARED_SECRET_LEN
+            )
+        if self.serial_shared_secret == b"changeme123":
+            raise ValueError("serial_shared_secret placeholder is insecure")
+        self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
+        unique_symbols = {byte for byte in self.serial_shared_secret}
+        if len(unique_symbols) < 4:
+            raise ValueError(
+                "serial_shared_secret must contain at least " "four distinct bytes"
+            )
+        self._validate_queue_limits()
+        self._normalize_topic_prefix()
+        self._normalize_paths()
+        self._validate_operational_limits()
 
-    @property
-    def topic_authorization(self) -> Any:
-        """
-        Return topic structure configuration.
-        Used by context.py to validate topic access.
-        """
-        # Based on typical usage, this likely returns the configured root topic
-        # or a structure defining read/write paths. Assuming simple structure
-        # based on mqtt_topic for now.
-        return {
-            "root": self.mqtt_topic,
-            # Add other topic-related config if needed by consumers
-        }
+    def _validate_queue_limits(self) -> None:
+        mailbox_limit = self._require_positive(
+            "mailbox_queue_limit",
+            self.mailbox_queue_limit,
+        )
+        mailbox_bytes_limit = self._require_positive(
+            "mailbox_queue_bytes_limit",
+            self.mailbox_queue_bytes_limit,
+        )
+        if mailbox_bytes_limit < mailbox_limit:
+            raise ValueError(
+                "mailbox_queue_bytes_limit must be greater than or equal to "
+                "mailbox_queue_limit"
+            )
+        console_limit = self._require_positive(
+            "console_queue_limit_bytes",
+            self.console_queue_limit_bytes,
+        )
+        mqtt_limit = self._require_positive(
+            "mqtt_queue_limit",
+            self.mqtt_queue_limit,
+        )
+        self.mailbox_queue_limit = mailbox_limit
+        self.mailbox_queue_bytes_limit = mailbox_bytes_limit
+        self.console_queue_limit_bytes = console_limit
+        self.mqtt_queue_limit = mqtt_limit
+
+    @staticmethod
+    def _require_positive(name: str, value: int) -> int:
+        if value <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+        return value
+
+    def _normalize_topic_prefix(self) -> None:
+        normalized = self._build_topic_prefix(self.mqtt_topic)
+        self.mqtt_topic = normalized
+
+    def _normalize_paths(self) -> None:
+        root = self._normalize_path(
+            self.file_system_root,
+            field="file_system_root",
+            require_absolute=True,
+        )
+        spool = self._normalize_path(
+            self.mqtt_spool_dir,
+            field="mqtt_spool_dir",
+            require_absolute=False,
+        )
+        self.file_system_root = root
+        self.mqtt_spool_dir = spool
+
+    def _validate_operational_limits(self) -> None:
+        positive_int_fields = (
+            "reconnect_delay",
+            "status_interval",
+            "process_timeout",
+            "process_max_output_bytes",
+            "process_max_concurrent",
+            "serial_handshake_fatal_failures",
+            "file_write_max_bytes",
+            "file_storage_quota_bytes",
+        )
+        for field_name in positive_int_fields:
+            value = getattr(self, field_name)
+            validated = self._require_positive(field_name, int(value))
+            setattr(self, field_name, validated)
+
+        if self.file_storage_quota_bytes < self.file_write_max_bytes:
+            raise ValueError(
+                "file_storage_quota_bytes must be greater than or equal to "
+                "file_write_max_bytes"
+            )
+
+        if self.watchdog_enabled:
+            interval = self._require_positive_float(
+                "watchdog_interval",
+                float(self.watchdog_interval),
+            )
+            self.watchdog_interval = interval
+
+        self.bridge_summary_interval = max(
+            0.0,
+            float(self.bridge_summary_interval),
+        )
+        self.bridge_handshake_interval = max(
+            0.0,
+            float(self.bridge_handshake_interval),
+        )
+
+    @staticmethod
+    def _build_topic_prefix(prefix: str) -> str:
+        segments = [segment for segment in prefix.split("/") if segment]
+        normalized = "/".join(segments)
+        if not normalized:
+            raise ValueError("mqtt_topic must contain at least one segment")
+        return normalized
+
+    @staticmethod
+    def _normalize_path(
+        value: str,
+        *,
+        field: str,
+        require_absolute: bool,
+    ) -> str:
+        candidate = (value or "").strip()
+        if not candidate:
+            raise ValueError(f"{field} must be a non-empty path")
+        expanded = os.path.expanduser(candidate)
+        normalized = os.path.abspath(expanded)
+        if require_absolute and not os.path.isabs(expanded):
+            raise ValueError(f"{field} must be an absolute path")
+        return normalized
+
+    @staticmethod
+    def _require_positive_float(name: str, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError(f"{name} must be a positive number")
+        return value
+
+
+def _load_raw_config() -> dict[str, str]:
+    try:
+        uci_values = get_uci_config()
+        if uci_values:
+            return uci_values
+    except Exception:
+        # get_uci_config already logs, simply fall back to defaults
+        pass
+    return get_default_config()
+
+
+def _optional_path(path: str | None) -> str | None:
+    if not path:
+        return None
+    candidate = path.strip()
+    return candidate or None
+
+
+def _resolve_watchdog_settings() -> tuple[bool, float]:
+    disable_flag = os.environ.get(ENV_DISABLE_WATCHDOG)
+    if disable_flag and disable_flag.strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False, DEFAULT_WATCHDOG_INTERVAL
+
+    env_interval = os.environ.get(ENV_WATCHDOG_INTERVAL)
+    if env_interval:
+        try:
+            interval = max(0.5, float(env_interval))
+        except ValueError:
+            interval = DEFAULT_WATCHDOG_INTERVAL
+        return True, interval
+
+    procd_raw = os.environ.get(ENV_PROCD_WATCHDOG) or os.environ.get(
+        ENV_PROCD_WATCHDOG_MS
+    )
+    if procd_raw:
+        try:
+            procd_ms = max(0, int(procd_raw))
+        except ValueError:
+            procd_ms = 0
+        if procd_ms > 0:
+            heartbeat = max(1.0, procd_ms / 2000.0)
+            return True, heartbeat
+
+    return False, DEFAULT_WATCHDOG_INTERVAL
 
 
 def load_runtime_config() -> RuntimeConfig:
-    """
-    Legacy helper function to load configuration.
-    Wraps RuntimeConfig.load() for backward compatibility with daemon.py.
-    """
-    return RuntimeConfig.load()
+    """Load configuration from UCI/defaults and environment variables."""
+
+    raw = _load_raw_config()
+
+    def _get_int(key: str, default: int) -> int:
+        return parse_int(raw.get(key), default)
+
+    def _get_bool(key: str, default: bool) -> bool:
+        value = raw.get(key)
+        return parse_bool(value) if value is not None else default
+
+    debug_logging = parse_bool(raw.get("debug"))
+    if os.environ.get(ENV_DEBUG) == "1":
+        debug_logging = True
+
+    allowed_commands_raw = raw.get("allowed_commands", "")
+    allowed_commands = normalise_allowed_commands(allowed_commands_raw.split())
+
+    watchdog_enabled, watchdog_interval = _resolve_watchdog_settings()
+
+    mqtt_tls_value = raw.get("mqtt_tls")
+    mqtt_tls = parse_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
+
+    credentials_map: dict[str, str] = {}
+
+    serial_secret_str = lookup_credential(
+        (
+            ENV_SERIAL_SECRET,
+            "SERIAL_SHARED_SECRET",
+            "serial_shared_secret",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("serial_shared_secret") or "",
+    )
+    serial_secret_bytes = (
+        serial_secret_str.encode("utf-8") if serial_secret_str else b""
+    )
+
+    spool_dir = os.environ.get(ENV_MQTT_SPOOL_DIR) or raw.get(
+        "mqtt_spool_dir",
+        DEFAULT_MQTT_SPOOL_DIR,
+    )
+    spool_dir = (spool_dir or DEFAULT_MQTT_SPOOL_DIR).strip()
+    if not spool_dir:
+        spool_dir = DEFAULT_MQTT_SPOOL_DIR
+
+    mqtt_cafile = lookup_credential(
+        (
+            ENV_MQTT_CAFILE,
+            "MQTT_CAFILE",
+            "mqtt_cafile",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_cafile"),
+    )
+    mqtt_cafile = _optional_path(mqtt_cafile)
+    if mqtt_cafile is None and mqtt_tls:
+        mqtt_cafile = DEFAULT_MQTT_CAFILE
+
+    mqtt_certfile = lookup_credential(
+        (
+            ENV_MQTT_CERTFILE,
+            "MQTT_CERTFILE",
+            "mqtt_certfile",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_certfile"),
+    )
+    mqtt_keyfile = lookup_credential(
+        (
+            ENV_MQTT_KEYFILE,
+            "MQTT_KEYFILE",
+            "mqtt_keyfile",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_keyfile"),
+    )
+
+    mqtt_user = lookup_credential(
+        (
+            ENV_MQTT_USER,
+            "MQTT_USERNAME",
+            "mqtt_user",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_user"),
+    )
+    mqtt_pass = lookup_credential(
+        (
+            ENV_MQTT_PASS,
+            "MQTT_PASSWORD",
+            "mqtt_pass",
+        ),
+        credential_map=credentials_map,
+        environ=os.environ,
+        fallback=raw.get("mqtt_pass"),
+    )
+
+    topic_authorization = TopicAuthorization(
+        file_read=_get_bool("mqtt_allow_file_read", True),
+        file_write=_get_bool("mqtt_allow_file_write", True),
+        file_remove=_get_bool("mqtt_allow_file_remove", True),
+        datastore_get=_get_bool("mqtt_allow_datastore_get", True),
+        datastore_put=_get_bool("mqtt_allow_datastore_put", True),
+        mailbox_read=_get_bool("mqtt_allow_mailbox_read", True),
+        mailbox_write=_get_bool("mqtt_allow_mailbox_write", True),
+        shell_run=_get_bool("mqtt_allow_shell_run", True),
+        shell_run_async=_get_bool("mqtt_allow_shell_run_async", True),
+        shell_poll=_get_bool("mqtt_allow_shell_poll", True),
+        shell_kill=_get_bool("mqtt_allow_shell_kill", True),
+        console_input=_get_bool("mqtt_allow_console_input", True),
+        digital_write=_get_bool("mqtt_allow_digital_write", True),
+        digital_read=_get_bool("mqtt_allow_digital_read", True),
+        digital_mode=_get_bool("mqtt_allow_digital_mode", True),
+        analog_write=_get_bool("mqtt_allow_analog_write", True),
+        analog_read=_get_bool("mqtt_allow_analog_read", True),
+    )
+    metrics_enabled = _get_bool("metrics_enabled", False)
+    if os.environ.get(ENV_METRICS_ENABLED) == "1":
+        metrics_enabled = True
+
+    metrics_host = raw.get("metrics_host", DEFAULT_METRICS_HOST).strip()
+    if not metrics_host:
+        metrics_host = DEFAULT_METRICS_HOST
+    env_metrics_host = os.environ.get(ENV_METRICS_HOST)
+    if env_metrics_host:
+        candidate_host = env_metrics_host.strip()
+        if candidate_host:
+            metrics_host = candidate_host
+
+    metrics_port = _get_int("metrics_port", DEFAULT_METRICS_PORT)
+    env_metrics_port = os.environ.get(ENV_METRICS_PORT)
+    if env_metrics_port:
+        metrics_port = parse_int(env_metrics_port, DEFAULT_METRICS_PORT)
+
+    summary_interval = parse_float(
+        raw.get("bridge_summary_interval"),
+        float(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
+    )
+    env_summary = os.environ.get(ENV_BRIDGE_SUMMARY_INTERVAL)
+    if env_summary:
+        summary_interval = parse_float(env_summary, float(DEFAULT_BRIDGE_SUMMARY_INTERVAL))
+
+    handshake_interval = parse_float(
+        raw.get("bridge_handshake_interval"),
+        float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
+    )
+    env_handshake = os.environ.get(ENV_BRIDGE_HANDSHAKE_INTERVAL)
+    if env_handshake:
+        handshake_interval = parse_float(env_handshake, float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL))
+
+    return RuntimeConfig(
+        serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
+        serial_baud=_get_int("serial_baud", DEFAULT_BAUDRATE),
+        serial_safe_baud=_get_int("serial_safe_baud", DEFAULT_SAFE_BAUDRATE),
+        mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
+        mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
+        mqtt_user=_optional_path(mqtt_user),
+        mqtt_pass=_optional_path(mqtt_pass),
+        mqtt_tls=mqtt_tls,
+        mqtt_cafile=mqtt_cafile,
+        mqtt_certfile=_optional_path(mqtt_certfile),
+        mqtt_keyfile=_optional_path(mqtt_keyfile),
+        mqtt_topic=raw.get("mqtt_topic", DEFAULT_MQTT_TOPIC),
+        allowed_commands=allowed_commands,
+        file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
+        process_timeout=_get_int("process_timeout", DEFAULT_PROCESS_TIMEOUT),
+        file_write_max_bytes=max(
+            1,
+            _get_int(
+                "file_write_max_bytes",
+                DEFAULT_FILE_WRITE_MAX_BYTES,
+            ),
+        ),
+        file_storage_quota_bytes=max(
+            1,
+            _get_int(
+                "file_storage_quota_bytes",
+                DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+            ),
+        ),
+        mqtt_queue_limit=max(1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)),
+        reconnect_delay=_get_int("reconnect_delay", DEFAULT_RECONNECT_DELAY),
+        status_interval=_get_int("status_interval", DEFAULT_STATUS_INTERVAL),
+        debug_logging=debug_logging,
+        console_queue_limit_bytes=_get_int(
+            "console_queue_limit_bytes", DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+        ),
+        mailbox_queue_limit=_get_int(
+            "mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT
+        ),
+        mailbox_queue_bytes_limit=_get_int(
+            "mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+        ),
+        pending_pin_request_limit=_get_int(
+            "pending_pin_request_limit",
+            DEFAULT_PENDING_PIN_REQUESTS,
+        ),
+        serial_retry_timeout=parse_float(
+            raw.get("serial_retry_timeout"), DEFAULT_SERIAL_RETRY_TIMEOUT
+        ),
+        serial_response_timeout=parse_float(
+            raw.get("serial_response_timeout"), DEFAULT_SERIAL_RESPONSE_TIMEOUT
+        ),
+        serial_retry_attempts=max(
+            1, _get_int("serial_retry_attempts", DEFAULT_RETRY_LIMIT)
+        ),
+        serial_handshake_min_interval=max(
+            0.0,
+            parse_float(
+                raw.get("serial_handshake_min_interval"),
+                DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+            ),
+        ),
+        serial_handshake_fatal_failures=max(
+            1,
+            _get_int(
+                "serial_handshake_fatal_failures",
+                DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+            ),
+        ),
+        watchdog_enabled=watchdog_enabled,
+        watchdog_interval=watchdog_interval,
+        topic_authorization=topic_authorization,
+        serial_shared_secret=serial_secret_bytes,
+        mqtt_spool_dir=spool_dir,
+        process_max_output_bytes=max(
+            1024,
+            _get_int(
+                "process_max_output_bytes",
+                DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+            ),
+        ),
+        process_max_concurrent=max(
+            1,
+            _get_int(
+                "process_max_concurrent",
+                DEFAULT_PROCESS_MAX_CONCURRENT,
+            ),
+        ),
+        metrics_enabled=metrics_enabled,
+        metrics_host=metrics_host,
+        metrics_port=max(0, metrics_port),
+        bridge_summary_interval=summary_interval,
+        bridge_handshake_interval=handshake_interval,
+    )

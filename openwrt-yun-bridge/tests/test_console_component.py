@@ -1,105 +1,140 @@
+"""Tests for the ConsoleComponent."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import MagicMock
+import pytest_asyncio
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
-    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-    DEFAULT_FILE_WRITE_MAX_BYTES,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-    DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_METRICS_HOST,
-    DEFAULT_METRICS_PORT,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
-    DEFAULT_PENDING_PIN_REQUESTS,
-    DEFAULT_PROCESS_MAX_CONCURRENT,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
-    DEFAULT_WATCHDOG_INTERVAL,
-    SUPERVISOR_DEFAULT_MAX_BACKOFF,
-    SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 )
-
-# Mock values for tests
-TEST_SERIAL_PORT = "/dev/null"
-TEST_SERIAL_BAUD = 115200
-TEST_SERIAL_SAFE_BAUD = 115200
-TEST_MQTT_HOST = "localhost"
-TEST_MQTT_CAFILE = "/tmp/test-ca.pem"
-TEST_FILE_SYSTEM_ROOT = "/tmp"
-TEST_SERIAL_SHARED_SECRET = b"unit-test-secret-1234"
-TEST_MQTT_SPOOL_DIR = "/tmp/yunbridge-tests-spool"
+from yunbridge.rpc import protocol
+from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
+from yunbridge.services.components.base import BridgeContext
+from yunbridge.services.components.console import ConsoleComponent
+from yunbridge.state.context import create_runtime_state
 
 
-@pytest.fixture()
-def runtime_config() -> RuntimeConfig:
-    return RuntimeConfig(
-        serial_port=TEST_SERIAL_PORT,
-        serial_baud=TEST_SERIAL_BAUD,
-        serial_safe_baud=TEST_SERIAL_SAFE_BAUD,
-        serial_shared_secret=TEST_SERIAL_SHARED_SECRET,
-        serial_retry_timeout=0.01,
-        serial_response_timeout=DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-        serial_retry_attempts=1,
-        serial_handshake_min_interval=DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-        serial_handshake_fatal_failures=DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-        mqtt_host=TEST_MQTT_HOST,
+@pytest_asyncio.fixture
+async def console_component() -> ConsoleComponent:
+    config = RuntimeConfig(
+        serial_port="/dev/null",
+        serial_baud=protocol.DEFAULT_BAUDRATE,
+        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
+        mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_tls=True,
-        mqtt_cafile=TEST_MQTT_CAFILE,
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
         mqtt_user=None,
         mqtt_pass=None,
+        mqtt_tls=False,
+        mqtt_cafile=None,
+        mqtt_certfile=None,
+        mqtt_keyfile=None,
         mqtt_topic=DEFAULT_MQTT_TOPIC,
-        mqtt_spool_dir=TEST_MQTT_SPOOL_DIR,
-        mqtt_queue_limit=8,
-        file_system_root=TEST_FILE_SYSTEM_ROOT,
-        file_write_max_bytes=DEFAULT_FILE_WRITE_MAX_BYTES,
-        file_storage_quota_bytes=DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+        allowed_commands=(),
+        file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        process_max_output_bytes=DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-        process_max_concurrent=DEFAULT_PROCESS_MAX_CONCURRENT,
-        console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-        mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
-        mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-        pending_pin_request_limit=DEFAULT_PENDING_PIN_REQUESTS,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
-        bridge_summary_interval=DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-        bridge_handshake_interval=DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-        debug_logging=False,
-        allowed_commands=(),
-        metrics_enabled=False,
-        metrics_host=DEFAULT_METRICS_HOST,
-        metrics_port=DEFAULT_METRICS_PORT,
-        watchdog_enabled=False,
-        watchdog_interval=DEFAULT_WATCHDOG_INTERVAL,
-        supervisor_restart_interval=SUPERVISOR_DEFAULT_RESTART_INTERVAL,
-        supervisor_min_backoff=SUPERVISOR_DEFAULT_MIN_BACKOFF,
-        supervisor_max_backoff=SUPERVISOR_DEFAULT_MAX_BACKOFF,
+        serial_shared_secret=b"testsecret",
+    )
+    state = create_runtime_state(config)
+    ctx = AsyncMock(spec=BridgeContext)
+
+    # Mock schedule_background to just await the coroutine immediately for testing
+    async def _schedule(coro):
+        await coro
+
+    ctx.schedule_background.side_effect = _schedule
+
+    component = ConsoleComponent(config, state, ctx)
+    return component
+
+
+@pytest.mark.asyncio
+async def test_handle_write(console_component: ConsoleComponent) -> None:
+    payload = b"console output"
+    await console_component.handle_write(payload)
+
+    console_component.ctx.enqueue_mqtt.assert_awaited_once()
+    msg = console_component.ctx.enqueue_mqtt.call_args[0][0]
+    assert msg.payload == payload
+    assert "console/out" in msg.topic_name
+
+
+@pytest.mark.asyncio
+async def test_flow_control(console_component: ConsoleComponent) -> None:
+    # Initial state
+    assert console_component.state.mcu_is_paused is False
+
+    # XOFF
+    await console_component.handle_xoff(b"")
+    assert console_component.state.mcu_is_paused is True
+
+    # XON
+    with patch.object(
+        console_component, "flush_queue", new_callable=AsyncMock
+    ) as mock_flush:
+        await console_component.handle_xon(b"")
+        assert console_component.state.mcu_is_paused is False
+        mock_flush.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_input_direct(console_component: ConsoleComponent) -> None:
+    payload = b"input"
+    console_component.ctx.send_frame.return_value = True
+
+    await console_component.handle_mqtt_input(payload)
+
+    console_component.ctx.send_frame.assert_awaited_once_with(
+        Command.CMD_CONSOLE_WRITE.value, payload
     )
 
 
-@pytest.fixture
-def mock_serial_port():
-    mock = MagicMock()
-    mock.port = TEST_SERIAL_PORT
-    mock.baudrate = TEST_SERIAL_BAUD
-    mock.is_open = True
-    return mock
+@pytest.mark.asyncio
+async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> None:
+    console_component.state.mcu_is_paused = True
+    payload = b"input"
+
+    await console_component.handle_mqtt_input(payload)
+
+    console_component.ctx.send_frame.assert_not_awaited()
+    assert len(console_component.state.console_to_mcu_queue) == 1
+    assert console_component.state.console_to_mcu_queue[0] == payload
 
 
-@pytest.fixture
-def mock_mqtt_client():
-    mock = MagicMock()
-    return mock
+@pytest.mark.asyncio
+async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -> None:
+    # Payload larger than MAX_PAYLOAD_SIZE
+    # We need to account for overhead if any, but console chunks are raw?
+    # Let's check _iter_console_chunks implementation or assume it chunks by MAX_PAYLOAD_SIZE - overhead
+    # Assuming overhead is small or zero for console write command payload itself?
+    # Actually protocol.py says MAX_PAYLOAD_SIZE = 256.
+    # Let's try a large payload.
+
+    large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
+    console_component.ctx.send_frame.return_value = True
+
+    await console_component.handle_mqtt_input(large_payload)
+
+    assert console_component.ctx.send_frame.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_flush_queue(console_component: ConsoleComponent) -> None:
+    console_component.state.enqueue_console_chunk(b"queued", None)
+    console_component.ctx.send_frame.return_value = True
+
+    await console_component.flush_queue()
+
+    console_component.ctx.send_frame.assert_awaited_once_with(
+        Command.CMD_CONSOLE_WRITE.value, b"queued"
+    )
+    assert len(console_component.state.console_to_mcu_queue) == 0

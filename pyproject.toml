@@ -10,7 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "pyserial>=3.5",
     "paho-mqtt==2.1.0",      # STRICT: Required for CallbackAPIVersion.VERSION2
-    "aiomqtt==2.3.0",        # STRICT: Validated against paho 2.1.0
+    "aiomqtt==2.4.0",        # STRICT: Validated against paho 2.1.0
     "cobs>=1.2.2",
     "psutil>=6.0.0",
     "prometheus-client>=0.21.0"

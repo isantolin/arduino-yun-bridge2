@@ -357,6 +357,26 @@ class FileComponent:
         path: Path,
         data: bytes,
     ) -> tuple[bool, bytes | None, str | None]:
+        # [FLASH PROTECTION]
+        # Warn if writing to potentially non-volatile storage (not /tmp or /mnt)
+        try:
+            resolved = path.resolve()
+            is_volatile = False
+            for safe_prefix in ("/tmp", "/mnt", "/var/run", "/run"):
+                if str(resolved).startswith(safe_prefix):
+                    is_volatile = True
+                    break
+            
+            if not is_volatile:
+                logger.warning(
+                    "FLASH WEAR WARNING: Writing to non-volatile storage: %s. "
+                    "This may damage the device flash memory. Use /tmp or /mnt.",
+                    resolved,
+                )
+        except Exception:
+            # Don't block write if check fails
+            pass
+
         payload_size = len(data)
         async with self._storage_lock:
             limit = max(1, self.state.file_write_max_bytes)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any
 
 from ..common import (
     get_uci_config,
@@ -341,7 +341,7 @@ class RuntimeConfig:
         return self.mqtt_tls
 
     @property
-    def allowed_policy(self) -> Dict[str, bool]:  # Changed return type hint
+    def allowed_policy(self) -> Any:
         """
         Return a dictionary of all mqtt_allow_* flags.
         Used by context.py for policy enforcement.
@@ -353,7 +353,7 @@ class RuntimeConfig:
         }
 
     @property
-    def topic_authorization(self) -> Dict[str, Any]:  # Changed return type hint
+    def topic_authorization(self) -> Any:
         """
         Return topic structure configuration.
         Used by context.py to validate topic access.

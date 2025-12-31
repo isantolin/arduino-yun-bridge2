@@ -57,7 +57,7 @@ class StructuredLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         logger_name = record.name
         if logger_name.startswith(self.PREFIX):
-            logger_name = logger_name[len(self.PREFIX) :]
+            logger_name = logger_name[len(self.PREFIX):]
 
         payload: dict[str, Any] = {
             "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)

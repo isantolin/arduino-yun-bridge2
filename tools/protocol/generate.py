@@ -124,9 +124,25 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_TEST_EXIT_CODE = {consts['test_exit_code']};\n"
         )
+    if "status_code_min" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_STATUS_CODE_MIN = {consts['status_code_min']};\n"
+        )
+    if "status_code_max" in consts:
+        out.write(
+            f"constexpr uint8_t RPC_STATUS_CODE_MAX = {consts['status_code_max']};\n"
+        )
+    if "system_command_min" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = {consts['system_command_min']};\n"
+        )
     if "system_command_max" in consts:
         out.write(
             f"constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = {consts['system_command_max']};\n"
+        )
+    if "gpio_command_min" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_GPIO_COMMAND_MIN = {consts['gpio_command_min']};\n"
         )
     out.write("\n")
 
@@ -267,9 +283,25 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"TEST_EXIT_CODE: Final[int] = {consts['test_exit_code']}\n"
         )
+    if "status_code_min" in consts:
+        out.write(
+            f"STATUS_CODE_MIN: Final[int] = {consts['status_code_min']}\n"
+        )
+    if "status_code_max" in consts:
+        out.write(
+            f"STATUS_CODE_MAX: Final[int] = {consts['status_code_max']}\n"
+        )
+    if "system_command_min" in consts:
+        out.write(
+            f"SYSTEM_COMMAND_MIN: Final[int] = {consts['system_command_min']}\n"
+        )
     if "system_command_max" in consts:
         out.write(
             f"SYSTEM_COMMAND_MAX: Final[int] = {consts['system_command_max']}\n"
+        )
+    if "gpio_command_min" in consts:
+        out.write(
+            f"GPIO_COMMAND_MIN: Final[int] = {consts['gpio_command_min']}\n"
         )
     out.write("\n")
 

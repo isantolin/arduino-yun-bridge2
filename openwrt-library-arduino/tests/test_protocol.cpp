@@ -11,17 +11,21 @@
 using namespace rpc;
 
 static void test_endianness_helpers() {
-  uint8_t buffer[2] = {0x12, 0x34};
+  uint8_t buffer[2] = {
+      static_cast<uint8_t>((TEST_CMD_ID >> 8) & rpc::RPC_UINT8_MASK),
+      static_cast<uint8_t>(TEST_CMD_ID & rpc::RPC_UINT8_MASK),
+  };
   assert(read_u16_be(buffer) == TEST_CMD_ID);
-  write_u16_be(buffer, 0xCDEF);
-  assert(buffer[0] == 0xCD && buffer[1] == 0xEF);
+  write_u16_be(buffer, TEST_WRITE_U16_VALUE);
+  assert(buffer[0] == ((TEST_WRITE_U16_VALUE >> 8) & rpc::RPC_UINT8_MASK) &&
+         buffer[1] == (TEST_WRITE_U16_VALUE & rpc::RPC_UINT8_MASK));
 }
 
 static void test_crc_helpers() {
   const uint8_t data[] = {0xAA, 0xBB, 0xCC, 0xDD};
   uint32_t crc = crc32_ieee(data, sizeof(data));
   // Valor verificado con binascii.crc32 (polinomio IEEE 802.3).
-  assert(crc == 0x55B401A7);
+  assert(crc == TEST_CRC32_VECTOR_EXPECTED);
 }
 
 static void test_builder_roundtrip() {
@@ -30,7 +34,7 @@ static void test_builder_roundtrip() {
   Frame frame{};
 
   const uint16_t command_id = TEST_CMD_ID;
-  const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, 0x01, RPC_UINT8_MASK, 0x02, rpc::RPC_FRAME_DELIMITER};
+  const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, 0x01, rpc::RPC_UINT8_MASK, 0x02, rpc::RPC_FRAME_DELIMITER};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
     size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
@@ -80,10 +84,10 @@ static void test_parser_crc_failure() {
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, sizeof(raw), 0x4444, payload, sizeof(payload));
+  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_CRC_FAILURE, payload, sizeof(payload));
   assert(raw_len > 0);
 
-  raw[sizeof(FrameHeader)] ^= RPC_UINT8_MASK;  // Corrupt payload without fixing CRC.
+  raw[sizeof(FrameHeader)] ^= rpc::RPC_UINT8_MASK;  // Corrupt payload without fixing CRC.
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
@@ -100,7 +104,7 @@ static void test_parser_header_validation() {
 
   const uint8_t payload[] = {0xAA};
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, sizeof(raw), 0x0102, payload, sizeof(payload));
+  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_HEADER_VALIDATION, payload, sizeof(payload));
   assert(raw_len > 0);
 
   // Break protocol version.
@@ -123,7 +127,7 @@ static void test_parser_overflow_guard() {
 
   size_t generated = 0;
   while (generated + 254 <= MAX_RAW_FRAME_SIZE) {
-    encoded.push_back(RPC_UINT8_MASK);
+    encoded.push_back(rpc::RPC_UINT8_MASK);
     encoded.insert(encoded.end(), 254, 0x55);
     generated += 254;
   }
@@ -143,7 +147,7 @@ static void test_parser_noise_handling() {
   FrameParser parser;
   Frame frame{};
 
-  const uint16_t command_id = 0x55AA;
+  const uint16_t command_id = TEST_CMD_ID_NOISE;
   const uint8_t payload[] = {0xDE, 0xAD, 0xBE, 0xEF};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
@@ -153,7 +157,7 @@ static void test_parser_noise_handling() {
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
 
   // Inject noise before the frame. 
-  // Note: We must end with RPC_FRAME_DELIMITER to flush the noise as a "bad frame" 
+  // Note: We must end with rpc::RPC_FRAME_DELIMITER to flush the noise as a "bad frame" 
   // so the parser is clean for the valid frame.
   const uint8_t noise[] = {0x11, 0x22, rpc::RPC_FRAME_DELIMITER, 0x33, 0x44, rpc::RPC_FRAME_DELIMITER}; 
   for (uint8_t b : noise) {
@@ -167,7 +171,7 @@ static void test_parser_noise_handling() {
         parsed = true;
     }
   }
-  // The last byte (RPC_FRAME_DELIMITER) should trigger the parse
+  // The last byte (rpc::RPC_FRAME_DELIMITER) should trigger the parse
   parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
   
   assert(parsed);
@@ -179,7 +183,7 @@ static void test_parser_fragmentation() {
   FrameParser parser;
   Frame frame{};
 
-  const uint16_t command_id = 0x9988;
+  const uint16_t command_id = TEST_CMD_ID_FRAGMENTATION;
   const uint8_t payload[] = {0x01, 0x02, 0x03};
 
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
@@ -192,7 +196,7 @@ static void test_parser_fragmentation() {
   bool parsed = false;
   for (size_t i = 0; i < encoded_len; ++i) {
       parsed = parser.consume(encoded[i], frame);
-      assert(!parsed); // Should not be done until RPC_FRAME_DELIMITER
+      assert(!parsed); // Should not be done until rpc::RPC_FRAME_DELIMITER
   }
   parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
   assert(parsed);

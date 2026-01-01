@@ -29,8 +29,12 @@ using std::max;
 #define round(x) ((x) >= 0 ? (long)((x) + 0.5) : (long)((x) - 0.5))
 
 // Stub functions
+// Allow host tests to override timing behavior (e.g., time travel) by defining
+// ARDUINO_STUB_CUSTOM_MILLIS before including Arduino headers.
+#ifndef ARDUINO_STUB_CUSTOM_MILLIS
 inline unsigned long millis() { return 0; }
 inline void delay(unsigned long) {}
+#endif
 // Fix: Comment out unused parameter name to avoid compiler warning
 inline void delayMicroseconds(unsigned int /*us*/) {} 
 inline void yield() {} 

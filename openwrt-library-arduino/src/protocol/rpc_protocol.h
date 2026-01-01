@@ -35,7 +35,11 @@ constexpr uint8_t RPC_DIGITAL_HIGH = 1;
 constexpr uint8_t RPC_TEST_PAYLOAD_BYTE = 170;
 constexpr uint8_t RPC_TEST_MARKER_BYTE = 85;
 constexpr uint8_t RPC_TEST_EXIT_CODE = 127;
+constexpr uint8_t RPC_STATUS_CODE_MIN = 48;
+constexpr uint8_t RPC_STATUS_CODE_MAX = 63;
+constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = 64;
 constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = 79;
+constexpr uint16_t RPC_GPIO_COMMAND_MIN = 80;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;

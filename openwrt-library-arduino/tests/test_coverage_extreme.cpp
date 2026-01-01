@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <vector>
 
+// Use a custom millis() implementation for time travel in host tests.
+#define ARDUINO_STUB_CUSTOM_MILLIS 1
+
 // 1. Sobrescribir millis() para Time Travel
 static unsigned long _virtual_millis = 0;
 unsigned long millis() { return _virtual_millis; }
@@ -102,25 +105,31 @@ void test_write_failure_handling() {
     io.write_fails = false; // Restaurar
 }
 
-void test_handshake_timeout_and_retry() {
-    printf("TEST: Handshake Timeout & Retry\n");
-    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE); // Inicia handshake
+void test_ack_timeout_and_retry() {
+    printf("TEST: ACK Timeout & Retry\n");
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     io.tx.clear();
 
-    // Estado inicial: esperando sync
+    // En host tests (compilados con BRIDGE_TEST_NO_GLOBALS), begin() no bloquea
+    // esperando sincronización, y el MCU no inicia CMD_LINK_SYNC (lo inicia Linux).
+    // Para cubrir el path de retransmisión, enviamos un comando permitido en
+    // estado no sincronizado.
     assert(Bridge._synchronized == false);
 
-    // Avanzar tiempo > timeout
-    forward_time(Bridge._ack_timeout_ms + 100);
+    uint8_t payload[] = {0xAA};
+    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, sizeof(payload));
+    assert(ok == true);
 
-    // Ejecutar ciclo
-    // Bridge no tiene poll(), llamamos a _processAckTimeout directamente
-    // o simulamos el ciclo si existiera un método público de polling.
-    // Al no haber poll(), usamos el mecanismo interno:
+    // Limpiar TX para medir solo la retransmisión.
+    io.tx.clear();
+
+    // Avanzar tiempo > timeout y forzar evaluación.
+    forward_time(Bridge._ack_timeout_ms + 100);
     Bridge._processAckTimeout();
 
-    // Verificar que se envió algo nuevo (retransmisión de sync)
+    // Verificar que se retransmitió el último frame.
     assert(io.tx.size() > 0);
+    assert(Bridge._retry_count >= 1);
 }
 
 void test_protocol_crc_error() {
@@ -133,7 +142,7 @@ void test_protocol_crc_error() {
 int main() {
     test_buffer_overflow_protection();
     test_write_failure_handling();
-    test_handshake_timeout_and_retry();
+    test_ack_timeout_and_retry();
     test_protocol_crc_error();
     printf("ALL TESTS PASSED\n");
     return 0;

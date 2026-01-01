@@ -68,7 +68,7 @@ struct Frame {
 class FrameParser {
  public:
   FrameParser();
-  // Consumes a byte. If a full packet is received (ending in 0x00),
+  // Consumes a byte. If a full packet is received (ending in RPC_FRAME_DELIMITER),
   // it decodes, validates, and populates out_frame, returning true.
   bool consume(uint8_t byte, Frame& out_frame);
   void reset();

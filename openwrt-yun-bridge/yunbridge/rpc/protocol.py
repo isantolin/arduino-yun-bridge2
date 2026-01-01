@@ -28,7 +28,11 @@ DIGITAL_HIGH: Final[int] = 1
 TEST_PAYLOAD_BYTE: Final[int] = 170
 TEST_MARKER_BYTE: Final[int] = 85
 TEST_EXIT_CODE: Final[int] = 127
+STATUS_CODE_MIN: Final[int] = 48
+STATUS_CODE_MAX: Final[int] = 63
+SYSTEM_COMMAND_MIN: Final[int] = 64
 SYSTEM_COMMAND_MAX: Final[int] = 79
+GPIO_COMMAND_MIN: Final[int] = 80
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16

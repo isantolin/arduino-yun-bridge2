@@ -34,6 +34,7 @@ venv/
 *~
 # Exclude OpenWRT build output
 openwrt-library-arduino/build-coverage/
+openwrt-library-arduino/build-host-local/
 # Python dist folders
 openwrt-yun-client-python/dist/
 YunBridge-v2/dist/

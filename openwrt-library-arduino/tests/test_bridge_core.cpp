@@ -200,9 +200,8 @@ void test_bridge_flow_control() {
     stream.tx_buffer.clear();
     
     // Now we need to ACK the XOFF so the bridge can send XON later.
-    // XOFF command ID is 0x08.
-    // ACK command ID is 0x07.
-    // Payload is the command ID being acked (0x08).
+    // ACK is a status frame (StatusCode::STATUS_ACK).
+    // Payload is the command ID being acked (CommandId::CMD_XOFF).
     
     uint16_t ack_cmd_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_ACK);
     uint16_t xoff_cmd_id = static_cast<uint16_t>(rpc::CommandId::CMD_XOFF);
@@ -365,12 +364,10 @@ void test_bridge_crc_mismatch() {
     stream.inject_rx(encoded);
     bridge.process();
 
-    // Expect STATUS_CRC_MISMATCH (0x04)
+    // Expect STATUS_CRC_MISMATCH.
     // We can check if the response frame contains this status.
     // Response frame: [VER][LEN][STATUS_CMD][PAYLOAD][CRC]
-    // STATUS_CRC_MISMATCH is 0x04.
     // Since it's a status, it's sent as a command with ID = status value.
-    // So we look for command ID 0x0004.
     
     assert(stream.tx_buffer.size() > 0);
     // Decode to verify? For now, just asserting response exists is good, 
@@ -385,7 +382,7 @@ void test_bridge_unknown_command() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
-    // Command ID 0xFFFF is likely unknown
+    // Command ID rpc::RPC_INVALID_ID_SENTINEL is likely unknown
     uint16_t cmd_id = rpc::RPC_INVALID_ID_SENTINEL;
     std::vector<uint8_t> payload = {0};
     std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
@@ -393,7 +390,7 @@ void test_bridge_unknown_command() {
     stream.inject_rx(frame);
     bridge.process();
     
-    // Expect STATUS_CMD_UNKNOWN (0x02)
+    // Expect STATUS_CMD_UNKNOWN.
     assert(stream.tx_buffer.size() > 0);
 }
 

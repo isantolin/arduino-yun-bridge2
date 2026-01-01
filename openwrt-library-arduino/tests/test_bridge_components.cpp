@@ -1139,8 +1139,8 @@ void test_filesystem_handle_read_response() {
   
   // payload: [len_hi, len_lo, ...data...]
   std::vector<uint8_t> payload;
-  payload.push_back((content_len >> 8) & 0xFF);
-  payload.push_back(content_len & 0xFF);
+  payload.push_back((content_len >> 8) & rpc::RPC_UINT8_MASK);
+  payload.push_back(content_len & rpc::RPC_UINT8_MASK);
   payload.insert(payload.end(), content, content + content_len);
 
   Frame frame{};

@@ -469,9 +469,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   bool is_system_command = false;
   
-  // New Logic: System commands are 0x40 - 0x4F
-  // Status codes are 0x30 - 0x3F
-  if (raw_command >= 0x40 && raw_command <= 0x4F) {
+  // System commands are in [rpc::RPC_SYSTEM_COMMAND_MIN, rpc::RPC_SYSTEM_COMMAND_MAX].
+  // Status codes are in [rpc::RPC_STATUS_CODE_MIN, rpc::RPC_STATUS_CODE_MAX].
+  if (raw_command >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_command <= rpc::RPC_SYSTEM_COMMAND_MAX) {
       is_system_command = true;
   }
 
@@ -498,8 +498,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
               requires_ack = false;
           }
       }
-  } else if (raw_command >= 0x50) {
-      // High-ID commands (GPIO 0x50+, Console 0x60, etc)
+    } else if (raw_command >= rpc::RPC_GPIO_COMMAND_MIN) {
+      // High-ID commands (GPIO+, Console, etc)
       switch(command) {
         case CommandId::CMD_SET_PIN_MODE:
         case CommandId::CMD_DIGITAL_WRITE:
@@ -553,9 +553,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   // Handle Status/Error frames (when not a system command)
   if (!command_processed_internally) {
-      // Status codes are in range 0x30 - 0x3F
-      if (raw_command >= rpc::to_underlying(StatusCode::STATUS_OK) && 
-          raw_command <= rpc::to_underlying(StatusCode::STATUS_ACK)) {
+      // Status codes are in the reserved range declared by the protocol.
+      if (raw_command >= rpc::RPC_STATUS_CODE_MIN && raw_command <= rpc::RPC_STATUS_CODE_MAX) {
         
         const StatusCode status = static_cast<StatusCode>(raw_command);
         const size_t payload_length = frame.header.payload_length;
@@ -594,8 +593,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     _command_handler(frame);
   } else if (!command_processed_internally) {
     // Only send UNKNOWN if it's not a response we recognized
-    // And if it's NOT a status code (0x30-0x3F)
-    if (raw_command < 0x30 || raw_command > 0x3F) {
+    // And if it's NOT a status code
+    if (raw_command < rpc::RPC_STATUS_CODE_MIN || raw_command > rpc::RPC_STATUS_CODE_MAX) {
         (void)sendFrame(StatusCode::STATUS_CMD_UNKNOWN);
     }
   }
@@ -649,7 +648,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
   printf("[Bridge] _sendFrame ID=%u AwaitingAck=%d PendingCount=%d\n", command_id, _awaiting_ack, _pending_tx_count);
 #endif
   if (!_synchronized) {
-    bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) || // [FIX] Updated range for new System IDs (0x40-0x4F)
+    bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_RESET_RESP));
@@ -709,12 +708,13 @@ void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
 #endif
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  // Status codes (0x30-0x3F) and Flow Control do NOT require ACK
-  if (command_id >= 0x30 && command_id <= 0x3F) {
+  // Status codes and Flow Control do NOT require ACK
+  if (command_id >= rpc::RPC_STATUS_CODE_MIN && command_id <= rpc::RPC_STATUS_CODE_MAX) {
       return false;
   }
   // XOFF/XON
-  if (command_id == 0x4E || command_id == 0x4F) {
+  if (command_id == rpc::to_underlying(CommandId::CMD_XOFF) ||
+    command_id == rpc::to_underlying(CommandId::CMD_XON)) {
       return false;
   }
   // Response frames (e.g. GET_VERSION_RESP) also don't require ACK,
@@ -722,7 +722,7 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
   // for incoming frames.
   // For OUTGOING frames, we check this method.
   
-  // By default, system commands (0x40-0x4F) except flow control might require ACK 
+  // By default, system commands except flow control might require ACK 
   // (CMD_LINK_SYNC does, CMD_SET_BAUDRATE does in the sense of waiting for it).
   // But strictly, only what's marked 'requires_ack = true' in spec should.
   // However, this C++ helper is simplistic.

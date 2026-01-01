@@ -96,7 +96,6 @@ void test_write_failure_handling() {
 
     uint8_t data[] = {0xAA};
     // sendFrame debe retornar false si el stream falla
-    // Usamos CMD_GET_VERSION (0x0A) como comando válido genérico
     bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, data, 1);
 
     assert(ok == false);

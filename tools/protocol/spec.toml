@@ -26,7 +26,7 @@ digital_high = 0x01
 test_payload_byte = 0xAA
 test_marker_byte = 0x55
 test_exit_code = 0x7F
-system_command_max = 0x0F
+system_command_max = 0x4F
 
 [handshake]
 nonce_length = 16
@@ -188,262 +188,275 @@ name = "CONSOLE_INPUT"
 value = "input"
 description = "Console input action"
 
+# --- STATUS CODES REASSIGNED TO SAFE RANGE 0x30-0x3F ---
 [[statuses]]
 name = "OK"
-value = 0x00
+value = 0x30
 description = "Operation completed successfully."
 [[statuses]]
 name = "ERROR"
-value = 0x01
+value = 0x31
 description = "Generic failure."
 [[statuses]]
 name = "CMD_UNKNOWN"
-value = 0x02
+value = 0x32
 description = "Command not recognized."
 [[statuses]]
 name = "MALFORMED"
-value = 0x03
+value = 0x33
 description = "Payload had invalid structure."
 [[statuses]]
 name = "OVERFLOW"
-value = 0x08
+value = 0x34
 description = "Frame exceeded buffer size."
 [[statuses]]
 name = "CRC_MISMATCH"
-value = 0x04
+value = 0x35
 description = "CRC check failed."
 [[statuses]]
 name = "TIMEOUT"
-value = 0x05
+value = 0x36
 description = "Operation timed out."
 [[statuses]]
 name = "NOT_IMPLEMENTED"
-value = 0x06
+value = 0x37
 description = "Command defined but not supported."
 [[statuses]]
 name = "ACK"
-value = 0x07
+value = 0x38
 description = "Generic acknowledgement for fire-and-forget commands."
 
-# --- SYSTEM COMMANDS REASSIGNED TO 0x0A-0x0F ---
+# --- SYSTEM COMMANDS REASSIGNED TO 0x40-0x4F ---
 
 [[commands]]
 name = "CMD_GET_VERSION"
-value = 0x0A
+value = 0x40
 category = "system"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_GET_VERSION_RESP"
-value = 0x80
+value = 0x41
 category = "system"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_GET_FREE_MEMORY"
-value = 0x0B
+value = 0x42
 category = "system"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_GET_FREE_MEMORY_RESP"
-value = 0x82
+value = 0x43
 category = "system"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_LINK_SYNC"
-value = 0x0C
+value = 0x44
 category = "system"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_LINK_SYNC_RESP"
-value = 0x83
+value = 0x45
 category = "system"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_LINK_RESET"
-value = 0x0D
+value = 0x46
 category = "system"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 description = "Reset link state. Accepts optional payload with 'config_format' to update timing parameters."
 [[commands]]
 name = "CMD_LINK_RESET_RESP"
-value = 0x84
+value = 0x47
 category = "system"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_GET_TX_DEBUG_SNAPSHOT"
-value = 0x0E
+value = 0x48
 category = "system"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_GET_TX_DEBUG_SNAPSHOT_RESP"
-value = 0x85
+value = 0x49
 category = "system"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_SET_BAUDRATE"
-value = 0x0F
+value = 0x4A
 category = "system"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_SET_BAUDRATE_RESP"
-value = 0x86
+value = 0x4B
 category = "system"
-direction = "mcu_to_linux"
-
-# --- END SYSTEM COMMANDS ---
+directions = ["mcu_to_linux"]
 
 [[commands]]
 name = "CMD_XOFF"
-value = 0x70
+value = 0x4E
 description = "Pause transmission (Flow Control)"
+directions = ["mcu_to_linux"]
 requires_ack = false
 
 [[commands]]
 name = "CMD_XON"
-value = 0x71
+value = 0x4F
 description = "Resume transmission (Flow Control)"
+directions = ["mcu_to_linux"]
 requires_ack = false
+
+# --- GPIO COMMANDS REASSIGNED TO 0x50-0x5F ---
 [[commands]]
 name = "CMD_SET_PIN_MODE"
-value = 0x10
+value = 0x50
 category = "gpio"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 requires_ack = true
 [[commands]]
 name = "CMD_DIGITAL_WRITE"
-value = 0x11
+value = 0x51
 category = "gpio"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 requires_ack = true
 [[commands]]
 name = "CMD_ANALOG_WRITE"
-value = 0x12
+value = 0x52
 category = "gpio"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 requires_ack = true
 [[commands]]
 name = "CMD_DIGITAL_READ"
-value = 0x13
+value = 0x53
 category = "gpio"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_ANALOG_READ"
-value = 0x14
+value = 0x54
 category = "gpio"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_DIGITAL_READ_RESP"
-value = 0x15
+value = 0x55
 category = "gpio"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_ANALOG_READ_RESP"
-value = 0x16
+value = 0x56
 category = "gpio"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
+
+# --- CONSOLE COMMANDS REASSIGNED TO 0x60 ---
 [[commands]]
 name = "CMD_CONSOLE_WRITE"
-value = 0x20
+value = 0x60
 category = "console"
-direction = "bidirectional"
+directions = ["linux_to_mcu", "mcu_to_linux"]
 requires_ack = true
+
+# --- DATASTORE COMMANDS REASSIGNED TO 0x70 ---
 [[commands]]
 name = "CMD_DATASTORE_PUT"
-value = 0x30
+value = 0x70
 category = "datastore"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 requires_ack = true
 [[commands]]
 name = "CMD_DATASTORE_GET"
-value = 0x31
+value = 0x71
 category = "datastore"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_DATASTORE_GET_RESP"
-value = 0x81
+value = 0x72
 category = "datastore"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
+
+# --- MAILBOX COMMANDS REASSIGNED TO 0x80 ---
 [[commands]]
 name = "CMD_MAILBOX_READ"
-value = 0x40
+value = 0x80
 category = "mailbox"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_MAILBOX_PROCESSED"
-value = 0x41
+value = 0x81
 category = "mailbox"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_MAILBOX_AVAILABLE"
-value = 0x42
+value = 0x82
 category = "mailbox"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_MAILBOX_PUSH"
-value = 0x43
+value = 0x83
 category = "mailbox"
-direction = "bidirectional"
+directions = ["linux_to_mcu", "mcu_to_linux"]
 [[commands]]
 name = "CMD_MAILBOX_READ_RESP"
-value = 0x90
+value = 0x84
 category = "mailbox"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_MAILBOX_AVAILABLE_RESP"
-value = 0x92
+value = 0x85
 category = "mailbox"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
+
+# --- FILESYSTEM COMMANDS REASSIGNED TO 0x90 ---
 [[commands]]
 name = "CMD_FILE_WRITE"
-value = 0x50
+value = 0x90
 category = "filesystem"
-direction = "bidirectional"
+directions = ["linux_to_mcu", "mcu_to_linux"]
 [[commands]]
 name = "CMD_FILE_READ"
-value = 0x51
+value = 0x91
 category = "filesystem"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_FILE_REMOVE"
-value = 0x52
+value = 0x92
 category = "filesystem"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_FILE_READ_RESP"
-value = 0xA1
+value = 0x93
 category = "filesystem"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
+
+# --- PROCESS COMMANDS REASSIGNED TO 0xA0 ---
 [[commands]]
 name = "CMD_PROCESS_RUN"
-value = 0x60
+value = 0xA0
 category = "process"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_PROCESS_RUN_ASYNC"
-value = 0x61
+value = 0xA1
 category = "process"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_PROCESS_POLL"
-value = 0x62
+value = 0xA2
 category = "process"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_PROCESS_KILL"
-value = 0x63
+value = 0xA3
 category = "process"
-direction = "mcu_to_linux"
+directions = ["mcu_to_linux"]
 [[commands]]
 name = "CMD_PROCESS_RUN_RESP"
-value = 0xB0
+value = 0xA4
 category = "process"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_PROCESS_RUN_ASYNC_RESP"
-value = 0xB1
+value = 0xA5
 category = "process"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]
 [[commands]]
 name = "CMD_PROCESS_POLL_RESP"
-value = 0xB2
+value = 0xA6
 category = "process"
-direction = "linux_to_mcu"
+directions = ["linux_to_mcu"]

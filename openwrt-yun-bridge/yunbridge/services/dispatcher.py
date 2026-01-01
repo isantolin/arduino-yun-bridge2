@@ -180,8 +180,10 @@ class BridgeDispatcher:
                 "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
                 command_id,
             )
-            if command_id < RESPONSE_OFFSET:
-                # Politely tell the MCU to stop talking until sync
+            # Politely tell the MCU to stop talking until sync.
+            # Note: command IDs are not guaranteed to be < RESPONSE_OFFSET; we
+            # rely on the explicit Status enum for status frames instead.
+            if command_id not in STATUS_VALUES:
                 await self.acknowledge_frame(
                     command_id,
                     status=Status.MALFORMED,

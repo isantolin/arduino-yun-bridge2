@@ -12,10 +12,10 @@ from tests.test_constants import TEST_BROKEN_CRC
 
 
 def test_resolve_command_hex() -> None:
-    # [FIX] Updated ID: CMD_LINK_RESET is now 0x0D (13)
-    assert frame_debug._resolve_command("0x0D") == Command.CMD_LINK_RESET.value
+    # [FIX] Updated ID: CMD_LINK_RESET is now 0x46 (70)
+    assert frame_debug._resolve_command("0x46") == Command.CMD_LINK_RESET.value
     assert frame_debug._resolve_command("0XFF") == UINT8_MASK
-    assert frame_debug._resolve_command("10") == Command.CMD_SET_PIN_MODE.value
+    assert frame_debug._resolve_command("10") == 10  # Just an integer
 
 
 def test_resolve_command_name() -> None:
@@ -81,8 +81,8 @@ def test_snapshot_render() -> None:
         encoded_hex="0304",
     )
     rendered = snapshot.render()
-    # [FIX] Updated ID: CMD_GET_VERSION is now 0x0A
-    assert "cmd_id=0x0A (CMD_GET_VERSION)" in rendered
+    # [FIX] Updated ID: CMD_GET_VERSION is now 0x40
+    assert "cmd_id=0x40 (CMD_GET_VERSION)" in rendered
     assert f"crc=0x{TEST_BROKEN_CRC:08X}" in rendered
     assert "raw_frame=0102" in rendered
 

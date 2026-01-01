@@ -467,26 +467,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool command_processed_internally = false;
   bool requires_ack = false;
 
-  // [FIX] Detect Collision between System Commands and Status Codes
-  // IDs 0-7 are shared. We distinguish by payload or explicit ID check.
   bool is_system_command = false;
   
-  switch (command) {
-    case CommandId::CMD_GET_VERSION: // 0x0A
-    case CommandId::CMD_GET_FREE_MEMORY: // 0x0B
-    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT: // 0x0E
-    case CommandId::CMD_SET_BAUDRATE: // 0x0F
-    case CommandId::CMD_LINK_SYNC: // 0x0C
-    case CommandId::CMD_LINK_RESET: // 0x0D
-        is_system_command = true;
-        break;
-    default:
-      // High IDs (GPIO, Console, etc) don't collide with Status (0-8)
-      // [FIX] XON (0x09) is also a system/flow command, so we use > 8
-      if (raw_command > 8) {
-          is_system_command = true;
-      }
-      break;
+  // New Logic: System commands are 0x40 - 0x4F
+  // Status codes are 0x30 - 0x3F
+  if (raw_command >= 0x40 && raw_command <= 0x4F) {
+      is_system_command = true;
   }
 
   if (is_system_command) {
@@ -500,7 +486,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           _handleSystemCommand(frame);
           command_processed_internally = true;
           requires_ack = false;
-      } else if (raw_command <= 0x0F) { // Updated range for new System IDs
+      } else {
           // Other system commands
           _handleSystemCommand(frame);
           command_processed_internally = true;
@@ -511,52 +497,51 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           } else {
               requires_ack = false;
           }
-      } else {
-          // High-ID commands (GPIO, etc)
-          switch(command) {
-            case CommandId::CMD_SET_PIN_MODE:
-            case CommandId::CMD_DIGITAL_WRITE:
-            case CommandId::CMD_ANALOG_WRITE:
-            case CommandId::CMD_DIGITAL_READ:
-            case CommandId::CMD_ANALOG_READ:
-              _handleGpioCommand(frame);
-              command_processed_internally = true;
-              requires_ack = (command != CommandId::CMD_DIGITAL_READ && command != CommandId::CMD_ANALOG_READ);
-              break;
-            case CommandId::CMD_CONSOLE_WRITE:
-              _handleConsoleCommand(frame);
-              command_processed_internally = true;
-              requires_ack = true;
-              break;
-            case CommandId::CMD_MAILBOX_PUSH:
-            case CommandId::CMD_MAILBOX_AVAILABLE:
-              Mailbox.handleResponse(frame); 
-              command_processed_internally = true;
-              requires_ack = true;
-              break;
-            case CommandId::CMD_FILE_WRITE:
-              FileSystem.handleResponse(frame);
-              command_processed_internally = true;
-              requires_ack = true;
-              break;
-            
-            // [FIX CRITICO] Agregar casos para las RESPUESTAS (Linux -> MCU)
-            // para marcarlas como procesadas y evitar CMD_UNKNOWN.
-            case CommandId::CMD_DATASTORE_GET_RESP:
-            case CommandId::CMD_MAILBOX_READ_RESP:
-            case CommandId::CMD_MAILBOX_AVAILABLE_RESP:
-            case CommandId::CMD_FILE_READ_RESP:
-            case CommandId::CMD_PROCESS_RUN_RESP:
-            case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-            case CommandId::CMD_PROCESS_POLL_RESP:
-            case CommandId::CMD_LINK_SYNC_RESP:
-              command_processed_internally = true;
-              requires_ack = false; 
-              break;
+      }
+  } else if (raw_command >= 0x50) {
+      // High-ID commands (GPIO 0x50+, Console 0x60, etc)
+      switch(command) {
+        case CommandId::CMD_SET_PIN_MODE:
+        case CommandId::CMD_DIGITAL_WRITE:
+        case CommandId::CMD_ANALOG_WRITE:
+        case CommandId::CMD_DIGITAL_READ:
+        case CommandId::CMD_ANALOG_READ:
+          _handleGpioCommand(frame);
+          command_processed_internally = true;
+          requires_ack = (command != CommandId::CMD_DIGITAL_READ && command != CommandId::CMD_ANALOG_READ);
+          break;
+        case CommandId::CMD_CONSOLE_WRITE:
+          _handleConsoleCommand(frame);
+          command_processed_internally = true;
+          requires_ack = true;
+          break;
+        case CommandId::CMD_MAILBOX_PUSH:
+        case CommandId::CMD_MAILBOX_AVAILABLE:
+          Mailbox.handleResponse(frame); 
+          command_processed_internally = true;
+          requires_ack = true;
+          break;
+        case CommandId::CMD_FILE_WRITE:
+          FileSystem.handleResponse(frame);
+          command_processed_internally = true;
+          requires_ack = true;
+          break;
+        
+        // Responses (Linux -> MCU)
+        case CommandId::CMD_DATASTORE_GET_RESP:
+        case CommandId::CMD_MAILBOX_READ_RESP:
+        case CommandId::CMD_MAILBOX_AVAILABLE_RESP:
+        case CommandId::CMD_FILE_READ_RESP:
+        case CommandId::CMD_PROCESS_RUN_RESP:
+        case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
+        case CommandId::CMD_PROCESS_POLL_RESP:
+        case CommandId::CMD_LINK_SYNC_RESP:
+          command_processed_internally = true;
+          requires_ack = false; 
+          break;
 
-            default:
-              break;
-          }
+        default:
+          break;
       }
   }
 
@@ -568,8 +553,10 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   // Handle Status/Error frames (when not a system command)
   if (!command_processed_internally) {
-      // Check if it's a valid status code range (e.g., 0-8)
-      if (raw_command <= rpc::to_underlying(StatusCode::STATUS_OVERFLOW)) {
+      // Status codes are in range 0x30 - 0x3F
+      if (raw_command >= rpc::to_underlying(StatusCode::STATUS_OK) && 
+          raw_command <= rpc::to_underlying(StatusCode::STATUS_ACK)) {
+        
         const StatusCode status = static_cast<StatusCode>(raw_command);
         const size_t payload_length = frame.header.payload_length;
         const uint8_t* payload_data = frame.payload;
@@ -607,7 +594,8 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     _command_handler(frame);
   } else if (!command_processed_internally) {
     // Only send UNKNOWN if it's not a response we recognized
-    if (raw_command > 8) { // Don't reply UNKNOWN to Status codes
+    // And if it's NOT a status code (0x30-0x3F)
+    if (raw_command < 0x30 || raw_command > 0x3F) {
         (void)sendFrame(StatusCode::STATUS_CMD_UNKNOWN);
     }
   }
@@ -661,7 +649,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
   printf("[Bridge] _sendFrame ID=%u AwaitingAck=%d PendingCount=%d\n", command_id, _awaiting_ack, _pending_tx_count);
 #endif
   if (!_synchronized) {
-    bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) || // [FIX] Updated range for new System IDs (0x00-0x0F)
+    bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) || // [FIX] Updated range for new System IDs (0x40-0x4F)
                    (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
                    (command_id == rpc::to_underlying(CommandId::CMD_LINK_RESET_RESP));
@@ -721,11 +709,26 @@ void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
 #endif
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  // [FIX] Status codes (0-8) and Flow Control (XON=9) do NOT require ACK
-  if (command_id <= 9) { 
-      return false; 
+  // Status codes (0x30-0x3F) and Flow Control do NOT require ACK
+  if (command_id >= 0x30 && command_id <= 0x3F) {
+      return false;
   }
-  return command_id > rpc::to_underlying(StatusCode::STATUS_ACK);
+  // XOFF/XON
+  if (command_id == 0x4E || command_id == 0x4F) {
+      return false;
+  }
+  // Response frames (e.g. GET_VERSION_RESP) also don't require ACK,
+  // but they are usually handled by the 'requires_ack = false' logic in dispatch
+  // for incoming frames.
+  // For OUTGOING frames, we check this method.
+  
+  // By default, system commands (0x40-0x4F) except flow control might require ACK 
+  // (CMD_LINK_SYNC does, CMD_SET_BAUDRATE does in the sense of waiting for it).
+  // But strictly, only what's marked 'requires_ack = true' in spec should.
+  // However, this C++ helper is simplistic.
+  // Let's rely on the exclusion of Status codes.
+  
+  return true;
 }
 
 void BridgeClass::_clearAckState() {

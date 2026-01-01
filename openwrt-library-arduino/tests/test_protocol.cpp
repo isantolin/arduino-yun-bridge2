@@ -80,7 +80,7 @@ static void test_parser_crc_failure() {
 
   const uint8_t payload[] = {0x10, 0x20, 0x30};
   uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, sizeof(raw), 0x1111, payload, sizeof(payload));
+  size_t raw_len = builder.build(raw, sizeof(raw), 0x4444, payload, sizeof(payload));
   assert(raw_len > 0);
 
   raw[sizeof(FrameHeader)] ^= RPC_UINT8_MASK;  // Corrupt payload without fixing CRC.

@@ -57,20 +57,32 @@ def _resolve_command(candidate: str) -> int:
     if not candidate:
         raise ValueError("command may not be empty")
 
-    normalized = candidate.strip().upper()
-    if normalized.startswith("0X"):
-        normalized = normalized[2:]
+    normalized = candidate.strip()
+    
+    # Try generic integer parsing (handles 10, 0x10, 0o10)
     try:
-        return int(normalized, 16)
+        return int(normalized, 0)
     except ValueError:
         pass
 
+    normalized_upper = normalized.upper()
+    # Fallback to hex if it looks like hex but missing 0x prefix?
+    # Original code: if normalized.startswith("0X"): ... int(..., 16)
+    # The int(..., 0) handles 0x. The only case left is "10" meant as hex "10" -> 16?
+    # But user wants "10" -> 10.
+    # So if it fails int(..., 0), it's not a number.
+    
     try:
-        return Command[normalized].value
+        return Command[normalized_upper].value
+    except KeyError:
+        pass
+        
+    try:
+        return Status[normalized_upper].value
     except KeyError as exc:
         raise ValueError(
-            f"Unknown command '{candidate}'. Use hex (e.g. 0x03) "
-            "or a Command enum name."
+            f"Unknown command '{candidate}'. Use integer (e.g. 10, 0x0A) "
+            "or a Command/Status enum name."
         ) from exc
 
 

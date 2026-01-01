@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import struct
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from typing import cast
 
 import pytest
 import pytest_asyncio
@@ -218,3 +222,280 @@ async def test_handle_poll_malformed(
     args = mock_context.send_frame.call_args[0]
     assert args[0] == Command.CMD_PROCESS_POLL_RESP.value
     assert args[1][0] == Status.MALFORMED.value
+
+
+@pytest.mark.asyncio
+async def test_handle_run_internal_error_sends_error_frame(
+    process_component: ProcessComponent, mock_context: AsyncMock
+) -> None:
+    with patch.object(
+        ProcessComponent, "_try_acquire_process_slot", new_callable=AsyncMock
+    ) as mock_acquire:
+        mock_acquire.return_value = True
+
+        with patch.object(ProcessComponent, "run_sync", new_callable=AsyncMock) as mock_run:
+            mock_run.side_effect = RuntimeError("boom")
+
+            await process_component.handle_run(b"echo hello")
+
+            # Falls back to Status.ERROR frame with a stable reason.
+            assert mock_context.send_frame.await_count == 1
+            cmd_id, payload = mock_context.send_frame.call_args[0]
+            assert cmd_id == Status.ERROR.value
+            assert payload == b"process_run_internal_error"
+
+
+@pytest.mark.asyncio
+async def test_handle_run_async_validation_error_publishes_error(
+    process_component: ProcessComponent, mock_context: AsyncMock
+) -> None:
+    with patch.object(ProcessComponent, "start_async", new_callable=AsyncMock) as mock_start:
+        mock_start.side_effect = CommandValidationError("nope")
+
+        await process_component.handle_run_async(b"blocked")
+
+        assert mock_context.send_frame.await_count == 1
+        cmd_id, payload = mock_context.send_frame.call_args[0]
+        assert cmd_id == Status.ERROR.value
+        assert b"command_validation_failed" in payload
+
+        assert mock_context.enqueue_mqtt.await_count == 1
+        queued = mock_context.enqueue_mqtt.call_args[0][0]
+        body = json.loads(queued.payload.decode("utf-8"))
+        assert body["status"] == "error"
+        assert body["reason"] == "command_validation_failed"
+
+
+@pytest.mark.asyncio
+async def test_process_slot_acquire_timeout_returns_false(
+    process_component: ProcessComponent,
+) -> None:
+    guard = asyncio.BoundedSemaphore(1)
+    await guard.acquire()
+    process_component._process_slots = guard
+    assert await process_component._try_acquire_process_slot() is False
+
+
+def test_process_slot_release_ignores_value_error(process_component: ProcessComponent) -> None:
+    guard = asyncio.BoundedSemaphore(1)
+    process_component._process_slots = guard
+    # Releasing without a matching acquire raises ValueError; should be swallowed.
+    process_component._release_process_slot()
+
+
+def test_limit_sync_payload_truncates_tail(process_component: ProcessComponent) -> None:
+    process_component.state.process_output_limit = 3
+    payload, truncated = process_component._limit_sync_payload(b"abcdef")
+    assert payload == b"def"
+    assert truncated is True
+
+
+def test_build_sync_response_trims_to_protocol_budget(process_component: ProcessComponent) -> None:
+    stdout = b"a" * 9999
+    stderr = b"b" * 9999
+    out = process_component._build_sync_response(Status.OK.value, stdout, stderr)
+    assert out[0] == (Status.OK.value & rpc_protocol.UINT8_MASK)
+    # Must include two uint16 lengths
+    assert len(out) <= rpc_protocol.MAX_PAYLOAD_SIZE
+
+
+@pytest.mark.asyncio
+async def test_handle_kill_malformed_payload_returns_false(
+    process_component: ProcessComponent,
+) -> None:
+    assert await process_component.handle_kill(b"\x00", send_ack=True) is False
+
+
+@pytest.mark.asyncio
+async def test_handle_kill_unknown_pid_returns_ack(
+    process_component: ProcessComponent,
+) -> None:
+    pid = 123
+    payload = struct.pack(">H", pid)
+    assert await process_component.handle_kill(payload, send_ack=True) is True
+
+
+@pytest.mark.asyncio
+async def test_handle_kill_terminates_and_cleans_slot(
+    process_component: ProcessComponent, mock_context: AsyncMock
+) -> None:
+    pid = 77
+
+    class FakeProc:
+        def __init__(self) -> None:
+            self.pid = 999
+            self.returncode: int | None = None
+
+        async def wait(self) -> None:
+            # Ensure we hit the timeout path.
+            await asyncio.sleep(1)
+
+        def kill(self) -> None:
+            return None
+
+    proc = FakeProc()
+    # Minimal ManagedProcess-like slot; runtime state stores a richer object, but we only need
+    # the attributes used by handle_kill.
+    slot = SimpleNamespace(handle=proc, exit_code=None, is_drained=lambda: True)
+
+    async with process_component.state.process_lock:
+        process_component.state.running_processes[pid] = slot  # type: ignore[assignment]
+
+    with patch.object(
+        ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
+    ) as mock_term:
+        ok = await process_component.handle_kill(struct.pack(">H", pid), send_ack=True)
+        assert ok is True
+        mock_term.assert_awaited_once()
+
+    async with process_component.state.process_lock:
+        assert pid not in process_component.state.running_processes
+
+
+@pytest.mark.asyncio
+async def test_terminate_process_tree_short_circuits_when_returned(
+    process_component: ProcessComponent,
+) -> None:
+    proc = SimpleNamespace(returncode=0, pid=123, kill=lambda: None)
+    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+        await process_component._terminate_process_tree(proc)  # type: ignore[arg-type]
+        mock_to_thread.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_terminate_process_tree_kills_when_no_pid(
+    process_component: ProcessComponent,
+) -> None:
+    killed: list[bool] = []
+
+    def _kill() -> None:
+        killed.append(True)
+
+    proc = SimpleNamespace(returncode=None, pid=None, kill=_kill)
+    await process_component._terminate_process_tree(proc)  # type: ignore[arg-type]
+    assert killed
+
+
+@pytest.mark.asyncio
+async def test_run_sync_rejected_command_returns_error(process_component: ProcessComponent) -> None:
+    with patch.object(
+        ProcessComponent, "_prepare_command", side_effect=CommandValidationError("nope")
+    ):
+        status, stdout, stderr, exit_code = await process_component.run_sync("blocked")
+        assert status == Status.ERROR.value
+        assert stdout == b""
+        assert b"nope" in stderr
+        assert exit_code is None
+
+
+@pytest.mark.asyncio
+async def test_run_sync_subprocess_oserror_returns_error(process_component: ProcessComponent) -> None:
+    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
+        with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
+            status, stdout, stderr, exit_code = await process_component.run_sync("/bin/true")
+            assert status == Status.ERROR.value
+            assert stdout == b""
+            assert b"bad" in stderr
+            assert exit_code is None
+
+
+@pytest.mark.asyncio
+async def test_run_sync_timeout_kills_process(process_component: ProcessComponent) -> None:
+    process_component.state.process_timeout = 1
+
+    class _FakeStream:
+        async def read(self, _n: int) -> bytes:
+            await asyncio.sleep(0)
+            return b""
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self.stdout = _FakeStream()
+            self.stderr = _FakeStream()
+            self.returncode: int | None = None
+            self.pid = 123
+            self._killed = False
+
+        async def wait(self) -> None:
+            # Keep running until killed.
+            while not self._killed:
+                await asyncio.sleep(0.05)
+            self.returncode = 9
+
+        def kill(self) -> None:
+            self._killed = True
+
+    fake_proc = _FakeProc()
+
+    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/sleep", "10")):
+        with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+            with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+                status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep")
+                assert status == Status.TIMEOUT.value
+                assert exit_code == 9
+                mock_to_thread.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_start_async_allocate_pid_failure_returns_sentinel(process_component: ProcessComponent) -> None:
+    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
+        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+            mock_alloc.return_value = rpc_protocol.INVALID_ID_SENTINEL
+            pid = await process_component.start_async("/bin/true")
+            assert pid == rpc_protocol.INVALID_ID_SENTINEL
+
+
+@pytest.mark.asyncio
+async def test_start_async_subprocess_oserror_returns_sentinel(process_component: ProcessComponent) -> None:
+    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
+        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+            mock_alloc.return_value = 55
+            with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
+                pid = await process_component.start_async("/bin/true")
+                assert pid == rpc_protocol.INVALID_ID_SENTINEL
+
+
+@pytest.mark.asyncio
+async def test_collect_output_unknown_pid_returns_error_batch(
+    process_component: ProcessComponent,
+) -> None:
+    batch = await process_component.collect_output(999)
+    assert batch.status_byte == Status.ERROR.value
+    assert batch.finished is False
+
+
+@pytest.mark.asyncio
+async def test_read_stream_chunk_timeout_returns_empty(process_component: ProcessComponent) -> None:
+    class _SlowReader(asyncio.StreamReader):
+        async def read(self, _n: int = -1) -> bytes:  # type: ignore[override]
+            await asyncio.sleep(0.05)
+            return b"data"
+
+    chunk = await process_component._read_stream_chunk(
+        1,
+        cast(asyncio.StreamReader, _SlowReader()),
+        timeout=0.001,
+    )
+    assert chunk == b""
+
+
+@pytest.mark.asyncio
+async def test_read_stream_chunk_reader_error_returns_empty(process_component: ProcessComponent) -> None:
+    class _BadReader(asyncio.StreamReader):
+        async def read(self, _n: int = -1) -> bytes:  # type: ignore[override]
+            raise OSError("boom")
+
+    chunk = await process_component._read_stream_chunk(
+        1,
+        cast(asyncio.StreamReader, _BadReader()),
+        timeout=0,
+    )
+    assert chunk == b""
+
+
+@pytest.mark.asyncio
+async def test_terminate_process_tree_uses_to_thread_when_pid_present(process_component: ProcessComponent) -> None:
+    proc = SimpleNamespace(returncode=None, pid=123, kill=lambda: None)
+    with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+        await process_component._terminate_process_tree(proc)  # type: ignore[arg-type]
+        mock_to_thread.assert_awaited_once()

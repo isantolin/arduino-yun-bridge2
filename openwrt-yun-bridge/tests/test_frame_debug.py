@@ -6,21 +6,29 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from yunbridge.rpc.protocol import Command, Status, UINT8_MASK
+from yunbridge.rpc.protocol import (
+    Command,
+    FRAME_DELIMITER,
+    Status,
+    UINT8_MASK,
+)
 from yunbridge.tools import frame_debug
 from tests.test_constants import TEST_BROKEN_CRC
 
 
 def test_resolve_command_hex() -> None:
-    # [FIX] Updated ID: CMD_LINK_RESET is now 0x46 (70)
-    assert frame_debug._resolve_command("0x46") == Command.CMD_LINK_RESET.value
-    assert frame_debug._resolve_command("0XFF") == UINT8_MASK
+    assert (
+        frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}")
+        == Command.CMD_LINK_RESET.value
+    )
+    assert frame_debug._resolve_command(f"0X{UINT8_MASK:02X}") == UINT8_MASK
     assert frame_debug._resolve_command("10") == 10  # Just an integer
 
 
 def test_resolve_command_name() -> None:
     assert (
-        frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
+        frame_debug._resolve_command("CMD_GET_VERSION")
+        == Command.CMD_GET_VERSION.value
     )
     assert (
         frame_debug._resolve_command("CMD_GET_FREE_MEMORY")
@@ -28,7 +36,8 @@ def test_resolve_command_name() -> None:
     )
     # Case insensitive
     assert (
-        frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
+        frame_debug._resolve_command("cmd_get_version")
+        == Command.CMD_GET_VERSION.value
     )
 
 
@@ -43,9 +52,9 @@ def test_resolve_command_invalid() -> None:
 def test_parse_payload() -> None:
     assert frame_debug._parse_payload(None) == b""
     assert frame_debug._parse_payload("") == b""
-    assert frame_debug._parse_payload("010203") == b"\x01\x02\x03"
-    assert frame_debug._parse_payload("0x0102") == b"\x01\x02"
-    assert frame_debug._parse_payload("01 02 03") == b"\x01\x02\x03"
+    assert frame_debug._parse_payload("010203") == bytes([1, 2, 3])
+    assert frame_debug._parse_payload(f"0x{1:02X}{2:02X}") == bytes([1, 2])
+    assert frame_debug._parse_payload("01 02 03") == bytes([1, 2, 3])
 
 
 def test_parse_payload_invalid() -> None:
@@ -61,10 +70,12 @@ def test_name_for_command() -> None:
         frame_debug._name_for_command(Command.CMD_GET_VERSION.value)
         == "CMD_GET_VERSION"
     )
-    # Status.OK (0) no longer overlaps with CMD_GET_VERSION (0x0A)
-    # But let's keep testing Status resolution
+    # Keep testing Status resolution
     assert frame_debug._name_for_command(Status.ACK.value) == "ACK"
-    assert frame_debug._name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
+    assert (
+        frame_debug._name_for_command(UINT8_MASK)
+        == f"UNKNOWN(0x{UINT8_MASK:02X})"
+    )
 
 
 def test_snapshot_render() -> None:
@@ -81,14 +92,16 @@ def test_snapshot_render() -> None:
         encoded_hex="0304",
     )
     rendered = snapshot.render()
-    # [FIX] Updated ID: CMD_GET_VERSION is now 0x40
-    assert "cmd_id=0x40 (CMD_GET_VERSION)" in rendered
+    assert (
+        f"cmd_id=0x{Command.CMD_GET_VERSION.value:02X} (CMD_GET_VERSION)"
+        in rendered
+    )
     assert f"crc=0x{TEST_BROKEN_CRC:08X}" in rendered
     assert "raw_frame=0102" in rendered
 
 
 def test_hex_with_spacing() -> None:
-    assert frame_debug._hex_with_spacing(b"\x01\x02") == "01 02"
+    assert frame_debug._hex_with_spacing(bytes([1, 2])) == "01 02"
     assert frame_debug._hex_with_spacing(b"") == ""
 
 
@@ -97,14 +110,14 @@ def test_build_snapshot() -> None:
     assert snapshot.command_id == Command.CMD_GET_VERSION.value
     assert snapshot.payload_length == 0
     assert snapshot.cobs_length > 0
-    assert snapshot.encoded_packet.endswith(b"\x00")
+    assert snapshot.encoded_packet.endswith(FRAME_DELIMITER)
 
 
 def test_iter_counts() -> None:
     assert list(frame_debug._iter_counts(3)) == [0, 1, 2]
 
     # Test infinite generator (partial)
-    gen = frame_debug._iter_counts(0)
+    gen = iter(frame_debug._iter_counts(0))
     assert next(gen) == 0
     assert next(gen) == 1
     assert next(gen) == 2
@@ -113,7 +126,14 @@ def test_iter_counts() -> None:
 @patch("yunbridge.tools.frame_debug.serial.Serial")
 def test_main_dry_run(mock_serial_cls: MagicMock) -> None:
     # Test running without --port (dry run)
-    ret = frame_debug.main(["--command", "CMD_GET_VERSION", "--count", "1"])
+    ret = frame_debug.main(
+        [
+            "--command",
+            "CMD_GET_VERSION",
+            "--count",
+            "1",
+        ]
+    )
     assert ret == 0
     mock_serial_cls.assert_not_called()
 
@@ -124,7 +144,14 @@ def test_main_with_serial_write(mock_serial_cls: MagicMock) -> None:
     mock_serial.write.return_value = 10
 
     ret = frame_debug.main(
-        ["--port", "/dev/ttyTEST", "--command", "CMD_GET_VERSION", "--count", "1"]
+        [
+            "--port",
+            "/dev/ttyTEST",
+            "--command",
+            "CMD_GET_VERSION",
+            "--count",
+            "1",
+        ]
     )
 
     assert ret == 0
@@ -162,13 +189,14 @@ def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     mock_serial.write.return_value = 10
 
     # Simulate reading a valid frame (COBS encoded)
-    # Frame(cmd=OK, payload=b"") -> raw: 0x00 ... CRC
+    # Frame(cmd=OK, payload=b"") -> raw: delimiter ... CRC
     # Let's just use a simple mocked read sequence
-    # read(1) -> b'\x01', b'\x00' (terminator)
-    mock_serial.read.side_effect = [b"\x01", b"\x00", b""]
+    mock_serial.read.side_effect = [bytes([1]), FRAME_DELIMITER, b""]
 
     with patch("yunbridge.tools.frame_debug._decode_frame") as mock_decode:
-        mock_decode.return_value = frame_debug.Frame(Status.OK.value, b"response")
+        mock_decode.return_value = frame_debug.Frame(
+            Status.OK.value, b"response"
+        )
 
         ret = frame_debug.main(
             [

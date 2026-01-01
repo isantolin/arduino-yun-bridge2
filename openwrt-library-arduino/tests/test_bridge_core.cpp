@@ -130,7 +130,7 @@ void test_bridge_send_frame() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear(); // Clear handshake frames
 
-    uint8_t payload[] = {0x01, 0x02, 0x03};
+    uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
     bool result = bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, 3);
     
     assert(result == true);
@@ -144,7 +144,7 @@ void test_bridge_process_rx() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Construct a valid frame (CMD_GET_VERSION)
-    std::vector<uint8_t> payload = {0x01, 0x02, 0x03};
+    std::vector<uint8_t> payload = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
     uint16_t cmd_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
     std::vector<uint8_t> encoded_frame = TestFrameBuilder::build(cmd_id, payload);
     
@@ -332,7 +332,7 @@ void test_bridge_crc_mismatch() {
     stream.tx_buffer.clear();
 
     // Build a valid frame
-    std::vector<uint8_t> payload = {0x01, 0x02};
+    std::vector<uint8_t> payload = {TEST_BYTE_01, TEST_BYTE_02};
     uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
     
     // Manually build frame to corrupt CRC
@@ -402,7 +402,7 @@ void test_bridge_payload_too_large() {
 
     // Max payload is 128 (RPC_BUFFER_SIZE/MAX_PAYLOAD_SIZE)
     // Let's try to send 200 bytes.
-    std::vector<uint8_t> payload(200, 0xAB);
+    std::vector<uint8_t> payload(200, TEST_BYTE_AB);
     uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
     
     // We need to manually build this because TestFrameBuilder might just work 

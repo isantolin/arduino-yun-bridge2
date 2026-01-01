@@ -134,7 +134,7 @@ constexpr T constrain(T value, T minimum, T maximum) {
 }
 
 // Bit manipulation macros
-#define bitRead(value, bit) (((value) >> (bit)) & 0x01)
+#define bitRead(value, bit) (((value) >> (bit)) & 1)
 #define bitSet(value, bit) ((value) |= (1UL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
 #define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))

@@ -10,7 +10,8 @@ def test_build_and_parse_round_trip() -> None:
     raw = Frame.build(TEST_CMD_ID, payload)
 
     assert (
-        len(raw) == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
+        len(raw)
+        == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
     )
 
     parsed_command, parsed_payload = Frame.parse(raw)
@@ -50,7 +51,7 @@ def test_parse_validates_version_and_length() -> None:
     payload = b"data"
     raw = bytearray(Frame.build(protocol.Command.CMD_DATASTORE_PUT, payload))
 
-    raw[0] ^= 0x01
+    raw[0] ^= 1
     with pytest.raises(ValueError):
         Frame.parse(bytes(raw))
 

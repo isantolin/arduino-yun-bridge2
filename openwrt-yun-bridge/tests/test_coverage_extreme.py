@@ -9,7 +9,12 @@ import pytest
 from yunbridge.transport.serial import SerialTransport
 from yunbridge.transport.mqtt import mqtt_task
 from yunbridge.daemon import BridgeDaemon
-from yunbridge.rpc.protocol import FRAME_DELIMITER, Command
+from yunbridge.rpc.protocol import (
+    FRAME_DELIMITER,
+    Command,
+    TEST_PAYLOAD_BYTE,
+    UINT8_MASK,
+)
 from yunbridge.rpc.frame import Frame
 from cobs import cobs
 import aiomqtt
@@ -101,9 +106,9 @@ async def test_serial_read_loop_corruption_and_recovery():
     valid_frame = cobs.encode(
         Frame.build(Command.CMD_GET_VERSION, b"")
     ) + FRAME_DELIMITER
-    bad_cobs = b"\x05\xFF\xFF" + FRAME_DELIMITER
+    bad_cobs = bytes([5, UINT8_MASK, UINT8_MASK]) + FRAME_DELIMITER
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
-    noise = b"\x00\x00\xFF\xAA"
+    noise = bytes([0, 0, UINT8_MASK, TEST_PAYLOAD_BYTE])
 
     feed_data = [valid_frame, bad_cobs, huge_chunk, noise, b""]
 
@@ -134,11 +139,17 @@ async def test_serial_write_flow_control():
     """Prueba protecciones de escritura."""
     transport = SerialTransport(MagicMock(), MagicMock(), MagicMock())
     transport.writer = None
-    assert await transport.send_frame(0x01, b"") is False
+    assert (
+        await transport.send_frame(Command.CMD_GET_VERSION.value, b"")
+        is False
+    )
 
     transport.writer = MagicMock()
     transport.writer.is_closing.return_value = True
-    assert await transport.send_frame(0x01, b"") is False
+    assert (
+        await transport.send_frame(Command.CMD_GET_VERSION.value, b"")
+        is False
+    )
 
 
 # --- MQTT TRANSPORT: CONNECTION BACKOFF ---

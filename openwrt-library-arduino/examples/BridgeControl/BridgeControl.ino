@@ -22,6 +22,7 @@ const int ledPin = 13;
 
 void printHexValue(Print& target, uint16_t value, uint8_t width) {
   static constexpr char kHexDigits[] = "0123456789ABCDEF";
+  static constexpr uint16_t kNibbleMask = 15;
   if (width == 0) {
     return;
   }
@@ -30,7 +31,7 @@ void printHexValue(Print& target, uint16_t value, uint8_t width) {
   }
   char buffer[4];
   for (int i = width - 1; i >= 0; --i) {
-    buffer[i] = kHexDigits[value & 0x0F];
+    buffer[i] = kHexDigits[value & kNibbleMask];
     value >>= 4;
   }
   for (uint8_t i = 0; i < width; ++i) {

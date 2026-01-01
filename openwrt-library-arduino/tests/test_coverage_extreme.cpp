@@ -26,6 +26,7 @@ void forward_time(unsigned long ms) { _virtual_millis += ms; }
 
 #include "protocol/rpc_protocol.h"
 #include "protocol/cobs.h"
+#include "test_constants.h"
 
 // Mocks
 HardwareSerial Serial;
@@ -81,7 +82,7 @@ void test_buffer_overflow_protection() {
     // Crear trama válida pero GIGANTE (mayor que buffer interno)
     std::vector<uint8_t> frame;
     frame.push_back(rpc::RPC_FRAME_DELIMITER); // 0 bytes to next delimiter (COBS start)
-    for (int i = 0; i < 300; i++) frame.push_back(0x01);
+    for (int i = 0; i < 300; i++) frame.push_back(TEST_BYTE_01);
     frame.push_back(rpc::RPC_FRAME_DELIMITER); // Delimiter
 
     io.push_rx(frame);
@@ -97,7 +98,7 @@ void test_write_failure_handling() {
     printf("TEST: Write Failure Handling\n");
     io.write_fails = true;
 
-    uint8_t data[] = {0xAA};
+    uint8_t data[] = {TEST_PAYLOAD_BYTE};
     // sendFrame debe retornar false si el stream falla
     bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, data, 1);
 
@@ -116,7 +117,7 @@ void test_ack_timeout_and_retry() {
     // estado no sincronizado.
     assert(Bridge._synchronized == false);
 
-    uint8_t payload[] = {0xAA};
+    uint8_t payload[] = {TEST_PAYLOAD_BYTE};
     bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, sizeof(payload));
     assert(ok == true);
 

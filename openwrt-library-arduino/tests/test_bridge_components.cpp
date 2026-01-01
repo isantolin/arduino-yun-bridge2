@@ -374,7 +374,7 @@ void test_console_write_and_flow_control() {
   Console.begin();
   Bridge._synchronized = true; // Manually sync for test
 
-  const uint8_t payload[] = {0xAA, 0xBB, 0xCC};
+  const uint8_t payload[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB, TEST_BYTE_CC};
   size_t written = Console.write(payload, sizeof(payload));
   TEST_ASSERT(written == sizeof(payload));
 
@@ -387,7 +387,7 @@ void test_console_write_and_flow_control() {
   inject_ack(stream, Bridge, command_value(CommandId::CMD_CONSOLE_WRITE));
   stream.clear();
 
-  std::vector<uint8_t> large(MAX_PAYLOAD_SIZE + 5, 0x5A);
+  std::vector<uint8_t> large(MAX_PAYLOAD_SIZE + 5, TEST_BYTE_5A);
   size_t large_written = Console.write(large.data(), large.size());
   TEST_ASSERT(large_written == large.size());
   auto limited_frames = decode_frames(stream.data());
@@ -401,11 +401,11 @@ void test_console_write_and_flow_control() {
   Console.begin();
   Bridge._synchronized = true; // Manually sync for test
 
-  std::vector<uint8_t> inbound(ConsoleClass::kBufferHighWater + 2, 0x34);
+  std::vector<uint8_t> inbound(ConsoleClass::kBufferHighWater + 2, TEST_BYTE_34);
   Console._push(inbound.data(), inbound.size());
   TEST_ASSERT(Console.available() == static_cast<int>(inbound.size()));
   int peeked = Console.peek();
-  TEST_ASSERT(peeked == 0x34);
+  TEST_ASSERT(peeked == TEST_BYTE_34);
 
   auto xoff_frames = decode_frames(stream.data());
   TEST_ASSERT(!xoff_frames.empty());
@@ -415,7 +415,7 @@ void test_console_write_and_flow_control() {
 
   for (size_t i = 0; i < inbound.size(); ++i) {
     int value = Console.read();
-    TEST_ASSERT(value == 0x34);
+    TEST_ASSERT(value == TEST_BYTE_34);
   }
   TEST_ASSERT(Console.read() == -1);
 
@@ -436,7 +436,7 @@ void test_console_write_blocked_when_not_synced() {
   Bridge.begin();
   Console.begin();
 
-  const uint8_t payload[] = {0xAA, 0xBB, 0xCC};
+  const uint8_t payload[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB, TEST_BYTE_CC};
   size_t written = Console.write(payload, sizeof(payload));
   
   // Should be 0 because sendFrame returns false when not synced
@@ -530,7 +530,7 @@ void test_mailbox_send_and_requests_emit_commands() {
   inject_ack(stream, Bridge, command_value(CommandId::CMD_MAILBOX_PUSH));
   stream.clear();
 
-  std::vector<uint8_t> raw(MAX_PAYLOAD_SIZE, 0x41);
+  std::vector<uint8_t> raw(MAX_PAYLOAD_SIZE, TEST_BYTE_41);
   Mailbox.send(raw.data(), raw.size());
   auto raw_frames = decode_frames(stream.data());
   TEST_ASSERT(raw_frames.size() == 1);
@@ -568,7 +568,7 @@ void test_filesystem_write_and_remove_payloads() {
   Bridge._synchronized = true; // Manually sync for test
 
   const char* path = "/tmp/data";
-  std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, 0xEE);
+  std::vector<uint8_t> blob(MAX_PAYLOAD_SIZE, TEST_BYTE_EE);
   FileSystem.write(path, blob.data(), blob.size());
   auto write_frames = decode_frames(stream.data());
   TEST_ASSERT(write_frames.size() == 1);
@@ -717,7 +717,7 @@ void test_begin_preserves_binary_shared_secret_length() {
   RecordingStream stream_explicit;
   BridgeClass bridge_explicit(stream_explicit); // Local
 
-  const uint8_t secret_bytes[] = {0, 0x01, 0x02, 0, 0x03};
+  const uint8_t secret_bytes[] = {TEST_BYTE_00, TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_00, TEST_BYTE_03};
   const char* binary_secret = reinterpret_cast<const char*>(secret_bytes);
   bridge_explicit.begin(rpc::RPC_DEFAULT_BAUDRATE, binary_secret, sizeof(secret_bytes));
 
@@ -726,7 +726,7 @@ void test_begin_preserves_binary_shared_secret_length() {
       reinterpret_cast<const void*>(binary_secret));
   TEST_ASSERT(bridge_explicit._shared_secret_len == sizeof(secret_bytes));
 
-  const uint8_t nonce[] = {0x10, 0x11, 0x12, 0x13};
+  const uint8_t nonce[] = {TEST_BYTE_10, TEST_BYTE_11, TEST_BYTE_12, TEST_BYTE_13};
   uint8_t explicit_tag[16];
   bridge_explicit._computeHandshakeTag(
       nonce, sizeof(nonce), explicit_tag);
@@ -768,14 +768,14 @@ void test_ack_flushes_pending_queue_after_response() {
   Bridge.begin();
   Bridge._synchronized = true; // Manually sync for test
 
-  const uint8_t first_payload[] = {0x42};
+  const uint8_t first_payload[] = {TEST_BYTE_42};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE,
       first_payload, sizeof(first_payload));
   TEST_ASSERT(sent);
   TEST_ASSERT(Bridge._awaiting_ack);
 
-  const uint8_t queued_payload[] = {0xAA, 0xBB};
+  const uint8_t queued_payload[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB};
     bool enqueued = Bridge._enqueuePendingTx(
       command_value(CommandId::CMD_MAILBOX_PUSH),
       queued_payload, sizeof(queued_payload));
@@ -809,7 +809,7 @@ void test_status_ack_frame_clears_pending_state_via_dispatch() {
   StatusHandlerState::instance = &status_state;
   Bridge.onStatus(status_handler_trampoline);
 
-  const uint8_t payload[] = {0x55};
+  const uint8_t payload[] = {TEST_MARKER_BYTE};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload));
   TEST_ASSERT(sent);
@@ -857,7 +857,7 @@ void test_status_error_frame_dispatches_handler() {
 
 void test_serial_overflow_emits_status_notification() {
   TEST_TRACE("START: test_serial_overflow_emits_status_notification");
-  std::vector<uint8_t> oversized(rpc::COBS_BUFFER_SIZE + 8, 0xAA);
+  std::vector<uint8_t> oversized(rpc::COBS_BUFFER_SIZE + 8, TEST_PAYLOAD_BYTE);
   RecordingStream stream;
   stream.inject_rx(oversized);
   ScopedBridgeBinding binding(stream);
@@ -883,7 +883,7 @@ void test_malformed_status_triggers_retransmit() {
   Bridge.begin();
   Bridge._synchronized = true; // Manually sync for test
 
-  const uint8_t payload[] = {0x10, 0x20, 0x30};
+  const uint8_t payload[] = {TEST_BYTE_10, TEST_BYTE_20, TEST_BYTE_30};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
   TEST_ASSERT(sent);
@@ -912,11 +912,10 @@ void test_link_sync_generates_tag_and_ack() {
   const char* secret = "unit-test-secret";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
-  const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
-      0x01, 0x02, 0x03, 0x04,
-      0x05, 0x06, 0x07, 0x08,
-      0x09, 0x0A, 0x0B, 0x0C,
-      0x0D, 0x0E, 0x0F, 0x10};
+  uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH];
+  for (size_t i = 0; i < sizeof(nonce); ++i) {
+    nonce[i] = static_cast<uint8_t>(i + 1);
+  }
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
   frame.header.command_id = command_value(CommandId::CMD_LINK_SYNC);
@@ -950,11 +949,10 @@ void test_link_sync_without_secret_replays_nonce_only() {
 
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, nullptr);
 
-  const uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH] = {
-      0xAA, 0xBB, 0xCC, 0xDD,
-      0xEE, 0x01, 0x02, 0x03,
-      0x04, 0x05, 0x06, 0x07,
-      0x08, 0x09, 0x0A, 0x0B};
+  uint8_t nonce[RPC_HANDSHAKE_NONCE_LENGTH];
+  for (size_t i = 0; i < sizeof(nonce); ++i) {
+    nonce[i] = static_cast<uint8_t>(TEST_PAYLOAD_BYTE - static_cast<uint8_t>(i));
+  }
   Frame frame{};
   frame.header.version = PROTOCOL_VERSION;
   frame.header.command_id = command_value(CommandId::CMD_LINK_SYNC);
@@ -984,7 +982,7 @@ void test_ack_timeout_emits_status_and_resets_state() {
   StatusHandlerState::instance = &status_state;
   Bridge.onStatus(status_handler_trampoline);
 
-  const uint8_t payload[] = {0x99};
+  const uint8_t payload[] = {TEST_BYTE_99};
   bool sent = Bridge.sendFrame(
       CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload));
   TEST_ASSERT(sent);
@@ -1468,10 +1466,10 @@ void test_bridge_process_input_errors() {
   frame_data.push_back(0); frame_data.push_back(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)); // CMD_GET_VERSION
   
   // Add Bad CRC
-  frame_data.push_back(0xDE);
-  frame_data.push_back(0xAD);
-  frame_data.push_back(0xBE);
-  frame_data.push_back(0xEF);
+  frame_data.push_back(TEST_BYTE_DE);
+  frame_data.push_back(TEST_BYTE_AD);
+  frame_data.push_back(TEST_BYTE_BE);
+  frame_data.push_back(TEST_BYTE_EF);
   
   // Encode COBS
   std::vector<uint8_t> cobs_data(frame_data.size() + 5); 

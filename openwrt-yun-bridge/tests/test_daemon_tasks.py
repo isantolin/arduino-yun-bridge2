@@ -75,7 +75,9 @@ class _SerialServiceStub:
         self.received_frames: Deque[tuple[int, bytes]] = deque()
         self.serial_connected = asyncio.Event()
         self.serial_disconnected = asyncio.Event()
-        self._serial_sender: None | (Callable[[int, bytes], Awaitable[bool]]) = None
+        self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = (
+            None
+        )
 
     def register_serial_sender(
         self, sender: Callable[[int, bytes], Awaitable[bool]]
@@ -182,9 +184,12 @@ async def test_serial_reader_task_emits_crc_mismatch(
     state = create_runtime_state(runtime_config)
     service = _SerialServiceStub(runtime_config, state)
 
-    frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, bytes([protocol.DIGITAL_HIGH])).to_bytes()
+    frame = Frame(
+        Command.CMD_DIGITAL_READ_RESP.value,
+        bytes([protocol.DIGITAL_HIGH]),
+    ).to_bytes()
     corrupted = bytearray(cobs.encode(frame))
-    corrupted[0] = 0xFF  # Invalid COBS code
+    corrupted[0] = protocol.UINT8_MASK  # Invalid COBS code
     encoded = cobs.encode(bytes(corrupted)) + FRAME_DELIMITER
 
     reader = _FakeStreamReader(encoded, b"")
@@ -214,7 +219,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
         packets.pop()
 
     assert packets
-    decoded = cobs.decode(packets[0])
+    decoded = cobs.decode(bytes(packets[0]))
     response_frame = Frame.from_bytes(decoded)
 
     assert response_frame.command_id == Status.CRC_MISMATCH.value
@@ -243,7 +248,9 @@ async def test_serial_reader_task_limits_packet_size(
 
     service.send_frame = MethodType(_capture_send_frame, service)
 
-    oversized = bytes([protocol.TEST_PAYLOAD_BYTE]) * (MAX_SERIAL_PACKET_BYTES + 16)
+    oversized = bytes([protocol.TEST_PAYLOAD_BYTE]) * (
+        MAX_SERIAL_PACKET_BYTES + 16
+    )
     # reader will produce oversized content then a terminator
     reader = _FakeStreamReader(oversized + FRAME_DELIMITER, b"")
     writer = _FakeStreamWriter()

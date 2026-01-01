@@ -399,4 +399,4 @@ def test_serial_flow_pipeline_abandoned_on_reset(
 def test_status_name_handles_unknown() -> None:
     assert _status_name(None) == "unknown"
     assert _status_name(Status.OK.value) == "OK"
-    assert _status_name(0x99) == "0x99"
+    assert _status_name(153) == "0x99"

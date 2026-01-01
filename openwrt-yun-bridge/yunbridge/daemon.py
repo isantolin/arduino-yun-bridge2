@@ -175,6 +175,7 @@ class BridgeDaemon:
             cleanup_status_file()
             logger.info("Yun Bridge daemon stopped.")
 
+
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
     config = load_runtime_config()
     configure_logging(config)
@@ -213,6 +214,7 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
     except Exception:
         logger.critical("Fatal error in main execution", exc_info=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

@@ -115,7 +115,7 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(b"\x01")
+    await component.handle_digital_read_resp(struct.pack(protocol.PIN_READ_FORMAT, 1))
 
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
@@ -141,7 +141,7 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(b"\x00")
+    await component.handle_digital_read_resp(bytes([protocol.DIGITAL_LOW]))
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -166,7 +166,7 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_analog_read_resp(bytes([0x01, 0x00]))
+    await component.handle_analog_read_resp(struct.pack(protocol.UINT16_FORMAT, 256))
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -334,7 +334,7 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == struct.pack(">BB", 5, 0)
+    assert payload == struct.pack(protocol.PIN_WRITE_FORMAT, 5, protocol.DIGITAL_LOW)
 
 
 @pytest.mark.asyncio
@@ -370,4 +370,4 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_WRITE.value
-    assert payload == struct.pack(">BB", 1, 10)
+    assert payload == struct.pack(protocol.PIN_WRITE_FORMAT, 1, 10)

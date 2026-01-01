@@ -113,7 +113,7 @@ class ConsoleComponent:
             return []
         chunk_size = MAX_PAYLOAD_SIZE
         return [
-            payload[index : index + chunk_size]
+            payload[index:index + chunk_size]
             for index in range(0, len(payload), chunk_size)
         ]
 

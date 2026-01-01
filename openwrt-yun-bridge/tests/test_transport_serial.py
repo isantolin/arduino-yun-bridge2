@@ -30,6 +30,9 @@ from yunbridge.state.context import create_runtime_state
 from yunbridge.transport import serial as serial_mod
 
 
+TEST_UNKNOWN_COMMAND_ID: int = protocol.TEST_UNKNOWN_COMMAND_ID
+
+
 def _make_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
@@ -163,7 +166,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
     monkeypatch.setattr(serial_mod.cobs, "decode", lambda _data: (_ for _ in ()).throw(cobs.DecodeError("bad")))
 
     # Provide enough bytes for header extraction.
-    header = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, 0x99)
+    header = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, TEST_UNKNOWN_COMMAND_ID)
     encoded = header + b"x" * 4
 
     transport = serial_mod.SerialTransport(config, state, service)
@@ -174,7 +177,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
     status, payload = service.send_frame.call_args[0]
     assert status == Status.MALFORMED.value
     hint = struct.unpack(UINT16_FORMAT, payload[:2])[0]
-    assert hint == 0x99
+    assert hint == TEST_UNKNOWN_COMMAND_ID
 
 
 @pytest.mark.asyncio
@@ -185,7 +188,7 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
 
     service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
-    raw = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, 0x44) + b"x" * 10
+    raw = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, Command.CMD_LINK_SYNC.value) + b"x" * 10
 
     monkeypatch.setattr(serial_mod.cobs, "decode", lambda _data: raw)
 
@@ -204,7 +207,7 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
     status, payload = service.send_frame.call_args[0]
     assert status == Status.CRC_MISMATCH.value
     hint = struct.unpack(UINT16_FORMAT, payload[:2])[0]
-    assert hint == 0x44
+    assert hint == Command.CMD_LINK_SYNC.value
 
 
 @pytest.mark.asyncio
@@ -284,7 +287,7 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
     seen: dict[str, str] = {}
     monkeypatch.setattr(serial_mod.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
 
-    ok = await transport.send_frame(0xFE, b"\x00")
+    ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
     assert ok is True
     assert writer.writes
     assert "0xFE" in seen.get("msg", "")

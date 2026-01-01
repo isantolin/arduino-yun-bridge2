@@ -1,16 +1,19 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <cmath>
-#include <string> // Added for std::string
-#include <algorithm> // For std::min, std::max
+#include <cstdio>
 
 // Basic types
 using boolean = bool;
 using byte = uint8_t;
 using word = uint16_t;
+
+// Placement new/delete for tests that reconstruct objects in-place.
+inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
+inline void operator delete(void*, void*) noexcept {}
 
 // Constants
 #define HIGH 1
@@ -24,8 +27,8 @@ using word = uint16_t;
 #define abs(x) ((x) > 0 ? (x) : -(x))
 #undef min
 #undef max
-using std::min;
-using std::max;
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
 #define round(x) ((x) >= 0 ? (long)((x) + 0.5) : (long)((x) - 0.5))
 
 // Stub functions
@@ -50,18 +53,37 @@ inline int analogRead(uint8_t) { return 0; }
 // Helper class for string manipulation (minimal stub)
 class String {
 public:
-    String(const char* s = "") : _data(s ? s : "") {}
-    String(int v) : _data(std::to_string(v)) {}
-    
-    const char* c_str() const { return _data.c_str(); }
-    size_t length() const { return _data.length(); }
-    
-    // Minimal operators needed for tests
-    bool operator==(const String& other) const { return _data == other._data; }
-    bool operator==(const char* other) const { return _data == (other ? other : ""); }
-    
+    static constexpr size_t kCapacity = 64;
+
+    String(const char* s = "") { assign(s); }
+
+    String(int v) {
+        char buf[16];
+        (void)::snprintf(buf, sizeof(buf), "%d", v);
+        assign(buf);
+    }
+
+    const char* c_str() const { return data_; }
+    size_t length() const { return length_; }
+
+    bool operator==(const String& other) const {
+        return ::strcmp(data_, other.data_) == 0;
+    }
+
+    bool operator==(const char* other) const {
+        return ::strcmp(data_, (other ? other : "")) == 0;
+    }
+
 private:
-    std::string _data;
+    void assign(const char* s) {
+        const char* src = s ? s : "";
+        ::strncpy(data_, src, kCapacity - 1);
+        data_[kCapacity - 1] = '\0';
+        length_ = ::strlen(data_);
+    }
+
+    char data_[kCapacity] = {};
+    size_t length_ = 0;
 };
 
 // F macro for Flash strings (no-op on host)

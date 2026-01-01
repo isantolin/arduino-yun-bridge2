@@ -127,7 +127,10 @@ class BridgeDispatcher:
 
         # Process
         self.mcu_registry.register(Command.CMD_PROCESS_RUN.value, process.handle_run)
-        self.mcu_registry.register(Command.CMD_PROCESS_RUN_ASYNC.value, process.handle_run_async)
+        self.mcu_registry.register(
+            Command.CMD_PROCESS_RUN_ASYNC.value,
+            process.handle_run_async,
+        )
         self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
         # CMD_PROCESS_KILL is handled via register_system_handlers or manually if needed
 
@@ -135,17 +138,44 @@ class BridgeDispatcher:
         self.mqtt_router.register(Topic.SHELL, self._handle_shell_topic)
 
         # Pin (GPIO)
-        self.mcu_registry.register(Command.CMD_DIGITAL_READ_RESP.value, pin.handle_digital_read_resp)
-        self.mcu_registry.register(Command.CMD_ANALOG_READ_RESP.value, pin.handle_analog_read_resp)
-        self.mcu_registry.register(Command.CMD_DIGITAL_READ.value, lambda p: pin.handle_unexpected_mcu_request(Command.CMD_DIGITAL_READ, p))
-        self.mcu_registry.register(Command.CMD_ANALOG_READ.value, lambda p: pin.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, p))
+        self.mcu_registry.register(
+            Command.CMD_DIGITAL_READ_RESP.value,
+            pin.handle_digital_read_resp,
+        )
+        self.mcu_registry.register(
+            Command.CMD_ANALOG_READ_RESP.value,
+            pin.handle_analog_read_resp,
+        )
+        self.mcu_registry.register(
+            Command.CMD_DIGITAL_READ.value,
+            lambda payload: pin.handle_unexpected_mcu_request(
+                Command.CMD_DIGITAL_READ,
+                payload,
+            ),
+        )
+        self.mcu_registry.register(
+            Command.CMD_ANALOG_READ.value,
+            lambda payload: pin.handle_unexpected_mcu_request(
+                Command.CMD_ANALOG_READ,
+                payload,
+            ),
+        )
         self.mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)
         self.mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)
 
         # System
-        self.mcu_registry.register(Command.CMD_GET_FREE_MEMORY_RESP.value, system.handle_get_free_memory_resp)
-        self.mcu_registry.register(Command.CMD_GET_VERSION_RESP.value, system.handle_get_version_resp)
-        self.mcu_registry.register(Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value, system.handle_get_tx_debug_snapshot_resp)
+        self.mcu_registry.register(
+            Command.CMD_GET_FREE_MEMORY_RESP.value,
+            system.handle_get_free_memory_resp,
+        )
+        self.mcu_registry.register(
+            Command.CMD_GET_VERSION_RESP.value,
+            system.handle_get_version_resp,
+        )
+        self.mcu_registry.register(
+            Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value,
+            system.handle_get_tx_debug_snapshot_resp,
+        )
         self.mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
 
     def register_system_handlers(

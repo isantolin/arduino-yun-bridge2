@@ -1,0 +1,17 @@
+[flake8]
+# Run a comprehensive Flake8 pass.
+# Exclude requirements per Phase 3: ignore /openwrt-sdk, /feeds, and any dot-prefixed dirs.
+exclude =
+    openwrt-sdk,
+    feeds,
+    .*/,
+    .git,
+    __pycache__,
+    *.egg-info,
+    build,
+    dist
+
+# Full checks (pycodestyle + pyflakes + McCabe).
+select = E,F,W,C90
+max-line-length = 120
+max-complexity = 50

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from collections.abc import Iterable
 
 _BROKER_ENV_VARS: tuple[str, ...] = (
@@ -21,7 +22,8 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
         if logger is not None:
             logger.info(message)
         else:
-            print(message, flush=True)
+            sys.stdout.write(message + "\n")
+            sys.stdout.flush()
 
     _emit("Yun Bridge client environment snapshot:")
     for key in _BROKER_ENV_VARS:

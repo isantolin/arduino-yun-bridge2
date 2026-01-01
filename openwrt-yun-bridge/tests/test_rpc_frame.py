@@ -9,10 +9,7 @@ def test_build_and_parse_round_trip() -> None:
     payload = b"\x01\x02\x03"
     raw = Frame.build(TEST_CMD_ID, payload)
 
-    assert (
-        len(raw)
-        == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
-    )
+    assert len(raw) == protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
 
     parsed_command, parsed_payload = Frame.parse(raw)
     assert parsed_command == TEST_CMD_ID

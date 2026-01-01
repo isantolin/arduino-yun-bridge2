@@ -35,6 +35,7 @@ constexpr uint8_t RPC_DIGITAL_HIGH = 1;
 constexpr uint8_t RPC_TEST_PAYLOAD_BYTE = 170;
 constexpr uint8_t RPC_TEST_MARKER_BYTE = 85;
 constexpr uint8_t RPC_TEST_EXIT_CODE = 127;
+constexpr uint16_t RPC_TEST_UNKNOWN_COMMAND_ID = 153;
 constexpr uint8_t RPC_STATUS_CODE_MIN = 48;
 constexpr uint8_t RPC_STATUS_CODE_MAX = 63;
 constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = 64;

@@ -62,7 +62,7 @@ async def test_send_frame_without_serial_sender_returns_false() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    ok = await service.send_frame(0x01, b"x")
+    ok = await service.send_frame(protocol.Command.CMD_GET_VERSION.value, b"x")
     assert ok is False
 
 
@@ -89,7 +89,7 @@ async def test_acknowledge_mcu_frame_no_sender_is_noop() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._acknowledge_mcu_frame(0x1234, status=Status.ACK)
+    await service._acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, status=Status.ACK)
 
 
 @pytest.mark.asyncio
@@ -107,12 +107,18 @@ async def test_acknowledge_mcu_frame_truncates_extra_payload() -> None:
     service.register_serial_sender(_sender)
 
     extra = b"x" * (protocol.MAX_PAYLOAD_SIZE * 2)
-    await service._acknowledge_mcu_frame(0x55AA, status=Status.MALFORMED, extra=extra)
+    await service._acknowledge_mcu_frame(
+        protocol.Command.CMD_GET_FREE_MEMORY.value,
+        status=Status.MALFORMED,
+        extra=extra,
+    )
 
     assert sent
     status_cmd, payload = sent[0]
     assert status_cmd == Status.MALFORMED.value
-    assert payload.startswith(struct.pack(protocol.UINT16_FORMAT, 0x55AA))
+    assert payload.startswith(
+        struct.pack(protocol.UINT16_FORMAT, protocol.Command.CMD_GET_FREE_MEMORY.value)
+    )
     assert len(payload) <= protocol.MAX_PAYLOAD_SIZE
 
 
@@ -174,7 +180,7 @@ async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._handle_get_free_memory_resp(b"\x00")
+    await service._handle_get_free_memory_resp(protocol.FRAME_DELIMITER)
     assert state.mqtt_publish_queue.qsize() == 0
 
 

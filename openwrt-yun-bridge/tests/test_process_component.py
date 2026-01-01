@@ -303,7 +303,7 @@ def test_build_sync_response_trims_to_protocol_budget(process_component: Process
 async def test_handle_kill_malformed_payload_returns_false(
     process_component: ProcessComponent,
 ) -> None:
-    assert await process_component.handle_kill(b"\x00", send_ack=True) is False
+    assert await process_component.handle_kill(rpc_protocol.FRAME_DELIMITER, send_ack=True) is False
 
 
 @pytest.mark.asyncio
@@ -311,7 +311,7 @@ async def test_handle_kill_unknown_pid_returns_ack(
     process_component: ProcessComponent,
 ) -> None:
     pid = 123
-    payload = struct.pack(">H", pid)
+    payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
     assert await process_component.handle_kill(payload, send_ack=True) is True
 
 
@@ -344,7 +344,10 @@ async def test_handle_kill_terminates_and_cleans_slot(
     with patch.object(
         ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
     ) as mock_term:
-        ok = await process_component.handle_kill(struct.pack(">H", pid), send_ack=True)
+        ok = await process_component.handle_kill(
+            struct.pack(rpc_protocol.UINT16_FORMAT, pid),
+            send_ack=True,
+        )
         assert ok is True
         mock_term.assert_awaited_once()
 

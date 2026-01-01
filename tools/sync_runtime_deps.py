@@ -148,9 +148,9 @@ def main(argv: Sequence[str]) -> int:
     args = parse_args(argv)
     deps = load_manifest()
     if args.print_openwrt:
-        print("\n".join(collect_openwrt_packages(deps)))
+        sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
     if args.print_pip:
-        print("\n".join(collect_pip_specs(deps)))
+        sys.stdout.write("\n".join(collect_pip_specs(deps)) + "\n")
     if args.print_openwrt or args.print_pip:
         return 0
     updated_requirements = write_requirements(deps, dry_run=args.check)

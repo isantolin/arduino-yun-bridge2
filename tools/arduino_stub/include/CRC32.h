@@ -9,9 +9,13 @@
 // interface and polynomial (0x04C11DB7, reflected input/output).
 class CRC32 {
  public:
+  static constexpr uint32_t kInitialState = 0xFFFFFFFFu;
+  static constexpr uint32_t kFinalXor = 0xFFFFFFFFu;
+  static constexpr uint32_t kByteMask = 0xFFu;
+
   CRC32() { reset(); }
 
-  void reset() { state_ = 0xFFFFFFFFu; }
+  void reset() { state_ = kInitialState; }
 
   void update(const uint8_t& data) { step(data); }
 
@@ -32,7 +36,7 @@ class CRC32 {
     }
   }
 
-  uint32_t finalize() const { return state_ ^ 0xFFFFFFFFu; }
+  uint32_t finalize() const { return state_ ^ kFinalXor; }
 
   template <typename Type>
   static uint32_t calculate(const Type* data, size_t count) {
@@ -96,7 +100,7 @@ class CRC32 {
       0xCDD70693u, 0x54DE5729u, 0x23D967BFu, 0xB3667A2Eu, 0xC4614AB8u,
       0x5D681B02u, 0x2A6F2B94u, 0xB40BBE37u, 0xC30C8EA1u, 0x5A05DF1Bu,
       0x2D02EF8Du};
-    uint32_t idx = (state_ ^ byte) & 0xFFu;
+    uint32_t idx = (state_ ^ byte) & kByteMask;
     state_ = (state_ >> 8) ^ kTable[idx];
   }
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import collections
 import json
 import logging
-from typing import Deque
+from typing import Awaitable, Callable, Deque, cast
 
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc.protocol import Action, Command
@@ -50,8 +50,9 @@ class SystemComponent:
         logger.info("MCU acknowledged baudrate change. Switching local UART...")
         # We need to signal the transport layer to change baudrate.
         # This is a bit of a layer violation or needs a callback.
-        if hasattr(self.ctx, "on_baudrate_change_ack"):
-            await self.ctx.on_baudrate_change_ack()  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        ack = getattr(self.ctx, "on_baudrate_change_ack", None)
+        if ack is not None:
+            await cast(Callable[[], Awaitable[None]], ack)()
 
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
         if len(payload) != 2:

@@ -4,10 +4,11 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <vector>
 
 class COBS {
  public:
+  static constexpr uint8_t kMaxCode = 0xFFu;
+
   static size_t encode(const uint8_t* buffer, size_t size, uint8_t* encoded) {
     if (!buffer || !encoded) return 0;
     const uint8_t* src_end = buffer + size;
@@ -23,7 +24,7 @@ class COBS {
       } else {
         *dst++ = *buffer;
         code++;
-        if (code == 0xFF) {
+        if (code == kMaxCode) {
           *code_ptr = code;
           if (buffer + 1 < src_end) {
             code_ptr = dst++;
@@ -46,14 +47,18 @@ class COBS {
     }
     if (size == 0) return 0;
 
-    // [SAFETY FIX] Handle in-place decoding
+    // Handle in-place decoding (avoid STL).
     if (encoded == decoded) {
-        std::vector<uint8_t> temp(size);
-        size_t decoded_len = decode(encoded, size, temp.data());
+      uint8_t* temp = new uint8_t[size];
+      size_t decoded_len = 0;
+      if (temp) {
+        decoded_len = decode(encoded, size, temp);
         if (decoded_len > 0) {
-            memcpy(decoded, temp.data(), decoded_len);
+          memcpy(decoded, temp, decoded_len);
         }
-        return decoded_len;
+        delete[] temp;
+      }
+      return decoded_len;
     }
 
     const uint8_t* src = encoded;
@@ -71,7 +76,7 @@ class COBS {
       src += copy_len;
       dst += copy_len;
 
-      if (code < 0xFF && src < src_end) {
+      if (code < kMaxCode && src < src_end) {
         *dst++ = 0;
       }
     }

@@ -509,7 +509,7 @@ def test_mailbox_available_flow(
         assert sent_frames
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         assert frame_ids[-2] == Command.CMD_MAILBOX_AVAILABLE_RESP.value
-        assert sent_frames[-2][1] == b"\x02"
+        assert sent_frames[-2][1] == bytes([len(runtime_state.mailbox_queue)])
         # Final frame should be ACK referencing the original command.
         assert frame_ids[-1] == Status.ACK.value
         assert sent_frames[-1][1] == struct.pack(
@@ -617,7 +617,7 @@ def test_datastore_get_from_mcu_returns_cached_value(
 
         assert len(sent_frames) >= 2
         assert sent_frames[0][0] == Command.CMD_DATASTORE_GET_RESP.value
-        assert sent_frames[0][1] == b"\x02" + b"42"
+        assert sent_frames[0][1] == bytes([len(b"42")]) + b"42"
         assert sent_frames[1][0] == Status.ACK.value
         assert sent_frames[1][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_DATASTORE_GET.value)
 
@@ -660,7 +660,7 @@ def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
         assert len(sent_frames) >= 2
         assert sent_frames[0][0] == Command.CMD_DATASTORE_GET_RESP.value
-        assert sent_frames[0][1] == b"\x00"
+        assert sent_frames[0][1] == bytes([len(b"")])
         assert sent_frames[1][0] == Status.ACK.value
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -1441,8 +1441,7 @@ def test_legacy_mcu_pin_read_request_emits_not_implemented(
 
         assert sent_frames
         assert any(
-            status_id == Status.NOT_IMPLEMENTED.value
-            and b"pin-read-origin-mcu" in status_payload
+            status_id == Status.NOT_IMPLEMENTED.value and b"pin-read-origin-mcu" in status_payload
             for status_id, status_payload in sent_frames
         )
 

@@ -28,7 +28,7 @@ define Build/Prepare
 	$(CP) ./yunbridge.files $(PKG_BUILD_DIR)/
 	# CORRECCIÓN: Apuntar a la carpeta uci-defaults
 	$(CP) ./uci-defaults/99-yunbridge-disable-askconsole $(PKG_BUILD_DIR)/
-	$(CP) ./99-yunbridge-ttyath0.conf $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/98-yunbridge-default-serial $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/
 endef
 
@@ -42,8 +42,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/yunbridge.files $(1)/etc/yunbridge/
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-yunbridge-disable-askconsole $(1)/etc/uci-defaults/99-yunbridge-disable-askconsole
-	$(INSTALL_DIR) $(1)/etc/config
-	$(INSTALL_CONF) $(PKG_BUILD_DIR)/99-yunbridge-ttyath0.conf $(1)/etc/config/yunbridge-ttyath0
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-yunbridge-default-serial $(1)/etc/uci-defaults/98-yunbridge-default-serial
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_DIR) $(1)/usr/bin
 	[ -d $(PKG_BUILD_DIR)/scripts ] && find $(PKG_BUILD_DIR)/scripts -type f -print0 | xargs -0 -I {} $(INSTALL_BIN) "{}" $(1)/usr/bin/ || true

@@ -21,7 +21,23 @@
 # Simple script to control LED 13 from OpenWRT via MQTT
 # Usage: led13_control.sh on|off
 
-LOGFILE="/var/log/yunbridge_script.log"
+LOGGER_TAG="yunbridge-led13"
+
+log_info() {
+    if command -v logger >/dev/null 2>&1; then
+        logger -t "$LOGGER_TAG" -- "$*"
+    else
+        echo "$*" >&2
+    fi
+}
+
+log_error() {
+    if command -v logger >/dev/null 2>&1; then
+        logger -t "$LOGGER_TAG" -p daemon.err -- "$*"
+    else
+        echo "$*" >&2
+    fi
+}
 
 PIN_ARG=${2:-}
 PIN_ENV=${YUNBRIDGE_LED_PIN:-}
@@ -30,7 +46,7 @@ PIN="${PIN_ARG:-${PIN_ENV:-$PIN_DEFAULT}}"
 
 if ! echo "$PIN" | grep -Eq '^[0-9]+$'; then
     echo "Error: pin must be numeric." >&2
-    echo "[$(date)] Error: invalid pin '$PIN'" >> "$LOGFILE"
+    log_error "invalid pin '$PIN'"
     exit 5
 fi
 
@@ -47,13 +63,13 @@ MQTT_CAFILE=${YUNBRIDGE_MQTT_CAFILE:-$(uci -q get yunbridge.general.mqtt_cafile 
 # Check for mosquitto_pub command
 if ! command -v mosquitto_pub >/dev/null 2>&1; then
     echo "Error: mosquitto_pub command not found. Please install mosquitto-client." >&2
-    echo "[$(date)] Error: mosquitto_pub command not found." >> "$LOGFILE"
+    log_error "mosquitto_pub command not found"
     exit 3
 fi
 
 if [ -z "$1" ]; then
     echo "Usage: $0 on|off [pin]" >&2
-    echo "[$(date)] Error: No argument provided" >> "$LOGFILE"
+	log_error "no argument provided"
 	exit 1
 fi
 
@@ -66,7 +82,7 @@ case "$1" in
         ;;
     *)
         echo "Usage: $0 on|off" >&2
-        echo "[$(date)] Error: Invalid argument '$1'" >> "$LOGFILE"
+        log_error "invalid argument '$1'"
         exit 2
         ;;
 esac
@@ -87,6 +103,8 @@ if [ "$MQTT_TLS" = "1" ]; then
 fi
 
 if ! "$@"; then
-	echo "[$(date)] Error: Failed to publish MQTT message" >> "$LOGFILE"
+    log_error "failed to publish MQTT message"
 	exit 4
 fi
+
+log_info "published LED${PIN}=${payload} to ${MQTT_TOPIC}"

@@ -16,18 +16,21 @@ from types import SimpleNamespace
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 
+from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.const import DEFAULT_MQTT_TOPIC
 
 
 logger = logging.getLogger("yunbridge.pin_rest")
-if not logger.hasHandlers():
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+
+
+def _configure_fallback_logging() -> None:
+    if logging.getLogger().handlers:
+        return
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -143,7 +146,9 @@ def send_response(status_code: int, data: dict[str, Any]) -> None:
 def main() -> None:
     try:
         config = load_runtime_config()
+        configure_logging(config)
     except Exception as exc:  # pragma: no cover - configuration failures
+        _configure_fallback_logging()
         logger.exception("Failed to load runtime configuration")
         send_response(
             500,

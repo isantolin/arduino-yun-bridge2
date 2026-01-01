@@ -9,7 +9,7 @@ rationale = "Base interpreter shipped on the target image"
 [[dependency]]
 name = "python3-uci"
 openwrt = "python3-uci"
-pip = "uci==1.0.6"
+pip = ""
 rationale = "Load daemon configuration from UCI"
 
 [[dependency]]

@@ -3,4 +3,3 @@
 /usr/bin/yunbridge-hw-smoke
 /usr/bin/yunbridge-rotate-credentials
 /etc/init.d/yunbridge
-/etc/config/yunbridge-ttyath0

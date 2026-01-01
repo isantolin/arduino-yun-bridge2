@@ -8,8 +8,7 @@ config general 'general'
     option serial_port '/dev/ttyATH0'
     option serial_baud '115200'
     
-    # [SEGURIDAD] Secreto compartido
-    option serial_shared_secret 'changeme123'
+    # [SEGURIDAD] Secreto compartido (se genera automáticamente en primer boot)
 
     # [MQTT] Configuración del broker local
     option mqtt_host '127.0.0.1'

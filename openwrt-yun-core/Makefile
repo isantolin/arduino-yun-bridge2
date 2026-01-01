@@ -27,6 +27,7 @@ define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./yunbridge.files $(PKG_BUILD_DIR)/
 	# CORRECCIÓN: Apuntar a la carpeta uci-defaults
+	$(CP) ./uci-defaults/97-yunbridge-default-secret $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/99-yunbridge-disable-askconsole $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/98-yunbridge-default-serial $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/
@@ -41,6 +42,7 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/yunbridge
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/yunbridge.files $(1)/etc/yunbridge/
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/97-yunbridge-default-secret $(1)/etc/uci-defaults/97-yunbridge-default-secret
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-yunbridge-disable-askconsole $(1)/etc/uci-defaults/99-yunbridge-disable-askconsole
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-yunbridge-default-serial $(1)/etc/uci-defaults/98-yunbridge-default-serial
 	$(INSTALL_DIR) $(1)/www/cgi-bin

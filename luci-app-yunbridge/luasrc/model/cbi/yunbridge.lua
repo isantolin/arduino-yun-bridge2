@@ -53,7 +53,6 @@ local function ensure_general_section()
             file_system_root = "/root/yun_files",
             process_timeout = "10",
             allowed_commands = "",
-            serial_shared_secret = "changeme123",
         })
     end
 

@@ -102,7 +102,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### 0. Credenciales compartidas (daemon, CGI y scripts)
 
-> **Nota:** Todo el árbol sigue iniciando con el placeholder `changeme123` definido en la sección `yunbridge.general.serial_shared_secret` de UCI y en los ejemplos de la librería. Solo sirve para demos; `RuntimeConfig.__post_init__` lo rechaza, así que rota el material con `../tools/rotate_credentials.sh` o desde LuCI y pega el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."` en tu sketch antes de exponer el equipo. Consulta la guía completa en [`CREDENTIALS.md`](CREDENTIALS.md).
+> **Nota:** El sistema no debe desplegarse con secretos placeholder. En primer boot, `uci-defaults`/el instalador provisionan un `serial_shared_secret` único si falta; además `RuntimeConfig.__post_init__` rechaza explícitamente el placeholder histórico `changeme123`. Rota el material con `../tools/rotate_credentials.sh` o desde LuCI y pega el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."` en tu sketch antes de exponer el equipo. Consulta la guía completa en [`CREDENTIALS.md`](CREDENTIALS.md).
 
 	```sh
 	SECRET=$(openssl rand -hex 32)
@@ -128,7 +128,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	/etc/init.d/yunbridge restart
 	```
 - También puedes exportar `YUNBRIDGE_SERIAL_SECRET` en `/etc/rc.local` o en el `procd` `env` si prefieres inyectar el valor en runtime sin escribirlo en UCI.
-- En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o usa el snippet que muestra LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake. Los ejemplos de la librería incluyen por defecto `changeme123`, pero debes reemplazarlo antes de producción o correr `../tools/rotate_credentials.sh` para regenerar ambos extremos.
+- En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o usa el snippet que muestra LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake. Genera/rota un secreto por dispositivo antes de producción (por ejemplo con `../tools/rotate_credentials.sh`).
 
 ### 2. Políticas de comando y topics sensibles
 

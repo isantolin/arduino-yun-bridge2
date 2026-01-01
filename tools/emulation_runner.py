@@ -49,7 +49,7 @@ def main():
     # Script is in tools/, so up one level is root
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent
-    
+
     # Path to the Python package source (Required for PYTHONPATH)
     package_root = repo_root / "openwrt-yun-bridge"
 
@@ -107,36 +107,36 @@ def main():
     try:
         # 4. Start SimAVR
         logger.info(f"Starting simavr with {firmware_path}...")
-        
+
         simavr_cmd = [
             "simavr",
             "-m", "atmega32u4",
             "-f", "16000000",
             str(firmware_path)
         ]
-        
+
         simavr_proc = subprocess.Popen(simavr_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         # 5. Start Python Daemon (Test Mode)
         logger.info("Starting Bridge Daemon (Test Mode)...")
-        
+
         daemon_env = os.environ.copy()
-        
+
         # Inject openwrt-yun-bridge into PYTHONPATH
         current_pythonpath = daemon_env.get("PYTHONPATH", "")
         daemon_env["PYTHONPATH"] = f"{str(package_root)}{os.pathsep}{current_pythonpath}"
-        
+
         # Configuration injection to pass RuntimeConfig validation
         daemon_env["YUNBRIDGE_PORT"] = SOCAT_PORT0
         daemon_env["YUNBRIDGE_BAUDRATE"] = str(protocol.DEFAULT_BAUDRATE)
-        
+
         # Security & Transport settings for Test Environment
-        daemon_env["SERIAL_SHARED_SECRET"] = "emulation_test_secret_xyz" 
-        
+        daemon_env["SERIAL_SHARED_SECRET"] = "emulation_test_secret_xyz"
+
         # Disable MQTT TLS and watchdog for tests
         daemon_env["MQTT_TLS"] = "0"
         daemon_env["DISABLE_WATCHDOG"] = "1"
-        
+
         # [NEW] Suppress UCI missing warning (since we are not on OpenWrt)
         daemon_env["YUNBRIDGE_NO_UCI_WARNING"] = "1"
 

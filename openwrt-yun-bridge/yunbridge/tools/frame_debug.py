@@ -58,7 +58,7 @@ def _resolve_command(candidate: str) -> int:
         raise ValueError("command may not be empty")
 
     normalized = candidate.strip()
-    
+
     # Try generic integer parsing (handles 10, 0x10, 0o10)
     try:
         return int(normalized, 0)
@@ -71,12 +71,12 @@ def _resolve_command(candidate: str) -> int:
     # The int(..., 0) handles 0x. The only case left is "10" meant as hex "10" -> 16?
     # But user wants "10" -> 10.
     # So if it fails int(..., 0), it's not a number.
-    
+
     try:
         return Command[normalized_upper].value
     except KeyError:
         pass
-        
+
     try:
         return Status[normalized_upper].value
     except KeyError as exc:
@@ -116,7 +116,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
-    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE :], "big")
+    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE:], "big")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
@@ -172,11 +172,11 @@ def _print_response(frame: Frame) -> None:
     payload_preview = payload_hex[:64]
     if len(payload_hex) > 64:
         payload_preview += "…"
-    print("[FrameDebug] --- MCU Response ---")
+    sys.stdout.write("[FrameDebug] --- MCU Response ---\n")
     command_name = _name_for_command(frame.command_id)
-    print(f"cmd_id=0x{frame.command_id:02X} ({command_name})")
-    print(f"payload_len={len(frame.payload)}")
-    print(f"payload={payload_preview}")
+    sys.stdout.write(f"cmd_id=0x{frame.command_id:02X} ({command_name})\n")
+    sys.stdout.write(f"payload_len={len(frame.payload)}\n")
+    sys.stdout.write(f"payload={payload_preview}\n")
 
 
 def _positive_float(value: str) -> float:
@@ -284,27 +284,32 @@ def main(argv: list[str] | None = None) -> int:
             args.baud,
             args.read_timeout,
         )
-        print(f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud")
+        sys.stdout.write(
+            f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud\n"
+        )
 
     try:
         for iteration in _iter_counts(args.count):
             snapshot = build_snapshot(command_id, payload)
-            print(snapshot.render())
+            sys.stdout.write(snapshot.render() + "\n")
             if serial_device:
                 written = _write_frame(serial_device, snapshot.encoded_packet)
-                print(f"[FrameDebug] wrote {written} bytes to serial port")
+                sys.stdout.write(
+                    f"[FrameDebug] wrote {written} bytes to serial port\n"
+                )
                 if args.read_response:
                     encoded_response = _read_frame(
                         serial_device, timeout=args.read_timeout
                     )
                     if not encoded_response:
-                        print("[FrameDebug] No response before timeout")
+                        sys.stdout.write("[FrameDebug] No response before timeout\n")
                     else:
                         try:
                             response_frame = _decode_frame(encoded_response)
                         except Exception as exc:
-                            print(
-                                "[FrameDebug] Failed to decode MCU response: " f"{exc}"
+                            sys.stderr.write(
+                                "[FrameDebug] Failed to decode MCU response: "
+                                f"{exc}\n"
                             )
                         else:
                             _print_response(response_frame)

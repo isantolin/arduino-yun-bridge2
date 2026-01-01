@@ -50,7 +50,7 @@ class FileComponent:
             logger.warning("Invalid file write payload: missing data section")
             return False
 
-        path = payload[cursor : cursor + path_len].decode("utf-8", errors="ignore")
+        path = payload[cursor:cursor + path_len].decode("utf-8", errors="ignore")
 
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
         # Bloqueamos explícitamente rutas absolutas o relativas peligrosas antes de procesar datos.
@@ -75,10 +75,10 @@ class FileComponent:
             return False
 
         cursor += path_len
-        data_len = int.from_bytes(payload[cursor : cursor + 2], "big")
+        data_len = int.from_bytes(payload[cursor:cursor + 2], "big")
         cursor += 2
 
-        file_data = payload[cursor : cursor + data_len]
+        file_data = payload[cursor:cursor + data_len]
         if len(file_data) != data_len:
             logger.warning("File write payload truncated. Expected %d bytes.", data_len)
             return False
@@ -105,7 +105,7 @@ class FileComponent:
             logger.warning("Invalid file read payload: missing path bytes")
             return
 
-        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
+        filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
         success, content, reason = await self._perform_file_operation(
             Action.FILE_READ, filename
         )
@@ -140,7 +140,7 @@ class FileComponent:
             logger.warning("Invalid file remove payload: missing path bytes")
             return False
 
-        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
+        filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
         success, _, reason = await self._perform_file_operation(
             Action.FILE_REMOVE, filename
         )
@@ -366,7 +366,7 @@ class FileComponent:
                 if str(resolved).startswith(safe_prefix):
                     is_volatile = True
                     break
-            
+
             if not is_volatile:
                 logger.warning(
                     "FLASH WEAR WARNING: Writing to non-volatile storage: %s. "

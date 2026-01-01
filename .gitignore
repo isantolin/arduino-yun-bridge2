@@ -64,6 +64,7 @@ test_bridge_core
 
 .gemini/
 gha-creds-*.json
+.tmp/
 feeds/luci-app-yunbridge
 feeds/openwrt-yun-bridge
 feeds/openwrt-yun-core

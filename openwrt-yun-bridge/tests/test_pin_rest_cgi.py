@@ -18,12 +18,7 @@ from yunbridge.config.settings import RuntimeConfig
 
 
 def _load_pin_rest_cgi() -> ModuleType:
-    script_path = (
-        Path(__file__).resolve().parents[2]
-        / "openwrt-yun-core"
-        / "scripts"
-        / "pin_rest_cgi.py"
-    )
+    script_path = Path(__file__).resolve().parents[2] / "openwrt-yun-core" / "scripts" / "pin_rest_cgi.py"
     spec = importlib.util.spec_from_file_location("pin_rest_cgi", script_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load pin_rest_cgi script")

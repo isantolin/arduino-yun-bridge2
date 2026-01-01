@@ -71,3 +71,10 @@ executionEnvironments = [
 
 [tool.ruff]
 target-version = "py313"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 50

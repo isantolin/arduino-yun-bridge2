@@ -244,14 +244,11 @@ def main(argv: list[str]) -> int:
         rows.append(combined)
 
     if not rows:
-        print(
-            "[coverage-report] No coverage artifacts were found.",
-            file=sys.stderr,
-        )
+        sys.stderr.write("[coverage-report] No coverage artifacts were found.\n")
         return 1
 
     table = _render_markdown(rows)
-    print(table)
+    sys.stdout.write(table + "\n")
 
     _write_optional(args.output_markdown, table + "\n")
     _append_optional(args.github_step_summary, table + "\n")

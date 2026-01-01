@@ -440,7 +440,7 @@ class RuntimeState:
         chunk_len = len(chunk)
         # The caller should ensure the chunk fits within the configured limit.
         if chunk_len > self.console_queue_limit_bytes:
-            data = bytes(chunk[-self.console_queue_limit_bytes :])
+            data = bytes(chunk[-self.console_queue_limit_bytes:])
             chunk_len = len(data)
         else:
             data = bytes(chunk)

@@ -1,12 +1,12 @@
-#include <cassert>
-#include <cstdint>
-#include <cstring>
-#include <vector>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 #include "protocol/cobs.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
+#include "test_support.h"
 
 using namespace rpc;
 
@@ -15,17 +15,17 @@ static void test_endianness_helpers() {
       static_cast<uint8_t>((TEST_CMD_ID >> 8) & rpc::RPC_UINT8_MASK),
       static_cast<uint8_t>(TEST_CMD_ID & rpc::RPC_UINT8_MASK),
   };
-  assert(read_u16_be(buffer) == TEST_CMD_ID);
+  TEST_ASSERT(read_u16_be(buffer) == TEST_CMD_ID);
   write_u16_be(buffer, TEST_WRITE_U16_VALUE);
-  assert(buffer[0] == ((TEST_WRITE_U16_VALUE >> 8) & rpc::RPC_UINT8_MASK) &&
-         buffer[1] == (TEST_WRITE_U16_VALUE & rpc::RPC_UINT8_MASK));
+  TEST_ASSERT(buffer[0] == ((TEST_WRITE_U16_VALUE >> 8) & rpc::RPC_UINT8_MASK) &&
+              buffer[1] == (TEST_WRITE_U16_VALUE & rpc::RPC_UINT8_MASK));
 }
 
 static void test_crc_helpers() {
   const uint8_t data[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB, TEST_BYTE_CC, TEST_BYTE_DD};
   uint32_t crc = crc32_ieee(data, sizeof(data));
   // Valor verificado con binascii.crc32 (polinomio IEEE 802.3).
-  assert(crc == TEST_CRC32_VECTOR_EXPECTED);
+  TEST_ASSERT(crc == TEST_CRC32_VECTOR_EXPECTED);
 }
 
 static void test_builder_roundtrip() {
@@ -36,45 +36,46 @@ static void test_builder_roundtrip() {
   const uint16_t command_id = TEST_CMD_ID;
   const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, TEST_BYTE_01, rpc::RPC_UINT8_MASK, TEST_BYTE_02, rpc::RPC_FRAME_DELIMITER};
 
-  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
     size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
-    assert(raw_len ==
-      sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
+    TEST_ASSERT(raw_len ==
+                sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
 
     uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
-    assert(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
+    TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
-  assert(encoded_len > 0);
+  TEST_ASSERT(encoded_len > 0);
 
   bool parsed = false;
   for (size_t i = 0; i < encoded_len; ++i) {
-    assert(!parser.consume(encoded[i], frame));
+    TEST_ASSERT(!parser.consume(encoded[i], frame));
   }
   parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
-  assert(parsed);
-  assert(frame.header.version == PROTOCOL_VERSION);
-  assert(frame.header.command_id == command_id);
-  assert(frame.header.payload_length == sizeof(payload));
-  assert(std::memcmp(frame.payload, payload, sizeof(payload)) == 0);
+  TEST_ASSERT(parsed);
+  TEST_ASSERT(frame.header.version == PROTOCOL_VERSION);
+  TEST_ASSERT(frame.header.command_id == command_id);
+  TEST_ASSERT(frame.header.payload_length == sizeof(payload));
+  TEST_ASSERT(test_memeq(frame.payload, payload, sizeof(payload)));
 }
 
 static void test_builder_payload_limit() {
   FrameBuilder builder;
-  std::vector<uint8_t> payload(MAX_PAYLOAD_SIZE + 1, TEST_BYTE_01);
-  uint8_t buffer[MAX_RAW_FRAME_SIZE] = {0};
-  size_t len = builder.build(buffer, sizeof(buffer), TEST_CMD_ID, payload.data(), payload.size());
-  assert(len == 0);
+  uint8_t payload[MAX_PAYLOAD_SIZE + 1];
+  test_memfill(payload, sizeof(payload), TEST_BYTE_01);
+  uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE] = {0};
+  size_t len = builder.build(buffer, sizeof(buffer), TEST_CMD_ID, payload, sizeof(payload));
+  TEST_ASSERT(len == 0);
 }
 
 static void test_parser_incomplete_packets() {
   FrameParser parser;
   Frame frame{};
-  assert(!parser.consume(TEST_BYTE_11, frame));
-  assert(!parser.consume(TEST_BYTE_22, frame));
+  TEST_ASSERT(!parser.consume(TEST_BYTE_11, frame));
+  TEST_ASSERT(!parser.consume(TEST_BYTE_22, frame));
   // Reset and provide terminating zero with no data -> should be ignored.
-  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_crc_failure() {
@@ -83,18 +84,18 @@ static void test_parser_crc_failure() {
   Frame frame{};
 
   const uint8_t payload[] = {TEST_BYTE_10, TEST_BYTE_20, TEST_BYTE_30};
-  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_CRC_FAILURE, payload, sizeof(payload));
-  assert(raw_len > 0);
+  TEST_ASSERT(raw_len > 0);
 
   raw[sizeof(FrameHeader)] ^= rpc::RPC_UINT8_MASK;  // Corrupt payload without fixing CRC.
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
   for (size_t i = 0; i < encoded_len; ++i) {
-    assert(!parser.consume(encoded[i], frame));
+    TEST_ASSERT(!parser.consume(encoded[i], frame));
   }
-  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_header_validation() {
@@ -103,9 +104,9 @@ static void test_parser_header_validation() {
   Frame frame{};
 
   const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
-  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_HEADER_VALIDATION, payload, sizeof(payload));
-  assert(raw_len > 0);
+  TEST_ASSERT(raw_len > 0);
 
   // Break protocol version.
   raw[0] = PROTOCOL_VERSION + 1;
@@ -113,33 +114,40 @@ static void test_parser_header_validation() {
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
   for (size_t i = 0; i < encoded_len; ++i) {
-    assert(!parser.consume(encoded[i], frame));
+    TEST_ASSERT(!parser.consume(encoded[i], frame));
   }
-  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_overflow_guard() {
   FrameParser parser;
   Frame frame{};
 
-  std::vector<uint8_t> encoded;
-  encoded.reserve(COBS_BUFFER_SIZE);
+  enum { kOverflowBufSize = rpc::MAX_RAW_FRAME_SIZE + 1024 };
+  uint8_t encoded[kOverflowBufSize];
+  size_t encoded_len = 0;
 
   size_t generated = 0;
-  while (generated + 254 <= MAX_RAW_FRAME_SIZE) {
-    encoded.push_back(rpc::RPC_UINT8_MASK);
-    encoded.insert(encoded.end(), 254, TEST_MARKER_BYTE);
+  while (generated + 254 <= rpc::MAX_RAW_FRAME_SIZE) {
+    TEST_ASSERT(encoded_len + 1 + 254 < kOverflowBufSize);
+    encoded[encoded_len++] = rpc::RPC_UINT8_MASK;
+    for (size_t i = 0; i < 254; ++i) {
+      encoded[encoded_len++] = TEST_MARKER_BYTE;
+    }
     generated += 254;
   }
 
-  size_t remaining = MAX_RAW_FRAME_SIZE - generated;
-  encoded.push_back(static_cast<uint8_t>(remaining + 2));
-  encoded.insert(encoded.end(), remaining + 1, TEST_BYTE_33);
-
-  for (uint8_t byte : encoded) {
-    assert(!parser.consume(byte, frame));
+  size_t remaining = rpc::MAX_RAW_FRAME_SIZE - generated;
+  TEST_ASSERT(encoded_len + 1 + (remaining + 1) < kOverflowBufSize);
+  encoded[encoded_len++] = static_cast<uint8_t>(remaining + 2);
+  for (size_t i = 0; i < remaining + 1; ++i) {
+    encoded[encoded_len++] = TEST_BYTE_33;
   }
-  assert(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+
+  for (size_t i = 0; i < encoded_len; ++i) {
+    TEST_ASSERT(!parser.consume(encoded[i], frame));
+  }
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
 }
 
 static void test_parser_noise_handling() {
@@ -150,7 +158,7 @@ static void test_parser_noise_handling() {
   const uint16_t command_id = TEST_CMD_ID_NOISE;
   const uint8_t payload[] = {TEST_BYTE_DE, TEST_BYTE_AD, TEST_BYTE_BE, TEST_BYTE_EF};
 
-  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
@@ -174,8 +182,8 @@ static void test_parser_noise_handling() {
   // The last byte (rpc::RPC_FRAME_DELIMITER) should trigger the parse
   parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
   
-  assert(parsed);
-  assert(frame.header.command_id == command_id);
+  TEST_ASSERT(parsed);
+  TEST_ASSERT(frame.header.command_id == command_id);
 }
 
 static void test_parser_fragmentation() {
@@ -186,7 +194,7 @@ static void test_parser_fragmentation() {
   const uint16_t command_id = TEST_CMD_ID_FRAGMENTATION;
   const uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
 
-  uint8_t raw[MAX_RAW_FRAME_SIZE] = {0};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
   size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
@@ -196,11 +204,11 @@ static void test_parser_fragmentation() {
   bool parsed = false;
   for (size_t i = 0; i < encoded_len; ++i) {
       parsed = parser.consume(encoded[i], frame);
-      assert(!parsed); // Should not be done until rpc::RPC_FRAME_DELIMITER
+      TEST_ASSERT(!parsed); // Should not be done until rpc::RPC_FRAME_DELIMITER
   }
   parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
-  assert(parsed);
-  assert(frame.header.command_id == command_id);
+    TEST_ASSERT(parsed);
+    TEST_ASSERT(frame.header.command_id == command_id);
 }
 
 int main() {

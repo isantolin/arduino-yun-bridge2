@@ -160,7 +160,7 @@ def test_mqtt_digital_write_sends_frame(
         assert sent_frames
         command_id, payload = sent_frames[0]
         assert command_id == Command.CMD_DIGITAL_WRITE.value
-        assert payload == struct.pack(">BB", 5, 1)
+        assert payload == struct.pack(protocol.PIN_WRITE_FORMAT, 5, protocol.DIGITAL_HIGH)
 
     asyncio.run(_run())
 
@@ -200,7 +200,7 @@ def test_mqtt_analog_read_tracks_pending_queue(
         assert sent_frames
         command_id, payload = sent_frames[0]
         assert command_id == Command.CMD_ANALOG_READ.value
-        assert payload == struct.pack(">B", 2)
+        assert payload == struct.pack(protocol.PIN_READ_FORMAT, 2)
         pending = runtime_state.pending_analog_reads[-1]
         assert pending.pin == 2
 
@@ -451,13 +451,14 @@ def test_mqtt_shell_kill_invokes_process_component(
             "yunbridge.services.components.process." "ProcessComponent.handle_kill",
             new=fake_kill,
         ):
+            pid = 21
             await service.handle_mqtt_message(
                 _make_inbound(
                     topic_path(
                         runtime_state.mqtt_topic_prefix,
                         Topic.SHELL,
                         "kill",
-                        "21",
+                        str(pid),
                     ),
                     b"",
                 )
@@ -465,7 +466,7 @@ def test_mqtt_shell_kill_invokes_process_component(
             assert calls == [
                 (
                     service._process,  # pyright: ignore[reportPrivateUsage]
-                    struct.pack(protocol.UINT16_FORMAT, 21),
+                    struct.pack(protocol.UINT16_FORMAT, pid),
                     False,
                 )
             ]

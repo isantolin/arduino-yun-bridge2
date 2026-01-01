@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import shlex
 import textwrap
 import time
@@ -386,7 +387,7 @@ async def main_async(
         for target in targets:
             tag_str = ",".join(sorted(target.tags)) or "-"
             host = target.host or "local"
-            print(f"{target.name:20} host={host:20} tags={tag_str}")
+            sys.stdout.write(f"{target.name:20} host={host:20} tags={tag_str}\n")
         return 0
 
     semaphore = asyncio.Semaphore(max(1, max_parallel))
@@ -402,10 +403,10 @@ async def main_async(
 
     results = await asyncio.gather(*(runner(target) for target in targets))
 
-    print(format_summary(results))
+    sys.stdout.write(format_summary(results) + "\n")
     if json_path:
         write_json(results, json_path)
-        print(f"JSON report written to {json_path}")
+        sys.stdout.write(f"JSON report written to {json_path}\n")
 
     if any((not res.success) and (not res.skipped) for res in results):
         return 1

@@ -184,21 +184,27 @@ class ProcessComponent:
             logger.warning("Invalid PROCESS_POLL payload: %s", payload.hex())
             await self.ctx.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value,
-                bytes([Status.MALFORMED.value, PROCESS_DEFAULT_EXIT_CODE])
-                + struct.pack(protocol.UINT16_FORMAT, 0)
-                + struct.pack(protocol.UINT16_FORMAT, 0),
+                b"".join(
+                    [
+                        bytes([Status.MALFORMED.value, PROCESS_DEFAULT_EXIT_CODE]),
+                        struct.pack(protocol.UINT16_FORMAT, 0),
+                        struct.pack(protocol.UINT16_FORMAT, 0),
+                    ]
+                ),
             )
             return False
 
         pid = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
         batch = await self.collect_output(pid)
 
-        response_payload = (
-            bytes([batch.status_byte, batch.exit_code])
-            + struct.pack(protocol.UINT16_FORMAT, len(batch.stdout_chunk))
-            + struct.pack(protocol.UINT16_FORMAT, len(batch.stderr_chunk))
-            + batch.stdout_chunk
-            + batch.stderr_chunk
+        response_payload = b"".join(
+            [
+                bytes([batch.status_byte, batch.exit_code]),
+                struct.pack(protocol.UINT16_FORMAT, len(batch.stdout_chunk)),
+                struct.pack(protocol.UINT16_FORMAT, len(batch.stderr_chunk)),
+                batch.stdout_chunk,
+                batch.stderr_chunk,
+            ]
         )
         await self.ctx.send_frame(Command.CMD_PROCESS_POLL_RESP.value, response_payload)
 
@@ -828,12 +834,14 @@ class ProcessComponent:
         stdout_trim = stdout_bytes[:max_payload]
         remaining = max_payload - len(stdout_trim)
         stderr_trim = stderr_bytes[:remaining]
-        return (
-            bytes([status & UINT8_MASK])
-            + struct.pack(protocol.UINT16_FORMAT, len(stdout_trim))
-            + stdout_trim
-            + struct.pack(protocol.UINT16_FORMAT, len(stderr_trim))
-            + stderr_trim
+        return b"".join(
+            [
+                bytes([status & UINT8_MASK]),
+                struct.pack(protocol.UINT16_FORMAT, len(stdout_trim)),
+                stdout_trim,
+                struct.pack(protocol.UINT16_FORMAT, len(stderr_trim)),
+                stderr_trim,
+            ]
         )
 
     def _limit_sync_payload(self, payload: bytes) -> tuple[bytes, bool]:

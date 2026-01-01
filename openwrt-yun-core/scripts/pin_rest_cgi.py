@@ -138,9 +138,11 @@ def get_pin_from_path() -> str | None:
 
 
 def send_response(status_code: int, data: dict[str, Any]) -> None:
-    print(f"Status: {status_code}")
-    print("Content-Type: application/json\n")
-    print(json.dumps(data))
+    sys.stdout.write(f"Status: {status_code}\n")
+    sys.stdout.write("Content-Type: application/json\n\n")
+    sys.stdout.write(json.dumps(data))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
 
 
 def main() -> None:

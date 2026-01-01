@@ -3,10 +3,10 @@
  * Enfoque: Manipulación directa de estado interno y Fuzzing de Protocolo.
  */
 
-#include <assert.h>
 #include <string.h>
 #include <stdio.h>
-#include <vector>
+
+#include "test_support.h"
 
 // Use a custom millis() implementation for time travel in host tests.
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
@@ -40,22 +40,17 @@ ProcessClass Process;
 // 3. Mock Stream con fallos programables
 class FlakyStream : public Stream {
 public:
-    std::vector<uint8_t> rx;
-    std::vector<uint8_t> tx;
+    ByteBuffer<8192> rx;
+    ByteBuffer<8192> tx;
     bool write_fails = false;
 
-    int available() override { return rx.size(); }
-    int read() override {
-        if (rx.empty()) return -1;
-        uint8_t b = rx.front();
-        rx.erase(rx.begin());
-        return b;
-    }
-    int peek() override { return rx.empty() ? -1 : rx.front(); }
+    int available() override { return static_cast<int>(rx.remaining()); }
+    int read() override { return rx.read_byte(); }
+    int peek() override { return rx.peek_byte(); }
 
     size_t write(uint8_t c) override {
         if (write_fails) return 0;
-        tx.push_back(c);
+        TEST_ASSERT(tx.push(c));
         return 1;
     }
     size_t write(const uint8_t *b, size_t s) override {
@@ -65,8 +60,8 @@ public:
     }
     void flush() override {}
 
-    void push_rx(const std::vector<uint8_t>& data) {
-        rx.insert(rx.end(), data.begin(), data.end());
+    void push_rx(const uint8_t* data, size_t len) {
+        TEST_ASSERT(rx.append(data, len));
     }
 };
 
@@ -80,12 +75,12 @@ void test_buffer_overflow_protection() {
     io.rx.clear();
 
     // Crear trama válida pero GIGANTE (mayor que buffer interno)
-    std::vector<uint8_t> frame;
-    frame.push_back(rpc::RPC_FRAME_DELIMITER); // 0 bytes to next delimiter (COBS start)
-    for (int i = 0; i < 300; i++) frame.push_back(TEST_BYTE_01);
-    frame.push_back(rpc::RPC_FRAME_DELIMITER); // Delimiter
+    uint8_t frame[302];
+    frame[0] = rpc::RPC_FRAME_DELIMITER;
+    test_memfill(frame + 1, 300, TEST_BYTE_01);
+    frame[301] = rpc::RPC_FRAME_DELIMITER;
 
-    io.push_rx(frame);
+    io.push_rx(frame, sizeof(frame));
 
     // Procesar. Debería detectar overflow y resetear buffer sin crashear.
     rpc::Frame f;
@@ -102,7 +97,7 @@ void test_write_failure_handling() {
     // sendFrame debe retornar false si el stream falla
     bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, data, 1);
 
-    assert(ok == false);
+    TEST_ASSERT(ok == false);
     io.write_fails = false; // Restaurar
 }
 
@@ -115,11 +110,11 @@ void test_ack_timeout_and_retry() {
     // esperando sincronización, y el MCU no inicia CMD_LINK_SYNC (lo inicia Linux).
     // Para cubrir el path de retransmisión, enviamos un comando permitido en
     // estado no sincronizado.
-    assert(Bridge._synchronized == false);
+    TEST_ASSERT(Bridge._synchronized == false);
 
     uint8_t payload[] = {TEST_PAYLOAD_BYTE};
     bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, sizeof(payload));
-    assert(ok == true);
+    TEST_ASSERT(ok == true);
 
     // Limpiar TX para medir solo la retransmisión.
     io.tx.clear();
@@ -129,15 +124,15 @@ void test_ack_timeout_and_retry() {
     Bridge._processAckTimeout();
 
     // Verificar que se retransmitió el último frame.
-    assert(io.tx.size() > 0);
-    assert(Bridge._retry_count >= 1);
+    TEST_ASSERT(io.tx.len > 0);
+    TEST_ASSERT(Bridge._retry_count >= 1);
 }
 
 void test_protocol_crc_error() {
     printf("TEST: Protocol CRC Error\n");
     // Inyectar llamada directa si encoding es complejo en test
     Bridge._emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, "");
-    assert(io.tx.size() > 0);
+    TEST_ASSERT(io.tx.len > 0);
 }
 
 int main() {

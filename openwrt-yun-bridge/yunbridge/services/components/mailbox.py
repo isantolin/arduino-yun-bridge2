@@ -70,7 +70,7 @@ class MailboxComponent:
             return False
 
         msg_len = struct.unpack(">H", payload[:2])[0]
-        data = payload[2 : 2 + msg_len]
+        data = payload[2:2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
                 "MAILBOX_PUSH length mismatch. Expected %d bytes, got %d.",

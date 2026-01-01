@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -9,6 +8,9 @@
 template <typename Hash>
 class HMAC {
  public:
+  static constexpr uint8_t kHmacIpadXor = 0x36u;
+  static constexpr uint8_t kHmacOpadXor = 0x5Cu;
+
   explicit HMAC(Hash& scratch) : scratch_(scratch) {}
 
   void reset(const uint8_t* key, size_t key_len) {
@@ -18,20 +20,20 @@ class HMAC {
       scratch_.reset();
       scratch_.update(key, key_len);
       scratch_.finalize(hashed, Hash::kDigestSize);
-      std::memset(key_block, 0, Hash::kBlockSize);
-      std::memcpy(key_block, hashed, Hash::kDigestSize);
+      ::memset(key_block, 0, Hash::kBlockSize);
+      ::memcpy(key_block, hashed, Hash::kDigestSize);
     } else {
-      std::memset(key_block, 0, Hash::kBlockSize);
+      ::memset(key_block, 0, Hash::kBlockSize);
       if (key != nullptr && key_len > 0) {
-        std::memcpy(key_block, key, key_len);
+        ::memcpy(key_block, key, key_len);
       }
     }
 
     uint8_t ipad[Hash::kBlockSize];
     uint8_t opad[Hash::kBlockSize];
     for (size_t i = 0; i < Hash::kBlockSize; ++i) {
-      ipad[i] = key_block[i] ^ 0x36;
-      opad[i] = key_block[i] ^ 0x5C;
+      ipad[i] = static_cast<uint8_t>(key_block[i] ^ kHmacIpadXor);
+      opad[i] = static_cast<uint8_t>(key_block[i] ^ kHmacOpadXor);
     }
 
     inner_.reset();
@@ -58,9 +60,10 @@ class HMAC {
     uint8_t final_digest[Hash::kDigestSize];
     outer_work.finalize(final_digest, Hash::kDigestSize);
 
-    const size_t to_copy = std::min(len, static_cast<size_t>(Hash::kDigestSize));
+    const size_t digest_size = static_cast<size_t>(Hash::kDigestSize);
+    const size_t to_copy = (len < digest_size) ? len : digest_size;
     if (out != nullptr && to_copy > 0) {
-      std::memcpy(out, final_digest, to_copy);
+      ::memcpy(out, final_digest, to_copy);
     }
   }
 

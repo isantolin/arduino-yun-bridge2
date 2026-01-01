@@ -16,7 +16,7 @@ from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.policy import CommandValidationError
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Action, Status, UINT16_FORMAT
+from yunbridge.rpc.protocol import Action, Status
 from yunbridge.services.components.shell import ShellComponent
 from yunbridge.state.context import RuntimeState
 
@@ -270,7 +270,7 @@ async def test_shell_kill_packs_pid_and_suppresses_ack(
     )
 
     process.handle_kill.assert_awaited_once_with(
-        struct.pack(UINT16_FORMAT, 42),
+        struct.pack(protocol.UINT16_FORMAT, 42),
         send_ack=False,
     )
 

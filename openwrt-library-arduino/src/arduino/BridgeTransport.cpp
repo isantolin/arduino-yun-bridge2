@@ -118,8 +118,10 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
 }
 
 bool BridgeTransport::sendControlFrame(uint16_t command_id) {
-    uint8_t raw_buf[32];
-    uint8_t cobs_buf[34];
+    constexpr size_t kControlRawMax = sizeof(rpc::FrameHeader) + rpc::CRC_TRAILER_SIZE;
+    constexpr size_t kControlCobsMax = kControlRawMax + (kControlRawMax / 254) + 2;
+    uint8_t raw_buf[kControlRawMax];
+    uint8_t cobs_buf[kControlCobsMax];
     rpc::FrameBuilder builder;
     
     size_t raw_len = builder.build(raw_buf, sizeof(raw_buf), command_id, nullptr, 0);

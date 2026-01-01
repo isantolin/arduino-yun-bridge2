@@ -39,7 +39,7 @@ rationale = "COBS framing for the RPC protocol"
 [[dependency]]
 name = "psutil"
 openwrt = "python3-psutil"
-pip = "psutil==7.2.0"
+pip = "psutil==7.2.1"
 rationale = "Process supervision and zombie cleanup"
 
 [[dependency]]

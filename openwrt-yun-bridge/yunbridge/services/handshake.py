@@ -208,12 +208,11 @@ class SerialHandshakeManager:
         expected_tag = self._state.link_expected_tag
         recalculated_tag = self._compute_handshake_tag(nonce)
 
-        if (
-            nonce != expected
-            or expected_tag is None
-            or len(tag_bytes) != rpc_protocol.HANDSHAKE_TAG_LENGTH
-            or not hmac.compare_digest(tag_bytes, recalculated_tag)
-        ):
+        nonce_mismatch = nonce != expected
+        missing_expected_tag = expected_tag is None
+        bad_tag_length = len(tag_bytes) != rpc_protocol.HANDSHAKE_TAG_LENGTH
+        tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
+        if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
             self._logger.warning(
                 "LINK_SYNC_RESP auth mismatch (nonce=%s)",
                 nonce.hex(),
@@ -273,21 +272,12 @@ class SerialHandshakeManager:
         timeout = max(0.5, self._timing.response_timeout_seconds)
         deadline = loop.time() + timeout
         while loop.time() < deadline:
-            if (
-                self._state.link_is_synchronized
-                and self._state.link_handshake_nonce is None
-            ):
+            if self._state.link_is_synchronized and self._state.link_handshake_nonce is None:
                 return True
-            if (
-                self._state.link_handshake_nonce != nonce
-                and not self._state.link_is_synchronized
-            ):
+            if self._state.link_handshake_nonce != nonce and not self._state.link_is_synchronized:
                 break
             await asyncio.sleep(0.01)
-        return (
-            self._state.link_is_synchronized
-            and self._state.link_handshake_nonce is None
-        )
+        return self._state.link_is_synchronized and self._state.link_handshake_nonce is None
 
     def _clear_handshake_expectations(self) -> None:
         self._state.link_handshake_nonce = None

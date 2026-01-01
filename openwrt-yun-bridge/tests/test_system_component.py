@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import struct
 from collections.abc import Coroutine
 from typing import Any
 
@@ -12,6 +13,7 @@ from aiomqtt.message import Message as MQTTMessage
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.protocol.topics import Topic, topic_path
+from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.protocol import Command
 from yunbridge.services.components.system import SystemComponent
 from yunbridge.state.context import RuntimeState
@@ -99,7 +101,9 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         # pyright: ignore[reportPrivateUsage]
         component._pending_free_memory.append(inbound)
 
-        await component.handle_get_free_memory_resp(b"\x00d")
+        await component.handle_get_free_memory_resp(
+            struct.pack(rpc_protocol.UINT16_FORMAT, 100)
+        )
 
         assert len(ctx.published) == 2
         message, reply_context = ctx.published[0]
@@ -131,7 +135,9 @@ def test_handle_get_free_memory_resp_ignores_malformed(
 
         caplog.set_level("WARNING", logger="yunbridge.system")
 
-        await component.handle_get_free_memory_resp(b"\x01")
+        await component.handle_get_free_memory_resp(
+            struct.pack(rpc_protocol.UINT8_FORMAT, rpc_protocol.DIGITAL_HIGH)
+        )
 
         assert not ctx.published
         # pyright: ignore[reportPrivateUsage]
@@ -156,7 +162,7 @@ def test_handle_get_version_resp_publishes_pending_and_updates_state(
         # pyright: ignore[reportPrivateUsage]
         component._pending_version.append(inbound)
 
-        await component.handle_get_version_resp(b"\x01\x02")
+        await component.handle_get_version_resp(bytes([1, 2]))
 
         assert runtime_state.mcu_version == (1, 2)
         assert len(ctx.published) == 2

@@ -17,28 +17,18 @@ from tests.test_constants import TEST_BROKEN_CRC
 
 
 def test_resolve_command_hex() -> None:
-    assert (
-        frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}")
-        == Command.CMD_LINK_RESET.value
-    )
+    assert frame_debug._resolve_command(
+        f"0x{Command.CMD_LINK_RESET.value:02X}"
+    ) == Command.CMD_LINK_RESET.value
     assert frame_debug._resolve_command(f"0X{UINT8_MASK:02X}") == UINT8_MASK
     assert frame_debug._resolve_command("10") == 10  # Just an integer
 
 
 def test_resolve_command_name() -> None:
-    assert (
-        frame_debug._resolve_command("CMD_GET_VERSION")
-        == Command.CMD_GET_VERSION.value
-    )
-    assert (
-        frame_debug._resolve_command("CMD_GET_FREE_MEMORY")
-        == Command.CMD_GET_FREE_MEMORY.value
-    )
+    assert frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
+    assert frame_debug._resolve_command("CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value
     # Case insensitive
-    assert (
-        frame_debug._resolve_command("cmd_get_version")
-        == Command.CMD_GET_VERSION.value
-    )
+    assert frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
 
 
 def test_resolve_command_invalid() -> None:
@@ -66,16 +56,10 @@ def test_parse_payload_invalid() -> None:
 
 
 def test_name_for_command() -> None:
-    assert (
-        frame_debug._name_for_command(Command.CMD_GET_VERSION.value)
-        == "CMD_GET_VERSION"
-    )
+    assert frame_debug._name_for_command(Command.CMD_GET_VERSION.value) == "CMD_GET_VERSION"
     # Keep testing Status resolution
     assert frame_debug._name_for_command(Status.ACK.value) == "ACK"
-    assert (
-        frame_debug._name_for_command(UINT8_MASK)
-        == f"UNKNOWN(0x{UINT8_MASK:02X})"
-    )
+    assert frame_debug._name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
 
 
 def test_snapshot_render() -> None:
@@ -92,10 +76,7 @@ def test_snapshot_render() -> None:
         encoded_hex="0304",
     )
     rendered = snapshot.render()
-    assert (
-        f"cmd_id=0x{Command.CMD_GET_VERSION.value:02X} (CMD_GET_VERSION)"
-        in rendered
-    )
+    assert f"cmd_id=0x{Command.CMD_GET_VERSION.value:02X} (CMD_GET_VERSION)" in rendered
     assert f"crc=0x{TEST_BROKEN_CRC:08X}" in rendered
     assert "raw_frame=0102" in rendered
 

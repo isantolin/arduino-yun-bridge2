@@ -303,18 +303,13 @@ async def test_serial_reader_task_propagates_handshake_fatal(
     transport = SerialTransport(runtime_config, state, cast(Any, service))
     task = asyncio.create_task(transport.run())
 
-    print("DEBUG: awaiting task")
     try:
         await task
-        print("DEBUG: task finished without exception")
     except SerialHandshakeFatal:
-        print("DEBUG: Caught SerialHandshakeFatal as expected")
         pass
     except Exception as exc:
-        print(f"DEBUG: Caught unexpected exception {type(exc)}: {exc}")
         pytest.fail(f"Expected SerialHandshakeFatal, got {type(exc)}")
     else:
-        print("DEBUG: Failed to raise")
         pytest.fail("Did not raise SerialHandshakeFatal")
 
 

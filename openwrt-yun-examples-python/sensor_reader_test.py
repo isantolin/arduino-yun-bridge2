@@ -21,14 +21,14 @@ async def main() -> None:
     parser.add_argument("--user", default=None, help="MQTT Username")
     parser.add_argument("--password", default=None, help="MQTT Password")
     parser.add_argument(
-        "--pin", 
-        default="d13", 
+        "--pin",
+        default="d13",
         help="Pin to read (e.g., 'd13' or 'a0'). Default: d13"
     )
     parser.add_argument(
-        "--interval", 
-        type=float, 
-        default=2.0, 
+        "--interval",
+        type=float,
+        default=2.0,
         help="Read interval in seconds. Default: 2.0"
     )
     args = parser.parse_args()

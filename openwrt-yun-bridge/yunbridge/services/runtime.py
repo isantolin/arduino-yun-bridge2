@@ -321,12 +321,12 @@ class BridgeService:
                     correlation_data=reply_correlation,
                 )
             origin_topic = str(reply_context.topic)
+            user_properties = message_to_queue.user_properties + (
+                ("bridge-request-topic", origin_topic),
+            )
             message_to_queue = replace(
                 message_to_queue,
-                user_properties=(
-                    message_to_queue.user_properties
-                    + (("bridge-request-topic", origin_topic),)
-                ),
+                user_properties=user_properties,
             )
 
         while True:

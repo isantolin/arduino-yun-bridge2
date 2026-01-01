@@ -1,7 +1,6 @@
-#include <cassert>
-#include <cstring>
-#include <vector>
-#include <iostream>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
 #define private public
 #define protected public
@@ -14,6 +13,7 @@
 #include "protocol/crc.h"
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
+#include "test_support.h"
 
 // Define global Serial instances for the stub
 HardwareSerial Serial;
@@ -33,95 +33,93 @@ BridgeClass Bridge(Serial1);
 // Mock Stream
 class MockStream : public Stream {
 public:
-    std::vector<uint8_t> tx_buffer;
-    std::vector<uint8_t> rx_buffer;
-    size_t rx_pos = 0;
+    ByteBuffer<8192> tx_buffer;
+    ByteBuffer<8192> rx_buffer;
 
     size_t write(uint8_t c) override {
-        tx_buffer.push_back(c);
+        TEST_ASSERT(tx_buffer.push(c));
         return 1;
     }
 
     size_t write(const uint8_t* buffer, size_t size) override {
-        tx_buffer.insert(tx_buffer.end(), buffer, buffer + size);
+        TEST_ASSERT(tx_buffer.append(buffer, size));
         return size;
     }
 
     int available() override {
-        return static_cast<int>(rx_buffer.size() - rx_pos);
+        return static_cast<int>(rx_buffer.remaining());
     }
 
     int read() override {
-        if (rx_pos >= rx_buffer.size()) return -1;
-        return rx_buffer[rx_pos++];
+        return rx_buffer.read_byte();
     }
 
     int peek() override {
-        if (rx_pos >= rx_buffer.size()) return -1;
-        return rx_buffer[rx_pos];
+        return rx_buffer.peek_byte();
     }
 
     void flush() override {}
     
     // Helper to inject data into RX buffer
-    void inject_rx(const std::vector<uint8_t>& data) {
-        rx_buffer.insert(rx_buffer.end(), data.begin(), data.end());
+    void inject_rx(const uint8_t* data, size_t len) {
+        TEST_ASSERT(rx_buffer.append(data, len));
     }
 };
 
 class TestFrameBuilder {
 public:
-    static std::vector<uint8_t> build(uint16_t command_id, const std::vector<uint8_t>& payload) {
-        std::vector<uint8_t> frame;
-        
+    static size_t build(uint8_t* out, size_t out_cap, uint16_t command_id,
+                        const uint8_t* payload, size_t payload_len) {
+    uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
+        size_t cursor = 0;
+
         // Header
-        frame.push_back(rpc::PROTOCOL_VERSION);
-        
+        raw[cursor++] = rpc::PROTOCOL_VERSION;
+
         // Payload Length (Big Endian)
-        uint16_t len = static_cast<uint16_t>(payload.size());
-        frame.push_back((len >> 8) & rpc::RPC_UINT8_MASK);
-        frame.push_back(len & rpc::RPC_UINT8_MASK);
-        
+        const uint16_t len = static_cast<uint16_t>(payload_len);
+        raw[cursor++] = static_cast<uint8_t>((len >> 8) & rpc::RPC_UINT8_MASK);
+        raw[cursor++] = static_cast<uint8_t>(len & rpc::RPC_UINT8_MASK);
+
         // Command ID (Big Endian)
-        frame.push_back((command_id >> 8) & rpc::RPC_UINT8_MASK);
-        frame.push_back(command_id & rpc::RPC_UINT8_MASK);
-        
+        raw[cursor++] = static_cast<uint8_t>((command_id >> 8) & rpc::RPC_UINT8_MASK);
+        raw[cursor++] = static_cast<uint8_t>(command_id & rpc::RPC_UINT8_MASK);
+
         // Payload
-        frame.insert(frame.end(), payload.begin(), payload.end());
-        
+        if (payload_len) {
+            TEST_ASSERT(payload != nullptr);
+            TEST_ASSERT(cursor + payload_len + 4 <= sizeof(raw));
+            memcpy(raw + cursor, payload, payload_len);
+            cursor += payload_len;
+        }
+
         // CRC32
-        uint32_t crc = crc32_ieee(frame.data(), frame.size());
-        frame.push_back((crc >> 24) & rpc::RPC_UINT8_MASK);
-        frame.push_back((crc >> 16) & rpc::RPC_UINT8_MASK);
-        frame.push_back((crc >> 8) & rpc::RPC_UINT8_MASK);
-        frame.push_back(crc & rpc::RPC_UINT8_MASK);
-        
-        // COBS Encode
-        std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
-        size_t encoded_len = cobs::encode(frame.data(), frame.size(), encoded.data());
-        encoded.resize(encoded_len);
-        
-        // Delimiter
-        encoded.push_back(rpc::RPC_FRAME_DELIMITER);
-        
-        return encoded;
+        const uint32_t crc = crc32_ieee(raw, cursor);
+        TEST_ASSERT(cursor + 4 <= sizeof(raw));
+        raw[cursor++] = static_cast<uint8_t>((crc >> 24) & rpc::RPC_UINT8_MASK);
+        raw[cursor++] = static_cast<uint8_t>((crc >> 16) & rpc::RPC_UINT8_MASK);
+        raw[cursor++] = static_cast<uint8_t>((crc >> 8) & rpc::RPC_UINT8_MASK);
+        raw[cursor++] = static_cast<uint8_t>(crc & rpc::RPC_UINT8_MASK);
+
+        // COBS Encode into out
+        TEST_ASSERT(out != nullptr);
+        const size_t encoded_len = cobs::encode(raw, cursor, out);
+        TEST_ASSERT(encoded_len > 0);
+        TEST_ASSERT(encoded_len + 1 <= out_cap);
+        out[encoded_len] = rpc::RPC_FRAME_DELIMITER;
+        return encoded_len + 1;
     }
 };
 
 void test_bridge_begin() {
-    std::cout << "  [DEBUG] Creating MockStream" << std::endl;
     MockStream stream;
-    std::cout << "  [DEBUG] Creating BridgeClass" << std::endl;
     BridgeClass bridge(stream);
-    
-    std::cout << "  [DEBUG] Calling bridge.begin" << std::endl;
+
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    std::cout << "  [DEBUG] bridge.begin returned" << std::endl;
     
     // Verify initial state
-    assert(bridge._awaiting_ack == false);
-    assert(bridge._transport.isFlowPaused() == false);
-    std::cout << "  [DEBUG] test_bridge_begin assertions passed" << std::endl;
+    TEST_ASSERT(bridge._awaiting_ack == false);
+    TEST_ASSERT(bridge._transport.isFlowPaused() == false);
 }
 
 void test_bridge_send_frame() {
@@ -133,8 +131,8 @@ void test_bridge_send_frame() {
     uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
     bool result = bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, 3);
     
-    assert(result == true);
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(result == true);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
     // Verify COBS encoding and frame structure if possible
 }
 
@@ -144,15 +142,18 @@ void test_bridge_process_rx() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Construct a valid frame (CMD_GET_VERSION)
-    std::vector<uint8_t> payload = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
+    const uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
     uint16_t cmd_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
-    std::vector<uint8_t> encoded_frame = TestFrameBuilder::build(cmd_id, payload);
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t encoded_frame[kEncodedCap];
+    const size_t encoded_len =
+        TestFrameBuilder::build(encoded_frame, sizeof(encoded_frame), cmd_id, payload, sizeof(payload));
     
-    stream.inject_rx(encoded_frame);
+    stream.inject_rx(encoded_frame, encoded_len);
     bridge.process();
     
     // Assert no crash and that data was consumed
-    assert(stream.available() == 0);
+    TEST_ASSERT(stream.available() == 0);
 }
 
 void test_bridge_handshake() {
@@ -164,19 +165,24 @@ void test_bridge_handshake() {
     stream.tx_buffer.clear();
     
     // Create a 16-byte nonce
-    std::vector<uint8_t> nonce(16);
-    for (int i = 0; i < 16; i++) nonce[i] = static_cast<uint8_t>(i);
+    uint8_t nonce[16];
+    for (uint8_t i = 0; i < sizeof(nonce); i++) {
+        nonce[i] = i;
+    }
     
     // Inject CMD_LINK_SYNC
     uint16_t cmd_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-    std::vector<uint8_t> encoded_frame = TestFrameBuilder::build(cmd_id, nonce);
-    stream.inject_rx(encoded_frame);
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t encoded_frame[kEncodedCap];
+    const size_t encoded_len =
+        TestFrameBuilder::build(encoded_frame, sizeof(encoded_frame), cmd_id, nonce, sizeof(nonce));
+    stream.inject_rx(encoded_frame, encoded_len);
     
     bridge.process();
     
     // Expect CMD_LINK_SYNC_RESP
     // We expect a response in tx_buffer.
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 void test_bridge_flow_control() {
@@ -186,15 +192,16 @@ void test_bridge_flow_control() {
     stream.tx_buffer.clear();
     
     // Inject enough bytes to trigger XOFF (High Water Mark = 48)
-    std::vector<uint8_t> data(50, TEST_PAYLOAD_BYTE);
-    data.push_back(rpc::RPC_FRAME_DELIMITER); // Delimiter to flush garbage so parser resets
-    stream.inject_rx(data);
+    uint8_t data[51];
+    test_memfill(data, 50, TEST_PAYLOAD_BYTE);
+    data[50] = rpc::RPC_FRAME_DELIMITER; // flush garbage so parser resets
+    stream.inject_rx(data, sizeof(data));
     
     // First process(): sees 50 bytes, sends XOFF, reads all bytes
     bridge.process();
     
     // Should have sent XOFF
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
     // Ideally verify it is XOFF frame
     
     stream.tx_buffer.clear();
@@ -205,19 +212,23 @@ void test_bridge_flow_control() {
     
     uint16_t ack_cmd_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_ACK);
     uint16_t xoff_cmd_id = static_cast<uint16_t>(rpc::CommandId::CMD_XOFF);
-    
-    std::vector<uint8_t> ack_payload;
-    ack_payload.push_back((xoff_cmd_id >> 8) & rpc::RPC_UINT8_MASK);
-    ack_payload.push_back(xoff_cmd_id & rpc::RPC_UINT8_MASK);
-    
-    std::vector<uint8_t> ack_frame = TestFrameBuilder::build(ack_cmd_id, ack_payload);
-    stream.inject_rx(ack_frame);
+
+    const uint8_t ack_payload[2] = {
+        static_cast<uint8_t>((xoff_cmd_id >> 8) & rpc::RPC_UINT8_MASK),
+        static_cast<uint8_t>(xoff_cmd_id & rpc::RPC_UINT8_MASK),
+    };
+
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t ack_frame[kEncodedCap];
+    const size_t ack_len = TestFrameBuilder::build(
+        ack_frame, sizeof(ack_frame), ack_cmd_id, ack_payload, sizeof(ack_payload));
+    stream.inject_rx(ack_frame, ack_len);
     
     // Process the ACK. This should also trigger XON because buffer is low.
     bridge.process();
     
     // Should have sent XON
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 void test_bridge_request_digital_read_no_op() {
@@ -229,7 +240,7 @@ void test_bridge_request_digital_read_no_op() {
     bridge.requestDigitalRead(13);
     
     // Assert that NO data was written to the stream
-    assert(stream.tx_buffer.size() == 0);
+    TEST_ASSERT(stream.tx_buffer.len == 0);
 }
 
 void test_bridge_file_write_incoming() {
@@ -251,14 +262,14 @@ void test_bridge_file_write_incoming() {
     rpc::Frame frame;
     frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     frame.header.payload_length = sizeof(payload);
-    std::memcpy(frame.payload, payload, sizeof(payload));
+    memcpy(frame.payload, payload, sizeof(payload));
 
     // Dispatch directly
     bridge.dispatch(frame);
 
     // Expect an ACK response
     // ACK frame: [CMD_ACK][LEN=2][CMD_ID_ACKED]
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
     // We can't easily decode the output here without a full decoder, 
     // but we verified that it triggered a response.
 }
@@ -271,14 +282,16 @@ void test_bridge_malformed_frame() {
 
     // Inject garbage data into the stream to trigger malformed/overflow logic
     // This tests the parser's resilience
-    std::vector<uint8_t> garbage(300, rpc::RPC_UINT8_MASK); 
-    stream.inject_rx(garbage);
-    stream.inject_rx({rpc::RPC_FRAME_DELIMITER}); // Terminator
+    uint8_t garbage[300];
+    test_memfill(garbage, sizeof(garbage), rpc::RPC_UINT8_MASK);
+    stream.inject_rx(garbage, sizeof(garbage));
+    const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
+    stream.inject_rx(&terminator, 1);
 
     bridge.process();
     
     // Should have sent a STATUS_MALFORMED or similar error frame
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 void test_file_write_eeprom_parsing() {
@@ -289,20 +302,28 @@ void test_file_write_eeprom_parsing() {
     // Case 1: Valid EEPROM write
     // Path: "/eeprom/10" (len 10)
     // Data: "AB"
-    std::vector<uint8_t> payload;
-    std::string path = "/eeprom/10";
-    payload.push_back(static_cast<uint8_t>(path.length()));
-    payload.insert(payload.end(), path.begin(), path.end());
-    payload.push_back('A');
-    payload.push_back('B');
-    
-    std::vector<uint8_t> frame = TestFrameBuilder::build(rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), payload);
-    stream.inject_rx(frame);
+    const char path[] = "/eeprom/10";
+    const uint8_t path_len = static_cast<uint8_t>(sizeof(path) - 1);
+    uint8_t payload[1 + sizeof(path) - 1 + 2];
+    payload[0] = path_len;
+    memcpy(payload + 1, path, path_len);
+    payload[1 + path_len] = 'A';
+    payload[1 + path_len + 1] = 'B';
+
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t frame[kEncodedCap];
+    const size_t frame_len = TestFrameBuilder::build(
+        frame,
+        sizeof(frame),
+        rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),
+        payload,
+        sizeof(payload));
+    stream.inject_rx(frame, frame_len);
     
     bridge.process();
     
     // Should send ACK
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 void test_file_write_malformed_path() {
@@ -311,18 +332,22 @@ void test_file_write_malformed_path() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Case 2: Malformed path length (claim 100 bytes, provide 5)
-    std::vector<uint8_t> payload;
-    payload.push_back(100); // Path len
-    payload.push_back('/');
-    payload.push_back('e');
-    
-    std::vector<uint8_t> frame = TestFrameBuilder::build(rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), payload);
-    stream.inject_rx(frame);
+    const uint8_t payload[] = {100, '/', 'e'};
+
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t frame[kEncodedCap];
+    const size_t frame_len = TestFrameBuilder::build(
+        frame,
+        sizeof(frame),
+        rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),
+        payload,
+        sizeof(payload));
+    stream.inject_rx(frame, frame_len);
     
     bridge.process();
     
     // Should NOT crash.
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 void test_bridge_crc_mismatch() {
@@ -331,37 +356,38 @@ void test_bridge_crc_mismatch() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
-    // Build a valid frame
-    std::vector<uint8_t> payload = {TEST_BYTE_01, TEST_BYTE_02};
-    uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-    
-    // Manually build frame to corrupt CRC
-    std::vector<uint8_t> frame;
-    frame.push_back(rpc::PROTOCOL_VERSION);
-    uint16_t len = static_cast<uint16_t>(payload.size());
-    frame.push_back((len >> 8) & rpc::RPC_UINT8_MASK);
-    frame.push_back(len & rpc::RPC_UINT8_MASK);
-    frame.push_back((cmd_id >> 8) & rpc::RPC_UINT8_MASK);
-    frame.push_back(cmd_id & rpc::RPC_UINT8_MASK);
-    frame.insert(frame.end(), payload.begin(), payload.end());
-    
-    // Calculate CORRECT CRC
-    uint32_t crc = crc32_ieee(frame.data(), frame.size());
-    // CORRUPT IT
-    crc ^= rpc::RPC_CRC_INITIAL; 
-    
-    frame.push_back((crc >> 24) & rpc::RPC_UINT8_MASK);
-    frame.push_back((crc >> 16) & rpc::RPC_UINT8_MASK);
-    frame.push_back((crc >> 8) & rpc::RPC_UINT8_MASK);
-    frame.push_back(crc & rpc::RPC_UINT8_MASK);
-    
-    // COBS Encode
-    std::vector<uint8_t> encoded(frame.size() + 2 + frame.size() / 254 + 1);
-    size_t encoded_len = cobs::encode(frame.data(), frame.size(), encoded.data());
-    encoded.resize(encoded_len);
-    encoded.push_back(rpc::RPC_FRAME_DELIMITER);
+    const uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02};
+    const uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
 
-    stream.inject_rx(encoded);
+    uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
+    size_t cursor = 0;
+
+    raw[cursor++] = rpc::PROTOCOL_VERSION;
+    const uint16_t len = static_cast<uint16_t>(sizeof(payload));
+    raw[cursor++] = static_cast<uint8_t>((len >> 8) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>(len & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>((cmd_id >> 8) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>(cmd_id & rpc::RPC_UINT8_MASK);
+    memcpy(raw + cursor, payload, sizeof(payload));
+    cursor += sizeof(payload);
+
+    // Correct CRC, then corrupt it.
+    uint32_t crc = crc32_ieee(raw, cursor);
+    crc ^= rpc::RPC_CRC_INITIAL;
+
+    raw[cursor++] = static_cast<uint8_t>((crc >> 24) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>((crc >> 16) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>((crc >> 8) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>(crc & rpc::RPC_UINT8_MASK);
+
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t encoded[kEncodedCap];
+    const size_t encoded_len = cobs::encode(raw, cursor, encoded);
+    TEST_ASSERT(encoded_len > 0);
+    TEST_ASSERT(encoded_len + 1 <= sizeof(encoded));
+    encoded[encoded_len] = rpc::RPC_FRAME_DELIMITER;
+
+    stream.inject_rx(encoded, encoded_len + 1);
     bridge.process();
 
     // Expect STATUS_CRC_MISMATCH.
@@ -369,7 +395,7 @@ void test_bridge_crc_mismatch() {
     // Response frame: [VER][LEN][STATUS_CMD][PAYLOAD][CRC]
     // Since it's a status, it's sent as a command with ID = status value.
     
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
     // Decode to verify? For now, just asserting response exists is good, 
     // but let's be more specific if we can.
     // The mock stream just has raw bytes. 
@@ -383,15 +409,18 @@ void test_bridge_unknown_command() {
     stream.tx_buffer.clear();
 
     // Command ID rpc::RPC_INVALID_ID_SENTINEL is likely unknown
-    uint16_t cmd_id = rpc::RPC_INVALID_ID_SENTINEL;
-    std::vector<uint8_t> payload = {0};
-    std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
-    
-    stream.inject_rx(frame);
+    const uint16_t cmd_id = rpc::RPC_INVALID_ID_SENTINEL;
+    const uint8_t payload[] = {0};
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
+    uint8_t frame[kEncodedCap];
+    const size_t frame_len = TestFrameBuilder::build(
+        frame, sizeof(frame), cmd_id, payload, sizeof(payload));
+
+    stream.inject_rx(frame, frame_len);
     bridge.process();
     
     // Expect STATUS_CMD_UNKNOWN.
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 void test_bridge_payload_too_large() {
@@ -400,56 +429,62 @@ void test_bridge_payload_too_large() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
-    // Max payload is 128 (RPC_BUFFER_SIZE/MAX_PAYLOAD_SIZE)
-    // Let's try to send 200 bytes.
-    std::vector<uint8_t> payload(200, TEST_BYTE_AB);
-    uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-    
-    // We need to manually build this because TestFrameBuilder might just work 
-    // (it doesn't enforce limits, just encodes).
-    // However, the Bridge `processInput` or `cobs::decode` should fail 
-    // if the decoded buffer exceeds internal limits.
-    
-    std::vector<uint8_t> frame = TestFrameBuilder::build(cmd_id, payload);
-    stream.inject_rx(frame);
+    // Max payload is 128. Build an oversized raw frame (200 bytes) and inject it.
+    // This should trip the frame parser's overflow/malformed handling.
+    enum { kTooLargePayload = 200 };
+    uint8_t payload[kTooLargePayload];
+    test_memfill(payload, sizeof(payload), TEST_BYTE_AB);
+    const uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+
+    enum { kRawLen = 5 + kTooLargePayload + 4 };
+    uint8_t raw[kRawLen];
+    size_t cursor = 0;
+
+    raw[cursor++] = rpc::PROTOCOL_VERSION;
+    const uint16_t len = static_cast<uint16_t>(kTooLargePayload);
+    raw[cursor++] = static_cast<uint8_t>((len >> 8) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>(len & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>((cmd_id >> 8) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>(cmd_id & rpc::RPC_UINT8_MASK);
+    memcpy(raw + cursor, payload, kTooLargePayload);
+    cursor += kTooLargePayload;
+
+    const uint32_t crc = crc32_ieee(raw, cursor);
+    raw[cursor++] = static_cast<uint8_t>((crc >> 24) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>((crc >> 16) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>((crc >> 8) & rpc::RPC_UINT8_MASK);
+    raw[cursor++] = static_cast<uint8_t>(crc & rpc::RPC_UINT8_MASK);
+
+    enum { kEncodedCap = kRawLen + (kRawLen / 254) + 3 };
+    uint8_t encoded[kEncodedCap];
+    const size_t encoded_len = cobs::encode(raw, cursor, encoded);
+    TEST_ASSERT(encoded_len > 0);
+    TEST_ASSERT(encoded_len + 1 <= sizeof(encoded));
+    encoded[encoded_len] = rpc::RPC_FRAME_DELIMITER;
+    stream.inject_rx(encoded, encoded_len + 1);
     
     bridge.process();
     
     // Should result in STATUS_MALFORMED or similar, or just be dropped/reset.
     // The current implementation might send an error.
-    assert(stream.tx_buffer.size() > 0);
+    TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
 int main() {
-    std::cout << "Running test_bridge_begin..." << std::endl;
     test_bridge_begin();
-    std::cout << "Running test_bridge_send_frame..." << std::endl;
     test_bridge_send_frame();
-    std::cout << "Running test_bridge_process_rx..." << std::endl;
     test_bridge_process_rx();
-    std::cout << "Running test_bridge_handshake..." << std::endl;
     test_bridge_handshake();
-    std::cout << "Running test_bridge_flow_control..." << std::endl;
     test_bridge_flow_control();
-    std::cout << "Running test_bridge_request_digital_read_no_op..." << std::endl;
     test_bridge_request_digital_read_no_op();
-    std::cout << "Running test_bridge_file_write_incoming..." << std::endl;
     test_bridge_file_write_incoming();
-    std::cout << "Running test_bridge_malformed_frame..." << std::endl;
     test_bridge_malformed_frame();
-    std::cout << "Running test_file_write_eeprom_parsing..." << std::endl;
     test_file_write_eeprom_parsing();
-    std::cout << "Running test_file_write_malformed_path..." << std::endl;
     test_file_write_malformed_path();
     
     // New Robustness Tests
-    std::cout << "Running test_bridge_crc_mismatch..." << std::endl;
     test_bridge_crc_mismatch();
-    std::cout << "Running test_bridge_unknown_command..." << std::endl;
     test_bridge_unknown_command();
-    std::cout << "Running test_bridge_payload_too_large..." << std::endl;
     test_bridge_payload_too_large();
-    
-    std::cout << "Bridge Core Tests Passed" << std::endl;
     return 0;
 }

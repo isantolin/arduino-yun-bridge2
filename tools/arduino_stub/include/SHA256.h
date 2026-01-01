@@ -8,6 +8,9 @@ class SHA256 {
  public:
   static constexpr size_t kDigestSize = 32;
   static constexpr size_t kBlockSize = 64;
+  static constexpr uint8_t kByteMask = 0xFFu;
+  static constexpr uint8_t kHmacIpadXor = 0x36u;
+  static constexpr uint8_t kHmacOpadXor = 0x5Cu;
 
   SHA256() { reset(); }
 
@@ -33,7 +36,7 @@ class SHA256 {
       if (to_copy > len) {
         to_copy = len;
       }
-      std::memcpy(buffer_ + buffer_len_, data, to_copy);
+      ::memcpy(buffer_ + buffer_len_, data, to_copy);
       buffer_len_ += to_copy;
       data += to_copy;
       len -= to_copy;
@@ -61,7 +64,7 @@ class SHA256 {
     }
 
     for (size_t i = 0; i < 8; ++i) {
-      buffer_[63 - i] = static_cast<uint8_t>((bit_length_ >> (i * 8)) & 0xFFu);
+      buffer_[63 - i] = static_cast<uint8_t>((bit_length_ >> (i * 8)) & kByteMask);
     }
     transform(buffer_);
 
@@ -70,14 +73,14 @@ class SHA256 {
       full_digest[i * 4 + 0] = static_cast<uint8_t>((state_[i] >> 24) & 0xFFu);
       full_digest[i * 4 + 1] = static_cast<uint8_t>((state_[i] >> 16) & 0xFFu);
       full_digest[i * 4 + 2] = static_cast<uint8_t>((state_[i] >> 8) & 0xFFu);
-      full_digest[i * 4 + 3] = static_cast<uint8_t>(state_[i] & 0xFFu);
+      full_digest[i * 4 + 3] = static_cast<uint8_t>(state_[i] & kByteMask);
     }
 
     if (digest && len > 0) {
       if (len > kDigestSize) {
         len = kDigestSize;
       }
-      std::memcpy(digest, full_digest, len);
+      ::memcpy(digest, full_digest, len);
     }
   }
 
@@ -89,13 +92,13 @@ class SHA256 {
         tmp.update(key, key_len);
         tmp.finalize(key_block, kDigestSize);
       } else {
-        std::memcpy(key_block, key, key_len);
+        ::memcpy(key_block, key, key_len);
       }
     }
 
     for (size_t i = 0; i < kBlockSize; ++i) {
-      ipad_[i] = key_block[i] ^ 0x36u;
-      opad_[i] = key_block[i] ^ 0x5Cu;
+      ipad_[i] = static_cast<uint8_t>(key_block[i] ^ kHmacIpadXor);
+      opad_[i] = static_cast<uint8_t>(key_block[i] ^ kHmacOpadXor);
     }
 
     reset();

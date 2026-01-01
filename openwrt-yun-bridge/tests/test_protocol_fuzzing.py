@@ -31,8 +31,12 @@ def test_frame_parsing_resilience_to_fuzzing():
         except valid_exceptions:
             # This is expected behavior for garbage data
             pass
-        except Exception as e:
-            pytest.fail(f"Frame.from_bytes crashed on iteration {i} with unhandled exception: {type(e).__name__}: {e}. Data hex: {raw_data.hex()}")
+        except Exception as exc:
+            message = (
+                f"Frame.from_bytes crashed on iteration {i} with unhandled exception: "
+                f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
+            )
+            pytest.fail(message)
 
 
 @pytest.mark.fuzz

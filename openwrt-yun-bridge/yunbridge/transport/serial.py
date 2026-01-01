@@ -158,7 +158,7 @@ class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
 
     def connection_lost(self, exc: Exception | None) -> None:
         FlowControlMixin.connection_lost(self, exc)
-    
+
     def pause_writing(self) -> None:
         FlowControlMixin.pause_writing(self)
 

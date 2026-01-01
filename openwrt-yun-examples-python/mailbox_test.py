@@ -43,7 +43,7 @@ async def main() -> None:
 
         message_to_send: str = "hello_from_async_client"
         logging.info("Sending message to mailbox: '%s'", message_to_send)
-        
+
         # Send the message
         await bridge.mailbox_write(message_to_send)
         logging.info("Message sent successfully.")
@@ -61,4 +61,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-    

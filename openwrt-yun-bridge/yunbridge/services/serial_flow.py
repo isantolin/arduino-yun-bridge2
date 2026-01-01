@@ -212,10 +212,7 @@ class SerialFlowController:
             pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:
-        return (
-            bool(expected_responses(command_id))
-            or command_id in SERIAL_ACK_ONLY_COMMANDS
-        )
+        return bool(expected_responses(command_id)) or command_id in SERIAL_ACK_ONLY_COMMANDS
 
     async def _execute_with_retries(
         self,

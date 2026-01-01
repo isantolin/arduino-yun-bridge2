@@ -1,17 +1,81 @@
 from __future__ import annotations
 
+import ast
+import fnmatch
 import re
+from os import walk
 from pathlib import Path
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _is_excluded_path(path: Path) -> bool:
+    rel = path.relative_to(_REPO_ROOT)
+
+    # Exclude any path that passes through these directories.
+    excluded_dir_names = {
+        ".tox",
+        ".git",
+        ".venv",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".eggs",
+        "__pycache__",
+        "venv",
+        "site-packages",
+        "node_modules",
+    }
+    if any(part in excluded_dir_names for part in rel.parts):
+        return True
+
+    # Exclude whole subtrees by prefix.
+    excluded_prefixes = {
+        Path("build"),
+        Path("dist"),
+        Path("coverage"),
+        Path("feeds"),
+        Path("openwrt-sdk"),
+        Path("test_protocol_bin"),
+        Path("openwrt-library-arduino/build-coverage"),
+        Path("openwrt-library-arduino/build-host"),
+        Path("openwrt-library-arduino/build-host-local"),
+    }
+    rel_str = rel.as_posix()
+    for prefix in excluded_prefixes:
+        prefix_str = prefix.as_posix()
+        if rel_str == prefix_str or rel_str.startswith(prefix_str + "/"):
+            return True
+    return False
+
+
 def _iter_text_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
-    files: list[Path] = []
-    for pattern in patterns:
-        files.extend(root.rglob(pattern))
-    return sorted({path for path in files if path.is_file()})
+    matched: list[Path] = []
+
+    for dirpath_str, dirnames, filenames in walk(root):
+        dirpath = Path(dirpath_str)
+
+        # Prune excluded directories early for performance.
+        if _is_excluded_path(dirpath):
+            dirnames[:] = []
+            continue
+
+        # Also prune excluded subdirs.
+        kept: list[str] = []
+        for name in dirnames:
+            p = dirpath / name
+            if not _is_excluded_path(p):
+                kept.append(name)
+        dirnames[:] = kept
+
+        for filename in filenames:
+            if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
+                candidate = dirpath / filename
+                if candidate.is_file() and not _is_excluded_path(candidate):
+                    matched.append(candidate)
+
+    return sorted(set(matched))
 
 
 def _find_matches(files: list[Path], regex: re.Pattern[str]) -> list[tuple[Path, int, str]]:
@@ -28,49 +92,70 @@ def _find_matches(files: list[Path], regex: re.Pattern[str]) -> list[tuple[Path,
     return hits
 
 
-def test_no_print_in_yunbridge_runtime() -> None:
-    """Keep daemon runtime logs structured; allow prints only in tools."""
+def _find_print_calls(py_files: list[Path]) -> list[tuple[Path, int, str]]:
+    hits: list[tuple[Path, int, str]] = []
+    for path in py_files:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
 
-    yunbridge_root = _REPO_ROOT / "openwrt-yun-bridge" / "yunbridge"
-    assert yunbridge_root.is_dir(), f"missing yunbridge root: {yunbridge_root}"
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            hits.append((path, exc.lineno or 1, f"SyntaxError: {exc.msg}"))
+            continue
 
-    # We allow prints in CLI/debug helpers under yunbridge/tools.
-    excluded_prefixes = {
-        yunbridge_root / "tools",
-    }
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "print":
+                hits.append((path, node.lineno, "print(...)"))
+    return hits
 
-    py_files = _iter_text_files(yunbridge_root, ("*.py",))
-    py_files = [
-        path
-        for path in py_files
-        if not any(path.is_relative_to(prefix) for prefix in excluded_prefixes)
-    ]
 
-    print_regex = re.compile(r"\bprint\s*\(")
-    hits = _find_matches(py_files, print_regex)
+def test_no_print_repo_wide() -> None:
+    """Repo-wide: no print() anywhere (tools/tests/examples included).
 
-    assert not hits, "print() is not allowed in yunbridge runtime modules:\n" + "\n".join(
+    Rationale: production logs must remain structured (syslog/JSON), and
+    helper CLIs should use explicit stdout/stderr writes.
+    """
+
+    py_files = _iter_text_files(_REPO_ROOT, ("*.py",))
+    py_files = [path for path in py_files if not _is_excluded_path(path)]
+
+    hits = _find_print_calls(py_files)
+
+    assert not hits, "print() is not allowed repo-wide:\n" + "\n".join(
         f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
     )
 
 
-def test_no_stl_in_mcu_runtime_src() -> None:
-    """MCU runtime must stay C++11-friendly and avoid STL usage."""
+def test_no_stl_in_mcu_src_or_tests() -> None:
+    """MCU code must stay C++11-friendly and avoid STL usage (src + tests)."""
 
-    mcu_root = _REPO_ROOT / "openwrt-library-arduino" / "src"
-    assert mcu_root.is_dir(), f"missing MCU src root: {mcu_root}"
+    mcu_src_root = _REPO_ROOT / "openwrt-library-arduino" / "src"
+    mcu_tests_root = _REPO_ROOT / "openwrt-library-arduino" / "tests"
+    assert mcu_src_root.is_dir(), f"missing MCU src root: {mcu_src_root}"
+    assert mcu_tests_root.is_dir(), f"missing MCU tests root: {mcu_tests_root}"
 
-    cpp_files = _iter_text_files(mcu_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+    cpp_files = _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+    cpp_files += _iter_text_files(mcu_tests_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
 
     # Keep this intentionally conservative: it catches the common STL types and includes.
     stl_regex = re.compile(
-        r"(\bstd::|#\s*include\s*<\s*(vector|string|map|set|list|deque|array|optional|variant|tuple|memory|algorithm|functional|unordered_[^>]+)\s*>)"
+        r"(\bstd::|#\s*include\s*<\s*(vector|string|map|set|list|"
+        r"deque|array|optional|variant|tuple|memory|algorithm|functional|"
+        r"unordered_[^>]+)\s*>)"
     )
     hits = _find_matches(cpp_files, stl_regex)
 
-    assert not hits, "STL usage is not allowed in openwrt-library-arduino/src:\n" + "\n".join(
+    message = "STL usage is not allowed in openwrt-library-arduino/src or tests:\n"
+    message += "\n".join(
         f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
     )
+    assert not hits, message
 
 
 def test_no_changeme_placeholder_in_shipped_defaults() -> None:

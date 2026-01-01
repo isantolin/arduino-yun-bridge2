@@ -97,4 +97,3 @@ if __name__ == "__main__":
         logger.info("Exiting due to KeyboardInterrupt.")
     except Exception:
         logger.exception("An error occurred in main execution.")
-    

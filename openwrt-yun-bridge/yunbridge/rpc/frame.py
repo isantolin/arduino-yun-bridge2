@@ -100,7 +100,7 @@ class Frame:
             )
 
         # 5. Extract payload
-        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE :]
+        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE:]
 
         return command_id, payload
 

@@ -119,7 +119,7 @@ class BoundedByteDeque:
         event = QueueEvent()
 
         if self.max_bytes and len(data) > self.max_bytes:
-            data = data[-self.max_bytes :]
+            data = data[-self.max_bytes:]
             event.truncated_bytes = len(chunk) - len(data)
 
         dropped_chunks, dropped_bytes = self._make_room_for(len(data), 1)
@@ -145,11 +145,7 @@ class BoundedByteDeque:
         limit_items = self.max_items
         limit_bytes = self.max_bytes
 
-        while (
-            limit_items is not None
-            and len(self._queue) + incoming_count > limit_items
-            and self._queue
-        ):
+        while limit_items is not None and len(self._queue) + incoming_count > limit_items and self._queue:
             removed = self._queue.popleft()
             self._bytes -= len(removed)
             dropped_chunks += 1
@@ -158,11 +154,7 @@ class BoundedByteDeque:
         if limit_bytes is not None and incoming_bytes > limit_bytes:
             return dropped_chunks, dropped_bytes
 
-        while (
-            limit_bytes is not None
-            and self._bytes + incoming_bytes > limit_bytes
-            and self._queue
-        ):
+        while limit_bytes is not None and self._bytes + incoming_bytes > limit_bytes and self._queue:
             removed = self._queue.popleft()
             self._bytes -= len(removed)
             dropped_chunks += 1

@@ -7,6 +7,9 @@ Reads spec.toml and generates:
 """
 
 import argparse
+import json
+import sys
+import textwrap
 from pathlib import Path
 from typing import Any, TextIO
 import tomllib
@@ -25,6 +28,40 @@ import struct
 from enum import IntEnum, StrEnum
 from typing import Final
 """
+
+
+def _write_python_str_constant(
+    out: TextIO,
+    name: str,
+    value: str,
+    *,
+    max_line_length: int = 120,
+    wrap_width: int = 88,
+) -> None:
+    prefix = f"{name}: Final[str] = "
+    literal = json.dumps(value)
+    line = f"{prefix}{literal}"
+    if len(line) <= max_line_length:
+        out.write(f"{line}\n")
+        return
+
+    chunks = textwrap.wrap(
+        value,
+        width=wrap_width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    if not chunks:
+        out.write(f"{prefix}{literal}\n")
+        return
+
+    if len(chunks) > 1:
+        chunks = [chunk + " " for chunk in chunks[:-1]] + [chunks[-1]]
+
+    out.write(f"{name}: Final[str] = (\n")
+    for chunk in chunks:
+        out.write(f"    {json.dumps(chunk)}\n")
+    out.write(")\n")
 
 
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
@@ -123,6 +160,10 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     if "test_exit_code" in consts:
         out.write(
             f"constexpr uint8_t RPC_TEST_EXIT_CODE = {consts['test_exit_code']};\n"
+        )
+    if "test_unknown_command_id" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_TEST_UNKNOWN_COMMAND_ID = {consts['test_unknown_command_id']};\n"
         )
     if "status_code_min" in consts:
         out.write(
@@ -283,6 +324,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"TEST_EXIT_CODE: Final[int] = {consts['test_exit_code']}\n"
         )
+    if "test_unknown_command_id" in consts:
+        out.write(
+            f"TEST_UNKNOWN_COMMAND_ID: Final[int] = {consts['test_unknown_command_id']}\n"
+        )
     if "status_code_min" in consts:
         out.write(
             f"STATUS_CODE_MIN: Final[int] = {consts['status_code_min']}\n"
@@ -312,14 +357,18 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"HANDSHAKE_TAG_ALGORITHM: Final[str] = \"{handshake['tag_algorithm']}\"\n"
         )
-        out.write(
-            f"HANDSHAKE_TAG_DESCRIPTION: Final[str] = \"{handshake['tag_description']}\"\n"
+        _write_python_str_constant(
+            out,
+            "HANDSHAKE_TAG_DESCRIPTION",
+            handshake["tag_description"],
         )
         out.write(
             f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n"
         )
-        out.write(
-            f"HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = \"{handshake['config_description']}\"\n"
+        _write_python_str_constant(
+            out,
+            "HANDSHAKE_CONFIG_DESCRIPTION",
+            handshake["config_description"],
         )
         out.write(
             "HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n"
@@ -434,12 +483,12 @@ def main() -> None:
     if args.cpp:
         with args.cpp.open("w") as f:
             generate_cpp(spec, f)
-        print(f"Generated {args.cpp}")
+        sys.stdout.write(f"Generated {args.cpp}\n")
 
     if args.py:
         with args.py.open("w") as f:
             generate_python(spec, f)
-        print(f"Generated {args.py}")
+        sys.stdout.write(f"Generated {args.py}\n")
 
 
 if __name__ == "__main__":

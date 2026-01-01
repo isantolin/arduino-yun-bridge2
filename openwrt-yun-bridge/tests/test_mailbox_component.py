@@ -34,7 +34,8 @@ class EnqueueHook(Protocol):
         message: QueuedPublish,
         *,
         reply_context: MQTTMessage | None = None,
-    ) -> Awaitable[None]: ...
+    ) -> Awaitable[None]:
+        ...
 
 
 class DummyBridge(BridgeContext):

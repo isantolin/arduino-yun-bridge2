@@ -7,7 +7,6 @@ import json
 import struct
 import time
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 import pytest
 

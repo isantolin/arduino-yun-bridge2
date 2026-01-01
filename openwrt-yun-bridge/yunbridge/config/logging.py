@@ -96,7 +96,8 @@ def _build_handler() -> Handler:
 def configure_logging(config: RuntimeConfig) -> None:
     """Configure root logging based on runtime settings."""
 
-    level_name = "DEBUG" if config.debug_logging else "INFO"
+    debug_logging = getattr(config, "debug_logging", False)
+    level_name = "DEBUG" if debug_logging else "INFO"
 
     dictConfig(
         {

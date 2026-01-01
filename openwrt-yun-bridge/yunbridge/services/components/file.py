@@ -456,6 +456,8 @@ class FileComponent:
                     for entry in iterator:
                         if entry.is_symlink():
                             continue
+                        if current == Path("/tmp") and entry.name.startswith("systemd-private-"):
+                            continue
                         try:
                             if entry.is_dir(follow_symlinks=False):
                                 stack.append(Path(entry.path))

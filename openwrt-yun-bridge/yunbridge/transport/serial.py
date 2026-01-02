@@ -418,7 +418,8 @@ class SerialTransport:
     async def send_frame(self, command_id: int, payload: bytes) -> bool:
         # Fast-fail: preserve legacy semantics (and avoid awaiting mocks) when
         # no writer is available.
-        if self.writer is None or self.writer.is_closing():
+        writer = self.writer
+        if writer is None or writer.is_closing():
             return False
 
         # Global backpressure: MCU XOFF pauses all Linux->MCU traffic.
@@ -428,12 +429,13 @@ class SerialTransport:
             await wait_fn()
 
         # Writer may have been closed while awaiting XON.
-        if self.writer is None or self.writer.is_closing():
+        writer = self.writer
+        if writer is None or writer.is_closing():
             return False
         try:
             encoded = _encode_frame_bytes(command_id, payload)
-            self.writer.write(encoded)
-            await self.writer.drain()
+            writer.write(encoded)
+            await writer.drain()
 
             if logger.isEnabledFor(logging.DEBUG):
                 try:

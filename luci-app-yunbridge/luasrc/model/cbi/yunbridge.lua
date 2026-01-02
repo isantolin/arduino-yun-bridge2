@@ -206,15 +206,14 @@ local mqtt_spool_dir = s:option(Value, "mqtt_spool_dir", translate("MQTT Spool D
 mqtt_spool_dir.placeholder = "/tmp/yunbridge/spool"
 mqtt_spool_dir.rmempty = false
 mqtt_spool_dir.description = translate(
-    "Directory used to spool MQTT messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
+    "Directory used to spool MQTT messages when the broker is unavailable. " ..
+    "Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
 )
 function mqtt_spool_dir.validate(_, value, _)
     if not value or value == "" then
         return nil, translate("Spool directory cannot be empty.")
     end
-    if value:sub(1, 1) == "/" then
-        -- absolute is OK
-    else
+    if value:sub(1, 1) ~= "/" then
         return nil, translate("Spool directory must be an absolute path.")
     end
     if value:match("^/tmp") or value:match("^/run") or value:match("^/var/run") or value:match("^/mnt") then

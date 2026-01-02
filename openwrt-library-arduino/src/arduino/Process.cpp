@@ -118,13 +118,13 @@ void ProcessClass::onProcessPollResponse(ProcessPollHandler handler) { _process_
 void ProcessClass::onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
-  if (_pending_process_poll_count >= kMaxPendingProcessPolls) {
+  if (_pending_process_poll_count >= BRIDGE_MAX_PENDING_PROCESS_POLLS) {
     return false;
   }
 
   uint8_t slot =
       (_pending_process_poll_head + _pending_process_poll_count) %
-      kMaxPendingProcessPolls;
+      BRIDGE_MAX_PENDING_PROCESS_POLLS;
   _pending_process_pids[slot] = pid;
   _pending_process_poll_count++;
   return true;
@@ -138,7 +138,7 @@ uint16_t ProcessClass::_popPendingProcessPid() {
   uint8_t slot = _pending_process_poll_head;
   uint16_t pid = _pending_process_pids[slot];
   _pending_process_poll_head =
-      (_pending_process_poll_head + 1) % kMaxPendingProcessPolls;
+      (_pending_process_poll_head + 1) % BRIDGE_MAX_PENDING_PROCESS_POLLS;
   _pending_process_poll_count--;
   _pending_process_pids[slot] = 0;
   return pid;

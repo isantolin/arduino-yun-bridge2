@@ -8,16 +8,13 @@
 #include <Arduino.h>
 #include <Stream.h>
 
+#include "bridge_config.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "arduino/BridgeTransport.h"
 
 // --- Configuration ---
-#ifdef BRIDGE_BAUDRATE
-constexpr unsigned long kBridgeBaudrate = BRIDGE_BAUDRATE;
-#else
-constexpr unsigned long kBridgeBaudrate = rpc::RPC_DEFAULT_BAUDRATE;
-#endif
+
 
 #ifndef BRIDGE_DEBUG_FRAMES
 constexpr bool kBridgeDebugFrames = false;
@@ -61,20 +58,6 @@ class BridgeClass {
   friend class FileSystemClass;
   friend class ProcessClass;
  public:
-  // Constants
-  static constexpr uint8_t kFirmwareVersionMajor = kDefaultFirmwareVersionMajor;
-  static constexpr uint8_t kFirmwareVersionMinor = kDefaultFirmwareVersionMinor;
-
-  static constexpr size_t kMaxFilePathLength = rpc::RPC_MAX_FILEPATH_LENGTH;
-  static constexpr size_t kMaxDatastoreKeyLength = rpc::RPC_MAX_DATASTORE_KEY_LENGTH;
-  static constexpr uint8_t kMaxPendingTxFrames = rpc::RPC_MAX_PENDING_TX_FRAMES;
-  static constexpr unsigned int kAckTimeoutMs = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
-  static constexpr uint8_t kMaxAckRetries = rpc::RPC_DEFAULT_RETRY_LIMIT;
-
-  // Flow Control Thresholds (assuming 64 byte hardware buffer)
-  static constexpr int kRxHighWaterMark = 48; // 75% full -> Send XOFF
-  static constexpr int kRxLowWaterMark = 16;  // 25% full -> Send XON
-
   // Callbacks
   using CommandHandler = void (*)(const rpc::Frame&);
   using DigitalReadHandler = void (*)(uint8_t);
@@ -85,7 +68,14 @@ class BridgeClass {
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
 
-  void begin(unsigned long baudrate = kBridgeBaudrate,
+  void begin(
+      unsigned long baudrate =
+#ifdef BRIDGE_BAUDRATE
+          BRIDGE_BAUDRATE
+#else
+          rpc::RPC_DEFAULT_BAUDRATE
+#endif
+      ,
              const char* secret = nullptr, size_t secret_len = 0);
   void process();
   bool isSynchronized() const { return _synchronized; }
@@ -156,6 +146,10 @@ class BridgeClass {
   uint8_t _retry_count;
   unsigned long _last_send_millis;
 
+  // Incoming deduplication (idempotency for retries)
+  uint32_t _last_rx_crc;
+  unsigned long _last_rx_crc_millis;
+
   // Config
   uint16_t _ack_timeout_ms;
   uint8_t _ack_retry_limit;
@@ -174,7 +168,7 @@ class BridgeClass {
     uint16_t payload_length;
     uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
   };
-  PendingTxFrame _pending_tx_frames[kMaxPendingTxFrames];
+  PendingTxFrame _pending_tx_frames[rpc::RPC_MAX_PENDING_TX_FRAMES];
   uint8_t _pending_tx_head;
   uint8_t _pending_tx_count;
   bool _synchronized;
@@ -187,6 +181,9 @@ class BridgeClass {
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
   void _handleConsoleCommand(const rpc::Frame& frame);
+
+  bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
+  void _markRxProcessed(const rpc::Frame& frame);
 
   void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
@@ -211,11 +208,6 @@ extern BridgeClass Bridge;
 
 class ConsoleClass : public Stream {
  public:
-  static constexpr size_t kTxBufferSize = 64;
-  static constexpr size_t kRxBufferSize = 64;
-  static constexpr size_t kBufferLowWater = 16;
-  static constexpr size_t kBufferHighWater = 48;
-
   ConsoleClass();
   void begin();
   void end() {}
@@ -241,14 +233,13 @@ class ConsoleClass : public Stream {
   size_t _rx_buffer_tail;
   size_t _tx_buffer_pos;
   bool _xoff_sent;
-  uint8_t _rx_buffer[kRxBufferSize];
-  uint8_t _tx_buffer[kTxBufferSize];
+  uint8_t _rx_buffer[BRIDGE_CONSOLE_RX_BUFFER_SIZE];
+  uint8_t _tx_buffer[BRIDGE_CONSOLE_TX_BUFFER_SIZE];
 };
 extern ConsoleClass Console;
 
 class DataStoreClass {
  public:
-  static constexpr uint8_t kMaxPendingDatastore = 2;
   using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
 
   DataStoreClass();
@@ -265,8 +256,8 @@ class DataStoreClass {
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
-  char _pending_datastore_keys[kMaxPendingDatastore][BridgeClass::kMaxDatastoreKeyLength + 1];
-  uint8_t _pending_datastore_key_lengths[kMaxPendingDatastore];
+  char _pending_datastore_keys[BRIDGE_MAX_PENDING_DATASTORE][rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1];
+  uint8_t _pending_datastore_key_lengths[BRIDGE_MAX_PENDING_DATASTORE];
   uint8_t _pending_datastore_head;
   uint8_t _pending_datastore_count;
   DataStoreGetHandler _datastore_get_handler;
@@ -318,7 +309,6 @@ extern FileSystemClass FileSystem;
 
 class ProcessClass {
  public:
-  static constexpr uint8_t kMaxPendingProcessPolls = 2;
   using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
                                      const uint8_t*, uint16_t);
   using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
@@ -344,7 +334,7 @@ class ProcessClass {
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 
-  uint16_t _pending_process_pids[kMaxPendingProcessPolls];
+  uint16_t _pending_process_pids[BRIDGE_MAX_PENDING_PROCESS_POLLS];
   uint8_t _pending_process_poll_head;
   uint8_t _pending_process_poll_count;
   

@@ -9,6 +9,10 @@
 // interface and polynomial (0x04C11DB7, reflected input/output).
 class CRC32 {
  public:
+  // Keep these aligned with tools/protocol/spec.toml:
+  // - constants.crc_initial
+  // - constants.crc32_mask (used as final XOR/mask)
+  // Polynomial is IEEE CRC-32 reflected (0xEDB88320) via the lookup table.
   static constexpr uint32_t kInitialState = 0xFFFFFFFFu;
   static constexpr uint32_t kFinalXor = 0xFFFFFFFFu;
   static constexpr uint32_t kByteMask = 0xFFu;

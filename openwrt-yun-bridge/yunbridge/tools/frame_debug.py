@@ -18,7 +18,7 @@ import serial
 
 from cobs import cobs
 from yunbridge.rpc.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
+    DEFAULT_BAUDRATE,
     FRAME_DELIMITER,
 )
 from yunbridge.rpc import protocol as rpc_protocol
@@ -221,8 +221,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--baud",
         type=int,
-        default=DEFAULT_SERIAL_BAUD,
-        help=f"Serial baud rate (default: {DEFAULT_SERIAL_BAUD}).",
+        default=DEFAULT_BAUDRATE,
+        help=f"Serial baud rate (default: {DEFAULT_BAUDRATE}).",
     )
     parser.add_argument(
         "--interval",

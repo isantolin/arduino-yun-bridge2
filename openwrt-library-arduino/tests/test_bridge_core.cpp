@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#define ARDUINO_STUB_CUSTOM_MILLIS 1
+
 #define private public
 #define protected public
 #include "Bridge.h"
@@ -18,6 +20,9 @@
 // Define global Serial instances for the stub
 HardwareSerial Serial;
 HardwareSerial Serial1;
+
+static unsigned long g_test_millis = 0;
+unsigned long millis() { return g_test_millis; }
 
 // Global instances required by Bridge.cpp linkage
 ConsoleClass Console;
@@ -110,6 +115,37 @@ public:
         return encoded_len + 1;
     }
 };
+
+static size_t count_status_ack_frames(const ByteBuffer<8192>& buffer) {
+    size_t count = 0;
+    size_t cursor = 0;
+
+    while (cursor < buffer.len) {
+        size_t end = cursor;
+        while (end < buffer.len && buffer.data[end] != rpc::RPC_FRAME_DELIMITER) {
+            end++;
+        }
+        const size_t segment_len = end - cursor;
+        if (segment_len > 0) {
+            uint8_t decoded[rpc::MAX_RAW_FRAME_SIZE];
+            const size_t decoded_len = cobs::decode(
+                &buffer.data[cursor],
+                segment_len,
+                decoded
+            );
+            if (decoded_len >= sizeof(rpc::FrameHeader)) {
+                const uint16_t cmd = rpc::read_u16_be(&decoded[3]);
+                if (cmd == rpc::to_underlying(rpc::StatusCode::STATUS_ACK)) {
+                    count++;
+                }
+            }
+        }
+
+        cursor = (end < buffer.len) ? (end + 1) : end;
+    }
+
+    return count;
+}
 
 void test_bridge_begin() {
     MockStream stream;
@@ -272,6 +308,44 @@ void test_bridge_file_write_incoming() {
     TEST_ASSERT(stream.tx_buffer.len > 0);
     // We can't easily decode the output here without a full decoder, 
     // but we verified that it triggered a response.
+}
+
+void test_bridge_dedup_console_write_retry() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    stream.tx_buffer.clear();
+
+    // Reset console RX state to a known baseline.
+    Console._rx_buffer_head = 0;
+    Console._rx_buffer_tail = 0;
+    Console._xoff_sent = false;
+
+    const uint8_t payload[] = { 'a', 'b', 'c' };
+
+    rpc::Frame frame;
+    frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+    frame.header.payload_length = sizeof(payload);
+    memcpy(frame.payload, payload, sizeof(payload));
+
+    const int before = Console.available();
+    TEST_ASSERT_EQ_UINT(before, 0);
+
+    // First delivery: side-effect must apply.
+    g_test_millis = 0;
+    bridge.dispatch(frame);
+    const int after_first = Console.available();
+    TEST_ASSERT_EQ_UINT(after_first, sizeof(payload));
+
+    // Second delivery (retry due to lost ACK): must be deduplicated.
+    g_test_millis = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS + 50;
+    bridge.dispatch(frame);
+    const int after_second = Console.available();
+    TEST_ASSERT_EQ_UINT(after_second, sizeof(payload));
+
+    // But ACK should be sent for both deliveries.
+    const size_t ack_count = count_status_ack_frames(stream.tx_buffer);
+    TEST_ASSERT_EQ_UINT(ack_count, 2);
 }
 
 void test_bridge_malformed_frame() {
@@ -481,6 +555,9 @@ int main() {
     test_bridge_malformed_frame();
     test_file_write_eeprom_parsing();
     test_file_write_malformed_path();
+
+    // Idempotency regression tests
+    test_bridge_dedup_console_write_retry();
     
     // New Robustness Tests
     test_bridge_crc_mismatch();

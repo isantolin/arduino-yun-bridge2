@@ -38,7 +38,6 @@ inline void write_u32_be(uint8_t* buffer, uint32_t value) {
   buffer[3] = static_cast<uint8_t>(value & RPC_UINT8_MASK);
 }
 
-constexpr size_t MAX_PAYLOAD_SIZE = 128;
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // Define FrameHeader struct before it is used in sizeof()

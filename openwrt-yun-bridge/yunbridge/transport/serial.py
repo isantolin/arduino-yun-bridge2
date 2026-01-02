@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import struct
 import os
@@ -367,6 +368,8 @@ class SerialTransport:
         self.writer = None
         self.reader = None
         self.state.serial_writer = None
+        # Ensure pending senders are never stuck waiting for XON after a disconnect.
+        self.state.serial_tx_allowed.set()
         try:
             await self.service.on_serial_disconnected()
         except Exception:
@@ -413,6 +416,18 @@ class SerialTransport:
                             pass
 
     async def send_frame(self, command_id: int, payload: bytes) -> bool:
+        # Fast-fail: preserve legacy semantics (and avoid awaiting mocks) when
+        # no writer is available.
+        if self.writer is None or self.writer.is_closing():
+            return False
+
+        # Global backpressure: MCU XOFF pauses all Linux->MCU traffic.
+        serial_tx_allowed = getattr(self.state, "serial_tx_allowed", None)
+        wait_fn = getattr(serial_tx_allowed, "wait", None) if serial_tx_allowed is not None else None
+        if wait_fn is not None and inspect.iscoroutinefunction(wait_fn):
+            await wait_fn()
+
+        # Writer may have been closed while awaiting XON.
         if self.writer is None or self.writer.is_closing():
             return False
         try:

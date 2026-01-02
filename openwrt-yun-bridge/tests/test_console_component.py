@@ -72,10 +72,12 @@ async def test_handle_write(console_component: ConsoleComponent) -> None:
 async def test_flow_control(console_component: ConsoleComponent) -> None:
     # Initial state
     assert console_component.state.mcu_is_paused is False
+    assert console_component.state.serial_tx_allowed.is_set() is True
 
     # XOFF
     await console_component.handle_xoff(b"")
     assert console_component.state.mcu_is_paused is True
+    assert console_component.state.serial_tx_allowed.is_set() is False
 
     # XON
     with patch.object(
@@ -83,6 +85,7 @@ async def test_flow_control(console_component: ConsoleComponent) -> None:
     ) as mock_flush:
         await console_component.handle_xon(b"")
         assert console_component.state.mcu_is_paused is False
+        assert console_component.state.serial_tx_allowed.is_set() is True
         mock_flush.assert_awaited_once()
 
 
@@ -116,8 +119,7 @@ async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -
     # We need to account for overhead if any, but console chunks are raw?
     # Let's check _iter_console_chunks implementation or assume it chunks by MAX_PAYLOAD_SIZE - overhead
     # Assuming overhead is small or zero for console write command payload itself?
-    # Actually protocol.py says MAX_PAYLOAD_SIZE = 256.
-    # Let's try a large payload.
+    # protocol.MAX_PAYLOAD_SIZE comes from tools/protocol/spec.toml.
 
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
     console_component.ctx.send_frame.return_value = True

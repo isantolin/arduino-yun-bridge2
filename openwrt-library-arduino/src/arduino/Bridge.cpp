@@ -102,8 +102,10 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
       _last_command_id(0),
       _retry_count(0),
       _last_send_millis(0),
-      _ack_timeout_ms(kAckTimeoutMs),
-      _ack_retry_limit(kMaxAckRetries),
+    _last_rx_crc(0),
+    _last_rx_crc_millis(0),
+      _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
+      _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
       _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
       _command_handler(nullptr),
       _digital_read_handler(nullptr),
@@ -117,7 +119,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
       , _tx_debug{}
 #endif
 {
-  for (int i = 0; i < kMaxPendingTxFrames; i++) {
+  for (int i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
     _pending_tx_frames[i].command_id = 0;
     _pending_tx_frames[i].payload_length = 0;
     memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
@@ -133,8 +135,10 @@ BridgeClass::BridgeClass(Stream& stream)
       _last_command_id(0),
       _retry_count(0),
       _last_send_millis(0),
-      _ack_timeout_ms(kAckTimeoutMs),
-      _ack_retry_limit(kMaxAckRetries),
+    _last_rx_crc(0),
+    _last_rx_crc_millis(0),
+      _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
+      _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
       _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
       _command_handler(nullptr),
       _digital_read_handler(nullptr),
@@ -148,7 +152,7 @@ BridgeClass::BridgeClass(Stream& stream)
       , _tx_debug{}
 #endif
 {
-  for (int i = 0; i < kMaxPendingTxFrames; i++) {
+  for (int i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
     _pending_tx_frames[i].command_id = 0;
     _pending_tx_frames[i].payload_length = 0;
     memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
@@ -182,6 +186,8 @@ void BridgeClass::begin(
   _last_command_id = 0;
   _retry_count = 0;
   _last_send_millis = 0;
+  _last_rx_crc = 0;
+  _last_rx_crc_millis = 0;
 #if BRIDGE_DEBUG_FRAMES
   _tx_debug = {};
 #endif
@@ -191,6 +197,71 @@ void BridgeClass::begin(
     process();
   }
 #endif
+}
+
+bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
+  const uint16_t payload_len = frame.header.payload_length;
+  if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
+    return false;
+  }
+
+  // Fingerprint: CRC32 of the raw frame (header + payload) as used on-wire.
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
+  rpc::FrameBuilder builder;
+  const size_t raw_len = builder.build(
+      raw,
+      sizeof(raw),
+      frame.header.command_id,
+      frame.payload,
+      payload_len);
+
+  if (raw_len < rpc::CRC_TRAILER_SIZE) {
+    return false;
+  }
+
+  const uint32_t crc = rpc::read_u32_be(&raw[raw_len - rpc::CRC_TRAILER_SIZE]);
+  if (_last_rx_crc == 0 || crc != _last_rx_crc) {
+    return false;
+  }
+
+  const unsigned long now = millis();
+  const unsigned long elapsed = now - _last_rx_crc_millis;
+
+  // Retries happen after the sender waits for an ACK timeout.
+  // If the same frame arrives *before* that timeout, treat it as a new command
+  // to reduce accidental suppression of legitimate repeated operations.
+  if (_ack_timeout_ms > 0 && elapsed < static_cast<unsigned long>(_ack_timeout_ms)) {
+    return false;
+  }
+
+  // Accept duplicates only within the expected retry horizon.
+  const unsigned long window_ms =
+      static_cast<unsigned long>(_ack_timeout_ms) *
+      static_cast<unsigned long>(_ack_retry_limit + 1);
+
+  return elapsed <= window_ms;
+}
+
+void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
+  const uint16_t payload_len = frame.header.payload_length;
+  if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
+    return;
+  }
+
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
+  rpc::FrameBuilder builder;
+  const size_t raw_len = builder.build(
+      raw,
+      sizeof(raw),
+      frame.header.command_id,
+      frame.payload,
+      payload_len);
+  if (raw_len < rpc::CRC_TRAILER_SIZE) {
+    return;
+  }
+
+  _last_rx_crc = rpc::read_u32_be(&raw[raw_len - rpc::CRC_TRAILER_SIZE]);
+  _last_rx_crc_millis = millis();
 }
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
@@ -211,8 +282,8 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
 
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
   // Default values
-  uint16_t ack_timeout_ms = kAckTimeoutMs;
-  uint8_t retry_limit = kMaxAckRetries;
+  uint16_t ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
+  uint8_t retry_limit = rpc::RPC_DEFAULT_RETRY_LIMIT;
   uint32_t response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
 
   if (payload != nullptr && length >= RPC_HANDSHAKE_CONFIG_SIZE) {
@@ -227,12 +298,12 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
   _ack_timeout_ms = (ack_timeout_ms >= RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
                      ack_timeout_ms <= RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS)
                         ? ack_timeout_ms
-                        : kAckTimeoutMs;
+                  : rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
 
   _ack_retry_limit = (retry_limit >= RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
                       retry_limit <= RPC_HANDSHAKE_RETRY_LIMIT_MAX)
                          ? retry_limit
-                         : kMaxAckRetries;
+                   : rpc::RPC_DEFAULT_RETRY_LIMIT;
 
   _response_timeout_ms =
       (response_timeout_ms >= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
@@ -307,8 +378,8 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
     case CommandId::CMD_GET_VERSION:
       if (payload_length == 0) {
         uint8_t version_payload[2];
-        version_payload[0] = static_cast<uint8_t>(BridgeClass::kFirmwareVersionMajor);
-        version_payload[1] = static_cast<uint8_t>(BridgeClass::kFirmwareVersionMinor);
+        version_payload[0] = static_cast<uint8_t>(kDefaultFirmwareVersionMajor);
+        version_payload[1] = static_cast<uint8_t>(kDefaultFirmwareVersionMinor);
         (void)sendFrame(CommandId::CMD_GET_VERSION_RESP, version_payload, sizeof(version_payload));
       }
       break;
@@ -477,6 +548,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   if (is_system_command) {
       if (command == CommandId::CMD_LINK_RESET) {
+          if (_isRecentDuplicateRx(frame)) {
+            uint8_t ack_payload[2];
+            rpc::write_u16_be(ack_payload, raw_command);
+            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            return;
+          }
           // [FIX] Send ACK immediately before reset destroys state
           uint8_t ack_payload[2];
           rpc::write_u16_be(ack_payload, raw_command);
@@ -504,25 +581,57 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         case CommandId::CMD_SET_PIN_MODE:
         case CommandId::CMD_DIGITAL_WRITE:
         case CommandId::CMD_ANALOG_WRITE:
+          if (_isRecentDuplicateRx(frame)) {
+            uint8_t ack_payload[2];
+            rpc::write_u16_be(ack_payload, raw_command);
+            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            return;
+          }
+          _handleGpioCommand(frame);
+          _markRxProcessed(frame);
+          command_processed_internally = true;
+          requires_ack = true;
+          break;
         case CommandId::CMD_DIGITAL_READ:
         case CommandId::CMD_ANALOG_READ:
           _handleGpioCommand(frame);
           command_processed_internally = true;
-          requires_ack = (command != CommandId::CMD_DIGITAL_READ && command != CommandId::CMD_ANALOG_READ);
+          requires_ack = false;
           break;
         case CommandId::CMD_CONSOLE_WRITE:
+          if (_isRecentDuplicateRx(frame)) {
+            uint8_t ack_payload[2];
+            rpc::write_u16_be(ack_payload, raw_command);
+            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            return;
+          }
           _handleConsoleCommand(frame);
+          _markRxProcessed(frame);
           command_processed_internally = true;
           requires_ack = true;
           break;
         case CommandId::CMD_MAILBOX_PUSH:
         case CommandId::CMD_MAILBOX_AVAILABLE:
+          if (_isRecentDuplicateRx(frame)) {
+            uint8_t ack_payload[2];
+            rpc::write_u16_be(ack_payload, raw_command);
+            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            return;
+          }
           Mailbox.handleResponse(frame); 
+          _markRxProcessed(frame);
           command_processed_internally = true;
           requires_ack = true;
           break;
         case CommandId::CMD_FILE_WRITE:
+          if (_isRecentDuplicateRx(frame)) {
+            uint8_t ack_payload[2];
+            rpc::write_u16_be(ack_payload, raw_command);
+            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            return;
+          }
           FileSystem.handleResponse(frame);
+          _markRxProcessed(frame);
           command_processed_internally = true;
           requires_ack = true;
           break;
@@ -801,7 +910,8 @@ void BridgeClass::_flushPendingTxQueue() {
       frame.command_id,
       frame.payload, frame.payload_length)) {
     uint8_t previous_head =
-        (_pending_tx_head + kMaxPendingTxFrames - 1) % kMaxPendingTxFrames;
+        (_pending_tx_head + rpc::RPC_MAX_PENDING_TX_FRAMES - 1) %
+        rpc::RPC_MAX_PENDING_TX_FRAMES;
     _pending_tx_head = previous_head;
     _pending_tx_frames[_pending_tx_head] = frame;
     _pending_tx_count++;
@@ -814,14 +924,15 @@ void BridgeClass::_clearPendingTxQueue() {
 }
 
 bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length) {
-  if (_pending_tx_count >= kMaxPendingTxFrames) {
+  if (_pending_tx_count >= rpc::RPC_MAX_PENDING_TX_FRAMES) {
     return false;
   }
   size_t payload_len = length;
   if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
     return false;
   }
-  uint8_t tail = (_pending_tx_head + _pending_tx_count) % kMaxPendingTxFrames;
+  uint8_t tail = (_pending_tx_head + _pending_tx_count) %
+      rpc::RPC_MAX_PENDING_TX_FRAMES;
   _pending_tx_frames[tail].command_id = command_id;
   _pending_tx_frames[tail].payload_length =
       static_cast<uint16_t>(payload_len);
@@ -837,7 +948,7 @@ bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
     return false;
   }
   frame = _pending_tx_frames[_pending_tx_head];
-  _pending_tx_head = (_pending_tx_head + 1) % kMaxPendingTxFrames;
+  _pending_tx_head = (_pending_tx_head + 1) % rpc::RPC_MAX_PENDING_TX_FRAMES;
   _pending_tx_count--; 
   return true;
 }

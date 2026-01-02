@@ -14,18 +14,19 @@ start_service() {
     # Evita desgaste de la memoria Flash por escrituras frecuentes (spool/sockets)
     mkdir -p /tmp/yunbridge/spool
     mkdir -p /tmp/run/yunbridge
+    mkdir -p /tmp/yun_files
     
     # Asegurar permisos correctos (777 permite acceso a tools de usuario si es necesario)
     chmod 777 /tmp/yunbridge/spool
     chmod 777 /tmp/run/yunbridge
+    chmod 755 /tmp/yun_files
 
     procd_open_instance
 
-    # Ejecución optimizada (-O) para Python 3.13
+    # Ejecución optimizada (-O) para Python 3.x
     procd_set_param command /usr/bin/python3 -O -m yunbridge
 
     # Entorno de ejecución
-    procd_set_param env PYTHONPATH=/usr/lib/python3.13/site-packages
     # Forzar configuración de spool en RAM (Safety fallback)
     procd_set_param env YUNBRIDGE_MQTT_SPOOL_DIR=/tmp/yunbridge/spool
 

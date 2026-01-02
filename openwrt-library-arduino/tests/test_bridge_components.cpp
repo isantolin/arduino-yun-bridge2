@@ -204,7 +204,7 @@ static void inject_ack(RecordingStream& stream, uint16_t command_id) {
 struct DatastoreGetState {
   static DatastoreGetState* instance;
   bool called;
-  FixedString<BridgeClass::kMaxDatastoreKeyLength + 1> key;
+  FixedString<rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1> key;
   ByteBuffer<rpc::MAX_PAYLOAD_SIZE> value;
 
   DatastoreGetState() : called(false), key(), value() {}

@@ -49,12 +49,12 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
     // Flow Control Logic
     int available_bytes = _stream.available();
     
-    if (!_flow_paused && available_bytes >= kRxHighWaterMark) {
+    if (!_flow_paused && available_bytes >= BRIDGE_RX_HIGH_WATER_MARK) {
         // Buffer getting full, pause sender
         // [FIX] Use sendControlFrame to avoid clobbering retransmission buffer
         sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XOFF));
         _flow_paused = true;
-    } else if (_flow_paused && available_bytes <= kRxLowWaterMark) {
+    } else if (_flow_paused && available_bytes <= BRIDGE_RX_LOW_WATER_MARK) {
         // Buffer drained enough, resume sender
         // [FIX] Use sendControlFrame
         sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XON));

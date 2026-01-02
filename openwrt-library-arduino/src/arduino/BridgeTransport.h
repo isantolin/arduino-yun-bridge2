@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <Stream.h>
+
+#include "../bridge_config.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/cobs.h"
 
@@ -59,9 +61,6 @@ public:
     uint8_t _last_cobs_frame[rpc::COBS_BUFFER_SIZE];
     size_t _last_cobs_len;
     
-    // Constants for flow control
-    static constexpr int kRxHighWaterMark = 48;
-    static constexpr int kRxLowWaterMark = 16;
 };
 
 } // namespace bridge

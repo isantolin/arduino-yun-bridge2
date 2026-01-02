@@ -41,7 +41,7 @@ from ..const import (
 from ..rpc.protocol import (
     Command,
     Status,
-    DEFAULT_RETRY_LIMIT as DEFAULT_SERIAL_RETRY_ATTEMPTS,
+    DEFAULT_RETRY_LIMIT,
 )
 
 logger = logging.getLogger("yunbridge.state")
@@ -51,6 +51,12 @@ SpoolSnapshot = dict[str, int | float]
 
 def _mqtt_queue_factory() -> asyncio.Queue[QueuedPublish]:
     return asyncio.Queue()
+
+
+def _serial_tx_event_factory() -> asyncio.Event:
+    evt = asyncio.Event()
+    evt.set()
+    return evt
 
 
 class _ExponentialBackoff:
@@ -273,6 +279,7 @@ class RuntimeState:
     datastore: dict[str, str] = field(default_factory=_str_dict_factory)
     mailbox_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
+    serial_tx_allowed: asyncio.Event = field(default_factory=_serial_tx_event_factory)
     console_to_mcu_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
@@ -350,7 +357,7 @@ class RuntimeState:
     serial_crc_errors: int = 0
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
-    serial_retry_limit: int = DEFAULT_SERIAL_RETRY_ATTEMPTS
+    serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counters: dict[str, int] = field(default_factory=_str_int_dict_factory)
     supervisor_stats: dict[str, SupervisorStats] = field(
         default_factory=_supervisor_stats_factory

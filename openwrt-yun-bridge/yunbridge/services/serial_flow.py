@@ -14,7 +14,7 @@ from yunbridge.const import (
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from yunbridge.rpc.protocol import ACK_ONLY_COMMANDS as SERIAL_ACK_ONLY_COMMANDS
+from yunbridge.rpc.protocol import ACK_ONLY_COMMANDS
 from yunbridge.rpc.contracts import expected_responses, response_to_request
 from yunbridge.rpc.protocol import Status
 
@@ -212,7 +212,7 @@ class SerialFlowController:
             pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:
-        return bool(expected_responses(command_id)) or command_id in SERIAL_ACK_ONLY_COMMANDS
+        return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
 
     async def _execute_with_retries(
         self,

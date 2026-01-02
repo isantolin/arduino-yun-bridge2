@@ -50,7 +50,9 @@ local function ensure_general_section()
             mqtt_cafile = "/etc/ssl/certs/ca-certificates.crt",
             mqtt_certfile = "",
             mqtt_keyfile = "",
-            file_system_root = "/root/yun_files",
+            -- Default to tmpfs to avoid Flash wear on devices without external storage.
+            file_system_root = "/tmp/yun_files",
+            mqtt_spool_dir = "/tmp/yunbridge/spool",
             process_timeout = "10",
             allowed_commands = "",
         })
@@ -64,7 +66,10 @@ ensure_general_section()
 local m = Map(
     "yunbridge",
     translate("YunBridge Configuration"),
-    translate("Configure the YunBridge daemon which proxies RPC frames between the MCU and MQTT.")
+    translate(
+        "Configure the YunBridge daemon which proxies RPC frames between the MCU and MQTT. " ..
+        "Runtime status snapshots are written to /tmp/yunbridge_status.json (tmpfs) and are cleared on reboot."
+    )
 )
 
 local s = m:section(TypedSection, "general", translate("Daemon Settings"))
@@ -197,10 +202,33 @@ mqtt_ws_port.datatype = "port"
 mqtt_ws_port.placeholder = "9001"
 mqtt_ws_port.rmempty = true
 
+local mqtt_spool_dir = s:option(Value, "mqtt_spool_dir", translate("MQTT Spool Directory"))
+mqtt_spool_dir.placeholder = "/tmp/yunbridge/spool"
+mqtt_spool_dir.rmempty = false
+mqtt_spool_dir.description = translate(
+    "Directory used to spool MQTT messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
+)
+function mqtt_spool_dir.validate(_, value, _)
+    if not value or value == "" then
+        return nil, translate("Spool directory cannot be empty.")
+    end
+    if value:sub(1, 1) == "/" then
+        -- absolute is OK
+    else
+        return nil, translate("Spool directory must be an absolute path.")
+    end
+    if value:match("^/tmp") or value:match("^/run") or value:match("^/var/run") or value:match("^/mnt") then
+        return value
+    end
+    return nil, translate("For Flash safety, use a path under /tmp, /run, /var/run, or /mnt.")
+end
+
 local fs_root = s:option(Value, "file_system_root", translate("File System Root"))
-fs_root.placeholder = "/root/yun_files"
+fs_root.placeholder = "/tmp/yun_files"
 fs_root.rmempty = false
-fs_root.description = translate("Directory exposed for MCU file operations.")
+fs_root.description = translate(
+    "Directory exposed for MCU file operations. Use /tmp for tmpfs (Flash-safe) or /mnt/<device> for external storage."
+)
 
 local process_timeout = s:option(Value, "process_timeout", translate("Process Timeout (s)"))
 process_timeout.datatype = "uinteger"

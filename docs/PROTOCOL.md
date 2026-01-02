@@ -28,7 +28,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **RuntimeState**: mantiene el estado mutable (colas MQTT, handshake, spool, métricas) y expone snapshots consistentes para status, MQTT y Prometheus.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
 - **MCU Firmware (openwrt-library-arduino)**: implementa el protocolo binario y vela por el secreto compartido del enlace serie.
-- **Instrumentación**: el daemon escribe `/tmp/yunbridge_status.json`, publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
+- **Instrumentación**: el daemon escribe `/tmp/yunbridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
 
 ## Seguridad
 
@@ -143,6 +143,19 @@ Los status usan el rango `0x30` - `0x3F`.
 
 ## 5. Comandos
 
+## 5.0 Semántica de ACK, retries e idempotencia (importante)
+
+Algunos comandos son **fire-and-forget** (no tienen respuesta “de negocio”) pero sí requieren confirmación mediante `STATUS_ACK (0x38)`.
+
+- **Retries por ACK perdido:** Linux puede reenviar el mismo frame si no recibe `STATUS_ACK` dentro de `ack_timeout_ms` (configurable via `CMD_LINK_RESET`).
+- **Idempotencia (mejor esfuerzo, sin `tx_id`):** el protocolo actual no incluye un identificador de transmisión en el header; por eso la idempotencia estricta no puede garantizarse sólo con el wire-format.
+  - El firmware (MCU) implementa deduplicación de **reintentos** para comandos con side-effects (p. ej. consola, mailbox, file write, GPIO write/mode): si llega un duplicado **después** de `ack_timeout_ms` y **antes** del fin del horizonte de retries, el MCU reenvía `STATUS_ACK` pero **no re-ejecuta** el handler.
+  - Para reducir falsos positivos, un frame idéntico recibido **antes** del `ack_timeout_ms` se trata como un comando nuevo (p. ej. repeticiones legítimas a alta frecuencia).
+
+Notas:
+- Esta deduplicación es deliberadamente conservadora: protege contra retries por ACK perdido sin “romper” casos de uso de repetición rápida.
+- Si se requiere idempotencia inequívoca para todos los casos, el camino correcto es introducir un `tx_id` (implica versionado del protocolo y regeneración Python/C++).
+
 ### 5.1 Sistema y control de flujo (0x40 – 0x4F)
 
 - **`0x40` CMD_GET_VERSION (Linux → MCU)**
@@ -171,6 +184,8 @@ Los status usan el rango `0x30` - `0x3F`.
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.
+  - Semántica: `CMD_XOFF` indica backpressure del MCU (buffers/colas cerca de saturación). Linux debe **detener todo envío** de frames al MCU hasta recibir `CMD_XON`.
+  - Implementación esperada en daemon: el gating de TX es global (no sólo consola), y debe liberarse también ante desconexión para evitar deadlocks.
 
 ### 5.2 GPIO (0x50 – 0x5F)
 

@@ -43,12 +43,14 @@ class ConsoleComponent:
         await self.ctx.enqueue_mqtt(message)
 
     async def handle_xoff(self, _: bytes) -> None:
-        logger.warning("MCU > XOFF received, pausing console output.")
+        logger.warning("MCU > XOFF received, pausing serial output.")
         self.state.mcu_is_paused = True
+        self.state.serial_tx_allowed.clear()
 
     async def handle_xon(self, _: bytes) -> None:
-        logger.info("MCU > XON received, resuming console output.")
+        logger.info("MCU > XON received, resuming serial output.")
         self.state.mcu_is_paused = False
+        self.state.serial_tx_allowed.set()
         await self.flush_queue()
 
     async def handle_mqtt_input(
@@ -107,6 +109,7 @@ class ConsoleComponent:
 
     def on_serial_disconnected(self) -> None:
         self.state.mcu_is_paused = False
+        self.state.serial_tx_allowed.set()
 
     def _iter_console_chunks(self, payload: bytes) -> list[bytes]:
         if not payload:

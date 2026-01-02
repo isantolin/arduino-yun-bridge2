@@ -13,8 +13,8 @@ ConsoleClass::ConsoleClass()
       _rx_buffer_tail(0),
       _tx_buffer_pos(0),
       _xoff_sent(false) {
-      memset(_rx_buffer, 0, kRxBufferSize);
-      memset(_tx_buffer, 0, kTxBufferSize);
+  memset(_rx_buffer, 0, sizeof(_rx_buffer));
+  memset(_tx_buffer, 0, sizeof(_tx_buffer));
 }
 
 void ConsoleClass::begin() {
@@ -23,14 +23,14 @@ void ConsoleClass::begin() {
   _rx_buffer_tail = 0;
   _xoff_sent = false;
   _tx_buffer_pos = 0;
-  memset(_rx_buffer, 0, kRxBufferSize);
-  memset(_tx_buffer, 0, kTxBufferSize);
+  memset(_rx_buffer, 0, sizeof(_rx_buffer));
+  memset(_tx_buffer, 0, sizeof(_tx_buffer));
 }
 
 size_t ConsoleClass::write(uint8_t c) {
   if (!_begun) return 0;
 
-  const size_t capacity = kTxBufferSize;
+  const size_t capacity = sizeof(_tx_buffer);
   if (capacity == 0) {
     return 0;
   }
@@ -76,7 +76,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
 }
 
 int ConsoleClass::available() {
-  const size_t capacity = kRxBufferSize;
+  const size_t capacity = sizeof(_rx_buffer);
   if (capacity == 0) {
     return 0;
   }
@@ -101,11 +101,13 @@ int ConsoleClass::peek() {
 int ConsoleClass::read() {
   if (_rx_buffer_head == _rx_buffer_tail) return -1;
   uint8_t c = _rx_buffer[_rx_buffer_tail];
-  _rx_buffer_tail = (_rx_buffer_tail + 1) % kRxBufferSize;
+  _rx_buffer_tail = (_rx_buffer_tail + 1) % sizeof(_rx_buffer);
 
   // [FIX] Reset _xoff_sent only if XON is successfully sent (or queued).
   // With the Bridge fix, this will send immediately without queueing.
-  if (_xoff_sent && (size_t)available() < kBufferLowWater) {
+  const size_t capacity = sizeof(_rx_buffer);
+  const size_t low_water = (capacity * 1) / 4;
+  if (_xoff_sent && (size_t)available() < low_water) {
     if (Bridge.sendFrame(CommandId::CMD_XON)) {
       _xoff_sent = false;
     }
@@ -139,7 +141,7 @@ void ConsoleClass::flush() {
 }
 
 void ConsoleClass::_push(const uint8_t* data, size_t length) {
-  const size_t capacity = kRxBufferSize;
+  const size_t capacity = sizeof(_rx_buffer);
   if (capacity == 0 || length == 0) {
     return;
   }
@@ -152,7 +154,8 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     }
   }
 
-  if (!_xoff_sent && (size_t)available() > kBufferHighWater) {
+  const size_t high_water = (capacity * 3) / 4;
+  if (!_xoff_sent && (size_t)available() > high_water) {
     if (Bridge.sendFrame(CommandId::CMD_XOFF)) {
         _xoff_sent = true;
     }

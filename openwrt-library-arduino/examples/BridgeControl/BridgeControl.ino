@@ -18,11 +18,7 @@
 #include <Bridge.h>
 #include <string.h>
 
-const int ledPin = 13;
-
 void printHexValue(Print& target, uint16_t value, uint8_t width) {
-  static constexpr char kHexDigits[] = "0123456789ABCDEF";
-  static constexpr uint16_t kNibbleMask = 15;
   if (width == 0) {
     return;
   }
@@ -31,7 +27,7 @@ void printHexValue(Print& target, uint16_t value, uint8_t width) {
   }
   char buffer[4];
   for (int i = width - 1; i >= 0; --i) {
-    buffer[i] = kHexDigits[value & kNibbleMask];
+    buffer[i] = ("0123456789ABCDEF")[value & 0x0Fu];
     value >>= 4;
   }
   for (uint8_t i = 0; i < width; ++i) {
@@ -61,10 +57,10 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
     Console.println(msg_buf);
 
     if (strcmp(msg_buf, "ON") == 0) {
-      digitalWrite(ledPin, HIGH);
+      digitalWrite(13, HIGH);
       Console.println(F("LED 13 encendido por Mailbox"));
     } else if (strcmp(msg_buf, "OFF") == 0) {
-      digitalWrite(ledPin, LOW);
+      digitalWrite(13, LOW);
       Console.println(F("LED 13 apagado por Mailbox"));
     } else {
       Console.print(F("Comando desconocido: "));
@@ -93,7 +89,7 @@ void setup() {
   Mailbox.onMailboxMessage(handleMailboxMessage);
   Bridge.onStatus(handleStatusFrame);
   
-  pinMode(ledPin, OUTPUT);
+  pinMode(13, OUTPUT);
   // delay(2000); // Removed blocking delay
 
   // Wait for handshake with non-blocking LED blink
@@ -104,7 +100,7 @@ void setup() {
     if (millis() - lastBlink > 50) {
       lastBlink = millis();
       ledState = !ledState;
-      digitalWrite(ledPin, ledState ? HIGH : LOW);
+      digitalWrite(13, ledState ? HIGH : LOW);
     }
   }
   

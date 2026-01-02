@@ -227,7 +227,7 @@ end
 function action_status()
     local content = fs.readfile("/tmp/yunbridge_status.json")
     if not content or content == "" then
-        content = [[{"status": "error", "message": "Status file not found or is empty."}]]
+        content = [[{"status": "error", "message": "Status file not found or is empty. The daemon may be stopped, starting up, or the device may have rebooted (the status file lives on /tmp tmpfs)."}]]
     end
     luci.http.prepare_content("application/json")
     luci.http.write(content)

@@ -30,9 +30,6 @@ from yunbridge.state.context import create_runtime_state
 from yunbridge.transport import serial as serial_mod
 
 
-TEST_UNKNOWN_COMMAND_ID: int = protocol.TEST_UNKNOWN_COMMAND_ID
-
-
 def _make_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
@@ -166,7 +163,12 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
     monkeypatch.setattr(serial_mod.cobs, "decode", lambda _data: (_ for _ in ()).throw(cobs.DecodeError("bad")))
 
     # Provide enough bytes for header extraction.
-    header = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, TEST_UNKNOWN_COMMAND_ID)
+    header = struct.pack(
+        protocol.CRC_COVERED_HEADER_FORMAT,
+        1,
+        0,
+        protocol.TEST_UNKNOWN_COMMAND_ID,
+    )
     encoded = header + b"x" * 4
 
     transport = serial_mod.SerialTransport(config, state, service)
@@ -177,7 +179,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
     status, payload = service.send_frame.call_args[0]
     assert status == Status.MALFORMED.value
     hint = struct.unpack(UINT16_FORMAT, payload[:2])[0]
-    assert hint == TEST_UNKNOWN_COMMAND_ID
+    assert hint == protocol.TEST_UNKNOWN_COMMAND_ID
 
 
 @pytest.mark.asyncio
@@ -314,3 +316,43 @@ async def test_send_frame_returns_false_on_write_error() -> None:
     transport.writer = _Writer()  # type: ignore[assignment]
     ok = await transport.send_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_send_frame_honors_xoff_xon_backpressure() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    service = BridgeService(config, state)
+
+    transport = serial_mod.SerialTransport(config, state, service)
+
+    class _Writer:
+        def __init__(self) -> None:
+            self.writes: list[bytes] = []
+
+        def is_closing(self) -> bool:
+            return False
+
+        def write(self, data: bytes) -> None:
+            self.writes.append(data)
+
+        async def drain(self) -> None:
+            return None
+
+    writer = _Writer()
+    transport.writer = writer  # type: ignore[assignment]
+
+    # Pause serial TX (simulate XOFF)
+    state.serial_tx_allowed.clear()
+
+    task = asyncio.create_task(
+        transport.send_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    )
+    await asyncio.sleep(0)
+    assert writer.writes == []
+
+    # Resume serial TX (simulate XON)
+    state.serial_tx_allowed.set()
+    ok = await asyncio.wait_for(task, timeout=1.0)
+    assert ok is True
+    assert writer.writes

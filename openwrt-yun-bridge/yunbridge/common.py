@@ -15,10 +15,6 @@ from typing import (
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
-    DEFAULT_RETRY_LIMIT as DEFAULT_SERIAL_RETRY_ATTEMPTS,
-)
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -225,11 +221,11 @@ def get_default_config() -> dict[str, str]:
         "mqtt_spool_dir": DEFAULT_MQTT_SPOOL_DIR,
         "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
         "serial_port": DEFAULT_SERIAL_PORT,
-        "serial_baud": str(DEFAULT_SERIAL_BAUD),
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
         "serial_shared_secret": "",
         "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
         "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
-        "serial_retry_attempts": str(DEFAULT_SERIAL_RETRY_ATTEMPTS),
+        "serial_retry_attempts": str(protocol.DEFAULT_RETRY_LIMIT),
         "serial_handshake_min_interval": str(DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL),
         "serial_handshake_fatal_failures": str(DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES),
         "debug": "0",

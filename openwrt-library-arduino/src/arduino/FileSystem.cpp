@@ -9,7 +9,7 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
                             size_t length) {
   if (!filePath || !data) return;
   const auto path_info = measure_bounded_cstring(
-      filePath, BridgeClass::kMaxFilePathLength);
+      filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
   if (path_info.length == 0 || path_info.overflowed) return;
   const size_t path_len = path_info.length;
 
@@ -36,7 +36,7 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
 void FileSystemClass::remove(const char* filePath) {
   if (!filePath) return;
   const auto path_info = measure_bounded_cstring(
-      filePath, BridgeClass::kMaxFilePathLength);
+  filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
   if (path_info.length == 0 || path_info.overflowed) return;
   const size_t path_len = path_info.length;
 
@@ -55,7 +55,7 @@ void FileSystemClass::read(const char* filePath) {
     return;
   }
   size_t len = strlen(filePath);
-  if (len > BridgeClass::kMaxFilePathLength) {
+  if (len > rpc::RPC_MAX_FILEPATH_LENGTH) {
     return;
   }
 

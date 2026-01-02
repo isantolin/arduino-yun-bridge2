@@ -21,7 +21,8 @@ config general 'general'
     option mqtt_spool_dir '/tmp/yunbridge/spool'
 
     # [ALMACENAMIENTO]
-    option file_system_root '/mnt/sda1'
+    # Default to tmpfs to avoid Flash wear unless an external mount is configured.
+    option file_system_root '/tmp/yun_files'
 
     # [TIMEOUTS]
     option process_timeout '15'

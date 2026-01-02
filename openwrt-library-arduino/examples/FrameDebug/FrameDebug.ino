@@ -20,7 +20,6 @@
 
 namespace {
 #if BRIDGE_DEBUG_FRAMES
-const unsigned long kSendIntervalMs = 5000;
 unsigned long last_send_ms = 0;
 
 void printSnapshot(const BridgeClass::FrameDebugSnapshot &snapshot) {
@@ -92,7 +91,7 @@ void loop() {
 #if BRIDGE_DEBUG_FRAMES
 #if FRAME_DEBUG_AUTO_POLL
   unsigned long now = millis();
-  if (now - last_send_ms >= kSendIntervalMs) {
+  if (now - last_send_ms >= 5000UL) {
     last_send_ms = now;
 
     Serial.println(F("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY"));

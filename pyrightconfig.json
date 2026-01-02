@@ -6,6 +6,8 @@
         "openwrt-yun-core/scripts"
     ],
     "include": [
+        ".venv",
+        ".tox",
         "openwrt-yun-bridge/yunbridge",
         "openwrt-yun-examples-python/yunbridge_client",
         "openwrt-yun-core/scripts"
@@ -16,6 +18,8 @@
     ],
     "exclude": [
         "openwrt-sdk",
+        ".tox",
+        ".venv",
         "**/__pycache__",
         "**/node_modules",
         "**/.*",

@@ -23,34 +23,34 @@ namespace {
 unsigned long last_send_ms = 0;
 
 void printSnapshot(const BridgeClass::FrameDebugSnapshot &snapshot) {
-  Serial.println(F("[FrameDebug] --- TX Snapshot ---"));
-  Serial.print(F("cmd_id=0x"));
+  Serial.println("[FrameDebug] --- TX Snapshot ---");
+  Serial.print("cmd_id=0x");
   Serial.println(snapshot.last_command_id, HEX);
-  Serial.print(F("payload_len="));
+  Serial.print("payload_len=");
   Serial.println(snapshot.payload_length);
-  Serial.print(F("crc=0x"));
+  Serial.print("crc=0x");
   Serial.println(snapshot.crc, HEX);
-  Serial.print(F("raw_len="));
+  Serial.print("raw_len=");
   Serial.println(snapshot.raw_length);
-  Serial.print(F("cobs_len="));
+  Serial.print("cobs_len=");
   Serial.println(snapshot.cobs_length);
-  Serial.print(F("expected_serial_bytes="));
+  Serial.print("expected_serial_bytes=");
   Serial.println(snapshot.expected_serial_bytes);
-  Serial.print(F("last_write_return="));
+  Serial.print("last_write_return=");
   Serial.println(snapshot.last_write_return);
-  Serial.print(F("last_shortfall="));
+  Serial.print("last_shortfall=");
   Serial.println(snapshot.last_shortfall);
-  Serial.print(F("tx_count="));
+  Serial.print("tx_count=");
   Serial.println(snapshot.tx_count);
-  Serial.print(F("write_shortfall_events="));
+  Serial.print("write_shortfall_events=");
   Serial.println(snapshot.write_shortfall_events);
-  Serial.print(F("build_failures="));
+  Serial.print("build_failures=");
   Serial.println(snapshot.build_failures);
 }
 
 void clearSnapshotStats() {
   Bridge.resetTxDebugStats();
-  Serial.println(F("[FrameDebug] Snapshot cleared"));
+  Serial.println("[FrameDebug] Snapshot cleared");
 }
 #endif
 }
@@ -65,10 +65,10 @@ void setup() {
   }
   */
 
-  Serial.println(F("[FrameDebug] Starting"));
+  Serial.println("[FrameDebug] Starting");
 
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
-  Serial.println(F("[FrameDebug] Bridge initialized with sketch-defined secret"));
+  Serial.println("[FrameDebug] Bridge initialized with sketch-defined secret");
 
   // Wait for handshake with non-blocking LED blink
   pinMode(13, OUTPUT);
@@ -82,7 +82,7 @@ void setup() {
       digitalWrite(13, ledState ? HIGH : LOW);
     }
   }
-  Serial.println(F("[FrameDebug] Handshake synchronized"));
+  Serial.println("[FrameDebug] Handshake synchronized");
 }
 
 void loop() {
@@ -94,7 +94,7 @@ void loop() {
   if (now - last_send_ms >= 5000UL) {
     last_send_ms = now;
 
-    Serial.println(F("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY"));
+    Serial.println("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY");
     Bridge.requestGetFreeMemory();
 
     delay(20);  // Allow time for the frame to flush over Serial1.
@@ -111,7 +111,7 @@ void loop() {
     switch (cmd) {
       case 'f':
       case 'F':
-        Serial.println(F("[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY trigger"));
+        Serial.println("[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY trigger");
         Bridge.requestGetFreeMemory();
         delay(20);
         printSnapshot(Bridge.getTxDebugSnapshot());
@@ -129,9 +129,9 @@ void loop() {
       case '\\r':
         break;
       default:
-        Serial.print(F("[FrameDebug] Unknown command '"));
+        Serial.print("[FrameDebug] Unknown command '");
         Serial.print(cmd);
-        Serial.println(F("'. Use f=free-mem, s=snapshot, c=clear."));
+        Serial.println("'. Use f=free-mem, s=snapshot, c=clear.");
         break;
     }
   }
@@ -141,7 +141,7 @@ void loop() {
   // is not available.
   static bool notified = false;
   if (!notified) {
-    Serial.println(F("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect stats."));
+    Serial.println("[FrameDebug] BRIDGE_DEBUG_FRAMES disabled; enable it to collect stats.");
     notified = true;
   }
 #endif

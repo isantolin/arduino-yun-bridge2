@@ -36,34 +36,34 @@ void printHexValue(Print& target, uint16_t value, uint8_t width) {
 }
 
 void handleDigitalReadResponse(uint8_t value) {
-  Console.print(F("Respuesta asíncrona de lectura digital: "));
+  Console.print("Respuesta asíncrona de lectura digital: ");
   Console.println(value);
 }
 
 void handleCommand(const rpc::Frame& frame) {
-  Console.print(F("Comando RPC no manejado: ID=0x"));
+  Console.print("Comando RPC no manejado: ID=0x");
   printHexValue(Console, frame.header.command_id, 4);
-  Console.print(F(", Payload Len="));
+  Console.print(", Payload Len=");
   Console.println(frame.header.payload_length);
 }
 
-void handleMailboxMessage(const uint8_t* buffer, size_t size) {
+void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
   char msg_buf[80];
   if (size < sizeof(msg_buf)) {
     memcpy(msg_buf, buffer, size);
     msg_buf[size] = '\0';
 
-    Console.print(F("Mensaje de Mailbox recibido: "));
+    Console.print("Mensaje de Mailbox recibido: ");
     Console.println(msg_buf);
 
     if (strcmp(msg_buf, "ON") == 0) {
       digitalWrite(13, HIGH);
-      Console.println(F("LED 13 encendido por Mailbox"));
+      Console.println("LED 13 encendido por Mailbox");
     } else if (strcmp(msg_buf, "OFF") == 0) {
       digitalWrite(13, LOW);
-      Console.println(F("LED 13 apagado por Mailbox"));
+      Console.println("LED 13 apagado por Mailbox");
     } else {
-      Console.print(F("Comando desconocido: "));
+      Console.print("Comando desconocido: ");
       Console.println(msg_buf);
     }
   }
@@ -73,7 +73,7 @@ void handleMailboxMessage(const uint8_t* buffer, size_t size) {
 void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   (void)payload;
   (void)length;
-  Console.print(F("Estado: 0x"));
+  Console.print("Estado: 0x");
   printHexValue(Console, rpc::to_underlying(status_code), 2);
   Console.println();
 }
@@ -104,7 +104,7 @@ void setup() {
     }
   }
   
-  Console.println(F("Bridge iniciado con secreto definido en Sketch."));
+  Console.println("Bridge iniciado con secreto definido en Sketch.");
   Mailbox.requestRead();
 }
 

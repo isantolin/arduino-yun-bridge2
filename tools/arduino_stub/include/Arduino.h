@@ -118,6 +118,7 @@ public:
     size_t println(int, int = 10) { return 0; }
     size_t println(void) { return 0; }
     size_t print(const __FlashStringHelper *) { return 0; }
+    size_t println(const __FlashStringHelper *) { return 0; }
 };
 
 class Stream : public Print {

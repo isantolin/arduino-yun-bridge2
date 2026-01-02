@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import secrets
 import shlex
 import ssl
@@ -34,11 +33,51 @@ __all__ = [
     "QOSLevel",
 ]
 
-MQTT_HOST = os.environ.get("YUN_BROKER_IP", DEFAULT_MQTT_HOST)
-MQTT_PORT = int(os.environ.get("YUN_BROKER_PORT", DEFAULT_MQTT_PORT))
-MQTT_TOPIC_PREFIX = DEFAULT_MQTT_TOPIC
-MQTT_USER = os.environ.get("YUN_BROKER_USER")
-MQTT_PASS = os.environ.get("YUN_BROKER_PASS")
+
+def _read_uci_general() -> dict[str, str]:
+    try:
+        from uci import Uci  # type: ignore
+    except ImportError:
+        return {}
+
+    try:
+        with Uci() as cursor:
+            section = cursor.get_all("yunbridge", "general")
+            if not section:
+                return {}
+            clean: dict[str, str] = {}
+            for key, value in section.items():
+                if key.startswith((".", "_")):
+                    continue
+                clean[str(key)] = str(value)
+            return clean
+    except Exception:
+        return {}
+
+
+_UCI_GENERAL = _read_uci_general()
+
+MQTT_HOST = _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
+MQTT_PORT = int(_UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))
+MQTT_TOPIC_PREFIX = _UCI_GENERAL.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
+MQTT_USER = _UCI_GENERAL.get("mqtt_user") or None
+MQTT_PASS = _UCI_GENERAL.get("mqtt_pass") or None
+
+
+def _default_tls_context() -> ssl.SSLContext | None:
+    mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "1")
+    if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
+        return None
+
+    cafile = _UCI_GENERAL.get("mqtt_cafile")
+    if not cafile:
+        return None
+    try:
+        ctx = ssl.create_default_context(cafile=cafile)
+        return ctx
+    except Exception:
+        return None
+
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +128,7 @@ class Bridge:
         self.topic_prefix = topic_prefix
         self.username = username
         self.password = password
-        self.tls_context = tls_context
+        self.tls_context = tls_context if tls_context is not None else _default_tls_context()
         self._client: MqttClient | None = None
         self._response_routes: dict[
             str,

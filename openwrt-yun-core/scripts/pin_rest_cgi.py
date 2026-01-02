@@ -19,6 +19,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.const import DEFAULT_MQTT_TOPIC
+from yunbridge.common import get_uci_config, parse_float, parse_int
 
 
 logger = logging.getLogger("yunbridge.pin_rest")
@@ -33,35 +34,22 @@ def _configure_fallback_logging() -> None:
     )
 
 
-def _env_int(name: str, default: int, minimum: int = 1) -> int:
-    try:
-        return max(minimum, int(os.environ.get(name, str(default))))
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float, minimum: float = 0.0) -> float:
-    try:
-        return max(minimum, float(os.environ.get(name, str(default))))
-    except (TypeError, ValueError):
-        return default
-
-
-DEFAULT_RETRIES = _env_int("YUNBRIDGE_MQTT_RETRIES", 3)
-DEFAULT_PUBLISH_TIMEOUT = _env_float("YUNBRIDGE_MQTT_TIMEOUT", 4.0, 0.0)
-DEFAULT_BACKOFF_BASE = _env_float("YUNBRIDGE_MQTT_BACKOFF", 0.5, 0.0)
-DEFAULT_POLL_INTERVAL = _env_float("YUNBRIDGE_MQTT_POLL_INTERVAL", 0.05, 0.001)
+_UCI = get_uci_config()
+DEFAULT_RETRIES = max(1, parse_int(_UCI.get("pin_mqtt_retries"), 3))
+DEFAULT_PUBLISH_TIMEOUT = max(0.0, parse_float(_UCI.get("pin_mqtt_timeout"), 4.0))
+DEFAULT_BACKOFF_BASE = max(0.0, parse_float(_UCI.get("pin_mqtt_backoff"), 0.5))
+DEFAULT_POLL_INTERVAL = max(0.001, parse_float(_UCI.get("pin_mqtt_poll_interval"), 0.05))
 
 
 def _resolve_tls_material(config: RuntimeConfig) -> SimpleNamespace | None:
-    cafile = os.environ.get("YUNBRIDGE_PIN_CAFILE") or config.mqtt_cafile
+    cafile = config.mqtt_cafile
     if not cafile:
         return None
 
     return SimpleNamespace(
         cafile=cafile,
-        certfile=os.environ.get("YUNBRIDGE_PIN_CERTFILE") or config.mqtt_certfile,
-        keyfile=os.environ.get("YUNBRIDGE_PIN_KEYFILE") or config.mqtt_keyfile,
+        certfile=config.mqtt_certfile,
+        keyfile=config.mqtt_keyfile,
     )
 
 

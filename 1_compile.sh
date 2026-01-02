@@ -18,22 +18,11 @@ Options:
                         the system package manager (requires sudo/root).
   --skip-host-deps      Skip dependency installation (default behaviour).
   -h, --help            Show this message and exit.
-
-Environment variables:
-  YUNBRIDGE_INSTALL_HOST_DEPS=1  enables host dependency installation.
-  YUNBRIDGE_SKIP_HOST_DEPS=1     forces skip regardless of other flags.
-    YUNBRIDGE_SERIAL_RETRY_TIMEOUT overrides the default serial ACK timeout
-                                                                 picked up later by 3_install.sh.
-    YUNBRIDGE_SERIAL_RETRY_ATTEMPTS overrides retry attempts consumed by
-                                                                    3_install.sh when initialising UCI.
 EOF
 }
 
 # Default to installing host deps unless explicitly disabled
-INSTALL_HOST_DEPS=${YUNBRIDGE_INSTALL_HOST_DEPS:-1}
-if [ "${YUNBRIDGE_SKIP_HOST_DEPS:-0}" = "1" ]; then
-    INSTALL_HOST_DEPS=0
-fi
+INSTALL_HOST_DEPS=1
 
 POSITIONAL=()
 while [[ $# -gt 0 ]]; do

@@ -250,8 +250,8 @@ msgstr "Gestiona secretos compartidos y material TLS sin salir de LuCI."
 msgid "Rotate Credentials"
 msgstr "Rotar credenciales"
 
-msgid "This regenerates YUNBRIDGE_SERIAL_SECRET and the MQTT password, writes them to UCI, and restarts the daemon."
-msgstr "Esto regenera YUNBRIDGE_SERIAL_SECRET y la contraseña MQTT, las escribe en UCI y reinicia el daemon."
+msgid "This regenerates the serial shared secret (serial_shared_secret) and the MQTT password, writes them to UCI, and restarts the daemon."
+msgstr "Esto regenera el secreto serie compartido (serial_shared_secret) y la contraseña MQTT, los escribe en UCI y reinicia el daemon."
 
 msgid "Rotate now"
 msgstr "Rotar ahora"

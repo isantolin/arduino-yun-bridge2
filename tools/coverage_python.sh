@@ -2,8 +2,55 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COVERAGE_ROOT="${COVERAGE_ROOT:-$ROOT_DIR/coverage/python}"
+DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
 DEFAULT_TARGET="openwrt-yun-bridge/tests"
+
+usage() {
+  cat <<'EOF'
+Usage: tools/coverage_python.sh [--output-root DIR] [--no-html] [--json] [--] [pytest args...]
+
+Options:
+  --output-root DIR  Output directory (default: coverage/python)
+  --no-html           Disable HTML coverage report
+  --json              Emit coverage.json (coverage.py JSON)
+  -h, --help          Show this help
+
+Any remaining arguments are passed to pytest. If no pytest args are supplied,
+the default target is openwrt-yun-bridge/tests.
+EOF
+}
+
+COVERAGE_ROOT="$DEFAULT_COVERAGE_ROOT"
+ENABLE_HTML=1
+ENABLE_JSON=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-root)
+      COVERAGE_ROOT="$2"
+      shift 2
+      ;;
+    --no-html)
+      ENABLE_HTML=0
+      shift
+      ;;
+    --json)
+      ENABLE_JSON=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
 
 if ! command -v pytest >/dev/null 2>&1; then
   # Avoid relying on a globally-installed `pytest` entrypoint.
@@ -35,11 +82,11 @@ python -m pytest \
   --cov=yunbridge \
   --cov-branch \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \
-  $( [[ "${COVERAGE_HTML:-1}" -eq 1 ]] && echo "--cov-report=html:$COVERAGE_ROOT/html" ) \
+  $( [[ "$ENABLE_HTML" -eq 1 ]] && echo "--cov-report=html:$COVERAGE_ROOT/html" ) \
   --cov-report=term \
   "${PYTEST_ARGS[@]}"
 
-if [[ "${COVERAGE_JSON:-0}" -eq 1 ]]; then
+if [[ "$ENABLE_JSON" -eq 1 ]]; then
   python -m coverage json \
     --include "$ROOT_DIR/openwrt-yun-bridge/yunbridge/*" \
     -o "$COVERAGE_ROOT/coverage.json" >/dev/null

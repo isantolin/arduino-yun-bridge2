@@ -1,22 +1,39 @@
-"""Helpers to introspect environment variables for the Yun bridge client."""
+"""Helpers to introspect Yun Bridge client configuration.
+
+The ecosystem uses UCI as the single source of truth; example scripts should
+not rely on environment variables for configuration.
+"""
 
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from collections.abc import Iterable
 
-_BROKER_ENV_VARS: tuple[str, ...] = (
-    "YUN_BROKER_IP",
-    "YUN_BROKER_PORT",
-    "YUN_BROKER_USER",
-    "YUN_BROKER_PASS",
-)
+
+def _read_uci_general() -> dict[str, str]:
+    try:
+        from uci import Uci  # type: ignore
+    except ImportError:
+        return {}
+
+    try:
+        with Uci() as cursor:
+            section = cursor.get_all("yunbridge", "general")
+            if not section:
+                return {}
+            clean: dict[str, str] = {}
+            for key, value in section.items():
+                if str(key).startswith((".", "_")):
+                    continue
+                clean[str(key)] = str(value)
+            return clean
+    except Exception:
+        return {}
 
 
 def dump_client_env(logger: logging.Logger | None = None) -> None:
-    """Log the MQTT-related environment variables for quick diagnostics."""
+    """Log the MQTT-related UCI settings for quick diagnostics."""
 
     def _emit(message: str) -> None:
         if logger is not None:
@@ -25,11 +42,18 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
             sys.stdout.write(message + "\n")
             sys.stdout.flush()
 
-    _emit("Yun Bridge client environment snapshot:")
-    for key in _BROKER_ENV_VARS:
-        value = os.environ.get(key)
-        if value is None:
+    _emit("Yun Bridge client configuration snapshot (UCI):")
+    cfg = _read_uci_general()
+    if not cfg:
+        _emit("  <UCI unavailable or yunbridge.general missing>")
+        return
+
+    for key in ("mqtt_host", "mqtt_port", "mqtt_tls", "mqtt_user", "mqtt_topic", "mqtt_cafile"):
+        value = cfg.get(key)
+        if not value:
             _emit(f"  {key}=<unset>")
+        elif key == "mqtt_user":
+            _emit(f"  {key}='{value}'")
         else:
             _emit(f"  {key}='{value}'")
 

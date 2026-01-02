@@ -37,34 +37,38 @@ class DatastoreComponent:
 
     async def handle_put(self, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
-        if len(payload) < 2:
+        mv = memoryview(payload)
+        if len(mv) < 2:
             logger.warning(
                 "Malformed DATASTORE_PUT payload: too short (%d bytes)",
-                len(payload),
+                len(mv),
             )
             return False
 
-        key_len = payload[0]
+        key_len = mv[0]
         cursor = 1
-        if len(payload) < cursor + key_len + DATASTORE_VALUE_LEN_SIZE:
+        header_len = 1 + int(key_len) + DATASTORE_VALUE_LEN_SIZE
+        if len(mv) < header_len:
             logger.warning(
                 "Malformed DATASTORE_PUT payload: missing key/value data.",
             )
             return False
 
-        key_bytes = payload[cursor:cursor + key_len]
-        cursor += key_len
-        value_len = payload[cursor]
+        key_end = cursor + int(key_len)
+        key_bytes = bytes(mv[cursor:key_end])
+        cursor = key_end
+
+        value_len = mv[cursor]
         cursor += DATASTORE_VALUE_LEN_SIZE
 
-        remaining = len(payload) - cursor
-        if remaining < value_len:
+        expected_total_len = cursor + int(value_len)
+        if len(mv) != expected_total_len:
             logger.warning(
                 "Malformed DATASTORE_PUT payload: value length mismatch.",
             )
             return False
 
-        value_bytes = payload[cursor:cursor + value_len]
+        value_bytes = bytes(mv[cursor:expected_total_len])
         key = key_bytes.decode("utf-8", errors="ignore")
         value = value_bytes.decode("utf-8", errors="ignore")
 

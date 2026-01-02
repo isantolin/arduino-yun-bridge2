@@ -71,11 +71,6 @@ def _install_dummy_uci_module(
 def test_load_runtime_config_applies_env_and_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.delenv("YUNBRIDGE_SERIAL_SECRET", raising=False)
-    monkeypatch.setenv("YUNBRIDGE_DEBUG", "1")
-    monkeypatch.setenv("YUNBRIDGE_WATCHDOG_INTERVAL", "0.2")
-    monkeypatch.delenv("PROCD_WATCHDOG", raising=False)
-
     raw_config = {
         "serial_port": "/dev/custom",
         "serial_baud": "57600",
@@ -90,6 +85,7 @@ def test_load_runtime_config_applies_env_and_defaults(
         "mqtt_topic": " custom/topic ",
         "allowed_commands": "  ls  ECHO ls  ",
         "file_system_root": "/data",
+        "allow_non_tmp_paths": "1",
         "process_timeout": "60",
         "mqtt_queue_limit": "0",
         "reconnect_delay": "7",
@@ -101,6 +97,8 @@ def test_load_runtime_config_applies_env_and_defaults(
         "serial_response_timeout": "1.0",
         "serial_retry_attempts": "0",
         "serial_shared_secret": " envsecret ",
+        "watchdog_enabled": "1",
+        "watchdog_interval": "0.2",
     }
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
@@ -125,7 +123,7 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.mqtt_queue_limit == 1
     assert config.reconnect_delay == 7
     assert config.status_interval == 5
-    assert config.debug_logging is True
+    assert config.debug_logging is False
     assert config.console_queue_limit_bytes == 4096
     assert config.mailbox_queue_limit == 3
     assert config.mailbox_queue_bytes_limit == 512
@@ -141,7 +139,7 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.metrics_port == const.DEFAULT_METRICS_PORT
 
 
-def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
+def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
     raw_config = {
         "serial_port": "/dev/ttyS1",
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
@@ -153,29 +151,25 @@ def test_load_runtime_config_metrics_env(monkeypatch: pytest.MonkeyPatch):
         "allowed_commands": "uptime",
         "file_system_root": "/tmp",
         "process_timeout": "10",
-        "serial_shared_secret": " inline ",
+        "serial_shared_secret": " unit-test-secret-1234 ",
         "metrics_enabled": "0",
         "metrics_host": "0.0.0.0",
         "metrics_port": "9200",
     }
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
-    monkeypatch.setenv("YUNBRIDGE_METRICS_ENABLED", "1")
-    monkeypatch.setenv("YUNBRIDGE_METRICS_HOST", " ::1 ")
-    monkeypatch.setenv("YUNBRIDGE_METRICS_PORT", "9400")
 
     config = settings.load_runtime_config()
 
-    assert config.metrics_enabled is True
-    assert config.metrics_host == "::1"
-    assert config.metrics_port == 9400
+    # OpenWrt policy: ENV variables must not override persisted UCI config.
+    assert config.metrics_enabled is False
+    assert config.metrics_host == "0.0.0.0"
+    assert config.metrics_port == 9200
 
 
-def test_load_runtime_config_allows_empty_mqtt_user_env(
+def test_load_runtime_config_allows_empty_mqtt_user_value(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.setenv("YUNBRIDGE_MQTT_USER", "   ")
-
     raw_config = {
         "serial_port": "/dev/env",
         "serial_baud": "57600",
@@ -183,6 +177,7 @@ def test_load_runtime_config_allows_empty_mqtt_user_env(
         "mqtt_host": "broker",
         "mqtt_port": "8883",
         "mqtt_cafile": "/etc/cafile",
+        "mqtt_user": "   ",
         "serial_shared_secret": " envsecret ",
     }
 
@@ -196,14 +191,11 @@ def test_load_runtime_config_allows_empty_mqtt_user_env(
 def test_load_runtime_config_prefers_uci_config(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.delenv("YUNBRIDGE_DEBUG", raising=False)
-    monkeypatch.delenv("YUNBRIDGE_WATCHDOG_INTERVAL", raising=False)
-    monkeypatch.delenv("PROCD_WATCHDOG", raising=False)
-
     uci_config = {
         "serial_port": "/dev/uci",
         "debug": "1",
         "mqtt_tls": "0",
+        "serial_shared_secret": " unit-test-secret-1234 ",
     }
 
     monkeypatch.setattr(settings, "get_uci_config", lambda: uci_config)
@@ -224,8 +216,6 @@ def test_load_runtime_config_prefers_uci_config(
 def test_load_runtime_config_falls_back_to_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    monkeypatch.delenv("YUNBRIDGE_SERIAL_SECRET", raising=False)
-
     def _uci_failure() -> dict[str, str]:
         raise RuntimeError("uci unavailable")
 
@@ -248,9 +238,6 @@ def test_load_runtime_config_falls_back_to_defaults(
 
     monkeypatch.setattr(settings, "get_uci_config", _uci_failure)
     monkeypatch.setattr(settings, "get_default_config", lambda: default_config)
-    monkeypatch.delenv("YUNBRIDGE_WATCHDOG_INTERVAL", raising=False)
-    monkeypatch.setenv("PROCD_WATCHDOG", "4000")
-
     config = settings.load_runtime_config()
 
     assert config.serial_port == "/dev/default"
@@ -266,8 +253,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.serial_response_timeout == (const.DEFAULT_SERIAL_RETRY_TIMEOUT * 2)
     assert config.serial_retry_attempts == 1
     assert config.allowed_policy.allow_all is True
-    assert config.watchdog_enabled is True
-    assert config.watchdog_interval == 2.0
+    assert config.watchdog_enabled is False
     assert config.serial_shared_secret == b"defaultsecret"
 
 
@@ -309,14 +295,29 @@ def test_get_uci_config_handles_value_wrappers(
     assert config["allowed_commands"] == "ls echo"
 
 
-def test_resolve_watchdog_settings_uses_procd(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.delenv("YUNBRIDGE_WATCHDOG_INTERVAL", raising=False)
-    monkeypatch.setenv("PROCD_WATCHDOG", "10000")
+def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
+    raw_config = {
+        "serial_port": "/dev/ttyS1",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "mqtt_host": "broker",
+        "mqtt_port": "8883",
+        "mqtt_tls": "1",
+        "mqtt_cafile": "/etc/ca.pem",
+        "mqtt_topic": "br",
+        "allowed_commands": "uptime",
+        "file_system_root": "/tmp",
+        "process_timeout": "10",
+        "serial_shared_secret": " unit-test-secret-1234 ",
+        "watchdog_enabled": "1",
+        "watchdog_interval": "0.2",
+    }
 
-    enabled, interval = settings._resolve_watchdog_settings()
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
 
-    assert enabled is True
-    assert interval == const.DEFAULT_WATCHDOG_INTERVAL
+    config = settings.load_runtime_config()
+
+    assert config.watchdog_enabled is True
+    assert config.watchdog_interval == 0.5
 
 
 def test_configure_logging_stream_handler(

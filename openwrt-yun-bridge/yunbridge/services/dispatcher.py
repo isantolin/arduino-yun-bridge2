@@ -173,6 +173,10 @@ class BridgeDispatcher:
             system.handle_get_version_resp,
         )
         self.mcu_registry.register(
+            Command.CMD_SET_BAUDRATE_RESP.value,
+            system.handle_set_baudrate_resp,
+        )
+        self.mcu_registry.register(
             Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value,
             system.handle_get_tx_debug_snapshot_resp,
         )

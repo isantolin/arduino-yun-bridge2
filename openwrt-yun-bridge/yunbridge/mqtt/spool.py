@@ -151,6 +151,13 @@ class MQTTPublishSpool:
         self._fallback_active = False
         self._fallback_hook = on_fallback
 
+        if str(self.directory) != "/tmp" and not str(self.directory).startswith("/tmp/"):
+            logger.warning(
+                "MQTT spool directory %s is not under /tmp; forcing memory-only mode",
+                self.directory,
+            )
+            self._activate_fallback("non_tmp_directory")
+
         if self._use_disk:
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)

@@ -40,9 +40,8 @@ log_error() {
 }
 
 PIN_ARG=${2:-}
-PIN_ENV=${YUNBRIDGE_LED_PIN:-}
 PIN_DEFAULT=13
-PIN="${PIN_ARG:-${PIN_ENV:-$PIN_DEFAULT}}"
+PIN="${PIN_ARG:-$PIN_DEFAULT}"
 
 if ! echo "$PIN" | grep -Eq '^[0-9]+$'; then
     echo "Error: pin must be numeric." >&2
@@ -51,14 +50,14 @@ if ! echo "$PIN" | grep -Eq '^[0-9]+$'; then
 fi
 
 TOPIC_PREFIX=$(uci -q get yunbridge.general.mqtt_topic 2>/dev/null || printf '%s' "br")
-MQTT_TOPIC=${YUNBRIDGE_TOPIC:-${TOPIC_PREFIX}/d/${PIN}}
+MQTT_TOPIC=${TOPIC_PREFIX}/d/${PIN}
 
-MQTT_HOST=${YUNBRIDGE_MQTT_HOST:-$(uci -q get yunbridge.general.mqtt_host 2>/dev/null || printf '%s' "127.0.0.1")}
-MQTT_PORT=${YUNBRIDGE_MQTT_PORT:-$(uci -q get yunbridge.general.mqtt_port 2>/dev/null || printf '%s' "8883")}
-MQTT_USER=${YUNBRIDGE_MQTT_USER:-$(uci -q get yunbridge.general.mqtt_user 2>/dev/null || printf '%s' "")}
-MQTT_PASS=${YUNBRIDGE_MQTT_PASS:-$(uci -q get yunbridge.general.mqtt_pass 2>/dev/null || printf '%s' "")}
-MQTT_TLS=${YUNBRIDGE_MQTT_TLS:-$(uci -q get yunbridge.general.mqtt_tls 2>/dev/null || printf '%s' "1")}
-MQTT_CAFILE=${YUNBRIDGE_MQTT_CAFILE:-$(uci -q get yunbridge.general.mqtt_cafile 2>/dev/null || printf '%s' "")}
+MQTT_HOST=$(uci -q get yunbridge.general.mqtt_host 2>/dev/null || printf '%s' "127.0.0.1")
+MQTT_PORT=$(uci -q get yunbridge.general.mqtt_port 2>/dev/null || printf '%s' "8883")
+MQTT_USER=$(uci -q get yunbridge.general.mqtt_user 2>/dev/null || printf '%s' "")
+MQTT_PASS=$(uci -q get yunbridge.general.mqtt_pass 2>/dev/null || printf '%s' "")
+MQTT_TLS=$(uci -q get yunbridge.general.mqtt_tls 2>/dev/null || printf '%s' "1")
+MQTT_CAFILE=$(uci -q get yunbridge.general.mqtt_cafile 2>/dev/null || printf '%s' "")
 
 # Check for mosquitto_pub command
 if ! command -v mosquitto_pub >/dev/null 2>&1; then

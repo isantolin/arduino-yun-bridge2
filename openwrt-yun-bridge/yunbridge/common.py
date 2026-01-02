@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os  # Added for environment variable access
 from collections.abc import Iterable
 from typing import (
     Final,
@@ -169,12 +168,9 @@ def get_uci_config() -> dict[str, str]:
         from uci import Uci  # type: ignore
     except ImportError:
         # In test environments (e.g. CI/Emulation), missing UCI is expected.
-        if os.environ.get("YUNBRIDGE_NO_UCI_WARNING") == "1":
-            logger.debug("UCI module not found (warning suppressed by env).")
-        else:
-            logger.warning(
-                "UCI module not found (not running on OpenWrt?); using default configuration."
-            )
+        logger.warning(
+            "UCI module not found (not running on OpenWrt?); using default configuration."
+        )
         return get_default_config()
 
     try:
@@ -262,6 +258,9 @@ def get_default_config() -> dict[str, str]:
         "metrics_enabled": "0",
         "metrics_host": DEFAULT_METRICS_HOST,
         "metrics_port": str(DEFAULT_METRICS_PORT),
+        "watchdog_enabled": "1",
+        "watchdog_interval": "5",
+        "allow_non_tmp_paths": "0",
     }
 
 

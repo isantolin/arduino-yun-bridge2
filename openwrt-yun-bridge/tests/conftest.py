@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from yunbridge import common as common_module
+from yunbridge.config import settings as settings_module
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
     DEFAULT_MQTT_PORT,
@@ -41,8 +43,17 @@ def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
 
 @pytest.fixture(autouse=True)
 def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure load_runtime_config() sees a secure serial secret by default."""
-    monkeypatch.setenv("YUNBRIDGE_SERIAL_SECRET", "unit-test-secret-1234")
+    """Ensure load_runtime_config() sees a secure serial secret by default.
+
+    Settings are UCI-only, so we inject a deterministic UCI payload for tests.
+    """
+
+    def _test_uci_config() -> dict[str, str]:
+        config = common_module.get_default_config()
+        config["serial_shared_secret"] = "unit-test-secret-1234"
+        return config
+
+    monkeypatch.setattr(settings_module, "get_uci_config", _test_uci_config)
 
 
 @pytest.fixture()

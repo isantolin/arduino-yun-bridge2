@@ -20,6 +20,8 @@ SWAP_EXPECTED_KB=$((SWAP_SIZE_MB * 1024))
 SWAP_FILE_PATH="/swapfile"
 # ----------------------------------
 
+DEVICE_ARG=${2:-}
+
 ensure_swap_uci_entry() {
     uci -q delete fstab.swap_file || true
     uci set fstab.swap_file="swap"
@@ -33,13 +35,18 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-FORCE_FORMAT="${EXTROOT_FORCE:-0}"
+FORCE_FORMAT="0"
+if command -v uci >/dev/null 2>&1; then
+    FORCE_FORMAT=$(uci -q get yunbridge.general.extroot_force 2>/dev/null || true)
+    [ -z "${FORCE_FORMAT}" ] && FORCE_FORMAT="0"
+fi
 
 # 1. Find the SD card device dynamically
 echo "--- Starting Extroot and SWAP Script (Robust Mode) ---" | tee -a $LOG_FILE
 
-if [ -n "${DEVICE:-}" ]; then
-    echo "[INFO] DEVICE predefinido detectado: $DEVICE" | tee -a $LOG_FILE
+if [ -n "${DEVICE_ARG}" ]; then
+    DEVICE="$DEVICE_ARG"
+    echo "[INFO] Dispositivo predefinido: $DEVICE" | tee -a $LOG_FILE
 else
     echo "Attempting to find SD card device..." | tee -a $LOG_FILE
 
@@ -48,7 +55,7 @@ else
 
     if [ -z "$DETECTED_DEVICE" ]; then
         echo "ERROR! Could not automatically find SD card device. Please ensure it's inserted." | tee -a $LOG_FILE
-        echo "Defina DEVICE=/dev/xxx y ejecute nuevamente." | tee -a $LOG_FILE
+        echo "Pasa el dispositivo como argumento: $0 <swap_mb> </dev/xxx>" | tee -a $LOG_FILE
         exit 1
     fi
 
@@ -68,7 +75,7 @@ case "$DEVICE" in
     /dev/mmcblk[1-9]*|/dev/mmcblk[1-9]*p[0-9]*|/dev/sd[a-z][0-9]*) ;;
     *)
         echo "ERROR! El dispositivo detectado ($DEVICE) no corresponde a una tarjeta SD soportada." | tee -a $LOG_FILE
-        echo "Defina la variable DEVICE manualmente y vuelva a ejecutar o exporte EXTROOT_FORCE=1 junto a DEVICE=/dev/..." | tee -a $LOG_FILE
+        echo "Pasa el dispositivo como argumento: $0 <swap_mb> </dev/xxx>, o configure 'yunbridge.general.extroot_force=1' en UCI para omitir confirmaciones." | tee -a $LOG_FILE
         exit 1
         ;;
 esac
@@ -155,7 +162,7 @@ else
                 ;;
         esac
     else
-        echo "[INFO] EXTROOT_FORCE=1 detectado, omitiendo confirmación interactiva." | tee -a $LOG_FILE
+        echo "[INFO] UCI extroot_force=1 detectado, omitiendo confirmación interactiva." | tee -a $LOG_FILE
     fi
 
     # 2.2 DEVICE PREPARATION AND FORMATTING
@@ -314,8 +321,9 @@ fi
 # 5. REBOOT
 echo "5. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
 echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE
-echo "   Antes de ejecutar ./3_install.sh puedes exportar" | tee -a $LOG_FILE
-echo "     YUNBRIDGE_SERIAL_RETRY_TIMEOUT / YUNBRIDGE_SERIAL_RETRY_ATTEMPTS" | tee -a $LOG_FILE
-echo "   para ajustar el control de flujo serie que el instalador aplicará." | tee -a $LOG_FILE
+echo "   Antes de ejecutar ./3_install.sh puedes ajustar el control de flujo serie vía UCI:" | tee -a $LOG_FILE
+echo "     uci set yunbridge.general.serial_retry_timeout='0.75'" | tee -a $LOG_FILE
+echo "     uci set yunbridge.general.serial_retry_attempts='3'" | tee -a $LOG_FILE
+echo "     uci commit yunbridge" | tee -a $LOG_FILE
 sleep 5
 reboot

@@ -39,15 +39,15 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
 
 
 def test_runtime_config_normalizes_topic_and_paths() -> None:
-    spool_relative = "relative/spool"
-    expected_spool = os.path.abspath(spool_relative)
+    spool_absolute = "/tmp/relative/spool"
+    expected_spool = os.path.abspath(spool_absolute)
     root_input = "/tmp//bridge/test/.."
     expected_root = os.path.abspath(root_input)
     config = RuntimeConfig(
         **_config_kwargs(
             mqtt_topic="/demo//prefix/",
             file_system_root=root_input,
-            mqtt_spool_dir=spool_relative,
+            mqtt_spool_dir=spool_absolute,
         )
     )
     assert config.mqtt_topic == "demo/prefix"

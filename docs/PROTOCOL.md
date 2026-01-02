@@ -207,6 +207,11 @@ Notas:
 - **`0x71` CMD_DATASTORE_GET (MCU → Linux)**: `[key_len: u8, key: char[]]`.
 - **`0x72` CMD_DATASTORE_GET_RESP (Linux → MCU)**: `[value_len: u8, value: char[]]`.
 
+Notas operativas:
+
+- El datastore del daemon es **volátil (RAM)**: se mantiene en memoria mientras el proceso está vivo y **no persiste a disco**.
+- La persistencia “durable” del sistema se limita al spool MQTT (si está habilitado) y por defecto se ubica en `/tmp` para minimizar desgaste de flash.
+
 ### 5.5 Mailbox (0x80)
 
 - **`0x80` CMD_MAILBOX_READ (MCU → Linux)**: sin payload. Respuesta `0x84 CMD_MAILBOX_READ_RESP`.

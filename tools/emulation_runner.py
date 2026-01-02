@@ -12,6 +12,8 @@ import subprocess
 import logging
 import time
 import os
+import tempfile
+import textwrap
 from pathlib import Path
 
 # Configure logging
@@ -122,23 +124,55 @@ def main():
 
         daemon_env = os.environ.copy()
 
+        # Provide configuration via a stub UCI module to match the daemon's
+        # UCI-only configuration policy (even outside OpenWrt).
+        os.makedirs("/tmp/yunbridge/spool", exist_ok=True)
+        os.makedirs("/tmp/yunbridge/fs", exist_ok=True)
+
+        uci_config = {
+            "serial_port": SOCAT_PORT0,
+            "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+            "serial_shared_secret": "emulation_test_secret_xyz",
+            "mqtt_host": "127.0.0.1",
+            "mqtt_port": "1883",
+            "mqtt_tls": "0",
+            "mqtt_spool_dir": "/tmp/yunbridge/spool",
+            "file_system_root": "/tmp/yunbridge/fs",
+            "watchdog_enabled": "0",
+            "debug": "1",
+        }
+
+        uci_stub_dir = tempfile.TemporaryDirectory(prefix="yunbridge-uci-")
+        uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
+        uci_stub_path.write_text(
+            textwrap.dedent(
+                """\
+                from __future__ import annotations
+
+                _CONFIG = {config!r}
+
+
+                class Uci:
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, exc_type, exc, tb):
+                        return False
+
+                    def get_all(self, package: str, section: str):
+                        if package == "yunbridge" and section == "general":
+                            return dict(_CONFIG)
+                        return None
+                """
+            ).format(config=uci_config),
+            encoding="utf-8",
+        )
+
         # Inject openwrt-yun-bridge into PYTHONPATH
         current_pythonpath = daemon_env.get("PYTHONPATH", "")
-        daemon_env["PYTHONPATH"] = f"{str(package_root)}{os.pathsep}{current_pythonpath}"
-
-        # Configuration injection to pass RuntimeConfig validation
-        daemon_env["YUNBRIDGE_PORT"] = SOCAT_PORT0
-        daemon_env["YUNBRIDGE_BAUDRATE"] = str(protocol.DEFAULT_BAUDRATE)
-
-        # Security & Transport settings for Test Environment
-        daemon_env["SERIAL_SHARED_SECRET"] = "emulation_test_secret_xyz"
-
-        # Disable MQTT TLS and watchdog for tests
-        daemon_env["MQTT_TLS"] = "0"
-        daemon_env["DISABLE_WATCHDOG"] = "1"
-
-        # [NEW] Suppress UCI missing warning (since we are not on OpenWrt)
-        daemon_env["YUNBRIDGE_NO_UCI_WARNING"] = "1"
+        daemon_env["PYTHONPATH"] = (
+            f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_pythonpath}"
+        )
 
         daemon_cmd = [
             sys.executable,
@@ -175,6 +209,11 @@ def main():
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(simavr_proc, "simavr")
         cleanup_process(socat_proc, "socat")
+
+        try:
+            uci_stub_dir.cleanup()  # type: ignore[name-defined]
+        except Exception:
+            pass
 
     return 0
 

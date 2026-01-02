@@ -80,47 +80,43 @@ mosquitto -v -p 8883 \
 
 Cuando no hay ningún broker escuchando, los ejemplos fallarán con un timeout al conectarse.
 
-### Variables de entorno útiles
+### Configuración del daemon (solo UCI)
 
-Exporta estas variables antes de ejecutar los scripts o instaladores para ajustar el comportamiento sin editar los archivos UCI:
+El daemon **no** consume variables de entorno para su configuración: todo se gestiona vía UCI/LuCI.
 
 ```sh
-# Activa el modo de depuración en el daemon y los ejemplos
-export YUNBRIDGE_DEBUG=1
+# Activa depuración en el daemon
+uci set yunbridge.general.debug='1'
+uci commit yunbridge
+/etc/init.d/yunbridge restart
 
-# Fuerza la instalación sin confirmaciones interactivas en 3_install.sh
-export YUNBRIDGE_AUTO_UPGRADE=1
-
-# Elimina automáticamente paquetes PPP/odhcp que bloquean ttyATH0 durante 3_install.sh
-export YUNBRIDGE_REMOVE_PPP=1
-
-# Omite el prompt de confirmación al preparar el extroot en 2_expand.sh
-export EXTROOT_FORCE=1
-
-# Ajusta la cola MQTT (vía UCI) antes de reiniciar el daemon
-uci set yunbridge.general.mqtt_queue_limit=256
+# Ejemplos de tuning (vía UCI)
+uci set yunbridge.general.mqtt_queue_limit='256'
 uci set yunbridge.general.serial_retry_timeout='0.75'
 uci set yunbridge.general.serial_retry_attempts='3'
 uci commit yunbridge
 /etc/init.d/yunbridge restart
 ```
 
-### Variables de entorno del cliente
+### Configuración (solo UCI)
 
-Los módulos de `yunbridge_client` detectan automáticamente estas variables al conectarse al broker MQTT:
+Este repo evita knobs por variables de entorno: usa UCI para el daemon y también para los valores del broker que consumen estos ejemplos.
+
+### Configuración del broker para los ejemplos
+
+Los módulos de `yunbridge_client` leen la configuración desde `yunbridge.general.*`:
 
 ```sh
-export YUN_BROKER_IP='192.168.1.50'
-export YUN_BROKER_PORT='8883'
-export YUN_BROKER_USER='mi_usuario'
-export YUN_BROKER_PASS='mi_password'
-# Ajusta la resiliencia de los clientes REST/LuCI frente a brokers lentos
-export YUNBRIDGE_MQTT_RETRIES='5'
-export YUNBRIDGE_MQTT_TIMEOUT='6.0'
-export YUNBRIDGE_MQTT_BACKOFF='0.75'
+uci set yunbridge.general.mqtt_host='192.168.1.50'
+uci set yunbridge.general.mqtt_port='8883'
+uci set yunbridge.general.mqtt_user='mi_usuario'
+uci set yunbridge.general.mqtt_pass='mi_password'
+uci set yunbridge.general.mqtt_tls='1'
+uci commit yunbridge
+/etc/init.d/yunbridge restart
 ```
 
-Puedes definirlas en tu shell de desarrollo o añadirlas a `/etc/profile.d/` si quieres que queden persistentes en la Yún. El prefijo MQTT (`br` por defecto) puede modificarse al instanciar `Bridge(topic_prefix="otro_prefijo")`.
+El prefijo MQTT (`br` por defecto) se controla con `yunbridge.general.mqtt_topic` o al instanciar `Bridge(topic_prefix="otro_prefijo")`.
 
 ### Nuevos ejemplos y flujos
 

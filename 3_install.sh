@@ -29,7 +29,7 @@ INIT_SCRIPT="/etc/init.d/yunbridge"
 REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
 MIN_DISK_KB=51200 # 50MB free required
-export TMPDIR=/overlay/upper/tmp
+TMPDIR=/overlay/upper/tmp
 
 # [FIX] Removed --force-reinstall as it is not supported by OpenWrt's apk
 LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
@@ -49,17 +49,9 @@ DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL="0.0"
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
 
-SKIP_TLS_AUTOGEN="${YUNBRIDGE_SKIP_TLS_AUTOGEN:-0}"
-if [ "${YUNBRIDGE_FORCE_TLS_REGEN+set}" = "set" ]; then
-    FORCE_TLS_REGEN="$YUNBRIDGE_FORCE_TLS_REGEN"
-    FORCE_TLS_REGEN_USER_SET=1
-else
-    FORCE_TLS_REGEN="1"
-    FORCE_TLS_REGEN_USER_SET=0
-fi
-if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN_USER_SET" = "0" ]; then
-    FORCE_TLS_REGEN="0"
-fi
+# Installer behaviour is configured via UCI (yunbridge.general.installer_*).
+SKIP_TLS_AUTOGEN="0"
+FORCE_TLS_REGEN="1"
 
 # [FIX] Added python3-*.apk to the top to ensure dependencies are installed BEFORE the bridge
 PROJECT_APK_PATTERNS="\
@@ -357,8 +349,8 @@ generate_tls_material() (
     tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/yunbridge-tls.XXXXXX")
     trap 'rm -rf "$tmpdir"' EXIT
     ca_key="$tls_dir/ca.key"
-    ca_days="${YUNBRIDGE_TLS_CA_DAYS:-3650}"
-    client_days="${YUNBRIDGE_TLS_CLIENT_DAYS:-825}"
+    ca_days=$(ensure_general_default installer_tls_ca_days "3650")
+    client_days=$(ensure_general_default installer_tls_client_days "825")
 
     cat >"$tmpdir/ca.cnf" <<'EOF'
 [ req ]
@@ -412,6 +404,9 @@ EOF
 )
 
 ensure_tls_material() {
+    SKIP_TLS_AUTOGEN=$(ensure_general_default installer_skip_tls_autogen "0")
+    FORCE_TLS_REGEN=$(ensure_general_default installer_force_tls_regen "1")
+
     if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN" != "1" ]; then
         return
     fi
@@ -485,20 +480,16 @@ ensure_secure_serial_secret() {
 }
 
 set_serial_uci_value() {
-    local key="$1" default_value="$2" env_value="$3"
-    if [ -n "$env_value" ]; then
-        uci_set_general "$key" "$env_value"
-    else
-        ensure_general_default "$key" "$default_value" >/dev/null
-    fi
+    local key="$1" default_value="$2"
+    ensure_general_default "$key" "$default_value" >/dev/null
 }
 
 configure_serial_link_settings() {
-    set_serial_uci_value "serial_retry_timeout" "$DEFAULT_SERIAL_RETRY_TIMEOUT" "${YUNBRIDGE_SERIAL_RETRY_TIMEOUT:-}"
-    set_serial_uci_value "serial_retry_attempts" "$DEFAULT_SERIAL_RETRY_ATTEMPTS" "${YUNBRIDGE_SERIAL_RETRY_ATTEMPTS:-}"
-    set_serial_uci_value "serial_response_timeout" "$DEFAULT_SERIAL_RESPONSE_TIMEOUT" "${YUNBRIDGE_SERIAL_RESPONSE_TIMEOUT:-}"
-    set_serial_uci_value "serial_handshake_min_interval" "$DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL" "${YUNBRIDGE_SERIAL_HANDSHAKE_MIN_INTERVAL:-}"
-    set_serial_uci_value "serial_handshake_fatal_failures" "$DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES" "${YUNBRIDGE_SERIAL_HANDSHAKE_FATAL_FAILURES:-}"
+    set_serial_uci_value "serial_retry_timeout" "$DEFAULT_SERIAL_RETRY_TIMEOUT"
+    set_serial_uci_value "serial_retry_attempts" "$DEFAULT_SERIAL_RETRY_ATTEMPTS"
+    set_serial_uci_value "serial_response_timeout" "$DEFAULT_SERIAL_RESPONSE_TIMEOUT"
+    set_serial_uci_value "serial_handshake_min_interval" "$DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL"
+    set_serial_uci_value "serial_handshake_fatal_failures" "$DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES"
     uci_commit_general
 }
 
@@ -584,7 +575,8 @@ install_manifest_pip_requirements
 
 # --- Install Prebuilt Packages ---
 echo "[STEP 5/6] Installing project .apk packages..."
-project_apk_globs=${YUNBRIDGE_PROJECT_APK_GLOBS:-$PROJECT_APK_PATTERNS}
+project_apk_globs=$(uci_get_general installer_project_apk_globs)
+[ -z "$project_apk_globs" ] && project_apk_globs="$PROJECT_APK_PATTERNS"
 project_apk_installed=0
 for glob in $project_apk_globs; do
     # [FIX] Use hyphen to match exact package versions
@@ -617,10 +609,12 @@ echo "[STEP 6/6] Finalizing system configuration..."
 [ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
 
 echo "[FINAL] Finalizing setup..."
-mkdir -p /etc/profile.d
-echo "export YUNBRIDGE_DEBUG=1" > /etc/profile.d/yunbridge_debug.sh
-chmod +x /etc/profile.d/yunbridge_debug.sh
-export YUNBRIDGE_DEBUG=1
+
+# The daemon is configured via UCI (environment variables are ignored).
+if command -v uci >/dev/null 2>&1; then
+    uci set yunbridge.general.debug='1' >/dev/null 2>&1 || true
+    uci commit yunbridge >/dev/null 2>&1 || true
+fi
 
 if [ -x "$INIT_SCRIPT" ]; then
     echo "[INFO] Enabling and starting yunbridge daemon..."

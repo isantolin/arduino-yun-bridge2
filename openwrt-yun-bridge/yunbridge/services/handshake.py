@@ -259,9 +259,8 @@ class SerialHandshakeManager:
             return
 
         hint = (
-            "Verify YUNBRIDGE_SERIAL_SECRET (configured via UCI/LuCI or "
-            "exported before starting the daemon) matches the "
-            "BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
+            "Verify yunbridge.general.serial_shared_secret (configured via UCI/LuCI) "
+            "matches the BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
         raise SerialHandshakeFatal(
             "MCU rejected the serial shared secret " f"(reason={reason}). {hint}"

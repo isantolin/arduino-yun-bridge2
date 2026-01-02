@@ -19,7 +19,7 @@ What happens:
 
 1. The script connects via SSH (default user `root`) and runs `/usr/bin/yunbridge-rotate-credentials` on the device.
 2. The helper writes the regenerated secrets to UCI (`/etc/config/yunbridge`) and restarts the daemon.
-3. The script captures the freshly generated `YUNBRIDGE_SERIAL_SECRET` and prints a ready-to-paste snippet:
+3. The script captures the freshly generated serial shared secret (stored in `yunbridge.general.serial_shared_secret`, also printed as `SERIAL_SECRET=...`) and prints a ready-to-paste snippet:
 
    ```c
    #define BRIDGE_SERIAL_SHARED_SECRET "<hex-secret>"

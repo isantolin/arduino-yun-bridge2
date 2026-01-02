@@ -32,4 +32,3 @@ name = "local-loopback"
 local = true
 # Optional environment variables are expressed as a table.
 [targets.env]
-YUNBRIDGE_SMOKE_VERBOSE = "1"

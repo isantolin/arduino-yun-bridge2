@@ -1,8 +1,10 @@
 """Settings loader for the Yun Bridge daemon.
 
-This module centralises configuration loading from UCI and environment
-variables so the rest of the code can depend on a strongly typed
-RuntimeConfig instance.
+Configuration is loaded from OpenWrt UCI (package `yunbridge`, section
+`general`) with sane defaults for non-OpenWrt environments.
+
+Runtime configuration is intentionally **UCI-only**: environment variables are
+not used as overrides.
 """
 
 from __future__ import annotations
@@ -48,28 +50,10 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
-    ENV_BRIDGE_HANDSHAKE_INTERVAL,
-    ENV_BRIDGE_SUMMARY_INTERVAL,
-    ENV_DEBUG,
-    ENV_DISABLE_WATCHDOG,
-    ENV_METRICS_ENABLED,
-    ENV_METRICS_HOST,
-    ENV_METRICS_PORT,
-    ENV_MQTT_CAFILE,
-    ENV_MQTT_CERTFILE,
-    ENV_MQTT_KEYFILE,
-    ENV_MQTT_PASS,
-    ENV_MQTT_SPOOL_DIR,
-    ENV_MQTT_USER,
-    ENV_PROCD_WATCHDOG,
-    ENV_PROCD_WATCHDOG_MS,
-    ENV_SERIAL_SECRET,
-    ENV_WATCHDOG_INTERVAL,
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
 from ..rpc.protocol import DEFAULT_BAUDRATE, DEFAULT_RETRY_LIMIT, DEFAULT_SAFE_BAUDRATE
-from .credentials import lookup_credential
 
 
 logger = logging.getLogger(__name__)
@@ -123,6 +107,7 @@ class RuntimeConfig:
     metrics_port: int = DEFAULT_METRICS_PORT
     bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
     bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
+    allow_non_tmp_paths: bool = False
 
     @property
     def tls_enabled(self) -> bool:
@@ -213,8 +198,19 @@ class RuntimeConfig:
         spool = self._normalize_path(
             self.mqtt_spool_dir,
             field="mqtt_spool_dir",
-            require_absolute=False,
+            require_absolute=True,
         )
+
+        if not self.allow_non_tmp_paths:
+            for field_name, candidate in (
+                ("file_system_root", root),
+                ("mqtt_spool_dir", spool),
+            ):
+                if candidate != "/tmp" and not candidate.startswith("/tmp/"):
+                    raise ValueError(
+                        f"{field_name} must be under /tmp unless allow_non_tmp_paths=1"
+                    )
+
         self.file_system_root = root
         self.mqtt_spool_dir = spool
 
@@ -305,41 +301,8 @@ def _optional_path(path: str | None) -> str | None:
     return candidate or None
 
 
-def _resolve_watchdog_settings() -> tuple[bool, float]:
-    disable_flag = os.environ.get(ENV_DISABLE_WATCHDOG)
-    if disable_flag and disable_flag.strip().lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }:
-        return False, DEFAULT_WATCHDOG_INTERVAL
-
-    env_interval = os.environ.get(ENV_WATCHDOG_INTERVAL)
-    if env_interval:
-        try:
-            interval = max(0.5, float(env_interval))
-        except ValueError:
-            interval = DEFAULT_WATCHDOG_INTERVAL
-        return True, interval
-
-    procd_raw = os.environ.get(ENV_PROCD_WATCHDOG) or os.environ.get(
-        ENV_PROCD_WATCHDOG_MS
-    )
-    if procd_raw:
-        try:
-            procd_ms = max(0, int(procd_raw))
-        except ValueError:
-            procd_ms = 0
-        if procd_ms > 0:
-            heartbeat = max(1.0, procd_ms / 2000.0)
-            return True, heartbeat
-
-    return False, DEFAULT_WATCHDOG_INTERVAL
-
-
 def load_runtime_config() -> RuntimeConfig:
-    """Load configuration from UCI/defaults and environment variables."""
+    """Load configuration from UCI/defaults."""
 
     raw = _load_raw_config()
 
@@ -351,96 +314,34 @@ def load_runtime_config() -> RuntimeConfig:
         return parse_bool(value) if value is not None else default
 
     debug_logging = parse_bool(raw.get("debug"))
-    if os.environ.get(ENV_DEBUG) == "1":
-        debug_logging = True
 
     allowed_commands_raw = raw.get("allowed_commands", "")
     allowed_commands = normalise_allowed_commands(allowed_commands_raw.split())
 
-    watchdog_enabled, watchdog_interval = _resolve_watchdog_settings()
+    watchdog_enabled = _get_bool("watchdog_enabled", False)
+    watchdog_interval = max(
+        0.5,
+        parse_float(raw.get("watchdog_interval"), DEFAULT_WATCHDOG_INTERVAL),
+    )
 
     mqtt_tls_value = raw.get("mqtt_tls")
     mqtt_tls = parse_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
 
-    credentials_map: dict[str, str] = {}
-
-    serial_secret_str = lookup_credential(
-        (
-            ENV_SERIAL_SECRET,
-            "SERIAL_SHARED_SECRET",
-            "serial_shared_secret",
-        ),
-        credential_map=credentials_map,
-        environ=os.environ,
-        fallback=raw.get("serial_shared_secret") or "",
-    )
+    serial_secret_str = (raw.get("serial_shared_secret") or "").strip()
     serial_secret_bytes = (
         serial_secret_str.encode("utf-8") if serial_secret_str else b""
     )
 
-    spool_dir = os.environ.get(ENV_MQTT_SPOOL_DIR) or raw.get(
-        "mqtt_spool_dir",
-        DEFAULT_MQTT_SPOOL_DIR,
-    )
-    spool_dir = (spool_dir or DEFAULT_MQTT_SPOOL_DIR).strip()
-    if not spool_dir:
-        spool_dir = DEFAULT_MQTT_SPOOL_DIR
+    spool_dir = raw.get("mqtt_spool_dir", DEFAULT_MQTT_SPOOL_DIR)
 
-    mqtt_cafile = lookup_credential(
-        (
-            ENV_MQTT_CAFILE,
-            "MQTT_CAFILE",
-            "mqtt_cafile",
-        ),
-        credential_map=credentials_map,
-        environ=os.environ,
-        fallback=raw.get("mqtt_cafile"),
-    )
-    mqtt_cafile = _optional_path(mqtt_cafile)
+    mqtt_cafile = _optional_path(raw.get("mqtt_cafile"))
     if mqtt_cafile is None and mqtt_tls:
         mqtt_cafile = DEFAULT_MQTT_CAFILE
 
-    mqtt_certfile = lookup_credential(
-        (
-            ENV_MQTT_CERTFILE,
-            "MQTT_CERTFILE",
-            "mqtt_certfile",
-        ),
-        credential_map=credentials_map,
-        environ=os.environ,
-        fallback=raw.get("mqtt_certfile"),
-    )
-    mqtt_keyfile = lookup_credential(
-        (
-            ENV_MQTT_KEYFILE,
-            "MQTT_KEYFILE",
-            "mqtt_keyfile",
-        ),
-        credential_map=credentials_map,
-        environ=os.environ,
-        fallback=raw.get("mqtt_keyfile"),
-    )
-
-    mqtt_user = lookup_credential(
-        (
-            ENV_MQTT_USER,
-            "MQTT_USERNAME",
-            "mqtt_user",
-        ),
-        credential_map=credentials_map,
-        environ=os.environ,
-        fallback=raw.get("mqtt_user"),
-    )
-    mqtt_pass = lookup_credential(
-        (
-            ENV_MQTT_PASS,
-            "MQTT_PASSWORD",
-            "mqtt_pass",
-        ),
-        credential_map=credentials_map,
-        environ=os.environ,
-        fallback=raw.get("mqtt_pass"),
-    )
+    mqtt_certfile = _optional_path(raw.get("mqtt_certfile"))
+    mqtt_keyfile = _optional_path(raw.get("mqtt_keyfile"))
+    mqtt_user = _optional_path(raw.get("mqtt_user"))
+    mqtt_pass = _optional_path(raw.get("mqtt_pass"))
 
     topic_authorization = TopicAuthorization(
         file_read=_get_bool("mqtt_allow_file_read", True),
@@ -462,38 +363,19 @@ def load_runtime_config() -> RuntimeConfig:
         analog_read=_get_bool("mqtt_allow_analog_read", True),
     )
     metrics_enabled = _get_bool("metrics_enabled", False)
-    if os.environ.get(ENV_METRICS_ENABLED) == "1":
-        metrics_enabled = True
 
-    metrics_host = raw.get("metrics_host", DEFAULT_METRICS_HOST).strip()
-    if not metrics_host:
-        metrics_host = DEFAULT_METRICS_HOST
-    env_metrics_host = os.environ.get(ENV_METRICS_HOST)
-    if env_metrics_host:
-        candidate_host = env_metrics_host.strip()
-        if candidate_host:
-            metrics_host = candidate_host
-
-    metrics_port = _get_int("metrics_port", DEFAULT_METRICS_PORT)
-    env_metrics_port = os.environ.get(ENV_METRICS_PORT)
-    if env_metrics_port:
-        metrics_port = parse_int(env_metrics_port, DEFAULT_METRICS_PORT)
+    metrics_host = (raw.get("metrics_host") or DEFAULT_METRICS_HOST).strip()
+    metrics_port = parse_int(raw.get("metrics_port"), DEFAULT_METRICS_PORT)
 
     summary_interval = parse_float(
         raw.get("bridge_summary_interval"),
         float(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
     )
-    env_summary = os.environ.get(ENV_BRIDGE_SUMMARY_INTERVAL)
-    if env_summary:
-        summary_interval = parse_float(env_summary, float(DEFAULT_BRIDGE_SUMMARY_INTERVAL))
 
     handshake_interval = parse_float(
         raw.get("bridge_handshake_interval"),
         float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
     )
-    env_handshake = os.environ.get(ENV_BRIDGE_HANDSHAKE_INTERVAL)
-    if env_handshake:
-        handshake_interval = parse_float(env_handshake, float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL))
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
@@ -589,4 +471,5 @@ def load_runtime_config() -> RuntimeConfig:
         metrics_port=max(0, metrics_port),
         bridge_summary_interval=summary_interval,
         bridge_handshake_interval=handshake_interval,
+        allow_non_tmp_paths=_get_bool("allow_non_tmp_paths", False),
     )

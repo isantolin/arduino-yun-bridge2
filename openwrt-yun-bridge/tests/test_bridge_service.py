@@ -429,7 +429,7 @@ def test_on_serial_connected_raises_on_secret_mismatch(
 
         message = str(exc_info.value)
         assert "serial shared secret" in message
-        assert "YUNBRIDGE_SERIAL_SECRET" in message
+        assert "yunbridge.general.serial_shared_secret" in message
 
     asyncio.run(_run())
 

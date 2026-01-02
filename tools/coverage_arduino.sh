@@ -6,8 +6,55 @@ LIB_ROOT="${ROOT_DIR}/openwrt-library-arduino"
 SRC_ROOT="${LIB_ROOT}/src"
 TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
-BUILD_DIR="${BUILD_DIR:-${LIB_ROOT}/build-coverage}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-${ROOT_DIR}/coverage/arduino}"
+
+usage() {
+  cat <<'EOF'
+Usage: tools/coverage_arduino.sh [--build-dir DIR] [--output-root DIR] [--force-rebuild] [--no-html]
+
+Options:
+  --build-dir DIR     Directory for build outputs (default: openwrt-library-arduino/build-coverage)
+  --output-root DIR   Directory for reports (default: coverage/arduino)
+  --force-rebuild     Rebuild harness even if binaries exist
+  --no-html           Disable HTML reports
+  -h, --help          Show this help
+EOF
+}
+
+BUILD_DIR="${LIB_ROOT}/build-coverage"
+OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
+FORCE_REBUILD=0
+ENABLE_HTML=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --build-dir)
+      BUILD_DIR="$2"
+      shift 2
+      ;;
+    --output-root)
+      OUTPUT_ROOT="$2"
+      shift 2
+      ;;
+    --force-rebuild)
+      FORCE_REBUILD=1
+      shift
+      ;;
+    --no-html)
+      ENABLE_HTML=0
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[coverage_arduino] Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
 SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 PROTOCOL_SOURCES=(
@@ -57,7 +104,7 @@ fi
 mkdir -p "${BUILD_DIR}"
 
 RUN_BUILD=0
-if [[ "${FORCE_REBUILD:-0}" -eq 1 ]]; then
+if [[ "${FORCE_REBUILD}" -eq 1 ]]; then
   RUN_BUILD=1
 fi
 
@@ -180,7 +227,7 @@ gcovr \
   --filter "${SRC_ROOT}" \
   --xml "${XML_PATH}"
 
-if [[ "${ARDUINO_COVERAGE_HTML:-1}" -eq 1 ]]; then
+if [[ "${ENABLE_HTML}" -eq 1 ]]; then
   gcovr \
     --root "${SRC_ROOT}" \
     --object-directory "${BUILD_DIR}" \
@@ -203,7 +250,7 @@ fi
 echo "[coverage_arduino] Reporte generado en:" >&2
 echo "  - ${SUMMARY_PATH}" >&2
 echo "  - ${XML_PATH}" >&2
-if [[ "${ARDUINO_COVERAGE_HTML:-1}" -eq 1 ]]; then
+if [[ "${ENABLE_HTML}" -eq 1 ]]; then
   echo "  - ${HTML_PATH}" >&2
   echo "  - ${BRIDGE_HTML_PATH}" >&2
   echo "  - ${CONSOLE_HTML_PATH}" >&2

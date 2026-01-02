@@ -9,37 +9,55 @@ USE_PROCD=1
 DEPENDS="mosquitto network"
 
 start_service() {
+    local spool_dir="/tmp/yunbridge/spool"
+    local file_root="/tmp/yun_files"
+    local watchdog_enabled="1"
+    local watchdog_interval="5"
+    local respawn_threshold="3600"
+    local respawn_timeout="5"
+    local respawn_retry="0"
+
+    if command -v uci >/dev/null 2>&1; then
+        spool_dir="$(uci -q get yunbridge.general.mqtt_spool_dir || echo "$spool_dir")"
+        file_root="$(uci -q get yunbridge.general.file_system_root || echo "$file_root")"
+        watchdog_enabled="$(uci -q get yunbridge.general.watchdog_enabled || echo "$watchdog_enabled")"
+        watchdog_interval="$(uci -q get yunbridge.general.watchdog_interval || echo "$watchdog_interval")"
+        respawn_threshold="$(uci -q get yunbridge.general.respawn_threshold || echo "$respawn_threshold")"
+        respawn_timeout="$(uci -q get yunbridge.general.respawn_timeout || echo "$respawn_timeout")"
+        respawn_retry="$(uci -q get yunbridge.general.respawn_retry || echo "$respawn_retry")"
+    fi
+
     # [FLASH PROTECTION - CRITICAL]
     # Crear directorios de trabajo en RAM (/tmp es tmpfs en OpenWrt)
     # Evita desgaste de la memoria Flash por escrituras frecuentes (spool/sockets)
-    mkdir -p /tmp/yunbridge/spool
+    mkdir -p "$spool_dir"
     mkdir -p /tmp/run/yunbridge
-    mkdir -p /tmp/yun_files
+    mkdir -p "$file_root"
     
     # Asegurar permisos correctos (777 permite acceso a tools de usuario si es necesario)
-    chmod 777 /tmp/yunbridge/spool
+    chmod 777 "$spool_dir"
     chmod 777 /tmp/run/yunbridge
-    chmod 755 /tmp/yun_files
+    chmod 755 "$file_root"
 
     procd_open_instance
 
     # Ejecución optimizada (-O) para Python 3.x
     procd_set_param command /usr/bin/python3 -O -m yunbridge
 
-    # Entorno de ejecución
-    # Forzar configuración de spool en RAM (Safety fallback)
-    procd_set_param env YUNBRIDGE_MQTT_SPOOL_DIR=/tmp/yunbridge/spool
-
     # [RESILIENCIA]
     # Reinicio infinito con backoff de 5s si falla
     # Si falla repetidamente antes de 3600s, se considera inestable
-    procd_set_param respawn ${respawn_threshold:-3600} ${respawn_timeout:-5} ${respawn_retry:-0}
+    procd_set_param respawn "$respawn_threshold" "$respawn_timeout" "$respawn_retry"
 
     # [WATCHDOG]
-    # Integración con el watchdog del kernel vía procd
-    local watchdog_ms="${YUNBRIDGE_PROCD_WATCHDOG_MS:-60000}"
-    procd_set_param watchdog "$watchdog_ms"
-    procd_set_param env YUNBRIDGE_PROCD_WATCHDOG_MS="$watchdog_ms"
+    # Integración con el watchdog del kernel vía procd (controlado por UCI)
+    case "${watchdog_enabled}" in
+        1|true|yes|on)
+            local watchdog_ms
+            watchdog_ms="$(awk -v s="${watchdog_interval}" 'BEGIN { if (s+0 <= 0) s=5; printf "%d", (s*2000) }')"
+            procd_set_param watchdog "$watchdog_ms"
+            ;;
+    esac
 
     # Redirigir logs a syslog (logread)
     procd_set_param stdout 1

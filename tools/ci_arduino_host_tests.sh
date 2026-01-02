@@ -11,7 +11,34 @@ STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${LIB_DIR}/build-host-local"
 mkdir -p "${BUILD_DIR}"
 
-CXX="${CXX:-g++}"
+usage() {
+  cat <<'EOF'
+Usage: tools/ci_arduino_host_tests.sh [--cxx COMPILER]
+
+Options:
+  --cxx COMPILER  C++ compiler to use (default: g++)
+  -h, --help      Show this help
+EOF
+}
+
+CXX="g++"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --cxx)
+      CXX="$2"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "[host-cpp] Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
 
 COMMON_DEFS=(
   -DBRIDGE_HOST_TEST=1

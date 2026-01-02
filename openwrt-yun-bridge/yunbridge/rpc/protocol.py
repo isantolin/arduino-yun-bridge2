@@ -174,4 +174,6 @@ ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
     Command.CMD_ANALOG_WRITE.value,
     Command.CMD_CONSOLE_WRITE.value,
     Command.CMD_DATASTORE_PUT.value,
+    Command.CMD_MAILBOX_PUSH.value,
+    Command.CMD_FILE_WRITE.value,
 })

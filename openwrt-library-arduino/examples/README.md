@@ -37,4 +37,4 @@ Tips:
 2. From Linux run `openwrt-yun-examples-python/mailbox_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
 3. Switch to `FrameDebug.ino` when you need to inspect timings or CRC32 values on the serial link; keep the serial console open for a few minutes to gather meaningful stats.
 
-These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in consulta [ARCHITECTURE.md](../../../docs/ARCHITECTURE.md)..
+These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in [PROTOCOL.md](../../../docs/PROTOCOL.md).

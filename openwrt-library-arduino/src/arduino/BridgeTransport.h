@@ -31,9 +31,7 @@ public:
     // Retransmits the last frame sent via sendFrame()
     bool retransmitLastFrame();
     
-    // Flow control
-    void pauseFlow();
-    void resumeFlow();
+    // Flow control (automatic in processInput)
     bool isFlowPaused() const { return _flow_paused; }
     
     // Stats/Debug

@@ -48,7 +48,7 @@ class _FakeAsyncClient:
             raise asyncio.TimeoutError()
         return self
 
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+    async def __aexit__(self, exc_type: Any, exc: Any, _tb: Any) -> None:
         pass
 
     async def publish(

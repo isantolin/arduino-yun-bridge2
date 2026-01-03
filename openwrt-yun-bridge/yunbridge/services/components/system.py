@@ -41,11 +41,6 @@ class SystemComponent:
             self.state.mcu_version = None
         return send_ok
 
-    async def request_baudrate_change(self, new_baud: int) -> bool:
-        payload = new_baud.to_bytes(4, "big")
-        logger.info("Requesting MCU baudrate change to %d", new_baud)
-        return await self.ctx.send_frame(Command.CMD_SET_BAUDRATE.value, payload)
-
     async def handle_set_baudrate_resp(self, payload: bytes) -> None:
         logger.info("MCU acknowledged baudrate change. Switching local UART...")
         # We need to signal the transport layer to change baudrate.

@@ -180,7 +180,7 @@ async def test_handle_get_free_memory_resp_malformed_no_publish() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._handle_get_free_memory_resp(protocol.FRAME_DELIMITER)
+    await service._system.handle_get_free_memory_resp(protocol.FRAME_DELIMITER)
     assert state.mqtt_publish_queue.qsize() == 0
 
 
@@ -190,7 +190,7 @@ async def test_handle_get_version_resp_publishes_and_sets_state() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._handle_get_version_resp(bytes([1, 2]))
+    await service._system.handle_get_version_resp(bytes([1, 2]))
 
     assert state.mcu_version == (1, 2)
     queued = state.mqtt_publish_queue.get_nowait()

@@ -120,7 +120,7 @@ async def test_serial_read_loop_corruption_and_recovery():
 
     iterator = feed_generator()
 
-    async def mock_read(n):
+    async def mock_read(_n):
         try:
             return await iterator.__anext__()
         except StopAsyncIteration:

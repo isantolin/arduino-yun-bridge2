@@ -20,9 +20,6 @@ class MCUHandlerRegistry:
     def register(self, command_id: int, handler: McuHandler) -> None:
         self._handlers[command_id] = handler
 
-    def bulk_register(self, mapping: dict[int, McuHandler]) -> None:
-        self._handlers.update(mapping)
-
     def get(self, command_id: int) -> McuHandler | None:
         return self._handlers.get(command_id)
 

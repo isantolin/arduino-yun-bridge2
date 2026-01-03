@@ -172,19 +172,6 @@ bool BridgeTransport::retransmitLastFrame() {
     return written == (_last_cobs_len + 1);
 }
 
-void BridgeTransport::pauseFlow() {
-    if (!_flow_paused) {
-        sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XOFF));
-        _flow_paused = true;
-    }
-}
-
-void BridgeTransport::resumeFlow() {
-    if (_flow_paused) {
-        sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XON));
-        _flow_paused = false;
-    }
-}
 void BridgeTransport::reset() {
     _parser.reset();
     _flow_paused = false;

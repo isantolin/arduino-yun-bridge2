@@ -56,14 +56,12 @@ def test_serial_flow_records_success_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.consume_serial_flow_payload()
-    assert payload is not None
+    payload = runtime_state.build_bridge_snapshot()["serial_flow"]
     assert payload["commands_sent"] == 1
     assert payload["commands_acked"] == 1
     assert payload["retries"] == 0
     assert payload["failures"] == 0
     assert payload["last_event_unix"] > 0
-    assert runtime_state.consume_serial_flow_payload() is None
 
 
 def test_serial_flow_records_retry_metrics(
@@ -96,8 +94,7 @@ def test_serial_flow_records_retry_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.consume_serial_flow_payload()
-    assert payload is not None
+    payload = runtime_state.build_bridge_snapshot()["serial_flow"]
     assert payload["commands_sent"] == 2
     assert payload["commands_acked"] == 1
     assert payload["retries"] == 1
@@ -127,8 +124,7 @@ def test_serial_flow_records_failure_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.consume_serial_flow_payload()
-    assert payload is not None
+    payload = runtime_state.build_bridge_snapshot()["serial_flow"]
     assert payload["commands_sent"] == 0
     assert payload["commands_acked"] == 0
     assert payload["retries"] == 0
@@ -252,7 +248,7 @@ def test_serial_flow_handles_response_after_ack(
         loop = asyncio.get_running_loop()
         command_id = Command.CMD_DIGITAL_READ.value
 
-        async def fake_sender(cid: int, payload: bytes) -> bool:
+        async def fake_sender(_cid: int, payload: bytes) -> bool:
             def emit_frames() -> None:
                 controller.on_frame_received(
                     Status.ACK.value,

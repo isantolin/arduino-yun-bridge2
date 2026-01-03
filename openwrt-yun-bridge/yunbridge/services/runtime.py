@@ -212,14 +212,6 @@ class BridgeService:
     def _parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
         return parse_topic(self.state.mqtt_topic_prefix, topic_name)
 
-    async def cancel_background_tasks(self) -> None:
-        # TaskGroup doesn't have a direct cancel_all, but exiting the context handles it.
-        # However, if we want to cancel explicitly without exiting:
-        # We can't easily cancel all tasks in a TaskGroup without exiting it.
-        # But this method was used to cancel the supervisor.
-        # Since we are using TaskGroup, we rely on __aexit__ to clean up.
-        pass
-
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""
 
@@ -500,58 +492,12 @@ class BridgeService:
         )
         await self.enqueue_mqtt(message)
 
-    async def _handle_get_free_memory_resp(self, payload: bytes) -> None:
-        if len(payload) != 2:
-            logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
-            return
-
-        free_memory = int.from_bytes(payload, "big")
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            "free_memory",
-            "value",
-        )
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=str(free_memory).encode("utf-8"),
-        )
-        await self.enqueue_mqtt(message)
-
-    async def _handle_get_version_resp(self, payload: bytes) -> None:
-        if len(payload) != 2:
-            logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
-            return
-
-        major, minor = payload[0], payload[1]
-        self.state.mcu_version = (major, minor)
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            "version",
-            "value",
-        )
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=f"{major}.{minor}".encode(),
-        )
-        await self.enqueue_mqtt(message)
-        logger.info("MCU firmware version reported as %d.%d", major, minor)
-
     # ------------------------------------------------------------------
     # Process management
     # ------------------------------------------------------------------
 
     def is_command_allowed(self, command: str) -> bool:
         return self.state.allowed_policy.is_allowed(command)
-
-    async def _run_command_sync(
-        self, command: str
-    ) -> tuple[int, bytes, bytes, int | None]:
-        return await self._process.run_sync(command)
-
-    async def _collect_process_output(self, pid: int) -> ProcessOutputBatch:
-        return await self._process.collect_output(pid)
 
     def _trim_process_buffers(
         self, stdout_buffer: bytearray, stderr_buffer: bytearray

@@ -106,9 +106,6 @@ class BoundedByteDeque:
         self._bytes -= len(blob)
         return blob
 
-    def to_list(self) -> list[bytes]:
-        return list(self._queue)
-
     def extend(self, chunks: Iterable[bytes]) -> QueueEvent:
         event = QueueEvent()
         for chunk in chunks:

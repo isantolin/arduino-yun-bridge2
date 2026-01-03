@@ -345,7 +345,7 @@ async def test_mqtt_task_handles_incoming_message(
 
     monkeypatch.setattr(
         "yunbridge.transport.mqtt.aiomqtt.Client",
-        lambda **kw: mock_client,
+        lambda **_kw: mock_client,
     )
 
     runtime_config.mqtt_tls = False

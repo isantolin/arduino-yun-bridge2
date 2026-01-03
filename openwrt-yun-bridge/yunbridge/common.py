@@ -6,7 +6,6 @@ import logging
 from collections.abc import Iterable
 from typing import (
     Final,
-    TypeVar,
     TYPE_CHECKING,
     cast,
 )
@@ -49,8 +48,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from yunbridge.mqtt.messages import QueuedPublish
-
-T = TypeVar("T")
 
 _TRUE_STRINGS: Final[frozenset[str]] = frozenset(
     {"1", "yes", "on", "true", "enable", "enabled"}

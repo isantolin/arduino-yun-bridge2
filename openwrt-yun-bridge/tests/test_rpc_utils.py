@@ -33,7 +33,7 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
         def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, _tb) -> bool:
             return False
 
         def get_all(self, package: str, section: str) -> dict[str, object]:
@@ -71,7 +71,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, exc_type, exc, tb) -> bool:
+        def __exit__(self, exc_type, exc, _tb) -> bool:
             return False
 
         def get_all(self, package: str, section: str) -> dict[str, object]:

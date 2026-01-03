@@ -94,7 +94,7 @@ def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPa
             return [0, 0, 0, _Termios.ECHO]
 
         @staticmethod
-        def tcsetattr(fd: int, when: int, attrs) -> None:
+        def tcsetattr(fd: int, _when: int, attrs) -> None:
             calls.append(("tcsetattr", attrs[3]))
 
     monkeypatch.setattr(serial_mod, "tty", _TTY)

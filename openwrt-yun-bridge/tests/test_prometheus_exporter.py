@@ -9,6 +9,7 @@ from yunbridge.state.context import SupervisorStats
 
 @pytest.mark.asyncio
 async def test_prometheus_exporter_serves_metrics(runtime_state, socket_enabled: None):
+    assert socket_enabled is None
     runtime_state.file_storage_quota_bytes = 4096
     runtime_state.file_storage_bytes_used = 1024
     runtime_state.supervisor_stats = {

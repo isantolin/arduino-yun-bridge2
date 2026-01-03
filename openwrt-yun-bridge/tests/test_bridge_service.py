@@ -1291,8 +1291,7 @@ def test_run_command_respects_allow_list(
         )
         service = BridgeService(runtime_config, runtime_state)
 
-        run_sync = getattr(service, "_run_command_sync")
-        status, _, stderr, _ = await run_sync("/bin/true")
+        status, _, stderr, _ = await service._process.run_sync("/bin/true")
 
         assert status == Status.ERROR.value
         assert b"not allowed" in stderr
@@ -1300,8 +1299,9 @@ def test_run_command_respects_allow_list(
         runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
         service_with_wildcard = BridgeService(runtime_config, runtime_state)
 
-        run_command = getattr(service_with_wildcard, "_run_command_sync")
-        status_ok, _, stderr_ok, _ = await run_command("/bin/true")
+        status_ok, _, stderr_ok, _ = await service_with_wildcard._process.run_sync(
+            "/bin/true"
+        )
 
         assert status_ok == Status.OK.value
         assert stderr_ok == b""
@@ -1321,8 +1321,7 @@ def test_run_command_accepts_shell_metacharacters_as_literals(
         with patch("yunbridge.services.components.process.ProcessComponent.run_sync") as mock_run:
             mock_run.return_value = (Status.OK.value, b"hello; ls\n", b"", 0)
 
-            run_sync = getattr(service, "_run_command_sync")
-            status, stdout, _, _ = await run_sync("echo hello; ls")
+            status, stdout, _, _ = await service._process.run_sync("echo hello; ls")
 
             assert status == Status.OK.value
             assert b"hello; ls" in stdout

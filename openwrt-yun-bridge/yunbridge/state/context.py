@@ -237,7 +237,6 @@ class SerialFlowStats:
     retries: int = 0
     failures: int = 0
     last_event_unix: float = 0.0
-    dirty: bool = False
 
     def as_dict(self) -> dict[str, float | int]:
         return {
@@ -657,14 +656,6 @@ class RuntimeState:
         else:
             return
         stats.last_event_unix = time.time()
-        stats.dirty = True
-
-    def consume_serial_flow_payload(self) -> dict[str, float | int] | None:
-        stats = self.serial_flow_stats
-        if not stats.dirty:
-            return None
-        stats.dirty = False
-        return stats.as_dict()
 
     def record_serial_pipeline_event(self, event: Mapping[str, Any]) -> None:
         name = str(event.get("event", ""))
@@ -749,15 +740,6 @@ class RuntimeState:
             return
         stats.backoff_seconds = 0.0
         stats.fatal = False
-
-    def mark_supervisor_unhealthy(self, name: str, reason: str) -> None:
-        stats = self.supervisor_stats.get(name)
-        if stats is None:
-            stats = SupervisorStats()
-            self.supervisor_stats[name] = stats
-        stats.last_exception = reason
-        stats.last_failure_unix = time.time()
-        stats.restarts += 1
 
     def configure_spool(self, directory: str, limit: int) -> None:
         self.mqtt_spool_dir = directory

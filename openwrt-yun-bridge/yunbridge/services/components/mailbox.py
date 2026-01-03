@@ -169,19 +169,6 @@ class MailboxComponent:
             case _:
                 logger.debug("Ignoring mailbox action '%s'", action)
 
-    async def handle_mqtt_write(
-        self,
-        payload: bytes,
-        inbound: MQTTMessage | None = None,
-    ) -> None:
-        await self._handle_mqtt_write(payload, inbound)
-
-    async def handle_mqtt_read(
-        self,
-        inbound: MQTTMessage | None = None,
-    ) -> None:
-        await self._handle_mqtt_read(inbound)
-
     async def _handle_mqtt_write(
         self,
         payload: bytes,

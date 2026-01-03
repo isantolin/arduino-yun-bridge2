@@ -141,7 +141,7 @@ async def test_mqtt_task_requeues_on_publish_failure(
         async def __aenter__(self):
             return self
 
-        async def __aexit__(self, exc_type, exc, tb):
+        async def __aexit__(self, exc_type, exc, _tb):
             return False
 
         async def subscribe(self, topic: str, qos: int = 0):

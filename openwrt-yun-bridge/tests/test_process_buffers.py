@@ -111,7 +111,7 @@ def test_collect_process_output_flushes_stored_buffers(
 
         collect = cast(
             Callable[[int], Awaitable[ProcessOutputBatch]],
-            getattr(runtime_service, "_collect_process_output"),
+            runtime_service._process.collect_output,
         )
 
         batch = await collect(pid)

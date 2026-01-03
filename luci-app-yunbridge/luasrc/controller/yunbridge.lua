@@ -239,8 +239,13 @@ end
 -- Deleted: action_log_daemon, action_log_mqtt, action_log_script and helper functions
 
 local function run_and_capture(cmd)
-    local tmp = os.tmpname()
-    local wrapped = string.format("%s >%s 2>&1", cmd, tmp)
+    -- Prefer /tmp explicitly (tmpfs) to avoid accidental flash writes.
+    local tmp = (sys.exec("mktemp -p /tmp yunbridge-luci.XXXXXX 2>/dev/null") or "")
+        :gsub("%s+$", "")
+    if tmp == "" then
+        tmp = os.tmpname()
+    end
+    local wrapped = string.format("%s >%q 2>&1", cmd, tmp)
     local rc = sys.call(wrapped)
     local output = fs.readfile(tmp) or ""
     fs.remove(tmp)

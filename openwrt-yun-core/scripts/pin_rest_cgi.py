@@ -11,8 +11,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from types import SimpleNamespace
-
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 

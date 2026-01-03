@@ -153,22 +153,6 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint8_t RPC_DIGITAL_HIGH = {consts['digital_high']};\n"
         )
-    if "test_payload_byte" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_TEST_PAYLOAD_BYTE = {consts['test_payload_byte']};\n"
-        )
-    if "test_marker_byte" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_TEST_MARKER_BYTE = {consts['test_marker_byte']};\n"
-        )
-    if "test_exit_code" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_TEST_EXIT_CODE = {consts['test_exit_code']};\n"
-        )
-    if "test_unknown_command_id" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_TEST_UNKNOWN_COMMAND_ID = {consts['test_unknown_command_id']};\n"
-        )
     if "status_code_min" in consts:
         out.write(
             f"constexpr uint8_t RPC_STATUS_CODE_MIN = {consts['status_code_min']};\n"
@@ -315,22 +299,6 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if "digital_high" in consts:
         out.write(
             f"DIGITAL_HIGH: Final[int] = {consts['digital_high']}\n"
-        )
-    if "test_payload_byte" in consts:
-        out.write(
-            f"TEST_PAYLOAD_BYTE: Final[int] = {consts['test_payload_byte']}\n"
-        )
-    if "test_marker_byte" in consts:
-        out.write(
-            f"TEST_MARKER_BYTE: Final[int] = {consts['test_marker_byte']}\n"
-        )
-    if "test_exit_code" in consts:
-        out.write(
-            f"TEST_EXIT_CODE: Final[int] = {consts['test_exit_code']}\n"
-        )
-    if "test_unknown_command_id" in consts:
-        out.write(
-            f"TEST_UNKNOWN_COMMAND_ID: Final[int] = {consts['test_unknown_command_id']}\n"
         )
     if "status_code_min" in consts:
         out.write(

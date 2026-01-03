@@ -19,7 +19,9 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include <stdio.h> // Added for debug prints
+#if defined(BRIDGE_HOST_TEST)
+  #include <stdio.h>
+#endif
 #if __has_include(<Crypto.h>)
   #include <Crypto.h>
 #else

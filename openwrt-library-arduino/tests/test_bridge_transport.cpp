@@ -113,7 +113,7 @@ static void test_transport_sendFrame_rejects_oversized_payload() {
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
 
   uint8_t payload[rpc::MAX_PAYLOAD_SIZE + 1];
-  test_memfill(payload, sizeof(payload), rpc::RPC_TEST_PAYLOAD_BYTE);
+  test_memfill(payload, sizeof(payload), TEST_PAYLOAD_BYTE);
   TEST_ASSERT(!transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
 }
 
@@ -124,9 +124,9 @@ static void test_transport_sendFrame_fails_on_short_write() {
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
 
   const uint8_t payload[] = {
-      rpc::RPC_TEST_PAYLOAD_BYTE,
-      rpc::RPC_TEST_MARKER_BYTE,
-      rpc::RPC_TEST_EXIT_CODE,
+      TEST_PAYLOAD_BYTE,
+      TEST_MARKER_BYTE,
+      TEST_EXIT_CODE,
   };
   TEST_ASSERT(!transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
 }
@@ -137,7 +137,7 @@ static void test_transport_sendFrame_fails_when_terminator_write_fails() {
   bridge::BridgeTransport transport(stream, nullptr);
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
 
-  const uint8_t payload[] = {rpc::RPC_TEST_PAYLOAD_BYTE};
+  const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
   TEST_ASSERT(!transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
 }
 
@@ -159,7 +159,7 @@ static void test_transport_retransmitLastFrame_behaviors() {
   TEST_ASSERT(!transport.retransmitLastFrame());
 
   // Create a last frame.
-  const uint8_t payload[] = {rpc::RPC_TEST_PAYLOAD_BYTE, rpc::RPC_TEST_MARKER_BYTE};
+  const uint8_t payload[] = {TEST_PAYLOAD_BYTE, TEST_MARKER_BYTE};
   TEST_ASSERT(transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
   TEST_ASSERT(transport._last_cobs_len > 0);
 
@@ -176,7 +176,7 @@ static void test_transport_processInput_flow_control_pause_resume() {
 
   // Add enough bytes so available() trips the high-water mark.
   uint8_t inbound[50];
-  test_memfill(inbound, sizeof(inbound), rpc::RPC_TEST_MARKER_BYTE);
+  test_memfill(inbound, sizeof(inbound), TEST_MARKER_BYTE);
   stream.inject_rx(inbound, sizeof(inbound));
 
   rpc::Frame frame{};
@@ -201,7 +201,7 @@ static void test_transport_processInput_overflow_sets_error() {
   // Feed more than the FrameParser buffer without a delimiter.
   enum { kLen = rpc::COBS_BUFFER_SIZE + 1 };
   uint8_t inbound[kLen];
-  test_memfill(inbound, sizeof(inbound), rpc::RPC_TEST_MARKER_BYTE);
+  test_memfill(inbound, sizeof(inbound), TEST_MARKER_BYTE);
   stream.inject_rx(inbound, sizeof(inbound));
 
   rpc::Frame frame{};

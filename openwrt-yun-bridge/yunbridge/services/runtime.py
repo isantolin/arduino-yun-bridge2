@@ -318,7 +318,6 @@ class BridgeService:
             reply_context: An optional `MQTTMessage` that triggered this publish,
                            used to derive `ResponseTopic` and `CorrelationData` for replies.
         """
-        queue = self.state.mqtt_publish_queue
         message_to_queue = message
         if reply_context is not None:
             props = getattr(reply_context, "properties", None)
@@ -346,16 +345,16 @@ class BridgeService:
 
         while True:
             try:
-                queue.put_nowait(message_to_queue)
+                self.state.mqtt_publish_queue.put_nowait(message_to_queue)
                 return
             except asyncio.QueueFull:
                 try:
-                    dropped = queue.get_nowait()
+                    dropped = self.state.mqtt_publish_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     await asyncio.sleep(0)
                     continue
 
-                queue.task_done()
+                self.state.mqtt_publish_queue.task_done()
                 drop_topic = dropped.topic_name
                 self.state.record_mqtt_drop(drop_topic)
                 stored = await self.state.stash_mqtt_message(dropped)
@@ -380,7 +379,7 @@ class BridgeService:
                 logger.warning(
                     "MQTT publish queue saturated (%d/%d); dropping oldest "
                     "topic=%s%s",
-                    queue.qsize(),
+                    self.state.mqtt_publish_queue.qsize(),
                     self.state.mqtt_queue_limit,
                     drop_topic,
                     spool_note,

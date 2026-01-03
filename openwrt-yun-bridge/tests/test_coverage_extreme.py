@@ -12,7 +12,6 @@ from yunbridge.daemon import BridgeDaemon
 from yunbridge.rpc.protocol import (
     FRAME_DELIMITER,
     Command,
-    TEST_PAYLOAD_BYTE,
     UINT8_MASK,
 )
 from yunbridge.rpc.frame import Frame
@@ -108,6 +107,7 @@ async def test_serial_read_loop_corruption_and_recovery():
     ) + FRAME_DELIMITER
     bad_cobs = bytes([5, UINT8_MASK, UINT8_MASK]) + FRAME_DELIMITER
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
+    TEST_PAYLOAD_BYTE = 0xAA
     noise = bytes([0, 0, UINT8_MASK, TEST_PAYLOAD_BYTE])
 
     feed_data = [valid_frame, bad_cobs, huge_chunk, noise, b""]

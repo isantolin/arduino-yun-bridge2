@@ -61,14 +61,14 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.11.x (lo que entrega OpenWrt 23.05). | Mantener compatibilidad hacia adelante ejecutando la suite completa en 3.12 antes de promover cambios. | `tox -e py311,py312` (nuevo `../tox.ini`) ejecuta `pytest` sobre `../openwrt-yun-bridge/tests` con ambas versiones. |
-| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc1 (`gcc-13.3.0` para `ath79/generic`). | Validar paridad con la rama estable 23.05 (`gcc-13.x`) antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc1` (por defecto) y `./1_compile.sh 23.05.5` generan IPKs equivalentes para comparar tamaño y ABI. |
+| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc1. | Validar paridad con la rama estable 23.05 antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc1` (por defecto) y `./1_compile.sh 23.05.5` generan IPKs equivalentes para comparar tamaño y ABI. |
 `../tools/coverage_arduino.sh` construye el harness con el `g++` disponible en `PATH`. | Ensayar la misma versión de GCC usada en la Yún final ejecutando el script dentro del SDK/contendor deseado o adelantando el `PATH` al toolchain adecuado. | `PATH=/opt/openwrt-sdk/staging_dir/toolchain-*/bin:$PATH ./tools/coverage_arduino.sh` recompila y reporta diferencias de warnings o cobertura. |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
 	./1_compile.sh 23.05.5 ath79/generic
 	```
-	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05, lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc1 `gcc-13.3`).
+	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05, lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc1).
 - Este repositorio incluye `tox.ini` con los entornos `py311` y `py312`; los intérpretes que falten se omiten automáticamente (`skip_missing_interpreters=true`), de modo que se puede ejecutar en laptops con un solo Python instalado y en CI multi-versión.
 - Cuando se ejecute una rama candidata, usa el siguiente comando para asegurar que ambos intérpretes comparten resultados:
 	```sh

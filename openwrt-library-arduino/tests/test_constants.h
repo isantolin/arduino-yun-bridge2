@@ -12,9 +12,9 @@ constexpr uint16_t TEST_CMD_ID_NOISE = 21930;
 constexpr uint16_t TEST_CMD_ID_FRAGMENTATION = 39304;
 constexpr uint32_t TEST_RANDOM_SEED = 3735928559U;
 constexpr uint32_t TEST_CRC32_VECTOR_EXPECTED = 1437860263U;
-constexpr uint8_t TEST_PAYLOAD_BYTE = rpc::RPC_TEST_PAYLOAD_BYTE;
-constexpr uint8_t TEST_MARKER_BYTE = rpc::RPC_TEST_MARKER_BYTE;
-constexpr uint8_t TEST_EXIT_CODE = rpc::RPC_TEST_EXIT_CODE;
+constexpr uint8_t TEST_PAYLOAD_BYTE = 0xAA;
+constexpr uint8_t TEST_MARKER_BYTE = 0x55;
+constexpr uint8_t TEST_EXIT_CODE = 0x7F;
 
 constexpr uint8_t TEST_BYTE_00 = 0;
 constexpr uint8_t TEST_BYTE_01 = 1;

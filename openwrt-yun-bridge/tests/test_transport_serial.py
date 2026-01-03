@@ -167,7 +167,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
         protocol.CRC_COVERED_HEADER_FORMAT,
         1,
         0,
-        protocol.TEST_UNKNOWN_COMMAND_ID,
+        0x99,
     )
     encoded = header + b"x" * 4
 
@@ -179,7 +179,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
     status, payload = service.send_frame.call_args[0]
     assert status == Status.MALFORMED.value
     hint = struct.unpack(UINT16_FORMAT, payload[:2])[0]
-    assert hint == protocol.TEST_UNKNOWN_COMMAND_ID
+    assert hint == 0x99
 
 
 @pytest.mark.asyncio

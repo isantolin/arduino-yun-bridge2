@@ -102,9 +102,10 @@ def test_mcu_analog_read_response_publishes_to_mqtt(
             PendingPinRequest(pin=3, reply_context=None)
         )
 
+        TEST_EXIT_CODE = 0x7F
         await service.handle_mcu_frame(
             Command.CMD_ANALOG_READ_RESP.value,
-            bytes([0, protocol.TEST_EXIT_CODE]),
+            bytes([0, TEST_EXIT_CODE]),
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()

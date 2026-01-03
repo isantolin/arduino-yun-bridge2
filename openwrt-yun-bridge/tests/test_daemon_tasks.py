@@ -248,7 +248,8 @@ async def test_serial_reader_task_limits_packet_size(
 
     service.send_frame = MethodType(_capture_send_frame, service)
 
-    oversized = bytes([protocol.TEST_PAYLOAD_BYTE]) * (
+    TEST_PAYLOAD_BYTE = 0xAA
+    oversized = bytes([TEST_PAYLOAD_BYTE]) * (
         MAX_SERIAL_PACKET_BYTES + 16
     )
     # reader will produce oversized content then a terminator

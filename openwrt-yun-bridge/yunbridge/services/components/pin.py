@@ -189,12 +189,13 @@ class PinComponent:
             else Command.CMD_ANALOG_READ
         )
         queue_limit = self.state.pending_pin_request_limit
-        queue = (
-            self.state.pending_digital_reads
+
+        queue_len = (
+            len(self.state.pending_digital_reads)
             if command == Command.CMD_DIGITAL_READ
-            else self.state.pending_analog_reads
+            else len(self.state.pending_analog_reads)
         )
-        if len(queue) >= queue_limit:
+        if queue_len >= queue_limit:
             logger.warning(
                 "Pending %s read queue saturated (limit=%d); " "dropping pin %s",
                 topic_type,

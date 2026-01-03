@@ -6,7 +6,7 @@ set -e
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
 # compile.sh - Compila todos los paquetes del ecosistema Arduino Yun v2
-# Target: OpenWrt 25.12.0 (APK System)
+# Target: OpenWrt 25.12.0-rc1 (APK System)
 #
 
 usage() {

@@ -26,7 +26,6 @@ from .components import (
     MailboxComponent,
     PinComponent,
     ProcessComponent,
-    ProcessOutputBatch,
     ShellComponent,
     SystemComponent,
 )

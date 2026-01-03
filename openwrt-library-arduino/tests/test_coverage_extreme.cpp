@@ -106,14 +106,14 @@ void test_ack_timeout_and_retry() {
     Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     io.tx.clear();
 
-    // En host tests (compilados con BRIDGE_TEST_NO_GLOBALS), begin() no bloquea
-    // esperando sincronización, y el MCU no inicia CMD_LINK_SYNC (lo inicia Linux).
-    // Para cubrir el path de retransmisión, enviamos un comando permitido en
-    // estado no sincronizado.
-    TEST_ASSERT(Bridge._synchronized == false);
+    // Para cubrir el path de retransmisión necesitamos un comando que requiera ACK.
+    // Eso solo aplica a comandos fire-and-forget (ACK-only) definidos en el spec.
+    // Forzamos estado sincronizado para que el Bridge permita enviar comandos no-system.
+    Bridge._synchronized = true;
+    TEST_ASSERT(Bridge._synchronized == true);
 
     uint8_t payload[] = {TEST_PAYLOAD_BYTE};
-    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, payload, sizeof(payload));
+    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload));
     TEST_ASSERT(ok == true);
 
     // Limpiar TX para medir solo la retransmisión.

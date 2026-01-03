@@ -240,3 +240,50 @@ def test_no_lambda_or_nested_functions_in_runtime_package() -> None:
     assert not hits, "Runtime package must not use lambda or nested defs:\n" + "\n".join(
         f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
     )
+
+
+def test_no_copied_first_party_packages_in_feeds() -> None:
+    """feeds/ must not contain copied trees of first-party packages.
+
+    Rationale: copying package sources into feeds/ creates drift and makes it
+    easy to accidentally build from stale code. Use symlinks instead.
+    """
+
+    feed_root = _REPO_ROOT / "feeds"
+    assert feed_root.is_dir(), f"missing feeds root: {feed_root}"
+
+    packages = [
+        "luci-app-yunbridge",
+        "openwrt-yun-bridge",
+        "openwrt-yun-core",
+    ]
+
+    failures: list[str] = []
+    for pkg in packages:
+        feed_entry = feed_root / pkg
+        src_dir = _REPO_ROOT / pkg
+
+        if not src_dir.is_dir():
+            failures.append(f"missing expected package directory at repo root: {pkg}")
+            continue
+
+        # It's OK if the feed entry does not exist (build scripts may create it).
+        # If it does exist, it must NOT be a copied tree.
+        if not feed_entry.exists() and not feed_entry.is_symlink():
+            continue
+
+        if not feed_entry.is_symlink():
+            failures.append(f"feeds/{pkg}: must not be a copied tree (expected symlink or absent)")
+            continue
+
+        # Resolve to ensure it points at the repo-root package.
+        try:
+            resolved = feed_entry.resolve(strict=True)
+        except FileNotFoundError:
+            failures.append(f"feeds/{pkg}: broken symlink")
+            continue
+
+        if resolved != src_dir.resolve(strict=True):
+            failures.append(f"feeds/{pkg}: points to {resolved}, expected {src_dir}")
+
+    assert not failures, "\n".join(failures)

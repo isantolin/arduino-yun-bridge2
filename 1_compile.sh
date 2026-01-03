@@ -252,14 +252,11 @@ fi
 # Bootstrap build deps inside SDK
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling==1.18.0"
 
-# 2. Sync Packages to SDK
-for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
-    if [ -d "$pkg" ]; then
-        echo "[INFO] Syncing $pkg to SDK..."
-        rm -rf "$SDK_DIR/package/$pkg"
-        cp -r "$pkg" "$SDK_DIR/package/"
-    fi
-done
+# 2. Package Sources
+# Prefer using the local feed (src-link) to avoid duplicated/copies drifting.
+# If you really need to copy sources directly into the SDK tree, set:
+#   SYNC_PACKAGES_TO_SDK=1
+SYNC_PACKAGES_TO_SDK="${SYNC_PACKAGES_TO_SDK:-0}"
 
 # --- FEEDS SETUP (FIXED FLAT STRUCTURE) ---
 LOCAL_FEED_ENABLED=0
@@ -289,6 +286,17 @@ if [ -d "$LOCAL_FEED_PATH" ]; then
     echo "src-link yunbridge $LOCAL_FEED_PATH" >> "$FEEDS_CONF"
     echo "[INFO] Configured local feed at $LOCAL_FEED_PATH"
     LOCAL_FEED_ENABLED=1
+fi
+
+# Fallback: if local feed is NOT enabled, optionally copy package sources into the SDK.
+if [ "$LOCAL_FEED_ENABLED" -ne 1 ] && [ "$SYNC_PACKAGES_TO_SDK" -eq 1 ]; then
+    for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+        if [ -d "$pkg" ]; then
+            echo "[INFO] Syncing $pkg to SDK..."
+            rm -rf "$SDK_DIR/package/$pkg"
+            cp -r "$pkg" "$SDK_DIR/package/"
+        fi
+    done
 fi
 
 # Update Feeds

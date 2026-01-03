@@ -41,8 +41,9 @@ start_service() {
 
     procd_open_instance
 
-    # Ejecución optimizada (-O) para Python 3.x
-    procd_set_param command /usr/bin/python3 -O -m yunbridge
+    # Arrancar vía wrapper (/usr/bin/yunbridge) para asegurar PYTHONPATH y flags
+    # consistentes con el layout del paquete (/usr/libexec/yunbridge).
+    procd_set_param command /usr/bin/yunbridge
 
     # [RESILIENCIA]
     # Reinicio infinito con backoff de 5s si falla

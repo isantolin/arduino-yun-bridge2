@@ -49,56 +49,54 @@ class BridgeDaemon:
         if self.config.serial_shared_secret:
             logger.info("Security check passed: Shared secret is configured.")
 
+    async def _run_serial_link(self) -> None:
+        transport = SerialTransport(self.config, self.state, self.service)
+        await transport.run()
+
+    async def _run_mqtt_link(self) -> None:
+        await mqtt_task(self.config, self.state, self.service)
+
+    async def _run_status_writer(self) -> None:
+        await status_writer(self.state, self.config.status_interval)
+
+    async def _run_metrics_publisher(self) -> None:
+        await publish_metrics(
+            self.state,
+            self.service.enqueue_mqtt,
+            float(self.config.status_interval),
+        )
+
+    async def _run_bridge_snapshots(self) -> None:
+        await publish_bridge_snapshots(
+            self.state,
+            self.service.enqueue_mqtt,
+            summary_interval=float(self.config.bridge_summary_interval),
+            handshake_interval=float(self.config.bridge_handshake_interval),
+        )
+
     def _setup_supervision(self) -> list[SupervisedTaskSpec]:
         """Prepare the list of tasks to be supervised."""
-
-        # 1. Define Core Tasks (Inner functions to capture 'self')
-        async def _serial_runner() -> None:
-            transport = SerialTransport(self.config, self.state, self.service)
-            await transport.run()
-
-        async def _mqtt_runner() -> None:
-            await mqtt_task(self.config, self.state, self.service)
-
-        async def _status_runner() -> None:
-            await status_writer(self.state, self.config.status_interval)
-
-        async def _metrics_runner() -> None:
-            await publish_metrics(
-                self.state,
-                self.service.enqueue_mqtt,
-                float(self.config.status_interval),
-            )
-
-        async def _bridge_snapshots_runner() -> None:
-            await publish_bridge_snapshots(
-                self.state,
-                self.service.enqueue_mqtt,
-                summary_interval=float(self.config.bridge_summary_interval),
-                handshake_interval=float(self.config.bridge_handshake_interval),
-            )
-
-        # 2. Build Spec List
+        # Build Spec List
         specs: list[SupervisedTaskSpec] = [
             SupervisedTaskSpec(
                 name="serial-link",
-                factory=_serial_runner,
+                factory=self._run_serial_link,
                 fatal_exceptions=(SerialHandshakeFatal,),
             ),
             SupervisedTaskSpec(
                 name="mqtt-link",
-                factory=_mqtt_runner,
+                factory=self._run_mqtt_link,
             ),
             SupervisedTaskSpec(
                 name="status-writer",
-                factory=_status_runner,
+                factory=self._run_status_writer,
                 max_restarts=5,
                 restart_interval=120.0,
                 max_backoff=10.0,
             ),
             SupervisedTaskSpec(
                 name="metrics-publisher",
-                factory=_metrics_runner,
+                factory=self._run_metrics_publisher,
                 max_restarts=5,
                 restart_interval=120.0,
                 max_backoff=10.0,
@@ -110,7 +108,7 @@ class BridgeDaemon:
            self.config.bridge_handshake_interval > 0.0:
             specs.append(SupervisedTaskSpec(
                 name="bridge-snapshots",
-                factory=_bridge_snapshots_runner,
+                factory=self._run_bridge_snapshots,
                 max_restarts=5,
                 restart_interval=120.0,
                 max_backoff=10.0,

@@ -59,6 +59,38 @@ def _serial_tx_event_factory() -> asyncio.Event:
     return evt
 
 
+def _empty_spool_snapshot_factory() -> SpoolSnapshot:
+    return cast(SpoolSnapshot, {})
+
+
+def _spool_wait_strategy_factory() -> Any:
+    return _ExponentialBackoff(
+        multiplier=5.0,
+        min_val=5.0,
+        max_val=60.0,
+    )
+
+
+def _serial_pipeline_base_payload(command_id: int, attempt: int) -> dict[str, Any]:
+    return {
+        "command_id": command_id,
+        "command_name": _command_name(command_id),
+        "attempt": attempt,
+    }
+
+
+def _coerce_snapshot_int(snapshot: Mapping[str, Any], name: str, current: int) -> int:
+    value = snapshot.get(name)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return current
+    return current
+
+
 class _ExponentialBackoff:
     def __init__(self, min_val: float, max_val: float, multiplier: float) -> None:
         self.min = min_val
@@ -264,15 +296,11 @@ class RuntimeState:
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = field(
-        default_factory=lambda: cast(SpoolSnapshot, {}),
+        default_factory=_empty_spool_snapshot_factory,
         repr=False,
     )
     _spool_wait_strategy: Any = field(
-        default_factory=lambda: _ExponentialBackoff(
-            multiplier=5.0,
-            min_val=5.0,
-            max_val=60.0,
-        ),
+        default_factory=_spool_wait_strategy_factory,
         init=False,
         repr=False,
     )
@@ -644,15 +672,8 @@ class RuntimeState:
         acked = bool(event.get("ack_received"))
         status_code = event.get("status")
 
-        def _base_payload() -> dict[str, Any]:
-            return {
-                "command_id": command_id,
-                "command_name": _command_name(command_id),
-                "attempt": attempt,
-            }
-
         if name == "start":
-            payload = _base_payload()
+            payload = _serial_pipeline_base_payload(command_id, attempt)
             payload.update(
                 started_unix=timestamp,
                 acknowledged=False,
@@ -671,7 +692,7 @@ class RuntimeState:
             return
 
         if name in {"success", "failure", "abandoned"}:
-            payload = _base_payload()
+            payload = _serial_pipeline_base_payload(command_id, attempt)
             payload.update(
                 event=name,
                 completed_unix=timestamp,
@@ -912,22 +933,13 @@ class RuntimeState:
         return snapshot
 
     def _apply_spool_observation(self, snapshot: Mapping[str, Any]) -> None:
-        def _coerce_int(name: str, current: int) -> int:
-            value = snapshot.get(name)
-            if isinstance(value, (int, float)):
-                return int(value)
-            if isinstance(value, str):
-                try:
-                    return int(value)
-                except ValueError:
-                    return current
-            return current
-
-        self.mqtt_spool_dropped_limit = _coerce_int(
+        self.mqtt_spool_dropped_limit = _coerce_snapshot_int(
+            snapshot,
             "dropped_due_to_limit",
             self.mqtt_spool_dropped_limit,
         )
-        self.mqtt_spool_trim_events = _coerce_int(
+        self.mqtt_spool_trim_events = _coerce_snapshot_int(
+            snapshot,
             "trim_events",
             self.mqtt_spool_trim_events,
         )

@@ -301,24 +301,26 @@ def _optional_path(path: str | None) -> str | None:
     return candidate or None
 
 
+def _raw_get_int(raw: dict[str, str], key: str, default: int) -> int:
+    return parse_int(raw.get(key), default)
+
+
+def _raw_get_bool(raw: dict[str, str], key: str, default: bool) -> bool:
+    value = raw.get(key)
+    return parse_bool(value) if value is not None else default
+
+
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults."""
 
     raw = _load_raw_config()
-
-    def _get_int(key: str, default: int) -> int:
-        return parse_int(raw.get(key), default)
-
-    def _get_bool(key: str, default: bool) -> bool:
-        value = raw.get(key)
-        return parse_bool(value) if value is not None else default
 
     debug_logging = parse_bool(raw.get("debug"))
 
     allowed_commands_raw = raw.get("allowed_commands", "")
     allowed_commands = normalise_allowed_commands(allowed_commands_raw.split())
 
-    watchdog_enabled = _get_bool("watchdog_enabled", False)
+    watchdog_enabled = _raw_get_bool(raw, "watchdog_enabled", False)
     watchdog_interval = max(
         0.5,
         parse_float(raw.get("watchdog_interval"), DEFAULT_WATCHDOG_INTERVAL),
@@ -344,25 +346,25 @@ def load_runtime_config() -> RuntimeConfig:
     mqtt_pass = _optional_path(raw.get("mqtt_pass"))
 
     topic_authorization = TopicAuthorization(
-        file_read=_get_bool("mqtt_allow_file_read", True),
-        file_write=_get_bool("mqtt_allow_file_write", True),
-        file_remove=_get_bool("mqtt_allow_file_remove", True),
-        datastore_get=_get_bool("mqtt_allow_datastore_get", True),
-        datastore_put=_get_bool("mqtt_allow_datastore_put", True),
-        mailbox_read=_get_bool("mqtt_allow_mailbox_read", True),
-        mailbox_write=_get_bool("mqtt_allow_mailbox_write", True),
-        shell_run=_get_bool("mqtt_allow_shell_run", True),
-        shell_run_async=_get_bool("mqtt_allow_shell_run_async", True),
-        shell_poll=_get_bool("mqtt_allow_shell_poll", True),
-        shell_kill=_get_bool("mqtt_allow_shell_kill", True),
-        console_input=_get_bool("mqtt_allow_console_input", True),
-        digital_write=_get_bool("mqtt_allow_digital_write", True),
-        digital_read=_get_bool("mqtt_allow_digital_read", True),
-        digital_mode=_get_bool("mqtt_allow_digital_mode", True),
-        analog_write=_get_bool("mqtt_allow_analog_write", True),
-        analog_read=_get_bool("mqtt_allow_analog_read", True),
+        file_read=_raw_get_bool(raw, "mqtt_allow_file_read", True),
+        file_write=_raw_get_bool(raw, "mqtt_allow_file_write", True),
+        file_remove=_raw_get_bool(raw, "mqtt_allow_file_remove", True),
+        datastore_get=_raw_get_bool(raw, "mqtt_allow_datastore_get", True),
+        datastore_put=_raw_get_bool(raw, "mqtt_allow_datastore_put", True),
+        mailbox_read=_raw_get_bool(raw, "mqtt_allow_mailbox_read", True),
+        mailbox_write=_raw_get_bool(raw, "mqtt_allow_mailbox_write", True),
+        shell_run=_raw_get_bool(raw, "mqtt_allow_shell_run", True),
+        shell_run_async=_raw_get_bool(raw, "mqtt_allow_shell_run_async", True),
+        shell_poll=_raw_get_bool(raw, "mqtt_allow_shell_poll", True),
+        shell_kill=_raw_get_bool(raw, "mqtt_allow_shell_kill", True),
+        console_input=_raw_get_bool(raw, "mqtt_allow_console_input", True),
+        digital_write=_raw_get_bool(raw, "mqtt_allow_digital_write", True),
+        digital_read=_raw_get_bool(raw, "mqtt_allow_digital_read", True),
+        digital_mode=_raw_get_bool(raw, "mqtt_allow_digital_mode", True),
+        analog_write=_raw_get_bool(raw, "mqtt_allow_analog_write", True),
+        analog_read=_raw_get_bool(raw, "mqtt_allow_analog_read", True),
     )
-    metrics_enabled = _get_bool("metrics_enabled", False)
+    metrics_enabled = _raw_get_bool(raw, "metrics_enabled", False)
 
     metrics_host = (raw.get("metrics_host") or DEFAULT_METRICS_HOST).strip()
     metrics_port = parse_int(raw.get("metrics_port"), DEFAULT_METRICS_PORT)
@@ -379,10 +381,10 @@ def load_runtime_config() -> RuntimeConfig:
 
     return RuntimeConfig(
         serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
-        serial_baud=_get_int("serial_baud", DEFAULT_BAUDRATE),
-        serial_safe_baud=_get_int("serial_safe_baud", DEFAULT_SAFE_BAUDRATE),
+        serial_baud=_raw_get_int(raw, "serial_baud", DEFAULT_BAUDRATE),
+        serial_safe_baud=_raw_get_int(raw, "serial_safe_baud", DEFAULT_SAFE_BAUDRATE),
         mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
-        mqtt_port=_get_int("mqtt_port", DEFAULT_MQTT_PORT),
+        mqtt_port=_raw_get_int(raw, "mqtt_port", DEFAULT_MQTT_PORT),
         mqtt_user=_optional_path(mqtt_user),
         mqtt_pass=_optional_path(mqtt_pass),
         mqtt_tls=mqtt_tls,
@@ -392,35 +394,44 @@ def load_runtime_config() -> RuntimeConfig:
         mqtt_topic=raw.get("mqtt_topic", DEFAULT_MQTT_TOPIC),
         allowed_commands=allowed_commands,
         file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
-        process_timeout=_get_int("process_timeout", DEFAULT_PROCESS_TIMEOUT),
+        process_timeout=_raw_get_int(raw, "process_timeout", DEFAULT_PROCESS_TIMEOUT),
         file_write_max_bytes=max(
             1,
-            _get_int(
+            _raw_get_int(
+                raw,
                 "file_write_max_bytes",
                 DEFAULT_FILE_WRITE_MAX_BYTES,
             ),
         ),
         file_storage_quota_bytes=max(
             1,
-            _get_int(
+            _raw_get_int(
+                raw,
                 "file_storage_quota_bytes",
                 DEFAULT_FILE_STORAGE_QUOTA_BYTES,
             ),
         ),
-        mqtt_queue_limit=max(1, _get_int("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)),
-        reconnect_delay=_get_int("reconnect_delay", DEFAULT_RECONNECT_DELAY),
-        status_interval=_get_int("status_interval", DEFAULT_STATUS_INTERVAL),
+        mqtt_queue_limit=max(
+            1,
+            _raw_get_int(raw, "mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT),
+        ),
+        reconnect_delay=_raw_get_int(raw, "reconnect_delay", DEFAULT_RECONNECT_DELAY),
+        status_interval=_raw_get_int(raw, "status_interval", DEFAULT_STATUS_INTERVAL),
         debug_logging=debug_logging,
-        console_queue_limit_bytes=_get_int(
+        console_queue_limit_bytes=_raw_get_int(
+            raw,
             "console_queue_limit_bytes", DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
         ),
-        mailbox_queue_limit=_get_int(
+        mailbox_queue_limit=_raw_get_int(
+            raw,
             "mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT
         ),
-        mailbox_queue_bytes_limit=_get_int(
+        mailbox_queue_bytes_limit=_raw_get_int(
+            raw,
             "mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
         ),
-        pending_pin_request_limit=_get_int(
+        pending_pin_request_limit=_raw_get_int(
+            raw,
             "pending_pin_request_limit",
             DEFAULT_PENDING_PIN_REQUESTS,
         ),
@@ -431,7 +442,7 @@ def load_runtime_config() -> RuntimeConfig:
             raw.get("serial_response_timeout"), DEFAULT_SERIAL_RESPONSE_TIMEOUT
         ),
         serial_retry_attempts=max(
-            1, _get_int("serial_retry_attempts", DEFAULT_RETRY_LIMIT)
+            1, _raw_get_int(raw, "serial_retry_attempts", DEFAULT_RETRY_LIMIT)
         ),
         serial_handshake_min_interval=max(
             0.0,
@@ -442,7 +453,8 @@ def load_runtime_config() -> RuntimeConfig:
         ),
         serial_handshake_fatal_failures=max(
             1,
-            _get_int(
+            _raw_get_int(
+                raw,
                 "serial_handshake_fatal_failures",
                 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
             ),
@@ -454,14 +466,16 @@ def load_runtime_config() -> RuntimeConfig:
         mqtt_spool_dir=spool_dir,
         process_max_output_bytes=max(
             1024,
-            _get_int(
+            _raw_get_int(
+                raw,
                 "process_max_output_bytes",
                 DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
             ),
         ),
         process_max_concurrent=max(
             1,
-            _get_int(
+            _raw_get_int(
+                raw,
                 "process_max_concurrent",
                 DEFAULT_PROCESS_MAX_CONCURRENT,
             ),
@@ -471,5 +485,5 @@ def load_runtime_config() -> RuntimeConfig:
         metrics_port=max(0, metrics_port),
         bridge_summary_interval=summary_interval,
         bridge_handshake_interval=handshake_interval,
-        allow_non_tmp_paths=_get_bool("allow_non_tmp_paths", False),
+        allow_non_tmp_paths=_raw_get_bool(raw, "allow_non_tmp_paths", False),
     )

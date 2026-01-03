@@ -148,17 +148,11 @@ class BridgeDispatcher:
         )
         self.mcu_registry.register(
             Command.CMD_DIGITAL_READ.value,
-            lambda payload: pin.handle_unexpected_mcu_request(
-                Command.CMD_DIGITAL_READ,
-                payload,
-            ),
+            self._handle_unexpected_digital_read,
         )
         self.mcu_registry.register(
             Command.CMD_ANALOG_READ.value,
-            lambda payload: pin.handle_unexpected_mcu_request(
-                Command.CMD_ANALOG_READ,
-                payload,
-            ),
+            self._handle_unexpected_analog_read,
         )
         self.mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)
         self.mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)
@@ -199,6 +193,20 @@ class BridgeDispatcher:
             if status == Status.ACK:
                 continue
             self.mcu_registry.register(status.value, status_handler_factory(status))
+
+    async def _handle_unexpected_digital_read(self, payload: bytes) -> bool:
+        pin = self.pin
+        if pin is None:
+            logger.warning("Pin component not registered; dropping unexpected DIGITAL_READ")
+            return False
+        return await pin.handle_unexpected_mcu_request(Command.CMD_DIGITAL_READ, payload)
+
+    async def _handle_unexpected_analog_read(self, payload: bytes) -> bool:
+        pin = self.pin
+        if pin is None:
+            logger.warning("Pin component not registered; dropping unexpected ANALOG_READ")
+            return False
+        return await pin.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, payload)
 
     async def dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """

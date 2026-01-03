@@ -116,6 +116,68 @@ def _is_positive_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and value > 0
 
 
+async def _emit_metrics_snapshot(
+    state: RuntimeState,
+    enqueue: PublishEnqueue,
+    *,
+    expiry_seconds: float,
+) -> None:
+    snapshot = state.build_metrics_snapshot()
+    await enqueue(
+        _build_metrics_message(
+            state,
+            snapshot,
+            expiry_seconds=expiry_seconds,
+        )
+    )
+
+
+async def _emit_bridge_snapshot(
+    state: RuntimeState,
+    enqueue: PublishEnqueue,
+    flavor: str,
+) -> None:
+    try:
+        snapshot = (
+            state.build_handshake_snapshot()
+            if flavor == "handshake"
+            else state.build_bridge_snapshot()
+        )
+        await enqueue(
+            _build_bridge_snapshot_message(
+                state,
+                flavor,
+                snapshot,
+            )
+        )
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception(
+            "Failed to publish bridge snapshot",
+            extra={"flavor": flavor},
+        )
+
+
+async def _bridge_snapshot_loop(
+    state: RuntimeState,
+    enqueue: PublishEnqueue,
+    *,
+    flavor: str,
+    seconds: int,
+) -> None:
+    # Initial emit
+    try:
+        await _emit_bridge_snapshot(state, enqueue, flavor)
+    except Exception:
+        # Already logged in _emit_bridge_snapshot
+        pass
+
+    while True:
+        await asyncio.sleep(seconds)
+        await _emit_bridge_snapshot(state, enqueue, flavor)
+
+
 async def publish_metrics(
     state: RuntimeState,
     enqueue: PublishEnqueue,
@@ -130,19 +192,9 @@ async def publish_metrics(
         raise ValueError("interval must be greater than zero")
     expiry = float(tick_seconds * 2)
 
-    async def _emit_snapshot() -> None:
-        snapshot = state.build_metrics_snapshot()
-        await enqueue(
-            _build_metrics_message(
-                state,
-                snapshot,
-                expiry_seconds=expiry,
-            )
-        )
-
     # Initial emit
     try:
-        await _emit_snapshot()
+        await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
@@ -154,7 +206,7 @@ async def publish_metrics(
         while True:
             await asyncio.sleep(tick_seconds)
             try:
-                await _emit_snapshot()
+                await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -183,46 +235,26 @@ async def publish_bridge_snapshots(
         await asyncio.Event().wait()
         return
 
-    async def _loop(flavor: str, seconds: int) -> None:
-        # Initial emit
-        try:
-            await _emit(flavor)
-        except Exception:
-            # Already logged in _emit, just continue loop
-            pass
-
-        while True:
-            await asyncio.sleep(seconds)
-            await _emit(flavor)
-
-    async def _emit(flavor: str) -> None:
-        try:
-            snapshot = (
-                state.build_handshake_snapshot()
-                if flavor == "handshake"
-                else state.build_bridge_snapshot()
-            )
-            await enqueue(
-                _build_bridge_snapshot_message(
-                    state,
-                    flavor,
-                    snapshot,
-                )
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception(
-                "Failed to publish bridge snapshot",
-                extra={"flavor": flavor},
-            )
-
     try:
         async with asyncio.TaskGroup() as tg:
             if summary_seconds is not None:
-                tg.create_task(_loop("summary", summary_seconds))
+                tg.create_task(
+                    _bridge_snapshot_loop(
+                        state,
+                        enqueue,
+                        flavor="summary",
+                        seconds=summary_seconds,
+                    )
+                )
             if handshake_seconds is not None:
-                tg.create_task(_loop("handshake", handshake_seconds))
+                tg.create_task(
+                    _bridge_snapshot_loop(
+                        state,
+                        enqueue,
+                        flavor="handshake",
+                        seconds=handshake_seconds,
+                    )
+                )
     except* asyncio.CancelledError:
         logger.info("Bridge snapshot publisher cancelled.")
         raise

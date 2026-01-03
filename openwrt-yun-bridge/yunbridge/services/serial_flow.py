@@ -138,7 +138,7 @@ class SerialFlowController:
         )
 
         async with self._condition:
-            await self._condition.wait_for(lambda: self._current is None)
+            await self._condition.wait_for(self._is_idle)
             self._current = pending
 
         try:
@@ -148,6 +148,9 @@ class SerialFlowController:
                 if self._current is pending:
                     self._current = None
                     self._condition.notify_all()
+
+    def _is_idle(self) -> bool:
+        return self._current is None
 
     def _emit_metric(self, event: str) -> None:
         if self._metrics_callback is None:

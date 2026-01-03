@@ -40,6 +40,66 @@ def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
 
 
+async def _mqtt_publisher_loop(
+    state: RuntimeState,
+    client: aiomqtt.Client,
+) -> None:
+    while True:
+        # [OPTIMIZATION] Flush spool before processing new messages
+        await state.flush_mqtt_spool()
+        message = await state.mqtt_publish_queue.get()
+        topic_name = message.topic_name
+        props = build_mqtt_properties(message)
+
+        try:
+            await client.publish(
+                topic_name,
+                message.payload,
+                qos=int(message.qos),
+                retain=message.retain,
+                properties=props,
+            )
+        except asyncio.CancelledError:
+            logger.debug("MQTT publisher loop cancelled.")
+            try:
+                state.mqtt_publish_queue.put_nowait(message)
+            except asyncio.QueueFull:
+                logger.warning("MQTT queue full during shutdown; message dropped.")
+            raise
+        except aiomqtt.MqttError as exc:
+            logger.warning("MQTT publish failed (%s); requeuing.", exc)
+            try:
+                state.mqtt_publish_queue.put_nowait(message)
+            except asyncio.QueueFull:
+                logger.error("MQTT spool full; message dropped.")
+            raise
+        except Exception:
+            logger.exception("Critical error in MQTT publisher.")
+            raise
+        finally:
+            state.mqtt_publish_queue.task_done()
+
+
+async def _mqtt_subscriber_loop(
+    service: BridgeService,
+    client: aiomqtt.Client,
+) -> None:
+    try:
+        async for message in client.messages:
+            topic = str(message.topic)
+            if not topic:
+                continue
+            try:
+                await service.handle_mqtt_message(message)
+            except Exception:
+                logger.exception("Error processing MQTT topic %s", topic)
+    except asyncio.CancelledError:
+        pass  # Clean exit
+    except aiomqtt.MqttError as exc:
+        logger.warning("MQTT subscriber loop interrupted: %s", exc)
+        raise
+
+
 async def mqtt_task(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -47,58 +107,6 @@ async def mqtt_task(
 ) -> None:
     tls_context = _configure_tls(config)
     reconnect_delay = max(1, config.reconnect_delay)
-
-    async def _publisher_loop(client: aiomqtt.Client) -> None:
-        while True:
-            # [OPTIMIZATION] Flush spool before processing new messages
-            await state.flush_mqtt_spool()
-            message = await state.mqtt_publish_queue.get()
-            topic_name = message.topic_name
-            props = build_mqtt_properties(message)
-
-            try:
-                await client.publish(
-                    topic_name,
-                    message.payload,
-                    qos=int(message.qos),
-                    retain=message.retain,
-                    properties=props,
-                )
-            except asyncio.CancelledError:
-                logger.debug("MQTT publisher loop cancelled.")
-                try:
-                    state.mqtt_publish_queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    logger.warning("MQTT queue full during shutdown; message dropped.")
-                raise
-            except aiomqtt.MqttError as exc:
-                logger.warning("MQTT publish failed (%s); requeuing.", exc)
-                try:
-                    state.mqtt_publish_queue.put_nowait(message)
-                except asyncio.QueueFull:
-                    logger.error("MQTT spool full; message dropped.")
-                raise
-            except Exception:
-                logger.exception("Critical error in MQTT publisher.")
-                raise
-            finally:
-                state.mqtt_publish_queue.task_done()
-
-    async def _subscriber_loop(client: aiomqtt.Client) -> None:
-        try:
-            async for message in client.messages:
-                topic = str(message.topic)
-                if not topic:
-                    continue
-                try:
-                    await service.handle_mqtt_message(message)
-                except Exception:
-                    logger.exception("Error processing MQTT topic %s", topic)
-        except asyncio.CancelledError:
-            pass  # Clean exit
-        except aiomqtt.MqttError as exc:
-            logger.warning("MQTT subscriber loop interrupted: %s", exc)
-            raise
 
     while True:
         try:
@@ -119,32 +127,83 @@ async def mqtt_task(
             ) as client:
                 logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
 
-                prefix = state.mqtt_topic_prefix
-
-                def _sub(top: Topic | str, *segs: str) -> str:
-                    return topic_path(prefix, top, *segs)
-
-                # Subscription List (Optimized)
+                # Subscription List (no closures/lambdas; always read prefix from state)
                 topics = [
-                    (_sub(Topic.DIGITAL, "+", Action.PIN_MODE), 0),
-                    (_sub(Topic.DIGITAL, "+", Action.PIN_READ), 0),
-                    (_sub(Topic.DIGITAL, "+"), 0),
-                    (_sub(Topic.ANALOG, "+", Action.PIN_READ), 0),
-                    (_sub(Topic.ANALOG, "+"), 0),
-                    (_sub(Topic.CONSOLE, Action.CONSOLE_IN), 0),
-                    (_sub(Topic.DATASTORE, Action.DATASTORE_PUT, "#"), 0),
-                    (_sub(Topic.DATASTORE, Action.DATASTORE_GET, "#"), 0),
-                    (_sub(Topic.MAILBOX, Action.MAILBOX_WRITE), 0),
-                    (_sub(Topic.MAILBOX, Action.MAILBOX_READ), 0),
-                    (_sub(Topic.SHELL, Action.SHELL_RUN), 0),
-                    (_sub(Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
-                    (_sub(Topic.SHELL, Action.SHELL_POLL, "#"), 0),
-                    (_sub(Topic.SHELL, Action.SHELL_KILL, "#"), 0),
-                    (_sub(Topic.SYSTEM, Action.SYSTEM_FREE_MEMORY, Action.SYSTEM_GET), 0),
-                    (_sub(Topic.SYSTEM, Action.SYSTEM_VERSION, Action.SYSTEM_GET), 0),
-                    (_sub(Topic.FILE, Action.FILE_WRITE, "#"), 0),
-                    (_sub(Topic.FILE, Action.FILE_READ, "#"), 0),
-                    (_sub(Topic.FILE, Action.FILE_REMOVE, "#"), 0),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.DIGITAL,
+                            "+",
+                            Action.PIN_MODE,
+                        ),
+                        0,
+                    ),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.DIGITAL,
+                            "+",
+                            Action.PIN_READ,
+                        ),
+                        0,
+                    ),
+                    (topic_path(state.mqtt_topic_prefix, Topic.DIGITAL, "+"), 0),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.ANALOG,
+                            "+",
+                            Action.PIN_READ,
+                        ),
+                        0,
+                    ),
+                    (topic_path(state.mqtt_topic_prefix, Topic.ANALOG, "+"), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.CONSOLE, Action.CONSOLE_IN), 0),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.DATASTORE,
+                            Action.DATASTORE_PUT,
+                            "#",
+                        ),
+                        0,
+                    ),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.DATASTORE,
+                            Action.DATASTORE_GET,
+                            "#",
+                        ),
+                        0,
+                    ),
+                    (topic_path(state.mqtt_topic_prefix, Topic.MAILBOX, Action.MAILBOX_WRITE), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.MAILBOX, Action.MAILBOX_READ), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_RUN), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_POLL, "#"), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_KILL, "#"), 0),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.SYSTEM,
+                            Action.SYSTEM_FREE_MEMORY,
+                            Action.SYSTEM_GET,
+                        ),
+                        0,
+                    ),
+                    (
+                        topic_path(
+                            state.mqtt_topic_prefix,
+                            Topic.SYSTEM,
+                            Action.SYSTEM_VERSION,
+                            Action.SYSTEM_GET,
+                        ),
+                        0,
+                    ),
+                    (topic_path(state.mqtt_topic_prefix, Topic.FILE, Action.FILE_WRITE, "#"), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.FILE, Action.FILE_READ, "#"), 0),
+                    (topic_path(state.mqtt_topic_prefix, Topic.FILE, Action.FILE_REMOVE, "#"), 0),
                 ]
 
                 for topic, qos in topics:
@@ -153,8 +212,8 @@ async def mqtt_task(
                 logger.info("Subscribed to %d command topics.", len(topics))
 
                 async with asyncio.TaskGroup() as task_group:
-                    task_group.create_task(_publisher_loop(client))
-                    task_group.create_task(_subscriber_loop(client))
+                    task_group.create_task(_mqtt_publisher_loop(state, client))
+                    task_group.create_task(_mqtt_subscriber_loop(service, client))
 
         except* aiomqtt.MqttError as exc_group:
             for exc in exc_group.exceptions:

@@ -14,7 +14,7 @@ from aiomqtt.message import Message as MQTTMessage
 from ..config.settings import RuntimeConfig
 from ..const import TOPIC_FORBIDDEN_REASON
 from ..mqtt.messages import QueuedPublish
-from ..protocol.topics import Topic, parse_topic, topic_path
+from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
 from ..rpc import protocol
 from ..rpc.protocol import Status  # Only Status from rpc.protocol needed
 
@@ -42,6 +42,29 @@ from .routers import MCUHandlerRegistry, MQTTRouter
 from .serial_flow import SerialFlowController
 
 logger = logging.getLogger("yunbridge.service")
+
+
+async def _background_task_runner(
+    coroutine: Coroutine[Any, Any, None],
+    *,
+    task_name: str | None,
+) -> None:
+    try:
+        await coroutine
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Background task %s failed", task_name or "unknown")
+
+
+class _StatusHandler:
+    def __init__(self, service: "BridgeService", status: Status) -> None:
+        self._service = service
+        self._status = status
+
+    async def __call__(self, payload: bytes) -> None:
+        await self._service.handle_status(self._status, payload)
+
 
 STATUS_VALUES = {status.value for status in Status}
 _PRE_SYNC_ALLOWED_COMMANDS = {
@@ -93,7 +116,7 @@ class BridgeService:
             mqtt_router=MQTTRouter(),
             send_frame=self.send_frame,
             acknowledge_frame=self._acknowledge_mcu_frame,
-            is_link_synchronized=lambda: self.state.link_is_synchronized,
+            is_link_synchronized=self._is_link_synchronized,
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
@@ -178,15 +201,16 @@ class BridgeService:
         if not self._task_group:
             raise RuntimeError("BridgeService context not entered")
 
-        async def _safe_runner() -> None:
-            try:
-                await coroutine
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                logger.exception("Background task %s failed", name or "unknown")
+        return self._task_group.create_task(
+            _background_task_runner(coroutine, task_name=name),
+            name=name,
+        )
 
-        return self._task_group.create_task(_safe_runner(), name=name)
+    def _is_link_synchronized(self) -> bool:
+        return self.state.link_is_synchronized
+
+    def _parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
+        return parse_topic(self.state.mqtt_topic_prefix, topic_name)
 
     async def cancel_background_tasks(self) -> None:
         # TaskGroup doesn't have a direct cancel_all, but exiting the context handles it.
@@ -276,7 +300,7 @@ class BridgeService:
         try:
             await self._dispatcher.dispatch_mqtt_message(
                 inbound,
-                lambda t: parse_topic(self.state.mqtt_topic_prefix, t),
+                self._parse_inbound_topic,
             )
         except Exception:
             logger.exception(
@@ -444,12 +468,9 @@ class BridgeService:
             logger.debug("MCU > ACK received")
 
     def _status_handler(self, status: Status) -> Callable[[bytes], Awaitable[None]]:
-        async def _handler(payload: bytes) -> None:
-            await self._handle_status(status, payload)
+        return _StatusHandler(self, status)
 
-        return _handler
-
-    async def _handle_status(self, status: Status, payload: bytes) -> None:
+    async def handle_status(self, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)
         text = payload.decode("utf-8", errors="ignore") if payload else ""
         log_method = logger.warning if status != Status.ACK else logger.debug

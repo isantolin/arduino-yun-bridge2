@@ -78,6 +78,19 @@ def _ensure_raw_mode(serial_obj: Any, port_name: str) -> None:
         logger.warning("Failed to force raw mode on serial port: %s", e)
 
 
+def _open_serial_hardware(ser: Any, url: str) -> None:
+    try:
+        ser.open()
+        if ser.fd is None:
+            raise serial.SerialException("Serial port opened but no fd available")
+        os.set_blocking(ser.fd, False)
+        _ensure_raw_mode(ser, url)
+    except Exception:
+        if getattr(ser, "is_open", False):
+            ser.close()
+        raise
+
+
 async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     logger.warning("Serial disconnected; dropping frame 0x%02X", command_id)
     return False
@@ -148,6 +161,16 @@ class SerialProtocol(asyncio.Protocol):
         self.reader.feed_eof()
 
 
+class _SerialReadProtocolFactory:
+    def __init__(self) -> None:
+        self.protocol: SerialProtocol | None = None
+
+    def __call__(self) -> SerialProtocol:
+        protocol = SerialProtocol()
+        self.protocol = protocol
+        return protocol
+
+
 class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
     """Native asyncio Protocol for Serial communication (Write side with Flow Control)."""
     def __init__(self) -> None:
@@ -167,6 +190,16 @@ class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
         FlowControlMixin.resume_writing(self)
 
 
+class _SerialWriteProtocolFactory:
+    def __init__(self) -> None:
+        self.protocol: SerialWriteProtocol | None = None
+
+    def __call__(self) -> SerialWriteProtocol:
+        protocol = SerialWriteProtocol()
+        self.protocol = protocol
+        return protocol
+
+
 async def _open_serial_connection(
     url: str, baudrate: int, **kwargs: Any
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
@@ -182,26 +215,17 @@ async def _open_serial_connection(
     if kwargs.get("exclusive", False):
         ser.exclusive = True
 
-    def _open_hardware() -> None:
-        try:
-            ser.open()
-            if ser.fd is None:
-                raise serial.SerialException("Serial port opened but no fd available")
-            os.set_blocking(ser.fd, False)
-            _ensure_raw_mode(ser, url)
-        except Exception:
-            if ser.is_open:
-                ser.close()
-            raise
-
-    await loop.run_in_executor(None, _open_hardware)
+    await loop.run_in_executor(None, _open_serial_hardware, ser, url)
 
     # Separate Read and Write transports for bidirectional pipe support
-    read_protocol = SerialProtocol()
-    await loop.connect_read_pipe(lambda: read_protocol, ser)
+    read_factory = _SerialReadProtocolFactory()
+    await loop.connect_read_pipe(read_factory, ser)
+    read_protocol = read_factory.protocol
+    if read_protocol is None:  # pragma: no cover
+        raise RuntimeError("Serial read protocol factory did not produce a protocol")
 
-    write_protocol = SerialWriteProtocol()
-    write_transport, _ = await loop.connect_write_pipe(lambda: write_protocol, ser)
+    write_factory = _SerialWriteProtocolFactory()
+    write_transport, write_protocol = await loop.connect_write_pipe(write_factory, ser)
 
     writer = asyncio.StreamWriter(
         write_transport,

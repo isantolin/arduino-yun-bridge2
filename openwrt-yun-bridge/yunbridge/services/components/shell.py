@@ -94,18 +94,15 @@ class ShellComponent:
             protocol.MQTT_SUFFIX_RESPONSE,
         )
 
-        def _build_response(payload_bytes: bytes) -> QueuedPublish:
-            return QueuedPublish(
-                topic_name=response_topic,
-                payload=payload_bytes,
-                content_type="text/plain; charset=utf-8",
-                message_expiry_interval=30,
-            )
-
         async with AsyncExitStack() as stack:
             stack.push_async_callback(
                 self.ctx.enqueue_mqtt,
-                _build_response(b"Error: shell handler failed unexpectedly"),
+                self._build_response(
+                    response_topic,
+                    b"Error: shell handler failed unexpectedly",
+                    content_type="text/plain; charset=utf-8",
+                    message_expiry_interval=30,
+                ),
                 reply_context=inbound,
             )
             (
@@ -137,7 +134,12 @@ class ShellComponent:
 
             stack.pop_all()
             await self.ctx.enqueue_mqtt(
-                _build_response(response.encode("utf-8")),
+                self._build_response(
+                    response_topic,
+                    response.encode("utf-8"),
+                    content_type="text/plain; charset=utf-8",
+                    message_expiry_interval=30,
+                ),
                 reply_context=inbound,
             )
 
@@ -173,22 +175,31 @@ class ShellComponent:
             protocol.MQTT_SUFFIX_RESPONSE,
         )
 
-        def _build_response(payload_bytes: bytes) -> QueuedPublish:
-            return QueuedPublish(
-                topic_name=response_topic,
-                payload=payload_bytes,
-            )
-
         if pid == protocol.INVALID_ID_SENTINEL:
             await self.ctx.enqueue_mqtt(
-                _build_response(b"error:not_allowed"),
+                self._build_response(response_topic, b"error:not_allowed"),
                 reply_context=inbound,
             )
             return
 
         await self.ctx.enqueue_mqtt(
-            _build_response(str(pid).encode("utf-8")),
+            self._build_response(response_topic, str(pid).encode("utf-8")),
             reply_context=inbound,
+        )
+
+    def _build_response(
+        self,
+        topic_name: str,
+        payload: bytes,
+        *,
+        content_type: str | None = None,
+        message_expiry_interval: int | None = None,
+    ) -> QueuedPublish:
+        return QueuedPublish(
+            topic_name=topic_name,
+            payload=payload,
+            content_type=content_type,
+            message_expiry_interval=message_expiry_interval,
         )
 
     async def _handle_poll(self, pid_model: ShellPidPayload) -> None:

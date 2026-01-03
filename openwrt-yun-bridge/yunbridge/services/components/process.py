@@ -84,45 +84,43 @@ class ProcessComponent:
             )
             return
 
-        async def _execute() -> None:
-            async with AsyncExitStack() as stack:
-                stack.callback(self._release_process_slot)
-                try:
-                    (
-                        status,
-                        stdout_bytes,
-                        stderr_bytes,
-                        exit_code,
-                    ) = await self.run_sync(command)
-                    response = self._build_sync_response(
-                        status,
-                        stdout_bytes,
-                        stderr_bytes,
-                    )
-                    await self.ctx.send_frame(
-                        Command.CMD_PROCESS_RUN_RESP.value, response
-                    )
-                    logger.debug(
-                        "Sent PROCESS_RUN_RESP status=%d exit=%s",
-                        status,
-                        exit_code,
-                    )
-                except CommandValidationError as exc:
-                    await self.ctx.send_frame(
-                        Status.ERROR.value,
-                        encode_status_reason(exc.message),
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to execute synchronous process command '%s'",
-                        command,
-                    )
-                    await self.ctx.send_frame(
-                        Status.ERROR.value,
-                        b"process_run_internal_error",
-                    )
+        await self.ctx.schedule_background(self._execute_sync_command(command))
 
-        await self.ctx.schedule_background(_execute())
+    async def _execute_sync_command(self, command: str) -> None:
+        async with AsyncExitStack() as stack:
+            stack.callback(self._release_process_slot)
+            try:
+                (
+                    status,
+                    stdout_bytes,
+                    stderr_bytes,
+                    exit_code,
+                ) = await self.run_sync(command)
+                response = self._build_sync_response(
+                    status,
+                    stdout_bytes,
+                    stderr_bytes,
+                )
+                await self.ctx.send_frame(Command.CMD_PROCESS_RUN_RESP.value, response)
+                logger.debug(
+                    "Sent PROCESS_RUN_RESP status=%d exit=%s",
+                    status,
+                    exit_code,
+                )
+            except CommandValidationError as exc:
+                await self.ctx.send_frame(
+                    Status.ERROR.value,
+                    encode_status_reason(exc.message),
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to execute synchronous process command '%s'",
+                    command,
+                )
+                await self.ctx.send_frame(
+                    Status.ERROR.value,
+                    b"process_run_internal_error",
+                )
 
     async def handle_run_async(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")
@@ -291,27 +289,6 @@ class ProcessComponent:
         stderr_buffer = bytearray()
         timed_out = False
 
-        async def _wait_for_completion() -> None:
-            nonlocal timed_out
-            timeout = self.state.process_timeout
-            if timeout <= 0:
-                await proc.wait()
-                return
-            try:
-                async with asyncio.timeout(timeout):
-                    await proc.wait()
-            except TimeoutError:
-                timed_out = True
-                await self._terminate_process_tree(proc)
-                try:
-                    async with asyncio.timeout(1):
-                        await proc.wait()
-                except TimeoutError:
-                    logger.warning(
-                        "Synchronous process PID %d did not exit after kill",
-                        pid_hint,
-                    )
-
         try:
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(
@@ -328,7 +305,7 @@ class ProcessComponent:
                         stderr_buffer,
                     )
                 )
-                tg.create_task(_wait_for_completion())
+                wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
         except Exception:
             logger.exception(
                 "Unexpected error executing command '%s'",
@@ -340,6 +317,11 @@ class ProcessComponent:
             except Exception:
                 pass
             return Status.ERROR.value, b"", b"Internal error", None
+
+        try:
+            timed_out = bool(wait_task.result())
+        except Exception:
+            timed_out = False
 
         stdout_bytes = bytes(stdout_buffer)
         stderr_bytes = bytes(stderr_buffer)
@@ -358,6 +340,27 @@ class ProcessComponent:
             stderr_bytes,
             proc.returncode,
         )
+
+    async def _wait_for_sync_completion(self, proc: AsyncioProcess, pid_hint: int) -> bool:
+        timeout = self.state.process_timeout
+        if timeout <= 0:
+            await proc.wait()
+            return False
+        try:
+            async with asyncio.timeout(timeout):
+                await proc.wait()
+            return False
+        except TimeoutError:
+            await self._terminate_process_tree(proc)
+            try:
+                async with asyncio.timeout(1):
+                    await proc.wait()
+            except TimeoutError:
+                logger.warning(
+                    "Synchronous process PID %d did not exit after kill",
+                    pid_hint,
+                )
+            return True
 
     async def start_async(self, command: str) -> int:
         try:
@@ -570,40 +573,18 @@ class ProcessComponent:
     async def _read_process_pipes(
         self, pid: int, proc: AsyncioProcess
     ) -> tuple[bytes, bytes]:
-        stdout_chunk = b""
-        stderr_chunk = b""
-
-        async def _read_stdout() -> None:
-            nonlocal stdout_chunk
-            stdout_chunk = await self._read_stream_chunk(pid, proc.stdout)
-
-        async def _read_stderr() -> None:
-            nonlocal stderr_chunk
-            stderr_chunk = await self._read_stream_chunk(pid, proc.stderr)
-
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(_read_stdout())
-            tg.create_task(_read_stderr())
-        return stdout_chunk, stderr_chunk
+            stdout_task = tg.create_task(self._read_stream_chunk(pid, proc.stdout))
+            stderr_task = tg.create_task(self._read_stream_chunk(pid, proc.stderr))
+        return stdout_task.result(), stderr_task.result()
 
     async def _drain_process_pipes(
         self, pid: int, proc: AsyncioProcess
     ) -> tuple[bytes, bytes]:
-        stdout_tail = b""
-        stderr_tail = b""
-
-        async def _drain_stdout() -> None:
-            nonlocal stdout_tail
-            stdout_tail = await self._drain_stream(pid, proc.stdout)
-
-        async def _drain_stderr() -> None:
-            nonlocal stderr_tail
-            stderr_tail = await self._drain_stream(pid, proc.stderr)
-
         async with asyncio.TaskGroup() as tg:
-            tg.create_task(_drain_stdout())
-            tg.create_task(_drain_stderr())
-        return stdout_tail, stderr_tail
+            stdout_task = tg.create_task(self._drain_stream(pid, proc.stdout))
+            stderr_task = tg.create_task(self._drain_stream(pid, proc.stderr))
+        return stdout_task.result(), stderr_task.result()
 
     async def _read_stream_chunk(
         self,

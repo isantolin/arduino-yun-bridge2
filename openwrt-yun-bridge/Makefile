@@ -66,6 +66,9 @@ define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./yunbridge $(PKG_BUILD_DIR)/
+	# Never ship tests/ in production packages (apk/ipk). If tests are added under
+	# yunbridge/ in the future, strip them from the payload here.
+	find $(PKG_BUILD_DIR)/yunbridge -type d \( -name "tests" -o -name "test" \) -prune -exec rm -rf {} + || true
 	$(CP) ./yunbridge.init $(PKG_BUILD_DIR)/
 	$(CP) ./yunbridge.sh $(PKG_BUILD_DIR)/
 endef

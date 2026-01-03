@@ -145,6 +145,21 @@ async def test_handle_write_invalid_path(
 
 
 @pytest.mark.asyncio
+async def test_rejects_non_tmp_root_by_default(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    component.state.allow_non_tmp_paths = False
+    component.state.file_system_root = "/etc/yunbridge-test"
+
+    payload = _build_write_payload("foo.txt", b"x")
+    await component.handle_write(payload)
+
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert bridge.sent_frames[-1][1].decode() == "unsafe_path"
+
+
+@pytest.mark.asyncio
 async def test_handle_write_rejects_per_write_limit(
     file_component: tuple[FileComponent, DummyBridge],
 ) -> None:

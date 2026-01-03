@@ -483,15 +483,26 @@ class FileComponent:
     def _get_base_dir(self) -> Path | None:
         base_dir = Path(self.state.file_system_root).expanduser()
         try:
+            resolved = base_dir.resolve()
+        except OSError:
+            resolved = base_dir.absolute()
+
+        if not self.state.allow_non_tmp_paths:
+            resolved_str = str(resolved)
+            if resolved_str != "/tmp" and not resolved_str.startswith("/tmp/"):
+                logger.warning(
+                    "FLASH PROTECTION: Rejecting file_system_root outside /tmp: %s",
+                    resolved,
+                )
+                return None
+
+        try:
             base_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
             logger.exception("Failed to create base directory for files: %s", base_dir)
             return None
-        try:
-            return base_dir.resolve()
-        except OSError:
-            logger.exception("Failed to resolve base directory for files: %s", base_dir)
-            return None
+
+        return resolved
 
     @staticmethod
     def _existing_file_size(path: Path) -> int:

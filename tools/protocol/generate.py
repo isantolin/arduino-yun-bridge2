@@ -64,6 +64,94 @@ def _write_python_str_constant(
     out.write(")\n")
 
 
+def _python_action_group_class_name(prefix: str) -> str:
+    mapping = {
+        "DATASTORE": "Datastore",
+    }
+    stem = mapping.get(prefix) or prefix.lower().title()
+    return f"{stem}Action"
+
+
+def _python_topic_action_enum_class(topic_name: str) -> str | None:
+    mapping = {
+        "ANALOG": "AnalogAction",
+        "CONSOLE": "ConsoleAction",
+        "DATASTORE": "DatastoreAction",
+        "DIGITAL": "DigitalAction",
+        "FILE": "FileAction",
+        "MAILBOX": "MailboxAction",
+        "SHELL": "ShellAction",
+        "SYSTEM": "SystemAction",
+    }
+    return mapping.get(topic_name)
+
+
+def _python_action_member_by_prefix(spec: dict[str, Any]) -> dict[str, dict[str, str]]:
+    lookup: dict[str, dict[str, str]] = {}
+    for action in spec.get("actions", []):
+        raw_name = str(action["name"])
+        if "_" not in raw_name:
+            continue
+        prefix, suffix = raw_name.split("_", 1)
+        lookup.setdefault(prefix, {})[str(action["value"])] = suffix
+    return lookup
+
+
+def _python_mqtt_segment_expr(
+    *,
+    topic_name: str,
+    seg: str,
+    action_member_by_prefix: dict[str, dict[str, str]],
+) -> str:
+    if seg == "+":
+        return "MQTT_WILDCARD_SINGLE"
+    if seg == "#":
+        return "MQTT_WILDCARD_MULTI"
+
+    enum_class = _python_topic_action_enum_class(topic_name)
+    if enum_class is not None:
+        member = action_member_by_prefix.get(topic_name, {}).get(seg)
+        if member is not None:
+            return f"{enum_class}.{member}.value"
+
+    return json.dumps(seg)
+
+
+def _write_python_mqtt_subscriptions(out: TextIO, spec: dict[str, Any]) -> None:
+    mqtt_subscriptions = spec.get("mqtt_subscriptions")
+    if not mqtt_subscriptions:
+        return
+
+    out.write(
+        "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (\n"
+    )
+
+    action_member_by_prefix = _python_action_member_by_prefix(spec)
+
+    for entry in mqtt_subscriptions:
+        topic_name = str(entry["topic"]).strip()
+        segments = entry.get("segments") or []
+        if not isinstance(segments, list):
+            raise TypeError("mqtt_subscriptions.segments must be a list")
+        qos = int(entry.get("qos", 0))
+        topic_expr = f"Topic.{topic_name}"
+        if segments:
+            segment_expr = ", ".join(
+                _python_mqtt_segment_expr(
+                    topic_name=topic_name,
+                    seg=str(seg),
+                    action_member_by_prefix=action_member_by_prefix,
+                )
+                for seg in segments
+            )
+            out.write(f"    ({topic_expr}, ({segment_expr},), {qos}),\n")
+        else:
+            out.write(f"    ({topic_expr}, (), {qos}),\n")
+
+    # flake8 expects two blank lines between top-level definitions.
+    out.write(")\n\n\n")
+
+
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
@@ -424,13 +512,6 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
         # A single StrEnum cannot safely contain duplicate values like "read" or
         # "write" without creating aliases, which makes parsing/iteration brittle.
 
-        def _action_group_class_name(prefix: str) -> str:
-            mapping = {
-                "DATASTORE": "Datastore",
-            }
-            stem = mapping.get(prefix) or prefix.lower().title()
-            return f"{stem}Action"
-
         grouped: dict[str, list[dict[str, Any]]] = {}
         for action in spec["actions"]:
             raw_name = str(action["name"])
@@ -440,7 +521,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             grouped.setdefault(prefix, []).append(action)
 
         for prefix, actions in grouped.items():
-            out.write(f"class {_action_group_class_name(prefix)}(StrEnum):\n")
+            out.write(f"class {_python_action_group_class_name(prefix)}(StrEnum):\n")
             for action in actions:
                 raw_name = str(action["name"])
                 _prefix, suffix = raw_name.split("_", 1)
@@ -449,64 +530,9 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
                 )
             out.write("\n\n")
 
-    mqtt_subscriptions = spec.get("mqtt_subscriptions")
-    if mqtt_subscriptions:
-        # Emit subscriptions after action enums so we can reference FooAction.BAR.value
-        # for known segments (instead of repeating string literals).
-        out.write(
-            "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (\n"
-        )
-
-        # Build a lookup {TOPIC_PREFIX: {segment_value: member_suffix}}.
-        action_member_by_prefix: dict[str, dict[str, str]] = {}
-        for action in spec.get("actions", []):
-            raw_name = str(action["name"])
-            if "_" not in raw_name:
-                continue
-            prefix, suffix = raw_name.split("_", 1)
-            action_member_by_prefix.setdefault(prefix, {})[str(action["value"])] = suffix
-
-        def _topic_action_enum_class(topic_name: str) -> str | None:
-            mapping = {
-                "ANALOG": "AnalogAction",
-                "CONSOLE": "ConsoleAction",
-                "DATASTORE": "DatastoreAction",
-                "DIGITAL": "DigitalAction",
-                "FILE": "FileAction",
-                "MAILBOX": "MailboxAction",
-                "SHELL": "ShellAction",
-                "SYSTEM": "SystemAction",
-            }
-            return mapping.get(topic_name)
-
-        def _segment_expr(topic_name: str, seg: str) -> str:
-            if seg == "+":
-                return "MQTT_WILDCARD_SINGLE"
-            if seg == "#":
-                return "MQTT_WILDCARD_MULTI"
-
-            enum_class = _topic_action_enum_class(topic_name)
-            if enum_class is not None:
-                member = action_member_by_prefix.get(topic_name, {}).get(seg)
-                if member is not None:
-                    return f"{enum_class}.{member}.value"
-
-            return json.dumps(seg)
-
-        for entry in mqtt_subscriptions:
-            topic_name = str(entry["topic"]).strip()
-            segments = entry.get("segments") or []
-            if not isinstance(segments, list):
-                raise TypeError("mqtt_subscriptions.segments must be a list")
-            qos = int(entry.get("qos", 0))
-            topic_expr = f"Topic.{topic_name}"
-            if segments:
-                segment_expr = ", ".join(_segment_expr(topic_name, str(seg)) for seg in segments)
-                out.write(f"    ({topic_expr}, ({segment_expr},), {qos}),\n")
-            else:
-                out.write(f"    ({topic_expr}, (), {qos}),\n")
-        # flake8 expects two blank lines between top-level definitions.
-        out.write(")\n\n\n")
+    # Emit subscriptions after action enums so we can reference FooAction.BAR.value
+    # for known segments (instead of repeating string literals).
+    _write_python_mqtt_subscriptions(out, spec)
 
     out.write("class Status(IntEnum):\n")
     for status in spec["statuses"]:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import struct
 from unittest.mock import AsyncMock
 from typing import cast
 
@@ -15,7 +14,7 @@ from cobs import cobs
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.rpc.protocol import Command
 from yunbridge.services.runtime import BridgeService
 from yunbridge.services.handshake import SerialHandshakeFatal
 from yunbridge.state.context import create_runtime_state
@@ -285,8 +284,6 @@ async def test_read_loop_packet_too_large_sends_malformed(monkeypatch: pytest.Mo
     # Before link sync we avoid emitting MALFORMED status frames to reduce
     # handshake/protocol desync. The decode error is still recorded.
     assert service.send_frame.await_count == 0
-
-
 
 
 @pytest.mark.asyncio

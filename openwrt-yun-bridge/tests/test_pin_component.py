@@ -15,7 +15,7 @@ from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Action, Command, Status
+from yunbridge.rpc.protocol import Command, PinAction, Status
 from yunbridge.services.components.pin import PinComponent
 from yunbridge.state.context import PendingPinRequest, RuntimeState
 
@@ -193,7 +193,7 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
             runtime_state.mqtt_topic_prefix,
             Topic.DIGITAL.value,
             "2",
-            Action.PIN_MODE.value,
+            PinAction.MODE.value,
         ],
         "1",
     )
@@ -218,7 +218,7 @@ async def test_handle_mqtt_mode_command_rejects_invalid_payload(
             runtime_state.mqtt_topic_prefix,
             Topic.DIGITAL.value,
             "2",
-            Action.PIN_MODE.value,
+            PinAction.MODE.value,
         ],
         "not-an-int",
     )
@@ -244,7 +244,7 @@ async def test_handle_mqtt_read_command_queue_overflow_notifies_mqtt(
             runtime_state.mqtt_topic_prefix,
             Topic.DIGITAL.value,
             "9",
-            Action.PIN_READ.value,
+            PinAction.READ.value,
         ],
         "",
         inbound,
@@ -279,7 +279,7 @@ async def test_handle_mqtt_read_command_send_fails_does_not_enqueue_pending(
             runtime_state.mqtt_topic_prefix,
             Topic.ANALOG.value,
             "3",
-            Action.PIN_READ.value,
+            PinAction.READ.value,
         ],
         "",
     )
@@ -302,7 +302,7 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
             runtime_state.mqtt_topic_prefix,
             Topic.ANALOG.value,
             "3",
-            Action.PIN_READ.value,
+            PinAction.READ.value,
         ],
         "",
         inbound,

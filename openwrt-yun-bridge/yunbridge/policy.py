@@ -9,7 +9,15 @@ from collections.abc import Iterable
 from .common import normalise_allowed_commands
 from .const import ALLOWED_COMMAND_WILDCARD
 from .protocol.topics import Topic
-from .rpc.protocol import Action
+from .rpc.protocol import (
+    AnalogAction,
+    ConsoleAction,
+    DatastoreAction,
+    DigitalAction,
+    FileAction,
+    MailboxAction,
+    ShellAction,
+)
 
 
 class CommandValidationError(Exception):
@@ -104,26 +112,26 @@ class TopicAuthorization:
         topic_key = topic.lower()
         action_key = action.lower()
         mapping = {
-            (Topic.FILE.value, Action.FILE_READ.value): self.file_read,
-            (Topic.FILE.value, Action.FILE_WRITE.value): self.file_write,
-            (Topic.FILE.value, Action.FILE_REMOVE.value): self.file_remove,
-            (Topic.DATASTORE.value, Action.DATASTORE_GET.value): self.datastore_get,
-            (Topic.DATASTORE.value, Action.DATASTORE_PUT.value): self.datastore_put,
-            (Topic.MAILBOX.value, Action.MAILBOX_READ.value): self.mailbox_read,
-            (Topic.MAILBOX.value, Action.MAILBOX_WRITE.value): self.mailbox_write,
-            (Topic.SHELL.value, Action.SHELL_RUN.value): self.shell_run,
-            (Topic.SHELL.value, Action.SHELL_RUN_ASYNC.value): self.shell_run_async,
-            (Topic.SHELL.value, Action.SHELL_POLL.value): self.shell_poll,
-            (Topic.SHELL.value, Action.SHELL_KILL.value): self.shell_kill,
+            (Topic.FILE.value, FileAction.READ.value): self.file_read,
+            (Topic.FILE.value, FileAction.WRITE.value): self.file_write,
+            (Topic.FILE.value, FileAction.REMOVE.value): self.file_remove,
+            (Topic.DATASTORE.value, DatastoreAction.GET.value): self.datastore_get,
+            (Topic.DATASTORE.value, DatastoreAction.PUT.value): self.datastore_put,
+            (Topic.MAILBOX.value, MailboxAction.READ.value): self.mailbox_read,
+            (Topic.MAILBOX.value, MailboxAction.WRITE.value): self.mailbox_write,
+            (Topic.SHELL.value, ShellAction.RUN.value): self.shell_run,
+            (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): self.shell_run_async,
+            (Topic.SHELL.value, ShellAction.POLL.value): self.shell_poll,
+            (Topic.SHELL.value, ShellAction.KILL.value): self.shell_kill,
             # Console action historically used "input" internally, while MQTT uses "in".
             # Treat both as equivalent to avoid breaking existing UCI configs / callers.
-            (Topic.CONSOLE.value, Action.CONSOLE_IN.value): self.console_input,
-            (Topic.CONSOLE.value, Action.CONSOLE_INPUT.value): self.console_input,
-            (Topic.DIGITAL.value, Action.DIGITAL_WRITE.value): self.digital_write,
-            (Topic.DIGITAL.value, Action.DIGITAL_READ.value): self.digital_read,
-            (Topic.DIGITAL.value, Action.PIN_MODE.value): self.digital_mode,
-            (Topic.ANALOG.value, Action.ANALOG_WRITE.value): self.analog_write,
-            (Topic.ANALOG.value, Action.ANALOG_READ.value): self.analog_read,
+            (Topic.CONSOLE.value, ConsoleAction.IN.value): self.console_input,
+            (Topic.CONSOLE.value, ConsoleAction.INPUT.value): self.console_input,
+            (Topic.DIGITAL.value, DigitalAction.WRITE.value): self.digital_write,
+            (Topic.DIGITAL.value, DigitalAction.READ.value): self.digital_read,
+            (Topic.DIGITAL.value, DigitalAction.MODE.value): self.digital_mode,
+            (Topic.ANALOG.value, AnalogAction.WRITE.value): self.analog_write,
+            (Topic.ANALOG.value, AnalogAction.READ.value): self.analog_read,
         }
         return mapping.get((topic_key, action_key), False)
 

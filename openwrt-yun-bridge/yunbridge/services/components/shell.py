@@ -9,7 +9,7 @@ from contextlib import AsyncExitStack
 from aiomqtt.message import Message as MQTTMessage
 
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Action, Status
+from yunbridge.rpc.protocol import ShellAction, Status
 
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
@@ -51,25 +51,25 @@ class ShellComponent:
         action = parts[2] if len(parts) >= 3 else ""
 
         match action:
-            case Action.SHELL_RUN:
+            case ShellAction.RUN:
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
                     return
                 await self._handle_shell_run(payload_model, inbound)
 
-            case Action.SHELL_RUN_ASYNC:
+            case ShellAction.RUN_ASYNC:
                 payload_model = self._parse_shell_command(payload, action)
                 if payload_model is None:
                     return
                 await self._handle_run_async(payload_model, inbound)
 
-            case Action.SHELL_POLL if len(parts) == 4:
+            case ShellAction.POLL if len(parts) == 4:
                 pid_model = self._parse_shell_pid(parts[3], action)
                 if pid_model is None:
                     return
                 await self._handle_poll(pid_model)
 
-            case Action.SHELL_KILL if len(parts) == 4:
+            case ShellAction.KILL if len(parts) == 4:
                 pid_model = self._parse_shell_pid(parts[3], action)
                 if pid_model is None:
                     return
@@ -156,7 +156,7 @@ class ShellComponent:
             response_topic = topic_path(
                 self.state.mqtt_topic_prefix,
                 Topic.SHELL,
-                Action.SHELL_RUN_ASYNC,
+                ShellAction.RUN_ASYNC,
                 "error",
             )
             await self.ctx.enqueue_mqtt(
@@ -171,7 +171,7 @@ class ShellComponent:
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
-            Action.SHELL_RUN_ASYNC,
+            ShellAction.RUN_ASYNC,
             protocol.MQTT_SUFFIX_RESPONSE,
         )
 

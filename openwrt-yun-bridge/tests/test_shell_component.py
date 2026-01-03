@@ -16,7 +16,7 @@ from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.policy import CommandValidationError
 from yunbridge.protocol.topics import Topic, topic_path
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Action, Status
+from yunbridge.rpc.protocol import ShellAction, Status
 from yunbridge.services.components.shell import ShellComponent
 from yunbridge.state.context import RuntimeState
 
@@ -68,7 +68,7 @@ async def test_shell_run_ok_builds_text_response(
 
     inbound = _fake_inbound()
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_RUN.value],
+        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
         b"echo hello",
         inbound,
     )
@@ -98,7 +98,7 @@ async def test_shell_run_timeout_message_mentions_configured_timeout(
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_RUN.value],
+        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
         b"sleep 1000",
         None,
     )
@@ -120,7 +120,7 @@ async def test_shell_run_malformed_returns_empty_command_error(
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_RUN.value],
+        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
         b"echo hi",
         None,
     )
@@ -140,7 +140,7 @@ async def test_shell_run_error_uses_stderr_detail(
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_RUN.value],
+        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
         b"false",
         None,
     )
@@ -162,7 +162,7 @@ async def test_shell_run_exception_triggers_fallback_publish(
     inbound = _fake_inbound()
     with pytest.raises(RuntimeError):
         await component.handle_mqtt(
-            [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_RUN.value],
+            [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
             b"echo hi",
             inbound,
         )
@@ -189,7 +189,7 @@ async def test_shell_run_async_validation_error_publishes_error_topic(
         [
             runtime_state.mqtt_topic_prefix,
             Topic.SHELL.value,
-            Action.SHELL_RUN_ASYNC.value,
+            ShellAction.RUN_ASYNC.value,
         ],
         b"bad",
         inbound,
@@ -201,7 +201,7 @@ async def test_shell_run_async_validation_error_publishes_error_topic(
     assert message.topic_name == topic_path(
         runtime_state.mqtt_topic_prefix,
         Topic.SHELL,
-        Action.SHELL_RUN_ASYNC,
+        ShellAction.RUN_ASYNC,
         "error",
     )
     assert message.payload == b"error:bad"
@@ -222,7 +222,7 @@ async def test_shell_run_async_not_allowed_returns_error_payload(
         [
             runtime_state.mqtt_topic_prefix,
             Topic.SHELL.value,
-            Action.SHELL_RUN_ASYNC.value,
+            ShellAction.RUN_ASYNC.value,
         ],
         b"echo hi",
         None,
@@ -244,7 +244,12 @@ async def test_shell_poll_calls_process_helpers(
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_POLL.value, "123"],
+        [
+            runtime_state.mqtt_topic_prefix,
+            Topic.SHELL.value,
+            ShellAction.POLL.value,
+            "123",
+        ],
         b"",
         None,
     )
@@ -264,7 +269,12 @@ async def test_shell_kill_packs_pid_and_suppresses_ack(
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_KILL.value, "42"],
+        [
+            runtime_state.mqtt_topic_prefix,
+            Topic.SHELL.value,
+            ShellAction.KILL.value,
+            "42",
+        ],
         b"",
         None,
     )
@@ -286,12 +296,17 @@ async def test_shell_ignores_invalid_payloads_and_actions(
     component = ShellComponent(runtime_config, runtime_state, ctx, process)
 
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_RUN.value],
+        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, ShellAction.RUN.value],
         b"",
         None,
     )
     await component.handle_mqtt(
-        [runtime_state.mqtt_topic_prefix, Topic.SHELL.value, Action.SHELL_POLL.value, "0"],
+        [
+            runtime_state.mqtt_topic_prefix,
+            Topic.SHELL.value,
+            ShellAction.POLL.value,
+            "0",
+        ],
         b"",
         None,
     )

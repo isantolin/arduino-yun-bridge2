@@ -6,7 +6,7 @@ import logging
 import struct
 
 from aiomqtt.message import Message as MQTTMessage
-from yunbridge.rpc.protocol import Action, Command, Status
+from yunbridge.rpc.protocol import Command, PinAction, Status
 from yunbridge.rpc import protocol
 
 
@@ -143,9 +143,9 @@ class PinComponent:
 
         if len(parts) == 4:
             subtopic = parts[3]
-            if subtopic == Action.PIN_MODE and topic_enum == Topic.DIGITAL:
+            if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
                 await self._handle_mode_command(pin, pin_str, payload_str)
-            elif subtopic == Action.PIN_READ:
+            elif subtopic == PinAction.READ:
                 await self._handle_read_command(topic_enum, pin, inbound)
             else:
                 logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)

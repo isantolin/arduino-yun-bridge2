@@ -405,6 +405,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             out.write(f'{name}: Final[str] = "{value}"\n')
         out.write("\n\n")
 
+    # MQTT wildcard segments used by MQTT subscriptions.
+    out.write('MQTT_WILDCARD_SINGLE: Final[str] = "+"\n')
+    out.write('MQTT_WILDCARD_MULTI: Final[str] = "#"\n\n\n')
+
     if "topics" in spec:
         out.write("class Topic(StrEnum):\n")
         for topic in spec["topics"]:
@@ -413,11 +417,82 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             )
         out.write("\n\n")
 
+    if "actions" in spec:
+        # NOTE: actions in spec.toml use a PREFIX_SUFFIX naming convention
+        # (e.g. FILE_READ, SHELL_RUN_ASYNC). We intentionally generate per-topic
+        # enums (FileAction, ShellAction, ...) instead of a single Action enum.
+        # A single StrEnum cannot safely contain duplicate values like "read" or
+        # "write" without creating aliases, which makes parsing/iteration brittle.
+
+        def _action_group_class_name(prefix: str) -> str:
+            mapping = {
+                "DATASTORE": "Datastore",
+            }
+            stem = mapping.get(prefix) or prefix.lower().title()
+            return f"{stem}Action"
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for action in spec["actions"]:
+            raw_name = str(action["name"])
+            if "_" not in raw_name:
+                raise ValueError(f"Action name must be PREFIX_SUFFIX (got {raw_name!r})")
+            prefix, _suffix = raw_name.split("_", 1)
+            grouped.setdefault(prefix, []).append(action)
+
+        for prefix, actions in grouped.items():
+            out.write(f"class {_action_group_class_name(prefix)}(StrEnum):\n")
+            for action in actions:
+                raw_name = str(action["name"])
+                _prefix, suffix = raw_name.split("_", 1)
+                out.write(
+                    f"    {suffix} = \"{action['value']}\"  # {action['description']}\n"
+                )
+            out.write("\n\n")
+
     mqtt_subscriptions = spec.get("mqtt_subscriptions")
     if mqtt_subscriptions:
+        # Emit subscriptions after action enums so we can reference FooAction.BAR.value
+        # for known segments (instead of repeating string literals).
         out.write(
             "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (\n"
         )
+
+        # Build a lookup {TOPIC_PREFIX: {segment_value: member_suffix}}.
+        action_member_by_prefix: dict[str, dict[str, str]] = {}
+        for action in spec.get("actions", []):
+            raw_name = str(action["name"])
+            if "_" not in raw_name:
+                continue
+            prefix, suffix = raw_name.split("_", 1)
+            action_member_by_prefix.setdefault(prefix, {})[str(action["value"])] = suffix
+
+        def _topic_action_enum_class(topic_name: str) -> str | None:
+            mapping = {
+                "ANALOG": "AnalogAction",
+                "CONSOLE": "ConsoleAction",
+                "DATASTORE": "DatastoreAction",
+                "DIGITAL": "DigitalAction",
+                "FILE": "FileAction",
+                "MAILBOX": "MailboxAction",
+                "SHELL": "ShellAction",
+                "SYSTEM": "SystemAction",
+            }
+            return mapping.get(topic_name)
+
+        def _segment_expr(topic_name: str, seg: str) -> str:
+            if seg == "+":
+                return "MQTT_WILDCARD_SINGLE"
+            if seg == "#":
+                return "MQTT_WILDCARD_MULTI"
+
+            enum_class = _topic_action_enum_class(topic_name)
+            if enum_class is not None:
+                member = action_member_by_prefix.get(topic_name, {}).get(seg)
+                if member is not None:
+                    return f"{enum_class}.{member}.value"
+
+            return json.dumps(seg)
+
         for entry in mqtt_subscriptions:
             topic_name = str(entry["topic"]).strip()
             segments = entry.get("segments") or []
@@ -426,20 +501,12 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             qos = int(entry.get("qos", 0))
             topic_expr = f"Topic.{topic_name}"
             if segments:
-                segment_expr = ", ".join(json.dumps(str(seg)) for seg in segments)
+                segment_expr = ", ".join(_segment_expr(topic_name, str(seg)) for seg in segments)
                 out.write(f"    ({topic_expr}, ({segment_expr},), {qos}),\n")
             else:
                 out.write(f"    ({topic_expr}, (), {qos}),\n")
         # flake8 expects two blank lines between top-level definitions.
         out.write(")\n\n\n")
-
-    if "actions" in spec:
-        out.write("class Action(StrEnum):\n")
-        for action in spec["actions"]:
-            out.write(
-                f"    {action['name']} = \"{action['value']}\"  # {action['description']}\n"
-            )
-        out.write("\n\n")
 
     out.write("class Status(IntEnum):\n")
     for status in spec["statuses"]:

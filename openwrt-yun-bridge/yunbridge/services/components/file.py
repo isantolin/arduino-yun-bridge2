@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 
 from aiomqtt.message import Message as MQTTMessage
 from yunbridge.rpc import protocol
-from yunbridge.rpc.protocol import Action, Command, MAX_PAYLOAD_SIZE, Status
+from yunbridge.rpc.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
 from ...mqtt.messages import QueuedPublish
@@ -84,7 +84,7 @@ class FileComponent:
             return False
 
         success, _, reason = await self._perform_file_operation(
-            Action.FILE_WRITE, path, file_data
+            FileAction.WRITE, path, file_data
         )
         if success:
             return True
@@ -107,7 +107,7 @@ class FileComponent:
 
         filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
         success, content, reason = await self._perform_file_operation(
-            Action.FILE_READ, filename
+            FileAction.READ, filename
         )
 
         if not success:
@@ -142,7 +142,7 @@ class FileComponent:
 
         filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
         success, _, reason = await self._perform_file_operation(
-            Action.FILE_REMOVE, filename
+            FileAction.REMOVE, filename
         )
         if success:
             return True
@@ -175,9 +175,9 @@ class FileComponent:
                 outcome,
             )
             match action:
-                case Action.FILE_WRITE:
+                case FileAction.WRITE:
                     success, _, reason = await self._perform_file_operation(
-                        Action.FILE_WRITE, filename, payload
+                        FileAction.WRITE, filename, payload
                     )
                     if not success:
                         outcome["status"] = reason or "write_failed"
@@ -189,13 +189,13 @@ class FileComponent:
                     else:
                         outcome["status"] = "ok"
 
-                case Action.FILE_READ:
+                case FileAction.READ:
                     (
                         success,
                         content,
                         reason,
                     ) = await self._perform_file_operation(
-                        Action.FILE_READ,
+                        FileAction.READ,
                         filename,
                     )
                     if not success:
@@ -211,7 +211,7 @@ class FileComponent:
                     response_topic = topic_path(
                         self.state.mqtt_topic_prefix,
                         Topic.FILE,
-                        Action.FILE_READ,
+                        FileAction.READ,
                         protocol.MQTT_SUFFIX_RESPONSE,
                         *tuple(segment for segment in filename.split("/") if segment),
                     )
@@ -227,9 +227,9 @@ class FileComponent:
                         reply_context=inbound,
                     )
 
-                case Action.FILE_REMOVE:
+                case FileAction.REMOVE:
                     success, _, reason = await self._perform_file_operation(
-                        Action.FILE_REMOVE, filename
+                        FileAction.REMOVE, filename
                     )
                     if not success:
                         outcome["status"] = reason or "remove_failed"
@@ -275,16 +275,16 @@ class FileComponent:
 
         try:
             match operation:
-                case Action.FILE_WRITE:
+                case FileAction.WRITE:
                     assert data is not None
                     return await self._write_with_quota(safe_path, data)
 
-                case Action.FILE_READ:
+                case FileAction.READ:
                     content = await asyncio.to_thread(self._read_file_sync, safe_path)
                     logger.info("Read %d bytes from %s", len(content), safe_path)
                     return True, content, "ok"
 
-                case Action.FILE_REMOVE:
+                case FileAction.REMOVE:
                     return await self._remove_with_tracking(safe_path)
 
                 case _:

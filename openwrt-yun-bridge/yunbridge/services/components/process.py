@@ -28,9 +28,9 @@ from yunbridge.rpc.protocol import (
     PROCESS_DEFAULT_EXIT_CODE,
     UINT8_MASK,
     UINT16_MAX,
-    Action,
     Command,
     MAX_PAYLOAD_SIZE,
+    ShellAction,
     Status,
 )
 
@@ -150,7 +150,7 @@ class ProcessComponent:
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
                     Topic.SHELL,
-                    Action.SHELL_RUN_ASYNC,
+                    ShellAction.RUN_ASYNC,
                     protocol.MQTT_SUFFIX_RESPONSE,
                 )
                 await self.ctx.enqueue_mqtt(
@@ -164,7 +164,7 @@ class ProcessComponent:
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
-            Action.SHELL_RUN_ASYNC,
+            ShellAction.RUN_ASYNC,
             "error",
         )
         error_payload = json.dumps(
@@ -678,7 +678,7 @@ class ProcessComponent:
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
-            Action.SHELL_POLL,
+            ShellAction.POLL,
             str(pid),
             protocol.MQTT_SUFFIX_RESPONSE,
         )

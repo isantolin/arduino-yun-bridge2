@@ -148,6 +148,11 @@ topic = "SYSTEM"
 segments = ["version", "get"]
 qos = 0
 
+[[mqtt_subscriptions]]
+topic = "SYSTEM"
+segments = ["tx_debug", "get"]
+qos = 0
+
 # Bridge snapshots (daemon inbound): keep in sync with BridgeDispatcher._handle_bridge_topic
 [[mqtt_subscriptions]]
 topic = "SYSTEM"
@@ -280,6 +285,10 @@ description = "System free memory"
 name = "SYSTEM_VERSION"
 value = "version"
 description = "System version"
+[[actions]]
+name = "SYSTEM_TX_DEBUG"
+value = "tx_debug"
+description = "System TX debug snapshot"
 [[actions]]
 name = "SYSTEM_GET"
 value = "get"

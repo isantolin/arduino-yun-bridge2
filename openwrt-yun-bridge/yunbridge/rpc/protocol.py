@@ -69,6 +69,10 @@ MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
 MQTT_SUFFIX_RESPONSE: Final[str] = "response"
 
 
+MQTT_WILDCARD_SINGLE: Final[str] = "+"
+MQTT_WILDCARD_MULTI: Final[str] = "#"
+
+
 class Topic(StrEnum):
     ANALOG = "a"  # Analog pin operations
     CONSOLE = "console"  # Remote console
@@ -81,56 +85,82 @@ class Topic(StrEnum):
     SYSTEM = "system"  # System control and info
 
 
+class FileAction(StrEnum):
+    READ = "read"  # Read file content
+    WRITE = "write"  # Write file content
+    REMOVE = "remove"  # Remove file
+
+
+class ShellAction(StrEnum):
+    RUN = "run"  # Run shell command
+    RUN_ASYNC = "run_async"  # Run shell command asynchronously
+    POLL = "poll"  # Poll shell command status
+    KILL = "kill"  # Kill shell command
+
+
+class MailboxAction(StrEnum):
+    WRITE = "write"  # Write to mailbox
+    READ = "read"  # Read from mailbox
+
+
+class DatastoreAction(StrEnum):
+    GET = "get"  # Get datastore value
+    PUT = "put"  # Put datastore value
+
+
+class PinAction(StrEnum):
+    MODE = "mode"  # Set pin mode
+    READ = "read"  # Read pin value
+
+
+class ConsoleAction(StrEnum):
+    IN = "in"  # Console input
+    INPUT = "input"  # Console input action
+
+
+class SystemAction(StrEnum):
+    FREE_MEMORY = "free_memory"  # System free memory
+    VERSION = "version"  # System version
+    TX_DEBUG = "tx_debug"  # System TX debug snapshot
+    GET = "get"  # Get system info
+
+
+class DigitalAction(StrEnum):
+    WRITE = "write"  # Digital write
+    READ = "read"  # Digital read
+    MODE = "mode"  # Digital mode
+
+
+class AnalogAction(StrEnum):
+    WRITE = "write"  # Analog write
+    READ = "read"  # Analog read
+
+
 MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (
-    (Topic.DIGITAL, ("+", "mode",), 0),
-    (Topic.DIGITAL, ("+", "read",), 0),
-    (Topic.DIGITAL, ("+",), 0),
-    (Topic.ANALOG, ("+", "read",), 0),
-    (Topic.ANALOG, ("+",), 0),
-    (Topic.CONSOLE, ("in",), 0),
-    (Topic.DATASTORE, ("put", "#",), 0),
-    (Topic.DATASTORE, ("get", "#",), 0),
-    (Topic.MAILBOX, ("write",), 0),
-    (Topic.MAILBOX, ("read",), 0),
-    (Topic.SHELL, ("run",), 0),
-    (Topic.SHELL, ("run_async",), 0),
-    (Topic.SHELL, ("poll", "#",), 0),
-    (Topic.SHELL, ("kill", "#",), 0),
-    (Topic.SYSTEM, ("free_memory", "get",), 0),
-    (Topic.SYSTEM, ("version", "get",), 0),
-    (Topic.SYSTEM, ("bridge", "handshake", "get",), 0),
-    (Topic.SYSTEM, ("bridge", "summary", "get",), 0),
-    (Topic.SYSTEM, ("bridge", "state", "get",), 0),
-    (Topic.FILE, ("write", "#",), 0),
-    (Topic.FILE, ("read", "#",), 0),
-    (Topic.FILE, ("remove", "#",), 0),
+    (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE, DigitalAction.MODE.value,), 0),
+    (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE, DigitalAction.READ.value,), 0),
+    (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE,), 0),
+    (Topic.ANALOG, (MQTT_WILDCARD_SINGLE, AnalogAction.READ.value,), 0),
+    (Topic.ANALOG, (MQTT_WILDCARD_SINGLE,), 0),
+    (Topic.CONSOLE, (ConsoleAction.IN.value,), 0),
+    (Topic.DATASTORE, (DatastoreAction.PUT.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.DATASTORE, (DatastoreAction.GET.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.MAILBOX, (MailboxAction.WRITE.value,), 0),
+    (Topic.MAILBOX, (MailboxAction.READ.value,), 0),
+    (Topic.SHELL, (ShellAction.RUN.value,), 0),
+    (Topic.SHELL, (ShellAction.RUN_ASYNC.value,), 0),
+    (Topic.SHELL, (ShellAction.POLL.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.SHELL, (ShellAction.KILL.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.SYSTEM, (SystemAction.FREE_MEMORY.value, SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, (SystemAction.VERSION.value, SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, (SystemAction.TX_DEBUG.value, SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, ("bridge", "handshake", SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, ("bridge", "summary", SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, ("bridge", "state", SystemAction.GET.value,), 0),
+    (Topic.FILE, (FileAction.WRITE.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.FILE, (FileAction.READ.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.FILE, (FileAction.REMOVE.value, MQTT_WILDCARD_MULTI,), 0),
 )
-
-
-class Action(StrEnum):
-    FILE_READ = "read"  # Read file content
-    FILE_WRITE = "write"  # Write file content
-    FILE_REMOVE = "remove"  # Remove file
-    SHELL_RUN = "run"  # Run shell command
-    SHELL_RUN_ASYNC = "run_async"  # Run shell command asynchronously
-    SHELL_POLL = "poll"  # Poll shell command status
-    SHELL_KILL = "kill"  # Kill shell command
-    MAILBOX_WRITE = "write"  # Write to mailbox
-    DATASTORE_GET = "get"  # Get datastore value
-    DATASTORE_PUT = "put"  # Put datastore value
-    PIN_MODE = "mode"  # Set pin mode
-    PIN_READ = "read"  # Read pin value
-    CONSOLE_IN = "in"  # Console input
-    MAILBOX_READ = "read"  # Read from mailbox
-    SYSTEM_FREE_MEMORY = "free_memory"  # System free memory
-    SYSTEM_VERSION = "version"  # System version
-    SYSTEM_GET = "get"  # Get system info
-    DIGITAL_WRITE = "write"  # Digital write
-    DIGITAL_READ = "read"  # Digital read
-    DIGITAL_MODE = "mode"  # Digital mode
-    ANALOG_WRITE = "write"  # Analog write
-    ANALOG_READ = "read"  # Analog read
-    CONSOLE_INPUT = "input"  # Console input action
 
 
 class Status(IntEnum):

@@ -161,6 +161,153 @@ def _find_lambdas_and_nested_functions(py_files: list[Path]) -> list[tuple[Path,
     return hits
 
 
+def _find_shadowing_and_scope_escapes(py_files: list[Path]) -> list[tuple[Path, int, str]]:
+    """Detect scope escapes (global/nonlocal) and import-name shadowing.
+
+    Rationale:
+    - global/nonlocal enable cross-scope mutation, which is hard to reason about.
+    - Shadowing imported names (e.g., modules) can silently change meaning inside a
+      function and complicate reviews.
+
+    Note: This intentionally does NOT treat class-body names as an enclosing scope.
+    Python does not resolve function names through class scope (LEGB).
+    """
+
+    hits: list[tuple[Path, int, str]] = []
+
+    always_allowed = {
+        "_",
+        "self",
+        "cls",
+        "args",
+        "kwargs",
+        # Common exception binding names.
+        "exc",
+        "exc_group",
+        "e",
+        "err",
+        "error",
+    }
+
+    def _collect_imported_names(module: ast.Module) -> set[str]:
+        imported: set[str] = set()
+        for node in module.body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported.add(alias.asname or alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    imported.add(alias.asname or alias.name)
+        return imported
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self, imported_names: set[str]) -> None:
+            self.imported_names = imported_names
+
+        def _check_name(self, name: str, lineno: int, context: str) -> None:
+            if not name or name in always_allowed:
+                return
+            if name in self.imported_names:
+                hits.append((path, lineno, f"shadowing imported name '{name}' via {context}"))
+
+        def _check_target(self, target: ast.AST, lineno: int, context: str) -> None:
+            if isinstance(target, ast.Name):
+                self._check_name(target.id, lineno, context)
+                return
+            if isinstance(target, (ast.Tuple, ast.List)):
+                for elt in target.elts:
+                    self._check_target(elt, lineno, context)
+
+        def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
+            hits.append((path, node.lineno, "global statement"))
+            self.generic_visit(node)
+
+        def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
+            hits.append((path, node.lineno, "nonlocal statement"))
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+            for arg in (
+                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+            ):
+                self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
+            if node.args.vararg is not None:
+                self._check_name(node.args.vararg.arg, node.lineno, "*args")
+            if node.args.kwarg is not None:
+                self._check_name(node.args.kwarg.arg, node.lineno, "**kwargs")
+
+            self.generic_visit(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+            for arg in (
+                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+            ):
+                self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
+            if node.args.vararg is not None:
+                self._check_name(node.args.vararg.arg, node.lineno, "*args")
+            if node.args.kwarg is not None:
+                self._check_name(node.args.kwarg.arg, node.lineno, "**kwargs")
+
+            self.generic_visit(node)
+
+        def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+            for t in node.targets:
+                self._check_target(t, node.lineno, "assignment")
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "annotated assignment")
+            self.generic_visit(node)
+
+        def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "augmented assignment")
+            self.generic_visit(node)
+
+        def visit_For(self, node: ast.For) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "for target")
+            self.generic_visit(node)
+
+        def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "async for target")
+            self.generic_visit(node)
+
+        def visit_With(self, node: ast.With) -> None:  # noqa: N802
+            for item in node.items:
+                if item.optional_vars is not None:
+                    self._check_target(item.optional_vars, node.lineno, "with as")
+            self.generic_visit(node)
+
+        def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
+            for item in node.items:
+                if item.optional_vars is not None:
+                    self._check_target(item.optional_vars, node.lineno, "async with as")
+            self.generic_visit(node)
+
+        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+            if node.name:
+                self._check_name(node.name, node.lineno, "except as")
+            self.generic_visit(node)
+
+    for path in py_files:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            hits.append((path, exc.lineno or 1, f"SyntaxError: {exc.msg}"))
+            continue
+
+        imported_names = _collect_imported_names(tree)
+        _Visitor(imported_names).visit(tree)
+
+    return hits
+
+
 def test_no_print_repo_wide() -> None:
     """Repo-wide: no print() anywhere (tools/tests/examples included).
 
@@ -238,6 +385,23 @@ def test_no_lambda_or_nested_functions_in_runtime_package() -> None:
     hits = _find_lambdas_and_nested_functions(py_files)
 
     assert not hits, "Runtime package must not use lambda or nested defs:\n" + "\n".join(
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
+    )
+
+
+def test_no_shadowing_or_scope_escapes_in_runtime_package() -> None:
+    """Runtime code must avoid name shadowing and global/nonlocal.
+
+    This enforces a strict "no hidden aliasing" posture for embedded/system code.
+    """
+
+    runtime_root = _REPO_ROOT / "openwrt-yun-bridge" / "yunbridge"
+    assert runtime_root.is_dir(), f"missing runtime root: {runtime_root}"
+
+    py_files = _iter_text_files(runtime_root, ("*.py",))
+    hits = _find_shadowing_and_scope_escapes(py_files)
+
+    assert not hits, "Runtime package must not shadow names or use global/nonlocal:\n" + "\n".join(
         f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
     )
 

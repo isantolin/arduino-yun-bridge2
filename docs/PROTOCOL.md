@@ -275,9 +275,29 @@ Notas operativas:
 - **`0xA2` CMD_PROCESS_POLL (MCU → Linux)**: `[process_id: u16]`.
 - **`0xA3` CMD_PROCESS_KILL (MCU → Linux)**: `[process_id: u16]`.
 
+Respuestas (Linux → MCU):
+
+- **`0xA4` CMD_PROCESS_RUN_RESP (Linux → MCU)**: respuesta al `CMD_PROCESS_RUN`.
+- **`0xA5` CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)**: respuesta al `CMD_PROCESS_RUN_ASYNC`.
+- **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: respuesta al `CMD_PROCESS_POLL`.
+
+Notas:
+- El wire-format exacto de payload está definido en `tools/protocol/spec.toml` y se refleja en los bindings generados.
+- `CMD_PROCESS_KILL` se confirma típicamente con status/ACK a nivel de transporte.
+
 ## 6. Consideraciones adicionales
 
 - **Truncado**: si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
 - **MQTT**: además del RPC serie, el daemon expone una API MQTT.
   - Dirección: MQTT clientes → daemon (comandos), daemon → MQTT (respuestas/snapshots).
   - La lista de suscripciones (incluyendo comodines y QoS) vive en `tools/protocol/spec.toml` (`[[mqtt_subscriptions]]`) y se genera a Python como `MQTT_COMMAND_SUBSCRIPTIONS`.
+
+### MQTT: snapshots del bridge (SYSTEM/bridge/*)
+
+Además de los comandos anteriores, el daemon expone endpoints de lectura de estado:
+
+- `br/system/bridge/handshake/get` → publica `br/system/bridge/handshake/value`.
+- `br/system/bridge/summary/get` → publica `br/system/bridge/summary/value`.
+- `br/system/bridge/state/get` → publica `br/system/bridge/summary/value` (alias histórico).
+
+Estos topics forman parte del contrato operativo y deben estar definidos en `tools/protocol/spec.toml`.

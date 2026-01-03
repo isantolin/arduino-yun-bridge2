@@ -192,12 +192,12 @@ class RuntimeConfig:
     def _normalize_paths(self) -> None:
         root = self._normalize_path(
             self.file_system_root,
-            field="file_system_root",
+            field_name="file_system_root",
             require_absolute=True,
         )
         spool = self._normalize_path(
             self.mqtt_spool_dir,
-            field="mqtt_spool_dir",
+            field_name="mqtt_spool_dir",
             require_absolute=True,
         )
 
@@ -211,7 +211,7 @@ class RuntimeConfig:
                 )
                 root = self._normalize_path(
                     DEFAULT_FILE_SYSTEM_ROOT,
-                    field="file_system_root",
+                    field_name="file_system_root",
                     require_absolute=True,
                 )
 
@@ -224,7 +224,7 @@ class RuntimeConfig:
                 )
                 spool = self._normalize_path(
                     DEFAULT_MQTT_SPOOL_DIR,
-                    field="mqtt_spool_dir",
+                    field_name="mqtt_spool_dir",
                     require_absolute=True,
                 )
 
@@ -281,16 +281,16 @@ class RuntimeConfig:
     def _normalize_path(
         value: str,
         *,
-        field: str,
+        field_name: str,
         require_absolute: bool,
     ) -> str:
         candidate = (value or "").strip()
         if not candidate:
-            raise ValueError(f"{field} must be a non-empty path")
+            raise ValueError(f"{field_name} must be a non-empty path")
         expanded = os.path.expanduser(candidate)
         normalized = os.path.abspath(expanded)
         if require_absolute and not os.path.isabs(expanded):
-            raise ValueError(f"{field} must be an absolute path")
+            raise ValueError(f"{field_name} must be an absolute path")
         return normalized
 
     @staticmethod

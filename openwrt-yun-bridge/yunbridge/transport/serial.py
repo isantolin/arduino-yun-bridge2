@@ -166,9 +166,9 @@ class _SerialReadProtocolFactory:
         self.protocol: SerialProtocol | None = None
 
     def __call__(self) -> SerialProtocol:
-        protocol = SerialProtocol()
-        self.protocol = protocol
-        return protocol
+        serial_protocol = SerialProtocol()
+        self.protocol = serial_protocol
+        return serial_protocol
 
 
 class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
@@ -195,9 +195,9 @@ class _SerialWriteProtocolFactory:
         self.protocol: SerialWriteProtocol | None = None
 
     def __call__(self) -> SerialWriteProtocol:
-        protocol = SerialWriteProtocol()
-        self.protocol = protocol
-        return protocol
+        serial_protocol = SerialWriteProtocol()
+        self.protocol = serial_protocol
+        return serial_protocol
 
 
 async def _open_serial_connection(

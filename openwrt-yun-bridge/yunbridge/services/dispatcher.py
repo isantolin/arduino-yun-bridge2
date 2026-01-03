@@ -336,7 +336,9 @@ class BridgeDispatcher:
     async def _handle_console_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
         if route.identifier != "in":
             return False
-        action = "input"
+        # Keep policy aligned with MQTT topic identifier: br/console/in
+        # (Backward compat is handled at the policy layer.)
+        action = route.identifier
         if not self.is_topic_action_allowed(Topic.CONSOLE, action):
             await self.reject_topic_action(inbound, Topic.CONSOLE, action)
             return True

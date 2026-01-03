@@ -115,6 +115,9 @@ class TopicAuthorization:
             (Topic.SHELL.value, Action.SHELL_RUN_ASYNC.value): self.shell_run_async,
             (Topic.SHELL.value, Action.SHELL_POLL.value): self.shell_poll,
             (Topic.SHELL.value, Action.SHELL_KILL.value): self.shell_kill,
+            # Console action historically used "input" internally, while MQTT uses "in".
+            # Treat both as equivalent to avoid breaking existing UCI configs / callers.
+            (Topic.CONSOLE.value, Action.CONSOLE_IN.value): self.console_input,
             (Topic.CONSOLE.value, Action.CONSOLE_INPUT.value): self.console_input,
             (Topic.DIGITAL.value, Action.DIGITAL_WRITE.value): self.digital_write,
             (Topic.DIGITAL.value, Action.DIGITAL_READ.value): self.digital_read,

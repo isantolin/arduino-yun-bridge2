@@ -22,8 +22,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-yun-bridge
-PKG_VERSION:=2.0.0
-PKG_RELEASE:=3
+PKG_VERSION:=2.0.1
+PKG_RELEASE:=1
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3

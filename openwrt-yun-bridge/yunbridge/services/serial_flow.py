@@ -15,7 +15,10 @@ from yunbridge.const import (
     SERIAL_SUCCESS_STATUS_CODES,
 )
 from yunbridge.rpc.protocol import ACK_ONLY_COMMANDS
-from yunbridge.rpc.contracts import expected_responses, response_to_request
+from yunbridge.rpc.contracts import (
+    expected_responses as rpc_expected_responses,
+    response_to_request,
+)
 from yunbridge.rpc.protocol import Status
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
@@ -134,7 +137,7 @@ class SerialFlowController:
 
         pending = PendingCommand(
             command_id=command_id,
-            expected_responses=set(expected_responses(command_id)),
+            expected_responses=set(rpc_expected_responses(command_id)),
         )
 
         async with self._condition:
@@ -215,7 +218,7 @@ class SerialFlowController:
             pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:
-        return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
+        return bool(rpc_expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
 
     async def _execute_with_retries(
         self,

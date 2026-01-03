@@ -60,7 +60,7 @@ ensure_newline_before_comments = true
 
 [tool.pyright]
 include = ["openwrt-yun-bridge/yunbridge", "openwrt-yun-examples-python"]
-exclude = ["**/__pycache__", "**/node_modules", "**/.*", ".venv_debug"]
+exclude = ["**/__pycache__", "**/node_modules", "**/.*", ".venv_debug", '.venv']
 venv = ".venv"
 reportMissingImports = true
 reportMissingTypeStubs = false

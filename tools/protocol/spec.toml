@@ -148,6 +148,22 @@ topic = "SYSTEM"
 segments = ["version", "get"]
 qos = 0
 
+# Bridge snapshots (daemon inbound): keep in sync with BridgeDispatcher._handle_bridge_topic
+[[mqtt_subscriptions]]
+topic = "SYSTEM"
+segments = ["bridge", "handshake", "get"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SYSTEM"
+segments = ["bridge", "summary", "get"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SYSTEM"
+segments = ["bridge", "state", "get"]
+qos = 0
+
 [[mqtt_subscriptions]]
 topic = "FILE"
 segments = ["write", "#"]

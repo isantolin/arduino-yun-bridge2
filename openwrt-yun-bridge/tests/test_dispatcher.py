@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from yunbridge.protocol.topics import Topic, TopicRoute
-from yunbridge.rpc.protocol import Command, RESPONSE_OFFSET, Status
+from yunbridge.rpc.protocol import Command, Status
 from yunbridge.services.dispatcher import BridgeDispatcher
 from yunbridge.services.routers import MCUHandlerRegistry, MQTTRouter
 
@@ -143,7 +143,7 @@ async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented() -> N
 async def test_dispatch_mcu_frame_orphaned_response_is_ignored() -> None:
     dispatcher = _make_dispatcher()
 
-    await dispatcher.dispatch_mcu_frame(RESPONSE_OFFSET + 1, b"")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_MAILBOX_READ_RESP.value, b"")
 
     dispatcher.send_frame.assert_not_awaited()
     dispatcher.acknowledge_frame.assert_not_awaited()

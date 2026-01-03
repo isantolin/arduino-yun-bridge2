@@ -826,18 +826,21 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
     command_id == rpc::to_underlying(CommandId::CMD_XON)) {
       return false;
   }
-  // Response frames (e.g. GET_VERSION_RESP) also don't require ACK,
-  // but they are usually handled by the 'requires_ack = false' logic in dispatch
-  // for incoming frames.
-  // For OUTGOING frames, we check this method.
-  
-  // By default, system commands except flow control might require ACK 
-  // (CMD_LINK_SYNC does, CMD_SET_BAUDRATE does in the sense of waiting for it).
-  // But strictly, only what's marked 'requires_ack = true' in spec should.
-  // However, this C++ helper is simplistic.
-  // Let's rely on the exclusion of Status codes.
-  
-  return true;
+
+  // Only fire-and-forget commands require ACK.
+  // Keep this aligned with the protocol spec / Python ACK_ONLY_COMMANDS.
+  switch (command_id) {
+    case rpc::to_underlying(CommandId::CMD_SET_PIN_MODE):
+    case rpc::to_underlying(CommandId::CMD_DIGITAL_WRITE):
+    case rpc::to_underlying(CommandId::CMD_ANALOG_WRITE):
+    case rpc::to_underlying(CommandId::CMD_CONSOLE_WRITE):
+    case rpc::to_underlying(CommandId::CMD_DATASTORE_PUT):
+    case rpc::to_underlying(CommandId::CMD_MAILBOX_PUSH):
+    case rpc::to_underlying(CommandId::CMD_FILE_WRITE):
+      return true;
+    default:
+      return false;
+  }
 }
 
 void BridgeClass::_clearAckState() {
@@ -975,5 +978,11 @@ void BridgeClass::requestAnalogRead(uint8_t pin) {
 }
 
 void BridgeClass::requestGetFreeMemory() {
-  (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY);
+  // Emit the MCU free-memory response frame directly.
+  // The canonical request (CMD_GET_FREE_MEMORY) is linux_to_mcu; this helper is
+  // primarily used by debug sketches to exercise the TX path.
+  uint16_t free_mem = getFreeMemory();
+  uint8_t resp_payload[2];
+  rpc::write_u16_be(resp_payload, free_mem);
+  (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
 }

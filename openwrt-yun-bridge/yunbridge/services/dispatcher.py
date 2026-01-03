@@ -6,10 +6,10 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
 from yunbridge.rpc.protocol import (
-    RESPONSE_OFFSET,
     Command,
     Status,
 )
+from yunbridge.rpc.contracts import response_to_request
 from yunbridge.protocol.topics import Topic, TopicRoute
 from .routers import MCUHandlerRegistry, MQTTRouter
 
@@ -255,11 +255,11 @@ class BridgeDispatcher:
                     "Critical: Exception in handler for command %s", command_name
                 )
                 # Optionally send an error status back to MCU if it was a request
-                if command_id < RESPONSE_OFFSET:
+                if response_to_request(command_id) is None:
                     # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
                     await self.send_frame(Status.ERROR.value, b"Internal Error")
 
-        elif command_id < RESPONSE_OFFSET:
+        elif response_to_request(command_id) is None:
             logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:

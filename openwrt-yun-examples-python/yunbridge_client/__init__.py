@@ -62,18 +62,22 @@ MQTT_PORT = int(_UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))
 MQTT_TOPIC_PREFIX = _UCI_GENERAL.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
 MQTT_USER = _UCI_GENERAL.get("mqtt_user") or None
 MQTT_PASS = _UCI_GENERAL.get("mqtt_pass") or None
+MQTT_TLS_INSECURE = _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
 
 
 def _default_tls_context() -> ssl.SSLContext | None:
     mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "1")
     if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
         return None
-
-    cafile = _UCI_GENERAL.get("mqtt_cafile")
-    if not cafile:
-        return None
     try:
-        ctx = ssl.create_default_context(cafile=cafile)
+        cafile = _UCI_GENERAL.get("mqtt_cafile")
+        if cafile:
+            ctx = ssl.create_default_context(cafile=cafile)
+        else:
+            ctx = ssl.create_default_context()
+
+        if str(MQTT_TLS_INSECURE).strip() in {"1", "true", "yes", "on"}:
+            ctx.check_hostname = False
         return ctx
     except Exception:
         return None

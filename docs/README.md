@@ -30,7 +30,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Persistencia vs Flash-wear:** por defecto los paths intensivos en escritura apuntan a tmpfs (`mqtt_spool_dir=/tmp/yunbridge/spool`, `file_system_root=/tmp/yun_files`). Para persistencia, configura `file_system_root` y/o `mqtt_spool_dir` a un mount externo (por ejemplo `/mnt/sda1/yun_files`) vía UCI/LuCI.
 - **Spool MQTT autodiagnosticado:** Si el spool en disco detecta errores del filesystem (corrupción, disco lleno, permisos) el daemon deshabilita automáticamente la persistencia, publica `mqtt_spool_degraded`/`mqtt_spool_failure_reason` en el status JSON y continúa en modo *best effort* sin bloquear la cola de publicación en memoria.
 - **Cuotas de escritura de archivos:** El sandbox ahora aplica `file_write_max_bytes` (límite por frame) y `file_storage_quota_bytes` (cuota total bajo `file_system_root`). Los rechazos devuelven `STATUS_ERROR` al MCU o `bridge-error` en MQTT con motivos `write_limit_exceeded` o `storage_quota_exceeded`, y `RuntimeState` mantiene contadores (`file_write_limit_rejections`, `file_storage_limit_rejections`, `file_storage_bytes_used`) que se exportan en los snapshots y métricas para observabilidad.
-- El daemon ahora **falla en seguro** cuando `mqtt_tls=1`: si falta el CA o el certificado cliente, el arranque se aborta con error explícito.
+- El daemon ahora **falla en seguro** cuando `mqtt_tls=1`: si configuras un `mqtt_cafile` explícito y el archivo falta, el arranque se aborta con un error explícito. Los certificados de cliente (`mqtt_certfile`/`mqtt_keyfile`) son opcionales y solo aplican cuando el broker exige mTLS.
 - La ejecución remota de comandos MQTT requiere una lista blanca explícita (`yunbridge.general.allowed_commands`). Un valor vacío significa *ningún comando permitido*; use `*` para habilitar todos de forma consciente.
 - **Watchdog procd (UCI):** el init script lee `watchdog_enabled` y `watchdog_interval` desde UCI y configura `procd_set_param watchdog` en consecuencia. El daemon emite `WATCHDOG=trigger` en `stdout` con la cadencia requerida y reporta latidos en `RuntimeState`.
 - **Respawn (UCI):** ajusta `respawn_threshold`, `respawn_timeout` y `respawn_retry` en UCI para endurecer o relajar la ventana de reintentos sin editar `/etc/init.d/yunbridge`.
@@ -41,9 +41,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Guía rápida de UCI**:
 	```sh
 	uci set yunbridge.general.mqtt_tls='1'
+	# Opcional: cafile (si está vacío se usa el trust store del sistema)
 	uci set yunbridge.general.mqtt_cafile='/etc/ssl/certs/bridge-ca.pem'
-	uci set yunbridge.general.mqtt_certfile='/etc/ssl/certs/bridge.crt'
-	uci set yunbridge.general.mqtt_keyfile='/etc/ssl/private/bridge.key'
+	# Opcional (mTLS): solo si tu broker exige certificados de cliente
+	uci set yunbridge.general.mqtt_certfile='/etc/yunbridge/client.crt'
+	uci set yunbridge.general.mqtt_keyfile='/etc/yunbridge/client.key'
 	uci set yunbridge.general.allowed_commands='ls cat uptime'
 	uci set yunbridge.general.serial_retry_timeout='0.75'
 	uci set yunbridge.general.serial_retry_attempts='3'
@@ -54,7 +56,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	```
 	- Usa `allowed_commands='*'` solo en entornos controlados; cualquier otro valor se normaliza a minúsculas y se interpreta como lista explícita.
 	- Las rutas de certificados deben existir; de lo contrario, el daemon abortará el arranque.
-	- El instalador (`3_install.sh`) inicializa estos valores si aún no existen; personalízalos vía UCI/LuCI antes de ejecutar el daemon.
+	- El instalador (`3_install.sh`) inicializa los defaults de runtime y secretos, pero ya no genera certificados de cliente; configura TLS/mTLS vía UCI/LuCI según tu broker.
 
 ## Plan de compatibilidad y toolchain
 
@@ -113,12 +115,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	/etc/init.d/yunbridge restart
 	```
 - También puedes usar `../tools/rotate_credentials.sh --host <yun>` o la pestaña *Credentials & TLS* (que imprime el snippet `#define BRIDGE_SERIAL_SHARED_SECRET`) para ejecutar ese procedimiento remotamente mediante `/usr/bin/yunbridge-rotate-credentials`, que ahora actualiza UCI directamente.
-- `3_install.sh` reprovisiona por defecto `/etc/yunbridge/tls/ca.crt`, `yunbridge.crt` y `yunbridge.key` en cada ejecución, reescribiendo la ruta heredada (`/etc/ssl/certs/ca-certificates.crt`) y cualquier `cert/key` inexistente para apuntar al bundle privado bajo `/etc/yunbridge/tls`. El script instala automáticamente la dependencia `openssl-util` si falta antes de generar el material. Importa el CA resultante en tu broker si habilitarás TLS mutuo; si prefieres mantener tus propios archivos y quieres que el instalador solo valide que existen, ajusta UCI:
-	```sh
-	uci set yunbridge.general.installer_force_tls_regen='0'
-	uci set yunbridge.general.installer_skip_tls_autogen='1'
-	uci commit yunbridge
-	```
+- `3_install.sh` ya no genera material TLS (CA/cert/key) para el bridge. Para TLS usa un certificado del broker confiable por el sistema (p.ej. Let's Encrypt) o configura `mqtt_cafile` apuntando a tu CA. Para mTLS, provee explícitamente `mqtt_certfile`/`mqtt_keyfile` y configura el broker para requerirlos.
 ### 1. Autenticación del enlace serie MCU ↔ Linux
 
 - El handshake usa un tag HMAC-SHA256 (16 bytes) derivado de `serial_shared_secret`; si el secreto no existe o es débil, el daemon se niega a arrancar.

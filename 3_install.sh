@@ -36,11 +36,6 @@ LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
 
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
-DEFAULT_TLS_DIR="/etc/yunbridge/tls"
-DEFAULT_TLS_CAFILE="$DEFAULT_TLS_DIR/ca.crt"
-DEFAULT_TLS_CERTFILE="$DEFAULT_TLS_DIR/yunbridge.crt"
-DEFAULT_TLS_KEYFILE="$DEFAULT_TLS_DIR/yunbridge.key"
-SHIPPING_TLS_CAFILE_PLACEHOLDER="/etc/ssl/certs/ca-certificates.crt"
 
 # Keep shell defaults aligned with yunbridge.const
 DEFAULT_SERIAL_RETRY_TIMEOUT="0.75"
@@ -48,10 +43,6 @@ DEFAULT_SERIAL_RESPONSE_TIMEOUT="3.0"
 DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL="0.0"
 DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
-
-# Installer behaviour is configured via UCI (yunbridge.general.installer_*).
-SKIP_TLS_AUTOGEN="0"
-FORCE_TLS_REGEN="1"
 
 # [FIX] Added python3-*.apk to the top to ensure dependencies are installed BEFORE the bridge
 PROJECT_APK_PATTERNS="\
@@ -278,31 +269,6 @@ ensure_general_default() {
     printf '%s\n' "$current"
 }
 
-normalize_tls_path_in_uci() {
-    local key="$1" default_value="$2" placeholder="$3"
-    local current
-    current=$(ensure_general_default "$key" "$default_value")
-
-    if [ -n "$placeholder" ] && [ "$current" = "$placeholder" ]; then
-        current="$default_value"
-        uci_set_general "$key" "$current"
-    fi
-
-    case "$current" in
-        $DEFAULT_TLS_DIR/*)
-            printf '%s\n' "$current"
-            return
-            ;;
-    esac
-
-    if [ ! -s "$current" ]; then
-        current="$default_value"
-        uci_set_general "$key" "$current"
-    fi
-
-    printf '%s\n' "$current"
-}
-
 generate_random_hex() {
     local length="$1" value=""
     if command -v python3 >/dev/null 2>&1; then
@@ -333,109 +299,24 @@ PY
     printf '%s\n' "$value"
 }
 
-generate_tls_material() (
-    set -e
-    local cafile="$1" certfile="$2" keyfile="$3"
+normalize_tls_path_in_uci() {
+    # Deprecated: the installer no longer generates TLS CA/cert/key material.
+    # Keep the helper to avoid breaking external automation that might source it.
+    local key="$1" default_value="$2" placeholder="$3"
+    local current
+    current=$(ensure_general_default "$key" "$default_value")
 
-    if ! command -v openssl >/dev/null 2>&1; then
-        echo "[ERROR] openssl utility not found." >&2
-        exit 1
+    if [ -n "$placeholder" ] && [ "$current" = "$placeholder" ]; then
+        current="$default_value"
+        uci_set_general "$key" "$current"
     fi
 
-    local tls_dir cert_dir key_dir ca_key tmpdir ca_days client_days
-    tls_dir=$(dirname "$cafile")
-    mkdir -p "$tls_dir"
-    umask 077
-    tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/yunbridge-tls.XXXXXX")
-    trap 'rm -rf "$tmpdir"' EXIT
-    ca_key="$tls_dir/ca.key"
-    ca_days=$(ensure_general_default installer_tls_ca_days "3650")
-    client_days=$(ensure_general_default installer_tls_client_days "825")
-
-    cat >"$tmpdir/ca.cnf" <<'EOF'
-[ req ]
-default_bits = 3072
-prompt = no
-default_md = sha256
-distinguished_name = dn
-x509_extensions = v3_ca
-
-[ dn ]
-CN = YunBridge Local CA
-O = YunBridge
-OU = Installer
-
-[ v3_ca ]
-subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid:always,issuer
-basicConstraints = critical,CA:true
-keyUsage = critical, digitalSignature, cRLSign, keyCertSign
-EOF
-
-    cat >"$tmpdir/client.cnf" <<'EOF'
-[ req ]
-default_bits = 2048
-prompt = no
-default_md = sha256
-distinguished_name = dn
-req_extensions = req_ext
-
-[ dn ]
-CN = YunBridge Client
-O = YunBridge
-OU = Installer
-
-[ req_ext ]
-extendedKeyUsage = clientAuth
-keyUsage = digitalSignature
-subjectAltName = DNS:yunbridge-mqtt
-EOF
-
-    echo "[INFO] Generating MQTT CA certificate..."
-    openssl req -x509 -config "$tmpdir/ca.cnf" -newkey rsa:3072 -keyout "$ca_key" -out "$cafile" -days "$ca_days" -sha256 -nodes
-
-    echo "[INFO] Generating MQTT client certificate..."
-    openssl req -new -config "$tmpdir/client.cnf" -keyout "$keyfile" -out "$tmpdir/client.csr" -nodes
-
-    openssl x509 -req -in "$tmpdir/client.csr" -CA "$cafile" -CAkey "$ca_key" -CAcreateserial -out "$certfile" -days "$client_days" -sha256 -extensions req_ext -extfile "$tmpdir/client.cnf"
-
-    chmod 600 "$cafile" "$ca_key" "$certfile" "$keyfile"
-    echo "[INFO] TLS material created."
-)
-
-ensure_tls_material() {
-    SKIP_TLS_AUTOGEN=$(ensure_general_default installer_skip_tls_autogen "0")
-    FORCE_TLS_REGEN=$(ensure_general_default installer_force_tls_regen "1")
-
-    if [ "$SKIP_TLS_AUTOGEN" = "1" ] && [ "$FORCE_TLS_REGEN" != "1" ]; then
-        return
+    if [ ! -s "$current" ]; then
+        current="$default_value"
+        uci_set_general "$key" "$current"
     fi
 
-    if ! command -v openssl >/dev/null 2>&1; then
-        install_dependency openssl-util
-    fi
-
-    local cafile certfile keyfile
-    if [ "$FORCE_TLS_REGEN" = "1" ]; then
-        cafile="$DEFAULT_TLS_CAFILE"
-        certfile="$DEFAULT_TLS_CERTFILE"
-        keyfile="$DEFAULT_TLS_KEYFILE"
-        uci_set_general mqtt_cafile "$cafile"
-        uci_set_general mqtt_certfile "$certfile"
-        uci_set_general mqtt_keyfile "$keyfile"
-        uci_commit_general
-        rm -f "$cafile" "$certfile" "$keyfile" "$DEFAULT_TLS_DIR/ca.key"
-    else
-        cafile=$(normalize_tls_path_in_uci mqtt_cafile "$DEFAULT_TLS_CAFILE" "$SHIPPING_TLS_CAFILE_PLACEHOLDER")
-        certfile=$(normalize_tls_path_in_uci mqtt_certfile "$DEFAULT_TLS_CERTFILE" "")
-        keyfile=$(normalize_tls_path_in_uci mqtt_keyfile "$DEFAULT_TLS_KEYFILE" "")
-        uci_commit_general
-    fi
-
-    if [ -z "$cafile" ]; then return; fi
-    if [ -s "$cafile" ] && [ -s "$certfile" ] && [ -s "$keyfile" ]; then return; fi
-
-    generate_tls_material "$cafile" "$certfile" "$keyfile"
+    printf '%s\n' "$current"
 }
 
 ensure_secure_serial_secret() {
@@ -599,7 +480,6 @@ if [ "$project_apk_installed" -eq 0 ]; then
 else
     # Only configure secrets if the package installed successfully
     ensure_secure_serial_secret
-    ensure_tls_material
     configure_serial_link_settings
 fi
 

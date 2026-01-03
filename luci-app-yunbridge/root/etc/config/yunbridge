@@ -14,6 +14,7 @@ config general 'general'
     option mqtt_host '127.0.0.1'
     option mqtt_port '8883'
     option mqtt_tls '1'
+    option mqtt_tls_insecure '0'
     option mqtt_cafile '/etc/ssl/certs/ca-certificates.crt'
     option mqtt_topic 'br'
 

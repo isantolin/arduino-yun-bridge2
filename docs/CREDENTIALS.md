@@ -54,6 +54,6 @@ The **Services → YunBridge → Credentials & TLS** page now shows an "Arduino 
 - Track which devices have been rotated by tagging them in your asset inventory or by storing the `SERIAL_SECRET=...` line that `tools/rotate_credentials.sh` prints during automation runs.
 - If you mirror secrets into another system (e.g., provisioning service), parse the `SERIAL_SECRET=...` line that the CLI prints or call the LuCI endpoint (`/admin/services/yunbridge/rotate_credentials`) and use the `serial_secret` field in its JSON response.
 - Keep any snippet/header file with `BRIDGE_SERIAL_SHARED_SECRET` out of version control (or encrypt it) so each device preserves its unique material.
-- Store TLS assets separately from the credential file. Use the commands documented in the LuCI page or `3_install.sh` to regenerate the `/etc/yunbridge/tls/` directory whenever you rotate client certificates.
+- Store TLS assets separately from the credential file. If you use mutual TLS (mTLS), manage client certificates explicitly and keep them out of version control.
 
 Following this workflow keeps the MCU and daemon secrets aligned and makes rotations a repeatable, scriptable process that you can embed in CI, provisioning scripts, or LuCI itself.

@@ -57,6 +57,7 @@ MQTT_PORT=$(uci -q get yunbridge.general.mqtt_port 2>/dev/null || printf '%s' "8
 MQTT_USER=$(uci -q get yunbridge.general.mqtt_user 2>/dev/null || printf '%s' "")
 MQTT_PASS=$(uci -q get yunbridge.general.mqtt_pass 2>/dev/null || printf '%s' "")
 MQTT_TLS=$(uci -q get yunbridge.general.mqtt_tls 2>/dev/null || printf '%s' "1")
+MQTT_TLS_INSECURE=$(uci -q get yunbridge.general.mqtt_tls_insecure 2>/dev/null || printf '%s' "0")
 MQTT_CAFILE=$(uci -q get yunbridge.general.mqtt_cafile 2>/dev/null || printf '%s' "")
 
 # Check for mosquitto_pub command
@@ -97,6 +98,14 @@ fi
 if [ "$MQTT_TLS" = "1" ]; then
     if [ -n "$MQTT_CAFILE" ]; then
         set -- "$@" --cafile "$MQTT_CAFILE"
+    elif [ -s "/etc/ssl/certs/ca-certificates.crt" ]; then
+        # Use the system trust store when no cafile is configured.
+        set -- "$@" --cafile "/etc/ssl/certs/ca-certificates.crt"
+    elif [ -d "/etc/ssl/certs" ]; then
+        set -- "$@" --capath "/etc/ssl/certs"
+    fi
+    if [ "$MQTT_TLS_INSECURE" = "1" ]; then
+        set -- "$@" --insecure
     fi
     set -- "$@" --tls-version tlsv1.2
 fi

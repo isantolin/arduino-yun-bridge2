@@ -78,6 +78,7 @@ class RuntimeConfig:
     allowed_commands: tuple[str, ...]
     file_system_root: str
     process_timeout: int
+    mqtt_tls_insecure: bool = False
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
     allowed_policy: AllowedCommandPolicy = field(init=False)
@@ -111,7 +112,7 @@ class RuntimeConfig:
 
     @property
     def tls_enabled(self) -> bool:
-        return self.mqtt_tls and bool(self.mqtt_cafile)
+        return self.mqtt_tls
 
     def __post_init__(self) -> None:
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
@@ -130,8 +131,16 @@ class RuntimeConfig:
                 "MQTT TLS is disabled; MQTT credentials and payloads "
                 "will be sent in plaintext."
             )
-        elif not self.mqtt_cafile:
-            raise ValueError("MQTT TLS is enabled but 'mqtt_cafile' is not configured")
+        else:
+            if self.mqtt_tls_insecure:
+                logger.warning(
+                    "MQTT TLS hostname verification is disabled (mqtt_tls_insecure=1); "
+                    "this is less secure and should be used only for known/self-hosted brokers."
+                )
+            if not self.mqtt_cafile:
+                logger.info(
+                    "MQTT TLS is enabled with no mqtt_cafile configured; using system trust store."
+                )
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
@@ -346,6 +355,8 @@ def load_runtime_config() -> RuntimeConfig:
     mqtt_tls_value = raw.get("mqtt_tls")
     mqtt_tls = parse_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
 
+    mqtt_tls_insecure = _raw_get_bool(raw, "mqtt_tls_insecure", False)
+
     serial_secret_str = (raw.get("serial_shared_secret") or "").strip()
     serial_secret_bytes = (
         serial_secret_str.encode("utf-8") if serial_secret_str else b""
@@ -405,6 +416,7 @@ def load_runtime_config() -> RuntimeConfig:
         mqtt_user=_optional_path(mqtt_user),
         mqtt_pass=_optional_path(mqtt_pass),
         mqtt_tls=mqtt_tls,
+        mqtt_tls_insecure=mqtt_tls_insecure,
         mqtt_cafile=mqtt_cafile,
         mqtt_certfile=_optional_path(mqtt_certfile),
         mqtt_keyfile=_optional_path(mqtt_keyfile),

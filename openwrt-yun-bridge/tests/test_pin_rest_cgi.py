@@ -103,6 +103,7 @@ def test_publish_with_retries_configures_tls(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     captured_clients: list[CapturingFakeClient] = []
 
@@ -123,6 +124,9 @@ def test_publish_with_retries_configures_tls(
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"
     runtime_config.mqtt_tls = True
+    cafile = tmp_path / "test-ca.pem"
+    cafile.write_text("dummy-ca")
+    runtime_config.mqtt_cafile = str(cafile)
 
     pin_rest_module.publish_with_retries(
         topic="br/d/13",
@@ -136,7 +140,7 @@ def test_publish_with_retries_configures_tls(
     fake_client = captured_clients[0]
 
     assert fake_client.auth_args == ("user", "secret")
-    assert fake_client.tls_kwargs["ca_certs"] == "/tmp/test-ca.pem"
+    assert fake_client.tls_kwargs["ca_certs"] == str(cafile)
 
     assert len(fake_client.published) == 1
     assert fake_client.published[0] == ("br/d/13", "1", 1)
@@ -178,6 +182,8 @@ def test_publish_with_retries_times_out(
             return MockInfo()
 
     monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
+
+    runtime_config.mqtt_tls = False
 
     with pytest.raises(RuntimeError, match="Failed to publish"):
         pin_rest_module.publish_with_retries(

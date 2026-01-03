@@ -48,7 +48,15 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
         _emit("  <UCI unavailable or yunbridge.general missing>")
         return
 
-    for key in ("mqtt_host", "mqtt_port", "mqtt_tls", "mqtt_user", "mqtt_topic", "mqtt_cafile"):
+    for key in (
+        "mqtt_host",
+        "mqtt_port",
+        "mqtt_tls",
+        "mqtt_tls_insecure",
+        "mqtt_user",
+        "mqtt_topic",
+        "mqtt_cafile",
+    ):
         value = cfg.get(key)
         if not value:
             _emit(f"  {key}=<unset>")

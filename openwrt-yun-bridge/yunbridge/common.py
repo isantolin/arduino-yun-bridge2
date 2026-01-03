@@ -205,6 +205,10 @@ def get_default_config() -> dict[str, str]:
         "mqtt_host": DEFAULT_MQTT_HOST,
         "mqtt_port": str(DEFAULT_MQTT_PORT),
         "mqtt_tls": "1",
+        # If enabled, clients will skip TLS hostname verification (equivalent to
+        # mosquitto_{pub,sub} --insecure). Certificate chain verification still
+        # applies unless explicitly disabled elsewhere.
+        "mqtt_tls_insecure": "0",
         "mqtt_cafile": DEFAULT_MQTT_CAFILE,
         "mqtt_certfile": "",
         "mqtt_keyfile": "",

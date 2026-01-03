@@ -41,16 +41,33 @@ DEFAULT_BACKOFF_BASE = max(0.0, parse_float(_UCI.get("pin_mqtt_backoff"), 0.5))
 DEFAULT_POLL_INTERVAL = max(0.001, parse_float(_UCI.get("pin_mqtt_poll_interval"), 0.05))
 
 
-def _resolve_tls_material(config: RuntimeConfig) -> SimpleNamespace | None:
-    cafile = config.mqtt_cafile
-    if not cafile:
-        return None
+def _configure_tls(client: Any, config: RuntimeConfig) -> None:
+    if not getattr(config, "mqtt_tls", False):
+        return
 
-    return SimpleNamespace(
-        cafile=cafile,
-        certfile=config.mqtt_certfile,
-        keyfile=config.mqtt_keyfile,
-    )
+    cafile = getattr(config, "mqtt_cafile", None) or None
+    certfile = getattr(config, "mqtt_certfile", None) or None
+    keyfile = getattr(config, "mqtt_keyfile", None) or None
+    tls_insecure = bool(getattr(config, "mqtt_tls_insecure", False))
+
+    if (certfile and not keyfile) or (keyfile and not certfile):
+        raise ValueError("TLS client auth requires both mqtt_certfile and mqtt_keyfile")
+
+    if cafile and not os.path.exists(cafile):
+        raise ValueError(f"TLS CA file does not exist: {cafile}")
+
+    tls_kwargs: dict[str, Any] = {}
+    if cafile:
+        tls_kwargs["ca_certs"] = cafile
+    if certfile:
+        tls_kwargs["certfile"] = certfile
+    if keyfile:
+        tls_kwargs["keyfile"] = keyfile
+
+    client.tls_set(**tls_kwargs)
+
+    if tls_insecure and hasattr(client, "tls_insecure_set"):
+        client.tls_insecure_set(True)
 
 
 def publish_with_retries(
@@ -64,8 +81,6 @@ def publish_with_retries(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
 ) -> None:
     """Publish an MQTT message with retry and timeout semantics."""
-    tls_material = _resolve_tls_material(config) if config.mqtt_tls else None
-
     last_error: Exception | None = None
 
     for attempt in range(1, retries + 1):
@@ -75,12 +90,7 @@ def publish_with_retries(
             callback_api_version=CallbackAPIVersion.VERSION2,
         )
 
-        if tls_material and tls_material.cafile:
-            client.tls_set(
-                ca_certs=tls_material.cafile,
-                certfile=tls_material.certfile,
-                keyfile=tls_material.keyfile,
-            )
+        _configure_tls(client, config)
 
         if config.mqtt_user:
             client.username_pw_set(config.mqtt_user, config.mqtt_pass)

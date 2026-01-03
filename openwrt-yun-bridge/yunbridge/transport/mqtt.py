@@ -25,14 +25,24 @@ def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
     if not config.tls_enabled:
         return None
 
-    if not config.mqtt_cafile or not Path(config.mqtt_cafile).exists():
-        raise RuntimeError(f"MQTT TLS CA file missing: {config.mqtt_cafile}")
-
     try:
-        context = ssl.create_default_context(
-            ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile
-        )
+        if config.mqtt_cafile:
+            if not Path(config.mqtt_cafile).exists():
+                raise RuntimeError(f"MQTT TLS CA file missing: {config.mqtt_cafile}")
+            context = ssl.create_default_context(
+                ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile
+            )
+        else:
+            # Use system trust store.
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
         context.minimum_version = MQTT_TLS_MIN_VERSION
+
+        # Equivalent to mosquitto_{pub,sub} --insecure: disable hostname verification
+        # (useful when connecting via IP while the certificate CN/SAN is a DNS name).
+        if getattr(config, "mqtt_tls_insecure", False):
+            context.check_hostname = False
+
         if config.mqtt_certfile and config.mqtt_keyfile:
             context.load_cert_chain(config.mqtt_certfile, config.mqtt_keyfile)
 

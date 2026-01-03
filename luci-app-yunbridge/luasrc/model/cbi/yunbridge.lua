@@ -47,6 +47,7 @@ local function ensure_general_section()
             mqtt_pass = "",
             mqtt_ws_port = "9001",
             mqtt_tls = "1",
+            mqtt_tls_insecure = "0",
             mqtt_cafile = "/etc/ssl/certs/ca-certificates.crt",
             mqtt_certfile = "",
             mqtt_keyfile = "",
@@ -149,6 +150,19 @@ mqtt_tls.default = "1"
 mqtt_tls.description = translate("Strongly recommended. Disabling TLS sends MQTT credentials " ..
     "and payloads in plaintext.")
 
+local mqtt_tls_insecure = s:option(
+    Flag,
+    "mqtt_tls_insecure",
+    translate("Disable TLS Hostname Verification")
+)
+mqtt_tls_insecure.rmempty = true
+mqtt_tls_insecure.default = "0"
+mqtt_tls_insecure:depends("mqtt_tls", "1")
+mqtt_tls_insecure.description = translate(
+    "Equivalent to mosquitto --insecure. Allows connecting via IP even when the broker certificate " ..
+    "CN/SAN is a DNS name. Less secure; use only for trusted/self-hosted brokers."
+)
+
 local mqtt_cafile = s:option(Value, "mqtt_cafile", translate("CA File Path"))
 mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
 mqtt_cafile:depends("mqtt_tls", "1")
@@ -162,12 +176,7 @@ local function is_tls_enabled(section)
     return tostring(form_value or "0") == "1"
 end
 
-function mqtt_cafile.validate(_, value, section)
-    if is_tls_enabled(section) then
-        if not value or value == "" then
-            return nil, translate("CA file is required when TLS is enabled.")
-        end
-    end
+function mqtt_cafile.validate(_, value, _)
     return value
 end
 
@@ -175,11 +184,17 @@ local mqtt_certfile = s:option(Value, "mqtt_certfile", translate("Client Certifi
 mqtt_certfile.placeholder = "/etc/yunbridge/client.crt"
 mqtt_certfile:depends("mqtt_tls", "1")
 mqtt_certfile.rmempty = true
+mqtt_certfile.description = translate(
+    "Optional. Only required if your MQTT broker enforces client certificates (mTLS)."
+)
 
 local mqtt_keyfile = s:option(Value, "mqtt_keyfile", translate("Client Key Path"))
 mqtt_keyfile.placeholder = "/etc/yunbridge/client.key"
 mqtt_keyfile:depends("mqtt_tls", "1")
 mqtt_keyfile.rmempty = true
+mqtt_keyfile.description = translate(
+    "Optional. Only required if your MQTT broker enforces client certificates (mTLS)."
+)
 
 local mqtt_topic = s:option(Value, "mqtt_topic", translate("MQTT Topic Prefix"))
 mqtt_topic.placeholder = "br"

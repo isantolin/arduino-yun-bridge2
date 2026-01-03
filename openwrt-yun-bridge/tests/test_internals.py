@@ -65,15 +65,42 @@ async def test_mqtt_internal_tls_setup_branches():
     from yunbridge.transport.mqtt import _configure_tls
     assert _configure_tls(mock_cfg) is None
 
-    # Caso 2: TLS habilitado pero sin CA (Debe fallar)
+    # Caso 2: TLS habilitado sin cafile (usa trust store)
     mock_cfg.tls_enabled = True
+    mock_cfg.mqtt_cafile = None
+    mock_cfg.mqtt_tls_insecure = False
+    mock_cfg.mqtt_certfile = None
+    mock_cfg.mqtt_keyfile = None
+
+    fake_ctx = MagicMock()
+    fake_ctx.check_hostname = True
+
+    with patch("yunbridge.transport.mqtt.ssl.create_default_context") as mk_ctx:
+        mk_ctx.return_value = fake_ctx
+        ctx = _configure_tls(mock_cfg)
+        assert ctx is fake_ctx
+        assert fake_ctx.check_hostname is True
+
+    # Caso 3: cafile explícito pero inexistente (debe fallar)
     mock_cfg.mqtt_cafile = "/non/existent/ca.crt"
 
-    # Mockear Path.exists para que devuelva False
     with patch("yunbridge.transport.mqtt.Path") as MockPath:
         MockPath.return_value.exists.return_value = False
         with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
             _configure_tls(mock_cfg)
+
+    # Caso 4: mqtt_tls_insecure desactiva check_hostname
+    mock_cfg.mqtt_cafile = None
+    mock_cfg.mqtt_tls_insecure = True
+
+    fake_ctx2 = MagicMock()
+    fake_ctx2.check_hostname = True
+
+    with patch("yunbridge.transport.mqtt.ssl.create_default_context") as mk_ctx2:
+        mk_ctx2.return_value = fake_ctx2
+        ctx2 = _configure_tls(mock_cfg)
+        assert ctx2 is fake_ctx2
+        assert fake_ctx2.check_hostname is False
 
 
 # --- DAEMON ENTRY POINT ---

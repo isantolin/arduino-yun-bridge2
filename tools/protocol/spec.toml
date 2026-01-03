@@ -63,6 +63,110 @@ incoming_available = "incoming_available"
 outgoing_available = "outgoing_available"
 response = "response"
 
+# MQTT command subscriptions (daemon inbound).
+# These define which topics the daemon must subscribe to in order to receive
+# commands via MQTT. They are intentionally expressed relative to the runtime
+# prefix (e.g. "br") so deployments can override the prefix.
+#
+# Wildcards:
+# - "+" matches exactly one segment
+# - "#" matches zero or more segments
+
+[[mqtt_subscriptions]]
+topic = "DIGITAL"
+segments = ["+", "mode"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "DIGITAL"
+segments = ["+", "read"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "DIGITAL"
+segments = ["+"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "ANALOG"
+segments = ["+", "read"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "ANALOG"
+segments = ["+"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "CONSOLE"
+segments = ["in"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "DATASTORE"
+segments = ["put", "#"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "DATASTORE"
+segments = ["get", "#"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "MAILBOX"
+segments = ["write"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "MAILBOX"
+segments = ["read"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SHELL"
+segments = ["run"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SHELL"
+segments = ["run_async"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SHELL"
+segments = ["poll", "#"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SHELL"
+segments = ["kill", "#"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SYSTEM"
+segments = ["free_memory", "get"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "SYSTEM"
+segments = ["version", "get"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "FILE"
+segments = ["write", "#"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "FILE"
+segments = ["read", "#"]
+qos = 0
+
+[[mqtt_subscriptions]]
+topic = "FILE"
+segments = ["remove", "#"]
+qos = 0
+
 [[topics]]
 name = "ANALOG"
 value = "a"

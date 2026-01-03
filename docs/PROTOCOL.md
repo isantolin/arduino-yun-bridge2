@@ -1,8 +1,37 @@
 # Yun Bridge v2 — Protocol & Architecture
 
-Este documento unifica y reemplaza la documentación histórica de:
+Este documento unifica y reemplaza documentación histórica y dispersa.
 
-- `openwrt-library-arduino/docs/PROTOCOL.md` (protocolo binario)
+## Mini-diagrama (flujos y direccionalidad)
+
+```
+                 ┌──────────────────────────────────────────────┐
+                 │                MQTT v5 Broker                │
+                 └──────────────────────────────────────────────┘
+                               ▲                     │
+                               │ daemon publishes     │ clients publish
+                               │ (responses/snapshots)│ (commands)
+                               │                     ▼
+                      ┌────────────────────────────────────┐
+                      │   YunBridge daemon (Linux / MPU)   │
+                      │  - Policy (allow/deny)             │
+                      │  - Dispatcher (MCU + MQTT routes)  │
+                      │  - RuntimeState snapshots          │
+                      └────────────────────────────────────┘
+                               ▲
+                               │ Serial RPC frames (COBS + CRC)
+                               │
+                               ▼
+                      ┌────────────────────────────────────┐
+                      │        MCU firmware (Arduino)      │
+                      │  - Handshake HMAC-auth             │
+                      │  - RPC command handlers            │
+                      └────────────────────────────────────┘
+
+Notas:
+- Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con comandos bidireccionales/push simétrico donde aplica.
+- MQTT: clientes→daemon (comandos) y daemon→MQTT (respuestas/snapshots/metrics).
+```
 
 ## Fuente de verdad
 
@@ -90,13 +119,20 @@ La comunicación sigue un modelo de RPC: normalmente el MPU inicia peticiones y 
 
 ### Comandos que requieren ACK
 
-Actualmente se consideran ACK-required (y por tanto trackeables por el daemon cuando salen Linux → MCU):
+Hay dos niveles distintos de “ACK” en este sistema:
 
-- `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE`
-- `CMD_CONSOLE_WRITE`
-- `CMD_DATASTORE_PUT`
-- `CMD_MAILBOX_PUSH`
-- `CMD_FILE_WRITE`
+1) **ACK de transporte (recomendado por compatibilidad):** tras procesar exitosamente un frame *no-status* recibido, el receptor responde con `STATUS_ACK (0x38)` para confirmar recepción (y permitir retries acotados si el emisor no ve ese ACK).
+  - Excepciones: frames de `Status` y `CMD_XOFF`/`CMD_XON`.
+  - Si el receptor detecta un error de framing/semántica, puede responder con `STATUS_MALFORMED`, `STATUS_ERROR`, etc.
+
+2) **Comandos “ACK-only” (sin respuesta de negocio):** son comandos para los cuales **no existe** `CMD_X_RESP`; el éxito se confirma con `STATUS_ACK`.
+  Esta lista está alineada con el spec (bindings Python: `ACK_ONLY_COMMANDS`):
+
+- `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
+- `CMD_CONSOLE_WRITE` (bidireccional)
+- `CMD_DATASTORE_PUT` (MCU → Linux)
+- `CMD_MAILBOX_PUSH` (bidireccional)
+- `CMD_FILE_WRITE` (bidireccional)
 
 ## 2. Transporte
 
@@ -216,10 +252,10 @@ Notas operativas:
 
 - **`0x80` CMD_MAILBOX_READ (MCU → Linux)**: sin payload. Respuesta `0x84 CMD_MAILBOX_READ_RESP`.
 - **`0x81` CMD_MAILBOX_PROCESSED (MCU → Linux)**: `[message_id: u16]` (opcional).
-- **`0x82` CMD_MAILBOX_AVAILABLE (MCU → Linux y Linux → MCU)**:
-  - Modo *request* (MCU → Linux): sin payload. Respuesta `0x85 CMD_MAILBOX_AVAILABLE_RESP` con `[count: u8]`.
-  - Modo *notification* (Linux → MCU): payload `[count: u8]`.
-  - Confirmación (solo modo notification): `STATUS_ACK (0x38)`.
+- **`0x82` CMD_MAILBOX_AVAILABLE (MCU → Linux)**:
+  - Modo *request*: sin payload.
+  - Respuesta: `0x85 CMD_MAILBOX_AVAILABLE_RESP` (Linux → MCU) con `[count: u8]`.
+  - Nota: el firmware actual tolera (para compatibilidad) recibir `CMD_MAILBOX_AVAILABLE` con payload `[count: u8]` como notificación Linux → MCU, pero el daemon no lo emite y no forma parte del contrato principal del protocolo.
 - **`0x83` CMD_MAILBOX_PUSH (push simétrico, bidireccional)**:
   - Payload: `[message_len: u16, message: byte[]]`.
   - Confirmación: `STATUS_ACK (0x38)`.
@@ -242,4 +278,6 @@ Notas operativas:
 ## 6. Consideraciones adicionales
 
 - **Truncado**: si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
-- **MQTT**: el daemon expone estas operaciones en topics MQTT (`br/gpio`, `br/process`, `br/datastore`, etc.).
+- **MQTT**: además del RPC serie, el daemon expone una API MQTT.
+  - Dirección: MQTT clientes → daemon (comandos), daemon → MQTT (respuestas/snapshots).
+  - La lista de suscripciones (incluyendo comodines y QoS) vive en `tools/protocol/spec.toml` (`[[mqtt_subscriptions]]`) y se genera a Python como `MQTT_COMMAND_SUBSCRIPTIONS`.

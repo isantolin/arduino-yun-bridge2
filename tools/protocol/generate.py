@@ -445,6 +445,26 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             )
         out.write("\n\n")
 
+    mqtt_subscriptions = spec.get("mqtt_subscriptions")
+    if mqtt_subscriptions:
+        out.write(
+            "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (\n"
+        )
+        for entry in mqtt_subscriptions:
+            topic_name = str(entry["topic"]).strip()
+            segments = entry.get("segments") or []
+            if not isinstance(segments, list):
+                raise TypeError("mqtt_subscriptions.segments must be a list")
+            qos = int(entry.get("qos", 0))
+            topic_expr = f"Topic.{topic_name}"
+            if segments:
+                segment_expr = ", ".join(json.dumps(str(seg)) for seg in segments)
+                out.write(f"    ({topic_expr}, ({segment_expr},), {qos}),\n")
+            else:
+                out.write(f"    ({topic_expr}, (), {qos}),\n")
+        # flake8 expects two blank lines between top-level definitions.
+        out.write(")\n\n\n")
+
     if "actions" in spec:
         out.write("class Action(StrEnum):\n")
         for action in spec["actions"]:

@@ -14,6 +14,7 @@ from typing import Any
 from .settings import RuntimeConfig
 
 SYSLOG_SOCKET = Path("/dev/log")
+SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 
 _RESERVED_LOG_KEYS = {
     "args",
@@ -83,9 +84,21 @@ class StructuredLogFormatter(logging.Formatter):
 
 
 def _build_handler() -> Handler:
-    if SYSLOG_SOCKET.exists():
+    candidates: tuple[Path, ...]
+    if str(SYSLOG_SOCKET) == "/dev/log":
+        candidates = (SYSLOG_SOCKET, SYSLOG_SOCKET_FALLBACK)
+    else:
+        candidates = (SYSLOG_SOCKET,)
+
+    socket_path: Path | None = None
+    for candidate in candidates:
+        if candidate.exists():
+            socket_path = candidate
+            break
+
+    if socket_path is not None:
         syslog_handler = SysLogHandler(
-            address=str(SYSLOG_SOCKET),
+            address=str(socket_path),
             facility=SysLogHandler.LOG_DAEMON,
         )
         syslog_handler.ident = "yunbridge "

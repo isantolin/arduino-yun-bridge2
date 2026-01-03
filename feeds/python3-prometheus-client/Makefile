@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-prometheus-client
-PKG_VERSION:=0.21.1
-PKG_RELEASE:=2
+PKG_VERSION:=0.23.1
+PKG_RELEASE:=1
 
 PYPI_NAME:=prometheus_client
-PKG_HASH:=252505a722ac04b0456be05c05f75f45d760c2911ffc45f2a06bcaed9f3ae3fb
+PKG_HASH:=6ae8f9081eaaaf153a2e959d2e6c4f4fb57b12ef76c8c7980202f1e57b48b2ce
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=Apache-2.0

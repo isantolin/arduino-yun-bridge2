@@ -85,6 +85,29 @@ class Topic(StrEnum):
     SYSTEM = "system"  # System control and info
 
 
+MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (
+    (Topic.DIGITAL, ("+", "mode",), 0),
+    (Topic.DIGITAL, ("+", "read",), 0),
+    (Topic.DIGITAL, ("+",), 0),
+    (Topic.ANALOG, ("+", "read",), 0),
+    (Topic.ANALOG, ("+",), 0),
+    (Topic.CONSOLE, ("in",), 0),
+    (Topic.DATASTORE, ("put", "#",), 0),
+    (Topic.DATASTORE, ("get", "#",), 0),
+    (Topic.MAILBOX, ("write",), 0),
+    (Topic.MAILBOX, ("read",), 0),
+    (Topic.SHELL, ("run",), 0),
+    (Topic.SHELL, ("run_async",), 0),
+    (Topic.SHELL, ("poll", "#",), 0),
+    (Topic.SHELL, ("kill", "#",), 0),
+    (Topic.SYSTEM, ("free_memory", "get",), 0),
+    (Topic.SYSTEM, ("version", "get",), 0),
+    (Topic.FILE, ("write", "#",), 0),
+    (Topic.FILE, ("read", "#",), 0),
+    (Topic.FILE, ("remove", "#",), 0),
+)
+
+
 class Action(StrEnum):
     FILE_READ = "read"  # Read file content
     FILE_WRITE = "write"  # Write file content

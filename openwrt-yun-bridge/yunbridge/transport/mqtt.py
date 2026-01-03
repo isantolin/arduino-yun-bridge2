@@ -13,7 +13,8 @@ import aiomqtt
 from yunbridge.common import build_mqtt_connect_properties, build_mqtt_properties
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import MQTT_TLS_MIN_VERSION
-from yunbridge.protocol import Action, Topic, topic_path
+from yunbridge.protocol import topic_path
+from yunbridge.rpc.protocol import MQTT_COMMAND_SUBSCRIPTIONS
 from yunbridge.services.runtime import BridgeService
 from yunbridge.state.context import RuntimeState
 
@@ -128,83 +129,14 @@ async def mqtt_task(
                 logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
 
                 # Subscription List (no closures/lambdas; always read prefix from state)
-                topics = [
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.DIGITAL,
-                            "+",
-                            Action.PIN_MODE,
-                        ),
-                        0,
-                    ),
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.DIGITAL,
-                            "+",
-                            Action.PIN_READ,
-                        ),
-                        0,
-                    ),
-                    (topic_path(state.mqtt_topic_prefix, Topic.DIGITAL, "+"), 0),
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.ANALOG,
-                            "+",
-                            Action.PIN_READ,
-                        ),
-                        0,
-                    ),
-                    (topic_path(state.mqtt_topic_prefix, Topic.ANALOG, "+"), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.CONSOLE, Action.CONSOLE_IN), 0),
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.DATASTORE,
-                            Action.DATASTORE_PUT,
-                            "#",
-                        ),
-                        0,
-                    ),
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.DATASTORE,
-                            Action.DATASTORE_GET,
-                            "#",
-                        ),
-                        0,
-                    ),
-                    (topic_path(state.mqtt_topic_prefix, Topic.MAILBOX, Action.MAILBOX_WRITE), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.MAILBOX, Action.MAILBOX_READ), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_RUN), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_RUN_ASYNC), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_POLL, "#"), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.SHELL, Action.SHELL_KILL, "#"), 0),
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.SYSTEM,
-                            Action.SYSTEM_FREE_MEMORY,
-                            Action.SYSTEM_GET,
-                        ),
-                        0,
-                    ),
-                    (
-                        topic_path(
-                            state.mqtt_topic_prefix,
-                            Topic.SYSTEM,
-                            Action.SYSTEM_VERSION,
-                            Action.SYSTEM_GET,
-                        ),
-                        0,
-                    ),
-                    (topic_path(state.mqtt_topic_prefix, Topic.FILE, Action.FILE_WRITE, "#"), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.FILE, Action.FILE_READ, "#"), 0),
-                    (topic_path(state.mqtt_topic_prefix, Topic.FILE, Action.FILE_REMOVE, "#"), 0),
-                ]
+                topics: list[tuple[str, int]] = []
+                for topic_enum, segments, qos in MQTT_COMMAND_SUBSCRIPTIONS:
+                    topics.append(
+                        (
+                            topic_path(state.mqtt_topic_prefix, topic_enum, *segments),
+                            int(qos),
+                        )
+                    )
 
                 for topic, qos in topics:
                     await client.subscribe(topic, qos=qos)

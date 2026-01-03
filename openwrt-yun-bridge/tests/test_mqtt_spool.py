@@ -75,8 +75,11 @@ def test_spool_skips_corrupt_rows(
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     spool.append(_make_message("topic/first"))
 
-    # Inject a corrupt entry directly into the underlying durable queue.
     queue: Any = getattr(spool, "_disk_queue")
+    if queue is None:
+        pytest.skip("Durable spool backend not available")
+
+    # Inject a corrupt entry directly into the underlying durable queue.
     queue.append(b"not-a-dict")
     spool.append(_make_message("topic/second"))
 
@@ -102,10 +105,13 @@ def test_spool_fallback_on_disk_full(
     """Test automatic fallback to memory queue when disk write fails."""
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=5)
 
+    queue: Any = getattr(spool, "_disk_queue")
+    if queue is None:
+        pytest.skip("Durable spool backend not available")
+
     def _boom(_record: object) -> None:
         raise OSError(errno.ENOSPC, "disk full")
 
-    queue: Any = getattr(spool, "_disk_queue")
     monkeypatch.setattr(queue, "append", _boom)
 
     # First append should fail on disk and trigger fallback
@@ -143,6 +149,8 @@ def test_spool_fallback_invokes_hook(
     )
 
     queue: Any = getattr(spool, "_disk_queue")
+    if queue is None:
+        pytest.skip("Durable spool backend not available")
 
     def _boom(_record: object) -> None:
         raise OSError(errno.ENOSPC, "disk full")
@@ -206,6 +214,8 @@ def test_spool_requeue_fallback(
 
     # Mock disk queue appendleft to fail
     queue: Any = getattr(spool, "_disk_queue")
+    if queue is None:
+        pytest.skip("Durable spool backend not available")
 
     def _boom(_record: object) -> None:
         raise OSError(errno.EIO, "disk error")
@@ -232,6 +242,8 @@ def test_spool_pop_fallback(
 
     # Mock disk queue popleft to fail
     queue: Any = getattr(spool, "_disk_queue")
+    if queue is None:
+        pytest.skip("Durable spool backend not available")
 
     def _boom() -> None:
         raise OSError(errno.EIO, "disk error")
@@ -253,6 +265,8 @@ def test_spool_trim_fallback(
 
     # Mock disk queue popleft (used in trim) to fail
     queue: Any = getattr(spool, "_disk_queue")
+    if queue is None:
+        pytest.skip("Durable spool backend not available")
 
     def _boom() -> None:
         raise OSError(errno.EIO, "disk error")

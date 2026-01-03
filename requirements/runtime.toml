@@ -13,6 +13,12 @@ pip = ""
 rationale = "Load daemon configuration from UCI"
 
 [[dependency]]
+name = "python3-sqlite3"
+openwrt = "python3-sqlite3"
+pip = ""
+rationale = "Enable durable MQTT spool backend (sqlite3 stdlib module)"
+
+[[dependency]]
 name = "aiomqtt"
 openwrt = "python3-aiomqtt"
 pip = "aiomqtt==2.4.0"

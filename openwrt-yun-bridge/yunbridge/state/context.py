@@ -287,6 +287,7 @@ class RuntimeState:
     mqtt_spool_failure_reason: str | None = None
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     mqtt_spool_limit: int = 0
+    allow_non_tmp_paths: bool = False
     mqtt_spool_retry_attempts: int = 0
     mqtt_spool_backoff_until: float = 0.0
     mqtt_spool_last_error: str | None = None
@@ -395,6 +396,7 @@ class RuntimeState:
         self.allowed_policy = config.allowed_policy
         self.process_timeout = config.process_timeout
         self.file_system_root = config.file_system_root
+        self.allow_non_tmp_paths = config.allow_non_tmp_paths
         self.file_write_max_bytes = config.file_write_max_bytes
         self.file_storage_quota_bytes = config.file_storage_quota_bytes
         self.file_storage_bytes_used = 0
@@ -769,6 +771,7 @@ class RuntimeState:
             self.mqtt_spool = MQTTPublishSpool(
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
+                allow_non_tmp_paths=self.allow_non_tmp_paths,
                 on_fallback=self._on_spool_fallback,
             )
             self.mqtt_spool_degraded = False
@@ -791,6 +794,7 @@ class RuntimeState:
                 MQTTPublishSpool,
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
+                allow_non_tmp_paths=self.allow_non_tmp_paths,
                 on_fallback=self._on_spool_fallback,
             )
         except Exception as exc:

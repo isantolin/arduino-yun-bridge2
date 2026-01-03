@@ -6,11 +6,15 @@ import collections
 import errno
 import logging
 import pickle
-import sqlite3
 import threading
 import time
 from pathlib import Path
 from typing import Deque as TypingDeque, Protocol, Callable, cast
+
+try:
+    import sqlite3
+except ImportError:  # pragma: no cover - optional on OpenWrt images
+    sqlite3 = None  # type: ignore[assignment]
 
 from .messages import SpoolRecord, QueuedPublish
 
@@ -41,6 +45,8 @@ class SqliteDeque:
     """Persistent deque implementation using SQLite."""
 
     def __init__(self, directory: str) -> None:
+        if sqlite3 is None:
+            raise RuntimeError("sqlite3 module not available")
         self._db_path = Path(directory) / "spool.db"
         self._conn = sqlite3.connect(
             self._db_path,
@@ -136,6 +142,7 @@ class MQTTPublishSpool:
         directory: str,
         limit: int,
         *,
+        allow_non_tmp_paths: bool = False,
         on_fallback: Callable[[str], None] | None = None,
     ) -> None:
         self.directory = Path(directory)
@@ -151,19 +158,29 @@ class MQTTPublishSpool:
         self._fallback_active = False
         self._fallback_hook = on_fallback
 
-        if str(self.directory) != "/tmp" and not str(self.directory).startswith("/tmp/"):
+        directory_str = str(self.directory)
+        is_tmp = directory_str == "/tmp" or directory_str.startswith("/tmp/")
+        if not is_tmp and not allow_non_tmp_paths:
             logger.warning(
                 "MQTT spool directory %s is not under /tmp; forcing memory-only mode",
                 self.directory,
             )
             self._activate_fallback("non_tmp_directory")
+        elif not is_tmp and allow_non_tmp_paths:
+            logger.warning(
+                "MQTT spool directory %s is not under /tmp; ensure it is not flash-backed (prefer /mnt)",
+                self.directory,
+            )
 
         if self._use_disk:
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
                 # queue_dir = self.directory / "queue" # No longer needed for sqlite
                 # queue_dir.mkdir(parents=True, exist_ok=True)
-                self._disk_queue = cast(DiskQueue, SqliteDeque(directory=str(self.directory)))
+                self._disk_queue = cast(
+                    DiskQueue,
+                    SqliteDeque(directory=str(self.directory)),
+                )
             except Exception as exc:
                 logger.warning(
                     "Failed to initialize disk spool at %s; falling back "

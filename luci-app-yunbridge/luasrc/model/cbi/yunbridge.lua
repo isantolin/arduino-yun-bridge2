@@ -168,14 +168,6 @@ mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
 mqtt_cafile:depends("mqtt_tls", "1")
 mqtt_cafile.rmempty = true
 
-local function is_tls_enabled(section)
-    local form_value = mqtt_tls:formvalue(section)
-    if form_value == nil then
-        form_value = uci:get("yunbridge", section, "mqtt_tls")
-    end
-    return tostring(form_value or "0") == "1"
-end
-
 function mqtt_cafile.validate(_, value, _)
     return value
 end

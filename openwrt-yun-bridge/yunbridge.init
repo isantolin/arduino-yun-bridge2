@@ -13,6 +13,7 @@ start_service() {
     local file_root="/tmp/yun_files"
     local watchdog_enabled="1"
     local watchdog_interval="5"
+    local allow_non_tmp_paths="0"
     local respawn_threshold="3600"
     local respawn_timeout="5"
     local respawn_retry="0"
@@ -22,10 +23,27 @@ start_service() {
         file_root="$(uci -q get yunbridge.general.file_system_root || echo "$file_root")"
         watchdog_enabled="$(uci -q get yunbridge.general.watchdog_enabled || echo "$watchdog_enabled")"
         watchdog_interval="$(uci -q get yunbridge.general.watchdog_interval || echo "$watchdog_interval")"
+        allow_non_tmp_paths="$(uci -q get yunbridge.general.allow_non_tmp_paths || echo "$allow_non_tmp_paths")"
         respawn_threshold="$(uci -q get yunbridge.general.respawn_threshold || echo "$respawn_threshold")"
         respawn_timeout="$(uci -q get yunbridge.general.respawn_timeout || echo "$respawn_timeout")"
         respawn_retry="$(uci -q get yunbridge.general.respawn_retry || echo "$respawn_retry")"
     fi
+
+    case "${allow_non_tmp_paths}" in
+        1|true|yes|on|enable|enabled)
+            ;;
+        *)
+            case "$spool_dir" in
+                /tmp|/tmp/*) ;;
+                *) spool_dir="/tmp/yunbridge/spool" ;;
+            esac
+
+            case "$file_root" in
+                /tmp|/tmp/*) ;;
+                *) file_root="/tmp/yun_files" ;;
+            esac
+            ;;
+    esac
 
     # [FLASH PROTECTION - CRITICAL]
     # Crear directorios de trabajo en RAM (/tmp es tmpfs en OpenWrt)

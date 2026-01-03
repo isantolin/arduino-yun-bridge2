@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import string
 from pathlib import Path
 from typing import Any
@@ -217,6 +218,248 @@ async def test_handle_remove_updates_usage(
     assert component.state.file_storage_bytes_used == 0
     root = Path(component.state.file_system_root)
     assert not (root / "temp.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_handle_write_rejects_too_short_payload(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+
+    assert await component.handle_write(b"") is False
+    assert bridge.sent_frames == []
+
+
+@pytest.mark.asyncio
+async def test_handle_write_rejects_missing_data_section(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    # path_len=3 but missing 2-byte length field
+    payload = bytes([3]) + b"foo"
+    assert await component.handle_write(payload) is False
+    assert bridge.sent_frames == []
+
+
+@pytest.mark.asyncio
+async def test_handle_write_rejects_absolute_path(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    payload = _build_write_payload("/etc/passwd", b"x")
+
+    assert await component.handle_write(payload) is False
+    assert bridge.sent_frames
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert bridge.sent_frames[-1][1].decode() == "invalid_path"
+
+
+@pytest.mark.asyncio
+async def test_handle_write_rejects_truncated_data(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    encoded = b"foo"
+    # Declares 4 bytes of data but only provides 3.
+    payload = bytes([len(encoded)]) + encoded + (4).to_bytes(2, "big") + b"abc"
+    assert await component.handle_write(payload) is False
+    assert bridge.sent_frames == []
+
+
+@pytest.mark.asyncio
+async def test_handle_read_rejects_invalid_payloads(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    await component.handle_read(b"")
+    await component.handle_read(bytes([5]) + b"ab")
+    assert bridge.sent_frames == []
+
+
+@pytest.mark.asyncio
+async def test_handle_read_failure_sends_error(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component, bridge = file_component
+
+    async def fail(_op: str, _filename: str, _data: bytes | None = None):
+        return False, None, "boom"
+
+    monkeypatch.setattr(component, "_perform_file_operation", fail)
+    await component.handle_read(bytes([3]) + b"foo")
+    assert bridge.sent_frames[-1][0] == Status.ERROR.value
+    assert bridge.sent_frames[-1][1].decode() == "boom"
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_missing_filename_is_ignored(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    await component.handle_mqtt("read", [], b"")
+    assert bridge.published == []
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_unknown_action_is_ignored(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, bridge = file_component
+    await component.handle_mqtt("unknown", ["file.txt"], b"")
+    assert bridge.published == []
+    assert bridge.sent_frames == []
+
+
+@pytest.mark.asyncio
+async def test_perform_file_operation_unknown_operation_branch(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    component, _ = file_component
+    ok, content, reason = await component._perform_file_operation("bogus", "file.txt")
+    assert ok is False
+    assert content is None
+    assert reason == "unknown_operation"
+
+
+@pytest.mark.asyncio
+async def test_perform_file_operation_oserror_returns_false(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component, _ = file_component
+
+    def boom(_path: Path) -> bytes:
+        raise OSError("read_failed")
+
+    monkeypatch.setattr(component, "_read_file_sync", boom)
+    ok, content, reason = await component._perform_file_operation("read", "file.txt")
+    assert ok is False
+    assert content is None
+    assert reason is not None
+
+
+def test_normalise_filename_rejects_bad_inputs() -> None:
+    assert FileComponent._normalise_filename("") is None
+    assert FileComponent._normalise_filename("   ") is None
+    assert FileComponent._normalise_filename("./") is None
+    assert FileComponent._normalise_filename("../") is None
+    assert FileComponent._normalise_filename("a\x00b") is None
+
+
+def test_scan_directory_size_handles_scandir_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class FakeDirEntry:
+        def __init__(self, name: str, path: str) -> None:
+            self.name = name
+            self.path = path
+
+        def is_symlink(self) -> bool:
+            return self.name == "sym"
+
+        def is_dir(self, *, follow_symlinks: bool = False) -> bool:
+            if self.name == "bad_dir":
+                raise OSError("boom")
+            return self.name == "dir"
+
+        def is_file(self, *, follow_symlinks: bool = False) -> bool:
+            return self.name == "file"
+
+        def stat(self, *, follow_symlinks: bool = False):
+            class Stat:
+                st_size = 3
+
+            return Stat()
+
+    class FakeScandir:
+        def __init__(self, path: Path) -> None:
+            self._path = path
+
+        def __enter__(self):
+            return iter(
+                [
+                    FakeDirEntry("sym", str(self._path / "sym")),
+                    FakeDirEntry("bad_dir", str(self._path / "bad_dir")),
+                    FakeDirEntry("file", str(self._path / "file")),
+                ]
+            )
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    def fake_scandir(path: str | os.PathLike[str]):
+        p = Path(path)
+        if p.name == "missing":
+            raise FileNotFoundError
+        if p.name == "broken":
+            raise OSError("nope")
+        return FakeScandir(p)
+
+    monkeypatch.setattr(os, "scandir", fake_scandir)
+
+    # stack contains: root, then missing/broken are simulated via Path names.
+    (tmp_path / "missing").mkdir()
+    (tmp_path / "broken").mkdir()
+
+    total = FileComponent._scan_directory_size(tmp_path)
+    assert total == 3
+
+
+@pytest.mark.asyncio
+async def test_write_with_quota_emits_flash_warning_for_non_tmp_path(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component, _ = file_component
+
+    non_tmp_root = Path.cwd() / ".pytest-yunbridge-nonvolatile"
+    non_tmp_root.mkdir(parents=True, exist_ok=True)
+    try:
+        component.state.allow_non_tmp_paths = True
+        component.state.file_system_root = str(non_tmp_root)
+        component.state.file_write_max_bytes = 32
+        component.state.file_storage_quota_bytes = 1024
+
+        ok, _, reason = await component._perform_file_operation(
+            "write",
+            "alpha.txt",
+            b"abc",
+        )
+        assert ok is True
+        assert reason == "ok"
+    finally:
+        for child in non_tmp_root.rglob("*"):
+            if child.is_file():
+                child.unlink()
+        if non_tmp_root.exists():
+            non_tmp_root.rmdir()
+
+
+def test_write_file_sync_warns_when_growing_large(tmp_path: Path) -> None:
+    path = tmp_path / "big.bin"
+    FileComponent._write_file_sync(path, b"x" * (1024 * 1024 + 1))
+    assert path.stat().st_size > 1024 * 1024
+
+
+def test_get_base_dir_returns_none_when_mkdir_fails(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    component, _ = file_component
+    component.state.allow_non_tmp_paths = True
+
+    real_mkdir = Path.mkdir
+
+    def failing_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        if str(self).endswith("fail-mkdir"):
+            raise OSError("mkdir failed")
+        return real_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", failing_mkdir)
+    component.state.file_system_root = str(Path.cwd() / "fail-mkdir")
+    assert component._get_base_dir() is None
 
 
 SAFE_FILENAME_CHARS = string.ascii_letters + string.digits + "/._- " + "\\"

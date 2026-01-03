@@ -182,6 +182,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
     state = create_runtime_state(runtime_config)
+    state.link_is_synchronized = True
     service = _SerialServiceStub(runtime_config, state)
 
     frame = Frame(
@@ -234,6 +235,7 @@ async def test_serial_reader_task_limits_packet_size(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
     state = create_runtime_state(runtime_config)
+    state.link_is_synchronized = True
     service = _SerialServiceStub(runtime_config, state)
 
     reported: Deque[tuple[int, bytes]] = deque()

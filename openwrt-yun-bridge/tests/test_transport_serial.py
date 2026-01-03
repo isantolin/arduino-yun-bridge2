@@ -136,6 +136,7 @@ async def test_flow_control_mixin_connection_lost_wakes_waiter() -> None:
 async def test_process_packet_non_binary_sends_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     state = create_runtime_state(config)
+    state.link_is_synchronized = True
     service = BridgeService(config, state)
 
     service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
@@ -154,6 +155,7 @@ async def test_process_packet_non_binary_sends_malformed(monkeypatch: pytest.Mon
 async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     state = create_runtime_state(config)
+    state.link_is_synchronized = True
     service = BridgeService(config, state)
 
     service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
@@ -186,6 +188,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
 async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     state = create_runtime_state(config)
+    state.link_is_synchronized = True
     service = BridgeService(config, state)
 
     service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]

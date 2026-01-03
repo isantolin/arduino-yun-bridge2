@@ -96,6 +96,33 @@ class VectorStream : public Stream {
   }
 };
 
+class CapturingSerial : public HardwareSerial {
+ public:
+  ByteBuffer<8192> tx;
+  int writes = 0;
+  int fail_after_writes = -1;
+
+  size_t write(uint8_t c) override {
+    writes++;
+    if (fail_after_writes >= 0 && writes > fail_after_writes) {
+      return 0;
+    }
+    TEST_ASSERT(tx.push(c));
+    return 1;
+  }
+
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+
+  void clear() {
+    tx.clear();
+    writes = 0;
+    fail_after_writes = -1;
+  }
+};
+
 static void test_cobs_null_guards() {
   uint8_t dst[8] = {0};
   uint8_t src[2] = {1, 2};
@@ -210,6 +237,40 @@ static void test_transport_processInput_overflow_sets_error() {
   TEST_ASSERT(transport.getLastError() == rpc::FrameParser::Error::OVERFLOW);
 }
 
+static void test_transport_hardware_serial_branches() {
+  VectorStream stream;
+  CapturingSerial serial;
+
+  bridge::BridgeTransport transport(stream, &serial);
+  transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
+
+  // sendFrame should go through the hardware-serial write path.
+  const uint8_t payload[] = {TEST_MARKER_BYTE, TEST_EXIT_CODE};
+  TEST_ASSERT(transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
+  TEST_ASSERT(serial.tx.len > 0);
+
+  // flush() should take the hardware-serial branch.
+  transport.flush();
+
+  // setBaudrate() should take the hardware-serial branch.
+  transport.setBaudrate(rpc::RPC_DEFAULT_BAUDRATE);
+
+  // sendControlFrame also uses the hardware-serial path.
+  serial.clear();
+  TEST_ASSERT(transport.sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XON)));
+  TEST_ASSERT(serial.tx.len > 0);
+
+  // retransmitLastFrame uses the hardware-serial path.
+  serial.clear();
+  TEST_ASSERT(transport.retransmitLastFrame());
+  TEST_ASSERT(serial.tx.len > 0);
+
+  // Failure branch: short write causes sendFrame to fail.
+  serial.clear();
+  serial.fail_after_writes = 1;
+  TEST_ASSERT(!transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
+}
+
 }  // namespace
 
 int main() {
@@ -221,6 +282,7 @@ int main() {
   test_transport_retransmitLastFrame_behaviors();
   test_transport_processInput_flow_control_pause_resume();
   test_transport_processInput_overflow_sets_error();
+  test_transport_hardware_serial_branches();
 
   return 0;
 }

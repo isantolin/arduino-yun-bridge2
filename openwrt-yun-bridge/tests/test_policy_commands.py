@@ -6,7 +6,7 @@ import string
 
 import pytest
 
-from yunbridge.policy import tokenize_shell_command
+from yunbridge.policy import CommandValidationError, tokenize_shell_command
 
 SAFE_TOKEN_CHARS = string.ascii_letters + string.digits + "._-/:"
 FORBIDDEN_CHARS = ";&|><`"
@@ -52,3 +52,9 @@ def test_tokenizer_accepts_shell_metacharacters_as_literals(command: str) -> Non
     """
     tokens = tokenize_shell_command(command)
     assert len(tokens) > 0
+
+
+def test_tokenizer_rejects_empty_command() -> None:
+    with pytest.raises(CommandValidationError) as err:
+        tokenize_shell_command("   ")
+    assert "Empty" in err.value.message

@@ -322,3 +322,104 @@ async def test_finalize_async_process_slot_missing_releases(process_component: P
     with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
         await process_component._finalize_async_process(123, proc)  # type: ignore[arg-type]
         mock_release.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_kill_timeout_releases_slot(process_component: ProcessComponent) -> None:
+    import yunbridge.services.components.process as process_mod
+
+    pid = 11
+
+    class _Proc:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+
+        async def wait(self) -> None:
+            return None
+
+    proc = _Proc()
+    slot = ManagedProcess(pid=pid, command="echo hi", handle=proc)
+    async with process_component.state.process_lock:
+        process_component.state.running_processes[pid] = slot
+
+    class _TimeoutCtx:
+        async def __aenter__(self) -> None:
+            raise TimeoutError
+
+        async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
+            return False
+
+    with patch.object(process_mod.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
+        with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
+            with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
+                ok = await process_component.handle_kill(struct.pack(">H", pid))
+
+    assert ok is True
+    mock_term.assert_awaited_once()
+    mock_release.assert_called_once()
+    async with process_component.state.process_lock:
+        assert pid not in process_component.state.running_processes
+
+
+@pytest.mark.asyncio
+async def test_handle_kill_process_lookup_error_is_handled(process_component: ProcessComponent) -> None:
+    pid = 12
+
+    class _Proc:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+
+        async def wait(self) -> None:
+            return None
+
+    proc = _Proc()
+    slot = ManagedProcess(pid=pid, command="echo hi", handle=proc)
+    async with process_component.state.process_lock:
+        process_component.state.running_processes[pid] = slot
+
+    with patch.object(
+        ProcessComponent,
+        "_terminate_process_tree",
+        new_callable=AsyncMock,
+        side_effect=ProcessLookupError,
+    ) as mock_term:
+        with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
+            ok = await process_component.handle_kill(struct.pack(">H", pid))
+
+    assert ok is True
+    mock_term.assert_awaited_once()
+    mock_release.assert_called_once()
+    async with process_component.state.process_lock:
+        assert pid not in process_component.state.running_processes
+
+
+@pytest.mark.asyncio
+async def test_handle_kill_unexpected_exception_is_handled(process_component: ProcessComponent) -> None:
+    pid = 13
+
+    class _Proc:
+        def __init__(self) -> None:
+            self.returncode: int | None = None
+
+        async def wait(self) -> None:
+            return None
+
+    proc = _Proc()
+    slot = ManagedProcess(pid=pid, command="echo hi", handle=proc)
+    async with process_component.state.process_lock:
+        process_component.state.running_processes[pid] = slot
+
+    with patch.object(
+        ProcessComponent,
+        "_terminate_process_tree",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("boom"),
+    ) as mock_term:
+        with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
+            ok = await process_component.handle_kill(struct.pack(">H", pid))
+
+    assert ok is True
+    mock_term.assert_awaited_once()
+    mock_release.assert_called_once()
+    async with process_component.state.process_lock:
+        assert pid not in process_component.state.running_processes

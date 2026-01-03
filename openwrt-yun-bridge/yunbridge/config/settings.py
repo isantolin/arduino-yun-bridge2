@@ -202,14 +202,31 @@ class RuntimeConfig:
         )
 
         if not self.allow_non_tmp_paths:
-            for field_name, candidate in (
-                ("file_system_root", root),
-                ("mqtt_spool_dir", spool),
-            ):
-                if candidate != "/tmp" and not candidate.startswith("/tmp/"):
-                    raise ValueError(
-                        f"{field_name} must be under /tmp unless allow_non_tmp_paths=1"
-                    )
+            if root != "/tmp" and not root.startswith("/tmp/"):
+                logger.warning(
+                    "FLASH PROTECTION: Overriding file_system_root outside /tmp (%s) to %s; "
+                    "set allow_non_tmp_paths=1 to allow non-/tmp paths.",
+                    root,
+                    DEFAULT_FILE_SYSTEM_ROOT,
+                )
+                root = self._normalize_path(
+                    DEFAULT_FILE_SYSTEM_ROOT,
+                    field="file_system_root",
+                    require_absolute=True,
+                )
+
+            if spool != "/tmp" and not spool.startswith("/tmp/"):
+                logger.warning(
+                    "FLASH PROTECTION: Overriding mqtt_spool_dir outside /tmp (%s) to %s; "
+                    "set allow_non_tmp_paths=1 to allow non-/tmp paths.",
+                    spool,
+                    DEFAULT_MQTT_SPOOL_DIR,
+                )
+                spool = self._normalize_path(
+                    DEFAULT_MQTT_SPOOL_DIR,
+                    field="mqtt_spool_dir",
+                    require_absolute=True,
+                )
 
         self.file_system_root = root
         self.mqtt_spool_dir = spool

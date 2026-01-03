@@ -167,6 +167,36 @@ def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
     assert config.metrics_port == 9200
 
 
+def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+    raw_config = {
+        "serial_port": "/dev/ttyS1",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "mqtt_host": "broker",
+        "mqtt_port": "8883",
+        "mqtt_tls": "1",
+        "mqtt_cafile": "/etc/ca.pem",
+        "mqtt_topic": "br",
+        "allowed_commands": "uptime",
+        "file_system_root": "/data",
+        "mqtt_spool_dir": "/data/spool",
+        "allow_non_tmp_paths": "0",
+        "process_timeout": "10",
+        "serial_shared_secret": " unit-test-secret-1234 ",
+    }
+
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+
+    with caplog.at_level(logging.WARNING):
+        config = settings.load_runtime_config()
+
+    assert config.file_system_root == const.DEFAULT_FILE_SYSTEM_ROOT
+    assert config.mqtt_spool_dir == const.DEFAULT_MQTT_SPOOL_DIR
+    assert any("FLASH PROTECTION" in rec.getMessage() for rec in caplog.records)
+
+
 def test_load_runtime_config_allows_empty_mqtt_user_value(
     monkeypatch: pytest.MonkeyPatch,
 ):

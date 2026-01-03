@@ -340,6 +340,11 @@ class SerialTransport:
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
 
+    def _should_emit_parse_error_status(self) -> bool:
+        # Avoid sending MALFORMED/CRC_MISMATCH frames before link sync: it can
+        # confuse older firmwares and makes handshake recovery harder.
+        return bool(getattr(self.state, "link_is_synchronized", False))
+
     async def run(self) -> None:
         reconnect_delay = max(1, self.config.reconnect_delay)
 
@@ -433,11 +438,12 @@ class SerialTransport:
                         discarding = True
                         self.state.record_serial_decode_error()
                         logger.warning("Serial packet too large, flushed.")
-                        try:
-                            payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL) + snapshot
-                            await self.service.send_frame(Status.MALFORMED.value, payload)
-                        except Exception:
-                            pass
+                        if self._should_emit_parse_error_status():
+                            try:
+                                payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL) + snapshot
+                                await self.service.send_frame(Status.MALFORMED.value, payload)
+                            except Exception:
+                                pass
 
     async def send_frame(self, command_id: int, payload: bytes) -> bool:
         # Fast-fail: preserve legacy semantics (and avoid awaiting mocks) when
@@ -477,7 +483,8 @@ class SerialTransport:
             self.state.record_serial_decode_error()
             payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL)
             try:
-                await self.service.send_frame(Status.MALFORMED.value, payload)
+                if self._should_emit_parse_error_status():
+                    await self.service.send_frame(Status.MALFORMED.value, payload)
             except Exception:
                 logger.exception("Failed to notify MCU about non-binary serial payload")
             return
@@ -498,6 +505,9 @@ class SerialTransport:
                 "Frame parse error %s for raw %s (len=%d header=%s)",
                 exc, error_data.hex(), len(error_data), header_hex,
             )
+
+            if not self._should_emit_parse_error_status():
+                return
 
             status = Status.MALFORMED
             if "crc mismatch" in str(exc).lower():

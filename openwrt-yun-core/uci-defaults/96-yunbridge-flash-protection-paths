@@ -1,0 +1,53 @@
+#!/bin/sh
+# Enforce RAM-backed paths by default (flash protection).
+# If allow_non_tmp_paths is not enabled, ensure file_system_root and mqtt_spool_dir
+# live under /tmp to avoid writing frequently to flash.
+# Runs once on first boot / first install (uci-defaults).
+
+DEFAULT_FILE_ROOT="/tmp/yun_files"
+DEFAULT_SPOOL_DIR="/tmp/yunbridge/spool"
+
+if ! command -v uci >/dev/null 2>&1; then
+    exit 0
+fi
+
+allow_non_tmp_paths="$(uci -q get yunbridge.general.allow_non_tmp_paths 2>/dev/null || echo "0")"
+
+case "${allow_non_tmp_paths}" in
+    1|true|yes|on|enable|enabled)
+        exit 0
+        ;;
+esac
+
+current_file_root="$(uci -q get yunbridge.general.file_system_root 2>/dev/null || true)"
+current_spool_dir="$(uci -q get yunbridge.general.mqtt_spool_dir 2>/dev/null || true)"
+
+changed=0
+
+needs_tmp_prefix() {
+    local candidate="$1"
+    [ -n "$candidate" ] || return 0
+    [ "$candidate" = "/tmp" ] && return 1
+    case "$candidate" in
+        /tmp/*) return 1 ;;
+    esac
+    return 0
+}
+
+if needs_tmp_prefix "$current_file_root"; then
+    uci -q set yunbridge.general=general
+    uci -q set yunbridge.general.file_system_root="$DEFAULT_FILE_ROOT"
+    changed=1
+fi
+
+if needs_tmp_prefix "$current_spool_dir"; then
+    uci -q set yunbridge.general=general
+    uci -q set yunbridge.general.mqtt_spool_dir="$DEFAULT_SPOOL_DIR"
+    changed=1
+fi
+
+if [ "$changed" -eq 1 ]; then
+    uci -q commit yunbridge
+fi
+
+exit 0

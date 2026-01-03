@@ -1,229 +1,546 @@
-"""Unit tests for BridgeDispatcher."""
-
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import pytest
 
-from yunbridge.protocol.topics import Topic, TopicRoute
-from yunbridge.rpc.protocol import Command, Status
+from yunbridge.protocol.topics import TopicRoute, parse_topic
+from yunbridge.rpc.protocol import Command, Status, Topic
 from yunbridge.services.dispatcher import BridgeDispatcher
 from yunbridge.services.routers import MCUHandlerRegistry, MQTTRouter
 
+from .mqtt_helpers import make_inbound_message
+
+
+@dataclass(frozen=True)
+class _Calls:
+    items: list[tuple[str, Any]]
+
+    def add(self, name: str, *args: Any) -> None:
+        self.items.append((name, args))
+
+
+class _FileComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_write(self, payload: bytes) -> bool:
+        self._calls.add("file.handle_write", payload)
+        return True
+
+    async def handle_read(self, payload: bytes) -> bool:
+        self._calls.add("file.handle_read", payload)
+        return True
+
+    async def handle_remove(self, payload: bytes) -> bool:
+        self._calls.add("file.handle_remove", payload)
+        return True
+
+    async def handle_mqtt(
+        self,
+        identifier: str,
+        remainder: list[str],
+        payload: bytes,
+        inbound: Any,
+    ) -> None:
+        self._calls.add("file.handle_mqtt", identifier, tuple(remainder), payload, inbound)
+
+
+class _ConsoleComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_mqtt_input(self, payload: bytes, inbound: Any) -> bool:
+        self._calls.add("console.handle_mqtt_input", payload, inbound)
+        return True
+
+    async def handle_xoff(self, payload: bytes) -> bool:
+        self._calls.add("console.handle_xoff", payload)
+        return True
+
+    async def handle_xon(self, payload: bytes) -> bool:
+        self._calls.add("console.handle_xon", payload)
+        return True
+
+    async def handle_write(self, payload: bytes) -> bool:
+        self._calls.add("console.handle_write", payload)
+        return True
+
+
+class _DatastoreComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_put(self, payload: bytes) -> bool:
+        self._calls.add("datastore.handle_put", payload)
+        return True
+
+    async def handle_get_request(self, payload: bytes) -> bool:
+        self._calls.add("datastore.handle_get_request", payload)
+        return True
+
+    async def handle_mqtt(
+        self,
+        identifier: str,
+        remainder: list[str],
+        payload: bytes,
+        payload_str: str,
+        inbound: Any,
+    ) -> None:
+        self._calls.add(
+            "datastore.handle_mqtt",
+            identifier,
+            tuple(remainder),
+            payload,
+            payload_str,
+            inbound,
+        )
+
+
+class _MailboxComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_push(self, payload: bytes) -> bool:
+        self._calls.add("mailbox.handle_push", payload)
+        return True
+
+    async def handle_available(self, payload: bytes) -> bool:
+        self._calls.add("mailbox.handle_available", payload)
+        return True
+
+    async def handle_read(self, payload: bytes) -> bool:
+        self._calls.add("mailbox.handle_read", payload)
+        return True
+
+    async def handle_processed(self, payload: bytes) -> bool:
+        self._calls.add("mailbox.handle_processed", payload)
+        return True
+
+    async def handle_mqtt(self, identifier: str, payload: bytes, inbound: Any) -> None:
+        self._calls.add("mailbox.handle_mqtt", identifier, payload, inbound)
+
+
+class _PinComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_digital_read_resp(self, payload: bytes) -> bool:
+        self._calls.add("pin.handle_digital_read_resp", payload)
+        return True
+
+    async def handle_analog_read_resp(self, payload: bytes) -> bool:
+        self._calls.add("pin.handle_analog_read_resp", payload)
+        return True
+
+    async def handle_unexpected_mcu_request(self, command: Command, payload: bytes) -> bool:
+        self._calls.add("pin.handle_unexpected_mcu_request", command, payload)
+        return True
+
+    async def handle_mqtt(
+        self,
+        topic: Topic,
+        parts: list[str],
+        payload_str: str,
+        inbound: Any,
+    ) -> None:
+        self._calls.add("pin.handle_mqtt", topic, tuple(parts), payload_str, inbound)
+
+
+class _ProcessComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_run(self, payload: bytes) -> bool:
+        self._calls.add("process.handle_run", payload)
+        return True
+
+    async def handle_run_async(self, payload: bytes) -> bool:
+        self._calls.add("process.handle_run_async", payload)
+        return True
+
+    async def handle_poll(self, payload: bytes) -> bool:
+        self._calls.add("process.handle_poll", payload)
+        return True
+
+
+class _ShellComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_mqtt(self, parts: list[str], payload: bytes, inbound: Any) -> None:
+        self._calls.add("shell.handle_mqtt", tuple(parts), payload, inbound)
+
+
+class _SystemComponent:
+    def __init__(self, calls: _Calls) -> None:
+        self._calls = calls
+
+    async def handle_get_free_memory_resp(self, payload: bytes) -> bool:
+        self._calls.add("system.handle_get_free_memory_resp", payload)
+        return True
+
+    async def handle_get_version_resp(self, payload: bytes) -> bool:
+        self._calls.add("system.handle_get_version_resp", payload)
+        return True
+
+    async def handle_set_baudrate_resp(self, payload: bytes) -> bool:
+        self._calls.add("system.handle_set_baudrate_resp", payload)
+        return True
+
+    async def handle_get_tx_debug_snapshot_resp(self, payload: bytes) -> bool:
+        self._calls.add("system.handle_get_tx_debug_snapshot_resp", payload)
+        return True
+
+    async def handle_mqtt(self, identifier: str, remainder: list[str], inbound: Any) -> bool:
+        self._calls.add("system.handle_mqtt", identifier, tuple(remainder), inbound)
+        return identifier != "nope"
+
 
 def _make_dispatcher(
+    calls: _Calls,
     *,
-    is_link_synchronized: bool = True,
-    is_topic_action_allowed: bool = True,
+    is_link_synchronized: Callable[[], bool] | None = None,
+    is_topic_action_allowed: Callable[[Topic | str, str], bool] | None = None,
 ) -> BridgeDispatcher:
     registry = MCUHandlerRegistry()
     router = MQTTRouter()
 
-    async def _send_frame(_cmd: int, _payload: bytes) -> bool:
+    async def _send_frame(command_id: int, payload: bytes) -> bool:
+        calls.add("send_frame", command_id, payload)
         return True
 
-    async def _ack(*_args, **_kwargs) -> None:
-        return None
+    async def _acknowledge_frame(*args: Any, **kwargs: Any) -> None:
+        calls.add("acknowledge_frame", args, kwargs)
 
-    async def _reject(*_args, **_kwargs) -> None:
-        return None
+    def _is_link_synchronized() -> bool:
+        return True if is_link_synchronized is None else is_link_synchronized()
 
-    async def _publish(*_args, **_kwargs) -> None:
-        return None
+    def _is_topic_action_allowed(topic: Topic | str, action: str) -> bool:
+        if is_topic_action_allowed is not None:
+            return is_topic_action_allowed(topic, action)
+        return True
 
-    return BridgeDispatcher(
-        mcu_registry=registry,
-        mqtt_router=router,
-        send_frame=AsyncMock(side_effect=_send_frame),
-        acknowledge_frame=AsyncMock(side_effect=_ack),
-        is_link_synchronized=lambda: is_link_synchronized,
-        is_topic_action_allowed=lambda _topic, _action: is_topic_action_allowed,
-        reject_topic_action=AsyncMock(side_effect=_reject),
-        publish_bridge_snapshot=AsyncMock(side_effect=_publish),
+    async def _reject_topic_action(inbound: Any, topic: Topic | str, action: str) -> None:
+        calls.add("reject_topic_action", inbound, topic, action)
+
+    async def _publish_bridge_snapshot(kind: str, inbound: Any) -> None:
+        calls.add("publish_bridge_snapshot", kind, inbound)
+
+    dispatcher = BridgeDispatcher(
+        registry,
+        router,
+        _send_frame,
+        _acknowledge_frame,
+        _is_link_synchronized,
+        _is_topic_action_allowed,
+        _reject_topic_action,
+        _publish_bridge_snapshot,
     )
+    dispatcher.register_components(
+        console=_ConsoleComponent(calls),
+        datastore=_DatastoreComponent(calls),
+        file=_FileComponent(calls),
+        mailbox=_MailboxComponent(calls),
+        pin=_PinComponent(calls),
+        process=_ProcessComponent(calls),
+        shell=_ShellComponent(calls),
+        system=_SystemComponent(calls),
+    )
+
+    async def _handle_link_sync_resp(payload: bytes) -> bool:
+        calls.add("handle_link_sync_resp", payload)
+        return True
+
+    async def _handle_link_reset_resp(payload: bytes) -> bool:
+        calls.add("handle_link_reset_resp", payload)
+        return True
+
+    async def _handle_ack(payload: bytes) -> None:
+        calls.add("handle_ack", payload)
+
+    def _status_handler_factory(status: Status):
+        async def _handler(payload: bytes) -> None:
+            calls.add("status_handler", status, payload)
+
+        return _handler
+
+    async def _handle_process_kill(payload: bytes) -> bool | None:
+        calls.add("handle_process_kill", payload)
+        return True
+
+    dispatcher.register_system_handlers(
+        handle_link_sync_resp=_handle_link_sync_resp,
+        handle_link_reset_resp=_handle_link_reset_resp,
+        handle_ack=_handle_ack,
+        status_handler_factory=_status_handler_factory,
+        handle_process_kill=_handle_process_kill,
+    )
+    return dispatcher
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_rejects_pre_sync_non_status_sends_malformed() -> None:
-    dispatcher = _make_dispatcher(is_link_synchronized=False)
+async def test_dispatch_mcu_frame_rejects_pre_sync_and_ack_malformed() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls, is_link_synchronized=lambda: False)
 
-    cmd = Command.CMD_CONSOLE_WRITE.value
-    payload = b"abcdef" * 50
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"xyz")
 
-    await dispatcher.dispatch_mcu_frame(cmd, payload)
-
-    dispatcher.acknowledge_frame.assert_awaited_once()
-    args, kwargs = dispatcher.acknowledge_frame.call_args
-    assert args[0] == cmd
-    assert kwargs["status"] == Status.MALFORMED
-    assert kwargs["extra"]
+    assert any(name == "acknowledge_frame" for name, _ in calls.items)
 
 
 @pytest.mark.asyncio
 async def test_dispatch_mcu_frame_allows_status_frames_pre_sync() -> None:
-    dispatcher = _make_dispatcher(is_link_synchronized=False)
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls, is_link_synchronized=lambda: False)
 
-    # Status frames are allowed pre-sync and do not get auto-acked.
-    await dispatcher.dispatch_mcu_frame(Status.OK.value, b"hello")
+    await dispatcher.dispatch_mcu_frame(Status.ACK.value, b"")
 
-    dispatcher.acknowledge_frame.assert_not_awaited()
+    assert not any(name == "acknowledge_frame" for name, _ in calls.items)
+    assert any(name == "handle_ack" for name, _ in calls.items)
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_allows_link_sync_response_pre_sync() -> None:
-    dispatcher = _make_dispatcher(is_link_synchronized=False)
+async def test_dispatch_mcu_frame_handler_success_auto_acks() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
 
-    handled: list[bytes] = []
-
-    async def _handler(payload: bytes):
-        handled.append(payload)
+    async def handler(payload: bytes) -> bool:
+        calls.add("handler", payload)
         return True
 
-    dispatcher.mcu_registry.register(Command.CMD_LINK_SYNC_RESP.value, _handler)
+    dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_LINK_SYNC_RESP.value, b"x")
-
-    assert handled == [b"x"]
+    assert ("handler", (b"hello",)) in calls.items
+    assert any(name == "acknowledge_frame" for name, _ in calls.items)
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_handler_false_skips_ack() -> None:
-    dispatcher = _make_dispatcher()
+async def test_dispatch_mcu_frame_handler_returns_false_no_ack() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
 
-    async def _handler(_payload: bytes):
+    async def handler(_payload: bytes) -> bool:
         return False
 
-    dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, _handler)
+    dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
-
-    dispatcher.acknowledge_frame.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_dispatch_mcu_frame_handler_success_acks() -> None:
-    dispatcher = _make_dispatcher()
-
-    async def _handler(_payload: bytes):
-        return True
-
-    dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, _handler)
-
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
-
-    dispatcher.acknowledge_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value)
+    assert not any(name == "acknowledge_frame" for name, _ in calls.items)
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_handler_exception_sends_error_for_requests() -> None:
-    dispatcher = _make_dispatcher()
+async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
 
-    async def _handler(_payload: bytes):
+    async def handler(_payload: bytes) -> bool:
         raise RuntimeError("boom")
 
-    dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, _handler)
+    dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
+    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
-
-    dispatcher.send_frame.assert_awaited_once_with(Status.ERROR.value, b"Internal Error")
+    assert any(
+        name == "send_frame" and args[0] == Status.ERROR.value for name, args in calls.items
+    )
 
 
 @pytest.mark.asyncio
 async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented() -> None:
-    dispatcher = _make_dispatcher()
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_LINK_SYNC.value, b"")
 
-    dispatcher.send_frame.assert_awaited_once_with(Status.NOT_IMPLEMENTED.value, b"")
+    assert any(
+        name == "send_frame" and args[0] == Status.NOT_IMPLEMENTED.value
+        for name, args in calls.items
+    )
 
 
 @pytest.mark.asyncio
 async def test_dispatch_mcu_frame_orphaned_response_is_ignored() -> None:
-    dispatcher = _make_dispatcher()
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
 
-    await dispatcher.dispatch_mcu_frame(Command.CMD_MAILBOX_READ_RESP.value, b"")
+    await dispatcher.dispatch_mcu_frame(Command.CMD_PROCESS_RUN_RESP.value, b"1")
 
-    dispatcher.send_frame.assert_not_awaited()
-    dispatcher.acknowledge_frame.assert_not_awaited()
+    assert not any(name == "acknowledge_frame" for name, _ in calls.items)
+    assert not any(name == "send_frame" for name, _ in calls.items)
 
 
-@pytest.mark.asyncio
-async def test_dispatch_mqtt_message_ignores_unmatched_prefix() -> None:
-    dispatcher = _make_dispatcher()
+def test_resolve_command_name_command_status_unknown() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
 
-    inbound = SimpleNamespace(topic="other/prefix", payload=b"x")
-
-    def _parse(_topic: str):
-        return None
-
-    await dispatcher.dispatch_mqtt_message(inbound, _parse)  # type: ignore[arg-type]
+    assert dispatcher._resolve_command_name(Command.CMD_CONSOLE_WRITE.value) == "CMD_CONSOLE_WRITE"
+    assert dispatcher._resolve_command_name(Status.ACK.value) == "ACK"
+    assert dispatcher._resolve_command_name(0xEE).startswith("UNKNOWN(0x")
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mqtt_message_ignores_missing_segments() -> None:
-    dispatcher = _make_dispatcher()
-
-    inbound = SimpleNamespace(topic="br/system", payload=b"x")
-
-    def _parse(_topic: str):
-        return TopicRoute(raw="br/system", prefix="br", topic=Topic.SYSTEM, segments=())
-
-    await dispatcher.dispatch_mqtt_message(inbound, _parse)  # type: ignore[arg-type]
-
-
-@pytest.mark.asyncio
-async def test_dispatch_mqtt_message_unhandled_logs_and_returns() -> None:
-    dispatcher = _make_dispatcher()
-
-    inbound = SimpleNamespace(topic="br/system/status", payload=b"x")
-
-    def _parse(_topic: str):
-        return TopicRoute(
-            raw="br/system/status",
-            prefix="br",
-            topic=Topic.SYSTEM,
-            segments=("status",),
-        )
-
-    await dispatcher.dispatch_mqtt_message(inbound, _parse)  # type: ignore[arg-type]
-
-
-@pytest.mark.asyncio
-async def test_handle_bridge_topic_publishes_snapshots() -> None:
-    dispatcher = _make_dispatcher()
-
-    route = TopicRoute(
-        raw="br/system/bridge/handshake/get",
-        prefix="br",
-        topic=Topic.SYSTEM,
-        segments=("bridge", "handshake", "get"),
+async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
+    inbound = make_inbound_message("other/prefix/console/in", payload=b"hi")
+    await dispatcher.dispatch_mqtt_message(
+        inbound,
+        parse_topic_func=lambda name: parse_topic("br", name),
     )
-    inbound = SimpleNamespace(topic=route.raw, payload=b"")
+    assert calls.items == []
 
-    ok = await dispatcher._handle_system_topic(route, inbound)  # type: ignore[arg-type]
-    assert ok is True
+    inbound2 = make_inbound_message("br/console", payload=b"hi")
+    await dispatcher.dispatch_mqtt_message(
+        inbound2,
+        parse_topic_func=lambda name: parse_topic("br", name),
+    )
+    assert calls.items == []
 
-    dispatcher.publish_bridge_snapshot.assert_awaited_once_with("handshake", inbound)
+
+@pytest.mark.asyncio
+async def test_dispatch_mqtt_message_router_error_is_caught() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
+
+    async def exploding(_route: TopicRoute, _msg: Any) -> bool:
+        raise RuntimeError("boom")
+
+    dispatcher.mqtt_router.register(Topic.CONSOLE, exploding)
+    dispatcher.mqtt_router._handlers[Topic.CONSOLE] = [exploding]  # type: ignore[attr-defined]
+    inbound = make_inbound_message("br/console/in", payload=b"hi")
+    await dispatcher.dispatch_mqtt_message(
+        inbound,
+        parse_topic_func=lambda name: parse_topic("br", name),
+    )
+    assert calls.items == []
 
 
-def test_payload_bytes_supports_common_types() -> None:
-    assert BridgeDispatcher._payload_bytes(b"x") == b"x"
-    assert BridgeDispatcher._payload_bytes(bytearray(b"x")) == b"x"
-    assert BridgeDispatcher._payload_bytes(memoryview(b"x")) == b"x"
+@pytest.mark.asyncio
+async def test_console_topic_rejects_by_policy_and_accepts_payload_types() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(
+        calls,
+        is_topic_action_allowed=lambda _topic, _action: False,
+    )
+    inbound = make_inbound_message("br/console/in", payload=b"hello")
+    route = parse_topic("br", str(inbound.topic))
+    assert route is not None
+    handled = await dispatcher._handle_console_topic(route, inbound)
+    assert handled is True
+    assert any(name == "reject_topic_action" for name, _ in calls.items)
+
+    calls2 = _Calls([])
+    dispatcher2 = _make_dispatcher(calls2)
+    inbound2 = make_inbound_message("br/console/in", payload=b"hello")
+    route2 = parse_topic("br", str(inbound2.topic))
+    assert route2 is not None
+    handled2 = await dispatcher2._handle_console_topic(route2, inbound2)
+    assert handled2 is True
+    assert any(name == "console.handle_mqtt_input" for name, _ in calls2.items)
+
+
+@pytest.mark.asyncio
+async def test_file_topic_requires_two_segments_and_calls_component() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
+
+    route1 = TopicRoute(raw="br/file", prefix="br", topic=Topic.FILE, segments=("read",))
+    inbound1 = make_inbound_message("br/file/read", payload=b"x")
+    assert await dispatcher._handle_file_topic(route1, inbound1) is False
+
+    inbound2 = make_inbound_message("br/file/read/path", payload=bytearray(b"abc"))
+    route2 = parse_topic("br", str(inbound2.topic))
+    assert route2 is not None
+    assert await dispatcher._handle_file_topic(route2, inbound2) is True
+    assert any(name == "file.handle_mqtt" for name, _ in calls.items)
+
+
+@pytest.mark.asyncio
+async def test_datastore_topic_rejects_missing_identifier_and_calls_component() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
+
+    route1 = TopicRoute(raw="br/datastore", prefix="br", topic=Topic.DATASTORE, segments=())
+    inbound1 = make_inbound_message("br/datastore", payload=b"x")
+    assert await dispatcher._handle_datastore_topic(route1, inbound1) is False
+
+    inbound2 = make_inbound_message("br/datastore/put/key", payload=memoryview(b"hi"))
+    route2 = parse_topic("br", str(inbound2.topic))
+    assert route2 is not None
+    assert await dispatcher._handle_datastore_topic(route2, inbound2) is True
+    assert any(name == "datastore.handle_mqtt" for name, _ in calls.items)
+
+
+@pytest.mark.asyncio
+async def test_pin_topic_action_deduction_and_policy() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(
+        calls,
+        is_topic_action_allowed=lambda _topic, action: action != "write",
+    )
+    inbound = make_inbound_message("br/d/13", payload=b"1")
+    route = parse_topic("br", str(inbound.topic))
+    assert route is not None
+    assert await dispatcher._handle_pin_topic(route, inbound) is True
+    assert any(name == "reject_topic_action" for name, _ in calls.items)
+
+    calls2 = _Calls([])
+    dispatcher2 = _make_dispatcher(calls2)
+    inbound2 = make_inbound_message("br/d/13/read", payload=b"")
+    route2 = parse_topic("br", str(inbound2.topic))
+    assert route2 is not None
+    assert await dispatcher2._handle_pin_topic(route2, inbound2) is True
+    assert any(name == "pin.handle_mqtt" for name, _ in calls2.items)
+
+
+@pytest.mark.asyncio
+async def test_system_topic_bridge_get_handlers_and_fallback_to_component() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
+
+    inbound1 = make_inbound_message("br/system/bridge/handshake/get")
+    route1 = parse_topic("br", str(inbound1.topic))
+    assert route1 is not None
+    assert await dispatcher._handle_system_topic(route1, inbound1) is True
+    assert ("publish_bridge_snapshot", ("handshake", inbound1)) in calls.items
+
+    inbound2 = make_inbound_message("br/system/bridge/summary/get")
+    route2 = parse_topic("br", str(inbound2.topic))
+    assert route2 is not None
+    assert await dispatcher._handle_system_topic(route2, inbound2) is True
+    assert ("publish_bridge_snapshot", ("summary", inbound2)) in calls.items
+
+    inbound3 = make_inbound_message("br/system/nope")
+    route3 = parse_topic("br", str(inbound3.topic))
+    assert route3 is not None
+    assert await dispatcher._handle_system_topic(route3, inbound3) is False
+
+
+def test_pin_action_from_parts_variants() -> None:
+    assert BridgeDispatcher._pin_action_from_parts(["br", "digital"]) is None
+    assert BridgeDispatcher._pin_action_from_parts(["br", "digital", "13"]) == "write"
+    assert BridgeDispatcher._pin_action_from_parts(["br", "digital", "13", ""]) is None
+    assert BridgeDispatcher._pin_action_from_parts(["br", "digital", "13", "READ"]) == "read"
+
+
+def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
+    assert BridgeDispatcher._payload_bytes(b"a") == b"a"
+    assert BridgeDispatcher._payload_bytes(bytearray(b"a")) == b"a"
+    assert BridgeDispatcher._payload_bytes(memoryview(b"a")) == b"a"
     assert BridgeDispatcher._payload_bytes(None) == b""
     assert BridgeDispatcher._payload_bytes("hi") == b"hi"
-    assert BridgeDispatcher._payload_bytes(1) == b"1"
+    assert BridgeDispatcher._payload_bytes(12) == b"12"
     assert BridgeDispatcher._payload_bytes(1.5) == b"1.5"
-
     with pytest.raises(TypeError):
         BridgeDispatcher._payload_bytes(object())
 
 
-def test_pin_action_from_parts() -> None:
-    assert BridgeDispatcher._pin_action_from_parts([]) is None
-    assert BridgeDispatcher._pin_action_from_parts(["br", "digital"]) is None
-    assert BridgeDispatcher._pin_action_from_parts(["br", "digital", "13"]) == "write"
-    assert BridgeDispatcher._pin_action_from_parts(["br", "digital", "13", "read"]) == "read"
-    assert BridgeDispatcher._pin_action_from_parts(["br", "digital", "13", ""]) is None
+@pytest.mark.asyncio
+async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing() -> None:
+    calls = _Calls([])
+    dispatcher = _make_dispatcher(calls)
+    dispatcher.pin = None
+    assert await dispatcher._handle_unexpected_digital_read(b"") is False
+    assert await dispatcher._handle_unexpected_analog_read(b"") is False

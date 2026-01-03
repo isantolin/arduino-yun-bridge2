@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, Awaitable
 from yunbridge.rpc.protocol import (
     Command,
     Status,
+    STATUS_CODE_MIN,
 )
 from yunbridge.rpc.contracts import response_to_request
 from yunbridge.protocol.topics import Topic, TopicRoute
@@ -225,7 +226,7 @@ class BridgeDispatcher:
             # Politely tell the MCU to stop talking until sync.
             # Note: command IDs are not guaranteed to be < RESPONSE_OFFSET; we
             # rely on the explicit Status enum for status frames instead.
-            if command_id not in STATUS_VALUES:
+            if command_id not in STATUS_VALUES and command_id >= int(STATUS_CODE_MIN):
                 await self.acknowledge_frame(
                     command_id,
                     status=Status.MALFORMED,

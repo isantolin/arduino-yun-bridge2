@@ -1,15 +1,22 @@
 """Tests for shared utilities."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 from yunbridge.common import (
+    build_mqtt_connect_properties,
+    build_mqtt_properties,
+    encode_status_reason,
+    get_default_config,
     get_uci_config,
     normalise_allowed_commands,
-    get_default_config,
     parse_bool,
-    parse_int,
     parse_float,
+    parse_int,
 )
+from yunbridge.mqtt.messages import QueuedPublish
+from yunbridge.rpc import protocol
 
 
 def test_parse_bool():
@@ -91,3 +98,76 @@ def test_get_uci_config_success():
         assert config["debug"] == "1"
         # Ensure other defaults are present
         assert "serial_port" in config
+
+
+def test_get_uci_config_missing_section_returns_defaults() -> None:
+    mock_module = MagicMock()
+    mock_uci_class = MagicMock()
+    mock_module.Uci = mock_uci_class
+    mock_cursor = MagicMock()
+    mock_uci_class.return_value.__enter__.return_value = mock_cursor
+    mock_cursor.get_all.return_value = {}
+
+    with patch.dict("sys.modules", {"uci": mock_module}):
+        config = get_uci_config()
+        assert config == get_default_config()
+
+
+def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
+    mock_module = MagicMock()
+    mock_uci_class = MagicMock()
+    mock_module.Uci = mock_uci_class
+    mock_cursor = MagicMock()
+    mock_uci_class.return_value.__enter__.return_value = mock_cursor
+
+    mock_cursor.get_all.return_value = {
+        ".type": "general",
+        "_meta": "ignore",
+        "mqtt_host": ["example.com", 1883],
+        "mqtt_tls": 0,
+    }
+
+    with patch.dict("sys.modules", {"uci": mock_module}):
+        config = get_uci_config()
+        assert config["mqtt_host"] == "example.com 1883"
+        assert config["mqtt_tls"] == "0"
+        assert ".type" not in config
+        assert "_meta" not in config
+
+
+def test_encode_status_reason_trims_to_max_payload() -> None:
+    payload = encode_status_reason("x" * (protocol.MAX_PAYLOAD_SIZE + 50))
+    assert len(payload) == protocol.MAX_PAYLOAD_SIZE
+
+
+def test_build_mqtt_properties_returns_none_when_empty() -> None:
+    message = QueuedPublish(topic_name="br/test", payload=b"hi")
+    assert build_mqtt_properties(message) is None
+
+
+def test_build_mqtt_properties_populates_fields() -> None:
+    message = QueuedPublish(
+        topic_name="br/test",
+        payload=b"hi",
+        content_type="text/plain",
+        payload_format_indicator=1,
+        message_expiry_interval=10,
+        response_topic="br/response",
+        correlation_data=b"cid",
+        user_properties=(("k", "v"),),
+    )
+    props = build_mqtt_properties(message)
+    assert props is not None
+    assert props.ContentType == "text/plain"
+    assert props.PayloadFormatIndicator == 1
+    assert props.MessageExpiryInterval == 10
+    assert props.ResponseTopic == "br/response"
+    assert props.CorrelationData == b"cid"
+    assert ("k", "v") in list(props.UserProperty)
+
+
+def test_build_mqtt_connect_properties_sets_request_response_flags() -> None:
+    props = build_mqtt_connect_properties()
+    assert props.SessionExpiryInterval == 0
+    assert props.RequestResponseInformation == 1
+    assert props.RequestProblemInformation == 1

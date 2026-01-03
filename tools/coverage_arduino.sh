@@ -206,6 +206,7 @@ mkdir -p "${OUTPUT_ROOT}"
 SUMMARY_PATH="${OUTPUT_ROOT}/summary.txt"
 HTML_PATH="${OUTPUT_ROOT}/index.html"
 XML_PATH="${OUTPUT_ROOT}/coverage.xml"
+JSON_PATH="${OUTPUT_ROOT}/coverage.json"
 BRIDGE_HTML_PATH="${OUTPUT_ROOT}/bridge_handshake.html"
 CONSOLE_HTML_PATH="${OUTPUT_ROOT}/console_flow.html"
 
@@ -220,6 +221,13 @@ gcovr \
   --object-directory "${BUILD_DIR}" \
   --filter "${SRC_ROOT}" \
   --json-summary "${SUMMARY_JSON_PATH}"
+
+gcovr \
+  --root "${SRC_ROOT}" \
+  --object-directory "${BUILD_DIR}" \
+  --filter "${SRC_ROOT}" \
+  --json "${JSON_PATH}" \
+  --json-pretty
 
 gcovr \
   --root "${SRC_ROOT}" \
@@ -250,6 +258,7 @@ fi
 echo "[coverage_arduino] Reporte generado en:" >&2
 echo "  - ${SUMMARY_PATH}" >&2
 echo "  - ${XML_PATH}" >&2
+echo "  - ${JSON_PATH}" >&2
 if [[ "${ENABLE_HTML}" -eq 1 ]]; then
   echo "  - ${HTML_PATH}" >&2
   echo "  - ${BRIDGE_HTML_PATH}" >&2

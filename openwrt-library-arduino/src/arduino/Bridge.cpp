@@ -27,7 +27,9 @@
 #include <SHA256.h>
 
 #include "arduino/StringUtils.h"
-#include "arduino/BridgeHostTestTrace.h"
+#ifdef BRIDGE_HOST_TEST
+  #include "arduino/BridgeHostTestTrace.h"
+#endif
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
 

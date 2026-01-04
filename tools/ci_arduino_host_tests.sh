@@ -51,6 +51,7 @@ ARDUINO_TEST_DEFS=(
 
 COMMON_INCLUDES=(
   -I"${SRC_DIR}"
+  -I"${TEST_DIR}/mocks"
   -I"${STUB_DIR}"
 )
 

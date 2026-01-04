@@ -211,6 +211,31 @@ class SerialFlowController:
             return
 
         if command_id in SERIAL_FAILURE_STATUS_CODES:
+            # MCU status frames are not reliably correlated to the in-flight
+            # command across firmware versions. In particular, some versions
+            # emit human-readable reasons like "serial_rx_overflow".
+            #
+            # To avoid aborting unrelated commands (especially during early
+            # handshake), only treat a failure status as "for this command"
+            # when either:
+            #   - the payload is empty (legacy behavior: unconditional reject)
+            #   - the payload starts with the pending command id (big-endian u16)
+            #
+            # Otherwise, ignore the status for flow-control purposes and let
+            # ack/response timeouts drive retries.
+            if not payload:
+                pending.mark_failure(command_id)
+                return
+
+            if len(payload) >= 2:
+                target = int.from_bytes(payload[:2], "big")
+                if target == pending.command_id:
+                    pending.mark_failure(command_id)
+                    return
+
+            if all(32 <= byte < 127 for byte in payload):
+                return
+
             pending.mark_failure(command_id)
             return
 

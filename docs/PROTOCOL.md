@@ -255,7 +255,8 @@ Notas operativas:
 - **`0x82` CMD_MAILBOX_AVAILABLE (MCU → Linux)**:
   - Modo *request*: sin payload.
   - Respuesta: `0x85 CMD_MAILBOX_AVAILABLE_RESP` (Linux → MCU) con `[count: u8]`.
-  - Nota: el firmware actual tolera (para compatibilidad) recibir `CMD_MAILBOX_AVAILABLE` con payload `[count: u8]` como notificación Linux → MCU, pero el daemon no lo emite y no forma parte del contrato principal del protocolo.
+  - Regla estricta: si el request incluye payload (cualquier `payload_length != 0`), el daemon responde con `STATUS_MALFORMED (0x33)` cuyo payload es el `command_id` (u16 big-endian) del request.
+  - `CMD_MAILBOX_AVAILABLE` (Linux → MCU) es inválido en el contrato y el firmware lo descarta.
 - **`0x83` CMD_MAILBOX_PUSH (push simétrico, bidireccional)**:
   - Payload: `[message_len: u16, message: byte[]]`.
   - Confirmación: `STATUS_ACK (0x38)`.

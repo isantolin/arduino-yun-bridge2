@@ -564,6 +564,38 @@ def test_mailbox_available_flow(
     asyncio.run(_run())
 
 
+def test_mailbox_available_rejects_payload(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.handle_mcu_frame(
+            Command.CMD_MAILBOX_AVAILABLE.value,
+            b"\x02",  # invalid: payload must be empty
+        )
+
+        assert sent_frames
+        frame_ids = [frame_id for frame_id, _ in sent_frames]
+        assert frame_ids[-1] == Status.MALFORMED.value
+        assert sent_frames[-1][1] == struct.pack(
+            rpc_protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
+        )
+        assert Command.CMD_MAILBOX_AVAILABLE_RESP.value not in frame_ids
+        assert Status.ACK.value not in frame_ids
+
+    asyncio.run(_run())
+
+
 def test_mailbox_push_overflow_returns_error(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,

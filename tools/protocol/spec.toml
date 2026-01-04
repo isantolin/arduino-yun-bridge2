@@ -514,6 +514,9 @@ name = "CMD_MAILBOX_AVAILABLE"
 value = 0x82
 category = "mailbox"
 directions = ["mcu_to_linux"]
+# Strict semantics:
+# - Request MUST have an empty payload (payload_length == 0).
+# - Any non-empty payload is rejected by Linux with STATUS_MALFORMED (payload: u16 command_id).
 [[commands]]
 name = "CMD_MAILBOX_PUSH"
 value = 0x83

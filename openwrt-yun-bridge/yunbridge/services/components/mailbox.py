@@ -110,7 +110,16 @@ class MailboxComponent:
 
     async def handle_available(self, payload: bytes) -> bool:
         """Handle CMD_MAILBOX_AVAILABLE."""
-        # Just return the count of messages in queue
+        # Strict contract: request MUST have an empty payload.
+        # Any payload is rejected to avoid ambiguous "request vs notify" semantics.
+        if payload:
+            await self.ctx.send_frame(
+                Status.MALFORMED.value,
+                struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value),
+            )
+            return False
+
+        # Return the count of messages in queue
         queue_len = len(self.state.mailbox_queue) & UINT8_MASK
         count_payload = bytes((queue_len & UINT8_MASK,))
         await self.ctx.send_frame(

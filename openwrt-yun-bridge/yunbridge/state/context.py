@@ -753,7 +753,6 @@ class RuntimeState:
             self.mqtt_spool = MQTTPublishSpool(
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
-                allow_non_tmp_paths=self.allow_non_tmp_paths,
                 on_fallback=self._on_spool_fallback,
             )
             self.mqtt_spool_degraded = False
@@ -776,7 +775,6 @@ class RuntimeState:
                 MQTTPublishSpool,
                 self.mqtt_spool_dir,
                 self.mqtt_spool_limit,
-                allow_non_tmp_paths=self.allow_non_tmp_paths,
                 on_fallback=self._on_spool_fallback,
             )
         except Exception as exc:

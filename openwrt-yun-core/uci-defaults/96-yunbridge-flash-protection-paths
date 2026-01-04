@@ -1,7 +1,7 @@
 #!/bin/sh
 # Enforce RAM-backed paths by default (flash protection).
-# If allow_non_tmp_paths is not enabled, ensure file_system_root and mqtt_spool_dir
-# live under /tmp to avoid writing frequently to flash.
+# mqtt_spool_dir is ALWAYS kept under /tmp to avoid flash wear.
+# allow_non_tmp_paths only affects file_system_root (File component).
 # Runs once on first boot / first install (uci-defaults).
 
 DEFAULT_FILE_ROOT="/tmp/yun_files"
@@ -12,12 +12,6 @@ if ! command -v uci >/dev/null 2>&1; then
 fi
 
 allow_non_tmp_paths="$(uci -q get yunbridge.general.allow_non_tmp_paths 2>/dev/null || echo "0")"
-
-case "${allow_non_tmp_paths}" in
-    1|true|yes|on|enable|enabled)
-        exit 0
-        ;;
-esac
 
 current_file_root="$(uci -q get yunbridge.general.file_system_root 2>/dev/null || true)"
 current_spool_dir="$(uci -q get yunbridge.general.mqtt_spool_dir 2>/dev/null || true)"
@@ -34,11 +28,18 @@ needs_tmp_prefix() {
     return 0
 }
 
-if needs_tmp_prefix "$current_file_root"; then
-    uci -q set yunbridge.general=general
-    uci -q set yunbridge.general.file_system_root="$DEFAULT_FILE_ROOT"
-    changed=1
-fi
+case "${allow_non_tmp_paths}" in
+    1|true|yes|on|enable|enabled)
+        : # file_system_root may be non-/tmp when explicitly allowed
+        ;;
+    *)
+        if needs_tmp_prefix "$current_file_root"; then
+            uci -q set yunbridge.general=general
+            uci -q set yunbridge.general.file_system_root="$DEFAULT_FILE_ROOT"
+            changed=1
+        fi
+        ;;
+esac
 
 if needs_tmp_prefix "$current_spool_dir"; then
     uci -q set yunbridge.general=general

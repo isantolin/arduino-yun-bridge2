@@ -142,7 +142,6 @@ class MQTTPublishSpool:
         directory: str,
         limit: int,
         *,
-        allow_non_tmp_paths: bool = False,
         on_fallback: Callable[[str], None] | None = None,
     ) -> None:
         self.directory = Path(directory)
@@ -160,17 +159,12 @@ class MQTTPublishSpool:
 
         directory_str = str(self.directory)
         is_tmp = directory_str == "/tmp" or directory_str.startswith("/tmp/")
-        if not is_tmp and not allow_non_tmp_paths:
+        if not is_tmp:
             logger.warning(
                 "MQTT spool directory %s is not under /tmp; forcing memory-only mode",
                 self.directory,
             )
             self._activate_fallback("non_tmp_directory")
-        elif not is_tmp and allow_non_tmp_paths:
-            logger.warning(
-                "MQTT spool directory %s is not under /tmp; ensure it is not flash-backed (prefer /mnt)",
-                self.directory,
-            )
 
         if self._use_disk:
             try:

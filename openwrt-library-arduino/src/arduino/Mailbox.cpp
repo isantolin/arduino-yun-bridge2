@@ -81,12 +81,6 @@ void MailboxClass::handleResponse(const rpc::Frame& frame) {
         }
       }
       break;
-    case CommandId::CMD_MAILBOX_AVAILABLE:
-       if (_mailbox_available_handler && payload_length == 1 && payload_data) {
-        uint8_t count = payload_data[0];
-        _mailbox_available_handler(count);
-      }
-      break;
     default:
       break;
   }

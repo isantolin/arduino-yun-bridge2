@@ -613,7 +613,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           requires_ack = true;
           break;
         case CommandId::CMD_MAILBOX_PUSH:
-        case CommandId::CMD_MAILBOX_AVAILABLE:
           if (_isRecentDuplicateRx(frame)) {
             uint8_t ack_payload[2];
             rpc::write_u16_be(ack_payload, raw_command);

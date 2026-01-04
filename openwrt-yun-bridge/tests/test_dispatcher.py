@@ -281,13 +281,14 @@ def _make_dispatcher(
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mcu_frame_rejects_pre_sync_and_ack_malformed() -> None:
+async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls, is_link_synchronized=lambda: False)
 
     await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"xyz")
 
-    assert any(name == "acknowledge_frame" for name, _ in calls.items)
+    assert not any(name == "acknowledge_frame" for name, _ in calls.items)
+    assert not any(name == "send_frame" for name, _ in calls.items)
 
 
 @pytest.mark.asyncio

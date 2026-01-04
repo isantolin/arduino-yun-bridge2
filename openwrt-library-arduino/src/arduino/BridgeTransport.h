@@ -48,6 +48,10 @@ public:
 #else
  private:
 #endif
+    // Best-effort write-all helper: tries to write the full buffer.
+    // Returns true only if all bytes were written.
+    bool _writeAll(const uint8_t* buffer, size_t size);
+
     Stream& _stream;
     HardwareSerial* _hardware_serial;
     rpc::FrameParser _parser;

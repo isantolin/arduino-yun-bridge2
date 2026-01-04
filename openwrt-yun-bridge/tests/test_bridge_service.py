@@ -521,13 +521,8 @@ def test_mcu_frame_before_sync_is_rejected(
             b"\x00\x00",
         )
 
-        assert sent_frames
-        status_id, status_payload = sent_frames[-1]
-        assert status_id == Status.MALFORMED.value
-        assert status_payload[:2] == struct.pack(
-            rpc_protocol.UINT16_FORMAT,
-            Command.CMD_MAILBOX_PUSH.value,
-        )
+        # Pre-sync frames are dropped without replying to avoid serial feedback loops.
+        assert not sent_frames
         assert runtime_state.mailbox_incoming_queue_bytes == 0
 
     asyncio.run(_run())

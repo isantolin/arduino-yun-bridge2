@@ -223,15 +223,9 @@ class BridgeDispatcher:
                 "Security: Rejecting MCU frame 0x%02X (Link not synchronized)",
                 command_id,
             )
-            # Politely tell the MCU to stop talking until sync.
-            # Note: command IDs are not guaranteed to be < RESPONSE_OFFSET; we
-            # rely on the explicit Status enum for status frames instead.
-            if command_id not in STATUS_VALUES and command_id >= int(STATUS_CODE_MIN):
-                await self.acknowledge_frame(
-                    command_id,
-                    status=Status.MALFORMED,
-                    extra=payload[:_STATUS_PAYLOAD_WINDOW],
-                )
+            # IMPORTANT: Do not send any reply frames while not synchronized.
+            # Responding (ACK/STATUS) can create a feedback loop that floods the
+            # serial link and increases frame corruption / RX overflows.
             return
 
         # 2. Handler Resolution

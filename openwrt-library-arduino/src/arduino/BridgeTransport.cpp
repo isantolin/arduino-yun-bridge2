@@ -77,6 +77,32 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
     return false;
 }
 
+bool BridgeTransport::_writeAll(const uint8_t* buffer, size_t size) {
+    if (!buffer || size == 0) {
+        return false;
+    }
+
+    size_t total = 0;
+    while (total < size) {
+        size_t written = 0;
+        const uint8_t* chunk = buffer + total;
+        const size_t remaining = size - total;
+
+        if (_hardware_serial != nullptr) {
+            written = _hardware_serial->write(chunk, remaining);
+        } else {
+            written = _stream.write(chunk, remaining);
+        }
+
+        if (written == 0) {
+            return false;
+        }
+        total += written;
+    }
+
+    return true;
+}
+
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
     size_t raw_len = _builder.build(
         _raw_frame_buffer,
@@ -92,29 +118,20 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
     size_t cobs_len = cobs::encode(_raw_frame_buffer, raw_len, _last_cobs_frame);
     _last_cobs_len = cobs_len;
 
-    // Write COBS frame
-    size_t written = 0;
-    if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(_last_cobs_frame, cobs_len);
-    } else {
-        written = _stream.write(_last_cobs_frame, cobs_len);
-    }
-
-    if (written != cobs_len) {
-        return false;
-    }
-
-    // Write terminator
     const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
+    const bool frame_ok = _writeAll(_last_cobs_frame, cobs_len);
+
+    // Even if the frame write partially failed, attempt to write a delimiter.
+    // This helps the receiver resynchronize and avoids concatenating fragments.
+    const bool term_ok = _writeAll(&terminator, 1);
+
     if (_hardware_serial != nullptr) {
-        written += _hardware_serial->write(&terminator, 1);
-        _hardware_serial->flush(); // Force physical transmission
+        _hardware_serial->flush();
     } else {
-        written += _stream.write(&terminator, 1);
         _stream.flush();
     }
 
-    return written == (cobs_len + 1);
+    return frame_ok && term_ok;
 }
 
 bool BridgeTransport::sendControlFrame(uint16_t command_id) {
@@ -129,47 +146,33 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
     
     size_t cobs_len = cobs::encode(raw_buf, raw_len, cobs_buf);
     
-    size_t written = 0;
-    if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(cobs_buf, cobs_len);
-    } else {
-        written = _stream.write(cobs_buf, cobs_len);
-    }
-    
-    if (written != cobs_len) return false;
-    
     const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
+    const bool frame_ok = _writeAll(cobs_buf, cobs_len);
+    const bool term_ok = _writeAll(&terminator, 1);
+
     if (_hardware_serial != nullptr) {
-        written += _hardware_serial->write(&terminator, 1);
+        _hardware_serial->flush();
     } else {
-        written += _stream.write(&terminator, 1);
+        _stream.flush();
     }
-    
-    return written == (cobs_len + 1);
+
+    return frame_ok && term_ok;
 }
 
 bool BridgeTransport::retransmitLastFrame() {
     if (_last_cobs_len == 0) return false;
-    
-    size_t written = 0;
-    if (_hardware_serial != nullptr) {
-        written = _hardware_serial->write(_last_cobs_frame, _last_cobs_len);
-    } else {
-        written = _stream.write(_last_cobs_frame, _last_cobs_len);
-    }
-    
-    if (written != _last_cobs_len) return false;
-    
+
     const uint8_t terminator = rpc::RPC_FRAME_DELIMITER;
+    const bool frame_ok = _writeAll(_last_cobs_frame, _last_cobs_len);
+    const bool term_ok = _writeAll(&terminator, 1);
+
     if (_hardware_serial != nullptr) {
-        written += _hardware_serial->write(&terminator, 1);
         _hardware_serial->flush();
     } else {
-        written += _stream.write(&terminator, 1);
         _stream.flush();
     }
-    
-    return written == (_last_cobs_len + 1);
+
+    return frame_ok && term_ok;
 }
 
 void BridgeTransport::reset() {

@@ -133,7 +133,7 @@ async def test_flow_control_mixin_connection_lost_wakes_waiter() -> None:
 
 
 @pytest.mark.asyncio
-async def test_process_packet_non_binary_sends_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_packet_non_binary_does_not_send_status(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     state.link_is_synchronized = True
@@ -145,14 +145,11 @@ async def test_process_packet_non_binary_sends_malformed(monkeypatch: pytest.Mon
     await transport._process_packet(b"")
 
     assert state.serial_decode_errors == 1
-    service.send_frame.assert_awaited_once()
-    status, payload = service.send_frame.call_args[0]
-    assert status == Status.MALFORMED.value
-    assert len(payload) == 2
+    service.send_frame.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_packet_decode_error_does_not_send_status(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     state.link_is_synchronized = True
@@ -177,11 +174,7 @@ async def test_process_packet_decode_error_reports_malformed(monkeypatch: pytest
     await transport._process_packet(encoded)
 
     assert state.serial_decode_errors == 1
-    service.send_frame.assert_awaited_once()
-    status, payload = service.send_frame.call_args[0]
-    assert status == Status.MALFORMED.value
-    hint = struct.unpack(UINT16_FORMAT, payload[:2])[0]
-    assert hint == 0x99
+    service.send_frame.assert_not_awaited()
 
 
 @pytest.mark.asyncio

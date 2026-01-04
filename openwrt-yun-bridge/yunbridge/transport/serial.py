@@ -412,38 +412,42 @@ class SerialTransport:
 
         while True:
             try:
-                byte = await self.reader.read(1)
+                chunk = await self.reader.read(256)
             except (OSError, asyncio.IncompleteReadError):
                 break
 
-            if not byte:
+            if not chunk:
                 break
 
-            if byte == FRAME_DELIMITER:
-                if discarding:
-                    discarding = False
-                    buffer.clear()
-                elif buffer:
-                    encoded_packet = bytes(buffer)
-                    buffer.clear()
-                    await self._process_packet(encoded_packet)
-                    await asyncio.sleep(0)
-            else:
-                if not discarding:
-                    buffer.append(byte[0])
-                    if len(buffer) > MAX_SERIAL_PACKET_BYTES:
-                        # Flush, warn, and start discarding tail
-                        snapshot = bytes(buffer[:32])
+            for byte_value in chunk:
+                if byte_value == FRAME_DELIMITER[0]:
+                    if discarding:
+                        discarding = False
                         buffer.clear()
-                        discarding = True
-                        self.state.record_serial_decode_error()
-                        logger.warning("Serial packet too large, flushed.")
-                        if self._should_emit_parse_error_status():
-                            try:
-                                payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL) + snapshot
-                                await self.service.send_frame(Status.MALFORMED.value, payload)
-                            except Exception:
-                                pass
+                        continue
+
+                    if buffer:
+                        encoded_packet = bytes(buffer)
+                        buffer.clear()
+                        await self._process_packet(encoded_packet)
+                        await asyncio.sleep(0)
+                    continue
+
+                if discarding:
+                    continue
+
+                buffer.append(byte_value)
+                if len(buffer) > MAX_SERIAL_PACKET_BYTES:
+                    # Flush, warn, and start discarding tail
+                    snapshot = bytes(buffer[:32])
+                    buffer.clear()
+                    discarding = True
+                    self.state.record_serial_decode_error()
+                    logger.warning("Serial packet too large, flushed.")
+                    # IMPORTANT: Do not emit MALFORMED statuses for oversized packets.
+                    # We don't have a reliable command ID hint here, and replying can
+                    # create a negative-ack feedback loop that increases congestion.
+                    _ = snapshot  # retained for potential future debug hooks
 
     async def send_frame(self, command_id: int, payload: bytes) -> bool:
         # Fast-fail: preserve legacy semantics (and avoid awaiting mocks) when
@@ -481,12 +485,6 @@ class SerialTransport:
     async def _process_packet(self, encoded_packet: bytes) -> None:
         if not _is_binary_packet(encoded_packet):
             self.state.record_serial_decode_error()
-            payload = struct.pack(protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL)
-            try:
-                if self._should_emit_parse_error_status():
-                    await self.service.send_frame(Status.MALFORMED.value, payload)
-            except Exception:
-                logger.exception("Failed to notify MCU about non-binary serial payload")
             return
 
         packet_bytes = _coerce_packet(encoded_packet)
@@ -497,7 +495,22 @@ class SerialTransport:
             frame = Frame.from_bytes(raw_frame)
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
-        except (cobs.DecodeError, ValueError) as exc:
+        except cobs.DecodeError as exc:
+            # COBS decode errors strongly suggest mid-stream corruption (e.g. stray 0x00
+            # delimiter or dropped bytes). Replying with MALFORMED here is harmful because
+            # we don't have a trustworthy command ID and may trigger retransmit storms.
+            self.state.record_serial_decode_error()
+            header_hex = packet_bytes[:5].hex()
+            logger.warning(
+                "Frame parse error %s for raw %s (len=%d header=%s)",
+                exc,
+                packet_bytes.hex(),
+                len(packet_bytes),
+                header_hex,
+            )
+            return
+
+        except ValueError as exc:
             self.state.record_serial_decode_error()
             error_data = raw_frame if raw_frame is not None else packet_bytes
             header_hex = error_data[: protocol.CRC_COVERED_HEADER_SIZE].hex()

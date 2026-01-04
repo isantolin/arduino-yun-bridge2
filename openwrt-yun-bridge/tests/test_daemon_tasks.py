@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import struct
 from collections import deque
 from dataclasses import dataclass
 from types import MethodType
@@ -273,12 +272,8 @@ async def test_serial_reader_task_limits_packet_size(
     await asyncio.wait_for(service.serial_disconnected.wait(), timeout=1)
 
     assert not service.received_frames
-    assert reported
-    status_id, payload = reported.pop()
-    assert status_id == Status.MALFORMED.value
-    assert payload[:2] == struct.pack(
-        protocol.UINT16_FORMAT, protocol.INVALID_ID_SENTINEL
-    )
+    assert not reported
+    assert state.serial_decode_errors == 1
 
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

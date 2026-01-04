@@ -38,7 +38,6 @@ def _load_spec() -> (
     constants = {
         "PROTOCOL_VERSION": int(raw["constants"]["protocol_version"]),
         "MAX_PAYLOAD_SIZE": int(raw["constants"]["max_payload_size"]),
-        "RPC_BUFFER_SIZE": int(raw["constants"]["rpc_buffer_size"]),
     }
     statuses = [
         _StatusSpec(name=entry["name"], value=int(entry["value"]))
@@ -76,7 +75,6 @@ def test_protocol_spec_matches_generated_bindings() -> None:
 
     assert rpc_protocol.PROTOCOL_VERSION == constants["PROTOCOL_VERSION"]
     assert rpc_protocol.MAX_PAYLOAD_SIZE == constants["MAX_PAYLOAD_SIZE"]
-    assert rpc_protocol.RPC_BUFFER_SIZE == constants["RPC_BUFFER_SIZE"]
 
     for status in statuses:
         enum_member = rpc_protocol.Status[status.name]

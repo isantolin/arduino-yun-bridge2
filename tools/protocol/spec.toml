@@ -6,7 +6,6 @@ protocol_version = 0x02
 default_baudrate = 115200
 default_safe_baudrate = 115200
 max_payload_size = 128
-rpc_buffer_size = 128
 max_filepath_length = 64
 max_datastore_key_length = 32
 default_ack_timeout_ms = 200

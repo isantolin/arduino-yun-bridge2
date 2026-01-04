@@ -170,9 +170,6 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = {consts['default_safe_baudrate']};\n"
         )
-    out.write(
-        f"constexpr unsigned int RPC_BUFFER_SIZE = {consts['rpc_buffer_size']};\n\n"
-    )
     if "max_payload_size" in consts:
         out.write(
             f"constexpr size_t MAX_PAYLOAD_SIZE = {consts['max_payload_size']};\n"
@@ -323,7 +320,6 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             f"DEFAULT_SAFE_BAUDRATE: Final[int] = {consts['default_safe_baudrate']}\n"
         )
     out.write(f"MAX_PAYLOAD_SIZE: Final[int] = {consts['max_payload_size']}\n")
-    out.write(f"RPC_BUFFER_SIZE: Final[int] = {consts['rpc_buffer_size']}\n")
     if "max_filepath_length" in consts:
         out.write(
             f"MAX_FILEPATH_LENGTH: Final[int] = {consts['max_filepath_length']}\n"

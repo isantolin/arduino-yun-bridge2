@@ -168,18 +168,11 @@ class BridgeDaemon:
         except* asyncio.CancelledError:
             logger.info("Main task cancelled; shutting down.")
         except* Exception as exc_group:
-            try:
-                for exc in exc_group.exceptions:
-                    logger.critical(
-                        "Unhandled exception in main task group",
-                        exc_info=exc,
-                    )
-            finally:
-                try:
-                    del exc
-                except UnboundLocalError:
-                    pass
-                del exc_group
+            for group_exc in exc_group.exceptions:
+                logger.critical(
+                    "Unhandled exception in main task group",
+                    exc_info=group_exc,
+                )
             raise
         finally:
             cleanup_status_file()
@@ -218,15 +211,8 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         logger.critical("Startup aborted: %s", exc)
         sys.exit(1)
     except ExceptionGroup as exc_group:
-        try:
-            for exc in exc_group.exceptions:
-                logger.critical("Fatal error in main execution", exc_info=exc)
-        finally:
-            try:
-                del exc
-            except UnboundLocalError:
-                pass
-            del exc_group
+        for group_exc in exc_group.exceptions:
+            logger.critical("Fatal error in main execution", exc_info=group_exc)
         sys.exit(1)
     except Exception:
         logger.critical("Fatal error in main execution", exc_info=True)

@@ -18,14 +18,6 @@ try:
 except ImportError:
     import json
 
-from prometheus_client import (
-    CONTENT_TYPE_LATEST,
-    CollectorRegistry,
-    generate_latest,
-)
-from prometheus_client.registry import Collector
-from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
-
 from .protocol.topics import Topic, topic_path
 from .mqtt.messages import QueuedPublish
 from .state.context import RuntimeState
@@ -265,7 +257,7 @@ async def publish_bridge_snapshots(
         raise
 
 
-class _RuntimeStateCollector(Collector):
+class _RuntimeStateCollector:
     """Prometheus collector that projects RuntimeState snapshots."""
 
     def __init__(self, state: RuntimeState) -> None:
@@ -273,6 +265,8 @@ class _RuntimeStateCollector(Collector):
 
     def collect(self) -> Iterator[Any]:
         # pragma: no cover - exercised via exporter
+        from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
+
         snapshot = self._state.build_metrics_snapshot()
         info_values: list[tuple[str, str]] = []
         for metric_type, name, value in self._flatten(
@@ -329,6 +323,8 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the Prometheus text format."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
+        from prometheus_client import CollectorRegistry
+
         self._state = state
         self._host = host
         self._port = port
@@ -404,6 +400,7 @@ class PrometheusExporter:
                 await self._write_response(writer, 404, b"")
                 return
             payload = self._render_metrics()
+            from prometheus_client import CONTENT_TYPE_LATEST
             await self._write_response(
                 writer,
                 200,
@@ -444,6 +441,8 @@ class PrometheusExporter:
         await writer.drain()
 
     def _render_metrics(self) -> bytes:
+        from prometheus_client import generate_latest
+
         return generate_latest(self._registry)
 
 

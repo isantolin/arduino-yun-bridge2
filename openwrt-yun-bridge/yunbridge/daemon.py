@@ -6,16 +6,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
 from yunbridge.const import DEFAULT_SERIAL_SHARED_SECRET
-from yunbridge.metrics import (
-    PrometheusExporter,
-    publish_bridge_snapshots,
-    publish_metrics,
-)
+from yunbridge.metrics import publish_bridge_snapshots, publish_metrics
 from yunbridge.services.runtime import (
     BridgeService,
     SerialHandshakeFatal,
@@ -32,6 +28,10 @@ from yunbridge.watchdog import WatchdogKeepalive
 
 
 logger = logging.getLogger("yunbridge")
+
+
+if TYPE_CHECKING:
+    from yunbridge.metrics import PrometheusExporter
 
 
 class BridgeDaemon:
@@ -129,6 +129,8 @@ class BridgeDaemon:
             ))
 
         if self.config.metrics_enabled:
+            from yunbridge.metrics import PrometheusExporter
+
             self.exporter = PrometheusExporter(
                 self.state,
                 self.config.metrics_host,

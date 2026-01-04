@@ -546,19 +546,18 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
 
 def main() -> None:
     default_spec = Path(__file__).resolve().parent / "spec.toml"
-    default_cpp = (
-        Path(__file__).resolve().parents[2]
-        / "openwrt-library-arduino"
-        / "src"
-        / "protocol"
-        / "rpc_protocol.h"
+    repo_root = Path(__file__).resolve().parents[2]
+    default_cpp = repo_root.joinpath(
+        "openwrt-library-arduino",
+        "src",
+        "protocol",
+        "rpc_protocol.h",
     )
-    default_py = (
-        Path(__file__).resolve().parents[2]
-        / "openwrt-yun-bridge"
-        / "yunbridge"
-        / "rpc"
-        / "protocol.py"
+    default_py = repo_root.joinpath(
+        "openwrt-yun-bridge",
+        "yunbridge",
+        "rpc",
+        "protocol.py",
     )
 
     parser = argparse.ArgumentParser(description="Generate protocol bindings")

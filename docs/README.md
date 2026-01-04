@@ -16,7 +16,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Protección ante frames serie malformados:** El lector COBS aplica un límite duro al tamaño de cada paquete y envía `STATUS_MALFORMED` al MCU cuando se detecta un frame que supera la especificación, evitando que un sketch ruidoso deje bloqueado el bucle asíncrono en Linux.
 - **Procesos asíncronos robustos:** Los polls sucesivos ahora entregan todo el `stdout`/`stderr` generado, incluso cuando los procesos producen más datos que un frame. El daemon mantiene buffers circulares por PID, conserva el `exit_code` hasta que el MCU confirma la lectura completa y vigila cada proceso en segundo plano para liberar el slot concurrente incluso si el cliente MQTT nunca vuelve a emitir `PROCESS_POLL`.
 - **Estado inmediato de buzón:** Los sketches pueden invocar `Mailbox.requestAvailable()` y recibir el conteo pendiente en `Bridge.onMailboxAvailableResponse`, lo que evita lecturas vacías y mantiene sincronizado al MCU con la cola de Linux.
-- **Lecturas de pin dirigidas desde Linux:** `CMD_DIGITAL_READ`/`CMD_ANALOG_READ` solo se originan desde el daemon; si un sketch invoca `Bridge.requestDigitalRead()`/`Bridge.requestAnalogRead()` ahora recibirá `STATUS_NOT_IMPLEMENTED` con `bridge-error=pin_read_initiate_from_linux`, evitando que el MCU monopolice el enlace serial con peticiones legacy.
+- **Lecturas de pin dirigidas desde Linux:** `CMD_DIGITAL_READ`/`CMD_ANALOG_READ` solo se originan desde el daemon; el MCU ya no expone APIs para iniciar lecturas de pin (evita patrones legacy que monopolizan el enlace serial).
 
 ### Novedades (noviembre 2025)
 

@@ -59,7 +59,7 @@ void loop() {
 - The library targets AVR-based Arduino Yun boards. Ensure the Arduino AVR core is installed.
 - The shared protocol headers are kept aligned with the Python daemon under `openwrt-yun-bridge/yunbridge/rpc`.
 - Recent updates align the datastore, mailbox, and filesystem payloads with the binary protocol specification (length-prefixed values and `STATUS_*` propagation). The async process helpers now queue partial outputs so repeated `Bridge.processPoll()` calls deliver the full stream, and the library automatically issues additional polls when partial chunks arrive.
-- MCU sketches should no longer attempt to initiate pin reads directly; `Bridge.requestDigitalRead()` and `Bridge.requestAnalogRead()` now emit `STATUS_NOT_IMPLEMENTED` to signal that GPIO reads are exclusively driven from the Linux daemon via MQTT.
+- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via MQTT (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
 
 ## Contributing
 

@@ -19,9 +19,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
-#if defined(BRIDGE_HOST_TEST)
-  #include <stdio.h>
-#endif
 #if __has_include(<Crypto.h>)
   #include <Crypto.h>
 #else
@@ -30,6 +27,7 @@
 #include <SHA256.h>
 
 #include "arduino/StringUtils.h"
+#include "arduino/BridgeHostTestTrace.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
 
@@ -756,7 +754,7 @@ bool BridgeClass::sendFrame(StatusCode status_code, const uint8_t* payload, size
 
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
 #ifdef BRIDGE_HOST_TEST
-  printf("[Bridge] _sendFrame ID=%u AwaitingAck=%d PendingCount=%d\n", command_id, _awaiting_ack, _pending_tx_count);
+  bridge_host_test::send_frame(command_id, _awaiting_ack, _pending_tx_count);
 #endif
   if (!_synchronized) {
     bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
@@ -771,14 +769,14 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
   // [FIX] No encolar comandos que no requieren ACK (como XON/XOFF o Status)
   if (!_requiresAck(command_id)) {
 #ifdef BRIDGE_HOST_TEST
-    printf("[Bridge] _sendFrame: No ACK required for ID=%u, sending immediate\n", command_id);
+    bridge_host_test::send_frame_no_ack(command_id);
 #endif
     return _sendFrameImmediate(command_id, payload, length);
   }
 
   if (_awaiting_ack) {
 #ifdef BRIDGE_HOST_TEST
-    printf("[Bridge] _sendFrame: Awaiting ACK, enqueuing ID=%u\n", command_id);
+    bridge_host_test::send_frame_queued(command_id);
 #endif
     if (_enqueuePendingTx(command_id, payload, length)) {
       return true;
@@ -803,7 +801,7 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
     _last_send_millis = millis();
     _last_command_id = command_id;
 #ifdef BRIDGE_HOST_TEST
-    printf("[Bridge] _sendFrameImmediate: ID=%u sent, set _awaiting_ack=true\n", command_id);
+    bridge_host_test::send_frame_immediate(command_id);
 #endif
   }
 
@@ -969,14 +967,6 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 void BridgeClass::analogWrite(uint8_t pin, int value) {
   uint8_t val_u8 = static_cast<uint8_t>(constrain(value, static_cast<int>(rpc::RPC_DIGITAL_LOW), static_cast<int>(rpc::RPC_UINT8_MASK)));
   ::analogWrite(pin, static_cast<int>(val_u8));
-}
-
-void BridgeClass::requestDigitalRead(uint8_t pin) {
-  (void)pin;
-}
-
-void BridgeClass::requestAnalogRead(uint8_t pin) {
-  (void)pin;
 }
 
 void BridgeClass::requestGetFreeMemory() {

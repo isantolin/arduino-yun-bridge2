@@ -35,7 +35,7 @@
 - `RuntimeState` feeds `/tmp/yunbridge_status.json`, `br/system/status`, `br/system/metrics`, and the optional Prometheus exporter (`metrics_enabled`). Keep these snapshots consistent when adding fields.
 - Serial link is single-threaded: honor `pending_pin_request_limit`, mailbox/console queue caps, and MQTT queue thresholds before enqueueing new work.
 - Shell/process requests must pass through `AllowedCommandPolicy`; update LuCI text and docs whenever the whitelist schema changes.
-- MCU no longer initiates pin reads (`Bridge.requestDigitalRead()` returns `STATUS_NOT_IMPLEMENTED`). Any MCU protocol tweak requires a corresponding daemon handler update.
+- MCU no longer initiates pin reads (Linux daemon exclusively originates `CMD_DIGITAL_READ`/`CMD_ANALOG_READ`). Any MCU protocol tweak requires a corresponding daemon handler update.
 
 ## Handy References
 - `docs/PROTOCOL.md`: contrato del protocolo + deep dive on BridgeService, RuntimeState, metrics, and security controls.

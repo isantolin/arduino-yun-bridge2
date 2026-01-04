@@ -86,8 +86,6 @@ class BridgeClass {
   void analogWrite(uint8_t pin, int value);
   
   // Request Methods
-  void requestDigitalRead(uint8_t pin);
-  void requestAnalogRead(uint8_t pin);
   void requestGetFreeMemory();
 
   // Events

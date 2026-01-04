@@ -355,18 +355,6 @@ void test_bridge_flow_control() {
     TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
-void test_bridge_request_digital_read_no_op() {
-    MockStream stream;
-    BridgeClass bridge(stream);
-    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    stream.tx_buffer.clear(); // Clear handshake frames
-
-    bridge.requestDigitalRead(13);
-    
-    // Assert that NO data was written to the stream
-    TEST_ASSERT(stream.tx_buffer.len == 0);
-}
-
 void test_bridge_file_write_incoming() {
     MockStream stream;
     BridgeClass bridge(stream);
@@ -972,7 +960,6 @@ int main() {
     test_bridge_process_rx();
     test_bridge_handshake();
     test_bridge_flow_control();
-    test_bridge_request_digital_read_no_op();
     test_bridge_file_write_incoming();
     test_bridge_malformed_frame();
     test_file_write_eeprom_parsing();

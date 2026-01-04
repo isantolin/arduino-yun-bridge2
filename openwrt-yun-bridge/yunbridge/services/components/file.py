@@ -9,7 +9,7 @@ import struct
 from contextlib import AsyncExitStack
 from pathlib import Path, PurePosixPath
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
@@ -158,7 +158,7 @@ class FileComponent:
         action: str,
         path_parts: list[str],
         payload: bytes,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         filename = "/".join(path_parts)
         if not filename:

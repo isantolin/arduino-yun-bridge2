@@ -9,7 +9,7 @@ import logging
 import struct
 import subprocess
 from asyncio import StreamReader
-from asyncio.subprocess import Process as AsyncioProcess
+from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 
@@ -341,7 +341,7 @@ class ProcessComponent:
             proc.returncode,
         )
 
-    async def _wait_for_sync_completion(self, proc: AsyncioProcess, pid_hint: int) -> bool:
+    async def _wait_for_sync_completion(self, proc: Process, pid_hint: int) -> bool:
         timeout = self.state.process_timeout
         if timeout <= 0:
             await proc.wait()
@@ -571,7 +571,7 @@ class ProcessComponent:
             buffer.extend(chunk)
 
     async def _read_process_pipes(
-        self, pid: int, proc: AsyncioProcess
+        self, pid: int, proc: Process
     ) -> tuple[bytes, bytes]:
         async with asyncio.TaskGroup() as tg:
             stdout_task = tg.create_task(self._read_stream_chunk(pid, proc.stdout))
@@ -579,7 +579,7 @@ class ProcessComponent:
         return stdout_task.result(), stderr_task.result()
 
     async def _drain_process_pipes(
-        self, pid: int, proc: AsyncioProcess
+        self, pid: int, proc: Process
     ) -> tuple[bytes, bytes]:
         async with asyncio.TaskGroup() as tg:
             stdout_task = tg.create_task(self._drain_stream(pid, proc.stdout))
@@ -718,7 +718,7 @@ class ProcessComponent:
         logger.error("No async process slots available; all PIDs in use")
         return INVALID_ID_SENTINEL
 
-    async def _terminate_process_tree(self, proc: AsyncioProcess) -> None:
+    async def _terminate_process_tree(self, proc: Process) -> None:
         if proc.returncode is not None:
             return
         pid_value = getattr(proc, "pid", None)
@@ -732,7 +732,7 @@ class ProcessComponent:
     async def _monitor_async_process(
         self,
         pid: int,
-        proc: AsyncioProcess,
+        proc: Process,
     ) -> None:
         try:
             await proc.wait()
@@ -746,7 +746,7 @@ class ProcessComponent:
     async def _finalize_async_process(
         self,
         pid: int,
-        proc: AsyncioProcess,
+        proc: Process,
     ) -> None:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)

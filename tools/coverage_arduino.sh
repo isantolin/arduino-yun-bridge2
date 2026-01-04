@@ -73,6 +73,14 @@ ARDUINO_RUNTIME_SOURCES=(
   "${PROTOCOL_SOURCES[@]}"
 )
 
+TEST_SOURCES=(
+  "${TEST_ROOT}/test_protocol.cpp"
+  "${TEST_ROOT}/test_bridge_components.cpp"
+  "${TEST_ROOT}/test_bridge_core.cpp"
+  "${TEST_ROOT}/test_coverage_extreme.cpp"
+  "${TEST_ROOT}/test_bridge_transport.cpp"
+)
+
 COMPILE_FLAGS=(
   -std=c++11      # Updated to C++11 as requested
   -g              # Debug symbols enabled
@@ -104,10 +112,69 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 
+BUILD_SIGNATURE_PATH="${BUILD_DIR}/.coverage_build_signature"
+
 RUN_BUILD=0
 if [[ "${FORCE_REBUILD}" -eq 1 ]]; then
   RUN_BUILD=1
 fi
+
+hash_file() {
+  local path="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${path}" | awk '{print $1}'
+    return
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${path}" | awk '{print $1}'
+    return
+  fi
+  python3 - "${path}" <<'PY'
+import hashlib
+import sys
+
+path = sys.argv[1]
+h = hashlib.sha256()
+with open(path, 'rb') as f:
+    for chunk in iter(lambda: f.read(1024 * 1024), b''):
+        h.update(chunk)
+print(h.hexdigest())
+PY
+}
+
+compute_build_signature() {
+  local tmp
+  tmp="$(mktemp)"
+  {
+    echo "gcovr=$(gcovr --version 2>/dev/null | head -n 1 || true)"
+    echo "g++=$(g++ --version 2>/dev/null | head -n 1 || true)"
+    echo "-- compile flags --"
+    printf '%s\n' "${COMPILE_FLAGS[@]}"
+    echo "-- sources --"
+    local src
+    for src in "${ARDUINO_RUNTIME_SOURCES[@]}" "${TEST_SOURCES[@]}"; do
+      echo "${src}:$(hash_file "${src}")"
+    done
+  } >"${tmp}"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${tmp}" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${tmp}" | awk '{print $1}'
+  else
+    python3 - "${tmp}" <<'PY'
+import hashlib
+import sys
+
+path = sys.argv[1]
+h = hashlib.sha256()
+with open(path, 'rb') as f:
+    h.update(f.read())
+print(h.hexdigest())
+PY
+  fi
+  rm -f "${tmp}"
+}
 
 # Always clean up old coverage data to prevent stale references
 find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
@@ -116,6 +183,19 @@ find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
 
 if [[ ! -x "${BUILD_DIR}/protocol/test_protocol" || ! -x "${BUILD_DIR}/components/test_bridge_components" || ! -x "${BUILD_DIR}/core/test_bridge_core" || ! -x "${BUILD_DIR}/extreme/test_coverage_extreme" || ! -x "${BUILD_DIR}/transport/test_bridge_transport" ]]; then
   RUN_BUILD=1
+fi
+
+# If sources/tests/flags changed since last build, force a rebuild so .gcno matches sources.
+if [[ "${RUN_BUILD}" -eq 0 ]]; then
+  if [[ ! -f "${BUILD_SIGNATURE_PATH}" ]]; then
+    RUN_BUILD=1
+  else
+    CURRENT_SIG="$(compute_build_signature)"
+    STORED_SIG="$(cat "${BUILD_SIGNATURE_PATH}")"
+    if [[ "${CURRENT_SIG}" != "${STORED_SIG}" ]]; then
+      RUN_BUILD=1
+    fi
+  fi
 fi
 
 build_one() {
@@ -146,6 +226,7 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
   # Cleanup is already done above, but we keep this for safety if logic changes
   find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
   find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true
+  find "${BUILD_DIR}" -name '*.o' -delete 2>/dev/null || true
 
   echo "[coverage_arduino] Compilando test_protocol" >&2
   build_one \
@@ -181,6 +262,8 @@ if [[ ${RUN_BUILD} -eq 1 ]]; then
     "${BUILD_DIR}/transport/test_bridge_transport" \
     "${ARDUINO_RUNTIME_SOURCES[@]}" \
     "${TEST_ROOT}/test_bridge_transport.cpp"
+
+  compute_build_signature >"${BUILD_SIGNATURE_PATH}"
 fi
 
 echo "[coverage_arduino] Ejecutando tests host..." >&2

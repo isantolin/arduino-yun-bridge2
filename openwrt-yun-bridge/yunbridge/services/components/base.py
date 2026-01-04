@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any, Protocol
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
@@ -25,7 +25,7 @@ class BridgeContext(Protocol):
         self,
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         ...
 

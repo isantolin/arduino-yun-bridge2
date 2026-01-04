@@ -3,8 +3,6 @@
 #include <string.h>
 #include "protocol/rpc_protocol.h"
 
-using namespace rpc;
-
 void FileSystemClass::write(const char* filePath, const uint8_t* data,
                             size_t length) {
   if (!filePath || !data) return;
@@ -13,7 +11,7 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
   if (path_info.length == 0 || path_info.overflowed) return;
   const size_t path_len = path_info.length;
 
-  const size_t max_data = MAX_PAYLOAD_SIZE - 3 - path_len;
+  const size_t max_data = rpc::MAX_PAYLOAD_SIZE - 3 - path_len;
   if (length > max_data) {
     length = max_data;
   }
@@ -23,13 +21,13 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
   
   payload[0] = static_cast<uint8_t>(path_len);
   memcpy(payload + 1, filePath, path_len);
-  write_u16_be(payload + 1 + path_len, static_cast<uint16_t>(length));
+  rpc::write_u16_be(payload + 1 + path_len, static_cast<uint16_t>(length));
   if (length > 0) {
     memcpy(payload + 3 + path_len, data, length);
   }
 
   (void)Bridge.sendFrame(
-      CommandId::CMD_FILE_WRITE,
+      rpc::CommandId::CMD_FILE_WRITE,
       payload, static_cast<uint16_t>(path_len + length + 3));
 }
 
@@ -46,7 +44,7 @@ void FileSystemClass::remove(const char* filePath) {
   payload[0] = static_cast<uint8_t>(path_len);
   memcpy(payload + 1, filePath, path_len);
   (void)Bridge.sendFrame(
-      CommandId::CMD_FILE_REMOVE,
+      rpc::CommandId::CMD_FILE_REMOVE,
       payload, static_cast<uint16_t>(path_len + 1));
 }
 
@@ -64,16 +62,16 @@ void FileSystemClass::read(const char* filePath) {
   memcpy(payload + 1, filePath, len);
   const uint16_t total = static_cast<uint16_t>(
       len + 1);
-  (void)Bridge.sendFrame(CommandId::CMD_FILE_READ, payload, total);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_FILE_READ, payload, total);
 }
 
 void FileSystemClass::handleResponse(const rpc::Frame& frame) {
-  const CommandId command = static_cast<CommandId>(frame.header.command_id);
+  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload;
 
   switch (command) {
-    case CommandId::CMD_FILE_READ_RESP:
+    case rpc::CommandId::CMD_FILE_READ_RESP:
       if (_file_system_read_handler && payload_length >= 2 && payload_data) {
         uint16_t data_len = rpc::read_u16_be(payload_data);
         const size_t expected = static_cast<size_t>(2 + data_len);
@@ -82,7 +80,7 @@ void FileSystemClass::handleResponse(const rpc::Frame& frame) {
         }
       }
       break;
-    case CommandId::CMD_FILE_WRITE:
+    case rpc::CommandId::CMD_FILE_WRITE:
       if (payload_length > 1 && payload_data) {
            uint8_t path_len = payload_data[0];
            if (path_len < payload_length) {

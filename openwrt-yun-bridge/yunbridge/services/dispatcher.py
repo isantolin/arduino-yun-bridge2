@@ -15,7 +15,7 @@ from .routers import MCUHandlerRegistry, MQTTRouter
 
 if TYPE_CHECKING:
     # [FIX] Pylance: Simplificamos import para evitar reportMissingModuleSource
-    from aiomqtt import Message as MQTTMessage
+    from aiomqtt import Message
     from .components import (
         ConsoleComponent,
         DatastoreComponent,
@@ -58,8 +58,8 @@ class BridgeDispatcher:
         acknowledge_frame: Callable[..., Awaitable[None]],
         is_link_synchronized: Callable[[], bool],
         is_topic_action_allowed: Callable[[Topic | str, str], bool],
-        reject_topic_action: Callable[[MQTTMessage, Topic | str, str], Awaitable[None]],
-        publish_bridge_snapshot: Callable[[str, MQTTMessage | None], Awaitable[None]],
+        reject_topic_action: Callable[[Message, Topic | str, str], Awaitable[None]],
+        publish_bridge_snapshot: Callable[[str, Message | None], Awaitable[None]],
     ) -> None:
         self.mcu_registry = mcu_registry
         self.mqtt_router = mqtt_router
@@ -276,7 +276,7 @@ class BridgeDispatcher:
 
     async def dispatch_mqtt_message(
         self,
-        inbound: MQTTMessage,
+        inbound: Message,
         parse_topic_func: Callable[[str], TopicRoute | None],
     ) -> None:
         inbound_topic = str(inbound.topic)
@@ -314,7 +314,7 @@ class BridgeDispatcher:
 
     # --- MQTT Handlers ---
 
-    async def _handle_file_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_file_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if len(route.segments) < 2:
             return False
         identifier = route.identifier
@@ -326,7 +326,7 @@ class BridgeDispatcher:
             await self.file.handle_mqtt(identifier, list(route.remainder), payload, inbound)
         return True
 
-    async def _handle_console_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_console_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if route.identifier != "in":
             return False
         # Keep policy aligned with MQTT topic identifier: br/console/in
@@ -340,7 +340,7 @@ class BridgeDispatcher:
             await self.console.handle_mqtt_input(payload, inbound)
         return True
 
-    async def _handle_datastore_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_datastore_topic(self, route: TopicRoute, inbound: Message) -> bool:
         identifier = route.identifier
         if not identifier:
             return False
@@ -353,7 +353,7 @@ class BridgeDispatcher:
             await self.datastore.handle_mqtt(identifier, list(route.remainder), payload, payload_str, inbound)
         return True
 
-    async def _handle_mailbox_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_mailbox_topic(self, route: TopicRoute, inbound: Message) -> bool:
         identifier = route.identifier
         if identifier and not self.is_topic_action_allowed(route.topic, identifier):
             await self.reject_topic_action(inbound, route.topic, identifier)
@@ -363,7 +363,7 @@ class BridgeDispatcher:
             await self.mailbox.handle_mqtt(identifier, payload, inbound)
         return True
 
-    async def _handle_shell_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_shell_topic(self, route: TopicRoute, inbound: Message) -> bool:
         identifier = route.identifier
         if identifier and not self.is_topic_action_allowed(route.topic, identifier):
             await self.reject_topic_action(inbound, route.topic, identifier)
@@ -373,7 +373,7 @@ class BridgeDispatcher:
             await self.shell.handle_mqtt(route.raw.split("/"), payload, inbound)
         return True
 
-    async def _handle_pin_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_pin_topic(self, route: TopicRoute, inbound: Message) -> bool:
         payload = self._payload_bytes(inbound.payload)
         payload_str = payload.decode("utf-8", errors="ignore")
         parts = route.raw.split("/")
@@ -385,7 +385,7 @@ class BridgeDispatcher:
             await self.pin.handle_mqtt(route.topic, parts, payload_str, inbound)
         return True
 
-    async def _handle_system_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if route.identifier == "bridge":
             bridge_handled = await self._handle_bridge_topic(route, inbound)
             if bridge_handled:
@@ -397,7 +397,7 @@ class BridgeDispatcher:
             return handled
         return False
 
-    async def _handle_bridge_topic(self, route: TopicRoute, inbound: MQTTMessage) -> bool:
+    async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:
         segments = list(route.remainder)
         if not segments:
             return False

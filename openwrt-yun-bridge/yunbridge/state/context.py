@@ -6,13 +6,13 @@ import asyncio
 import collections
 import logging
 import time
-from asyncio.subprocess import Process as AsyncioProcess
+from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 from typing import Any, Deque, cast
 from collections.abc import Mapping
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from ..mqtt.messages import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
@@ -123,14 +123,14 @@ def _status_label(code: int | None) -> str:
 @dataclass(slots=True)
 class PendingPinRequest:
     pin: int
-    reply_context: MQTTMessage | None
+    reply_context: Message | None
 
 
 @dataclass(slots=True)
 class ManagedProcess:
     pid: int
     command: str = ""
-    handle: AsyncioProcess | None = None
+    handle: Process | None = None
     stdout_buffer: bytearray = field(default_factory=bytearray)
     stderr_buffer: bytearray = field(default_factory=bytearray)
     exit_code: int | None = None

@@ -1,8 +1,6 @@
 #include "Bridge.h"
 #include "protocol/rpc_protocol.h"
 
-using namespace rpc;
-
 ProcessClass::ProcessClass() 
   : _pending_process_poll_head(0),
     _pending_process_poll_count(0),
@@ -18,11 +16,11 @@ void ProcessClass::run(const char* command) {
   }
   size_t len = strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
-    Bridge._emitStatus(StatusCode::STATUS_ERROR, F("process_run_payload_too_large"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("process_run_payload_too_large"));
     return;
   }
   (void)Bridge.sendFrame(
-      CommandId::CMD_PROCESS_RUN,
+      rpc::CommandId::CMD_PROCESS_RUN,
       reinterpret_cast<const uint8_t*>(command),
       len);
 }
@@ -33,11 +31,11 @@ void ProcessClass::runAsync(const char* command) {
   }
   size_t len = strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
-    Bridge._emitStatus(StatusCode::STATUS_ERROR, F("process_run_async_payload_too_large"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("process_run_async_payload_too_large"));
     return;
   }
   (void)Bridge.sendFrame(
-      CommandId::CMD_PROCESS_RUN_ASYNC,
+      rpc::CommandId::CMD_PROCESS_RUN_ASYNC,
       reinterpret_cast<const uint8_t*>(command),
       len);
 }
@@ -49,28 +47,28 @@ void ProcessClass::poll(int pid) {
 
   const uint16_t pid_u16 = static_cast<uint16_t>(pid);
   if (!_pushPendingProcessPid(pid_u16)) {
-    Bridge._emitStatus(StatusCode::STATUS_ERROR, F("process_poll_queue_full"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("process_poll_queue_full"));
     return;
   }
 
   uint8_t pid_payload[2];
   rpc::write_u16_be(pid_payload, pid_u16);
-  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_POLL, pid_payload, 2);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_POLL, pid_payload, 2);
 }
 
 void ProcessClass::kill(int pid) {
   uint8_t pid_payload[2];
-  write_u16_be(pid_payload, static_cast<uint16_t>(pid));
-  (void)Bridge.sendFrame(CommandId::CMD_PROCESS_KILL, pid_payload, 2);
+  rpc::write_u16_be(pid_payload, static_cast<uint16_t>(pid));
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_KILL, pid_payload, 2);
 }
 
 void ProcessClass::handleResponse(const rpc::Frame& frame) {
-  const CommandId command = static_cast<CommandId>(frame.header.command_id);
+  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload;
 
   switch (command) {
-    case CommandId::CMD_PROCESS_RUN_RESP:
+    case rpc::CommandId::CMD_PROCESS_RUN_RESP:
       if (_process_run_handler && payload_length >= 1 && payload_data) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
         if (payload_length >= 5) {
@@ -84,13 +82,13 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
         }
       }
       break;
-    case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
+    case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
       if (_process_run_async_handler && payload_length >= 2 && payload_data) {
         uint16_t pid = rpc::read_u16_be(payload_data);
         _process_run_async_handler(static_cast<int>(pid));
       }
       break;
-    case CommandId::CMD_PROCESS_POLL_RESP:
+    case rpc::CommandId::CMD_PROCESS_POLL_RESP:
       if (_process_poll_handler && payload_length >= 2 && payload_data) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
         uint8_t running = payload_data[1];

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import struct
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from yunbridge.rpc.protocol import Command, PinAction, Status
 from yunbridge.rpc import protocol
 
@@ -123,7 +123,7 @@ class PinComponent:
         topic_type: str | Topic,
         parts: list[str],
         payload_str: str,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         if len(parts) < 3:
             return
@@ -181,7 +181,7 @@ class PinComponent:
         self,
         topic_type: Topic,
         pin: int,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         command = (
             Command.CMD_DIGITAL_READ
@@ -281,7 +281,7 @@ class PinComponent:
         self,
         topic_type: Topic,
         pin: int,
-        inbound: MQTTMessage | None,
+        inbound: Message | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
         message = QueuedPublish(

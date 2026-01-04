@@ -33,8 +33,6 @@
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
 
-using namespace rpc;
-
 #ifndef BRIDGE_TEST_NO_GLOBALS
 BridgeClass Bridge(Serial1);
 ConsoleClass Console;
@@ -59,7 +57,7 @@ static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int value) {
 #endif
 
 namespace {
-constexpr size_t kHandshakeTagSize = RPC_HANDSHAKE_TAG_LENGTH;
+constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
 static_assert(
   kHandshakeTagSize > 0,
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
@@ -108,7 +106,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
     _last_rx_crc_millis(0),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
-      _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
+      _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
       _command_handler(nullptr),
       _digital_read_handler(nullptr),
       _analog_read_handler(nullptr),
@@ -141,7 +139,7 @@ BridgeClass::BridgeClass(Stream& stream)
     _last_rx_crc_millis(0),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
-      _response_timeout_ms(RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
+      _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
       _command_handler(nullptr),
       _digital_read_handler(nullptr),
       _analog_read_handler(nullptr),
@@ -286,9 +284,9 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
   // Default values
   uint16_t ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
   uint8_t retry_limit = rpc::RPC_DEFAULT_RETRY_LIMIT;
-  uint32_t response_timeout_ms = RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+  uint32_t response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
 
-  if (payload != nullptr && length >= RPC_HANDSHAKE_CONFIG_SIZE) {
+  if (payload != nullptr && length >= rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
     const uint8_t* cursor = payload;
     ack_timeout_ms = rpc::read_u16_be(cursor);
     cursor += 2;
@@ -297,21 +295,21 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
   }
 
   // Apply with validation
-  _ack_timeout_ms = (ack_timeout_ms >= RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
-                     ack_timeout_ms <= RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS)
+    _ack_timeout_ms = (ack_timeout_ms >= rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS &&
+                ack_timeout_ms <= rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS)
                         ? ack_timeout_ms
                   : rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
 
-  _ack_retry_limit = (retry_limit >= RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
-                      retry_limit <= RPC_HANDSHAKE_RETRY_LIMIT_MAX)
+    _ack_retry_limit = (retry_limit >= rpc::RPC_HANDSHAKE_RETRY_LIMIT_MIN &&
+                 retry_limit <= rpc::RPC_HANDSHAKE_RETRY_LIMIT_MAX)
                          ? retry_limit
                    : rpc::RPC_DEFAULT_RETRY_LIMIT;
 
   _response_timeout_ms =
-      (response_timeout_ms >= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
-       response_timeout_ms <= RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)
+      (response_timeout_ms >= rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS &&
+       response_timeout_ms <= rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)
           ? response_timeout_ms
-          : RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
+         : rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
 }
 
 void BridgeClass::onCommand(CommandHandler handler) { _command_handler = handler; }
@@ -372,28 +370,28 @@ void BridgeClass::flushStream() {
 }
 
 void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
-  const CommandId command = static_cast<CommandId>(frame.header.command_id);
+  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload;
 
   switch (command) {
-    case CommandId::CMD_GET_VERSION:
+    case rpc::CommandId::CMD_GET_VERSION:
       if (payload_length == 0) {
         uint8_t version_payload[2];
         version_payload[0] = static_cast<uint8_t>(kDefaultFirmwareVersionMajor);
         version_payload[1] = static_cast<uint8_t>(kDefaultFirmwareVersionMinor);
-        (void)sendFrame(CommandId::CMD_GET_VERSION_RESP, version_payload, sizeof(version_payload));
+        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, version_payload, sizeof(version_payload));
       }
       break;
-    case CommandId::CMD_GET_FREE_MEMORY:
+    case rpc::CommandId::CMD_GET_FREE_MEMORY:
       if (payload_length == 0) {
         uint16_t free_mem = getFreeMemory();
         uint8_t resp_payload[2];
         rpc::write_u16_be(resp_payload, free_mem);
-        (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
+        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
       }
       break;
-    case CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
+    case rpc::CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
       if (payload_length == 0) {
         uint8_t resp[9];
         resp[0] = _pending_tx_count;
@@ -401,14 +399,14 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         resp[2] = _retry_count;
         rpc::write_u16_be(&resp[3], _last_command_id);
         rpc::write_u32_be(&resp[5], static_cast<uint32_t>(_last_send_millis));
-        (void)sendFrame(CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP, resp, sizeof(resp));
+        (void)sendFrame(rpc::CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP, resp, sizeof(resp));
       }
       break;
-    case CommandId::CMD_SET_BAUDRATE:
+    case rpc::CommandId::CMD_SET_BAUDRATE:
       if (payload_length == 4) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
         // [OPTIMIZATION] Enviar ACK y programar cambio diferido sin bloquear la CPU
-        (void)sendFrame(CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
+        (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         _transport.flush();
         
         // Iniciamos el temporizador para cambiar la velocidad en el próximo ciclo process()
@@ -417,10 +415,10 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         s_baudrate_change_timestamp = millis();
       }
       break;
-    case CommandId::CMD_LINK_SYNC:
+    case rpc::CommandId::CMD_LINK_SYNC:
       {
         const size_t nonce_length = payload_length;
-        if (nonce_length != RPC_HANDSHAKE_NONCE_LENGTH) break;
+        if (nonce_length != rpc::RPC_HANDSHAKE_NONCE_LENGTH) break;
         
         _resetLinkState();
         Console.begin();
@@ -428,7 +426,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         const size_t response_length = static_cast<size_t>(nonce_length) + (has_secret ? kHandshakeTagSize : 0);
         
         if (response_length > rpc::MAX_PAYLOAD_SIZE) {
-          (void)sendFrame(StatusCode::STATUS_MALFORMED);
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
           break;
         }
 
@@ -440,17 +438,17 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
             _computeHandshakeTag(payload_data, nonce_length, tag);
             memcpy(response + nonce_length, tag, kHandshakeTagSize);
           }
-          (void)sendFrame(CommandId::CMD_LINK_SYNC_RESP, response, response_length);
+          (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, response, response_length);
           _synchronized = true;
         }
       }
       break;
-    case CommandId::CMD_LINK_RESET:
-      if (payload_length == 0 || payload_length == RPC_HANDSHAKE_CONFIG_SIZE) {
+    case rpc::CommandId::CMD_LINK_RESET:
+      if (payload_length == 0 || payload_length == rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
         _resetLinkState();
         _applyTimingConfig(payload_data, payload_length);
         Console.begin();
-        (void)sendFrame(CommandId::CMD_LINK_RESET_RESP);
+        (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
       }
       break;
     default:
@@ -459,14 +457,14 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 }
 
 void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
-  const CommandId command = static_cast<CommandId>(frame.header.command_id);
+  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload;
 
   if (!payload_data) return;
 
   switch (command) {
-    case CommandId::CMD_SET_PIN_MODE:
+    case rpc::CommandId::CMD_SET_PIN_MODE:
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t mode = payload_data[1];
@@ -476,7 +474,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         #endif
       }
       break;
-    case CommandId::CMD_DIGITAL_WRITE:
+    case rpc::CommandId::CMD_DIGITAL_WRITE:
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t value = payload_data[1] ? HIGH : LOW;
@@ -486,12 +484,12 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         #endif
       }
       break;
-    case CommandId::CMD_ANALOG_WRITE:
+    case rpc::CommandId::CMD_ANALOG_WRITE:
       if (payload_length == 2) {
         ::analogWrite(payload_data[0], static_cast<int>(payload_data[1]));
       }
       break;
-    case CommandId::CMD_DIGITAL_READ:
+    case rpc::CommandId::CMD_DIGITAL_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
         int value = ::digitalRead(pin);
@@ -499,10 +497,10 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
         #endif
         uint8_t resp_payload = static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK);
-        (void)sendFrame(CommandId::CMD_DIGITAL_READ_RESP, &resp_payload, 1);
+        (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, &resp_payload, 1);
       }
       break;
-    case CommandId::CMD_ANALOG_READ:
+    case rpc::CommandId::CMD_ANALOG_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
         int value = ::analogRead(pin);
@@ -511,7 +509,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         #endif
         uint8_t resp_payload[2];
         rpc::write_u16_be(resp_payload, static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
-        (void)sendFrame(CommandId::CMD_ANALOG_READ_RESP, resp_payload, sizeof(resp_payload));
+        (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload, sizeof(resp_payload));
       }
       break;
     default:
@@ -520,14 +518,14 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
 }
 
 void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
-  if (static_cast<CommandId>(frame.header.command_id) == CommandId::CMD_CONSOLE_WRITE) {
+  if (static_cast<rpc::CommandId>(frame.header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
     Console._push(frame.payload, frame.header.payload_length);
   }
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
   const uint16_t raw_command = frame.header.command_id;
-  const CommandId command = static_cast<CommandId>(raw_command);
+  const rpc::CommandId command = static_cast<rpc::CommandId>(raw_command);
   
   // 1. Handle Responses (Linux -> MCU)
   // These calls update internal state but do not set 'command_processed_internally' automatically here.
@@ -549,17 +547,17 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 
   if (is_system_command) {
-      if (command == CommandId::CMD_LINK_RESET) {
+      if (command == rpc::CommandId::CMD_LINK_RESET) {
           if (_isRecentDuplicateRx(frame)) {
             uint8_t ack_payload[2];
             rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
             return;
           }
           // [FIX] Send ACK immediately before reset destroys state
           uint8_t ack_payload[2];
           rpc::write_u16_be(ack_payload, raw_command);
-          (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+          (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
           _transport.flush();
           
           _handleSystemCommand(frame);
@@ -571,7 +569,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           command_processed_internally = true;
           
           // [FIX] CMD_LINK_SYNC requires specific ACK + Response frame
-          if (command == CommandId::CMD_LINK_SYNC) {
+          if (command == rpc::CommandId::CMD_LINK_SYNC) {
               requires_ack = true;
           } else {
               requires_ack = false;
@@ -580,13 +578,13 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     } else if (raw_command >= rpc::RPC_GPIO_COMMAND_MIN) {
       // High-ID commands (GPIO+, Console, etc)
       switch(command) {
-        case CommandId::CMD_SET_PIN_MODE:
-        case CommandId::CMD_DIGITAL_WRITE:
-        case CommandId::CMD_ANALOG_WRITE:
+        case rpc::CommandId::CMD_SET_PIN_MODE:
+        case rpc::CommandId::CMD_DIGITAL_WRITE:
+        case rpc::CommandId::CMD_ANALOG_WRITE:
           if (_isRecentDuplicateRx(frame)) {
             uint8_t ack_payload[2];
             rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
             return;
           }
           _handleGpioCommand(frame);
@@ -594,17 +592,17 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           command_processed_internally = true;
           requires_ack = true;
           break;
-        case CommandId::CMD_DIGITAL_READ:
-        case CommandId::CMD_ANALOG_READ:
+        case rpc::CommandId::CMD_DIGITAL_READ:
+        case rpc::CommandId::CMD_ANALOG_READ:
           _handleGpioCommand(frame);
           command_processed_internally = true;
           requires_ack = false;
           break;
-        case CommandId::CMD_CONSOLE_WRITE:
+        case rpc::CommandId::CMD_CONSOLE_WRITE:
           if (_isRecentDuplicateRx(frame)) {
             uint8_t ack_payload[2];
             rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
             return;
           }
           _handleConsoleCommand(frame);
@@ -612,11 +610,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           command_processed_internally = true;
           requires_ack = true;
           break;
-        case CommandId::CMD_MAILBOX_PUSH:
+        case rpc::CommandId::CMD_MAILBOX_PUSH:
           if (_isRecentDuplicateRx(frame)) {
             uint8_t ack_payload[2];
             rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
             return;
           }
           Mailbox.handleResponse(frame); 
@@ -624,11 +622,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           command_processed_internally = true;
           requires_ack = true;
           break;
-        case CommandId::CMD_FILE_WRITE:
+        case rpc::CommandId::CMD_FILE_WRITE:
           if (_isRecentDuplicateRx(frame)) {
             uint8_t ack_payload[2];
             rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
             return;
           }
           FileSystem.handleResponse(frame);
@@ -638,14 +636,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         
         // Responses (Linux -> MCU)
-        case CommandId::CMD_DATASTORE_GET_RESP:
-        case CommandId::CMD_MAILBOX_READ_RESP:
-        case CommandId::CMD_MAILBOX_AVAILABLE_RESP:
-        case CommandId::CMD_FILE_READ_RESP:
-        case CommandId::CMD_PROCESS_RUN_RESP:
-        case CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-        case CommandId::CMD_PROCESS_POLL_RESP:
-        case CommandId::CMD_LINK_SYNC_RESP:
+        case rpc::CommandId::CMD_DATASTORE_GET_RESP:
+        case rpc::CommandId::CMD_MAILBOX_READ_RESP:
+        case rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP:
+        case rpc::CommandId::CMD_FILE_READ_RESP:
+        case rpc::CommandId::CMD_PROCESS_RUN_RESP:
+        case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
+        case rpc::CommandId::CMD_PROCESS_POLL_RESP:
+        case rpc::CommandId::CMD_LINK_SYNC_RESP:
           command_processed_internally = true;
           requires_ack = false; 
           break;
@@ -658,7 +656,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   if (requires_ack) {
     uint8_t ack_payload[2];
     rpc::write_u16_be(ack_payload, raw_command);
-    (void)sendFrame(StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+    (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
   }
 
   // Handle Status/Error frames (when not a system command)
@@ -666,12 +664,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       // Status codes are in the reserved range declared by the protocol.
       if (raw_command >= rpc::RPC_STATUS_CODE_MIN && raw_command <= rpc::RPC_STATUS_CODE_MAX) {
         
-        const StatusCode status = static_cast<StatusCode>(raw_command);
+        const rpc::StatusCode status = static_cast<rpc::StatusCode>(raw_command);
         const size_t payload_length = frame.header.payload_length;
         const uint8_t* payload_data = frame.payload;
         
         switch (status) {
-          case StatusCode::STATUS_ACK: {
+          case rpc::StatusCode::STATUS_ACK: {
             uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
             if (payload_length >= 2 && payload_data) {
               ack_id = rpc::read_u16_be(payload_data);
@@ -679,7 +677,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
             _handleAck(ack_id);
             break;
           }
-          case StatusCode::STATUS_MALFORMED: {
+          case rpc::StatusCode::STATUS_MALFORMED: {
             uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
             if (payload_length >= 2 && payload_data) {
               malformed_id = rpc::read_u16_be(payload_data);
@@ -705,12 +703,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     // Only send UNKNOWN if it's not a response we recognized
     // And if it's NOT a status code
     if (raw_command < rpc::RPC_STATUS_CODE_MIN || raw_command > rpc::RPC_STATUS_CODE_MAX) {
-        (void)sendFrame(StatusCode::STATUS_CMD_UNKNOWN);
+        (void)sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN);
     }
   }
 }
 
-void BridgeClass::_emitStatus(StatusCode status_code, const char* message) {
+void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
   if (message && *message) {
@@ -724,7 +722,7 @@ void BridgeClass::_emitStatus(StatusCode status_code, const char* message) {
   }
 }
 
-void BridgeClass::_emitStatus(StatusCode status_code, const __FlashStringHelper* message) {
+void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
   if (message) {
@@ -745,11 +743,11 @@ void BridgeClass::_emitStatus(StatusCode status_code, const __FlashStringHelper*
   }
 }
 
-bool BridgeClass::sendFrame(CommandId command_id, const uint8_t* payload, size_t length) {
+bool BridgeClass::sendFrame(rpc::CommandId command_id, const uint8_t* payload, size_t length) {
   return _sendFrame(rpc::to_underlying(command_id), payload, length);
 }
 
-bool BridgeClass::sendFrame(StatusCode status_code, const uint8_t* payload, size_t length) {
+bool BridgeClass::sendFrame(rpc::StatusCode status_code, const uint8_t* payload, size_t length) {
   return _sendFrame(rpc::to_underlying(status_code), payload, length);
 }
 
@@ -759,9 +757,9 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* payload, size_t
 #endif
   if (!_synchronized) {
     bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
-                   (command_id == rpc::to_underlying(CommandId::CMD_GET_VERSION_RESP)) ||
-                   (command_id == rpc::to_underlying(CommandId::CMD_LINK_SYNC_RESP)) ||
-                   (command_id == rpc::to_underlying(CommandId::CMD_LINK_RESET_RESP));
+                   (command_id == rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||
+                   (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP)) ||
+                   (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP));
     if (!allowed) {
       return false;
     }
@@ -823,21 +821,21 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
       return false;
   }
   // XOFF/XON
-  if (command_id == rpc::to_underlying(CommandId::CMD_XOFF) ||
-    command_id == rpc::to_underlying(CommandId::CMD_XON)) {
+  if (command_id == rpc::to_underlying(rpc::CommandId::CMD_XOFF) ||
+    command_id == rpc::to_underlying(rpc::CommandId::CMD_XON)) {
       return false;
   }
 
   // Only fire-and-forget commands require ACK.
   // Keep this aligned with the protocol spec / Python ACK_ONLY_COMMANDS.
   switch (command_id) {
-    case rpc::to_underlying(CommandId::CMD_SET_PIN_MODE):
-    case rpc::to_underlying(CommandId::CMD_DIGITAL_WRITE):
-    case rpc::to_underlying(CommandId::CMD_ANALOG_WRITE):
-    case rpc::to_underlying(CommandId::CMD_CONSOLE_WRITE):
-    case rpc::to_underlying(CommandId::CMD_DATASTORE_PUT):
-    case rpc::to_underlying(CommandId::CMD_MAILBOX_PUSH):
-    case rpc::to_underlying(CommandId::CMD_FILE_WRITE):
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE):
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE):
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE):
+    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
+    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT):
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH):
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE):
       return true;
     default:
       return false;
@@ -887,7 +885,7 @@ void BridgeClass::_processAckTimeout() {
   if (_retry_count >= _ack_retry_limit) {
     _awaiting_ack = false;
     if (_status_handler) {
-      _status_handler(StatusCode::STATUS_TIMEOUT, nullptr, 0);
+      _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
     }
     _flushPendingTxQueue();
     return;
@@ -977,5 +975,5 @@ void BridgeClass::requestGetFreeMemory() {
   uint16_t free_mem = getFreeMemory();
   uint8_t resp_payload[2];
   rpc::write_u16_be(resp_payload, free_mem);
-  (void)sendFrame(CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
+  (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
 }

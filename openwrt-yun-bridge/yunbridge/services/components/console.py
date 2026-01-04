@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from yunbridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
 
 from ...protocol.topics import Topic, topic_path
@@ -56,7 +56,7 @@ class ConsoleComponent:
     async def handle_mqtt_input(
         self,
         payload: bytes,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         chunks = self._iter_console_chunks(payload)
         if self.state.mcu_is_paused:

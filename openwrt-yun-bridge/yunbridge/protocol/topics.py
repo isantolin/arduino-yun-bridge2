@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from yunbridge.rpc import protocol as rpc_protocol
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Topic
 
 
@@ -92,7 +92,7 @@ def mailbox_incoming_available_topic(prefix: str) -> str:
     return topic_path(
         prefix,
         Topic.MAILBOX,
-        rpc_protocol.MQTT_SUFFIX_INCOMING_AVAILABLE,
+        protocol.MQTT_SUFFIX_INCOMING_AVAILABLE,
     )
 
 
@@ -102,7 +102,7 @@ def mailbox_outgoing_available_topic(prefix: str) -> str:
     return topic_path(
         prefix,
         Topic.MAILBOX,
-        rpc_protocol.MQTT_SUFFIX_OUTGOING_AVAILABLE,
+        protocol.MQTT_SUFFIX_OUTGOING_AVAILABLE,
     )
 
 

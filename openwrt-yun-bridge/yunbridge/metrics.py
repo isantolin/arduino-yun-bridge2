@@ -6,6 +6,7 @@ import asyncio
 import logging
 import math
 import re
+import json
 from dataclasses import replace
 from typing import TYPE_CHECKING
 from typing import (
@@ -15,9 +16,9 @@ from typing import (
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 
 try:
-    import ujson as json  # type: ignore
-except ImportError:
-    import json
+    import ujson  # type: ignore
+except ImportError:  # pragma: no cover
+    ujson = None  # type: ignore[assignment]
 
 from .protocol.topics import Topic, topic_path
 from .mqtt.messages import QueuedPublish
@@ -27,9 +28,9 @@ logger = logging.getLogger("yunbridge.metrics")
 
 
 if TYPE_CHECKING:
-    from prometheus_client.registry import Collector as _PrometheusCollectorBase
+    from prometheus_client.registry import Collector
 else:
-    class _PrometheusCollectorBase:  # pragma: no cover
+    class Collector:  # pragma: no cover
         pass
 
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
@@ -39,6 +40,12 @@ _INFO_DOC = "YunBridge informational metric"
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
+
+
+def _json_dumps(value: Any) -> str:
+    if ujson is not None:
+        return ujson.dumps(value)
+    return json.dumps(value)
 
 
 def _build_metrics_message(
@@ -54,7 +61,7 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        payload=json.dumps(snapshot).encode("utf-8"),
+        payload=_json_dumps(snapshot).encode("utf-8"),
         content_type="application/json",
         message_expiry_interval=int(expiry_seconds),
     )
@@ -265,7 +272,7 @@ async def publish_bridge_snapshots(
         raise
 
 
-class _RuntimeStateCollector(_PrometheusCollectorBase):
+class _RuntimeStateCollector(Collector):
     """Prometheus collector that projects RuntimeState snapshots."""
 
     def __init__(self, state: RuntimeState) -> None:
@@ -479,7 +486,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=json.dumps(snapshot).encode("utf-8"),
+        payload=_json_dumps(snapshot).encode("utf-8"),
         content_type="application/json",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),

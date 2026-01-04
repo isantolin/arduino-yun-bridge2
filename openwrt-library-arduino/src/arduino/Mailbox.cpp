@@ -3,15 +3,13 @@
 #include <string.h>
 #include "protocol/rpc_protocol.h"
 
-using namespace rpc;
-
 MailboxClass::MailboxClass() 
   : _mailbox_handler(nullptr),
     _mailbox_available_handler(nullptr) {}
 
 void MailboxClass::send(const char* message) {
   if (!message) return;
-  const size_t max_payload = MAX_PAYLOAD_SIZE - 2;
+  const size_t max_payload = rpc::MAX_PAYLOAD_SIZE - 2;
   const auto info = measure_bounded_cstring(message, max_payload);
   if (info.length == 0) {
     return;
@@ -26,7 +24,7 @@ void MailboxClass::send(const char* message) {
 void MailboxClass::send(const uint8_t* data, size_t length) {
   if (!data || length == 0) return;
 
-  size_t max_payload = MAX_PAYLOAD_SIZE - 2;
+  size_t max_payload = rpc::MAX_PAYLOAD_SIZE - 2;
   if (length > max_payload) {
     length = max_payload;
   }
@@ -34,28 +32,28 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
   // [OPTIMIZATION] Use shared scratch buffer
   uint8_t* payload = Bridge.getScratchBuffer();
   
-  write_u16_be(payload, static_cast<uint16_t>(length));
+    rpc::write_u16_be(payload, static_cast<uint16_t>(length));
   memcpy(payload + 2, data, length);
   (void)Bridge.sendFrame(
-      CommandId::CMD_MAILBOX_PUSH,
+      rpc::CommandId::CMD_MAILBOX_PUSH,
       payload, static_cast<uint16_t>(length + 2));
 }
 
 void MailboxClass::requestRead() {
-  (void)Bridge.sendFrame(CommandId::CMD_MAILBOX_READ);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
 void MailboxClass::requestAvailable() {
-  (void)Bridge.sendFrame(CommandId::CMD_MAILBOX_AVAILABLE);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
 void MailboxClass::handleResponse(const rpc::Frame& frame) {
-  const CommandId command = static_cast<CommandId>(frame.header.command_id);
+  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload;
 
   switch (command) {
-    case CommandId::CMD_MAILBOX_READ_RESP:
+    case rpc::CommandId::CMD_MAILBOX_READ_RESP:
       if (_mailbox_handler && payload_length >= 2 && payload_data != nullptr) {
         uint16_t message_len = rpc::read_u16_be(payload_data);
         const size_t expected = static_cast<size_t>(2 + message_len);
@@ -65,13 +63,13 @@ void MailboxClass::handleResponse(const rpc::Frame& frame) {
         }
       }
       break;
-    case CommandId::CMD_MAILBOX_AVAILABLE_RESP:
+    case rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP:
       if (_mailbox_available_handler && payload_length == 1 && payload_data) {
         uint8_t count = payload_data[0];
         _mailbox_available_handler(count);
       }
       break;
-    case CommandId::CMD_MAILBOX_PUSH:
+    case rpc::CommandId::CMD_MAILBOX_PUSH:
       if (_mailbox_handler && payload_length >= 2 && payload_data != nullptr) {
         uint16_t message_len = rpc::read_u16_be(payload_data);
         const size_t expected = static_cast<size_t>(2 + message_len);

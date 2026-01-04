@@ -9,7 +9,7 @@ import pickle
 import threading
 import time
 from pathlib import Path
-from typing import Deque as TypingDeque, Protocol, Callable, cast
+from typing import Deque, Protocol, Callable, cast
 
 try:
     import sqlite3
@@ -147,7 +147,7 @@ class MQTTPublishSpool:
         self.directory = Path(directory)
         self.limit = max(0, limit)
         self._lock = threading.Lock()
-        self._memory_queue: TypingDeque[SpoolRecord] = collections.deque()
+        self._memory_queue: Deque[SpoolRecord] = collections.deque()
         self._disk_queue: DiskQueue | None = None
         self._use_disk = True
         self._dropped_due_to_limit = 0

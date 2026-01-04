@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from yunbridge.protocol.topics import Topic, TopicRoute
 
 McuHandler = Callable[[bytes], Awaitable[bool | None]]
-MqttHandler = Callable[[TopicRoute, MQTTMessage], Awaitable[bool]]
+MqttHandler = Callable[[TopicRoute, Message], Awaitable[bool]]
 
 
 class MCUHandlerRegistry:
@@ -37,7 +37,7 @@ class MQTTRouter:
     async def dispatch(
         self,
         route: TopicRoute,
-        inbound: MQTTMessage,
+        inbound: Message,
     ) -> bool:
         for handler in self._handlers.get(route.topic, []):
             handled = await handler(route, inbound)

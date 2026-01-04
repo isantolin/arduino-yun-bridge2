@@ -6,7 +6,7 @@ import logging
 import struct
 from contextlib import AsyncExitStack
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import ShellAction, Status
@@ -46,7 +46,7 @@ class ShellComponent:
         self,
         parts: list[str],
         payload: bytes,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         action = parts[2] if len(parts) >= 3 else ""
 
@@ -84,7 +84,7 @@ class ShellComponent:
     async def _handle_shell_run(
         self,
         payload: ShellCommandPayload,
-        inbound: MQTTMessage | None,
+        inbound: Message | None,
     ) -> None:
         command = payload.command
         logger.info("Executing shell command from MQTT: '%s'", command)
@@ -146,7 +146,7 @@ class ShellComponent:
     async def _handle_run_async(
         self,
         payload: ShellCommandPayload,
-        inbound: MQTTMessage | None,
+        inbound: Message | None,
     ) -> None:
         command = payload.command
         logger.info("MQTT async shell command: '%s'", command)

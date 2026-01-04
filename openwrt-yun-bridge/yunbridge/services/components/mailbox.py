@@ -6,7 +6,7 @@ import json
 import logging
 import struct
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
     UINT8_MASK,
@@ -168,7 +168,7 @@ class MailboxComponent:
         self,
         action: str,
         payload: bytes,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         match action:
             case MailboxAction.WRITE:
@@ -181,7 +181,7 @@ class MailboxComponent:
     async def _handle_mqtt_write(
         self,
         payload: bytes,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         if not self.state.enqueue_mailbox_message(payload, logger):
             await self._handle_outgoing_overflow(len(payload), inbound)
@@ -200,7 +200,7 @@ class MailboxComponent:
 
     async def _handle_mqtt_read(
         self,
-        inbound: MQTTMessage | None = None,
+        inbound: Message | None = None,
     ) -> None:
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
@@ -247,7 +247,7 @@ class MailboxComponent:
     async def _handle_outgoing_overflow(
         self,
         payload_size: int,
-        inbound: MQTTMessage | None,
+        inbound: Message | None,
     ) -> None:
         queue_len = len(self.state.mailbox_queue)
         logger.error(

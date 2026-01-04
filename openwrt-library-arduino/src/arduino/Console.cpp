@@ -5,8 +5,6 @@
 
 #include "protocol/rpc_protocol.h"
 
-using namespace rpc;
-
 ConsoleClass::ConsoleClass()
     : _begun(false),
       _rx_buffer_head(0),
@@ -62,9 +60,9 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   size_t transmitted = 0;
   while (remaining > 0) {
     size_t chunk_size =
-        remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
+        remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
     if (!Bridge.sendFrame(
-            CommandId::CMD_CONSOLE_WRITE,
+            rpc::CommandId::CMD_CONSOLE_WRITE,
             buffer + offset, chunk_size)) {
       break;
     }
@@ -108,7 +106,7 @@ int ConsoleClass::read() {
   const size_t capacity = sizeof(_rx_buffer);
   const size_t low_water = (capacity * 1) / 4;
   if (_xoff_sent && (size_t)available() < low_water) {
-    if (Bridge.sendFrame(CommandId::CMD_XON)) {
+    if (Bridge.sendFrame(rpc::CommandId::CMD_XON)) {
       _xoff_sent = false;
     }
   }
@@ -125,9 +123,9 @@ void ConsoleClass::flush() {
     size_t remaining = _tx_buffer_pos;
     size_t offset = 0;
     while (remaining > 0) {
-      size_t chunk = remaining > MAX_PAYLOAD_SIZE ? MAX_PAYLOAD_SIZE : remaining;
+      size_t chunk = remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
       if (!Bridge.sendFrame(
-              CommandId::CMD_CONSOLE_WRITE,
+              rpc::CommandId::CMD_CONSOLE_WRITE,
               _tx_buffer + offset, chunk)) {
         break;
       }
@@ -156,7 +154,7 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
 
   const size_t high_water = (capacity * 3) / 4;
   if (!_xoff_sent && (size_t)available() > high_water) {
-    if (Bridge.sendFrame(CommandId::CMD_XOFF)) {
+    if (Bridge.sendFrame(rpc::CommandId::CMD_XOFF)) {
         _xoff_sent = true;
     }
   }

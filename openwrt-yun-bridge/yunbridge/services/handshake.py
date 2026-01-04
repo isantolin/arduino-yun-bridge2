@@ -21,7 +21,7 @@ from ..const import (
 )
 from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import handshake_topic
-from ..rpc import protocol as rpc_protocol
+from ..rpc import protocol
 from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from ..state.context import RuntimeState
 
@@ -60,19 +60,19 @@ def _seconds_to_ms(value: float) -> int:
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
     ack_ms = _clamp(
         _seconds_to_ms(config.serial_retry_timeout),
-        rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
-        rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
+        protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
+        protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
     )
     response_ms = _clamp(
         _seconds_to_ms(config.serial_response_timeout),
-        rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
-        rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
+        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
+        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
     )
     response_ms = max(response_ms, ack_ms)
     retry_limit = _clamp(
         int(config.serial_retry_attempts),
-        rpc_protocol.HANDSHAKE_RETRY_LIMIT_MIN,
-        rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX,
+        protocol.HANDSHAKE_RETRY_LIMIT_MIN,
+        protocol.HANDSHAKE_RETRY_LIMIT_MAX,
     )
     return SerialTimingWindow(
         ack_timeout_ms=ack_ms,
@@ -121,7 +121,7 @@ class SerialHandshakeManager:
 
     async def synchronize(self) -> bool:
         await self._respect_handshake_backoff()
-        nonce_length = rpc_protocol.HANDSHAKE_NONCE_LENGTH
+        nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
         self._state.record_handshake_attempt()
         nonce = os.urandom(nonce_length)
         self._state.link_handshake_nonce = nonce
@@ -178,7 +178,7 @@ class SerialHandshakeManager:
             return False
 
         nonce_length = self._state.link_nonce_length or len(expected)
-        required_length = nonce_length + rpc_protocol.HANDSHAKE_TAG_LENGTH
+        required_length = nonce_length + protocol.HANDSHAKE_TAG_LENGTH
         rate_limit = self._config.serial_handshake_min_interval
         if rate_limit > 0:
             now = time.monotonic()
@@ -218,7 +218,7 @@ class SerialHandshakeManager:
 
         nonce_mismatch = nonce != expected
         missing_expected_tag = expected_tag is None
-        bad_tag_length = len(tag_bytes) != rpc_protocol.HANDSHAKE_TAG_LENGTH
+        bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
             self._logger.warning(
@@ -421,7 +421,7 @@ class SerialHandshakeManager:
         if not secret:
             return b""
         digest = hmac.new(secret, nonce, hashlib.sha256).digest()
-        return digest[: rpc_protocol.HANDSHAKE_TAG_LENGTH]
+        return digest[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
         return self._compute_handshake_tag(nonce)
@@ -431,7 +431,7 @@ class SerialHandshakeManager:
         return self.calculate_handshake_tag(secret, nonce)
 
     def _build_reset_payload(self) -> bytes:
-        fmt = rpc_protocol.HANDSHAKE_CONFIG_FORMAT
+        fmt = protocol.HANDSHAKE_CONFIG_FORMAT
         if not fmt:
             return b""
         packed = struct.pack(

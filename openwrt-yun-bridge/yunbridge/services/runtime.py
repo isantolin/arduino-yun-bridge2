@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import replace
 from typing import Any
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
 from ..const import TOPIC_FORBIDDEN_REASON
@@ -286,7 +286,7 @@ class BridgeService:
                 payload.hex(),
             )
 
-    async def handle_mqtt_message(self, inbound: MQTTMessage) -> None:
+    async def handle_mqtt_message(self, inbound: Message) -> None:
         inbound_topic = str(inbound.topic)
         try:
             await self._dispatcher.dispatch_mqtt_message(
@@ -303,7 +303,7 @@ class BridgeService:
         self,
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         """Enqueues an MQTT message for publishing.
 
@@ -315,7 +315,7 @@ class BridgeService:
 
         Args:
             message: The `QueuedPublish` object to enqueue.
-            reply_context: An optional `MQTTMessage` that triggered this publish,
+            reply_context: An optional `Message` that triggered this publish,
                            used to derive `ResponseTopic` and `CorrelationData` for replies.
         """
         message_to_queue = message
@@ -510,7 +510,7 @@ class BridgeService:
     async def _publish_bridge_snapshot(
         self,
         flavor: str,
-        inbound: MQTTMessage | None,
+        inbound: Message | None,
     ) -> None:
         if flavor == "handshake":
             snapshot = self.state.build_handshake_snapshot()
@@ -544,7 +544,7 @@ class BridgeService:
 
     async def _reject_topic_action(
         self,
-        inbound: MQTTMessage,
+        inbound: Message,
         topic_type: Topic | str,
         action: str,
     ) -> None:

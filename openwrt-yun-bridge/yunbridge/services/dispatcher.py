@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Callable, Awaitable
 from yunbridge.rpc.protocol import (
     Command,
     Status,
-    STATUS_CODE_MIN,
 )
 from yunbridge.rpc.contracts import response_to_request
 from yunbridge.protocol.topics import Topic, TopicRoute

@@ -10,6 +10,7 @@ import shlex
 import ssl
 import uuid
 from contextlib import AsyncExitStack
+from pathlib import Path
 from typing import Any, TypedDict, cast
 from collections.abc import Iterable, Sequence
 
@@ -70,7 +71,10 @@ def _default_tls_context() -> ssl.SSLContext | None:
     if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
         return None
     try:
-        cafile = _UCI_GENERAL.get("mqtt_cafile")
+        cafile = (_UCI_GENERAL.get("mqtt_cafile") or "").strip()
+        if not cafile and Path("/etc/ssl/certs/ca-certificates.crt").exists():
+            cafile = "/etc/ssl/certs/ca-certificates.crt"
+
         if cafile:
             ctx = ssl.create_default_context(cafile=cafile)
         else:

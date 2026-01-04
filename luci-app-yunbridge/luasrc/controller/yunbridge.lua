@@ -164,6 +164,7 @@ function action_api(...)
     local port = uci:get("yunbridge", "general", "mqtt_port") or "8883"
     local topic_prefix = uci:get("yunbridge", "general", "mqtt_topic") or "br"
     local tls = uci:get("yunbridge", "general", "mqtt_tls") or "1"
+    local tls_insecure = uci:get("yunbridge", "general", "mqtt_tls_insecure") or "0"
     local cafile = uci:get("yunbridge", "general", "mqtt_cafile") or ""
 
     -- Prepare mosquitto_pub arguments without relying on a shell
@@ -184,7 +185,21 @@ function action_api(...)
         if cafile ~= "" then
             pub_args[#pub_args + 1] = "--cafile"
             pub_args[#pub_args + 1] = cafile
+        else
+            -- Match daemon defaults: if UCI cafile is empty, fall back to system bundle/capath.
+            if fs.access("/etc/ssl/certs/ca-certificates.crt") then
+                pub_args[#pub_args + 1] = "--cafile"
+                pub_args[#pub_args + 1] = "/etc/ssl/certs/ca-certificates.crt"
+            elseif fs.access("/etc/ssl/certs") then
+                pub_args[#pub_args + 1] = "--capath"
+                pub_args[#pub_args + 1] = "/etc/ssl/certs"
+            end
         end
+
+        if tls_insecure == "1" then
+            pub_args[#pub_args + 1] = "--insecure"
+        end
+
         pub_args[#pub_args + 1] = "--tls-version"
         pub_args[#pub_args + 1] = "tlsv1.2"
     end
@@ -203,7 +218,7 @@ function action_api(...)
             status = "error",
             message = "Failed to execute mosquitto_pub. Is mosquitto-client installed?",
             detail = last_error,
-            argv = args
+            argv = pub_args
         })
     end
 end

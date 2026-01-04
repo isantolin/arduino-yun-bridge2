@@ -132,6 +132,14 @@ class SerialHandshakeManager:
             Command.CMD_LINK_RESET.value,
             self._reset_payload,
         )
+        if not reset_ok and self._reset_payload:
+            self._logger.warning(
+                "LINK_RESET rejected; retrying without timing payload (legacy firmware?)"
+            )
+            reset_ok = await self._send_frame(
+                Command.CMD_LINK_RESET.value,
+                b"",
+            )
         if not reset_ok:
             self._logger.warning("Failed to emit LINK_RESET during handshake")
             self._clear_handshake_expectations()

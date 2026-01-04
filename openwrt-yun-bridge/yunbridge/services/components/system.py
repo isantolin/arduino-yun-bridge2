@@ -143,11 +143,7 @@ class SystemComponent:
         remainder: list[str],
         inbound: MQTTMessage | None = None,
     ) -> bool:
-        if (
-            identifier == SystemAction.FREE_MEMORY
-            and remainder
-            and remainder[0] == SystemAction.GET
-        ):
+        if identifier == SystemAction.FREE_MEMORY and remainder and remainder[0] == SystemAction.GET:
             if inbound is not None:
                 self._pending_free_memory.append(inbound)
             await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")

@@ -154,6 +154,56 @@ def test_on_serial_connected_flushes_console_queue(
     asyncio.run(_run())
 
 
+def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+
+        sent_frames: list[tuple[int, bytes]] = []
+
+        flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
+
+        async def fake_sender(command_id: int, payload: bytes) -> bool:
+            sent_frames.append((command_id, payload))
+
+            if command_id == Command.CMD_LINK_RESET.value:
+                if payload:
+                    flow.on_frame_received(Status.MALFORMED.value, b"")
+                else:
+                    await service.handle_mcu_frame(
+                        Command.CMD_LINK_RESET_RESP.value,
+                        b"",
+                    )
+            elif command_id == Command.CMD_LINK_SYNC.value:
+                nonce = service.state.link_handshake_nonce or b""
+                tag = service._compute_handshake_tag(nonce)
+                response = nonce + tag
+                await service.handle_mcu_frame(
+                    Command.CMD_LINK_SYNC_RESP.value,
+                    response,
+                )
+            return True
+
+        service.register_serial_sender(fake_sender)
+
+        await service.on_serial_connected()
+
+        reset_payloads = [
+            payload
+            for frame_id, payload in sent_frames
+            if frame_id == Command.CMD_LINK_RESET.value
+        ]
+        assert len(reset_payloads) >= 2
+        assert len(reset_payloads[0]) == rpc_protocol.HANDSHAKE_CONFIG_SIZE
+        assert reset_payloads[1] == b""
+        assert runtime_state.handshake_successes == 1
+        assert runtime_state.serial_link_connected is True
+
+    asyncio.run(_run())
+
+
 def test_sync_link_rejects_invalid_handshake_tag(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:

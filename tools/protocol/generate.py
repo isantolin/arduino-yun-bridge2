@@ -155,6 +155,7 @@ def _write_python_mqtt_subscriptions(out: TextIO, spec: dict[str, Any]) -> None:
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
+    out.write('#include <stddef.h>\n')
     out.write('#include <stdint.h>\n\n')
 
     out.write("namespace rpc {\n\n")
@@ -544,22 +545,49 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
 
 
 def main() -> None:
+    default_spec = Path(__file__).resolve().parent / "spec.toml"
+    default_cpp = (
+        Path(__file__).resolve().parents[2]
+        / "openwrt-library-arduino"
+        / "src"
+        / "protocol"
+        / "rpc_protocol.h"
+    )
+    default_py = (
+        Path(__file__).resolve().parents[2]
+        / "openwrt-yun-bridge"
+        / "yunbridge"
+        / "rpc"
+        / "protocol.py"
+    )
+
     parser = argparse.ArgumentParser(description="Generate protocol bindings")
-    parser.add_argument("--spec", type=Path, required=True, help="Path to spec.toml")
-    parser.add_argument("--cpp", type=Path, help="Output C++ header")
-    parser.add_argument("--py", type=Path, help="Output Python module")
+    parser.add_argument(
+        "--spec",
+        type=Path,
+        default=default_spec,
+        help=f"Path to spec.toml (default: {default_spec})",
+    )
+    parser.add_argument("--cpp", type=Path, help=f"Output C++ header (default: {default_cpp})")
+    parser.add_argument("--py", type=Path, help=f"Output Python module (default: {default_py})")
     args = parser.parse_args()
+
+    if args.cpp is None and args.py is None:
+        args.cpp = default_cpp
+        args.py = default_py
 
     with args.spec.open("rb") as f:
         spec = tomllib.load(f)
 
-    if args.cpp:
-        with args.cpp.open("w") as f:
+    if args.cpp is not None:
+        args.cpp.parent.mkdir(parents=True, exist_ok=True)
+        with args.cpp.open("w", encoding="utf-8") as f:
             generate_cpp(spec, f)
         sys.stdout.write(f"Generated {args.cpp}\n")
 
-    if args.py:
-        with args.py.open("w") as f:
+    if args.py is not None:
+        args.py.parent.mkdir(parents=True, exist_ok=True)
+        with args.py.open("w", encoding="utf-8") as f:
             generate_python(spec, f)
         sys.stdout.write(f"Generated {args.py}\n")
 

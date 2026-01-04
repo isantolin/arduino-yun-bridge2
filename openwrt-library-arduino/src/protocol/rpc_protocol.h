@@ -7,6 +7,7 @@
 #ifndef RPC_PROTOCOL_H
 #define RPC_PROTOCOL_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace rpc {

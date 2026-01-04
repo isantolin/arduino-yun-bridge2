@@ -12,7 +12,7 @@ from yunbridge.rpc.protocol import (
     Status,
     UINT8_MASK,
 )
-from yunbridge.tools import frame_debug
+from tools import frame_debug
 from tests.test_constants import TEST_BROKEN_CRC
 
 
@@ -104,7 +104,7 @@ def test_iter_counts() -> None:
     assert next(gen) == 2
 
 
-@patch("yunbridge.tools.frame_debug.serial.Serial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_dry_run(mock_serial_cls: MagicMock) -> None:
     # Test running without --port (dry run)
     ret = frame_debug.main(
@@ -119,7 +119,7 @@ def test_main_dry_run(mock_serial_cls: MagicMock) -> None:
     mock_serial_cls.assert_not_called()
 
 
-@patch("yunbridge.tools.frame_debug.serial.Serial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_with_serial_write(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10
@@ -141,7 +141,7 @@ def test_main_with_serial_write(mock_serial_cls: MagicMock) -> None:
     mock_serial.close.assert_called()
 
 
-@patch("yunbridge.tools.frame_debug.serial.Serial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_with_serial_read_timeout(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10
@@ -164,7 +164,7 @@ def test_main_with_serial_read_timeout(mock_serial_cls: MagicMock) -> None:
     mock_serial.read.assert_called()
 
 
-@patch("yunbridge.tools.frame_debug.serial.Serial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10
@@ -174,7 +174,7 @@ def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     # Let's just use a simple mocked read sequence
     mock_serial.read.side_effect = [bytes([1]), FRAME_DELIMITER, b""]
 
-    with patch("yunbridge.tools.frame_debug._decode_frame") as mock_decode:
+    with patch("tools.frame_debug._decode_frame") as mock_decode:
         mock_decode.return_value = frame_debug.Frame(
             Status.OK.value, b"response"
         )

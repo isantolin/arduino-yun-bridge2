@@ -88,6 +88,7 @@ COMPILE_FLAGS=(
   -fprofile-arcs
   -ftest-coverage
   -I"${SRC_ROOT}"
+  -I"${TEST_ROOT}/mocks"
   -I"${STUB_INCLUDE}"
 )
 

@@ -12,7 +12,6 @@ default_ack_timeout_ms = 200
 default_retry_limit = 5
 max_pending_tx_frames = 2
 invalid_id_sentinel = 0xFFFF
-response_offset = 0x80
 uint8_mask = 0xFF
 uint16_max = 0xFFFF
 process_default_exit_code = 0xFF

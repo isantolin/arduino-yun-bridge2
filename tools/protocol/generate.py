@@ -198,10 +198,6 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint16_t RPC_INVALID_ID_SENTINEL = {consts['invalid_id_sentinel']};\n"
         )
-    if "response_offset" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_RESPONSE_OFFSET = {consts['response_offset']};\n"
-        )
     if "uint8_mask" in consts:
         out.write(
             f"constexpr uint8_t RPC_UINT8_MASK = {consts['uint8_mask']};\n"
@@ -343,10 +339,6 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if "invalid_id_sentinel" in consts:
         out.write(
             f"INVALID_ID_SENTINEL: Final[int] = {consts['invalid_id_sentinel']}\n"
-        )
-    if "response_offset" in consts:
-        out.write(
-            f"RESPONSE_OFFSET: Final[int] = {consts['response_offset']}\n"
         )
     if "uint8_mask" in consts:
         out.write(

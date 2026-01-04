@@ -7,6 +7,7 @@ import logging
 import math
 import re
 from dataclasses import replace
+from typing import TYPE_CHECKING
 from typing import (
     Any,
     cast,
@@ -23,6 +24,13 @@ from .mqtt.messages import QueuedPublish
 from .state.context import RuntimeState
 
 logger = logging.getLogger("yunbridge.metrics")
+
+
+if TYPE_CHECKING:
+    from prometheus_client.registry import Collector as _PrometheusCollectorBase
+else:
+    class _PrometheusCollectorBase:  # pragma: no cover
+        pass
 
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 _INFO_METRIC = "yunbridge_info"
@@ -257,7 +265,7 @@ async def publish_bridge_snapshots(
         raise
 
 
-class _RuntimeStateCollector:
+class _RuntimeStateCollector(_PrometheusCollectorBase):
     """Prometheus collector that projects RuntimeState snapshots."""
 
     def __init__(self, state: RuntimeState) -> None:

@@ -11,7 +11,6 @@ import pytest
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
@@ -41,7 +40,7 @@ def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -352,7 +351,7 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
     with patch.object(process_mod.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-                ok = await process_component.handle_kill(struct.pack(">H", pid))
+                ok = await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -384,7 +383,7 @@ async def test_handle_kill_process_lookup_error_is_handled(process_component: Pr
         side_effect=ProcessLookupError,
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(struct.pack(">H", pid))
+            ok = await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -416,7 +415,7 @@ async def test_handle_kill_unexpected_exception_is_handled(process_component: Pr
         side_effect=RuntimeError("boom"),
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(struct.pack(">H", pid))
+            ok = await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
 
     assert ok is True
     mock_term.assert_awaited_once()

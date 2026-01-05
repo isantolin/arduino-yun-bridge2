@@ -242,7 +242,7 @@ class PinComponent:
         )
         await self.ctx.send_frame(
             command.value,
-            struct.pack(">BB", pin, value),
+            struct.pack(protocol.PIN_WRITE_FORMAT, pin, value),
         )
 
     def _parse_pin_identifier(self, pin_str: str) -> int:

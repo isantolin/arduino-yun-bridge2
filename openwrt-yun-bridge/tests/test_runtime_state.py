@@ -13,6 +13,7 @@ import pytest
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.mqtt.spool import MQTTPublishSpool
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, Status
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
@@ -314,7 +315,10 @@ def test_stash_mqtt_message_disables_spool_on_failure(
                 return None
 
         state.mqtt_spool = cast(MQTTPublishSpool, _BrokenSpool())
-        message = QueuedPublish(topic_name="br/test", payload=b"{}")
+        message = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+            payload=b"{}",
+        )
         stored = await state.stash_mqtt_message(message)
 
         assert stored is False
@@ -377,7 +381,10 @@ def test_spool_fallback_updates_state(
         monkeypatch.setattr(queue, "append", _boom)
 
         stored = await state.stash_mqtt_message(
-            QueuedPublish(topic_name="br/test", payload=b"{}")
+            QueuedPublish(
+                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+                payload=b"{}",
+            )
         )
 
         assert stored is True

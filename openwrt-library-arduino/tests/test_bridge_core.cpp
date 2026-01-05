@@ -529,7 +529,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     stream.clear_tx();
 
     // Send a command that requires ACK.
-    const uint8_t payload[] = {0x01};
+    const uint8_t payload[] = {TEST_BYTE_01};
     g_test_millis = 0;
     TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload)));
     TEST_ASSERT(bridge._awaiting_ack);
@@ -577,7 +577,7 @@ void test_bridge_pending_queue_flush_failure_requeues() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     bridge._synchronized = true;
 
-    const uint8_t payload[] = {0xAA};
+    const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
     g_test_millis = 0;
     stream.clear_tx();
 
@@ -614,7 +614,7 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
 
     uint8_t big[rpc::MAX_PAYLOAD_SIZE + 1];
-    test_memfill(big, sizeof(big), 0xBB);
+    test_memfill(big, sizeof(big), TEST_BYTE_BB);
     TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), big, sizeof(big)));
 
     // Fill queue.

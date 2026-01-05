@@ -3,11 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Must be defined before including Bridge.h to expose private fields on host.
-#define BRIDGE_HOST_TEST 1
-
+// Host tests may introspect internals; use the private/public override pattern.
+#define private public
+#define protected public
 #include "Bridge.h"
 #include "arduino/BridgeTransport.h"
+#undef private
+#undef protected
 #include "protocol/cobs.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"

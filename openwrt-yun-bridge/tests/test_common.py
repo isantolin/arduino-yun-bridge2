@@ -141,18 +141,21 @@ def test_encode_status_reason_trims_to_max_payload() -> None:
 
 
 def test_build_mqtt_properties_returns_none_when_empty() -> None:
-    message = QueuedPublish(topic_name="br/test", payload=b"hi")
+    message = QueuedPublish(
+        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+        payload=b"hi",
+    )
     assert build_mqtt_properties(message) is None
 
 
 def test_build_mqtt_properties_populates_fields() -> None:
     message = QueuedPublish(
-        topic_name="br/test",
+        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hi",
         content_type="text/plain",
         payload_format_indicator=1,
         message_expiry_interval=10,
-        response_topic="br/response",
+        response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response",
         correlation_data=b"cid",
         user_properties=(("k", "v"),),
     )
@@ -161,7 +164,7 @@ def test_build_mqtt_properties_populates_fields() -> None:
     assert props.ContentType == "text/plain"
     assert props.PayloadFormatIndicator == 1
     assert props.MessageExpiryInterval == 10
-    assert props.ResponseTopic == "br/response"
+    assert props.ResponseTopic == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"
     assert props.CorrelationData == b"cid"
     assert ("k", "v") in list(props.UserProperty)
 

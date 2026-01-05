@@ -3,16 +3,16 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from yunbridge.state import context
-from yunbridge.rpc.protocol import Status
+from yunbridge.rpc.protocol import Status, UINT8_MASK
 
 
 def test_command_name_formats_unknown_command_id() -> None:
-    assert context._command_name(0xFF) == "0xFF"
+    assert context._command_name(UINT8_MASK) == "0xFF"
 
 
 def test_status_label_covers_none_and_unknown_code() -> None:
     assert context._status_label(None) == "unknown"
-    assert context._status_label(0xFF) == "0xFF"
+    assert context._status_label(UINT8_MASK) == "0xFF"
 
 
 def test_status_label_returns_enum_name_for_known_status() -> None:

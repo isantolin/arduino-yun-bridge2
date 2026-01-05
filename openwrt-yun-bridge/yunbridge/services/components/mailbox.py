@@ -47,11 +47,11 @@ class MailboxComponent:
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
-            "processed",
+            MailboxAction.PROCESSED,
         )
         message_id: int | None = None
         if len(payload) >= 2:
-            message_id = struct.unpack(">H", payload[:2])[0]
+            message_id = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
 
         if message_id is not None:
             body = json.dumps({"message_id": message_id}).encode("utf-8")
@@ -69,7 +69,7 @@ class MailboxComponent:
             )
             return False
 
-        msg_len = struct.unpack(">H", payload[:2])[0]
+        msg_len = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
         data = payload[2:2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
@@ -87,14 +87,14 @@ class MailboxComponent:
             )
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("mailbox_incoming_overflow"),
+                encode_status_reason(protocol.STATUS_REASON_MAILBOX_INCOMING_OVERFLOW),
             )
             return False
 
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
-            "incoming",
+            MailboxAction.INCOMING,
         )
         await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=data))
 
@@ -205,7 +205,7 @@ class MailboxComponent:
         topic = self.state.mailbox_incoming_topic or topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
-            "incoming",
+            MailboxAction.INCOMING,
         )
 
         if self.state.mailbox_incoming_queue:
@@ -263,18 +263,18 @@ class MailboxComponent:
         )
         await self.ctx.send_frame(
             Status.ERROR.value,
-            encode_status_reason("mailbox_outgoing_overflow"),
+            encode_status_reason(protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW),
         )
         await self._publish_outgoing_available()
         overflow_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.MAILBOX,
-            "errors",
+            MailboxAction.ERRORS,
         )
         body = json.dumps(
             {
                 "event": "write_overflow",
-                "reason": "mailbox_outgoing_overflow",
+                "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,
                 "queue_size": queue_len,
                 "queue_limit": self.state.mailbox_queue_limit,
                 "queue_bytes_limit": self.state.mailbox_queue_bytes_limit,

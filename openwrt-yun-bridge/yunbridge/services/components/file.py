@@ -62,7 +62,7 @@ class FileComponent:
             logger.warning("Security Alert: Path traversal attempt blocked: %s", path)
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("invalid_path"),
+                encode_status_reason(protocol.STATUS_REASON_INVALID_PATH),
             )
             return False
 
@@ -70,7 +70,7 @@ class FileComponent:
             logger.warning("Security Alert: Absolute paths not allowed: %s", path)
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("invalid_path"),
+                encode_status_reason(protocol.STATUS_REASON_INVALID_PATH),
             )
             return False
 
@@ -87,11 +87,12 @@ class FileComponent:
             FileAction.WRITE, path, file_data
         )
         if success:
+            await self.ctx.send_frame(Status.OK.value, b"")
             return True
 
         await self.ctx.send_frame(
             Status.ERROR.value,
-            encode_status_reason(reason or "write_failed"),
+            encode_status_reason(reason or protocol.STATUS_REASON_WRITE_FAILED),
         )
         return False
 
@@ -113,7 +114,7 @@ class FileComponent:
         if not success:
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason(reason or "read_failed"),
+                encode_status_reason(reason or protocol.STATUS_REASON_READ_FAILED),
             )
             return
 
@@ -145,11 +146,12 @@ class FileComponent:
             FileAction.REMOVE, filename
         )
         if success:
+            await self.ctx.send_frame(Status.OK.value, b"")
             return True
 
         await self.ctx.send_frame(
             Status.ERROR.value,
-            encode_status_reason(reason or "remove_failed"),
+            encode_status_reason(reason or protocol.STATUS_REASON_REMOVE_FAILED),
         )
         return False
 

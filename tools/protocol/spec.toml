@@ -56,6 +56,25 @@ pin_write_format = ">BB"
 incoming_available = "incoming_available"
 outgoing_available = "outgoing_available"
 response = "response"
+error = "error"
+
+[mqtt_defaults]
+default_topic_prefix = "br"
+
+[status_reasons]
+invalid_path = "invalid_path"
+read_failed = "read_failed"
+remove_failed = "remove_failed"
+write_failed = "write_failed"
+mailbox_incoming_overflow = "mailbox_incoming_overflow"
+mailbox_outgoing_overflow = "mailbox_outgoing_overflow"
+process_limit_reached = "process_limit_reached"
+command_validation_failed = "command_validation_failed"
+process_run_async_failed = "process_run_async_failed"
+process_run_internal_error = "process_run_internal_error"
+process_kill_malformed = "process_kill_malformed"
+process_not_found = "process_not_found"
+process_kill_failed = "process_kill_failed"
 
 # MQTT command subscriptions (daemon inbound).
 # These define which topics the daemon must subscribe to in order to receive
@@ -272,9 +291,25 @@ name = "CONSOLE_IN"
 value = "in"
 description = "Console input"
 [[actions]]
+name = "CONSOLE_OUT"
+value = "out"
+description = "Console output"
+[[actions]]
 name = "MAILBOX_READ"
 value = "read"
 description = "Read from mailbox"
+[[actions]]
+name = "MAILBOX_INCOMING"
+value = "incoming"
+description = "Mailbox incoming messages"
+[[actions]]
+name = "MAILBOX_PROCESSED"
+value = "processed"
+description = "Mailbox processed notifications"
+[[actions]]
+name = "MAILBOX_ERRORS"
+value = "errors"
+description = "Mailbox error topic"
 [[actions]]
 name = "SYSTEM_FREE_MEMORY"
 value = "free_memory"
@@ -291,6 +326,30 @@ description = "System TX debug snapshot"
 name = "SYSTEM_GET"
 value = "get"
 description = "Get system info"
+[[actions]]
+name = "SYSTEM_VALUE"
+value = "value"
+description = "Value payload segment"
+[[actions]]
+name = "SYSTEM_METRICS"
+value = "metrics"
+description = "Metrics topic"
+[[actions]]
+name = "SYSTEM_BRIDGE"
+value = "bridge"
+description = "Bridge snapshots"
+[[actions]]
+name = "SYSTEM_HANDSHAKE"
+value = "handshake"
+description = "Handshake snapshot"
+[[actions]]
+name = "SYSTEM_SUMMARY"
+value = "summary"
+description = "Bridge summary snapshot"
+[[actions]]
+name = "SYSTEM_STATE"
+value = "state"
+description = "Bridge state snapshot"
 [[actions]]
 name = "DIGITAL_WRITE"
 value = "write"

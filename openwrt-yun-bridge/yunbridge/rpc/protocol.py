@@ -65,7 +65,24 @@ MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
 MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
 MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
 MQTT_SUFFIX_RESPONSE: Final[str] = "response"
+MQTT_SUFFIX_ERROR: Final[str] = "error"
 
+
+MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"
+
+STATUS_REASON_COMMAND_VALIDATION_FAILED: Final[str] = "command_validation_failed"
+STATUS_REASON_INVALID_PATH: Final[str] = "invalid_path"
+STATUS_REASON_MAILBOX_INCOMING_OVERFLOW: Final[str] = "mailbox_incoming_overflow"
+STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW: Final[str] = "mailbox_outgoing_overflow"
+STATUS_REASON_PROCESS_KILL_FAILED: Final[str] = "process_kill_failed"
+STATUS_REASON_PROCESS_KILL_MALFORMED: Final[str] = "process_kill_malformed"
+STATUS_REASON_PROCESS_LIMIT_REACHED: Final[str] = "process_limit_reached"
+STATUS_REASON_PROCESS_NOT_FOUND: Final[str] = "process_not_found"
+STATUS_REASON_PROCESS_RUN_ASYNC_FAILED: Final[str] = "process_run_async_failed"
+STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR: Final[str] = "process_run_internal_error"
+STATUS_REASON_READ_FAILED: Final[str] = "read_failed"
+STATUS_REASON_REMOVE_FAILED: Final[str] = "remove_failed"
+STATUS_REASON_WRITE_FAILED: Final[str] = "write_failed"
 
 MQTT_WILDCARD_SINGLE: Final[str] = "+"
 MQTT_WILDCARD_MULTI: Final[str] = "#"
@@ -99,6 +116,9 @@ class ShellAction(StrEnum):
 class MailboxAction(StrEnum):
     WRITE = "write"  # Write to mailbox
     READ = "read"  # Read from mailbox
+    INCOMING = "incoming"  # Mailbox incoming messages
+    PROCESSED = "processed"  # Mailbox processed notifications
+    ERRORS = "errors"  # Mailbox error topic
 
 
 class DatastoreAction(StrEnum):
@@ -113,6 +133,7 @@ class PinAction(StrEnum):
 
 class ConsoleAction(StrEnum):
     IN = "in"  # Console input
+    OUT = "out"  # Console output
     INPUT = "input"  # Console input action
 
 
@@ -121,6 +142,12 @@ class SystemAction(StrEnum):
     VERSION = "version"  # System version
     TX_DEBUG = "tx_debug"  # System TX debug snapshot
     GET = "get"  # Get system info
+    VALUE = "value"  # Value payload segment
+    METRICS = "metrics"  # Metrics topic
+    BRIDGE = "bridge"  # Bridge snapshots
+    HANDSHAKE = "handshake"  # Handshake snapshot
+    SUMMARY = "summary"  # Bridge summary snapshot
+    STATE = "state"  # Bridge state snapshot
 
 
 class DigitalAction(StrEnum):
@@ -152,9 +179,9 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
     (Topic.SYSTEM, (SystemAction.FREE_MEMORY.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.VERSION.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.TX_DEBUG.value, SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, ("bridge", "handshake", SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, ("bridge", "summary", SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, ("bridge", "state", SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.HANDSHAKE.value, SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.SUMMARY.value, SystemAction.GET.value,), 0),
+    (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.STATE.value, SystemAction.GET.value,), 0),
     (Topic.FILE, (FileAction.WRITE.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.FILE, (FileAction.READ.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.FILE, (FileAction.REMOVE.value, MQTT_WILDCARD_MULTI,), 0),

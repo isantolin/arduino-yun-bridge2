@@ -85,6 +85,31 @@ async def test_handle_write_and_read_roundtrip(
 
 
 @pytest.mark.asyncio
+async def test_handle_write_sends_ok_on_success(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    component, bridge = file_component
+    payload = _build_write_payload("ok.txt", b"abc")
+    assert await component.handle_write(payload) is True
+    assert (tmp_path / "ok.txt").exists()
+    assert bridge.sent_frames[-1][0] == Status.OK.value
+
+
+@pytest.mark.asyncio
+async def test_handle_remove_sends_ok_on_success(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    component, bridge = file_component
+    (tmp_path / "rm.txt").write_text("x", encoding="utf-8")
+    payload = bytes([6]) + b"rm.txt"
+    assert await component.handle_remove(payload) is True
+    assert not (tmp_path / "rm.txt").exists()
+    assert bridge.sent_frames[-1][0] == Status.OK.value
+
+
+@pytest.mark.asyncio
 async def test_handle_read_truncated_payload(
     file_component: tuple[FileComponent, DummyBridge],
     tmp_path: Path,

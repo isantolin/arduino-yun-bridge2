@@ -125,11 +125,7 @@ class BridgeClass {
   void resetTxDebugStats() {}
 #endif
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  private:
-#endif
   bridge::BridgeTransport _transport;
   const uint8_t* _shared_secret;
   size_t _shared_secret_len;
@@ -246,11 +242,7 @@ class DataStoreClass {
   void handleResponse(const rpc::Frame& frame);
   void onDataStoreGetResponse(DataStoreGetHandler handler);
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  private:
-#endif
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
@@ -276,11 +268,7 @@ class MailboxClass {
   void onMailboxMessage(MailboxHandler handler);
   void onMailboxAvailableResponse(MailboxAvailableHandler handler);
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  private:
-#endif
   MailboxHandler _mailbox_handler;
   MailboxAvailableHandler _mailbox_available_handler;
 };
@@ -296,11 +284,7 @@ class FileSystemClass {
   void handleResponse(const rpc::Frame& frame);
   void onFileSystemReadResponse(FileSystemReadHandler handler);
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  private:
-#endif
   FileSystemReadHandler _file_system_read_handler;
 };
 extern FileSystemClass FileSystem;
@@ -324,11 +308,7 @@ class ProcessClass {
   void onProcessPollResponse(ProcessPollHandler handler);
   void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  private:
-#endif
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 

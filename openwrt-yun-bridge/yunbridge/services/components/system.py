@@ -58,8 +58,8 @@ class SystemComponent:
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
-            "free_memory",
-            "value",
+            SystemAction.FREE_MEMORY,
+            SystemAction.VALUE,
         )
         message = QueuedPublish(
             topic_name=topic,
@@ -116,8 +116,8 @@ class SystemComponent:
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
-            "tx_debug",
-            "value",
+            SystemAction.TX_DEBUG,
+            SystemAction.VALUE,
         )
         message = QueuedPublish(
             topic_name=topic,
@@ -178,8 +178,8 @@ class SystemComponent:
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
-            "version",
-            "value",
+            SystemAction.VERSION,
+            SystemAction.VALUE,
         )
         message = QueuedPublish(
             topic_name=topic,

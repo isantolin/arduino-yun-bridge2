@@ -152,6 +152,39 @@ def _write_python_mqtt_subscriptions(out: TextIO, spec: dict[str, Any]) -> None:
     out.write(")\n\n\n")
 
 
+def _write_python_mqtt_defaults(out: TextIO, spec: dict[str, Any]) -> None:
+    mqtt_defaults = spec.get("mqtt_defaults")
+    if not mqtt_defaults:
+        return
+    if not isinstance(mqtt_defaults, dict):
+        raise TypeError("mqtt_defaults must be a table")
+
+    default_topic_prefix = mqtt_defaults.get("default_topic_prefix")
+    if default_topic_prefix is not None:
+        _write_python_str_constant(
+            out,
+            "MQTT_DEFAULT_TOPIC_PREFIX",
+            str(default_topic_prefix),
+        )
+
+    out.write("\n")
+
+
+def _write_python_status_reasons(out: TextIO, spec: dict[str, Any]) -> None:
+    status_reasons = spec.get("status_reasons")
+    if not status_reasons:
+        return
+    if not isinstance(status_reasons, dict):
+        raise TypeError("status_reasons must be a table")
+
+    for key in sorted(status_reasons.keys()):
+        value = status_reasons[key]
+        name = f"STATUS_REASON_{str(key).upper()}"
+        _write_python_str_constant(out, name, str(value))
+
+    out.write("\n")
+
+
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
@@ -481,6 +514,9 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             name = f"MQTT_SUFFIX_{key.upper()}"
             out.write(f'{name}: Final[str] = "{value}"\n')
         out.write("\n\n")
+
+    _write_python_mqtt_defaults(out, spec)
+    _write_python_status_reasons(out, spec)
 
     # MQTT wildcard segments used by MQTT subscriptions.
     out.write('MQTT_WILDCARD_SINGLE: Final[str] = "+"\n')

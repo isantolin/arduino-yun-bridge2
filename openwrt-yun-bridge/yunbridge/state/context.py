@@ -30,7 +30,6 @@ from ..const import (
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_SPOOL_DIR,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
@@ -38,6 +37,7 @@ from ..const import (
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
 )
+from ..rpc import protocol
 from ..rpc.protocol import (
     Command,
     Status,
@@ -329,7 +329,7 @@ class RuntimeState:
     file_storage_bytes_used: int = 0
     file_write_limit_rejections: int = 0
     file_storage_limit_rejections: int = 0
-    mqtt_topic_prefix: str = DEFAULT_MQTT_TOPIC
+    mqtt_topic_prefix: str = protocol.MQTT_DEFAULT_TOPIC_PREFIX
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     watchdog_beats: int = 0

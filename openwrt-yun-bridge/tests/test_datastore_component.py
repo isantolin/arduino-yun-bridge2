@@ -11,7 +11,6 @@ import pytest_asyncio
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
@@ -37,7 +36,7 @@ async def datastore_component() -> DatastoreComponent:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -63,7 +62,12 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
     key = b"key1"
     value = b"value1"
     # Payload: key_len (1 byte) + key + value_len (1 byte) + value
-    payload = struct.pack("B", len(key)) + key + struct.pack("B", len(value)) + value
+    payload = (
+        struct.pack(protocol.UINT8_FORMAT, len(key))
+        + key
+        + struct.pack(protocol.UINT8_FORMAT, len(value))
+        + value
+    )
 
     # Mock _publish_value
     with patch.object(
@@ -83,7 +87,7 @@ async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> 
 
     # Missing value length
     key = b"k"
-    payload = struct.pack("B", len(key)) + key
+    payload = struct.pack(protocol.UINT8_FORMAT, len(key)) + key
     assert await datastore_component.handle_put(payload) is False
 
 
@@ -95,7 +99,7 @@ async def test_handle_get_request_success(
     datastore_component.state.datastore["key1"] = "value1"
 
     key = b"key1"
-    payload = struct.pack("B", len(key)) + key
+    payload = struct.pack(protocol.UINT8_FORMAT, len(key)) + key
 
     await datastore_component.handle_get_request(payload)
 
@@ -114,7 +118,7 @@ async def test_handle_get_request_missing(
     datastore_component: DatastoreComponent,
 ) -> None:
     key = b"missing"
-    payload = struct.pack("B", len(key)) + key
+    payload = struct.pack(protocol.UINT8_FORMAT, len(key)) + key
 
     await datastore_component.handle_get_request(payload)
 

@@ -11,6 +11,7 @@ import pytest
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError
+from yunbridge.rpc import protocol
 from yunbridge.state.context import RuntimeState, create_runtime_state
 
 
@@ -104,7 +105,10 @@ def test_stash_mqtt_message_returns_false_when_spool_disabled(
         state = create_runtime_state(runtime_config)
 
         stored = await state.stash_mqtt_message(
-            QueuedPublish(topic_name="br/test", payload=b"{}")
+            QueuedPublish(
+                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+                payload=b"{}",
+            )
         )
 
         assert stored is False
@@ -123,9 +127,17 @@ def test_flush_mqtt_spool_queue_full_requeue_failure_disables_spool(
 
         state.mqtt_queue_limit = 10
         state.mqtt_publish_queue = asyncio.Queue(maxsize=1)
-        state.mqtt_publish_queue.put_nowait(QueuedPublish(topic_name="br/full", payload=b"1"))
+        state.mqtt_publish_queue.put_nowait(
+            QueuedPublish(
+                topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/full",
+                payload=b"1",
+            )
+        )
 
-        message = QueuedPublish(topic_name="br/test", payload=b"2")
+        message = QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+            payload=b"2",
+        )
 
         class _StubSpool:
             def pop_next(self) -> QueuedPublish | None:

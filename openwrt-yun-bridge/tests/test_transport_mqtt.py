@@ -15,7 +15,6 @@ from yunbridge.const import (
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
@@ -40,7 +39,7 @@ def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
         mqtt_cafile=cafile,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -128,7 +127,10 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
     # Seed one outgoing message.
     await state.mqtt_publish_queue.put(
-        QueuedPublish(topic_name="br/test/topic", payload=b"hello")
+        QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic",
+            payload=b"hello",
+        )
     )
 
     created: list[object] = []

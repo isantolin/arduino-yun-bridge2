@@ -1341,18 +1341,26 @@ def test_enqueue_mqtt_drops_oldest_when_full(
         runtime_state.mqtt_queue_limit = 1
         service = BridgeService(runtime_config, runtime_state)
 
-        first = QueuedPublish("br/test/one", b"1")
-        second = QueuedPublish("br/test/two", b"2")
+        first = QueuedPublish(
+            f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one",
+            b"1",
+        )
+        second = QueuedPublish(
+            f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/two",
+            b"2",
+        )
 
         await service.enqueue_mqtt(first)
         await service.enqueue_mqtt(second)
 
         assert runtime_state.mqtt_dropped_messages == 1
-        assert runtime_state.mqtt_drop_counts.get("br/test/one") == 1
+        assert runtime_state.mqtt_drop_counts.get(
+            f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one"
+        ) == 1
         assert runtime_state.mqtt_publish_queue.qsize() == 1
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name == "br/test/two"
+        assert queued.topic_name == f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/two"
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())

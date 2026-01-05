@@ -37,6 +37,20 @@ Notas:
 
 La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/spec.toml`.
 
+Centralizar en el spec significa **solo** lo que debe ser idéntico entre implementaciones (MCU y Linux) o lo que constituye el contrato externo (MQTT) que otros clientes consumen.
+
+Qué **sí** se centraliza en `spec.toml` (y se genera a Python/C++):
+
+- **Contrato wire MCU↔Linux**: enums/IDs (`Command`, `Status`), layouts de payload, límites, sentinels/máscaras, formatos `struct` y cualquier valor validado por ambos lados.
+- **Handshake autenticado**: formato serializado y rangos (`HANDSHAKE_CONFIG_*`, `*_MIN/MAX`) y defaults que formen parte del intercambio/validación.
+- **Contrato MQTT público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`MQTT_DEFAULT_TOPIC_PREFIX`, `MQTT_SUFFIX_*`, `STATUS_REASON_*`).
+
+Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`, `[status_reasons]`, `[[mqtt_subscriptions]]`, `[[topics]]`, `[[actions]]`) para evitar drift; esos catálogos se consideran canónicos en el spec y en los bindings generados.
+
+Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime):
+
+- **Defaults de OpenWrt/daemon**: `DEFAULT_MQTT_HOST`, `DEFAULT_MQTT_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `openwrt-yun-bridge/yunbridge/const.py`.
+
 Al ejecutar:
 
 - `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py openwrt-yun-bridge/yunbridge/rpc/protocol.py --cpp openwrt-library-arduino/src/protocol/rpc_protocol.h`

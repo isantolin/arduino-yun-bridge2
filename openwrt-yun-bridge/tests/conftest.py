@@ -15,11 +15,11 @@ from yunbridge.config import settings as settings_module
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
@@ -85,7 +85,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_cafile="/tmp/test-ca.pem",
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,

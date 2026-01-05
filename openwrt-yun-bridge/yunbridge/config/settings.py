@@ -41,7 +41,6 @@ from ..const import (
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TLS_INSECURE,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
@@ -58,6 +57,7 @@ from ..const import (
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
+from ..rpc import protocol
 from ..rpc.protocol import DEFAULT_BAUDRATE, DEFAULT_RETRY_LIMIT, DEFAULT_SAFE_BAUDRATE
 
 
@@ -427,7 +427,7 @@ def load_runtime_config() -> RuntimeConfig:
         mqtt_cafile=mqtt_cafile,
         mqtt_certfile=_optional_path(mqtt_certfile),
         mqtt_keyfile=_optional_path(mqtt_keyfile),
-        mqtt_topic=raw.get("mqtt_topic", DEFAULT_MQTT_TOPIC),
+        mqtt_topic=raw.get("mqtt_topic", protocol.MQTT_DEFAULT_TOPIC_PREFIX),
         allowed_commands=allowed_commands,
         file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
         process_timeout=_raw_get_int(raw, "process_timeout", DEFAULT_PROCESS_TIMEOUT),

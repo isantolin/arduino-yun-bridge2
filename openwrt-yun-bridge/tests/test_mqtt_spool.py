@@ -11,6 +11,7 @@ import pytest
 
 from yunbridge.mqtt.messages import QueuedPublish
 from yunbridge.mqtt.spool import MQTTPublishSpool
+from yunbridge.rpc import protocol
 
 
 def _make_message(
@@ -31,7 +32,7 @@ def _make_message(
 def test_spool_roundtrip(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     message = _make_message(
-        "br/system/test",
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/test",
         user_properties=(("k", "v"),),
     )
 

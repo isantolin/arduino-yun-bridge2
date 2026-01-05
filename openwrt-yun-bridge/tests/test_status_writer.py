@@ -9,6 +9,7 @@ from yunbridge.policy import AllowedCommandPolicy
 from yunbridge.state.context import RuntimeState, SupervisorStats
 from yunbridge.state import status as status_module
 from yunbridge.mqtt.spool import MQTTPublishSpool
+from yunbridge.rpc import protocol
 
 
 def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
@@ -30,7 +31,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state = RuntimeState()
         state.mqtt_queue_limit = 42
         state.mqtt_dropped_messages = 3
-        state.mqtt_drop_counts["br/test"] = 2
+        state.mqtt_drop_counts[f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test"] = 2
         state.datastore["foo"] = "bar"
         state.mailbox_queue.append(b"abc")
         state.mailbox_queue_bytes = 3
@@ -98,7 +99,9 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
 
         assert payload["mqtt_queue_limit"] == 42
         assert payload["mqtt_messages_dropped"] == 3
-        assert payload["mqtt_drop_counts"] == {"br/test": 2}
+        assert payload["mqtt_drop_counts"] == {
+            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 2
+        }
         assert payload["datastore_keys"] == ["foo"]
         assert payload["mailbox_size"] == 1
         assert payload["mailbox_bytes"] == 3

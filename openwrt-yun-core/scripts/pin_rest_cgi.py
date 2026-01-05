@@ -16,8 +16,8 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from yunbridge.config.logging import configure_logging
 from yunbridge.config.settings import RuntimeConfig, load_runtime_config
-from yunbridge.const import DEFAULT_MQTT_TOPIC
 from yunbridge.common import get_uci_config, parse_float, parse_int
+from yunbridge.rpc import protocol
 
 
 logger = logging.getLogger("yunbridge.pin_rest")
@@ -218,7 +218,7 @@ def main() -> None:
         )
         return
 
-    topic = f"{config.mqtt_topic or DEFAULT_MQTT_TOPIC}/d/{pin}"
+    topic = f"{config.mqtt_topic or protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/{pin}"
     payload = "1" if state == "ON" else "0"
 
     try:

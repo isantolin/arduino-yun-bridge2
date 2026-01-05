@@ -80,7 +80,7 @@ class ProcessComponent:
             )
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("process_limit_reached"),
+                encode_status_reason(protocol.STATUS_REASON_PROCESS_LIMIT_REACHED),
             )
             return
 
@@ -119,7 +119,7 @@ class ProcessComponent:
                 )
                 await self.ctx.send_frame(
                     Status.ERROR.value,
-                    b"process_run_internal_error",
+                    encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR),
                 )
 
     async def handle_run_async(self, payload: bytes) -> None:
@@ -130,17 +130,17 @@ class ProcessComponent:
             logger.warning("Rejected async command '%s': %s", command, exc)
             await self.ctx.send_frame(
                 Status.ERROR.value,
-                encode_status_reason("command_validation_failed"),
+                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
             )
-            await self._publish_run_async_error("command_validation_failed")
+            await self._publish_run_async_error(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED)
             return
         match pid:
             case protocol.INVALID_ID_SENTINEL:
                 await self.ctx.send_frame(
                     Status.ERROR.value,
-                    encode_status_reason("process_run_async_failed"),
+                    encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED),
                 )
-                await self._publish_run_async_error("process_run_async_failed")
+                await self._publish_run_async_error(protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED)
                 return
             case _:
                 await self.ctx.send_frame(
@@ -165,7 +165,7 @@ class ProcessComponent:
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
             ShellAction.RUN_ASYNC,
-            "error",
+            protocol.MQTT_SUFFIX_ERROR,
         )
         error_payload = json.dumps(
             {
@@ -218,9 +218,13 @@ class ProcessComponent:
                 len(payload),
                 payload.hex(),
             )
+            await self.ctx.send_frame(
+                Status.MALFORMED.value,
+                encode_status_reason(protocol.STATUS_REASON_PROCESS_KILL_MALFORMED),
+            )
             return False
 
-        pid = struct.unpack(">H", payload[:2])[0]
+        pid = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
 
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
@@ -228,6 +232,10 @@ class ProcessComponent:
 
         if proc is None:
             logger.warning("Attempted to kill non-existent PID: %d", pid)
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason(protocol.STATUS_REASON_PROCESS_NOT_FOUND),
+            )
             return send_ack
 
         try:
@@ -246,6 +254,11 @@ class ProcessComponent:
             logger.info("Process PID %d already exited before kill.", pid)
         except Exception:
             logger.exception("Error killing process PID %d", pid)
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason(protocol.STATUS_REASON_PROCESS_KILL_FAILED),
+            )
+            return send_ack
         finally:
             released_slot = False
             async with self.state.process_lock:
@@ -262,6 +275,7 @@ class ProcessComponent:
             if released_slot:
                 self._release_process_slot()
 
+        await self.ctx.send_frame(Status.OK.value, b"")
         return send_ack
 
     async def run_sync(self, command: str) -> tuple[int, bytes, bytes, int | None]:

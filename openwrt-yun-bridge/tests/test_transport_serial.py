@@ -17,7 +17,6 @@ from yunbridge.const import (
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
@@ -43,7 +42,7 @@ def _make_config() -> RuntimeConfig:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -79,13 +78,15 @@ def test_ensure_raw_mode_noop_when_termios_missing(monkeypatch: pytest.MonkeyPat
 def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, object]] = []
 
+    termios_mod = pytest.importorskip("termios")
+
     class _TTY:
         @staticmethod
         def setraw(fd: int) -> None:
             calls.append(("setraw", fd))
 
     class _Termios:
-        ECHO = 0x00000008
+        ECHO = termios_mod.ECHO
         TCSANOW = 0
 
         @staticmethod

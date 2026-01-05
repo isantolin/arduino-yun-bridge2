@@ -16,7 +16,6 @@ from yunbridge.const import (
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
@@ -42,7 +41,7 @@ def _make_config() -> RuntimeConfig:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -128,17 +127,26 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    msg = QueuedPublish(topic_name="br/x", payload=b"hello")
+    msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
 
-    props = SimpleNamespace(ResponseTopic="br/resp", CorrelationData=b"cid")
-    inbound = SimpleNamespace(topic="br/origin", properties=props)
+    props = SimpleNamespace(
+        ResponseTopic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
+        CorrelationData=b"cid",
+    )
+    inbound = SimpleNamespace(
+        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
+        properties=props,
+    )
 
     await service.enqueue_mqtt(msg, reply_context=inbound)  # type: ignore[arg-type]
 
     queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.topic_name == "br/resp"
+    assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
     assert queued.correlation_data == b"cid"
-    assert ("bridge-request-topic", "br/origin") in queued.user_properties
+    assert (
+        "bridge-request-topic",
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/origin",
+    ) in queued.user_properties
 
 
 @pytest.mark.asyncio
@@ -160,15 +168,21 @@ async def test_enqueue_mqtt_queue_full_drops_and_spools(monkeypatch: pytest.Monk
 
     service = BridgeService(config, state)
 
-    first = QueuedPublish(topic_name="br/old", payload=b"1")
+    first = QueuedPublish(
+        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
+        payload=b"1",
+    )
     state.mqtt_publish_queue.put_nowait(first)
 
-    second = QueuedPublish(topic_name="br/new", payload=b"2")
+    second = QueuedPublish(
+        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
+        payload=b"2",
+    )
     await service.enqueue_mqtt(second)
 
     # Queue now contains the new message.
     queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.topic_name == "br/new"
+    assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new"
 
     # Drop counters updated.
     assert state.mqtt_dropped_messages == 1
@@ -203,7 +217,10 @@ async def test_reject_topic_action_enqueues_status() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    inbound = SimpleNamespace(topic="br/system/secret", properties=None)
+    inbound = SimpleNamespace(
+        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/secret",
+        properties=None,
+    )
     await service._reject_topic_action(inbound, Topic.SYSTEM, "reboot")  # type: ignore[arg-type]
 
     queued = state.mqtt_publish_queue.get_nowait()
@@ -219,7 +236,10 @@ async def test_publish_bridge_snapshot_handshake_flavor() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    inbound = SimpleNamespace(topic="br/system/bridge/handshake/get", properties=None)
+    inbound = SimpleNamespace(
+        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get",
+        properties=None,
+    )
     await service._publish_bridge_snapshot("handshake", inbound)  # type: ignore[arg-type]
 
     queued = state.mqtt_publish_queue.get_nowait()
@@ -249,9 +269,19 @@ async def test_enqueue_mqtt_spool_unavailable_logs(monkeypatch: pytest.MonkeyPat
     state.mqtt_spool_backoff_until = time.monotonic() + 5
 
     service = BridgeService(config, state)
-    state.mqtt_publish_queue.put_nowait(QueuedPublish(topic_name="br/old", payload=b"1"))
+    state.mqtt_publish_queue.put_nowait(
+        QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/old",
+            payload=b"1",
+        )
+    )
 
-    await service.enqueue_mqtt(QueuedPublish(topic_name="br/new", payload=b"2"))
+    await service.enqueue_mqtt(
+        QueuedPublish(
+            topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new",
+            payload=b"2",
+        )
+    )
 
     queued = state.mqtt_publish_queue.get_nowait()
-    assert queued.topic_name == "br/new"
+    assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/new"

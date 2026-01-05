@@ -13,6 +13,7 @@ from yunbridge.metrics import (
     publish_metrics,
 )
 from yunbridge.mqtt.messages import QueuedPublish
+from yunbridge.rpc import protocol
 from yunbridge.state.context import RuntimeState
 
 
@@ -92,8 +93,6 @@ async def test_publish_metrics_marks_unknown_spool_reason(
             "watchdog_enabled": False,
         }
 
-    runtime_state.mqtt_topic_prefix = "br"
-
     with patch.object(
         RuntimeState,
         "build_metrics_snapshot",
@@ -136,8 +135,6 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     def _handshake(self: RuntimeState) -> dict[str, object]:
         return {"snapshot": "handshake"}
 
-    runtime_state.mqtt_topic_prefix = "br"
-
     with patch.object(
         RuntimeState, "build_bridge_snapshot", side_effect=_summary, autospec=True
     ), patch.object(
@@ -158,8 +155,12 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
             await task
 
     topics = {message.topic_name for message in messages}
-    assert "br/system/bridge/summary/value" in topics
-    assert "br/system/bridge/handshake/value" in topics
+    assert (
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
+    )
+    assert (
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
+    )
     properties = [prop for message in messages for prop in message.user_properties]
     assert ("bridge-snapshot", "summary") in properties
     assert ("bridge-snapshot", "handshake") in properties

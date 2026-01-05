@@ -15,7 +15,6 @@ import pytest_asyncio
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
@@ -59,7 +58,7 @@ async def process_component(mock_context: AsyncMock) -> ProcessComponent:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=DEFAULT_MQTT_TOPIC,
+        mqtt_topic=rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -302,17 +301,27 @@ def test_build_sync_response_trims_to_protocol_budget(process_component: Process
 @pytest.mark.asyncio
 async def test_handle_kill_malformed_payload_returns_false(
     process_component: ProcessComponent,
+    mock_context: AsyncMock,
 ) -> None:
     assert await process_component.handle_kill(rpc_protocol.FRAME_DELIMITER, send_ack=True) is False
+    mock_context.send_frame.assert_awaited_once_with(
+        Status.MALFORMED.value,
+        b"process_kill_malformed",
+    )
 
 
 @pytest.mark.asyncio
 async def test_handle_kill_unknown_pid_returns_ack(
     process_component: ProcessComponent,
+    mock_context: AsyncMock,
 ) -> None:
     pid = 123
     payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
     assert await process_component.handle_kill(payload, send_ack=True) is True
+    mock_context.send_frame.assert_awaited_once_with(
+        Status.ERROR.value,
+        b"process_not_found",
+    )
 
 
 @pytest.mark.asyncio
@@ -350,6 +359,7 @@ async def test_handle_kill_terminates_and_cleans_slot(
         )
         assert ok is True
         mock_term.assert_awaited_once()
+        mock_context.send_frame.assert_awaited_with(Status.OK.value, b"")
 
     async with process_component.state.process_lock:
         assert pid not in process_component.state.running_processes

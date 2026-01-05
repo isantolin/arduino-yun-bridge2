@@ -43,11 +43,7 @@ public:
     // Resets internal state (parser, flow control)
     void reset();
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  private:
-#endif
     // Best-effort write-all helper: tries to write the full buffer.
     // Returns true only if all bytes were written.
     bool _writeAll(const uint8_t* buffer, size_t size);

@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.rpc import protocol
 
 
 def _load_pin_rest_cgi() -> ModuleType:
@@ -129,7 +130,7 @@ def test_publish_with_retries_configures_tls(
     runtime_config.mqtt_cafile = str(cafile)
 
     pin_rest_module.publish_with_retries(
-        topic="br/d/13",
+        topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload="1",
         config=runtime_config,
         retries=1,
@@ -143,7 +144,11 @@ def test_publish_with_retries_configures_tls(
     assert fake_client.tls_kwargs["ca_certs"] == str(cafile)
 
     assert len(fake_client.published) == 1
-    assert fake_client.published[0] == ("br/d/13", "1", 1)
+    assert fake_client.published[0] == (
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
+        "1",
+        1,
+    )
 
 
 def test_publish_with_retries_times_out(
@@ -187,7 +192,7 @@ def test_publish_with_retries_times_out(
 
     with pytest.raises(RuntimeError, match="Failed to publish"):
         pin_rest_module.publish_with_retries(
-            topic="br/d/2",
+            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/2",
             payload="0",
             config=runtime_config,
             retries=1,
@@ -200,7 +205,7 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_pin_rest_cgi()
 
     fake_config = SimpleNamespace(
-        mqtt_topic="br",
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,
@@ -240,7 +245,7 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch) -> None:
     body = output.getvalue().split("\n\n", 1)[1]
     response = json.loads(body)
     assert response["status"] == "ok"
-    assert captured["topic"] == "br/d/7"
+    assert captured["topic"] == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/7"
     assert captured["payload"] == "1"
 
 
@@ -248,7 +253,7 @@ def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
     module = _load_pin_rest_cgi()
 
     fake_config = SimpleNamespace(
-        mqtt_topic="br",
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,

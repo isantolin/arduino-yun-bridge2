@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-aiomqtt
-PKG_VERSION:=2.4.0
+PKG_VERSION:=2.5.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiomqtt
 PKG_SOURCE:=aiomqtt-$(PKG_VERSION).tar.gz
-PKG_HASH:=ab0f18fc5b7ffaa57451c407417d674db837b00a9c7d953cccd02be64f046c17
+PKG_HASH:=70e181c140a54ae736394efe2b9e865f665551a5417f6957456cc46010487b21
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
@@ -20,7 +20,7 @@ define Package/python3-aiomqtt
   SECTION:=lang
   CATEGORY:=Languages
   SUBMENU:=Python
-  TITLE:=Idiomatic asyncio MQTT client (v2.4.0)
+  TITLE:=Idiomatic asyncio MQTT client (v2.5.0)
   URL:=https://github.com/empicano/aiomqtt
   DEPENDS:=+python3-light +python3-paho-mqtt
 endef

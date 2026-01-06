@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import argparse
+import ssl
 
 from yunbridge_client import Bridge, dump_client_env
 
@@ -20,11 +21,12 @@ async def main() -> None:
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")
     parser.add_argument("--password", default=None, help="MQTT Password")
+    parser.add_argument("--tls-insecure", action="store_true", help="Disable TLS certificate verification")
     args = parser.parse_args()
 
     dump_client_env(logging.getLogger(__name__))
 
-    bridge_args = {}
+    bridge_args: dict[str, object] = {}
     if args.host:
         bridge_args["host"] = args.host
     if args.port:
@@ -33,8 +35,13 @@ async def main() -> None:
         bridge_args["username"] = args.user
     if args.password:
         bridge_args["password"] = args.password
+    if args.tls_insecure:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        bridge_args["tls_context"] = ctx
 
-    bridge = Bridge(**bridge_args)
+    bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
     await bridge.connect()
 
     logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")

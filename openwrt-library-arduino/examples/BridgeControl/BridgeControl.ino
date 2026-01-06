@@ -73,9 +73,14 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
 void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   (void)payload;
   (void)length;
+  // Silenced: printing on every status frame causes serial collisions
+  // Only uncomment for debugging specific issues
+  (void)status_code;
+  /*
   Console.print("Estado: 0x");
   printHexValue(Console, rpc::to_underlying(status_code), 2);
   Console.println();
+  */
 }
 
 void setup() {

@@ -36,15 +36,19 @@ void printHexValue(Print& target, uint16_t value, uint8_t width) {
 }
 
 void handleDigitalReadResponse(uint8_t value) {
-  Console.print("Respuesta asíncrona de lectura digital: ");
-  Console.println(value);
+  // DISABLED: Console.print causes serial collisions
+  // Console.print("Respuesta asíncrona de lectura digital: ");
+  // Console.println(value);
+  (void)value;
 }
 
 void handleCommand(const rpc::Frame& frame) {
-  Console.print("Comando RPC no manejado: ID=0x");
-  printHexValue(Console, frame.header.command_id, 4);
-  Console.print(", Payload Len=");
-  Console.println(frame.header.payload_length);
+  // DISABLED: Console.print causes serial collisions
+  // Console.print("Comando RPC no manejado: ID=0x");
+  // printHexValue(Console, frame.header.command_id, 4);
+  // Console.print(", Payload Len=");
+  // Console.println(frame.header.payload_length);
+  (void)frame;
 }
 
 void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
@@ -53,18 +57,19 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
     memcpy(msg_buf, buffer, size);
     msg_buf[size] = '\0';
 
-    Console.print("Mensaje de Mailbox recibido: ");
-    Console.println(msg_buf);
+    // DISABLED: Console.print causes serial collisions
+    // Console.print("Mensaje de Mailbox recibido: ");
+    // Console.println(msg_buf);
 
     if (strcmp(msg_buf, "ON") == 0) {
       digitalWrite(13, HIGH);
-      Console.println("LED 13 encendido por Mailbox");
+      // Console.println("LED 13 encendido por Mailbox");
     } else if (strcmp(msg_buf, "OFF") == 0) {
       digitalWrite(13, LOW);
-      Console.println("LED 13 apagado por Mailbox");
+      // Console.println("LED 13 apagado por Mailbox");
     } else {
-      Console.print("Comando desconocido: ");
-      Console.println(msg_buf);
+      // Console.print("Comando desconocido: ");
+      // Console.println(msg_buf);
     }
   }
   Mailbox.requestRead();
@@ -109,7 +114,8 @@ void setup() {
     }
   }
   
-  Console.println("Bridge iniciado con secreto definido en Sketch.");
+  // DISABLED: Console.print causes serial collisions
+  // Console.println("Bridge iniciado con secreto definido en Sketch.");
   Mailbox.requestRead();
 }
 

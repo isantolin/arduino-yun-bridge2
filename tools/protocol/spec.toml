@@ -27,6 +27,16 @@ system_command_min = 0x40
 system_command_max = 0x4F
 gpio_command_min = 0x50
 
+# RLE compression constants
+rle_escape_byte = 0xFF
+rle_min_run_length = 4
+rle_max_run_length = 256
+rle_single_escape_marker = 0xFF
+
+[compression]
+none = 0x00
+rle = 0x01
+
 [handshake]
 nonce_length = 16
 tag_length = 16

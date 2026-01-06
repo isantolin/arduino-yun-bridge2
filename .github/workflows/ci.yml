@@ -174,12 +174,10 @@ jobs:
 
       - name: Build and Run Host Tests
         run: |
-          cd openwrt-library-arduino
           ./tools/ci_arduino_host_tests.sh
 
       - name: Run Coverage
         run: |
-          cd openwrt-library-arduino
           ./tools/coverage_arduino.sh || true
 
       - name: Upload Arduino Coverage

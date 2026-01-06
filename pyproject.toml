@@ -8,7 +8,7 @@ version = "2.0.1"
 description = "Arduino Yun Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
-    "pyserial>=3.5",
+    # pyserial removed: replaced by built-in termios (yunbridge.transport.termios_serial)
     "paho-mqtt==2.1.0",      # STRICT: Required for CallbackAPIVersion.VERSION2
     "aiomqtt==2.5.0",        # STRICT: Python 3.13 compatible, validated against paho 2.1.0
     "cobs>=1.2.2",

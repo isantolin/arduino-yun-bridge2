@@ -1,4 +1,8 @@
-"""Serial transport helpers for the Yun Bridge daemon (Python 3.13+ Compatible)."""
+"""Serial transport helpers for the Yun Bridge daemon (Python 3.13+ Compatible).
+
+This module uses a pure-termios serial implementation to avoid the pyserial
+dependency, which has not been maintained since 2020.
+"""
 
 from __future__ import annotations
 
@@ -7,16 +11,18 @@ import inspect
 import logging
 import struct
 import os
-try:
-    import termios
-    import tty
-except ImportError:
-    termios = None  # type: ignore
-    tty = None  # type: ignore
+import termios
+import tty
 from typing import Any, Sized, TypeGuard, cast, Final
 
-import serial
 from cobs import cobs
+
+# Use our pure-termios serial implementation instead of pyserial
+from yunbridge.transport.termios_serial import (
+    TermiosSerial,
+    SerialException,
+    serial_for_url,
+)
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.rpc.protocol import FRAME_DELIMITER
@@ -62,13 +68,10 @@ def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
     return cobs.encode(raw_frame) + FRAME_DELIMITER
 
 
-def _ensure_raw_mode(serial_obj: Any, port_name: str) -> None:
+def _ensure_raw_mode(serial_obj: TermiosSerial, port_name: str) -> None:
     """Force raw mode on the serial file descriptor if possible."""
-    if not (termios and tty):
-        return
-
     try:
-        if hasattr(serial_obj, "fd") and serial_obj.fd is not None:
+        if serial_obj.fd is not None:
             tty.setraw(serial_obj.fd)
             attrs = termios.tcgetattr(serial_obj.fd)
             attrs[3] = attrs[3] & ~termios.ECHO
@@ -78,11 +81,11 @@ def _ensure_raw_mode(serial_obj: Any, port_name: str) -> None:
         logger.warning("Failed to force raw mode on serial port: %s", e)
 
 
-def _open_serial_hardware(ser: Any, url: str) -> None:
+def _open_serial_hardware(ser: TermiosSerial, url: str) -> None:
     try:
         ser.open()
         if ser.fd is None:
-            raise serial.SerialException("Serial port opened but no fd available")
+            raise SerialException("Serial port opened but no fd available")
         os.set_blocking(ser.fd, False)
         _ensure_raw_mode(ser, url)
     except Exception:
@@ -205,12 +208,12 @@ async def _open_serial_connection(
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     """
     Open a serial connection using native asyncio.
-    Replaces pyserial-asyncio to ensure Python 3.13+ compatibility.
+    Uses pure-termios implementation instead of pyserial.
     """
     loop = asyncio.get_running_loop()
 
-    # Create the pyserial instance in a non-blocking way
-    ser = serial.serial_for_url(url, baudrate=baudrate, do_not_open=True)
+    # Create the termios serial instance in a non-blocking way
+    ser = serial_for_url(url, baudrate=baudrate, do_not_open=True)
 
     if kwargs.get("exclusive", False):
         ser.exclusive = True
@@ -311,9 +314,9 @@ async def _open_serial_connection_with_retry(
 
             return reader, writer
 
-        except (serial.SerialException, OSError, ExceptionGroup) as exc:
+        except (SerialException, OSError, ExceptionGroup) as exc:
             if isinstance(exc, ExceptionGroup):
-                _, remainder = exc.split((serial.SerialException, OSError))
+                _, remainder = exc.split((SerialException, OSError))
                 if remainder:
                     raise remainder
 
@@ -367,7 +370,7 @@ class SerialTransport:
                 except* Exception:
                     logger.exception("Error running post-connect hooks")
 
-            except (serial.SerialException, asyncio.IncompleteReadError) as exc:
+            except (SerialException, asyncio.IncompleteReadError) as exc:
                 logger.error("Serial communication error: %s", exc)
             except ConnectionResetError:
                 logger.error("Serial connection reset.")

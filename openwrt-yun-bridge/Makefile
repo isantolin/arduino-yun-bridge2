@@ -37,13 +37,13 @@ define Package/$(PKG_NAME)
 	TITLE:=Yun Bridge Python Daemon
 	DEPENDS:=+openwrt-yun-core
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
+	# Note: python3-pyserial removed - replaced by built-in termios
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
 		+python3-sqlite3 \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
-		+python3-pyserial \
 		+python3-cobs \
 		+python3-psutil \
 		+python3-prometheus-client

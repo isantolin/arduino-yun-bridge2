@@ -7,7 +7,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from serial import SerialException
+from yunbridge.transport.termios_serial import SerialException
 
 from yunbridge.config.settings import load_runtime_config
 from yunbridge.services.task_supervisor import supervise_task

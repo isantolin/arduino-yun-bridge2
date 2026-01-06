@@ -3,13 +3,13 @@
 import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 import pytest
-import serial
 
 from yunbridge.config.settings import RuntimeConfig
 from yunbridge.transport.serial import (
     _open_serial_connection_with_retry,
     SerialTransport,
 )
+from yunbridge.transport.termios_serial import SerialException
 from yunbridge.rpc import protocol
 
 
@@ -44,7 +44,7 @@ async def test_open_serial_connection_retry_success():
 
     mock_connect = AsyncMock()
     mock_connect.side_effect = [
-        serial.SerialException("Fail 1"),
+        SerialException("Fail 1"),
         OSError("Fail 2"),
         (success_reader, success_writer),  # Success
     ]
@@ -87,7 +87,7 @@ async def test_open_serial_connection_cancelled():
     )
 
     mock_connect = AsyncMock()
-    mock_connect.side_effect = serial.SerialException("Permanent Fail")
+    mock_connect.side_effect = SerialException("Permanent Fail")
 
     with patch("yunbridge.transport.serial.OPEN_SERIAL_CONNECTION", mock_connect), \
          patch("asyncio.sleep", AsyncMock()):

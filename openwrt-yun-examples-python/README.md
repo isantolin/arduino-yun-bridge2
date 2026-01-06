@@ -40,7 +40,7 @@ En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `pyserial-asyncio`, `prometheus-client` y `tenacity` llegan ahora desde PyPI, mientras que `python3-pyserial` proviene de los feeds oficiales. No necesitas instalar `asyncio-mqtt`: trabajamos directamente contra `aiomqtt.Client`, reutilizamos `QueuedPublish` para los spoolers y apoyamos la observabilidad en los mismos helpers que usa el daemon para exponer `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `prometheus-client` y `tenacity` llegan ahora desde PyPI. La comunicación serial del daemon usa una implementación pura basada en `termios` (módulo built-in de Python), eliminando la dependencia de `pyserial`. No necesitas instalar `asyncio-mqtt`: trabajamos directamente contra `aiomqtt.Client`, reutilizamos `QueuedPublish` para los spoolers y apoyamos la observabilidad en los mismos helpers que usa el daemon para exponer `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
 
 Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala las dependencias mínimas en tu entorno de desarrollo:
 
@@ -48,7 +48,6 @@ Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paq
 pip install \
 	"aiomqtt>=2.4,<3" \
 	"paho-mqtt>=2.1,<3" \
-	"pyserial-asyncio>=0.6,<1" \
 	"prometheus-client>=0.20,<1" \
 	"tenacity>=9.0,<10" \
 	"cobs>=1.2,<2"

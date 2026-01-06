@@ -17,8 +17,6 @@ import time
 from dataclasses import dataclass
 from collections.abc import Iterable
 
-import serial
-
 from cobs import cobs
 from yunbridge.rpc.protocol import (
     DEFAULT_BAUDRATE,
@@ -27,6 +25,7 @@ from yunbridge.rpc.protocol import (
 from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.frame import Frame
 from yunbridge.rpc.protocol import Command, Status
+from yunbridge.transport.termios_serial import TermiosSerial, SerialException
 
 
 @dataclass(slots=True)
@@ -131,20 +130,20 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     )
 
 
-def _open_serial_device(port: str, baud: int, timeout: float) -> serial.Serial:
+def _open_serial_device(port: str, baud: int, timeout: float) -> TermiosSerial:
     try:
-        return serial.Serial(port=port, baudrate=baud, timeout=timeout)
-    except serial.SerialException as exc:  # pragma: no cover - hardware path
+        return TermiosSerial(port=port, baudrate=baud, timeout=timeout)
+    except SerialException as exc:  # pragma: no cover - hardware path
         raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
 
 
-def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
+def _write_frame(device: TermiosSerial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
     return int(written) if written is not None else 0
 
 
-def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
+def _read_frame(device: TermiosSerial, timeout: float) -> bytes | None:
     buffer = bytearray()
     deadline = time.monotonic() + timeout if timeout > 0 else None
     while True:
@@ -275,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
         return 2
 
-    serial_device: serial.Serial | None = None
+    serial_device: TermiosSerial | None = None
     if args.port:
         serial_device = _open_serial_device(
             args.port,

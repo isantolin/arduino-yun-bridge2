@@ -425,11 +425,11 @@ apk update
 echo "[INFO] Skipping system upgrade to maintain stability."
 
 echo "[STEP 4/6] Installing essential dependencies..."
+# Note: python3-pyserial removed - replaced by built-in termios
 ESSENTIAL_PACKAGES="\
 python3 \
 python3-asyncio \
 python3-uci \
-python3-pyserial \
 python3-psutil \
 python3-more-itertools \
 python3-pip \

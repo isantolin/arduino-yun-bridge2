@@ -30,11 +30,8 @@ openwrt = "python3-paho-mqtt"
 pip = "paho-mqtt==2.1.0"
 rationale = "Synchronous MQTT client for legacy CGI scripts"
 
-[[dependency]]
-name = "pyserial"
-openwrt = "python3-pyserial"
-pip = "pyserial==3.5"
-rationale = "Serial I/O with the MCU"
+# pyserial removed: replaced by built-in termios (yunbridge.transport.termios_serial)
+# This eliminates the dependency on an unmaintained package (last release 2020)
 
 [[dependency]]
 name = "python-cobs"

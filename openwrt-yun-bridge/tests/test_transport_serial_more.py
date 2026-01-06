@@ -8,7 +8,6 @@ from typing import cast
 
 import pytest
 
-import serial
 from cobs import cobs
 
 from yunbridge.config.settings import RuntimeConfig
@@ -19,6 +18,7 @@ from yunbridge.services.runtime import BridgeService
 from yunbridge.services.handshake import SerialHandshakeFatal
 from yunbridge.state.context import create_runtime_state
 from yunbridge.transport import serial as serial_mod
+from yunbridge.transport.termios_serial import SerialException
 
 
 class _FakeReader:
@@ -222,7 +222,7 @@ async def test_open_serial_connection_with_retry_raises_unexpected_exception_gro
         serial_shared_secret=b"testshared",
     )
 
-    exc = ExceptionGroup("boom", [serial.SerialException("serial"), ValueError("bad")])
+    exc = ExceptionGroup("boom", [SerialException("serial"), ValueError("bad")])
 
     opener = AsyncMock(side_effect=exc)
     monkeypatch.setattr(serial_mod, "OPEN_SERIAL_CONNECTION", opener)

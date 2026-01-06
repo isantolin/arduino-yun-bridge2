@@ -14,6 +14,7 @@ from yunbridge.rpc import protocol
 from yunbridge.rpc.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
+from ...const import FILE_LARGE_WARNING_BYTES
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -524,7 +525,7 @@ class FileComponent:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("ab") as f:
             f.write(data)
-            if f.tell() > 1048576:  # 1MB warning
+            if f.tell() > FILE_LARGE_WARNING_BYTES:
                 logger.warning("File %s is growing large (>1MB) in RAM!", path)
 
     @staticmethod

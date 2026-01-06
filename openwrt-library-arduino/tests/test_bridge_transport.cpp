@@ -3,13 +3,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Host tests may introspect internals; use the private/public override pattern.
-#define private public
-#define protected public
+// Enable test interface for controlled access to internals.
+// This replaces the problematic `#define private public` anti-pattern.
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+
 #include "Bridge.h"
 #include "arduino/BridgeTransport.h"
-#undef private
-#undef protected
+#include "arduino/BridgeTestInterface.h"
 #include "protocol/cobs.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -183,6 +183,7 @@ static void test_transport_retransmitLastFrame_behaviors() {
   VectorStream stream;
   bridge::BridgeTransport transport(stream, nullptr);
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
+  auto accessor = bridge::test::TestAccessor::create(transport);
 
   // No last frame yet.
   TEST_ASSERT(!transport.retransmitLastFrame());
@@ -190,7 +191,7 @@ static void test_transport_retransmitLastFrame_behaviors() {
   // Create a last frame.
   const uint8_t payload[] = {TEST_PAYLOAD_BYTE, TEST_MARKER_BYTE};
   TEST_ASSERT(transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
-  TEST_ASSERT(transport._last_cobs_len > 0);
+  TEST_ASSERT(accessor.getLastCobsLen() > 0);
 
   // Now force a terminator failure to hit the error branch.
   stream.mode = WriteMode::TerminatorFailsOnSecondCall;

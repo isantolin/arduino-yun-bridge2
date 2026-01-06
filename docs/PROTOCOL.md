@@ -273,6 +273,39 @@ Notas:
   - Semántica: `CMD_XOFF` indica backpressure del MCU (buffers/colas cerca de saturación). Linux debe **detener todo envío** de frames al MCU hasta recibir `CMD_XON`.
   - Implementación esperada en daemon: el gating de TX es global (no sólo consola), y debe liberarse también ante desconexión para evitar deadlocks.
 
+### 5.1.1 Control de Flujo XON/XOFF (Detalle)
+
+El protocolo implementa control de flujo por software para proteger los buffers limitados del MCU (típicamente 64-256 bytes de RX en AVR).
+
+#### Mecanismo
+
+```
+MCU detecta RX buffer > 75% → envía CMD_XOFF (0x4E) → Linux pausa TX
+MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
+```
+
+#### Parámetros de Configuración (MCU)
+
+| Macro | Valor por defecto | Descripción |
+| --- | --- | --- |
+| `BRIDGE_HW_RX_BUFFER_SIZE` | 64 | Tamaño asumido del buffer RX hardware |
+| `BRIDGE_RX_HIGH_WATER_MARK` | 75% (48 bytes) | Umbral para emitir XOFF |
+| `BRIDGE_RX_LOW_WATER_MARK` | 25% (16 bytes) | Umbral para emitir XON |
+
+#### Comportamiento del Daemon (Linux)
+
+1. **Recepción de XOFF**: El daemon detiene inmediatamente todo envío de frames hacia el MCU.
+2. **Recepción de XON**: El daemon reanuda el envío normal de frames.
+3. **Desconexión**: Al detectar desconexión del puerto serial, el estado de pausa se limpia automáticamente para evitar deadlocks.
+4. **Timeout**: Si el daemon permanece en estado XOFF por más de `response_timeout_ms`, puede considerar el enlace como degradado.
+
+#### Notas de Implementación
+
+- `CMD_XOFF` y `CMD_XON` **no requieren ACK** (`requires_ack = false` en spec.toml).
+- Son comandos unidireccionales MCU → Linux únicamente.
+- El daemon debe aplicar el gating de forma **global** (todos los comandos, no solo consola).
+- La pausa debe liberarse inmediatamente ante pérdida de conexión serial.
+
 ### 5.2 GPIO (0x50 – 0x5F)
 
 - **`0x50` CMD_SET_PIN_MODE (Linux → MCU)**: `[pin: u8, mode: u8]`.

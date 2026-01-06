@@ -40,3 +40,9 @@
 #ifndef BRIDGE_MAX_PENDING_PROCESS_POLLS
 #define BRIDGE_MAX_PENDING_PROCESS_POLLS 2
 #endif
+
+// File size warning threshold (bytes) - used by daemon for RAM monitoring.
+// Matches Python: yunbridge.const.FILE_LARGE_WARNING_BYTES = 1048576
+#ifndef BRIDGE_FILE_LARGE_WARNING_BYTES
+#define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576
+#endif

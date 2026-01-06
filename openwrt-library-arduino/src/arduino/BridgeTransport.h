@@ -10,7 +10,13 @@
 
 namespace bridge {
 
+// Forward declaration for test interface
+namespace test { class TestAccessor; }
+
 class BridgeTransport {
+    // Allow test accessor to inspect internal state for unit testing.
+    // This replaces the problematic `#define private public` anti-pattern.
+    friend class test::TestAccessor;
 public:
     explicit BridgeTransport(Stream& stream, HardwareSerial* hwSerial = nullptr);
     

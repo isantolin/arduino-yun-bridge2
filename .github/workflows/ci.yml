@@ -157,3 +157,35 @@ jobs:
           
           # Run full system emulation
           python3 tools/emulation_runner.py
+
+  arduino-host-tests:
+    name: Arduino C++ Host Tests
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Build Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ make
+
+      - name: Build and Run Host Tests
+        run: |
+          cd openwrt-library-arduino
+          ./tools/ci_arduino_host_tests.sh
+
+      - name: Run Coverage
+        run: |
+          cd openwrt-library-arduino
+          ./tools/coverage_arduino.sh || true
+
+      - name: Upload Arduino Coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arduino-coverage
+          path: coverage/arduino
+          if-no-files-found: ignore

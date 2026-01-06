@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 import pty
 import pytest
-from unittest.mock import patch, MagicMock
-import termios
 
 from yunbridge.transport.termios_serial import (
     TermiosSerial,

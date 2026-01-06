@@ -163,19 +163,6 @@ CONFIG_PACKAGE_wpad-basic-mbedtls=y
 # CONFIG_PACKAGE_ppp is not set
 # CONFIG_PACKAGE_ppp-mod-pppoe is not set
 
-# Remover IPv6 DHCP client (Yun típicamente usa IPv4)
-# CONFIG_PACKAGE_odhcp6c is not set
-
-# Remover firewall IPv6 (ahorra ~100KB)
-# CONFIG_PACKAGE_ip6tables is not set
-
-# Remover opkg extra features
-# CONFIG_PACKAGE_opkg-lede is not set
-
-# Usar dnsmasq mínimo
-CONFIG_PACKAGE_dnsmasq=y
-# CONFIG_PACKAGE_dnsmasq-full is not set
-
 # NOTA: Python, LuCI, Mosquitto y YunBridge se instalan
 # DESPUÉS de configurar extroot con 2_expand.sh y 3_install.sh
 # porque no caben en los 16MB de flash del Yun.

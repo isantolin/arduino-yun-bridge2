@@ -37,7 +37,9 @@ void setup() {
     }
   }
 
-  Console.println("MCU: Setup complete. Handshake verified.");
+  // Removed Console.println to avoid mixing console data with protocol frames
+  // Console messages can interfere with COBS framing
+  digitalWrite(13, HIGH); // Indicate handshake complete
 }
 
 void loop() {

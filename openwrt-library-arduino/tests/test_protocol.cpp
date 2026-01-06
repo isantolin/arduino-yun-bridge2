@@ -211,6 +211,144 @@ static void test_parser_fragmentation() {
     TEST_ASSERT(frame.header.command_id == command_id);
 }
 
+// Test COBS encoding for ANALOG_READ_RESP with various values
+// This is the specific case that was failing in production
+static void test_analog_read_resp_encoding() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+
+  // Test with multiple analog values that could trigger edge cases
+  const uint16_t analog_values[] = {0, 1, 255, 256, 512, 1000, 1023};
+  const uint16_t command_id = 86;  // CMD_ANALOG_READ_RESP = 0x56
+
+  for (size_t v = 0; v < sizeof(analog_values) / sizeof(analog_values[0]); ++v) {
+    parser.reset();
+
+    uint16_t analog_value = analog_values[v];
+    uint8_t payload[2];
+    write_u16_be(payload, analog_value);
+
+    uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
+    size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
+    TEST_ASSERT(raw_len > 0);
+
+    // Verify raw frame structure
+    // Header: version(1) + payload_len(2) + command_id(2) = 5 bytes
+    // Payload: 2 bytes
+    // CRC: 4 bytes
+    // Total: 11 bytes
+    TEST_ASSERT(raw_len == 11);
+
+    uint8_t encoded[COBS_BUFFER_SIZE] = {0};
+    size_t encoded_len = cobs::encode(raw, raw_len, encoded);
+    TEST_ASSERT(encoded_len > 0);
+    TEST_ASSERT(encoded_len <= raw_len + (raw_len / 254) + 1);
+
+    // Verify no zero bytes in encoded data (COBS invariant)
+    for (size_t i = 0; i < encoded_len; ++i) {
+      TEST_ASSERT(encoded[i] != 0);
+    }
+
+    // Feed encoded frame to parser
+    bool parsed = false;
+    for (size_t i = 0; i < encoded_len; ++i) {
+      parsed = parser.consume(encoded[i], frame);
+      TEST_ASSERT(!parsed);  // Should not complete until delimiter
+    }
+
+    // Complete frame with delimiter
+    parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
+    TEST_ASSERT(parsed);
+    TEST_ASSERT(frame.header.command_id == command_id);
+    TEST_ASSERT(frame.header.payload_length == 2);
+
+    // Verify payload matches
+    uint16_t decoded_value = read_u16_be(frame.payload);
+    TEST_ASSERT(decoded_value == analog_value);
+  }
+}
+
+// Test COBS encoding for DIGITAL_READ_RESP
+static void test_digital_read_resp_encoding() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+
+  const uint16_t command_id = 85;  // CMD_DIGITAL_READ_RESP = 0x55
+
+  for (uint8_t digital_value = 0; digital_value <= 1; ++digital_value) {
+    parser.reset();
+
+    uint8_t payload[1] = {digital_value};
+
+    uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
+    size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
+    TEST_ASSERT(raw_len > 0);
+
+    // Header: 5 bytes, Payload: 1 byte, CRC: 4 bytes = 10 bytes
+    TEST_ASSERT(raw_len == 10);
+
+    uint8_t encoded[COBS_BUFFER_SIZE] = {0};
+    size_t encoded_len = cobs::encode(raw, raw_len, encoded);
+    TEST_ASSERT(encoded_len > 0);
+
+    // Verify no zero bytes in encoded data
+    for (size_t i = 0; i < encoded_len; ++i) {
+      TEST_ASSERT(encoded[i] != 0);
+    }
+
+    // Parse the frame
+    bool parsed = false;
+    for (size_t i = 0; i < encoded_len; ++i) {
+      parsed = parser.consume(encoded[i], frame);
+      TEST_ASSERT(!parsed);
+    }
+
+    parsed = parser.consume(rpc::RPC_FRAME_DELIMITER, frame);
+    TEST_ASSERT(parsed);
+    TEST_ASSERT(frame.header.command_id == command_id);
+    TEST_ASSERT(frame.header.payload_length == 1);
+    TEST_ASSERT(frame.payload[0] == digital_value);
+  }
+}
+
+// Test native COBS encode/decode roundtrip
+static void test_cobs_native_roundtrip() {
+  // Test various patterns including zeros
+  const uint8_t test_patterns[][8] = {
+    {0x00},                                      // Single zero
+    {0x00, 0x00},                                // Two zeros
+    {0x01, 0x00, 0x02},                          // Zero in middle
+    {0x00, 0x01, 0x02, 0x00},                    // Zeros at start and end
+    {0x02, 0x00, 0x02, 0x00, 0x56},              // Header-like pattern
+    {0x02, 0x00, 0x02, 0x00, 0x56, 0x03, 0xE8},  // Analog read resp pattern
+    {0xFF, 0xFE, 0xFD, 0xFC, 0xFB, 0xFA, 0xF9, 0xF8},  // High bytes
+  };
+  const size_t pattern_lens[] = {1, 2, 3, 4, 5, 7, 8};
+
+  for (size_t p = 0; p < sizeof(pattern_lens) / sizeof(pattern_lens[0]); ++p) {
+    uint8_t encoded[16] = {0};
+    uint8_t decoded[16] = {0};
+
+    size_t enc_len = cobs::encode(test_patterns[p], pattern_lens[p], encoded);
+    TEST_ASSERT(enc_len > 0);
+
+    // Verify no zeros in encoded output
+    for (size_t i = 0; i < enc_len; ++i) {
+      TEST_ASSERT(encoded[i] != 0);
+    }
+
+    size_t dec_len = cobs::decode(encoded, enc_len, decoded);
+    TEST_ASSERT(dec_len == pattern_lens[p]);
+
+    // Verify decoded matches original
+    for (size_t i = 0; i < pattern_lens[p]; ++i) {
+      TEST_ASSERT(decoded[i] == test_patterns[p][i]);
+    }
+  }
+}
+
 int main() {
   test_endianness_helpers();
   test_crc_helpers();
@@ -222,5 +360,8 @@ int main() {
   test_parser_header_validation();
   test_parser_noise_handling();
   test_parser_fragmentation();
+  test_cobs_native_roundtrip();
+  test_analog_read_resp_encoding();
+  test_digital_read_resp_encoding();
   return 0;
 }

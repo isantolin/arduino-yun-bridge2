@@ -596,7 +596,15 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         case rpc::CommandId::CMD_DIGITAL_READ:
         case rpc::CommandId::CMD_ANALOG_READ:
+          // Check for duplicate: if the same command was recently processed,
+          // silently ignore to avoid sending multiple responses that can
+          // corrupt the serial stream when Linux retries.
+          if (_isRecentDuplicateRx(frame)) {
+            // Don't send anything - Linux already got or will get the first response
+            return;
+          }
           _handleGpioCommand(frame);
+          _markRxProcessed(frame);
           command_processed_internally = true;
           requires_ack = false;
           break;

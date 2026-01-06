@@ -108,7 +108,7 @@ void FileSystemClass::handleResponse(const rpc::Frame& frame) {
 
 #if defined(ARDUINO_ARCH_AVR)
                if (is_eeprom && data_len > 0) {
-                   int offset = 0;
+                   int16_t offset = 0;
                    if (path_len > prefix_len) {
                        const char* num_start = path_start + prefix_len;
                        size_t num_len = path_len - prefix_len;

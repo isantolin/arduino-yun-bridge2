@@ -47,7 +47,7 @@ void BridgeTransport::flushRx() {
 
 bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
     // Flow Control Logic
-    int available_bytes = _stream.available();
+    int16_t available_bytes = static_cast<int16_t>(_stream.available());
     
     if (!_flow_paused && available_bytes >= BRIDGE_RX_HIGH_WATER_MARK) {
         // Buffer getting full, pause sender
@@ -62,7 +62,7 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
     }
 
     while (_stream.available()) {
-        int byte_read = _stream.read();
+        int16_t byte_read = static_cast<int16_t>(_stream.read());
         if (byte_read >= 0) {
             uint8_t byte = static_cast<uint8_t>(byte_read);
             bool parsed = _parser.consume(byte, rxFrame);

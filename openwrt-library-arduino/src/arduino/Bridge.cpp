@@ -17,8 +17,8 @@
 #endif
 
 #include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
+// Note: <stdlib.h> removed - not used (no malloc/free/atoi)
+// Note: <stdint.h> provided by Arduino.h
 #if __has_include(<Crypto.h>)
   #include <Crypto.h>
 #else
@@ -116,7 +116,7 @@ BridgeClass::BridgeClass(HardwareSerial& serial)
       , _tx_debug{}
 #endif
 {
-  for (int i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
+  for (uint8_t i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
     _pending_tx_frames[i].command_id = 0;
     _pending_tx_frames[i].payload_length = 0;
     memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
@@ -149,7 +149,7 @@ BridgeClass::BridgeClass(Stream& stream)
       , _tx_debug{}
 #endif
 {
-  for (int i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
+  for (uint8_t i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
     _pending_tx_frames[i].command_id = 0;
     _pending_tx_frames[i].payload_length = 0;
     memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
@@ -164,7 +164,7 @@ void BridgeClass::begin(
   // Host tests may stub millis() to a constant; keep this loop bounded.
   const unsigned long start = millis();
   unsigned long last = start;
-  unsigned int spins = 0;
+  uint16_t spins = 0;
   while ((millis() - start) < 100 && spins < 1000U) {
     _transport.flushRx();
     spins++;
@@ -494,7 +494,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_DIGITAL_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
-        int value = ::digitalRead(pin);
+        int16_t value = ::digitalRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
         #endif
@@ -505,7 +505,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_ANALOG_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
-        int value = ::analogRead(pin);
+        int16_t value = ::analogRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);
         #endif

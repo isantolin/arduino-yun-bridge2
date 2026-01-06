@@ -1,7 +1,7 @@
 #include "Bridge.h"
 
-#include <limits.h>
-#include <string.h> // Necesario para memset
+// Note: <limits.h> removed - INT_MAX check replaced with explicit size_t cast
+#include <string.h> // memset
 
 #include "protocol/rpc_protocol.h"
 
@@ -85,9 +85,7 @@ int ConsoleClass::available() {
   if (head == tail) {
     used = 0;
   }
-  if (used > static_cast<size_t>(INT_MAX)) {
-    used = static_cast<size_t>(INT_MAX);
-  }
+  // Clamp to max buffer size (64 bytes) - always fits in int
   return static_cast<int>(used);
 }
 

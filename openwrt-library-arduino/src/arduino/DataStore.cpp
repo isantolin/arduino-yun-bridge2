@@ -7,7 +7,7 @@ DataStoreClass::DataStoreClass()
   : _pending_datastore_head(0),
     _pending_datastore_count(0),
     _datastore_get_handler(nullptr) {
-  for (int i = 0; i < BRIDGE_MAX_PENDING_DATASTORE; i++) {
+  for (uint8_t i = 0; i < BRIDGE_MAX_PENDING_DATASTORE; i++) {
       memset(_pending_datastore_keys[i], 0, rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1);
   }
   memset(_pending_datastore_key_lengths, 0, BRIDGE_MAX_PENDING_DATASTORE);
@@ -61,7 +61,7 @@ void DataStoreClass::requestGet(const char* key) {
   memcpy(payload + 1, key, key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "datastore_queue_full");
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("datastore_queue_full"));
     return;
   }
 

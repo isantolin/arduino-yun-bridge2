@@ -209,19 +209,30 @@ class PinComponent:
             )
             return
 
+        # Register pending request BEFORE sending frame to avoid race condition
+        # where MCU response arrives before send_frame returns
+        pending_request = PendingPinRequest(pin=pin, reply_context=inbound)
+        if command == Command.CMD_DIGITAL_READ:
+            self.state.pending_digital_reads.append(pending_request)
+        else:
+            self.state.pending_analog_reads.append(pending_request)
+
         send_ok = await self.ctx.send_frame(
             command.value,
             struct.pack(protocol.PIN_READ_FORMAT, pin),
         )
-        if send_ok:
+        if not send_ok:
+            # Remove pending request if send failed
             if command == Command.CMD_DIGITAL_READ:
-                self.state.pending_digital_reads.append(
-                    PendingPinRequest(pin=pin, reply_context=inbound)
-                )
+                try:
+                    self.state.pending_digital_reads.remove(pending_request)
+                except ValueError:
+                    pass  # Already consumed by response handler
             else:
-                self.state.pending_analog_reads.append(
-                    PendingPinRequest(pin=pin, reply_context=inbound)
-                )
+                try:
+                    self.state.pending_analog_reads.remove(pending_request)
+                except ValueError:
+                    pass  # Already consumed by response handler
 
     async def _handle_write_command(
         self, topic_type: Topic, pin: int, parts: list[str], payload_str: str

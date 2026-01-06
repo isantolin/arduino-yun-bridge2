@@ -108,6 +108,42 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 
 ---
 
+## Notas de plataforma (Arduino Yun)
+
+### Consola del kernel y conflicto con ttyATH0
+
+El Arduino Yun presenta un conflicto de hardware: el puerto serial `/dev/ttyATH0` es usado simultáneamente por:
+
+1. **Consola del kernel** (configurada en bootargs a 250000 baud)
+2. **Protocolo YunBridge** (opera a 115200 baud)
+
+Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corromper frames COBS del protocolo, causando errores de parsing como:
+
+```
+Frame parse error: payload_length=... cmd_id=... (COBS decode failed)
+```
+
+**Solución automática**: El paquete `openwrt-yun-core` incluye el script UCI-defaults `95-yunbridge-silence-kernel-console` que:
+
+1. Crea `/etc/sysctl.d/99-yunbridge-no-console.conf` con `kernel.printk = 0 0 0 0`
+2. Añade un respaldo en `/etc/rc.local`
+
+Esto silencia los mensajes del kernel en la consola serial sin recompilar el kernel ni modificar U-Boot.
+
+**Verificación manual**:
+```bash
+# Ver estado actual
+cat /proc/sys/kernel/printk
+
+# Silenciar temporalmente
+echo 0 > /proc/sys/kernel/printk
+dmesg -n 1
+```
+
+**Nota**: Si se necesita debug del kernel, se puede acceder vía `dmesg` o `logread` sin afectar el protocolo serial.
+
+---
+
 # Protocolo binario (RPC)
 
 ## 1. Visión general

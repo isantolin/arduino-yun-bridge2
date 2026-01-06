@@ -420,6 +420,7 @@ name = "CMD_GET_VERSION"
 value = 0x40
 category = "system"
 directions = ["linux_to_mcu"]
+expects_direct_response = true
 [[commands]]
 name = "CMD_GET_VERSION_RESP"
 value = 0x41
@@ -430,6 +431,7 @@ name = "CMD_GET_FREE_MEMORY"
 value = 0x42
 category = "system"
 directions = ["linux_to_mcu"]
+expects_direct_response = true
 [[commands]]
 name = "CMD_GET_FREE_MEMORY_RESP"
 value = 0x43
@@ -515,11 +517,13 @@ name = "CMD_DIGITAL_READ"
 value = 0x53
 category = "gpio"
 directions = ["linux_to_mcu"]
+expects_direct_response = true
 [[commands]]
 name = "CMD_ANALOG_READ"
 value = 0x54
 category = "gpio"
 directions = ["linux_to_mcu"]
+expects_direct_response = true
 [[commands]]
 name = "CMD_DIGITAL_READ_RESP"
 value = 0x55

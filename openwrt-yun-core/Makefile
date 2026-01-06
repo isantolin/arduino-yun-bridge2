@@ -26,11 +26,12 @@ define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./yunbridge.files $(PKG_BUILD_DIR)/
-	# CORRECCIÓN: Apuntar a la carpeta uci-defaults
+	# Copy uci-defaults scripts for first-boot configuration
+	$(CP) ./uci-defaults/95-yunbridge-silence-kernel-console $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/96-yunbridge-flash-protection-paths $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/97-yunbridge-default-secret $(PKG_BUILD_DIR)/
-	$(CP) ./uci-defaults/99-yunbridge-disable-askconsole $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/98-yunbridge-default-serial $(PKG_BUILD_DIR)/
+	$(CP) ./uci-defaults/99-yunbridge-disable-askconsole $(PKG_BUILD_DIR)/
 	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/
 endef
 
@@ -43,10 +44,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/etc/yunbridge
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/yunbridge.files $(1)/etc/yunbridge/
 	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/95-yunbridge-silence-kernel-console $(1)/etc/uci-defaults/95-yunbridge-silence-kernel-console
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/96-yunbridge-flash-protection-paths $(1)/etc/uci-defaults/96-yunbridge-flash-protection-paths
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/97-yunbridge-default-secret $(1)/etc/uci-defaults/97-yunbridge-default-secret
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-yunbridge-disable-askconsole $(1)/etc/uci-defaults/99-yunbridge-disable-askconsole
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-yunbridge-default-serial $(1)/etc/uci-defaults/98-yunbridge-default-serial
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-yunbridge-disable-askconsole $(1)/etc/uci-defaults/99-yunbridge-disable-askconsole
 	$(INSTALL_DIR) $(1)/www/cgi-bin
 	$(INSTALL_DIR) $(1)/usr/bin
 	[ -d $(PKG_BUILD_DIR)/scripts ] && find $(PKG_BUILD_DIR)/scripts -type f -print0 | xargs -0 -I {} $(INSTALL_BIN) "{}" $(1)/usr/bin/ || true

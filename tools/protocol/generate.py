@@ -568,14 +568,25 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
 
     out.write("class Command(IntEnum):\n")
     ack_only_commands = []
+    response_only_commands = []
     for cmd in spec["commands"]:
         out.write(f"    {cmd['name']} = {cmd['value']}\n")
         if cmd.get("requires_ack", False):
             ack_only_commands.append(f"Command.{cmd['name']}.value")
+        if cmd.get("expects_direct_response", False):
+            response_only_commands.append(f"Command.{cmd['name']}.value")
 
     if ack_only_commands:
         out.write("\n\nACK_ONLY_COMMANDS: frozenset[int] = frozenset({\n")
         for cmd_val in ack_only_commands:
+            out.write(f"    {cmd_val},\n")
+        out.write("})\n")
+
+    if response_only_commands:
+        out.write("\n# Commands that expect a direct response without a prior ACK.\n")
+        out.write("# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.\n")
+        out.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({\n")
+        for cmd_val in response_only_commands:
             out.write(f"    {cmd_val},\n")
         out.write("})\n")
 

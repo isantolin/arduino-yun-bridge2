@@ -10,22 +10,22 @@
 - `openwrt-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums).
 - `luci-app-yunbridge/`: LuCI UI plus CGI endpoints that mirror `/tmp/yunbridge_status.json` and `br/system/status`.
 - `openwrt-yun-examples-python/`: MQTT client scripts that reuse the daemon's DTO modules (`yunbridge.mqtt.messages` + `yunbridge.mqtt.inbound`) while talking to `aiomqtt` directly; useful for manual verification.
-- `feeds/` + `openwrt-sdk/`: local OpenWrt feed populated by `tools/sync_feed_overlay.sh`; SDK builds IPKs via the top-level scripts.
+- `feeds/` + `openwrt-sdk/`: local OpenWrt feed populated by `tools/sync_feed_overlay.sh`; SDK builds APKs via the top-level scripts.
 
 ## Protocol, Config, and Secrets
 - Edit `tools/protocol/spec.toml` then run `python3 tools/protocol/generate.py` to refresh both Python (`yunbridge/rpc/protocol.py`) and C++ (`openwrt-library-arduino/src/protocol/`). Commit both sides together.
-- Runtime defaults live in `openwrt-yun-bridge/yunbridge/const.py`; adjust values there and expose overrides via UCI (`yunbridge.general.*`) or env vars.
+- Runtime defaults live in `openwrt-yun-bridge/yunbridge/const.py`; adjust values there and expose overrides via UCI (`yunbridge.general.*`).
 - Rotate serial + MQTT credentials with `tools/rotate_credentials.sh --host <yun>` or `/usr/bin/yunbridge-rotate-credentials` so sketches can embed `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - Update topic ACLs (`mqtt_allow_*`, `allowed_commands`) in both policy code (`yunbridge/policy.py`) and LuCI defaults whenever permissions change.
 
 ## Build, Install, and Dependencies
-- `./1_compile.sh [openwrt-version] [target]` downloads the SDK, refreshes `feeds/yunbridge`, and builds local IPKs.
-- `./2_expand.sh` prepares storage (extroot/overlay); `./3_install.sh` deploys packages, mixing `opkg` with PyPI pins defined in `dependencies/runtime.toml`.
-- After editing `dependencies/runtime.toml`, run `python3 tools/sync_runtime_deps.py` (or `--check` in CI) to update `requirements/runtime.txt` and Makefiles.
-- Local parity: `pip install -r requirements/runtime.txt` (Python 3.11/3.12) matches the daemon environment.
+- `./1_compile.sh [openwrt-version] [target]` downloads the SDK, refreshes `feeds/yunbridge`, and builds local APKs for all dependencies.
+- `./2_expand.sh` prepares storage (extroot/overlay); `./3_install.sh` deploys packages from `bin/` using `apk add`.
+- After editing `requirements/runtime.toml`, run `python3 tools/sync_runtime_deps.py` (or `--check` in CI) to update `requirements/runtime.txt` and Makefiles.
+- Local parity: `pip install -r requirements/runtime.txt` (Python 3.13) matches the daemon environment.
 
 ## Testing & Quality Gates
-- Python unit tests: `tox -e py311,py312 -- --maxfail=1 --durations=10`; Pyright config sits at repo root for static checks.
+- Python unit tests: `tox -e py313 -- --maxfail=1 --durations=10`; Pyright config sits at repo root for static checks.
 - Coverage stack: `./tools/coverage_python.sh` + `./tools/coverage_arduino.sh`, or `tox -e coverage` followed by `python tools/coverage_report.py` to refresh `coverage/coverage-summary.md`.
 - Hardware smoke tests: `./tools/hardware_smoke_test.sh --host <yun>` for a single board; `./tools/hardware_harness.py --manifest hardware/targets.toml --max-parallel 3 --tag regression` to fan out and emit JSON reports.
 - Manual MQTT verification: run scripts in `openwrt-yun-examples-python/` against the broker at `127.0.0.1:8883`; ensure they see MQTT v5 `response_topic` + `correlation_data`.

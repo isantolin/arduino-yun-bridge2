@@ -63,21 +63,21 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
-| Python (daemon en el MPU) | Base en Python 3.11.x (lo que entrega OpenWrt 23.05). | Mantener compatibilidad hacia adelante ejecutando la suite completa en 3.12 antes de promover cambios. | `tox -e py311,py312` (nuevo `../tox.ini`) ejecuta `pytest` sobre `../openwrt-yun-bridge/tests` con ambas versiones. |
-| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc1. | Validar paridad con la rama estable 23.05 antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc1` (por defecto) y `./1_compile.sh 23.05.5` generan IPKs equivalentes para comparar tamaño y ABI. |
+| Python (daemon en el MPU) | Base en Python 3.13.x (lo que entrega OpenWrt 25.12). | Mantener compatibilidad con futuras versiones ejecutando la suite completa antes de promover cambios. | `tox -e py313` (ver `../tox.ini`) ejecuta `pytest` sobre `../openwrt-yun-bridge/tests`. |
+| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc1. | Validar paridad con ramas legacy antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc1` (por defecto) genera APKs; `./1_compile.sh 23.05.5` genera IPKs para comparar. |
 `../tools/coverage_arduino.sh` construye el harness con el `g++` disponible en `PATH`. | Ensayar la misma versión de GCC usada en la Yún final ejecutando el script dentro del SDK/contendor deseado o adelantando el `PATH` al toolchain adecuado. | `PATH=/opt/openwrt-sdk/staging_dir/toolchain-*/bin:$PATH ./tools/coverage_arduino.sh` recompila y reporta diferencias de warnings o cobertura. |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
 	./1_compile.sh 23.05.5 ath79/generic
 	```
-	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05, lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc1).
-- Este repositorio incluye `tox.ini` con los entornos `py311` y `py312`; los intérpretes que falten se omiten automáticamente (`skip_missing_interpreters=true`), de modo que se puede ejecutar en laptops con un solo Python instalado y en CI multi-versión.
-- Cuando se ejecute una rama candidata, usa el siguiente comando para asegurar que ambos intérpretes comparten resultados:
+	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05 (genera IPKs), lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc1 que genera APKs).
+- Este repositorio incluye `tox.ini` con el entorno `py313`; los intérpretes que falten se omiten automáticamente (`skip_missing_interpreters=true`), de modo que se puede ejecutar en laptops con un solo Python instalado y en CI.
+- Cuando se ejecute una rama candidata, usa el siguiente comando para asegurar que los tests pasan:
 	```sh
-	tox -e py311,py312 -- --maxfail=1 --durations=10
+	tox -e py313 -- --maxfail=1 --durations=10
 	```
-- Los reportes de cobertura para el firmware siguen saliendo de `tools/coverage_arduino.sh`, que deja registrado qué versión exacta de `avr-g++` ejecutó, facilitando la correlación con los builds de OpenWrt 23.05.
+- Los reportes de cobertura para el firmware siguen saliendo de `tools/coverage_arduino.sh`, que deja registrado qué versión exacta de `avr-g++` ejecutó.
 
 ### Automatización operativa
 
@@ -85,18 +85,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Smoke test de hardware:** Lanza `../tools/hardware_smoke_test.sh --host <yun>` (o el botón *Run smoke test* en LuCI) para ejecutar `/usr/bin/yunbridge-hw-smoke`, que valida servicio, credenciales y una ida y vuelta real a `br/system/status`.
 - **Harness multi-dispositivo:** Copia `../hardware/targets.example.toml` a `../hardware/targets.toml`, ajusta tus hosts y luego ejecuta `../tools/hardware_harness.py --list` para verlos. El mismo script corre las pruebas en paralelo (`--max-parallel 4`), filtra por `--tag staging` o `--target lab-yun-01` y expone reportes JSON (`--json results/hw-smoke.json`) ideales para CI.
 - **TLS guiado:** La pestaña *Credentials & TLS* documenta cómo subir bundles `tar.gz` con CA/cert/key a `/etc/yunbridge/tls/` usando `scp` antes de apuntar el daemon al nuevo material.
-- **Frame debug en Linux:** Cuando necesites replicar el ejemplo `FrameDebug` del sketch pero del lado del daemon, detén `yunbridge` y ejecuta `python3 -m yunbridge.tools.frame_debug --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`. El utilitario construye el frame con las mismas rutinas (`rpc.Frame`, `cobs.encode`), imprime CRC/tamaños/hex y, si `--read-response` está activo, decodifica el primer frame que responda el MCU. También puedes omitir `--port` para inspeccionar la estructura del frame sin tocar el hardware o cambiar `--payload`/`--count` para generar ráfagas a intervalos fijos.
-
-### Resolver errores de `aiomqtt` / `paho-mqtt`
-
-- Para evitar el bug del feed oficial (que arrastra `python3-hatchling` como dependencia de runtime), `3_install.sh` ahora instala `aiomqtt>=2.4,<3.0` y `paho-mqtt>=2.1,<3.0` directamente desde PyPI usando `pip3`.
-- Si el dispositivo no tenía `pip3`, el instalador añade automáticamente `python3-pip` antes de continuar.
-- Si la instalación falla por certificados o espacio en disco, puedes repetir el paso manualmente:
-	```sh
-	python3 -m pip install --no-cache-dir --upgrade "aiomqtt>=2.4,<3.0"
-	```
-	Vuelve a lanzar `./3_install.sh` cuando el comando termine con éxito.
-- Para limpiar restos de IPKs antiguos, ejecuta `opkg remove python3-aiomqtt python3-paho-mqtt` antes de iniciar el instalador.
+- **Frame debug en Linux:** Cuando necesites replicar el ejemplo `FrameDebug` del sketch pero del lado del daemon, detén `yunbridge` y ejecuta `python3 -m tools.frame_debug --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`. El utilitario construye el frame con las mismas rutinas (`rpc.Frame`, `cobs.encode`), imprime CRC/tamaños/hex y, si `--read-response` está activo, decodifica el primer frame que responda el MCU. También puedes omitir `--port` para inspeccionar la estructura del frame sin tocar el hardware o cambiar `--payload`/`--count` para generar ráfagas a intervalos fijos.
 
 ## Despliegue seguro
 
@@ -191,28 +180,15 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad, observabilidad y el contrato del protocolo? Revisa [`PROTOCOL.md`](PROTOCOL.md) para obtener el documento actualizado.
 
-> **Nota:** Todas las dependencias del daemon se instalan vía `opkg`, salvo las bibliotecas que solo existen en PyPI (`aiomqtt==2.5.0`, `paho-mqtt==2.1.0`, `cobs==1.2.2`, `tenacity==9.1.2`, `prometheus-client>=0.21.0`, `persist-queue==1.1.0`, `attrs==24.2.0`). Esos paquetes se obtienen automáticamente de PyPI durante `3_install.sh`, que ahora lee `../requirements/runtime.toml` y aplica los mismos pines usados por `requirements/runtime.txt`. El resto (`python3-psutil>=6.0.0`, `python3-more-itertools>=10.8.0`, etc.) sigue llegando como IPKs tradicionales. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt`, refrescar el `Makefile` e instruir a `1_compile.sh`.
+> **Nota:** Todas las dependencias del daemon se compilan localmente como APKs en `feeds/` y se instalan desde `bin/` durante `3_install.sh`. Las librerías Python (`aiomqtt`, `paho-mqtt`, `cobs`, `prometheus-client`, `psutil`) tienen sus propios Makefiles en el feed `yunbridge`. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt` y refrescar los Makefiles.
 >
 > **✅ Nota sobre pyserial:** La dependencia `pyserial` ha sido reemplazada por una implementación pura basada en `termios` (módulo built-in de Python). Esto elimina la dependencia externa y evita posibles incompatibilidades con futuras versiones de Python. Ver `yunbridge/transport/termios_serial.py`.
 
-### Flujo reproducible con PyPI
-
-- **Instala localmente los mismos paquetes que el daemon:**
-	```sh
-	python3 -m pip install --upgrade -r requirements/runtime.txt
-	```
-	Esto usa exactamente los pines publicados en `../requirements/runtime.toml`, por lo que cualquier entorno virtual replica al daemon.
-- **Valida que los pines sigan disponibles en PyPI:** con `pip>=24.2` puedes hacer un chequeo sin modificar tu entorno usando `python3 -m pip install --dry-run -r requirements/runtime.txt`. En versiones anteriores de `pip`, ejecuta el mismo comando sin `--dry-run` dentro de un entorno temporal.
-- **Dispositivos OpenWrt:** `3_install.sh` ahora genera una lista temporal a partir de `../requirements/runtime.toml` e instala exclusivamente los paquetes que NO tienen contraparte `opkg`, garantizando que el sistema embebido y tu entorno local comparten versiones.
-- **Automatiza las revisiones:** añade `./tools/sync_runtime_deps.py --check` a tus pipelines para asegurar que ningún commit olvida actualizar los artefactos derivados.
-- **Pruebas locales:** los entornos de `tox` consumen `requirements/runtime.txt`, así que `tox -e py311,py312` siempre valida contra el mismo conjunto de librerías que se usan en producción.
-
 ## Primeros Pasos
 
-1.  **Compilar:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes IPK de OpenWRT.
-2.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software y las dependencias.
+1.  **Compilar:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes APK de OpenWRT (incluidas las dependencias Python en `feeds/`).
+2.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software desde `bin/`.
 	- El script evita hacer upgrades del sistema (por estabilidad) y se centra en instalar/actualizar las dependencias necesarias para YunBridge.
-	> **Nota:** `3_install.sh` combina `opkg` (IPKs tradicionales) con una instalación controlada vía `pip3` para los paquetes que solo existen en PyPI. Si se interrumpe esa fase, verifica la conectividad TLS y ejecuta `python3 -m pip install --no-cache-dir --upgrade -r requirements/runtime.txt` antes de relanzar el instalador para asegurarte de que cada pin declarado en `../requirements/runtime.toml` quedó aplicado.
 3.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `../tools/rotate_credentials.sh --host <yun>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
 4.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
 
@@ -223,14 +199,14 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Cobertura Python:** Lanza `../tools/coverage_python.sh` (o simplemente `tox -e coverage`, que encadena ambos scripts) para generar `coverage/python/` con reportes `term-missing`, `coverage.xml` y HTML. Puedes pasar argumentos extra (por ejemplo un subconjunto de tests) y usar `--output-root` si necesitas otro directorio.
 - **Cobertura C++:** Ejecuta `./tools/coverage_arduino.sh` o reutiliza el `tox -e coverage` anterior para compilar un harness host que prueba el protocolo binario con `g++ -fprofile-arcs -ftest-coverage`, ejecuta los tests y genera reportes en `coverage/arduino/`. Si ya tienes un build instrumentado diferente, usa `--build-dir`/`--output-root` o `--force-rebuild` para reutilizarlo.
 - **Resumen automático:** Después de correr ambos scripts, ejecuta `../tools/coverage_report.py` para generar una tabla consolidada (`coverage/coverage-summary.md` + `.json`). El workflow de CI hace esto automáticamente y publica la tabla en el *GitHub Step Summary*, además de adjuntar el markdown como artefacto.
-- **Artefactos de cobertura en CI:** El workflow `coverage` de GitHub Actions corre `tox -e coverage` en Python 3.11 y publica los directorios `coverage/python` y `coverage/arduino` como artefactos para cada PR/commit, facilitando su inspección sin levantar un entorno local.
-- **Matriz Python 3.11/3.12:** Usa `tox` para ejecutar la suite completa en ambos intérpretes y detectar regresiones antes de desplegar:
+- **Artefactos de cobertura en CI:** El workflow `coverage` de GitHub Actions corre `tox -e coverage` en Python 3.13 y publica los directorios `coverage/python` y `coverage/arduino` como artefactos para cada PR/commit, facilitando su inspección sin levantar un entorno local.
+- **Matriz Python 3.13:** Usa `tox` para ejecutar la suite completa y detectar regresiones antes de desplegar:
 	```sh
-	tox -e py311,py312
+	tox -e py313
 	```
 - **Smoke test remoto:** `./tools/hardware_smoke_test.sh --host <yun>` invoca `/usr/bin/yunbridge-hw-smoke` vía SSH y falla si el daemon no responde a `br/system/status` en menos de 7 segundos.
 - **Harness multi-dispositivo:** `./tools/hardware_harness.py --manifest hardware/targets.toml --max-parallel 3 --tag regression` recorre todos los dispositivos definidos en el manifiesto, ejecuta el script anterior mediante SSH y al final resume qué nodos pasaron/ fallaron (además de producir un reporte JSON opcional).
-- **Pruebas manuales:** Tras instalar los paquetes IPK en tu Yún, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-yun-examples-python` y revisa el nuevo log del daemon (`/var/log/yunbridge.log`).
+- **Pruebas manuales:** Tras instalar los paquetes en tu Yún, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-yun-examples-python` y revisa el nuevo log del daemon (`/var/log/yunbridge.log`).
 - **Diagnóstico en el MCU:** Carga el sketch `openwrt-library-arduino/examples/FrameDebug/FrameDebug.ino` para imprimir cada 5 s el snapshot de transmisión y confirmar que `expected_serial_bytes` coincide con `last_write_return`.
 - **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/yunbridge_status.json` junto al límite configurado. Ese snapshot ahora incluye `mqtt_spool_*`, `watchdog_*` (latido, intervalo, habilitado) y los nuevos contadores de almacenamiento (`file_storage_bytes_used`, `file_write_limit_rejections`, `file_storage_limit_rejections`) para que LuCI los muestre sin parsers adicionales. Además, `br/system/metrics` adjunta las mismas claves y propiedades MQTT (`bridge-spool`, `bridge-watchdog-enabled`, `bridge-watchdog-interval`) para que los consumidores puedan alertar cuando el spool persistente se degrada, el watchdog deja de latir o el sandbox de archivos se acerca al límite.
 - **Telemetría reforzada:** `RuntimeState` cuenta los eventos de drop y truncamiento en todas las colas (MQTT, consola, mailbox y mailbox_incoming) y el writer periódico exporta los acumuladores en `/tmp/yunbridge_status.json` (`*_dropped_*`, `*_truncated_*`) junto con los tamaños actuales. Estos mismos contadores se publican en `br/system/status` para integrarse con dashboards MQTT.

@@ -40,9 +40,9 @@ En resumen, la comunicación se realiza exclusivamente a través de MQTT, lo que
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt` (que ya incluye `paho-mqtt` ≥ 2.1), `cobs`, `prometheus-client` y `tenacity` llegan ahora desde PyPI. La comunicación serial del daemon usa una implementación pura basada en `termios` (módulo built-in de Python), eliminando la dependencia de `pyserial`. No necesitas instalar `asyncio-mqtt`: trabajamos directamente contra `aiomqtt.Client`, reutilizamos `QueuedPublish` para los spoolers y apoyamos la observabilidad en los mismos helpers que usa el daemon para exponer `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
+Los scripts reutilizan las mismas dependencias instaladas en la Yún por `3_install.sh`. `aiomqtt`, `paho-mqtt`, `cobs`, `prometheus-client` y `psutil` se compilan localmente como APKs en `feeds/` y se instalan desde `bin/`. La comunicación serial del daemon usa una implementación pura basada en `termios` (módulo built-in de Python), eliminando la dependencia de `pyserial`. No necesitas instalar `asyncio-mqtt`: trabajamos directamente contra `aiomqtt.Client`, reutilizamos `QueuedPublish` para los spoolers y apoyamos la observabilidad en los mismos helpers que usa el daemon para exponer `session_expiry_interval` y códigos de motivo enriquecidos sin cambiar el código de los ejemplos.
 
-Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes IPK), instala las dependencias mínimas en tu entorno de desarrollo:
+Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paquetes APK), instala las dependencias mínimas en tu entorno de desarrollo:
 
 ```sh
 pip install \
@@ -54,8 +54,6 @@ pip install \
 ```
 
 Antes de modificar los ejemplos, ejecuta `pyright` en la raíz del proyecto para asegurarte de que el tipado estático siga consistente con el daemon.
-
-> **Nota:** Si trabajas en un entorno virtual fuera de OpenWrt, añade `tenacity>=9.1` a tu entorno (viene de PyPI en `3_install.sh`) para que los ejemplos puedan aprovechar los mismos helpers de reconexión que usa el daemon.
 
 ### Puesta en marcha del broker MQTT
 

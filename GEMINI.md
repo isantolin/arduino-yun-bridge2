@@ -29,8 +29,8 @@ To build the project, run the `1_compile.sh` script. This script will:
 
 1.  Download and configure the OpenWrt SDK.
 2.  Copy the project's packages into the SDK.
-3.  Compile the packages to create `.ipk` files.
-4.  Place the resulting `.ipk` files in the `bin/` directory.
+3.  Compile the packages to create `.apk` files.
+4.  Place the resulting `.apk` files in the `bin/` directory.
 
 ```bash
 ./1_compile.sh
@@ -49,7 +49,7 @@ If your device has limited storage, you can use the `2_expand.sh` script to expa
 To install the bridge on your Arduino Yún, transfer the project files to the device and run the `3_install.sh` script as root. This script will:
 
 1.  Install the necessary system dependencies.
-2.  Install the project's `.ipk` packages.
+2.  Install the project's `.apk` packages.
 3.  Configure the system.
 4.  Start the `yunbridge` daemon.
 

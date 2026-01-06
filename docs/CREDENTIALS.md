@@ -47,7 +47,7 @@ The **Services → YunBridge → Credentials & TLS** page now shows an "Arduino 
 
 1. Rebuild or re-upload your Arduino sketch so it includes the updated `#define BRIDGE_SERIAL_SHARED_SECRET "..."` line (or the header where you stored that snippet).
 2. Run `tools/hardware_smoke_test.sh --host <yun>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
-3. Check `/var/log/yun-bridge.log` or the LuCI status panel for `handshake` entries. Any `serial handshake rejected` messages typically mean the MCU firmware did not pick up the new header yet.
+3. Check `/var/log/yunbridge.log` or the LuCI status panel for `handshake` entries. Any `serial handshake rejected` messages typically mean the MCU firmware did not pick up the new header yet.
 
 ## Operational checklist
 

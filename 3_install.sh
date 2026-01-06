@@ -9,16 +9,6 @@ set -eu
 PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$PROJECT_ROOT"
 
-DEPENDENCY_MANIFEST="$PROJECT_ROOT/requirements/runtime.toml"
-
-if [ ! -f "$DEPENDENCY_MANIFEST" ]; then
-    cat >&2 <<EOF
-[ERROR] Missing dependency manifest at $DEPENDENCY_MANIFEST.
-[HINT] Copy the entire arduino-yun-bridge2 repository (including dependencies/) to the device and run ./3_install.sh from that directory.
-EOF
-    exit 1
-fi
-
 if [ "$(id -u)" -ne 0 ]; then
     echo "ERROR: este script debe ejecutarse como root." >&2
     exit 1
@@ -28,7 +18,6 @@ fi
 INIT_SCRIPT="/etc/init.d/yunbridge"
 REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
-MIN_DISK_KB=51200 # 50MB free required
 TMPDIR=/overlay/upper/tmp
 
 # [FIX] Removed --force-reinstall as it is not supported by OpenWrt's apk
@@ -146,86 +135,7 @@ install_dependency() {
     exit 1
 }
 
-check_disk_space() {
-    local target="$1"
-    local available_kb
-    available_kb=$(df -k "$target" | awk 'NR==2 {print $4}')
-    
-    if [ "$available_kb" -lt "$MIN_DISK_KB" ]; then
-        echo "[ERROR] Insufficient disk space on $target. Available: ${available_kb}KB, Required: ${MIN_DISK_KB}KB" >&2
-        return 1
-    fi
-    echo "[INFO] Disk space check passed on $target (${available_kb}KB available)."
-    return 0
-}
 
-install_manifest_pip_requirements() {
-    local manifest_path="$DEPENDENCY_MANIFEST"
-    local tmp_requirements
-
-    if ! command -v python3 >/dev/null 2>&1; then
-        echo "[ERROR] python3 binary not found." >&2
-        exit 1
-    fi
-
-    if [ ! -f "$manifest_path" ]; then
-        echo "[ERROR] Missing dependency manifest at $manifest_path" >&2
-        exit 1
-    fi
-
-    tmp_requirements=$(mktemp "${TMPDIR:-/tmp}/yunbridge-pip.XXXXXX")
-    python3 - "$manifest_path" "$tmp_requirements" <<'PY'
-import sys
-from pathlib import Path
-import tomllib
-
-manifest = Path(sys.argv[1])
-output = Path(sys.argv[2])
-if not manifest.exists():
-    raise SystemExit(f"Missing manifest: {manifest}")
-
-data = tomllib.loads(manifest.read_text())
-specs = sorted(
-    {
-        entry.get("pip", "").strip()
-        for entry in data.get("dependency", [])
-        if entry.get("pip") and not entry.get("openwrt")
-    }
-)
-if specs:
-    output.write_text("\n".join(specs) + "\n")
-else:
-    output.write_text("")
-PY
-
-    if [ ! -s "$tmp_requirements" ]; then
-        echo "[INFO] Manifest declares no pip-only dependencies; skipping PyPI install."
-        rm -f "$tmp_requirements"
-        return
-    fi
-
-    if ! command -v pip3 >/dev/null 2>&1; then
-        echo "[INFO] pip3 not found; installing python3-pip..."
-        install_dependency python3-pip
-    fi
-
-    if ! check_disk_space "/overlay"; then
-        echo "[ERROR] Not enough space for pip packages." >&2
-        rm -f "$tmp_requirements"
-        exit 1
-    fi
-
-    echo "[INFO] Installing pinned PyPI dependencies..."
-    # --break-system-packages might be needed on newer Python/OpenWrt envs
-    # Added || true to prevent install failure from stopping the script if user has custom env
-    if ! python3 -m pip install --break-system-packages --no-cache-dir --upgrade --pre -r "$tmp_requirements"; then
-        echo "[ERROR] Failed to install pinned PyPI dependencies." >&2
-        rm -f "$tmp_requirements"
-        exit 1
-    fi
-
-    rm -f "$tmp_requirements"
-}
 
 # Ensure UCI config file exists before trying to access it
 ensure_uci_config() {
@@ -432,7 +342,6 @@ python3-asyncio \
 python3-uci \
 python3-psutil \
 python3-more-itertools \
-python3-pip \
 openssl-util \
 coreutils-stty \
 mosquitto-client-ssl \
@@ -451,8 +360,6 @@ done
 # Ensure we have a Lua runtime
 if apk info -e lua >/dev/null 2>&1; then install_dependency "lua";
 elif apk info -e lua5.1 >/dev/null 2>&1; then install_dependency "lua5.1"; fi
-
-install_manifest_pip_requirements
 
 # --- Install Prebuilt Packages ---
 echo "[STEP 5/6] Installing project .apk packages..."

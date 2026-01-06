@@ -1,6 +1,6 @@
 # Arquitectura del Cliente del Puente de Yun v2
 
-Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través de `yunbridge/daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.4** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, consumiendo directamente `aiomqtt.client.Message` junto con los DTOs serializables (`QueuedPublish`) y los helpers (`topic_name`, `correlation_data`) que expone el daemon sin recurrir a ningún shim intermedio.
+Este componente (`openwrt-yun-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino Yun interactúen con el microcontrolador a través de `yunbridge/daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.5** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, consumiendo directamente `aiomqtt.client.Message` junto con los DTOs serializables (`QueuedPublish`) y los helpers (`topic_name`, `correlation_data`) que expone el daemon sin recurrir a ningún shim intermedio.
 
 ## API de Comunicación: MQTT
 
@@ -46,7 +46,7 @@ Si ejecutas los ejemplos directamente desde el repositorio (sin instalar los paq
 
 ```sh
 pip install \
-	"aiomqtt>=2.4,<3" \
+	"aiomqtt>=2.5,<3" \
 	"paho-mqtt>=2.1,<3" \
 	"prometheus-client>=0.20,<1" \
 	"tenacity>=9.0,<10" \

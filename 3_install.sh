@@ -341,7 +341,6 @@ python3 \
 python3-asyncio \
 python3-uci \
 python3-psutil \
-python3-more-itertools \
 openssl-util \
 coreutils-stty \
 mosquitto-client-ssl \

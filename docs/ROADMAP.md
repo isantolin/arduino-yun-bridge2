@@ -14,7 +14,7 @@
 - Refactored Arduino C++ library to "Decoupled Bridge" architecture.
 - Verified system with comprehensive test suites (`test_bridge_core`, `test_bridge_components`).
 - Validated build artifacts and installation scripts.
-- Achieved "Ready for Release" status (v2.0.0).
+- Achieved "Ready for Release" status (v2.0.1).
 
 ## Future / Ideas
 - **Hardware Verification**: Conduct extensive testing on physical Arduino Yun hardware.

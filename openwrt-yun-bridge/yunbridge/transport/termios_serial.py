@@ -24,6 +24,7 @@ import fcntl
 import os
 import select
 import termios
+from typing import Any
 from typing import Final
 
 # Baudrate constants mapping
@@ -104,7 +105,7 @@ class TermiosSerial:
         self._exclusive = exclusive
         self._fd: int | None = None
         self._is_open = False
-        self._original_attrs: list[int] | None = None
+        self._original_attrs: list[Any] | None = None
 
         if not do_not_open:
             self.open()

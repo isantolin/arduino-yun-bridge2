@@ -4,14 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import errno
-import json
 import os
-import struct
 import tempfile
-import threading
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -177,7 +172,7 @@ def test_spool_non_tmp_directory_forces_memory_mode() -> None:
     """Cover line 148: Non-tmp directory forces memory-only mode."""
     from yunbridge.mqtt.spool import MQTTPublishSpool
 
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with tempfile.TemporaryDirectory():
         # Use a non-tmp path
         spool = MQTTPublishSpool(
             directory="/var/lib/test_spool",
@@ -217,7 +212,6 @@ def test_spool_append_disk_error_falls_back_to_memory() -> None:
         )
         # Force disk queue to raise on append
         if spool._disk_queue is not None:
-            original_append = spool._disk_queue.append
             spool._disk_queue.append = MagicMock(side_effect=OSError("Disk full"))
 
         msg = QueuedPublish(topic_name="test", payload=b"data")
@@ -363,7 +357,7 @@ async def test_runtime_send_frame_no_sender() -> None:
     service = BridgeService(config, state)
     # No sender registered
 
-    result = await service.send_frame(0x01, b"test")
+    await service.send_frame(0x01, b"test")
     # Should return False or handle gracefully
 
 

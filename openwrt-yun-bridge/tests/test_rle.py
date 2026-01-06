@@ -5,8 +5,6 @@ import pytest
 
 from yunbridge.rpc.rle import (
     ESCAPE_BYTE,
-    MIN_RUN_LENGTH,
-    MAX_RUN_LENGTH,
     encode,
     decode,
     should_compress,

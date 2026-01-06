@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import struct
-import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -24,7 +23,7 @@ from yunbridge.rpc.protocol import (
     Status,
 )
 from yunbridge.services.components.base import BridgeContext
-from yunbridge.services.components.process import ProcessComponent, ProcessOutputBatch
+from yunbridge.services.components.process import ProcessComponent
 from yunbridge.state.context import ManagedProcess, create_runtime_state
 
 
@@ -290,16 +289,16 @@ async def test_start_async_generic_exception_returns_sentinel(
 def test_serial_termios_import_fallback() -> None:
     """Cover lines 13-15: termios/tty not available on non-Unix platforms."""
     from yunbridge.transport import serial as serial_module
-    
+
     # Save original values
     original_termios = getattr(serial_module, '_termios', None)
     original_tty = getattr(serial_module, '_tty', None)
-    
+
     try:
         # Simulate the fallback case by setting module-level to None
         serial_module._termios = None
         serial_module._tty = None
-        
+
         mock_serial = MagicMock()
         mock_serial.fd = 1
         # Should not raise with None termios/tty
@@ -339,7 +338,7 @@ def test_serial_ensure_raw_mode_exception() -> None:
     mock_serial = MagicMock()
     mock_serial.fd = 42
 
-    with patch("yunbridge.transport.serial.termios") as mock_termios:
+    with patch("yunbridge.transport.serial.termios"):
         with patch("yunbridge.transport.serial.tty") as mock_tty:
             mock_tty.setraw.side_effect = OSError("Permission denied")
             # Should not raise, just log warning

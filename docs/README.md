@@ -64,14 +64,14 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.13.x (lo que entrega OpenWrt 25.12). | Mantener compatibilidad con futuras versiones ejecutando la suite completa antes de promover cambios. | `tox -e py313` (ver `../tox.ini`) ejecuta `pytest` sobre `../openwrt-yun-bridge/tests`. |
-| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc1. | Validar paridad con ramas legacy antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc1` (por defecto) genera APKs; `./1_compile.sh 23.05.5` genera IPKs para comparar. |
+| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc2. | Validar paridad con ramas legacy antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc2` (por defecto) genera APKs; `./1_compile.sh 23.05.5` genera IPKs para comparar. |
 `../tools/coverage_arduino.sh` construye el harness con el `g++` disponible en `PATH`. | Ensayar la misma versión de GCC usada en la Yún final ejecutando el script dentro del SDK/contendor deseado o adelantando el `PATH` al toolchain adecuado. | `PATH=/opt/openwrt-sdk/staging_dir/toolchain-*/bin:$PATH ./tools/coverage_arduino.sh` recompila y reporta diferencias de warnings o cobertura. |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
 	./1_compile.sh 23.05.5 ath79/generic
 	```
-	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05 (genera IPKs), lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc1 que genera APKs).
+	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05 (genera IPKs), lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc2 que genera APKs).
 - Este repositorio incluye `tox.ini` con el entorno `py313`; los intérpretes que falten se omiten automáticamente (`skip_missing_interpreters=true`), de modo que se puede ejecutar en laptops con un solo Python instalado y en CI.
 - Cuando se ejecute una rama candidata, usa el siguiente comando para asegurar que los tests pasan:
 	```sh

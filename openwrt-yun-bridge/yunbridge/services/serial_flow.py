@@ -14,7 +14,7 @@ from yunbridge.const import (
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from yunbridge.rpc.protocol import ACK_ONLY_COMMANDS
+from yunbridge.rpc.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS
 from yunbridge.rpc.contracts import (
     expected_responses as rpc_expected_responses,
     response_to_request,
@@ -308,7 +308,8 @@ class SerialFlowController:
 
         self._emit_metric("sent")
 
-        ack_phase = True
+        # Commands in RESPONSE_ONLY_COMMANDS don't expect ACK, skip ack phase
+        ack_phase = pending.command_id not in RESPONSE_ONLY_COMMANDS
         while True:
             if ack_phase and pending.ack_received:
                 ack_phase = False

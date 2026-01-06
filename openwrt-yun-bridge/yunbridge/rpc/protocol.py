@@ -254,3 +254,12 @@ ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
     Command.CMD_MAILBOX_PUSH.value,
     Command.CMD_FILE_WRITE.value,
 })
+
+# Commands that expect a direct response without a prior ACK.
+# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
+RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
+    Command.CMD_DIGITAL_READ.value,
+    Command.CMD_ANALOG_READ.value,
+    Command.CMD_GET_VERSION.value,
+    Command.CMD_GET_FREE_MEMORY.value,
+})

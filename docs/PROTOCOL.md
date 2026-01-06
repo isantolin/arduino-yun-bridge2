@@ -343,6 +343,107 @@ Notas:
   - Dirección: MQTT clientes → daemon (comandos), daemon → MQTT (respuestas/snapshots).
   - La lista de suscripciones (incluyendo comodines y QoS) vive en `tools/protocol/spec.toml` (`[[mqtt_subscriptions]]`) y se genera a Python como `MQTT_COMMAND_SUBSCRIPTIONS`.
 
+---
+
+## 7. Compresión RLE (opcional)
+
+El protocolo incluye una implementación de **Run-Length Encoding (RLE)** optimizada para sistemas embebidos con RAM limitada. Está disponible en ambos lados (MCU y daemon) para comprimir payloads antes de transmitir.
+
+### 7.1 Casos de uso
+
+| Tipo de dato | Compresión típica | Recomendación |
+| --- | --- | --- |
+| Console output con espacios/tabs | 1.2x - 2x | ✅ Usar |
+| Datos de sensores repetitivos | 2x - 10x | ✅ Usar |
+| Archivos con padding nulo | 10x - 50x | ✅ Usar |
+| Datos GPIO (1-2 bytes) | N/A | ❌ No usar |
+| Handshake/crypto | N/A | ❌ No usar |
+| Datos aleatorios | ~1x | ❌ No usar |
+
+### 7.2 Formato de codificación
+
+```
+Literal:     byte                    (si byte ≠ 0xFF)
+Run:         0xFF <count> <byte>     (secuencia de bytes repetidos)
+```
+
+| Count | Significado |
+| --- | --- |
+| 0-254 | Run length = count + 2 (2-256 bytes) |
+| 255 | Marcador especial: exactamente 1 byte (para escapar 0xFF aislado) |
+
+**Ejemplos:**
+
+```
+Input:   "AAAAA"           (5 bytes)
+Output:  0xFF 0x03 0x41    (3 bytes: escape + count=3+2=5 + 'A')
+
+Input:   0xFF              (1 byte aislado)
+Output:  0xFF 0xFF 0xFF    (3 bytes: escape + marcador_especial + 0xFF)
+
+Input:   0xFF 0xFF         (2 bytes consecutivos)
+Output:  0xFF 0x00 0xFF    (3 bytes: escape + count=0+2=2 + 0xFF)
+```
+
+### 7.3 Parámetros
+
+| Constante | Valor | Descripción |
+| --- | --- | --- |
+| `RLE_ESCAPE_BYTE` | `0xFF` | Byte que indica inicio de secuencia codificada |
+| `RLE_MIN_RUN_LENGTH` | 4 | Longitud mínima para codificar (break-even) |
+| `RLE_MAX_RUN_LENGTH` | 256 | Máximo por secuencia (runs más largos se dividen) |
+
+### 7.4 Performance
+
+| Escenario | Input | Output | Ratio |
+| --- | --- | --- | --- |
+| Datos uniformes | 100 bytes | 3 bytes | **33x** |
+| Largo uniforme | 1000 bytes | 12 bytes | **83x** |
+| Texto normal | 100 bytes | ~100 bytes | ~1x |
+| Muchos 0xFF aislados | 50 bytes | ~150 bytes | 0.3x (expansión) |
+
+### 7.5 Uso en código
+
+**C++ (MCU):**
+```cpp
+#include "protocol/rle.h"
+
+uint8_t input[] = "AAAAAAAAAA";  // 10 bytes
+uint8_t output[32];
+
+// Verificar si vale la pena comprimir
+if (rle::should_compress(input, 10)) {
+  size_t compressed_len = rle::encode(input, 10, output, sizeof(output));
+  // compressed_len = 3 bytes
+}
+
+// Decodificar
+uint8_t decoded[32];
+size_t decoded_len = rle::decode(output, compressed_len, decoded, sizeof(decoded));
+```
+
+**Python (daemon):**
+```python
+from yunbridge.rpc.rle import encode, decode, should_compress
+
+data = b"A" * 100
+
+if should_compress(data):
+    compressed = encode(data)  # 3 bytes
+    original = decode(compressed)  # 100 bytes
+```
+
+### 7.6 Recursos
+
+- **RAM (MCU):** ~10 bytes de stack, sin heap
+- **Flash (MCU):** ~500 bytes de código
+- **Archivos fuente:**
+  - C++: `openwrt-library-arduino/src/protocol/rle.h`
+  - Python: `openwrt-yun-bridge/yunbridge/rpc/rle.py`
+  - Spec: `tools/protocol/spec.toml` (sección `[compression]`)
+
+---
+
 ### MQTT: snapshots del bridge (SYSTEM/bridge/*)
 
 Además de los comandos anteriores, el daemon expone endpoints de lectura de estado:

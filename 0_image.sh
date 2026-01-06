@@ -28,14 +28,22 @@ usage() {
     cat <<'EOF'
 Usage: ./0_image.sh [OPENWRT_VERSION]
 
-Compila una imagen OpenWrt completa para Arduino Yun con:
+Compila una imagen OpenWrt BASE para Arduino Yun con:
   - UART serial a 115200 baud (en lugar de 250000)
-  - Paquetes del ecosistema Yun Bridge preinstalados
+  - Sistema mínimo (~6-8MB, cabe en 16MB flash)
+
+NOTA: Esta imagen NO incluye Python, LuCI ni YunBridge.
+      Esos paquetes se instalan después con 2_expand.sh y 3_install.sh.
+
+Flujo completo:
+  1. ./0_image.sh        # Compila imagen base
+  2. Flashear imagen
+  3. ./2_expand.sh       # Configura extroot en SD
+  4. ./3_install.sh      # Instala Python, LuCI, YunBridge
 
 Ejemplos:
   ./0_image.sh                  # Usa 25.12.0-rc2 por defecto
   ./0_image.sh 25.12.0-rc2      # Versión específica
-  ./0_image.sh v25.12.0-rc2     # Con prefijo 'v'
 
 Requisitos:
   - ~15GB de espacio en disco
@@ -120,64 +128,37 @@ fi
 # --- Actualizar feeds ---
 log_info "Actualizando feeds..."
 ./scripts/feeds update -a
-
-# --- Agregar feed local del proyecto ---
-FEEDS_CONF="feeds.conf"
-if [ -f "$FEEDS_CONF" ]; then
-    # Remover entrada anterior si existe
-    sed -i '/yunbridge/d' "$FEEDS_CONF"
-fi
-echo "src-link yunbridge $SCRIPT_DIR/feeds" >> "$FEEDS_CONF"
-log_info "Feed local yunbridge agregado"
-
-./scripts/feeds update yunbridge
 ./scripts/feeds install -a
 
-# --- Configuración del target ---
-log_info "Configurando para Arduino Yun..."
+# --- Configuración del target (IMAGEN MÍNIMA) ---
+log_info "Configurando imagen mínima para Arduino Yun (16MB flash)..."
 
 cat > .config <<'DEFCONFIG'
-# Target
+# Target: Arduino Yun (ath79/generic)
 CONFIG_TARGET_ath79=y
 CONFIG_TARGET_ath79_generic=y
 CONFIG_TARGET_ath79_generic_DEVICE_arduino-yun=y
 
-# Imagen
+# Imagen compacta
 CONFIG_TARGET_ROOTFS_SQUASHFS=y
 CONFIG_TARGET_ROOTFS_EXT4FS=n
 
-# Paquetes base
+# Sistema base (requerido)
 CONFIG_PACKAGE_base-files=y
 CONFIG_PACKAGE_busybox=y
 CONFIG_PACKAGE_dropbear=y
 
-# Python 3.13
-CONFIG_PACKAGE_python3=y
-CONFIG_PACKAGE_python3-asyncio=y
-CONFIG_PACKAGE_python3-logging=y
+# Soporte extroot (para expandir a SD después)
+CONFIG_PACKAGE_block-mount=y
+CONFIG_PACKAGE_kmod-fs-ext4=y
+CONFIG_PACKAGE_e2fsprogs=y
 
-# MQTT
-CONFIG_PACKAGE_mosquitto-ssl=y
-CONFIG_PACKAGE_mosquitto-client-ssl=y
+# Networking básico
+CONFIG_PACKAGE_wpad-basic-mbedtls=y
 
-# Paquetes Yun Bridge
-CONFIG_PACKAGE_openwrt-yun-bridge=y
-CONFIG_PACKAGE_openwrt-yun-core=y
-CONFIG_PACKAGE_luci-app-yunbridge=y
-
-# Dependencias Python del Bridge
-CONFIG_PACKAGE_python3-paho-mqtt=y
-CONFIG_PACKAGE_python3-aiomqtt=y
-CONFIG_PACKAGE_python3-cobs=y
-CONFIG_PACKAGE_python3-prometheus-client=y
-
-# LuCI (opcional pero útil)
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-ssl=y
-
-# Utilidades
-CONFIG_PACKAGE_htop=y
-CONFIG_PACKAGE_nano=y
+# NOTA: Python, LuCI, Mosquitto y YunBridge se instalan
+# DESPUÉS de configurar extroot con 2_expand.sh y 3_install.sh
+# porque no caben en los 16MB de flash del Yun.
 DEFCONFIG
 
 # Expandir configuración
@@ -186,7 +167,7 @@ make defconfig
 # --- Compilar ---
 NPROC=$(nproc)
 log_info "Iniciando compilación con $NPROC threads..."
-log_info "Esto puede tomar 30-60 minutos en la primera compilación."
+log_info "Esto puede tomar 20-40 minutos para imagen mínima."
 
 # Primera pasada: descargar todo
 log_info "Descargando fuentes..."
@@ -210,6 +191,8 @@ echo ""
 
 if [ -n "$SYSUPGRADE" ]; then
     log_info "Imagen sysupgrade: $SYSUPGRADE"
+    SIZE=$(ls -lh "$SYSUPGRADE" | awk '{print $5}')
+    log_info "Tamaño: $SIZE (debe ser < 16MB)"
     ls -lh "$SYSUPGRADE"
 fi
 
@@ -219,9 +202,16 @@ if [ -n "$FACTORY" ]; then
 fi
 
 echo ""
-log_info "Para flashear via sysupgrade (desde el Yun):"
-echo "  scp $SYSUPGRADE root@arduino.local:/tmp/"
-echo "  ssh root@arduino.local 'sysupgrade -n /tmp/$(basename "$SYSUPGRADE")'"
+log_info "=== Próximos pasos ==="
 echo ""
-log_info "Para flashear via U-Boot (imagen factory):"
-echo "  Consultar: https://openwrt.org/toh/arduino/yun"
+echo "1. Flashear la imagen:"
+echo "   scp $SYSUPGRADE root@arduino.local:/tmp/"
+echo "   ssh root@arduino.local 'sysupgrade -n /tmp/\$(basename $SYSUPGRADE)'"
+echo ""
+echo "2. Insertar tarjeta SD y ejecutar:"
+echo "   ./2_expand.sh    # Configura extroot en SD"
+echo ""
+echo "3. Instalar YunBridge:"
+echo "   ./3_install.sh   # Instala Python, LuCI, YunBridge"
+echo ""
+log_warn "IMPORTANTE: Sin tarjeta SD solo tendrás sistema base (SSH)"

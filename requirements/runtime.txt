@@ -1,5 +1,4 @@
 # Generated via tools/sync_runtime_deps.py; do not edit.
-# pyserial removed: replaced by built-in termios (yunbridge.transport.termios_serial)
 aiomqtt==2.5.0
 cobs==1.2.2
 paho-mqtt==2.1.0

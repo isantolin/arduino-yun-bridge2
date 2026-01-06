@@ -186,11 +186,32 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ## Primeros Pasos
 
-1.  **Compilar:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes APK de OpenWRT (incluidas las dependencias Python en `feeds/`).
-2.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software desde `bin/`.
+### Opción A: Imagen completa (recomendado para instalaciones nuevas)
+
+La forma más sencilla es compilar una imagen OpenWrt completa que ya incluye todo el ecosistema YunBridge:
+
+1.  **Compilar imagen:** Ejecuta `./0_image.sh` para generar una imagen OpenWrt con:
+	- UART a 115200 baud (corrige el baudrate legacy de 250000)
+	- Todos los paquetes YunBridge preinstalados
+	- Configuración automática de extroot/swap en primer boot
+	- Generación automática de secretos de seguridad
+2.  **Flashear:** Usa la imagen `sysupgrade` o `factory` generada en `openwrt-build/bin/targets/ath79/generic/`.
+3.  **Primer boot:** Inserta una tarjeta SD y el sistema la configurará automáticamente como extroot. Después de un reinicio automático, el sistema estará listo.
+4.  **Obtener secreto:** Ejecuta `uci get yunbridge.general.serial_shared_secret` y usa el valor en tu sketch Arduino.
+
+### Opción B: Instalación sobre OpenWrt existente
+
+Si ya tienes OpenWrt instalado y no quieres reflashear:
+
+1.  **Compilar paquetes:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes APK de OpenWRT (incluidas las dependencias Python en `feeds/`).
+2.  **Preparar almacenamiento:** Ejecuta `./2_expand.sh` para configurar extroot en la tarjeta SD y crear swap (el sistema reiniciará).
+3.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software desde `bin/`.
 	- El script evita hacer upgrades del sistema (por estabilidad) y se centra en instalar/actualizar las dependencias necesarias para YunBridge.
-3.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `../tools/rotate_credentials.sh --host <yun>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
-4.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
+
+### Configuración post-instalación
+
+1.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `../tools/rotate_credentials.sh --host <yun>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
+2.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
 
 ### Verificación y control de calidad
 

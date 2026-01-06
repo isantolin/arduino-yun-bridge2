@@ -1,5 +1,5 @@
 # Generated via tools/sync_runtime_deps.py; do not edit.
-aiomqtt==2.4.0
+aiomqtt==2.5.0
 cobs==1.2.2
 paho-mqtt==2.1.0
 prometheus-client==0.23.1

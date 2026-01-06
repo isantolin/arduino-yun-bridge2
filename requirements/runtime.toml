@@ -21,8 +21,8 @@ rationale = "Enable durable MQTT spool backend (sqlite3 stdlib module)"
 [[dependency]]
 name = "aiomqtt"
 openwrt = "python3-aiomqtt"
-pip = "aiomqtt==2.4.0"
-rationale = "Async MQTT v5 client used for runtime telemetry"
+pip = "aiomqtt==2.5.0"
+rationale = "Async MQTT v5 client used for runtime telemetry (Python 3.13 compatible)"
 
 [[dependency]]
 name = "paho-mqtt"

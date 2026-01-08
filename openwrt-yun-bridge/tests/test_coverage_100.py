@@ -9,10 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from asyncio.subprocess import Process
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-from typing import cast
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,11 +24,10 @@ from yunbridge.rpc import protocol as rpc_protocol
 from yunbridge.rpc.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
-    Command,
     Status,
 )
 from yunbridge.services.components.base import BridgeContext
-from yunbridge.services.components.process import ProcessComponent, ProcessOutputBatch
+from yunbridge.services.components.process import ProcessComponent
 from yunbridge.state.context import ManagedProcess, create_runtime_state
 
 
@@ -107,7 +103,7 @@ async def test_collect_output_slot_disappears_mid_operation(
         process_component.state.running_processes[pid] = slot
 
     # Patch io_lock to delete the slot during iteration
-    original_io_lock = slot.io_lock
+    _original_io_lock = slot.io_lock
 
     class TrickyLock:
         async def __aenter__(self):
@@ -318,7 +314,7 @@ async def test_read_stream_chunk_various_exceptions(
             reader.read = AsyncMock(side_effect=asyncio.IncompleteReadError(b"", 10))
         else:
             reader = BadReader(exc_type)
-        
+
         chunk = await process_component._read_stream_chunk(pid, reader, timeout=0)  # type: ignore
         assert chunk == b""
 
@@ -345,7 +341,7 @@ def test_process_component_release_without_acquire() -> None:
     state = create_runtime_state(config)
     ctx = AsyncMock(spec=BridgeContext)
     comp = ProcessComponent(config, state, ctx)
-    
+
     # Release without acquire - should not raise (ValueError swallowed)
     comp._release_process_slot()  # Should not raise
 
@@ -354,14 +350,14 @@ def test_process_component_release_without_acquire() -> None:
 async def test_process_timeout_zero_no_timeout() -> None:
     """Cover branch where process_timeout <= 0."""
     from yunbridge.services.components.process import ProcessComponent
-    
+
     config = _make_config()
     state = create_runtime_state(config)
     state.process_timeout = 0  # Disable timeout
     ctx = AsyncMock(spec=BridgeContext)
     ctx.is_command_allowed.return_value = True
-    comp = ProcessComponent(config, state, ctx)
-    
+    _comp = ProcessComponent(config, state, ctx)
+
     # Just verify timeout is 0
     assert state.process_timeout == 0
 

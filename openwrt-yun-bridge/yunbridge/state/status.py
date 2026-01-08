@@ -115,7 +115,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
         except asyncio.CancelledError:
             logger.info("Status writer task cancelled.")
             raise
-        except Exception:
+        except Exception:  # pragma: no cover - defensive
             logger.exception("Failed to write status file.")
         await asyncio.sleep(interval)
 

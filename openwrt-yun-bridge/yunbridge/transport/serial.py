@@ -89,7 +89,7 @@ def _open_serial_hardware(ser: TermiosSerial, url: str) -> None:
             raise SerialException("Serial port opened but no fd available")
         os.set_blocking(ser.fd, False)
         _ensure_raw_mode(ser, url)
-    except Exception:
+    except Exception:  # pragma: no cover - cleanup guard
         if getattr(ser, "is_open", False):
             ser.close()
         raise
@@ -327,7 +327,7 @@ async def _open_serial_connection_with_retry(
             logger.warning("%s failed (%s); retrying in %.1fs.", action, exc, current_delay)
             await asyncio.sleep(current_delay)
             current_delay = min(max_delay, current_delay * 2)
-        except Exception:
+        except Exception:  # pragma: no cover - unexpected fatal
             logger.critical("Unexpected error during serial connection", exc_info=True)
             raise
 

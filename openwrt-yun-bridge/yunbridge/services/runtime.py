@@ -52,7 +52,7 @@ async def _background_task_runner(
         await coroutine
     except asyncio.CancelledError:
         raise
-    except Exception:
+    except Exception:  # pragma: no cover - defensive
         logger.exception("Background task %s failed", task_name or "unknown")
 
 

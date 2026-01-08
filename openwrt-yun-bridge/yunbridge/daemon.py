@@ -219,7 +219,7 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         for group_exc in exc_group.exceptions:
             logger.critical("Fatal error in main execution", exc_info=group_exc)
         sys.exit(1)
-    except Exception:
+    except Exception:  # pragma: no cover - unexpected fatal
         logger.critical("Fatal error in main execution", exc_info=True)
         sys.exit(1)
 

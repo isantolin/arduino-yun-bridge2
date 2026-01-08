@@ -201,7 +201,7 @@ class TermiosSerial:
             self._configure_port()
             self._is_open = True
 
-        except Exception:
+        except Exception:  # pragma: no cover - cleanup guard
             os.close(self._fd)
             self._fd = None
             raise

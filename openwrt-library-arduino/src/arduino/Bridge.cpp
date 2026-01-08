@@ -41,7 +41,7 @@ ProcessClass Process;
 
 #if BRIDGE_DEBUG_IO
 template <typename ActionText>
-static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int value) {
+static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int16_t value) {
   if (!kBridgeDebugIo) return;
   if (!Console) return;
   Console.print(F("[GPIO] "));

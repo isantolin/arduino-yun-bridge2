@@ -295,13 +295,13 @@ class ProcessClass {
                                      const uint8_t*, uint16_t);
   using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
                                       uint16_t, const uint8_t*, uint16_t);
-  using ProcessRunAsyncHandler = void (*)(int);
+  using ProcessRunAsyncHandler = void (*)(int16_t);  // PID from daemon (signed for error sentinel)
 
   ProcessClass();
   void run(const char* command);
   void runAsync(const char* command);
-  void poll(int pid);
-  void kill(int pid);
+  void poll(int16_t pid);
+  void kill(int16_t pid);
   void handleResponse(const rpc::Frame& frame);
   
   void onProcessRunResponse(ProcessRunHandler handler);

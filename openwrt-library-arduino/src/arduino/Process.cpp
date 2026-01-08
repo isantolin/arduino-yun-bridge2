@@ -45,7 +45,7 @@ void ProcessClass::runAsync(const char* command) {
       len);
 }
 
-void ProcessClass::poll(int pid) {
+void ProcessClass::poll(int16_t pid) {
   if (pid < 0) {
     return;
   }
@@ -61,7 +61,7 @@ void ProcessClass::poll(int pid) {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_POLL, pid_payload, 2);
 }
 
-void ProcessClass::kill(int pid) {
+void ProcessClass::kill(int16_t pid) {
   uint8_t pid_payload[2];
   rpc::write_u16_be(pid_payload, static_cast<uint16_t>(pid));
   (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_KILL, pid_payload, 2);

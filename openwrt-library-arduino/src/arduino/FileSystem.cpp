@@ -97,7 +97,8 @@ void FileSystemClass::handleResponse(const rpc::Frame& frame) {
                    }
                }
 #else
-               // [OPTIMIZATION] Non-AVR: Use standard comparison (no PROGMEM)
+               // [OPTIMIZATION] Non-AVR: PROGMEM is no-op, use standard strncmp
+               // String constant is placed in .rodata (flash) by linker on ARM/ESP32
                static const char prefix[] = "/eeprom/";
                const size_t prefix_len = 8; // strlen("/eeprom/")
                if (path_len >= prefix_len) {

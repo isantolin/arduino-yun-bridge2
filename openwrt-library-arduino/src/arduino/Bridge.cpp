@@ -53,6 +53,21 @@ static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int value) {
 }
 #endif
 
+// [OPTIMIZATION] PROGMEM error strings with external linkage for cross-file use
+// These are defined outside the anonymous namespace to allow extern declarations
+// Note: 'extern' is required because 'const' variables have internal linkage by default in C++
+extern const char kSerialOverflowMessage[] PROGMEM;
+extern const char kProcessRunPayloadTooLarge[] PROGMEM;
+extern const char kProcessRunAsyncPayloadTooLarge[] PROGMEM;
+extern const char kProcessPollQueueFull[] PROGMEM;
+extern const char kDatastoreQueueFull[] PROGMEM;
+
+const char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
+const char kProcessRunPayloadTooLarge[] PROGMEM = "process_run_payload_too_large";
+const char kProcessRunAsyncPayloadTooLarge[] PROGMEM = "process_run_async_payload_too_large";
+const char kProcessPollQueueFull[] PROGMEM = "process_poll_queue_full";
+const char kDatastoreQueueFull[] PROGMEM = "datastore_queue_full";
+
 namespace {
 constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
 static_assert(
@@ -60,13 +75,6 @@ static_assert(
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
 );
 constexpr size_t kSha256DigestSize = 32;
-
-// [OPTIMIZATION] Store all error message strings in PROGMEM to save SRAM
-constexpr char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
-constexpr char kProcessRunPayloadTooLarge[] PROGMEM = "process_run_payload_too_large";
-constexpr char kProcessRunAsyncPayloadTooLarge[] PROGMEM = "process_run_async_payload_too_large";
-constexpr char kProcessPollQueueFull[] PROGMEM = "process_poll_queue_full";
-constexpr char kDatastoreQueueFull[] PROGMEM = "datastore_queue_full";
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;

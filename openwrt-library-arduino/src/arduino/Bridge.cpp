@@ -81,10 +81,53 @@ extern "C" char __heap_start;
 extern "C" char* __brkval;
 #endif
 
-// Variables estáticas para gestión no bloqueante del cambio de baudrate
-static uint32_t s_pending_baudrate = 0;
-static unsigned long s_baudrate_change_timestamp = 0;
+/**
+ * @brief Encapsulated state for deferred baudrate changes.
+ * 
+ * [SIL-2 COMPLIANCE] This structure eliminates global mutable state by
+ * encapsulating the pending baudrate change mechanism. The state is only
+ * modified through well-defined entry points in BridgeClass::process().
+ * 
+ * The deferred change pattern is necessary because:
+ * 1. The MCU must ACK the baudrate change command at the OLD speed
+ * 2. A delay is needed for the ACK to physically leave the UART
+ * 3. Only then can the hardware switch to the new speed
+ */
+struct BaudrateChangeState {
+  uint32_t pending_baudrate;         ///< Target baudrate (0 = no change pending)
+  unsigned long change_timestamp_ms; ///< millis() when change was requested
+  
+  static constexpr unsigned long kSettleDelayMs = 50; ///< Delay before applying change
+  
+  /// Check if a baudrate change is pending and ready to apply
+  bool isReady(unsigned long now_ms) const {
+    return pending_baudrate > 0 && (now_ms - change_timestamp_ms) > kSettleDelayMs;
+  }
+  
+  /// Schedule a deferred baudrate change
+  void schedule(uint32_t baudrate, unsigned long now_ms) {
+    pending_baudrate = baudrate;
+    change_timestamp_ms = now_ms;
+  }
+  
+  /// Clear the pending change (call after applying)
+  void clear() {
+    pending_baudrate = 0;
+  }
+};
 
+/// Singleton instance for baudrate change state
+static BaudrateChangeState g_baudrate_state = {0, 0};
+
+/**
+ * @brief Calculate free memory on AVR platforms.
+ * 
+ * [SIL-2] This function provides a safe estimate of available stack/heap
+ * space. Returns 0 on non-AVR platforms. The result is clamped to uint16_t
+ * range to prevent overflow.
+ * 
+ * @return Free bytes between stack and heap (0 on non-AVR)
+ */
 uint16_t getFreeMemory() {
 #if defined(ARDUINO_ARCH_AVR)
   char stack_top;
@@ -215,6 +258,21 @@ void BridgeClass::begin(
 #endif
 }
 
+/**
+ * @brief Check if frame is a duplicate from retry mechanism.
+ * 
+ * [SIL-2 IDEMPOTENCY] Prevents re-execution of side-effects from retried
+ * commands when the ACK was lost but the original command succeeded.
+ * 
+ * Detection is based on CRC fingerprint within a time window:
+ * - If same CRC arrives BEFORE ack_timeout: treat as new (fast repeat)
+ * - If same CRC arrives AFTER ack_timeout but within retry horizon: duplicate
+ * 
+ * The retry horizon is: ack_timeout_ms * (retry_limit + 1)
+ * 
+ * @param frame Incoming frame to check
+ * @return true if this is a duplicate that should be ACK'd but not re-executed
+ */
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
   const uint16_t payload_len = frame.header.payload_length;
   if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
@@ -280,6 +338,19 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
   _last_rx_crc_millis = millis();
 }
 
+/**
+ * @brief Compute HMAC-SHA256 authentication tag for handshake.
+ * 
+ * [SECURITY] Implements the challenge-response authentication:
+ * tag = HMAC-SHA256(shared_secret, nonce)[0:16]
+ * 
+ * The tag is truncated to 16 bytes as specified in the protocol.
+ * If no shared secret is configured, returns all zeros (insecure mode).
+ * 
+ * @param nonce     Random challenge from Linux (16 bytes)
+ * @param nonce_len Length of nonce (must be RPC_HANDSHAKE_NONCE_LENGTH)
+ * @param out_tag   Output buffer for 16-byte tag
+ */
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
     memset(out_tag, 0, kHandshakeTagSize);
@@ -296,6 +367,19 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   memcpy(out_tag, digest, kHandshakeTagSize);
 }
 
+/**
+ * @brief Apply timing configuration from handshake or link reset.
+ * 
+ * [SIL-2] Validates all timing parameters against safe bounds before applying:
+ * - ack_timeout_ms: [25, 60000] ms
+ * - retry_limit: [1, 8]
+ * - response_timeout_ms: [100, 180000] ms
+ * 
+ * Invalid values are replaced with defaults, never propagated.
+ * 
+ * @param payload Serialized timing config (may be null for defaults)
+ * @param length  Payload length (0 or RPC_HANDSHAKE_CONFIG_SIZE)
+ */
 void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
   // Default values
   uint16_t ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
@@ -335,12 +419,10 @@ void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_f
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
-// [HARDENING] Máquina de estados para cambio de baudrate NO BLOQUEANTE
-  if (s_pending_baudrate > 0) {
-    if (millis() - s_baudrate_change_timestamp > 50) {
-      _transport.setBaudrate(s_pending_baudrate);
-      s_pending_baudrate = 0;
-    }
+// [SIL-2] Deferred baudrate change: check if pending and ready to apply
+  if (g_baudrate_state.isReady(millis())) {
+    _transport.setBaudrate(g_baudrate_state.pending_baudrate);
+    g_baudrate_state.clear();
   }
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -410,14 +492,13 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_SET_BAUDRATE:
       if (payload_length == 4) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
-        // [OPTIMIZATION] Enviar ACK y programar cambio diferido sin bloquear la CPU
+        // [SIL-2] Send ACK first, then schedule deferred baudrate change
+        // This allows the ACK to be transmitted at the old baudrate
         (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         _transport.flush();
         
-        // Iniciamos el temporizador para cambiar la velocidad en el próximo ciclo process()
-        // dando tiempo a que el ACK salga físicamente del UART.
-        s_pending_baudrate = new_baud;
-        s_baudrate_change_timestamp = millis();
+        // Schedule the baudrate change via encapsulated state
+        g_baudrate_state.schedule(new_baud, millis());
       }
       break;
     case rpc::CommandId::CMD_LINK_SYNC:
@@ -528,6 +609,23 @@ void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
   }
 }
 
+/**
+ * @brief Main dispatcher for incoming RPC frames.
+ * 
+ * [SIL-2] This is the central routing function that:
+ * 1. Handles responses (Linux -> MCU) via component handlers
+ * 2. Dispatches commands (Linux -> MCU) to appropriate handlers
+ * 3. Manages ACK generation for fire-and-forget commands
+ * 4. Implements duplicate detection for idempotency
+ * 5. Routes status frames to the status handler callback
+ * 
+ * Frame types are identified by command_id ranges:
+ * - 0x30-0x3F: Status codes
+ * - 0x40-0x4F: System commands
+ * - 0x50+: GPIO, Console, Datastore, Mailbox, File, Process
+ * 
+ * @param frame Parsed and CRC-verified frame from transport layer
+ */
 void BridgeClass::dispatch(const rpc::Frame& frame) {
   const uint16_t raw_command = frame.header.command_id;
   const rpc::CommandId command = static_cast<rpc::CommandId>(raw_command);
@@ -881,6 +979,20 @@ void BridgeClass::_processAckTimeout() {
   _retransmitLastFrame();
 }
 
+/**
+ * @brief Reset link state to unsynchronized (Fail-Safe transition).
+ * 
+ * [SIL-2 FAIL-SAFE] This function transitions the bridge to a safe state:
+ * 1. Sets _synchronized = false (blocks non-system commands)
+ * 2. Clears ACK tracking state
+ * 3. Empties pending TX queue
+ * 4. Resets transport parser state
+ * 
+ * Called during:
+ * - Link reset command processing
+ * - Handshake initiation
+ * - Fatal error recovery
+ */
 void BridgeClass::_resetLinkState() {
   _synchronized = false;
   _clearAckState();

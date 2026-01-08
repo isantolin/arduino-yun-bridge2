@@ -40,6 +40,6 @@
 ## Handy References
 - `docs/PROTOCOL.md`: contrato del protocolo + deep dive on BridgeService, RuntimeState, metrics, and security controls.
 - `docs/CREDENTIALS.md`: TLS bundle rollout, watchdog tuning, respawn guidance.
-- `/var/log/yunbridge.log` + `/tmp/yunbridge_status.json`: primary debug artifacts; replicate scenarios in tests where possible.
+- Logs: `logread` (syslog ring buffer in RAM) + `/tmp/yunbridge_status.json`: primary debug artifacts; replicate scenarios in tests where possible.
 
 Keep edits concise and contextual: reference the exact script or module you touch, tie it back to the MQTT/OpenWrt workflow, and ask for clarification if a workflow is unclear.

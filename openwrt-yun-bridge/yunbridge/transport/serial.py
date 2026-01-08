@@ -38,6 +38,43 @@ from yunbridge.state.context import RuntimeState
 
 logger = logging.getLogger("yunbridge")
 
+
+def format_hexdump(data: bytes, prefix: str = "") -> str:
+    """Format binary data as canonical hexdump for SIL-2 compliant logging.
+    
+    Produces output in the standard hexdump format:
+    XX XX XX XX  XX XX XX XX  XX XX XX XX  XX XX XX XX  |................|
+    
+    Args:
+        data: Binary data to format
+        prefix: Optional prefix for each line (e.g., "  ")
+    
+    Returns:
+        Multi-line string with hexdump format
+    """
+    if not data:
+        return f"{prefix}<empty>"
+    
+    lines: list[str] = []
+    for offset in range(0, len(data), 16):
+        chunk = data[offset:offset + 16]
+        # Hex part: groups of 4 bytes separated by double space
+        hex_parts: list[str] = []
+        for i in range(0, 16, 4):
+            group = chunk[i:i + 4]
+            hex_parts.append(" ".join(f"{b:02X}" for b in group))
+        hex_str = "  ".join(hex_parts)
+        # ASCII part: printable chars or '.'
+        ascii_str = "".join(
+            chr(b) if 32 <= b < 127 else "." for b in chunk
+        )
+        # Pad hex_str to fixed width (47 chars for 16 bytes)
+        hex_str = hex_str.ljust(47)
+        lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
+    
+    return "\n".join(lines)
+
+
 # Explicit framing overhead: 1 code byte + 1 delimiter + ~1 byte/254 overhead + safety margin
 FRAMING_OVERHEAD: Final[int] = 4
 
@@ -483,7 +520,12 @@ class SerialTransport:
                     cmd_name = Command(command_id).name
                 except ValueError:
                     cmd_name = f"0x{command_id:02X}"
-                logger.debug("LINUX > %s payload=%s", cmd_name, payload.hex())
+                # [SIL-2] Canonical hexdump format for binary traffic debugging
+                if payload:
+                    hexdump = format_hexdump(payload, prefix="       ")
+                    logger.debug("LINUX > %s len=%d\n%s", cmd_name, len(payload), hexdump)
+                else:
+                    logger.debug("LINUX > %s (no payload)", cmd_name)
             return True
         except Exception as exc:
             logger.error("Send failed 0x%02X: %s", command_id, exc)
@@ -554,4 +596,9 @@ class SerialTransport:
             logger.exception("Error processing frame")
 
 
-__all__ = ["SerialTransport", "serial_sender_not_ready", "_open_serial_connection_with_retry"]
+__all__ = [
+    "SerialTransport",
+    "serial_sender_not_ready",
+    "_open_serial_connection_with_retry",
+    "format_hexdump",
+]

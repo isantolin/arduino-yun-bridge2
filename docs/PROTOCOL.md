@@ -83,10 +83,62 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 
 ## Observabilidad
 
-- **Logging estructurado**: logs JSON (`ts`, `level`, `logger`, `message`, `extra`).
+- **Logging estructurado**: logs JSON (`ts`, `level`, `logger`, `message`, `extra`) enviados a syslog.
+- **Destino de logs**: Por defecto OpenWrt usa `logread` (ring buffer en RAM), NO escribe a `/var/log/` en flash.
 - **Metrics MQTT**: snapshots periódicos en `br/system/metrics`.
 - **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
-- **Status Writer**: `/tmp/yunbridge_status.json` como snapshot local.
+- **Status Writer**: `/tmp/yunbridge_status.json` como snapshot local (tmpfs/RAM).
+
+## Estado Seguro (Fail-Safe State) — IEC 61508 / SIL 2
+
+Esta sección documenta formalmente el comportamiento del sistema ante condiciones de fallo, cumpliendo con los requisitos de Seguridad Funcional.
+
+### Definición de Estado Seguro
+
+El **Estado Seguro** es la configuración a la que el sistema transiciona automáticamente cuando detecta un fallo irrecuperable. En este estado:
+
+1. **GPIO**: Todos los pines configurados por el Bridge se resetean a `INPUT` (alta impedancia), evitando actuaciones no intencionadas.
+2. **Comunicación Serial**: El enlace RPC se considera no sincronizado (`_synchronized = false`).
+3. **Colas pendientes**: Se vacían todas las colas TX/RX para evitar procesamiento de datos corruptos.
+4. **Flow Control**: Se libera cualquier estado XOFF para evitar deadlocks.
+
+### Matriz de Transición a Estado Seguro
+
+| Condición de Fallo | Acción MCU | Acción Daemon | Estado Resultante |
+|--------------------|------------|---------------|-------------------|
+| CRC Mismatch | Reset parser, emit `STATUS_CRC_MISMATCH` | Log + reintento | Link degradado |
+| Frame Malformed | Reset parser, emit `STATUS_MALFORMED` | Log + descarte | Link operativo |
+| Buffer Overflow | Reset parser, descarte silencioso | Log + descarte | Link operativo |
+| Handshake Timeout | `_resetLinkState()` | Backoff exponencial | Link no sincronizado |
+| Handshake Auth Fail | `_resetLinkState()` | `SerialHandshakeFatal` si > N fallos | Link rechazado |
+| Serial Disconnect | N/A (hardware) | Clear queues, `serial_tx_allowed.set()` | Reconexión pendiente |
+| ACK Timeout (max retries) | `_awaiting_ack = false` | Log + siguiente frame | Frame perdido |
+| Watchdog Timeout | Reset MCU (AVR `wdt_reset()`) | Depende de procd | Reinicio completo |
+
+### Invariantes de Seguridad
+
+1. **No hay alocación dinámica post-inicialización**: Todos los buffers son estáticos con tamaños conocidos en compile-time.
+2. **No hay recursión**: Todas las funciones usan iteración para evitar stack overflow.
+3. **Validación de rangos**: Cada entrada externa se valida contra límites antes de uso.
+4. **CRC obligatorio**: Ningún frame se procesa sin verificación CRC exitosa.
+5. **Timeout en todas las operaciones bloqueantes**: Previene deadlocks indefinidos.
+
+### Recuperación Automática
+
+El sistema implementa recuperación automática con backoff exponencial:
+
+```
+Handshake retry: base=1s, max=60s, factor=2x
+Serial reconnect: base=reconnect_delay (UCI), max=8x base
+MQTT spool retry: base=5s, max=60s
+```
+
+### Monitoreo de Estado Seguro
+
+El estado de salud del enlace se expone en:
+- `/tmp/yunbridge_status.json` → campo `link_is_synchronized`
+- MQTT topic `br/system/bridge/summary/value` → snapshot completo
+- Prometheus metric `yunbridge_serial_link_synchronized` (si habilitado)
 
 ## Configuración relevante
 

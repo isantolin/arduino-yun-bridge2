@@ -565,16 +565,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   if (is_system_command) {
       if (command == rpc::CommandId::CMD_LINK_RESET) {
           if (_isRecentDuplicateRx(frame)) {
-            uint8_t ack_payload[2];
-            rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            _sendAckAndFlush(raw_command);
             return;
           }
-          // [FIX] Send ACK immediately before reset destroys state
-          uint8_t ack_payload[2];
-          rpc::write_u16_be(ack_payload, raw_command);
-          (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
-          _transport.flush();
+          // Send ACK and flush before reset destroys state
+          _sendAckAndFlush(raw_command);
           
           _handleSystemCommand(frame);
           command_processed_internally = true;
@@ -598,9 +593,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         case rpc::CommandId::CMD_DIGITAL_WRITE:
         case rpc::CommandId::CMD_ANALOG_WRITE:
           if (_isRecentDuplicateRx(frame)) {
-            uint8_t ack_payload[2];
-            rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            _sendAckAndFlush(raw_command);
             return;
           }
           _handleGpioCommand(frame);
@@ -624,9 +617,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         case rpc::CommandId::CMD_CONSOLE_WRITE:
           if (_isRecentDuplicateRx(frame)) {
-            uint8_t ack_payload[2];
-            rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            _sendAckAndFlush(raw_command);
             return;
           }
           _handleConsoleCommand(frame);
@@ -636,9 +627,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         case rpc::CommandId::CMD_MAILBOX_PUSH:
           if (_isRecentDuplicateRx(frame)) {
-            uint8_t ack_payload[2];
-            rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            _sendAckAndFlush(raw_command);
             return;
           }
           Mailbox.handleResponse(frame); 
@@ -648,9 +637,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           break;
         case rpc::CommandId::CMD_FILE_WRITE:
           if (_isRecentDuplicateRx(frame)) {
-            uint8_t ack_payload[2];
-            rpc::write_u16_be(ack_payload, raw_command);
-            (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+            _sendAckAndFlush(raw_command);
             return;
           }
           FileSystem.handleResponse(frame);
@@ -910,6 +897,13 @@ void BridgeClass::_resetLinkState() {
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
+}
+
+void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
+  uint8_t ack_payload[2];
+  rpc::write_u16_be(ack_payload, command_id);
+  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+  _transport.flush();
 }
 
 void BridgeClass::_flushPendingTxQueue() {

@@ -503,9 +503,9 @@ static void test_process_poll_response_short_payload() {
 }
 
 static bool g_process_async_called = false;
-static int g_process_async_pid = -1;
+static int16_t g_process_async_pid = -1;
 
-static void process_async_handler(int pid) {
+static void process_async_handler(int16_t pid) {
   g_process_async_called = true;
   g_process_async_pid = pid;
 }

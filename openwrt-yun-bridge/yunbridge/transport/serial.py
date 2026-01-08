@@ -25,6 +25,7 @@ from yunbridge.transport.termios_serial import (
 )
 
 from yunbridge.config.settings import RuntimeConfig
+from yunbridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
 from yunbridge.rpc.protocol import FRAME_DELIMITER
 from yunbridge.rpc import protocol
 from yunbridge.rpc.frame import Frame
@@ -255,7 +256,10 @@ async def _negotiate_baudrate(
     try:
         writer.write(encoded)
         await writer.drain()
-        response_data = await asyncio.wait_for(reader.readuntil(FRAME_DELIMITER), timeout=2.0)
+        response_data = await asyncio.wait_for(
+            reader.readuntil(FRAME_DELIMITER),
+            timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+        )
         decoded = cobs.decode(response_data[:-1])
         resp_frame = Frame.from_bytes(decoded)
 

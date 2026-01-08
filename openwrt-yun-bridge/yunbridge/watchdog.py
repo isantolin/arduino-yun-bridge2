@@ -8,7 +8,7 @@ import os
 import time
 from collections.abc import Callable
 
-from .const import DEFAULT_WATCHDOG_INTERVAL, WATCHDOG_TRIGGER_TOKEN
+from .const import DEFAULT_WATCHDOG_INTERVAL, WATCHDOG_MIN_INTERVAL, WATCHDOG_TRIGGER_TOKEN
 from .state.context import RuntimeState
 
 WatchdogWrite = Callable[[bytes], None]
@@ -30,7 +30,7 @@ class WatchdogKeepalive:
         write: WatchdogWrite | None = None,
         logger: logging.Logger | None = None,
     ) -> None:
-        self._interval = max(0.5, interval)
+        self._interval = max(WATCHDOG_MIN_INTERVAL, interval)
         self._state = state
         self._token = token
         self._write = write or _default_write
@@ -41,7 +41,7 @@ class WatchdogKeepalive:
         return self._interval
 
     def update_interval(self, interval: float) -> None:
-        self._interval = max(0.5, interval)
+        self._interval = max(WATCHDOG_MIN_INTERVAL, interval)
 
     def kick(self) -> None:
         """Send a single watchdog pulse immediately."""

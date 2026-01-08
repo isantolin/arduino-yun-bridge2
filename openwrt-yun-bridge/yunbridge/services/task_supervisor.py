@@ -12,6 +12,7 @@ from yunbridge.const import (
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
     SUPERVISOR_DEFAULT_RESTART_INTERVAL,
+    SUPERVISOR_MIN_RESTART_WINDOW,
 )
 from yunbridge.state.context import RuntimeState
 
@@ -43,7 +44,7 @@ async def supervise_task(
     log = logger or logging.getLogger("yunbridge.supervisor")
     current_backoff = min_backoff
     restarts_in_window = 0
-    restart_window_duration = max(1.0, restart_interval)
+    restart_window_duration = max(SUPERVISOR_MIN_RESTART_WINDOW, restart_interval)
 
     while True:
         start_time = time.monotonic()

@@ -16,6 +16,11 @@ from yunbridge.services.runtime import (
     BridgeService,
     SerialHandshakeFatal,
 )
+from yunbridge.const import (
+    SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
+    SUPERVISOR_STATUS_MAX_BACKOFF,
+    SUPERVISOR_STATUS_RESTART_INTERVAL,
+)
 from yunbridge.services.task_supervisor import SupervisedTaskSpec, supervise_task
 from yunbridge.state.context import create_runtime_state
 from yunbridge.state.status import cleanup_status_file, status_writer
@@ -91,15 +96,15 @@ class BridgeDaemon:
                 name="status-writer",
                 factory=self._run_status_writer,
                 max_restarts=5,
-                restart_interval=120.0,
-                max_backoff=10.0,
+                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
+                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
             ),
             SupervisedTaskSpec(
                 name="metrics-publisher",
                 factory=self._run_metrics_publisher,
                 max_restarts=5,
-                restart_interval=120.0,
-                max_backoff=10.0,
+                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
+                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
             ),
         ]
 
@@ -110,8 +115,8 @@ class BridgeDaemon:
                 name="bridge-snapshots",
                 factory=self._run_bridge_snapshots,
                 max_restarts=5,
-                restart_interval=120.0,
-                max_backoff=10.0,
+                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
+                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
             ))
 
         if self.config.watchdog_enabled:
@@ -124,8 +129,8 @@ class BridgeDaemon:
                 name="watchdog",
                 factory=self.watchdog.run,
                 max_restarts=5,
-                restart_interval=120.0,
-                max_backoff=10.0,
+                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
+                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
             ))
 
         if self.config.metrics_enabled:
@@ -140,7 +145,7 @@ class BridgeDaemon:
                 name="prometheus-exporter",
                 factory=self.exporter.run,
                 max_restarts=5,
-                restart_interval=300.0,
+                restart_interval=SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
             ))
 
         return specs

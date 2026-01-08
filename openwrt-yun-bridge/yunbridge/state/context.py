@@ -36,6 +36,9 @@ from ..const import (
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
+    SPOOL_BACKOFF_MAX_SECONDS,
+    SPOOL_BACKOFF_MIN_SECONDS,
+    SPOOL_BACKOFF_MULTIPLIER,
 )
 from ..rpc import protocol
 from ..rpc.protocol import (
@@ -65,9 +68,9 @@ def _empty_spool_snapshot_factory() -> SpoolSnapshot:
 
 def _spool_wait_strategy_factory() -> Any:
     return _ExponentialBackoff(
-        multiplier=5.0,
-        min_val=5.0,
-        max_val=60.0,
+        multiplier=SPOOL_BACKOFF_MULTIPLIER,
+        min_val=SPOOL_BACKOFF_MIN_SECONDS,
+        max_val=SPOOL_BACKOFF_MAX_SECONDS,
     )
 
 

@@ -42,13 +42,20 @@ class FileComponent:
 
     async def handle_write(self, payload: bytes) -> bool:
         if len(payload) < 3:
-            logger.warning("Invalid file write payload length: %d", len(payload))
+            logger.warning(
+                "Invalid file write payload length: %d, hex=%s",
+                len(payload),
+                payload.hex() if payload else "(empty)",
+            )
             return False
 
         path_len = payload[0]
         cursor = 1
         if len(payload) < cursor + path_len + 2:
-            logger.warning("Invalid file write payload: missing data section")
+            logger.warning(
+                "Invalid file write payload: missing data section, hex=%s",
+                payload[:32].hex() if len(payload) > 32 else payload.hex(),
+            )
             return False
 
         path = payload[cursor:cursor + path_len].decode("utf-8", errors="ignore")
@@ -99,12 +106,19 @@ class FileComponent:
 
     async def handle_read(self, payload: bytes) -> None:
         if len(payload) < 1:
-            logger.warning("Invalid file read payload length: %d", len(payload))
+            logger.warning(
+                "Invalid file read payload length: %d, hex=%s",
+                len(payload),
+                payload.hex() if payload else "(empty)",
+            )
             return
 
         path_len = payload[0]
         if len(payload) < 1 + path_len:
-            logger.warning("Invalid file read payload: missing path bytes")
+            logger.warning(
+                "Invalid file read payload: missing path bytes, hex=%s",
+                payload.hex(),
+            )
             return
 
         filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
@@ -134,12 +148,19 @@ class FileComponent:
 
     async def handle_remove(self, payload: bytes) -> bool:
         if len(payload) < 1:
-            logger.warning("Invalid file remove payload length: %d", len(payload))
+            logger.warning(
+                "Invalid file remove payload length: %d, hex=%s",
+                len(payload),
+                payload.hex() if payload else "(empty)",
+            )
             return False
 
         path_len = payload[0]
         if len(payload) < 1 + path_len:
-            logger.warning("Invalid file remove payload: missing path bytes")
+            logger.warning(
+                "Invalid file remove payload: missing path bytes, hex=%s",
+                payload.hex(),
+            )
             return False
 
         filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")

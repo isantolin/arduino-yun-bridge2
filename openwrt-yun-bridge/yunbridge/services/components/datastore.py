@@ -40,8 +40,9 @@ class DatastoreComponent:
         mv = memoryview(payload)
         if len(mv) < 2:
             logger.warning(
-                "Malformed DATASTORE_PUT payload: too short (%d bytes)",
+                "Malformed DATASTORE_PUT payload: too short (%d bytes), hex=%s",
                 len(mv),
+                payload.hex(),
             )
             return False
 
@@ -50,7 +51,8 @@ class DatastoreComponent:
         header_len = 1 + int(key_len) + DATASTORE_VALUE_LEN_SIZE
         if len(mv) < header_len:
             logger.warning(
-                "Malformed DATASTORE_PUT payload: missing key/value data.",
+                "Malformed DATASTORE_PUT payload: missing key/value data, hex=%s",
+                payload.hex(),
             )
             return False
 
@@ -64,7 +66,8 @@ class DatastoreComponent:
         expected_total_len = cursor + int(value_len)
         if len(mv) != expected_total_len:
             logger.warning(
-                "Malformed DATASTORE_PUT payload: value length mismatch.",
+                "Malformed DATASTORE_PUT payload: value length mismatch, hex=%s",
+                payload.hex(),
             )
             return False
 
@@ -80,8 +83,9 @@ class DatastoreComponent:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         if len(payload) < 1:
             logger.warning(
-                "Malformed DATASTORE_GET payload: too short (%d bytes)",
+                "Malformed DATASTORE_GET payload: too short (%d bytes), hex=%s",
                 len(payload),
+                payload.hex() if payload else "(empty)",
             )
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
@@ -92,7 +96,8 @@ class DatastoreComponent:
         key_len = payload[0]
         if len(payload) < 1 + key_len:
             logger.warning(
-                "Malformed DATASTORE_GET payload: missing key bytes",
+                "Malformed DATASTORE_GET payload: missing key bytes, hex=%s",
+                payload.hex(),
             )
             await self.ctx.send_frame(Status.MALFORMED.value, b"data_get_key")
             return False

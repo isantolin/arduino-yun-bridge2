@@ -61,9 +61,10 @@ class ConsoleComponent:
         chunks = self._iter_console_chunks(payload)
         if self.state.mcu_is_paused:
             logger.warning(
-                "MCU paused, queueing %d console chunk(s) (%d bytes)",
+                "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
                 len(chunks),
                 len(payload),
+                payload[:32].hex() if len(payload) > 32 else payload.hex(),
             )
             for chunk in chunks:
                 if chunk:

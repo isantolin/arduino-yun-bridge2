@@ -647,6 +647,18 @@ class RuntimeState:
         self.handshake_fatal_unix = time.time()
 
     def record_serial_flow_event(self, event: str) -> None:
+        """Record a serial flow control event for metrics.
+
+        This method updates internal counters for serial link health monitoring.
+        Events are recorded for telemetry/metrics purposes and exposed via the
+        Prometheus exporter and status snapshots.
+
+        Valid events: 'sent', 'ack', 'retry', 'failure'.
+
+        Note:
+            This is also exercised by unit tests to verify counter logic,
+            but it is part of the public API for metrics collection.
+        """
         stats = self.serial_flow_stats
         if event == "sent":
             stats.commands_sent += 1
@@ -661,6 +673,24 @@ class RuntimeState:
         stats.last_event_unix = time.time()
 
     def record_serial_pipeline_event(self, event: Mapping[str, Any]) -> None:
+        """Record a serial pipeline state transition for diagnostics.
+
+        This method tracks the lifecycle of serial commands (start → ack → success/failure)
+        and is used by the BridgeService to maintain visibility into inflight operations.
+        The recorded data is exposed via status snapshots and metrics.
+
+        Expected event keys:
+            - event: 'start', 'ack', 'success', 'failure', 'abandoned'
+            - command_id: The RPC command ID (int)
+            - attempt: Retry attempt number (int, default 1)
+            - timestamp: Unix timestamp (float, defaults to now)
+            - ack_received: Whether ACK was received (bool)
+            - status: Status code if completed (int or None)
+
+        Note:
+            Exercised by tests to verify state machine logic; part of the
+            observability API for serial link debugging.
+        """
         name = str(event.get("event", ""))
         command_id = int(event.get("command_id", 0))
         attempt = int(event.get("attempt", 1) or 1)

@@ -3,6 +3,9 @@
 #include <string.h>
 #include "protocol/rpc_protocol.h"
 
+// [OPTIMIZATION] PROGMEM error string defined in Bridge.cpp
+extern const char kDatastoreQueueFull[] PROGMEM;
+
 DataStoreClass::DataStoreClass() 
   : _pending_datastore_head(0),
     _pending_datastore_count(0),
@@ -61,7 +64,7 @@ void DataStoreClass::requestGet(const char* key) {
   memcpy(payload + 1, key, key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("datastore_queue_full"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, reinterpret_cast<const __FlashStringHelper*>(kDatastoreQueueFull));
     return;
   }
 

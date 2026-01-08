@@ -97,8 +97,9 @@ void FileSystemClass::handleResponse(const rpc::Frame& frame) {
                    }
                }
 #else
-               const char prefix[] = "/eeprom/";
-               const size_t prefix_len = sizeof(prefix) - 1;
+               // [OPTIMIZATION] Non-AVR: Use standard comparison (no PROGMEM)
+               static const char prefix[] = "/eeprom/";
+               const size_t prefix_len = 8; // strlen("/eeprom/")
                if (path_len >= prefix_len) {
                    if (strncmp(path_start, prefix, prefix_len) == 0) {
                        is_eeprom = true;

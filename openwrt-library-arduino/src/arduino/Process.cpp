@@ -1,6 +1,11 @@
 #include "Bridge.h"
 #include "protocol/rpc_protocol.h"
 
+// [OPTIMIZATION] PROGMEM error strings defined in Bridge.cpp
+extern const char kProcessRunPayloadTooLarge[] PROGMEM;
+extern const char kProcessRunAsyncPayloadTooLarge[] PROGMEM;
+extern const char kProcessPollQueueFull[] PROGMEM;
+
 ProcessClass::ProcessClass() 
   : _pending_process_poll_head(0),
     _pending_process_poll_count(0),
@@ -16,7 +21,7 @@ void ProcessClass::run(const char* command) {
   }
   size_t len = strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("process_run_payload_too_large"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, reinterpret_cast<const __FlashStringHelper*>(kProcessRunPayloadTooLarge));
     return;
   }
   (void)Bridge.sendFrame(
@@ -31,7 +36,7 @@ void ProcessClass::runAsync(const char* command) {
   }
   size_t len = strlen(command);
   if (len > rpc::MAX_PAYLOAD_SIZE) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("process_run_async_payload_too_large"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, reinterpret_cast<const __FlashStringHelper*>(kProcessRunAsyncPayloadTooLarge));
     return;
   }
   (void)Bridge.sendFrame(
@@ -47,7 +52,7 @@ void ProcessClass::poll(int pid) {
 
   const uint16_t pid_u16 = static_cast<uint16_t>(pid);
   if (!_pushPendingProcessPid(pid_u16)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("process_poll_queue_full"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, reinterpret_cast<const __FlashStringHelper*>(kProcessPollQueueFull));
     return;
   }
 

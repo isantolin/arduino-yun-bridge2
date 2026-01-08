@@ -60,7 +60,13 @@ static_assert(
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
 );
 constexpr size_t kSha256DigestSize = 32;
+
+// [OPTIMIZATION] Store all error message strings in PROGMEM to save SRAM
 constexpr char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
+constexpr char kProcessRunPayloadTooLarge[] PROGMEM = "process_run_payload_too_large";
+constexpr char kProcessRunAsyncPayloadTooLarge[] PROGMEM = "process_run_async_payload_too_large";
+constexpr char kProcessPollQueueFull[] PROGMEM = "process_poll_queue_full";
+constexpr char kDatastoreQueueFull[] PROGMEM = "datastore_queue_full";
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;

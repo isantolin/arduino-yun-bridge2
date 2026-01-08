@@ -4,10 +4,16 @@
  *
  * Test interface for BridgeTransport - provides controlled access to
  * internal state for unit testing without using #define private public.
+ *
+ * [FIRMWARE OPTIMIZATION] This file is EXCLUDED from production firmware.
+ * It is only compiled when BRIDGE_ENABLE_TEST_INTERFACE is defined,
+ * which should only happen in host test builds (not Arduino sketches).
+ * This saves ~500 bytes of Flash in production builds.
  */
 #ifndef BRIDGE_TEST_INTERFACE_H
 #define BRIDGE_TEST_INTERFACE_H
 
+// [GUARD] Only compile test interface when explicitly enabled for host tests
 #ifdef BRIDGE_ENABLE_TEST_INTERFACE
 
 #include "BridgeTransport.h"

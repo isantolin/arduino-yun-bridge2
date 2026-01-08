@@ -41,20 +41,20 @@ logger = logging.getLogger("yunbridge")
 
 def format_hexdump(data: bytes, prefix: str = "") -> str:
     """Format binary data as canonical hexdump for SIL-2 compliant logging.
-    
+
     Produces output in the standard hexdump format:
     XX XX XX XX  XX XX XX XX  XX XX XX XX  XX XX XX XX  |................|
-    
+
     Args:
         data: Binary data to format
         prefix: Optional prefix for each line (e.g., "  ")
-    
+
     Returns:
         Multi-line string with hexdump format
     """
     if not data:
         return f"{prefix}<empty>"
-    
+
     lines: list[str] = []
     for offset in range(0, len(data), 16):
         chunk = data[offset:offset + 16]
@@ -71,7 +71,7 @@ def format_hexdump(data: bytes, prefix: str = "") -> str:
         # Pad hex_str to fixed width (47 chars for 16 bytes)
         hex_str = hex_str.ljust(47)
         lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
-    
+
     return "\n".join(lines)
 
 

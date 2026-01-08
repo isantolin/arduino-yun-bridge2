@@ -658,17 +658,6 @@ void test_bridge_system_commands_and_baudrate_state_machine() {
         first_frame_command_id_or_sentinel(stream.tx_buffer),
         rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP));
 
-    // GET_TX_DEBUG_SNAPSHOT (payload_length == 0) emits a response.
-    stream.tx_buffer.clear();
-    rpc::Frame snap{};
-    snap.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_TX_DEBUG_SNAPSHOT);
-    snap.header.payload_length = 0;
-    bridge._handleSystemCommand(snap);
-    TEST_ASSERT(stream.tx_buffer.len > 0);
-    TEST_ASSERT_EQ_UINT(
-        first_frame_command_id_or_sentinel(stream.tx_buffer),
-        rpc::to_underlying(rpc::CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP));
-
     // SET_BAUDRATE schedules a deferred baud change; process() applies it after 50ms.
     stream.tx_buffer.clear();
     rpc::Frame baud{};

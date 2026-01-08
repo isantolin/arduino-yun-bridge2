@@ -170,10 +170,6 @@ class BridgeDispatcher:
             Command.CMD_SET_BAUDRATE_RESP.value,
             system.handle_set_baudrate_resp,
         )
-        self.mcu_registry.register(
-            Command.CMD_GET_TX_DEBUG_SNAPSHOT_RESP.value,
-            system.handle_get_tx_debug_snapshot_resp,
-        )
         self.mqtt_router.register(Topic.SYSTEM, self._handle_system_topic)
 
     def register_system_handlers(

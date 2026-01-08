@@ -260,10 +260,6 @@ Notas:
   - Petición: opcionalmente `[ack_timeout: u16, retry_limit: u8, response_timeout: u32]`.
   - Respuesta (`0x47 CMD_LINK_RESET_RESP`): sin payload.
 
-- **`0x48` CMD_GET_TX_DEBUG_SNAPSHOT (Linux → MCU)**
-  - Petición: sin payload.
-  - Respuesta (`0x49 CMD_GET_TX_DEBUG_SNAPSHOT_RESP`): `[pending_count: u8, awaiting_ack: u8, retry_count: u8, last_cmd_id: u16, last_send_ms: u32]`.
-
 - **`0x4A` CMD_SET_BAUDRATE (Linux → MCU)**
   - Petición: `[baudrate: u32]`.
   - Respuesta (`0x4B CMD_SET_BAUDRATE_RESP`): sin payload.

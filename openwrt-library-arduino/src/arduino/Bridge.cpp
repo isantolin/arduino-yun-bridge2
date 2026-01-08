@@ -407,17 +407,6 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
       }
       break;
-    case rpc::CommandId::CMD_GET_TX_DEBUG_SNAPSHOT:
-      if (payload_length == 0) {
-        uint8_t resp[9];
-        resp[0] = _pending_tx_count;
-        resp[1] = _awaiting_ack ? 1 : 0;
-        resp[2] = _retry_count;
-        rpc::write_u16_be(&resp[3], _last_command_id);
-        rpc::write_u32_be(&resp[5], static_cast<uint32_t>(_last_send_millis));
-        (void)sendFrame(rpc::CommandId::CMD_GET_TX_DEBUG_SNAPSHOT_RESP, resp, sizeof(resp));
-      }
-      break;
     case rpc::CommandId::CMD_SET_BAUDRATE:
       if (payload_length == 4) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
@@ -972,14 +961,4 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 void BridgeClass::analogWrite(uint8_t pin, int value) {
   uint8_t val_u8 = static_cast<uint8_t>(constrain(value, static_cast<int>(rpc::RPC_DIGITAL_LOW), static_cast<int>(rpc::RPC_UINT8_MASK)));
   ::analogWrite(pin, static_cast<int>(val_u8));
-}
-
-void BridgeClass::requestGetFreeMemory() {
-  // Emit the MCU free-memory response frame directly.
-  // The canonical request (CMD_GET_FREE_MEMORY) is linux_to_mcu; this helper is
-  // primarily used by debug sketches to exercise the TX path.
-  uint16_t free_mem = getFreeMemory();
-  uint8_t resp_payload[2];
-  rpc::write_u16_be(resp_payload, free_mem);
-  (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
 }

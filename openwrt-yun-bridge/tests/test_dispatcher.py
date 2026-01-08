@@ -190,10 +190,6 @@ class _SystemComponent:
         self._calls.add("system.handle_set_baudrate_resp", payload)
         return True
 
-    async def handle_get_tx_debug_snapshot_resp(self, payload: bytes) -> bool:
-        self._calls.add("system.handle_get_tx_debug_snapshot_resp", payload)
-        return True
-
     async def handle_mqtt(self, identifier: str, remainder: list[str], inbound: Any) -> bool:
         self._calls.add("system.handle_mqtt", identifier, tuple(remainder), inbound)
         return identifier != "nope"

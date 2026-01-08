@@ -84,9 +84,6 @@ class BridgeClass {
   void pinMode(uint8_t pin, uint8_t mode);
   void digitalWrite(uint8_t pin, uint8_t value);
   void analogWrite(uint8_t pin, int value);
-  
-  // Request Methods
-  void requestGetFreeMemory();
 
   // Events
   void onCommand(CommandHandler handler);

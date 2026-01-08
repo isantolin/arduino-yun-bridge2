@@ -94,8 +94,12 @@ void loop() {
   if (now - last_send_ms >= 5000UL) {
     last_send_ms = now;
 
+    // Directly emit CMD_GET_FREE_MEMORY_RESP to exercise the TX path.
     Serial.println("[FrameDebug] Sending CommandId::CMD_GET_FREE_MEMORY_RESP");
-    Bridge.requestGetFreeMemory();
+    uint16_t free_mem = getFreeMemory();
+    uint8_t resp[2];
+    rpc::write_u16_be(resp, free_mem);
+    Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp, sizeof(resp));
 
     delay(20);  // Allow time for the frame to flush over Serial1.
 
@@ -111,11 +115,16 @@ void loop() {
     switch (cmd) {
       case 'f':
       case 'F':
-        Serial.println("[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY_RESP trigger");
-        Bridge.requestGetFreeMemory();
-        delay(20);
-        printSnapshot(Bridge.getTxDebugSnapshot());
-        clearSnapshotStats();
+        {
+          Serial.println("[FrameDebug] Manual CommandId::CMD_GET_FREE_MEMORY_RESP trigger");
+          uint16_t fm = getFreeMemory();
+          uint8_t rp[2];
+          rpc::write_u16_be(rp, fm);
+          Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, rp, sizeof(rp));
+          delay(20);
+          printSnapshot(Bridge.getTxDebugSnapshot());
+          clearSnapshotStats();
+        }
         break;
       case 's':
       case 'S':

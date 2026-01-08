@@ -140,7 +140,6 @@ class ConsoleAction(StrEnum):
 class SystemAction(StrEnum):
     FREE_MEMORY = "free_memory"  # System free memory
     VERSION = "version"  # System version
-    TX_DEBUG = "tx_debug"  # System TX debug snapshot
     GET = "get"  # Get system info
     VALUE = "value"  # Value payload segment
     METRICS = "metrics"  # Metrics topic
@@ -178,7 +177,6 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
     (Topic.SHELL, (ShellAction.KILL.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.SYSTEM, (SystemAction.FREE_MEMORY.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.VERSION.value, SystemAction.GET.value,), 0),
-    (Topic.SYSTEM, (SystemAction.TX_DEBUG.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.HANDSHAKE.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.SUMMARY.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.STATE.value, SystemAction.GET.value,), 0),
@@ -209,8 +207,6 @@ class Command(IntEnum):
     CMD_LINK_SYNC_RESP = 69
     CMD_LINK_RESET = 70
     CMD_LINK_RESET_RESP = 71
-    CMD_GET_TX_DEBUG_SNAPSHOT = 72
-    CMD_GET_TX_DEBUG_SNAPSHOT_RESP = 73
     CMD_SET_BAUDRATE = 74
     CMD_SET_BAUDRATE_RESP = 75
     CMD_XOFF = 78

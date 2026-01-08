@@ -208,9 +208,6 @@ class _System:
     async def handle_set_baudrate_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_get_tx_debug_snapshot_resp(self, _payload: bytes) -> bool:
-        return True
-
     async def handle_mqtt(
         self,
         _identifier: str,
@@ -321,7 +318,6 @@ async def test_mcu_inbound_commands_are_registered() -> None:
             Command.CMD_GET_FREE_MEMORY.value,
             Command.CMD_LINK_SYNC.value,
             Command.CMD_LINK_RESET.value,
-            Command.CMD_GET_TX_DEBUG_SNAPSHOT.value,
             Command.CMD_SET_BAUDRATE.value,
             Command.CMD_SET_PIN_MODE.value,
             Command.CMD_DIGITAL_WRITE.value,

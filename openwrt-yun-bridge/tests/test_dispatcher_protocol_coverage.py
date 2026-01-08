@@ -96,9 +96,6 @@ class _DummyComponent:
     async def handle_set_baudrate_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_get_tx_debug_snapshot_resp(self, _payload: bytes) -> bool:
-        return True
-
 
 class _SystemHandlers:
     async def handle_link_sync_resp(self, _payload: bytes) -> bool:

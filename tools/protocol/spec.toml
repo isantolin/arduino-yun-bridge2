@@ -3,8 +3,8 @@
 
 [constants]
 protocol_version = 0x02
-default_baudrate = 115200
-default_safe_baudrate = 115200
+default_baudrate = 250000
+default_safe_baudrate = 250000
 max_payload_size = 128
 max_filepath_length = 64
 max_datastore_key_length = 32

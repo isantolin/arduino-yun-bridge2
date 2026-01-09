@@ -13,8 +13,8 @@
 namespace rpc {
 
 constexpr uint8_t PROTOCOL_VERSION = 2;
-constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
-constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = 115200;
+constexpr unsigned long RPC_DEFAULT_BAUDRATE = 250000;
+constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = 250000;
 constexpr size_t MAX_PAYLOAD_SIZE = 128;
 constexpr size_t RPC_MAX_FILEPATH_LENGTH = 64;
 constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = 32;

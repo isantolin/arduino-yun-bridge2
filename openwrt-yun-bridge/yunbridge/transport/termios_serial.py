@@ -61,6 +61,17 @@ BAUDRATE_MAP: Final[dict[int, int]] = {
     4000000: termios.B4000000,
 }
 
+# Custom baudrate support via BOTHER (Linux-specific, asm-generic/termbits.h)
+# BOTHER allows setting arbitrary baudrates via c_ispeed/c_ospeed fields
+BOTHER: Final[int] = 0o010000  # octal 010000 = 4096
+CBAUD: Final[int] = 0o010017   # Baud speed mask
+CBAUDEX: Final[int] = 0o010000
+
+# TCGETS2/TCSETS2 ioctl codes for termios2 structure (architecture-dependent)
+# These are from asm-generic/ioctls.h for most architectures
+TCGETS2: Final[int] = 0x802C542A  # _IOR('T', 0x2A, struct termios2)
+TCSETS2: Final[int] = 0x402C542B  # _IOW('T', 0x2B, struct termios2)
+
 
 class SerialException(OSError):
     """Exception raised on serial port errors (pyserial compatible)."""
@@ -72,9 +83,11 @@ class TermiosSerial:
     Pure termios-based serial port implementation.
 
     Provides a pyserial-compatible subset interface for Linux/POSIX.
+    Supports both standard POSIX baudrates and custom baudrates (like 250000)
+    via Linux termios2 BOTHER extension.
 
     Usage:
-        ser = TermiosSerial('/dev/ttyATH0', baudrate=115200)
+        ser = TermiosSerial('/dev/ttyATH0', baudrate=250000)
         ser.open()
         data = ser.read(128)
         ser.write(b'hello')
@@ -84,7 +97,7 @@ class TermiosSerial:
     def __init__(
         self,
         port: str,
-        baudrate: int = 115200,
+        baudrate: int = 250000,
         timeout: float | None = None,
         exclusive: bool = False,
         do_not_open: bool = False,
@@ -94,7 +107,7 @@ class TermiosSerial:
 
         Args:
             port: Device path (e.g., '/dev/ttyATH0')
-            baudrate: Baud rate (default 115200)
+            baudrate: Baud rate (default 250000)
             timeout: Read timeout in seconds (None = blocking, 0 = non-blocking)
             exclusive: Request exclusive access (TIOCEXCL)
             do_not_open: If True, don't open port in constructor
@@ -211,10 +224,13 @@ class TermiosSerial:
         if self._fd is None:
             return
 
-        # Get termios baudrate constant
-        if self._baudrate not in BAUDRATE_MAP:
-            raise SerialException(f"Unsupported baudrate: {self._baudrate}")
-        speed = BAUDRATE_MAP[self._baudrate]
+        # Check if baudrate is standard or needs custom BOTHER handling
+        use_custom_baud = self._baudrate not in BAUDRATE_MAP
+        
+        if not use_custom_baud:
+            speed = BAUDRATE_MAP[self._baudrate]
+        else:
+            speed = BOTHER  # Will set actual speed via termios2
 
         # Get current attributes
         try:
@@ -249,11 +265,69 @@ class TermiosSerial:
         except termios.error as e:
             raise SerialException(f"Failed to set terminal attributes: {e}") from e
 
+        # For custom baudrates, use termios2 with BOTHER
+        if use_custom_baud:
+            self._set_custom_baudrate(self._baudrate)
+
         # Flush buffers
         try:
             termios.tcflush(self._fd, termios.TCIOFLUSH)
         except termios.error:
             pass
+
+    def _set_custom_baudrate(self, baudrate: int) -> None:
+        """
+        Set a custom (non-standard) baudrate using Linux termios2 BOTHER.
+
+        This is required for baudrates like 250000 that aren't in the
+        standard POSIX termios constants.
+        """
+        if self._fd is None:
+            return
+
+        import struct
+
+        # termios2 structure layout (44 bytes on most architectures):
+        # struct termios2 {
+        #     tcflag_t c_iflag;      /* 4 bytes */
+        #     tcflag_t c_oflag;      /* 4 bytes */
+        #     tcflag_t c_cflag;      /* 4 bytes */
+        #     tcflag_t c_lflag;      /* 4 bytes */
+        #     cc_t c_line;           /* 1 byte */
+        #     cc_t c_cc[19];         /* 19 bytes */
+        #     speed_t c_ispeed;      /* 4 bytes */
+        #     speed_t c_ospeed;      /* 4 bytes */
+        # };
+        TERMIOS2_SIZE = 44
+
+        try:
+            # Read current termios2 settings
+            buf = bytearray(TERMIOS2_SIZE)
+            fcntl.ioctl(self._fd, TCGETS2, buf)
+
+            # Unpack: iflag, oflag, cflag, lflag, line, cc[19], ispeed, ospeed
+            iflag, oflag, cflag, lflag = struct.unpack_from("IIII", buf, 0)
+            line = buf[16]
+            cc = buf[17:36]
+            ispeed, ospeed = struct.unpack_from("II", buf, 36)
+
+            # Clear CBAUD bits and set BOTHER for custom speed
+            cflag = (cflag & ~CBAUD) | BOTHER
+
+            # Pack modified structure
+            struct.pack_into("IIII", buf, 0, iflag, oflag, cflag, lflag)
+            buf[16] = line
+            buf[17:36] = cc
+            struct.pack_into("II", buf, 36, baudrate, baudrate)
+
+            # Write new settings
+            fcntl.ioctl(self._fd, TCSETS2, buf)
+
+        except OSError as e:
+            raise SerialException(
+                f"Failed to set custom baudrate {baudrate}: {e}. "
+                "Custom baudrates require Linux kernel with termios2 support."
+            ) from e
 
     def close(self) -> None:
         """Close the serial port."""
@@ -380,7 +454,7 @@ class TermiosSerial:
 
 def serial_for_url(
     url: str,
-    baudrate: int = 115200,
+    baudrate: int = 250000,
     **kwargs: object,
 ) -> TermiosSerial:
     """

@@ -6,7 +6,7 @@ set -e
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
 # 0_image.sh - Compila imagen OpenWrt completa para Arduino Yun
-# Target: OpenWrt 25.12.0-rc2 con UART a 115200 baud
+# Target: OpenWrt 25.12.0-rc2 con UART a 250000 baud (native U-Boot speed)
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,7 +29,7 @@ usage() {
 Usage: ./0_image.sh [OPENWRT_VERSION]
 
 Compila una imagen OpenWrt BASE para Arduino Yun con:
-  - UART serial a 115200 baud (en lugar de 250000)
+  - UART serial a 250000 baud (native, matches U-Boot)
   - Sistema mínimo (~6-8MB, cabe en 16MB flash)
 
 NOTA: Esta imagen NO incluye Python, LuCI ni YunBridge.
@@ -98,23 +98,18 @@ else
     git checkout "$OPENWRT_TAG"
 fi
 
-# --- Aplicar parche para 115200 baud ---
+# --- Arduino Yun DTS verification (keep native 250000 baud) ---
 DTS_FILE="target/linux/ath79/dts/ar9331_arduino_yun.dts"
 
 if [ -f "$DTS_FILE" ]; then
-    log_info "Aplicando parche de baudrate 250000 -> 115200..."
+    log_info "Arduino Yun DTS found: $DTS_FILE"
+    log_info "Keeping native 250000 baud (experimental branch)"
     
-    # Backup original
-    cp "$DTS_FILE" "${DTS_FILE}.orig"
-    
-    # Cambiar baudrate en el DTS
-    sed -i 's/250000/115200/g' "$DTS_FILE"
-    
-    # Verificar cambio
-    if grep -q "115200" "$DTS_FILE"; then
-        log_info "Parche aplicado correctamente al DTS"
+    # Verify baudrate
+    if grep -q "250000" "$DTS_FILE"; then
+        log_info "DTS baudrate confirmed: 250000 baud"
     else
-        log_warn "No se encontró referencia a baudrate en el DTS (puede estar en otro archivo)"
+        log_warn "DTS baudrate check: value may differ from expected"
     fi
 else
     log_warn "DTS del Arduino Yun no encontrado en $DTS_FILE"
@@ -137,7 +132,7 @@ cat > .config <<'DEFCONFIG'
 # Target: Arduino Yun (ath79/generic)
 CONFIG_TARGET_ath79=y
 CONFIG_TARGET_ath79_generic=y
-CONFIG_TARGET_ath79_generic_DEVICE_arduino-yun=y
+CONFIG_TARGET_ath79_generic_DEVICE_arduino_yun=y
 
 # Imagen compacta
 CONFIG_TARGET_ROOTFS_SQUASHFS=y

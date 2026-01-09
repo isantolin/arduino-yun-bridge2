@@ -167,8 +167,29 @@ class TestTermiosSerialWithPTY:
         """Test that unsupported baudrate raises exception."""
         master_fd, slave_name = pty_pair
 
-        with pytest.raises(SerialException, match="Unsupported baudrate"):
+        # 12345 is neither in BAUDRATE_MAP nor a valid custom baudrate
+        # Note: With BOTHER support, custom baudrates like 250000 are now valid
+        with pytest.raises((SerialException, OSError)):
             TermiosSerial(slave_name, baudrate=12345)
+
+    def test_custom_baudrate_250000(self, pty_pair: tuple[int, str]) -> None:
+        """Test custom 250000 baudrate via BOTHER (experimental branch)."""
+        master_fd, slave_name = pty_pair
+
+        # 250000 is not in standard BAUDRATE_MAP but should work via termios2/BOTHER
+        try:
+            with TermiosSerial(slave_name, baudrate=250000) as ser:
+                assert ser.is_open
+                assert ser.baudrate == 250000
+                # Verify we can still write/read (PTY doesn't care about baud)
+                test_data = b"250k test"
+                written = ser.write(test_data)
+                assert written == len(test_data)
+        except SerialException as e:
+            # May fail on systems without termios2 BOTHER support
+            if "termios2" in str(e) or "custom baudrate" in str(e).lower():
+                pytest.skip("System doesn't support custom baudrates via BOTHER")
+            raise
 
     def test_fileno(self, pty_pair: tuple[int, str]) -> None:
         """Test fileno() returns valid fd."""

@@ -46,6 +46,28 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install tox
 
+      # [SIL-2] Pre-flight security check: ensure no hardcoded secrets in config files
+      - name: Security Check - No Hardcoded Secrets
+        run: |
+          echo "Checking for hardcoded secrets in configuration files..."
+          # Check UCI config for actual secret values (not validation code)
+          if grep -r "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" \
+               --include="yunbridge" \
+               luci-app-yunbridge/root/etc/config/ 2>/dev/null | \
+               grep -v "changeme123" | grep -v '""' | grep -v "''"; then
+            echo "::error::Hardcoded secret found in UCI config!"
+            exit 1
+          fi
+          # Check for any password/secret assignments in Lua
+          if grep -rn "password\s*=\s*['\"][^'\"]\+" \
+               --include="*.lua" \
+               luci-app-yunbridge/ 2>/dev/null | \
+               grep -v "option\|input\|field"; then
+            echo "::error::Potential hardcoded password in Lua files!"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
+
       - name: Lint
         run: tox -e lint
 

@@ -38,8 +38,8 @@ local function ensure_general_section()
             enabled = "1",
             debug = "0",
             serial_port = "/dev/ttyATH0",
-            serial_baud = "115200",
-            serial_safe_baud = "115200",
+            serial_baud = "250000",
+            serial_safe_baud = "250000",
             mqtt_host = "127.0.0.1",
             mqtt_port = "8883",
             mqtt_topic = "br",
@@ -103,14 +103,14 @@ serial_baud:value("460800")
 serial_baud:value("500000")
 serial_baud:value("921600")
 serial_baud:value("1000000")
-serial_baud.default = "115200"
+serial_baud.default = "250000"
 serial_baud.rmempty = false
 
 local serial_safe_baud = s:option(
     ListValue,
     "serial_safe_baud",
     translate("Safe Serial Baud Rate"),
-    translate("Initial baudrate for negotiation. Use 115200 for safety.")
+    translate("Initial baudrate for negotiation. Use 250000 for experimental branch.")
 )
 serial_safe_baud:value("2400")
 serial_safe_baud:value("4800")
@@ -125,7 +125,7 @@ serial_safe_baud:value("460800")
 serial_safe_baud:value("500000")
 serial_safe_baud:value("921600")
 serial_safe_baud:value("1000000")
-serial_safe_baud.default = "115200"
+serial_safe_baud.default = "250000"
 serial_safe_baud.rmempty = false
 
 local mqtt_host = s:option(Value, "mqtt_host", translate("MQTT Host"))

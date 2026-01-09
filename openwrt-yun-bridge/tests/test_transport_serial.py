@@ -230,7 +230,7 @@ async def test_process_packet_success_dispatches(monkeypatch: pytest.MonkeyPatch
 async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     config.serial_safe_baud = 9600
-    config.serial_baud = 115200
+    config.serial_baud = 250000
 
     fake_reader = asyncio.StreamReader()
 

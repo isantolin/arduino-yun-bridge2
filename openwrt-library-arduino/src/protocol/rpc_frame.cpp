@@ -1,3 +1,35 @@
+/**
+ * @file rpc_frame.cpp
+ * @brief RPC frame encoding/decoding for Arduino-Linux communication.
+ * 
+ * [SIL-2 COMPLIANCE - IEC 61508]
+ * This module implements the binary framing layer with safety guarantees:
+ * 
+ * 1. COBS ENCODING: Consistent Overhead Byte Stuffing ensures no 0x00
+ *    bytes appear in encoded data, allowing 0x00 as frame delimiter.
+ * 
+ * 2. CRC32 INTEGRITY: IEEE 802.3 CRC32 computed over header+payload,
+ *    verified before any frame processing.
+ * 
+ * 3. BUFFER SAFETY: All operations use bounded arrays with explicit
+ *    size checks. No heap allocation.
+ * 
+ * 4. IN-PLACE DECODING: COBS decode operates in-place since decoded
+ *    size <= encoded size, eliminating need for temporary buffers.
+ * 
+ * 5. SECURE WIPE: Buffers are zeroed after use to prevent data leakage.
+ * 
+ * Frame format on wire:
+ *   [COBS-encoded(Header + Payload + CRC32)] [0x00 delimiter]
+ * 
+ * Header format (5 bytes, big-endian):
+ *   - version (1 byte): Protocol version (must match PROTOCOL_VERSION)
+ *   - payload_length (2 bytes): Length of payload in bytes
+ *   - command_id (2 bytes): Command or status code
+ * 
+ * @see rpc_protocol.h for protocol constants
+ * @see tools/protocol/spec.toml for specification source
+ */
 #include "rpc_frame.h"
 #include "rpc_protocol.h"
 

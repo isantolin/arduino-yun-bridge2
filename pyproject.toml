@@ -77,4 +77,5 @@ line-length = 120
 select = ["E", "F", "W", "C90"]
 
 [tool.ruff.lint.mccabe]
-max-complexity = 50
+# [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability
+max-complexity = 25

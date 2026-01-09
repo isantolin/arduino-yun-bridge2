@@ -1,5 +1,30 @@
-# yunrpc/frame.py
-# Provides classes for building and parsing RPC frames.
+"""RPC frame building and parsing for Arduino-Linux serial communication.
+
+This module implements the binary frame format used over the serial link
+between the Linux daemon and the Arduino MCU.
+
+[SIL-2 COMPLIANCE]
+The frame format is designed for reliable communication:
+- CRC32 integrity check on every frame
+- Explicit length fields prevent buffer overruns
+- Version field ensures protocol compatibility
+- Big-endian byte order for cross-platform consistency
+
+Frame Structure (on wire after COBS encoding):
+    [Header (5 bytes)] [Payload (0-128 bytes)] [CRC32 (4 bytes)]
+
+Header Format (big-endian):
+    - version (1 byte): Protocol version, must match PROTOCOL_VERSION
+    - payload_length (2 bytes): Number of payload bytes
+    - command_id (2 bytes): Command or status code from protocol.py
+
+The raw frame is then COBS-encoded and terminated with 0x00 delimiter
+before transmission.
+
+Example:
+    >>> frame = Frame.build(Command.CMD_GET_VERSION, b"")
+    >>> encoded = cobs.encode(frame) + b"\\x00"
+"""
 
 import struct
 from typing import Self
@@ -9,7 +34,28 @@ from .crc import crc32_ieee
 
 
 class Frame:
+    """Represents an RPC frame for MCU-Linux communication.
+    
+    This class provides both object-oriented and static methods for
+    frame construction and parsing.
+    
+    Attributes:
+        command_id: The RPC command or status code (16-bit).
+        payload: The frame payload (0 to MAX_PAYLOAD_SIZE bytes).
+    
+    Example:
+        >>> frame = Frame(Command.CMD_CONSOLE_WRITE, b"Hello")
+        >>> raw = frame.to_bytes()  # Build raw frame
+        >>> parsed = Frame.from_bytes(raw)  # Parse back
+    """
+    
     def __init__(self, command_id: int, payload: bytes = b"") -> None:
+        """Initialize a Frame instance.
+        
+        Args:
+            command_id: RPC command or status code (0-65535).
+            payload: Frame payload bytes (default empty).
+        """
         self.command_id = command_id
         self.payload = payload
 

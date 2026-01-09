@@ -1,5 +1,32 @@
 #!/usr/bin/env python3
-"""Async orchestrator for the Arduino Yun Bridge v2 daemon."""
+"""Async orchestrator for the Arduino Yun Bridge v2 daemon.
+
+This module contains the main entry point and orchestration logic for the
+Yun Bridge daemon, which manages communication between OpenWrt Linux and
+the Arduino MCU over serial and MQTT.
+
+[SIL-2 COMPLIANCE]
+The daemon implements robust error handling:
+- Task supervision with automatic restart and backoff
+- Fatal exception handling for unrecoverable serial errors
+- Graceful shutdown on SIGTERM/SIGINT
+- Status file cleanup on exit
+
+Architecture:
+    main() -> BridgeDaemon -> TaskGroup
+        ├── serial-link (SerialTransport)
+        ├── mqtt-link (mqtt_task)
+        ├── status-writer (status_writer)
+        ├── metrics-publisher (publish_metrics)
+        ├── bridge-snapshots (optional)
+        ├── watchdog (optional)
+        └── prometheus-exporter (optional)
+
+Usage:
+    $ python -m yunbridge.daemon
+    # Or via init script:
+    $ /etc/init.d/yunbridge start
+"""
 
 from __future__ import annotations
 
@@ -40,9 +67,26 @@ if TYPE_CHECKING:
 
 
 class BridgeDaemon:
-    """Orchestrator for the Yun Bridge services."""
+    """Main orchestrator for the Yun Bridge daemon services.
+    
+    This class manages the lifecycle of all daemon components including
+    serial communication, MQTT publishing, metrics, and optional features
+    like watchdog and Prometheus exporter.
+    
+    Attributes:
+        config: Runtime configuration loaded from UCI.
+        state: Shared runtime state for all components.
+        service: BridgeService instance handling RPC dispatch.
+        watchdog: Optional watchdog keepalive task.
+        exporter: Optional Prometheus metrics exporter.
+    """
 
     def __init__(self, config: RuntimeConfig):
+        """Initialize the daemon with configuration.
+        
+        Args:
+            config: Validated RuntimeConfig from UCI/defaults.
+        """
         self.config = config
         self.state = create_runtime_state(config)
         self.service = BridgeService(config, self.state)

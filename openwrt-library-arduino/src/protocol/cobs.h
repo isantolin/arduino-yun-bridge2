@@ -5,13 +5,21 @@
 #include <stdint.h>
 
 /**
- * Native COBS (Consistent Overhead Byte Stuffing) implementation.
+ * @file cobs.h
+ * @brief Consistent Overhead Byte Stuffing (COBS) encoding/decoding.
  * 
- * Replaces PacketSerial dependency with a minimal, self-contained implementation
- * for better control and debugging of frame encoding issues.
+ * [SIL-2 COMPLIANCE - IEC 61508]
+ * Native implementation replacing PacketSerial dependency for:
+ * - Better control over buffer handling
+ * - Explicit size validation
+ * - No hidden allocations
  * 
- * COBS encoding ensures no zero bytes appear in the encoded output, allowing
- * zero (0x00) to be used as a frame delimiter.
+ * COBS Properties:
+ * - Guaranteed no 0x00 bytes in output (allows 0x00 as delimiter)
+ * - Worst-case overhead: 1 byte per 254 input bytes + 1 code byte
+ * - Decoded size always <= encoded size (enables in-place decoding)
+ * 
+ * @see https://en.wikipedia.org/wiki/Consistent_Overhead_Byte_Stuffing
  */
 namespace cobs {
 

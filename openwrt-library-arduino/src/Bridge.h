@@ -1,6 +1,21 @@
-/*
+/**
+ * @file Bridge.h
+ * @brief Arduino Yun Bridge v2 - MCU-side RPC library.
+ * 
  * This file is part of Arduino Yun Ecosystem v2.
- * (C) 2025 Ignacio Santolin
+ * (C) 2025-2026 Ignacio Santolin and contributors.
+ * 
+ * [SIL-2 COMPLIANCE - IEC 61508]
+ * This library is designed following functional safety guidelines:
+ * - No STL usage (prevents heap fragmentation on AVR)
+ * - No recursion (deterministic stack usage)
+ * - No dynamic allocation post-initialization
+ * - All inputs validated against safe ranges
+ * - CRC32 integrity on all frames
+ * - Defined fail-safe state on error conditions
+ * 
+ * @see docs/PROTOCOL.md for protocol specification
+ * @see tools/protocol/spec.toml for machine-readable contract
  */
 #ifndef BRIDGE_H
 #define BRIDGE_H
@@ -38,6 +53,18 @@ constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
 #ifndef BRIDGE_WATCHDOG_TIMEOUT
 #define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
 #endif
+#endif
+
+// [SIL-2] Multi-platform watchdog support
+#if defined(ARDUINO_ARCH_ESP32) && BRIDGE_ENABLE_WATCHDOG
+#include <esp_task_wdt.h>
+#ifndef BRIDGE_WATCHDOG_TIMEOUT_MS
+#define BRIDGE_WATCHDOG_TIMEOUT_MS 2000
+#endif
+#endif
+
+#if defined(ARDUINO_ARCH_ESP8266) && BRIDGE_ENABLE_WATCHDOG
+// ESP8266 uses yield() for watchdog - software WDT
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MAJOR

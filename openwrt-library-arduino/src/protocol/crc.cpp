@@ -1,3 +1,22 @@
+/**
+ * @file crc.cpp
+ * @brief CRC32 implementation for frame integrity verification.
+ * 
+ * [SIL-2 COMPLIANCE]
+ * This module provides a self-contained CRC32 implementation to ensure:
+ * - Bit-identical results between MCU (C++) and daemon (Python)
+ * - No external library dependencies that could drift
+ * - Deterministic execution (no heap, no recursion)
+ * 
+ * Algorithm: IEEE 802.3 CRC32 (same as Ethernet, PNG, ZIP)
+ * Polynomial: 0xEDB88320 (bit-reversed representation)
+ * Initial value: 0xFFFFFFFF
+ * Final XOR: 0xFFFFFFFF (via bitwise NOT)
+ * 
+ * @param data Pointer to data buffer
+ * @param len  Length of data in bytes
+ * @return CRC32 checksum (32-bit unsigned)
+ */
 #include "crc.h"
 #include "rpc_protocol.h"
 

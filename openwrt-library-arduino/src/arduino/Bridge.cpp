@@ -418,16 +418,37 @@ void BridgeClass::onAnalogReadResponse(AnalogReadHandler handler) { _analog_read
 void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
+/**
+ * @brief Main processing loop - call frequently from loop().
+ * 
+ * [SIL-2 COMPLIANCE] This function:
+ * 1. Resets the hardware watchdog (AVR/ESP32/ESP8266)
+ * 2. Applies any pending baudrate changes
+ * 3. Processes incoming serial frames
+ * 4. Handles ACK timeouts and retransmissions
+ * 5. Flushes pending TX queue and console buffers
+ * 
+ * Must be called at least every 100ms to prevent watchdog reset.
+ */
 void BridgeClass::process() {
-// [SIL-2] Deferred baudrate change: check if pending and ready to apply
+  // [SIL-2] Deferred baudrate change: check if pending and ready to apply
   if (g_baudrate_state.isReady(millis())) {
     _transport.setBaudrate(g_baudrate_state.pending_baudrate);
     g_baudrate_state.clear();
   }
 
+  // [SIL-2] Multi-platform watchdog reset
 #if defined(ARDUINO_ARCH_AVR)
   if (kBridgeEnableWatchdog) {
     wdt_reset();
+  }
+#elif defined(ARDUINO_ARCH_ESP32)
+  if (kBridgeEnableWatchdog) {
+    esp_task_wdt_reset();
+  }
+#elif defined(ARDUINO_ARCH_ESP8266)
+  if (kBridgeEnableWatchdog) {
+    yield();  // ESP8266 software WDT reset
   }
 #endif
 

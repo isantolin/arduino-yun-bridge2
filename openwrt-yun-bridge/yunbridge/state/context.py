@@ -271,6 +271,11 @@ class SerialThroughputStats:
         }
 
 
+def _latency_bucket_counts_factory() -> list[int]:
+    """Factory for SerialLatencyStats bucket_counts field."""
+    return [0] * len(LATENCY_BUCKETS_MS)
+
+
 @dataclass(slots=True)
 class SerialLatencyStats:
     """RPC command latency histogram for performance monitoring.
@@ -279,7 +284,7 @@ class SerialLatencyStats:
     Buckets represent cumulative counts (Prometheus histogram style).
     """
     # Histogram bucket counts (cumulative, le=bucket_ms)
-    bucket_counts: list[int] = field(default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS))
+    bucket_counts: list[int] = field(default_factory=_latency_bucket_counts_factory)
     # Total observations above largest bucket
     overflow_count: int = 0
     # Running totals for average calculation

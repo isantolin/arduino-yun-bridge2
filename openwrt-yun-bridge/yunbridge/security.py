@@ -56,13 +56,10 @@ def secure_zero(data: bytearray | memoryview) -> None:
         # Get underlying buffer for memoryview
         buf = (ctypes.c_char * len(data)).from_buffer(data)
         ctypes.memset(ctypes.addressof(buf), 0, len(data))
-    elif isinstance(data, bytearray):
+    else:
+        # data is bytearray (type narrowed by signature)
         buf = (ctypes.c_char * len(data)).from_buffer(data)
         ctypes.memset(ctypes.addressof(buf), 0, len(data))
-    else:
-        raise TypeError(
-            f"secure_zero requires bytearray or memoryview, got {type(data).__name__}"
-        )
 
 
 def secure_zero_bytes_copy(data: bytes) -> bytes:

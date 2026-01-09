@@ -68,11 +68,11 @@ if TYPE_CHECKING:
 
 class BridgeDaemon:
     """Main orchestrator for the Yun Bridge daemon services.
-    
+
     This class manages the lifecycle of all daemon components including
     serial communication, MQTT publishing, metrics, and optional features
     like watchdog and Prometheus exporter.
-    
+
     Attributes:
         config: Runtime configuration loaded from UCI.
         state: Shared runtime state for all components.
@@ -83,7 +83,7 @@ class BridgeDaemon:
 
     def __init__(self, config: RuntimeConfig):
         """Initialize the daemon with configuration.
-        
+
         Args:
             config: Validated RuntimeConfig from UCI/defaults.
         """

@@ -35,23 +35,23 @@ from .crc import crc32_ieee
 
 class Frame:
     """Represents an RPC frame for MCU-Linux communication.
-    
+
     This class provides both object-oriented and static methods for
     frame construction and parsing.
-    
+
     Attributes:
         command_id: The RPC command or status code (16-bit).
         payload: The frame payload (0 to MAX_PAYLOAD_SIZE bytes).
-    
+
     Example:
         >>> frame = Frame(Command.CMD_CONSOLE_WRITE, b"Hello")
         >>> raw = frame.to_bytes()  # Build raw frame
         >>> parsed = Frame.from_bytes(raw)  # Parse back
     """
-    
+
     def __init__(self, command_id: int, payload: bytes = b"") -> None:
         """Initialize a Frame instance.
-        
+
         Args:
             command_id: RPC command or status code (0-65535).
             payload: Frame payload bytes (default empty).

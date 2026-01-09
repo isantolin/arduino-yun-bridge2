@@ -24,17 +24,17 @@ from yunbridge.rpc.protocol import CRC32_MASK
 
 def crc32_ieee(data: bytes, initial: int = 0) -> int:
     """Compute IEEE 802.3 CRC-32 checksum.
-    
+
     This function wraps Python's binascii.crc32() and masks the result
     to ensure consistent 32-bit unsigned output.
-    
+
     Args:
         data: Input bytes to checksum.
         initial: Initial CRC value (default 0, internally converted).
-    
+
     Returns:
         32-bit unsigned CRC value masked by CRC32_MASK.
-    
+
     Note:
         The result is bit-identical to crc32_ieee() in protocol/crc.cpp
         on the MCU side.

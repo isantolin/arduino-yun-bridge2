@@ -76,6 +76,12 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90"]
 
+[tool.ruff.lint.per-file-ignores]
+# Code generators are inherently complex: exclude from mccabe checks
+"tools/protocol/generate.py" = ["C901"]
+# Test helper functions can have complex logic for static analysis
+"openwrt-yun-bridge/tests/test_repo_policy_gates.py" = ["C901"]
+
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability
 max-complexity = 25

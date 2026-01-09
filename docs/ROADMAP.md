@@ -1,22 +1,10 @@
 # Roadmap
 
-## Phase 1: Protocol Analysis & Specification (Completed)
-- Defined binary protocol in `tools/protocol/spec.toml`.
-- Implemented Python daemon with async architecture.
-- Created initial test suite.
+> **Current Release**: v2.0.1 (OpenWrt 25.12.0 compatible)
 
-## Phase 2: Core Implementation (Completed)
-- Implemented full MQTT v5 support.
-- Developed robust serial handshake with HMAC authentication.
-- Created `openwrt-yun-bridge` and `openwrt-yun-core` packages.
+## Pending
 
-## Phase 3: Execution & Verification (Completed)
-- Refactored Arduino C++ library to "Decoupled Bridge" architecture.
-- Verified system with comprehensive test suites (`test_bridge_core`, `test_bridge_components`).
-- Validated build artifacts and installation scripts.
-- Achieved "Ready for Release" status (v2.0.1).
-
-## Future / Ideas
 - **Hardware Verification**: Conduct extensive testing on physical Arduino Yun hardware.
 - **Performance Tuning**: Optimize serial throughput and memory usage on the MCU.
 - **Extended Metrics**: Add more granular metrics for specific subsystems.
+- **ESP32/ESP8266 Validation**: Test multi-platform watchdog support on real hardware.

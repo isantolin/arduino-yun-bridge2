@@ -293,8 +293,10 @@ class _RuntimeStateCollector(Collector):
 
         # [EXTENDED METRICS] Emit latency histogram if present
         latency_data = snapshot.get("serial_latency")
-        if isinstance(latency_data, dict) and latency_data.get("count", 0) > 0:
-            yield from self._emit_latency_histogram(latency_data, HistogramMetricFamily)
+        if isinstance(latency_data, dict):
+            latency_dict: dict[str, Any] = cast(dict[str, Any], latency_data)
+            if latency_dict.get("count", 0) > 0:
+                yield from self._emit_latency_histogram(latency_dict, HistogramMetricFamily)
 
         info_values: list[tuple[str, str]] = []
         for metric_type, name, value in self._flatten(
@@ -329,18 +331,22 @@ class _RuntimeStateCollector(Collector):
         HistogramMetricFamily: type,
     ) -> Iterator[Any]:
         """Emit Prometheus histogram for RPC latency."""
-        buckets_dict = latency_data.get("buckets", {})
-        if not isinstance(buckets_dict, dict):
+        buckets_raw = latency_data.get("buckets", {})
+        if not isinstance(buckets_raw, dict):
             return
+
+        buckets_dict: dict[str, Any] = cast(dict[str, Any], buckets_raw)
 
         # Build bucket list: [(upper_bound, cumulative_count), ...]
         bucket_list: list[tuple[float, int]] = []
-        for key, count in buckets_dict.items():
+        for raw_key, raw_count in buckets_dict.items():
+            key = str(raw_key)
             if key.startswith("le_") and key.endswith("ms"):
                 try:
                     bound_ms = float(key[3:-2])  # Extract number from "le_Xms"
                     bound_s = bound_ms / 1000.0  # Convert to seconds
-                    bucket_list.append((bound_s, int(count)))
+                    count_val = int(raw_count) if isinstance(raw_count, (int, float)) else 0
+                    bucket_list.append((bound_s, count_val))
                 except (ValueError, TypeError):
                     continue
 

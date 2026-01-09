@@ -55,8 +55,8 @@ msgstr "Copy snippet"
 msgid "Safe Serial Baud Rate"
 msgstr "Safe Serial Baud Rate"
 
-msgid "Initial baudrate for negotiation. Use 115200 for safety."
-msgstr "Initial baudrate for negotiation. Use 115200 for safety."
+msgid "Initial baudrate for negotiation. Use 250000 for experimental branch."
+msgstr "Initial baudrate for negotiation. Use 250000 for experimental branch."
 
 msgid "Status snapshot is read from /tmp/yunbridge_status.json (tmpfs) and may be empty after reboot or while the daemon is starting."
 msgstr "Status snapshot is read from /tmp/yunbridge_status.json (tmpfs) and may be empty after reboot or while the daemon is starting."

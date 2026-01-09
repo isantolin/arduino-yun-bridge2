@@ -191,7 +191,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 La forma más sencilla es compilar una imagen OpenWrt completa que ya incluye todo el ecosistema YunBridge:
 
 1.  **Compilar imagen:** Ejecuta `./0_image.sh` para generar una imagen OpenWrt con:
-	- UART a 115200 baud (corrige el baudrate legacy de 250000)
+	- UART a 250000 baud (coincide con velocidad nativa U-Boot)
 	- Todos los paquetes YunBridge preinstalados
 	- Configuración automática de extroot/swap en primer boot
 	- Generación automática de secretos de seguridad

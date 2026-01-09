@@ -63,7 +63,7 @@ async def test_negotiate_baudrate_success() -> None:
     reader = _FakeReader(response)
     writer = _FakeWriter()
 
-    ok = await serial_mod._negotiate_baudrate(reader, writer, 115200)
+    ok = await serial_mod._negotiate_baudrate(reader, writer, 250000)
 
     assert ok is True
     assert writer.writes
@@ -77,7 +77,7 @@ async def test_negotiate_baudrate_unexpected_response() -> None:
     reader = _FakeReader(response)
     writer = _FakeWriter()
 
-    ok = await serial_mod._negotiate_baudrate(reader, writer, 115200)
+    ok = await serial_mod._negotiate_baudrate(reader, writer, 250000)
 
     assert ok is False
 
@@ -87,7 +87,7 @@ async def test_negotiate_baudrate_timeout_returns_false() -> None:
     reader = _TimeoutReader()
     writer = _FakeWriter()
 
-    ok = await serial_mod._negotiate_baudrate(reader, writer, 115200)
+    ok = await serial_mod._negotiate_baudrate(reader, writer, 250000)
 
     assert ok is False
 
@@ -115,7 +115,7 @@ def test_open_serial_hardware_closes_on_failure() -> None:
 async def test_open_serial_connection_with_retry_no_negotiation(monkeypatch: pytest.MonkeyPatch) -> None:
     config = RuntimeConfig(
         serial_port="loop://",
-        serial_baud=115200,
+        serial_baud=250000,
         serial_safe_baud=0,
         mqtt_host="localhost",
         mqtt_port=1883,
@@ -149,14 +149,14 @@ async def test_open_serial_connection_with_retry_no_negotiation(monkeypatch: pyt
     assert reader is fake_reader
     assert got_writer is writer
     opener.assert_awaited_once()
-    assert opener.call_args.kwargs.get("baudrate") == 115200
+    assert opener.call_args.kwargs.get("baudrate") == 250000
 
 
 @pytest.mark.asyncio
 async def test_open_serial_connection_with_retry_negotiation_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     config = RuntimeConfig(
         serial_port="loop://",
-        serial_baud=115200,
+        serial_baud=250000,
         serial_safe_baud=9600,
         mqtt_host="localhost",
         mqtt_port=1883,
@@ -199,8 +199,8 @@ async def test_open_serial_connection_with_retry_raises_unexpected_exception_gro
 ) -> None:
     config = RuntimeConfig(
         serial_port="loop://",
-        serial_baud=115200,
-        serial_safe_baud=115200,
+        serial_baud=250000,
+        serial_safe_baud=250000,
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user=None,

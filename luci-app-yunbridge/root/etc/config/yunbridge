@@ -4,9 +4,9 @@ config general 'general'
     # [PRODUCCION] Debug desactivado
     option debug '0'
 
-    # [SERIAL] Velocidad estándar (Legacy Compatibility)
+    # [SERIAL] Experimental 250000 baud (matches U-Boot)
     option serial_port '/dev/ttyATH0'
-    option serial_baud '115200'
+    option serial_baud '250000'
     
     # [SEGURIDAD] Secreto compartido (se genera automáticamente en primer boot)
 

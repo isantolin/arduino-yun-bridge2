@@ -167,7 +167,7 @@ El estado de salud del enlace se expone en:
 El Arduino Yun presenta un conflicto de hardware: el puerto serial `/dev/ttyATH0` es usado simultáneamente por:
 
 1. **Consola del kernel** (configurada en bootargs a 250000 baud)
-2. **Protocolo YunBridge** (opera a 115200 baud)
+2. **Protocolo YunBridge** (opera a 250000 baud en branch experimental)
 
 Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corromper frames COBS del protocolo, causando errores de parsing como:
 

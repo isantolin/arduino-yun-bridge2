@@ -365,6 +365,9 @@ class RuntimeState:
     link_is_synchronized: bool = False
     link_expected_tag: bytes | None = None
     link_nonce_length: int = 0
+    # [MIL-SPEC] Anti-replay nonce counters
+    link_nonce_counter: int = 0  # Counter for generating outbound nonces
+    link_last_nonce_counter: int = 0  # Last accepted inbound nonce counter
     handshake_attempts: int = 0
     handshake_successes: int = 0
     handshake_failures: int = 0

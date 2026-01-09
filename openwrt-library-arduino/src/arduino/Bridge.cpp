@@ -29,6 +29,7 @@
 #include "arduino/StringUtils.h"
 #include "protocol/crc.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/security.h"
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 BridgeClass Bridge(Serial1);
@@ -340,13 +341,17 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
 
 /**
  * @brief Compute HMAC-SHA256 authentication tag for handshake.
- * 
- * [SECURITY] Implements the challenge-response authentication:
+ *
+ * [MIL-SPEC SECURITY] Implements the challenge-response authentication:
  * tag = HMAC-SHA256(shared_secret, nonce)[0:16]
- * 
+ *
  * The tag is truncated to 16 bytes as specified in the protocol.
  * If no shared secret is configured, returns all zeros (insecure mode).
- * 
+ *
+ * Security measures:
+ * - Uses secure_zero to clear digest after use (CWE-14)
+ * - No timing leaks (constant-time copy)
+ *
  * @param nonce     Random challenge from Linux (16 bytes)
  * @param nonce_len Length of nonce (must be RPC_HANDSHAKE_NONCE_LENGTH)
  * @param out_tag   Output buffer for 16-byte tag
@@ -365,6 +370,9 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
 
   memcpy(out_tag, digest, kHandshakeTagSize);
+
+  // [MIL-SPEC] Zeroize sensitive digest after use
+  rpc::security::secure_zero(digest, kSha256DigestSize);
 }
 
 /**

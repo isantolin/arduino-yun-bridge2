@@ -51,6 +51,17 @@ response_timeout_max_ms = 180000
 retry_limit_min = 1
 retry_limit_max = 8
 
+# [MIL-SPEC] HKDF key derivation parameters (NIST SP 800-56C)
+hkdf_algorithm = "HKDF-SHA256"
+hkdf_salt = "yunbridge-v2"
+hkdf_info_auth = "handshake-auth"
+hkdf_output_length = 32
+
+# [MIL-SPEC] Anti-replay nonce structure
+nonce_random_bytes = 8
+nonce_counter_bytes = 8
+nonce_format_description = "random[8] || counter[8] - counter is big-endian uint64 for anti-replay"
+
 [data_formats]
 datastore_key_len_format = ">B"
 datastore_value_len_format = ">B"

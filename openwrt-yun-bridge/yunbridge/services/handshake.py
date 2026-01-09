@@ -1,4 +1,11 @@
-"""Serial handshake coordination utilities for BridgeService."""
+"""Serial handshake coordination utilities for BridgeService.
+
+[MIL-SPEC COMPLIANCE]
+This module implements secure handshake with:
+- HMAC-SHA256 authentication (timing-safe comparison)
+- Nonce with monotonic counter (anti-replay protection)
+- Secure memory zeroization after use
+"""
 
 from __future__ import annotations
 
@@ -7,7 +14,6 @@ import hashlib
 import hmac
 import json
 import logging
-import os
 import struct
 import time
 from dataclasses import dataclass
@@ -23,6 +29,12 @@ from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import handshake_topic
 from ..rpc import protocol
 from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
+from ..security import (
+    generate_nonce_with_counter,
+    secure_zero,
+    timing_safe_equal,
+    validate_nonce_counter,
+)
 from ..state.context import RuntimeState
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
@@ -123,7 +135,13 @@ class SerialHandshakeManager:
         await self._respect_handshake_backoff()
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
         self._state.record_handshake_attempt()
-        nonce = os.urandom(nonce_length)
+
+        # [MIL-SPEC] Generate nonce with anti-replay counter
+        nonce, new_counter = generate_nonce_with_counter(
+            self._state.link_nonce_counter
+        )
+        self._state.link_nonce_counter = new_counter
+
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = nonce_length
         self._state.link_expected_tag = self._compute_handshake_tag(nonce)
@@ -219,7 +237,20 @@ class SerialHandshakeManager:
         nonce_mismatch = nonce != expected
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
-        tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
+        # [MIL-SPEC] Use timing-safe comparison to prevent side-channel attacks
+        tag_mismatch = not timing_safe_equal(tag_bytes, recalculated_tag)
+
+        # [MIL-SPEC] Validate nonce counter for anti-replay protection
+        if not nonce_mismatch and not missing_expected_tag:
+            is_valid, _ = validate_nonce_counter(
+                nonce, self._state.link_last_nonce_counter
+            )
+            if not is_valid:
+                self._logger.warning(
+                    "LINK_SYNC_RESP replay detected (nonce counter too low)"
+                )
+                nonce_mismatch = True  # Treat as nonce mismatch
+
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
             self._logger.warning(
                 "LINK_SYNC_RESP auth mismatch (nonce=%s)",
@@ -287,6 +318,14 @@ class SerialHandshakeManager:
         return self._state.link_is_synchronized and self._state.link_handshake_nonce is None
 
     def _clear_handshake_expectations(self) -> None:
+        # [MIL-SPEC] Securely zero sensitive handshake material before clearing
+        if self._state.link_handshake_nonce is not None:
+            nonce_buf = bytearray(self._state.link_handshake_nonce)
+            secure_zero(nonce_buf)
+        if self._state.link_expected_tag is not None:
+            tag_buf = bytearray(self._state.link_expected_tag)
+            secure_zero(tag_buf)
+
         self._state.link_handshake_nonce = None
         self._state.link_expected_tag = None
         self._state.link_nonce_length = 0

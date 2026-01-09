@@ -315,8 +315,41 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
             f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {handshake['retry_limit_min']};\n"
         )
         out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n\n"
+            f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n"
         )
+
+        # [MIL-SPEC] HKDF and anti-replay constants
+        if "hkdf_salt" in handshake:
+            salt = handshake['hkdf_salt']
+            salt_bytes = ', '.join(f"0x{ord(c):02X}" for c in salt)
+            out.write(
+                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{salt_bytes}}};\n"
+            )
+            out.write(
+                f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(salt)};\n"
+            )
+        if "hkdf_info_auth" in handshake:
+            info = handshake['hkdf_info_auth']
+            info_bytes = ', '.join(f"0x{ord(c):02X}" for c in info)
+            out.write(
+                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{info_bytes}}};\n"
+            )
+            out.write(
+                f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(info)};\n"
+            )
+        if "hkdf_output_length" in handshake:
+            out.write(
+                f"constexpr unsigned int RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH = {handshake['hkdf_output_length']};\n"
+            )
+        if "nonce_random_bytes" in handshake:
+            out.write(
+                f"constexpr unsigned int RPC_HANDSHAKE_NONCE_RANDOM_BYTES = {handshake['nonce_random_bytes']};\n"
+            )
+        if "nonce_counter_bytes" in handshake:
+            out.write(
+                f"constexpr unsigned int RPC_HANDSHAKE_NONCE_COUNTER_BYTES = {handshake['nonce_counter_bytes']};\n"
+            )
+        out.write("\n")
 
     out.write("enum class StatusCode : uint8_t {\n")
     for status in spec["statuses"]:
@@ -471,8 +504,35 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             f"HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = {handshake['retry_limit_min']}\n"
         )
         out.write(
-            f"HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = {handshake['retry_limit_max']}\n\n"
+            f"HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = {handshake['retry_limit_max']}\n"
         )
+
+        # [MIL-SPEC] HKDF and anti-replay constants
+        if "hkdf_algorithm" in handshake:
+            out.write(
+                f"HANDSHAKE_HKDF_ALGORITHM: Final[str] = \"{handshake['hkdf_algorithm']}\"\n"
+            )
+        if "hkdf_salt" in handshake:
+            out.write(
+                f"HANDSHAKE_HKDF_SALT: Final[bytes] = b\"{handshake['hkdf_salt']}\"\n"
+            )
+        if "hkdf_info_auth" in handshake:
+            out.write(
+                f"HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b\"{handshake['hkdf_info_auth']}\"\n"
+            )
+        if "hkdf_output_length" in handshake:
+            out.write(
+                f"HANDSHAKE_HKDF_OUTPUT_LENGTH: Final[int] = {handshake['hkdf_output_length']}\n"
+            )
+        if "nonce_random_bytes" in handshake:
+            out.write(
+                f"HANDSHAKE_NONCE_RANDOM_BYTES: Final[int] = {handshake['nonce_random_bytes']}\n"
+            )
+        if "nonce_counter_bytes" in handshake:
+            out.write(
+                f"HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = {handshake['nonce_counter_bytes']}\n"
+            )
+        out.write("\n")
 
     formats = spec.get("data_formats", {})
     if formats:

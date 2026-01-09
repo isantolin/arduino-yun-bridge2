@@ -42,6 +42,11 @@ _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 
+def _bucket_sort_key(item: tuple[float, int]) -> float:
+    """Sort key for histogram buckets by upper bound."""
+    return item[0]
+
+
 def _json_dumps(value: Any) -> str:
     if ujson is not None:
         return ujson.dumps(value)
@@ -350,7 +355,7 @@ class _RuntimeStateCollector(Collector):
                 except (ValueError, TypeError):
                     continue
 
-        bucket_list.sort(key=lambda x: x[0])
+        bucket_list.sort(key=_bucket_sort_key)
 
         if not bucket_list:
             return

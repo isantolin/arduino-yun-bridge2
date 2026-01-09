@@ -92,9 +92,9 @@ CONFIG_MTDPARTS_DEFAULT="mtdparts=spi-flash.0:256k(u-boot),64k(u-boot-env),15936
 # CONFIG_ISO_PARTITION is not set
 # CONFIG_EFI_PARTITION is not set
 
-# Network - minimal
+# Network - minimal (AG7XXX enabled for TFTP recovery)
 CONFIG_NET_RANDOM_ETHADDR=y
-# CONFIG_AG7XXX is not set
+CONFIG_AG7XXX=y
 
 # MTD/SPI Flash - only chips used by Yun
 CONFIG_MTD=y

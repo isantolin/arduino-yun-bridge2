@@ -1,0 +1,24 @@
+config TARGET_ARDUINO_YUN
+	bool "Arduino Yun (AR9331 DDR2 64MB)"
+	select SOC_AR933X
+	select DM_SERIAL
+	select SPI
+	select SPI_FLASH
+	select SPI_FLASH_MACRONIX
+	select SPI_FLASH_WINBOND
+	help
+	  Arduino Yun board with:
+	  - AR9331 Hornet SoC @ 400MHz
+	  - 64MB DDR2 SDRAM (vs 32MB DDR1 on AP121)
+	  - 16MB SPI Flash
+	  - ATmega32U4 MCU bridge via UART1 (250000 baud)
+	  - WiFi 802.11bgn
+
+config ARDUINO_YUN_DDR2
+	bool "Enable DDR2 initialization for Arduino Yun"
+	depends on TARGET_ARDUINO_YUN
+	default y
+	help
+	  Initialize DDR2 memory with Yun-specific timing parameters.
+	  Required for 64MB RAM support. Disable only if using SPL
+	  that handles DDR2 init.

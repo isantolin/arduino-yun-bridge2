@@ -273,16 +273,29 @@ async def publish_bridge_snapshots(
 
 
 class _RuntimeStateCollector(Collector):
-    """Prometheus collector that projects RuntimeState snapshots."""
+    """Prometheus collector that projects RuntimeState snapshots.
+
+    [EXTENDED METRICS] Supports histogram buckets for latency metrics.
+    """
 
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
 
     def collect(self) -> Iterator[Any]:
         # pragma: no cover - exercised via exporter
-        from prometheus_client.core import GaugeMetricFamily, InfoMetricFamily
+        from prometheus_client.core import (
+            GaugeMetricFamily,
+            HistogramMetricFamily,
+            InfoMetricFamily,
+        )
 
         snapshot = self._state.build_metrics_snapshot()
+
+        # [EXTENDED METRICS] Emit latency histogram if present
+        latency_data = snapshot.get("serial_latency")
+        if isinstance(latency_data, dict) and latency_data.get("count", 0) > 0:
+            yield from self._emit_latency_histogram(latency_data, HistogramMetricFamily)
+
         info_values: list[tuple[str, str]] = []
         for metric_type, name, value in self._flatten(
             "yunbridge",
@@ -309,6 +322,49 @@ class _RuntimeStateCollector(Collector):
                     {"value": value},
                 )
             yield info_metric
+
+    def _emit_latency_histogram(
+        self,
+        latency_data: dict[str, Any],
+        HistogramMetricFamily: type,
+    ) -> Iterator[Any]:
+        """Emit Prometheus histogram for RPC latency."""
+        buckets_dict = latency_data.get("buckets", {})
+        if not isinstance(buckets_dict, dict):
+            return
+
+        # Build bucket list: [(upper_bound, cumulative_count), ...]
+        bucket_list: list[tuple[float, int]] = []
+        for key, count in buckets_dict.items():
+            if key.startswith("le_") and key.endswith("ms"):
+                try:
+                    bound_ms = float(key[3:-2])  # Extract number from "le_Xms"
+                    bound_s = bound_ms / 1000.0  # Convert to seconds
+                    bucket_list.append((bound_s, int(count)))
+                except (ValueError, TypeError):
+                    continue
+
+        bucket_list.sort(key=lambda x: x[0])
+
+        if not bucket_list:
+            return
+
+        total_count = latency_data.get("count", 0)
+        total_sum = latency_data.get("sum_ms", 0.0) / 1000.0  # Convert to seconds
+
+        # Add +Inf bucket
+        bucket_list.append((float("inf"), int(total_count)))
+
+        histogram = HistogramMetricFamily(
+            "yunbridge_serial_rpc_latency_seconds",
+            "RPC command round-trip latency histogram",
+        )
+        histogram.add_metric(
+            [],
+            buckets=bucket_list,
+            sum_value=total_sum,
+        )
+        yield histogram
 
     def _flatten(
         self,

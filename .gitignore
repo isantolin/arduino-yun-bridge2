@@ -3,6 +3,7 @@ openwrt-sdk/
 aio-mqtt-master/
 bin/
 build/
+openwrt-build/
 *.ipk
 *.o
 *.so

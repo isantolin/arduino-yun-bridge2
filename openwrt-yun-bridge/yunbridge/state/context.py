@@ -233,6 +233,98 @@ def _supervisor_stats_factory() -> dict[str, SupervisorStats]:
     return {}
 
 
+# [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
+LATENCY_BUCKETS_MS: tuple[float, ...] = (5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0)
+
+
+@dataclass(slots=True)
+class SerialThroughputStats:
+    """Serial link throughput counters for observability.
+
+    [SIL-2] Simple counters with monotonic increments only.
+    """
+    bytes_sent: int = 0
+    bytes_received: int = 0
+    frames_sent: int = 0
+    frames_received: int = 0
+    last_tx_unix: float = 0.0
+    last_rx_unix: float = 0.0
+
+    def record_tx(self, nbytes: int) -> None:
+        self.bytes_sent += nbytes
+        self.frames_sent += 1
+        self.last_tx_unix = time.time()
+
+    def record_rx(self, nbytes: int) -> None:
+        self.bytes_received += nbytes
+        self.frames_received += 1
+        self.last_rx_unix = time.time()
+
+    def as_dict(self) -> dict[str, float | int]:
+        return {
+            "bytes_sent": self.bytes_sent,
+            "bytes_received": self.bytes_received,
+            "frames_sent": self.frames_sent,
+            "frames_received": self.frames_received,
+            "last_tx_unix": self.last_tx_unix,
+            "last_rx_unix": self.last_rx_unix,
+        }
+
+
+@dataclass(slots=True)
+class SerialLatencyStats:
+    """RPC command latency histogram for performance monitoring.
+
+    [SIL-2] Fixed bucket boundaries, no dynamic allocation.
+    Buckets represent cumulative counts (Prometheus histogram style).
+    """
+    # Histogram bucket counts (cumulative, le=bucket_ms)
+    bucket_counts: list[int] = field(default_factory=lambda: [0] * len(LATENCY_BUCKETS_MS))
+    # Total observations above largest bucket
+    overflow_count: int = 0
+    # Running totals for average calculation
+    total_observations: int = 0
+    total_latency_ms: float = 0.0
+    # Min/max tracking
+    min_latency_ms: float = float("inf")
+    max_latency_ms: float = 0.0
+
+    def record(self, latency_ms: float) -> None:
+        """Record a latency observation into histogram buckets."""
+        self.total_observations += 1
+        self.total_latency_ms += latency_ms
+        if latency_ms < self.min_latency_ms:
+            self.min_latency_ms = latency_ms
+        if latency_ms > self.max_latency_ms:
+            self.max_latency_ms = latency_ms
+
+        # Cumulative bucket counts (le style)
+        for i, bucket in enumerate(LATENCY_BUCKETS_MS):
+            if latency_ms <= bucket:
+                self.bucket_counts[i] += 1
+        if latency_ms > LATENCY_BUCKETS_MS[-1]:
+            self.overflow_count += 1
+
+    def as_dict(self) -> dict[str, Any]:
+        avg = (
+            self.total_latency_ms / self.total_observations
+            if self.total_observations > 0
+            else 0.0
+        )
+        return {
+            "buckets": {
+                f"le_{int(b)}ms": self.bucket_counts[i]
+                for i, b in enumerate(LATENCY_BUCKETS_MS)
+            },
+            "overflow": self.overflow_count,
+            "count": self.total_observations,
+            "sum_ms": self.total_latency_ms,
+            "avg_ms": avg,
+            "min_ms": self.min_latency_ms if self.total_observations > 0 else 0.0,
+            "max_ms": self.max_latency_ms,
+        }
+
+
 @dataclass(slots=True)
 class SerialFlowStats:
     commands_sent: int = 0
@@ -383,6 +475,8 @@ class RuntimeState:
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
     serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
+    serial_throughput_stats: SerialThroughputStats = field(default_factory=SerialThroughputStats)
+    serial_latency_stats: SerialLatencyStats = field(default_factory=SerialLatencyStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -748,6 +842,22 @@ class RuntimeState:
     def record_serial_crc_error(self) -> None:
         self.serial_crc_errors += 1
 
+    def record_serial_tx(self, nbytes: int) -> None:
+        """Record bytes transmitted on serial link for throughput metrics."""
+        self.serial_throughput_stats.record_tx(nbytes)
+
+    def record_serial_rx(self, nbytes: int) -> None:
+        """Record bytes received on serial link for throughput metrics."""
+        self.serial_throughput_stats.record_rx(nbytes)
+
+    def record_rpc_latency_ms(self, latency_ms: float) -> None:
+        """Record RPC command round-trip latency for histogram metrics.
+
+        Args:
+            latency_ms: Command round-trip time in milliseconds.
+        """
+        self.serial_latency_stats.record(latency_ms)
+
     def record_mcu_status(self, status: Status) -> None:
         key = status.name
         self.mcu_status_counters[key] = self.mcu_status_counters.get(key, 0) + 1
@@ -974,6 +1084,19 @@ class RuntimeState:
         spool_snapshot = self._current_spool_snapshot()
         snapshot: dict[str, Any] = {
             "serial": self.serial_flow_stats.as_dict(),
+            # [EXTENDED METRICS] Throughput and latency
+            "serial_throughput": self.serial_throughput_stats.as_dict(),
+            "serial_latency": self.serial_latency_stats.as_dict(),
+            # Queue depths for real-time monitoring
+            "queue_depths": {
+                "mqtt": self.mqtt_publish_queue.qsize(),
+                "console": len(self.console_to_mcu_queue),
+                "mailbox_outgoing": len(self.mailbox_queue),
+                "mailbox_incoming": len(self.mailbox_incoming_queue),
+                "pending_digital_reads": len(self.pending_digital_reads),
+                "pending_analog_reads": len(self.pending_analog_reads),
+                "running_processes": len(self.running_processes),
+            },
             "mqtt_queue_size": self.mqtt_publish_queue.qsize(),
             "mqtt_queue_limit": self.mqtt_queue_limit,
             "mqtt_dropped": self.mqtt_dropped_messages,

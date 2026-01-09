@@ -90,7 +90,7 @@ void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint
 
 void setup() {
   // AHORA PASAMOS EL SECRETO AQUÍ
-  // Argumento 1: Baudrate (por defecto 115200)
+  // Argumento 1: Baudrate (por defecto 250000 en experimental)
   // Argumento 2: El secreto compartido
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
 

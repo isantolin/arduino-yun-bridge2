@@ -274,4 +274,19 @@ __all__: Final[tuple[str, ...]] = (
     "get_uci_config",
     "build_mqtt_connect_properties",
     "build_mqtt_properties",
+    "log_hexdump",
 )
+
+
+def log_hexdump(
+    logger_instance: logging.Logger, level: int, label: str, data: bytes
+) -> None:
+    """Log binary data in hexadecimal format using syslog-friendly output.
+
+    Format: [LABEL] LEN=10 HEX=00 01 02 ...
+    """
+    if not logger_instance.isEnabledFor(level):
+        return
+
+    hex_str = " ".join(f"{b:02X}" for b in data)
+    logger_instance.log(level, "[%s] LEN=%d HEX=%s", label, len(data), hex_str)

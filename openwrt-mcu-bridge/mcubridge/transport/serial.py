@@ -542,6 +542,19 @@ class SerialTransport:
         try:
             raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
+            
+            if logger.isEnabledFor(logging.DEBUG):
+                try:
+                    cmd_name = Command(frame.command_id).name
+                except ValueError:
+                    cmd_name = f"0x{frame.command_id:02X}"
+                
+                if frame.payload:
+                     hexdump = format_hexdump(frame.payload, prefix="       ")
+                     logger.debug("LINUX < %s len=%d\n%s", cmd_name, len(frame.payload), hexdump)
+                else:
+                     logger.debug("LINUX < %s (no payload)", cmd_name)
+
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
         except cobs.DecodeError as exc:

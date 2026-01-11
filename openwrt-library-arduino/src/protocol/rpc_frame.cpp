@@ -176,7 +176,8 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
 
     // --- Validate Header ---
     if (out_frame.header.version != PROTOCOL_VERSION ||
-      out_frame.header.payload_length > MAX_PAYLOAD_SIZE ||
+      // [SIL-2] Defense in Depth: Validate against actual buffer size
+      out_frame.header.payload_length > sizeof(out_frame.payload) ||
         (sizeof(FrameHeader) + out_frame.header.payload_length) != data_len) {
       reset(); // Security Wipe
       _last_error = Error::MALFORMED;

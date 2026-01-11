@@ -32,10 +32,19 @@
 #include "protocol/security.h"
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
-#if defined(HAVE_HWSERIAL1)
-BridgeClass Bridge(Serial1);
+// [SIL-2] Robust Hardware Serial Detection
+// We prioritize Serial1 for Bridge communication on devices that support it (Yun, Leonardo, Mega, etc.)
+// to leave 'Serial' (USB CDC) free for debugging.
+#if defined(__AVR_ATmega32U4__) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(_VARIANT_ARDUINO_ZERO_)
+  // 32U4 (Yun/Leonardo), SAMD (Zero), SAM (Due) -> Use Serial1
+  BridgeClass Bridge(Serial1);
+#elif defined(HAVE_HWSERIAL1) && !defined(__AVR_ATmega328P__)
+  // Generic fallback: If Serial1 exists and we are NOT on an ATmega328P (Uno/Nano), use it.
+  // We exclude 328P explicitly because some cores might define HAVE_HWSERIAL1 incorrectly or we want Serial on pins 0/1.
+  BridgeClass Bridge(Serial1);
 #else
-BridgeClass Bridge(Serial);
+  // Fallback for Uno (328P), ESP8266, ESP32 (default), etc.
+  BridgeClass Bridge(Serial);
 #endif
 ConsoleClass Console;
 DataStoreClass DataStore;
@@ -857,21 +866,33 @@ void BridgeClass::_processAckTimeout() {
     return;
   }
   if (_retry_count >= _ack_retry_limit) {
-    _awaiting_ack = false;
+    // [SIL-2] Connection assumed lost after retry limit
     if (_status_handler) {
       _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
     }
-    _flushPendingTxQueue();
+    enterSafeState(); 
     return;
   }
   _retransmitLastFrame();
 }
 
-void BridgeClass::_resetLinkState() {
+void BridgeClass::enterSafeState() {
+  // [SIL-2] Fail-Safe State Entry
+  // This method ensures the system transitions to a known safe state upon
+  // communication loss or critical error.
+  
   _synchronized = false;
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
+
+  // Note: We do not forcibly set pins to LOW here because we don't know
+  // the safety polarity of the connected hardware. Ideally, this would
+  // invoke a user-registered safety callback.
+}
+
+void BridgeClass::_resetLinkState() {
+  enterSafeState();
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {

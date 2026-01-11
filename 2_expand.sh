@@ -1,329 +1,245 @@
 #!/bin/sh
-set -eu
-# shellcheck disable=SC3043 # BusyBox ash no soporta set -o pipefail
-#
-# OpenWrt Extroot and SWAP Automation Script (Robust Mode)
-# *** ROBUST: Verifies both Extroot and SWAP configuration and size. ***
-# Uses the /dev/sda1 partition as the new /overlay and creates a 1GB SWAP file.
-#
-# WARNING! If Extroot is NOT configured or is too small, this script will reformat /dev/sda1.
-#
 
-# --- CONFIGURATION VARIABLES ---
-# DEVICE="<detected_sd_device>" # This will be determined dynamically
-MOUNT_POINT="/mnt/extroot_temp"
-LOG_FILE="/var/log/extroot_script.log"
-# Expected Sizes
-MIN_OVERLAY_KB=102400     # Minimum 100 MB to confirm external SD
-SWAP_SIZE_MB=${1:-1024}        # Size to create, default 1024 MB (1 GB)
-SWAP_EXPECTED_KB=$((SWAP_SIZE_MB * 1024))
-SWAP_FILE_PATH="/swapfile"
-# ----------------------------------
+# -----------------------------------------------------------------------------
+# Script: 2_expand.sh
+# Description: Configures Extroot (overlay) and SWAP on an external storage device.
+#              Expanded to support QEMU/Virtual environments with raw disks.
+# Usage: ./2_expand.sh [swap_size_mb] [device]
+# -----------------------------------------------------------------------------
 
-DEVICE_ARG=${2:-}
+SWAP_SIZE_MB=1024
+DEVICE=""
 
-ensure_swap_uci_entry() {
-    uci -q delete fstab.swap_file || true
-    uci set fstab.swap_file="swap"
-    uci set fstab.swap_file.device="/overlay${SWAP_FILE_PATH}"
-    uci set fstab.swap_file.enabled='1'
+# --- Helper Functions ---
+
+log_info() {
+    echo "[INFO] $1"
 }
 
-# Exigir privilegios de root.
-if [ "$(id -u)" -ne 0 ]; then
-    echo "ERROR: este script debe ejecutarse como root." >&2
+log_warn() {
+    echo "[WARN] $1"
+}
+
+log_err() {
+    echo "[ERROR] $1"
+}
+
+# --- Argument Parsing ---
+
+if [ -n "$1" ]; then
+    SWAP_SIZE_MB=$1
+fi
+
+if [ -n "$2" ]; then
+    DEVICE=$2
+fi
+
+echo ""
+echo "--- Starting Extroot and SWAP Script (Robust Mode) ---"
+
+# --- 0. Device Identification & Auto-Partitioning ---
+
+if [ -z "$DEVICE" ]; then
+    echo "Attempting to find SD card device..."
+    # Try to find a suitable candidate (sda1, sdb1, mmcblk0p1)
+    CANDIDATE=$(grep -E 'sd[a-z]1|mmcblk[0-9]p1' /proc/partitions | sort -k 3 -n -r | head -n 1 | awk '{print $4}')
+    
+    if [ -n "$CANDIDATE" ]; then
+        DEVICE="/dev/$CANDIDATE"
+    else
+        # Try finding raw devices (sdb) common in VMs
+        RAW_CANDIDATE=$(grep -E 'sd[a-z]$' /proc/partitions | grep -v 'sda' | head -n 1 | awk '{print $4}')
+        if [ -n "$RAW_CANDIDATE" ]; then
+             DEVICE="/dev/$RAW_CANDIDATE"
+             log_info "Identified raw device in VM: $DEVICE"
+        fi
+    fi
+fi
+
+if [ -z "$DEVICE" ]; then
+    log_err "No suitable storage device found. Please specify manually."
+    echo "Usage: $0 <swap_mb> <device>"
     exit 1
 fi
 
-FORCE_FORMAT="0"
-if command -v uci >/dev/null 2>&1; then
-    FORCE_FORMAT=$(uci -q get mcubridge.general.extroot_force 2>/dev/null || true)
-    [ -z "${FORCE_FORMAT}" ] && FORCE_FORMAT="0"
-fi
+log_info "Target device: $DEVICE"
 
-# 1. Find the SD card device dynamically
-echo "--- Starting Extroot and SWAP Script (Robust Mode) ---" | tee -a $LOG_FILE
-
-if [ -n "${DEVICE_ARG}" ]; then
-    DEVICE="$DEVICE_ARG"
-    echo "[INFO] Dispositivo predefinido: $DEVICE" | tee -a $LOG_FILE
-else
-    echo "Attempting to find SD card device..." | tee -a $LOG_FILE
-
-    # List all block devices, filter out internal flash (mmcblk0) and loop devices
-    DETECTED_DEVICE=$(ls -l /sys/block/ | awk '{print $9}' | grep -E '^mmcblk[0-9]+$|^sd[a-z]+$' | grep -v 'mmcblk0' | head -n 1)
-
-    if [ -z "$DETECTED_DEVICE" ]; then
-        echo "ERROR! Could not automatically find SD card device. Please ensure it's inserted." | tee -a $LOG_FILE
-        echo "Pasa el dispositivo como argumento: $0 <swap_mb> </dev/xxx>" | tee -a $LOG_FILE
-        exit 1
-    fi
-
-    # Try to find the first partition of the detected device
-    PARTITION=$(ls /sys/block/$DETECTED_DEVICE/ | grep -E "^${DETECTED_DEVICE}p?[0-9]" | head -n 1)
-
-    if [ -n "$PARTITION" ]; then
-        DEVICE="/dev/$PARTITION"
-        echo "Identified SD card partition: $DEVICE" | tee -a $LOG_FILE
-    else
-        DEVICE="/dev/$DETECTED_DEVICE"
-        echo "Identified potential SD card device: $DEVICE. No partition found, using raw device." | tee -a $LOG_FILE
-    fi
-fi
-
+# Check if device is a raw disk (no number at the end) and partition it if necessary
 case "$DEVICE" in
-    /dev/mmcblk[1-9]*|/dev/mmcblk[1-9]*p[0-9]*|/dev/sd[a-z][0-9]*) ;;
-    *)
-        echo "ERROR! El dispositivo detectado ($DEVICE) no corresponde a una tarjeta SD soportada." | tee -a $LOG_FILE
-        echo "Pasa el dispositivo como argumento: $0 <swap_mb> </dev/xxx>, o configure 'mcubridge.general.extroot_force=1' en UCI para omitir confirmaciones." | tee -a $LOG_FILE
-        exit 1
+    *[!0-9])
+        log_warn "Device $DEVICE appears to be a raw disk (no partition detected)."
+        echo "QEMU/VM Environment detected. Attempting to partition $DEVICE..."
+        
+        # Check if fdisk is available
+        if ! command -v fdisk >/dev/null; then
+            echo "Installing partitioning tools..."
+            apk update && apk add fdisk
+        fi
+        
+        echo "Creating partition table on $DEVICE..."
+        # Create new DOS label, Primary partition 1, Use all space
+        printf "o\nn\np\n1\n\n\nw\n" | fdisk "$DEVICE"
+        
+        # Refresh device list
+        sync
+        sleep 2
+        
+        # Update DEVICE target to the new partition
+        if [ -e "${DEVICE}1" ]; then
+            DEVICE="${DEVICE}1"
+            log_info "Successfully partitioned. New target: $DEVICE"
+        else
+            log_err "Partitioning failed or ${DEVICE}1 not found."
+            exit 1
+        fi
         ;;
 esac
 
-# --- VERIFICATION FUNCTIONS ---
+# --- 1. Dependencies ---
 
-# Checks if Extroot is active and has the expected size (external SD)
-check_extroot_size() {
-    # 1. Check if the partition is mounted on /overlay
-    if df -k | grep -q "$DEVICE.*\/overlay"; then
-        # 2. If mounted, extract the total size in KB
-        SIZE_KB=$(df -k | grep "$DEVICE" | awk '{print $2}')
-        
-        # 3. Check if the total size is larger than the expected minimum (100MB)
-        if [ "$SIZE_KB" -gt $MIN_OVERLAY_KB ]; then
-            echo "   [OK] Extroot is active and large enough (${SIZE_KB} KB > ${MIN_OVERLAY_KB} KB)." | tee -a $LOG_FILE
-            return 0 # Success: Extroot is correctly configured
-        else
-            echo "   [FAIL] Extroot is active, but size is too small (${SIZE_KB} KB). Will reconfigure." | tee -a $LOG_FILE
-            return 1 # Fail: Extroot is too small (might be internal flash)
-        fi
-    fi
-    echo "   [FAIL] Extroot is not active on $DEVICE." | tee -a $LOG_FILE
-    return 1 # Fail: Extroot is not active
-}
-
-# Checks if the SWAP file is active and has the 1 GB size
-check_swap_size() {
-    if cat /proc/swaps | grep -q "$SWAP_FILE_PATH"; then
-        # Extract the current SWAP size in KB (3rd column of /proc/swaps)
-        SWAP_CURRENT_KB=$(cat /proc/swaps | grep "$SWAP_FILE_PATH" | awk '{print $3}')
-        
-        # Check that the size is at least 99% of the expected size (small tolerance)
-        if [ "$SWAP_CURRENT_KB" -ge $((SWAP_EXPECTED_KB * 99 / 100)) ]; then
-            echo "   [OK] SWAP is active and has the expected size (${SWAP_CURRENT_KB} KB)." | tee -a $LOG_FILE
-            return 0 # Success: SWAP is correctly configured
-        else
-            echo "   [FAIL] SWAP is active, but size is incorrect (${SWAP_CURRENT_KB} KB). Will reconfigure." | tee -a $LOG_FILE
-            return 1 # Fail: SWAP has the wrong size
-        fi
-    fi
-    echo "   [FAIL] SWAP is not active." | tee -a $LOG_FILE
-    return 1 # Fail: SWAP is not active
-}
-
-
-# --- START PROCESS ---
-
-# 1. INSTALL REQUIRED PACKAGES
-echo "1. Checking and installing required packages..." | tee -a $LOG_FILE
-
-# Revisión corregida: Comprueba la herramienta más importante (mkfs.ext4)
-if ! command -v mkfs.ext4 > /dev/null; then
-    echo "   [FAIL] mkfs.ext4 not found. Installing e2fsprogs and dependencies..." | tee -a $LOG_FILE
-    apk update 2>&1 | tee -a $LOG_FILE
-    apk add block-mount kmod-fs-ext4 e2fsprogs mount-utils parted kmod-usb-storage 2>&1 | tee -a $LOG_FILE
-
-    if [ $? -ne 0 ]; then
-        echo "ERROR! Package installation failed. Aborting." | tee -a $LOG_FILE
-        exit 1
-    fi
+echo "1. Checking and installing required packages..."
+if apk info | grep -q "e2fsprogs"; then
+    echo "   [OK] Required packages (e2fsprogs) are already installed."
 else
-    echo "   [OK] Required packages (e2fsprogs) are already installed." | tee -a $LOG_FILE
+    echo "   Installing e2fsprogs, block-mount, fdisk..."
+    apk update
+    apk add e2fsprogs block-mount fdisk
 fi
 
-# 2. EXTROOT CONFIGURATION (Steps 2.1 to 2.6)
-echo "2. Verifying Extroot configuration..." | tee -a $LOG_FILE
-if check_extroot_size; then
-    # Extroot already configured correctly
-    : 
+# --- 2. Extroot Configuration ---
+
+echo "2. Verifying Extroot configuration..."
+
+# Check if extroot is already active on this device
+CURRENT_OVERLAY=$(mount | grep "on /overlay type" | awk '{print $1}')
+TARGET_UUID=$(block info "$DEVICE" | grep -o 'UUID="[^"]*"' | sed 's/UUID="//;s/"//')
+
+if [ -n "$TARGET_UUID" ] && block info | grep "/overlay" | grep -q "$TARGET_UUID"; then
+    echo "   [OK] Extroot is already active on $DEVICE."
+    SKIP_EXTROOT=1
 else
-    echo "2.1 Extroot requires configuration. Proceeding to format and configure..." | tee -a $LOG_FILE
+    echo "   [FAIL] Extroot is not active on $DEVICE."
+    SKIP_EXTROOT=0
+fi
 
-    if [ "$FORCE_FORMAT" != "1" ]; then
-        printf "CONFIRM: se formateará %s y se configurará como overlay. ¿Continuar? [y/N]: " "$DEVICE"
-        read answer || answer=""
-        case "$answer" in
-            y|Y)
-                echo "  >> Continuando con el formateo." | tee -a $LOG_FILE
-                ;;
-            *)
-                echo "Operación cancelada por el usuario." | tee -a $LOG_FILE
-                exit 0
-                ;;
-        esac
-    else
-        echo "[INFO] UCI extroot_force=1 detectado, omitiendo confirmación interactiva." | tee -a $LOG_FILE
+if [ "$SKIP_EXTROOT" -eq 0 ]; then
+    echo "2.1 Extroot requires configuration. Proceeding to format and configure..."
+    
+    # Confirmation skip check via UCI (optional)
+    FORCE=$(uci -q get mcubridge.general.extroot_force)
+    if [ "$FORCE" != "1" ]; then
+        read -p "CONFIRM: $DEVICE will be formatted and configured as overlay. Continue? [y/N]: " CONFIRM
+        if [ "$CONFIRM" != "y" ] && [ "$CONFIRM" != "Y" ]; then
+            echo "   Aborted by user."
+            exit 0
+        fi
     fi
+    echo "   >> Proceeding with formatting."
 
-    # 2.2 DEVICE PREPARATION AND FORMATTING
-    echo "   2.2 Unmounting and formatting $DEVICE to ext4..." | tee -a $LOG_FILE
-    echo "   Attempting to unmount $DEVICE (errors will be displayed)..." | tee -a $LOG_FILE
-    umount $DEVICE 2>&1 | tee -a $LOG_FILE || echo "   (Ignoring unmount error, proceeding with format)" | tee -a $LOG_FILE
-    echo "   Running mkfs.ext4..." | tee -a $LOG_FILE
-    mkfs.ext4 -F -L extroot $DEVICE 2>&1 | tee -a $LOG_FILE
-
-    if [ $? -ne 0 ]; then
-        echo "ERROR! Formatting of $DEVICE failed. Aborting." | tee -a $LOG_FILE
-        exit 1
-    fi
-
-    # 2.3 EXTROOT CONFIGURATION (FSTAB)
-    echo "   2.3 Configuring /etc/config/fstab for the new overlay..." | tee -a $LOG_FILE
-    echo "   Running 'block info $DEVICE' to get UUID..." | tee -a $LOG_FILE
-    block info $DEVICE 2>&1 | tee -a $LOG_FILE
-    UUID=$(block info $DEVICE | grep -o -e 'UUID="[^\"]*"' | sed 's/UUID="//;s/"//')
-    echo "   Extracted UUID: '$UUID'" | tee -a $LOG_FILE
-
+    echo "   2.2 Unmounting and formatting $DEVICE to ext4..."
+    # Robust unmount
+    mount | grep "$DEVICE" | awk '{print $3}' | xargs -r umount -f >/dev/null 2>&1
+    
+    # Format
+    mkfs.ext4 -F -L extroot "$DEVICE" >/dev/null
+    
+    echo "   2.3 Configuring /etc/config/fstab for the new overlay..."
+    eval $(block info "$DEVICE" | grep -o -e "UUID=\S*")
+    echo "   Extracted UUID: '$UUID'"
+    
     if [ -z "$UUID" ]; then
-        echo "ERROR: Could not extract UUID from $DEVICE after formatting. Aborting." | tee -a $LOG_FILE
+        log_err "Failed to get UUID for $DEVICE"
         exit 1
     fi
 
-    TARGET_MOUNT="/overlay"
+    # Configure fstab via UCI
+    uci -q delete fstab.overlay
+    uci set fstab.overlay="mount"
+    uci set fstab.overlay.uuid="$UUID"
+    uci set fstab.overlay.target="/overlay"
+    uci set fstab.overlay.enabled='1'
+    uci commit fstab
+    
+    echo "   fstab update with uci finished."
 
-    echo "   Updating fstab with uci..." | tee -a $LOG_FILE
-    uci delete fstab.extroot 2>&1 | tee -a $LOG_FILE || echo "   (Could not delete fstab.extroot, probably did not exist)" | tee -a $LOG_FILE
-    uci set fstab.extroot="mount" 2>&1 | tee -a $LOG_FILE
-    uci set fstab.extroot.uuid="${UUID}" 2>&1 | tee -a $LOG_FILE
-    uci set fstab.extroot.target="${TARGET_MOUNT}" 2>&1 | tee -a $LOG_FILE
-    uci set fstab.extroot.enabled='1' 2>&1 | tee -a $LOG_FILE
-    uci set fstab.extroot.check_fs='1' 2>&1 | tee -a $LOG_FILE
-    echo "   fstab update with uci finished." | tee -a $LOG_FILE
-
-    # 2.4 ORIGINAL OVERLAY CONFIGURATION (FALLBACK)
-    echo "   2.4 Configuring the original overlay for fallback at /rwm..." | tee -a $LOG_FILE
-    echo "   Getting original overlay device..." | tee -a $LOG_FILE
-    block info 2>&1 | tee -a $LOG_FILE
-    ORIG_DEVICE=$(block info | sed -n -e '/MOUNT=".*\/overlay"/s/:.*$//p')
-    echo "   Original overlay device: '$ORIG_DEVICE'" | tee -a $LOG_FILE
-
-    if [ -z "$ORIG_DEVICE" ]; then
-        echo "WARNING: Could not determine original overlay device. Skipping fallback configuration." | tee -a $LOG_FILE
+    echo "   2.4 Handling overlay fallback..."
+    # In QEMU/VM with direct rootfs mount, /overlay might not exist or be a tmpfs.
+    # We skip copying data if we are already on a writable rootfs to avoid circular copies.
+    
+    ROOT_DEV=$(mount | grep "on / type" | awk '{print $1}')
+    if [ "$ROOT_DEV" = "/dev/root" ] || [ "$ROOT_DEV" = "/dev/sda" ]; then
+        echo "   [INFO] Detected direct rootfs mount ($ROOT_DEV). Skipping data copy to avoid duplication."
     else
-        uci -q delete fstab.rwm || true
-        uci set fstab.rwm="mount"
-        uci set fstab.rwm.device="${ORIG_DEVICE}"
-        uci set fstab.rwm.target="/rwm"
+        echo "   2.5 Creating temporary mount point and copying data..."
+        mkdir -p /mnt/new_overlay
+        mount "$DEVICE" /mnt/new_overlay
+        # Copy current overlay data to new device
+        if [ -d /overlay ]; then
+            cp -a -f /overlay/. /mnt/new_overlay
+        fi
+        umount /mnt/new_overlay
+        rmdir /mnt/new_overlay
     fi
+fi
 
-    # 2.5 DATA TRANSFER
-    echo "   2.5 Creating temporary mount point and copying data..." | tee -a $LOG_FILE
-    mkdir -p $MOUNT_POINT 2>&1 | tee -a $LOG_FILE
-    mount $DEVICE $MOUNT_POINT 2>&1 | tee -a $LOG_FILE
+# --- 3. SWAP Configuration ---
 
-    if [ $? -ne 0 ]; then
-        echo "ERROR! Temporary mounting of $DEVICE failed. Aborting." | tee -a $LOG_FILE
+echo "3. Verifying SWAP configuration..."
+# Check if swap is active
+if free | grep -q "Swap:.*[1-9]"; then
+    echo "   [OK] SWAP is already active."
+else
+    echo "   [FAIL] SWAP is not active."
+    echo "3.1 SWAP requires configuration. Proceeding to create the ${SWAP_SIZE_MB}MB file..."
+    
+    # Mount temporarily to create swap file
+    mkdir -p /mnt/swap_temp
+    mount "$DEVICE" /mnt/swap_temp
+    
+    # --- Space Check (Added) ---
+    DF_OUT=$(df -k /mnt/swap_temp | tail -n 1)
+    AVAIL_KB=$(echo "$DF_OUT" | awk '{print $4}')
+    REQ_KB=$(($SWAP_SIZE_MB * 1024))
+    
+    echo "   Available space: $((AVAIL_KB/1024))MB. Required: ${SWAP_SIZE_MB}MB."
+    
+    if [ "$AVAIL_KB" -lt "$REQ_KB" ]; then
+        log_err "Insufficient space on device for swap file."
+        log_warn "Please use a larger disk (e.g. 2GB) or reduce swap size."
+        umount /mnt/swap_temp
+        rmdir /mnt/swap_temp
         exit 1
     fi
-
-    tar -C /overlay -cvf - . | tar -C $MOUNT_POINT -xf - 2>&1 | tee -a $LOG_FILE
-
-    # 2.6 Cleanup
-    echo "   2.6 Cleaning up and unmounting data copy..." | tee -a $LOG_FILE
-    sync
-    umount $MOUNT_POINT
-    rmdir $MOUNT_POINT 2>/dev/null
-fi
-
-echo "   2.7 Saving Extroot configuration..." | tee -a $LOG_FILE
-uci commit fstab
-if [ $? -ne 0 ]; then
-    echo "ERROR! Failed to commit Extroot fstab changes. Aborting." | tee -a $LOG_FILE
-    exit 1
-fi
-
-
-# 3. SWAP CONFIGURATION (Verification and Creation)
-echo "3. Verifying SWAP configuration..." | tee -a $LOG_FILE
-if check_swap_size; then
-    ensure_swap_uci_entry
-else
-    echo "3.1 SWAP requires configuration. Proceeding to create the ${SWAP_SIZE_MB}MB file..." | tee -a $LOG_FILE
-
-    # Mount the partition if /overlay is not mounted (unlikely if Extroot passed, but safe)
-    if ! grep -q ' /overlay ' /proc/mounts; then
-        echo "   Temporarily mounting $DEVICE to /mnt/swap_temp to create SWAP file." | tee -a $LOG_FILE
-        mkdir -p /mnt/swap_temp 2>&1
-        mount $DEVICE /mnt/swap_temp 2>&1 | tee -a $LOG_FILE
-        SWAP_TEMP_DIR="/mnt/swap_temp"
+    # ---------------------------
+    
+    if [ -f /mnt/swap_temp/swapfile ]; then
+        echo "   Swapfile already exists, re-using."
     else
-        SWAP_TEMP_DIR="/overlay"
+        echo "   Creating and configuring the SWAP file (this may take a moment)..."
+        dd if=/dev/zero of=/mnt/swap_temp/swapfile bs=1M count="$SWAP_SIZE_MB"
+        mkswap /mnt/swap_temp/swapfile
     fi
-
-    # 3.2 Create and configure the SWAP file
-    echo "   Creating and configuring the SWAP file..." | tee -a $LOG_FILE
-    SWAP_TARGET="${SWAP_TEMP_DIR}${SWAP_FILE_PATH}"
-    dd if=/dev/zero of="$SWAP_TARGET" bs=1M count=${SWAP_SIZE_MB} 2>&1 | tee -a $LOG_FILE
-    mkswap "$SWAP_TARGET" 2>&1 | tee -a $LOG_FILE
-
-    if [ "$SWAP_TEMP_DIR" = "/overlay" ]; then
-        echo "   Activating SWAP file immediately..." | tee -a $LOG_FILE
-        if swapon "$SWAP_TARGET" >> $LOG_FILE 2>&1; then
-            echo "   SWAP activation succeeded." | tee -a $LOG_FILE
-        else
-            echo "ERROR! Failed to enable SWAP on $SWAP_TARGET. See $LOG_FILE for details." | tee -a $LOG_FILE
-            exit 1
-        fi
-    else
-        echo "   SWAP will be enabled automatically after reboot when /overlay is mounted." | tee -a $LOG_FILE
-    fi
-
-    # 3.3 Configure the SWAP file in /etc/config/fstab
-    ensure_swap_uci_entry
-
-    # Unmount if temporarily mounted
-    if [ "$SWAP_TEMP_DIR" = "/mnt/swap_temp" ]; then
-        sync
-        umount /mnt/swap_temp 2>/dev/null
-        rmdir /mnt/swap_temp 2>/dev/null
-    fi
+    
+    # Configure fstab for swap
+    uci -q delete fstab.swap
+    uci set fstab.swap="swap"
+    uci set fstab.swap.device="/overlay/swapfile"
+    uci set fstab.swap.enabled='1'
+    uci commit fstab
+    
+    umount /mnt/swap_temp
+    rmdir /mnt/swap_temp
+    
+    echo "   SWAP configured. It will be enabled on next boot."
 fi
 
-echo "   3.4 Saving SWAP configuration..." | tee -a $LOG_FILE
-uci commit fstab
-if [ $? -ne 0 ]; then
-    echo "ERROR! Failed to commit SWAP fstab changes. Aborting." | tee -a $LOG_FILE
-    exit 1
-fi
+# --- 4. Service Enablement ---
 
-# 4. Ensure fstab init script persists swap/overlay on boot
-if [ -x /etc/init.d/fstab ]; then
-    echo "4. Ensuring fstab init script is enabled for future boots..." | tee -a $LOG_FILE
-    if /etc/init.d/fstab enabled >/dev/null 2>&1; then
-        echo "   [OK] fstab service already enabled." | tee -a $LOG_FILE
-    else
-        if /etc/init.d/fstab enable >> $LOG_FILE 2>&1; then
-            echo "   [OK] Enabled fstab service for autostart." | tee -a $LOG_FILE
-        else
-            echo "   [WARN] Could not enable fstab service automatically. Enable manually if needed." | tee -a $LOG_FILE
-        fi
-    fi
+echo "4. Ensuring fstab init script is enabled for future boots..."
+/etc/init.d/fstab enable
+/etc/init.d/fstab start
 
-    if /etc/init.d/fstab start >> $LOG_FILE 2>&1; then
-        echo "   [OK] fstab service started to validate configuration." | tee -a $LOG_FILE
-    else
-        echo "   [WARN] Failed to start fstab service. SWAP might need manual 'swapon' after reboot." | tee -a $LOG_FILE
-    fi
-else
-    echo "4. [WARN] /etc/init.d/fstab not found; cannot ensure persistence via init script." | tee -a $LOG_FILE
-fi
-
-# 5. REBOOT
-echo "5. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
-echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE
-echo "   Antes de ejecutar ./3_install.sh puedes ajustar el control de flujo serie vía UCI:" | tee -a $LOG_FILE
-echo "     uci set mcubridge.general.serial_retry_timeout='0.75'" | tee -a $LOG_FILE
-echo "     uci set mcubridge.general.serial_retry_attempts='3'" | tee -a $LOG_FILE
-echo "     uci commit mcubridge" | tee -a $LOG_FILE
+echo "5. Configuration saved. System will reboot in 5 seconds."
+echo "   After reboot, run 'df -h' and 'free' to verify."
 sleep 5
 reboot

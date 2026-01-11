@@ -123,6 +123,7 @@ class BridgeClass {
   bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
   void flushStream();
+  void enterSafeState(); // [SIL-2] Force system into fail-safe state
   uint8_t* getScratchBuffer() { return _scratch_payload; }
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);

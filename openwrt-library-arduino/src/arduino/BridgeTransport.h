@@ -31,9 +31,6 @@ public:
     // Sends a frame. Returns true on success.
     bool sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
     
-    // Sends a control frame (no payload) without overwriting the main buffer
-    bool sendControlFrame(uint16_t command_id);
-    
     // Retransmits the last frame sent via sendFrame()
     bool retransmitLastFrame();
     
@@ -50,6 +47,10 @@ public:
     void reset();
 
  private:
+    // Sends a control frame (no payload) without overwriting the main buffer
+    // [SIL-2] Internal use only for flow control (XON/XOFF)
+    bool sendControlFrame(uint16_t command_id);
+
     // Best-effort write-all helper: tries to write the full buffer.
     // Returns true only if all bytes were written.
     bool _writeAll(const uint8_t* buffer, size_t size);

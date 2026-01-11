@@ -32,7 +32,11 @@
 #include "protocol/security.h"
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
+#if defined(HAVE_HWSERIAL1)
 BridgeClass Bridge(Serial1);
+#else
+BridgeClass Bridge(Serial);
+#endif
 ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;

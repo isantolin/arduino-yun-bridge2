@@ -330,7 +330,7 @@ static void test_parser_cobs_validation_failure() {
   }
   // This should trigger is_cobs_decoded_length_valid failure
   TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
-  TEST_ASSERT(parser.getLastError() == FrameParser::Error::MALFORMED);
+  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
 }
 
 // Test 2: Decoded length too large
@@ -354,7 +354,7 @@ static void test_parser_decoded_too_large() {
   }
   // Now consume delimiter. The pre-check should see decoded_len = 254 > MAX
   TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
-  TEST_ASSERT(parser.getLastError() == FrameParser::Error::MALFORMED);
+  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
 }
 
 // Test 3: Header logical validation mismatch
@@ -388,7 +388,7 @@ static void test_parser_header_logical_validation_mismatch() {
   
   // Should fail because header says len=3, but actual payload data remaining is only 2 bytes.
   TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
-  TEST_ASSERT(parser.getLastError() == FrameParser::Error::MALFORMED);
+  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
 }
 
 // Test 4: Builder buffer too small

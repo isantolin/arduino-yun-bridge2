@@ -46,6 +46,11 @@ class TestAccessor {
     return _transport._parser.getError();
   }
 
+  // --- Methods ---
+  bool sendControlFrame(uint16_t command_id) {
+    return _transport.sendControlFrame(command_id);
+  }
+
   // --- Factory method ---
   static TestAccessor create(BridgeTransport& transport) {
     return TestAccessor(transport);

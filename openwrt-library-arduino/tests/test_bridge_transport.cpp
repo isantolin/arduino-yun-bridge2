@@ -175,8 +175,9 @@ static void test_transport_sendControlFrame_fails_when_terminator_write_fails() 
   stream.mode = WriteMode::TerminatorFailsOnSecondCall;
   bridge::BridgeTransport transport(stream, nullptr);
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
+  auto accessor = bridge::test::TestAccessor::create(transport);
 
-  TEST_ASSERT(!transport.sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XOFF)));
+  TEST_ASSERT(!accessor.sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XOFF)));
 }
 
 static void test_transport_retransmitLastFrame_behaviors() {
@@ -246,6 +247,7 @@ static void test_transport_hardware_serial_branches() {
 
   bridge::BridgeTransport transport(stream, &serial);
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
+  auto accessor = bridge::test::TestAccessor::create(transport);
 
   // sendFrame should go through the hardware-serial write path.
   const uint8_t payload[] = {TEST_MARKER_BYTE, TEST_EXIT_CODE};
@@ -260,7 +262,7 @@ static void test_transport_hardware_serial_branches() {
 
   // sendControlFrame also uses the hardware-serial path.
   serial.clear();
-  TEST_ASSERT(transport.sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XON)));
+  TEST_ASSERT(accessor.sendControlFrame(rpc::to_underlying(rpc::CommandId::CMD_XON)));
   TEST_ASSERT(serial.tx.len > 0);
 
   // retransmitLastFrame uses the hardware-serial path.

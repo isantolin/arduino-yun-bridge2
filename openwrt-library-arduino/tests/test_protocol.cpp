@@ -313,6 +313,94 @@ static void test_digital_read_resp_encoding() {
   }
 }
 
+// Test 1: COBS validation failure (points outside buffer)
+static void test_parser_cobs_validation_failure() {
+  FrameParser parser;
+  Frame frame{};
+  
+  // Construct a malicious COBS sequence:
+  // Code 0x05 at index 0 says "next 4 bytes are data, then a zero".
+  // But we only provide 2 bytes total before the delimiter.
+  // 0x05 0xAA (delimiter 0x00 follows)
+  // Decoder expects index + 5 but len is only 2.
+  
+  const uint8_t malicious[] = {0x05, 0xAA};
+  for (uint8_t b : malicious) {
+    TEST_ASSERT(!parser.consume(b, frame));
+  }
+  // This should trigger is_cobs_decoded_length_valid failure
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+  TEST_ASSERT(parser.getLastError() == FrameParser::Error::MALFORMED);
+}
+
+// Test 2: Decoded length too large
+static void test_parser_decoded_too_large() {
+  FrameParser parser;
+  Frame frame{};
+  
+  // MAX_RAW_FRAME_SIZE is 141 (5 header + 128 payload + 4 CRC + padding safe margin?)
+  // Actually MAX_RAW_FRAME_SIZE = 138 (5 + 128 + 1 + 4) = 138.
+  
+  // We want to construct a COBS sequence that claims to be valid but decodes to > 138 bytes.
+  // We can use a sequence of 0xFF (254 bytes data, then zero).
+  // 0xFF followed by 254 bytes.
+  
+  uint8_t giant[256];
+  giant[0] = 0xFF; // Code: 254 bytes following
+  memset(&giant[1], 0xAA, 254); // Fill with data
+  
+  for (size_t i = 0; i < 255; i++) {
+     parser.consume(giant[i], frame);
+  }
+  // Now consume delimiter. The pre-check should see decoded_len = 254 > MAX
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+  TEST_ASSERT(parser.getLastError() == FrameParser::Error::MALFORMED);
+}
+
+// Test 3: Header logical validation mismatch
+static void test_parser_header_logical_validation_mismatch() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+  
+  uint8_t payload[] = {0x11, 0x22};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
+  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID, payload, sizeof(payload));
+  
+  // raw structure: [Ver][LenH][LenL][CmdH][CmdL][P1][P2][CRC][CRC][CRC][CRC]
+  // Len is 0x0002.
+  // Let's tamper with the Length field in the raw buffer to say 0x0003.
+  // raw[1] = 0; raw[2] = 2; -> change raw[2] to 3.
+  raw[2] = 3;
+  
+  // Re-calculate CRC because otherwise we hit CRC mismatch first!
+  // BUT: The FrameParser logic checks CRC *before* header validation. 
+  // So if we modify data, we MUST update CRC to pass the CRC check and reach the Header check.
+  uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
+  write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
+  
+  uint8_t encoded[COBS_BUFFER_SIZE];
+  size_t encoded_len = cobs::encode(raw, raw_len, encoded);
+  
+  for (size_t i = 0; i < encoded_len; i++) {
+    parser.consume(encoded[i], frame);
+  }
+  
+  // Should fail because header says len=3, but actual payload data remaining is only 2 bytes.
+  TEST_ASSERT(!parser.consume(rpc::RPC_FRAME_DELIMITER, frame));
+  TEST_ASSERT(parser.getLastError() == FrameParser::Error::MALFORMED);
+}
+
+// Test 4: Builder buffer too small
+static void test_builder_buffer_too_small() {
+  FrameBuilder builder;
+  uint8_t payload[] = {0x11, 0x22};
+  uint8_t small_buf[5]; // Too small for Header (5) + Payload (2) + CRC (4) = 11
+  
+  size_t len = builder.build(small_buf, sizeof(small_buf), TEST_CMD_ID, payload, sizeof(payload));
+  TEST_ASSERT(len == 0);
+}
+
 // Test native COBS encode/decode roundtrip
 static void test_cobs_native_roundtrip() {
   // Test various patterns including zeros
@@ -363,5 +451,11 @@ int main() {
   test_cobs_native_roundtrip();
   test_analog_read_resp_encoding();
   test_digital_read_resp_encoding();
+  
+  // New Coverage Tests
+  test_parser_cobs_validation_failure();
+  test_parser_decoded_too_large();
+  test_parser_header_logical_validation_mismatch();
+  test_builder_buffer_too_small();
   return 0;
 }

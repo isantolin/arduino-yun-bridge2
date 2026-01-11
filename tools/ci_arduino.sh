@@ -29,7 +29,7 @@ arduino-cli lib install PacketSerial CRC32 Crypto
 LIB_PATH="$PWD/openwrt-library-arduino"
 
 # Compile examples
-FQBN="arduino:avr:mcu"
+FQBN="arduino:avr:uno"
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 

@@ -9,7 +9,7 @@
 
 #include "Bridge.h"
 #include "arduino/BridgeTransport.h"
-#include "arduino/BridgeTestInterface.h"
+#include "BridgeTestInterface.h"
 #include "protocol/cobs.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"

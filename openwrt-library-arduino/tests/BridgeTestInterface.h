@@ -16,7 +16,7 @@
 // [GUARD] Only compile test interface when explicitly enabled for host tests
 #ifdef BRIDGE_ENABLE_TEST_INTERFACE
 
-#include "BridgeTransport.h"
+#include "arduino/BridgeTransport.h"
 
 namespace bridge {
 namespace test {

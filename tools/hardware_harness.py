@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coordinate YunBridge hardware smoke tests across multiple devices."""
+"""Coordinate McuBridge hardware smoke tests across multiple devices."""
 
 from __future__ import annotations
 
@@ -415,7 +415,7 @@ async def main_async(
 
 app = typer.Typer(
     add_completion=False,
-    help="Run YunBridge smoke tests across multiple devices.",
+    help="Run McuBridge smoke tests across multiple devices.",
 )
 
 

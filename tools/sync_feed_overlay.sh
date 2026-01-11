@@ -48,9 +48,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 PACKAGES=(
-    luci-app-yunbridge
-    openwrt-yun-bridge
-    openwrt-yun-core
+    luci-app-mcubridge
+    openwrt-mcu-bridge
+    openwrt-mcu-core
 )
 
 compute_link_target() {

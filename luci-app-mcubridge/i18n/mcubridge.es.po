@@ -1,0 +1,290 @@
+msgid "McuBridge Configuration"
+msgstr "Configuración de McuBridge"
+
+msgid "Main Settings"
+msgstr "Configuración Principal"
+
+msgid "MQTT Host"
+msgstr "Servidor MQTT"
+
+msgid "MQTT Port"
+msgstr "Puerto MQTT"
+
+msgid "MQTT Topic Prefix"
+msgstr "Prefijo de Tópico MQTT"
+
+msgid "Serial Port"
+msgstr "Puerto Serie"
+
+msgid "Serial Baudrate"
+msgstr "Baudios del Puerto Serie"
+
+msgid "Debug Mode"
+msgstr "Modo Depuración"
+
+msgid "Daemon Status"
+msgstr "Estado del Daemon"
+
+msgid "Recent Log Output"
+msgstr "Salida Reciente del Log"
+
+msgid "Web UI"
+msgstr "Interfaz Web"
+
+msgid "MQTT WebSocket Port"
+msgstr "Puerto WebSocket MQTT"
+
+msgid "Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext."
+msgstr "Muy recomendado. Si desactivas TLS las credenciales y cargas MQTT viajarán en texto plano."
+
+msgid "Serial Shared Secret"
+msgstr "Secreto Compartido Serial"
+
+msgid "Shared secret used to authenticate the MCU handshake. Must match the firmware and be at least 8 characters long."
+msgstr "Secreto compartido para autenticar el handshake con el MCU. Debe coincidir con el firmware y tener al menos 8 caracteres."
+
+msgid "Arduino Secret Template"
+msgstr "Plantilla de secreto para Arduino"
+
+msgid "Paste this snippet into your sketch (before including Bridge.h) so the MCU matches the new daemon secret."
+msgstr "Pega este snippet al inicio de tu sketch (antes de incluir Bridge.h) para que el MCU coincida con el nuevo secreto del daemon."
+
+msgid "Copy snippet"
+msgstr "Copiar snippet"
+
+msgid "Safe Serial Baud Rate"
+msgstr "Velocidad Serial Segura"
+
+msgid "Initial baudrate for negotiation. Use 115200 for safety."
+msgstr "Velocidad inicial para negociación. Use 115200 por seguridad."
+
+msgid "Status snapshot is read from /tmp/mcubridge_status.json (tmpfs) and may be empty after reboot or while the daemon is starting."
+msgstr "El estado se lee desde /tmp/mcubridge_status.json (tmpfs) y puede estar vacío después de reiniciar o mientras el daemon está iniciando."
+
+msgid "Configure the McuBridge daemon which proxies RPC frames between the MCU and MQTT. Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot."
+msgstr "Configura el daemon McuBridge que actúa como proxy de tramas RPC entre el MCU y MQTT. Los snapshots de estado se escriben en /tmp/mcubridge_status.json (tmpfs) y se borran al reiniciar."
+
+msgid "Daemon Settings"
+msgstr "Configuración del Daemon"
+
+msgid "Enable Daemon"
+msgstr "Habilitar Daemon"
+
+msgid "Enable Debug Logging"
+msgstr "Habilitar Logs de Depuración"
+
+msgid "Serial Baud Rate"
+msgstr "Velocidad (Baudios) del Puerto Serie"
+
+msgid "MQTT Username"
+msgstr "Usuario MQTT"
+
+msgid "MQTT Password"
+msgstr "Contraseña MQTT"
+
+msgid "Enable TLS/SSL"
+msgstr "Habilitar TLS/SSL"
+
+msgid "CA File Path"
+msgstr "Ruta del archivo CA"
+
+msgid "CA file is required when TLS is enabled."
+msgstr "El archivo CA es obligatorio cuando TLS está habilitado."
+
+msgid "Client Certificate Path"
+msgstr "Ruta del certificado del cliente"
+
+msgid "Client Key Path"
+msgstr "Ruta de la clave del cliente"
+
+msgid "Base topic used for bridge messages (for example br/d/<pin>)."
+msgstr "Tópico base usado para los mensajes del bridge (por ejemplo br/d/<pin>)."
+
+msgid "Topic prefix cannot be empty."
+msgstr "El prefijo de tópico no puede estar vacío."
+
+msgid "Topic prefix cannot contain MQTT wildcards."
+msgstr "El prefijo de tópico no puede contener comodines de MQTT."
+
+msgid "MQTT Spool Directory"
+msgstr "Directorio de spool MQTT"
+
+msgid "Directory used to spool MQTT messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
+msgstr "Directorio usado para encolar (spool) mensajes MQTT cuando el broker no está disponible. Mantén esto en /tmp (tmpfs) o en un montaje externo para evitar desgaste de la Flash."
+
+msgid "Spool directory cannot be empty."
+msgstr "El directorio de spool no puede estar vacío."
+
+msgid "Spool directory must be an absolute path."
+msgstr "El directorio de spool debe ser una ruta absoluta."
+
+msgid "For Flash safety, use a path under /tmp, /run, /var/run, or /mnt."
+msgstr "Por seguridad de la Flash, usa una ruta bajo /tmp, /run, /var/run o /mnt."
+
+msgid "File System Root"
+msgstr "Raíz del sistema de archivos"
+
+msgid "Directory exposed for MCU file operations. Use /tmp for tmpfs (Flash-safe) or /mnt/<device> for external storage."
+msgstr "Directorio expuesto para operaciones de archivos del MCU. Usa /tmp como tmpfs (seguro para Flash) o /mnt/<dispositivo> para almacenamiento externo."
+
+msgid "Process Timeout (s)"
+msgstr "Timeout de procesos (s)"
+
+msgid "Allowed Shell Commands"
+msgstr "Comandos de shell permitidos"
+
+msgid "Space separated whitelist for shell execution (leave empty to disable)."
+msgstr "Lista blanca separada por espacios para ejecución en shell (dejar vacío para desactivar)."
+
+msgid "Allow file reads"
+msgstr "Permitir lectura de archivos"
+
+msgid "Accept MQTT requests that read files via br/fs/read."
+msgstr "Aceptar solicitudes MQTT que leen archivos vía br/fs/read."
+
+msgid "Allow file writes"
+msgstr "Permitir escritura de archivos"
+
+msgid "Accept MQTT requests that write files via br/fs/write."
+msgstr "Aceptar solicitudes MQTT que escriben archivos vía br/fs/write."
+
+msgid "Allow file deletes"
+msgstr "Permitir borrado de archivos"
+
+msgid "Accept MQTT requests that delete files via br/fs/remove."
+msgstr "Aceptar solicitudes MQTT que borran archivos vía br/fs/remove."
+
+msgid "Allow datastore get"
+msgstr "Permitir lectura de datastore"
+
+msgid "Allow clients to read key/value pairs via br/datastore/get."
+msgstr "Permitir a los clientes leer pares clave/valor vía br/datastore/get."
+
+msgid "Allow datastore put"
+msgstr "Permitir escritura de datastore"
+
+msgid "Allow clients to modify key/value pairs via br/datastore/put."
+msgstr "Permitir a los clientes modificar pares clave/valor vía br/datastore/put."
+
+msgid "Allow mailbox read"
+msgstr "Permitir lectura de mailbox"
+
+msgid "Permit MQTT reads from the MCU mailbox."
+msgstr "Permitir lecturas MQTT desde el mailbox del MCU."
+
+msgid "Allow mailbox write"
+msgstr "Permitir escritura de mailbox"
+
+msgid "Permit MQTT writes into the MCU mailbox queue."
+msgstr "Permitir escrituras MQTT en la cola de mailbox del MCU."
+
+msgid "Allow shell run"
+msgstr "Permitir shell run"
+
+msgid "Allow synchronous shell execution via br/sh/run."
+msgstr "Permitir ejecución síncrona de shell vía br/sh/run."
+
+msgid "Allow shell run_async"
+msgstr "Permitir shell run_async"
+
+msgid "Allow asynchronous shell execution via br/sh/run_async."
+msgstr "Permitir ejecución asíncrona de shell vía br/sh/run_async."
+
+msgid "Allow shell poll"
+msgstr "Permitir shell poll"
+
+msgid "Allow polling of asynchronous shell jobs via br/sh/poll."
+msgstr "Permitir consultar trabajos asíncronos de shell vía br/sh/poll."
+
+msgid "Allow shell kill"
+msgstr "Permitir shell kill"
+
+msgid "Allow canceling asynchronous shell jobs via br/sh/kill."
+msgstr "Permitir cancelar trabajos asíncronos de shell vía br/sh/kill."
+
+msgid "Allow console input"
+msgstr "Permitir entrada de consola"
+
+msgid "Permit MQTT writes to br/console/in to reach the MCU console."
+msgstr "Permitir escrituras MQTT a br/console/in para llegar a la consola del MCU."
+
+msgid "Allow digital write"
+msgstr "Permitir escritura digital"
+
+msgid "Allow MQTT writes to br/d/<pin>/write."
+msgstr "Permitir escrituras MQTT a br/d/<pin>/write."
+
+msgid "Allow digital read"
+msgstr "Permitir lectura digital"
+
+msgid "Allow MQTT reads via br/d/<pin>/read."
+msgstr "Permitir lecturas MQTT vía br/d/<pin>/read."
+
+msgid "Allow digital mode"
+msgstr "Permitir modo digital"
+
+msgid "Allow MQTT access to br/d/<pin>/mode."
+msgstr "Permitir acceso MQTT a br/d/<pin>/mode."
+
+msgid "Allow analog write"
+msgstr "Permitir escritura analógica"
+
+msgid "Allow MQTT writes to br/a/<pin>/write."
+msgstr "Permitir escrituras MQTT a br/a/<pin>/write."
+
+msgid "Allow analog read"
+msgstr "Permitir lectura analógica"
+
+msgid "Allow MQTT reads via br/a/<pin>/read."
+msgstr "Permitir lecturas MQTT vía br/a/<pin>/read."
+
+msgid "Managed via UCI. Use the Credentials & TLS tab to rotate secrets."
+msgstr "Gestionado vía UCI. Usa la pestaña Credenciales y TLS para rotar secretos."
+
+msgid "Credentials & TLS"
+msgstr "Credenciales y TLS"
+
+msgid "Manage shared secrets and TLS material without leaving LuCI."
+msgstr "Gestiona secretos compartidos y material TLS sin salir de LuCI."
+
+msgid "Rotate Credentials"
+msgstr "Rotar credenciales"
+
+msgid "This regenerates the serial shared secret (serial_shared_secret) and the MQTT password, writes them to UCI, and restarts the daemon."
+msgstr "Esto regenera el secreto serie compartido (serial_shared_secret) y la contraseña MQTT, los escribe en UCI y reinicia el daemon."
+
+msgid "Rotate now"
+msgstr "Rotar ahora"
+
+msgid "TLS Material"
+msgstr "Material TLS"
+
+msgid "Upload new CA/certificate/key files via SCP or the provided helper:"
+msgstr "Sube nuevos archivos CA/certificado/clave vía SCP o usando el helper provisto:"
+
+msgid "Point the daemon to the new paths using the main configuration page."
+msgstr "Indica al daemon las nuevas rutas usando la página principal de configuración."
+
+msgid "Hardware Smoke Test"
+msgstr "Smoke test de hardware"
+
+msgid "Runs /usr/bin/mcubridge-hw-smoke to verify MQTT round trips and service health."
+msgstr "Ejecuta /usr/bin/mcubridge-hw-smoke para verificar round trips MQTT y la salud del servicio."
+
+msgid "Run smoke test"
+msgstr "Ejecutar smoke test"
+
+msgid "Running..."
+msgstr "Ejecutando..."
+
+msgid "No status available"
+msgstr "No hay estado disponible"
+
+msgid "Error processing data."
+msgstr "Error procesando datos."
+
+msgid "McuBridge Daemon Status"
+msgstr "Estado del daemon McuBridge"
+
+msgid "Loading status..."
+msgstr "Cargando estado..."

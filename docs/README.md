@@ -1,15 +1,21 @@
-# Arduino Yún Bridge 2
+# Arduino MCU Bridge 2
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-**Yún Bridge 2 es un reemplazo moderno, robusto y de alto rendimiento para el sistema Bridge original de Arduino Yún.**
+**MCU Bridge 2 es un reemplazo moderno, robusto y agnóstico de hardware para el sistema Bridge original.**
 
-Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el procesador Linux (MPU) en el Yún, reemplazando la antigua solución basada en `python-bridge` por un daemon asíncrono y un protocolo RPC binario eficiente.
+Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el procesador Linux (MPU) en dispositivos OpenWrt, reemplazando la antigua solución basada en `python-bridge` por un daemon asíncrono y un protocolo RPC binario eficiente.
+
+> **Nota de Migración (Enero 2026):**
+> El proyecto ha sido renombrado de "Yun Bridge" a "MCU Bridge" para reflejar su capacidad de funcionar en cualquier dispositivo OpenWrt (no solo Arduino Yun) que disponga de un enlace serial con un MCU.
+> - Paquetes OpenWrt: `openwrt-yun-*` ahora son `openwrt-mcu-*`
+> - Módulos Python: `yunbridge` ahora es `mcubridge`
+> - Configuración UCI: `yunbridge` ahora es `mcubridge`
 
 ## Características Principales
 
 - **Límites configurables:** Los buffers interno de consola y mailbox se pueden ajustar vía UCI (`console_queue_limit_bytes`, `mailbox_queue_limit`, `mailbox_queue_bytes_limit`) para prevenir desbordes en escenarios con alto tráfico. A partir de noviembre 2025 también puedes fijar `pending_pin_request_limit` para controlar cuántas lecturas de GPIO quedan en vuelo entre MQTT y el MCU sin bloquear el bus serial, y los nuevos `file_write_max_bytes` / `file_storage_quota_bytes` imponen límites tanto por escritura como agregados dentro del sandbox de archivos para evitar que un sketch agote el overlay de OpenWrt.
-	- Todos los valores por defecto consumidos por el daemon viven ahora en `../openwrt-yun-bridge/yunbridge/const.py` (`DEFAULT_MQTT_PORT`, `DEFAULT_SERIAL_RETRY_TIMEOUT`, etc.), lo que evita duplicar literales entre módulos y pruebas.
+	- Todos los valores por defecto consumidos por el daemon viven ahora en `../openwrt-mcu-bridge/mcubridge/const.py` (`DEFAULT_MQTT_PORT`, `DEFAULT_SERIAL_RETRY_TIMEOUT`, etc.), lo que evita duplicar literales entre módulos y pruebas.
 - **Backpressure en MQTT con MQTT v5:** El tamaño de la cola de publicación hacia el broker se controla con `mqtt_queue_limit`, mientras que las conexiones salientes usan propiedades MQTT v5 (session expiry = 0, request/response info) para que los clientes sepan cuándo reiniciar suscripciones y puedan negociar flujos de respuesta.
 - **Respuestas correladas en MQTT:** Cada publicación originada por el daemon puede reutilizar el `response_topic` proporcionado por el cliente y propaga un `correlation_data` binario, de modo que las respuestas (GPIO, datastore, mailbox, sistema, procesos, etc.) se pueden asociar de manera inequívoca incluso si varios consumidores comparten el mismo prefijo. Las propiedades de usuario (`bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`, `bridge-status`, …) transportan metadatos humanamente legibles sin romper la compatibilidad con clientes MQTT v3.
 - **Handshake automático MCU ↔ Linux:** Tras cada reconexión, el daemon solicita `CMD_GET_VERSION` y publica la versión del firmware del sketch en `br/system/version/value`, de modo que los clientes pueden validar compatibilidad antes de ejecutar comandos.
@@ -21,39 +27,39 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ### Novedades (noviembre 2025)
 
 - **Compresión RLE opcional:** Payloads con datos repetitivos (buffers de LEDs, streams de sensores uniformes) pueden comprimirse con Run-Length Encoding antes de enviarlos. Implementación disponible en C++ (`rle.h`) y Python (`rle.py`), con heurísticas para decidir cuándo conviene comprimir. Ver [PROTOCOL.md §7](PROTOCOL.md#7-compresión-rle-opcional) para detalles del formato.
-- Especificación única del protocolo en `../tools/protocol/spec.toml` con generador (`../tools/protocol/generate.py`) que emite `../openwrt-yun-bridge/yunbridge/rpc/protocol.py` y `../openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
+- Especificación única del protocolo en `../tools/protocol/spec.toml` con generador (`../tools/protocol/generate.py`) que emite `../openwrt-mcu-bridge/mcubridge/rpc/protocol.py` y `../openwrt-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
 - Migración del stack MQTT a **aiomqtt 2.5** + `paho-mqtt` 2.1: el daemon y los ejemplos usan un shim asíncrono compatible con la API previa de `asyncio-mqtt`, con soporte completo de MQTT v5 (propiedades de respuesta, clean start first-only, códigos de motivo enriquecidos) y reconexiones más predecibles en brokers modernos.
 - **Correlación automática de peticiones MQTT v5:** todas las respuestas generadas por el daemon reutilizan `response_topic` y `correlation_data` cuando el cliente lo solicita. Además, se adjuntan propiedades de usuario (`bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`, etc.) y `message_expiry_interval` específicos por servicio para que los consumidores puedan validar el contexto original incluso cuando los mensajes pasan por brokers compartidos.
-- Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `openwrt-yun-examples-python`, confirmando compatibilidad funcional.
-- Instrumentación de logging en `../openwrt-yun-bridge/yunbridge/daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
+- Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `openwrt-mcu-examples-python`, confirmando compatibilidad funcional.
+- Instrumentación de logging en `../openwrt-mcu-bridge/mcubridge/daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
 - **Datastore MQTT sin ida y vuelta al MCU:** Las lecturas `br/datastore/get/#` ahora se resuelven íntegramente en Linux usando la caché actualizada por `CMD_DATASTORE_PUT`. Las solicitudes que terminan en `/request` reciben inmediatamente el último valor disponible o un `bridge-error=datastore-miss` (payload vacío) sin congestionar el bus serial.
-- **Telemetría de colas consolidada:** `RuntimeState` ahora registra métricas de drop/truncamiento por servicio (`mqtt_dropped_messages`, `console_dropped_chunks`, `mailbox_truncated_bytes`, etc.) y el writer periódico (`status_writer`) las expone tanto en `/tmp/yunbridge_status.json` (snapshot en tmpfs; se pierde al reboot) como en los tópicos `br/system/status`, permitiendo integrar alertas en grafana/Prometheus sin parsers adicionales.
-- **Persistencia vs Flash-wear:** por defecto los paths intensivos en escritura apuntan a tmpfs (`mqtt_spool_dir=/tmp/yunbridge/spool`, `file_system_root=/tmp/yun_files`). Para persistencia, configura **solo** `file_system_root` a un mount externo (por ejemplo `/mnt/sda1/yun_files`) vía UCI/LuCI y habilita `allow_non_tmp_paths=1`. El `mqtt_spool_dir` se mantiene siempre bajo `/tmp` para evitar desgaste de flash.
+- **Telemetría de colas consolidada:** `RuntimeState` ahora registra métricas de drop/truncamiento por servicio (`mqtt_dropped_messages`, `console_dropped_chunks`, `mailbox_truncated_bytes`, etc.) y el writer periódico (`status_writer`) las expone tanto en `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot) como en los tópicos `br/system/status`, permitiendo integrar alertas en grafana/Prometheus sin parsers adicionales.
+- **Persistencia vs Flash-wear:** por defecto los paths intensivos en escritura apuntan a tmpfs (`mqtt_spool_dir=/tmp/mcubridge/spool`, `file_system_root=/tmp/mcu_files`). Para persistencia, configura **solo** `file_system_root` a un mount externo (por ejemplo `/mnt/sda1/mcu_files`) vía UCI/LuCI y habilita `allow_non_tmp_paths=1`. El `mqtt_spool_dir` se mantiene siempre bajo `/tmp` para evitar desgaste de flash.
 - **Spool MQTT autodiagnosticado:** Si el spool en disco detecta errores del filesystem (corrupción, disco lleno, permisos) el daemon deshabilita automáticamente la persistencia, publica `mqtt_spool_degraded`/`mqtt_spool_failure_reason` en el status JSON y continúa en modo *best effort* sin bloquear la cola de publicación en memoria.
 - **Cuotas de escritura de archivos:** El sandbox ahora aplica `file_write_max_bytes` (límite por frame) y `file_storage_quota_bytes` (cuota total bajo `file_system_root`). Los rechazos devuelven `STATUS_ERROR` al MCU o `bridge-error` en MQTT con motivos `write_limit_exceeded` o `storage_quota_exceeded`, y `RuntimeState` mantiene contadores (`file_write_limit_rejections`, `file_storage_limit_rejections`, `file_storage_bytes_used`) que se exportan en los snapshots y métricas para observabilidad.
 - El daemon ahora **falla en seguro** cuando `mqtt_tls=1`: si configuras un `mqtt_cafile` explícito y el archivo falta, el arranque se aborta con un error explícito. Los certificados de cliente (`mqtt_certfile`/`mqtt_keyfile`) son opcionales y solo aplican cuando el broker exige mTLS.
-- La ejecución remota de comandos MQTT requiere una lista blanca explícita (`yunbridge.general.allowed_commands`). Un valor vacío significa *ningún comando permitido*; use `*` para habilitar todos de forma consciente.
+- La ejecución remota de comandos MQTT requiere una lista blanca explícita (`mcubridge.general.allowed_commands`). Un valor vacío significa *ningún comando permitido*; use `*` para habilitar todos de forma consciente.
 - **Watchdog procd (UCI):** el init script lee `watchdog_enabled` y `watchdog_interval` desde UCI y configura `procd_set_param watchdog` en consecuencia. El daemon emite `WATCHDOG=trigger` en `stdout` con la cadencia requerida y reporta latidos en `RuntimeState`.
-- **Respawn (UCI):** ajusta `respawn_threshold`, `respawn_timeout` y `respawn_retry` en UCI para endurecer o relajar la ventana de reintentos sin editar `/etc/init.d/yunbridge`.
-- **Logging estructurado + Prometheus:** todos los módulos `yunbridge.*` ahora emiten líneas JSON con `ts`, `level`, `logger`, `message` y `extra`, facilitando la ingesta directa en syslog, Loki o Elastic. Además, se añadió un exportador HTTP opcional (`metrics_enabled`, `metrics_host`, `metrics_port`) que expone el mismo snapshot de `RuntimeState` en formato Prometheus sin dejar de publicar `br/system/metrics` vía MQTT.
+- **Respawn (UCI):** ajusta `respawn_threshold`, `respawn_timeout` y `respawn_retry` en UCI para endurecer o relajar la ventana de reintentos sin editar `/etc/init.d/mcubridge`.
+- **Logging estructurado + Prometheus:** todos los módulos `mcubridge.*` ahora emiten líneas JSON con `ts`, `level`, `logger`, `message` y `extra`, facilitando la ingesta directa en syslog, Loki o Elastic. Además, se añadió un exportador HTTP opcional (`metrics_enabled`, `metrics_host`, `metrics_port`) que expone el mismo snapshot de `RuntimeState` en formato Prometheus sin dejar de publicar `br/system/metrics` vía MQTT.
 - **Enlace serie con autenticación estricta:** el handshake `CMD_LINK_RESET`/`CMD_LINK_SYNC` ahora se valida en ambos extremos: la librería Arduino exige definir `BRIDGE_SERIAL_SHARED_SECRET` (o compilar con `BRIDGE_ALLOW_INSECURE_SERIAL_SECRET` en entornos de laboratorio) y el daemon rechaza cualquier frame que no sea de handshake o estado hasta que la sincronización se complete exitosamente. Todos los parámetros derivan de `../tools/protocol/spec.toml`, por lo que debes regenerar el protocolo tras modificar el spec.
 - **Cuotas de peticiones pendientes:** `RuntimeState` expone `pending_pin_request_limit` (configurable vía UCI) para evitar que MQTT u otros productores saturen las colas de lecturas GPIO; si se supera el límite, el daemon responde con `bridge-error=pending-pin-overflow` y no emite el comando al MCU, manteniendo el enlace libre de ataques por agotamiento.
 - **Watchdog de firmware opcional:** la librería Arduino habilita el WDT hardware (2 s por defecto) al inicializarse en AVR, con `wdt_reset()` aplicado en cada ciclo de `Bridge.process()`. Define `BRIDGE_ENABLE_WATCHDOG 0` o personaliza `BRIDGE_WATCHDOG_TIMEOUT` antes de incluir `Bridge.h` si necesitas desactivarlo o ajustar el intervalo.
 - **Guía rápida de UCI**:
 	```sh
-	uci set yunbridge.general.mqtt_tls='1'
+	uci set mcubridge.general.mqtt_tls='1'
 	# Opcional: cafile (si está vacío se usa el trust store del sistema)
-	uci set yunbridge.general.mqtt_cafile='/etc/ssl/certs/bridge-ca.pem'
+	uci set mcubridge.general.mqtt_cafile='/etc/ssl/certs/bridge-ca.pem'
 	# Opcional (mTLS): solo si tu broker exige certificados de cliente
-	uci set yunbridge.general.mqtt_certfile='/etc/yunbridge/client.crt'
-	uci set yunbridge.general.mqtt_keyfile='/etc/yunbridge/client.key'
-	uci set yunbridge.general.allowed_commands='ls cat uptime'
-	uci set yunbridge.general.serial_retry_timeout='0.75'
-	uci set yunbridge.general.serial_retry_attempts='3'
-	uci set yunbridge.general.serial_response_timeout='3.0'
-	uci set yunbridge.general.serial_handshake_min_interval='0.0'
-	uci set yunbridge.general.serial_handshake_fatal_failures='3'
-	uci commit yunbridge
+	uci set mcubridge.general.mqtt_certfile='/etc/mcubridge/client.crt'
+	uci set mcubridge.general.mqtt_keyfile='/etc/mcubridge/client.key'
+	uci set mcubridge.general.allowed_commands='ls cat uptime'
+	uci set mcubridge.general.serial_retry_timeout='0.75'
+	uci set mcubridge.general.serial_retry_attempts='3'
+	uci set mcubridge.general.serial_response_timeout='3.0'
+	uci set mcubridge.general.serial_handshake_min_interval='0.0'
+	uci set mcubridge.general.serial_handshake_fatal_failures='3'
+	uci commit mcubridge
 	```
 	- Usa `allowed_commands='*'` solo en entornos controlados; cualquier otro valor se normaliza a minúsculas y se interpreta como lista explícita.
 	- Las rutas de certificados deben existir; de lo contrario, el daemon abortará el arranque.
@@ -63,9 +69,9 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
-| Python (daemon en el MPU) | Base en Python 3.13.x (lo que entrega OpenWrt 25.12). | Mantener compatibilidad con futuras versiones ejecutando la suite completa antes de promover cambios. | `tox -e py313` (ver `../tox.ini`) ejecuta `pytest` sobre `../openwrt-yun-bridge/tests`. |
+| Python (daemon en el MPU) | Base en Python 3.13.x (lo que entrega OpenWrt 25.12). | Mantener compatibilidad con futuras versiones ejecutando la suite completa antes de promover cambios. | `tox -e py313` (ver `../tox.ini`) ejecuta `pytest` sobre `../openwrt-mcu-bridge/tests`. |
 | Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc2. | Validar paridad con ramas legacy antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc2` (por defecto) genera APKs; `./1_compile.sh 23.05.5` genera IPKs para comparar. |
-`../tools/coverage_arduino.sh` construye el harness con el `g++` disponible en `PATH`. | Ensayar la misma versión de GCC usada en la Yún final ejecutando el script dentro del SDK/contendor deseado o adelantando el `PATH` al toolchain adecuado. | `PATH=/opt/openwrt-sdk/staging_dir/toolchain-*/bin:$PATH ./tools/coverage_arduino.sh` recompila y reporta diferencias de warnings o cobertura. |
+`../tools/coverage_arduino.sh` construye el harness con el `g++` disponible en `PATH`. | Ensayar la misma versión de GCC usada en la MCU final ejecutando el script dentro del SDK/contendor deseado o adelantando el `PATH` al toolchain adecuado. | `PATH=/opt/openwrt-sdk/staging_dir/toolchain-*/bin:$PATH ./tools/coverage_arduino.sh` recompila y reporta diferencias de warnings o cobertura. |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
@@ -81,11 +87,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Automatización operativa
 
-- **Rotación de secretos:** Ejecuta `../tools/rotate_credentials.sh --host <yun>` o usa la pestaña *Credentials & TLS* en LuCI para invocar `/usr/bin/yunbridge-rotate-credentials`. Ambas rutas regeneran `yunbridge.general.serial_shared_secret`, refrescan la contraseña MQTT, reinician el daemon y terminan imprimiendo el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."` para que lo pegues al inicio de tu sketch antes de incluir `Bridge.h`.
-- **Smoke test de hardware:** Lanza `../tools/hardware_smoke_test.sh --host <yun>` (o el botón *Run smoke test* en LuCI) para ejecutar `/usr/bin/yunbridge-hw-smoke`, que valida servicio, credenciales y una ida y vuelta real a `br/system/status`.
-- **Harness multi-dispositivo:** Copia `../hardware/targets.example.toml` a `../hardware/targets.toml`, ajusta tus hosts y luego ejecuta `../tools/hardware_harness.py --list` para verlos. El mismo script corre las pruebas en paralelo (`--max-parallel 4`), filtra por `--tag staging` o `--target lab-yun-01` y expone reportes JSON (`--json results/hw-smoke.json`) ideales para CI.
-- **TLS guiado:** La pestaña *Credentials & TLS* documenta cómo subir bundles `tar.gz` con CA/cert/key a `/etc/yunbridge/tls/` usando `scp` antes de apuntar el daemon al nuevo material.
-- **Frame debug en Linux:** Cuando necesites replicar el ejemplo `FrameDebug` del sketch pero del lado del daemon, detén `yunbridge` y ejecuta `python3 -m tools.frame_debug --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`. El utilitario construye el frame con las mismas rutinas (`rpc.Frame`, `cobs.encode`), imprime CRC/tamaños/hex y, si `--read-response` está activo, decodifica el primer frame que responda el MCU. También puedes omitir `--port` para inspeccionar la estructura del frame sin tocar el hardware o cambiar `--payload`/`--count` para generar ráfagas a intervalos fijos.
+- **Rotación de secretos:** Ejecuta `../tools/rotate_credentials.sh --host <mcu>` o usa la pestaña *Credentials & TLS* en LuCI para invocar `/usr/bin/mcubridge-rotate-credentials`. Ambas rutas regeneran `mcubridge.general.serial_shared_secret`, refrescan la contraseña MQTT, reinician el daemon y terminan imprimiendo el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."` para que lo pegues al inicio de tu sketch antes de incluir `Bridge.h`.
+- **Smoke test de hardware:** Lanza `../tools/hardware_smoke_test.sh --host <mcu>` (o el botón *Run smoke test* en LuCI) para ejecutar `/usr/bin/mcubridge-hw-smoke`, que valida servicio, credenciales y una ida y vuelta real a `br/system/status`.
+- **Harness multi-dispositivo:** Copia `../hardware/targets.example.toml` a `../hardware/targets.toml`, ajusta tus hosts y luego ejecuta `../tools/hardware_harness.py --list` para verlos. El mismo script corre las pruebas en paralelo (`--max-parallel 4`), filtra por `--tag staging` o `--target lab-mcu-01` y expone reportes JSON (`--json results/hw-smoke.json`) ideales para CI.
+- **TLS guiado:** La pestaña *Credentials & TLS* documenta cómo subir bundles `tar.gz` con CA/cert/key a `/etc/mcubridge/tls/` usando `scp` antes de apuntar el daemon al nuevo material.
+- **Frame debug en Linux:** Cuando necesites replicar el ejemplo `FrameDebug` del sketch pero del lado del daemon, detén `mcubridge` y ejecuta `python3 -m tools.frame_debug --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`. El utilitario construye el frame con las mismas rutinas (`rpc.Frame`, `cobs.encode`), imprime CRC/tamaños/hex y, si `--read-response` está activo, decodifica el primer frame que responda el MCU. También puedes omitir `--port` para inspeccionar la estructura del frame sin tocar el hardware o cambiar `--payload`/`--count` para generar ráfagas a intervalos fijos.
 
 ## Despliegue seguro
 
@@ -97,14 +103,14 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	SECRET=$(openssl rand -hex 32)
 	PASS=$(openssl rand -base64 24)
 	uci batch <<EOF
-	set yunbridge.general.serial_shared_secret='$SECRET'
-	set yunbridge.general.mqtt_user='yunbridge-daemon'
-	set yunbridge.general.mqtt_pass='$PASS'
-	commit yunbridge
+	set mcubridge.general.serial_shared_secret='$SECRET'
+	set mcubridge.general.mqtt_user='mcubridge-daemon'
+	set mcubridge.general.mqtt_pass='$PASS'
+	commit mcubridge
 	EOF
-	/etc/init.d/yunbridge restart
+	/etc/init.d/mcubridge restart
 	```
-- También puedes usar `../tools/rotate_credentials.sh --host <yun>` o la pestaña *Credentials & TLS* (que imprime el snippet `#define BRIDGE_SERIAL_SHARED_SECRET`) para ejecutar ese procedimiento remotamente mediante `/usr/bin/yunbridge-rotate-credentials`, que ahora actualiza UCI directamente.
+- También puedes usar `../tools/rotate_credentials.sh --host <mcu>` o la pestaña *Credentials & TLS* (que imprime el snippet `#define BRIDGE_SERIAL_SHARED_SECRET`) para ejecutar ese procedimiento remotamente mediante `/usr/bin/mcubridge-rotate-credentials`, que ahora actualiza UCI directamente.
 - `3_install.sh` ya no genera material TLS (CA/cert/key) para el bridge. Para TLS usa un certificado del broker confiable por el sistema (p.ej. Let's Encrypt) o configura `mqtt_cafile` apuntando a tu CA. Para mTLS, provee explícitamente `mqtt_certfile`/`mqtt_keyfile` y configura el broker para requerirlos.
 ### 1. Autenticación del enlace serie MCU ↔ Linux
 
@@ -112,11 +118,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - Genera un secreto único por dispositivo (mínimo 8 bytes, idealmente 32) y aplícalo antes de iniciar el servicio:
 	```sh
 	openssl rand -hex 32 | awk '{print tolower($0)}' \
-	  | uci set yunbridge.general.serial_shared_secret="$(cat)"
-	uci commit yunbridge
-	/etc/init.d/yunbridge restart
+	  | uci set mcubridge.general.serial_shared_secret="$(cat)"
+	uci commit mcubridge
+	/etc/init.d/mcubridge restart
 	```
-- Configura el secreto únicamente en UCI (`yunbridge.general.serial_shared_secret`) y mantenlo sincronizado con el `#define BRIDGE_SERIAL_SHARED_SECRET "..."` del sketch.
+- Configura el secreto únicamente en UCI (`mcubridge.general.serial_shared_secret`) y mantenlo sincronizado con el `#define BRIDGE_SERIAL_SHARED_SECRET "..."` del sketch.
 - En el sketch define `#define BRIDGE_SERIAL_SHARED_SECRET "..."` (o usa el snippet que muestra LuCI) y vuelve a cargar el firmware; sin esto, el MCU rechazará el handshake. Genera/rota un secreto por dispositivo antes de producción (por ejemplo con `../tools/rotate_credentials.sh`).
 
 ### 2. Políticas de comando y topics sensibles
@@ -130,11 +136,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 	- `mqtt_allow_console_input`
 	- `mqtt_allow_digital_read`, `mqtt_allow_digital_write`, `mqtt_allow_digital_mode`
 	- `mqtt_allow_analog_read`, `mqtt_allow_analog_write`
-- Configúralos en LuCI (sección **Services → YunBridge → Security**) o vía CLI:
+- Configúralos en LuCI (sección **Services → McuBridge → Security**) o vía CLI:
 	```sh
-	uci set yunbridge.general.mqtt_allow_file_write='0'
-	uci set yunbridge.general.mqtt_allow_mailbox_write='0'
-	uci commit yunbridge && /etc/init.d/yunbridge reload
+	uci set mcubridge.general.mqtt_allow_file_write='0'
+	uci set mcubridge.general.mqtt_allow_mailbox_write='0'
+	uci commit mcubridge && /etc/init.d/mcubridge reload
 	```
 - TopicAuthorization ahora opera en modo "deny-by-default": cualquier combinación topic/acción no listada arriba se rechaza y se publica `topic-action-forbidden`.
 - Cuando una acción está bloqueada, el daemon publica `bridge-error=topic-action-forbidden` en `br/system/status`, de modo que los consumidores reciben un fallo explícito.
@@ -146,7 +152,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - En brokers tipo Mosquitto:
 	```
 	# /etc/mosquitto/acl
-	user yunbridge-daemon
+	user mcubridge-daemon
 	topic readwrite br/#
 
 	user sensors-ro
@@ -172,32 +178,32 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ## Arquitectura
 
 - **Callbacks de estado:** Registra `Bridge.onStatus(...)` en tus sketches para recibir `STATUS_*` desde Linux, incluyendo mensajes de error descriptivos cuando una operación (p.ej. I/O de archivos) falla.
-1.  **`openwrt-yun-bridge`**: El daemon principal de Python que se ejecuta en el MPU.
+1.  **`openwrt-mcu-bridge`**: El daemon principal de Python que se ejecuta en el MPU.
 2.  **`openwrt-library-arduino`**: La librería C++ para el sketch que se ejecuta en el MCU.
-3.  **`luci-app-yunbridge`**: La interfaz de configuración web.
-4.  **`openwrt-yun-examples-python`**: Paquete cliente con ejemplos de uso.
-5.  **`openwrt-yun-core`**: Ficheros de configuración base del sistema.
+3.  **`luci-app-mcubridge`**: La interfaz de configuración web.
+4.  **`openwrt-mcu-examples-python`**: Paquete cliente con ejemplos de uso.
+5.  **`openwrt-mcu-core`**: Ficheros de configuración base del sistema.
 
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad, observabilidad y el contrato del protocolo? Revisa [`PROTOCOL.md`](PROTOCOL.md) para obtener el documento actualizado.
 
-> **Nota:** Todas las dependencias del daemon se compilan localmente como APKs en `feeds/` y se instalan desde `bin/` durante `3_install.sh`. Las librerías Python (`aiomqtt`, `paho-mqtt`, `cobs`, `prometheus-client`, `psutil`) tienen sus propios Makefiles en el feed `yunbridge`. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt` y refrescar los Makefiles.
+> **Nota:** Todas las dependencias del daemon se compilan localmente como APKs en `feeds/` y se instalan desde `bin/` durante `3_install.sh`. Las librerías Python (`aiomqtt`, `paho-mqtt`, `cobs`, `prometheus-client`, `psutil`) tienen sus propios Makefiles en el feed `mcubridge`. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt` y refrescar los Makefiles.
 >
-> **✅ Nota sobre pyserial:** La dependencia `pyserial` ha sido reemplazada por una implementación pura basada en `termios` (módulo built-in de Python). Esto elimina la dependencia externa y evita posibles incompatibilidades con futuras versiones de Python. Ver `yunbridge/transport/termios_serial.py`.
+> **✅ Nota sobre pyserial:** La dependencia `pyserial` ha sido reemplazada por una implementación pura basada en `termios` (módulo built-in de Python). Esto elimina la dependencia externa y evita posibles incompatibilidades con futuras versiones de Python. Ver `mcubridge/transport/termios_serial.py`.
 
 ## Primeros Pasos
 
 ### Opción A: Imagen completa (recomendado para instalaciones nuevas)
 
-La forma más sencilla es compilar una imagen OpenWrt completa que ya incluye todo el ecosistema YunBridge:
+La forma más sencilla es compilar una imagen OpenWrt completa que ya incluye todo el ecosistema McuBridge:
 
 1.  **Compilar imagen:** Ejecuta `./0_image.sh` para generar una imagen OpenWrt con:
 	- UART a 115200 baud (corrige el baudrate legacy de 250000)
-	- Todos los paquetes YunBridge preinstalados
+	- Todos los paquetes McuBridge preinstalados
 	- Configuración automática de extroot/swap en primer boot
 	- Generación automática de secretos de seguridad
 2.  **Flashear:** Usa la imagen `sysupgrade` o `factory` generada en `openwrt-build/bin/targets/ath79/generic/`.
 3.  **Primer boot:** Inserta una tarjeta SD y el sistema la configurará automáticamente como extroot. Después de un reinicio automático, el sistema estará listo.
-4.  **Obtener secreto:** Ejecuta `uci get yunbridge.general.serial_shared_secret` y usa el valor en tu sketch Arduino.
+4.  **Obtener secreto:** Ejecuta `uci get mcubridge.general.serial_shared_secret` y usa el valor en tu sketch Arduino.
 
 ### Opción B: Instalación sobre OpenWrt existente
 
@@ -205,13 +211,13 @@ Si ya tienes OpenWrt instalado y no quieres reflashear:
 
 1.  **Compilar paquetes:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes APK de OpenWRT (incluidas las dependencias Python en `feeds/`).
 2.  **Preparar almacenamiento:** Ejecuta `./2_expand.sh` para configurar extroot en la tarjeta SD y crear swap (el sistema reiniciará).
-3.  **Instalar:** Transfiere el proyecto a tu Yún y ejecuta `./3_install.sh` para instalar el software desde `bin/`.
-	- El script evita hacer upgrades del sistema (por estabilidad) y se centra en instalar/actualizar las dependencias necesarias para YunBridge.
+3.  **Instalar:** Transfiere el proyecto a tu MCU y ejecuta `./3_install.sh` para instalar el software desde `bin/`.
+	- El script evita hacer upgrades del sistema (por estabilidad) y se centra en instalar/actualizar las dependencias necesarias para McuBridge.
 
 ### Configuración post-instalación
 
-1.  **Configurar:** Accede a la interfaz web de LuCI en tu Yún, navega a `Services > YunBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `../tools/rotate_credentials.sh --host <yun>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
-2.  **Explorar:** Revisa los ejemplos en `openwrt-yun-examples-python/` para aprender a interactuar con el puente a través de MQTT.
+1.  **Configurar:** Accede a la interfaz web de LuCI en tu MCU, navega a `Services > McuBridge` y configura el daemon. Antes de ponerlo en producción usa la pestaña *Credentials & TLS* (o `../tools/rotate_credentials.sh --host <mcu>`) para rotar el secreto serie y las credenciales MQTT directamente en UCI.
+2.  **Explorar:** Revisa los ejemplos en `openwrt-mcu-examples-python/` para aprender a interactuar con el puente a través de MQTT.
 
 ### Verificación y control de calidad
 
@@ -225,12 +231,12 @@ Si ya tienes OpenWrt instalado y no quieres reflashear:
 	```sh
 	tox -e py313
 	```
-- **Smoke test remoto:** `./tools/hardware_smoke_test.sh --host <yun>` invoca `/usr/bin/yunbridge-hw-smoke` vía SSH y falla si el daemon no responde a `br/system/status` en menos de 7 segundos.
+- **Smoke test remoto:** `./tools/hardware_smoke_test.sh --host <mcu>` invoca `/usr/bin/mcubridge-hw-smoke` vía SSH y falla si el daemon no responde a `br/system/status` en menos de 7 segundos.
 - **Harness multi-dispositivo:** `./tools/hardware_harness.py --manifest hardware/targets.toml --max-parallel 3 --tag regression` recorre todos los dispositivos definidos en el manifiesto, ejecuta el script anterior mediante SSH y al final resume qué nodos pasaron/ fallaron (además de producir un reporte JSON opcional).
-- **Pruebas manuales:** Tras instalar los paquetes en tu Yún, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-yun-examples-python` y revisa los logs del daemon con `logread | grep yunbridge`.
+- **Pruebas manuales:** Tras instalar los paquetes en tu MCU, verifica el flujo end-to-end ejecutando uno de los scripts de `openwrt-mcu-examples-python` y revisa los logs del daemon con `logread | grep mcubridge`.
 - **Diagnóstico en el MCU:** Carga el sketch `openwrt-library-arduino/examples/FrameDebug/FrameDebug.ino` para imprimir cada 5 s el snapshot de transmisión y confirmar que `expected_serial_bytes` coincide con `last_write_return`.
-- **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/yunbridge_status.json` junto al límite configurado. Ese snapshot ahora incluye `mqtt_spool_*`, `watchdog_*` (latido, intervalo, habilitado) y los nuevos contadores de almacenamiento (`file_storage_bytes_used`, `file_write_limit_rejections`, `file_storage_limit_rejections`) para que LuCI los muestre sin parsers adicionales. Además, `br/system/metrics` adjunta las mismas claves y propiedades MQTT (`bridge-spool`, `bridge-watchdog-enabled`, `bridge-watchdog-interval`) para que los consumidores puedan alertar cuando el spool persistente se degrada, el watchdog deja de latir o el sandbox de archivos se acerca al límite.
-- **Telemetría reforzada:** `RuntimeState` cuenta los eventos de drop y truncamiento en todas las colas (MQTT, consola, mailbox y mailbox_incoming) y el writer periódico exporta los acumuladores en `/tmp/yunbridge_status.json` (`*_dropped_*`, `*_truncated_*`) junto con los tamaños actuales. Estos mismos contadores se publican en `br/system/status` para integrarse con dashboards MQTT.
+- **Monitoreo:** El daemon expone estados y errores del MCU en `br/system/status` (JSON) y publica el tamaño actual de la cola MQTT en `/tmp/mcubridge_status.json` junto al límite configurado. Ese snapshot ahora incluye `mqtt_spool_*`, `watchdog_*` (latido, intervalo, habilitado) y los nuevos contadores de almacenamiento (`file_storage_bytes_used`, `file_write_limit_rejections`, `file_storage_limit_rejections`) para que LuCI los muestre sin parsers adicionales. Además, `br/system/metrics` adjunta las mismas claves y propiedades MQTT (`bridge-spool`, `bridge-watchdog-enabled`, `bridge-watchdog-interval`) para que los consumidores puedan alertar cuando el spool persistente se degrada, el watchdog deja de latir o el sandbox de archivos se acerca al límite.
+- **Telemetría reforzada:** `RuntimeState` cuenta los eventos de drop y truncamiento en todas las colas (MQTT, consola, mailbox y mailbox_incoming) y el writer periódico exporta los acumuladores en `/tmp/mcubridge_status.json` (`*_dropped_*`, `*_truncated_*`) junto con los tamaños actuales. Estos mismos contadores se publican en `br/system/status` para integrarse con dashboards MQTT.
 - **Snapshots `br/system/bridge/*`:** ahora puedes consultar el estado del enlace serie sin inspeccionar archivos locales. Publica un mensaje vacío en `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` (MQTT v5 opcionalmente con `response_topic`) y el daemon responderá con `.../handshake/value` o `.../summary/value` en JSON (`content-type: application/json`). Incluye sincronización actual, contadores de handshake, versión del MCU, pipeline serial en curso y el último comando completado, además de adjuntar la propiedad de usuario `bridge-snapshot` para que los clientes puedan enrutar la respuesta.
-- **Snapshots `br/system/bridge/*`:** ahora puedes consultar el estado del enlace serie sin inspeccionar archivos locales. Publica un mensaje vacío en `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` (MQTT v5 opcionalmente con `response_topic`) y el daemon responderá con `.../handshake/value` o `.../summary/value` en JSON (`content-type: application/json`). Incluye sincronización actual, contadores de handshake, versión del MCU, pipeline serial en curso y el último comando completado, además de adjuntar la propiedad de usuario `bridge-snapshot` para que los clientes puedan enrutar la respuesta. Además, el daemon republica estos snapshots de forma automática usando `aiocron`: `bridge_summary_interval` (60 s por defecto) controla la cadencia del resumen y `bridge_handshake_interval` (300 s por defecto) decide cada cuánto se emite el estado detallado del handshake. Ajusta ambos valores con `uci set yunbridge.general.bridge_summary_interval='<segundos>'`/`bridge_handshake_interval` y recarga el servicio.
-- **Exportador Prometheus:** Habilita `uci set yunbridge.general.metrics_enabled='1'` para exponer `http://<host>:<metrics_port>/metrics` con `Content-Type: text/plain; version=0.0.4`. Ajusta `metrics_host`/`metrics_port` si necesitas escuchar en otra interfaz. Verifica con `curl http://127.0.0.1:9130/metrics` y busca gauges como `yunbridge_mqtt_queue_size` o `yunbridge_serial_decode_errors`. Los campos de texto se representan como `yunbridge_info{key="...",value="..."} 1`.
+- **Snapshots `br/system/bridge/*`:** ahora puedes consultar el estado del enlace serie sin inspeccionar archivos locales. Publica un mensaje vacío en `br/system/bridge/handshake/get` o `br/system/bridge/summary/get` (MQTT v5 opcionalmente con `response_topic`) y el daemon responderá con `.../handshake/value` o `.../summary/value` en JSON (`content-type: application/json`). Incluye sincronización actual, contadores de handshake, versión del MCU, pipeline serial en curso y el último comando completado, además de adjuntar la propiedad de usuario `bridge-snapshot` para que los clientes puedan enrutar la respuesta. Además, el daemon republica estos snapshots de forma automática usando `aiocron`: `bridge_summary_interval` (60 s por defecto) controla la cadencia del resumen y `bridge_handshake_interval` (300 s por defecto) decide cada cuánto se emite el estado detallado del handshake. Ajusta ambos valores con `uci set mcubridge.general.bridge_summary_interval='<segundos>'`/`bridge_handshake_interval` y recarga el servicio.
+- **Exportador Prometheus:** Habilita `uci set mcubridge.general.metrics_enabled='1'` para exponer `http://<host>:<metrics_port>/metrics` con `Content-Type: text/plain; version=0.0.4`. Ajusta `metrics_host`/`metrics_port` si necesitas escuchar en otra interfaz. Verifica con `curl http://127.0.0.1:9130/metrics` y busca gauges como `mcubridge_mqtt_queue_size` o `mcubridge_serial_decode_errors`. Los campos de texto se representan como `mcubridge_info{key="...",value="..."} 1`.

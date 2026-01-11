@@ -17,7 +17,7 @@ fi
 echo "Updating core index..."
 arduino-cli core update-index
 
-# Install AVR core (for Yun)
+# Install AVR core (for MCU)
 echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr
 
@@ -29,7 +29,7 @@ arduino-cli lib install PacketSerial CRC32 Crypto
 LIB_PATH="$PWD/openwrt-library-arduino"
 
 # Compile examples
-FQBN="arduino:avr:yun"
+FQBN="arduino:avr:mcu"
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 

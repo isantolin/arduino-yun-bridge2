@@ -1,0 +1,16 @@
+#!/bin/sh
+# Seed McuBridge serial defaults without overwriting user config.
+# Runs once on first boot (uci-defaults).
+
+DEFAULT_SERIAL_PORT="/dev/ttyATH0"
+
+current_serial_port="$(uci -q get mcubridge.general.serial_port 2>/dev/null || true)"
+
+if [ -z "$current_serial_port" ]; then
+    # Ensure section exists; this is a no-op if already present.
+    uci -q set mcubridge.general=general
+    uci -q set mcubridge.general.serial_port="$DEFAULT_SERIAL_PORT"
+    uci -q commit mcubridge
+fi
+
+exit 0

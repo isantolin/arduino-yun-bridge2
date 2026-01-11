@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-paho-mqtt
 PKG_VERSION:=2.1.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PYPI_NAME:=paho-mqtt
 # ATENCIÓN: El tarball usa guion bajo, el SDK espera guion medio por defecto
@@ -30,6 +30,7 @@ define Package/python3-paho-mqtt
   SUBMENU:=Python
   TITLE:=MQTT Python client library (v2.x Custom)
   URL:=http://eclipse.org/paho
+  PKG_ARCH:=all
   DEPENDS:=+python3-light +python3-uuid +python3-logging +python3-openssl
 endef
 

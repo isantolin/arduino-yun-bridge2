@@ -7,7 +7,7 @@
 #define BRIDGE_ENABLE_PROCESS 0
 
 // CONFIGURACIÓN DEL SECRETO
-// Este password debe coincidir con el configurado en el lado de Linux (/etc/yun-bridge.conf o similar)
+// Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)
 #define BRIDGE_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 
 // Includes manuales para dependencias

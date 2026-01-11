@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-prometheus-client
 PKG_VERSION:=0.23.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PYPI_NAME:=prometheus_client
 PKG_HASH:=6ae8f9081eaaaf153a2e959d2e6c4f4fb57b12ef76c8c7980202f1e57b48b2ce
@@ -24,6 +24,7 @@ define Package/python3-prometheus-client
   SUBMENU:=Python
   TITLE:=Prometheus instrumentation library for Python
   URL:=https://github.com/prometheus/client_python
+  PKG_ARCH:=all
   # [OPTIMIZATION] Eliminado +python3-twisted
   DEPENDS:=+python3-light
 endef

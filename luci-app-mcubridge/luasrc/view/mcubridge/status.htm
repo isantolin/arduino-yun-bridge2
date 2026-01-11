@@ -1,0 +1,88 @@
+<!--
+This file is part of Arduino MCU Ecosystem v2.
+
+Copyright (C) 2025 Ignacio Santolin and contributors
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+-->
+<%+header%>
+
+<script type="text/javascript">//<![CDATA[
+
+    const T_NO_STATUS_AVAILABLE = '<%=translate("No status available")%>';
+    const T_ERROR_PROCESSING_DATA = '<%=translate("Error processing data.")%>';
+    
+    // Función de utilidad para generar la URL del controlador
+    function buildControllerUrl(action) {
+        return '<%=luci.dispatcher.build_url("admin", "services", "mcubridge")%>/' + action;
+    }
+
+    function fetchStatus() {
+        var status_url = buildControllerUrl('status_raw');
+        XHR.get(status_url, null, function(x, data) {
+            var status_content_element = document.getElementById('status-content');
+            
+            // Variable para almacenar el contenido final a mostrar
+            var display_content = T_NO_STATUS_AVAILABLE;
+
+            // --- MANEJO DE JSON DE ESTADO ---
+            try {
+                if (typeof data === 'object' && data !== null) {
+                    // Caso 1: LuCI/XHR ya devolvió el objeto parseado (Tu caso actual)
+                    display_content = JSON.stringify(data, null, 2);
+                
+                } else if (typeof data === 'string' && data.trim().startsWith('{')) {
+                    // Caso 2: Es una cadena de texto, pero parece JSON (Intentamos parsear)
+                    var obj = JSON.parse(data);
+                    display_content = JSON.stringify(obj, null, 2);
+                    
+                } else {
+                    // Caso 3: Es una cadena de texto simple (ej: "No status file found.")
+                    display_content = data || T_NO_STATUS_AVAILABLE;
+                }
+
+            } catch (e) {
+                // Si el parseo o stringify falla por cualquier motivo, mostramos el dato crudo.
+                console.error("Error parsing or stringifying status data:", e);
+                display_content = String(data) || T_ERROR_PROCESSING_DATA;
+            }
+
+            // Asignamos el contenido final al elemento <pre>
+            status_content_element.textContent = display_content;
+        });
+    }
+    
+    // Función para iniciar todas las llamadas
+    function startFetching() {
+        fetchStatus();
+        
+        // Configurar los intervalos de actualización (5 segundos)
+        setInterval(fetchStatus, 5000);
+    }
+
+    // Iniciar cuando la ventana esté completamente cargada
+    window.addEventListener('load', startFetching);
+//]]></script>
+
+<h2><%:McuBridge Daemon Status%></h2>
+<p>
+    <em>
+        <%:Status snapshot is read from /tmp/mcubridge_status.json (tmpfs) and may be empty after reboot or while the daemon is starting.%>
+    </em>
+</p>
+<div id="daemon-status">
+    <pre id="status-content"><%=translate("Loading status...")%></pre>
+</div>
+
+<%+footer%>

@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 /**
- * RLE (Run-Length Encoding) implementation for Yun Bridge protocol.
+ * RLE (Run-Length Encoding) implementation for MCU Bridge protocol.
  * 
  * Simple compression optimized for embedded systems with minimal RAM.
  * Uses escape-based encoding to handle all byte values:

@@ -1,10 +1,10 @@
-# Arduino Yun Bridge Examples
+# Arduino MCU Bridge Examples
 
 The sketches under `openwrt-library-arduino/examples/` act as smoke tests for the MCU library after the November 2025 refresh.
 
 ## BridgeControl
 
-- Exercises the main YunBridge flow: mailbox handling, GPIO callbacks, and `STATUS_*` frames from Linux.
+- Exercises the main McuBridge flow: mailbox handling, GPIO callbacks, and `STATUS_*` frames from Linux.
 - Uses `Bridge.onDigitalReadResponse`, `Bridge.onMailboxMessage`, and `Bridge.onStatus` to react to asynchronous events without busy loops.
 - Handy to confirm that the Python daemon and the MCU share the same serial secret before layering more services.
 
@@ -20,8 +20,8 @@ Compile and upload any example via `arduino-cli`:
 
 ```sh
 # Replace <SketchDir> with BridgeControl or FrameDebug
-arduino-cli compile --fqbn arduino:avr:yun openwrt-library-arduino/examples/<SketchDir>
-arduino-cli upload --fqbn arduino:avr:yun --port /dev/ttyACM0 \
+arduino-cli compile --fqbn arduino:avr:mcu openwrt-library-arduino/examples/<SketchDir>
+arduino-cli upload --fqbn arduino:avr:mcu --port /dev/ttyACM0 \
   openwrt-library-arduino/examples/<SketchDir>
 ```
 
@@ -33,8 +33,8 @@ Tips:
 
 ## Suggested validation flow
 
-1. Flash `BridgeControl.ino` and restart the daemon (`/etc/init.d/yunbridge restart`).
-2. From Linux run `openwrt-yun-examples-python/mailbox_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
+1. Flash `BridgeControl.ino` and restart the daemon (`/etc/init.d/mcubridge restart`).
+2. From Linux run `openwrt-mcu-examples-python/mailbox_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
 3. Switch to `FrameDebug.ino` when you need to inspect timings or CRC32 values on the serial link; keep the serial console open for a few minutes to gather meaningful stats.
 
 These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in [PROTOCOL.md](../../../docs/PROTOCOL.md).

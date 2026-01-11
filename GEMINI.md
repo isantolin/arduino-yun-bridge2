@@ -1,10 +1,10 @@
-# GEMINI.md: Your AI Assistant's Guide to Arduino Yún Bridge 2
+# GEMINI.md: Your AI Assistant's Guide to Arduino MCU Bridge 2
 
-This document provides a comprehensive overview of the Arduino Yún Bridge 2 project, designed to be used as a context file for AI assistants like Gemini.
+This document provides a comprehensive overview of the Arduino MCU Bridge 2 project, designed to be used as a context file for AI assistants like Gemini.
 
 ## Project Overview
 
-Arduino Yún Bridge 2 is a modern, high-performance replacement for the original Arduino Yún Bridge system. It facilitates robust and efficient communication between the Arduino-compatible microcontroller (MCU) and the Linux-based microprocessor (MPU) on the Arduino Yún and compatible boards.
+Arduino MCU Bridge 2 is a modern, high-performance replacement for the original Arduino MCU Bridge system. It facilitates robust and efficient communication between the Arduino-compatible microcontroller (MCU) and the Linux-based microprocessor (MPU) on the Arduino MCU and compatible boards.
 
 The core of the project is a Python daemon that runs on the Linux MPU and a C++ library that runs on the Arduino MCU. They communicate over the serial port using a custom, efficient, and reliable binary RPC protocol. The protocol is formally defined in a TOML file, and the corresponding C++ and Python code is generated from this specification, ensuring consistency between the two sides of the bridge.
 
@@ -46,12 +46,12 @@ If your device has limited storage, you can use the `2_expand.sh` script to expa
 
 ### Installing
 
-To install the bridge on your Arduino Yún, transfer the project files to the device and run the `3_install.sh` script as root. This script will:
+To install the bridge on your Arduino MCU, transfer the project files to the device and run the `3_install.sh` script as root. This script will:
 
 1.  Install the necessary system dependencies.
 2.  Install the project's `.apk` packages.
 3.  Configure the system.
-4.  Start the `yunbridge` daemon.
+4.  Start the `mcubridge` daemon.
 
 ```bash
 ./3_install.sh

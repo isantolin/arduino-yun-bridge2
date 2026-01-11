@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-# This file is part of Arduino Yun Ecosystem v2.
+# This file is part of Arduino MCU Ecosystem v2.
 # Copyright (C) 2025 Ignacio Santolin and contributors
 # Target: OpenWrt 25.12.0 (APK System)
 
@@ -15,7 +15,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 #  --- Configuration Variables ---
-INIT_SCRIPT="/etc/init.d/yunbridge"
+INIT_SCRIPT="/etc/init.d/mcubridge"
 REQUIRED_SWAP_KB=1048576
 MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
 TMPDIR=/overlay/upper/tmp
@@ -26,7 +26,7 @@ LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 
-# Keep shell defaults aligned with yunbridge.const
+# Keep shell defaults aligned with mcubridge.const
 DEFAULT_SERIAL_RETRY_TIMEOUT="0.75"
 DEFAULT_SERIAL_RESPONSE_TIMEOUT="3.0"
 DEFAULT_SERIAL_RETRY_ATTEMPTS="3"
@@ -36,9 +36,9 @@ DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
 # [FIX] Added python3-*.apk to the top to ensure dependencies are installed BEFORE the bridge
 PROJECT_APK_PATTERNS="\
 python3-*.apk \
-openwrt-yun-core-*.apk \
-openwrt-yun-bridge-*.apk \
-luci-app-yunbridge-*.apk"
+openwrt-mcu-core-*.apk \
+openwrt-mcu-bridge-*.apk \
+luci-app-mcubridge-*.apk"
 
 UCI_GENERAL_DIRTY=0
 
@@ -47,27 +47,27 @@ mkdir -p "$TMPDIR"
 
 stop_daemon() {
     if [ ! -x "$INIT_SCRIPT" ]; then
-        echo "[INFO] YunBridge daemon not installed, skipping stop."
+        echo "[INFO] McuBridge daemon not installed, skipping stop."
         return
     fi
 
-    echo "[INFO] Stopping yunbridge daemon if active..."
+    echo "[INFO] Stopping mcubridge daemon if active..."
     $INIT_SCRIPT stop 2>/dev/null || true
     sleep 1
 
-    pids=$(ps w | grep -E 'python[0-9.]*.*yunbridge' | grep -v grep | awk '{print $1}')
+    pids=$(ps w | grep -E 'python[0-9.]*.*mcubridge' | grep -v grep | awk '{print $1}')
 
     if [ -n "$pids" ]; then
         echo "[WARN] Daemon still running. Sending SIGTERM..."
         kill $pids 2>/dev/null || true
         sleep 2
-        pids2=$(ps w | grep -E 'python[0-9.]*.*yunbridge' | grep -v grep | awk '{print $1}')
+        pids2=$(ps w | grep -E 'python[0-9.]*.*mcubridge' | grep -v grep | awk '{print $1}')
         if [ -n "$pids2" ]; then
             echo "[WARN] Process will not die. Sending SIGKILL..."
             kill -9 $pids2 2>/dev/null || true
         fi
     else
-        echo "[INFO] No running yunbridge daemon process found."
+        echo "[INFO] No running mcubridge daemon process found."
     fi
 }
 
@@ -139,30 +139,30 @@ install_dependency() {
 
 # Ensure UCI config file exists before trying to access it
 ensure_uci_config() {
-    if [ ! -f /etc/config/yunbridge ]; then
-        echo "[WARN] /etc/config/yunbridge not found (package not installed?). Creating default..."
-        touch /etc/config/yunbridge
-        uci set yunbridge.general=settings
-        uci set yunbridge.general.enabled='1'
+    if [ ! -f /etc/config/mcubridge ]; then
+        echo "[WARN] /etc/config/mcubridge not found (package not installed?). Creating default..."
+        touch /etc/config/mcubridge
+        uci set mcubridge.general=settings
+        uci set mcubridge.general.enabled='1'
         UCI_GENERAL_DIRTY=1
     fi
 }
 
 uci_get_general() {
     local key="$1"
-    uci -q get "yunbridge.general.${key}" 2>/dev/null || true
+    uci -q get "mcubridge.general.${key}" 2>/dev/null || true
 }
 
 uci_set_general() {
     local key="$1" value="$2"
     ensure_uci_config
-    uci set "yunbridge.general.${key}=$value"
+    uci set "mcubridge.general.${key}=$value"
     UCI_GENERAL_DIRTY=1
 }
 
 uci_commit_general() {
     if [ "${UCI_GENERAL_DIRTY:-0}" -ne 0 ]; then
-        uci commit yunbridge
+        uci commit mcubridge
         UCI_GENERAL_DIRTY=0
     fi
 }
@@ -245,8 +245,8 @@ ensure_secure_serial_secret() {
     local rotation_ok=0
 
     # Try helper if exists
-    if command -v yunbridge-rotate-credentials >/dev/null 2>&1; then
-        if OUTPUT=$(yunbridge-rotate-credentials 2>&1); then
+    if command -v mcubridge-rotate-credentials >/dev/null 2>&1; then
+        if OUTPUT=$(mcubridge-rotate-credentials 2>&1); then
             rotation_ok=1
             final_secret=$(printf '%s\n' "$OUTPUT" | sed -n 's/^SERIAL_SECRET=//p' | tail -n 1)
         fi
@@ -257,7 +257,7 @@ ensure_secure_serial_secret() {
         local mqtt_pass mqtt_user
         mqtt_pass=$(generate_random_b64 32)
         mqtt_user=$(uci_get_general mqtt_user)
-        [ -z "$mqtt_user" ] && mqtt_user="yunbridge"
+        [ -z "$mqtt_user" ] && mqtt_user="mcubridge"
 
         uci_set_general serial_shared_secret "$final_secret"
         uci_set_general mqtt_user "$mqtt_user"
@@ -381,7 +381,7 @@ for glob in $project_apk_globs; do
 done
 
 if [ "$project_apk_installed" -eq 0 ]; then
-    echo "[WARN] No project .apk files found in bin/. 'yunbridge' package was NOT installed."
+    echo "[WARN] No project .apk files found in bin/. 'mcubridge' package was NOT installed."
     echo "[HINT] Run './1_compile.sh' first to build the packages."
 else
     # Only configure secrets if the package installed successfully
@@ -398,16 +398,16 @@ echo "[FINAL] Finalizing setup..."
 
 # The daemon is configured via UCI (environment variables are ignored).
 if command -v uci >/dev/null 2>&1; then
-    uci set yunbridge.general.debug='1' >/dev/null 2>&1 || true
-    uci commit yunbridge >/dev/null 2>&1 || true
+    uci set mcubridge.general.debug='1' >/dev/null 2>&1 || true
+    uci commit mcubridge >/dev/null 2>&1 || true
 fi
 
 if [ -x "$INIT_SCRIPT" ]; then
-    echo "[INFO] Enabling and starting yunbridge daemon..."
+    echo "[INFO] Enabling and starting mcubridge daemon..."
     $INIT_SCRIPT enable
     $INIT_SCRIPT restart
 else
-    echo "[WARNING] yunbridge init script not found (installation incomplete?)."
+    echo "[WARNING] mcubridge init script not found (installation incomplete?)."
 fi
 
 echo -e "\n--- Installation Complete! ---"

@@ -1,4 +1,4 @@
-# Auto-generated protocol specification source for Yun Bridge v2.
+# Auto-generated protocol specification source for MCU Bridge v2.
 # Any modifications here should be reflected by re-running tools/protocol/generate.py.
 
 [constants]
@@ -53,7 +53,7 @@ retry_limit_max = 8
 
 # [MIL-SPEC] HKDF key derivation parameters (NIST SP 800-56C)
 hkdf_algorithm = "HKDF-SHA256"
-hkdf_salt = "yunbridge-v2"
+hkdf_salt = "mcubridge-v2"
 hkdf_info_auth = "handshake-auth"
 hkdf_output_length = 32
 

@@ -1,5 +1,5 @@
 /*
-  Corrected Smoke Test for Yun Bridge 2.0
+  Corrected Smoke Test for MCU Bridge 2.0
   Waits for Console connection to avoid spamming the bus before handshake.
 */
 
@@ -7,7 +7,7 @@
 // Console is already declared in Bridge.h in this library version
 // #include <Console.h> 
 
-// Secret from UCI (yunbridge.general.serial_shared_secret)
+// Secret from UCI (mcubridge.general.serial_shared_secret)
 // Must match the daemon's configuration to pass the handshake.
 #define BRIDGE_SERIAL_SHARED_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 

@@ -1,0 +1,453 @@
+from __future__ import annotations
+
+import ast
+import fnmatch
+import re
+from os import walk
+from pathlib import Path
+
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _is_excluded_path(path: Path) -> bool:
+    rel = path.relative_to(_REPO_ROOT)
+
+    # Exclude any path that passes through these directories.
+    excluded_dir_names = {
+        ".tox",
+        ".git",
+        ".venv",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".eggs",
+        "__pycache__",
+        "venv",
+        "site-packages",
+        "node_modules",
+    }
+    if any(part in excluded_dir_names for part in rel.parts):
+        return True
+
+    # Exclude whole subtrees by prefix.
+    excluded_prefixes = {
+        Path("build"),
+        Path("dist"),
+        Path("coverage"),
+        Path("feeds"),
+        Path("openwrt-sdk"),
+        Path("test_protocol_bin"),
+        Path("openwrt-library-arduino/build-coverage"),
+        Path("openwrt-library-arduino/build-host"),
+        Path("openwrt-library-arduino/build-host-local"),
+    }
+    rel_str = rel.as_posix()
+    for prefix in excluded_prefixes:
+        prefix_str = prefix.as_posix()
+        if rel_str == prefix_str or rel_str.startswith(prefix_str + "/"):
+            return True
+    return False
+
+
+def _iter_text_files(root: Path, patterns: tuple[str, ...]) -> list[Path]:
+    matched: list[Path] = []
+
+    for dirpath_str, dirnames, filenames in walk(root):
+        dirpath = Path(dirpath_str)
+
+        # Prune excluded directories early for performance.
+        if _is_excluded_path(dirpath):
+            dirnames[:] = []
+            continue
+
+        # Also prune excluded subdirs.
+        kept: list[str] = []
+        for name in dirnames:
+            p = dirpath / name
+            if not _is_excluded_path(p):
+                kept.append(name)
+        dirnames[:] = kept
+
+        for filename in filenames:
+            if any(fnmatch.fnmatch(filename, pattern) for pattern in patterns):
+                candidate = dirpath / filename
+                if candidate.is_file() and not _is_excluded_path(candidate):
+                    matched.append(candidate)
+
+    return sorted(set(matched))
+
+
+def _find_matches(files: list[Path], regex: re.Pattern[str]) -> list[tuple[Path, int, str]]:
+    hits: list[tuple[Path, int, str]] = []
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # C++ sources should be UTF-8; if not, ignore rather than flake.
+            continue
+        for idx, line in enumerate(text.splitlines(), start=1):
+            if regex.search(line):
+                hits.append((path, idx, line.strip()))
+    return hits
+
+
+def _find_print_calls(py_files: list[Path]) -> list[tuple[Path, int, str]]:
+    hits: list[tuple[Path, int, str]] = []
+    for path in py_files:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            hits.append((path, exc.lineno or 1, f"SyntaxError: {exc.msg}"))
+            continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == "print":
+                hits.append((path, node.lineno, "print(...)"))
+    return hits
+
+
+def _find_lambdas_and_nested_functions(py_files: list[Path]) -> list[tuple[Path, int, str]]:
+    hits: list[tuple[Path, int, str]] = []
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self) -> None:
+            self.function_depth = 0
+
+        def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
+            hits.append((path, node.lineno, "lambda"))
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+            if self.function_depth > 0:
+                hits.append((path, node.lineno, f"nested def {node.name}(...)"))
+            self.function_depth += 1
+            try:
+                self.generic_visit(node)
+            finally:
+                self.function_depth -= 1
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+            if self.function_depth > 0:
+                hits.append((path, node.lineno, f"nested async def {node.name}(...)"))
+            self.function_depth += 1
+            try:
+                self.generic_visit(node)
+            finally:
+                self.function_depth -= 1
+
+    for path in py_files:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            hits.append((path, exc.lineno or 1, f"SyntaxError: {exc.msg}"))
+            continue
+
+        _Visitor().visit(tree)
+
+    return hits
+
+
+def _find_shadowing_and_scope_escapes(py_files: list[Path]) -> list[tuple[Path, int, str]]:
+    """Detect scope escapes (global/nonlocal) and import-name shadowing.
+
+    Rationale:
+    - global/nonlocal enable cross-scope mutation, which is hard to reason about.
+    - Shadowing imported names (e.g., modules) can silently change meaning inside a
+      function and complicate reviews.
+
+    Note: This intentionally does NOT treat class-body names as an enclosing scope.
+    Python does not resolve function names through class scope (LEGB).
+    """
+
+    hits: list[tuple[Path, int, str]] = []
+
+    always_allowed = {
+        "_",
+        "self",
+        "cls",
+        "args",
+        "kwargs",
+        # Common exception binding names.
+        "exc",
+        "exc_group",
+        "e",
+        "err",
+        "error",
+    }
+
+    def _collect_imported_names(module: ast.Module) -> set[str]:
+        imported: set[str] = set()
+        for node in module.body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imported.add(alias.asname or alias.name.split(".")[0])
+            elif isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name == "*":
+                        continue
+                    imported.add(alias.asname or alias.name)
+        return imported
+
+    class _Visitor(ast.NodeVisitor):
+        def __init__(self, imported_names: set[str]) -> None:
+            self.imported_names = imported_names
+
+        def _check_name(self, name: str, lineno: int, context: str) -> None:
+            if not name or name in always_allowed:
+                return
+            if name in self.imported_names:
+                hits.append((path, lineno, f"shadowing imported name '{name}' via {context}"))
+
+        def _check_target(self, target: ast.AST, lineno: int, context: str) -> None:
+            if isinstance(target, ast.Name):
+                self._check_name(target.id, lineno, context)
+                return
+            if isinstance(target, (ast.Tuple, ast.List)):
+                for elt in target.elts:
+                    self._check_target(elt, lineno, context)
+
+        def visit_Global(self, node: ast.Global) -> None:  # noqa: N802
+            hits.append((path, node.lineno, "global statement"))
+            self.generic_visit(node)
+
+        def visit_Nonlocal(self, node: ast.Nonlocal) -> None:  # noqa: N802
+            hits.append((path, node.lineno, "nonlocal statement"))
+            self.generic_visit(node)
+
+        def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+            for arg in (
+                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+            ):
+                self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
+            if node.args.vararg is not None:
+                self._check_name(node.args.vararg.arg, node.lineno, "*args")
+            if node.args.kwarg is not None:
+                self._check_name(node.args.kwarg.arg, node.lineno, "**kwargs")
+
+            self.generic_visit(node)
+
+        def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+            for arg in (
+                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
+            ):
+                self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
+            if node.args.vararg is not None:
+                self._check_name(node.args.vararg.arg, node.lineno, "*args")
+            if node.args.kwarg is not None:
+                self._check_name(node.args.kwarg.arg, node.lineno, "**kwargs")
+
+            self.generic_visit(node)
+
+        def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+            for t in node.targets:
+                self._check_target(t, node.lineno, "assignment")
+            self.generic_visit(node)
+
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "annotated assignment")
+            self.generic_visit(node)
+
+        def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "augmented assignment")
+            self.generic_visit(node)
+
+        def visit_For(self, node: ast.For) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "for target")
+            self.generic_visit(node)
+
+        def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+            self._check_target(node.target, node.lineno, "async for target")
+            self.generic_visit(node)
+
+        def visit_With(self, node: ast.With) -> None:  # noqa: N802
+            for item in node.items:
+                if item.optional_vars is not None:
+                    self._check_target(item.optional_vars, node.lineno, "with as")
+            self.generic_visit(node)
+
+        def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
+            for item in node.items:
+                if item.optional_vars is not None:
+                    self._check_target(item.optional_vars, node.lineno, "async with as")
+            self.generic_visit(node)
+
+        def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:  # noqa: N802
+            if node.name:
+                self._check_name(node.name, node.lineno, "except as")
+            self.generic_visit(node)
+
+    for path in py_files:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+
+        try:
+            tree = ast.parse(source, filename=str(path))
+        except SyntaxError as exc:
+            hits.append((path, exc.lineno or 1, f"SyntaxError: {exc.msg}"))
+            continue
+
+        imported_names = _collect_imported_names(tree)
+        _Visitor(imported_names).visit(tree)
+
+    return hits
+
+
+def test_no_print_repo_wide() -> None:
+    """Repo-wide: no print() anywhere (tools/tests/examples included).
+
+    Rationale: production logs must remain structured (syslog/JSON), and
+    helper CLIs should use explicit stdout/stderr writes.
+    """
+
+    py_files = _iter_text_files(_REPO_ROOT, ("*.py",))
+    py_files = [path for path in py_files if not _is_excluded_path(path)]
+
+    hits = _find_print_calls(py_files)
+
+    assert not hits, "print() is not allowed repo-wide:\n" + "\n".join(
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
+    )
+
+
+def test_no_stl_in_mcu_src_or_tests() -> None:
+    """MCU code must stay C++11-friendly and avoid STL usage (src + tests)."""
+
+    mcu_src_root = _REPO_ROOT / "openwrt-library-arduino" / "src"
+    mcu_tests_root = _REPO_ROOT / "openwrt-library-arduino" / "tests"
+    assert mcu_src_root.is_dir(), f"missing MCU src root: {mcu_src_root}"
+    assert mcu_tests_root.is_dir(), f"missing MCU tests root: {mcu_tests_root}"
+
+    cpp_files = _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+    cpp_files += _iter_text_files(mcu_tests_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+
+    # Keep this intentionally conservative: it catches the common STL types and includes.
+    stl_regex = re.compile(
+        r"(\bstd::|#\s*include\s*<\s*(vector|string|map|set|list|"
+        r"deque|array|optional|variant|tuple|memory|algorithm|functional|"
+        r"unordered_[^>]+)\s*>)"
+    )
+    hits = _find_matches(cpp_files, stl_regex)
+
+    message = "STL usage is not allowed in openwrt-library-arduino/src or tests:\n"
+    message += "\n".join(
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
+    )
+    assert not hits, message
+
+
+def test_no_changeme_placeholder_in_shipped_defaults() -> None:
+    """Never ship with the legacy placeholder serial secret."""
+
+    forbidden = "changeme123"
+    files = [
+        _REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
+        _REPO_ROOT / "luci-app-mcubridge" / "luasrc" / "model" / "cbi" / "mcubridge.lua",
+    ]
+
+    failures: list[str] = []
+    for path in files:
+        assert path.exists(), f"Missing expected defaults file: {path}"
+        data = path.read_text(encoding="utf-8", errors="replace")
+        if forbidden in data:
+            failures.append(f"{path.relative_to(_REPO_ROOT)}: contains forbidden placeholder '{forbidden}'")
+
+    assert not failures, "\n".join(failures)
+
+
+def test_no_lambda_or_nested_functions_in_runtime_package() -> None:
+    """Runtime code must avoid lambdas/closures.
+
+    Rationale: closures (including lambdas and nested defs) can capture mutable
+    state implicitly and hide aliasing. For embedded/system code, we prefer
+    explicit callables (methods, top-level functions, small callable objects).
+    """
+
+    runtime_root = _REPO_ROOT / "openwrt-mcu-bridge" / "mcubridge"
+    assert runtime_root.is_dir(), f"missing runtime root: {runtime_root}"
+
+    py_files = _iter_text_files(runtime_root, ("*.py",))
+    hits = _find_lambdas_and_nested_functions(py_files)
+
+    assert not hits, "Runtime package must not use lambda or nested defs:\n" + "\n".join(
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
+    )
+
+
+def test_no_shadowing_or_scope_escapes_in_runtime_package() -> None:
+    """Runtime code must avoid name shadowing and global/nonlocal.
+
+    This enforces a strict "no hidden aliasing" posture for embedded/system code.
+    """
+
+    runtime_root = _REPO_ROOT / "openwrt-mcu-bridge" / "mcubridge"
+    assert runtime_root.is_dir(), f"missing runtime root: {runtime_root}"
+
+    py_files = _iter_text_files(runtime_root, ("*.py",))
+    hits = _find_shadowing_and_scope_escapes(py_files)
+
+    assert not hits, "Runtime package must not shadow names or use global/nonlocal:\n" + "\n".join(
+        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
+    )
+
+
+def test_no_copied_first_party_packages_in_feeds() -> None:
+    """feeds/ must not contain copied trees of first-party packages.
+
+    Rationale: copying package sources into feeds/ creates drift and makes it
+    easy to accidentally build from stale code. Use symlinks instead.
+    """
+
+    feed_root = _REPO_ROOT / "feeds"
+    assert feed_root.is_dir(), f"missing feeds root: {feed_root}"
+
+    packages = [
+        "luci-app-mcubridge",
+        "openwrt-mcu-bridge",
+        "openwrt-mcu-core",
+    ]
+
+    failures: list[str] = []
+    for pkg in packages:
+        feed_entry = feed_root / pkg
+        src_dir = _REPO_ROOT / pkg
+
+        if not src_dir.is_dir():
+            failures.append(f"missing expected package directory at repo root: {pkg}")
+            continue
+
+        # It's OK if the feed entry does not exist (build scripts may create it).
+        # If it does exist, it must NOT be a copied tree.
+        if not feed_entry.exists() and not feed_entry.is_symlink():
+            continue
+
+        if not feed_entry.is_symlink():
+            failures.append(f"feeds/{pkg}: must not be a copied tree (expected symlink or absent)")
+            continue
+
+        # Resolve to ensure it points at the repo-root package.
+        try:
+            resolved = feed_entry.resolve(strict=True)
+        except FileNotFoundError:
+            failures.append(f"feeds/{pkg}: broken symlink")
+            continue
+
+        if resolved != src_dir.resolve(strict=True):
+            failures.append(f"feeds/{pkg}: points to {resolved}, expected {src_dir}")
+
+    assert not failures, "\n".join(failures)

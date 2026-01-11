@@ -2,7 +2,7 @@
 """
 Hardware Emulation Runner.
 This script is designed to launch SimAVR with the compiled Bridge firmware
-and connect it via a virtual serial port (socat) to the Python YunBridge daemon.
+and connect it via a virtual serial port (socat) to the Python McuBridge daemon.
 
 It serves as the End-to-End test entrypoint.
 """
@@ -53,11 +53,11 @@ def main():
     repo_root = script_dir.parent
 
     # Path to the Python package source (Required for PYTHONPATH)
-    package_root = repo_root / "openwrt-yun-bridge"
+    package_root = repo_root / "openwrt-mcu-bridge"
 
     # Add package to sys.path for direct imports in this script
     sys.path.insert(0, str(package_root))
-    from yunbridge.rpc import protocol
+    from mcubridge.rpc import protocol
 
     # Path to Firmware
     base_build_path = repo_root / "openwrt-library-arduino/build"
@@ -126,8 +126,8 @@ def main():
 
         # Provide configuration via a stub UCI module to match the daemon's
         # UCI-only configuration policy (even outside OpenWrt).
-        os.makedirs("/tmp/yunbridge/spool", exist_ok=True)
-        os.makedirs("/tmp/yunbridge/fs", exist_ok=True)
+        os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
+        os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
 
         uci_config = {
             "serial_port": SOCAT_PORT0,
@@ -136,13 +136,13 @@ def main():
             "mqtt_host": "127.0.0.1",
             "mqtt_port": "1883",
             "mqtt_tls": "0",
-            "mqtt_spool_dir": "/tmp/yunbridge/spool",
-            "file_system_root": "/tmp/yunbridge/fs",
+            "mqtt_spool_dir": "/tmp/mcubridge/spool",
+            "file_system_root": "/tmp/mcubridge/fs",
             "watchdog_enabled": "0",
             "debug": "1",
         }
 
-        uci_stub_dir = tempfile.TemporaryDirectory(prefix="yunbridge-uci-")
+        uci_stub_dir = tempfile.TemporaryDirectory(prefix="mcubridge-uci-")
         uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
         uci_stub_path.write_text(
             textwrap.dedent(
@@ -160,7 +160,7 @@ def main():
                         return False
 
                     def get_all(self, package: str, section: str):
-                        if package == "yunbridge" and section == "general":
+                        if package == "mcubridge" and section == "general":
                             return dict(_CONFIG)
                         return None
                 """
@@ -168,7 +168,7 @@ def main():
             encoding="utf-8",
         )
 
-        # Inject openwrt-yun-bridge into PYTHONPATH
+        # Inject openwrt-mcu-bridge into PYTHONPATH
         current_pythonpath = daemon_env.get("PYTHONPATH", "")
         daemon_env["PYTHONPATH"] = (
             f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_pythonpath}"
@@ -176,7 +176,7 @@ def main():
 
         daemon_cmd = [
             sys.executable,
-            "-m", "yunbridge.daemon",
+            "-m", "mcubridge.daemon",
             "--debug"
         ]
 

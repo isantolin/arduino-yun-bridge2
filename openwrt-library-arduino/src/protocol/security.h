@@ -2,7 +2,7 @@
  * @file security.h
  * @brief Security primitives for military-grade cryptographic operations.
  *
- * This file is part of Arduino Yun Ecosystem v2.
+ * This file is part of Arduino MCU Ecosystem v2.
  * (C) 2025-2026 Ignacio Santolin and contributors.
  *
  * [MIL-SPEC COMPLIANCE]

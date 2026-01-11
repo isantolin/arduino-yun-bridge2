@@ -37,7 +37,7 @@ fi
 
 FORCE_FORMAT="0"
 if command -v uci >/dev/null 2>&1; then
-    FORCE_FORMAT=$(uci -q get yunbridge.general.extroot_force 2>/dev/null || true)
+    FORCE_FORMAT=$(uci -q get mcubridge.general.extroot_force 2>/dev/null || true)
     [ -z "${FORCE_FORMAT}" ] && FORCE_FORMAT="0"
 fi
 
@@ -75,7 +75,7 @@ case "$DEVICE" in
     /dev/mmcblk[1-9]*|/dev/mmcblk[1-9]*p[0-9]*|/dev/sd[a-z][0-9]*) ;;
     *)
         echo "ERROR! El dispositivo detectado ($DEVICE) no corresponde a una tarjeta SD soportada." | tee -a $LOG_FILE
-        echo "Pasa el dispositivo como argumento: $0 <swap_mb> </dev/xxx>, o configure 'yunbridge.general.extroot_force=1' en UCI para omitir confirmaciones." | tee -a $LOG_FILE
+        echo "Pasa el dispositivo como argumento: $0 <swap_mb> </dev/xxx>, o configure 'mcubridge.general.extroot_force=1' en UCI para omitir confirmaciones." | tee -a $LOG_FILE
         exit 1
         ;;
 esac
@@ -322,8 +322,8 @@ fi
 echo "5. Configuration saved. System will reboot in 5 seconds." | tee -a $LOG_FILE
 echo "   After reboot, run 'df -h' and 'free' to verify the final status." | tee -a $LOG_FILE
 echo "   Antes de ejecutar ./3_install.sh puedes ajustar el control de flujo serie vía UCI:" | tee -a $LOG_FILE
-echo "     uci set yunbridge.general.serial_retry_timeout='0.75'" | tee -a $LOG_FILE
-echo "     uci set yunbridge.general.serial_retry_attempts='3'" | tee -a $LOG_FILE
-echo "     uci commit yunbridge" | tee -a $LOG_FILE
+echo "     uci set mcubridge.general.serial_retry_timeout='0.75'" | tee -a $LOG_FILE
+echo "     uci set mcubridge.general.serial_retry_attempts='3'" | tee -a $LOG_FILE
+echo "     uci commit mcubridge" | tee -a $LOG_FILE
 sleep 5
 reboot

@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 #
-# This file is part of Arduino Yun Ecosystem v2.
+# This file is part of Arduino MCU Ecosystem v2.
 #
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
-# compile.sh - Compila todos los paquetes del ecosistema Arduino Yun v2
+# compile.sh - Compila todos los paquetes del ecosistema Arduino MCU v2
 # Target: OpenWrt 25.12.0-rc2 (APK System)
 #
 
@@ -63,7 +63,7 @@ set -- "${POSITIONAL[@]}"
 
 # [CONFIG] Target Final OpenWrt 25.12.0-rc2
 OPENWRT_VERSION=${1:-"25.12.0-rc2"}
-OPENWRT_TARGET=${2:-"ath79/generic"}
+OPENWRT_TARGET=${2:-"malta/be"}
 
 OPENWRT_URL="downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
 
@@ -177,7 +177,7 @@ python3 "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
 echo "[INFO] Regenerating protocol files from spec..."
 python3 "$REPO_ROOT/tools/protocol/generate.py" \
     --spec "$REPO_ROOT/tools/protocol/spec.toml" \
-    --py "$REPO_ROOT/openwrt-yun-bridge/yunbridge/rpc/protocol.py" \
+    --py "$REPO_ROOT/openwrt-mcu-bridge/mcubridge/rpc/protocol.py" \
     --cpp "$REPO_ROOT/openwrt-library-arduino/src/protocol/rpc_protocol.h" || exit 1
 
 # --- BOOTSTRAP PYTHON CHECKS ---
@@ -279,18 +279,18 @@ if [ -d "$LOCAL_FEED_PATH" ]; then
     sed -i 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' "$FEEDS_CONF"
     
     # [FIX] Limpiar configuración antigua para forzar la ruta nueva
-    if grep -q "src-link yunbridge" "$FEEDS_CONF"; then
-        sed -i '/src-link yunbridge/d' "$FEEDS_CONF"
+    if grep -q "src-link mcubridge" "$FEEDS_CONF"; then
+        sed -i '/src-link mcubridge/d' "$FEEDS_CONF"
     fi
     
-    echo "src-link yunbridge $LOCAL_FEED_PATH" >> "$FEEDS_CONF"
+    echo "src-link mcubridge $LOCAL_FEED_PATH" >> "$FEEDS_CONF"
     echo "[INFO] Configured local feed at $LOCAL_FEED_PATH"
     LOCAL_FEED_ENABLED=1
 fi
 
 # Fallback: if local feed is NOT enabled, optionally copy package sources into the SDK.
 if [ "$LOCAL_FEED_ENABLED" -ne 1 ] && [ "$SYNC_PACKAGES_TO_SDK" -eq 1 ]; then
-    for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+    for pkg in luci-app-mcubridge openwrt-mcu-core openwrt-mcu-bridge; do
         if [ -d "$pkg" ]; then
             echo "[INFO] Syncing $pkg to SDK..."
             rm -rf "$SDK_DIR/package/$pkg"
@@ -363,15 +363,15 @@ fi
 
 
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
-    echo "[INFO] Installing yunbridge feed overrides..."
+    echo "[INFO] Installing mcubridge feed overrides..."
     
     # [FIX] Eliminar conflicto Paho MQTT (System vs Local)
     if [ -d "package/feeds/packages/python-paho-mqtt" ]; then
-        echo "[FIX] Removing upstream python-paho-mqtt (v1.6) to prioritize local yunbridge version (v2.1)..."
+        echo "[FIX] Removing upstream python-paho-mqtt (v1.6) to prioritize local mcubridge version (v2.1)..."
         rm -rf package/feeds/packages/python-paho-mqtt
     fi
     
-    ./scripts/feeds install -f -p yunbridge -a
+    ./scripts/feeds install -f -p mcubridge -a
 fi
 
 # [FIX] Cleanup uboot again
@@ -394,7 +394,7 @@ if [ -f "$USB_MODULES_MK" ]; then
 fi
 
 # Enable Packages
-REQUIRED_PKGS="openwrt-yun-bridge openwrt-yun-core luci-app-yunbridge"
+REQUIRED_PKGS="openwrt-mcu-bridge openwrt-mcu-core luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
 # Se ELIMINÓ python3-twisted porque prometheus_client ha sido optimizado para no usarlo.
 REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt mosquitto-client luaposix"
@@ -414,17 +414,17 @@ find "$BIN_DIR" -type f -name '*.apk' -delete
 cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # [FIX] Orden de compilación: Primero librerías críticas
-# Nota: Ahora están en el feed 'yunbridge' que apunta a 'feeds/' plano
+# Nota: Ahora están en el feed 'mcubridge' que apunta a 'feeds/' plano
 for lib in python3-paho-mqtt python3-aiomqtt python3-cobs python3-prometheus-client; do
     echo "[BUILD] Building library $lib..."
-    make package/feeds/yunbridge/$lib/compile V=s
+    make package/feeds/mcubridge/$lib/compile V=s
     
     # [FIX] Copiar artefactos .apk de librerías
     find bin/packages/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 
 # Luego paquetes principales
-for pkg in luci-app-yunbridge openwrt-yun-core openwrt-yun-bridge; do
+for pkg in luci-app-mcubridge openwrt-mcu-core openwrt-mcu-bridge; do
     echo "[BUILD] Building package $pkg (.apk)..."
     make package/$pkg/clean V=s || true
     make package/$pkg/compile V=s
@@ -447,7 +447,7 @@ fi
 echo "\n[OK] Build finished. Check the bin/ directory."
 
 # Cleanup
-for pkg in openwrt-yun-bridge luci-app-yunbridge openwrt-yun-core; do
+for pkg in openwrt-mcu-bridge luci-app-mcubridge openwrt-mcu-core; do
     find "$pkg" -type d -name build -exec rm -rf {} +
     find "$pkg" -type d -name bin -exec rm -rf {} +
     find "$pkg" -type d -name dist -exec rm -rf {} +

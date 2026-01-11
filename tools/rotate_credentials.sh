@@ -2,14 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOCAL_ROTATE_HELPER="${ROOT_DIR}/openwrt-yun-core/scripts/yunbridge-rotate-credentials"
+LOCAL_ROTATE_HELPER="${ROOT_DIR}/openwrt-mcu-core/scripts/mcubridge-rotate-credentials"
 
 show_help() {
   cat <<'EOF'
-Usage: ./tools/rotate_credentials.sh --host <yun-ip> [options]
+Usage: ./tools/rotate_credentials.sh --host <mcu-ip> [options]
 
 Options:
-  --host HOSTNAME        Target YunBridge host (IP or DNS).
+  --host HOSTNAME        Target McuBridge host (IP or DNS).
   --user USER            SSH username (default: root).
   --ssh "ARGS"           Extra options passed to ssh.
   --local PATH           Rotate credentials inside PATH (UCI config directory) without SSH.
@@ -120,7 +120,7 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 
-SSH_CMD=(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" -- /usr/bin/yunbridge-rotate-credentials)
+SSH_CMD=(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" -- /usr/bin/mcubridge-rotate-credentials)
 if ! OUTPUT=$("${SSH_CMD[@]}"); then
   exit 1
 fi

@@ -1,4 +1,4 @@
-"""Frame inspection utility for Yun Bridge developers.
+"""Frame inspection utility for MCU Bridge developers.
 
 This tool mirrors the Arduino-side FrameDebug example: it builds RPC
 frames, prints their metadata, and optionally writes them to the MCU
@@ -18,14 +18,14 @@ from dataclasses import dataclass
 from collections.abc import Iterable
 
 from cobs import cobs
-from yunbridge.rpc.protocol import (
+from mcubridge.rpc.protocol import (
     DEFAULT_BAUDRATE,
     FRAME_DELIMITER,
 )
-from yunbridge.rpc import protocol as rpc_protocol
-from yunbridge.rpc.frame import Frame
-from yunbridge.rpc.protocol import Command, Status
-from yunbridge.transport.termios_serial import TermiosSerial, SerialException
+from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc.frame import Frame
+from mcubridge.rpc.protocol import Command, Status
+from mcubridge.transport.termios_serial import TermiosSerial, SerialException
 
 
 @dataclass(slots=True)
@@ -193,8 +193,8 @@ def _non_negative_int(value: str) -> int:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect and optionally send Yun Bridge RPC frames. "
-            "Stop the yunbridge daemon before using --port."
+            "Inspect and optionally send MCU Bridge RPC frames. "
+            "Stop the mcubridge daemon before using --port."
         )
     )
     parser.add_argument(

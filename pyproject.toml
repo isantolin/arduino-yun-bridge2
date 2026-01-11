@@ -3,12 +3,12 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "openwrt-yun-bridge"
+name = "openwrt-mcu-bridge"
 version = "2.0.1"
-description = "Arduino Yun Bridge Protocol for OpenWrt (Python 3.13)"
+description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
-    # pyserial removed: replaced by built-in termios (yunbridge.transport.termios_serial)
+    # pyserial removed: replaced by built-in termios (mcubridge.transport.termios_serial)
     "paho-mqtt==2.1.0",      # STRICT: Required for CallbackAPIVersion.VERSION2
     "aiomqtt==2.5.0",        # STRICT: Python 3.13 compatible, validated against paho 2.1.0
     "cobs>=1.2.2",
@@ -17,18 +17,18 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["yunbridge"]
-package-dir = {"" = "openwrt-yun-bridge"}
+packages = ["mcubridge"]
+package-dir = {"" = "openwrt-mcu-bridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q --asyncio-mode=auto"
 testpaths = [
-    "openwrt-yun-bridge/tests",
+    "openwrt-mcu-bridge/tests",
 ]
 pythonpath = [
     ".",
-    "openwrt-yun-bridge"
+    "openwrt-mcu-bridge"
 ]
 
 [tool.black]
@@ -59,14 +59,14 @@ use_parentheses = true
 ensure_newline_before_comments = true
 
 [tool.pyright]
-include = ["openwrt-yun-bridge/yunbridge", "openwrt-yun-examples-python"]
+include = ["openwrt-mcu-bridge/mcubridge", "openwrt-mcu-examples-python"]
 exclude = ["**/__pycache__", "**/node_modules", "**/.*", ".venv_debug", '.venv']
 venv = ".venv"
 reportMissingImports = true
 reportMissingTypeStubs = false
 pythonVersion = "3.13"
 executionEnvironments = [
-  { root = "openwrt-yun-bridge/yunbridge" }
+  { root = "openwrt-mcu-bridge/mcubridge" }
 ]
 
 [tool.ruff]
@@ -80,7 +80,7 @@ select = ["E", "F", "W", "C90"]
 # Code generators are inherently complex: exclude from mccabe checks
 "tools/protocol/generate.py" = ["C901"]
 # Test helper functions can have complex logic for static analysis
-"openwrt-yun-bridge/tests/test_repo_policy_gates.py" = ["C901"]
+"openwrt-mcu-bridge/tests/test_repo_policy_gates.py" = ["C901"]
 
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability

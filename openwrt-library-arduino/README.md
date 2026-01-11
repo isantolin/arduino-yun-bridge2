@@ -1,6 +1,6 @@
-# YunBridge Arduino Library
+# McuBridge Arduino Library
 
-This library provides the MCU-side runtime for the Arduino Yun Bridge v2 project. It complements the OpenWrt daemon by handling RPC frames, pin control, datastore access, mailbox messaging, filesystem helpers, and process control from the Arduino sketch.
+This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project. It complements the OpenWrt daemon by handling RPC frames, pin control, datastore access, mailbox messaging, filesystem helpers, and process control from the Arduino sketch.
 
 ## Directory Layout
 
@@ -19,8 +19,8 @@ This library provides the MCU-side runtime for the Arduino Yun Bridge v2 project
 ## Installation
 
 1. Run `tools/install.sh` to copy the library into your Arduino libraries folder.
-2. Open Arduino IDE and locate the `BridgeControl` example under **File > Examples > YunBridge**.
-3. Upload to your Arduino Yun to validate the end-to-end communication with the bridge daemon.
+2. Open Arduino IDE and locate the `BridgeControl` example under **File > Examples > McuBridge**.
+3. Upload to your Arduino MCU to validate the end-to-end communication with the bridge daemon.
 
 ### External dependencies
 
@@ -56,8 +56,8 @@ void loop() {
 
 ## Building From Source
 
-- The library targets AVR-based Arduino Yun boards. Ensure the Arduino AVR core is installed.
-- The shared protocol headers are kept aligned with the Python daemon under `openwrt-yun-bridge/yunbridge/rpc`.
+- The library targets AVR-based Arduino MCU boards. Ensure the Arduino AVR core is installed.
+- The shared protocol headers are kept aligned with the Python daemon under `openwrt-mcu-bridge/mcubridge/rpc`.
 - Recent updates align the datastore, mailbox, and filesystem payloads with the binary protocol specification (length-prefixed values and `STATUS_*` propagation). The async process helpers now queue partial outputs so repeated `Bridge.processPoll()` calls deliver the full stream, and the library automatically issues additional polls when partial chunks arrive.
 - MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via MQTT (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
 

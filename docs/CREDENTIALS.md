@@ -1,4 +1,4 @@
-# YunBridge Credential Rotation
+# McuBridge Credential Rotation
 
 Secure deployments require the MCU, the Linux daemon, and the MQTT broker to agree on the same shared materials. This guide explains how to regenerate those secrets with the provided tooling and how to keep the Arduino firmware synchronized without leaking credentials into version control.
 
@@ -11,15 +11,15 @@ Secure deployments require the MCU, the Linux daemon, and the MQTT broker to agr
 ## Quick rotation from your workstation
 
 ```sh
-# Rotate credentials on a remote Yun and print the sketch snippet.
-./tools/rotate_credentials.sh --host <yun-ip>
+# Rotate credentials on a remote MCU and print the sketch snippet.
+./tools/rotate_credentials.sh --host <mcu-ip>
 ```
 
 What happens:
 
-1. The script connects via SSH (default user `root`) and runs `/usr/bin/yunbridge-rotate-credentials` on the device.
-2. The helper writes the regenerated secrets to UCI (`/etc/config/yunbridge`) and restarts the daemon.
-3. The script captures the freshly generated serial shared secret (stored in `yunbridge.general.serial_shared_secret`, also printed as `SERIAL_SECRET=...`) and prints a ready-to-paste snippet:
+1. The script connects via SSH (default user `root`) and runs `/usr/bin/mcubridge-rotate-credentials` on the device.
+2. The helper writes the regenerated secrets to UCI (`/etc/config/mcubridge`) and restarts the daemon.
+3. The script captures the freshly generated serial shared secret (stored in `mcubridge.general.serial_shared_secret`, also printed as `SERIAL_SECRET=...`) and prints a ready-to-paste snippet:
 
    ```c
    #define BRIDGE_SERIAL_SHARED_SECRET "<hex-secret>"
@@ -37,22 +37,22 @@ sudo ./tools/rotate_credentials.sh --local build/rootfs/etc/config \
   --emit-sketch-snippet my_project/BridgeSecret.inc
 ```
 
-The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `openwrt-yun-core/scripts/yunbridge-rotate-credentials`, and (optionally) drops a snippet file that you can include from multiple sketches.
+The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `openwrt-mcu-core/scripts/mcubridge-rotate-credentials`, and (optionally) drops a snippet file that you can include from multiple sketches.
 
 ## LuCI workflow
 
-The **Services → YunBridge → Credentials & TLS** page now shows an "Arduino Secret Template" block once the rotation succeeds. Use the **Copy snippet** button to paste the synchronized `BRIDGE_SERIAL_SHARED_SECRET` line directly into your sketch (before `#include <Bridge.h>`) or into a local header that you manage inside your project.
+The **Services → McuBridge → Credentials & TLS** page now shows an "Arduino Secret Template" block once the rotation succeeds. Use the **Copy snippet** button to paste the synchronized `BRIDGE_SERIAL_SHARED_SECRET` line directly into your sketch (before `#include <Bridge.h>`) or into a local header that you manage inside your project.
 
 ## Verifying the new material
 
 1. Rebuild or re-upload your Arduino sketch so it includes the updated `#define BRIDGE_SERIAL_SHARED_SECRET "..."` line (or the header where you stored that snippet).
-2. Run `tools/hardware_smoke_test.sh --host <yun>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
-3. Check daemon logs via `logread | grep yunbridge` or the LuCI status panel for `handshake` entries. Any `serial handshake rejected` messages typically mean the MCU firmware did not pick up the new header yet.
+2. Run `tools/hardware_smoke_test.sh --host <mcu>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
+3. Check daemon logs via `logread | grep mcubridge` or the LuCI status panel for `handshake` entries. Any `serial handshake rejected` messages typically mean the MCU firmware did not pick up the new header yet.
 
 ## Operational checklist
 
 - Track which devices have been rotated by tagging them in your asset inventory or by storing the `SERIAL_SECRET=...` line that `tools/rotate_credentials.sh` prints during automation runs.
-- If you mirror secrets into another system (e.g., provisioning service), parse the `SERIAL_SECRET=...` line that the CLI prints or call the LuCI endpoint (`/admin/services/yunbridge/rotate_credentials`) and use the `serial_secret` field in its JSON response.
+- If you mirror secrets into another system (e.g., provisioning service), parse the `SERIAL_SECRET=...` line that the CLI prints or call the LuCI endpoint (`/admin/services/mcubridge/rotate_credentials`) and use the `serial_secret` field in its JSON response.
 - Keep any snippet/header file with `BRIDGE_SERIAL_SHARED_SECRET` out of version control (or encrypt it) so each device preserves its unique material.
 - Store TLS assets separately from the credential file. If you use mutual TLS (mTLS), manage client certificates explicitly and keep them out of version control.
 

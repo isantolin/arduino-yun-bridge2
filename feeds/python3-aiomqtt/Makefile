@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-aiomqtt
 PKG_VERSION:=2.5.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PYPI_NAME:=aiomqtt
 PKG_SOURCE:=aiomqtt-$(PKG_VERSION).tar.gz
@@ -22,6 +22,7 @@ define Package/python3-aiomqtt
   SUBMENU:=Python
   TITLE:=Idiomatic asyncio MQTT client (v2.5.0)
   URL:=https://github.com/empicano/aiomqtt
+  PKG_ARCH:=all
   DEPENDS:=+python3-light +python3-paho-mqtt
 endef
 

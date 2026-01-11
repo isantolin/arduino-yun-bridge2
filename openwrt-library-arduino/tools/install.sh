@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# This file is part of Arduino Yun Ecosystem v2.
+# This file is part of Arduino MCU Ecosystem v2.
 #
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
@@ -17,7 +17,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-# YunBridge Arduino library install script - Robust version
+# McuBridge Arduino library install script - Robust version
 
 set -e
 
@@ -48,7 +48,7 @@ fi
 
 mkdir -p "$LIB_DIR"
 
-LIB_DST="$LIB_DIR/YunBridge"
+LIB_DST="$LIB_DIR/McuBridge"
 
 ensure_packetserial_library() {
   local packetserial_dir="$LIB_DIR/PacketSerial"
@@ -251,10 +251,10 @@ if [ ! -d src ]; then
 	exit 1
 fi
 
-echo "[INFO] Installing YunBridge library to: $LIB_DST"
+echo "[INFO] Installing McuBridge library to: $LIB_DST"
 # Remove any previous installation to avoid stale files from older layouts
 if [ -d "$LIB_DST" ]; then
-  echo "[INFO] Clearing existing YunBridge library contents"
+  echo "[INFO] Clearing existing McuBridge library contents"
   rm -rf "$LIB_DST"
 fi
 
@@ -270,4 +270,4 @@ if [ -d examples ]; then
   cp -a examples "$LIB_DST/"
 fi
 
-echo "[OK] YunBridge library installed successfully."
+echo "[OK] McuBridge library installed successfully."

@@ -1,5 +1,5 @@
 /*
- * This file is part of Arduino Yun Ecosystem v2.
+ * This file is part of Arduino MCU Ecosystem v2.
  * (C) 2025 Ignacio Santolin
  *
  * Test interface for BridgeTransport - provides controlled access to

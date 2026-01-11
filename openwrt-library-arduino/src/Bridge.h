@@ -1,8 +1,8 @@
 /**
  * @file Bridge.h
- * @brief Arduino Yun Bridge v2 - MCU-side RPC library.
+ * @brief Arduino MCU Bridge v2 - MCU-side RPC library.
  * 
- * This file is part of Arduino Yun Ecosystem v2.
+ * This file is part of Arduino MCU Ecosystem v2.
  * (C) 2025-2026 Ignacio Santolin and contributors.
  * 
  * [SIL-2 COMPLIANCE - IEC 61508]

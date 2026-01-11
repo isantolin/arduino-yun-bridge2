@@ -1,4 +1,4 @@
-# Yun Bridge v2 — Protocol & Architecture
+# MCU Bridge v2 — Protocol & Architecture
 
 Este documento unifica y reemplaza documentación histórica y dispersa.
 
@@ -13,7 +13,7 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                                │ (responses/snapshots)│ (commands)
                                │                     ▼
                       ┌────────────────────────────────────┐
-                      │   YunBridge daemon (Linux / MPU)   │
+                      │   McuBridge daemon (Linux / MPU)   │
                       │  - Policy (allow/deny)             │
                       │  - Dispatcher (MCU + MQTT routes)  │
                       │  - RuntimeState snapshots          │
@@ -49,11 +49,11 @@ Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`
 
 Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime):
 
-- **Defaults de OpenWrt/daemon**: `DEFAULT_MQTT_HOST`, `DEFAULT_MQTT_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `openwrt-yun-bridge/yunbridge/const.py`.
+- **Defaults de OpenWrt/daemon**: `DEFAULT_MQTT_HOST`, `DEFAULT_MQTT_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `openwrt-mcu-bridge/mcubridge/const.py`.
 
 Al ejecutar:
 
-- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py openwrt-yun-bridge/yunbridge/rpc/protocol.py --cpp openwrt-library-arduino/src/protocol/rpc_protocol.h`
+- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py openwrt-mcu-bridge/mcubridge/rpc/protocol.py --cpp openwrt-library-arduino/src/protocol/rpc_protocol.h`
 
 …se regeneran los bindings de Python y C++ y deben commitearse en el mismo cambio.
 
@@ -71,7 +71,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **RuntimeState**: mantiene el estado mutable (colas MQTT, handshake, spool, métricas) y expone snapshots consistentes para status, MQTT y Prometheus.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
 - **MCU Firmware (openwrt-library-arduino)**: implementa el protocolo binario y vela por el secreto compartido del enlace serie.
-- **Instrumentación**: el daemon escribe `/tmp/yunbridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
+- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
 
 ## Seguridad
 
@@ -87,7 +87,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **Destino de logs**: Por defecto OpenWrt usa `logread` (ring buffer en RAM), NO escribe a `/var/log/` en flash.
 - **Metrics MQTT**: snapshots periódicos en `br/system/metrics`.
 - **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
-- **Status Writer**: `/tmp/yunbridge_status.json` como snapshot local (tmpfs/RAM).
+- **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (tmpfs/RAM).
 
 ## Estado Seguro (Fail-Safe State) — IEC 61508 / SIL 2
 
@@ -136,9 +136,9 @@ MQTT spool retry: base=5s, max=60s
 ### Monitoreo de Estado Seguro
 
 El estado de salud del enlace se expone en:
-- `/tmp/yunbridge_status.json` → campo `link_is_synchronized`
+- `/tmp/mcubridge_status.json` → campo `link_is_synchronized`
 - MQTT topic `br/system/bridge/summary/value` → snapshot completo
-- Prometheus metric `yunbridge_serial_link_synchronized` (si habilitado)
+- Prometheus metric `mcubridge_serial_link_synchronized` (si habilitado)
 
 ## Configuración relevante
 
@@ -160,14 +160,14 @@ El estado de salud del enlace se expone en:
 
 ---
 
-## Notas de plataforma (Arduino Yun)
+## Notas de plataforma (Arduino MCU)
 
 ### Consola del kernel y conflicto con ttyATH0
 
-El Arduino Yun presenta un conflicto de hardware: el puerto serial `/dev/ttyATH0` es usado simultáneamente por:
+El Arduino MCU presenta un conflicto de hardware: el puerto serial `/dev/ttyATH0` es usado simultáneamente por:
 
 1. **Consola del kernel** (configurada en bootargs a 250000 baud)
-2. **Protocolo YunBridge** (opera a 115200 baud)
+2. **Protocolo McuBridge** (opera a 115200 baud)
 
 Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corromper frames COBS del protocolo, causando errores de parsing como:
 
@@ -175,9 +175,9 @@ Aunque los baud rates difieren, los mensajes `printk` del kernel pueden corrompe
 Frame parse error: payload_length=... cmd_id=... (COBS decode failed)
 ```
 
-**Solución automática**: El paquete `openwrt-yun-core` incluye el script UCI-defaults `95-yunbridge-silence-kernel-console` que:
+**Solución automática**: El paquete `openwrt-mcu-core` incluye el script UCI-defaults `95-mcubridge-silence-kernel-console` que:
 
-1. Crea `/etc/sysctl.d/99-yunbridge-no-console.conf` con `kernel.printk = 0 0 0 0`
+1. Crea `/etc/sysctl.d/99-mcubridge-no-console.conf` con `kernel.printk = 0 0 0 0`
 2. Añade un respaldo en `/etc/rc.local`
 
 Esto silencia los mensajes del kernel en la consola serial sin recompilar el kernel ni modificar U-Boot.
@@ -505,7 +505,7 @@ size_t decoded_len = rle::decode(output, compressed_len, decoded, sizeof(decoded
 
 **Python (daemon):**
 ```python
-from yunbridge.rpc.rle import encode, decode, should_compress
+from mcubridge.rpc.rle import encode, decode, should_compress
 
 data = b"A" * 100
 
@@ -520,7 +520,7 @@ if should_compress(data):
 - **Flash (MCU):** ~500 bytes de código
 - **Archivos fuente:**
   - C++: `openwrt-library-arduino/src/protocol/rle.h`
-  - Python: `openwrt-yun-bridge/yunbridge/rpc/rle.py`
+  - Python: `openwrt-mcu-bridge/mcubridge/rpc/rle.py`
   - Spec: `tools/protocol/spec.toml` (sección `[compression]`)
 
 ---

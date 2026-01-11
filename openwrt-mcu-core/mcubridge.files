@@ -1,0 +1,5 @@
+# List of files to install for McuBridge OpenWRT integration
+/usr/bin/mcubridge
+/usr/bin/mcubridge-hw-smoke
+/usr/bin/mcubridge-rotate-credentials
+/etc/init.d/mcubridge

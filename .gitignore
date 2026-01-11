@@ -37,10 +37,10 @@ venv/
 openwrt-library-arduino/build-coverage/
 openwrt-library-arduino/build-host-local/
 # Python dist folders
-openwrt-yun-client-python/dist/
-YunBridge-v2/dist/
+openwrt-mcu-client-python/dist/
+McuBridge-v2/dist/
 Bridge-v2/dist/
-luci-app-yunbridge/dist/
+luci-app-mcubridge/dist/
 **/dist/
 # Exclude any .apk or .deb anywhere
 **/*.apk
@@ -65,7 +65,7 @@ PHASE_3_REPORT.md
 .gemini/
 gha-creds-*.json
 .tmp/
-feeds/luci-app-yunbridge
-feeds/openwrt-yun-bridge
-feeds/openwrt-yun-core
+feeds/luci-app-mcubridge
+feeds/openwrt-mcu-bridge
+feeds/openwrt-mcu-core
 test_protocol_bin

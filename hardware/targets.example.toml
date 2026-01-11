@@ -14,14 +14,14 @@ retries = 1
 tags = ["lab"]
 
 [[targets]]
-name = "lab-yun-01"
+name = "lab-mcu-01"
 host = "192.168.50.21"
 tags = ["regression", "rev1"]
 notes = "Prototype board near the RF chamber"
 
 [[targets]]
-name = "staging-yun"
-host = "yun-staging.local"
+name = "staging-mcu"
+host = "mcu-staging.local"
 user = "admin"
 ssh = ["-o StrictHostKeyChecking=no"]
 tags = ["staging"]

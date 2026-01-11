@@ -1,4 +1,4 @@
-# Single source of truth for YunBridge daemon dependencies.
+# Single source of truth for McuBridge daemon dependencies.
 
 [[dependency]]
 name = "python3"
@@ -30,7 +30,7 @@ openwrt = "python3-paho-mqtt"
 pip = "paho-mqtt==2.1.0"
 rationale = "Synchronous MQTT client for legacy CGI scripts"
 
-# pyserial removed: replaced by built-in termios (yunbridge.transport.termios_serial)
+# pyserial removed: replaced by built-in termios (mcubridge.transport.termios_serial)
 # This eliminates the dependency on an unmaintained package (last release 2020)
 
 [[dependency]]

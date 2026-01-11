@@ -1,20 +1,20 @@
 {
     "typeCheckingMode": "standard",
     "strict": [
-        "openwrt-yun-bridge/yunbridge",
-        "openwrt-yun-examples-python/yunbridge_client",
-        "openwrt-yun-core/scripts"
+        "openwrt-mcu-bridge/mcubridge",
+        "openwrt-mcu-examples-python/mcubridge_client",
+        "openwrt-mcu-core/scripts"
     ],
     "include": [
         ".venv",
         ".tox",
-        "openwrt-yun-bridge/yunbridge",
-        "openwrt-yun-examples-python/yunbridge_client",
-        "openwrt-yun-core/scripts"
+        "openwrt-mcu-bridge/mcubridge",
+        "openwrt-mcu-examples-python/mcubridge_client",
+        "openwrt-mcu-core/scripts"
     ],
     "stubPath": "stubs",
     "extraPaths": [
-        "openwrt-yun-bridge"
+        "openwrt-mcu-bridge"
     ],
     "exclude": [
         "openwrt-sdk",

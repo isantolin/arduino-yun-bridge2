@@ -3,13 +3,13 @@ set -euo pipefail
 
 show_help() {
   cat <<'EOF'
-Usage: ./tools/hardware_smoke_test.sh --host <yun-ip> [options]
+Usage: ./tools/hardware_smoke_test.sh --host <mcu-ip> [options]
 
 Options:
-  --host HOSTNAME        Target YunBridge host (IP or DNS).
+  --host HOSTNAME        Target McuBridge host (IP or DNS).
   --user USER            SSH username (default: root).
   --ssh "ARGS"           Extra ssh options (e.g. "-i ~/.ssh/id_rsa").
-  --local                Run /usr/bin/yunbridge-hw-smoke locally instead of ssh.
+  --local                Run /usr/bin/mcubridge-hw-smoke locally instead of ssh.
   -h, --help             Show this message and exit.
 EOF
 }
@@ -37,7 +37,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ $LOCAL -eq 1 ]]; then
-  /usr/bin/yunbridge-hw-smoke
+  /usr/bin/mcubridge-hw-smoke
   exit 0
 fi
 
@@ -46,5 +46,5 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 
-SSH_CMD=(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" -- /usr/bin/yunbridge-hw-smoke)
+SSH_CMD=(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" -- /usr/bin/mcubridge-hw-smoke)
 "${SSH_CMD[@]}"

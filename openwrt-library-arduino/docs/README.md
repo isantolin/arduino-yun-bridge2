@@ -1,6 +1,6 @@
-# YunBridge Library Layout
+# McuBridge Library Layout
 
-This documentation outlines the internal structure of the YunBridge Arduino library.
+This documentation outlines the internal structure of the McuBridge Arduino library.
 
 ## Source Tree
 

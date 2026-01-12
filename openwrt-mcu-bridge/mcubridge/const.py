@@ -75,6 +75,7 @@ DEFAULT_MQTT_QUEUE_LIMIT: int = 256
 MQTT_TLS_MIN_VERSION: TLSVersion = TLSVersion.TLSv1_2
 # [CRITICAL] Spool directory in RAM to prevent Flash wear
 DEFAULT_MQTT_SPOOL_DIR: str = "/tmp/mcubridge/spool"
+MQTT_USER_PROP_FILE_PATH: str = "bridge-file-path"
 
 # -- MQTT Spool Backoff Strategy --
 SPOOL_BACKOFF_MULTIPLIER: float = 5.0
@@ -87,6 +88,11 @@ DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
 DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 4194304
 # Warning threshold for files growing large in RAM (1MB)
 FILE_LARGE_WARNING_BYTES: int = 1048576
+# Paths considered safe (volatile/RAM) for writing to avoid flash wear
+VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset(
+    {"/tmp", "/mnt", "/var/run", "/run"}
+)
+SYSTEMD_PRIVATE_PREFIX: str = "systemd-private-"
 
 # -- Component Limits --
 DEFAULT_PROCESS_TIMEOUT: int = 10
@@ -170,6 +176,7 @@ __all__ = [
     "SERIAL_FAILURE_STATUS_CODES",
     "SERIAL_SUCCESS_STATUS_CODES",
     "DEFAULT_MQTT_SPOOL_DIR",
+    "MQTT_USER_PROP_FILE_PATH",
     "DEFAULT_PROCESS_MAX_OUTPUT_BYTES",
     "DEFAULT_PROCESS_MAX_CONCURRENT",
     "DEFAULT_METRICS_HOST",
@@ -196,4 +203,6 @@ __all__ = [
     "TOPIC_FORBIDDEN_REASON",
     "DEFAULT_MQTT_TLS_INSECURE",
     "DEFAULT_ALLOW_NON_TMP_PATHS",
+    "VOLATILE_STORAGE_PATHS",
+    "SYSTEMD_PRIVATE_PREFIX",
 ]

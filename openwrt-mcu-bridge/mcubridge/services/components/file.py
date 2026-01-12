@@ -14,7 +14,12 @@ from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
-from ...const import FILE_LARGE_WARNING_BYTES
+from ...const import (
+    FILE_LARGE_WARNING_BYTES,
+    MQTT_USER_PROP_FILE_PATH,
+    SYSTEMD_PRIVATE_PREFIX,
+    VOLATILE_STORAGE_PATHS,
+)
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
 from ...state.context import RuntimeState
@@ -243,7 +248,7 @@ class FileComponent:
                         topic_name=response_topic,
                         payload=data,
                         message_expiry_interval=30,
-                        user_properties=(("bridge-file-path", filename),),
+                        user_properties=((MQTT_USER_PROP_FILE_PATH, filename),),
                     )
 
                     await self.ctx.enqueue_mqtt(
@@ -386,7 +391,7 @@ class FileComponent:
         try:
             resolved = path.resolve()
             is_volatile = False
-            for safe_prefix in ("/tmp", "/mnt", "/var/run", "/run"):
+            for safe_prefix in VOLATILE_STORAGE_PATHS:
                 if str(resolved).startswith(safe_prefix):
                     is_volatile = True
                     break
@@ -481,7 +486,7 @@ class FileComponent:
                     for entry in iterator:
                         if entry.is_symlink():
                             continue
-                        if current == Path("/tmp") and entry.name.startswith("systemd-private-"):
+                        if current == Path("/tmp") and entry.name.startswith(SYSTEMD_PRIVATE_PREFIX):
                             continue
                         try:
                             if entry.is_dir(follow_symlinks=False):

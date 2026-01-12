@@ -66,9 +66,9 @@ define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
-	# Never ship tests/ in production packages (apk/ipk). If tests are added under
-	# mcubridge/ in the future, strip them from the payload here.
-	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" \) -prune -exec rm -rf {} + || true
+	# Never ship tests/ or tools/ in production packages (apk/ipk).
+	# tools/ contains developer-only stubs (frame_debug) not needed at runtime.
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
 	$(CP) ./mcubridge.sh $(PKG_BUILD_DIR)/
 endef

@@ -22,6 +22,7 @@ constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = 200;
 constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = 5;
 constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = 2;
 constexpr uint16_t RPC_INVALID_ID_SENTINEL = 65535;
+constexpr uint16_t RPC_CMD_FLAG_COMPRESSED = 32768;
 constexpr uint8_t RPC_UINT8_MASK = 255;
 constexpr uint16_t RPC_UINT16_MAX = 65535;
 constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = 255;

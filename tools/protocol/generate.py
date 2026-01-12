@@ -232,6 +232,10 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(
             f"constexpr uint16_t RPC_INVALID_ID_SENTINEL = {consts['invalid_id_sentinel']};\n"
         )
+    if "cmd_flag_compressed" in consts:
+        out.write(
+            f"constexpr uint16_t RPC_CMD_FLAG_COMPRESSED = {consts['cmd_flag_compressed']};\n"
+        )
     if "uint8_mask" in consts:
         out.write(
             f"constexpr uint8_t RPC_UINT8_MASK = {consts['uint8_mask']};\n"
@@ -406,6 +410,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if "invalid_id_sentinel" in consts:
         out.write(
             f"INVALID_ID_SENTINEL: Final[int] = {consts['invalid_id_sentinel']}\n"
+        )
+    if "cmd_flag_compressed" in consts:
+        out.write(
+            f"CMD_FLAG_COMPRESSED: Final[int] = {consts['cmd_flag_compressed']}\n"
         )
     if "uint8_mask" in consts:
         out.write(

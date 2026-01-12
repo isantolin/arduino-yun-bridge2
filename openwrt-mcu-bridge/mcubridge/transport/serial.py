@@ -16,6 +16,7 @@ import tty
 from typing import Any, Sized, TypeGuard, cast, Final
 
 from cobs import cobs
+from mcubridge.rpc import rle
 
 # Use our pure-termios serial implementation instead of pyserial
 from mcubridge.transport.termios_serial import (
@@ -543,6 +544,18 @@ class SerialTransport:
         try:
             raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
+
+            # RLE Decompression
+            if frame.command_id & protocol.CMD_FLAG_COMPRESSED:
+                frame.command_id &= ~protocol.CMD_FLAG_COMPRESSED
+                try:
+                    frame.payload = rle.decode(frame.payload)
+                except ValueError as exc:
+                    logger.warning("RLE decompression failed: %s", exc)
+                    self.state.record_serial_decode_error()
+                    if self._should_emit_parse_error_status():
+                        await self.service.send_frame(Status.MALFORMED.value, b"RLE_FAIL")
+                    return
 
             if logger.isEnabledFor(logging.DEBUG):
                 try:

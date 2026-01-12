@@ -20,6 +20,7 @@ from mcubridge.rpc.contracts import (
     response_to_request,
 )
 from mcubridge.rpc.protocol import Status
+from mcubridge.rpc import rle, protocol
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
@@ -132,8 +133,21 @@ class SerialFlowController:
             )
             return False
 
+        final_cmd = command_id
+        final_payload = payload
+
+        # RLE Compression
+        if payload and rle.should_compress(payload):
+            try:
+                compressed = rle.encode(payload)
+                if len(compressed) < len(payload):
+                    final_cmd |= protocol.CMD_FLAG_COMPRESSED
+                    final_payload = compressed
+            except Exception:
+                self._logger.warning("Compression failed for command 0x%02X", command_id)
+
         if not self._should_track(command_id):
-            return await sender(command_id, payload)
+            return await sender(final_cmd, final_payload)
 
         pending = PendingCommand(
             command_id=command_id,
@@ -145,7 +159,7 @@ class SerialFlowController:
             self._current = pending
 
         try:
-            return await self._execute_with_retries(pending, payload, sender)
+            return await self._execute_with_retries(pending, final_payload, sender, final_cmd)
         finally:
             async with self._condition:
                 if self._current is pending:
@@ -250,13 +264,15 @@ class SerialFlowController:
         pending: PendingCommand,
         payload: bytes,
         sender: SendFrameCallable,
+        actual_cmd_id: int | None = None,
     ) -> bool:
+        cmd_to_send = actual_cmd_id if actual_cmd_id is not None else pending.command_id
         for attempt_num in range(1, self._max_attempts + 1):
             try:
                 pending.attempts = attempt_num
                 self._notify_pipeline("start", pending)
                 self._reset_pending_state(pending)
-                await self._send_and_wait(pending, payload, sender)
+                await self._send_and_wait(pending, payload, sender, cmd_to_send)
                 self._emit_metric("ack")
                 self._notify_pipeline("success", pending)
                 return True
@@ -296,8 +312,9 @@ class SerialFlowController:
         pending: PendingCommand,
         payload: bytes,
         sender: SendFrameCallable,
+        actual_cmd_id: int,
     ) -> None:
-        send_ok = await sender(pending.command_id, payload)
+        send_ok = await sender(actual_cmd_id, payload)
         if not send_ok:
             self._logger.error(
                 "Serial write failed for command 0x%02X",

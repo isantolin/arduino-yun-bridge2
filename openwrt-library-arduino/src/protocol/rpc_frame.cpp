@@ -120,7 +120,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     }
 
     // Check 3: Safe Decoding
-    size_t actual_written = cobs::decode(_rx_buffer, _rx_buffer_ptr, _rx_buffer);
+    size_t actual_written = cobs::decode(_rx_buffer, _rx_buffer_ptr, _rx_buffer, sizeof(_rx_buffer));
     
     // Check 4: Integrity Verification
     if (actual_written != decoded_len) {

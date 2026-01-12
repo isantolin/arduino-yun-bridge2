@@ -77,19 +77,21 @@ inline size_t encode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
  * @param src_buf  Source buffer containing COBS-encoded data
  * @param src_len  Length of encoded data
  * @param dst_buf  Destination buffer for decoded data (can be same as src_buf for in-place decode)
+ * @param dst_limit Maximum size of the destination buffer
  * @return         Length of decoded data, or 0 on error
  * 
  * Note: Decoded data is always smaller than or equal to encoded data,
  * so in-place decoding is safe.
  */
-inline size_t decode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
-  if (!src_buf || !dst_buf || src_len == 0) {
+inline size_t decode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf, size_t dst_limit) {
+  if (!src_buf || !dst_buf || src_len == 0 || dst_limit == 0) {
     return 0;
   }
 
   const uint8_t* src = src_buf;
   const uint8_t* src_end = src_buf + src_len;
   uint8_t* dst = dst_buf;
+  uint8_t* dst_end = dst_buf + dst_limit;
 
   while (src < src_end) {
     uint8_t code = *src++;
@@ -101,11 +103,17 @@ inline size_t decode(const uint8_t* src_buf, size_t src_len, uint8_t* dst_buf) {
 
     // Copy (code - 1) data bytes
     for (uint8_t i = 1; i < code && src < src_end; i++) {
+      if (dst >= dst_end) {
+        return 0; // Buffer overflow protection
+      }
       *dst++ = *src++;
     }
 
     // If code < 0xFF, there's an implicit zero (unless we're at the end)
     if (code < 0xFF && src < src_end) {
+      if (dst >= dst_end) {
+        return 0; // Buffer overflow protection
+      }
       *dst++ = 0;
     }
   }

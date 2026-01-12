@@ -317,13 +317,9 @@ class RuntimeConfig:
 
 
 def _load_raw_config() -> dict[str, str]:
-    try:
-        uci_values = get_uci_config()
-        if uci_values:
-            return uci_values
-    except Exception:
-        # get_uci_config already logs, simply fall back to defaults
-        pass
+    uci_values = get_uci_config()
+    if uci_values:
+        return uci_values
     return get_default_config()
 
 

@@ -545,7 +545,9 @@ class FileComponent:
     @staticmethod
     def _write_file_sync(path: Path, data: bytes) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("ab") as f:
+        # [SIL-2] Use "wb" (overwrite) instead of "ab" (append) to ensure determinism.
+        # This prevents unchecked file growth (resource exhaustion) if the client retries.
+        with path.open("wb") as f:
             f.write(data)
             if f.tell() > FILE_LARGE_WARNING_BYTES:
                 logger.warning("File %s is growing large (>1MB) in RAM!", path)

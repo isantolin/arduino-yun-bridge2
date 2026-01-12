@@ -225,6 +225,7 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(module, "load_runtime_config", lambda: fake_config)
     monkeypatch.setattr(module, "publish_with_retries", _fake_publish)
+    monkeypatch.setattr(module, "configure_logging", lambda config: None)
 
     environ: dict[str, str] = {
         "REQUEST_METHOD": "POST",
@@ -265,6 +266,7 @@ def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     monkeypatch.setattr(module, "load_runtime_config", lambda: fake_config)
+    monkeypatch.setattr(module, "configure_logging", lambda config: None)
     monkeypatch.setattr(
         module.os,
         "environ",

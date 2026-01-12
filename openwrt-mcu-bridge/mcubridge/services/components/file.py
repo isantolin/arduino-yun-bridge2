@@ -399,6 +399,7 @@ class FileComponent:
                 )
         except Exception:
             # Don't block write if check fails
+            logger.debug("Failed to verify flash write safety", exc_info=True)
             pass
 
         payload_size = len(data)

@@ -329,12 +329,13 @@ class ProcessComponent:
             try:
                 await proc.wait()
             except Exception:
-                pass
+                logger.debug("Error awaiting process during cleanup", exc_info=True)
             return Status.ERROR.value, b"", b"Internal error", None
 
         try:
             timed_out = bool(wait_task.result())
         except Exception:
+            logger.debug("Failed to retrieve sync process wait result", exc_info=True)
             timed_out = False
 
         stdout_bytes = bytes(stdout_buffer)

@@ -183,6 +183,7 @@ async def _bridge_snapshot_loop(
         await _emit_bridge_snapshot(state, enqueue, flavor)
     except Exception:
         # Already logged in _emit_bridge_snapshot
+        logger.debug("Bridge snapshot emit failed (initial)", exc_info=True)
         pass
 
     while True:

@@ -198,7 +198,8 @@ static size_t count_status_ack_frames(const ByteBuffer<8192>& buffer) {
             const size_t decoded_len = cobs::decode(
                 &buffer.data[cursor],
                 segment_len,
-                decoded
+                decoded,
+                sizeof(decoded)
             );
             if (decoded_len >= sizeof(rpc::FrameHeader)) {
                 const uint16_t cmd = rpc::read_u16_be(&decoded[3]);

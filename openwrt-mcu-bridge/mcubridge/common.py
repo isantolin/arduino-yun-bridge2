@@ -193,7 +193,7 @@ def get_uci_config() -> dict[str, str]:
 
             return clean_config
 
-    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+    except Exception as exc:  # [FAIL-SAFE] Catch-all to ensure defaults are loaded
         logger.warning("Failed to load UCI configuration: %s", exc)
         return get_default_config()
 

@@ -317,9 +317,12 @@ class RuntimeConfig:
 
 
 def _load_raw_config() -> dict[str, str]:
-    uci_values = get_uci_config()
-    if uci_values:
-        return uci_values
+    try:
+        uci_values = get_uci_config()
+        if uci_values:
+            return uci_values
+    except Exception:
+        logger.exception("Failed to load UCI configuration; falling back to defaults")
     return get_default_config()
 
 

@@ -126,7 +126,8 @@ def _open_serial_hardware(ser: TermiosSerial, url: str) -> None:
             raise SerialException("Serial port opened but no fd available")
         os.set_blocking(ser.fd, False)
         _ensure_raw_mode(ser, url)
-    except Exception:  # pragma: no cover - cleanup guard
+    except Exception as exc:  # pragma: no cover - cleanup guard
+        logger.warning("Error opening serial hardware, attempting cleanup: %s", exc)
         if getattr(ser, "is_open", False):
             ser.close()
         raise
@@ -436,8 +437,8 @@ class SerialTransport:
             try:
                 self.writer.close()
                 await self.writer.wait_closed()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Error closing serial writer: %s", exc)
         self.writer = None
         self.reader = None
         self.state.serial_writer = None
@@ -445,8 +446,8 @@ class SerialTransport:
         self.state.serial_tx_allowed.set()
         try:
             await self.service.on_serial_disconnected()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Error in on_serial_disconnected hook: %s", exc)
         self.service.register_serial_sender(serial_sender_not_ready)
 
     async def _read_loop(self) -> None:
@@ -597,14 +598,14 @@ class SerialTransport:
                         error_data[: protocol.CRC_COVERED_HEADER_SIZE],
                     )
                 except Exception:
-                    pass
+                    logger.debug("Failed to extract command hint from malformed packet", exc_info=True)
 
             truncated = error_data[:32]
             payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated
             try:
                 await self.service.send_frame(status.value, payload)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to send malformed status response: %s", exc)
         except Exception:
             logger.exception("Error processing frame")
 

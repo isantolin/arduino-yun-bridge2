@@ -37,11 +37,20 @@ def test_build_handler_prefers_syslog_when_socket_exists(tmp_path: Path, monkeyp
     fake_socket = tmp_path / "devlog"
     fake_socket.write_text("")
 
+    class MockSysLogHandler(logging.Handler):
+        LOG_DAEMON = "mock_facility"
+        def __init__(self, address: str, facility: str) -> None:
+            super().__init__()
+            self.address = address
+            self.facility = facility
+            self.ident = None
+
+    monkeypatch.setattr(log_mod, "SysLogHandler", MockSysLogHandler)
     monkeypatch.setattr(log_mod, "SYSLOG_SOCKET", fake_socket)
     monkeypatch.setattr(log_mod, "SYSLOG_SOCKET_FALLBACK", tmp_path / "varrunlog")
 
     handler = log_mod._build_handler()
-    assert isinstance(handler, logging.handlers.SysLogHandler)
+    assert isinstance(handler, MockSysLogHandler)
     assert getattr(handler, "ident", "") == "mcubridge "
 
 

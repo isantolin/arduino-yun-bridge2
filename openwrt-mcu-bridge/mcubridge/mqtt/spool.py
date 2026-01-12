@@ -280,7 +280,7 @@ class MQTTPublishSpool:
                 try:
                     count += len(self._disk_queue)
                 except Exception:
-                    pass
+                    logger.debug("Error counting disk queue items", exc_info=True)
             return count
 
     @property
@@ -307,7 +307,7 @@ class MQTTPublishSpool:
                 # the queue is corrupt, so close it to stop further disk I/O.
                 self._disk_queue.close()
             except Exception:
-                pass
+                logger.debug("Error closing disk queue during fallback", exc_info=True)
             self._disk_queue = None
         if self._fallback_hook is not None:
             try:
@@ -338,6 +338,7 @@ class MQTTPublishSpool:
                 current_size += len(self._disk_queue)
             except Exception:
                 # Can't count disk, assume 0 for disk part or just trim memory
+                logger.debug("Error counting disk queue for trim", exc_info=True)
                 pass
 
         dropped = 0
@@ -349,8 +350,9 @@ class MQTTPublishSpool:
                     dropped += 1
                     current_size -= 1
                     continue
-            except Exception:
+            except Exception as exc:
                 # Disk failure during trim, degrade
+                logger.error("Disk failure during trim: %s", exc)
                 self._activate_fallback("trim_failed")
 
             if self._memory_queue:

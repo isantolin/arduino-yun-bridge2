@@ -427,7 +427,7 @@ static void test_cobs_native_roundtrip() {
       TEST_ASSERT(encoded[i] != 0);
     }
 
-    size_t dec_len = cobs::decode(encoded, enc_len, decoded);
+    size_t dec_len = cobs::decode(encoded, enc_len, decoded, sizeof(decoded));
     TEST_ASSERT(dec_len == pattern_lens[p]);
 
     // Verify decoded matches original

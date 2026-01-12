@@ -132,8 +132,8 @@ static void test_cobs_null_guards() {
   TEST_ASSERT(cobs::encode(nullptr, 1, dst) == 0);
   TEST_ASSERT(cobs::encode(src, sizeof(src), nullptr) == 0);
 
-  TEST_ASSERT(cobs::decode(nullptr, 1, dst) == 0);
-  TEST_ASSERT(cobs::decode(src, sizeof(src), nullptr) == 0);
+  TEST_ASSERT(cobs::decode(nullptr, 1, dst, sizeof(dst)) == 0);
+  TEST_ASSERT(cobs::decode(src, sizeof(src), nullptr, 0) == 0);
 }
 
 static void test_transport_sendFrame_rejects_oversized_payload() {

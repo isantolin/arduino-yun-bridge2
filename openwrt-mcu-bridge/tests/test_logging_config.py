@@ -52,6 +52,7 @@ def test_configure_logging_syslog(tmp_path) -> None:
         allowed_commands=(),
         file_system_root="/tmp",
         process_timeout=5,
+        serial_shared_secret=b"valid_secret_1234",
     )
 
     with patch("mcubridge.config.logging.SYSLOG_SOCKET", fake_socket):

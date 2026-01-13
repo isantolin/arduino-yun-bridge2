@@ -13,8 +13,12 @@ from typing import Deque, Protocol, Callable, cast
 
 try:
     import sqlite3
+    SqliteError = sqlite3.Error  # type: ignore[assignment]
 except ImportError:  # pragma: no cover - optional on OpenWrt images
     sqlite3 = None  # type: ignore[assignment]
+
+    class SqliteError(Exception):  # type: ignore
+        pass
 
 from .messages import SpoolRecord, QueuedPublish
 
@@ -175,7 +179,7 @@ class MQTTPublishSpool:
                     DiskQueue,
                     SqliteDeque(directory=str(self.directory)),
                 )
-            except (OSError, sqlite3.Error) as exc:
+            except (OSError, SqliteError) as exc:
                 logger.warning(
                     "Failed to initialize disk spool at %s; falling back "
                     "to memory-only mode. Error: %s",
@@ -197,7 +201,7 @@ class MQTTPublishSpool:
                         close_fn()
                     else:
                         self._disk_queue.clear()
-                except (OSError, sqlite3.Error):
+                except (OSError, SqliteError):
                     logger.warning("Error closing disk queue", exc_info=True)
             self._disk_queue = None
             self._memory_queue.clear()
@@ -214,7 +218,7 @@ class MQTTPublishSpool:
             if self._use_disk and self._disk_queue is not None:
                 try:
                     self._disk_queue.append(record)
-                except (OSError, sqlite3.Error, pickle.PickleError) as exc:
+                except (OSError, SqliteError, pickle.PickleError) as exc:
                     self._handle_disk_error(exc, "append")
                     # Fallback immediately for this message
                     self._memory_queue.append(record)
@@ -236,7 +240,7 @@ class MQTTPublishSpool:
                     try:
                         if len(self._disk_queue) > 0:
                             record = self._disk_queue.popleft()
-                    except (OSError, sqlite3.Error, pickle.PickleError) as exc:
+                    except (OSError, SqliteError, pickle.PickleError) as exc:
                         self._handle_disk_error(exc, "pop")
                         # Disk failed, try memory next loop iteration
                         continue
@@ -266,7 +270,7 @@ class MQTTPublishSpool:
             if self._use_disk and self._disk_queue is not None:
                 try:
                     self._disk_queue.appendleft(record)
-                except (OSError, sqlite3.Error, pickle.PickleError) as exc:
+                except (OSError, SqliteError, pickle.PickleError) as exc:
                     self._handle_disk_error(exc, "requeue")
                     self._memory_queue.appendleft(record)
             else:
@@ -279,7 +283,7 @@ class MQTTPublishSpool:
             if self._disk_queue is not None:
                 try:
                     count += len(self._disk_queue)
-                except (OSError, sqlite3.Error):
+                except (OSError, SqliteError):
                     logger.debug("Error counting disk queue items", exc_info=True)
             return count
 
@@ -306,7 +310,7 @@ class MQTTPublishSpool:
                 # Attempting to salvage data from disk could be dangerous if
                 # the queue is corrupt, so close it to stop further disk I/O.
                 self._disk_queue.close()
-            except (OSError, sqlite3.Error):
+            except (OSError, SqliteError):
                 logger.debug("Error closing disk queue during fallback", exc_info=True)
             self._disk_queue = None
         if self._fallback_hook is not None:
@@ -336,7 +340,7 @@ class MQTTPublishSpool:
         if self._disk_queue is not None:
             try:
                 current_size += len(self._disk_queue)
-            except (OSError, sqlite3.Error):
+            except (OSError, SqliteError):
                 # Can't count disk, assume 0 for disk part or just trim memory
                 logger.debug("Error counting disk queue for trim", exc_info=True)
                 pass
@@ -350,7 +354,7 @@ class MQTTPublishSpool:
                     dropped += 1
                     current_size -= 1
                     continue
-            except (OSError, sqlite3.Error) as exc:
+            except (OSError, SqliteError) as exc:
                 # Disk failure during trim, degrade
                 logger.error("Disk failure during trim: %s", exc)
                 self._activate_fallback("trim_failed")

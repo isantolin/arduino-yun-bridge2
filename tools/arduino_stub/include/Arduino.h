@@ -161,3 +161,10 @@ constexpr T constrain(T value, T minimum, T maximum) {
 #define bitSet(value, bit) ((value) |= (1UL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
 #define bitWrite(value, bit, bitvalue) (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
+
+// Interrupts (Stubs for host tests)
+// In a host test environment, we generally run single-threaded logic tests,
+// so disabling/enabling interrupts can be treated as no-ops.
+// These are required because Bridge.cpp uses them for atomic state access.
+inline void noInterrupts() {}
+inline void interrupts() {}

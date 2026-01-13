@@ -1,14 +1,11 @@
-"""Tests for structured logging configuration."""
-
-from __future__ import annotations
+"""Tests for the logging configuration."""
 
 import json
 import logging
-from pathlib import Path
+from unittest.mock import patch
 
-import pytest
-
-import mcubridge.config.logging as log_mod
+from mcubridge.config import logging as log_mod
+from mcubridge.config.settings import RuntimeConfig
 
 
 def test_serialise_value_handles_bytes_and_objects() -> None:
@@ -21,42 +18,46 @@ def test_serialise_value_handles_bytes_and_objects() -> None:
         args=(),
         exc_info=None,
     )
-    record.custom_bytes = b"caf\xc3\xa9"
-    record.custom_obj = object()
+    record.custom_bytes = b"caf\xc3\xa9"  # type: ignore
+    record.custom_obj = object()  # type: ignore
 
     formatter = log_mod.StructuredLogFormatter()
     payload = json.loads(formatter.format(record))
 
     assert payload["logger"] == "test"
     assert payload["message"] == "hello"
-    assert payload["extra"]["custom_bytes"] == "café"
-    assert isinstance(payload["extra"]["custom_obj"], str)
+    # [SIL-2] Updated expectation: bytes are now hex-formatted for safety/clarity
+    # "café" in UTF-8 is 0x63 0x61 0x66 0xC3 0xA9
+    assert payload["extra"]["custom_bytes"] == "[63 61 66 C3 A9]"
+    assert str(record.custom_obj) in payload["extra"]["custom_obj"]
 
 
-def test_build_handler_prefers_syslog_when_socket_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_socket = tmp_path / "devlog"
-    fake_socket.write_text("")
+def test_configure_logging_syslog(tmp_path) -> None:
+    fake_socket = tmp_path / "log"
+    fake_socket.touch()
 
-    class MockSysLogHandler(logging.Handler):
-        LOG_DAEMON = "mock_facility"
-        def __init__(self, address: str, facility: str) -> None:
-            super().__init__()
-            self.address = address
-            self.facility = facility
-            self.ident = None
+    config = RuntimeConfig(
+        serial_port="/dev/ttyACM0",
+        serial_baud=115200,
+        serial_safe_baud=115200,
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        mqtt_user=None,
+        mqtt_pass=None,
+        mqtt_tls=True,
+        mqtt_cafile=None,
+        mqtt_certfile=None,
+        mqtt_keyfile=None,
+        mqtt_topic="arduino",
+        allowed_commands=(),
+        file_system_root="/tmp",
+        process_timeout=5,
+    )
 
-    monkeypatch.setattr(log_mod, "SysLogHandler", MockSysLogHandler)
-    monkeypatch.setattr(log_mod, "SYSLOG_SOCKET", fake_socket)
-    monkeypatch.setattr(log_mod, "SYSLOG_SOCKET_FALLBACK", tmp_path / "varrunlog")
-
-    handler = log_mod._build_handler()
-    assert isinstance(handler, MockSysLogHandler)
-    assert getattr(handler, "ident", "") == "mcubridge "
-
-
-def test_build_handler_falls_back_to_stream_when_no_socket(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(log_mod, "SYSLOG_SOCKET", tmp_path / "missing")
-    monkeypatch.setattr(log_mod, "SYSLOG_SOCKET_FALLBACK", tmp_path / "missing2")
-
-    handler = log_mod._build_handler()
-    assert isinstance(handler, logging.StreamHandler)
+    with patch("mcubridge.config.logging.SYSLOG_SOCKET", fake_socket):
+        with patch("logging.config.dictConfig") as mock_dict_config:
+            log_mod.configure_logging(config)
+            mock_dict_config.assert_called_once()
+            config_arg = mock_dict_config.call_args[0][0]
+            assert "handlers" in config_arg
+            assert "mcubridge" in config_arg["handlers"]

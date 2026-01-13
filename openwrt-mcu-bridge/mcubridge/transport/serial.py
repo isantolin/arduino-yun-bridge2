@@ -31,6 +31,7 @@ from mcubridge.rpc.protocol import FRAME_DELIMITER
 from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.rpc.protocol import Command, Status
+
 # Import directly from handshake to avoid circular dependency via runtime
 from mcubridge.services.handshake import SerialHandshakeFatal
 
@@ -60,17 +61,15 @@ def format_hexdump(data: bytes, prefix: str = "") -> str:
 
     lines: list[str] = []
     for offset in range(0, len(data), 16):
-        chunk = data[offset:offset + 16]
+        chunk = data[offset : offset + 16]
         # Hex part: groups of 4 bytes separated by double space
         hex_parts: list[str] = []
         for i in range(0, 16, 4):
-            group = chunk[i:i + 4]
+            group = chunk[i : i + 4]
             hex_parts.append(" ".join(f"{b:02X}" for b in group))
         hex_str = "  ".join(hex_parts)
         # ASCII part: printable chars or '.'
-        ascii_str = "".join(
-            chr(b) if 32 <= b < 127 else "." for b in chunk
-        )
+        ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
         # Pad hex_str to fixed width (47 chars for 16 bytes)
         hex_str = hex_str.ljust(47)
         lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
@@ -82,7 +81,10 @@ def format_hexdump(data: bytes, prefix: str = "") -> str:
 FRAMING_OVERHEAD: Final[int] = 4
 
 MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE + FRAMING_OVERHEAD
+    protocol.CRC_COVERED_HEADER_SIZE
+    + protocol.MAX_PAYLOAD_SIZE
+    + protocol.CRC_SIZE
+    + FRAMING_OVERHEAD
 )
 
 BinaryPacket = bytes | bytearray | memoryview
@@ -150,6 +152,7 @@ class FlowControlMixin:
     Mixin to implement asyncio flow control logic.
     Replicates asyncio.streams.FlowControlMixin for Python 3.13 compatibility.
     """
+
     def __init__(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
         if loop is None:
             self._loop = asyncio.get_running_loop()
@@ -195,6 +198,7 @@ class FlowControlMixin:
 
 class SerialProtocol(asyncio.Protocol):
     """Native asyncio Protocol for Serial communication (Read side)."""
+
     def __init__(self) -> None:
         self.transport: asyncio.Transport | None = None
         self.reader: asyncio.StreamReader = asyncio.StreamReader()
@@ -222,6 +226,7 @@ class _SerialReadProtocolFactory:
 
 class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
     """Native asyncio Protocol for Serial communication (Write side with Flow Control)."""
+
     def __init__(self) -> None:
         FlowControlMixin.__init__(self)
         self.transport: asyncio.Transport | None = None
@@ -277,10 +282,7 @@ async def _open_serial_connection(
     write_transport, write_protocol = await loop.connect_write_pipe(write_factory, ser)
 
     writer = asyncio.StreamWriter(
-        write_transport,
-        write_protocol,
-        read_protocol.reader,
-        loop
+        write_transport, write_protocol, read_protocol.reader, loop
     )
     return read_protocol.reader, writer
 
@@ -340,9 +342,7 @@ async def _open_serial_connection_with_retry(
     while True:
         try:
             reader, writer = await OPEN_SERIAL_CONNECTION(
-                url=config.serial_port,
-                baudrate=initial_baud,
-                exclusive=True
+                url=config.serial_port, baudrate=initial_baud, exclusive=True
             )
 
             if negotiation_needed:
@@ -354,12 +354,12 @@ async def _open_serial_connection_with_retry(
                     await asyncio.sleep(0.2)
 
                     reader, writer = await OPEN_SERIAL_CONNECTION(
-                        url=config.serial_port,
-                        baudrate=target_baud,
-                        exclusive=True
+                        url=config.serial_port, baudrate=target_baud, exclusive=True
                     )
                 else:
-                    logger.warning("Negotiation failed; staying at %d baud", initial_baud)
+                    logger.warning(
+                        "Negotiation failed; staying at %d baud", initial_baud
+                    )
 
             return reader, writer
 
@@ -369,7 +369,9 @@ async def _open_serial_connection_with_retry(
                 if remainder:
                     raise remainder
 
-            logger.warning("%s failed (%s); retrying in %.1fs.", action, exc, current_delay)
+            logger.warning(
+                "%s failed (%s); retrying in %.1fs.", action, exc, current_delay
+            )
             await asyncio.sleep(current_delay)
             current_delay = min(max_delay, current_delay * 2)
         except Exception:  # pragma: no cover - unexpected fatal
@@ -403,7 +405,9 @@ class SerialTransport:
         while True:
             should_retry = True
             try:
-                self.reader, self.writer = await _open_serial_connection_with_retry(self.config)
+                self.reader, self.writer = await _open_serial_connection_with_retry(
+                    self.config
+                )
                 self.state.serial_writer = self.writer
                 self.service.register_serial_sender(self.send_frame)
                 logger.info("Serial port connected successfully.")
@@ -418,7 +422,9 @@ class SerialTransport:
                     raise exc.exceptions[0]
                 except* Exception as exc_group:
                     for exc in exc_group.exceptions:
-                        logger.critical("Error running post-connect hooks", exc_info=exc)
+                        logger.critical(
+                            "Error running post-connect hooks", exc_info=exc
+                        )
 
             except (SerialException, asyncio.IncompleteReadError) as exc:
                 logger.error("Serial communication error: %s", exc)
@@ -511,7 +517,11 @@ class SerialTransport:
 
         # Global backpressure: MCU XOFF pauses all Linux->MCU traffic.
         serial_tx_allowed = getattr(self.state, "serial_tx_allowed", None)
-        wait_fn = getattr(serial_tx_allowed, "wait", None) if serial_tx_allowed is not None else None
+        wait_fn = (
+            getattr(serial_tx_allowed, "wait", None)
+            if serial_tx_allowed is not None
+            else None
+        )
         if wait_fn is not None and inspect.iscoroutinefunction(wait_fn):
             await wait_fn()
 
@@ -532,7 +542,9 @@ class SerialTransport:
                 # [SIL-2] Canonical hexdump format for binary traffic debugging
                 if payload:
                     hexdump = format_hexdump(payload, prefix="       ")
-                    logger.debug("LINUX > %s len=%d\n%s", cmd_name, len(payload), hexdump)
+                    logger.debug(
+                        "LINUX > %s len=%d\n%s", cmd_name, len(payload), hexdump
+                    )
                 else:
                     logger.debug("LINUX > %s (no payload)", cmd_name)
             return True
@@ -561,7 +573,9 @@ class SerialTransport:
                     logger.warning("RLE decompression failed: %s", exc)
                     self.state.record_serial_decode_error()
                     if self._should_emit_parse_error_status():
-                        await self.service.send_frame(Status.MALFORMED.value, b"RLE_FAIL")
+                        await self.service.send_frame(
+                            Status.MALFORMED.value, b"RLE_FAIL"
+                        )
                     return
 
             if logger.isEnabledFor(logging.DEBUG):
@@ -572,7 +586,9 @@ class SerialTransport:
 
                 if frame.payload:
                     hexdump = format_hexdump(frame.payload, prefix="       ")
-                    logger.debug("LINUX < %s len=%d\n%s", cmd_name, len(frame.payload), hexdump)
+                    logger.debug(
+                        "LINUX < %s len=%d\n%s", cmd_name, len(frame.payload), hexdump
+                    )
                 else:
                     logger.debug("LINUX < %s (no payload)", cmd_name)
 
@@ -599,7 +615,10 @@ class SerialTransport:
             header_hex = error_data[: protocol.CRC_COVERED_HEADER_SIZE].hex()
             logger.warning(
                 "Frame parse error %s for raw %s (len=%d header=%s)",
-                exc, error_data.hex(), len(error_data), header_hex,
+                exc,
+                error_data.hex(),
+                len(error_data),
+                header_hex,
             )
 
             if not self._should_emit_parse_error_status():
@@ -618,7 +637,10 @@ class SerialTransport:
                         error_data[: protocol.CRC_COVERED_HEADER_SIZE],
                     )
                 except Exception:
-                    logger.debug("Failed to extract command hint from malformed packet", exc_info=True)
+                    logger.debug(
+                        "Failed to extract command hint from malformed packet",
+                        exc_info=True,
+                    )
 
             truncated = error_data[:32]
             payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated

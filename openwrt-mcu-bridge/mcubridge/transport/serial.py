@@ -116,7 +116,7 @@ def _ensure_raw_mode(serial_obj: TermiosSerial, port_name: str) -> None:
             attrs[3] = attrs[3] & ~termios.ECHO
             termios.tcsetattr(serial_obj.fd, termios.TCSANOW, attrs)
             logger.debug("Forced raw mode (no echo) on %s", port_name)
-    except Exception as e:
+    except (OSError, termios.error) as e:
         logger.warning("Failed to force raw mode on serial port: %s", e)
 
 
@@ -127,7 +127,7 @@ def _open_serial_hardware(ser: TermiosSerial, url: str) -> None:
             raise SerialException("Serial port opened but no fd available")
         os.set_blocking(ser.fd, False)
         _ensure_raw_mode(ser, url)
-    except Exception as exc:  # pragma: no cover - cleanup guard
+    except (SerialException, OSError) as exc:  # pragma: no cover - cleanup guard
         logger.warning("Error opening serial hardware, attempting cleanup: %s", exc)
         if getattr(ser, "is_open", False):
             ser.close()
@@ -308,7 +308,7 @@ async def _negotiate_baudrate(
         else:
             logger.warning("Unexpected response: 0x%02X", resp_frame.command_id)
             return False
-    except (asyncio.TimeoutError, cobs.DecodeError, Exception) as e:
+    except (asyncio.TimeoutError, cobs.DecodeError, ValueError, OSError) as e:
         logger.error("Baudrate negotiation failed: %s", e)
         return False
 
@@ -410,8 +410,9 @@ class SerialTransport:
                     should_retry = False
                     logger.critical("%s", exc.exceptions[0])
                     raise exc.exceptions[0]
-                except* Exception:
-                    logger.exception("Error running post-connect hooks")
+                except* Exception as exc_group:
+                    for exc in exc_group.exceptions:
+                        logger.critical("Error running post-connect hooks", exc_info=exc)
 
             except (SerialException, asyncio.IncompleteReadError) as exc:
                 logger.error("Serial communication error: %s", exc)
@@ -529,7 +530,7 @@ class SerialTransport:
                 else:
                     logger.debug("LINUX > %s (no payload)", cmd_name)
             return True
-        except Exception as exc:
+        except (OSError, SerialException) as exc:
             logger.error("Send failed 0x%02X: %s", command_id, exc)
             return False
 
@@ -617,10 +618,10 @@ class SerialTransport:
             payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated
             try:
                 await self.service.send_frame(status.value, payload)
-            except Exception as exc:
+            except (OSError, SerialException) as exc:
                 logger.debug("Failed to send malformed status response: %s", exc)
         except Exception:
-            logger.exception("Error processing frame")
+            logger.critical("Critical error processing frame", exc_info=True)
 
 
 __all__ = [

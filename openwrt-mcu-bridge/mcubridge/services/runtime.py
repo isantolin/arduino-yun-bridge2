@@ -10,6 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 from aiomqtt.message import Message
+from ..transport.termios_serial import SerialException
 
 from ..config.settings import RuntimeConfig
 from ..const import TOPIC_FORBIDDEN_REASON
@@ -53,7 +54,7 @@ async def _background_task_runner(
     except asyncio.CancelledError:
         raise
     except Exception:  # pragma: no cover - defensive
-        logger.exception("Background task %s failed", task_name or "unknown")
+        logger.critical("Background task %s failed", task_name or "unknown", exc_info=True)
 
 
 class _StatusHandler:
@@ -280,10 +281,11 @@ class BridgeService:
         try:
             await self._dispatcher.dispatch_mcu_frame(command_id, payload)
         except Exception:
-            logger.exception(
-                "Error handling MCU frame: CMD=0x%02X payload=%s",
+            logger.critical(
+                "Critical error handling MCU frame: CMD=0x%02X payload=%s",
                 command_id,
                 payload.hex(),
+                exc_info=True,
             )
 
     async def handle_mqtt_message(self, inbound: Message) -> None:
@@ -294,9 +296,10 @@ class BridgeService:
                 self._parse_inbound_topic,
             )
         except Exception:
-            logger.exception(
-                "Error processing MQTT message on topic %s",
+            logger.critical(
+                "Critical error processing MQTT message on topic %s",
                 inbound_topic,
+                exc_info=True,
             )
 
     async def enqueue_mqtt(
@@ -437,11 +440,12 @@ class BridgeService:
             return
         try:
             await self._serial_sender(status.value, payload)
-        except Exception:
-            logger.exception(
-                "Failed to emit status 0x%02X for command 0x%02X",
+        except (OSError, SerialException, ValueError) as exc:
+            logger.error(
+                "Failed to emit status 0x%02X for command 0x%02X: %s",
                 status.value,
                 command_id,
+                exc,
             )
 
     # --- MCU command handlers ---

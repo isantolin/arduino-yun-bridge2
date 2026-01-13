@@ -47,7 +47,7 @@ def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
             context.load_cert_chain(config.mqtt_certfile, config.mqtt_keyfile)
 
         return context
-    except Exception as exc:
+    except (OSError, ssl.SSLError, ValueError) as exc:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
 
 
@@ -84,8 +84,8 @@ async def _mqtt_publisher_loop(
             except asyncio.QueueFull:
                 logger.error("MQTT spool full; message dropped.")
             raise
-        except Exception:
-            logger.exception("Critical error in MQTT publisher.")
+        except Exception as exc:
+            logger.critical("Critical error in MQTT publisher.", exc_info=exc)
             raise
         finally:
             state.mqtt_publish_queue.task_done()

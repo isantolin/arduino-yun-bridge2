@@ -57,7 +57,7 @@ class WatchdogKeepalive:
         try:
             self._write(self._token)
         except Exception as exc:  # pragma: no cover - defensive guard
-            self._logger.warning("Failed to emit watchdog trigger: %s", exc)
+            self._logger.warning("Failed to emit watchdog trigger: %s", exc, exc_info=True)
         else:
             if self._state is not None:
                 self._state.record_watchdog_beat(time.monotonic())

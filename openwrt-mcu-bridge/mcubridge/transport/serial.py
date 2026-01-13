@@ -13,7 +13,7 @@ import struct
 import os
 import termios
 import tty
-from typing import Any, Sized, TypeGuard, cast, Final
+from typing import Any, Sized, TypeGuard, cast, Final, TYPE_CHECKING
 
 from cobs import cobs
 from mcubridge.rpc import rle
@@ -31,10 +31,12 @@ from mcubridge.rpc.protocol import FRAME_DELIMITER
 from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.rpc.protocol import Command, Status
-from mcubridge.services.runtime import (
-    BridgeService,
-    SerialHandshakeFatal,
-)
+# Import directly from handshake to avoid circular dependency via runtime
+from mcubridge.services.handshake import SerialHandshakeFatal
+
+if TYPE_CHECKING:
+    from mcubridge.services.runtime import BridgeService
+
 from mcubridge.state.context import RuntimeState
 
 logger = logging.getLogger("mcubridge")

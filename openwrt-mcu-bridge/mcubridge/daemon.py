@@ -264,7 +264,7 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
             logger.critical("Fatal error in main execution", exc_info=group_exc)
         sys.exit(1)
     except Exception:
-        logger.critical("Unexpected fatal error", exc_info=True)
+        logger.exception("CRITICAL: Unhandled exception in main loop. Terminating for fail-safe restart.")
         sys.exit(1)
 
 

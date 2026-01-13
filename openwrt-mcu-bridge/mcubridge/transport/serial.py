@@ -472,7 +472,13 @@ class SerialTransport:
         while True:
             try:
                 chunk = await self.reader.read(256)
-            except (OSError, asyncio.IncompleteReadError):
+            except OSError as exc:
+                logger.error(f"Serial I/O Error: {exc}")
+                self._connected = False
+                break
+            except Exception:
+                logger.exception("CRITICAL: Unexpected error in serial reader loop")
+                self._connected = False
                 break
 
             if not chunk:

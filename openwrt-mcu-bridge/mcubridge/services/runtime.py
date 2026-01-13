@@ -53,8 +53,8 @@ async def _background_task_runner(
         await coroutine
     except asyncio.CancelledError:
         raise
-    except Exception:  # pragma: no cover - defensive
-        logger.critical("Background task %s failed", task_name or "unknown", exc_info=True)
+    except Exception:
+        logger.critical("CRITICAL: Background task %s failed unexpectedly", task_name or "unknown", exc_info=True)
 
 
 class _StatusHandler:

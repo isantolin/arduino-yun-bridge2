@@ -88,7 +88,7 @@ async def _mqtt_publisher_loop(
                 logger.error("MQTT spool full; message dropped.")
             raise
         except Exception as exc:
-            logger.critical("Critical error in MQTT publisher.", exc_info=exc)
+            logger.critical("CRITICAL: Unexpected error in MQTT publisher loop", exc_info=exc)
             raise
         finally:
             state.mqtt_publish_queue.task_done()
@@ -106,7 +106,7 @@ async def _mqtt_subscriber_loop(
             try:
                 await service.handle_mqtt_message(message)
             except Exception:
-                logger.exception("Error processing MQTT topic %s", topic)
+                logger.exception("CRITICAL: Error processing MQTT topic %s", topic)
     except asyncio.CancelledError:
         pass  # Clean exit
     except aiomqtt.MqttError as exc:
@@ -171,7 +171,7 @@ async def mqtt_task(
             raise
         except* Exception as exc_group:
             for exc in exc_group.exceptions:
-                logger.critical("Unexpected MQTT error", exc_info=exc)
+                logger.critical("CRITICAL: Unexpected MQTT error", exc_info=exc)
 
         logger.info("Reconnecting MQTT in %ds...", reconnect_delay)
         await asyncio.sleep(reconnect_delay)

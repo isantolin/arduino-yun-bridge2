@@ -56,8 +56,13 @@ def test_configure_logging_syslog(tmp_path) -> None:
     )
 
     with patch("mcubridge.config.logging.SYSLOG_SOCKET", fake_socket):
-        with patch("logging.config.dictConfig") as mock_dict_config:
+        # [SIL-2] Mock logging.getLogger to prevent side-effects (IO errors) during test
+        # and ensure dictConfig is the only thing we are asserting on.
+        with patch("logging.config.dictConfig") as mock_dict_config, \
+             patch("logging.getLogger"):
+            
             log_mod.configure_logging(config)
+            
             mock_dict_config.assert_called_once()
             config_arg = mock_dict_config.call_args[0][0]
             assert "handlers" in config_arg

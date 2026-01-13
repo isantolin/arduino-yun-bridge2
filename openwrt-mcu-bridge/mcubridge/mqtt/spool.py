@@ -254,7 +254,7 @@ class MQTTPublishSpool:
 
             try:
                 return QueuedPublish.from_record(record)
-            except (ValueError, TypeError, pickle.PickleError):
+            except (ValueError, TypeError, AttributeError, pickle.PickleError):
                 logger.warning(
                     "Dropping corrupt MQTT spool entry; cannot decode",
                     exc_info=True,

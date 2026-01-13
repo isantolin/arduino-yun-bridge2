@@ -22,8 +22,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.0.1
-PKG_RELEASE:=2
+PKG_VERSION:=2.1.0
+PKG_RELEASE:=1
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
@@ -51,7 +51,9 @@ define Package/$(PKG_NAME)
 endef
 
 define Package/$(PKG_NAME)/description
-  Python daemon for McuBridge ecosystem. Requires openwrt-mcu-core.
+  Modern Python daemon for the Arduino MCU Bridge v2 ecosystem.
+  Provides high-performance, asynchronous communication between OpenWrt Linux
+  and Arduino-compatible microcontrollers via Serial and MQTT.
 endef
 
 define Build/Compile

@@ -34,7 +34,7 @@ def test_disable_mqtt_spool_handles_close_error_and_schedules_retry(
 ) -> None:
     class _BrokenCloseSpool:
         def close(self) -> None:
-            raise RuntimeError("close-failed")
+            raise OSError("close-failed")
 
     runtime_state.mqtt_spool = cast(MQTTPublishSpool, _BrokenCloseSpool())
 

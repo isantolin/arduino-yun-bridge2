@@ -316,7 +316,9 @@ def test_serial_ensure_raw_mode_no_fd() -> None:
     from mcubridge.transport.serial import _ensure_raw_mode
 
     mock_serial = MagicMock()
-    del mock_serial.fd  # No fd attribute
+    # Ensure accessing fd raises AttributeError
+    del mock_serial.fd
+
     # Should not raise
     _ensure_raw_mode(mock_serial, "/dev/ttyS0")
 
@@ -338,7 +340,8 @@ def test_serial_ensure_raw_mode_exception() -> None:
     mock_serial = MagicMock()
     mock_serial.fd = 42
 
-    with patch("mcubridge.transport.serial.termios"):
+    with patch("mcubridge.transport.serial.termios") as mock_termios:
+        mock_termios.error = OSError
         with patch("mcubridge.transport.serial.tty") as mock_tty:
             mock_tty.setraw.side_effect = OSError("Permission denied")
             # Should not raise, just log warning
@@ -353,6 +356,7 @@ def test_serial_ensure_raw_mode_termios_exception() -> None:
     mock_serial.fd = 42
 
     with patch("mcubridge.transport.serial.termios") as mock_termios:
+        mock_termios.error = OSError
         with patch("mcubridge.transport.serial.tty") as mock_tty:
             mock_tty.setraw.return_value = None
             mock_termios.tcgetattr.side_effect = OSError("ENOTTY")

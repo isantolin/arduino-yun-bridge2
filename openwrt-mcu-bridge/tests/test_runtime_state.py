@@ -283,7 +283,7 @@ def test_create_runtime_state_marks_spool_degraded(
 ) -> None:
     class _BoomSpool:
         def __init__(self, *_args, **_kwargs) -> None:
-            raise RuntimeError("boom")
+            raise OSError("boom")
 
     monkeypatch.setattr(
         "mcubridge.state.context.MQTTPublishSpool",
@@ -309,7 +309,7 @@ def test_stash_mqtt_message_disables_spool_on_failure(
 
         class _BrokenSpool:
             def append(self, _message: QueuedPublish) -> None:
-                raise RuntimeError("disk-full")
+                raise OSError("disk-full")
 
             def close(self) -> None:
                 return None
@@ -343,7 +343,7 @@ def test_flush_mqtt_spool_handles_pop_failure(
 
         class _FailingSpool:
             def pop_next(self) -> QueuedPublish:
-                raise RuntimeError("read-error")
+                raise OSError("read-error")
 
             def requeue(self, _message: QueuedPublish) -> None:
                 return None

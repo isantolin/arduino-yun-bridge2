@@ -111,12 +111,16 @@ def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
 
 def _ensure_raw_mode(serial_obj: TermiosSerial, port_name: str) -> None:
     """Force raw mode on the serial file descriptor if possible."""
+    if termios is None or tty is None:
+        return
+
     try:
-        if serial_obj.fd is not None:
-            tty.setraw(serial_obj.fd)
-            attrs = termios.tcgetattr(serial_obj.fd)
+        fd = getattr(serial_obj, "fd", None)
+        if fd is not None:
+            tty.setraw(fd)
+            attrs = termios.tcgetattr(fd)
             attrs[3] = attrs[3] & ~termios.ECHO
-            termios.tcsetattr(serial_obj.fd, termios.TCSANOW, attrs)
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
             logger.debug("Forced raw mode (no echo) on %s", port_name)
     except (OSError, termios.error) as e:
         logger.warning("Failed to force raw mode on serial port: %s", e)
@@ -567,10 +571,10 @@ class SerialTransport:
                     cmd_name = f"0x{frame.command_id:02X}"
 
                 if frame.payload:
-                     hexdump = format_hexdump(frame.payload, prefix="       ")
-                     logger.debug("LINUX < %s len=%d\n%s", cmd_name, len(frame.payload), hexdump)
+                    hexdump = format_hexdump(frame.payload, prefix="       ")
+                    logger.debug("LINUX < %s len=%d\n%s", cmd_name, len(frame.payload), hexdump)
                 else:
-                     logger.debug("LINUX < %s (no payload)", cmd_name)
+                    logger.debug("LINUX < %s (no payload)", cmd_name)
 
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 

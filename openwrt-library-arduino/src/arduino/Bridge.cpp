@@ -3,6 +3,10 @@
  */
 #include "Bridge.h"
 
+// [SIL-2] Explicitly include Arduino.h to satisfy IntelliSense and ensure
+// noInterrupts()/interrupts() are available in all compilation contexts.
+#include <Arduino.h>
+
 // --- [SAFETY GUARD START] ---
 // CRITICAL: Prevent accidental STL usage on AVR targets (memory fragmentation risk)
 #if defined(ARDUINO_ARCH_AVR)
@@ -358,9 +362,19 @@ void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_f
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
-  if (g_baudrate_state.isReady(millis())) {
-    _transport.setBaudrate(g_baudrate_state.pending_baudrate);
+  // [SIL-2] Critical Section for global state access
+  // Although typically single-threaded on Arduino, we guard this against potential
+  // future interrupt-driven state changes or RTOS contexts.
+  noInterrupts();
+  bool ready = g_baudrate_state.isReady(millis());
+  uint32_t new_baud = g_baudrate_state.pending_baudrate;
+  interrupts();
+
+  if (ready) {
+    _transport.setBaudrate(new_baud);
+    noInterrupts();
     g_baudrate_state.clear();
+    interrupts();
   }
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -437,7 +451,10 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
         (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         _transport.flush();
+        // [SIL-2] Atomic State Update
+        noInterrupts();
         g_baudrate_state.schedule(new_baud, millis());
+        interrupts();
       }
       break;
     case rpc::CommandId::CMD_LINK_SYNC:

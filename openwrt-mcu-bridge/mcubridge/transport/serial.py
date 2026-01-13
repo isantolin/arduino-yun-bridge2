@@ -61,11 +61,11 @@ def format_hexdump(data: bytes, prefix: str = "") -> str:
 
     lines: list[str] = []
     for offset in range(0, len(data), 16):
-        chunk = data[offset : offset + 16]
+        chunk = data[offset: offset + 16]
         # Hex part: groups of 4 bytes separated by double space
         hex_parts: list[str] = []
         for i in range(0, 16, 4):
-            group = chunk[i : i + 4]
+            group = chunk[i: i + 4]
             hex_parts.append(" ".join(f"{b:02X}" for b in group))
         hex_str = "  ".join(hex_parts)
         # ASCII part: printable chars or '.'

@@ -43,10 +43,15 @@ _RESERVED_LOG_KEYS = {
 
 
 def _serialise_value(value: Any) -> Any:
+    """Serialise values for JSON logs with strict type handling."""
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
+        # [SIL-2] BINARY OBSERVABILITY:
+        # Never decode bytes as UTF-8 blindly. It destroys binary data (0xFF -> ).
+        # Use uppercase hex representation for absolute clarity in logs.
+        # Format: [DE AD BE EF]
+        return f"[{' '.join(f'{b:02X}' for b in value)}]"
     return str(value)
 
 

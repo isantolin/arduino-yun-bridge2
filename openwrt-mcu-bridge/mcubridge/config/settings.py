@@ -317,12 +317,23 @@ class RuntimeConfig:
 
 
 def _load_raw_config() -> dict[str, str]:
+    """Load configuration from UCI with robust error handling (SIL 2)."""
     try:
         uci_values = get_uci_config()
         if uci_values:
             return uci_values
-    except Exception:
-        logger.exception("Failed to load UCI configuration; falling back to defaults")
+    except (OSError, ValueError) as err:
+        # [SIL-2] Catch specific errors to differentiate operational issues from bugs.
+        # Fallback to defaults is acceptable here to ensure Fail-Operational behavior.
+        logger.error("Failed to load UCI configuration (Operational Error): %s", err)
+    except Exception as err:
+        # [SIL-2] Critical Catch-All: Log unexpected errors with stack trace before fallback.
+        logger.critical(
+            "CRITICAL: Unexpected failure while loading UCI config: %s",
+            err,
+            exc_info=True
+        )
+
     return get_default_config()
 
 

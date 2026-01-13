@@ -6,6 +6,7 @@ import asyncio
 import logging
 import ssl
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiomqtt
 # [REQ-PY3.13] Paho 2.x is used by aiomqtt internally, but aiomqtt > 2.0 handles the callback versioning.
@@ -15,8 +16,10 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import MQTT_TLS_MIN_VERSION
 from mcubridge.protocol import topic_path
 from mcubridge.rpc.protocol import MQTT_COMMAND_SUBSCRIPTIONS
-from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
+
+if TYPE_CHECKING:
+    from mcubridge.services.runtime import BridgeService
 
 logger = logging.getLogger("mcubridge")
 

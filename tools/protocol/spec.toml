@@ -472,6 +472,17 @@ value = 0x47
 category = "system"
 directions = ["mcu_to_linux"]
 [[commands]]
+name = "CMD_GET_CAPABILITIES"
+value = 0x48
+category = "system"
+directions = ["linux_to_mcu"]
+expects_direct_response = true
+[[commands]]
+name = "CMD_GET_CAPABILITIES_RESP"
+value = 0x49
+category = "system"
+directions = ["mcu_to_linux"]
+[[commands]]
 name = "CMD_SET_BAUDRATE"
 value = 0x4A
 category = "system"

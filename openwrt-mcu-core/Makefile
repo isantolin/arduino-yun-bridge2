@@ -16,7 +16,7 @@ define Package/$(PKG_NAME)
   CATEGORY:=Utilities
 	TITLE:=MCU Core Scripts and Configs (system Python only)
 	PKG_ARCH:=all
-	DEPENDS:=+python3 +python3-uci +mosquitto-client
+	DEPENDS:=+python3 +python3-uci +mosquitto-client +python3-aiomqtt +python3-cobs +python3-psutil +python3-prometheus-client
 endef
 
 define Package/$(PKG_NAME)/description

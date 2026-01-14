@@ -15,11 +15,6 @@ from typing import (
 )
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 
-try:
-    import ujson  # type: ignore
-except ImportError:  # pragma: no cover
-    ujson = None  # type: ignore[assignment]
-
 from .protocol.topics import Topic, topic_path
 from .mqtt.messages import QueuedPublish
 from .state.context import RuntimeState
@@ -47,12 +42,6 @@ def _bucket_sort_key(item: tuple[float, int]) -> float:
     return item[0]
 
 
-def _json_dumps(value: Any) -> str:
-    if ujson is not None:
-        return ujson.dumps(value)
-    return json.dumps(value)
-
-
 def _build_metrics_message(
     state: RuntimeState,
     snapshot: dict[str, Any],
@@ -66,7 +55,7 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        payload=_json_dumps(snapshot).encode("utf-8"),
+        payload=json.dumps(snapshot).encode("utf-8"),
         content_type="application/json",
         message_expiry_interval=int(expiry_seconds),
     )
@@ -554,7 +543,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=_json_dumps(snapshot).encode("utf-8"),
+        payload=json.dumps(snapshot).encode("utf-8"),
         content_type="application/json",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),

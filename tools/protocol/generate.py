@@ -554,6 +554,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             out.write(f"PIN_READ_FORMAT: Final[str] = \"{formats['pin_read_format']}\"\n")
         if "pin_write_format" in formats:
             out.write(f"PIN_WRITE_FORMAT: Final[str] = \"{formats['pin_write_format']}\"\n")
+        if "capabilities_format" in formats:
+            out.write(f"CAPABILITIES_FORMAT: Final[str] = \"{formats['capabilities_format']}\"\n")
+        if "nonce_counter_format" in formats:
+            out.write(f"NONCE_COUNTER_FORMAT: Final[str] = \"{formats['nonce_counter_format']}\"\n")
         out.write(
             f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n"
         )

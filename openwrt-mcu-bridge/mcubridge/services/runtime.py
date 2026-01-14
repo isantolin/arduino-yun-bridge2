@@ -54,7 +54,12 @@ async def _background_task_runner(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        logger.critical("CRITICAL: Background task %s failed unexpectedly: %s", task_name or "unknown", exc, exc_info=True)
+        logger.critical(
+            "CRITICAL: Background task %s failed unexpectedly: %s",
+            task_name or "unknown",
+            exc,
+            exc_info=True,
+        )
 
 
 class _StatusHandler:

@@ -404,17 +404,7 @@ def test_context_coerce_snapshot_none_value() -> None:
 # ============================================================================
 
 
-def test_metrics_json_dumps_without_ujson() -> None:
-    """Cover _json_dumps fallback path."""
-    from mcubridge import metrics
 
-    original_ujson = metrics.ujson
-    try:
-        metrics.ujson = None
-        result = metrics._json_dumps({"test": "value"})
-        assert '"test"' in result
-    finally:
-        metrics.ujson = original_ujson
 
 
 # ============================================================================

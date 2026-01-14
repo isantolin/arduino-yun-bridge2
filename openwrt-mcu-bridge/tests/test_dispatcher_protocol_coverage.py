@@ -104,6 +104,9 @@ class _SystemHandlers:
     async def handle_link_reset_resp(self, _payload: bytes) -> bool:
         return True
 
+    async def handle_get_capabilities_resp(self, _payload: bytes) -> bool:
+        return True
+
     async def handle_ack(self, _payload: bytes) -> None:
         return None
 
@@ -185,6 +188,7 @@ def test_all_mcu_to_linux_commands_have_registered_handlers() -> None:
     dispatcher.register_system_handlers(
         handle_link_sync_resp=sys_handlers.handle_link_sync_resp,
         handle_link_reset_resp=sys_handlers.handle_link_reset_resp,
+        handle_get_capabilities_resp=sys_handlers.handle_get_capabilities_resp,
         handle_ack=sys_handlers.handle_ack,
         status_handler_factory=_StatusHandlerFactory(sys_handlers),
         handle_process_kill=sys_handlers.handle_process_kill,
@@ -237,6 +241,7 @@ def test_ack_required_mcu_to_linux_commands_are_registered() -> None:
     dispatcher.register_system_handlers(
         handle_link_sync_resp=sys_handlers.handle_link_sync_resp,
         handle_link_reset_resp=sys_handlers.handle_link_reset_resp,
+        handle_get_capabilities_resp=sys_handlers.handle_get_capabilities_resp,
         handle_ack=sys_handlers.handle_ack,
         status_handler_factory=_StatusHandlerFactory(sys_handlers),
         handle_process_kill=sys_handlers.handle_process_kill,

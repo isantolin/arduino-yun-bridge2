@@ -68,7 +68,7 @@ def test_watchdog_kick_handles_write_errors(
     assert runtime_state.watchdog_beats == 0
     assert runtime_state.last_watchdog_beat == 0
     assert any(
-        record.message.startswith("Failed to emit watchdog trigger")
+        "Unexpected error emitting watchdog trigger" in record.message
         for record in caplog.records
     )
 

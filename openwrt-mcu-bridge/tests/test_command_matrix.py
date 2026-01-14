@@ -305,6 +305,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     dispatcher.register_system_handlers(
         handle_link_sync_resp=_noop_link_handler,
         handle_link_reset_resp=_noop_link_handler,
+        handle_get_capabilities_resp=_noop_link_handler,
         handle_ack=_noop_ack_handler,
         status_handler_factory=_noop_status_handler_factory,
         handle_process_kill=_noop_process_kill,
@@ -313,14 +314,14 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     # Commands initiated by Linux (to the MCU). These requests should not be
     # required as inbound handlers (though some may have "unexpected" handlers).
     linux_to_mcu_requests: frozenset[int] = frozenset(
-        {
-            Command.CMD_GET_VERSION.value,
-            Command.CMD_GET_FREE_MEMORY.value,
-            Command.CMD_LINK_SYNC.value,
-            Command.CMD_LINK_RESET.value,
-            Command.CMD_SET_BAUDRATE.value,
-            Command.CMD_SET_PIN_MODE.value,
-            Command.CMD_DIGITAL_WRITE.value,
+                    {
+                        Command.CMD_GET_VERSION.value,
+                        Command.CMD_GET_FREE_MEMORY.value,
+                        Command.CMD_GET_CAPABILITIES.value,
+                        Command.CMD_LINK_SYNC.value,
+                        Command.CMD_LINK_RESET.value,
+                        Command.CMD_SET_BAUDRATE.value,
+                        Command.CMD_SET_PIN_MODE.value,            Command.CMD_DIGITAL_WRITE.value,
             Command.CMD_ANALOG_WRITE.value,
             Command.CMD_DIGITAL_READ.value,
             Command.CMD_ANALOG_READ.value,

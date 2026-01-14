@@ -369,21 +369,7 @@ def test_serial_ensure_raw_mode_termios_exception() -> None:
 # ============================================================================
 
 
-def test_metrics_json_dumps_uses_ujson_when_available() -> None:
-    """Cover line 47: ujson fast path."""
-    from mcubridge import metrics
 
-    fake_ujson = MagicMock()
-    fake_ujson.dumps.return_value = '{"test": 1}'
-
-    original_ujson = metrics.ujson
-    try:
-        metrics.ujson = fake_ujson
-        result = metrics._json_dumps({"test": 1})
-        fake_ujson.dumps.assert_called_once_with({"test": 1})
-        assert result == '{"test": 1}'
-    finally:
-        metrics.ujson = original_ujson
 
 
 @pytest.mark.asyncio

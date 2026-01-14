@@ -27,18 +27,6 @@ from mcubridge.rpc.protocol import (
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
-@pytest.fixture()
-def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
-    """Provide a clean event loop per-test to mirror historical behavior."""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        yield loop
-    finally:
-        with suppress(RuntimeError):
-            loop.run_until_complete(loop.shutdown_asyncgens())
-        asyncio.set_event_loop(None)
-        loop.close()
 
 
 @pytest.fixture(autouse=True)
@@ -56,14 +44,7 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings_module, "get_uci_config", _test_uci_config)
 
 
-@pytest.fixture()
-def enable_event_loop_debug(
-    event_loop: asyncio.AbstractEventLoop,
-) -> Iterator[None]:
-    """Mirror HA fixture but ensure pytest-asyncio already created the loop."""
-    event_loop.set_debug(True)
-    yield
-    event_loop.set_debug(False)
+
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]

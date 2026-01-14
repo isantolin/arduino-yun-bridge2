@@ -254,6 +254,10 @@ def _make_dispatcher(
         calls.add("handle_link_reset_resp", payload)
         return True
 
+    async def _handle_get_capabilities_resp(payload: bytes) -> bool:
+        calls.add("handle_get_capabilities_resp", payload)
+        return True
+
     async def _handle_ack(payload: bytes) -> None:
         calls.add("handle_ack", payload)
 
@@ -270,6 +274,7 @@ def _make_dispatcher(
     dispatcher.register_system_handlers(
         handle_link_sync_resp=_handle_link_sync_resp,
         handle_link_reset_resp=_handle_link_reset_resp,
+        handle_get_capabilities_resp=_handle_get_capabilities_resp,
         handle_ack=_handle_ack,
         status_handler_factory=_status_handler_factory,
         handle_process_kill=_handle_process_kill,

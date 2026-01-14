@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Fix import paths for tools and sibling tests
+_REPO_ROOT = Path(__file__).parents[2]
+_PKG_ROOT = Path(__file__).parents[1]
+
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
 from unittest.mock import MagicMock, patch
 
 import pytest

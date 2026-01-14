@@ -310,7 +310,7 @@ class SerialHandshakeManager:
             self._logger.warning("Short capabilities payload: %s", payload.hex())
             return
         try:
-            ver, arch, dig, ana, feat = struct.unpack(">BBBBI", payload[:8])
+            ver, arch, dig, ana, feat = struct.unpack(protocol.CAPABILITIES_FORMAT, payload[:8])
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=ver,
                 board_arch=arch,

@@ -19,6 +19,8 @@ import secrets
 import struct
 from typing import Final
 
+from .rpc.protocol import NONCE_COUNTER_FORMAT
+
 # Constants for nonce format
 NONCE_RANDOM_BYTES: Final[int] = 8
 NONCE_COUNTER_BYTES: Final[int] = 8
@@ -130,7 +132,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """
     new_counter = counter + 1
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    counter_part = struct.pack(">Q", new_counter)  # Big-endian uint64
+    counter_part = struct.pack(NONCE_COUNTER_FORMAT, new_counter)  # Big-endian uint64
     return random_part + counter_part, new_counter
 
 
@@ -148,7 +150,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
-    return struct.unpack(">Q", nonce[NONCE_RANDOM_BYTES:])[0]
+    return struct.unpack(NONCE_COUNTER_FORMAT, nonce[NONCE_RANDOM_BYTES:])[0]
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

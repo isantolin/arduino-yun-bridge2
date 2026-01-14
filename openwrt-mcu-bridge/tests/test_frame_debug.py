@@ -14,18 +14,18 @@ if str(_REPO_ROOT) not in sys.path:
 if str(_PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(_PKG_ROOT))
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
-from mcubridge.rpc.protocol import (
+from mcubridge.rpc.protocol import (  # noqa: E402
     Command,
     FRAME_DELIMITER,
     Status,
     UINT8_MASK,
 )
-from tools import frame_debug
-from tests.test_constants import TEST_BROKEN_CRC
+from tools import frame_debug  # noqa: E402
+from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:

@@ -321,7 +321,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
-            
+
             # Auto-ACK to prevent serial_flow from blocking on frozen clock
             ack_payload = struct.pack(rpc_protocol.UINT16_FORMAT, command_id)
             service._serial_flow.on_frame_received(

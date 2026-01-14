@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 from collections.abc import Iterator
-from contextlib import suppress
 from pathlib import Path
 
 import pytest

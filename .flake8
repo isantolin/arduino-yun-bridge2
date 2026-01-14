@@ -13,5 +13,6 @@ exclude =
 
 # Full checks (pycodestyle + pyflakes + McCabe).
 select = E,F,W,C90
+ignore = W503, W504, E203
 max-line-length = 120
 max-complexity = 50

@@ -374,8 +374,10 @@ async def _open_serial_connection_with_retry(
             )
             await asyncio.sleep(current_delay)
             current_delay = min(max_delay, current_delay * 2)
-        except Exception:  # pragma: no cover - unexpected fatal
-            logger.critical("Unexpected error during serial connection", exc_info=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - unexpected fatal
+            logger.critical("Unexpected error during serial connection attempt: %s", exc, exc_info=True)
             raise
 
 

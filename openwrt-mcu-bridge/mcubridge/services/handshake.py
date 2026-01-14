@@ -284,13 +284,13 @@ class SerialHandshakeManager:
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         self._capabilities_future = loop.create_future()
-        
+
         ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
         if not ok:
             self._logger.warning("Failed to send CMD_GET_CAPABILITIES")
             self._capabilities_future = None
             return False
-        
+
         try:
             payload = await asyncio.wait_for(self._capabilities_future, timeout=2.0)
             self._parse_capabilities(payload)

@@ -240,11 +240,11 @@ class BridgeDispatcher:
                 # Execute the component handler
                 result = await handler(payload)
                 handled_successfully = result is not False
-            except Exception:  # [FIX] Eliminado 'as exc' (unused variable)
+            except Exception as exc:
                 # [RESILIENCE] Catch component crashes (e.g., Datastore error)
                 # so the Dispatcher stays alive for other components.
-                logger.exception(
-                    "Critical: Exception in handler for command %s", command_name
+                logger.critical(
+                    "Critical: Exception in handler for command %s: %s", command_name, exc, exc_info=True
                 )
                 # Optionally send an error status back to MCU if it was a request
                 if response_to_request(command_id) is None:

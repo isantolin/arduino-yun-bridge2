@@ -1246,7 +1246,7 @@ class RuntimeState:
                 "major": self.mcu_version[0],
                 "minor": self.mcu_version[1],
             }
-        
+
         caps = self.mcu_capabilities.as_dict() if self.mcu_capabilities else None
 
         return {

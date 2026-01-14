@@ -56,8 +56,10 @@ class WatchdogKeepalive:
         """Send a single watchdog pulse immediately."""
         try:
             self._write(self._token)
+        except OSError as exc:
+            self._logger.warning("Failed to emit watchdog trigger: %s", exc)
         except Exception as exc:  # pragma: no cover - defensive guard
-            self._logger.warning("Failed to emit watchdog trigger: %s", exc, exc_info=True)
+            self._logger.exception("CRITICAL: Unexpected error emitting watchdog trigger: %s", exc)
         else:
             if self._state is not None:
                 self._state.record_watchdog_beat(time.monotonic())

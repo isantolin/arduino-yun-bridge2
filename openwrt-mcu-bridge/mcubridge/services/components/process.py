@@ -252,8 +252,8 @@ class ProcessComponent:
                 logger.info("Killed process with PID %d", pid)
         except ProcessLookupError:
             logger.info("Process PID %d already exited before kill.", pid)
-        except Exception:
-            logger.exception("Error killing process PID %d", pid)
+        except Exception as exc:
+            logger.exception("Error killing process PID %d: %s", pid, exc)
             await self.ctx.send_frame(
                 Status.ERROR.value,
                 encode_status_reason(protocol.STATUS_REASON_PROCESS_KILL_FAILED),

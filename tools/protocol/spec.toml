@@ -73,6 +73,8 @@ uint16_format = ">H"
 uint32_format = ">I"
 pin_read_format = ">B"
 pin_write_format = ">BB"
+capabilities_format = ">BBBBI"
+nonce_counter_format = ">Q"
 
 [mqtt_suffixes]
 incoming_available = "incoming_available"

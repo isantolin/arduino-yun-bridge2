@@ -316,6 +316,11 @@ Notas:
   - Petición: `[baudrate: u32]`.
   - Respuesta (`0x4B CMD_SET_BAUDRATE_RESP`): sin payload.
 
+- **`0x48` CMD_GET_CAPABILITIES (Linux → MCU)**
+  - Petición: sin payload.
+  - Respuesta (`0x49 CMD_GET_CAPABILITIES_RESP`): `[proto_ver: u8, arch: u8, num_digital: u8, num_analog: u8, features: u32]`.
+  - **Propósito:** Introspección estática de hardware (SIL-2 Safety). Permite al MPU validar que la configuración de pines no excede los límites físicos del MCU.
+
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.
   - Semántica: `CMD_XOFF` indica backpressure del MCU (buffers/colas cerca de saturación). Linux debe **detener todo envío** de frames al MCU hasta recibir `CMD_XON`.

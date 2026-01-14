@@ -35,7 +35,7 @@ from ..security import (
     timing_safe_equal,
     validate_nonce_counter,
 )
-from ..state.context import RuntimeState
+from ..state.context import RuntimeState, McuCapabilities
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
@@ -130,6 +130,7 @@ class SerialHandshakeManager:
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         self._reset_payload = self._build_reset_payload()
+        self._capabilities_future: asyncio.Future[bytes] | None = None
 
     async def synchronize(self) -> bool:
         await self._respect_handshake_backoff()
@@ -274,7 +275,52 @@ class SerialHandshakeManager:
         self._clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
+
+        if not await self._fetch_capabilities():
+            self._logger.warning("Capabilities discovery failed (legacy firmware?)")
+
         return True
+
+    async def _fetch_capabilities(self) -> bool:
+        loop = asyncio.get_running_loop()
+        self._capabilities_future = loop.create_future()
+        
+        ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
+        if not ok:
+            self._logger.warning("Failed to send CMD_GET_CAPABILITIES")
+            self._capabilities_future = None
+            return False
+        
+        try:
+            payload = await asyncio.wait_for(self._capabilities_future, timeout=2.0)
+            self._parse_capabilities(payload)
+            return True
+        except asyncio.TimeoutError:
+            self._logger.warning("Timeout waiting for MCU capabilities")
+            return False
+        finally:
+            self._capabilities_future = None
+
+    def handle_capabilities_resp(self, payload: bytes) -> None:
+        if self._capabilities_future and not self._capabilities_future.done():
+            self._capabilities_future.set_result(payload)
+
+    def _parse_capabilities(self, payload: bytes) -> None:
+        if len(payload) < 8:
+            self._logger.warning("Short capabilities payload: %s", payload.hex())
+            return
+        try:
+            ver, arch, dig, ana, feat = struct.unpack(">BBBBI", payload[:8])
+            self._state.mcu_capabilities = McuCapabilities(
+                protocol_version=ver,
+                board_arch=arch,
+                num_digital_pins=dig,
+                num_analog_inputs=ana,
+                features=feat
+            )
+            self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
+        except struct.error:
+             self._logger.warning("Failed to unpack capabilities")
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:
         self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())

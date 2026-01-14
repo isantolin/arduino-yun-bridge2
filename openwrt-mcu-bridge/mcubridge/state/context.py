@@ -134,6 +134,25 @@ def _status_label(code: int | None) -> str:
 
 
 @dataclass(slots=True)
+class McuCapabilities:
+    """Hardware capabilities reported by the MCU."""
+    protocol_version: int = 0
+    board_arch: int = 0
+    num_digital_pins: int = 0
+    num_analog_inputs: int = 0
+    features: int = 0
+
+    def as_dict(self) -> dict[str, int]:
+        return {
+            "protocol_ver": self.protocol_version,
+            "arch": self.board_arch,
+            "digital": self.num_digital_pins,
+            "analog": self.num_analog_inputs,
+            "features": self.features,
+        }
+
+
+@dataclass(slots=True)
 class PendingPinRequest:
     pin: int
     reply_context: Message | None
@@ -468,6 +487,7 @@ class RuntimeState:
     mailbox_incoming_dropped_bytes: int = 0
     mailbox_incoming_overflow_events: int = 0
     mcu_version: tuple[int, int] | None = None
+    mcu_capabilities: McuCapabilities | None = None
     link_handshake_nonce: bytes | None = None
     link_is_synchronized: bool = False
     link_expected_tag: bytes | None = None
@@ -1226,6 +1246,9 @@ class RuntimeState:
                 "major": self.mcu_version[0],
                 "minor": self.mcu_version[1],
             }
+        
+        caps = self.mcu_capabilities.as_dict() if self.mcu_capabilities else None
+
         return {
             "serial_link": {
                 "connected": self.serial_link_connected,
@@ -1236,6 +1259,7 @@ class RuntimeState:
             "serial_pipeline": self.build_serial_pipeline_snapshot(),
             "serial_flow": self.serial_flow_stats.as_dict(),
             "mcu_version": mcu_version,
+            "capabilities": caps,
         }
 
     def _handshake_duration_since_start(self) -> float:

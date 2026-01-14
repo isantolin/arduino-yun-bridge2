@@ -176,12 +176,14 @@ class BridgeDispatcher:
         self,
         handle_link_sync_resp: Callable[[bytes], Awaitable[bool]],
         handle_link_reset_resp: Callable[[bytes], Awaitable[bool]],
+        handle_get_capabilities_resp: Callable[[bytes], Awaitable[bool]],
         handle_ack: Callable[[bytes], Awaitable[None]],
         status_handler_factory: Callable[[Status], Callable[[bytes], Awaitable[None]]],
         handle_process_kill: Callable[[bytes], Awaitable[bool | None]],
     ) -> None:
         self.mcu_registry.register(Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp)
         self.mcu_registry.register(Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp)
+        self.mcu_registry.register(Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp)
         self.mcu_registry.register(Command.CMD_PROCESS_KILL.value, handle_process_kill)
 
         self.mcu_registry.register(Status.ACK.value, handle_ack)

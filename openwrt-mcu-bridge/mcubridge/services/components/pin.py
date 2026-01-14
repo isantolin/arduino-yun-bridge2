@@ -141,6 +141,18 @@ class PinComponent:
         if pin < 0:
             return
 
+        is_analog_read = (
+            len(parts) == 4 and 
+            parts[3] == PinAction.READ and 
+            topic_enum == Topic.ANALOG
+        )
+        # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
+        # but capabilities struct reports 'num_analog_inputs' specifically for ADC.
+        # We'll use digital limit for writes and analog limit for analog reads.
+        
+        if not self._validate_pin_access(pin, is_analog_read):
+            return
+
         if len(parts) == 4:
             subtopic = parts[3]
             if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
@@ -308,6 +320,22 @@ class PinComponent:
             message,
             reply_context=inbound,
         )
+
+    def _validate_pin_access(self, pin: int, is_analog_input: bool) -> bool:
+        caps = self.state.mcu_capabilities
+        if caps is None:
+            return True
+        
+        limit = caps.num_analog_inputs if is_analog_input else caps.num_digital_pins
+        # Basic bounds check.
+        # Note: Arduino pins are 0-indexed, so count=20 means 0..19.
+        if pin >= limit:
+            logger.warning(
+                "Security Block: Pin %d exceeds hardware limit (%d).",
+                pin, limit
+            )
+            return False
+        return True
 
 
 __all__ = ["PinComponent"]

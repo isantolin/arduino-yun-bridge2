@@ -134,6 +134,7 @@ class BridgeService:
         self._dispatcher.register_system_handlers(
             handle_link_sync_resp=self._handle_link_sync_resp,
             handle_link_reset_resp=self._handle_link_reset_resp,
+            handle_get_capabilities_resp=self._handle_capabilities_resp,
             handle_ack=self._handle_ack,
             status_handler_factory=self._status_handler,
             handle_process_kill=self._handle_process_kill,
@@ -410,6 +411,10 @@ class BridgeService:
 
     async def _handle_link_reset_resp(self, payload: bytes) -> bool:
         return await self._handshake.handle_link_reset_resp(payload)
+
+    async def _handle_capabilities_resp(self, payload: bytes) -> bool:
+        self._handshake.handle_capabilities_resp(payload)
+        return True
 
     def _raise_if_handshake_fatal(self) -> None:
         self._handshake.raise_if_handshake_fatal()

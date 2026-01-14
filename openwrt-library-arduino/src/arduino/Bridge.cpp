@@ -446,6 +446,53 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
       }
       break;
+    case rpc::CommandId::CMD_GET_CAPABILITIES:
+      if (payload_length == 0) {
+        uint8_t caps[8];
+        caps[0] = rpc::PROTOCOL_VERSION;
+        
+        uint8_t arch = 0;
+        #if defined(ARDUINO_ARCH_AVR)
+        arch = 1;
+        #elif defined(ARDUINO_ARCH_ESP32)
+        arch = 2;
+        #elif defined(ARDUINO_ARCH_ESP8266)
+        arch = 3;
+        #elif defined(ARDUINO_ARCH_SAMD)
+        arch = 4;
+        #elif defined(ARDUINO_ARCH_SAM)
+        arch = 5;
+        #endif
+        caps[1] = arch;
+
+        #ifdef NUM_DIGITAL_PINS
+        caps[2] = static_cast<uint8_t>(NUM_DIGITAL_PINS);
+        #else
+        caps[2] = 0;
+        #endif
+
+        #ifdef NUM_ANALOG_INPUTS
+        caps[3] = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
+        #else
+        caps[3] = 0;
+        #endif
+
+        uint32_t features = 0;
+        if (kBridgeEnableWatchdog) features |= 1;
+        // RLE supported
+        features |= 2; 
+        #if BRIDGE_DEBUG_FRAMES
+        features |= 4;
+        #endif
+        #if BRIDGE_DEBUG_IO
+        features |= 8;
+        #endif
+
+        rpc::write_u32_be(&caps[4], features);
+        
+        (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps, sizeof(caps));
+      }
+      break;
     case rpc::CommandId::CMD_SET_BAUDRATE:
       if (payload_length == 4) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);

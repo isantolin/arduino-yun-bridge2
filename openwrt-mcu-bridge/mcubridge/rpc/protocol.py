@@ -63,6 +63,7 @@ CAPABILITY_HW_SERIAL1: Final[int] = 64
 CAPABILITY_FPU: Final[int] = 128
 CAPABILITY_LOGIC_3V3: Final[int] = 256
 CAPABILITY_BIG_BUFFER: Final[int] = 512
+CAPABILITY_I2C: Final[int] = 1024
 
 UINT8_FORMAT: Final[str] = ">B"
 UINT16_FORMAT: Final[str] = ">H"

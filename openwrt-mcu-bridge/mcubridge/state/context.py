@@ -144,43 +144,43 @@ class McuCapabilities:
 
     @property
     def has_watchdog(self) -> bool:
-        return bool(self.features & 1)
+        return bool(self.features & protocol.CAPABILITY_WATCHDOG)
 
     @property
     def has_rle(self) -> bool:
-        return bool(self.features & 2)
+        return bool(self.features & protocol.CAPABILITY_RLE)
 
     @property
     def debug_frames(self) -> bool:
-        return bool(self.features & 4)
+        return bool(self.features & protocol.CAPABILITY_DEBUG_FRAMES)
 
     @property
     def debug_io(self) -> bool:
-        return bool(self.features & 8)
+        return bool(self.features & protocol.CAPABILITY_DEBUG_IO)
 
     @property
     def has_eeprom(self) -> bool:
-        return bool(self.features & 16)
+        return bool(self.features & protocol.CAPABILITY_EEPROM)
 
     @property
     def has_dac(self) -> bool:
-        return bool(self.features & 32)
+        return bool(self.features & protocol.CAPABILITY_DAC)
 
     @property
     def has_hw_serial1(self) -> bool:
-        return bool(self.features & 64)
+        return bool(self.features & protocol.CAPABILITY_HW_SERIAL1)
 
     @property
     def has_fpu(self) -> bool:
-        return bool(self.features & 128)
+        return bool(self.features & protocol.CAPABILITY_FPU)
 
     @property
     def is_3v3_logic(self) -> bool:
-        return bool(self.features & 256)
+        return bool(self.features & protocol.CAPABILITY_LOGIC_3V3)
 
     @property
     def has_large_buffer(self) -> bool:
-        return bool(self.features & 512)
+        return bool(self.features & protocol.CAPABILITY_BIG_BUFFER)
 
     def as_dict(self) -> dict[str, int | bool]:
         return {

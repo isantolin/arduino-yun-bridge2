@@ -355,6 +355,13 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
             )
         out.write("\n")
 
+    capabilities = spec.get("capabilities", {})
+    if capabilities:
+        for key, value in capabilities.items():
+            name = f"RPC_CAPABILITY_{key.upper()}"
+            out.write(f"constexpr uint32_t {name} = {value};\n")
+        out.write("\n")
+
     out.write("enum class StatusCode : uint8_t {\n")
     for status in spec["statuses"]:
         out.write(f"    STATUS_{status['name']} = {status['value']},\n")
@@ -540,6 +547,13 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             out.write(
                 f"HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = {handshake['nonce_counter_bytes']}\n"
             )
+        out.write("\n")
+
+    capabilities = spec.get("capabilities", {})
+    if capabilities:
+        for key, value in capabilities.items():
+            name = f"CAPABILITY_{key.upper()}"
+            out.write(f"{name}: Final[int] = {value}\n")
         out.write("\n")
 
     formats = spec.get("data_formats", {})

@@ -55,6 +55,17 @@ constexpr unsigned int RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH = 32;
 constexpr unsigned int RPC_HANDSHAKE_NONCE_RANDOM_BYTES = 8;
 constexpr unsigned int RPC_HANDSHAKE_NONCE_COUNTER_BYTES = 8;
 
+constexpr uint32_t RPC_CAPABILITY_WATCHDOG = 1;
+constexpr uint32_t RPC_CAPABILITY_RLE = 2;
+constexpr uint32_t RPC_CAPABILITY_DEBUG_FRAMES = 4;
+constexpr uint32_t RPC_CAPABILITY_DEBUG_IO = 8;
+constexpr uint32_t RPC_CAPABILITY_EEPROM = 16;
+constexpr uint32_t RPC_CAPABILITY_DAC = 32;
+constexpr uint32_t RPC_CAPABILITY_HW_SERIAL1 = 64;
+constexpr uint32_t RPC_CAPABILITY_FPU = 128;
+constexpr uint32_t RPC_CAPABILITY_LOGIC_3V3 = 256;
+constexpr uint32_t RPC_CAPABILITY_BIG_BUFFER = 512;
+
 enum class StatusCode : uint8_t {
     STATUS_OK = 48,
     STATUS_ERROR = 49,

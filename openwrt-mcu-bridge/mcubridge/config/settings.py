@@ -218,30 +218,16 @@ class RuntimeConfig:
         # allow_non_tmp_paths is ONLY for the File component (file_system_root).
         if not self.allow_non_tmp_paths:
             if root != "/tmp" and not root.startswith("/tmp/"):
-                logger.warning(
-                    "FLASH PROTECTION: Overriding file_system_root outside /tmp (%s) to %s; "
-                    "set allow_non_tmp_paths=1 to allow non-/tmp paths for file storage.",
-                    root,
-                    DEFAULT_FILE_SYSTEM_ROOT,
-                )
-                root = self._normalize_path(
-                    DEFAULT_FILE_SYSTEM_ROOT,
-                    field_name="file_system_root",
-                    require_absolute=True,
+                raise ValueError(
+                    f"FLASH PROTECTION: file_system_root '{root}' is not in /tmp. "
+                    "Set allow_non_tmp_paths=1 to override (NOT RECOMMENDED)."
                 )
 
         # mqtt_spool_dir is always kept under /tmp to avoid flash wear.
         if spool != "/tmp" and not spool.startswith("/tmp/"):
-            logger.warning(
-                "FLASH PROTECTION: Overriding mqtt_spool_dir outside /tmp (%s) to %s; "
-                "MQTT spool must live under /tmp.",
-                spool,
-                DEFAULT_MQTT_SPOOL_DIR,
-            )
-            spool = self._normalize_path(
-                DEFAULT_MQTT_SPOOL_DIR,
-                field_name="mqtt_spool_dir",
-                require_absolute=True,
+            raise ValueError(
+                f"FLASH PROTECTION: mqtt_spool_dir '{spool}' is not in /tmp. "
+                "MQTT spool must live under /tmp to prevent flash wear."
             )
 
         self.file_system_root = root

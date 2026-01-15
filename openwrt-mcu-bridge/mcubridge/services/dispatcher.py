@@ -240,9 +240,8 @@ class BridgeDispatcher:
                 # Execute the component handler
                 result = await handler(payload)
                 handled_successfully = result is not False
-            except Exception as exc:
-                # [RESILIENCE] Catch component crashes (e.g., Datastore error)
-                # so the Dispatcher stays alive for other components.
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError) as exc:
+                # [RESILIENCE] Catch component crashes so the Dispatcher stays alive.
                 logger.critical(
                     "Critical: Exception in handler for command %s: %s", command_name, exc, exc_info=True
                 )
@@ -293,7 +292,7 @@ class BridgeDispatcher:
 
         try:
             handled = await self.mqtt_router.dispatch(route, inbound)
-        except Exception:
+        except (OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError):
             logger.exception("Error processing MQTT topic: %s", inbound_topic)
             return
 

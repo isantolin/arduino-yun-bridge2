@@ -112,11 +112,22 @@ class ProcessComponent:
                     Status.ERROR.value,
                     encode_status_reason(exc.message),
                 )
-            except Exception as e:
-                logger.exception(
-                    "Failed to execute synchronous process command '%s': %s",
+            except (OSError, ValueError) as e:
+                logger.error(
+                    "System error executing process command '%s': %s",
                     command,
                     e,
+                )
+                await self.ctx.send_frame(
+                    Status.ERROR.value,
+                    encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR),
+                )
+            except Exception as e:
+                logger.critical(
+                    "Unexpected fatal error executing synchronous process command '%s': %s",
+                    command,
+                    e,
+                    exc_info=True
                 )
                 await self.ctx.send_frame(
                     Status.ERROR.value,
@@ -321,11 +332,24 @@ class ProcessComponent:
                     )
                 )
                 wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
-        except Exception as e:
-            logger.exception(
-                "Unexpected error executing command '%s': %s",
+        except (OSError, ValueError) as e:
+            logger.error(
+                "IO Error interacting with process '%s': %s",
                 command,
                 e,
+            )
+            await self._terminate_process_tree(proc)
+            try:
+                await proc.wait()
+            except (OSError, ValueError):
+                pass
+            return Status.ERROR.value, b"", b"System IO error", None
+        except Exception as e:
+            logger.critical(
+                "Unexpected fatal error executing command '%s': %s",
+                command,
+                e,
+                exc_info=True
             )
             await self._terminate_process_tree(proc)
             try:
@@ -413,10 +437,11 @@ class ProcessComponent:
                 )
                 return INVALID_ID_SENTINEL
             except Exception as e:
-                logger.exception(
-                    "Unexpected error starting async process '%s': %s",
+                logger.critical(
+                    "Unexpected fatal error starting async process '%s': %s",
                     command,
                     e,
+                    exc_info=True
                 )
                 return INVALID_ID_SENTINEL
 
@@ -577,10 +602,11 @@ class ProcessComponent:
                     exc_info=True,
                 )
                 break
-            except Exception:
-                logger.debug(
-                    "Error reading process pipe for PID %d",
+            except Exception as e:
+                logger.critical(
+                    "Unexpected fatal error reading process pipe for PID %d: %s",
                     pid,
+                    e,
                     exc_info=True,
                 )
                 break
@@ -635,10 +661,11 @@ class ProcessComponent:
                 exc_info=True,
             )
             return b""
-        except Exception:
-            logger.debug(
-                "Unexpected error reading pipe for PID %d",
+        except Exception as e:
+            logger.critical(
+                "Unexpected fatal error reading pipe for PID %d: %s",
                 pid,
+                e,
                 exc_info=True,
             )
             return b""
@@ -757,7 +784,7 @@ class ProcessComponent:
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.exception("Error while awaiting async process PID %d: %s", pid, e)
+            logger.critical("Unexpected error while awaiting async process PID %d: %s", pid, e, exc_info=True)
             return
         await self._finalize_async_process(pid, proc)
 

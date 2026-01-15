@@ -49,17 +49,9 @@ async def _background_task_runner(
     *,
     task_name: str | None,
 ) -> None:
-    try:
-        await coroutine
-    except asyncio.CancelledError:
-        raise
-    except Exception as exc:
-        logger.critical(
-            "CRITICAL: Background task %s failed unexpectedly: %s",
-            task_name or "unknown",
-            exc,
-            exc_info=True,
-        )
+    # Exceptions bubble up to the TaskGroup, which cancels siblings and
+    # raises ExceptionGroup in the main loop.
+    await coroutine
 
 
 class _StatusHandler:
@@ -229,7 +221,7 @@ class BridgeService:
         except SerialHandshakeFatal as exc:
             fatal_error = exc
             handshake_ok = False
-        except Exception as e:
+        except (OSError, SerialException, ValueError, RuntimeError) as e:
             logger.exception("Failed to synchronise MCU link after reconnect: %s", e)
 
         if fatal_error is not None:
@@ -246,12 +238,12 @@ class BridgeService:
             version_ok = await self._system.request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to request MCU version after reconnect: %s", e)
 
         try:
             await self._console.flush_queue()
-        except Exception as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to flush console backlog after reconnect: %s", e)
 
     async def on_serial_disconnected(self) -> None:
@@ -286,7 +278,7 @@ class BridgeService:
         self._serial_flow.on_frame_received(command_id, payload)
         try:
             await self._dispatcher.dispatch_mcu_frame(command_id, payload)
-        except Exception as e:
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
                 command_id,
@@ -302,7 +294,7 @@ class BridgeService:
                 inbound,
                 self._parse_inbound_topic,
             )
-        except Exception as e:
+        except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
                 "Critical error processing MQTT message on topic %s: %s",
                 inbound_topic,

@@ -153,10 +153,17 @@ async def _emit_bridge_snapshot(
         )
     except asyncio.CancelledError:
         raise
-    except Exception as e:
-        logger.exception(
-            "Failed to publish bridge snapshot: %s",
+    except (TypeError, ValueError, OSError) as e:
+        logger.error(
+            "Failed to publish bridge snapshot (serialization/IO): %s",
             e,
+            extra={"flavor": flavor},
+        )
+    except (TypeError, ValueError, AttributeError, OSError) as e:
+        logger.critical(
+            "Unexpected error in bridge snapshot builder: %s",
+            e,
+            exc_info=True,
             extra={"flavor": flavor},
         )
 
@@ -171,10 +178,12 @@ async def _bridge_snapshot_loop(
     # Initial emit
     try:
         await _emit_bridge_snapshot(state, enqueue, flavor)
-    except Exception:
+    except (TypeError, ValueError, OSError):
         # Already logged in _emit_bridge_snapshot
         logger.debug("Bridge snapshot emit failed (initial)", exc_info=True)
         pass
+    except (TypeError, ValueError, AttributeError, OSError):
+         logger.critical("Bridge snapshot initial emit fatal error", exc_info=True)
 
     while True:
         await asyncio.sleep(seconds)
@@ -201,8 +210,10 @@ async def publish_metrics(
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
-    except Exception as e:
-        logger.exception("Failed to publish initial metrics payload: %s", e)
+    except (TypeError, ValueError, OSError) as e:
+        logger.error("Failed to publish initial metrics payload: %s", e)
+    except (TypeError, ValueError, AttributeError, OSError) as e:
+        logger.critical("Unexpected error in initial metrics emit: %s", e, exc_info=True)
 
     # Loop
     try:
@@ -212,8 +223,10 @@ async def publish_metrics(
                 await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
             except asyncio.CancelledError:
                 raise
-            except Exception as e:
-                logger.exception("Failed to publish metrics payload: %s", e)
+            except (TypeError, ValueError, OSError) as e:
+                logger.error("Failed to publish metrics payload: %s", e)
+            except (TypeError, ValueError, AttributeError, OSError) as e:
+                logger.critical("Unexpected error in metrics loop: %s", e, exc_info=True)
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
@@ -482,13 +495,17 @@ class PrometheusExporter:
             )
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("Prometheus handler error")
+        except (OSError, ValueError, IndexError) as e:
+            logger.warning("Prometheus client request error: %s", e)
+        except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as e:
+             logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
         finally:
             try:
                 writer.close()
                 await writer.wait_closed()
-            except Exception:
+            except (OSError, ValueError):
+                pass
+            except (OSError, ValueError, RuntimeError):
                 logger.debug("Error closing metrics client", exc_info=True)
 
     async def _write_response(

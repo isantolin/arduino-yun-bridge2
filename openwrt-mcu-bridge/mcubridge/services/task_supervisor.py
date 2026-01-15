@@ -75,7 +75,12 @@ async def supervise_task(
                     name, backoff=0.0, exc=exc, fatal=True
                 )
             raise
-        except Exception as exc:
+        except BaseException as exc:
+            # [SIL-2] Catch-all for supervisor resilience.
+            # We explicitly re-raise control flow exceptions.
+            if isinstance(exc, (SystemExit, KeyboardInterrupt, GeneratorExit)):
+                raise
+
             now = time.monotonic()
             runtime = now - start_time
 

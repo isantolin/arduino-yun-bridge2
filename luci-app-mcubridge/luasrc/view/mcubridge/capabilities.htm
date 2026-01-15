@@ -1,0 +1,120 @@
+<%+header%>
+
+<script type="text/javascript">//<![CDATA[
+    // URL to fetch raw status JSON
+    const STATUS_URL = '<%=luci.dispatcher.build_url("admin", "services", "mcubridge", "status_raw")%>';
+
+    // Translations
+    const T_LOADING = '<%=translate("Loading capabilities...")%>';
+    const T_NOT_AVAILABLE = '<%=translate("Not available (Handshake pending or legacy firmware)")%>';
+    const T_YES = '<%=translate("Yes")%>';
+    const T_NO = '<%=translate("No")%>';
+
+    function renderBool(value) {
+        if (value === true) return '<span class="cbi-value-field" style="color:green; font-weight:bold;">' + T_YES + '</span>';
+        return '<span class="cbi-value-field" style="color:red;">' + T_NO + '</span>';
+    }
+
+    function updateTable(caps) {
+        var container = document.getElementById('caps-container');
+        
+        if (!caps) {
+            container.innerHTML = '<div class="alert-message warning">' + T_NOT_AVAILABLE + '</div>';
+            return;
+        }
+
+        var html = '<div class="cbi-map">';
+        html += '<h3 class="cbi-section-title"><%:Identified Hardware%></h3>';
+        html += '<div class="cbi-section">';
+        
+        // --- General Info ---
+        html += '<div class="cbi-value">';
+        html += '<label class="cbi-value-title"><%:Architecture ID%></label>';
+        html += '<div class="cbi-value-field">' + (caps.arch || '0') + '</div>';
+        html += '</div>';
+
+        html += '<div class="cbi-value">';
+        html += '<label class="cbi-value-title"><%:Protocol Version%></label>';
+        html += '<div class="cbi-value-field">' + (caps.protocol_ver || '0') + '</div>';
+        html += '</div>';
+
+        // --- Pins ---
+        html += '<div class="cbi-value">';
+        html += '<label class="cbi-value-title"><%:Digital Pins%></label>';
+        html += '<div class="cbi-value-field">' + (caps.digital || '0') + '</div>';
+        html += '</div>';
+
+        html += '<div class="cbi-value">';
+        html += '<label class="cbi-value-title"><%:Analog Inputs%></label>';
+        html += '<div class="cbi-value-field">' + (caps.analog || '0') + '</div>';
+        html += '</div>';
+
+        html += '</div>'; // End Section
+
+        html += '<h3 class="cbi-section-title"><%:Feature Flags%></h3>';
+        html += '<div class="cbi-section">';
+
+        // --- Features Table ---
+        var features = [
+            { key: 'has_watchdog', label: '<%:Watchdog Timer%>', desc: '<%:MCU expects heartbeat%>' },
+            { key: 'has_rle', label: '<%:RLE Compression%>', desc: '<%:Payload compression supported%>' },
+            { key: 'has_eeprom', label: '<%:EEPROM%>', desc: '<%:Non-volatile memory%>' },
+            { key: 'has_dac', label: '<%:True DAC%>', desc: '<%:Real analog output%>' },
+            { key: 'has_hw_serial1', label: '<%:HW Serial 1%>', desc: '<%:Extra UART available%>' },
+            { key: 'has_fpu', label: '<%:FPU%>', desc: '<%:Floating Point Unit%>' },
+            { key: 'is_3v3_logic', label: '<%:3.3V Logic%>', desc: '<%:IO Voltage Level%>' },
+            { key: 'has_large_buffer', label: '<%:Large Serial Buffer%>', desc: '<%:RX Buffer > 64 bytes%>' },
+            { key: 'debug_frames', label: '<%:Debug Frames%>', desc: '<%:Verbose frame logging%>' },
+            { key: 'debug_io', label: '<%:Debug I/O%>', desc: '<%:Verbose GPIO logging%>' }
+        ];
+
+        features.forEach(function(feat) {
+            html += '<div class="cbi-value">';
+            html += '<label class="cbi-value-title">' + feat.label + '</label>';
+            html += '<div class="cbi-value-field">';
+            html += renderBool(caps[feat.key]);
+            html += '<span class="cbi-value-description"> ' + feat.desc + '</span>';
+            html += '</div></div>';
+        });
+
+        html += '</div></div>'; // End Section & Map
+        container.innerHTML = html;
+    }
+
+    function fetchCapabilities() {
+        XHR.get(STATUS_URL, null, function(x, data) {
+            if (!data) return;
+            
+            // Handle raw text vs object response from LuCI
+            var statusObj = data;
+            if (typeof data === 'string') {
+                try { statusObj = JSON.parse(data); } catch(e) { return; }
+            }
+
+            // Extract capabilities from deep structure: bridge -> capabilities
+            var caps = null;
+            if (statusObj && statusObj.bridge && statusObj.bridge.capabilities) {
+                caps = statusObj.bridge.capabilities;
+            }
+            updateTable(caps);
+        });
+    }
+
+    // Init
+    window.addEventListener('load', function() {
+        fetchCapabilities();
+        // Refresh every 5s in case handshake completes late
+        setInterval(fetchCapabilities, 5000); 
+    });
+//]]></script>
+
+<h2><%:Device Capabilities%></h2>
+<p>
+    <%:These features are auto-detected during the serial handshake phase.%>
+</p>
+
+<div id="caps-container">
+    <em><%=translate("Loading capabilities...")%></em>
+</div>
+
+<%+footer%>

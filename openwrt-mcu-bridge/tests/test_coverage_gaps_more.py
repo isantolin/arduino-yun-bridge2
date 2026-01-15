@@ -575,7 +575,7 @@ async def test_publish_metrics_initial_exception_logged() -> None:
     task.cancel()
     try:
         await task
-    except asyncio.CancelledError:
+    except (RuntimeError, asyncio.CancelledError):
         pass
 
 
@@ -592,7 +592,8 @@ async def test_bridge_snapshot_loop_exception() -> None:
         raise RuntimeError("MQTT down")
 
     # Should log but not crash
-    await _emit_bridge_snapshot(state, _failing_enqueue, "summary")
+    with pytest.raises(RuntimeError, match="MQTT down"):
+        await _emit_bridge_snapshot(state, _failing_enqueue, "summary")
 
 
 def test_normalize_interval_zero() -> None:

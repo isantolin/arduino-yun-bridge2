@@ -189,12 +189,10 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
 
-    with caplog.at_level(logging.WARNING):
-        config = settings.load_runtime_config()
-
-    assert config.file_system_root == const.DEFAULT_FILE_SYSTEM_ROOT
-    assert config.mqtt_spool_dir == const.DEFAULT_MQTT_SPOOL_DIR
-    assert any("FLASH PROTECTION" in rec.getMessage() for rec in caplog.records)
+    # In previous versions, this would fall back to defaults.
+    # Now, strictly enforcing flash protection raises ValueError immediately.
+    with pytest.raises(ValueError, match="FLASH PROTECTION"):
+        settings.load_runtime_config()
 
 
 def test_load_runtime_config_allows_empty_mqtt_user_value(

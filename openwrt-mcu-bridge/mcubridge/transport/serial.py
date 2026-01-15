@@ -453,7 +453,7 @@ class SerialTransport:
             try:
                 self.writer.close()
                 await self.writer.wait_closed()
-            except Exception as exc:
+            except (OSError, ConnectionError) as exc:
                 logger.debug("Error closing serial writer: %s", exc)
         self.writer = None
         self.reader = None
@@ -474,12 +474,8 @@ class SerialTransport:
         while True:
             try:
                 chunk = await self.reader.read(256)
-            except OSError as exc:
+            except (OSError, asyncio.IncompleteReadError) as exc:
                 logger.error(f"Serial I/O Error: {exc}")
-                self._connected = False
-                break
-            except Exception as e:
-                logger.exception("CRITICAL: Unexpected error in serial reader loop: %s", e)
                 self._connected = False
                 break
 
@@ -644,7 +640,7 @@ class SerialTransport:
                         protocol.CRC_COVERED_HEADER_FORMAT,
                         error_data[: protocol.CRC_COVERED_HEADER_SIZE],
                     )
-                except Exception:
+                except struct.error:
                     logger.debug(
                         "Failed to extract command hint from malformed packet",
                         exc_info=True,

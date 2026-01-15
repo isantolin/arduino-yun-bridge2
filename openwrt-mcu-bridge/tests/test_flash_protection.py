@@ -1,7 +1,7 @@
 """Test suite for Flash Protection mechanisms (SIL-2 Safety)."""
 import unittest
-from unittest.mock import patch, MagicMock
-from mcubridge.config.settings import load_runtime_config, RuntimeConfig
+from unittest.mock import patch
+from mcubridge.config.settings import load_runtime_config
 
 class TestFlashProtection(unittest.TestCase):
     def test_file_system_root_must_be_volatile(self):

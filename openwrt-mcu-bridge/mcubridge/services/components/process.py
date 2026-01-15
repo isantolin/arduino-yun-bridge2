@@ -354,13 +354,13 @@ class ProcessComponent:
             await self._terminate_process_tree(proc)
             try:
                 await proc.wait()
-            except Exception:
+            except (OSError, ValueError, RuntimeError):
                 logger.debug("Error awaiting process during cleanup", exc_info=True)
             return Status.ERROR.value, b"", b"Internal error", None
 
         try:
             timed_out = bool(wait_task.result())
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
             logger.debug("Failed to retrieve sync process wait result", exc_info=True)
             timed_out = False
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import struct
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Awaitable, Callable
@@ -143,7 +144,7 @@ class SerialFlowController:
                 if len(compressed) < len(payload):
                     final_cmd |= protocol.CMD_FLAG_COMPRESSED
                     final_payload = compressed
-            except Exception as e:
+            except (ValueError, TypeError, struct.error) as e:
                 self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
 
         if not self._should_track(command_id):

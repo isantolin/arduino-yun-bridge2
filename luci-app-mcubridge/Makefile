@@ -52,6 +52,7 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./luasrc/view/mcubridge/status.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	$(CP) ./luasrc/view/mcubridge/webui.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	$(CP) ./luasrc/view/mcubridge/credentials.htm $(1)/usr/lib/lua/luci/view/mcubridge/
+	$(CP) ./luasrc/view/mcubridge/capabilities.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	# ESTA ES LA LÍNEA QUE FALTABA:
 	$(CP) ./luasrc/view/mcubridge/mqtt_port_helper.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	

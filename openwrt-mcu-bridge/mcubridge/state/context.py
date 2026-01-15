@@ -182,6 +182,10 @@ class McuCapabilities:
     def has_large_buffer(self) -> bool:
         return bool(self.features & protocol.CAPABILITY_BIG_BUFFER)
 
+    @property
+    def has_i2c(self) -> bool:
+        return bool(self.features & protocol.CAPABILITY_I2C)
+
     def as_dict(self) -> dict[str, int | bool]:
         return {
             "protocol_ver": self.protocol_version,
@@ -198,6 +202,7 @@ class McuCapabilities:
             "has_fpu": self.has_fpu,
             "is_3v3_logic": self.is_3v3_logic,
             "has_large_buffer": self.has_large_buffer,
+            "has_i2c": self.has_i2c,
         }
 
 

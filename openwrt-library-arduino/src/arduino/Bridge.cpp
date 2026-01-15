@@ -521,6 +521,12 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         features |= (1 << 9);
         #endif
 
+        // Bit 10: I2C (Wire) Support
+        #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
+            defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+        features |= (1 << 10);
+        #endif
+
         rpc::write_u32_be(&caps[4], features);
         
         (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps, sizeof(caps));

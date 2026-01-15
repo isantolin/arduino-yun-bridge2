@@ -333,6 +333,7 @@ Notas:
     | 7 | `128` | FPU | Unidad de punto flotante hardware. |
     | 8 | `256` | 3.3V Logic | Niveles lógicos de 3.3V (vs 5V). |
     | 9 | `512` | Big Buffer | Buffer RX serial extendido (>64 bytes). |
+    | 10 | `1024` | I2C | Soporte hardware I2C (Wire/SDA/SCL). |
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.

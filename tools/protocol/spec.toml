@@ -49,6 +49,7 @@ hw_serial1 = 0x00000040
 fpu = 0x00000080
 logic_3v3 = 0x00000100
 big_buffer = 0x00000200
+i2c = 0x00000400
 
 [handshake]
 nonce_length = 16

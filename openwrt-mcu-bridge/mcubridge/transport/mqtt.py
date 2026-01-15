@@ -105,8 +105,8 @@ async def _mqtt_subscriber_loop(
                 continue
             try:
                 await service.handle_mqtt_message(message)
-            except Exception:
-                logger.exception("CRITICAL: Error processing MQTT topic %s", topic)
+            except Exception as e:
+                logger.exception("CRITICAL: Error processing MQTT topic %s: %s", topic, e)
     except asyncio.CancelledError:
         pass  # Clean exit
     except aiomqtt.MqttError as exc:

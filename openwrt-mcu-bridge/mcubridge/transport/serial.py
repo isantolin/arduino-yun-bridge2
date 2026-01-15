@@ -437,8 +437,8 @@ class SerialTransport:
             except asyncio.CancelledError:
                 logger.info("Serial transport cancelled.")
                 raise
-            except Exception:
-                logger.critical("Unhandled exception in SerialTransport", exc_info=True)
+            except Exception as e:
+                logger.critical("Unhandled exception in SerialTransport: %s", e, exc_info=True)
             finally:
                 await self._disconnect()
 
@@ -478,8 +478,8 @@ class SerialTransport:
                 logger.error(f"Serial I/O Error: {exc}")
                 self._connected = False
                 break
-            except Exception:
-                logger.exception("CRITICAL: Unexpected error in serial reader loop")
+            except Exception as e:
+                logger.exception("CRITICAL: Unexpected error in serial reader loop: %s", e)
                 self._connected = False
                 break
 
@@ -656,8 +656,8 @@ class SerialTransport:
                 await self.service.send_frame(status.value, payload)
             except (OSError, SerialException) as exc:
                 logger.debug("Failed to send malformed status response: %s", exc)
-        except Exception:
-            logger.critical("Critical error processing frame", exc_info=True)
+        except Exception as e:
+            logger.critical("Critical error processing frame: %s", e, exc_info=True)
 
 
 __all__ = [

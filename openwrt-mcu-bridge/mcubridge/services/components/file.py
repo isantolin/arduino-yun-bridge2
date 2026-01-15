@@ -402,9 +402,9 @@ class FileComponent:
                     "This may damage the device flash memory. Use /tmp or /mnt.",
                     resolved,
                 )
-        except Exception:
+        except Exception as e:
             # Don't block write if check fails
-            logger.debug("Failed to verify flash write safety", exc_info=True)
+            logger.debug("Failed to verify flash write safety: %s", e, exc_info=True)
             pass
 
         payload_size = len(data)

@@ -143,8 +143,8 @@ class SerialFlowController:
                 if len(compressed) < len(payload):
                     final_cmd |= protocol.CMD_FLAG_COMPRESSED
                     final_payload = compressed
-            except Exception:
-                self._logger.warning("Compression failed for command 0x%02X", command_id)
+            except Exception as e:
+                self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
 
         if not self._should_track(command_id):
             return await sender(final_cmd, final_payload)
@@ -174,8 +174,8 @@ class SerialFlowController:
             return
         try:
             self._metrics_callback(event)
-        except Exception:  # pragma: no cover - defensive guard
-            self._logger.exception("Serial metrics callback failed")
+        except Exception as e:  # pragma: no cover - defensive guard
+            self._logger.exception("Serial metrics callback failed: %s", e)
 
     def _notify_pipeline(
         self,
@@ -196,8 +196,8 @@ class SerialFlowController:
         }
         try:
             self._pipeline_observer(payload)
-        except Exception:  # pragma: no cover - defensive guard
-            self._logger.exception("Serial pipeline observer failed")
+        except Exception as e:  # pragma: no cover - defensive guard
+            self._logger.exception("Serial pipeline observer failed: %s", e)
 
     def on_frame_received(self, command_id: int, payload: bytes) -> None:
         pending = self._current

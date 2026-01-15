@@ -112,10 +112,11 @@ class ProcessComponent:
                     Status.ERROR.value,
                     encode_status_reason(exc.message),
                 )
-            except Exception:
+            except Exception as e:
                 logger.exception(
-                    "Failed to execute synchronous process command '%s'",
+                    "Failed to execute synchronous process command '%s': %s",
                     command,
+                    e,
                 )
                 await self.ctx.send_frame(
                     Status.ERROR.value,
@@ -320,10 +321,11 @@ class ProcessComponent:
                     )
                 )
                 wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
-        except Exception:
+        except Exception as e:
             logger.exception(
-                "Unexpected error executing command '%s'",
+                "Unexpected error executing command '%s': %s",
                 command,
+                e,
             )
             await self._terminate_process_tree(proc)
             try:
@@ -410,10 +412,11 @@ class ProcessComponent:
                     exc,
                 )
                 return INVALID_ID_SENTINEL
-            except Exception:
+            except Exception as e:
                 logger.exception(
-                    "Unexpected error starting async process '%s'",
+                    "Unexpected error starting async process '%s': %s",
                     command,
+                    e,
                 )
                 return INVALID_ID_SENTINEL
 
@@ -753,8 +756,8 @@ class ProcessComponent:
             await proc.wait()
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("Error while awaiting async process PID %d", pid)
+        except Exception as e:
+            logger.exception("Error while awaiting async process PID %d: %s", pid, e)
             return
         await self._finalize_async_process(pid, proc)
 

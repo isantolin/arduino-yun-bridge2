@@ -193,11 +193,11 @@ def get_uci_config() -> dict[str, str]:
 
             return clean_config
 
-    except Exception:
+    except Exception as e:
         # [FAIL-SAFE] Catch-all to ensure defaults are loaded.
         # In SIL 2 contexts, we must log the full traceback for root cause analysis
         # even if we recover gracefully.
-        logger.exception("CRITICAL: Failed to load UCI configuration. Reverting to SAFE DEFAULTS.")
+        logger.exception("CRITICAL: Failed to load UCI configuration. Reverting to SAFE DEFAULTS. Error: %s", e)
         return get_default_config()
 
 

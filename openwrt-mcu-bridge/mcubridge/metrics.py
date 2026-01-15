@@ -153,9 +153,10 @@ async def _emit_bridge_snapshot(
         )
     except asyncio.CancelledError:
         raise
-    except Exception:
+    except Exception as e:
         logger.exception(
-            "Failed to publish bridge snapshot",
+            "Failed to publish bridge snapshot: %s",
+            e,
             extra={"flavor": flavor},
         )
 
@@ -200,8 +201,8 @@ async def publish_metrics(
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
-    except Exception:
-        logger.exception("Failed to publish initial metrics payload")
+    except Exception as e:
+        logger.exception("Failed to publish initial metrics payload: %s", e)
 
     # Loop
     try:
@@ -211,8 +212,8 @@ async def publish_metrics(
                 await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("Failed to publish metrics payload")
+            except Exception as e:
+                logger.exception("Failed to publish metrics payload: %s", e)
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
@@ -260,10 +261,10 @@ async def publish_bridge_snapshots(
     except* asyncio.CancelledError:
         logger.info("Bridge snapshot publisher cancelled.")
         raise
-    except* Exception:
+    except* Exception as exc_group:
         # Individual loop errors are caught inside _emit/_loop, but if something
         # escapes or TaskGroup raises, we log it.
-        logger.critical("Fatal error in bridge snapshot publisher", exc_info=True)
+        logger.critical("Fatal error in bridge snapshot publisher: %s", exc_group, exc_info=True)
         raise
 
 

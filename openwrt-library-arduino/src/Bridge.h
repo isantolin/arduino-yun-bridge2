@@ -14,6 +14,11 @@
  * - CRC32 integrity on all frames
  * - Defined fail-safe state on error conditions
  * 
+ * [STRICT NO-STL POLICY]
+ * The use of Standard Template Library (STL) headers (e.g., <vector>, <string>, <map>)
+ * is STRICTLY PROHIBITED to prevent heap fragmentation and non-deterministic behavior.
+ * Reviewers must reject any PR including these headers.
+ * 
  * @see docs/PROTOCOL.md for protocol specification
  * @see tools/protocol/spec.toml for machine-readable contract
  */
@@ -27,6 +32,9 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "arduino/BridgeTransport.h"
+
+// [SIL-2] Static Constraints
+static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
 
 // --- Configuration ---
 

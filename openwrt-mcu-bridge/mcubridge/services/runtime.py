@@ -229,8 +229,8 @@ class BridgeService:
         except SerialHandshakeFatal as exc:
             fatal_error = exc
             handshake_ok = False
-        except Exception:
-            logger.exception("Failed to synchronise MCU link after reconnect")
+        except Exception as e:
+            logger.exception("Failed to synchronise MCU link after reconnect: %s", e)
 
         if fatal_error is not None:
             raise fatal_error
@@ -246,13 +246,13 @@ class BridgeService:
             version_ok = await self._system.request_mcu_version()
             if not version_ok:
                 logger.warning("Failed to dispatch MCU version request after reconnect")
-        except Exception:
-            logger.exception("Failed to request MCU version after reconnect")
+        except Exception as e:
+            logger.exception("Failed to request MCU version after reconnect: %s", e)
 
         try:
             await self._console.flush_queue()
-        except Exception:
-            logger.exception("Failed to flush console backlog after reconnect")
+        except Exception as e:
+            logger.exception("Failed to flush console backlog after reconnect: %s", e)
 
     async def on_serial_disconnected(self) -> None:
         """Reset transient MCU tracking when the serial link drops."""
@@ -286,11 +286,12 @@ class BridgeService:
         self._serial_flow.on_frame_received(command_id, payload)
         try:
             await self._dispatcher.dispatch_mcu_frame(command_id, payload)
-        except Exception:
+        except Exception as e:
             logger.critical(
-                "Critical error handling MCU frame: CMD=0x%02X payload=%s",
+                "Critical error handling MCU frame: CMD=0x%02X payload=%s: %s",
                 command_id,
                 payload.hex(),
+                e,
                 exc_info=True,
             )
 
@@ -301,10 +302,11 @@ class BridgeService:
                 inbound,
                 self._parse_inbound_topic,
             )
-        except Exception:
+        except Exception as e:
             logger.critical(
-                "Critical error processing MQTT message on topic %s",
+                "Critical error processing MQTT message on topic %s: %s",
                 inbound_topic,
+                e,
                 exc_info=True,
             )
 

@@ -320,6 +320,19 @@ Notas:
   - Petición: sin payload.
   - Respuesta (`0x49 CMD_GET_CAPABILITIES_RESP`): `[proto_ver: u8, arch: u8, num_digital: u8, num_analog: u8, features: u32]`.
   - **Propósito:** Introspección estática de hardware (SIL-2 Safety). Permite al MPU validar que la configuración de pines no excede los límites físicos del MCU.
+  - **Features Bitmask (u32):**
+    | Bit | Valor | Feature | Descripción |
+    | :--- | :--- | :--- | :--- |
+    | 0 | `1` | Watchdog | MCU Watchdog habilitado. |
+    | 1 | `2` | RLE | Compresión RLE soportada. |
+    | 2 | `4` | Debug Frames | Logging de tramas activo. |
+    | 3 | `8` | Debug IO | Logging de GPIO activo. |
+    | 4 | `16` | EEPROM | Memoria no volátil disponible. |
+    | 5 | `32` | DAC | Salida analógica real (True DAC). |
+    | 6 | `64` | HW Serial 1 | Segundo puerto serial hardware disponible. |
+    | 7 | `128` | FPU | Unidad de punto flotante hardware. |
+    | 8 | `256` | 3.3V Logic | Niveles lógicos de 3.3V (vs 5V). |
+    | 9 | `512` | Big Buffer | Buffer RX serial extendido (>64 bytes). |
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.

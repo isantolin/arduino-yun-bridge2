@@ -142,13 +142,62 @@ class McuCapabilities:
     num_analog_inputs: int = 0
     features: int = 0
 
-    def as_dict(self) -> dict[str, int]:
+    @property
+    def has_watchdog(self) -> bool:
+        return bool(self.features & 1)
+
+    @property
+    def has_rle(self) -> bool:
+        return bool(self.features & 2)
+
+    @property
+    def debug_frames(self) -> bool:
+        return bool(self.features & 4)
+
+    @property
+    def debug_io(self) -> bool:
+        return bool(self.features & 8)
+
+    @property
+    def has_eeprom(self) -> bool:
+        return bool(self.features & 16)
+
+    @property
+    def has_dac(self) -> bool:
+        return bool(self.features & 32)
+
+    @property
+    def has_hw_serial1(self) -> bool:
+        return bool(self.features & 64)
+
+    @property
+    def has_fpu(self) -> bool:
+        return bool(self.features & 128)
+
+    @property
+    def is_3v3_logic(self) -> bool:
+        return bool(self.features & 256)
+
+    @property
+    def has_large_buffer(self) -> bool:
+        return bool(self.features & 512)
+
+    def as_dict(self) -> dict[str, int | bool]:
         return {
             "protocol_ver": self.protocol_version,
             "arch": self.board_arch,
             "digital": self.num_digital_pins,
             "analog": self.num_analog_inputs,
-            "features": self.features,
+            "features_raw": self.features,
+            # Expanded capabilities
+            "has_watchdog": self.has_watchdog,
+            "has_rle": self.has_rle,
+            "has_eeprom": self.has_eeprom,
+            "has_dac": self.has_dac,
+            "has_hw_serial1": self.has_hw_serial1,
+            "has_fpu": self.has_fpu,
+            "is_3v3_logic": self.is_3v3_logic,
+            "has_large_buffer": self.has_large_buffer,
         }
 
 

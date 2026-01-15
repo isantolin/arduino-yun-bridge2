@@ -488,6 +488,39 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         features |= 8;
         #endif
 
+        // Bit 4: EEPROM (Non-volatile memory)
+        #if defined(E2END) && (E2END > 0)
+        features |= (1 << 4);
+        #endif
+
+        // Bit 5: True DAC (Analog Output)
+        #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
+            defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)
+        features |= (1 << 5);
+        #endif
+
+        // Bit 6: Hardware Serial 1 (Tunneling capability)
+        #if defined(HAVE_HWSERIAL1)
+        features |= (1 << 6);
+        #endif
+
+        // Bit 7: Hardware FPU (Floating Point Unit)
+        #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
+        features |= (1 << 7);
+        #endif
+
+        // Bit 8: 3.3V Logic Level (Safety)
+        #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || \
+            defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
+            defined(ARDUINO_ARCH_RP2040)
+        features |= (1 << 8);
+        #endif
+
+        // Bit 9: Extended Serial Buffer (>64 bytes)
+        #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
+        features |= (1 << 9);
+        #endif
+
         rpc::write_u32_be(&caps[4], features);
         
         (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps, sizeof(caps));

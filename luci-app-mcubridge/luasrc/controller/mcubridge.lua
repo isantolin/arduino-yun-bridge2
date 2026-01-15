@@ -100,8 +100,8 @@ function index()
     entry({"admin", "services", "mcubridge", "webui"}, template("mcubridge/webui"), "Web UI", 100).dependent = false
     entry({"admin", "services", "mcubridge", "status"}, template("mcubridge/status"), "Daemon Status", 110)
         .dependent = false
-    entry({"admin", "services", "mcubridge", "capabilities"}, template("mcubridge/capabilities"), "Device Capabilities", 115)
-        .dependent = false
+    entry({"admin", "services", "mcubridge", "capabilities"},
+        template("mcubridge/capabilities"), "Device Capabilities", 115).dependent = false
     entry({"admin", "services", "mcubridge", "credentials"}, template("mcubridge/credentials"),
         "Credentials & TLS", 120).dependent = false
 

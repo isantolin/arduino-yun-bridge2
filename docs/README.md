@@ -24,6 +24,13 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Estado inmediato de buzón:** Los sketches pueden invocar `Mailbox.requestAvailable()` y recibir el conteo pendiente en `Bridge.onMailboxAvailableResponse`, lo que evita lecturas vacías y mantiene sincronizado al MCU con la cola de Linux.
 - **Lecturas de pin dirigidas desde Linux:** `CMD_DIGITAL_READ`/`CMD_ANALOG_READ` solo se originan desde el daemon; el MCU ya no expone APIs para iniciar lecturas de pin (evita patrones legacy que monopolizan el enlace serial).
 
+### Novedades (Enero 2026)
+
+- **Detección de Hardware (Capabilities Discovery):** El protocolo ahora incluye un mecanismo robusto de introspección (`CMD_GET_CAPABILITIES`) que permite al daemon Linux conocer las características físicas del MCU conectado: cantidad de pines digitales/analógicos, arquitectura (AVR/MIPS/ARM), y soporte de periféricos críticos como **EEPROM**, **True DAC**, **FPU** (Punto Flotante), **I2C (Wire)**, puertos seriales extra y niveles lógicos (3.3V vs 5V). Esto permite al daemon validar comandos antes de enviarlos, rechazando operaciones no soportadas por el hardware.
+- **Nueva Pestaña en LuCI:** Se ha añadido la sección **"Device Capabilities"** en la interfaz web, donde se visualiza en tiempo real toda la información descubierta del MCU: versión del protocolo, arquitectura, conteo de pines y estado de todas las features detectadas.
+- **Soporte Extendido de Protocolo:** El bitmask de `features` se ha expandido para incluir flags de Watchdog, RLE, Debug, EEPROM, DAC, HW Serial, FPU, Lógica 3.3V, Big Buffer y I2C.
+- **Manejo de Excepciones SIL-2:** Refactorización profunda del manejo de errores en el daemon Python para eliminar capturas genéricas (`except Exception`) en favor de tipos específicos (`OSError`, `struct.error`, etc.), cumpliendo con directivas de seguridad funcional para evitar el enmascaramiento de fallos críticos.
+
 ### Novedades (noviembre 2025)
 
 - **Compresión RLE opcional:** Payloads con datos repetitivos (buffers de LEDs, streams de sensores uniformes) pueden comprimirse con Run-Length Encoding antes de enviarlos. Implementación disponible en C++ (`rle.h`) y Python (`rle.py`), con heurísticas para decidir cuándo conviene comprimir. Ver [PROTOCOL.md §7](PROTOCOL.md#7-compresión-rle-opcional) para detalles del formato.

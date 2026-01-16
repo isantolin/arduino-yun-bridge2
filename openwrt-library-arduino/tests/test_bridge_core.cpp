@@ -183,6 +183,49 @@ public:
     }
 };
 
+void sync_bridge(BridgeClass& bridge, MockStream& stream) {
+    stream.tx_buffer.clear(); // Clear any initial traffic
+    
+    // Construct a CMD_LINK_SYNC frame manually for the test
+    const uint8_t nonce[rpc::RPC_HANDSHAKE_NONCE_LENGTH] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    
+    uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE]; // Max size for protocol frame
+    size_t cursor = 0;
+
+    raw_frame[cursor++] = rpc::PROTOCOL_VERSION;
+    const uint16_t len = static_cast<uint16_t>(sizeof(nonce)); // Payload length
+    raw_frame[cursor++] = static_cast<uint8_t>((len >> 8) & rpc::RPC_UINT8_MASK);
+    raw_frame[cursor++] = static_cast<uint8_t>(len & rpc::RPC_UINT8_MASK);
+    const uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+    raw_frame[cursor++] = static_cast<uint8_t>((cmd_id >> 8) & rpc::RPC_UINT8_MASK);
+    raw_frame[cursor++] = static_cast<uint8_t>(cmd_id & rpc::RPC_UINT8_MASK);
+    memcpy(raw_frame + cursor, nonce, sizeof(nonce));
+    cursor += sizeof(nonce);
+
+    uint32_t crc = crc32_ieee(raw_frame, cursor);
+    crc ^= rpc::RPC_CRC_INITIAL;
+
+    raw_frame[cursor++] = static_cast<uint8_t>((crc >> 24) & rpc::RPC_UINT8_MASK);
+    raw_frame[cursor++] = static_cast<uint8_t>((crc >> 16) & rpc::RPC_UINT8_MASK);
+    raw_frame[cursor++] = static_cast<uint8_t>((crc >> 8) & rpc::RPC_UINT8_MASK);
+    raw_frame[cursor++] = static_cast<uint8_t>(crc & rpc::RPC_UINT8_MASK);
+
+    // Encode with COBS
+    enum { kEncodedCap = rpc::MAX_RAW_FRAME_SIZE + 2 }; // +1 COBS overhead +1 delimiter
+    uint8_t encoded_frame[kEncodedCap];
+    const size_t encoded_len = cobs::encode(raw_frame, cursor, encoded_frame);
+    TEST_ASSERT(encoded_len > 0);
+    TEST_ASSERT(encoded_len + 1 <= sizeof(encoded_frame)); // Check space for delimiter
+    encoded_frame[encoded_len] = rpc::RPC_FRAME_DELIMITER;
+
+    stream.inject_rx(encoded_frame, encoded_len + 1);
+    bridge.process(); // Process the CMD_LINK_SYNC command
+    
+    // Expect CMD_LINK_SYNC_RESP and clear tx buffer for next test logic
+    TEST_ASSERT(stream.tx_buffer.len > 0);
+    stream.tx_buffer.clear(); // Clear response to sync
+}
+
 static size_t count_status_ack_frames(const ByteBuffer<8192>& buffer) {
     size_t count = 0;
     size_t cursor = 0;
@@ -251,6 +294,7 @@ void test_bridge_send_frame() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    sync_bridge(bridge, stream); // Ensure bridge is synchronized
     stream.tx_buffer.clear(); // Clear handshake frames
 
     uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02, TEST_BYTE_03};
@@ -804,6 +848,7 @@ void test_file_write_malformed_path() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    sync_bridge(bridge, stream); // Sync the bridge before testing error handling
     
     // Case 2: Malformed path length (claim 100 bytes, provide 5)
     const uint8_t payload[] = {100, '/', 'e'};
@@ -828,6 +873,7 @@ void test_bridge_crc_mismatch() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    sync_bridge(bridge, stream); // Sync the bridge before testing error handling
     stream.tx_buffer.clear();
 
     const uint8_t payload[] = {TEST_BYTE_01, TEST_BYTE_02};
@@ -880,6 +926,7 @@ void test_bridge_unknown_command() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    sync_bridge(bridge, stream); // Sync the bridge before testing error handling
     stream.tx_buffer.clear();
 
     // Command ID rpc::RPC_INVALID_ID_SENTINEL is likely unknown

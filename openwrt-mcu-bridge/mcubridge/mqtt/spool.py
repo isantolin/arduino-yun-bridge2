@@ -209,13 +209,8 @@ class MQTTPublishSpool:
     def __del__(self) -> None:  # pragma: no cover - defensive cleanup
         try:
             self.close()
-        except Exception as e:
-            # [SIL-2] Log unexpected errors during defensive cleanup.
-            logger.debug(
-                "Unhandled exception during MQTT spooler defensive cleanup: %s",
-                e,
-                exc_info=True,
-            )
+        except Exception:
+            pass
 
     def append(self, message: QueuedPublish) -> None:
         record: SpoolRecord = message.to_record()

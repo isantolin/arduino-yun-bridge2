@@ -559,5 +559,3 @@ def load_runtime_config() -> RuntimeConfig:
         bridge_handshake_interval=handshake_interval,
         allow_non_tmp_paths=_raw_get_bool(raw, "allow_non_tmp_paths", False),
     )
-
-}

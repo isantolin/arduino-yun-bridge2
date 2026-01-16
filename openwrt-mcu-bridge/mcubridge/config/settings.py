@@ -137,7 +137,7 @@ class RuntimeConfig:
                     "MQTT TLS hostname verification is disabled (mqtt_tls_insecure=1); "
                     "this is less secure and should be used only for known/self-hosted brokers."
                 )
-        
+
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
@@ -146,14 +146,14 @@ class RuntimeConfig:
             )
         if self.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
-            
+
         self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
             raise ValueError(
                 "serial_shared_secret must contain at least four distinct bytes"
             )
-            
+
         self._validate_queue_limits()
         self._normalize_topic_prefix()
         self._normalize_paths()
@@ -211,7 +211,7 @@ class RuntimeConfig:
         # [SIL-2] FLASH PROTECTION (OpenWrt)
         # CRITICAL: Enforce usage of /tmp (RAM) for high-frequency writes.
         # Writing to /overlay or /root on embedded devices causes premature flash failure.
-        
+
         if root != "/tmp" and not root.startswith("/tmp/"):
             raise ValueError(
                 f"FLASH PROTECTION VIOLATION: file_system_root '{root}' must be in /tmp. "

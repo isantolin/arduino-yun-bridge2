@@ -1,3 +1,11 @@
+/*
+ * CORRECCIÓN DE EMERGENCIA: test_bridge_core.cpp
+ * ----------------------------------------------
+ * Motivo: Fallo en Assertion en línea 225 (stream.tx_buffer.len > 0).
+ * Causa Raíz: La función sync_bridge calculaba mal el CRC (XOR extra),
+ * provocando que el Bridge rechazara el frame de sincronización.
+ * Solución: Usar TestFrameBuilder para construir el frame de forma consistente.
+ */
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -186,39 +194,21 @@ public:
 void sync_bridge(BridgeClass& bridge, MockStream& stream) {
     stream.tx_buffer.clear(); // Clear any initial traffic
     
-    // Construct a CMD_LINK_SYNC frame manually for the test
+    // Construct a CMD_LINK_SYNC frame
     const uint8_t nonce[rpc::RPC_HANDSHAKE_NONCE_LENGTH] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
     
-    uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE]; // Max size for protocol frame
-    size_t cursor = 0;
-
-    raw_frame[cursor++] = rpc::PROTOCOL_VERSION;
-    const uint16_t len = static_cast<uint16_t>(sizeof(nonce)); // Payload length
-    raw_frame[cursor++] = static_cast<uint8_t>((len >> 8) & rpc::RPC_UINT8_MASK);
-    raw_frame[cursor++] = static_cast<uint8_t>(len & rpc::RPC_UINT8_MASK);
-    const uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-    raw_frame[cursor++] = static_cast<uint8_t>((cmd_id >> 8) & rpc::RPC_UINT8_MASK);
-    raw_frame[cursor++] = static_cast<uint8_t>(cmd_id & rpc::RPC_UINT8_MASK);
-    memcpy(raw_frame + cursor, nonce, sizeof(nonce));
-    cursor += sizeof(nonce);
-
-    uint32_t crc = crc32_ieee(raw_frame, cursor);
-    crc ^= rpc::RPC_CRC_INITIAL;
-
-    raw_frame[cursor++] = static_cast<uint8_t>((crc >> 24) & rpc::RPC_UINT8_MASK);
-    raw_frame[cursor++] = static_cast<uint8_t>((crc >> 16) & rpc::RPC_UINT8_MASK);
-    raw_frame[cursor++] = static_cast<uint8_t>((crc >> 8) & rpc::RPC_UINT8_MASK);
-    raw_frame[cursor++] = static_cast<uint8_t>(crc & rpc::RPC_UINT8_MASK);
-
-    // Encode with COBS
-    enum { kEncodedCap = rpc::MAX_RAW_FRAME_SIZE + 2 }; // +1 COBS overhead +1 delimiter
+    enum { kEncodedCap = rpc::COBS_BUFFER_SIZE + 1 };
     uint8_t encoded_frame[kEncodedCap];
-    const size_t encoded_len = cobs::encode(raw_frame, cursor, encoded_frame);
-    TEST_ASSERT(encoded_len > 0);
-    TEST_ASSERT(encoded_len + 1 <= sizeof(encoded_frame)); // Check space for delimiter
-    encoded_frame[encoded_len] = rpc::RPC_FRAME_DELIMITER;
 
-    stream.inject_rx(encoded_frame, encoded_len + 1);
+    const size_t frame_len = TestFrameBuilder::build(
+        encoded_frame,
+        sizeof(encoded_frame),
+        rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
+        nonce,
+        sizeof(nonce)
+    );
+
+    stream.inject_rx(encoded_frame, frame_len);
     bridge.process(); // Process the CMD_LINK_SYNC command
     
     // Expect CMD_LINK_SYNC_RESP and clear tx buffer for next test logic

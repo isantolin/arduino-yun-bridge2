@@ -10,7 +10,9 @@ not used as overrides.
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import os
+import sys
 from dataclasses import dataclass, field
 
 from ..common import (
@@ -339,6 +341,44 @@ def _raw_get_bool(raw: dict[str, str], key: str, default: bool) -> bool:
     return parse_bool(value) if value is not None else default
 
 
+def configure_logging(config: RuntimeConfig) -> None:
+    """Configure logging for OpenWrt environment (Syslog)."""
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG if config.debug_logging else logging.INFO)
+
+    # Remove existing handlers to avoid duplication
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
+    formatter = logging.Formatter(
+        "%(name)s: %(levelname)s %(message)s"
+    )
+
+    handlers: list[logging.Handler] = []
+
+    # [SIL-2] Syslog Hook for OpenWrt
+    if os.path.exists("/dev/log"):
+        try:
+            syslog_handler = logging.handlers.SysLogHandler(
+                address="/dev/log",
+                facility=logging.handlers.SysLogHandler.LOG_DAEMON
+            )
+            syslog_handler.setFormatter(formatter)
+            handlers.append(syslog_handler)
+        except (OSError, ConnectionError) as e:
+            # Fallback if /dev/log exists but is inaccessible (rare)
+            print(f"Failed to connect to syslog: {e}", file=sys.stderr)
+
+    # Fallback/Development: Stderr
+    if not handlers or sys.stdout.isatty():
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        handlers.append(stream_handler)
+
+    for handler in handlers:
+        root.addHandler(handler)
+
+
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults."""
 
@@ -519,3 +559,5 @@ def load_runtime_config() -> RuntimeConfig:
         bridge_handshake_interval=handshake_interval,
         allow_non_tmp_paths=_raw_get_bool(raw, "allow_non_tmp_paths", False),
     )
+
+}

@@ -239,7 +239,7 @@ def test_sync_link_rejects_invalid_handshake_tag(
         service.register_serial_sender(fake_sender)
 
         success = await service.sync_link()
-        
+
         # Yield to allow background tasks to complete
         await asyncio.sleep(0)
 
@@ -278,14 +278,14 @@ def test_sync_link_rejects_truncated_response(
                 # Return truncated response (nonce only, no tag)
                 asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
-                    nonce, 
+                    nonce,
                 ))
             return True
 
         service.register_serial_sender(fake_sender)
 
         success = await service.sync_link()
-        
+
         # Yield to allow background tasks to update state
         await asyncio.sleep(0)
 

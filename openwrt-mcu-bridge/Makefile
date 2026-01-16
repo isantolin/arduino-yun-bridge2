@@ -10,18 +10,19 @@
 #
 # This program is distributed in the hope that it is useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 # OpenWRT package Makefile for openwrt-mcu-bridge
+# This Makefile declara openwrt-mcu-core como dependencia
 
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.1.2
+PKG_VERSION:=2.1.1
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
@@ -36,7 +37,7 @@ define Package/$(PKG_NAME)
 	TITLE:=MCU Bridge Python Daemon
 	PKG_ARCH:=all
 	DEPENDS:=+openwrt-mcu-core
-	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
+	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
@@ -57,9 +58,9 @@ endef
 
 define Build/Compile
 	# Compile Python source to bytecode to optimize startup time and save RAM
-	# on the target.
-	# We use -b to generate legacy .pyc files (no __pycache__ dir)
+	# on the target. We use -b to generate legacy .pyc files (no __pycache__ dir)
 	# which is often preferred for simple packaging, or standard compileall.
+	# OpenWrt python3 package usually handles this via hooks, but explicit is safer.
 	$(PYTHON3) -m compileall -b -f $(PKG_BUILD_DIR)/mcubridge
 endef
 

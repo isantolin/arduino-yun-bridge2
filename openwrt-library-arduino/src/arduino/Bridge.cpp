@@ -137,25 +137,6 @@ uint16_t getFreeMemory() {
 #endif
 }
 
-// [SIL-2] HARDENING: Funciones auxiliares para validación de límites
-// Retorna true si el pin es seguro para operaciones digitales
-bool checkDigitalPin(uint8_t pin) {
-  #ifdef NUM_DIGITAL_PINS
-  return pin < NUM_DIGITAL_PINS;
-  #else
-  return true; // Fallback si no está definido (riesgo aceptado en targets genéricos)
-  #endif
-}
-
-// Retorna true si el pin es seguro para operaciones analógicas
-bool checkAnalogPin(uint8_t pin) {
-  #ifdef NUM_ANALOG_INPUTS
-  return pin < NUM_ANALOG_INPUTS;
-  #else
-  return true; 
-  #endif
-}
-
 }
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
@@ -615,13 +596,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t mode = payload_data[1];
-        
-        // [SIL-2] Bounds Check
-        if (!checkDigitalPin(pin)) {
-           _emitStatus(rpc::StatusCode::STATUS_ERROR, F("gpio_bounds_error"));
-           return;
-        }
-
         ::pinMode(pin, mode);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("pinMode"), pin, mode);
@@ -632,13 +606,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t value = payload_data[1] ? HIGH : LOW;
-
-        // [SIL-2] Bounds Check
-        if (!checkDigitalPin(pin)) {
-           _emitStatus(rpc::StatusCode::STATUS_ERROR, F("gpio_bounds_error"));
-           return;
-        }
-
         ::digitalWrite(pin, value);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalWrite"), pin, value == HIGH ? 1 : 0);
@@ -647,27 +614,12 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       break;
     case rpc::CommandId::CMD_ANALOG_WRITE:
       if (payload_length == 2) {
-        // analogWrite acepta pines digitales con PWM, usamos checkDigitalPin
-        uint8_t pin = payload_data[0];
-        
-        // [SIL-2] Bounds Check
-        if (!checkDigitalPin(pin)) {
-           return; // Fail-silent en escritura
-        }
-
-        ::analogWrite(pin, static_cast<int>(payload_data[1]));
+        ::analogWrite(payload_data[0], static_cast<int>(payload_data[1]));
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
-
-        // [SIL-2] Bounds Check
-        if (!checkDigitalPin(pin)) {
-           _emitStatus(rpc::StatusCode::STATUS_ERROR, F("gpio_bounds_error"));
-           return;
-        }
-
         int16_t value = ::digitalRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
@@ -679,13 +631,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_ANALOG_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
-
-        // [SIL-2] Bounds Check
-        if (!checkAnalogPin(pin)) {
-           _emitStatus(rpc::StatusCode::STATUS_ERROR, F("gpio_bounds_error"));
-           return;
-        }
-
         int16_t value = ::analogRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);

@@ -2,9 +2,6 @@
 
 Configuration is loaded from OpenWrt UCI (package `mcubridge`, section
 `general`) with sane defaults for non-OpenWrt environments.
-
-Runtime configuration is intentionally **UCI-only**: environment variables are
-not used as overrides.
 """
 
 from __future__ import annotations
@@ -22,7 +19,6 @@ from ..common import (
     parse_int,
 )
 from ..const import (
-    DEFAULT_ALLOW_NON_TMP_PATHS,
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -113,7 +109,6 @@ class RuntimeConfig:
     metrics_port: int = DEFAULT_METRICS_PORT
     bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
     bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
-    allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
     @property
     def tls_enabled(self) -> bool:
@@ -142,25 +137,23 @@ class RuntimeConfig:
                     "MQTT TLS hostname verification is disabled (mqtt_tls_insecure=1); "
                     "this is less secure and should be used only for known/self-hosted brokers."
                 )
-            if not self.mqtt_cafile:
-                logger.info(
-                    "MQTT TLS is enabled with no mqtt_cafile configured; using system trust store."
-                )
+        
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
             raise ValueError(
-                "serial_shared_secret must be at least %d bytes"
-                % MIN_SERIAL_SHARED_SECRET_LEN
+                f"serial_shared_secret must be at least {MIN_SERIAL_SHARED_SECRET_LEN} bytes"
             )
         if self.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
+            
         self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
             raise ValueError(
-                "serial_shared_secret must contain at least " "four distinct bytes"
+                "serial_shared_secret must contain at least four distinct bytes"
             )
+            
         self._validate_queue_limits()
         self._normalize_topic_prefix()
         self._normalize_paths()
@@ -215,19 +208,20 @@ class RuntimeConfig:
             require_absolute=True,
         )
 
-        # allow_non_tmp_paths is ONLY for the File component (file_system_root).
-        if not self.allow_non_tmp_paths:
-            if root != "/tmp" and not root.startswith("/tmp/"):
-                raise ValueError(
-                    f"FLASH PROTECTION: file_system_root '{root}' is not in /tmp. "
-                    "Set allow_non_tmp_paths=1 to override (NOT RECOMMENDED)."
-                )
+        # [SIL-2] FLASH PROTECTION (OpenWrt)
+        # CRITICAL: Enforce usage of /tmp (RAM) for high-frequency writes.
+        # Writing to /overlay or /root on embedded devices causes premature flash failure.
+        
+        if root != "/tmp" and not root.startswith("/tmp/"):
+            raise ValueError(
+                f"FLASH PROTECTION VIOLATION: file_system_root '{root}' must be in /tmp. "
+                "Writing to persistent flash is prohibited for this daemon."
+            )
 
-        # mqtt_spool_dir is always kept under /tmp to avoid flash wear.
         if spool != "/tmp" and not spool.startswith("/tmp/"):
             raise ValueError(
-                f"FLASH PROTECTION: mqtt_spool_dir '{spool}' is not in /tmp. "
-                "MQTT spool must live under /tmp to prevent flash wear."
+                f"FLASH PROTECTION VIOLATION: mqtt_spool_dir '{spool}' must be in /tmp. "
+                "MQTT spool writes must not hit physical flash."
             )
 
         self.file_system_root = root
@@ -309,11 +303,8 @@ def _load_raw_config() -> dict[str, str]:
         if uci_values:
             return uci_values
     except (OSError, ValueError) as err:
-        # [SIL-2] Catch specific errors to differentiate operational issues from bugs.
-        # Fallback to defaults is acceptable here to ensure Fail-Operational behavior.
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
     except Exception as err:
-        # [SIL-2] Critical Catch-All: Log unexpected errors with stack trace before fallback.
         logger.critical(
             "CRITICAL: Unexpected failure while loading UCI config: %s",
             err,
@@ -517,5 +508,4 @@ def load_runtime_config() -> RuntimeConfig:
         metrics_port=max(0, metrics_port),
         bridge_summary_interval=summary_interval,
         bridge_handshake_interval=handshake_interval,
-        allow_non_tmp_paths=_raw_get_bool(raw, "allow_non_tmp_paths", False),
     )

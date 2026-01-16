@@ -367,7 +367,7 @@ def configure_logging(config: RuntimeConfig) -> None:
             handlers.append(syslog_handler)
         except (OSError, ConnectionError) as e:
             # Fallback if /dev/log exists but is inaccessible (rare)
-            print(f"Failed to connect to syslog: {e}", file=sys.stderr)
+            sys.stderr.write(f"Failed to connect to syslog: {e}\n")
 
     # Fallback/Development: Stderr
     if not handlers or sys.stdout.isatty():

@@ -22,7 +22,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.1.1
+PKG_VERSION:=2.1.2
 PKG_RELEASE:=1
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
@@ -41,7 +41,6 @@ define Package/$(PKG_NAME)
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
-		+python3-sqlite3 \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \

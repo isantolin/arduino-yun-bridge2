@@ -396,19 +396,24 @@ void BridgeClass::process() {
   } else {
     rpc::FrameParser::Error error = _transport.getLastError();
     if (error != rpc::FrameParser::Error::NONE) {
-      switch (error) {
-        case rpc::FrameParser::Error::CRC_MISMATCH:
-          _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
-          break;
-        case rpc::FrameParser::Error::MALFORMED:
-          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
-          break;
-        case rpc::FrameParser::Error::OVERFLOW:
-          _emitStatus(rpc::StatusCode::STATUS_MALFORMED, reinterpret_cast<const __FlashStringHelper*>(kSerialOverflowMessage));
-          break;
-        default:
-          _emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
-          break;
+      // [SIL-2] Noise Suppression: Do not emit error frames until link is synchronized.
+      // This prevents "Security: Rejecting MCU frame" logs on the Linux side caused by
+      // startup line noise or baudrate settling.
+      if (_synchronized) {
+        switch (error) {
+          case rpc::FrameParser::Error::CRC_MISMATCH:
+            _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
+            break;
+          case rpc::FrameParser::Error::MALFORMED:
+            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
+            break;
+          case rpc::FrameParser::Error::OVERFLOW:
+            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, reinterpret_cast<const __FlashStringHelper*>(kSerialOverflowMessage));
+            break;
+          default:
+            _emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
+            break;
+        }
       }
       _transport.clearError();
       _transport.clearOverflow();

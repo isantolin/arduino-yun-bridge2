@@ -361,6 +361,22 @@ async def _open_serial_connection_with_retry(
                         "Negotiation failed; staying at %d baud", initial_baud
                     )
 
+            # [SIL-2] Startup Noise Drain
+            # Discard any buffered input (garbage/bootloader noise) before starting the protocol loop.
+            # This prevents "Frame parse error" logs on startup.
+            try:
+                while not reader.at_eof():
+                    try:
+                        # Non-blocking read of up to 4KB
+                        garbage = await asyncio.wait_for(reader.read(4096), timeout=0.1)
+                        if not garbage:
+                            break
+                        logger.debug("Drained startup noise: %s", garbage.hex())
+                    except asyncio.TimeoutError:
+                        break
+            except Exception as e:
+                logger.debug("Error draining serial buffer: %s", e)
+
             return reader, writer
 
         except (SerialException, OSError, ExceptionGroup) as exc:

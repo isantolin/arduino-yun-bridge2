@@ -27,6 +27,10 @@ import termios
 from typing import Any
 from typing import Final
 
+import logging
+# Add module-level logger for use in exception handling.
+logger = logging.getLogger(__name__)
+
 # Baudrate constants mapping
 BAUDRATE_MAP: Final[dict[int, int]] = {
     50: termios.B50,
@@ -201,7 +205,9 @@ class TermiosSerial:
             self._configure_port()
             self._is_open = True
 
-        except Exception:  # pragma: no cover - cleanup guard
+        except Exception as e:  # pragma: no cover - cleanup guard
+            # [SIL-2] Log unexpected errors with stack trace to avoid silent failures.
+            logger.exception("Unhandled exception during serial port open/configuration cleanup.")
             os.close(self._fd)
             self._fd = None
             raise

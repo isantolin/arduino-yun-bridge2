@@ -205,7 +205,7 @@ class TermiosSerial:
             self._configure_port()
             self._is_open = True
 
-        except Exception as e:  # pragma: no cover - cleanup guard
+        except Exception:  # pragma: no cover - cleanup guard
             # [SIL-2] Log unexpected errors with stack trace to avoid silent failures.
             logger.exception("Unhandled exception during serial port open/configuration cleanup.")
             os.close(self._fd)

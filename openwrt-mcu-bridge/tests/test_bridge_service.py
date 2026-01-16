@@ -74,18 +74,19 @@ def test_on_serial_connected_flushes_console_queue(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
+                # [FIX] Await directly to avoid race conditions in tests
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                ))
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                ))
+                )
             elif command_id == Command.CMD_GET_VERSION.value:
                 flow.on_frame_received(
                     Command.CMD_GET_VERSION_RESP.value,
@@ -172,18 +173,18 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                 if payload:
                     flow.on_frame_received(Status.MALFORMED.value, b"")
                 else:
-                    asyncio.create_task(service.handle_mcu_frame(
+                    await service.handle_mcu_frame(
                         Command.CMD_LINK_RESET_RESP.value,
                         b"",
-                    ))
+                    )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                ))
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -215,20 +216,20 @@ def test_sync_link_rejects_invalid_handshake_tag(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                ))
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= rpc_protocol.UINT8_MASK
                 response = nonce + bytes(tag)
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                ))
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -259,16 +260,17 @@ def test_sync_link_rejects_truncated_response(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                ))
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                asyncio.create_task(service.handle_mcu_frame(
+                # [FIX] Await directly to ensure state update before assert
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
-                    nonce,
-                ))
+                    nonce, # Truncated (missing tag)
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -470,19 +472,19 @@ def test_on_serial_connected_raises_on_secret_mismatch(
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                ))
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= rpc_protocol.UINT8_MASK
-                asyncio.create_task(service.handle_mcu_frame(
+                await service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     nonce + bytes(tag),
-                ))
+                )
             return True
 
         service.register_serial_sender(fake_sender)

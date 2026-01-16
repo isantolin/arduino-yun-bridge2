@@ -287,7 +287,7 @@ def test_sync_link_rejects_truncated_response(
         assert success is False
         assert service.state.link_is_synchronized is False
         assert service.state.link_handshake_nonce is None
-        # [FIX] Removed assertion for MALFORMED frame as the bridge correctly 
+        # [FIX] Removed assertion for MALFORMED frame as the bridge correctly
         # drops invalid handshake responses silently to avoid storms.
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1

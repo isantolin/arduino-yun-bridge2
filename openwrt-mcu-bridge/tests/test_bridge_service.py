@@ -74,20 +74,21 @@ def test_on_serial_connected_flushes_console_queue(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                # [FIX] Await directly to avoid race conditions in tests
-                await service.handle_mcu_frame(
+                # Use create_task to avoid deadlock with write_lock held by sender
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                )
+                ))
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                )
+                ))
             elif command_id == Command.CMD_GET_VERSION.value:
+                # Direct flow injection bypasses lock issues
                 flow.on_frame_received(
                     Command.CMD_GET_VERSION_RESP.value,
                     b"\x01\x02",
@@ -173,18 +174,18 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                 if payload:
                     flow.on_frame_received(Status.MALFORMED.value, b"")
                 else:
-                    await service.handle_mcu_frame(
+                    asyncio.create_task(service.handle_mcu_frame(
                         Command.CMD_LINK_RESET_RESP.value,
                         b"",
-                    )
+                    ))
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                )
+                ))
             return True
 
         service.register_serial_sender(fake_sender)
@@ -209,7 +210,7 @@ def test_sync_link_rejects_invalid_handshake_tag(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     async def _run() -> None:
-        # [FIX] Reduce timeout to avoid test hang when response is rejected
+        # Reduce timeout to fail fast
         runtime_config.serial_response_timeout = 0.01
         runtime_config.serial_retry_attempts = 0
         service = BridgeService(runtime_config, runtime_state)
@@ -219,31 +220,32 @@ def test_sync_link_rejects_invalid_handshake_tag(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                )
+                ))
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= rpc_protocol.UINT8_MASK
                 response = nonce + bytes(tag)
-                # [FIX] Await to ensure state update, despite rejection
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                )
+                ))
             return True
 
         service.register_serial_sender(fake_sender)
 
         success = await service.sync_link()
+        
+        # Yield to allow background tasks to complete
+        await asyncio.sleep(0)
 
         assert success is False
         assert service.state.link_is_synchronized is False
         assert service.state.link_handshake_nonce is None
-        # Note: Code does not emit MALFORMED for handshake auth failures, it just drops them.
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
         assert runtime_state.handshake_successes == 0
@@ -257,7 +259,7 @@ def test_sync_link_rejects_truncated_response(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     async def _run() -> None:
-        # [FIX] Reduce timeout to prevent test blocking/hanging on failure
+        # Reduce timeout to fail fast
         runtime_config.serial_response_timeout = 0.01
         runtime_config.serial_retry_attempts = 0
         service = BridgeService(runtime_config, runtime_state)
@@ -267,28 +269,29 @@ def test_sync_link_rejects_truncated_response(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                )
+                ))
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                # [FIX] Await directly to ensure state update before assert
-                await service.handle_mcu_frame(
+                # Return truncated response (nonce only, no tag)
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
-                    nonce, # Truncated (missing tag)
-                )
+                    nonce, 
+                ))
             return True
 
         service.register_serial_sender(fake_sender)
 
         success = await service.sync_link()
+        
+        # Yield to allow background tasks to update state
+        await asyncio.sleep(0)
 
         assert success is False
         assert service.state.link_is_synchronized is False
         assert service.state.link_handshake_nonce is None
-        # [FIX] Removed assertion for MALFORMED frame as the bridge correctly
-        # drops invalid handshake responses silently to avoid storms.
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
         assert runtime_state.handshake_fatal_count == 1
@@ -480,19 +483,19 @@ def test_on_serial_connected_raises_on_secret_mismatch(
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             if command_id == Command.CMD_LINK_RESET.value:
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_RESET_RESP.value,
                     b"",
-                )
+                ))
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= rpc_protocol.UINT8_MASK
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     nonce + bytes(tag),
-                )
+                ))
             return True
 
         service.register_serial_sender(fake_sender)

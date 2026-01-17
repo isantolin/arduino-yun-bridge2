@@ -209,7 +209,7 @@ class MQTTPublishSpool:
     def __del__(self) -> None:  # pragma: no cover - defensive cleanup
         try:
             self.close()
-        except Exception:
+        except (OSError, SqliteError):
             pass
 
     def append(self, message: QueuedPublish) -> None:
@@ -316,9 +316,10 @@ class MQTTPublishSpool:
         if self._fallback_hook is not None:
             try:
                 self._fallback_hook(reason)
-            except Exception:
-                logger.debug(
-                    "Fallback hook raised an exception",
+            except Exception as err:
+                logger.error(
+                    "Fallback hook raised an exception: %s",
+                    err,
                     exc_info=True,
                 )
 

@@ -137,6 +137,15 @@ class Frame:
                 f"{protocol.PROTOCOL_VERSION}, got {version}"
             )
 
+        # [SIL-2] Semantic Validation: Reject invalid/reserved command IDs (e.g. 0x00)
+        # This prevents "noise" frames (valid CRC but nonsense ID) from reaching the
+        # dispatcher and flooding logs with "Link not synchronized" warnings.
+        if command_id < protocol.STATUS_CODE_MIN:
+            raise ValueError(
+                f"Invalid command id {command_id} (reserved/below minimum "
+                f"{protocol.STATUS_CODE_MIN})"
+            )
+
         # 4. Validate payload length against actual data length
         actual_payload_len = len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
         if payload_len != actual_payload_len:

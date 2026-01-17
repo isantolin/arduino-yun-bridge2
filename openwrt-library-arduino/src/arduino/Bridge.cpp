@@ -8,11 +8,10 @@
 #include <Arduino.h>
 
 // --- [SAFETY GUARD START] ---
-// CRITICAL: Prevent accidental STL usage on AVR targets (memory fragmentation risk)
-#if defined(ARDUINO_ARCH_AVR)
-  #if defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING)
-    #error "CRITICAL: STL detected in AVR build. Use standard arrays/pointers only to prevent heap fragmentation."
-  #endif
+// CRITICAL: Prevent accidental STL usage on ALL architectures (memory fragmentation risk)
+// SIL 2 Requirement: Dynamic allocation via STL containers is forbidden globally.
+#if defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || defined(_GLIBCXX_MAP)
+  #error "CRITICAL: STL detected. Use standard arrays/pointers only to prevent heap fragmentation (SIL 2 Violation)."
 #endif
 // --- [SAFETY GUARD END] ---
 

@@ -314,14 +314,15 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     # Commands initiated by Linux (to the MCU). These requests should not be
     # required as inbound handlers (though some may have "unexpected" handlers).
     linux_to_mcu_requests: frozenset[int] = frozenset(
-                    {
-                        Command.CMD_GET_VERSION.value,
-                        Command.CMD_GET_FREE_MEMORY.value,
-                        Command.CMD_GET_CAPABILITIES.value,
-                        Command.CMD_LINK_SYNC.value,
-                        Command.CMD_LINK_RESET.value,
-                        Command.CMD_SET_BAUDRATE.value,
-                        Command.CMD_SET_PIN_MODE.value,            Command.CMD_DIGITAL_WRITE.value,
+        {
+            Command.CMD_GET_VERSION.value,
+            Command.CMD_GET_FREE_MEMORY.value,
+            Command.CMD_GET_CAPABILITIES.value,
+            Command.CMD_LINK_SYNC.value,
+            Command.CMD_LINK_RESET.value,
+            Command.CMD_SET_BAUDRATE.value,
+            Command.CMD_SET_PIN_MODE.value,
+            Command.CMD_DIGITAL_WRITE.value,
             Command.CMD_ANALOG_WRITE.value,
             Command.CMD_DIGITAL_READ.value,
             Command.CMD_ANALOG_READ.value,

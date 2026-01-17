@@ -367,11 +367,6 @@ def test_serial_ensure_raw_mode_termios_exception() -> None:
 # ============================================================================
 # METRICS.PY COVERAGE GAPS (lines 47, 118, 160-163, 179-185, 199)
 # ============================================================================
-
-
-
-
-
 @pytest.mark.asyncio
 async def test_emit_metrics_snapshot_exception_on_initial() -> None:
     """Cover line 118: Initial metrics emit failure."""

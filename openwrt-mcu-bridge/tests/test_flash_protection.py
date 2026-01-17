@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 from mcubridge.config.settings import load_runtime_config
 
+
 class TestFlashProtection(unittest.TestCase):
     def test_file_system_root_must_be_volatile(self):
         """Ensure file_system_root raises ValueError if not in /tmp."""
@@ -41,6 +42,7 @@ class TestFlashProtection(unittest.TestCase):
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             config = load_runtime_config()
             self.assertEqual(config.file_system_root, "/etc/custom")
+
 
 if __name__ == "__main__":
     unittest.main()

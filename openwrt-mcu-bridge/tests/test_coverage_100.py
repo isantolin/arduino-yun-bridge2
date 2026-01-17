@@ -103,7 +103,6 @@ async def test_collect_output_slot_disappears_mid_operation(
         process_component.state.running_processes[pid] = slot
 
     # Patch io_lock to delete the slot during iteration
-    _original_io_lock = slot.io_lock
 
     class TrickyLock:
         async def __aenter__(self):
@@ -349,14 +348,12 @@ def test_process_component_release_without_acquire() -> None:
 @pytest.mark.asyncio
 async def test_process_timeout_zero_no_timeout() -> None:
     """Cover branch where process_timeout <= 0."""
-    from mcubridge.services.components.process import ProcessComponent
 
     config = _make_config()
     state = create_runtime_state(config)
     state.process_timeout = 0  # Disable timeout
     ctx = AsyncMock(spec=BridgeContext)
     ctx.is_command_allowed.return_value = True
-    _comp = ProcessComponent(config, state, ctx)
 
     # Just verify timeout is 0
     assert state.process_timeout == 0
@@ -402,11 +399,6 @@ def test_context_coerce_snapshot_none_value() -> None:
 # ============================================================================
 # METRICS - EDGE CASES
 # ============================================================================
-
-
-
-
-
 # ============================================================================
 # QUEUES - MORE EDGE CASES
 # ============================================================================
@@ -465,5 +457,3 @@ def test_common_encode_status_reason() -> None:
     # With unicode
     result2 = encode_status_reason("razón")
     assert isinstance(result2, bytes)
-
-

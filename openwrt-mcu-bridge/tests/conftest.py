@@ -25,8 +25,6 @@ from mcubridge.rpc.protocol import (
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
-
-
 @pytest.fixture(autouse=True)
 def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure load_runtime_config() sees a secure serial secret by default.
@@ -40,9 +38,6 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
         return config
 
     monkeypatch.setattr(settings_module, "get_uci_config", _test_uci_config)
-
-
-
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]

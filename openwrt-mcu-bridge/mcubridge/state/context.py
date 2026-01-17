@@ -13,8 +13,10 @@ try:
 except ImportError:
     # Fallback for systems without sqlite3 to prevent NameError in except blocks
     sqlite3 = None  # type: ignore
+
     class SqliteError(Exception):  # type: ignore
         pass
+
 
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace

@@ -174,9 +174,9 @@ def get_uci_config() -> dict[str, str]:
     except ImportError:
         # In test environments (e.g. CI/Emulation), missing UCI is expected.
         if is_openwrt:
-             # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
-             logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
-             raise RuntimeError("Missing dependency: python3-uci")
+            # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
+            logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
+            raise RuntimeError("Missing dependency: python3-uci")
 
         logger.warning(
             "UCI module not found (not running on OpenWrt?); using default configuration."
@@ -216,8 +216,8 @@ def get_uci_config() -> dict[str, str]:
 
     except (OSError, ValueError) as e:
         if is_openwrt:
-             logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
-             raise RuntimeError(f"Critical UCI failure: {e}") from e
+            logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
+            raise RuntimeError(f"Critical UCI failure: {e}") from e
 
         # Expected system errors (e.g. UCI file locked, parsing error) in non-critical envs
         logger.error("Failed to load UCI configuration: %s. Using defaults.", e)

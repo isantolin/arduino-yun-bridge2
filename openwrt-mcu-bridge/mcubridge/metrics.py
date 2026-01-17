@@ -183,7 +183,7 @@ async def _bridge_snapshot_loop(
         logger.debug("Bridge snapshot emit failed (initial)", exc_info=True)
         pass
     except (TypeError, ValueError, AttributeError, OSError):
-         logger.critical("Bridge snapshot initial emit fatal error", exc_info=True)
+        logger.critical("Bridge snapshot initial emit fatal error", exc_info=True)
 
     while True:
         await asyncio.sleep(seconds)
@@ -498,7 +498,7 @@ class PrometheusExporter:
         except (OSError, ValueError, IndexError) as e:
             logger.warning("Prometheus client request error: %s", e)
         except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as e:
-             logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
+            logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
         finally:
             try:
                 writer.close()

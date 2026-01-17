@@ -16,7 +16,6 @@ __pycache__/
 *.tar.xz
 *.tar.zst
 *.zip
-*.log
 *.swp
 *.swo
 .coverage

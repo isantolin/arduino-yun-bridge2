@@ -320,7 +320,7 @@ class SerialHandshakeManager:
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except struct.error:
-             self._logger.warning("Failed to unpack capabilities")
+            self._logger.warning("Failed to unpack capabilities")
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:
         self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())

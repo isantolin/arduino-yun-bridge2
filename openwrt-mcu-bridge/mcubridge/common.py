@@ -161,11 +161,11 @@ def build_mqtt_connect_properties() -> Properties:
 
 def get_uci_config() -> dict[str, str]:
     """Read MCU Bridge configuration directly from OpenWrt's UCI system.
-    
+
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
     We do not fallback to defaults in production to avoid 'split-brain' configurations.
     """
-    
+
     # Detect OpenWrt environment
     is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
 
@@ -177,7 +177,7 @@ def get_uci_config() -> dict[str, str]:
              # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
              logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
              raise RuntimeError("Missing dependency: python3-uci")
-        
+
         logger.warning(
             "UCI module not found (not running on OpenWrt?); using default configuration."
         )
@@ -193,7 +193,7 @@ def get_uci_config() -> dict[str, str]:
                 if is_openwrt:
                     # In production, missing config is fatal.
                     raise RuntimeError(f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! Re-install package to restore defaults.")
-                
+
                 logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
                 return get_default_config()
 
@@ -215,7 +215,7 @@ def get_uci_config() -> dict[str, str]:
         if is_openwrt:
              logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
              raise RuntimeError(f"Critical UCI failure: {e}") from e
-             
+
         # Expected system errors (e.g. UCI file locked, parsing error) in non-critical envs
         logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
         return get_default_config()

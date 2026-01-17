@@ -346,7 +346,7 @@ mqtt_acl_option(
 local serial_secret = s:option(Value, "serial_shared_secret", translate("Serial Shared Secret"))
 serial_secret.password = true
 serial_secret.rmempty = false
-serial_secret.description = translate("Shared secret for serial authentication. Must match the value in your Arduino sketch (BRIDGE_SERIAL_SHARED_SECRET).")
+serial_secret.description = translate("Shared secret for serial authentication (BRIDGE_SERIAL_SHARED_SECRET).")
 
 -- Helper script to toggle MQTT port based on TLS setting
 local script_s = m:section(SimpleSection)

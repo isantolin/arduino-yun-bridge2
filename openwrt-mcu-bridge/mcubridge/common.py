@@ -161,7 +161,7 @@ def build_mqtt_connect_properties() -> Properties:
 
 def get_uci_config() -> dict[str, str]:
     """Read MCU Bridge configuration directly from OpenWrt's UCI system.
-    
+
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
     We do not fallback to defaults in production to avoid 'split-brain' configurations.
     """
@@ -177,7 +177,7 @@ def get_uci_config() -> dict[str, str]:
              # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
              logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
              raise RuntimeError("Missing dependency: python3-uci")
-        
+
         logger.warning(
             "UCI module not found (not running on OpenWrt?); using default configuration."
         )

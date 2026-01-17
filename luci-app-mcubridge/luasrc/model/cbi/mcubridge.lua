@@ -343,10 +343,10 @@ mqtt_acl_option(
     "Allow MQTT reads via br/a/<pin>/read."
 )
 
-local serial_secret = s:option(DummyValue, "_serial_shared_secret", translate("Serial Shared Secret"))
-function serial_secret.cfgvalue()
-    return translate("Managed via UCI. Use the Credentials & TLS tab to rotate secrets.")
-end
+local serial_secret = s:option(Value, "serial_shared_secret", translate("Serial Shared Secret"))
+serial_secret.password = true
+serial_secret.rmempty = false
+serial_secret.description = translate("Shared secret for serial authentication. Must match the value in your Arduino sketch (BRIDGE_SERIAL_SHARED_SECRET).")
 
 -- Helper script to toggle MQTT port based on TLS setting
 local script_s = m:section(SimpleSection)

@@ -368,7 +368,7 @@ async def _open_serial_connection_with_retry(
             # break out and attempt protocol sync, otherwise the daemon hangs forever.
             drain_start_time = time.monotonic()
             drain_timeout = 1.0  # Max time to spend draining before forcing start
-            
+
             try:
                 while not reader.at_eof():
                     if (time.monotonic() - drain_start_time) > drain_timeout:

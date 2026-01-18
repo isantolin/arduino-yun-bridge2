@@ -4,14 +4,13 @@
 /**
  * @file BridgeTransport.cpp
  * @brief Serial transport layer for Arduino-Linux RPC communication.
- * 
- * [SIL-2 COMPLIANCE NOTES]
+ * * [SIL-2 COMPLIANCE NOTES]
  * - No dynamic memory allocation after initialization
  * - All buffers are statically sized at compile time
  * - Defensive programming with explicit range checks
  * - Flow control (XON/XOFF) prevents buffer overflow
- * 
- * The transport layer handles:
+ * - Output Guards: Prevents transmission of invalid/reserved Command IDs
+ * * The transport layer handles:
  * - COBS encoding/decoding of frames
  * - CRC verification via rpc::FrameBuilder/FrameParser
  * - Hardware flow control signaling
@@ -108,12 +107,10 @@ bool BridgeTransport::processInput(rpc::Frame& rxFrame) {
 
 /**
  * @brief Best-effort write-all helper with retry loop.
- * 
- * [SIL-2] Attempts to write the entire buffer to the stream.
+ * * [SIL-2] Attempts to write the entire buffer to the stream.
  * Returns true only if ALL bytes were successfully written.
  * Does not block indefinitely - returns false if write returns 0.
- * 
- * @param buffer Pointer to data to write (must not be null)
+ * * @param buffer Pointer to data to write (must not be null)
  * @param size   Number of bytes to write (must be > 0)
  * @return true if all bytes written, false otherwise
  */
@@ -145,19 +142,26 @@ bool BridgeTransport::_writeAll(const uint8_t* buffer, size_t size) {
 
 /**
  * @brief Build and send a complete RPC frame.
- * 
- * [SIL-2] This function:
+ * * [SIL-2] This function:
  * 1. Builds the raw frame (header + payload + CRC) into _raw_frame_buffer
  * 2. COBS-encodes into _last_cobs_frame (retained for retransmission)
  * 3. Writes the encoded frame + delimiter to the stream
  * 4. Flushes to ensure physical transmission
- * 
- * @param command_id RPC command or status code
+ * * @param command_id RPC command or status code
  * @param payload    Pointer to payload data (may be null if length=0)
  * @param length     Payload length in bytes (max MAX_PAYLOAD_SIZE)
  * @return true if frame was fully transmitted, false on error
  */
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
+    // [SIL-2] GUARD CLAUSE: Strict Protocol Compliance
+    // Prevent transmission of invalid Command IDs (0-47 are reserved/invalid).
+    // This is a CRITICAL FIX for the "Error Storm" where uninitialized logic
+    // might attempt to send Command ID 0, causing the Linux host to reply with
+    // an error, triggering an infinite feedback loop.
+    if (command_id < rpc::RPC_STATUS_CODE_MIN) {
+        return false;
+    }
+
     size_t raw_len = _builder.build(
         _raw_frame_buffer,
         sizeof(_raw_frame_buffer),
@@ -190,15 +194,18 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
 
 /**
  * @brief Send a control frame without payload (e.g., XON/XOFF).
- * 
- * [SIL-2] Unlike sendFrame(), this does NOT overwrite _last_cobs_frame,
+ * * [SIL-2] Unlike sendFrame(), this does NOT overwrite _last_cobs_frame,
  * preserving the ability to retransmit the last data frame if needed.
  * Uses local stack buffers sized for header+CRC only.
- * 
- * @param command_id Control command (typically CMD_XON or CMD_XOFF)
+ * * @param command_id Control command (typically CMD_XON or CMD_XOFF)
  * @return true if frame was fully transmitted, false on error
  */
 bool BridgeTransport::sendControlFrame(uint16_t command_id) {
+    // [SIL-2] GUARD CLAUSE: Validate control command ID
+    if (command_id < rpc::RPC_STATUS_CODE_MIN) {
+        return false;
+    }
+
     constexpr size_t kControlRawMax = sizeof(rpc::FrameHeader) + rpc::CRC_TRAILER_SIZE;
     constexpr size_t kControlCobsMax = kControlRawMax + (kControlRawMax / 254) + 2;
     uint8_t raw_buf[kControlRawMax];
@@ -225,12 +232,10 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
 
 /**
  * @brief Retransmit the last frame sent via sendFrame().
- * 
- * [SIL-2] Used for reliability when ACK timeout occurs.
+ * * [SIL-2] Used for reliability when ACK timeout occurs.
  * Reuses the pre-encoded COBS data in _last_cobs_frame to avoid
  * re-encoding and ensure bit-identical retransmission.
- * 
- * @return true if retransmission succeeded, false if no frame cached or write failed
+ * * @return true if retransmission succeeded, false if no frame cached or write failed
  */
 bool BridgeTransport::retransmitLastFrame() {
     if (_last_cobs_len == 0) return false;
@@ -250,12 +255,10 @@ bool BridgeTransport::retransmitLastFrame() {
 
 /**
  * @brief Reset transport state for link re-synchronization.
- * 
- * [SIL-2] Called during link reset to clear:
+ * * [SIL-2] Called during link reset to clear:
  * - Parser state (discard any partial frames)
  * - Flow control pause flag
- * 
- * Does NOT clear _last_cobs_frame to allow retransmission if needed.
+ * * Does NOT clear _last_cobs_frame to allow retransmission if needed.
  */
 void BridgeTransport::reset() {
     _parser.reset();

@@ -41,7 +41,6 @@ define Package/$(PKG_NAME)
 	PKG_ARCH:=all
 	DEPENDS:=+openwrt-mcu-core
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
-	# Updated for OpenWrt 25.12 (apk)
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \

@@ -38,8 +38,11 @@
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection
 // We prioritize Serial1 for Bridge communication on devices that support it (Yun, Leonardo, Mega, etc.)
-// to leave 'Serial' (USB CDC) free for debugging.
-#if defined(__AVR_ATmega32U4__) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(_VARIANT_ARDUINO_ZERO_)
+// to leave 'Serial' (USB CDC) free for debugging, UNLESS BRIDGE_USE_USB_SERIAL is explicitly requested.
+#if BRIDGE_USE_USB_SERIAL
+  // Force USB CDC (Serial)
+  BridgeClass Bridge(Serial);
+#elif defined(__AVR_ATmega32U4__) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(_VARIANT_ARDUINO_ZERO_)
   // 32U4 (Yun/Leonardo), SAMD (Zero), SAM (Due) -> Use Serial1
   BridgeClass Bridge(Serial1);
 #elif defined(HAVE_HWSERIAL1) && !defined(__AVR_ATmega328P__)

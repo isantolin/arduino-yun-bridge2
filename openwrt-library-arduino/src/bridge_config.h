@@ -46,3 +46,11 @@
 #ifndef BRIDGE_FILE_LARGE_WARNING_BYTES
 #define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576
 #endif
+
+// [SIL-2] Serial Port Configuration
+// Force Bridge to use the USB CDC port (Serial) instead of Hardware UART (Serial1)
+// on compatible boards (Yun, Leonardo, etc.).
+// Essential for direct PC-to-MCU connection debugging.
+#ifndef BRIDGE_USE_USB_SERIAL
+#define BRIDGE_USE_USB_SERIAL 1
+#endif

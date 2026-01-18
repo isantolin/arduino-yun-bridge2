@@ -525,8 +525,9 @@ class SerialTransport:
                     if buffer:
                         encoded_packet = bytes(buffer)
                         buffer.clear()
+                        # [FIX] Await packet processing to prevent race conditions
+                        # processing sequential frames.
                         await self._process_packet(encoded_packet)
-                        await asyncio.sleep(0)
                     continue
 
                 if discarding:

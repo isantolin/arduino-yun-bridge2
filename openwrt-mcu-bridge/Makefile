@@ -26,7 +26,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
 PKG_VERSION:=2.2.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
@@ -41,6 +41,7 @@ define Package/$(PKG_NAME)
 	PKG_ARCH:=all
 	DEPENDS:=+openwrt-mcu-core
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
+	# Updated for OpenWrt 25.12 (apk)
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \

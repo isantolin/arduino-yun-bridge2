@@ -165,7 +165,7 @@ class RuntimeConfig:
             )
         self._validate_queue_limits()
         self._normalize_topic_prefix()
-        self._normalize_paths()
+        self._validate_flash_protection()
         self._validate_operational_limits()
 
     def _validate_queue_limits(self) -> None:
@@ -205,7 +205,11 @@ class RuntimeConfig:
         normalized = self._build_topic_prefix(self.mqtt_topic)
         self.mqtt_topic = normalized
 
-    def _normalize_paths(self) -> None:
+    def _validate_flash_protection(self) -> None:
+        """
+        [SIL-2] Enforce Flash Wear Protection.
+        Critical paths (filesystem root, mqtt spool) MUST be in RAM (/tmp).
+        """
         root = self._normalize_path(
             self.file_system_root,
             field_name="file_system_root",
@@ -217,19 +221,20 @@ class RuntimeConfig:
             require_absolute=True,
         )
 
-        # allow_non_tmp_paths is ONLY for the File component (file_system_root).
+        # 1. File System Component Root
         if not self.allow_non_tmp_paths:
-            if root != "/tmp" and not root.startswith("/tmp/"):
+            if not root.startswith("/tmp"):
                 raise ValueError(
                     f"FLASH PROTECTION: file_system_root '{root}' is not in /tmp. "
-                    "Set allow_non_tmp_paths=1 to override (NOT RECOMMENDED)."
+                    "This prevents flash wear on the OpenWrt device. "
+                    "Set 'allow_non_tmp_paths' to '1' in UCI if you REALLY need persistent storage."
                 )
 
-        # mqtt_spool_dir is always kept under /tmp to avoid flash wear.
-        if spool != "/tmp" and not spool.startswith("/tmp/"):
-            raise ValueError(
+        # 2. MQTT Spool (ALWAYS in RAM)
+        if not spool.startswith("/tmp"):
+             raise ValueError(
                 f"FLASH PROTECTION: mqtt_spool_dir '{spool}' is not in /tmp. "
-                "MQTT spool must live under /tmp to prevent flash wear."
+                "MQTT spool writes frequently and must reside in RAM to prevent flash destruction."
             )
 
         self.file_system_root = root

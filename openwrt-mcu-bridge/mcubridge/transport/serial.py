@@ -11,6 +11,7 @@ import inspect
 import logging
 import struct
 import os
+import time
 import termios
 import tty
 from typing import Any, Sized, TypeGuard, cast, Final, TYPE_CHECKING
@@ -244,16 +245,6 @@ class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
         FlowControlMixin.resume_writing(self)
 
 
-class _SerialWriteProtocolFactory:
-    def __init__(self) -> None:
-        self.protocol: SerialWriteProtocol | None = None
-
-    def __call__(self) -> SerialWriteProtocol:
-        serial_protocol = SerialWriteProtocol()
-        self.protocol = serial_protocol
-        return serial_protocol
-
-
 async def _open_serial_connection(
     url: str, baudrate: int, **kwargs: Any
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
@@ -361,18 +352,34 @@ async def _open_serial_connection_with_retry(
                         "Negotiation failed; staying at %d baud", initial_baud
                     )
 
-            # [SIL-2] Startup Noise Drain
-            # Discard any buffered input (garbage/bootloader noise) before starting the protocol loop.
-            # This prevents "Frame parse error" logs on startup.
+            # [SIL-2] Startup Noise Drain (BOOT LOOP FIX)
+            # Drain residual garbage, BUT enforce a strict timeout.
+            # If the MCU sends continuous data (e.g. Serial.print in loop), we must eventually
+            # break out and attempt protocol sync, otherwise the daemon hangs forever.
+            drain_start_time = time.monotonic()
+            drain_timeout = 1.0  # Max time to spend draining before forcing start
+            
             try:
                 while not reader.at_eof():
+                    if (time.monotonic() - drain_start_time) > drain_timeout:
+                        logger.warning(
+                            "Serial line is flooding (continuous data detected). "
+                            "Forcing protocol start after %0.1fs drain. "
+                            "Check MCU sketch for rogue Serial.print() calls.",
+                            drain_timeout
+                        )
+                        break
+
                     try:
                         # Non-blocking read of up to 4KB
                         garbage = await asyncio.wait_for(reader.read(4096), timeout=0.1)
                         if not garbage:
                             break
-                        logger.debug("Drained startup noise: %s", garbage.hex())
+                        # Use new SIL-2 hexdump format for clarity
+                        logger.debug("Drained startup noise:\n%s", format_hexdump(garbage, prefix="  "))
                     except asyncio.TimeoutError:
+                        # 100ms silence detected - clean line
+                        logger.debug("Serial line silence detected. Ready.")
                         break
             except Exception as e:
                 logger.debug("Error draining serial buffer: %s", e)

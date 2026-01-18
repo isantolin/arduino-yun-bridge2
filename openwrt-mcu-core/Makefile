@@ -1,9 +1,8 @@
-
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-core
 PKG_VERSION:=1.1
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
@@ -16,6 +15,7 @@ define Package/$(PKG_NAME)
   CATEGORY:=Utilities
 	TITLE:=MCU Core Scripts and Configs (system Python only)
 	PKG_ARCH:=all
+	# Updated dependencies for OpenWrt 25.12 (apk based)
 	DEPENDS:=+python3 +python3-uci +mosquitto-client +python3-aiomqtt +python3-cobs +python3-psutil +python3-prometheus-client
 endef
 
@@ -56,4 +56,3 @@ define Package/$(PKG_NAME)/install
 endef
 
 $(eval $(call BuildPackage,openwrt-mcu-core))
-

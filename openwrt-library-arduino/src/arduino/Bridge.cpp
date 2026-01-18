@@ -208,6 +208,9 @@ void BridgeClass::begin(
     unsigned long arg_baudrate, const char* arg_secret, size_t arg_secret_len) {
   _transport.begin(arg_baudrate);
 
+  // [SIL-2] Startup Stabilization
+  // We perform a brief flush to clear any electrical noise on the line
+  // before starting protocol logic.
   const unsigned long start = millis();
   unsigned long last = start;
   uint16_t spins = 0;
@@ -241,6 +244,8 @@ void BridgeClass::begin(
 #endif
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
+  // Blocking wait for sync (legacy behavior compatibility)
+  // In modern async usage, one might prefer non-blocking checking of _synchronized.
   while (!_synchronized) {
     process();
   }

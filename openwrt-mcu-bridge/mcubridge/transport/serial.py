@@ -245,6 +245,16 @@ class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
         FlowControlMixin.resume_writing(self)
 
 
+class _SerialWriteProtocolFactory:
+    def __init__(self) -> None:
+        self.protocol: SerialWriteProtocol | None = None
+
+    def __call__(self) -> SerialWriteProtocol:
+        serial_protocol = SerialWriteProtocol()
+        self.protocol = serial_protocol
+        return serial_protocol
+
+
 async def _open_serial_connection(
     url: str, baudrate: int, **kwargs: Any
 ) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:

@@ -236,7 +236,8 @@ end
 function action_mqtt_ws_url()
     local host = uci:get("mcubridge", "general", "mqtt_host") or "127.0.0.1"
     local ws_port = uci:get("mcubridge", "general", "mqtt_ws_port") or "9001"
-    local url = string.format("ws://%s:%s", host, ws_port)
+    local scheme = (luci.http.getenv("HTTPS") == "on") and "wss" or "ws"
+local url = string.format("%s://%s:%s", scheme, host, ws_port)
     luci.http.prepare_content("text/plain")
     luci.http.write(url)
 end

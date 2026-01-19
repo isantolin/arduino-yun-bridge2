@@ -292,7 +292,9 @@ class SerialHandshakeManager:
             return False
 
         try:
-            timeout = max(2.0, self._timing.response_timeout_seconds)
+            # [SIL-2] Force ample timeout for cold boot capabilities discovery
+            # The MCU might be processing a flood of retries or initializing hardware.
+            timeout = max(10.0, self._timing.response_timeout_seconds)
             payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
             self._parse_capabilities(payload)
             return True

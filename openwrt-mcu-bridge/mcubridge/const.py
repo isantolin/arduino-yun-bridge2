@@ -55,8 +55,8 @@ DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
 # Initial wait for serial port availability (reconnect loop)
 DEFAULT_RECONNECT_DELAY: int = 5
 # Timeout for general serial operations (not strict RPC)
-DEFAULT_SERIAL_RETRY_TIMEOUT: float = 0.75
-DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 5.0
+DEFAULT_SERIAL_RETRY_TIMEOUT: float = 4.0
+DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 6.0
 # Baudrate negotiation timeout
 SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT: float = 2.0
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL: float = 0.0

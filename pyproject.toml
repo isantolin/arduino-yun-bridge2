@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openwrt-mcu-bridge"
-version = "2.2.0"
+version = "2.2.1"
 description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
@@ -74,7 +74,7 @@ target-version = "py313"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90"]
+select = ["E", "F", "W", "C90", "A", "PLW"]
 
 [tool.ruff.lint.per-file-ignores]
 # Code generators are inherently complex: exclude from mccabe checks

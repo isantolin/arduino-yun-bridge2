@@ -16,10 +16,10 @@ from mcubridge.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
-    DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
+    DEFAULT_BAUDRATE,
+    DEFAULT_SAFE_BAUDRATE,
     Status,
 )
 from mcubridge.services.components.base import BridgeContext
@@ -30,8 +30,8 @@ from mcubridge.state.context import ManagedProcess, create_runtime_state
 def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
-        serial_baud=DEFAULT_SERIAL_BAUD,
-        serial_safe_baud=DEFAULT_SERIAL_SAFE_BAUD,
+        serial_baud=DEFAULT_BAUDRATE,
+        serial_safe_baud=DEFAULT_SAFE_BAUDRATE,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,
@@ -40,7 +40,7 @@ def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -114,7 +114,7 @@ async def test_handle_kill_process_wait_timeout_logs_warning(
         "_terminate_process_tree",
         _fake_terminate,
     ):
-        payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
+        payload = struct.pack(protocol.UINT16_FORMAT, pid)
         ok = await process_component.handle_kill(payload)
 
     assert ok is True
@@ -277,7 +277,7 @@ async def test_start_async_generic_exception_returns_sentinel(
             mock_alloc.return_value = 55
             with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
                 pid = await process_component.start_async("/bin/true")
-                assert pid == rpc_protocol.INVALID_ID_SENTINEL
+                assert pid == protocol.INVALID_ID_SENTINEL
 
 
 # ============================================================================
@@ -287,27 +287,27 @@ async def test_start_async_generic_exception_returns_sentinel(
 
 def test_serial_termios_import_fallback() -> None:
     """Cover lines 13-15: termios/tty not available on non-Unix platforms."""
-    from mcubridge.transport import serial as serial_module
+    from mcubridge.transport import serial
 
     # Save original values
-    original_termios = getattr(serial_module, '_termios', None)
-    original_tty = getattr(serial_module, '_tty', None)
+    original_termios = getattr(serial, '_termios', None)
+    original_tty = getattr(serial, '_tty', None)
 
     try:
         # Simulate the fallback case by setting module-level to None
-        serial_module._termios = None
-        serial_module._tty = None
+        serial._termios = None
+        serial._tty = None
 
         mock_serial = MagicMock()
         mock_serial.fd = 1
         # Should not raise with None termios/tty
-        serial_module._ensure_raw_mode(mock_serial, "/dev/ttyS0")
+        serial._ensure_raw_mode(mock_serial, "/dev/ttyS0")
     finally:
         # Restore originals
         if original_termios is not None:
-            serial_module._termios = original_termios
+            serial._termios = original_termios
         if original_tty is not None:
-            serial_module._tty = original_tty
+            serial._tty = original_tty
 
 
 def test_serial_ensure_raw_mode_no_fd() -> None:
@@ -653,7 +653,7 @@ def test_process_trim_buffers_both_have_remaining(process_component: ProcessComp
 
     # Both should be truncated
     assert trunc_out is True or trunc_err is True
-    assert len(stdout_chunk) + len(stderr_chunk) <= rpc_protocol.MAX_PAYLOAD_SIZE - 6
+    assert len(stdout_chunk) + len(stderr_chunk) <= protocol.MAX_PAYLOAD_SIZE - 6
 
 
 @pytest.mark.asyncio

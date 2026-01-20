@@ -6,7 +6,7 @@ import struct
 from unittest.mock import patch
 
 import pytest
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, Status
 
@@ -27,7 +27,7 @@ def _make_inbound(
     *,
     qos: int = 0,
     retain: bool = False,
-) -> MQTTMessage:
+) -> Message:
     return make_inbound_message(
         topic,
         payload,

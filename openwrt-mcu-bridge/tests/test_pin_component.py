@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
@@ -25,7 +25,7 @@ class RecordingBridgeContext:
         self.config = config
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
-        self.enqueued: list[tuple[QueuedPublish, MQTTMessage | None]] = []
+        self.enqueued: list[tuple[QueuedPublish, Message | None]] = []
         self.send_frame_result = True
 
     async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
@@ -33,7 +33,7 @@ class RecordingBridgeContext:
         return self.send_frame_result
 
     async def enqueue_mqtt(
-        self, message: QueuedPublish, *, reply_context: MQTTMessage | None = None
+        self, message: QueuedPublish, *, reply_context: Message | None = None
     ) -> None:
         self.enqueued.append((message, reply_context))
 
@@ -51,8 +51,8 @@ class RecordingBridgeContext:
         return task
 
 
-def _fake_inbound() -> MQTTMessage:
-    return cast(MQTTMessage, object())
+def _fake_inbound() -> Message:
+    return cast(Message, object())
 
 
 @pytest.mark.asyncio

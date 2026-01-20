@@ -10,7 +10,7 @@ from typing import Any
 from collections.abc import Coroutine
 
 import pytest
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
@@ -35,7 +35,7 @@ class DummyBridge(BridgeContext):
         self,
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         self.published.append(message)
 

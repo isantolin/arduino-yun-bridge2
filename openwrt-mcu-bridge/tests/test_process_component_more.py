@@ -16,7 +16,7 @@ from mcubridge.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.policy import CommandValidationError
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
@@ -40,7 +40,7 @@ def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -86,7 +86,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     process_component: ProcessComponent, mock_context: AsyncMock
 ) -> None:
     pid = 1
-    payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
+    payload = struct.pack(protocol.UINT16_FORMAT, pid)
 
     batch = SimpleNamespace(
         status_byte=Status.OK.value,
@@ -227,7 +227,7 @@ async def test_start_async_rejects_when_slot_limit_reached(
             mock_acquire.return_value = False
             pid = await process_component.start_async("echo hi")
 
-    assert pid == rpc_protocol.INVALID_ID_SENTINEL
+    assert pid == protocol.INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio
@@ -272,7 +272,7 @@ async def test_collect_output_finishing_process_releases_slot(
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
                 batch = await process_component.collect_output(pid)
 
-    assert batch.exit_code == (7 & rpc_protocol.UINT8_MASK)
+    assert batch.exit_code == (7 & protocol.UINT8_MASK)
     assert batch.finished is True
     mock_release.assert_called_once()
 
@@ -293,7 +293,7 @@ async def test_allocate_pid_exhaustion_returns_sentinel(process_component: Proce
                 3: ManagedProcess(pid=3),
             }
         pid = await process_component._allocate_pid()
-        assert pid == rpc_protocol.INVALID_ID_SENTINEL
+        assert pid == protocol.INVALID_ID_SENTINEL
     finally:
         process_mod.UINT16_MAX = original_max
 
@@ -347,7 +347,7 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
     with patch.object(process_mod.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-                ok = await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
+                ok = await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -379,7 +379,7 @@ async def test_handle_kill_process_lookup_error_is_handled(process_component: Pr
         side_effect=ProcessLookupError,
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
+            ok = await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -412,4 +412,4 @@ async def test_handle_kill_unexpected_exception_is_handled(process_component: Pr
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
             with pytest.raises(RuntimeError, match="boom"):
-                await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
+                await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))

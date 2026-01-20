@@ -9,7 +9,7 @@ import struct
 from unittest.mock import patch
 
 import pytest
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
@@ -27,7 +27,7 @@ from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
 )
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, Status
 from mcubridge.services.components.process import ProcessComponent
 from mcubridge.services.handshake import derive_serial_timing
@@ -51,7 +51,7 @@ def _make_inbound(
     *,
     qos: int = 0,
     retain: bool = False,
-) -> MQTTMessage:
+) -> Message:
     return make_inbound_message(
         topic,
         payload,
@@ -96,7 +96,7 @@ def test_on_serial_connected_flushes_console_queue(
             elif command_id == Command.CMD_CONSOLE_WRITE.value:
                 flow.on_frame_received(
                     Status.ACK.value,
-                    struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_CONSOLE_WRITE.value),
+                    struct.pack(protocol.UINT16_FORMAT, Command.CMD_CONSOLE_WRITE.value),
                 )
             return True
 
@@ -116,10 +116,10 @@ def test_on_serial_connected_flushes_console_queue(
         ]
         assert reset_payloads
         reset_payload = reset_payloads[0]
-        assert len(reset_payload) == rpc_protocol.HANDSHAKE_CONFIG_SIZE
+        assert len(reset_payload) == protocol.HANDSHAKE_CONFIG_SIZE
         timing = derive_serial_timing(runtime_config)
         unpacked = struct.unpack(
-            rpc_protocol.HANDSHAKE_CONFIG_FORMAT,
+            protocol.HANDSHAKE_CONFIG_FORMAT,
             reset_payload,
         )
         assert unpacked[0] == timing.ack_timeout_ms
@@ -198,7 +198,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
             if frame_id == Command.CMD_LINK_RESET.value
         ]
         assert len(reset_payloads) >= 2
-        assert len(reset_payloads[0]) == rpc_protocol.HANDSHAKE_CONFIG_SIZE
+        assert len(reset_payloads[0]) == protocol.HANDSHAKE_CONFIG_SIZE
         assert reset_payloads[1] == b""
         assert runtime_state.handshake_successes == 1
         assert runtime_state.serial_link_connected is True
@@ -228,7 +228,7 @@ def test_sync_link_rejects_invalid_handshake_tag(
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
-                    tag[0] ^= rpc_protocol.UINT8_MASK
+                    tag[0] ^= protocol.UINT8_MASK
                 response = nonce + bytes(tag)
                 asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
@@ -336,7 +336,7 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
 
             # Auto-ACK to prevent serial_flow from blocking on frozen clock
-            ack_payload = struct.pack(rpc_protocol.UINT16_FORMAT, command_id)
+            ack_payload = struct.pack(protocol.UINT16_FORMAT, command_id)
             service._serial_flow.on_frame_received(
                 Status.ACK.value,
                 ack_payload,
@@ -357,7 +357,7 @@ def test_link_sync_resp_respects_rate_limit(
         )
 
         def _prime_handshake(seed: int) -> bytes:
-            nonce = bytes([seed]) * rpc_protocol.HANDSHAKE_NONCE_LENGTH
+            nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
             tag = service._compute_handshake_tag(nonce)
             runtime_state.link_is_synchronized = False
             runtime_state.link_handshake_nonce = nonce
@@ -400,7 +400,7 @@ def test_sync_auth_failure_schedules_backoff(
         )
 
         def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
-            nonce = bytes([seed]) * rpc_protocol.HANDSHAKE_NONCE_LENGTH
+            nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
             tag = service._compute_handshake_tag(nonce)
             runtime_state.link_is_synchronized = False
             runtime_state.link_handshake_nonce = nonce
@@ -410,7 +410,7 @@ def test_sync_auth_failure_schedules_backoff(
 
         nonce_one, tag_one = _prime_handshake(3)
         broken_tag_one = bytearray(tag_one)
-        broken_tag_one[0] ^= rpc_protocol.UINT8_MASK
+        broken_tag_one[0] ^= protocol.UINT8_MASK
         await service._handle_link_sync_resp(nonce_one + bytes(broken_tag_one))
         first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert first_delay > 0
@@ -423,7 +423,7 @@ def test_sync_auth_failure_schedules_backoff(
         fake_clock.advance(first_delay + 0.5)
         nonce_two, tag_two = _prime_handshake(4)
         broken_tag_two = bytearray(tag_two)
-        broken_tag_two[-1] ^= rpc_protocol.UINT8_MASK
+        broken_tag_two[-1] ^= protocol.UINT8_MASK
         await service._handle_link_sync_resp(nonce_two + bytes(broken_tag_two))
         second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert second_delay > first_delay
@@ -469,9 +469,9 @@ def test_derive_serial_timing_clamps_to_spec(
     runtime_config.serial_response_timeout = 999.0
     runtime_config.serial_retry_attempts = 99
     timing = derive_serial_timing(runtime_config)
-    assert timing.ack_timeout_ms == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-    assert timing.response_timeout_ms == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-    assert timing.retry_limit == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
+    assert timing.ack_timeout_ms == protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    assert timing.response_timeout_ms == protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    assert timing.retry_limit == protocol.HANDSHAKE_RETRY_LIMIT_MAX
 
 
 def test_on_serial_connected_raises_on_secret_mismatch(
@@ -491,7 +491,7 @@ def test_on_serial_connected_raises_on_secret_mismatch(
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
-                    tag[0] ^= rpc_protocol.UINT8_MASK
+                    tag[0] ^= protocol.UINT8_MASK
                 asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     nonce + bytes(tag),
@@ -584,7 +584,7 @@ def test_mailbox_available_flow(
         # Final frame should be ACK referencing the original command.
         assert frame_ids[-1] == Status.ACK.value
         assert sent_frames[-1][1] == struct.pack(
-            rpc_protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
+            protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
         )
 
     asyncio.run(_run())
@@ -614,7 +614,7 @@ def test_mailbox_available_rejects_payload(
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         assert frame_ids[-1] == Status.MALFORMED.value
         assert sent_frames[-1][1] == struct.pack(
-            rpc_protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
+            protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
         )
         assert Command.CMD_MAILBOX_AVAILABLE_RESP.value not in frame_ids
         assert Status.ACK.value not in frame_ids
@@ -638,7 +638,7 @@ def test_mailbox_push_overflow_returns_error(
 
         service.register_serial_sender(fake_sender)
 
-        payload = struct.pack(rpc_protocol.UINT16_FORMAT, 3) + b"abc"
+        payload = struct.pack(protocol.UINT16_FORMAT, 3) + b"abc"
         await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, payload)
 
         assert runtime_state.mailbox_incoming_queue_bytes == 0
@@ -688,7 +688,7 @@ def test_mailbox_read_requeues_on_send_failure(
         assert send_attempts[1][0] == Command.CMD_MAILBOX_READ_RESP.value
         # Final send is the ACK covering the MCU command.
         assert send_attempts[2][0] == Status.ACK.value
-        assert send_attempts[2][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_MAILBOX_READ.value)
+        assert send_attempts[2][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_READ.value)
 
     asyncio.run(_run())
 
@@ -722,7 +722,7 @@ def test_datastore_get_from_mcu_returns_cached_value(
         assert sent_frames[0][0] == Command.CMD_DATASTORE_GET_RESP.value
         assert sent_frames[0][1] == bytes([len(b"42")]) + b"42"
         assert sent_frames[1][0] == Status.ACK.value
-        assert sent_frames[1][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_DATASTORE_GET.value)
+        assert sent_frames[1][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_DATASTORE_GET.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(
@@ -811,7 +811,7 @@ def test_datastore_put_from_mcu_updates_cache_and_mqtt(
 
         assert len(sent_frames) == 1
         assert sent_frames[0][0] == Status.ACK.value
-        assert sent_frames[0][1] == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_DATASTORE_PUT.value)
+        assert sent_frames[0][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_DATASTORE_PUT.value)
 
     asyncio.run(_run())
 
@@ -1368,11 +1368,11 @@ def test_enqueue_mqtt_drops_oldest_when_full(
         service = BridgeService(runtime_config, runtime_state)
 
         first = QueuedPublish(
-            f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one",
+            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one",
             b"1",
         )
         second = QueuedPublish(
-            f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/two",
+            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/two",
             b"2",
         )
 
@@ -1381,12 +1381,12 @@ def test_enqueue_mqtt_drops_oldest_when_full(
 
         assert runtime_state.mqtt_dropped_messages == 1
         assert runtime_state.mqtt_drop_counts.get(
-            f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one"
+            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one"
         ) == 1
         assert runtime_state.mqtt_publish_queue.qsize() == 1
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        assert queued.topic_name == f"{rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/two"
+        assert queued.topic_name == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/two"
         runtime_state.mqtt_publish_queue.task_done()
 
     asyncio.run(_run())
@@ -1469,7 +1469,7 @@ def test_process_run_async_accepts_complex_arguments(
             status_id, status_payload = sent_frames[0]
             assert status_id == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
             # Payload should be the PID (123)
-            assert status_payload == struct.pack(rpc_protocol.UINT16_FORMAT, 123)
+            assert status_payload == struct.pack(protocol.UINT16_FORMAT, 123)
 
     asyncio.run(_run())
 
@@ -1575,7 +1575,7 @@ def test_process_run_async_failure_emits_error(
         service.register_serial_sender(fake_sender)
 
         async def failing_start_async(self: ProcessComponent, command: str) -> int:
-            return rpc_protocol.INVALID_ID_SENTINEL
+            return protocol.INVALID_ID_SENTINEL
 
         monkeypatch.setattr(
             ProcessComponent,
@@ -1595,7 +1595,7 @@ def test_process_run_async_failure_emits_error(
 
         ack_id, ack_payload = sent_frames[1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(rpc_protocol.UINT16_FORMAT, Command.CMD_PROCESS_RUN_ASYNC.value)
+        assert ack_payload == struct.pack(protocol.UINT16_FORMAT, Command.CMD_PROCESS_RUN_ASYNC.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(

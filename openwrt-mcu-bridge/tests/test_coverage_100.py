@@ -20,7 +20,7 @@ from mcubridge.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
@@ -44,7 +44,7 @@ def _make_config(*, process_max_concurrent: int = 2) -> RuntimeConfig:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls", "cat", "true"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -150,7 +150,7 @@ async def test_handle_kill_with_process_lookup_error(
         mock_term.side_effect = ProcessLookupError("already gone")
 
         result = await process_component.handle_kill(
-            struct.pack(rpc_protocol.UINT16_FORMAT, pid),
+            struct.pack(protocol.UINT16_FORMAT, pid),
             send_ack=True,
         )
         assert result is True
@@ -188,7 +188,7 @@ async def test_handle_kill_with_general_exception(
 
         with pytest.raises(RuntimeError, match="unexpected"):
             await process_component.handle_kill(
-                struct.pack(rpc_protocol.UINT16_FORMAT, pid),
+                struct.pack(protocol.UINT16_FORMAT, pid),
                 send_ack=True,
             )
         mock_context.send_frame.assert_not_awaited()
@@ -263,7 +263,7 @@ async def test_start_async_unexpected_exception(
             mock_alloc.return_value = 123
             with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
                 pid = await process_component.start_async("/bin/true")
-                assert pid == rpc_protocol.INVALID_ID_SENTINEL
+                assert pid == protocol.INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio
@@ -329,7 +329,7 @@ async def test_allocate_pid_exhausted(
 
     # Should still allocate a PID (finds one >= 100)
     pid = await process_component._allocate_pid()
-    assert pid >= 100 or pid == rpc_protocol.INVALID_ID_SENTINEL
+    assert pid >= 100 or pid == protocol.INVALID_ID_SENTINEL
 
 
 def test_process_component_release_without_acquire() -> None:

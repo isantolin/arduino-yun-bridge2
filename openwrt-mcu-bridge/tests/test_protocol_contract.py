@@ -11,12 +11,12 @@ from pathlib import Path
 
 import tomllib
 
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.services.handshake import SerialHandshakeManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "tools/protocol/spec.toml"
-CPP_HEADER_PATH = REPO_ROOT / "openwrt-library-arduino/src/protocol/rpc_protocol.h"
+CPP_HEADER_PATH = REPO_ROOT / "openwrt-library-arduino/src/protocol/protocol.h"
 
 
 @dataclass(frozen=True)
@@ -73,34 +73,34 @@ def test_protocol_spec_matches_generated_bindings() -> None:
     constants, statuses, commands, handshake = _load_spec()
     header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
 
-    assert rpc_protocol.PROTOCOL_VERSION == constants["PROTOCOL_VERSION"]
-    assert rpc_protocol.MAX_PAYLOAD_SIZE == constants["MAX_PAYLOAD_SIZE"]
+    assert protocol.PROTOCOL_VERSION == constants["PROTOCOL_VERSION"]
+    assert protocol.MAX_PAYLOAD_SIZE == constants["MAX_PAYLOAD_SIZE"]
 
     for status in statuses:
-        enum_member = rpc_protocol.Status[status.name]
+        enum_member = protocol.Status[status.name]
         assert enum_member.value == status.value
         # Check for enum class entry: STATUS_NAME = VALUE,
         enum_entry = f"STATUS_{status.name} = {status.value},"
         assert enum_entry in header_text
 
     for command in commands:
-        enum_member = rpc_protocol.Command[command.name]
+        enum_member = protocol.Command[command.name]
         assert enum_member.value == command.value
         # Check for enum class entry: NAME = VALUE,
         enum_entry = f"{command.name} = {command.value},"
         assert enum_entry in header_text
 
-    assert handshake["nonce_length"] == rpc_protocol.HANDSHAKE_NONCE_LENGTH
-    assert handshake["tag_length"] == rpc_protocol.HANDSHAKE_TAG_LENGTH
-    assert handshake["tag_algorithm"] == rpc_protocol.HANDSHAKE_TAG_ALGORITHM
-    assert handshake["tag_description"] == rpc_protocol.HANDSHAKE_TAG_DESCRIPTION
-    assert handshake["config_format"] == rpc_protocol.HANDSHAKE_CONFIG_FORMAT
-    assert handshake["ack_timeout_min_ms"] == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-    assert handshake["ack_timeout_max_ms"] == rpc_protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
-    assert handshake["response_timeout_min_ms"] == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
-    assert handshake["response_timeout_max_ms"] == rpc_protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-    assert handshake["retry_limit_min"] == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MIN
-    assert handshake["retry_limit_max"] == rpc_protocol.HANDSHAKE_RETRY_LIMIT_MAX
+    assert handshake["nonce_length"] == protocol.HANDSHAKE_NONCE_LENGTH
+    assert handshake["tag_length"] == protocol.HANDSHAKE_TAG_LENGTH
+    assert handshake["tag_algorithm"] == protocol.HANDSHAKE_TAG_ALGORITHM
+    assert handshake["tag_description"] == protocol.HANDSHAKE_TAG_DESCRIPTION
+    assert handshake["config_format"] == protocol.HANDSHAKE_CONFIG_FORMAT
+    assert handshake["ack_timeout_min_ms"] == protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
+    assert handshake["ack_timeout_max_ms"] == protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
+    assert handshake["response_timeout_min_ms"] == protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
+    assert handshake["response_timeout_max_ms"] == protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
+    assert handshake["retry_limit_min"] == protocol.HANDSHAKE_RETRY_LIMIT_MIN
+    assert handshake["retry_limit_max"] == protocol.HANDSHAKE_RETRY_LIMIT_MAX
 
 
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
@@ -109,7 +109,7 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     assert fmt, "Handshake config format missing in spec"
 
     packed_size = struct.calcsize(fmt)
-    assert packed_size == rpc_protocol.HANDSHAKE_CONFIG_SIZE
+    assert packed_size == protocol.HANDSHAKE_CONFIG_SIZE
 
     header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
     match = re.search(r"RPC_HANDSHAKE_CONFIG_SIZE\s*=\s*(\d+)u?", header_text)
@@ -122,9 +122,9 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
 
 def test_handshake_tag_reference_vector_matches_spec() -> None:
     secret = b"mcubridge-shared"
-    nonce = bytes(range(rpc_protocol.HANDSHAKE_NONCE_LENGTH))
+    nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
     expected = hmac.new(secret, nonce, hashlib.sha256).digest()[
-        : rpc_protocol.HANDSHAKE_TAG_LENGTH
+        : protocol.HANDSHAKE_TAG_LENGTH
     ]
     computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     assert computed == expected

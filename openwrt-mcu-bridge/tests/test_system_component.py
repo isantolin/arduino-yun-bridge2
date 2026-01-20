@@ -8,12 +8,12 @@ from collections.abc import Coroutine
 from typing import Any
 
 import pytest
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command
 from mcubridge.services.components.system import SystemComponent
 from mcubridge.state.context import RuntimeState
@@ -25,7 +25,7 @@ class DummyContext:
         self.config = config
         self.state = state
         self.sent_frames: list[tuple[int, bytes]] = []
-        self.published: list[tuple[QueuedPublish, MQTTMessage | None]] = []
+        self.published: list[tuple[QueuedPublish, Message | None]] = []
         self.scheduled: list[Coroutine[Any, Any, None]] = []
         self.send_result: bool = True
 
@@ -37,7 +37,7 @@ class DummyContext:
         self,
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         self.published.append((message, reply_context))
 
@@ -58,7 +58,7 @@ def _run(coro: Coroutine[Any, Any, None]) -> None:
     asyncio.run(coro)
 
 
-def _make_inbound(topic: str) -> MQTTMessage:
+def _make_inbound(topic: str) -> Message:
     return make_inbound_message(
         topic,
         response_topic=f"reply/{topic}",
@@ -102,7 +102,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         component._pending_free_memory.append(inbound)
 
         await component.handle_get_free_memory_resp(
-            struct.pack(rpc_protocol.UINT16_FORMAT, 100)
+            struct.pack(protocol.UINT16_FORMAT, 100)
         )
 
         assert len(ctx.published) == 2
@@ -136,7 +136,7 @@ def test_handle_get_free_memory_resp_ignores_malformed(
         caplog.set_level("WARNING", logger="mcubridge.system")
 
         await component.handle_get_free_memory_resp(
-            struct.pack(rpc_protocol.UINT8_FORMAT, rpc_protocol.DIGITAL_HIGH)
+            struct.pack(protocol.UINT8_FORMAT, protocol.DIGITAL_HIGH)
         )
 
         assert not ctx.published

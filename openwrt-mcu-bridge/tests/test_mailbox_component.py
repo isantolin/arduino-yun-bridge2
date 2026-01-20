@@ -10,7 +10,7 @@ from typing import Any, Protocol
 from collections.abc import Awaitable, Coroutine
 
 import pytest
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from mcubridge.rpc import protocol
 from mcubridge.config.settings import RuntimeConfig
@@ -33,7 +33,7 @@ class EnqueueHook(Protocol):
         self,
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> Awaitable[None]:
         ...
 
@@ -55,7 +55,7 @@ class DummyBridge(BridgeContext):
         self,
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         if self._enqueue_hook is not None:
             await self._enqueue_hook(
@@ -273,7 +273,7 @@ def test_handle_mqtt_read_incoming_still_notifies_on_failure(
     async def flaky_enqueue(
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         if message.topic_name.endswith("/incoming"):
             raise RuntimeError("boom")
@@ -300,7 +300,7 @@ def test_handle_mqtt_read_outgoing_still_notifies_on_failure(
     async def flaky_enqueue(
         message: QueuedPublish,
         *,
-        reply_context: MQTTMessage | None = None,
+        reply_context: Message | None = None,
     ) -> None:
         if message.topic_name.endswith("/incoming"):
             raise RuntimeError("boom")

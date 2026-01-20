@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from mcubridge import common as common_module
-from mcubridge.config import settings as settings_module
+from mcubridge import common
+from mcubridge.config import settings
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (
     DEFAULT_MQTT_PORT,
@@ -19,8 +19,8 @@ from mcubridge.const import (
 )
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
-    DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
+    DEFAULT_BAUDRATE,
+    DEFAULT_SAFE_BAUDRATE,
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
@@ -33,11 +33,11 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     """
 
     def _test_uci_config() -> dict[str, str]:
-        config = common_module.get_default_config()
+        config = common.get_default_config()
         config["serial_shared_secret"] = "unit-test-secret-1234"
         return config
 
-    monkeypatch.setattr(settings_module, "get_uci_config", _test_uci_config)
+    monkeypatch.setattr(settings, "get_uci_config", _test_uci_config)
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -49,8 +49,8 @@ if str(PACKAGE_ROOT) not in sys.path:
 def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
-        serial_baud=DEFAULT_SERIAL_BAUD,
-        serial_safe_baud=DEFAULT_SERIAL_SAFE_BAUD,
+        serial_baud=DEFAULT_BAUDRATE,
+        serial_safe_baud=DEFAULT_SAFE_BAUDRATE,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,

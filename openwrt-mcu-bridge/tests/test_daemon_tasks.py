@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt.message import Message
 
 from cobs import cobs
 
@@ -117,7 +117,7 @@ class _MQTTServiceStub:
         self.state = state
         self.handled = asyncio.Event()
 
-    async def handle_mqtt_message(self, inbound: MQTTMessage) -> None:
+    async def handle_mqtt_message(self, inbound: Message) -> None:
         self.handled.set()
 
     async def schedule_background(

@@ -5,13 +5,13 @@ from typing import Self
 
 import pytest
 
-from mcubridge import common as utils
+from mcubridge import common
 from mcubridge import const
 from mcubridge.rpc import protocol
 
 
 def test_get_default_config_matches_constants():
-    config = utils.get_default_config()
+    config = common.get_default_config()
 
     assert config["mqtt_host"] == const.DEFAULT_MQTT_HOST
     assert config["mqtt_port"] == str(const.DEFAULT_MQTT_PORT)
@@ -56,7 +56,7 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setitem(sys.modules, "uci", module)
 
-    config = utils.get_uci_config()
+    config = common.get_uci_config()
 
     assert config["serial_port"] == "uci-port"
     assert config["allowed_commands"] == "ls echo"
@@ -89,7 +89,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(utils, "get_default_config", fake_default)
 
-    config = utils.get_uci_config()
+    config = common.get_uci_config()
 
     assert fallback_called is True
     assert config == {"serial_port": "default"}

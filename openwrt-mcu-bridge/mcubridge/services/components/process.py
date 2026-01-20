@@ -122,17 +122,6 @@ class ProcessComponent:
                     Status.ERROR.value,
                     encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR),
                 )
-            except Exception as e:
-                logger.critical(
-                    "Unexpected fatal error executing synchronous process command '%s': %s",
-                    command,
-                    e,
-                    exc_info=True
-                )
-                await self.ctx.send_frame(
-                    Status.ERROR.value,
-                    encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR),
-                )
 
     async def handle_run_async(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")
@@ -264,13 +253,6 @@ class ProcessComponent:
                 logger.info("Killed process with PID %d", pid)
         except ProcessLookupError:
             logger.info("Process PID %d already exited before kill.", pid)
-        except Exception as exc:
-            logger.exception("Error killing process PID %d: %s", pid, exc)
-            await self.ctx.send_frame(
-                Status.ERROR.value,
-                encode_status_reason(protocol.STATUS_REASON_PROCESS_KILL_FAILED),
-            )
-            return send_ack
         finally:
             released_slot = False
             async with self.state.process_lock:
@@ -344,19 +326,6 @@ class ProcessComponent:
             except (OSError, ValueError):
                 pass
             return Status.ERROR.value, b"", b"System IO error", None
-        except Exception as e:
-            logger.critical(
-                "Unexpected fatal error executing command '%s': %s",
-                command,
-                e,
-                exc_info=True
-            )
-            await self._terminate_process_tree(proc)
-            try:
-                await proc.wait()
-            except (OSError, ValueError, RuntimeError):
-                logger.debug("Error awaiting process during cleanup", exc_info=True)
-            return Status.ERROR.value, b"", b"Internal error", None
 
         try:
             timed_out = bool(wait_task.result())
@@ -434,14 +403,6 @@ class ProcessComponent:
                     "Failed to start async process '%s': %s",
                     command,
                     exc,
-                )
-                return INVALID_ID_SENTINEL
-            except Exception as e:
-                logger.critical(
-                    "Unexpected fatal error starting async process '%s': %s",
-                    command,
-                    e,
-                    exc_info=True
                 )
                 return INVALID_ID_SENTINEL
 
@@ -602,14 +563,6 @@ class ProcessComponent:
                     exc_info=True,
                 )
                 break
-            except Exception as e:
-                logger.critical(
-                    "Unexpected fatal error reading process pipe for PID %d: %s",
-                    pid,
-                    e,
-                    exc_info=True,
-                )
-                break
             if not chunk:
                 break
             buffer.extend(chunk)
@@ -658,14 +611,6 @@ class ProcessComponent:
             logger.debug(
                 "Error reading process pipe for PID %d",
                 pid,
-                exc_info=True,
-            )
-            return b""
-        except Exception as e:
-            logger.critical(
-                "Unexpected fatal error reading pipe for PID %d: %s",
-                pid,
-                e,
                 exc_info=True,
             )
             return b""
@@ -783,9 +728,6 @@ class ProcessComponent:
             await proc.wait()
         except asyncio.CancelledError:
             raise
-        except Exception as e:
-            logger.critical("Unexpected error while awaiting async process PID %d: %s", pid, e, exc_info=True)
-            return
         await self._finalize_async_process(pid, proc)
 
     async def _finalize_async_process(

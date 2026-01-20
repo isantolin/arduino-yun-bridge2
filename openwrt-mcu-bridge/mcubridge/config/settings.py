@@ -319,13 +319,6 @@ def _load_raw_config() -> dict[str, str]:
         # [SIL-2] Catch specific errors to differentiate operational issues from bugs.
         # Fallback to defaults is acceptable here to ensure Fail-Operational behavior.
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
-    except Exception as err:
-        # [SIL-2] Critical Catch-All: Log unexpected errors with stack trace before fallback.
-        logger.critical(
-            "CRITICAL: Unexpected failure while loading UCI config: %s",
-            err,
-            exc_info=True
-        )
 
     return get_default_config()
 

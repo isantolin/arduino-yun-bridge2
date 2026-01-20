@@ -391,7 +391,7 @@ async def _open_serial_connection_with_retry(
                         # 100ms silence detected - clean line
                         logger.debug("Serial line silence detected. Ready.")
                         break
-            except Exception as e:
+            except (OSError, asyncio.TimeoutError) as e:
                 logger.debug("Error draining serial buffer: %s", e)
 
             return reader, writer
@@ -408,9 +408,6 @@ async def _open_serial_connection_with_retry(
             await asyncio.sleep(current_delay)
             current_delay = min(max_delay, current_delay * 2)
         except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # pragma: no cover - unexpected fatal
-            logger.critical("Unexpected error during serial connection attempt: %s", exc, exc_info=True)
             raise
 
 
@@ -470,8 +467,6 @@ class SerialTransport:
             except asyncio.CancelledError:
                 logger.info("Serial transport cancelled.")
                 raise
-            except Exception as e:
-                logger.critical("Unhandled exception in SerialTransport: %s", e, exc_info=True)
             finally:
                 await self._disconnect()
 
@@ -686,8 +681,6 @@ class SerialTransport:
                 await self.service.send_frame(status.value, payload)
             except (OSError, SerialException) as exc:
                 logger.debug("Failed to send malformed status response: %s", exc)
-        except Exception as e:
-            logger.critical("Critical error processing frame: %s", e, exc_info=True)
 
 
 __all__ = [

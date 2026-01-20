@@ -222,15 +222,6 @@ def get_uci_config() -> dict[str, str]:
         # Expected system errors (e.g. UCI file locked, parsing error) in non-critical envs
         logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
         return get_default_config()
-    except Exception as e:
-        # [FAIL-SAFE] Catch-all for unexpected UCI library bugs.
-        # In SIL 2 contexts, we must log the full traceback for root cause analysis.
-        if is_openwrt:
-            logger.critical("CRITICAL: Unexpected error loading UCI: %s", e, exc_info=True)
-            raise
-
-        logger.exception("CRITICAL: Unexpected error loading UCI. Reverting to SAFE DEFAULTS. Error: %s", e)
-        return get_default_config()
 
 
 def get_default_config() -> dict[str, str]:

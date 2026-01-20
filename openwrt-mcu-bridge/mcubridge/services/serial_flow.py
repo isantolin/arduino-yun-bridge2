@@ -173,10 +173,7 @@ class SerialFlowController:
     def _emit_metric(self, event: str) -> None:
         if self._metrics_callback is None:
             return
-        try:
-            self._metrics_callback(event)
-        except Exception as e:  # pragma: no cover - defensive guard
-            self._logger.exception("Serial metrics callback failed: %s", e)
+        self._metrics_callback(event)
 
     def _notify_pipeline(
         self,
@@ -195,10 +192,7 @@ class SerialFlowController:
             "status": status,
             "timestamp": time.time(),
         }
-        try:
-            self._pipeline_observer(payload)
-        except Exception as e:  # pragma: no cover - defensive guard
-            self._logger.exception("Serial pipeline observer failed: %s", e)
+        self._pipeline_observer(payload)
 
     def on_frame_received(self, command_id: int, payload: bytes) -> None:
         pending = self._current

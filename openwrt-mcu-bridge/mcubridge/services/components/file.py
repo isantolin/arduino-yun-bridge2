@@ -402,8 +402,8 @@ class FileComponent:
                     "This may damage the device flash memory. Use /tmp or /mnt.",
                     resolved,
                 )
-        except Exception as e:
-            # Don't block write if check fails
+        except OSError as e:
+            # Don't block write if check fails, but log specific OS errors
             logger.debug("Failed to verify flash write safety: %s", e, exc_info=True)
             pass
 

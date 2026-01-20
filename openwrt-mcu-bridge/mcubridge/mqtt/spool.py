@@ -314,14 +314,7 @@ class MQTTPublishSpool:
                 logger.debug("Error closing disk queue during fallback", exc_info=True)
             self._disk_queue = None
         if self._fallback_hook is not None:
-            try:
-                self._fallback_hook(reason)
-            except Exception as err:
-                logger.error(
-                    "Fallback hook raised an exception: %s",
-                    err,
-                    exc_info=True,
-                )
+            self._fallback_hook(reason)
 
     def _handle_disk_error(self, exc: Exception, op: str) -> None:
         reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"

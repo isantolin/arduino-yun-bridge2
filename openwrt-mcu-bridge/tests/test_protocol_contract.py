@@ -16,7 +16,7 @@ from mcubridge.services.handshake import SerialHandshakeManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "tools/protocol/spec.toml"
-CPP_HEADER_PATH = REPO_ROOT / "openwrt-library-arduino/src/protocol/protocol.h"
+CPP_HEADER_PATH = REPO_ROOT / "openwrt-library-arduino/src/protocol/rpc_protocol.h"
 
 
 @dataclass(frozen=True)

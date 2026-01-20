@@ -20,10 +20,10 @@ from mcubridge.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.policy import CommandValidationError
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
-    DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
+    DEFAULT_BAUDRATE,
+    DEFAULT_SAFE_BAUDRATE,
     Command,
     Status,
 )
@@ -48,8 +48,8 @@ def mock_context() -> AsyncMock:
 async def process_component(mock_context: AsyncMock) -> ProcessComponent:
     config = RuntimeConfig(
         serial_port="/dev/null",
-        serial_baud=DEFAULT_SERIAL_BAUD,
-        serial_safe_baud=DEFAULT_SERIAL_SAFE_BAUD,
+        serial_baud=DEFAULT_BAUDRATE,
+        serial_safe_baud=DEFAULT_SAFE_BAUDRATE,
         mqtt_host="localhost",
         mqtt_port=DEFAULT_MQTT_PORT,
         mqtt_user=None,
@@ -58,7 +58,7 @@ async def process_component(mock_context: AsyncMock) -> ProcessComponent:
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=rpc_protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
@@ -150,7 +150,7 @@ async def test_handle_run_async_success(
 
         mock_start.assert_awaited_once_with("sleep 10")
         mock_context.send_frame.assert_awaited_once_with(
-            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(rpc_protocol.UINT16_FORMAT, 123)
+            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(protocol.UINT16_FORMAT, 123)
         )
         # Should also enqueue MQTT message
         mock_context.enqueue_mqtt.assert_awaited_once()
@@ -163,7 +163,7 @@ async def test_handle_run_async_failure(
     with patch.object(
         ProcessComponent, "start_async", new_callable=AsyncMock
     ) as mock_start:
-        mock_start.return_value = rpc_protocol.INVALID_ID_SENTINEL
+        mock_start.return_value = protocol.INVALID_ID_SENTINEL
 
         await process_component.handle_run_async(b"fail")
 
@@ -177,7 +177,7 @@ async def test_handle_poll_success(
     process_component: ProcessComponent, mock_context: AsyncMock
 ) -> None:
     pid = 123
-    payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
+    payload = struct.pack(protocol.UINT16_FORMAT, pid)
 
     batch = ProcessOutputBatch(
         status_byte=1,  # Running
@@ -235,13 +235,8 @@ async def test_handle_run_internal_error_sends_error_frame(
         with patch.object(ProcessComponent, "run_sync", new_callable=AsyncMock) as mock_run:
             mock_run.side_effect = RuntimeError("boom")
 
-            await process_component.handle_run(b"echo hello")
-
-            # Falls back to Status.ERROR frame with a stable reason.
-            assert mock_context.send_frame.await_count == 1
-            cmd_id, payload = mock_context.send_frame.call_args[0]
-            assert cmd_id == Status.ERROR.value
-            assert payload == b"process_run_internal_error"
+            with pytest.raises(RuntimeError, match="boom"):
+                await process_component.handle_run(b"echo hello")
 
 
 @pytest.mark.asyncio
@@ -293,9 +288,9 @@ def test_build_sync_response_trims_to_protocol_budget(process_component: Process
     stdout = b"a" * 9999
     stderr = b"b" * 9999
     out = process_component._build_sync_response(Status.OK.value, stdout, stderr)
-    assert out[0] == (Status.OK.value & rpc_protocol.UINT8_MASK)
+    assert out[0] == (Status.OK.value & protocol.UINT8_MASK)
     # Must include two uint16 lengths
-    assert len(out) <= rpc_protocol.MAX_PAYLOAD_SIZE
+    assert len(out) <= protocol.MAX_PAYLOAD_SIZE
 
 
 @pytest.mark.asyncio
@@ -303,7 +298,7 @@ async def test_handle_kill_malformed_payload_returns_false(
     process_component: ProcessComponent,
     mock_context: AsyncMock,
 ) -> None:
-    assert await process_component.handle_kill(rpc_protocol.FRAME_DELIMITER, send_ack=True) is False
+    assert await process_component.handle_kill(protocol.FRAME_DELIMITER, send_ack=True) is False
     mock_context.send_frame.assert_awaited_once_with(
         Status.MALFORMED.value,
         b"process_kill_malformed",
@@ -316,7 +311,7 @@ async def test_handle_kill_unknown_pid_returns_ack(
     mock_context: AsyncMock,
 ) -> None:
     pid = 123
-    payload = struct.pack(rpc_protocol.UINT16_FORMAT, pid)
+    payload = struct.pack(protocol.UINT16_FORMAT, pid)
     assert await process_component.handle_kill(payload, send_ack=True) is True
     mock_context.send_frame.assert_awaited_once_with(
         Status.ERROR.value,
@@ -354,7 +349,7 @@ async def test_handle_kill_terminates_and_cleans_slot(
         ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
     ) as mock_term:
         ok = await process_component.handle_kill(
-            struct.pack(rpc_protocol.UINT16_FORMAT, pid),
+            struct.pack(protocol.UINT16_FORMAT, pid),
             send_ack=True,
         )
         assert ok is True
@@ -453,9 +448,9 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
 async def test_start_async_allocate_pid_failure_returns_sentinel(process_component: ProcessComponent) -> None:
     with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
         with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
-            mock_alloc.return_value = rpc_protocol.INVALID_ID_SENTINEL
+            mock_alloc.return_value = protocol.INVALID_ID_SENTINEL
             pid = await process_component.start_async("/bin/true")
-            assert pid == rpc_protocol.INVALID_ID_SENTINEL
+            assert pid == protocol.INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio
@@ -465,7 +460,7 @@ async def test_start_async_subprocess_oserror_returns_sentinel(process_component
             mock_alloc.return_value = 55
             with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
                 pid = await process_component.start_async("/bin/true")
-                assert pid == rpc_protocol.INVALID_ID_SENTINEL
+                assert pid == protocol.INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio

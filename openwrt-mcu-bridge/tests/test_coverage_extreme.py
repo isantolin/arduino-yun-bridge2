@@ -197,6 +197,7 @@ async def test_mqtt_publisher_loop_error_handling():
     msg = MagicMock()
     msg.topic_name = "test"
     msg.payload = b"data"
+    msg.payload_format_indicator = None  # Valid value
     await queue.put(msg)
     mock_state.mqtt_publish_queue = queue
     mock_state.flush_mqtt_spool = AsyncMock()
@@ -206,6 +207,7 @@ async def test_mqtt_publisher_loop_error_handling():
         aiomqtt.MqttError("Pub failed"),
         asyncio.CancelledError("Stop")
     ])
+    mock_client.subscribe = AsyncMock()
 
     mock_ctx = MagicMock()
     mock_ctx.__aenter__ = AsyncMock(return_value=mock_client)
@@ -227,11 +229,9 @@ async def test_mqtt_publisher_loop_error_handling():
             except (asyncio.CancelledError, BaseExceptionGroup):
                 pass
 
-            # Extraer y ejecutar publisher loop aislado
-            if tg_mock.create_task.call_args_list:
-                publisher_coro = tg_mock.create_task.call_args_list[0][0][0]
-                try:
-                    await publisher_coro
-                except (asyncio.CancelledError, BaseExceptionGroup):
-                    pass
+                # Extraer y ejecutar publisher loop aislado
+                if tg_mock.create_task.call_args_list:
+                    publisher_coro = tg_mock.create_task.call_args_list[0][0][0]
+                    with pytest.raises(aiomqtt.MqttError):
+                        await publisher_coro
                 mock_client.publish.assert_called()

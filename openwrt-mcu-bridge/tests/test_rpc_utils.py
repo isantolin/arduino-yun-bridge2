@@ -64,9 +64,6 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
-    class FakeError(Exception):
-        pass
-
     class FakeCursor:
         def __enter__(self) -> Self:
             return self
@@ -75,13 +72,12 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
             return False
 
         def get_all(self, package: str, section: str) -> dict[str, object]:
-            raise FakeError("boom")
+            raise OSError("boom")
 
     module = types.SimpleNamespace(
         Uci=lambda: FakeCursor(),
-        UciException=FakeError,
+        UciException=OSError,
     )
-
     monkeypatch.setitem(sys.modules, "uci", module)
 
     fallback_called = False

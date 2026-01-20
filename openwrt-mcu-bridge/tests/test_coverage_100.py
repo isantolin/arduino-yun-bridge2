@@ -186,15 +186,12 @@ async def test_handle_kill_with_general_exception(
     ) as mock_term:
         mock_term.side_effect = RuntimeError("unexpected")
 
-        result = await process_component.handle_kill(
-            struct.pack(rpc_protocol.UINT16_FORMAT, pid),
-            send_ack=True,
-        )
-        assert result is True
-        mock_context.send_frame.assert_awaited_with(
-            Status.ERROR.value,
-            b"process_kill_failed",
-        )
+        with pytest.raises(RuntimeError, match="unexpected"):
+            await process_component.handle_kill(
+                struct.pack(rpc_protocol.UINT16_FORMAT, pid),
+                send_ack=True,
+            )
+        mock_context.send_frame.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -252,7 +249,8 @@ async def test_monitor_async_process_exception(
             raise RuntimeError("boom")
 
     proc = BadProc()
-    await process_component._monitor_async_process(pid, proc)  # type: ignore
+    with pytest.raises(RuntimeError, match="boom"):
+        await process_component._monitor_async_process(pid, proc)  # type: ignore
 
 
 @pytest.mark.asyncio

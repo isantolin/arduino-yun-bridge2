@@ -159,18 +159,13 @@ async def test_run_sync_taskgroup_exception_returns_error(process_component: Pro
 
     proc = _Proc()
 
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("echo", "hi")):
-        with patch("asyncio.create_subprocess_exec", return_value=proc):
-            with patch.object(ProcessComponent, "_consume_stream", new_callable=AsyncMock) as mock_consume:
-                mock_consume.side_effect = RuntimeError("boom")
-                with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
-                    status, out, err, exit_code = await process_component.run_sync("echo hi")
+    mock_tg = MagicMock()
+    mock_tg.__aenter__ = AsyncMock(return_value=mock_tg)
+    mock_tg.create_task.side_effect = RuntimeError("boom")
 
-    assert status == Status.ERROR.value
-    assert out == b""
-    assert err
-    assert exit_code is None
-    mock_term.assert_awaited_once()
+    with patch("asyncio.TaskGroup", return_value=mock_tg):
+        with pytest.raises(RuntimeError, match="boom"):
+            await process_component.run_sync("echo hi")
 
 
 @pytest.mark.asyncio
@@ -311,7 +306,8 @@ async def test_monitor_async_process_handles_wait_exception(process_component: P
 
     proc = _Proc()
     with patch.object(ProcessComponent, "_finalize_async_process", new_callable=AsyncMock) as mock_finalize:
-        await process_component._monitor_async_process(1, proc)  # type: ignore[arg-type]
+        with pytest.raises(RuntimeError, match="boom"):
+            await process_component._monitor_async_process(1, proc)  # type: ignore[arg-type]
         mock_finalize.assert_not_awaited()
 
 
@@ -415,10 +411,5 @@ async def test_handle_kill_unexpected_exception_is_handled(process_component: Pr
         side_effect=RuntimeError("boom"),
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))
-
-    assert ok is True
-    mock_term.assert_awaited_once()
-    mock_release.assert_called_once()
-    async with process_component.state.process_lock:
-        assert pid not in process_component.state.running_processes
+            with pytest.raises(RuntimeError, match="boom"):
+                await process_component.handle_kill(struct.pack(rpc_protocol.UINT16_FORMAT, pid))

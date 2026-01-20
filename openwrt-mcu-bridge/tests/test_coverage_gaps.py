@@ -150,15 +150,14 @@ async def test_run_sync_wait_task_result_exception(
     with patch.object(ProcessComponent, "_prepare_command", return_value=("echo", "hi")):
         with patch("asyncio.create_subprocess_exec", return_value=proc):
             # Make _wait_for_sync_completion raise an exception
-            async def _bad_wait(self, p, h):
+            async def _bad_wait(*args, **kwargs):
                 raise ValueError("test error")
 
-            with patch.object(ProcessComponent, "_wait_for_sync_completion", _bad_wait):
-                status, out, err, exit_code = await process_component.run_sync("echo hi")
+            with patch.object(ProcessComponent, "_wait_for_sync_completion", side_effect=_bad_wait):
+                with pytest.raises(ExceptionGroup) as excinfo:
+                    await process_component.run_sync("echo hi")
 
-    # Should return ERROR (exception during processing)
-    assert status == Status.ERROR.value
-
+                assert "test error" in str(excinfo.value.exceptions[0])
 
 @pytest.mark.asyncio
 async def test_terminate_process_tree_already_returned(

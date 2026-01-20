@@ -87,7 +87,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         fallback_called = True
         return {"serial_port": "default"}
 
-    monkeypatch.setattr(utils, "get_default_config", fake_default)
+    monkeypatch.setattr(common, "get_default_config", fake_default)
 
     config = common.get_uci_config()
 

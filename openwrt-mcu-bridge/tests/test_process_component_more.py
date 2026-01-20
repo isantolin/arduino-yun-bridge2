@@ -140,25 +140,6 @@ async def test_run_sync_no_timeout_waits_for_process(process_component: ProcessC
 
 @pytest.mark.asyncio
 async def test_run_sync_taskgroup_exception_returns_error(process_component: ProcessComponent) -> None:
-    class _EmptyStream:
-        async def read(self, _n: int) -> bytes:
-            return b""
-
-    class _Proc:
-        def __init__(self) -> None:
-            self.pid = 123
-            self.stdout = _EmptyStream()
-            self.stderr = _EmptyStream()
-            self.returncode: int | None = None
-
-        async def wait(self) -> None:
-            self.returncode = 0
-
-        def kill(self) -> None:
-            return None
-
-    proc = _Proc()
-
     mock_tg = MagicMock()
     mock_tg.__aenter__ = AsyncMock(return_value=mock_tg)
     mock_tg.create_task.side_effect = RuntimeError("boom")
@@ -409,7 +390,7 @@ async def test_handle_kill_unexpected_exception_is_handled(process_component: Pr
         "_terminate_process_tree",
         new_callable=AsyncMock,
         side_effect=RuntimeError("boom"),
-    ) as mock_term:
-        with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
+    ):
+        with patch.object(ProcessComponent, "_release_process_slot"):
             with pytest.raises(RuntimeError, match="boom"):
                 await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))

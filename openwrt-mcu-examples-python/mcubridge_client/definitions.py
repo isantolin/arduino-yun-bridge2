@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 from dataclasses import dataclass
 from enum import IntEnum
-from collections.abc import Iterable as IterableABC
+from collections.abc import Iterable
 from typing import Any, Self, TypeGuard, TypedDict, Final
 
 from paho.mqtt.packettypes import PacketTypes
@@ -31,7 +31,7 @@ class SpoolRecord(TypedDict, total=False):
 
 
 UserProperty = tuple[str, str]
-IterableAny = IterableABC[Any]
+IterableAny = Iterable[Any]
 
 
 class QOSLevel(IntEnum):
@@ -42,7 +42,7 @@ class QOSLevel(IntEnum):
 
 
 def _is_iterable_sequence(value: Any) -> TypeGuard[IterableAny]:
-    return isinstance(value, IterableABC) and not isinstance(value, (bytes, str))
+    return isinstance(value, Iterable) and not isinstance(value, (bytes, str))
 
 
 def _normalize_user_properties(raw: Any) -> tuple[UserProperty, ...]:

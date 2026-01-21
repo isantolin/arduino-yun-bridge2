@@ -22,7 +22,7 @@ from mcubridge.rpc.protocol import (
     DEFAULT_BAUDRATE,
     FRAME_DELIMITER,
 )
-from mcubridge.rpc import protocol as rpc_protocol
+from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.rpc.protocol import Command, Status
 from mcubridge.transport.termios_serial import TermiosSerial, SerialException
@@ -113,7 +113,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
-    crc = int.from_bytes(raw_frame[-rpc_protocol.CRC_SIZE:], "big")
+    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE:], "big")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(

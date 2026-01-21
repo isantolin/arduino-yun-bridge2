@@ -232,7 +232,7 @@ class RuntimeConfig:
 
         # 2. MQTT Spool (ALWAYS in RAM)
         if not spool.startswith("/tmp"):
-             raise ValueError(
+            raise ValueError(
                 f"FLASH PROTECTION: mqtt_spool_dir '{spool}' is not in /tmp. "
                 "MQTT spool writes frequently and must reside in RAM to prevent flash destruction."
             )

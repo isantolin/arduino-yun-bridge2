@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Any, TypedDict, cast
 from collections.abc import Iterable, Sequence
 
-from aiomqtt import Client as MqttClient, MqttError, ProtocolVersion
-from aiomqtt.message import Message as MQTTMessage
+from aiomqtt import Client, MqttError, ProtocolVersion
+from aiomqtt.message import Message
 from aiomqtt.types import PayloadType
 from .definitions import (
     QOSLevel,
@@ -137,14 +137,14 @@ class Bridge:
         self.username = username
         self.password = password
         self.tls_context = tls_context if tls_context is not None else _default_tls_context()
-        self._client: MqttClient | None = None
+        self._client: Client | None = None
         self._response_routes: dict[
             str,
-            list[tuple[asyncio.Queue[MQTTMessage], bool]],
+            list[tuple[asyncio.Queue[Message], bool]],
         ] = {}
         self._correlation_routes: dict[
             bytes,
-            asyncio.Queue[MQTTMessage],
+            asyncio.Queue[Message],
         ] = {}
         self._reply_topic: str | None = None
         self._listener_task: asyncio.Task[None] | None = None
@@ -155,7 +155,7 @@ class Bridge:
         if self._client is not None:
             await self.disconnect()
 
-        self._client = MqttClient(
+        self._client = Client(
             hostname=self.host,
             port=self.port,
             username=self.username,
@@ -200,7 +200,7 @@ class Bridge:
         self._client = None
         logger.info("Disconnected from MQTT broker.")
 
-    def _ensure_client(self) -> MqttClient:
+    def _ensure_client(self) -> Client:
         client = self._client
         if client is None:
             raise ConnectionError("MQTT client not connected. Call connect() first.")
@@ -219,7 +219,7 @@ class Bridge:
         except Exception:
             logger.exception("Unexpected error in MQTT listener")
 
-    async def _handle_inbound_message(self, message: MQTTMessage) -> None:
+    async def _handle_inbound_message(self, message: Message) -> None:
         topic = str(message.topic)
         if not topic:
             return
@@ -260,8 +260,8 @@ class Bridge:
 
     def _safe_queue_put(
         self,
-        queue: asyncio.Queue[MQTTMessage],
-        message: MQTTMessage,
+        queue: asyncio.Queue[Message],
+        message: Message,
         *,
         drop_oldest: bool,
     ) -> None:
@@ -285,7 +285,7 @@ class Bridge:
     def _register_route(
         self,
         prefix: str,
-        queue: asyncio.Queue[MQTTMessage],
+        queue: asyncio.Queue[Message],
         *,
         drop_oldest: bool = False,
     ) -> None:
@@ -295,7 +295,7 @@ class Bridge:
     def _unregister_route(
         self,
         prefix: str,
-        queue: asyncio.Queue[MQTTMessage],
+        queue: asyncio.Queue[Message],
     ) -> None:
         routes = self._response_routes.get(prefix)
         if not routes:
@@ -328,7 +328,7 @@ class Bridge:
         if not topics:
             raise ValueError("resp_topic must contain at least one topic")
 
-        response_queue: asyncio.Queue[MQTTMessage] = asyncio.Queue(maxsize=1)
+        response_queue: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
         correlation = secrets.token_bytes(12)
         subscribed = False
         try:
@@ -534,7 +534,7 @@ class Bridge:
     async def console_read_async(self) -> str | None:
         topic = f"{self.topic_prefix}/console/out"
         client = self._ensure_client()
-        queue: asyncio.Queue[MQTTMessage] | None = None
+        queue: asyncio.Queue[Message] | None = None
         routes = self._response_routes.get(topic)
         if routes:
             queue = routes[0][0]

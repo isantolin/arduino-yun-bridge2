@@ -247,7 +247,8 @@ def test_load_runtime_config_falls_back_to_defaults(
     def _uci_failure() -> dict[str, str]:
         raise OSError("uci unavailable")
 
-    default_config = {        "serial_port": "/dev/default",
+    default_config = {
+        "serial_port": "/dev/default",
         "serial_baud": "not-int",
         "mqtt_tls": "1",
         "mqtt_user": "  ",

@@ -384,7 +384,7 @@ constexpr uint16_t to_underlying(CommandId value) {
     out.write("} // namespace rpc\n#endif\n")
 
 
-def generate_python(spec: dict[str, Any], out: TextIO) -> None:
+def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
     out.write(PY_HEADER + "\n")
     consts = spec["constants"]
     out.write(f"PROTOCOL_VERSION: Final[int] = {consts['protocol_version']}\n")

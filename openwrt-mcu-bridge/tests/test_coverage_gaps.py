@@ -159,6 +159,7 @@ async def test_run_sync_wait_task_result_exception(
 
                 assert "test error" in str(excinfo.value.exceptions[0])
 
+
 @pytest.mark.asyncio
 async def test_terminate_process_tree_already_returned(
     process_component: ProcessComponent,

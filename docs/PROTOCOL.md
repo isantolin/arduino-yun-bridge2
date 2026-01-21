@@ -263,6 +263,14 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 
 CRC32 (4 bytes, Big Endian) sobre cabecera+payload; CRC-32 IEEE 802.3 con polinomio reflejado `0xEDB88320`, estado inicial `0xFFFFFFFF`, XOR final `0xFFFFFFFF`.
 
+### 3.3 Implementación de bibliotecas (Wire Format)
+
+| Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
+| :--- | :--- | :--- | :--- |
+| **COBS** | Framing / Escaping | **Interna**: `protocol/cobs.h` (cero dependencias externas, reemplaza `PacketSerial`). | **Externa**: `cobs` (paquete PyPI) o implementación interna en `mcubridge.transport`. |
+| **CRC32** | Integridad | **Interna**: `protocol/crc.cpp` (lookup table-less para ahorrar flash). | **Interna**: `mcubridge.rpc.crc.crc32_ieee` (pure Python fallback o `zlib.crc32`). |
+| **Endianness** | Byte Order | `__builtin_bswap16/32` o macros custom. | `struct.pack('>...')` (Big Endian standard library). |
+
 ## 4. Códigos de estado (`Status`)
 
 Los status usan el rango `0x30` - `0x3F`.

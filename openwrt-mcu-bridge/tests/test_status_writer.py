@@ -24,6 +24,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         monkeypatch.setattr(status, "STATUS_FILE", status_path)
         monkeypatch.setattr(
             status,
+            "_write_status_file",
             fake_write,
         )
 

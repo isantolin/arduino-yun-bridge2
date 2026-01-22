@@ -82,9 +82,13 @@ class Frame:
         # Calculate CRC over the header and payload, then mask it to the
         # exact number of bits declared by the protocol.
         data_to_crc = crc_covered_header + payload
-        # Use binascii.crc32 directly (standard IEEE 802.3) and mask to 32-bit unsigned.
-        # This matches the C++ implementation's behavior.
-        crc = crc32(data_to_crc) & protocol.CRC32_MASK
+        
+        # Calculate mask based on protocol size (usually 4 bytes -> 0xFFFFFFFF)
+        crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
+
+        # Use binascii.crc32 directly (standard IEEE 802.3) and mask to 32-bit unsigned,
+        # then apply the protocol size mask.
+        crc = (crc32(data_to_crc) & protocol.CRC32_MASK) & crc_mask
 
         # Pack the CRC
         crc_packed = struct.pack(

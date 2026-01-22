@@ -63,7 +63,7 @@ async def test_negotiate_baudrate_success() -> None:
     reader = _FakeReader(response)
     writer = _FakeWriter()
 
-    ok = await serial_mod._negotiate_baudrate(reader, writer, 115200)
+    ok = await serial._negotiate_baudrate(reader, writer, 115200)
 
     assert ok is True
     assert writer.writes
@@ -77,7 +77,7 @@ async def test_negotiate_baudrate_unexpected_response() -> None:
     reader = _FakeReader(response)
     writer = _FakeWriter()
 
-    ok = await serial_mod._negotiate_baudrate(reader, writer, 115200)
+    ok = await serial._negotiate_baudrate(reader, writer, 115200)
 
     assert ok is False
 
@@ -87,7 +87,7 @@ async def test_negotiate_baudrate_timeout_returns_false() -> None:
     reader = _TimeoutReader()
     writer = _FakeWriter()
 
-    ok = await serial_mod._negotiate_baudrate(reader, writer, 115200)
+    ok = await serial._negotiate_baudrate(reader, writer, 115200)
 
     assert ok is False
 
@@ -106,7 +106,7 @@ def test_open_serial_hardware_closes_on_failure() -> None:
             closed["closed"] = True
 
     with pytest.raises(OSError):
-        serial_mod._open_serial_hardware(_StubSerial(), "loop://")
+        serial._open_serial_hardware(_StubSerial(), "loop://")
 
     assert closed["closed"] is True
 
@@ -142,9 +142,9 @@ async def test_open_serial_connection_with_retry_no_negotiation(monkeypatch: pyt
     writer = _FakeWriter()
 
     opener = AsyncMock(return_value=(fake_reader, writer))
-    monkeypatch.setattr(serial_mod, "OPEN_SERIAL_CONNECTION", opener)
+    monkeypatch.setattr(serial, "OPEN_SERIAL_CONNECTION", opener)
 
-    reader, got_writer = await serial_mod._open_serial_connection_with_retry(config)
+    reader, got_writer = await serial._open_serial_connection_with_retry(config)
 
     assert reader is fake_reader
     assert got_writer is writer
@@ -183,10 +183,10 @@ async def test_open_serial_connection_with_retry_negotiation_failure(monkeypatch
     writer = _FakeWriter()
 
     opener = AsyncMock(return_value=(fake_reader, writer))
-    monkeypatch.setattr(serial_mod, "OPEN_SERIAL_CONNECTION", opener)
-    monkeypatch.setattr(serial_mod, "_negotiate_baudrate", AsyncMock(return_value=False))
+    monkeypatch.setattr(serial, "OPEN_SERIAL_CONNECTION", opener)
+    monkeypatch.setattr(serial, "_negotiate_baudrate", AsyncMock(return_value=False))
 
-    reader, got_writer = await serial_mod._open_serial_connection_with_retry(config)
+    reader, got_writer = await serial._open_serial_connection_with_retry(config)
 
     assert reader is fake_reader
     assert got_writer is writer
@@ -225,10 +225,10 @@ async def test_open_serial_connection_with_retry_raises_unexpected_exception_gro
     exc = ExceptionGroup("boom", [SerialException("serial"), ValueError("bad")])
 
     opener = AsyncMock(side_effect=exc)
-    monkeypatch.setattr(serial_mod, "OPEN_SERIAL_CONNECTION", opener)
+    monkeypatch.setattr(serial, "OPEN_SERIAL_CONNECTION", opener)
 
     with pytest.raises(ExceptionGroup):
-        await serial_mod._open_serial_connection_with_retry(config)
+        await serial._open_serial_connection_with_retry(config)
 
 
 @pytest.mark.asyncio
@@ -262,9 +262,9 @@ async def test_read_loop_packet_too_large_sends_malformed(monkeypatch: pytest.Mo
     service = BridgeService(config, state)
     service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
 
-    data = bytearray(b"A" * (serial_mod.MAX_SERIAL_PACKET_BYTES + 1))
+    data = bytearray(b"A" * (serial.MAX_SERIAL_PACKET_BYTES + 1))
     data.extend(protocol.FRAME_DELIMITER)
 
     class _ByteReader:
@@ -318,19 +318,19 @@ async def test_serial_transport_run_stops_on_handshake_fatal(monkeypatch: pytest
 
     writer = _FakeWriter()
     monkeypatch.setattr(
-        serial_mod,
+        serial,
         "_open_serial_connection_with_retry",
         AsyncMock(return_value=(asyncio.StreamReader(), writer)),
     )
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
     monkeypatch.setattr(transport, "_read_loop", AsyncMock(return_value=None))
     monkeypatch.setattr(transport, "_disconnect", AsyncMock(return_value=None))
 
     monkeypatch.setattr(service, "on_serial_connected", AsyncMock(side_effect=SerialHandshakeFatal("fatal")))
 
     sleep_spy = AsyncMock()
-    monkeypatch.setattr(serial_mod.asyncio, "sleep", sleep_spy)
+    monkeypatch.setattr(serial.asyncio, "sleep", sleep_spy)
 
     with pytest.raises(SerialHandshakeFatal):
         await transport.run()

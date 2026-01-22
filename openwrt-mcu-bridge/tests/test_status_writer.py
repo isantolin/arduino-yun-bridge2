@@ -21,7 +21,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
             writes.append(payload)
             status_path.write_text(json.dumps(payload))
 
-        monkeypatch.setattr(status_module, "STATUS_FILE", status_path)
+        monkeypatch.setattr(status, "STATUS_FILE", status_path)
         monkeypatch.setattr(
             status,
             fake_write,
@@ -83,7 +83,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state.watchdog_beats = 11
         state.last_watchdog_beat = 101.0
 
-        task = asyncio.create_task(status_module.status_writer(state, 0))
+        task = asyncio.create_task(status.status_writer(state, 0))
         for _ in range(10):
             if writes:
                 break
@@ -169,8 +169,8 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
 def test_cleanup_status_file(monkeypatch, tmp_path):
     status_path = tmp_path / "status.json"
     status_path.write_text("{}")
-    monkeypatch.setattr(status_module, "STATUS_FILE", status_path)
+    monkeypatch.setattr(status, "STATUS_FILE", status_path)
 
     assert status_path.exists()
-    status_module.cleanup_status_file()
+    status.cleanup_status_file()
     assert not status_path.exists()

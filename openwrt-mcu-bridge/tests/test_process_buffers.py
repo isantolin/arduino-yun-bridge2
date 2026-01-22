@@ -144,7 +144,7 @@ def test_start_async_respects_concurrency_limit(
             state.running_processes[123] = ManagedProcess(
                 123,
                 "",
-                cast(AsyncioProcess, object()),
+                cast(Process, object()),
             )
         result = await process_component.start_async("/bin/true")
         assert result == protocol.INVALID_ID_SENTINEL
@@ -228,14 +228,14 @@ def test_async_process_monitor_releases_slot(
         slot = ManagedProcess(
             77,
             "/bin/true",
-            cast(AsyncioProcess, fake_proc),
+            cast(Process, fake_proc),
         )
         async with state.process_lock:
             state.running_processes[slot.pid] = slot
 
         await process_component._monitor_async_process(
             slot.pid,
-            cast(AsyncioProcess, fake_proc),
+            cast(Process, fake_proc),
         )
 
         assert slot.handle is None

@@ -262,8 +262,8 @@ async def test_collect_output_finishing_process_releases_slot(
 import mcubridge.services.components.process
 
     # Shrink the search space so we can exhaust it quickly.
-    original_max = process_mod.UINT16_MAX
-    process_mod.UINT16_MAX = 3
+    original_max = mcubridge.services.components.process.UINT16_MAX
+    mcubridge.services.components.process.UINT16_MAX = 3
     try:
         async with process_component.state.process_lock:
             process_component.state.next_pid = 1
@@ -275,7 +275,7 @@ import mcubridge.services.components.process
         pid = await process_component._allocate_pid()
         assert pid == protocol.INVALID_ID_SENTINEL
     finally:
-        process_mod.UINT16_MAX = original_max
+        mcubridge.services.components.process.UINT16_MAX = original_max
 
 
 @pytest.mark.asyncio
@@ -324,7 +324,7 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
         async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
             return False
 
-    with patch.object(process_mod.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
+    with patch.object(mcubridge.services.components.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
                 ok = await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))

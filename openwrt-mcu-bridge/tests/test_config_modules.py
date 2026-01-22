@@ -11,7 +11,7 @@ import pytest
 from mcubridge import common
 from mcubridge import const
 from mcubridge.rpc import protocol
-from mcubridge.config import logging
+import mcubridge.config.logging
 from mcubridge.config import settings
 
 
@@ -353,20 +353,20 @@ def test_configure_logging_stream_handler(
     tmp_path: Path,
 ):
     missing_socket = tmp_path / "no-syslog"
-    monkeypatch.setattr(logging_module, "SYSLOG_SOCKET", missing_socket)
+    monkeypatch.setattr(mcubridge.config.logging, "SYSLOG_SOCKET", missing_socket)
 
     config = settings.RuntimeConfig(
         **_runtime_config_kwargs(serial_shared_secret=b"testshared")
     )
 
-    logging_module.configure_logging(config)
+    mcubridge.config.logging.configure_logging(config)
 
     root_logger = logging.getLogger()
     assert len(root_logger.handlers) == 1
 
     handler = root_logger.handlers[0]
     assert handler.level == logging.INFO
-    assert isinstance(handler.formatter, logging_module.StructuredLogFormatter)
+    assert isinstance(handler.formatter, mcubridge.config.logging.StructuredLogFormatter)
 
     capture = io.StringIO()
     assert isinstance(handler, logging.StreamHandler)
@@ -447,8 +447,8 @@ def test_configure_logging_syslog_handler(
         def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover
             pass
 
-    monkeypatch.setattr(logging_module, "SYSLOG_SOCKET", socket_path)
-    monkeypatch.setattr(logging_module, "SysLogHandler", DummySysLogHandler)
+    monkeypatch.setattr(mcubridge.config.logging, "SYSLOG_SOCKET", socket_path)
+    monkeypatch.setattr(mcubridge.config.logging, "SysLogHandler", DummySysLogHandler)
 
     config = settings.RuntimeConfig(
         serial_port="/dev/ttyUSB0",
@@ -470,7 +470,7 @@ def test_configure_logging_syslog_handler(
         serial_shared_secret=b"testshared",
     )
 
-    logging_module.configure_logging(config)
+    mcubridge.config.logging.configure_logging(config)
 
     handler = logging.getLogger().handlers[0]
 
@@ -478,14 +478,14 @@ def test_configure_logging_syslog_handler(
     assert handler.address == str(socket_path)
     assert handler.facility is DummySysLogHandler.LOG_DAEMON
     assert handler.level == logging.DEBUG
-    assert isinstance(handler.formatter, logging_module.StructuredLogFormatter)
+    assert isinstance(handler.formatter, mcubridge.config.logging.StructuredLogFormatter)
     assert handler.ident == "mcubridge "
 
     logging.getLogger().handlers.clear()
 
 
 def test_structured_formatter_trims_prefix_and_serialises_extra():
-    formatter = logging_module.StructuredLogFormatter()
+    formatter = mcubridge.config.logging.StructuredLogFormatter()
     record = logging.LogRecord(
         name="mcubridge.sub",
         level=logging.INFO,

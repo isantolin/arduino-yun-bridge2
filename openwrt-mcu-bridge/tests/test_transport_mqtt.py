@@ -55,13 +55,13 @@ def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
 
 def test_configure_tls_disabled_returns_none(tmp_path: Path) -> None:
     config = _make_config(tls=False, cafile=str(tmp_path / "ca.pem"))
-    assert mqtt_mod._configure_tls(config) is None
+    assert mqtt._configure_tls(config) is None
 
 
 def test_configure_tls_missing_cafile_raises(tmp_path: Path) -> None:
     config = _make_config(tls=True, cafile=str(tmp_path / "missing.pem"))
     with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
-        mqtt_mod._configure_tls(config)
+        mqtt._configure_tls(config)
 
 
 def test_configure_tls_loads_cert_chain_when_provided(
@@ -85,7 +85,7 @@ def test_configure_tls_loads_cert_chain_when_provided(
         return fake_context
 
     monkeypatch.setattr(
-        mqtt_mod.ssl,
+        mqtt.ssl,
         "create_default_context",
         _fake_create_default_context,
     )
@@ -94,7 +94,7 @@ def test_configure_tls_loads_cert_chain_when_provided(
     config.mqtt_certfile = str(tmp_path / "client.pem")
     config.mqtt_keyfile = str(tmp_path / "client.key")
 
-    ctx = mqtt_mod._configure_tls(config)
+    ctx = mqtt._configure_tls(config)
     assert ctx is fake_context
     assert calls == [(config.mqtt_certfile, config.mqtt_keyfile)]
 
@@ -109,11 +109,11 @@ def test_configure_tls_wraps_ssl_errors(
     def _boom(*_args, **_kwargs):
         raise ValueError("bad")
 
-    monkeypatch.setattr(mqtt_mod.ssl, "create_default_context", _boom)
+    monkeypatch.setattr(mqtt.ssl, "create_default_context", _boom)
 
     config = _make_config(tls=True, cafile=str(cafile))
     with pytest.raises(RuntimeError, match=r"TLS setup failed"):
-        mqtt_mod._configure_tls(config)
+        mqtt._configure_tls(config)
 
 
 @pytest.mark.asyncio
@@ -162,16 +162,16 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
             return _iter()
 
-    monkeypatch.setattr(mqtt_mod.aiomqtt, "Client", FakeClient)
+    monkeypatch.setattr(mqtt.aiomqtt, "Client", FakeClient)
 
     # Stop after the first reconnect attempt.
     async def _cancel_sleep(_seconds: float):
         raise asyncio.CancelledError
 
-    monkeypatch.setattr(mqtt_mod.asyncio, "sleep", _cancel_sleep)
+    monkeypatch.setattr(mqtt.asyncio, "sleep", _cancel_sleep)
 
     with pytest.raises(asyncio.CancelledError):
-        await mqtt_mod.mqtt_task(config, state, service)
+        await mqtt.mqtt_task(config, state, service)
 
     # Publisher requeues the message on publish error.
     assert state.mqtt_publish_queue.qsize() >= 1

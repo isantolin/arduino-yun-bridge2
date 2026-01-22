@@ -57,22 +57,22 @@ def _make_config() -> RuntimeConfig:
 
 
 def test_is_binary_packet_type_and_size_guards() -> None:
-    assert serial_mod._is_binary_packet(b"") is False
-    assert serial_mod._is_binary_packet("nope") is False  # type: ignore[arg-type]
-    assert serial_mod._is_binary_packet(b"a" * (serial_mod.MAX_SERIAL_PACKET_BYTES + 1)) is False
-    assert serial_mod._is_binary_packet(b"a") is True
-    assert serial_mod._is_binary_packet(memoryview(b"abc")) is True
+    assert serial._is_binary_packet(b"") is False
+    assert serial._is_binary_packet("nope") is False  # type: ignore[arg-type]
+    assert serial._is_binary_packet(b"a" * (serial.MAX_SERIAL_PACKET_BYTES + 1)) is False
+    assert serial._is_binary_packet(b"a") is True
+    assert serial._is_binary_packet(memoryview(b"abc")) is True
 
 
 def test_coerce_packet_returns_bytes() -> None:
-    assert serial_mod._coerce_packet(b"abc") == b"abc"
-    assert serial_mod._coerce_packet(bytearray(b"abc")) == b"abc"
+    assert serial._coerce_packet(b"abc") == b"abc"
+    assert serial._coerce_packet(bytearray(b"abc")) == b"abc"
 
 
 def test_ensure_raw_mode_noop_when_termios_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(serial_mod, "termios", None)
-    monkeypatch.setattr(serial_mod, "tty", None)
-    serial_mod._ensure_raw_mode(SimpleNamespace(fd=123), "/dev/null")
+    monkeypatch.setattr(serial, "termios", None)
+    monkeypatch.setattr(serial, "tty", None)
+    serial._ensure_raw_mode(SimpleNamespace(fd=123), "/dev/null")
 
 
 def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,10 +98,10 @@ def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPa
         def tcsetattr(fd: int, _when: int, attrs) -> None:
             calls.append(("tcsetattr", attrs[3]))
 
-    monkeypatch.setattr(serial_mod, "tty", _TTY)
-    monkeypatch.setattr(serial_mod, "termios", _Termios)
+    monkeypatch.setattr(serial, "tty", _TTY)
+    monkeypatch.setattr(serial, "termios", _Termios)
 
-    serial_mod._ensure_raw_mode(SimpleNamespace(fd=10), "/dev/tty")
+    serial._ensure_raw_mode(SimpleNamespace(fd=10), "/dev/tty")
     assert ("setraw", 10) in calls
     # Expect ECHO bit to be cleared
     assert ("tcsetattr", 0) in calls
@@ -109,7 +109,7 @@ def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.asyncio
 async def test_flow_control_mixin_drain_unblocks_on_resume() -> None:
-    mixin = serial_mod.FlowControlMixin()
+    mixin = serial.FlowControlMixin()
     mixin.pause_writing()
 
     task = asyncio.create_task(mixin._drain_helper())
@@ -122,7 +122,7 @@ async def test_flow_control_mixin_drain_unblocks_on_resume() -> None:
 
 @pytest.mark.asyncio
 async def test_flow_control_mixin_connection_lost_wakes_waiter() -> None:
-    mixin = serial_mod.FlowControlMixin()
+    mixin = serial.FlowControlMixin()
     mixin.pause_writing()
 
     task = asyncio.create_task(mixin._drain_helper())
@@ -142,7 +142,7 @@ async def test_process_packet_non_binary_does_not_send_status(monkeypatch: pytes
 
     service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
     await transport._process_packet(b"")
 
     assert state.serial_decode_errors == 1
@@ -160,7 +160,7 @@ async def test_process_packet_decode_error_does_not_send_status(monkeypatch: pyt
     service.handle_mcu_frame = AsyncMock()  # type: ignore[method-assign]
 
     # Make decode fail.
-    monkeypatch.setattr(serial_mod.cobs, "decode", lambda _data: (_ for _ in ()).throw(cobs.DecodeError("bad")))
+    monkeypatch.setattr(serial.cobs, "decode", lambda _data: (_ for _ in ()).throw(cobs.DecodeError("bad")))
 
     # Provide enough bytes for header extraction.
     header = struct.pack(
@@ -171,7 +171,7 @@ async def test_process_packet_decode_error_does_not_send_status(monkeypatch: pyt
     )
     encoded = header + b"x" * 4
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
     await transport._process_packet(encoded)
 
     assert state.serial_decode_errors == 1
@@ -189,14 +189,14 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
 
     raw = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, Command.CMD_LINK_SYNC.value) + b"x" * 10
 
-    monkeypatch.setattr(serial_mod.cobs, "decode", lambda _data: raw)
+    monkeypatch.setattr(serial.cobs, "decode", lambda _data: raw)
 
     def _bad_frame(_raw: bytes) -> Frame:
         raise ValueError("crc mismatch")
 
-    monkeypatch.setattr(serial_mod.Frame, "from_bytes", _bad_frame)
+    monkeypatch.setattr(serial.Frame, "from_bytes", _bad_frame)
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
     await transport._process_packet(b"encoded")
 
     assert state.serial_decode_errors == 1
@@ -218,9 +218,9 @@ async def test_process_packet_success_dispatches(monkeypatch: pytest.MonkeyPatch
     service.handle_mcu_frame = AsyncMock()  # type: ignore[method-assign]
 
     frame_bytes = Frame.build(Command.CMD_CONSOLE_WRITE.value, b"hi")
-    monkeypatch.setattr(serial_mod.cobs, "decode", lambda _data: frame_bytes)
+    monkeypatch.setattr(serial.cobs, "decode", lambda _data: frame_bytes)
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
     await transport._process_packet(b"encoded")
 
     service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
@@ -248,11 +248,11 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
     w2 = FakeWriter()
 
     opener = AsyncMock(side_effect=[(fake_reader, w1), (fake_reader, w2)])
-    monkeypatch.setattr(serial_mod, "OPEN_SERIAL_CONNECTION", opener)
-    monkeypatch.setattr(serial_mod, "_negotiate_baudrate", AsyncMock(return_value=True))
-    monkeypatch.setattr(serial_mod.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(serial, "OPEN_SERIAL_CONNECTION", opener)
+    monkeypatch.setattr(serial, "_negotiate_baudrate", AsyncMock(return_value=True))
+    monkeypatch.setattr(serial.asyncio, "sleep", AsyncMock())
 
-    reader, writer = await serial_mod._open_serial_connection_with_retry(config)
+    reader, writer = await serial._open_serial_connection_with_retry(config)
     assert reader is fake_reader
     assert writer is w2
     assert opener.await_count == 2
@@ -264,7 +264,7 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
 
     class _Writer:
         def __init__(self) -> None:
@@ -282,9 +282,9 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
     writer = _Writer()
     transport.writer = writer  # type: ignore[assignment]
 
-    monkeypatch.setattr(serial_mod.logger, "isEnabledFor", lambda _lvl: True)
+    monkeypatch.setattr(serial.logger, "isEnabledFor", lambda _lvl: True)
     seen: dict[str, str] = {}
-    monkeypatch.setattr(serial_mod.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
+    monkeypatch.setattr(serial.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
 
     ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
     assert ok is True
@@ -298,7 +298,7 @@ async def test_send_frame_returns_false_on_write_error() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
 
     class _Writer:
         def is_closing(self) -> bool:
@@ -321,7 +321,7 @@ async def test_send_frame_honors_xoff_xon_backpressure() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    transport = serial_mod.SerialTransport(config, state, service)
+    transport = serial.SerialTransport(config, state, service)
 
     class _Writer:
         def __init__(self) -> None:

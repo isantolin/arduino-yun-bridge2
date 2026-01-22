@@ -10,7 +10,7 @@ from aiomqtt import Client
 @pytest.mark.asyncio
 async def test_aiomqtt_context_manager_mocking():
     """Verify that we can mock the async context manager of aiomqtt."""
-    mock_client_instance = AsyncMock(spec=BaseClient)
+    mock_client_instance = AsyncMock(spec=Client)
 
     # Setup the __aenter__ to return the mock instance itself
     mock_client_instance.__aenter__.return_value = mock_client_instance
@@ -29,7 +29,7 @@ async def test_aiomqtt_context_manager_mocking():
 @pytest.mark.asyncio
 async def test_aiomqtt_messages_iterator_mocking():
     """Verify mocking of the messages async iterator."""
-    mock_client = AsyncMock(spec=BaseClient)
+    mock_client = AsyncMock(spec=Client)
     mock_messages = AsyncMock()
 
     # Mock messages property

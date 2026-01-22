@@ -4,7 +4,7 @@ import json
 import logging
 from unittest.mock import patch
 
-from mcubridge.config import logging
+import mcubridge.config.logging
 from mcubridge.config.settings import RuntimeConfig
 
 
@@ -21,7 +21,7 @@ def test_serialise_value_handles_bytes_and_objects() -> None:
     record.custom_bytes = b"caf\xc3\xa9"  # type: ignore
     record.custom_obj = object()  # type: ignore
 
-    mcubridge.config.logging.StructuredLogFormatter()
+    formatter = mcubridge.config.logging.StructuredLogFormatter()
     payload = json.loads(formatter.format(record))
 
     assert payload["logger"] == "test"
@@ -61,7 +61,7 @@ def test_configure_logging_syslog(tmp_path) -> None:
         with patch("mcubridge.config.logging.dictConfig") as mock_dict_config, \
              patch("logging.getLogger") as mock_get_logger:
 
-            log_mod.configure_logging(config)
+            mcubridge.config.logging.configure_logging(config)
 
             mock_dict_config.assert_called_once()
             config_arg = mock_dict_config.call_args[0][0]

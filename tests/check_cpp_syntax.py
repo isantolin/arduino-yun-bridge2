@@ -7,6 +7,7 @@ def check_cpp_syntax() -> bool:
     # Base directories
     base_dir = os.path.abspath("openwrt-library-arduino/src")
     protocol_dir = os.path.join(base_dir, "protocol")
+    arduino_dir = os.path.join(base_dir, "arduino")
 
     # Mock Arduino directory (using existing stub)
     stub_dir = os.path.abspath("tools/arduino_stub/include")
@@ -18,7 +19,7 @@ def check_cpp_syntax() -> bool:
     sources = [
         os.path.join(protocol_dir, "rpc_frame.cpp"),
         os.path.join(arduino_dir, "Bridge.cpp"),
-
+    ]
 
     include_paths = [
         f"-I{base_dir}",

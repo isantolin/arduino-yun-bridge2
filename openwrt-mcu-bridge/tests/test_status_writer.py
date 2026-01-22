@@ -7,7 +7,7 @@ import pytest
 
 from mcubridge.policy import AllowedCommandPolicy
 from mcubridge.state.context import RuntimeState, SupervisorStats
-from mcubridge.state import status as status_module
+from mcubridge.state import status
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.rpc import protocol
 
@@ -23,8 +23,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
 
         monkeypatch.setattr(status_module, "STATUS_FILE", status_path)
         monkeypatch.setattr(
-            status_module,
-            "_write_status_file",
+            status,
             fake_write,
         )
 

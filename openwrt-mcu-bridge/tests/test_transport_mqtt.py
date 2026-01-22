@@ -23,7 +23,7 @@ from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.rpc import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import mqtt as mqtt_mod
+from mcubridge.transport import mqtt
 
 
 def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:

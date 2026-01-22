@@ -8,7 +8,7 @@ from typing import Any, cast
 from collections.abc import Awaitable, Callable
 
 import pytest
-from asyncio.subprocess import Process as AsyncioProcess
+from asyncio.subprocess import Process
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (

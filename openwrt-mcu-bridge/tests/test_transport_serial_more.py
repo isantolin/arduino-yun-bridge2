@@ -17,7 +17,7 @@ from mcubridge.rpc.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import serial as serial_mod
+from mcubridge.transport import serial
 from mcubridge.transport.termios_serial import SerialException
 
 

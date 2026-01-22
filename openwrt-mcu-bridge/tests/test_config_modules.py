@@ -11,7 +11,7 @@ import pytest
 from mcubridge import common
 from mcubridge import const
 from mcubridge.rpc import protocol
-from mcubridge.config import logging as logging_module
+from mcubridge.config import logging
 from mcubridge.config import settings
 
 

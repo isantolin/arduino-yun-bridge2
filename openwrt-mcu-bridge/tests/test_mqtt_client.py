@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from aiomqtt import Client as BaseClient
+from aiomqtt import Client
 
 # We are testing direct usage of aiomqtt since the custom Client shim is gone.
 # The tests confirm we can mock aiomqtt.Client the same way daemon.py does.

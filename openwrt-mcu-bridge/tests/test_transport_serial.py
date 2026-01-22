@@ -26,7 +26,7 @@ from mcubridge.rpc.frame import Frame
 from mcubridge.rpc.protocol import Command, Status, UINT16_FORMAT
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import serial as serial_mod
+from mcubridge.transport import serial
 
 
 def _make_config() -> RuntimeConfig:

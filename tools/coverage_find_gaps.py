@@ -18,7 +18,7 @@ import argparse
 import json
 import re
 import sys
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -62,7 +62,7 @@ def _parse_condition_coverage(value: str) -> tuple[int, int] | None:
 
 
 def load_python_gaps(xml_path: Path) -> list[FileGaps]:
-    tree = ET.parse(xml_path)
+    tree = xml.etree.ElementTree.parse(xml_path)
     root = tree.getroot()
 
     gaps: list[FileGaps] = []

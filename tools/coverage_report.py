@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -44,7 +44,7 @@ class CoverageMetrics:
 def _read_python_metrics(path: Path) -> CoverageMetrics | None:
     if not path.exists():
         return None
-    root = ET.parse(path).getroot()
+    root = xml.etree.ElementTree.parse(path).getroot()
     attr = root.attrib
 
     def _get(name: str) -> int:

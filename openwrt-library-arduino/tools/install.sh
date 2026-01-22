@@ -78,16 +78,16 @@ ensure_packetserial_library() {
   trap 'rm -rf "$tmp_dir"' EXIT
 
   local zip_path="$tmp_dir/PacketSerial.zip"
-  local repo_url="https://codeload.github.com/bakercp/PacketSerial/zip/refs/heads/master"
+  local repo_url="https://codeload.github.com/FrankBoesing/PacketSerial/zip/refs/heads/master"
   echo "[INFO] Downloading PacketSerial from $repo_url"
   if [ "$downloader" = "curl" ]; then
     curl -fsSL "$repo_url" -o "$zip_path" || {
-      echo "[ERROR] Unable to download PacketSerial automatically. Please install it manually from https://github.com/bakercp/PacketSerial" >&2
+      echo "[ERROR] Unable to download PacketSerial automatically. Please install it manually from https://github.com/FrankBoesing/PacketSerial" >&2
       exit 1
     }
   else
     wget -qO "$zip_path" "$repo_url" || {
-      echo "[ERROR] Unable to download PacketSerial automatically. Please install it manually from https://github.com/bakercp/PacketSerial" >&2
+      echo "[ERROR] Unable to download PacketSerial automatically. Please install it manually from https://github.com/FrankBoesing/PacketSerial" >&2
       exit 1
     }
   fi
@@ -111,16 +111,16 @@ ensure_packetserial_library() {
   trap - EXIT
 }
 
-ensure_crc32_library() {
-  local crc32_dir="$LIB_DIR/CRC32"
-  if [ -f "$crc32_dir/src/CRC32.h" ]; then
-    echo "[INFO] CRC32 dependency already present."
+ensure_fastcrc_library() {
+  local fastcrc_dir="$LIB_DIR/FastCRC"
+  if [ -f "$fastcrc_dir/src/FastCRC.h" ]; then
+    echo "[INFO] FastCRC dependency already present."
     return 0
   fi
 
-  echo "[WARN] CRC32 library not found. Attempting to install it automatically..."
+  echo "[WARN] FastCRC library not found. Attempting to install it automatically..."
   if ! command -v unzip >/dev/null 2>&1; then
-    echo "[ERROR] 'unzip' is required to install CRC32 automatically." >&2
+    echo "[ERROR] 'unzip' is required to install FastCRC automatically." >&2
     exit 1
   fi
 
@@ -130,7 +130,7 @@ ensure_crc32_library() {
   elif command -v wget >/dev/null 2>&1; then
     downloader="wget"
   else
-    echo "[ERROR] Install 'curl' or 'wget' to download CRC32 automatically." >&2
+    echo "[ERROR] Install 'curl' or 'wget' to download FastCRC automatically." >&2
     exit 1
   fi
 
@@ -138,36 +138,36 @@ ensure_crc32_library() {
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' EXIT
 
-  local zip_path="$tmp_dir/CRC32.zip"
-  local repo_url="https://codeload.github.com/bakercp/CRC32/zip/refs/heads/master"
-  echo "[INFO] Downloading CRC32 from $repo_url"
+  local zip_path="$tmp_dir/FastCRC.zip"
+  local repo_url="https://codeload.github.com/FrankBoesing/FastCRC/zip/refs/heads/master"
+  echo "[INFO] Downloading FastCRC from $repo_url"
   if [ "$downloader" = "curl" ]; then
     curl -fsSL "$repo_url" -o "$zip_path" || {
-      echo "[ERROR] Unable to download CRC32 automatically. Please install it manually from https://github.com/bakercp/CRC32" >&2
+      echo "[ERROR] Unable to download FastCRC automatically. Please install it manually from https://github.com/FrankBoesing/FastCRC" >&2
       exit 1
     }
   else
     wget -qO "$zip_path" "$repo_url" || {
-      echo "[ERROR] Unable to download CRC32 automatically. Please install it manually from https://github.com/bakercp/CRC32" >&2
+      echo "[ERROR] Unable to download FastCRC automatically. Please install it manually from https://github.com/FrankBoesing/FastCRC" >&2
       exit 1
     }
   fi
 
   unzip -q "$zip_path" -d "$tmp_dir"
   local extracted_root
-  extracted_root="$(find "$tmp_dir" -maxdepth 1 -type d -name 'CRC32-*' | head -n1)"
+  extracted_root="$(find "$tmp_dir" -maxdepth 1 -type d -name 'FastCRC-*' | head -n1)"
   if [ -z "$extracted_root" ]; then
-    echo "[ERROR] Failed to extract CRC32 archive." >&2
+    echo "[ERROR] Failed to extract FastCRC archive." >&2
     exit 1
   fi
 
-  rm -rf "$crc32_dir"
-  cp -a "$extracted_root" "$crc32_dir"
-  if [ ! -f "$crc32_dir/src/CRC32.h" ]; then
-    echo "[ERROR] CRC32 installation failed; header not found at $crc32_dir/src/CRC32.h" >&2
+  rm -rf "$fastcrc_dir"
+  cp -a "$extracted_root" "$fastcrc_dir"
+  if [ ! -f "$fastcrc_dir/src/FastCRC.h" ]; then
+    echo "[ERROR] FastCRC installation failed; header not found at $fastcrc_dir/src/FastCRC.h" >&2
     exit 1
   fi
-  echo "[OK] CRC32 installed at $crc32_dir"
+  echo "[OK] FastCRC installed at $fastcrc_dir"
   rm -rf "$tmp_dir"
   trap - EXIT
 }
@@ -242,7 +242,7 @@ ensure_crypto_library() {
   trap - EXIT
 }
 
-ensure_crc32_library
+ensure_fastcrc_library
 ensure_packetserial_library
 ensure_crypto_library
 

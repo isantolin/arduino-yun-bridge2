@@ -32,10 +32,14 @@
  */
 #include "rpc_frame.h"
 #include "rpc_protocol.h"
+#include <FastCRC.h>
 
 #include <string.h>
 
 namespace rpc {
+
+// Static FastCRC32 instance.
+static FastCRC32 CRC32;
 
 namespace {
 
@@ -150,7 +154,7 @@ bool FrameParser::consume(uint8_t byte, Frame& out_frame) {
     }
     size_t crc_start = decoded_len - CRC_TRAILER_SIZE;
     uint32_t received_crc = read_u32_be(&_rx_buffer[crc_start]);
-    uint32_t calculated_crc = crc32_ieee(_rx_buffer, crc_start);
+    uint32_t calculated_crc = CRC32.crc32(_rx_buffer, crc_start);
 
     if (received_crc != calculated_crc) {
       reset(); // Security Wipe
@@ -248,7 +252,7 @@ size_t FrameBuilder::build(uint8_t* buffer,
   }
 
   // --- CRC ---
-  uint32_t crc = crc32_ieee(buffer, data_len);
+  uint32_t crc = CRC32.crc32(buffer, data_len);
   write_u32_be(buffer + data_len, crc);
 
   return total_len;  // Return total raw frame length

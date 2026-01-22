@@ -4,7 +4,6 @@
 #include <Arduino.h>
 
 #include "cobs.h"
-#include "crc.h"
 #include "rpc_protocol.h"
 
 namespace rpc {

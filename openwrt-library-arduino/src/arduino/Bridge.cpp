@@ -30,7 +30,6 @@
 #include <SHA256.h>
 
 #include "arduino/StringUtils.h"
-#include "protocol/crc.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/security.h"

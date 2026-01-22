@@ -20,7 +20,7 @@
 
 #include "protocol/rpc_protocol.h"
 #include "protocol/cobs.h"
-#include "protocol/crc.h"
+#include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
 #include "test_support.h"

@@ -18,7 +18,7 @@
 #undef protected
 
 #include "protocol/cobs.h"
-#include "protocol/crc.h"
+#include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "test_constants.h"

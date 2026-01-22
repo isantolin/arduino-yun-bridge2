@@ -89,7 +89,7 @@ COMPILE_FLAGS=(
   -pedantic
   -DBRIDGE_HOST_TEST=1
   -DBRIDGE_TEST_NO_GLOBALS=1
-  -DBRIDGE_SERIAL_SHARED_SECRET=\"host_test_secret\"
+  -DBRIDGE_SERIAL_SHARED_SECRET="host_test_secret"
   -DBRIDGE_FIRMWARE_VERSION_MAJOR=2
   -DBRIDGE_FIRMWARE_VERSION_MINOR=0
   -fprofile-arcs
@@ -201,7 +201,7 @@ build_one() {
   local suite_dir="$1"
   local out_bin="$2"
   shift 2
-  local -a sources=("$@")
+  local -a sources=($@)
 
   mkdir -p "${suite_dir}"
 

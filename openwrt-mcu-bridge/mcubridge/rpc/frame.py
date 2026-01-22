@@ -23,14 +23,14 @@ before transmission.
 
 Example:
     >>> frame = Frame.build(Command.CMD_GET_VERSION, b"")
-    >>> encoded = cobs.encode(frame) + b"\\x00"
+    >>> encoded = cobs.encode(frame) + bytes([0])
 """
 
 import struct
+from binascii import crc32
 from typing import Self
 
 from . import protocol
-from .crc import crc32_ieee
 
 
 class Frame:
@@ -82,8 +82,9 @@ class Frame:
         # Calculate CRC over the header and payload, then mask it to the
         # exact number of bits declared by the protocol.
         data_to_crc = crc_covered_header + payload
-        crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
-        crc = crc32_ieee(data_to_crc) & crc_mask
+        # Use binascii.crc32 directly (standard IEEE 802.3) and mask to 32-bit unsigned.
+        # This matches the C++ implementation's behavior.
+        crc = crc32(data_to_crc) & protocol.CRC32_MASK
 
         # Pack the CRC
         crc_packed = struct.pack(
@@ -114,7 +115,7 @@ class Frame:
             received_crc_packed,
         )
 
-        calculated_crc = crc32_ieee(data_to_check)
+        calculated_crc = crc32(data_to_check) & protocol.CRC32_MASK
 
         if received_crc != calculated_crc:
             raise ValueError(

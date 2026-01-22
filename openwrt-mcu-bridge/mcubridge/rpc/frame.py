@@ -82,7 +82,7 @@ class Frame:
         # Calculate CRC over the header and payload, then mask it to the
         # exact number of bits declared by the protocol.
         data_to_crc = crc_covered_header + payload
-        
+
         # Calculate mask based on protocol size (usually 4 bytes -> 0xFFFFFFFF)
         crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
 

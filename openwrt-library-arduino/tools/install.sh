@@ -78,11 +78,11 @@ ensure_packetserial_library() {
   trap 'rm -rf "$tmp_dir"' EXIT
 
   local zip_path="$tmp_dir/PacketSerial.zip"
-  local repo_url="https://codeload.github.com/FrankBoesing/PacketSerial/zip/refs/heads/master"
+  local repo_url="https://codeload.github.com/bakercp/PacketSerial/zip/refs/heads/master"
   echo "[INFO] Downloading PacketSerial from $repo_url"
   if [ "$downloader" = "curl" ]; then
     curl -fsSL "$repo_url" -o "$zip_path" || {
-      echo "[ERROR] Unable to download PacketSerial automatically. Please install it manually from https://github.com/FrankBoesing/PacketSerial" >&2
+      echo "[ERROR] Unable to download PacketSerial automatically. Please install it manually from https://github.com/bakercp/PacketSerial" >&2
       exit 1
     }
   else

@@ -7,16 +7,7 @@ import collections
 import logging
 import time
 import pickle
-try:
-    import sqlite3
-    SqliteError = sqlite3.Error  # type: ignore[assignment]
-except ImportError:
-    # Fallback for systems without sqlite3 to prevent NameError in except blocks
-    sqlite3 = None  # type: ignore
-
-    class SqliteError(Exception):  # type: ignore
-        pass
-
+import sqlite3
 
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
@@ -60,6 +51,7 @@ from ..rpc.protocol import (
 )
 
 logger = logging.getLogger("mcubridge.state")
+SqliteError = sqlite3.Error  # type: ignore[assignment]
 
 SpoolSnapshot = dict[str, int | float]
 

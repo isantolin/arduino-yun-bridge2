@@ -10,19 +10,11 @@ import threading
 import time
 from pathlib import Path
 from typing import Deque, Protocol, Callable, cast
-
-try:
-    import sqlite3
-    SqliteError = sqlite3.Error  # type: ignore[assignment]
-except ImportError:  # pragma: no cover - optional on OpenWrt images
-    sqlite3 = None  # type: ignore[assignment]
-
-    class SqliteError(Exception):  # type: ignore
-        pass
-
+import sqlite3
 from .messages import SpoolRecord, QueuedPublish
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
+SqliteError = sqlite3.Error  # type: ignore[assignment]
 
 
 class DiskQueue(Protocol):
@@ -49,8 +41,6 @@ class SqliteDeque:
     """Persistent deque implementation using SQLite."""
 
     def __init__(self, directory: str) -> None:
-        if sqlite3 is None:
-            raise RuntimeError("sqlite3 module not available")
         self._db_path = Path(directory) / "spool.db"
         self._conn = sqlite3.connect(
             self._db_path,

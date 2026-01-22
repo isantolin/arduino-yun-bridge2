@@ -259,7 +259,8 @@ async def test_collect_output_finishing_process_releases_slot(
 
 
 @pytest.mark.asyncio
-import mcubridge.services.components.process
+async def test_allocate_pid_exhaustion_returns_sentinel(process_component: ProcessComponent) -> None:
+    import mcubridge.services.components.process
 
     # Shrink the search space so we can exhaust it quickly.
     original_max = mcubridge.services.components.process.UINT16_MAX

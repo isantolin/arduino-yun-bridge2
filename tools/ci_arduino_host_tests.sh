@@ -63,7 +63,6 @@ COMMON_FLAGS=(
 
 PROTOCOL_SOURCES=(
   "${SRC_DIR}/protocol/rpc_frame.cpp"
-  "${SRC_DIR}/protocol/crc.cpp"
 )
 
 ARDUINO_RUNTIME_SOURCES=(

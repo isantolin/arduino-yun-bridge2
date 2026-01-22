@@ -15,10 +15,10 @@ def check_cpp_syntax() -> bool:
     # We can't easily check Bridge.cpp because it depends heavily on Arduino hardware libraries (Stream, Serial, etc)
     # which are hard to mock fully without a lot of work.
     # However, checking rpc_frame.cpp is critical because of the missing constants issue we fixed.
-    files_to_check = [
+    sources = [
         os.path.join(protocol_dir, "rpc_frame.cpp"),
-        os.path.join(protocol_dir, "crc.cpp"),
-    ]
+        os.path.join(arduino_dir, "Bridge.cpp"),
+
 
     include_paths = [
         f"-I{base_dir}",

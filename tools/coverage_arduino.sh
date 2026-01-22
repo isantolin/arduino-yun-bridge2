@@ -58,7 +58,6 @@ done
 SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 PROTOCOL_SOURCES=(
-  "${SRC_ROOT}/protocol/crc.cpp"
   "${SRC_ROOT}/protocol/rpc_frame.cpp"
 )
 

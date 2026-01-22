@@ -2,13 +2,15 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <FastCRC.h>
 #include "protocol/cobs.h"
-#include "protocol/crc.h"
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
 #include "test_support.h"
 
 using namespace rpc;
+
+static FastCRC32 CRC32;
 
 static void test_endianness_helpers() {
   uint8_t buffer[2] = {
@@ -23,7 +25,7 @@ static void test_endianness_helpers() {
 
 static void test_crc_helpers() {
   const uint8_t data[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB, TEST_BYTE_CC, TEST_BYTE_DD};
-  uint32_t crc = crc32_ieee(data, sizeof(data));
+  uint32_t crc = CRC32.crc32(data, sizeof(data));
   // Valor verificado con binascii.crc32 (polinomio IEEE 802.3).
   TEST_ASSERT(crc == TEST_CRC32_VECTOR_EXPECTED);
 }
@@ -42,7 +44,7 @@ static void test_builder_roundtrip() {
                 sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
 
     uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
-    TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
+    TEST_ASSERT(crc == CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE));
 
   uint8_t encoded[COBS_BUFFER_SIZE] = {0};
   size_t encoded_len = cobs::encode(raw, raw_len, encoded);
@@ -376,7 +378,7 @@ static void test_parser_header_logical_validation_mismatch() {
   // Re-calculate CRC because otherwise we hit CRC mismatch first!
   // BUT: The FrameParser logic checks CRC *before* header validation. 
   // So if we modify data, we MUST update CRC to pass the CRC check and reach the Header check.
-  uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
+  uint32_t new_crc = CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
   
   uint8_t encoded[COBS_BUFFER_SIZE];

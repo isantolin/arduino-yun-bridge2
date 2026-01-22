@@ -70,3 +70,4 @@ def test_configure_logging_syslog(tmp_path) -> None:
 
             # Verify we tried to log the startup message
             mock_get_logger.return_value.info.assert_called_once()
+

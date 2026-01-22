@@ -25,8 +25,8 @@ def test_frame_build_masks_crc_to_protocol_size(
 ) -> None:
     """Frame serialization must honor the CRC size from the protocol spec."""
 
-    monkeypatch.setattr(frame.protocol, "CRC_FORMAT", ">H", raising=False)
-    monkeypatch.setattr(frame.protocol, "CRC_SIZE", 2, raising=False)
+    monkeypatch.setattr("mcubridge.rpc.protocol.CRC_FORMAT", ">H", raising=False)
+    monkeypatch.setattr("mcubridge.rpc.protocol.CRC_SIZE", 2, raising=False)
 
     payload = b"\xaa" * 4
     raw = frame.Frame(

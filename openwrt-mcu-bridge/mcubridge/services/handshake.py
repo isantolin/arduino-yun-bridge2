@@ -276,33 +276,54 @@ class SerialHandshakeManager:
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
 
-        if not await self._fetch_capabilities():
-            self._logger.warning("Capabilities discovery failed (legacy firmware?)")
+        # Fire and forget capabilities fetch to avoid blocking the sync flow,
+        # but ensure it runs with a delay.
+        asyncio.create_task(self._fetch_capabilities_with_delay())
 
         return True
 
+    async def _fetch_capabilities_with_delay(self) -> None:
+        """Wait for bus settlement and then fetch capabilities."""
+        # [SIL-2] Mandatory settlement delay.
+        # This prevents collision with CMD_GET_VERSION (0x40) sent by daemon health checks.
+        await asyncio.sleep(2.0)
+        await self._fetch_capabilities()
+
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
-        self._capabilities_future = loop.create_future()
 
-        ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
-        if not ok:
-            self._logger.warning("Failed to send CMD_GET_CAPABILITIES")
-            self._capabilities_future = None
-            return False
+        # Log the command ID for verification (User Request: CMD Problem Investigation)
+        cmd_id = Command.CMD_GET_CAPABILITIES.value
+        self._logger.debug(f"Starting capabilities discovery using Command ID 0x{cmd_id:02X}")
 
-        try:
-            # [SIL-2] Force ample timeout for cold boot capabilities discovery
-            # The MCU might be processing a flood of retries or initializing hardware.
-            timeout = max(10.0, self._timing.response_timeout_seconds)
-            payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
-            self._parse_capabilities(payload)
-            return True
-        except asyncio.TimeoutError:
-            self._logger.warning("Timeout waiting for MCU capabilities")
-            return False
-        finally:
-            self._capabilities_future = None
+        # [SIL-2] Retry logic for capabilities discovery to handle bus contention
+        # Increased attempts and backoff to ensure we eventually get through
+        for attempt in range(1, 6):
+            self._capabilities_future = loop.create_future()
+
+            if attempt > 1:
+                # Progressive backoff to allow serial buffers to flush
+                # 0.5s, 1.0s, 1.5s...
+                await asyncio.sleep(0.5 * attempt)
+
+            ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
+            if not ok:
+                self._logger.warning(f"Failed to send CMD_GET_CAPABILITIES (attempt {attempt})")
+                self._capabilities_future = None
+                continue
+
+            try:
+                # [SIL-2] Force ample timeout for cold boot capabilities discovery
+                timeout = max(5.0, self._timing.response_timeout_seconds)
+                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
+                self._parse_capabilities(payload)
+                return True
+            except asyncio.TimeoutError:
+                self._logger.warning(f"Timeout waiting for MCU capabilities (attempt {attempt})")
+            finally:
+                self._capabilities_future = None
+
+        return False
 
     def handle_capabilities_resp(self, payload: bytes) -> None:
         if self._capabilities_future and not self._capabilities_future.done():

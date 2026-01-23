@@ -2,8 +2,6 @@
 #define RPC_FRAME_H
 
 #include <Arduino.h>
-
-#include "cobs.h"
 #include "rpc_protocol.h"
 
 namespace rpc {
@@ -40,7 +38,6 @@ inline void write_u32_be(uint8_t* buffer, uint32_t value) {
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // Define FrameHeader struct before it is used in sizeof()
-// CRITICAL: This attribute is essential for protocol compatibility.
 struct FrameHeader {
   uint8_t version;
   uint16_t payload_length;
@@ -53,11 +50,6 @@ static_assert(sizeof(FrameHeader) == 5, "FrameHeader must be exactly 5 bytes");
 constexpr size_t MAX_RAW_FRAME_SIZE =
   sizeof(FrameHeader) + MAX_PAYLOAD_SIZE + CRC_TRAILER_SIZE;
 
-// Buffer to hold a COBS-encoded frame. Overhead is 1 byte per 254-byte block +
-// 1 code byte. Add a little extra for safety.
-constexpr size_t COBS_BUFFER_SIZE =
-    MAX_RAW_FRAME_SIZE + (MAX_RAW_FRAME_SIZE / 254) + 2;
-
 struct Frame {
   FrameHeader header;
   uint8_t payload[MAX_PAYLOAD_SIZE];
@@ -66,11 +58,10 @@ struct Frame {
 class FrameParser {
  public:
   FrameParser();
-  // Consumes a byte. If a full packet is received (ending in RPC_FRAME_DELIMITER),
-  // it decodes, validates, and populates out_frame, returning true.
-  bool consume(uint8_t byte, Frame& out_frame);
-  void reset();
-  bool overflowed() const;
+  
+  // Parses a DECODED buffer (already stripped of COBS by PacketSerial).
+  // Validates CRC and Protocol rules.
+  bool parse(const uint8_t* buffer, size_t size, Frame& out_frame);
   
   enum class Error {
     NONE,
@@ -82,9 +73,6 @@ class FrameParser {
   void clearError() { _last_error = Error::NONE; }
 
  private:
-  uint8_t _rx_buffer[COBS_BUFFER_SIZE];
-  size_t _rx_buffer_ptr;
-  bool _overflow_detected;
   Error _last_error;
 };
 
@@ -92,7 +80,6 @@ class FrameBuilder {
  public:
   FrameBuilder();
   // Builds a raw frame into a buffer. Returns the length of the raw frame.
-  // SAFETY: Now requires the buffer size to prevent overflows.
   size_t build(uint8_t* buffer,
                size_t buffer_size,
                uint16_t command_id,

@@ -491,7 +491,7 @@ class SerialTransport:
         try:
             await self.service.on_serial_disconnected()
         except Exception as exc:
-            logger.debug("Error in on_serial_disconnected hook: %s", exc)
+            logger.warning("Error in on_serial_disconnected hook: %s", exc)
         self.service.register_serial_sender(serial_sender_not_ready)
 
     async def _read_loop(self) -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import struct
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -94,7 +93,8 @@ def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPa
         TIOCEXCL = 0 # Also used in exclusive mode path
         TCIOFLUSH = 0
 
-        class error(Exception): pass
+        class error(Exception):
+            pass
 
         @staticmethod
         def tcgetattr(fd: int):
@@ -126,7 +126,7 @@ async def test_flow_control_mixin_drain_unblocks_on_resume() -> None:
     mixin = serial.FlowControlMixin()
     mixin.pause_writing()
 
-    task = asyncio.create_task(mixin._drain_helper())
+    task = asyncio.create_task(mixin.drain_helper())
     await asyncio.sleep(0)
     assert not task.done()
 
@@ -139,7 +139,7 @@ async def test_flow_control_mixin_connection_lost_wakes_waiter() -> None:
     mixin = serial.FlowControlMixin()
     mixin.pause_writing()
 
-    task = asyncio.create_task(mixin._drain_helper())
+    task = asyncio.create_task(mixin.drain_helper())
     await asyncio.sleep(0)
 
     mixin.connection_lost(ConnectionError("boom"))
@@ -259,8 +259,8 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
 
         async def wait_closed(self) -> None:
             return None
-            
-        async def _drain_helper(self) -> None:
+
+        async def drain_helper(self) -> None:
             return None
 
     w1 = FakeWriter()
@@ -299,8 +299,8 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
 
         async def drain(self) -> None:
             return None
-            
-        async def _drain_helper(self) -> None:
+
+        async def drain_helper(self) -> None:
             return None
 
     writer = _Writer()
@@ -337,8 +337,8 @@ async def test_send_frame_returns_false_on_write_error() -> None:
 
         async def drain(self) -> None:
             return None
-            
-        async def _drain_helper(self) -> None:
+
+        async def drain_helper(self) -> None:
             return None
 
     transport.writer = _Writer()  # type: ignore[assignment]
@@ -368,8 +368,8 @@ async def test_send_frame_honors_xoff_xon_backpressure() -> None:
 
         async def drain(self) -> None:
             return None
-            
-        async def _drain_helper(self) -> None:
+
+        async def drain_helper(self) -> None:
             return None
 
     writer = _Writer()

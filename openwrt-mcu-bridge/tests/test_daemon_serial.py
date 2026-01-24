@@ -40,7 +40,7 @@ async def test_open_serial_connection_retry_success():
     success_reader = AsyncMock()
     success_writer = AsyncMock()
     success_writer.transport = MagicMock()
-    success_writer._drain_helper = AsyncMock()
+    success_writer.drain_helper = AsyncMock()
     # Prevent _ensure_raw_mode from receiving an AsyncMock as fd
     # success_writer.transport.serial.fd = None # No longer relevant with EagerSerialWriteProtocol structure
 
@@ -148,7 +148,7 @@ async def test_serial_reader_task_reconnects():
     mock_writer.wait_closed = AsyncMock()
     mock_writer.is_closing.return_value = False
     mock_writer.transport = MagicMock()
-    mock_writer._drain_helper = AsyncMock()
+    mock_writer.drain_helper = AsyncMock()
 
     # Mock connect to return our stream mocks
     mock_connect = AsyncMock(return_value=(mock_reader, mock_writer))

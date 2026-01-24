@@ -13,25 +13,19 @@ import logging
 import logging.handlers
 import os
 import sys
-from typing import Any
+from typing import Any, cast
 
 from ..common import (
     get_default_config,
     get_uci_config,
     normalise_allowed_commands,
     parse_bool,
-    parse_float,
-    parse_int,
 )
 from ..const import (
     DEFAULT_MQTT_CAFILE,
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_SERIAL_PORT,
 )
 from ..rpc import protocol
-from ..rpc.protocol import DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE
 from .model import RuntimeConfig
 from .schema import RuntimeConfigSchema, ValidationError
 
@@ -48,13 +42,6 @@ def _load_raw_config() -> dict[str, str]:
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
 
     return get_default_config()
-
-
-def _optional_path(path: str | None) -> str | None:
-    if not path:
-        return None
-    candidate = path.strip()
-    return candidate or None
 
 
 def configure_logging(config: RuntimeConfig) -> None:
@@ -95,12 +82,6 @@ def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults using Marshmallow schema."""
 
     raw = _load_raw_config()
-    
-    # Pre-process raw dictionary to match Schema expected types/structure
-    # Schema handles basic type conversion (e.g. "1" -> 1 for Int fields)
-    # but we need to map UCI keys to Schema keys where they differ slightly
-    # or handle complex structures.
-
     data: dict[str, Any] = {}
     
     # Direct mappings (UCI key == Schema key)
@@ -122,33 +103,27 @@ def load_runtime_config() -> RuntimeConfig:
     
     for key in direct_keys:
         if key in raw:
-            # Handle empty strings as None for optional fields where appropriate
             val = raw[key]
-            if isinstance(val, str):
-                val = val.strip()
+            # Strip whitespace
+            val = val.strip()
 
             if val == "" and key in ("mqtt_user", "mqtt_pass", "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile"):
                 val = None
             
-            # Map 'debug' to 'debug_logging'
             target_key = "debug_logging" if key == "debug" else key
             data[target_key] = val
 
-    # Handle defaults logic for critical paths that might be missing in raw
     if "mqtt_topic" not in data:
         data["mqtt_topic"] = protocol.MQTT_DEFAULT_TOPIC_PREFIX
         
     if "serial_port" not in data:
         data["serial_port"] = DEFAULT_SERIAL_PORT
 
-    # Handle allowed_commands list
     if "allowed_commands" in raw:
-        # Normalize: split string by spaces
         cmds = normalise_allowed_commands(raw["allowed_commands"].split())
         data["allowed_commands"] = list(cmds)
 
-    # Handle Topic Authorization (Nested)
-    topic_auth = {}
+    topic_auth: dict[str, bool] = {}
     auth_keys = [
         ("mqtt_allow_file_read", "file_read"),
         ("mqtt_allow_file_write", "file_write"),
@@ -171,23 +146,12 @@ def load_runtime_config() -> RuntimeConfig:
     
     for uci_key, schema_key in auth_keys:
         if uci_key in raw:
-            # UCI returns "0"/"1", "true"/"false". parse_bool handles this.
-            # Schema expects boolean.
             topic_auth[schema_key] = parse_bool(raw[uci_key])
             
     if topic_auth:
         data["topic_authorization"] = topic_auth
 
-    # TLS Default Logic (Legacy behavior preservation)
-    # If mqtt_tls is True (default if missing in Schema, but here we construct input),
-    # and cafile missing, set default.
-    # Actually Schema 'load_default' handles defaults.
-    # But settings.py logic had: if mqtt_tls and not cafile -> default_cafile.
-    # We replicate this *before* loading if possible, or let Schema handle?
-    # Schema load_defaults are static. We need dynamic default based on mqtt_tls.
-    # It's cleaner to handle this prep.
-    
-    _mqtt_tls = parse_bool(data.get("mqtt_tls", "1")) # Default true in legacy loader
+    _mqtt_tls = parse_bool(data.get("mqtt_tls", "1"))
     _mqtt_cafile = data.get("mqtt_cafile")
     
     if _mqtt_tls and not _mqtt_cafile:
@@ -195,15 +159,17 @@ def load_runtime_config() -> RuntimeConfig:
 
     try:
         schema = RuntimeConfigSchema()
-        config = schema.load(data)
+        config = cast(RuntimeConfig, schema.load(data))
         return config
     except ValidationError as err:
         logger.critical("Configuration validation failed: %s", err.messages)
-        # Re-raise as ValueError to maintain compatibility with existing error handling
-        # or allow it to bubble up. Existing code expects ValueErrors for config issues.
-        # We flatten the validation errors into a string.
-        flat_errors = "; ".join(f"{k}: {v}" for k, v in err.messages.items())
+        # Format messages for the ValueError
+        if isinstance(err.messages, dict):
+            flat_errors = "; ".join(f"{k}: {v}" for k, v in err.messages.items()) # type: ignore
+        else:
+            flat_errors = str(err.messages)
         raise ValueError(f"Invalid configuration: {flat_errors}") from err
+
 
 __all__ = [
     "RuntimeConfig",

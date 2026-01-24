@@ -46,8 +46,8 @@ class _FakeWriter:
 
     async def drain(self) -> None:
         return None
-        
-    async def _drain_helper(self) -> None:
+
+    async def drain_helper(self) -> None:
         return None
 
     def close(self) -> None:

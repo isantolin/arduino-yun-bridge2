@@ -17,14 +17,14 @@ if str(_REPO_ROOT) not in sys.path:
 if str(_PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(_PKG_ROOT))
 
-from mcubridge.rpc.protocol import (
+from mcubridge.rpc.protocol import (  # noqa: E402
     Command,
     FRAME_DELIMITER,
     Status,
     UINT8_MASK,
 )
-from tools import frame_debug
-from tests.test_constants import TEST_BROKEN_CRC
+from tools import frame_debug  # noqa: E402
+from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:
@@ -119,7 +119,7 @@ def test_main_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     # Test running without --port (dry run)
     mock_open = MagicMock()
     monkeypatch.setattr(frame_debug, "_open_serial_device", mock_open)
-    
+
     ret = frame_debug.main(
         [
             "--command",
@@ -136,7 +136,7 @@ def test_main_with_serial_write(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_open = MagicMock(return_value=123)
     mock_write = MagicMock(return_value=10)
     mock_close = MagicMock()
-    
+
     monkeypatch.setattr(frame_debug, "_open_serial_device", mock_open)
     monkeypatch.setattr(frame_debug, "_write_frame", mock_write)
     monkeypatch.setattr(frame_debug.os, "close", mock_close)
@@ -188,7 +188,7 @@ def test_main_with_serial_read_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_main_with_serial_read_success(monkeypatch: pytest.MonkeyPatch) -> None:
     from cobs import cobs
     from mcubridge.rpc.frame import Frame as RpcFrame
-    
+
     frame = RpcFrame(Command.CMD_GET_VERSION_RESP.value, b"v2.0")
     response = cobs.encode(frame.to_bytes()) + FRAME_DELIMITER
 

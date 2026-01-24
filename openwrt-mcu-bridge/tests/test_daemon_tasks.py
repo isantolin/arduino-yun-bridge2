@@ -46,7 +46,7 @@ class _FakeStreamWriter:
         self.buffer.extend(data)
         return len(data)
 
-    async def _drain_helper(self) -> None:
+    async def drain_helper(self) -> None:
         await asyncio.sleep(0)
 
     async def drain(self) -> None:

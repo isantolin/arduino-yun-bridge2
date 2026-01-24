@@ -8,15 +8,12 @@ like pyserial. It implements "Eager Writes" for minimal latency.
 from __future__ import annotations
 
 import asyncio
-import errno
 import fcntl
-import inspect
 import logging
 import os
 import struct
 import termios
 import time
-import tty
 from typing import Any, Final, Sized, TypeGuard, cast, TYPE_CHECKING
 
 from cobs import cobs
@@ -54,9 +51,11 @@ class SerialException(OSError):
 class SerialFileObj:
     """Minimal file-like wrapper for a serial file descriptor."""
     def __init__(self, fd: int):
-        self._fd = fd
+        self._fd: int | None = fd
 
     def fileno(self) -> int:
+        if self._fd is None:
+            raise SerialException("File closed")
         return self._fd
 
     def close(self) -> None:
@@ -65,12 +64,14 @@ class SerialFileObj:
                 os.close(self._fd)
             except OSError:
                 pass
-            self._fd = None # type: ignore
+            self._fd = None
 
     def read(self, size: int) -> bytes:
+        if self._fd is None: raise SerialException("File closed")
         return os.read(self._fd, size)
 
     def write(self, data: bytes) -> int:
+        if self._fd is None: raise SerialException("File closed")
         return os.write(self._fd, data)
 
 def configure_serial_port(fd: int, baudrate: int, exclusive: bool = False) -> None:
@@ -83,7 +84,7 @@ def configure_serial_port(fd: int, baudrate: int, exclusive: bool = False) -> No
         try:
             fcntl.ioctl(fd, termios.TIOCEXCL)
         except (OSError, AttributeError):
-            pass 
+            pass
 
     try:
         attrs = termios.tcgetattr(fd)
@@ -120,7 +121,7 @@ def format_hexdump(data: bytes, prefix: str = "") -> str:
 
 FRAMING_OVERHEAD: Final[int] = 4
 MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + 
+    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE +
     protocol.CRC_SIZE + FRAMING_OVERHEAD
 )
 
@@ -171,7 +172,7 @@ class FlowControlMixin:
                 self._drain_waiter.set_result(None)
             self._drain_waiter = None
 
-    async def _drain_helper(self) -> None:
+    async def drain_helper(self) -> None:
         if self._connection_lost:
             raise ConnectionResetError("Connection lost")
         if not self._paused:
@@ -220,7 +221,7 @@ class EagerSerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
         """Eagerly write data to the file descriptor."""
         if not data:
             return
-        
+
         # [OPTIMIZATION] Eager Write Strategy
         # Try to write directly to the FD to avoid loop overhead and buffering.
         # If the transport is already paused/buffered, append to it to maintain order.
@@ -264,7 +265,7 @@ async def _open_serial_connection(
 ) -> tuple[asyncio.StreamReader, EagerSerialWriteProtocol]:
     """Open a serial connection using native asyncio with Eager Writes."""
     loop = asyncio.get_running_loop()
-    
+
     # 1. Open FD
     try:
         fd = os.open(url, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
@@ -286,9 +287,9 @@ async def _open_serial_connection(
     read_factory = _ReadProtocolFactory(read_proto)
     await loop.connect_read_pipe(read_factory, fobj)
 
-    # 5. Connect Write Pipe
+    # Use factory class to avoid nested function/closure
     write_factory = _WriteProtocolFactory(fd)
-    transport, _ = await loop.connect_write_pipe(write_factory, fobj)
+    _, _ = await loop.connect_write_pipe(write_factory, fobj)
     
     if write_factory.protocol is None: # pragma: no cover
         raise RuntimeError("Write protocol factory failed to produce protocol")
@@ -306,8 +307,8 @@ async def _negotiate_baudrate(
 
     try:
         writer.write(encoded)
-        await writer._drain_helper()
-        
+        await writer.drain_helper()
+
         response_data = await asyncio.wait_for(
             reader.readuntil(FRAME_DELIMITER),
             timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
@@ -332,7 +333,7 @@ async def _open_serial_connection_with_retry(
     current_delay = base_delay
     target_baud = config.serial_baud
     initial_baud = config.serial_safe_baud
-    
+
     negotiation_needed = (initial_baud > 0 and initial_baud != target_baud)
     baud_to_use = initial_baud if negotiation_needed else target_baud
 
@@ -353,8 +354,8 @@ async def _open_serial_connection_with_retry(
                     if writer.transport:
                         writer.transport.close()
                     # Wait a bit for close to settle?
-                    await asyncio.sleep(0.2) 
-                    
+                    await asyncio.sleep(0.2)
+
                     reader, writer = await _open_serial_connection(
                         url=config.serial_port, baudrate=target_baud, exclusive=True
                     )
@@ -368,10 +369,11 @@ async def _open_serial_connection_with_retry(
                     break
                 try:
                     garbage = await asyncio.wait_for(reader.read(4096), timeout=0.1)
-                    if not garbage: break
+                    if not garbage:
+                        break
                 except asyncio.TimeoutError:
                     break
-            
+
             return reader, writer
 
         except (SerialException, OSError, ExceptionGroup) as exc:
@@ -510,11 +512,11 @@ class SerialTransport:
         writer = self.writer
         if writer is None or writer.transport is None or writer.transport.is_closing():
             return False
-            
+
         try:
             encoded = _encode_frame_bytes(command_id, payload)
             writer.write(encoded)
-            await writer._drain_helper()
+            await writer.drain_helper()
 
             if logger.isEnabledFor(logging.DEBUG):
                 try:
@@ -537,6 +539,7 @@ class SerialTransport:
             return
 
         packet_bytes = _coerce_packet(encoded_packet)
+        raw_frame: bytes | None = None
         try:
             raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
@@ -573,19 +576,19 @@ class SerialTransport:
                 status = Status.CRC_MISMATCH if "crc mismatch" in str(exc).lower() else Status.MALFORMED
                 if status == Status.CRC_MISMATCH:
                     self.state.record_serial_crc_error()
-                
+
                 # Attempt to extract hint
                 command_hint = protocol.INVALID_ID_SENTINEL
                 data_to_parse = raw_frame if 'raw_frame' in locals() and raw_frame else packet_bytes
                 if len(data_to_parse) >= protocol.CRC_COVERED_HEADER_SIZE:
                     try:
                         _, _, command_hint = struct.unpack(
-                            protocol.CRC_COVERED_HEADER_FORMAT, 
+                            protocol.CRC_COVERED_HEADER_FORMAT,
                             data_to_parse[: protocol.CRC_COVERED_HEADER_SIZE]
                         )
                     except struct.error:
                         pass
-                
+
                 truncated = data_to_parse[:32]
                 payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated
                 await self.service.send_frame(status.value, payload)

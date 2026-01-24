@@ -472,13 +472,13 @@ async def test_serial_send_frame_xon_wait() -> None:
     # Mock writer
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
-    
+
     # EagerSerialWriteProtocol mock
     mock_protocol = MagicMock()
     mock_protocol.transport = mock_transport
     mock_protocol.write = MagicMock()
-    mock_protocol._drain_helper = AsyncMock()
-    
+    mock_protocol.drain_helper = AsyncMock()
+
     transport.writer = mock_protocol
 
     # Set XON event

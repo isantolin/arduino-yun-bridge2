@@ -7,7 +7,6 @@ import collections
 import logging
 import time
 import pickle
-import sqlite3
 
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
@@ -51,7 +50,6 @@ from ..rpc.protocol import (
 )
 
 logger = logging.getLogger("mcubridge.state")
-SqliteError = sqlite3.Error  # type: ignore[assignment]
 
 SpoolSnapshot = dict[str, int | float]
 
@@ -1044,7 +1042,7 @@ class RuntimeState:
         if spool is not None:
             try:
                 spool.close()
-            except (OSError, SqliteError, MQTTSpoolError, RuntimeError):
+            except (OSError, MQTTSpoolError, RuntimeError):
                 logger.debug(
                     "Failed to close MQTT spool during disable.",
                     exc_info=True,
@@ -1083,7 +1081,7 @@ class RuntimeState:
             await asyncio.to_thread(spool.append, message)
             self.mqtt_spooled_messages += 1
             return True
-        except (OSError, SqliteError, pickle.PickleError, MQTTSpoolError) as exc:
+        except (OSError, MQTTSpoolError) as exc:
             reason = "append_failed"
             if isinstance(exc, MQTTSpoolError):
                 reason = exc.reason
@@ -1101,7 +1099,7 @@ class RuntimeState:
                 break
             try:
                 message = await asyncio.to_thread(spool.pop_next)
-            except (OSError, SqliteError, pickle.PickleError, MQTTSpoolError) as exc:
+            except (OSError, MQTTSpoolError) as exc:
                 reason = "pop_failed"
                 if isinstance(exc, MQTTSpoolError):
                     reason = exc.reason
@@ -1119,7 +1117,7 @@ class RuntimeState:
             except asyncio.QueueFull:
                 try:
                     await asyncio.to_thread(spool.requeue, message)
-                except (OSError, SqliteError, pickle.PickleError, MQTTSpoolError) as exc:
+                except (OSError, MQTTSpoolError) as exc:
                     reason = "requeue_failed"
                     if isinstance(exc, MQTTSpoolError):
                         reason = exc.reason

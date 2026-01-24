@@ -45,13 +45,13 @@ def test_runtime_config_normalizes_topic_and_paths() -> None:
     expected_spool = os.path.abspath(spool_absolute)
     root_input = "/tmp//bridge/test/.."
     expected_root = os.path.abspath(root_input)
-    
+
     data = _config_kwargs(
         mqtt_topic="/demo//prefix/",
         file_system_root=root_input,
         mqtt_spool_dir=spool_absolute,
     )
-    
+
     config = RuntimeConfigSchema().load(data)
     assert isinstance(config, RuntimeConfig)
     assert config.mqtt_topic == "demo/prefix"

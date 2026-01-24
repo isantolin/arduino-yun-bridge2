@@ -10,8 +10,9 @@
 // --- [SAFETY GUARD START] ---
 // CRITICAL: Prevent accidental STL usage on ALL architectures (memory fragmentation risk)
 // SIL 2 Requirement: Dynamic allocation via STL containers is forbidden globally.
+// ETL is allowed as it is static.
 #if defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || defined(_GLIBCXX_MAP)
-  #error "CRITICAL: STL detected. Use standard arrays/pointers only to prevent heap fragmentation (SIL 2 Violation)."
+  #error "CRITICAL: STL detected. Use ETL or standard arrays/pointers only to prevent heap fragmentation (SIL 2 Violation)."
 #endif
 // --- [SAFETY GUARD END] ---
 
@@ -138,7 +139,7 @@ uint16_t getFreeMemory() {
 #endif
 }
 
-}
+} // namespace
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
     : _transport(arg_serial, &arg_serial),
@@ -159,18 +160,13 @@ BridgeClass::BridgeClass(HardwareSerial& arg_serial)
       _analog_read_handler(nullptr),
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
-      _pending_tx_head(0),
-      _pending_tx_count(0),
       _synchronized(false)
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
 {
-  for (uint8_t i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
-    _pending_tx_frames[i].command_id = 0;
-    _pending_tx_frames[i].payload_length = 0;
-    memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
-  }
+  _pending_tx_queue.clear();
+  _scratch_payload.clear();
 }
 
 BridgeClass::BridgeClass(Stream& arg_stream)
@@ -192,18 +188,13 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _analog_read_handler(nullptr),
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
-      _pending_tx_head(0),
-      _pending_tx_count(0),
       _synchronized(false)
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
 {
-  for (uint8_t i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
-    _pending_tx_frames[i].command_id = 0;
-    _pending_tx_frames[i].payload_length = 0;
-    memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
-  }
+  _pending_tx_queue.clear();
+  _scratch_payload.clear();
 }
 
 void BridgeClass::begin(
@@ -369,8 +360,6 @@ void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
   // [SIL-2] Critical Section for global state access
-  // Although typically single-threaded on Arduino, we guard this against potential
-  // future interrupt-driven state changes or RTOS contexts.
   noInterrupts();
   bool ready = g_baudrate_state.isReady(millis());
   uint32_t new_baud = g_baudrate_state.pending_baudrate;
@@ -569,7 +558,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
           break;
         }
 
-        uint8_t* response = _scratch_payload;
+        uint8_t* response = _scratch_payload.data();
         if (payload_data) {
           memcpy(response, payload_data, nonce_length);
           if (has_secret) {
@@ -671,12 +660,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   effective_frame.header.command_id = raw_command;
 
   if (is_compressed && frame.header.payload_length > 0) {
-    size_t decoded_len = rle::decode(frame.payload, frame.header.payload_length, _scratch_payload, rpc::MAX_PAYLOAD_SIZE);
+    size_t decoded_len = rle::decode(frame.payload, frame.header.payload_length, _scratch_payload.data(), _scratch_payload.capacity());
     if (decoded_len == 0) {
       _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
       return;
     }
-    memcpy(effective_frame.payload, _scratch_payload, decoded_len);
+    memcpy(effective_frame.payload, _scratch_payload.data(), decoded_len);
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   }
 
@@ -866,7 +855,7 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHe
       i++;
     }
     length = static_cast<uint16_t>(i);
-    payload = _scratch_payload;
+    payload = _scratch_payload.data();
   }
   (void)sendFrame(status_code, payload, length);
   if (_status_handler) {
@@ -899,10 +888,10 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
 
   if (arg_length > 0 && rle::should_compress(arg_payload, arg_length)) {
     // Attempt compression into scratch buffer
-    size_t compressed_len = rle::encode(arg_payload, arg_length, _scratch_payload, rpc::MAX_PAYLOAD_SIZE);
+    size_t compressed_len = rle::encode(arg_payload, arg_length, _scratch_payload.data(), _scratch_payload.capacity());
     if (compressed_len > 0 && compressed_len < arg_length) {
       final_cmd |= rpc::RPC_CMD_FLAG_COMPRESSED;
-      final_payload = _scratch_payload;
+      final_payload = _scratch_payload.data();
       final_len = compressed_len;
     }
   }
@@ -1023,9 +1012,6 @@ void BridgeClass::_processAckTimeout() {
 
 void BridgeClass::enterSafeState() {
   // [SIL-2] Fail-Safe State Entry
-  // This method ensures the system transitions to a known safe state upon
-  // communication loss or critical error.
-  
   _synchronized = false;
   _clearAckState();
   _clearPendingTxQueue();
@@ -1048,58 +1034,58 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  if (_awaiting_ack || _pending_tx_count == 0) {
+  if (_awaiting_ack || _pending_tx_queue.empty()) {
     return;
   }
-  PendingTxFrame frame;
-  if (!_dequeuePendingTx(frame)) {
-    return;
-  }
-    if (!_sendFrameImmediate(
+  PendingTxFrame& frame = _pending_tx_queue.front();
+  
+  // Use .data() and .size() for vector payload
+  if (!_sendFrameImmediate(
       frame.command_id,
-      frame.payload, frame.payload_length)) {
-    uint8_t previous_head =
-        (_pending_tx_head + rpc::RPC_MAX_PENDING_TX_FRAMES - 1) %
-        rpc::RPC_MAX_PENDING_TX_FRAMES;
-    _pending_tx_head = previous_head;
-    _pending_tx_frames[_pending_tx_head] = frame;
-    _pending_tx_count++;
+      frame.payload.data(), frame.payload.size())) {
+      // If immediate send fails (e.g. transport buffer full), we keep it at head
+      // and try again later. We do NOT rotate.
+      // Rotating would reorder packets, breaking strict order requirement.
+      return;
   }
+  
+  // Successfully sent (or queued in transport), so we pop it.
+  _pending_tx_queue.pop();
+  
+  // Try sending next?
+  // _sendFrameImmediate sets _awaiting_ack if needed.
+  // If it did, we stop flushing.
+  if (_awaiting_ack) return;
+  
+  // Recursively flush? No, loop or let next process() cycle handle it.
+  // Bridge.process calls _flushPendingTxQueue once.
 }
 
 void BridgeClass::_clearPendingTxQueue() {
-  _pending_tx_head = 0;
-  _pending_tx_count = 0;
+  _pending_tx_queue.clear();
 }
 
 bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
-  if (_pending_tx_count >= rpc::RPC_MAX_PENDING_TX_FRAMES) {
+  if (_pending_tx_queue.full()) {
     return false;
   }
-  size_t payload_len = arg_length;
-  if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
+  if (arg_length > rpc::MAX_PAYLOAD_SIZE) {
     return false;
   }
-  uint8_t tail = (_pending_tx_head + _pending_tx_count) %
-      rpc::RPC_MAX_PENDING_TX_FRAMES;
-  _pending_tx_frames[tail].command_id = command_id;
-  _pending_tx_frames[tail].payload_length =
-      static_cast<uint16_t>(payload_len);
-  if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload, arg_payload, payload_len);
-  }
-  _pending_tx_count++;
+  
+  PendingTxFrame frame;
+  frame.command_id = command_id;
+  
+  // Vector assignment handles copy
+  frame.payload.assign(arg_payload, arg_payload + arg_length);
+  
+  _pending_tx_queue.push(frame);
   return true;
 }
 
 bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
-  if (_pending_tx_count == 0) {
+    // Unused now with circular buffer direct access
     return false;
-  }
-  frame = _pending_tx_frames[_pending_tx_head];
-  _pending_tx_head = (_pending_tx_head + 1) % rpc::RPC_MAX_PENDING_TX_FRAMES;
-  _pending_tx_count--; 
-  return true;
 }
 
 void BridgeClass::pinMode(uint8_t pin, uint8_t mode) {

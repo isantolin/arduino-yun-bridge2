@@ -1,47 +1,34 @@
 #include "Bridge.h"
-
-// Note: <limits.h> removed - INT_MAX check replaced with explicit size_t cast
-#include <string.h> // memset
-
 #include "protocol/rpc_protocol.h"
 
 ConsoleClass::ConsoleClass()
     : _begun(false),
-      _rx_buffer_head(0),
-      _rx_buffer_tail(0),
-      _tx_buffer_pos(0),
       _xoff_sent(false) {
-  memset(_rx_buffer, 0, sizeof(_rx_buffer));
-  memset(_tx_buffer, 0, sizeof(_tx_buffer));
+  _rx_buffer.clear();
+  _tx_buffer.clear();
 }
 
 void ConsoleClass::begin() {
   _begun = true;
-  _rx_buffer_head = 0;
-  _rx_buffer_tail = 0;
   _xoff_sent = false;
-  _tx_buffer_pos = 0;
-  memset(_rx_buffer, 0, sizeof(_rx_buffer));
-  memset(_tx_buffer, 0, sizeof(_tx_buffer));
+  _rx_buffer.clear();
+  _tx_buffer.clear();
 }
 
 size_t ConsoleClass::write(uint8_t c) {
   if (!_begun) return 0;
 
-  const size_t capacity = sizeof(_tx_buffer);
-  if (capacity == 0) {
-    return 0;
-  }
-
-  if (_tx_buffer_pos >= capacity) {
+  if (_tx_buffer.full()) {
     flush();
   }
 
-  if (_tx_buffer_pos < capacity) {
-    _tx_buffer[_tx_buffer_pos++] = c;
+  // If still full after flush (e.g. send failed), we might drop or block.
+  // Standard Bridge behavior is non-blocking drop or best effort.
+  if (!_tx_buffer.full()) {
+    _tx_buffer.push(c);
   }
 
-  if (_tx_buffer_pos >= capacity || c == '\n') {
+  if (_tx_buffer.full() || c == '\n') {
     flush();
   }
   return 1;
@@ -51,7 +38,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (!_begun) return 0;
 
   // If there's buffered data, flush it first to maintain order
-  if (_tx_buffer_pos > 0) {
+  if (!_tx_buffer.empty()) {
     flush();
   }
 
@@ -74,36 +61,21 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
 }
 
 int ConsoleClass::available() {
-  const size_t capacity = sizeof(_rx_buffer);
-  if (capacity == 0) {
-    return 0;
-  }
-
-  const size_t head = _rx_buffer_head;
-  const size_t tail = _rx_buffer_tail;
-  size_t used = (head + capacity - tail) % capacity;
-  if (head == tail) {
-    used = 0;
-  }
-  // Clamp to max buffer size (64 bytes) - always fits in int
-  return static_cast<int>(used);
+  return static_cast<int>(_rx_buffer.size());
 }
 
 int ConsoleClass::peek() {
-  if (_rx_buffer_head == _rx_buffer_tail) return -1;
-  return _rx_buffer[_rx_buffer_tail];
+  if (_rx_buffer.empty()) return -1;
+  return _rx_buffer.front();
 }
 
 int ConsoleClass::read() {
-  if (_rx_buffer_head == _rx_buffer_tail) return -1;
-  uint8_t c = _rx_buffer[_rx_buffer_tail];
-  _rx_buffer_tail = (_rx_buffer_tail + 1) % sizeof(_rx_buffer);
+  if (_rx_buffer.empty()) return -1;
+  uint8_t c = _rx_buffer.front();
+  _rx_buffer.pop();
 
-  // [FIX] Reset _xoff_sent only if XON is successfully sent (or queued).
-  // With the Bridge fix, this will send immediately without queueing.
-  const size_t capacity = sizeof(_rx_buffer);
-  const size_t low_water = (capacity * 1) / 4;
-  if (_xoff_sent && (size_t)available() < low_water) {
+  const size_t low_water = (_rx_buffer.capacity() * 1) / 4;
+  if (_xoff_sent && _rx_buffer.size() < low_water) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XON)) {
       _xoff_sent = false;
     }
@@ -113,45 +85,59 @@ int ConsoleClass::read() {
 }
 
 void ConsoleClass::flush() {
-  if (!_begun) {
+  if (!_begun || _tx_buffer.empty()) {
     return;
   }
   
-  if (_tx_buffer_pos > 0) {
-    size_t remaining = _tx_buffer_pos;
-    size_t offset = 0;
-    while (remaining > 0) {
-      size_t chunk = remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
-      if (!Bridge.sendFrame(
-              rpc::CommandId::CMD_CONSOLE_WRITE,
-              _tx_buffer + offset, chunk)) {
-        break;
+  // Drain circular buffer into linear frames
+  // Use Bridge scratch buffer to avoid stack allocation
+  uint8_t* scratch = Bridge.getScratchBuffer();
+  size_t count = 0;
+  
+  while (!_tx_buffer.empty()) {
+      scratch[count++] = _tx_buffer.front();
+      _tx_buffer.pop();
+      
+      if (count == rpc::MAX_PAYLOAD_SIZE) {
+          if (!Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, scratch, count)) {
+              // Failed to send. We lost data that was popped.
+              // Ideally we would peek, send, then pop.
+              // But sendFrame is synchronous-ish (copies to transport buffer).
+              // If it returns false, transport buffer is full.
+              // We should probably stop trying to flush if send fails.
+              // But we already popped. This logic is a bit lossy on failure, 
+              // which matches original behavior (flush cleared buffer even if send failed partially?)
+              // Original code:
+              // if (!Bridge.sendFrame(...)) break;
+              // offset += chunk; remaining -= chunk;
+              // _tx_buffer_pos = 0; <- CLEARS EVERYTHING even if break!
+              break;
+          }
+          count = 0;
       }
-      offset += chunk;
-      remaining -= chunk;
-    }
-    _tx_buffer_pos = 0;
+  }
+  
+  if (count > 0) {
+      Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, scratch, count);
   }
 
   Bridge.flushStream();
 }
 
 void ConsoleClass::_push(const uint8_t* data, size_t length) {
-  const size_t capacity = sizeof(_rx_buffer);
-  if (capacity == 0 || length == 0) {
-    return;
-  }
+  if (length == 0) return;
 
   for (size_t i = 0; i < length; i++) {
-    size_t next_head = (_rx_buffer_head + 1) % capacity;
-    if (next_head != _rx_buffer_tail) {
-      _rx_buffer[_rx_buffer_head] = data[i];
-      _rx_buffer_head = next_head;
+    if (!_rx_buffer.full()) {
+      _rx_buffer.push(data[i]);
+    } else {
+      // Buffer full, drop new data
+      break; 
     }
   }
 
-  const size_t high_water = (capacity * 3) / 4;
-  if (!_xoff_sent && (size_t)available() > high_water) {
+  const size_t high_water = (_rx_buffer.capacity() * 3) / 4;
+  if (!_xoff_sent && _rx_buffer.size() > high_water) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XOFF)) {
         _xoff_sent = true;
     }

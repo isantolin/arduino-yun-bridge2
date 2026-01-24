@@ -13,11 +13,7 @@
  * - All inputs validated against safe ranges
  * - CRC32 integrity on all frames
  * - Defined fail-safe state on error conditions
- * 
- * [STRICT NO-STL POLICY]
- * The use of Standard Template Library (STL) headers (e.g., <vector>, <string>, <map>)
- * is STRICTLY PROHIBITED to prevent heap fragmentation and non-deterministic behavior.
- * Reviewers must reject any PR including these headers.
+ * - Uses ETL (Embedded Template Library) for safe static containers
  * 
  * @see docs/PROTOCOL.md for protocol specification
  * @see tools/protocol/spec.toml for machine-readable contract
@@ -27,6 +23,8 @@
 
 #include <Arduino.h>
 #include <Stream.h>
+#include <etl/vector.h>
+#include <etl/circular_buffer.h>
 
 #include "bridge_config.h"
 #include "protocol/rpc_frame.h"
@@ -132,7 +130,7 @@ class BridgeClass {
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
   void flushStream();
   void enterSafeState(); // [SIL-2] Force system into fail-safe state
-  uint8_t* getScratchBuffer() { return _scratch_payload; }
+  uint8_t* getScratchBuffer() { return _scratch_payload.data(); }
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
@@ -165,7 +163,8 @@ class BridgeClass {
 
   // Protocol Engine
   rpc::Frame _rx_frame;
-  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+  // Use ETL vector for scratch buffer (safe static allocation)
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> _scratch_payload;
 
   // State
   bool _awaiting_ack;
@@ -192,12 +191,13 @@ class BridgeClass {
   // Pending Queues
   struct PendingTxFrame {
     uint16_t command_id;
-    uint16_t payload_length;
-    uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
+    // Payload also uses ETL vector for safety
+    etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
-  PendingTxFrame _pending_tx_frames[rpc::RPC_MAX_PENDING_TX_FRAMES];
-  uint8_t _pending_tx_head;
-  uint8_t _pending_tx_count;
+  
+  // Use ETL circular buffer for queue
+  etl::circular_buffer<PendingTxFrame, rpc::RPC_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
+  
   bool _synchronized;
 
 #if BRIDGE_DEBUG_FRAMES
@@ -257,12 +257,11 @@ class ConsoleClass : public Stream {
 
  private:
   bool _begun;
-  size_t _rx_buffer_head;
-  size_t _rx_buffer_tail;
-  size_t _tx_buffer_pos;
   bool _xoff_sent;
-  uint8_t _rx_buffer[BRIDGE_CONSOLE_RX_BUFFER_SIZE];
-  uint8_t _tx_buffer[BRIDGE_CONSOLE_TX_BUFFER_SIZE];
+  
+  // Use ETL circular buffers
+  etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
+  etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 };
 extern ConsoleClass Console;
 
@@ -280,10 +279,16 @@ class DataStoreClass {
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
-  char _pending_datastore_keys[BRIDGE_MAX_PENDING_DATASTORE][rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1];
-  uint8_t _pending_datastore_key_lengths[BRIDGE_MAX_PENDING_DATASTORE];
-  uint8_t _pending_datastore_head;
-  uint8_t _pending_datastore_count;
+  // Using raw arrays for strings here is arguably okay, but could be etl::string
+  // Keeping as is for now unless full etl conversion requested, focusing on transport buffers.
+  // Actually, let's use etl::circular_buffer for the queue logic to remove head/count.
+  
+  struct PendingKey {
+      char key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1];
+  };
+  
+  etl::circular_buffer<PendingKey, BRIDGE_MAX_PENDING_DATASTORE> _pending_keys;
+  
   DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;
@@ -346,9 +351,8 @@ class ProcessClass {
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 
-  uint16_t _pending_process_pids[BRIDGE_MAX_PENDING_PROCESS_POLLS];
-  uint8_t _pending_process_poll_head;
-  uint8_t _pending_process_poll_count;
+  // Use ETL circular buffer
+  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_pids;
   
   ProcessRunHandler _process_run_handler;
   ProcessPollHandler _process_poll_handler;

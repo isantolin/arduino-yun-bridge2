@@ -83,10 +83,10 @@ def load_runtime_config() -> RuntimeConfig:
 
     raw = _load_raw_config()
     data: dict[str, Any] = {}
-    
+
     # Direct mappings (UCI key == Schema key)
     direct_keys = [
-        "serial_port", "serial_baud", "serial_safe_baud", 
+        "serial_port", "serial_baud", "serial_safe_baud",
         "mqtt_host", "mqtt_port", "mqtt_user", "mqtt_pass",
         "mqtt_tls", "mqtt_tls_insecure", "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile",
         "mqtt_topic", "file_system_root", "process_timeout",
@@ -100,7 +100,7 @@ def load_runtime_config() -> RuntimeConfig:
         "metrics_enabled", "metrics_host", "metrics_port",
         "bridge_summary_interval", "bridge_handshake_interval", "allow_non_tmp_paths"
     ]
-    
+
     for key in direct_keys:
         if key in raw:
             val = raw[key]
@@ -109,13 +109,13 @@ def load_runtime_config() -> RuntimeConfig:
 
             if val == "" and key in ("mqtt_user", "mqtt_pass", "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile"):
                 val = None
-            
+
             target_key = "debug_logging" if key == "debug" else key
             data[target_key] = val
 
     if "mqtt_topic" not in data:
         data["mqtt_topic"] = protocol.MQTT_DEFAULT_TOPIC_PREFIX
-        
+
     if "serial_port" not in data:
         data["serial_port"] = DEFAULT_SERIAL_PORT
 
@@ -143,17 +143,17 @@ def load_runtime_config() -> RuntimeConfig:
         ("mqtt_allow_analog_write", "analog_write"),
         ("mqtt_allow_analog_read", "analog_read"),
     ]
-    
+
     for uci_key, schema_key in auth_keys:
         if uci_key in raw:
             topic_auth[schema_key] = parse_bool(raw[uci_key])
-            
+
     if topic_auth:
         data["topic_authorization"] = topic_auth
 
     _mqtt_tls = parse_bool(data.get("mqtt_tls", "1"))
     _mqtt_cafile = data.get("mqtt_cafile")
-    
+
     if _mqtt_tls and not _mqtt_cafile:
         data["mqtt_cafile"] = DEFAULT_MQTT_CAFILE
 

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import logging
 import os
-from collections.abc import Iterable
+import random
+from collections.abc import Iterable, Awaitable, Callable
 from typing import (
     Final,
     TYPE_CHECKING,
     cast,
+    TypeVar,
+    ParamSpec,
+    Any,
 )
 
 from paho.mqtt.packettypes import PacketTypes
@@ -54,6 +60,118 @@ _TRUE_STRINGS: Final[frozenset[str]] = frozenset(
 )
 _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+class _BackoffCall:
+    """Callable wrapper implementing retry logic."""
+    def __init__(
+        self,
+        func: Callable[..., Awaitable[Any]],
+        retries: int,
+        start_delay: float,
+        max_delay: float,
+        factor: float,
+        jitter: bool,
+        exceptions: tuple[type[BaseException], ...],
+    ) -> None:
+        self.func = func
+        self.retries = retries
+        self.start_delay = start_delay
+        self.max_delay = max_delay
+        self.factor = factor
+        self.jitter = jitter
+        self.exceptions = exceptions
+        functools.update_wrapper(self, func)
+
+    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        delay = self.start_delay
+        attempt = 0
+
+        while True:
+            try:
+                return await self.func(*args, **kwargs)
+            except Exception as e:
+                # Check for direct match
+                is_match = isinstance(e, self.exceptions)
+
+                # Check for ExceptionGroup match
+                if not is_match and isinstance(e, ExceptionGroup):
+                    matches, remainder = e.split(self.exceptions) # type: ignore
+                    if matches and not remainder:
+                        is_match = True
+                    elif matches and remainder:
+                        # Mixed group (fatal + non-fatal). Raise remainder.
+                        raise e
+
+                if not is_match:
+                    raise
+
+                attempt += 1
+                if self.retries != -1 and attempt > self.retries:
+                    logger.error(
+                        "Backoff limit reached for %s after %d attempts. Last error: %s",
+                        self.func.__name__, attempt, e
+                    )
+                    raise
+
+                sleep_time = delay
+                if self.jitter:
+                    sleep_time = random.uniform(delay * 0.5, delay * 1.5)
+
+                logger.warning(
+                    "Retrying %s in %.2fs (attempt %d/%s). Error: %s",
+                    self.func.__name__, sleep_time, attempt,
+                    "inf" if self.retries == -1 else self.retries, e
+                )
+
+                await asyncio.sleep(sleep_time)
+                delay = min(delay * self.factor, self.max_delay)
+
+
+class backoff:
+    """Decorator for exponential backoff retry logic.
+
+    Args:
+        retries: Maximum number of retries (default 3).
+                 Use -1 for infinite retries (use with caution).
+        start_delay: Initial delay in seconds.
+        max_delay: Maximum delay cap in seconds.
+        factor: Multiplier for exponential backoff.
+        jitter: Add randomness to delay.
+        exceptions: Tuple of exceptions to catch and retry on.
+    """
+    def __init__(
+        self,
+        retries: int = 3,
+        start_delay: float = 0.1,
+        max_delay: float = 5.0,
+        factor: float = 2.0,
+        jitter: bool = True,
+        exceptions: tuple[type[BaseException], ...] = (Exception,),
+    ) -> None:
+        self.retries = retries
+        self.start_delay = start_delay
+        self.max_delay = max_delay
+        self.factor = factor
+        self.jitter = jitter
+        self.exceptions = exceptions
+
+    def __call__(
+        self, func: Callable[P, Awaitable[R]]
+    ) -> Callable[P, Awaitable[R]]:
+        wrapper = _BackoffCall(
+            func,
+            self.retries,
+            self.start_delay,
+            self.max_delay,
+            self.factor,
+            self.jitter,
+            self.exceptions,
+        )
+        return cast(Callable[P, Awaitable[R]], wrapper)
 
 
 def parse_bool(value: object) -> bool:
@@ -291,6 +409,7 @@ def get_default_config() -> dict[str, str]:
 
 
 __all__: Final[tuple[str, ...]] = (
+    "backoff",
     "normalise_allowed_commands",
     "parse_bool",
     "parse_int",

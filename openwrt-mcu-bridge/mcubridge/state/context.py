@@ -6,7 +6,6 @@ import asyncio
 import collections
 import logging
 import time
-import pickle
 
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
@@ -987,7 +986,7 @@ class RuntimeState:
             self.mqtt_spool_retry_attempts = 0
             self.mqtt_spool_backoff_until = 0.0
             self.mqtt_spool_last_error = None
-        except (OSError, SqliteError, MQTTSpoolError) as exc:
+        except (OSError, MQTTSpoolError) as exc:
             self._handle_mqtt_spool_failure("initialization_failed", exc=exc)
 
     async def ensure_spool(self) -> bool:
@@ -1004,7 +1003,7 @@ class RuntimeState:
                 self.mqtt_spool_limit,
                 on_fallback=self._on_spool_fallback,
             )
-        except (OSError, SqliteError, MQTTSpoolError) as exc:
+        except (OSError, MQTTSpoolError) as exc:
             self._handle_mqtt_spool_failure("reactivation_failed", exc=exc)
             return False
         self.mqtt_spool = spool

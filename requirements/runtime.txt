@@ -5,3 +5,4 @@ psutil>=5.9.0
 prometheus-client>=0.17.0
 paho-mqtt>=1.6.1
 msgspec>=0.18.0
+tenacity>=8.2.0

@@ -72,47 +72,52 @@ def test_ensure_raw_mode_noop_when_termios_missing(monkeypatch: pytest.MonkeyPat
     pass
 
 
+class _Termios:
+    # Minimal mock for termios module constants/methods
+    ECHO = 8 # Placeholder value
+    TCSANOW = 0
+    CS8 = 0
+    CREAD = 0
+    CLOCAL = 0
+    VMIN = 0
+    VTIME = 0
+    TIOCEXCL = 0
+    TCIOFLUSH = 0
+
+    class error(Exception):
+        pass
+
+    @staticmethod
+    def tcgetattr(fd: int):
+        cc = [0] * 32
+        return [0, 0, 0, _Termios.ECHO, 0, 0, cc]
+
+    @staticmethod
+    def tcsetattr(fd: int, _when: int, attrs) -> None:
+        pass
+
+    @staticmethod
+    def tcflush(fd: int, _queue: int) -> None:
+        pass
+
 def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, object]] = []
 
     termios_mod = pytest.importorskip("termios")
 
-    class _TTY:
-        @staticmethod
-        def setraw(fd: int) -> None:
-            calls.append(("setraw", fd))
+    # Update mock with real ECHO value if available, though placeholder is fine for logic check
+    _Termios.ECHO = termios_mod.ECHO
 
-    class _Termios:
-        ECHO = termios_mod.ECHO
-        TCSANOW = 0
-        CS8 = 0
-        CREAD = 0
-        CLOCAL = 0
-        VMIN = 0
-        VTIME = 0
-        TIOCEXCL = 0 # Also used in exclusive mode path
-        TCIOFLUSH = 0
+    def mock_tcsetattr(fd: int, _when: int, attrs) -> None:
+        calls.append(("tcsetattr", attrs[3]))
 
-        class error(Exception):
-            pass
+    def mock_tcflush(fd: int, _queue: int) -> None:
+        calls.append(("tcflush", fd))
 
-        @staticmethod
-        def tcgetattr(fd: int):
-            # attrs structure: [iflag, oflag, cflag, lflag, ispeed, ospeed, cc]
-            # cc is a list of control characters
-            cc = [0] * 32
-            return [0, 0, 0, _Termios.ECHO, 0, 0, cc]
+    monkeypatch.setattr(termios_mod, "tcgetattr", _Termios.tcgetattr)
+    monkeypatch.setattr(termios_mod, "tcsetattr", mock_tcsetattr)
+    monkeypatch.setattr(termios_mod, "tcflush", mock_tcflush)
 
-        @staticmethod
-        def tcsetattr(fd: int, _when: int, attrs) -> None:
-            calls.append(("tcsetattr", attrs[3]))
-
-        @staticmethod
-        def tcflush(fd: int, _queue: int) -> None:
-            calls.append(("tcflush", fd))
-
-    monkeypatch.setattr(serial, "tty", _TTY)
-    monkeypatch.setattr(serial, "termios", _Termios)
 
     serial.configure_serial_port(10, 115200)
 

@@ -14,6 +14,7 @@
  * - CRC32 integrity on all frames
  * - Defined fail-safe state on error conditions
  * - Uses ETL (Embedded Template Library) for safe static containers
+ * - Uses TaskScheduler for cooperative multitasking
  * 
  * @see docs/PROTOCOL.md for protocol specification
  * @see tools/protocol/spec.toml for machine-readable contract
@@ -25,6 +26,7 @@
 #include <Stream.h>
 #include <etl/vector.h>
 #include <etl/circular_buffer.h>
+#include <TaskSchedulerDeclarations.h>
 
 #include "bridge_config.h"
 #include "protocol/rpc_frame.h"
@@ -161,9 +163,13 @@ class BridgeClass {
   const uint8_t* _shared_secret;
   size_t _shared_secret_len;
 
+  // Scheduler
+  Scheduler _scheduler;
+  Task _serialTask;
+  Task _watchdogTask;
+
   // Protocol Engine
   rpc::Frame _rx_frame;
-  // Use ETL vector for scratch buffer (safe static allocation)
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> _scratch_payload;
 
   // State
@@ -191,11 +197,9 @@ class BridgeClass {
   // Pending Queues
   struct PendingTxFrame {
     uint16_t command_id;
-    // Payload also uses ETL vector for safety
     etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
   
-  // Use ETL circular buffer for queue
   etl::circular_buffer<PendingTxFrame, rpc::RPC_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
   
   bool _synchronized;
@@ -230,6 +234,13 @@ class BridgeClass {
   bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _dequeuePendingTx(PendingTxFrame& frame);
   void _clearAckState();
+  
+  // Task Callbacks
+  static void _serialTaskCallback();
+  static void _watchdogTaskCallback();
+  
+  void _processSerial();
+  void _processWatchdog();
 };
 
 extern BridgeClass Bridge;
@@ -279,10 +290,6 @@ class DataStoreClass {
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
-  // Using raw arrays for strings here is arguably okay, but could be etl::string
-  // Keeping as is for now unless full etl conversion requested, focusing on transport buffers.
-  // Actually, let's use etl::circular_buffer for the queue logic to remove head/count.
-  
   struct PendingKey {
       char key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1];
   };

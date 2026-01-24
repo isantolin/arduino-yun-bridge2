@@ -21,8 +21,6 @@
 #endif
 
 #include <string.h>
-// Note: <stdlib.h> removed - not used (no malloc/free/atoi)
-// Note: <stdint.h> provided by Arduino.h
 #if __has_include(<Crypto.h>)
   #include <Crypto.h>
 #else
@@ -37,20 +35,13 @@
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection
-// We prioritize Serial1 for Bridge communication on devices that support it (Yun, Leonardo, Mega, etc.)
-// to leave 'Serial' (USB CDC) free for debugging, UNLESS BRIDGE_USE_USB_SERIAL is explicitly requested.
 #if BRIDGE_USE_USB_SERIAL
-  // Force USB CDC (Serial)
   BridgeClass Bridge(Serial);
 #elif defined(__AVR_ATmega32U4__) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(_VARIANT_ARDUINO_ZERO_)
-  // 32U4 (Yun/Leonardo), SAMD (Zero), SAM (Due) -> Use Serial1
   BridgeClass Bridge(Serial1);
 #elif defined(HAVE_HWSERIAL1) && !defined(__AVR_ATmega328P__)
-  // Generic fallback: If Serial1 exists and we are NOT on an ATmega328P (Uno/Nano), use it.
-  // We exclude 328P explicitly because some cores might define HAVE_HWSERIAL1 incorrectly or we want Serial on pins 0/1.
   BridgeClass Bridge(Serial1);
 #else
-  // Fallback for Uno (328P), ESP8266, ESP32 (default), etc.
   BridgeClass Bridge(Serial);
 #endif
 ConsoleClass Console;
@@ -141,10 +132,22 @@ uint16_t getFreeMemory() {
 
 } // namespace
 
+// Static task callbacks
+void BridgeClass::_serialTaskCallback() {
+    Bridge._processSerial();
+}
+
+void BridgeClass::_watchdogTaskCallback() {
+    Bridge._processWatchdog();
+}
+
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
     : _transport(arg_serial, &arg_serial),
       _shared_secret(nullptr),
       _shared_secret_len(0),
+      _scheduler(),
+      _serialTask(0, TASK_FOREVER, &BridgeClass::_serialTaskCallback, &_scheduler, false),
+      _watchdogTask(100, TASK_FOREVER, &BridgeClass::_watchdogTaskCallback, &_scheduler, false),
       _rx_frame{},
       _awaiting_ack(false),
       _last_command_id(0),
@@ -173,6 +176,9 @@ BridgeClass::BridgeClass(Stream& arg_stream)
     : _transport(arg_stream, nullptr),
       _shared_secret(nullptr),
       _shared_secret_len(0),
+      _scheduler(),
+      _serialTask(0, TASK_FOREVER, &BridgeClass::_serialTaskCallback, &_scheduler, false),
+      _watchdogTask(100, TASK_FOREVER, &BridgeClass::_watchdogTaskCallback, &_scheduler, false),
       _rx_frame{},
       _awaiting_ack(false),
       _last_command_id(0),
@@ -202,8 +208,6 @@ void BridgeClass::begin(
   _transport.begin(arg_baudrate);
 
   // [SIL-2] Startup Stabilization
-  // We perform a brief flush to clear any electrical noise on the line
-  // before starting protocol logic.
   const unsigned long start = millis();
   unsigned long last = start;
   uint16_t spins = 0;
@@ -236,9 +240,14 @@ void BridgeClass::begin(
   _tx_debug = {};
 #endif
 
+  // Enable tasks
+  _serialTask.enable();
+  if (kBridgeEnableWatchdog) {
+      _watchdogTask.enable();
+  }
+
 #ifndef BRIDGE_TEST_NO_GLOBALS
   // Blocking wait for sync (legacy behavior compatibility)
-  // In modern async usage, one might prefer non-blocking checking of _synchronized.
   while (!_synchronized) {
     process();
   }
@@ -359,6 +368,20 @@ void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_f
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
+    _scheduler.execute();
+}
+
+void BridgeClass::_processWatchdog() {
+    #if defined(ARDUINO_ARCH_AVR)
+      wdt_reset();
+    #elif defined(ARDUINO_ARCH_ESP32)
+      esp_task_wdt_reset();
+    #elif defined(ARDUINO_ARCH_ESP8266)
+      yield();
+    #endif
+}
+
+void BridgeClass::_processSerial() {
   // [SIL-2] Critical Section for global state access
   noInterrupts();
   bool ready = g_baudrate_state.isReady(millis());
@@ -372,28 +395,11 @@ void BridgeClass::process() {
     interrupts();
   }
 
-#if defined(ARDUINO_ARCH_AVR)
-  if (kBridgeEnableWatchdog) {
-    wdt_reset();
-  }
-#elif defined(ARDUINO_ARCH_ESP32)
-  if (kBridgeEnableWatchdog) {
-    esp_task_wdt_reset();
-  }
-#elif defined(ARDUINO_ARCH_ESP8266)
-  if (kBridgeEnableWatchdog) {
-    yield();
-  }
-#endif
-
   if (_transport.processInput(_rx_frame)) {
     dispatch(_rx_frame);
   } else {
     rpc::FrameParser::Error error = _transport.getLastError();
     if (error != rpc::FrameParser::Error::NONE) {
-      // [SIL-2] Noise Suppression: Do not emit error frames until link is synchronized.
-      // This prevents "Security: Rejecting MCU frame" logs on the Linux side caused by
-      // startup line noise or baudrate settling.
       if (_synchronized) {
         switch (error) {
           case rpc::FrameParser::Error::CRC_MISMATCH:
@@ -488,40 +494,33 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         features |= 8;
         #endif
 
-        // Bit 4: EEPROM (Non-volatile memory)
         #if defined(E2END) && (E2END > 0)
         features |= (1 << 4);
         #endif
 
-        // Bit 5: True DAC (Analog Output)
         #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
             defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)
         features |= (1 << 5);
         #endif
 
-        // Bit 6: Hardware Serial 1 (Tunneling capability)
         #if defined(HAVE_HWSERIAL1)
         features |= (1 << 6);
         #endif
 
-        // Bit 7: Hardware FPU (Floating Point Unit)
         #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
         features |= (1 << 7);
         #endif
 
-        // Bit 8: 3.3V Logic Level (Safety)
         #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || \
             defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
             defined(ARDUINO_ARCH_RP2040)
         features |= (1 << 8);
         #endif
 
-        // Bit 9: Extended Serial Buffer (>64 bytes)
         #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
         features |= (1 << 9);
         #endif
 
-        // Bit 10: I2C (Wire) Support
         #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
             defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
         features |= (1 << 10);
@@ -537,7 +536,6 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
         (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         _transport.flush();
-        // [SIL-2] Atomic State Update
         noInterrupts();
         g_baudrate_state.schedule(new_baud, millis());
         interrupts();
@@ -1016,10 +1014,6 @@ void BridgeClass::enterSafeState() {
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
-
-  // Note: We do not forcibly set pins to LOW here because we don't know
-  // the safety polarity of the connected hardware. Ideally, this would
-  // invoke a user-registered safety callback.
 }
 
 void BridgeClass::_resetLinkState() {

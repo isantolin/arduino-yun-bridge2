@@ -1,8 +1,7 @@
 """Tests for serial transport coverage gaps (Native Asyncio)."""
 
 import pytest
-from unittest.mock import MagicMock, patch
-from types import SimpleNamespace
+from unittest.mock import patch
 
 # ... existing imports ...
 
@@ -15,7 +14,7 @@ def test_serial_termios_import_fallback(monkeypatch: pytest.MonkeyPatch) -> None
 def test_serial_ensure_raw_mode_no_fd() -> None:
     """Cover configure_serial_port with invalid FD."""
     from mcubridge.transport.serial import configure_serial_port, SerialException
-    
+
     # Passing an invalid FD (e.g. file object or None) should raise
     with pytest.raises((TypeError, SerialException, OSError)):
         configure_serial_port(None, 115200) # type: ignore
@@ -28,7 +27,7 @@ def test_serial_ensure_raw_mode_fd_none() -> None:
 def test_serial_ensure_raw_mode_exception() -> None:
     """Cover configure_serial_port raising exception on tcgetattr."""
     from mcubridge.transport.serial import configure_serial_port, SerialException
-    
+
     import termios
     with patch("termios.tcgetattr", side_effect=termios.error("fail")):
         with pytest.raises(SerialException):
@@ -38,7 +37,7 @@ def test_serial_ensure_raw_mode_termios_exception() -> None:
     """Cover configure_serial_port raising termios.error."""
     from mcubridge.transport.serial import configure_serial_port, SerialException
     import termios
-    
+
     with patch("termios.tcgetattr", side_effect=termios.error("fail")):
         with pytest.raises(SerialException):
             configure_serial_port(1, 115200)

@@ -17,6 +17,7 @@ import time
 from typing import Any, Final, Sized, TypeGuard, cast, TYPE_CHECKING
 
 from cobs import cobs
+from mcubridge.common import backoff
 from mcubridge.rpc import rle
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
@@ -67,11 +68,13 @@ class SerialFileObj:
             self._fd = None
 
     def read(self, size: int) -> bytes:
-        if self._fd is None: raise SerialException("File closed")
+        if self._fd is None:
+            raise SerialException("File closed")
         return os.read(self._fd, size)
 
     def write(self, data: bytes) -> int:
-        if self._fd is None: raise SerialException("File closed")
+        if self._fd is None:
+            raise SerialException("File closed")
         return os.write(self._fd, data)
 
 def configure_serial_port(fd: int, baudrate: int, exclusive: bool = False) -> None:
@@ -290,7 +293,7 @@ async def _open_serial_connection(
     # Use factory class to avoid nested function/closure
     write_factory = _WriteProtocolFactory(fd)
     _, _ = await loop.connect_write_pipe(write_factory, fobj)
-    
+
     if write_factory.protocol is None: # pragma: no cover
         raise RuntimeError("Write protocol factory failed to produce protocol")
 
@@ -326,11 +329,17 @@ async def _negotiate_baudrate(
         logger.error("Baudrate negotiation failed: %s", e)
         return False
 
+@backoff(
+    retries=-1,
+    start_delay=1.0,
+    max_delay=8.0,
+    jitter=True,
+    exceptions=(SerialException, OSError),
+)
 async def _open_serial_connection_with_retry(
     config: RuntimeConfig,
 ) -> tuple[asyncio.StreamReader, EagerSerialWriteProtocol]:
-    base_delay = float(max(1, config.reconnect_delay))
-    current_delay = base_delay
+    """Open serial connection with declarative backoff/retry."""
     target_baud = config.serial_baud
     initial_baud = config.serial_safe_baud
 
@@ -339,54 +348,40 @@ async def _open_serial_connection_with_retry(
 
     logger.info("Connecting to %s at %d baud...", config.serial_port, baud_to_use)
 
-    while True:
-        try:
+    # If this fails, @backoff handles retry/sleep/logging
+    reader, writer = await _open_serial_connection(
+        url=config.serial_port, baudrate=baud_to_use, exclusive=True
+    )
+
+    if negotiation_needed:
+        success = await _negotiate_baudrate(reader, writer, target_baud)
+        if success:
+            logger.info("Switching to target baudrate %d...", target_baud)
+            # Close and reopen at new speed
+            if writer.transport:
+                writer.transport.close()
+            # Wait a bit for close to settle?
+            await asyncio.sleep(0.2)
+
             reader, writer = await _open_serial_connection(
-                url=config.serial_port, baudrate=baud_to_use, exclusive=True
+                url=config.serial_port, baudrate=target_baud, exclusive=True
             )
+        else:
+            logger.warning("Negotiation failed; staying at %d baud", baud_to_use)
 
-            if negotiation_needed:
-                success = await _negotiate_baudrate(reader, writer, target_baud)
-                if success:
-                    logger.info("Switching to target baudrate %d...", target_baud)
-                    # Close and reopen at new speed
-                    # Note: writer.transport.close() closes the pipe, which closes the fd via SerialFileObj
-                    if writer.transport:
-                        writer.transport.close()
-                    # Wait a bit for close to settle?
-                    await asyncio.sleep(0.2)
+    # Drain noise
+    drain_start = time.monotonic()
+    while not reader.at_eof():
+        if (time.monotonic() - drain_start) > 1.0:
+            break
+        try:
+            garbage = await asyncio.wait_for(reader.read(4096), timeout=0.1)
+            if not garbage:
+                break
+        except asyncio.TimeoutError:
+            break
 
-                    reader, writer = await _open_serial_connection(
-                        url=config.serial_port, baudrate=target_baud, exclusive=True
-                    )
-                else:
-                    logger.warning("Negotiation failed; staying at %d baud", baud_to_use)
-
-            # Drain noise
-            drain_start = time.monotonic()
-            while not reader.at_eof():
-                if (time.monotonic() - drain_start) > 1.0:
-                    break
-                try:
-                    garbage = await asyncio.wait_for(reader.read(4096), timeout=0.1)
-                    if not garbage:
-                        break
-                except asyncio.TimeoutError:
-                    break
-
-            return reader, writer
-
-        except (SerialException, OSError, ExceptionGroup) as exc:
-            if isinstance(exc, ExceptionGroup):
-                _, remainder = exc.split((SerialException, OSError))
-                if remainder:
-                    raise remainder
-
-            logger.warning("Connection failed (%s); retrying in %.1fs.", exc, current_delay)
-            await asyncio.sleep(current_delay)
-            current_delay = min(base_delay * 8, current_delay * 2)
-        except asyncio.CancelledError:
-            raise
+    return reader, writer
 
 class SerialTransport:
     """Manages the serial connection to the MCU."""
@@ -412,6 +407,7 @@ class SerialTransport:
         while True:
             should_retry = True
             try:
+                # This will retry infinitely internally for connection errors
                 self.reader, self.writer = await _open_serial_connection_with_retry(
                     self.config
                 )

@@ -157,24 +157,24 @@ def _write_frame(fd: int, encoded_packet: bytes) -> int:
 def _read_frame(fd: int, timeout: float) -> bytes | None:
     buffer = bytearray()
     deadline = time.monotonic() + timeout if timeout > 0 else None
-    
+
     while True:
         remaining = deadline - time.monotonic() if deadline else None
         if remaining is not None and remaining <= 0:
             return None
-            
+
         ready, _, _ = select.select([fd], [], [], remaining)
         if not ready:
             continue
-            
+
         try:
             chunk = os.read(fd, 1)
         except OSError:
             chunk = b""
-            
+
         if not chunk:
             continue
-            
+
         if chunk == FRAME_DELIMITER:
             if buffer:
                 return bytes(buffer)

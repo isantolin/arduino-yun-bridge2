@@ -187,7 +187,7 @@ def test_spool_disk_queue_initialization_failure() -> None:
     """Cover disk queue initialization failure fallback."""
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
-    with patch("mcubridge.mqtt.spool.SqliteDeque", side_effect=OSError("Permission denied")):
+    with patch("mcubridge.mqtt.spool.FileDeque", side_effect=OSError("Permission denied")):
         spool = MQTTPublishSpool(
             directory="/tmp/test_spool_fail",
             limit=100,

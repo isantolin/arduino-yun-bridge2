@@ -9,7 +9,7 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Deque, Callable, cast, Protocol
+from typing import Deque, Callable, Protocol
 
 import msgspec
 
@@ -85,7 +85,7 @@ class FileDeque:
         # OK for small limits (default 256).
         try:
             files = sorted([
-                f for f in self.directory.iterdir() 
+                f for f in self.directory.iterdir()
                 if f.name.endswith(".msg")
             ])
         except OSError:
@@ -303,7 +303,7 @@ class MQTTPublishSpool:
     def _handle_disk_error(self, exc: Exception, op: str) -> None:
         reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
         logger.error(
-            "MQTT Spool disk error during %s: %s. Switching to memory-only (reason=%s).",
+            "MQTT Spool disk error during %s: %s. Switching to memory-only mode (reason=%s).",
             op,
             exc,
             reason,

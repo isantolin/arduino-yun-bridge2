@@ -53,7 +53,7 @@ def test_spool_trim_limit(tmp_path: Path) -> None:
     # Append 5 messages. Limit is 2. 3 should be dropped.
     for idx in range(5):
         spool.append(_make_message(f"topic/{idx}", str(idx)))
-    
+
     # Pending should be 2 (limit)
     assert spool.pending == 2
     snapshot = spool.snapshot()
@@ -88,14 +88,14 @@ def test_spool_skips_corrupt_rows(
     # or just rely on sort order. FileDeque sorts by name.
     # Existing files are like "timestamp.msg".
     # We create a file that sorts after the first one.
-    
+
     # Wait a tiny bit to ensure timestamp diff or force name
     import time
     time.sleep(0.001)
-    
+
     corrupt_file = tmp_path / f"{time.time_ns()}_corrupt.msg"
     corrupt_file.write_bytes(b"not-valid-msgpack-data")
-    
+
     time.sleep(0.001)
     spool.append(_make_message("topic/second"))
 
@@ -105,14 +105,14 @@ def test_spool_skips_corrupt_rows(
     restored_one = spool.pop_next()
     assert restored_one is not None
     assert restored_one.topic_name == "topic/first"
-    
+
     # Pop next should encounter corrupt file, log warning, delete it, and return second message
     restored_two = spool.pop_next()
-    
+
     assert restored_two is not None
     assert restored_two.topic_name == "topic/second"
     assert spool.pop_next() is None
-    
+
     # Check log for warning
     assert "corrupt/unreadable spool file" in caplog.text
 
@@ -158,11 +158,11 @@ def test_spool_fallback_on_disk_full(
 
     assert msg1 is not None
     assert msg2 is not None
-    
+
     # Order depends on whether disk queue had anything. It was empty before failure.
     # So both are in memory.
     # Order preserved in memory queue? append() adds to memory queue on failure.
-    
+
     assert msg1.topic_name == "topic/disk"
     assert msg2.topic_name == "topic/memory"
 

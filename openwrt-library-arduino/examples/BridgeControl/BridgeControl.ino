@@ -10,11 +10,6 @@
 // Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)
 #define BRIDGE_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 
-// Includes manuales para dependencias
-// #include <PacketSerial.h> // Removed: Internal dependency
-// #include <CRC32.h>        // Removed: Internal dependency
-// #include <Crypto.h>       // Removed: Internal dependency
-
 #include <Bridge.h>
 #include <string.h>
 

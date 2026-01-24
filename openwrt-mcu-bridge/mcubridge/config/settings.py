@@ -162,12 +162,12 @@ def load_runtime_config() -> RuntimeConfig:
         config = cast(RuntimeConfig, schema.load(data))
         return config
     except ValidationError as err:
-        logger.critical("Configuration validation failed: %s", err.messages)
+        logger.critical("Configuration validation failed: %s", err.messages) # type: ignore
         # Format messages for the ValueError
-        if isinstance(err.messages, dict):
+        if isinstance(err.messages, dict): # type: ignore
             flat_errors = "; ".join(f"{k}: {v}" for k, v in err.messages.items()) # type: ignore
         else:
-            flat_errors = str(err.messages)
+            flat_errors = str(err.messages) # type: ignore
         raise ValueError(f"Invalid configuration: {flat_errors}") from err
 
 

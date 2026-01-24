@@ -113,7 +113,7 @@ class _BackoffCall:
                 if self.retries != -1 and attempt > self.retries:
                     logger.error(
                         "Backoff limit reached for %s after %d attempts. Last error: %s",
-                        self.func.__name__, attempt, e
+                        self.func.__name__, attempt, e # type: ignore
                     )
                     raise
 
@@ -124,7 +124,7 @@ class _BackoffCall:
                 logger.warning(
                     "Retrying %s in %.2fs (attempt %d/%s). Error: %s",
                     self.func.__name__, sleep_time, attempt,
-                    "inf" if self.retries == -1 else self.retries, e
+                    "inf" if self.retries == -1 else self.retries, e # type: ignore
                 )
 
                 await asyncio.sleep(sleep_time)

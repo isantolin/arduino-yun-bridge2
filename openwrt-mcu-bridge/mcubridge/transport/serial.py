@@ -113,7 +113,7 @@ def configure_serial_port(fd: int, baudrate: int, exclusive: bool = False) -> No
 def format_hexdump(data: bytes, prefix: str = "") -> str:
     if not data:
         return f"{prefix}<empty>"
-    lines = []
+    lines: list[str] = []
     for offset in range(0, len(data), 16):
         chunk = data[offset: offset + 16]
         hex_parts = [" ".join(f"{b:02X}" for b in chunk[i: i + 4]) for i in range(0, 16, 4)]

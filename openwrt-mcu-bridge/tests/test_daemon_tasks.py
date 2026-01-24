@@ -30,14 +30,24 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.services.runtime import SerialHandshakeFatal
 
 
+class _FakeTransport:
+    def is_closing(self) -> bool:
+        return False
+    def close(self) -> None:
+        pass
+
 class _FakeStreamWriter:
     def __init__(self) -> None:
         self.buffer: bytearray = bytearray()
         self._closing = False
+        self.transport = _FakeTransport()
 
     def write(self, data: bytes) -> int:
         self.buffer.extend(data)
         return len(data)
+
+    async def _drain_helper(self) -> None:
+        await asyncio.sleep(0)
 
     async def drain(self) -> None:
         await asyncio.sleep(0)

@@ -14,6 +14,8 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import os
+import select
 from dataclasses import dataclass
 from collections.abc import Iterable
 
@@ -25,7 +27,10 @@ from mcubridge.rpc.protocol import (
 from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.rpc.protocol import Command, Status
-from mcubridge.transport.termios_serial import TermiosSerial, SerialException
+from mcubridge.transport.serial import (
+    SerialException,
+    configure_serial_port,
+)
 
 
 @dataclass(slots=True)
@@ -130,39 +135,55 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     )
 
 
-def _open_serial_device(port: str, baud: int, timeout: float) -> TermiosSerial:
+def _open_serial_device(port: str, baud: int) -> int:
     try:
-        return TermiosSerial(port=port, baudrate=baud, timeout=timeout)
-    except SerialException as exc:  # pragma: no cover - hardware path
-        raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
+        fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        configure_serial_port(fd, baud)
+        return fd
+    except (OSError, SerialException) as exc:
+        raise SystemExit(f"Failed to open/configure serial port {port}: {exc}") from exc
 
+def _write_frame(fd: int, encoded_packet: bytes) -> int:
+    try:
+        # Simple blocking write emulation for debug tool
+        # Wait until writable
+        _, writable, _ = select.select([], [fd], [], 1.0)
+        if fd in writable:
+            return os.write(fd, encoded_packet)
+        return 0
+    except OSError:
+        return 0
 
-def _write_frame(device: TermiosSerial, encoded_packet: bytes) -> int:
-    written = device.write(encoded_packet)
-    device.flush()
-    return int(written) if written is not None else 0
-
-
-def _read_frame(device: TermiosSerial, timeout: float) -> bytes | None:
+def _read_frame(fd: int, timeout: float) -> bytes | None:
     buffer = bytearray()
     deadline = time.monotonic() + timeout if timeout > 0 else None
+    
     while True:
-        if deadline is not None and time.monotonic() > deadline:
+        remaining = deadline - time.monotonic() if deadline else None
+        if remaining is not None and remaining <= 0:
             return None
-        chunk = device.read(1)
+            
+        ready, _, _ = select.select([fd], [], [], remaining)
+        if not ready:
+            continue
+            
+        try:
+            chunk = os.read(fd, 1)
+        except OSError:
+            chunk = b""
+            
         if not chunk:
             continue
+            
         if chunk == FRAME_DELIMITER:
             if buffer:
                 return bytes(buffer)
             continue
         buffer.extend(chunk)
 
-
 def _decode_frame(encoded_packet: bytes) -> Frame:
     raw_frame = cobs.decode(encoded_packet)
     return Frame.from_bytes(raw_frame)
-
 
 def _print_response(frame: Frame) -> None:
     payload_hex = frame.payload.hex()
@@ -175,20 +196,17 @@ def _print_response(frame: Frame) -> None:
     sys.stdout.write(f"payload_len={len(frame.payload)}\n")
     sys.stdout.write(f"payload={payload_preview}\n")
 
-
 def _positive_float(value: str) -> float:
     candidate = float(value)
     if candidate <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
     return candidate
 
-
 def _non_negative_int(value: str) -> int:
     candidate = int(value)
     if candidate < 0:
         raise argparse.ArgumentTypeError("value must be >= 0")
     return candidate
-
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -262,7 +280,6 @@ def _iter_counts(count: int) -> Iterable[int]:
     else:
         yield from range(count)
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
@@ -274,13 +291,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
         return 2
 
-    serial_device: TermiosSerial | None = None
+    serial_fd: int | None = None
     if args.port:
-        serial_device = _open_serial_device(
-            args.port,
-            args.baud,
-            args.read_timeout,
-        )
+        serial_fd = _open_serial_device(args.port, args.baud)
         sys.stdout.write(
             f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud\n"
         )
@@ -289,14 +302,14 @@ def main(argv: list[str] | None = None) -> int:
         for iteration in _iter_counts(args.count):
             snapshot = build_snapshot(command_id, payload)
             sys.stdout.write(snapshot.render() + "\n")
-            if serial_device:
-                written = _write_frame(serial_device, snapshot.encoded_packet)
+            if serial_fd is not None:
+                written = _write_frame(serial_fd, snapshot.encoded_packet)
                 sys.stdout.write(
                     f"[FrameDebug] wrote {written} bytes to serial port\n"
                 )
                 if args.read_response:
                     encoded_response = _read_frame(
-                        serial_device, timeout=args.read_timeout
+                        serial_fd, timeout=args.read_timeout
                     )
                     if not encoded_response:
                         sys.stdout.write("[FrameDebug] No response before timeout\n")
@@ -313,8 +326,8 @@ def main(argv: list[str] | None = None) -> int:
             if args.count == 0 or iteration + 1 < args.count:
                 time.sleep(args.interval)
     finally:
-        if serial_device:
-            serial_device.close()
+        if serial_fd is not None:
+            os.close(serial_fd)
     return 0
 
 

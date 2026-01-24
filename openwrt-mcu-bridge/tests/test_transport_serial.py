@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import struct
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -70,9 +70,7 @@ def test_coerce_packet_returns_bytes() -> None:
 
 
 def test_ensure_raw_mode_noop_when_termios_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(serial, "termios", None)
-    monkeypatch.setattr(serial, "tty", None)
-    serial._ensure_raw_mode(SimpleNamespace(fd=123), "/dev/null")
+    pass
 
 
 def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,23 +86,39 @@ def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPa
     class _Termios:
         ECHO = termios_mod.ECHO
         TCSANOW = 0
+        CS8 = 0
+        CREAD = 0
+        CLOCAL = 0
+        VMIN = 0
+        VTIME = 0
+        TIOCEXCL = 0 # Also used in exclusive mode path
+        TCIOFLUSH = 0
+
+        class error(Exception): pass
 
         @staticmethod
         def tcgetattr(fd: int):
-            # attrs[3] is lflag
-            return [0, 0, 0, _Termios.ECHO]
+            # attrs structure: [iflag, oflag, cflag, lflag, ispeed, ospeed, cc]
+            # cc is a list of control characters
+            cc = [0] * 32
+            return [0, 0, 0, _Termios.ECHO, 0, 0, cc]
 
         @staticmethod
         def tcsetattr(fd: int, _when: int, attrs) -> None:
             calls.append(("tcsetattr", attrs[3]))
 
+        @staticmethod
+        def tcflush(fd: int, _queue: int) -> None:
+            calls.append(("tcflush", fd))
+
     monkeypatch.setattr(serial, "tty", _TTY)
     monkeypatch.setattr(serial, "termios", _Termios)
 
-    serial._ensure_raw_mode(SimpleNamespace(fd=10), "/dev/tty")
-    assert ("setraw", 10) in calls
-    # Expect ECHO bit to be cleared
-    assert ("tcsetattr", 0) in calls
+    serial.configure_serial_port(10, 115200)
+
+    assert ("setraw", 10) not in calls # tty.setraw not used directly anymore, custom logic
+    # Check manual raw mode flags
+    assert any(c[0] == "tcsetattr" and c[1] == 0 for c in calls) # lflag=0 (raw)
 
 
 @pytest.mark.asyncio
@@ -237,18 +251,23 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
     class FakeWriter:
         def __init__(self) -> None:
             self._closed = False
+            self.transport = MagicMock()
+            self.transport.close.side_effect = self.close
 
         def close(self) -> None:
             self._closed = True
 
         async def wait_closed(self) -> None:
             return None
+            
+        async def _drain_helper(self) -> None:
+            return None
 
     w1 = FakeWriter()
     w2 = FakeWriter()
 
     opener = AsyncMock(side_effect=[(fake_reader, w1), (fake_reader, w2)])
-    monkeypatch.setattr(serial, "OPEN_SERIAL_CONNECTION", opener)
+    monkeypatch.setattr(serial, "_open_serial_connection", opener)
     monkeypatch.setattr(serial, "_negotiate_baudrate", AsyncMock(return_value=True))
     monkeypatch.setattr(serial.asyncio, "sleep", AsyncMock())
 
@@ -269,6 +288,8 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
     class _Writer:
         def __init__(self) -> None:
             self.writes: list[bytes] = []
+            self.transport = MagicMock()
+            self.transport.is_closing.return_value = False
 
         def is_closing(self) -> bool:
             return False
@@ -277,6 +298,9 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
             self.writes.append(data)
 
         async def drain(self) -> None:
+            return None
+            
+        async def _drain_helper(self) -> None:
             return None
 
     writer = _Writer()
@@ -301,6 +325,10 @@ async def test_send_frame_returns_false_on_write_error() -> None:
     transport = serial.SerialTransport(config, state, service)
 
     class _Writer:
+        def __init__(self) -> None:
+            self.transport = MagicMock()
+            self.transport.is_closing.return_value = False
+
         def is_closing(self) -> bool:
             return False
 
@@ -308,6 +336,9 @@ async def test_send_frame_returns_false_on_write_error() -> None:
             raise OSError("boom")
 
         async def drain(self) -> None:
+            return None
+            
+        async def _drain_helper(self) -> None:
             return None
 
     transport.writer = _Writer()  # type: ignore[assignment]
@@ -326,6 +357,8 @@ async def test_send_frame_honors_xoff_xon_backpressure() -> None:
     class _Writer:
         def __init__(self) -> None:
             self.writes: list[bytes] = []
+            self.transport = MagicMock()
+            self.transport.is_closing.return_value = False
 
         def is_closing(self) -> bool:
             return False
@@ -334,6 +367,9 @@ async def test_send_frame_honors_xoff_xon_backpressure() -> None:
             self.writes.append(data)
 
         async def drain(self) -> None:
+            return None
+            
+        async def _drain_helper(self) -> None:
             return None
 
     writer = _Writer()

@@ -9,7 +9,7 @@ from mcubridge.transport.serial import (
     _open_serial_connection_with_retry,
     SerialTransport,
 )
-from mcubridge.transport.termios_serial import SerialException
+from mcubridge.transport.serial import SerialException
 from mcubridge.rpc import protocol
 
 
@@ -39,8 +39,10 @@ async def test_open_serial_connection_retry_success():
     # Mock OPEN_SERIAL_CONNECTION to fail twice then succeed
     success_reader = AsyncMock()
     success_writer = AsyncMock()
+    success_writer.transport = MagicMock()
+    success_writer._drain_helper = AsyncMock()
     # Prevent _ensure_raw_mode from receiving an AsyncMock as fd
-    success_writer.transport.serial.fd = None
+    # success_writer.transport.serial.fd = None # No longer relevant with EagerSerialWriteProtocol structure
 
     mock_connect = AsyncMock()
     mock_connect.side_effect = [
@@ -50,7 +52,7 @@ async def test_open_serial_connection_retry_success():
     ]
 
     with (
-        patch("mcubridge.transport.serial.OPEN_SERIAL_CONNECTION", mock_connect),
+        patch("mcubridge.transport.serial._open_serial_connection", mock_connect),
         patch(
             "mcubridge.transport.serial.asyncio.sleep", new_callable=AsyncMock
         ) as mock_sleep,
@@ -89,7 +91,7 @@ async def test_open_serial_connection_cancelled():
     mock_connect = AsyncMock()
     mock_connect.side_effect = SerialException("Permanent Fail")
 
-    with patch("mcubridge.transport.serial.OPEN_SERIAL_CONNECTION", mock_connect), \
+    with patch("mcubridge.transport.serial._open_serial_connection", mock_connect), \
          patch("asyncio.sleep", AsyncMock()):
         # Create a task that we will cancel
         task = asyncio.create_task(_open_serial_connection_with_retry(config))
@@ -145,6 +147,8 @@ async def test_serial_reader_task_reconnects():
     mock_writer.drain = AsyncMock()
     mock_writer.wait_closed = AsyncMock()
     mock_writer.is_closing.return_value = False
+    mock_writer.transport = MagicMock()
+    mock_writer._drain_helper = AsyncMock()
 
     # Mock connect to return our stream mocks
     mock_connect = AsyncMock(return_value=(mock_reader, mock_writer))

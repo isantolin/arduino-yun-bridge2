@@ -9,7 +9,10 @@
 
 namespace bridge {
 
+namespace test { class TestAccessor; }
+
 class BridgeTransport {
+    friend class test::TestAccessor;
 public:
     BridgeTransport(Stream& stream, HardwareSerial* hwSerial = nullptr);
     

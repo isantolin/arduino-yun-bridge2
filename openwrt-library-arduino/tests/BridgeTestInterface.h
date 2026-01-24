@@ -38,12 +38,10 @@ class TestAccessor {
   explicit TestAccessor(BridgeTransport& transport) : _transport(transport) {}
 
   // --- Read-only accessors for test assertions ---
-  size_t getLastCobsLen() const { return _transport._last_cobs_len; }
-  bool isFlowPaused() const { return _transport._flow_paused; }
-  bool hasOverflowed() const { return _transport._parser.overflowed(); }
-
+  size_t getLastRawFrameLen() const { return _transport._last_raw_frame_len; }
+  
   rpc::FrameParser::Error getLastError() const {
-    return _transport._parser.getError();
+    return _transport.getLastError();
   }
 
   // --- Methods ---

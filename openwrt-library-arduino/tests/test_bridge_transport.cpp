@@ -149,7 +149,7 @@ static void test_transport_retransmitLastFrame_behaviors() {
   // Create a last frame.
   const uint8_t payload[] = {TEST_PAYLOAD_BYTE, TEST_MARKER_BYTE};
   TEST_ASSERT(transport.sendFrame(TEST_CMD_ID, payload, sizeof(payload)));
-  TEST_ASSERT(accessor.getLastCobsLen() > 0);
+  TEST_ASSERT(accessor.getLastRawFrameLen() > 0);
 
   // Note: We can no longer test write failure propagation here.
 }
@@ -218,10 +218,9 @@ static void test_transport_processInput_overflow_sets_error() {
 }
 
 static void test_transport_hardware_serial_branches() {
-  VectorStream stream;
   CapturingSerial serial;
 
-  bridge::BridgeTransport transport(stream, &serial);
+  bridge::BridgeTransport transport(serial, &serial);
   transport.begin(rpc::RPC_DEFAULT_BAUDRATE);
   auto accessor = bridge::test::TestAccessor::create(transport);
 

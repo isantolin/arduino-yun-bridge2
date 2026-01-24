@@ -10,7 +10,9 @@ class TestFlashProtection(unittest.TestCase):
         unsafe_conf = {
             "file_system_root": "/etc/unsafe",
             "allow_non_tmp_paths": "0",
-            "serial_shared_secret": "valid_secret_1234"
+            "serial_shared_secret": "valid_secret_1234",
+            "serial_baud": "9600",
+            "serial_port": "/dev/ttyS0",
         }
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             with self.assertRaises(ValueError) as cm:
@@ -24,7 +26,9 @@ class TestFlashProtection(unittest.TestCase):
             "mqtt_spool_dir": "/mnt/flash/spool",
             # Even with override allowed for FS root, spool MUST be safe
             "allow_non_tmp_paths": "1",
-            "serial_shared_secret": "valid_secret_1234"
+            "serial_shared_secret": "valid_secret_1234",
+            "serial_baud": "9600",
+            "serial_port": "/dev/ttyS0",
         }
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             with self.assertRaises(ValueError) as cm:
@@ -37,7 +41,9 @@ class TestFlashProtection(unittest.TestCase):
         unsafe_conf = {
             "file_system_root": "/etc/custom",
             "allow_non_tmp_paths": "1",
-            "serial_shared_secret": "secure_secret_1234"
+            "serial_shared_secret": "secure_secret_1234",
+            "serial_baud": "9600",
+            "serial_port": "/dev/ttyS0",
         }
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             config = load_runtime_config()

@@ -1,324 +1,186 @@
-#include "test_support.h"
-#include <cstring>
-#include <stdio.h>
-#include <stdlib.h> // for rand()
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
-// [SIL-2] Protocol Implementation Includes
-#include "protocol/rpc_protocol.h"
+#include <FastCRC.h>
+// [MODIFICADO] Eliminado include de cobs.h porque la lógica se movió a PacketSerial
 #include "protocol/rpc_frame.h"
+#include "test_constants.h"
+#include "test_support.h"
 
-// [FIX] CRITICAL: Migrated from deprecated "protocol/cobs.h" to PacketSerial standard
-// This ensures binary compatibility with the new firmware architecture.
-#include <Encoding/COBS.h>
+using namespace rpc;
 
-// --------------------------------------------------------------------------------
-// HELPER FUNCTIONS
-// --------------------------------------------------------------------------------
+static FastCRC32 CRC32;
 
-void print_buffer(const uint8_t* buffer, size_t length, const char* name) {
-    printf("%s [%zu]: ", name, length);
-    for (size_t i = 0; i < length; i++) {
-        printf("%02X ", buffer[i]);
-    }
-    printf("\n");
+// 1. Helpers Básicos (Original)
+static void test_endianness_helpers() {
+  uint8_t buffer[2] = {
+      static_cast<uint8_t>((TEST_CMD_ID >> 8) & rpc::RPC_UINT8_MASK),
+      static_cast<uint8_t>(TEST_CMD_ID & rpc::RPC_UINT8_MASK),
+  };
+  TEST_ASSERT(read_u16_be(buffer) == TEST_CMD_ID);
+  write_u16_be(buffer, TEST_WRITE_U16_VALUE);
+  TEST_ASSERT(buffer[0] == ((TEST_WRITE_U16_VALUE >> 8) & rpc::RPC_UINT8_MASK) &&
+              buffer[1] == (TEST_WRITE_U16_VALUE & rpc::RPC_UINT8_MASK));
 }
 
-// Helper to corrupt a specific byte in a buffer to simulate noise
-void corrupt_buffer(uint8_t* buffer, size_t len, size_t index) {
-    if (index < len) {
-        buffer[index] ^= 0xFF; // Invert bits
-    }
+// 2. Helpers CRC (Original)
+static void test_crc_helpers() {
+  const uint8_t data[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB, TEST_BYTE_CC, TEST_BYTE_DD};
+  uint32_t crc = CRC32.crc32(data, sizeof(data));
+  TEST_ASSERT(crc == TEST_CRC32_VECTOR_EXPECTED);
 }
 
-// --------------------------------------------------------------------------------
-// BASIC PROTOCOL TESTS
-// --------------------------------------------------------------------------------
+// 3. Roundtrip Constructor -> Parser (Adaptado: Sin COBS)
+static void test_builder_roundtrip() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
 
-void test_frame_constants() {
-    // Validate Architecture Constants
-    ASSERT_EQUAL(rpc::FRAME_DELIMITER, 0x00, "Frame delimiter must be 0x00");
-    ASSERT_TRUE(rpc::MAX_PAYLOAD_SIZE > 0, "Max payload must be positive");
-    ASSERT_TRUE(rpc::MAX_FRAME_SIZE > rpc::MAX_PAYLOAD_SIZE, "Frame size must account for overhead");
+  const uint16_t command_id = TEST_CMD_ID;
+  const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, TEST_BYTE_01, rpc::RPC_UINT8_MASK, TEST_BYTE_02, rpc::RPC_FRAME_DELIMITER};
+
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
+  size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
+  
+  // Verificación de tamaño RAW (Header + Payload + CRC)
+  TEST_ASSERT(raw_len == sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
+
+  uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
+  TEST_ASSERT(crc == CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE));
+
+  // [CAMBIO] En lugar de COBS encode -> decode, pasamos el buffer RAW directamente
+  // simulando que PacketSerial ya hizo su trabajo.
+  bool parsed = parser.parse(raw, raw_len, frame);
+  
+  TEST_ASSERT(parsed);
+  TEST_ASSERT(frame.header.version == PROTOCOL_VERSION);
+  TEST_ASSERT(frame.header.command_id == command_id);
+  TEST_ASSERT(frame.header.payload_length == sizeof(payload));
+  TEST_ASSERT(test_memeq(frame.payload, payload, sizeof(payload)));
 }
 
-void test_frame_builder_basic() {
-    rpc::FrameBuilder builder;
-    uint8_t buffer[256];
-    uint8_t payload[] = {0xAA, 0xBB, 0xCC};
-    
-    size_t len = builder.build(buffer, sizeof(buffer), 0x55, payload, 3);
-    
-    ASSERT_TRUE(len > 0, "Frame build failed");
-    
-    // Header Analysis (Big Endian Network Byte Order expected for Length)
-    // Frame Structure: [Len H][Len L][Cmd H][Cmd L][Payload...][CRC32...][Delimiter?]
-    // Note: Builder usually prepares raw frame before COBS.
-    
-    ASSERT_EQUAL(buffer[0], 0x00, "Length High mismatch");
-    ASSERT_EQUAL(buffer[1], 0x03, "Length Low mismatch");
-    ASSERT_EQUAL(buffer[2], 0x00, "Command High mismatch");
-    ASSERT_EQUAL(buffer[3], 0x55, "Command Low mismatch");
-    
-    // Payload Verification
-    ASSERT_EQUAL(buffer[4], 0xAA, "Payload[0] mismatch");
-    ASSERT_EQUAL(buffer[5], 0xBB, "Payload[1] mismatch");
-    ASSERT_EQUAL(buffer[6], 0xCC, "Payload[2] mismatch");
-    
-    // Length Verification (Header 4 + Payload 3 + CRC 4)
-    ASSERT_EQUAL(len, 11, "Total frame length mismatch (expected 11 bytes)");
+// 4. Límite de Payload (Original)
+static void test_builder_payload_limit() {
+  FrameBuilder builder;
+  uint8_t payload[MAX_PAYLOAD_SIZE + 1];
+  test_memfill(payload, sizeof(payload), TEST_BYTE_01);
+  uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE] = {0};
+  size_t len = builder.build(buffer, sizeof(buffer), TEST_CMD_ID, payload, sizeof(payload));
+  TEST_ASSERT(len == 0);
 }
 
-// --------------------------------------------------------------------------------
-// ENCODING TESTS (COBS MIGRATION VERIFICATION)
-// --------------------------------------------------------------------------------
+// 5. Paquetes Incompletos (Adaptado a API parse)
+static void test_parser_incomplete_packets() {
+  FrameParser parser;
+  Frame frame{};
+  
+  uint8_t raw[10]; // Buffer dummy insuficiente para un frame real
+  memset(raw, 0, sizeof(raw));
 
-void test_cobs_encoding_decoding() {
-    // [SCENARIO] Data with zeros to verify COBS stuffing logic
-    uint8_t raw_data[] = {0x11, 0x00, 0x22, 0x00, 0x33, 0x00, 0x00, 0x44};
-    uint8_t encoded_buffer[256];
-    uint8_t decoded_buffer[256];
-    
-    // [FIX] Using PacketSerial COBS API
-    size_t encoded_len = COBS::encode(raw_data, sizeof(raw_data), encoded_buffer);
-    
-    ASSERT_TRUE(encoded_len > sizeof(raw_data), "Encoded data should be larger due to overhead");
-    
-    // SIL-2 Check: Encoded buffer MUST NOT contain zeros (delimiter aliasing)
-    for(size_t i = 0; i < encoded_len; i++) {
-        if (encoded_buffer[i] == 0x00) {
-            printf("CRITICAL FAILURE: Found zero at index %zu in encoded buffer\n", i);
-            ASSERT_TRUE(false, "Encoded buffer contains forbidden zero byte!");
-        }
-    }
-    
-    // Decode back
-    // [FIX] Using PacketSerial COBS API
-    size_t decoded_len = COBS::decode(encoded_buffer, encoded_len, decoded_buffer);
-    
-    ASSERT_EQUAL(decoded_len, sizeof(raw_data), "Decoded length mismatch");
-    ASSERT_TRUE(memcmp(raw_data, decoded_buffer, sizeof(raw_data)) == 0, "Decoded content mismatch");
+  // FrameParser.parse debe retornar false si el tamaño es menor al mínimo (Header + CRC)
+  TEST_ASSERT(!parser.parse(raw, 4, frame)); // Menor que header
+  TEST_ASSERT(!parser.parse(raw, sizeof(FrameHeader), frame)); // Header sin CRC
 }
 
-void test_cobs_worst_case_overhead() {
-    // [SCENARIO] 254 non-zero bytes (Worst case for COBS block overhead)
-    uint8_t raw_data[254];
-    for(int i=0; i<254; i++) raw_data[i] = (i % 255) + 1; 
-    
-    uint8_t encoded_buffer[512];
-    uint8_t decoded_buffer[512];
-    
-    size_t encoded_len = COBS::encode(raw_data, sizeof(raw_data), encoded_buffer);
-    
-    // Overhead should be minimal but present (1 byte overhead usually for < 254)
-    ASSERT_TRUE(encoded_len >= sizeof(raw_data) + 1, "Insufficient overhead allocation");
-    
-    size_t decoded_len = COBS::decode(encoded_buffer, encoded_len, decoded_buffer);
-    ASSERT_EQUAL(decoded_len, sizeof(raw_data), "Worst-case decode length mismatch");
+// 6. Fallo de CRC (Adaptado)
+static void test_parser_crc_failure() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+
+  const uint8_t payload[] = {TEST_BYTE_10, TEST_BYTE_20, TEST_BYTE_30};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
+  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_CRC_FAILURE, payload, sizeof(payload));
+  TEST_ASSERT(raw_len > 0);
+
+  raw[sizeof(FrameHeader)] ^= rpc::RPC_UINT8_MASK;  // Corromper payload
+
+  TEST_ASSERT(!parser.parse(raw, raw_len, frame));
+  TEST_ASSERT(parser.getError() == FrameParser::Error::CRC_MISMATCH);
 }
 
-// --------------------------------------------------------------------------------
-// INTEGRITY & SAFETY TESTS (SIL 2 REQUIREMENTS)
-// --------------------------------------------------------------------------------
+// 7. Validación de Header (Versión) (Adaptado)
+static void test_parser_header_validation() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
 
-void test_frame_parser_full_cycle() {
-    rpc::FrameBuilder builder;
-    uint8_t raw_frame[64];
-    uint8_t payload[] = {0xCA, 0xFE, 0xBA, 0xBE};
-    
-    // 1. Build
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), 0x99, payload, sizeof(payload));
-    
-    // 2. Encode
-    uint8_t encoded_buffer[128];
-    size_t encoded_len = COBS::encode(raw_frame, raw_len, encoded_buffer);
-    
-    // 3. Add Delimiter (PacketSerial requires delimiter handling usually done by transport)
-    encoded_buffer[encoded_len++] = 0x00;
-    
-    // 4. Parse (Simulate receiving byte stream)
-    rpc::FrameParser parser;
-    rpc::Frame rx_frame;
-    bool frame_ready = false;
-    
-    // Feed parser byte by byte to test state machine
-    for(size_t i=0; i<encoded_len; i++) {
-        // Assume parser.parse takes the *decoded* buffer usually, but here we simulate the transport layer
-        // If FrameParser expects DECODED data, we must decode first.
-        // Checking FrameParser implementation... it likely handles raw decoded bytes.
-        // Let's decode strictly for this test as per standard flow.
-    }
-    
-    // Alternative: Decoding manually and feeding parser
-    uint8_t decoded_rx[128];
-    // Remove delimiter for decode
-    size_t decoded_rx_len = COBS::decode(encoded_buffer, encoded_len - 1, decoded_rx);
-    
-    frame_ready = parser.parse(decoded_rx, decoded_rx_len, rx_frame);
-    
-    ASSERT_TRUE(frame_ready, "Frame parsing failed on valid data");
-    ASSERT_EQUAL(rx_frame.header.command_id, 0x99, "Command ID mismatch");
-    ASSERT_EQUAL(rx_frame.header.payload_length, sizeof(payload), "Payload length mismatch");
-    
-    // Verify Payload Integrity
-    ASSERT_EQUAL(rx_frame.payload[0], 0xCA, "Byte 0");
-    ASSERT_EQUAL(rx_frame.payload[3], 0xBE, "Byte 3");
+  const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
+  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_HEADER_VALIDATION, payload, sizeof(payload));
+  TEST_ASSERT(raw_len > 0);
+
+  // Romper versión del protocolo
+  raw[0] = PROTOCOL_VERSION + 1;
+  
+  // Recalcular CRC para que el fallo sea de Header y no de CRC
+  uint32_t new_crc = CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE);
+  write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
+
+  TEST_ASSERT(!parser.parse(raw, raw_len, frame));
+  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
 }
 
-void test_crc_rejection() {
-    // [SAFETY] This test ensures that if a bit flips during transport, the frame is rejected.
-    rpc::FrameBuilder builder;
-    uint8_t raw_frame[64];
-    uint8_t payload[] = {0x01, 0x02, 0x03};
-    
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), 0x10, payload, 3);
-    
-    // Corrupt one byte in the payload part (Offset 4 header + 1 payload)
-    corrupt_buffer(raw_frame, raw_len, 5); 
-    
-    rpc::FrameParser parser;
-    rpc::Frame rx_frame;
-    bool success = parser.parse(raw_frame, raw_len, rx_frame);
-    
-    ASSERT_FALSE(success, "CRITICAL: Parser accepted frame with corrupted CRC!");
+// 8. Buffer Overflow Guard (Adaptado)
+static void test_parser_overflow_guard() {
+  FrameParser parser;
+  Frame frame{};
+
+  uint8_t huge_buffer[rpc::MAX_RAW_FRAME_SIZE + 50];
+  memset(huge_buffer, 0, sizeof(huge_buffer));
+
+  // Intentar parsear un buffer que excede el máximo permitido por el protocolo
+  TEST_ASSERT(!parser.parse(huge_buffer, sizeof(huge_buffer), frame));
+  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
 }
 
-void test_header_corruption() {
-    // [SAFETY] Test corruption in the header length field
-    rpc::FrameBuilder builder;
-    uint8_t raw_frame[64];
-    uint8_t payload[] = {0xFF};
-    
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), 0x20, payload, 1);
-    
-    // Corrupt Length MSB (Index 0)
-    corrupt_buffer(raw_frame, raw_len, 0);
-    
-    rpc::FrameParser parser;
-    rpc::Frame rx_frame;
-    bool success = parser.parse(raw_frame, raw_len, rx_frame);
-    
-    ASSERT_FALSE(success, "CRITICAL: Parser accepted frame with corrupted Header!");
+// 9. Lógica de Header inconsistente (Recuperado del original y adaptado)
+static void test_parser_header_logical_validation_mismatch() {
+  FrameBuilder builder;
+  FrameParser parser;
+  Frame frame{};
+  
+  uint8_t payload[] = {0x11, 0x22};
+  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
+  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID, payload, sizeof(payload));
+  
+  // raw structure: [Ver][LenH][LenL][CmdH][CmdL][P1][P2][CRC]...
+  // Payload real es 2 bytes. Cambiamos el header para decir que son 3.
+  raw[2] = 3;
+  
+  // Recalcular CRC para pasar la primera validación
+  uint32_t new_crc = CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE);
+  write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
+  
+  // Debe fallar porque el header dice length=3 pero el buffer raw solo tiene espacio para 2
+  TEST_ASSERT(!parser.parse(raw, raw_len, frame));
+  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
 }
 
-// --------------------------------------------------------------------------------
-// FUZZING & STRESS TESTS
-// --------------------------------------------------------------------------------
-
-void test_fuzzing_random_noise() {
-    // [ROBUSTNESS] Feed garbage to the decoder and parser to ensure no crashes/hangs
-    printf("Starting Fuzzing Test (1000 iterations)...\n");
-    
-    uint8_t noise_buffer[100];
-    uint8_t decoded_buffer[100];
-    rpc::FrameParser parser;
-    rpc::Frame rx_frame;
-    
-    srand(12345); // Deterministic seed for reproducibility
-    
-    for(int i=0; i<1000; i++) {
-        // Generate random length noise
-        size_t len = (rand() % 90) + 1;
-        for(size_t j=0; j<len; j++) {
-            noise_buffer[j] = rand() % 256;
-        }
-        
-        // Attempt decode (should fail or produce garbage, but NOT crash)
-        size_t dec_len = COBS::decode(noise_buffer, len, decoded_buffer);
-        
-        // Attempt parse (should definitely fail CRC or format checks)
-        bool success = parser.parse(decoded_buffer, dec_len, rx_frame);
-        
-        // We only assert that we are still alive. 
-        // Ideally success should be false, but statistically 1 in 4 billion might pass CRC32 by pure luck.
-        if(success) {
-            printf("WARNING: Fuzzer bypassed CRC (Statistical anomaly or weak CRC)\n");
-        }
-    }
-    ASSERT_TRUE(true, "Fuzzing completed without crash");
+// 10. Buffer de Builder muy pequeño (Recuperado del original)
+static void test_builder_buffer_too_small() {
+  FrameBuilder builder;
+  uint8_t payload[] = {0x11, 0x22};
+  uint8_t small_buf[5]; // Muy pequeño para Header (5) + Payload (2) + CRC (4)
+  
+  size_t len = builder.build(small_buf, sizeof(small_buf), TEST_CMD_ID, payload, sizeof(payload));
+  TEST_ASSERT(len == 0);
 }
-
-void test_payload_boundary_max() {
-    // [LIMITS] Test exactly MAX_PAYLOAD_SIZE
-    rpc::FrameBuilder builder;
-    uint8_t big_payload[rpc::MAX_PAYLOAD_SIZE];
-    uint8_t raw_frame[rpc::MAX_FRAME_SIZE + 50]; // Plenty of space
-    
-    memset(big_payload, 0x77, sizeof(big_payload));
-    
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), 0xAA, big_payload, sizeof(big_payload));
-    
-    ASSERT_TRUE(raw_len > sizeof(big_payload), "Frame build failed at max payload");
-    
-    rpc::FrameParser parser;
-    rpc::Frame rx_frame;
-    bool success = parser.parse(raw_frame, raw_len, rx_frame);
-    
-    ASSERT_TRUE(success, "Failed to parse MAX_PAYLOAD_SIZE frame");
-    ASSERT_EQUAL(rx_frame.header.payload_length, rpc::MAX_PAYLOAD_SIZE, "Payload length mismatch at max");
-}
-
-void test_payload_boundary_overflow() {
-    // [LIMITS] Test MAX_PAYLOAD_SIZE + 1 (Buffer Overflow Protection)
-    // This requires accessing internal logic or mocking, as Build() might just truncate or fail safely.
-    // We assume Build returns 0 on failure.
-    
-    rpc::FrameBuilder builder;
-    uint8_t huge_payload[rpc::MAX_PAYLOAD_SIZE + 10];
-    uint8_t raw_frame[rpc::MAX_FRAME_SIZE * 2];
-    
-    // Try to build oversized frame
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), 0xBB, huge_payload, sizeof(huge_payload));
-    
-    // Depending on implementation, it should either return 0 or truncate.
-    // If it returns a valid length, parser MUST reject it if it exceeds internal buffer.
-    if (raw_len > 0) {
-        rpc::FrameParser parser;
-        rpc::Frame rx_frame;
-        // Hack: artificially increase length in header if builder truncated it
-        if (raw_frame[1] != sizeof(huge_payload) & 0xFF) {
-             // If builder was smart and truncated, we can't test parser overflow this way easily.
-             // We manually construct a malicious frame.
-             raw_frame[0] = (sizeof(huge_payload) >> 8) & 0xFF;
-             raw_frame[1] = sizeof(huge_payload) & 0xFF;
-             // Re-calculate CRC would be needed here to pass CRC check but fail Length check.
-             // For now, we assume builder safety is the first line of defense.
-        }
-    } else {
-        ASSERT_EQUAL(raw_len, 0, "Builder correctly rejected oversized payload");
-    }
-}
-
-// --------------------------------------------------------------------------------
-// MAIN RUNNER
-// --------------------------------------------------------------------------------
 
 int main() {
-    printf("==================================================\n");
-    printf("  RUNNING PROTOCOL TESTS (SIL 2 COMPLIANT)\n");
-    printf("==================================================\n");
-    
-    // 1. Structural Tests
-    RUN_TEST(test_frame_constants);
-    
-    // 2. Builder Logic
-    RUN_TEST(test_frame_builder_basic);
-    RUN_TEST(test_payload_boundary_max);
-    RUN_TEST(test_payload_boundary_overflow);
-    
-    // 3. Transport Encoding (COBS PacketSerial)
-    RUN_TEST(test_cobs_encoding_decoding);
-    RUN_TEST(test_cobs_worst_case_overhead);
-    
-    // 4. Parser & Integrity Logic
-    RUN_TEST(test_frame_parser_full_cycle);
-    RUN_TEST(test_crc_rejection);
-    RUN_TEST(test_header_corruption);
-    
-    // 5. Robustness / Fuzzing
-    RUN_TEST(test_fuzzing_random_noise);
-    
-    printf("==================================================\n");
-    printf("  ALL PROTOCOL TESTS PASSED.\n");
-    printf("==================================================\n");
-    return 0;
+  test_endianness_helpers();
+  test_crc_helpers();
+  test_builder_roundtrip();
+  test_builder_payload_limit();
+  test_parser_incomplete_packets();
+  test_parser_crc_failure();
+  test_parser_header_validation();
+  test_parser_overflow_guard();
+  
+  // Tests de cobertura adicionales recuperados
+  test_parser_header_logical_validation_mismatch();
+  test_builder_buffer_too_small();
+  
+  return 0;
 }

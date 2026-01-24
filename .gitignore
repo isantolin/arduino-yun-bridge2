@@ -63,3 +63,4 @@ feeds/luci-app-mcubridge
 feeds/openwrt-mcu-bridge
 feeds/openwrt-mcu-core
 test_protocol_bin
+.VSCodeCounter/

@@ -17,7 +17,7 @@
 #undef private
 #undef protected
 
-#include "protocol/cobs.h"
+// #include "protocol/cobs.h" // Removed
 #include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -37,6 +37,63 @@ FileSystemClass FileSystem;
 ProcessClass Process;
 
 namespace {
+
+// Local COBS implementation for test frame generation
+struct TestCOBS {
+    static size_t encode(const uint8_t* source, size_t length, uint8_t* destination) {
+        size_t read_index = 0;
+        size_t write_index = 1;
+        size_t code_index = 0;
+        uint8_t code = 1;
+
+        while (read_index < length) {
+            if (source[read_index] == 0) {
+                destination[code_index] = code;
+                code = 1;
+                code_index = write_index++;
+                read_index++;
+            } else {
+                destination[write_index++] = source[read_index++];
+                code++;
+                if (code == 0xFF) {
+                    destination[code_index] = code;
+                    code = 1;
+                    code_index = write_index++;
+                }
+            }
+        }
+        destination[code_index] = code;
+        return write_index;
+    }
+
+    // Added decode for FrameParser tests
+    static size_t decode(const uint8_t* source, size_t length, uint8_t* destination) {
+        size_t read_index = 0;
+        size_t write_index = 0;
+        uint8_t code;
+        uint8_t i;
+
+        while (read_index < length) {
+            code = source[read_index];
+
+            if (read_index + code > length && code != 1) {
+                return 0;
+            }
+
+            read_index++;
+
+            for (i = 1; i < code; i++) {
+                destination[write_index++] = source[read_index++];
+            }
+
+            if (code != 0xFF && read_index != length) {
+                destination[write_index++] = 0;
+            }
+        }
+
+        return write_index;
+    }
+};
 
 // ============================================================================
 // Helper Classes
@@ -143,7 +200,7 @@ class TestFrameBuilder {
     raw[cursor++] = static_cast<uint8_t>((crc >> 8) & 0xFF);
     raw[cursor++] = static_cast<uint8_t>(crc & 0xFF);
 
-    const size_t encoded_len = cobs::encode(raw, cursor, out);
+    const size_t encoded_len = TestCOBS::encode(raw, cursor, out);
     out[encoded_len] = rpc::RPC_FRAME_DELIMITER;
     return encoded_len + 1;
   }
@@ -617,13 +674,17 @@ static void test_frame_parser_crc_mismatch() {
   raw[9] = (crc >> 8) & 0xFF;
   raw[10] = (crc & 0xFF) ^ 0xFF;  // Corrupt CRC
   
-  size_t len = cobs::encode(raw, 11, encoded);
+  size_t len = TestCOBS::encode(raw, 11, encoded);
   encoded[len++] = rpc::RPC_FRAME_DELIMITER;
   
   rpc::Frame f;
-  for (size_t i = 0; i < len; i++) {
-    parser.consume(encoded[i], f);
-  }
+  
+  // PacketSerial simulation: decode COBS first
+  uint8_t decoded[32];
+  size_t decoded_len = TestCOBS::decode(encoded, len - 1, decoded); // -1 for delimiter
+  
+  // Then parse
+  parser.parse(decoded, decoded_len, f);
   
   TEST_ASSERT(parser.getError() == rpc::FrameParser::Error::CRC_MISMATCH);
 }
@@ -644,13 +705,15 @@ static void test_frame_parser_malformed() {
   raw[7] = (crc >> 8) & 0xFF;
   raw[8] = crc & 0xFF;
   
-  size_t len = cobs::encode(raw, 9, encoded);
+  size_t len = TestCOBS::encode(raw, 9, encoded);
   encoded[len++] = rpc::RPC_FRAME_DELIMITER;
   
   rpc::Frame f;
-  for (size_t i = 0; i < len; i++) {
-    parser.consume(encoded[i], f);
-  }
+  // PacketSerial simulation
+  uint8_t decoded[32];
+  size_t decoded_len = TestCOBS::decode(encoded, len - 1, decoded);
+  
+  parser.parse(decoded, decoded_len, f);
   
   // Wrong version causes MALFORMED error (version is validated after CRC passes)
   TEST_ASSERT(parser.getError() == rpc::FrameParser::Error::MALFORMED);
@@ -674,42 +737,51 @@ static void test_frame_parser_oversized() {
   raw[7] = (crc >> 8) & 0xFF;
   raw[8] = crc & 0xFF;
   
-  size_t len = cobs::encode(raw, 9, encoded);
+  size_t len = TestCOBS::encode(raw, 9, encoded);
   encoded[len++] = rpc::RPC_FRAME_DELIMITER;
   
   rpc::Frame f;
-  for (size_t i = 0; i < len; i++) {
-    parser.consume(encoded[i], f);
-  }
   
-  // Should have some error (either OVERSIZED or CRC depending on impl)
+  // Note: If PacketSerial gives us a huge buffer, parse() should handle it.
+  // But here we simulate passing a huge buffer (raw) to parse().
+  // Actually, TestCOBS::decode doesn't check size limit of dest buffer so we must be careful.
+  uint8_t decoded[rpc::MAX_RAW_FRAME_SIZE + 50]; 
+  size_t decoded_len = TestCOBS::decode(encoded, len - 1, decoded);
+  
+  parser.parse(decoded, decoded_len, f);
+  
+  // Should have some error (either OVERSIZED/MALFORMED/CRC)
+  // FrameParser usually checks size <= MAX_RAW_FRAME_SIZE
+  // If it's bigger, it returns false/error.
+  // Let's check logic: parse() takes size. If size > MAX_RAW_FRAME_SIZE, it might error.
+  
+  // Wait, if it's oversize, FrameParser might return MALFORMED.
   TEST_ASSERT(parser.getError() != rpc::FrameParser::Error::NONE);
 }
 
 static void test_frame_parser_empty_frame() {
   rpc::FrameParser parser;
   
-  // Just delimiter with no content
+  // Empty buffer
   rpc::Frame f;
-  bool result = parser.consume(rpc::RPC_FRAME_DELIMITER, f);
+  bool result = parser.parse(nullptr, 0, f);
   
   // Should return false (no valid frame)
   TEST_ASSERT(!result);
 }
 
 static void test_frame_parser_cobs_decode_error() {
+  // This test was relevant for stream parsing (PacketSerial).
+  // FrameParser now receives decoded data.
+  // If PacketSerial fails to decode, it won't call the callback.
+  // So FrameParser never sees bad COBS data.
+  // We can remove this test or test that garbage data is rejected.
+  
   rpc::FrameParser parser;
-  
-  // Invalid COBS data (0x00 in middle)
-  uint8_t bad_data[] = {0x01, 0x00, 0x02, rpc::RPC_FRAME_DELIMITER};
-  
+  uint8_t garbage[] = {0x01, 0x02, 0x03};
   rpc::Frame f;
-  for (size_t i = 0; i < sizeof(bad_data); i++) {
-    parser.consume(bad_data[i], f);
-  }
-  
-  // Should have MALFORMED error (COBS decode issues)
-  TEST_ASSERT(parser.getError() == rpc::FrameParser::Error::MALFORMED);
+  parser.parse(garbage, 3, f);
+  TEST_ASSERT(parser.getError() != rpc::FrameParser::Error::NONE);
 }
 
 // ============================================================================

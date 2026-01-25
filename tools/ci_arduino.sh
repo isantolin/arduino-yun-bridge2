@@ -22,7 +22,6 @@ echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr
 
 # [CI/CD] Managed Dependencies Directory
-# We use a dedicated directory to ensure the compiler finds the headers
 DEPS_DIR="$PWD/openwrt-library-arduino/deps"
 mkdir -p "$DEPS_DIR"
 
@@ -33,15 +32,20 @@ ensure_lib_git() {
     if [ ! -d "$target" ]; then
         echo "[CI] Fetching $name from $url..."
         git clone --depth 1 "$url" "$target"
+        # SIL-2: Ensure deterministic structure for Arduino-cli
+        # If include exists but src doesn't, link include to src
+        if [ -d "$target/include" ] && [ ! -d "$target/src" ]; then
+            echo "[CI] Creating src symlink for $name..."
+            ln -s include "$target/src"
+        fi
     fi
 }
 
 echo "Installing libraries..."
-# Standard libraries via CLI
+# Standard libraries that follow Arduino layout
 arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "TaskScheduler"
 
-# ETL is often problematic via CLI lib manager due to its structure.
-# Fetching directly from source to ensure src/etl layout is present.
+# ETL has a non-standard layout in its main repo, we fix it locally
 ensure_lib_git "ETL" "https://github.com/ETLCPP/etl.git"
 
 # Define library path (current repo's library folder)
@@ -61,7 +65,7 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    # Add both the library and the managed deps folder to the search path
+    # We pass the ETL dependency path explicitly as a library
     BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --library $DEPS_DIR/ETL --warnings default"
     
     if [ -n "$BUILD_OUTPUT_DIR" ]; then

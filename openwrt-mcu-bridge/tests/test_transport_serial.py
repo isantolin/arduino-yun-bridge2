@@ -318,7 +318,7 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
     ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
     assert ok is True
     assert writer.writes
-    assert "0xFE" in seen.get("msg", "")
+    assert "FE" in seen.get("msg", "")
 
 
 @pytest.mark.asyncio

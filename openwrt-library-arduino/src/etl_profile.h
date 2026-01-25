@@ -14,8 +14,14 @@
  * - Ensures deterministic behavior
  */
 
+#ifndef ETL_NO_CPP_EXTENSIONS
 #define ETL_NO_CPP_EXTENSIONS
+#endif
+
+#ifndef ETL_THROW_EXCEPTIONS
 #define ETL_THROW_EXCEPTIONS 0
+#endif
+
 #define ETL_VERBOSE_ERRORS 0
 #define ETL_CHECK_PUSH_POP 0
 

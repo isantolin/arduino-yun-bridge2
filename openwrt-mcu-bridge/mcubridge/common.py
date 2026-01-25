@@ -288,52 +288,52 @@ def get_uci_config() -> dict[str, str]:
 
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
     """
-    # Detect OpenWrt environment
-    is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
+    if Uci is not None:
+        try:
+            with Uci() as cursor:
+                section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
 
-    if Uci is None:
-        if is_openwrt:
-            logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
-            raise RuntimeError("Missing dependency: python3-uci")
+                if not section:
+                    # Detect OpenWrt environment
+                    if os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version"):
+                        raise RuntimeError(
+                            f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
+                            "Re-install package to restore defaults."
+                        )
 
-        logger.warning("UCI module not found; using default configuration.")
-        return get_default_config()
+                    logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
+                    return get_default_config()
 
-    try:
-        with Uci() as cursor:
-            section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
+                # Clean internal UCI metadata (keys starting with dot/underscore)
+                clean_config = get_default_config()
+                for k, v in section.items():
+                    if k.startswith((".", "_")):
+                        continue
+                    if isinstance(v, (list, tuple)):
+                        # Explicitly cast v to Iterable to help type checker
+                        items = cast(Iterable[object], v)
+                        clean_config[k] = " ".join(str(item) for item in items)
+                    else:
+                        clean_config[k] = str(v)
 
-            if not section:
-                if is_openwrt:
-                    raise RuntimeError(
-                        f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
-                        "Re-install package to restore defaults."
-                    )
+                return clean_config
 
-                logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
-                return get_default_config()
+        except (OSError, ValueError) as e:
+            # Detect OpenWrt environment
+            if os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version"):
+                logger.critical("Failed to load UCI configuration: %s", e)
+                raise RuntimeError(f"Critical UCI failure: {e}") from e
 
-            # Clean internal UCI metadata (keys starting with dot/underscore)
-            clean_config = get_default_config()
-            for k, v in section.items():
-                if k.startswith((".", "_")):
-                    continue
-                if isinstance(v, (list, tuple)):
-                    # Explicitly cast v to Iterable to help type checker
-                    items = cast(Iterable[object], v)
-                    clean_config[k] = " ".join(str(item) for item in items)
-                else:
-                    clean_config[k] = str(v)
+            logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
+            return get_default_config()
 
-            return clean_config
+    # Fallback when Uci is None
+    if os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version"):
+        logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
+        raise RuntimeError("Missing dependency: python3-uci")
 
-    except (OSError, ValueError) as e:
-        if is_openwrt:
-            logger.critical("Failed to load UCI configuration: %s", e)
-            raise RuntimeError(f"Critical UCI failure: {e}") from e
-
-        logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
-        return get_default_config()
+    logger.warning("UCI module not found; using default configuration.")
+    return get_default_config()
 
 
 def get_default_config() -> dict[str, str]:

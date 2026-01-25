@@ -3,9 +3,16 @@ test_coverage_extreme.py (V3 Fixed).
 
 Objetivo: 100% Cobertura Real en Daemon y Transportes (Py3.13 Compatible).
 """
-import asyncio
-from unittest.mock import MagicMock, patch, AsyncMock
-import pytest
+import sys
+from unittest.mock import MagicMock, AsyncMock
+# Mock serial_asyncio_fast
+mock_saf = MagicMock()
+mock_saf.create_serial_connection = AsyncMock()
+sys.modules["serial_asyncio_fast"] = mock_saf
+
+import asyncio  # noqa: E402
+from unittest.mock import patch  # noqa: E402
+import pytest  # noqa: E402
 from mcubridge.transport.mqtt import mqtt_task
 from mcubridge.daemon import BridgeDaemon
 from mcubridge.rpc.protocol import (

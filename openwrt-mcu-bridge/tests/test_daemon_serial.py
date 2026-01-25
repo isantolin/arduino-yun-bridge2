@@ -60,7 +60,7 @@ async def test_serial_reader_task_reconnects():
     mock_sleep = AsyncMock()
     mock_sleep.side_effect = [None, None, None, RuntimeError("Break Loop")]
 
-    with patch("serial_asyncio_fast.create_serial_connection", mock_create), \
+    with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection", mock_create), \
          patch("asyncio.sleep", mock_sleep):
 
         transport = SerialTransport(config, state, service)

@@ -65,7 +65,9 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    # Passing both includes and ETL configuration macros
+    # We pass the ETL dependency path explicitly as a compiler flag to avoid
+    # arduino-cli library discovery issues.
+    # Note: we wrap the properties in quotes to prevent shell/CLI misinterpretation.
     BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --build-property compiler.cpp.extra_flags=$EXTRA_INCLUDES $COMPILER_FLAGS --warnings default"
     
     if [ -n "$BUILD_OUTPUT_DIR" ]; then

@@ -1,7 +1,5 @@
 """Utility helpers shared across MCU Bridge packages."""
 
-from __future__ import annotations
-
 import asyncio
 import functools
 import logging
@@ -20,6 +18,7 @@ from typing import (
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from mcubridge.rpc import protocol
+from uci import Uci
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -281,42 +280,16 @@ def get_uci_config() -> dict[str, str]:
     """Read MCU Bridge configuration directly from OpenWrt's UCI system.
 
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
-    We do not fallback to defaults in production to avoid 'split-brain' configurations.
     """
-
-    # Detect OpenWrt environment
-    is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
-
-    try:
-        from uci import Uci  # type: ignore
-    except ImportError:
-        # In test environments (e.g. CI/Emulation), missing UCI is expected.
-        if is_openwrt:
-            # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
-            logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
-            raise RuntimeError("Missing dependency: python3-uci")
-
-        logger.warning(
-            "UCI module not found (not running on OpenWrt?); using default configuration."
-        )
-        return get_default_config()
-
     try:
         with Uci() as cursor:
-            # OpenWrt's python3-uci returns a native dict in modern versions.
-            # We strictly expect the package 'mcubridge' and section 'general'.
             section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
 
             if not section:
-                if is_openwrt:
-                    # In production, missing config is fatal.
-                    raise RuntimeError(
-                        f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
-                        "Re-install package to restore defaults."
-                    )
-
-                logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
-                return get_default_config()
+                raise RuntimeError(
+                    f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
+                    "Re-install package to restore defaults."
+                )
 
             # Clean internal UCI metadata (keys starting with dot/underscore)
             clean_config = get_default_config()
@@ -333,24 +306,22 @@ def get_uci_config() -> dict[str, str]:
             return clean_config
 
     except (OSError, ValueError) as e:
-        if is_openwrt:
-            logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
-            raise RuntimeError(f"Critical UCI failure: {e}") from e
-
-        # Expected system errors (e.g. UCI file locked, parsing error) in non-critical envs
-        logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
-        return get_default_config()
+        logger.critical("Failed to load UCI configuration: %s", e)
+        raise RuntimeError(f"Critical UCI failure: {e}") from e
 
 
 def get_default_config() -> dict[str, str]:
     """Provide default MCU Bridge configuration values."""
+    from .const import DEFAULT_SERIAL_SHARED_SECRET
+    
+    default_secret = ""
+    if DEFAULT_SERIAL_SHARED_SECRET is not None:
+        default_secret = DEFAULT_SERIAL_SHARED_SECRET.decode("utf-8")
+
     return {
         "mqtt_host": DEFAULT_MQTT_HOST,
         "mqtt_port": str(DEFAULT_MQTT_PORT),
         "mqtt_tls": "1",
-        # If enabled, clients will skip TLS hostname verification (equivalent to
-        # mosquitto_{pub,sub} --insecure). Certificate chain verification still
-        # applies unless explicitly disabled elsewhere.
         "mqtt_tls_insecure": "0",
         "mqtt_cafile": DEFAULT_MQTT_CAFILE,
         "mqtt_certfile": "",
@@ -362,7 +333,7 @@ def get_default_config() -> dict[str, str]:
         "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
         "serial_port": DEFAULT_SERIAL_PORT,
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-        "serial_shared_secret": "",
+        "serial_shared_secret": default_secret,
         "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
         "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
         "serial_retry_attempts": str(protocol.DEFAULT_RETRY_LIMIT),

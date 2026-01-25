@@ -1,35 +1,3 @@
-#!/usr/bin/env python3
-"""Async orchestrator for the Arduino MCU Bridge v2 daemon.
-
-This module contains the main entry point and orchestration logic for the
-MCU Bridge daemon, which manages communication between OpenWrt Linux and
-the Arduino MCU over serial and MQTT.
-
-[SIL-2 COMPLIANCE]
-The daemon implements robust error handling:
-- Task supervision with automatic restart and backoff
-- Fatal exception handling for unrecoverable serial errors
-- Graceful shutdown on SIGTERM/SIGINT
-- Status file cleanup on exit
-
-Architecture:
-    main() -> BridgeDaemon -> TaskGroup
-        ├── serial-link (SerialTransport)
-        ├── mqtt-link (mqtt_task)
-        ├── status-writer (status_writer)
-        ├── metrics-publisher (publish_metrics)
-        ├── bridge-snapshots (optional)
-        ├── watchdog (optional)
-        └── prometheus-exporter (optional)
-
-Usage:
-    $ python -m mcubridge.daemon
-    # Or via init script:
-    $ /etc/init.d/mcubridge start
-"""
-
-from __future__ import annotations
-
 import asyncio
 import logging
 import sys
@@ -67,30 +35,12 @@ if TYPE_CHECKING:
 
 
 class BridgeDaemon:
-    """Main orchestrator for the MCU Bridge daemon services.
-
-    This class manages the lifecycle of all daemon components including
-    serial communication, MQTT publishing, metrics, and optional features
-    like watchdog and Prometheus exporter.
-
-    Attributes:
-        config: Runtime configuration loaded from UCI.
-        state: Shared runtime state for all components.
-        service: BridgeService instance handling RPC dispatch.
-        watchdog: Optional watchdog keepalive task.
-        exporter: Optional Prometheus metrics exporter.
-    """
+    """Main orchestrator for the MCU Bridge daemon services."""
 
     def __init__(self, config: RuntimeConfig):
-        """Initialize the daemon with configuration.
-
-        Args:
-            config: Validated RuntimeConfig from UCI/defaults.
-        """
         self.config = config
         self.state = create_runtime_state(config)
         self.service = BridgeService(config, self.state)
-        # Initialize dependencies
         self.service.register_serial_sender(serial_sender_not_ready)
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
@@ -125,7 +75,6 @@ class BridgeDaemon:
 
     def _setup_supervision(self) -> list[SupervisedTaskSpec]:
         """Prepare the list of tasks to be supervised."""
-        # Build Spec List
         specs: list[SupervisedTaskSpec] = [
             SupervisedTaskSpec(
                 name="serial-link",
@@ -152,7 +101,6 @@ class BridgeDaemon:
             ),
         ]
 
-        # 3. Optional Features
         if self.config.bridge_summary_interval > 0.0 or \
            self.config.bridge_handshake_interval > 0.0:
             specs.append(SupervisedTaskSpec(
@@ -228,7 +176,7 @@ class BridgeDaemon:
             logger.info("MCU Bridge daemon stopped.")
 
 
-def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
+def main() -> NoReturn:
     config = load_runtime_config()
     configure_logging(config)
 

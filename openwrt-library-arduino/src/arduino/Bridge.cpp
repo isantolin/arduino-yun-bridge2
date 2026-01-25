@@ -1037,12 +1037,16 @@ void BridgeClass::_processAckTimeout() {
 
 void BridgeClass::enterSafeState() {
   // [SIL-2] Fail-Safe State Entry: Reset GPIO to high-impedance (INPUT)
-  // to prevent un-intended actuation after link loss.
+  // to prevent un-intended actuation after link loss or critical error.
+  // This is a deterministic operation.
 #ifdef NUM_DIGITAL_PINS
   for (uint8_t pin = 0; pin < NUM_DIGITAL_PINS; pin++) {
-      // Exclude critical pins like Serial or Builtin LED if necessary
-      // but standard STO (Safe Torque Off) logic dictates high-impedance.
-      if (pin == LED_BUILTIN) continue;
+      // Pin 13 (LED_BUILTIN) is often used for status, we keep it as is
+      // or set to a known state. For safety, we prioritize high-impedance.
+      if (pin == LED_BUILTIN) {
+          ::digitalWrite(pin, LOW);
+          continue;
+      }
       ::pinMode(pin, INPUT);
   }
 #endif
@@ -1051,9 +1055,14 @@ void BridgeClass::enterSafeState() {
   _clearAckState();
   _clearPendingTxQueue();
   _transport.reset();
+  
+  // [SIL-2] Ensure internal buffers are cleared to prevent stale data processing
+  _scratch_payload.clear();
+  _rx_frame = rpc::Frame();
 }
 
 void BridgeClass::_resetLinkState() {
+  // [SIL-2] Link reset must always transition through the safe state.
   enterSafeState();
 }
 

@@ -119,7 +119,7 @@ DEFAULT_DEBUG_LOGGING: bool = False
 MIN_SERIAL_SHARED_SECRET_LEN: int = 8
 # SECURITY WARNING: This default secret is for initial setup only.
 # It MUST be rotated using 'mcubridge-rotate-credentials' before production use.
-DEFAULT_SERIAL_SHARED_SECRET: bytes | None = None
+DEFAULT_SERIAL_SHARED_SECRET: bytes | None = b"755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
 ALLOWED_COMMAND_WILDCARD: str = "*"
 TOPIC_FORBIDDEN_REASON: str = "topic-action-forbidden"
 

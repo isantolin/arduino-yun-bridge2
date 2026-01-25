@@ -17,7 +17,7 @@ import time
 from typing import Any, Final, Sized, TypeGuard, cast, TYPE_CHECKING
 
 from cobs import cobs
-from mcubridge.common import backoff, format_hexdump
+from mcubridge.common import backoff, format_hexdump, log_hexdump
 from mcubridge.rpc import rle
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
@@ -213,9 +213,6 @@ class EagerSerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
         if not data:
             return
 
-        # [OPTIMIZATION] Eager Write Strategy
-        # Try to write directly to the FD to avoid loop overhead and buffering.
-        # If the transport is already paused/buffered, append to it to maintain order.
         if not self._paused and self.transport:
             try:
                 n = os.write(self._fd, data)
@@ -230,7 +227,6 @@ class EagerSerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
                 self.transport.close()
                 return
 
-        # Fallback to standard asyncio buffering
         if self.transport:
             self.transport.write(data)
 
@@ -257,28 +253,23 @@ async def _open_serial_connection(
     """Open a serial connection using native asyncio with Eager Writes."""
     loop = asyncio.get_running_loop()
 
-    # 1. Open FD
     try:
         fd = os.open(url, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     except OSError as e:
         raise SerialException(f"Could not open port {url}: {e}") from e
 
-    # 2. Configure FD
     try:
         configure_serial_port(fd, baudrate, exclusive=kwargs.get("exclusive", False))
     except Exception:
         os.close(fd)
         raise
 
-    # 3. Create File Object wrapper for asyncio
     fobj = SerialFileObj(fd)
 
-    # 4. Connect Read Pipe
     read_proto = SerialReadProtocol()
     read_factory = _ReadProtocolFactory(read_proto)
     await loop.connect_read_pipe(read_factory, fobj)
 
-    # Use factory class to avoid nested function/closure
     write_factory = _WriteProtocolFactory(fd)
     _, _ = await loop.connect_write_pipe(write_factory, fobj)
 
@@ -294,7 +285,7 @@ async def _negotiate_baudrate(
 ) -> bool:
     logger.info("Negotiating baudrate switch to %d...", target_baud)
     payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
-    encoded = _encode_frame_bytes(Command.CMD_SET_BAUDRATE, payload)
+    encoded = _encode_frame_bytes(Command.CMD_SET_BAUDRATE.value, payload)
 
     try:
         writer.write(encoded)
@@ -307,7 +298,7 @@ async def _negotiate_baudrate(
         decoded = cobs.decode(response_data[:-1])
         resp_frame = Frame.from_bytes(decoded)
 
-        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
+        if resp_frame.command_id == Command.CMD_SET_BAUDRATE_RESP.value:
             logger.info("Baudrate negotiation accepted by MCU.")
             return True
         else:
@@ -336,7 +327,6 @@ async def _open_serial_connection_with_retry(
 
     logger.info("Connecting to %s at %d baud...", config.serial_port, baud_to_use)
 
-    # If this fails, @backoff handles retry/sleep/logging
     reader, writer = await _open_serial_connection(
         url=config.serial_port, baudrate=baud_to_use, exclusive=True
     )
@@ -345,10 +335,8 @@ async def _open_serial_connection_with_retry(
         success = await _negotiate_baudrate(reader, writer, target_baud)
         if success:
             logger.info("Switching to target baudrate %d...", target_baud)
-            # Close and reopen at new speed
             if writer.transport:
                 writer.transport.close()
-            # Wait a bit for close to settle?
             await asyncio.sleep(0.2)
 
             reader, writer = await _open_serial_connection(
@@ -357,7 +345,6 @@ async def _open_serial_connection_with_retry(
         else:
             logger.warning("Negotiation failed; staying at %d baud", baud_to_use)
 
-    # Drain noise
     drain_start = time.monotonic()
     while not reader.at_eof():
         if (time.monotonic() - drain_start) > 1.0:
@@ -395,7 +382,6 @@ class SerialTransport:
         while True:
             should_retry = True
             try:
-                # This will retry infinitely internally for connection errors
                 self.reader, self.writer = await _open_serial_connection_with_retry(
                     self.config
                 )
@@ -502,16 +488,7 @@ class SerialTransport:
             writer.write(encoded)
             await writer.drain_helper()
 
-            if logger.isEnabledFor(logging.DEBUG):
-                try:
-                    cmd_name = Command(command_id).name
-                except ValueError:
-                    cmd_name = f"0x{command_id:02X}"
-                if payload:
-                    hexdump = format_hexdump(payload, prefix="       ")
-                    logger.debug("LINUX > %s len=%d\n%s", cmd_name, len(payload), hexdump)
-                else:
-                    logger.debug("LINUX > %s (no payload)", cmd_name)
+            log_hexdump(logger, logging.DEBUG, "TX", encoded)
             return True
         except (OSError, SerialException) as exc:
             logger.error("Send failed 0x%02X: %s", command_id, exc)
@@ -538,17 +515,7 @@ class SerialTransport:
                         await self.service.send_frame(Status.MALFORMED.value, b"RLE_FAIL")
                     return
 
-            if logger.isEnabledFor(logging.DEBUG):
-                try:
-                    cmd_name = Command(frame.command_id).name
-                except ValueError:
-                    cmd_name = f"0x{frame.command_id:02X}"
-                if frame.payload:
-                    hexdump = format_hexdump(frame.payload, prefix="       ")
-                    logger.debug("LINUX < %s len=%d\n%s", cmd_name, len(frame.payload), hexdump)
-                else:
-                    logger.debug("LINUX < %s (no payload)", cmd_name)
-
+            log_hexdump(logger, logging.DEBUG, "RX", packet_bytes)
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
         except cobs.DecodeError:

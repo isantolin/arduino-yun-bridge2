@@ -234,7 +234,7 @@ def encode_status_reason(reason: str | None) -> bytes:
     return payload[: protocol.MAX_PAYLOAD_SIZE]
 
 
-def build_mqtt_properties(message: 'QueuedPublish') -> Properties | None:
+def build_mqtt_properties(message: Any) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
     has_props = any(
         [

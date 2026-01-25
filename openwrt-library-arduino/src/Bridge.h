@@ -29,6 +29,9 @@
 #include <TaskSchedulerDeclarations.h>
 
 #include "bridge_config.h"
+#include "etl_profile.h"
+
+#include <etl/algorithm.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "arduino/BridgeTransport.h"

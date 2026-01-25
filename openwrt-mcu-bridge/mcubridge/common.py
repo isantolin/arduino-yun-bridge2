@@ -21,11 +21,6 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from mcubridge.rpc import protocol
 
-try:
-    from uci import Uci
-except ImportError:
-    Uci = None
-
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -288,6 +283,11 @@ def get_uci_config() -> dict[str, str]:
 
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
     """
+    try:
+        from uci import Uci
+    except ImportError:
+        Uci = None
+
     if Uci is not None:
         try:
             with Uci() as cursor:

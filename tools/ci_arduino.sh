@@ -32,20 +32,14 @@ ensure_lib_git() {
     if [ ! -d "$target" ]; then
         echo "[CI] Fetching $name from $url..."
         git clone --depth 1 "$url" "$target"
-        # SIL-2: Ensure deterministic structure for Arduino-cli
-        # If include exists but src doesn't, link include to src
-        if [ -d "$target/include" ] && [ ! -d "$target/src" ]; then
-            echo "[CI] Creating src symlink for $name..."
-            ln -s include "$target/src"
-        fi
     fi
 }
 
 echo "Installing libraries..."
-# Standard libraries that follow Arduino layout
+# Standard libraries via CLI
 arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "TaskScheduler"
 
-# ETL has a non-standard layout in its main repo, we fix it locally
+# Fetch ETL from source
 ensure_lib_git "ETL" "https://github.com/ETLCPP/etl.git"
 
 # Define library path (current repo's library folder)
@@ -56,6 +50,10 @@ FQBN="arduino:avr:uno"
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 
+# Prepare compiler flags for extra headers
+# We add ETL's include directory directly to the compiler search path
+EXTRA_INCLUDES="-I$DEPS_DIR/ETL/include"
+
 echo "Compiling examples for $FQBN..."
 
 find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
@@ -65,8 +63,9 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    # We pass the ETL dependency path explicitly as a library
-    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --library $DEPS_DIR/ETL --warnings default"
+    # We pass the ETL dependency path explicitly as a compiler flag to avoid
+    # arduino-cli library discovery issues.
+    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --build-property compiler.cpp.extra_flags=$EXTRA_INCLUDES --warnings default"
     
     if [ -n "$BUILD_OUTPUT_DIR" ]; then
         # Create specific output dir for this sketch to avoid overwrites

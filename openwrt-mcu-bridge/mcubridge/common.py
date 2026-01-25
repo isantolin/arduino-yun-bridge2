@@ -435,3 +435,18 @@ def log_hexdump(
 
     hex_str = " ".join(f"{b:02X}" for b in data)
     logger_instance.log(level, "[%s] LEN=%d HEX=%s", label, len(data), hex_str)
+
+
+def format_hexdump(data: bytes, prefix: str = "") -> str:
+    """Return a multi-line canonical hexdump string."""
+    if not data:
+        return f"{prefix}<empty>"
+
+    lines: list[str] = []
+    for offset in range(0, len(data), 16):
+        chunk = data[offset : offset + 16]
+        hex_parts = [" ".join(f"{b:02X}" for b in chunk[i : i + 4]) for i in range(0, len(chunk), 4)]
+        hex_str = "  ".join(hex_parts).ljust(47)
+        ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+        lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
+    return "\n".join(lines)

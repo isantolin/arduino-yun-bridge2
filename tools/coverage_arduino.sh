@@ -97,6 +97,8 @@ COMPILE_FLAGS=(
   -I"${SRC_ROOT}"
   -I"${TEST_ROOT}/mocks"
   -I"${STUB_INCLUDE}"
+  -I"/tmp/etl/include"
+  -I"/tmp/taskscheduler/src"
 )
 
 if ! command -v gcovr >/dev/null 2>&1; then

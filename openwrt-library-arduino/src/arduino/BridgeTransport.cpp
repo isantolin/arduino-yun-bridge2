@@ -92,18 +92,13 @@ void BridgeTransport::onPacketReceived(const uint8_t* buffer, size_t size) {
 }
 
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
-    // [SIL-2] GUARD CLAUSE: Strict Protocol Compliance
-    if (command_id < rpc::RPC_STATUS_CODE_MIN) {
-        return false;
-    }
-
     rpc::FrameBuilder builder;
     
-    // Ensure we are working with the raw buffer space
-    // capacity() returns MAX_RAW_FRAME_SIZE
+    uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
+    
     size_t raw_len = builder.build(
-        _last_raw_frame.data(),
-        _last_raw_frame.capacity(),
+        raw_buffer,
+        sizeof(raw_buffer),
         command_id,
         payload,
         length);
@@ -112,8 +107,8 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
         return false;
     }
 
-    // Update size to reflect actual used bytes
-    _last_raw_frame.resize(raw_len);
+    // Update retransmission buffer
+    _last_raw_frame.assign(raw_buffer, raw_buffer + raw_len);
 
     // Send using PacketSerial (Handles COBS encoding and Delimiter)
     _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
@@ -128,11 +123,6 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
 }
 
 bool BridgeTransport::sendControlFrame(uint16_t command_id) {
-    // [SIL-2] GUARD CLAUSE: Validate control command ID
-    if (command_id < rpc::RPC_STATUS_CODE_MIN) {
-        return false;
-    }
-
     // Build a temporary frame for control messages to avoid overwriting _last_raw_frame
     // (preserving retransmission capability)
     // Using ETL vector here too for consistency, though stack array is fine for temporary

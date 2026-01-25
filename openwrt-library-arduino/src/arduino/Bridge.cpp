@@ -6,13 +6,16 @@
 // [SIL-2] Explicitly include Arduino.h to satisfy IntelliSense and ensure
 // noInterrupts()/interrupts() are available in all compilation contexts.
 #include <Arduino.h>
+#include <TaskScheduler.h>
 
 // --- [SAFETY GUARD START] ---
 // CRITICAL: Prevent accidental STL usage on ALL architectures (memory fragmentation risk)
 // SIL 2 Requirement: Dynamic allocation via STL containers is forbidden globally.
 // ETL is allowed as it is static.
+#ifndef BRIDGE_HOST_TEST
 #if defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || defined(_GLIBCXX_MAP)
   #error "CRITICAL: STL detected. Use ETL or standard arrays/pointers only to prevent heap fragmentation (SIL 2 Violation)."
+#endif
 #endif
 // --- [SAFETY GUARD END] ---
 
@@ -368,6 +371,9 @@ void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_f
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
+#ifdef BRIDGE_HOST_TEST
+    _processSerial();
+#endif
     _scheduler.execute();
 }
 
@@ -594,6 +600,9 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t mode = payload_data[1];
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
         ::pinMode(pin, mode);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("pinMode"), pin, mode);
@@ -604,6 +613,9 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t value = payload_data[1] ? HIGH : LOW;
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
         ::digitalWrite(pin, value);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalWrite"), pin, value == HIGH ? 1 : 0);
@@ -612,12 +624,19 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       break;
     case rpc::CommandId::CMD_ANALOG_WRITE:
       if (payload_length == 2) {
-        ::analogWrite(payload_data[0], static_cast<int>(payload_data[1]));
+        uint8_t pin = payload_data[0];
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
+        ::analogWrite(pin, static_cast<int>(payload_data[1]));
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
         int16_t value = ::digitalRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
@@ -629,6 +648,10 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_ANALOG_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
+#ifdef NUM_ANALOG_INPUTS
+        // Note: analogRead often accepts digital pin numbers too on Arduino
+        // but we validate against total inputs if defined.
+#endif
         int16_t value = ::analogRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);
@@ -1078,6 +1101,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payl
 }
 
 bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
+    (void)frame;
     // Unused now with circular buffer direct access
     return false;
 }

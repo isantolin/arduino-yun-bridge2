@@ -7,12 +7,10 @@ extern const char kProcessRunAsyncPayloadTooLarge[] PROGMEM;
 extern const char kProcessPollQueueFull[] PROGMEM;
 
 ProcessClass::ProcessClass() 
-  : _pending_process_poll_head(0),
-    _pending_process_poll_count(0),
-    _process_run_handler(nullptr),
+  : _process_run_handler(nullptr),
     _process_poll_handler(nullptr),
     _process_run_async_handler(nullptr) {
-  memset(_pending_process_pids, 0, sizeof(_pending_process_pids));
+  _pending_pids.clear();
 }
 
 void ProcessClass::run(const char* command) {
@@ -90,7 +88,7 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
       if (_process_run_async_handler && payload_length >= 2 && payload_data) {
         uint16_t pid = rpc::read_u16_be(payload_data);
-        _process_run_async_handler(static_cast<int>(pid));
+        _process_run_async_handler(static_cast<int16_t>(pid));
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
@@ -98,7 +96,7 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
         uint8_t running = payload_data[1];
         
-        _popPendingProcessPid(); 
+        (void)_popPendingProcessPid(); 
         
         if (payload_length >= 6) {
              uint16_t stdout_len = rpc::read_u16_be(payload_data + 2);
@@ -121,28 +119,18 @@ void ProcessClass::onProcessPollResponse(ProcessPollHandler handler) { _process_
 void ProcessClass::onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
-  if (_pending_process_poll_count >= BRIDGE_MAX_PENDING_PROCESS_POLLS) {
+  if (_pending_pids.full()) {
     return false;
   }
-
-  uint8_t slot =
-      (_pending_process_poll_head + _pending_process_poll_count) %
-      BRIDGE_MAX_PENDING_PROCESS_POLLS;
-  _pending_process_pids[slot] = pid;
-  _pending_process_poll_count++;
+  _pending_pids.push(pid);
   return true;
 }
 
 uint16_t ProcessClass::_popPendingProcessPid() {
-  if (_pending_process_poll_count == 0) {
+  if (_pending_pids.empty()) {
     return rpc::RPC_INVALID_ID_SENTINEL;
   }
-
-  uint8_t slot = _pending_process_poll_head;
-  uint16_t pid = _pending_process_pids[slot];
-  _pending_process_poll_head =
-      (_pending_process_poll_head + 1) % BRIDGE_MAX_PENDING_PROCESS_POLLS;
-  _pending_process_poll_count--;
-  _pending_process_pids[slot] = 0;
+  uint16_t pid = _pending_pids.front();
+  _pending_pids.pop();
   return pid;
 }

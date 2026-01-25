@@ -17,7 +17,7 @@ import time
 from typing import Any, Final, Sized, TypeGuard, cast, TYPE_CHECKING
 
 from cobs import cobs
-from mcubridge.common import backoff
+from mcubridge.common import backoff, format_hexdump
 from mcubridge.rpc import rle
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
@@ -109,18 +109,6 @@ def configure_serial_port(fd: int, baudrate: int, exclusive: bool = False) -> No
         termios.tcflush(fd, termios.TCIOFLUSH)
     except termios.error as e:
         raise SerialException(f"Failed to configure port: {e}") from e
-
-def format_hexdump(data: bytes, prefix: str = "") -> str:
-    if not data:
-        return f"{prefix}<empty>"
-    lines: list[str] = []
-    for offset in range(0, len(data), 16):
-        chunk = data[offset: offset + 16]
-        hex_parts = [" ".join(f"{b:02X}" for b in chunk[i: i + 4]) for i in range(0, 16, 4)]
-        hex_str = "  ".join(hex_parts).ljust(47)
-        ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
-        lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
-    return "\n".join(lines)
 
 FRAMING_OVERHEAD: Final[int] = 4
 MAX_SERIAL_PACKET_BYTES = (

@@ -44,7 +44,7 @@ define Package/$(PKG_NAME)
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
-		+python3-sqlite3 \
+		+python3-msgspec \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \

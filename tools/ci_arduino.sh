@@ -21,11 +21,28 @@ arduino-cli core update-index
 echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr
 
-# Install dependencies
+# [CI/CD] Managed Dependencies Directory
+# We use a dedicated directory to ensure the compiler finds the headers
+DEPS_DIR="$PWD/openwrt-library-arduino/deps"
+mkdir -p "$DEPS_DIR"
+
+ensure_lib_git() {
+    local name="$1"
+    local url="$2"
+    local target="$DEPS_DIR/$name"
+    if [ ! -d "$target" ]; then
+        echo "[CI] Fetching $name from $url..."
+        git clone --depth 1 "$url" "$target"
+    fi
+}
+
 echo "Installing libraries..."
-# FastCRC replaced CRC32 for high performance and SIL-2 compliance
-# ETL and TaskScheduler added for static memory and cooperative multitasking
-arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "Embedded Template Library ETL" "TaskScheduler"
+# Standard libraries via CLI
+arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "TaskScheduler"
+
+# ETL is often problematic via CLI lib manager due to its structure.
+# Fetching directly from source to ensure src/etl layout is present.
+ensure_lib_git "ETL" "https://github.com/ETLCPP/etl.git"
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/openwrt-library-arduino"
@@ -44,7 +61,8 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings default"
+    # Add both the library and the managed deps folder to the search path
+    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --library $DEPS_DIR/ETL --warnings default"
     
     if [ -n "$BUILD_OUTPUT_DIR" ]; then
         # Create specific output dir for this sketch to avoid overwrites

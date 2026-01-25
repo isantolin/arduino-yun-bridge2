@@ -447,7 +447,7 @@ class SupervisorStats:
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers."""
 
-    serial_writer: asyncio.StreamWriter | None = None
+    serial_writer: asyncio.BaseTransport | None = None
     serial_link_connected: bool = False
     mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(
         default_factory=_mqtt_queue_factory

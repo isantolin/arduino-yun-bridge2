@@ -54,12 +54,6 @@ def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
     return length <= MAX_SERIAL_PACKET_BYTES
 
 
-def _coerce_packet(candidate: BinaryPacket) -> bytes:
-    if isinstance(candidate, bytes):
-        return candidate
-    return bytes(candidate)
-
-
 def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
     """Encapsulate frame creation and COBS encoding."""
     raw_frame = Frame.build(command_id, payload)
@@ -86,7 +80,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         self.transport: asyncio.Transport | None = None
         self._buffer = bytearray()
         self._connected_future: asyncio.Future[None] = loop.create_future()
-        self._negotiation_future: asyncio.Future[bool] | None = None
+        self.negotiation_future: asyncio.Future[bool] | None = None
 
         # Discard state
         self._discarding = False
@@ -119,7 +113,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
                     continue
 
                 if self._buffer:
-                    self._process_packet(self._buffer)
+                    self._process_packet(bytes(self._buffer))
                     self._buffer.clear()
                 continue
 
@@ -148,20 +142,20 @@ class BridgeSerialProtocol(asyncio.Protocol):
                     self._buffer.extend(data[start:])
                 break
 
-    def _process_packet(self, encoded_packet: bytes | bytearray) -> None:
+    def _process_packet(self, encoded_packet: bytes) -> None:
         # Check for negotiation response first (bypass service)
-        if self._negotiation_future and not self._negotiation_future.done():
+        if self.negotiation_future and not self.negotiation_future.done():
             try:
                 raw_frame = cobs.decode(encoded_packet)
                 frame = Frame.from_bytes(raw_frame)
                 if frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
-                    self._negotiation_future.set_result(True)
+                    self.negotiation_future.set_result(True)
                     return
             except (cobs.DecodeError, ValueError):
                 pass  # Ignore malformed during negotiation
 
         # Normal processing
-        self.loop.create_task(self._async_process_packet(bytes(encoded_packet)))
+        self.loop.create_task(self._async_process_packet(encoded_packet))
 
     async def _async_process_packet(self, encoded_packet: bytes) -> None:
         if not _is_binary_packet(encoded_packet):
@@ -298,7 +292,7 @@ class SerialTransport:
 
             # 3. Register Sender
             self.service.register_serial_sender(self._serial_sender)
-            self.state.serial_writer = transport # Just to mark as connected in state if needed
+            self.state.serial_writer = transport
 
             # 4. Handshake / Main Loop
             # Since Protocol handles reading in background, we just wait here
@@ -325,15 +319,15 @@ class SerialTransport:
         payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
         # Manually encode since protocol.write_frame sends it
         # but we need to set the future BEFORE sending to avoid race condition
-        proto._negotiation_future = proto.loop.create_future()
+        proto.negotiation_future = proto.loop.create_future()
 
         if not proto.write_frame(Command.CMD_SET_BAUDRATE, payload):
             return False
 
         try:
-            await asyncio.wait_for(proto._negotiation_future, SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
+            await asyncio.wait_for(proto.negotiation_future, SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             return True
         except asyncio.TimeoutError:
             return False
         finally:
-            proto._negotiation_future = None
+            proto.negotiation_future = None

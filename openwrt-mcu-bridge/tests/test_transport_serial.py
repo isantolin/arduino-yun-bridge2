@@ -5,19 +5,19 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock
 
-# Mock serial_asyncio_fast before importing the module under test
+# Mock serial_asyncio_fast before importing SerialTransport
 sys.modules["serial_asyncio_fast"] = MagicMock()
 
-import asyncio
-import struct
-from unittest.mock import AsyncMock, Mock
+import asyncio  # noqa: E402
+import struct  # noqa: E402
+from unittest.mock import AsyncMock  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
-from cobs import cobs
+from cobs import cobs  # noqa: E402
 
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.settings import RuntimeConfig  # noqa: E402
+from mcubridge.const import (  # noqa: E402
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
@@ -26,12 +26,13 @@ from mcubridge.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.frame import Frame
-from mcubridge.rpc.protocol import Command, Status, UINT16_FORMAT
-from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import serial_fast as serial
+from mcubridge.rpc import protocol  # noqa: E402
+from mcubridge.rpc.frame import Frame  # noqa: E402
+from mcubridge.rpc.protocol import Command  # noqa: E402
+from mcubridge.services.runtime import BridgeService  # noqa: E402
+from mcubridge.state.context import create_runtime_state  # noqa: E402
+from mcubridge.transport import serial_fast as serial  # noqa: E402
+
 
 
 def _make_config() -> RuntimeConfig:
@@ -121,24 +122,23 @@ async def test_process_packet_decode_error_does_not_send_status(monkeypatch: pyt
 
 @pytest.mark.asyncio
 async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Logic in serial_fast currently logs CRC error but doesn't auto-reply status 
+    # Logic in serial_fast currently logs CRC error but doesn't auto-reply status
     # to avoid protocol overhead in interrupt context unless critical.
-    # The original test checked for status reply. 
+    # The original test checked for status reply.
     # Current implementation:
     # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
-    
+
     config = _make_config()
     state = create_runtime_state(config)
     state.link_is_synchronized = True
     service = BridgeService(config, state)
-    
+
     # We won't check for send_frame call here as it was removed from serial_fast's exception handler
     # for speed, unless we re-added it. The code I wrote:
     # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
-    
+
     raw = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, Command.CMD_LINK_SYNC.value) + b"x" * 10
     monkeypatch.setattr(serial.cobs, "decode", lambda _data: raw)
-
     def _bad_frame(_raw: bytes) -> Frame:
         raise ValueError("crc mismatch")
 
@@ -217,3 +217,4 @@ async def test_write_frame_returns_false_on_write_error() -> None:
     proto.connection_made(_MockTransport()) # type: ignore
     ok = proto.write_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False
+

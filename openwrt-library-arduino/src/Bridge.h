@@ -136,6 +136,7 @@ class BridgeClass {
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
+#if BRIDGE_DEBUG_FRAMES
   struct FrameDebugSnapshot {
     uint16_t tx_count;
     uint16_t build_failures;
@@ -150,12 +151,8 @@ class BridgeClass {
     uint16_t crc;
   };
 
-#if BRIDGE_DEBUG_FRAMES
   FrameDebugSnapshot getTxDebugSnapshot() const;
   void resetTxDebugStats();
-#else
-  FrameDebugSnapshot getTxDebugSnapshot() const { return {}; }
-  void resetTxDebugStats() {}
 #endif
 
  private:

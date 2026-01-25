@@ -11,16 +11,16 @@ import asyncio
 import functools
 import logging
 import struct
-import time
 from typing import Final, Sized, TypeGuard, cast
 
 from cobs import cobs
 from mcubridge.rpc import rle
 import serial_asyncio_fast  # type: ignore
 
+from mcubridge.common import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
-from mcubridge.rpc.protocol import FRAME_DELIMITER, Command, Status
+from mcubridge.rpc.protocol import FRAME_DELIMITER, Command
 from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.services.runtime import BridgeService
@@ -30,26 +30,6 @@ from mcubridge.state.context import RuntimeState
 from mcubridge.services.handshake import SerialHandshakeFatal
 
 logger = logging.getLogger("mcubridge")
-
-
-def format_hexdump(data: bytes, prefix: str = "") -> str:
-    """Format binary data as canonical hexdump for SIL-2 compliant logging."""
-    if not data:
-        return f"{prefix}<empty>"
-
-    lines: list[str] = []
-    for offset in range(0, len(data), 16):
-        chunk = data[offset: offset + 16]
-        hex_parts: list[str] = []
-        for i in range(0, 16, 4):
-            group = chunk[i: i + 4]
-            hex_parts.append(" ".join(f"{b:02X}" for b in group))
-        hex_str = "  ".join(hex_parts)
-        ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
-        hex_str = hex_str.ljust(47)
-        lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
-
-    return "\n".join(lines)
 
 
 # Explicit framing overhead: 1 code byte + 1 delimiter + ~1 byte/254 overhead
@@ -107,7 +87,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         self._buffer = bytearray()
         self._connected_future: asyncio.Future[None] = loop.create_future()
         self._negotiation_future: asyncio.Future[bool] | None = None
-        
+
         # Discard state
         self._discarding = False
 
@@ -137,12 +117,12 @@ class BridgeSerialProtocol(asyncio.Protocol):
                     self._discarding = False
                     self._buffer.clear()
                     continue
-                
+
                 if self._buffer:
                     self._process_packet(self._buffer)
                     self._buffer.clear()
                 continue
-            
+
             if self._discarding:
                 continue
 
@@ -177,7 +157,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 if frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
                     self._negotiation_future.set_result(True)
                     return
-            except Exception:
+            except (cobs.DecodeError, ValueError):
                 pass  # Ignore malformed during negotiation
 
         # Normal processing
@@ -197,51 +177,46 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 frame.payload = rle.decode(frame.payload)
 
             if logger.isEnabledFor(logging.DEBUG):
-                self._log_frame(frame, "LINUX <")
+                self._log_frame(frame, "MCU >")
 
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
-        except (cobs.DecodeError, ValueError, Exception) as exc:
+        except (cobs.DecodeError, ValueError) as exc:
             self.state.record_serial_decode_error()
             logger.debug("Frame parse error: %s", exc)
-            # Logic to send error status omitted for brevity/speed in protocol context
-            # unless critical.
             if "crc mismatch" in str(exc).lower():
-                 self.state.record_serial_crc_error()
+                self.state.record_serial_crc_error()
 
     def _log_frame(self, frame: Frame, direction: str) -> None:
         try:
             cmd_name = Command(frame.command_id).name
         except ValueError:
             cmd_name = f"0x{frame.command_id:02X}"
-        
+
         if frame.payload:
-            hexdump = format_hexdump(frame.payload, prefix="       ")
-            logger.debug("%s %s len=%d\n%s", direction, cmd_name, len(frame.payload), hexdump)
+            log_hexdump(logger, logging.DEBUG, f"{direction} {cmd_name}", frame.payload)
         else:
             logger.debug("%s %s (no payload)", direction, cmd_name)
 
     def write_frame(self, command_id: int, payload: bytes) -> bool:
         if self.transport is None or self.transport.is_closing():
             return False
-        
+
         try:
             encoded = _encode_frame_bytes(command_id, payload)
             self.transport.write(encoded)
-            
+
             if logger.isEnabledFor(logging.DEBUG):
-                # We reconstruct frame just for logging, slightly inefficient but debug only
                 try:
                     cmd_name = Command(command_id).name
                 except ValueError:
                     cmd_name = f"0x{command_id:02X}"
                 if payload:
-                    hexdump = format_hexdump(payload, prefix="       ")
-                    logger.debug("LINUX > %s len=%d\n%s", cmd_name, len(payload), hexdump)
+                    log_hexdump(logger, logging.DEBUG, f"LINUX > {cmd_name}", payload)
                 else:
                     logger.debug("LINUX > %s (no payload)", cmd_name)
             return True
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             logger.error("Send failed: %s", exc)
             return False
 
@@ -275,9 +250,9 @@ class SerialTransport:
             except asyncio.CancelledError:
                 self._stop_event.set()
                 raise
-            except Exception as exc:
+            except (OSError, RuntimeError) as exc:
                 logger.error("Serial error: %s", exc)
-            
+
             if should_retry and not self._stop_event.is_set():
                 logger.warning("Retrying serial in %ds...", reconnect_delay)
                 await asyncio.sleep(reconnect_delay)
@@ -297,7 +272,7 @@ class SerialTransport:
 
         # 1. Connect
         logger.info("Connecting to %s at %d baud (Fast Protocol)...", self.config.serial_port, start_baud)
-        
+
         protocol_factory = functools.partial(BridgeSerialProtocol, self.service, self.state, loop)
         transport, proto = await serial_asyncio_fast.create_serial_connection(
             loop, protocol_factory, self.config.serial_port, baudrate=start_baud
@@ -313,7 +288,7 @@ class SerialTransport:
                     transport.close()
                     # Wait for close?
                     await asyncio.sleep(0.2)
-                    
+
                     transport, proto = await serial_asyncio_fast.create_serial_connection(
                         loop, protocol_factory, self.config.serial_port, baudrate=target_baud
                     )
@@ -324,7 +299,7 @@ class SerialTransport:
             # 3. Register Sender
             self.service.register_serial_sender(self._serial_sender)
             self.state.serial_writer = transport # Just to mark as connected in state if needed
-            
+
             # 4. Handshake / Main Loop
             # Since Protocol handles reading in background, we just wait here
             # or perform the handshake logic.
@@ -342,7 +317,7 @@ class SerialTransport:
             self.protocol = None
             try:
                 await self.service.on_serial_disconnected()
-            except Exception as exc:
+            except (OSError, ValueError, RuntimeError) as exc:
                 logger.warning("Error in on_serial_disconnected hook: %s", exc)
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
@@ -351,7 +326,7 @@ class SerialTransport:
         # Manually encode since protocol.write_frame sends it
         # but we need to set the future BEFORE sending to avoid race condition
         proto._negotiation_future = proto.loop.create_future()
-        
+
         if not proto.write_frame(Command.CMD_SET_BAUDRATE, payload):
             return False
 

@@ -6,7 +6,6 @@ Objetivo: 100% Cobertura Real en Daemon y Transportes (Py3.13 Compatible).
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
-from mcubridge.transport import SerialTransport
 from mcubridge.transport.mqtt import mqtt_task
 from mcubridge.daemon import BridgeDaemon
 from mcubridge.rpc.protocol import (
@@ -95,10 +94,10 @@ async def test_serial_read_loop_corruption_and_recovery():
     from mcubridge.transport.serial_fast import BridgeSerialProtocol
     mock_service = AsyncMock()
     mock_state = MagicMock()
-    
+
     # We don't need a real loop here, just pass the current one or mock
     proto = BridgeSerialProtocol(mock_service, mock_state, asyncio.get_running_loop())
-    
+
     # Data stream: [Valid] [Corrupt] [Huge] [Noise]
     valid_frame = cobs.encode(
         Frame.build(Command.CMD_GET_VERSION, b"")
@@ -107,13 +106,13 @@ async def test_serial_read_loop_corruption_and_recovery():
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
     TEST_PAYLOAD_BYTE = 0xAA
     noise = bytes([0, 0, UINT8_MASK, TEST_PAYLOAD_BYTE])
-    
+
     # Feed data via data_received
     proto.data_received(valid_frame)
     proto.data_received(bad_cobs)
     proto.data_received(huge_chunk)
     proto.data_received(noise)
-    
+
     # Wait a bit for async tasks to run
     await asyncio.sleep(0.01)
 

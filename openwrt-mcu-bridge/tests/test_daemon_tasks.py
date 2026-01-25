@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 from collections import deque
 from dataclasses import dataclass
-from types import MethodType
 from typing import Any, Deque, cast
 from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -25,7 +23,7 @@ from mcubridge.transport import (
     SerialTransport,
 )
 from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.rpc.protocol import Command
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.services.runtime import SerialHandshakeFatal
 from mcubridge.transport.serial_fast import BridgeSerialProtocol
@@ -113,7 +111,7 @@ async def test_serial_reader_task_processes_frame(
     # Mock Transport/Protocol
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
-    
+
     # We need a real protocol to test data processing logic, or at least one with real methods
     # But BridgeSerialProtocol depends on asyncio loop.
     mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
@@ -128,10 +126,10 @@ async def test_serial_reader_task_processes_frame(
         task = asyncio.create_task(transport.run())
 
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
-        
+
         # Inject data
         mock_protocol.data_received(encoded)
-        
+
         # Allow async processing
         await asyncio.sleep(0.01)
 
@@ -188,7 +186,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
         assert not service.received_frames
         # Should record error
         assert state.serial_decode_errors > 0
-        
+
         # Stop
         mock_transport.is_closing.return_value = True
         with patch("asyncio.sleep", side_effect=RuntimeError("Stop")):
@@ -210,7 +208,7 @@ async def test_serial_reader_task_limits_packet_size(
     oversized = bytes([TEST_PAYLOAD_BYTE]) * (
         MAX_SERIAL_PACKET_BYTES + 16
     )
-    
+
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
     mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())

@@ -62,7 +62,7 @@ async def test_serial_reader_task_reconnects():
 
     with patch("serial_asyncio_fast.create_serial_connection", mock_create), \
          patch("asyncio.sleep", mock_sleep):
-        
+
         transport = SerialTransport(config, state, service)
         try:
             await transport.run()

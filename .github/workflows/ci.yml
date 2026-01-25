@@ -52,16 +52,16 @@ jobs:
           echo "Checking for hardcoded secrets in configuration files..."
           # Check UCI config for actual secret values (not validation code)
           if grep -r "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" \
-               --include="yunbridge" \
-               luci-app-yunbridge/root/etc/config/ 2>/dev/null | \
-               grep -v "changeme123" | grep -v '""' | grep -v "''"; then
+               --include="mcubridge" \
+               openwrt-mcu-core/uci-defaults/ 2>/dev/null | \
+               grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''"; then
             echo "::error::Hardcoded secret found in UCI config!"
             exit 1
           fi
           # Check for any password/secret assignments in Lua
           if grep -rn "password\s*=\s*['\"][^'\"]\+" \
                --include="*.lua" \
-               luci-app-yunbridge/ 2>/dev/null | \
+               luci-app-mcubridge/ 2>/dev/null | \
                grep -v "option\|input\|field"; then
             echo "::error::Potential hardcoded password in Lua files!"
             exit 1

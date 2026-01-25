@@ -3,13 +3,9 @@ test_internals.py.
 
 Objetivo: Ejecución quirúrgica de bucles internos y manejo de errores.
 """
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 import pytest
-from mcubridge.transport import SerialTransport
 from mcubridge.daemon import main
-from mcubridge.rpc.protocol import Command
-from mcubridge.rpc.frame import Frame
-from cobs import cobs
 
 
 # --- SERIAL TRANSPORT INTERNALS ---

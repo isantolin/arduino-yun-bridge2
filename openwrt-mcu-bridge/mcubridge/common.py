@@ -59,7 +59,7 @@ from .const import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from mcubridge.mqtt.messages import QueuedPublish
+    pass
 
 _TRUE_STRINGS: Final[frozenset[str]] = frozenset(
     {"1", "yes", "on", "true", "enable", "enabled"}

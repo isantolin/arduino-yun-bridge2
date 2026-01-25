@@ -239,6 +239,8 @@ class BridgeClass {
   static void _serialTaskCallback();
   static void _watchdogTaskCallback();
   
+  static BridgeClass* _instance; // [SIL-2] Active instance pointer for scheduler context
+  
   void _processSerial();
   void _processWatchdog();
 };

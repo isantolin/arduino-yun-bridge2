@@ -137,12 +137,18 @@ uint16_t getFreeMemory() {
 
 // Static task callbacks
 void BridgeClass::_serialTaskCallback() {
-    Bridge._processSerial();
+    if (_instance) {
+        _instance->_processSerial();
+    }
 }
 
 void BridgeClass::_watchdogTaskCallback() {
-    Bridge._processWatchdog();
+    if (_instance) {
+        _instance->_processWatchdog();
+    }
 }
+
+BridgeClass* BridgeClass::_instance = nullptr;
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
     : _transport(arg_serial, &arg_serial),
@@ -371,9 +377,7 @@ void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_f
 void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
 
 void BridgeClass::process() {
-#ifdef BRIDGE_HOST_TEST
-    _processSerial();
-#endif
+    _instance = this;
     _scheduler.execute();
 }
 
@@ -1032,7 +1036,17 @@ void BridgeClass::_processAckTimeout() {
 }
 
 void BridgeClass::enterSafeState() {
-  // [SIL-2] Fail-Safe State Entry
+  // [SIL-2] Fail-Safe State Entry: Reset GPIO to high-impedance (INPUT)
+  // to prevent un-intended actuation after link loss.
+#ifdef NUM_DIGITAL_PINS
+  for (uint8_t pin = 0; pin < NUM_DIGITAL_PINS; pin++) {
+      // Exclude critical pins like Serial or Builtin LED if necessary
+      // but standard STO (Safe Torque Off) logic dictates high-impedance.
+      if (pin == LED_BUILTIN) continue;
+      ::pinMode(pin, INPUT);
+  }
+#endif
+
   _synchronized = false;
   _clearAckState();
   _clearPendingTxQueue();

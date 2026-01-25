@@ -72,7 +72,7 @@ ensure_dep() {
   fi
 }
 
-ensure_dep "etl" "https://github.com/ETLCPP/etl/archive/refs/tags/20.39.4.tar.gz"
+ensure_dep "etl" "https://github.com/ETLCPP/etl/archive/refs/tags/20.44.2.tar.gz"
 ensure_dep "taskscheduler" "https://github.com/arkhipenko/TaskScheduler/archive/refs/tags/v3.8.5.tar.gz"
 ensure_dep "fastcrc" "https://github.com/FrankBoesing/FastCRC/archive/refs/heads/master.tar.gz"
 ensure_dep "packetserial" "https://github.com/bakercp/PacketSerial/archive/refs/heads/master.tar.gz"

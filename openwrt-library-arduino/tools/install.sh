@@ -270,8 +270,8 @@ ensure_etl_library() {
   trap 'rm -rf "$tmp_dir"' EXIT
 
   local zip_path="$tmp_dir/etl.zip"
-  # ETLCPP/etl
-  local repo_url="https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master"
+  # ETLCPP/etl - Pinned to latest stable 20.44.2
+  local repo_url="https://github.com/ETLCPP/etl/archive/refs/tags/20.44.2.zip"
   echo "[INFO] Downloading ETL from $repo_url"
   if [ "$downloader" = "curl" ]; then
     curl -fsSL "$repo_url" -o "$zip_path" || {

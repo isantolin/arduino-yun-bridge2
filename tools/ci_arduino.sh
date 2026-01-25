@@ -50,9 +50,11 @@ FQBN="arduino:avr:uno"
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 
-# Prepare compiler flags for extra headers
-# We add ETL's include directory directly to the compiler search path
+# [SIL-2] Target-specific configuration for ETL
+# We force ETL to not use the System STL because AVR (uno) doesn't provide it.
+# This prevents the 'type_traits: No such file or directory' error.
 EXTRA_INCLUDES="-I$DEPS_DIR/ETL/include"
+COMPILER_FLAGS="-DETL_NO_STL -DETL_THROW_EXCEPTIONS=0"
 
 echo "Compiling examples for $FQBN..."
 
@@ -63,9 +65,8 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    # We pass the ETL dependency path explicitly as a compiler flag to avoid
-    # arduino-cli library discovery issues.
-    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --build-property compiler.cpp.extra_flags=$EXTRA_INCLUDES --warnings default"
+    # Passing both includes and ETL configuration macros
+    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --build-property compiler.cpp.extra_flags=$EXTRA_INCLUDES $COMPILER_FLAGS --warnings default"
     
     if [ -n "$BUILD_OUTPUT_DIR" ]; then
         # Create specific output dir for this sketch to avoid overwrites

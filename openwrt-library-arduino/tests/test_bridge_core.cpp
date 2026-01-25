@@ -836,21 +836,10 @@ void test_bridge_malformed_frame() {
     stream.tx_buffer.clear();
 
     // Inject garbage data into the stream to trigger malformed/overflow logic
-    // We must encode it so it passes the transport layer (COBS) and reaches the parser
-    uint8_t garbage[100];
-    test_memfill(garbage, sizeof(garbage), 0xAA);
+    // We want to simulate MALFORMED, so let's send valid COBS of random data:
     
     enum { kEncodedCap = kMaxEncodedSize + 1 };
     uint8_t encoded[kEncodedCap];
-    const size_t encoded_len = TestFrameBuilder::build(
-        encoded, sizeof(encoded), 0xFFFF, garbage, sizeof(garbage)); // 0xFFFF is invalid ID
-
-    // We want to simulate MALFORMED, so let's corrupt the frame header *after* building valid COBS?
-    // Actually, TestFrameBuilder builds a valid frame.
-    // To trigger MALFORMED, we can send a frame with valid COBS but invalid structure (e.g. truncated).
-    // Or we can just use the previous approach but ENCODE the 0xFFs.
-    // Let's stick to the original intent: "resilience".
-    // If we send valid COBS of random data:
     
     uint8_t random_data[50];
     test_memfill(random_data, sizeof(random_data), 0x77);

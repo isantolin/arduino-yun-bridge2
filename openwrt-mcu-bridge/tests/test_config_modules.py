@@ -3,6 +3,7 @@ import json
 import logging
 import sys
 import types
+import importlib
 from pathlib import Path
 from typing import Any, Self
 
@@ -66,6 +67,8 @@ def _install_dummy_uci_module(
     )
 
     monkeypatch.setitem(sys.modules, "uci", module)
+    importlib.reload(common)
+    importlib.reload(settings)
 
 
 def test_load_runtime_config_applies_env_and_defaults(

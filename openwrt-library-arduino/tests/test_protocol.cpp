@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include <FastCRC.h>
-// [MODIFICADO] Eliminado include de cobs.h porque la lógica se movió a PacketSerial
+
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
 #include "test_support.h"

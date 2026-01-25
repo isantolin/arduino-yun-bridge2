@@ -5,6 +5,12 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import MagicMock
+
+# [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
+# This simulates the OpenWrt environment where 'uci' is available.
+if "uci" not in sys.modules:
+    sys.modules["uci"] = MagicMock()
 
 import pytest
 

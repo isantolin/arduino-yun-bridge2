@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from collections.abc import Iterable
 from typing import (
     Final,
     TYPE_CHECKING,
     cast,
 )
+
+# [SIL-2] STRICT DEPENDENCY: On OpenWrt, 'uci' is a mandatory system package.
+# We do not use try-import here to enforce fail-fast behavior in production.
+# For tests, we expect 'uci' to be mocked in sys.modules.
+import uci
 
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
@@ -160,43 +166,33 @@ def build_mqtt_connect_properties() -> Properties:
 
 
 def get_uci_config() -> dict[str, str]:
-    """Read MCU Bridge configuration directly from OpenWrt's UCI system.
+    """Read MCU Bridge configuration directly from OpenWrt's UCI system."""
 
-    [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
-    We do not fallback to defaults in production to avoid 'split-brain' configurations.
-    """
-
-    # Detect OpenWrt environment
     is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
 
     try:
-        from uci import Uci  # type: ignore
-    except ImportError:
-        # In test environments (e.g. CI/Emulation), missing UCI is expected.
-        if is_openwrt:
-            # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
-            logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
-            raise RuntimeError("Missing dependency: python3-uci")
-
-        logger.warning(
-            "UCI module not found (not running on OpenWrt?); using default configuration."
-        )
-        return get_default_config()
-
-    try:
-        with Uci() as cursor:
+        with uci.Uci() as cursor:
             # OpenWrt's python3-uci returns a native dict in modern versions.
             # We strictly expect the package 'mcubridge' and section 'general'.
-            section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
+            try:
+                section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
+            except uci.UciException as e:
+                # Differentiate between "package missing" and "section missing" if possible,
+                # but generally catch the library's specific error.
+                if is_openwrt:
+                    logger.critical("UCI failure reading %s.%s: %s", _UCI_PACKAGE, _UCI_SECTION, e)
+                    # On OpenWrt, we might want to fail hard, or fallback to defaults with a scream.
+                    # Given SIL-2 requirements for configuration determinism:
+                    raise RuntimeError(f"Critical UCI failure: {e}") from e
+                logger.warning("UCI section '%s.%s' read failed: %s; using defaults.", _UCI_PACKAGE, _UCI_SECTION, e)
+                return get_default_config()
 
             if not section:
                 if is_openwrt:
-                    # In production, missing config is fatal.
                     raise RuntimeError(
                         f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
                         "Re-install package to restore defaults."
                     )
-
                 logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
                 return get_default_config()
 
@@ -215,11 +211,11 @@ def get_uci_config() -> dict[str, str]:
             return clean_config
 
     except (OSError, ValueError) as e:
+        # Catch lower-level errors (e.g. file lock issues)
         if is_openwrt:
             logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
             raise RuntimeError(f"Critical UCI failure: {e}") from e
 
-        # Expected system errors (e.g. UCI file locked, parsing error) in non-critical envs
         logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
         return get_default_config()
 

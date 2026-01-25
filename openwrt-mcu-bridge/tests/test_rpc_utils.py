@@ -1,5 +1,6 @@
 import sys
 import types
+import importlib
 
 from typing import Self
 
@@ -55,6 +56,7 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
     )
 
     monkeypatch.setitem(sys.modules, "uci", module)
+    importlib.reload(common)
 
     config = common.get_uci_config()
 
@@ -79,6 +81,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         UciException=OSError,
     )
     monkeypatch.setitem(sys.modules, "uci", module)
+    importlib.reload(common)
 
     fallback_called = False
 

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import importlib
+import sys
 from unittest.mock import MagicMock, patch
 
+from mcubridge import common
 from mcubridge.common import (
     build_mqtt_connect_properties,
     build_mqtt_properties,
@@ -58,32 +61,14 @@ def test_normalise_commands():
     assert normalise_allowed_commands(cmds) == ("cmd1", "cmd2")
 
 
-def test_get_uci_config_missing_module():
-    """Test fallback when uci module is not installed."""
-    with patch.dict("sys.modules", {"uci": None}):
-        config = get_uci_config()
-        defaults = get_default_config()
-        # Should match defaults exactly
-        assert config == defaults
-
-
-def test_get_uci_config_failure():
-    """Test fallback when uci raises exception."""
-    mock_uci = MagicMock()
-    mock_uci.return_value.__enter__.side_effect = Exception("UCI Error")
-
-    with patch.dict("sys.modules", {"uci": mock_uci}):
-        config = get_uci_config()
-        assert config == get_default_config()
-
-
 def test_get_uci_config_success():
     """Test successful UCI read."""
     mock_module = MagicMock()
-    mock_uci_class = MagicMock()
-    mock_module.Uci = mock_uci_class
+    mock_module.UciException = Exception
+    
     mock_cursor = MagicMock()
-    mock_uci_class.return_value.__enter__.return_value = mock_cursor
+    # Mock context manager: with uci.Uci() as cursor
+    mock_module.Uci.return_value.__enter__.return_value = mock_cursor
 
     # Simulate standard UCI dict return
     mock_cursor.get_all.return_value = {
@@ -93,7 +78,8 @@ def test_get_uci_config_success():
     }
 
     with patch.dict("sys.modules", {"uci": mock_module}):
-        config = get_uci_config()
+        importlib.reload(common)
+        config = common.get_uci_config()
         assert config["mqtt_host"] == "192.168.1.100"
         assert config["debug"] == "1"
         # Ensure other defaults are present
@@ -102,23 +88,27 @@ def test_get_uci_config_success():
 
 def test_get_uci_config_missing_section_returns_defaults() -> None:
     mock_module = MagicMock()
-    mock_uci_class = MagicMock()
-    mock_module.Uci = mock_uci_class
+    mock_module.UciException = Exception
+    
     mock_cursor = MagicMock()
-    mock_uci_class.return_value.__enter__.return_value = mock_cursor
+    mock_module.Uci.return_value.__enter__.return_value = mock_cursor
+    
+    # Simulate missing section (empty dict or None depending on library, usually None or empty)
+    # common.py checks `if not section`
     mock_cursor.get_all.return_value = {}
 
     with patch.dict("sys.modules", {"uci": mock_module}):
-        config = get_uci_config()
-        assert config == get_default_config()
+        importlib.reload(common)
+        config = common.get_uci_config()
+        assert config == common.get_default_config()
 
 
 def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
     mock_module = MagicMock()
-    mock_uci_class = MagicMock()
-    mock_module.Uci = mock_uci_class
+    mock_module.UciException = Exception
+    
     mock_cursor = MagicMock()
-    mock_uci_class.return_value.__enter__.return_value = mock_cursor
+    mock_module.Uci.return_value.__enter__.return_value = mock_cursor
 
     mock_cursor.get_all.return_value = {
         ".type": "general",
@@ -128,7 +118,8 @@ def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
     }
 
     with patch.dict("sys.modules", {"uci": mock_module}):
-        config = get_uci_config()
+        importlib.reload(common)
+        config = common.get_uci_config()
         assert config["mqtt_host"] == "example.com 1883"
         assert config["mqtt_tls"] == "0"
         assert ".type" not in config

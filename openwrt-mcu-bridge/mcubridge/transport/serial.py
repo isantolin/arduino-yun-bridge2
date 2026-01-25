@@ -1,7 +1,6 @@
 """Serial transport helpers for the MCU Bridge daemon (Python 3.13+ Compatible).
 
-This module uses a pure-termios serial implementation to avoid the pyserial
-dependency, which has not been maintained since 2020.
+This module uses pyserial-asyncio-fast for zero-overhead async I/O.
 """
 
 from __future__ import annotations
@@ -10,21 +9,12 @@ import asyncio
 import inspect
 import logging
 import struct
-import os
 import time
-import termios
-import tty
-from typing import Any, Sized, TypeGuard, cast, Final, TYPE_CHECKING
+from typing import Final, Sized, TypeGuard, cast, TYPE_CHECKING
 
 from cobs import cobs
 from mcubridge.rpc import rle
-
-# Use our pure-termios serial implementation instead of pyserial
-from mcubridge.transport.termios_serial import (
-    TermiosSerial,
-    SerialException,
-    serial_for_url,
-)
+import serial_asyncio_fast  # type: ignore
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
@@ -112,183 +102,9 @@ def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
     return cobs.encode(raw_frame) + FRAME_DELIMITER
 
 
-def _ensure_raw_mode(serial_obj: TermiosSerial, port_name: str) -> None:
-    """Force raw mode on the serial file descriptor if possible."""
-    if termios is None or tty is None:
-        return
-
-    try:
-        fd = getattr(serial_obj, "fd", None)
-        if fd is not None:
-            tty.setraw(fd)
-            attrs = termios.tcgetattr(fd)
-            attrs[3] = attrs[3] & ~termios.ECHO
-            termios.tcsetattr(fd, termios.TCSANOW, attrs)
-            logger.debug("Forced raw mode (no echo) on %s", port_name)
-    except (OSError, termios.error) as e:
-        logger.warning("Failed to force raw mode on serial port: %s", e)
-
-
-def _open_serial_hardware(ser: TermiosSerial, url: str) -> None:
-    try:
-        ser.open()
-        if ser.fd is None:
-            raise SerialException("Serial port opened but no fd available")
-        os.set_blocking(ser.fd, False)
-        _ensure_raw_mode(ser, url)
-    except (SerialException, OSError) as exc:  # pragma: no cover - cleanup guard
-        logger.warning("Error opening serial hardware, attempting cleanup: %s", exc)
-        if getattr(ser, "is_open", False):
-            ser.close()
-        raise
-
-
 async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     logger.warning("Serial disconnected; dropping frame 0x%02X", command_id)
     return False
-
-
-class FlowControlMixin:
-    """
-    Mixin to implement asyncio flow control logic.
-    Replicates asyncio.streams.FlowControlMixin for Python 3.13 compatibility.
-    """
-
-    def __init__(self, loop: asyncio.AbstractEventLoop | None = None) -> None:
-        if loop is None:
-            self._loop = asyncio.get_running_loop()
-        else:
-            self._loop = loop
-        self._paused = False
-        self._drain_waiter: asyncio.Future[None] | None = None
-        self._connection_lost = False
-
-    def pause_writing(self) -> None:
-        self._paused = True
-
-    def resume_writing(self) -> None:
-        self._paused = False
-        waiter = self._drain_waiter
-        if waiter is not None:
-            self._drain_waiter = None
-            if not waiter.done():
-                waiter.set_result(None)
-
-    def connection_lost(self, exc: Exception | None) -> None:
-        self._connection_lost = True
-        waiter = self._drain_waiter
-        if waiter is not None:
-            self._drain_waiter = None
-            if not waiter.done():
-                if exc is None:
-                    waiter.set_result(None)
-                else:
-                    waiter.set_exception(exc)
-
-    async def _drain_helper(self) -> None:
-        if self._connection_lost:
-            raise ConnectionResetError("Connection lost")
-        if not self._paused:
-            return
-        waiter = self._drain_waiter
-        if waiter is None:
-            waiter = self._loop.create_future()
-            self._drain_waiter = waiter
-        await waiter
-
-
-class SerialProtocol(asyncio.Protocol):
-    """Native asyncio Protocol for Serial communication (Read side)."""
-
-    def __init__(self) -> None:
-        self.transport: asyncio.Transport | None = None
-        self.reader: asyncio.StreamReader = asyncio.StreamReader()
-
-    def connection_made(self, transport: asyncio.BaseTransport) -> None:
-        self.transport = cast(asyncio.Transport, transport)
-        self.reader.set_transport(transport)
-
-    def data_received(self, data: bytes) -> None:
-        self.reader.feed_data(data)
-
-    def connection_lost(self, exc: Exception | None) -> None:
-        self.reader.feed_eof()
-
-
-class _SerialReadProtocolFactory:
-    def __init__(self) -> None:
-        self.protocol: SerialProtocol | None = None
-
-    def __call__(self) -> SerialProtocol:
-        serial_protocol = SerialProtocol()
-        self.protocol = serial_protocol
-        return serial_protocol
-
-
-class SerialWriteProtocol(asyncio.Protocol, FlowControlMixin):
-    """Native asyncio Protocol for Serial communication (Write side with Flow Control)."""
-
-    def __init__(self) -> None:
-        FlowControlMixin.__init__(self)
-        self.transport: asyncio.Transport | None = None
-
-    def connection_made(self, transport: asyncio.BaseTransport) -> None:
-        self.transport = cast(asyncio.Transport, transport)
-
-    def connection_lost(self, exc: Exception | None) -> None:
-        FlowControlMixin.connection_lost(self, exc)
-
-    def pause_writing(self) -> None:
-        FlowControlMixin.pause_writing(self)
-
-    def resume_writing(self) -> None:
-        FlowControlMixin.resume_writing(self)
-
-
-class _SerialWriteProtocolFactory:
-    def __init__(self) -> None:
-        self.protocol: SerialWriteProtocol | None = None
-
-    def __call__(self) -> SerialWriteProtocol:
-        serial_protocol = SerialWriteProtocol()
-        self.protocol = serial_protocol
-        return serial_protocol
-
-
-async def _open_serial_connection(
-    url: str, baudrate: int, **kwargs: Any
-) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    """
-    Open a serial connection using native asyncio.
-    Uses pure-termios implementation instead of pyserial.
-    """
-    loop = asyncio.get_running_loop()
-
-    # Create the termios serial instance in a non-blocking way
-    ser = serial_for_url(url, baudrate=baudrate, do_not_open=True)
-
-    if kwargs.get("exclusive", False):
-        ser.exclusive = True
-
-    await loop.run_in_executor(None, _open_serial_hardware, ser, url)
-
-    # Separate Read and Write transports for bidirectional pipe support
-    read_factory = _SerialReadProtocolFactory()
-    await loop.connect_read_pipe(read_factory, ser)
-    read_protocol = read_factory.protocol
-    if read_protocol is None:  # pragma: no cover
-        raise RuntimeError("Serial read protocol factory did not produce a protocol")
-
-    write_factory = _SerialWriteProtocolFactory()
-    write_transport, write_protocol = await loop.connect_write_pipe(write_factory, ser)
-
-    writer = asyncio.StreamWriter(
-        write_transport, write_protocol, read_protocol.reader, loop
-    )
-    return read_protocol.reader, writer
-
-
-OPEN_SERIAL_CONNECTION = _open_serial_connection
 
 
 async def _negotiate_baudrate(
@@ -342,8 +158,9 @@ async def _open_serial_connection_with_retry(
 
     while True:
         try:
-            reader, writer = await OPEN_SERIAL_CONNECTION(
-                url=config.serial_port, baudrate=initial_baud, exclusive=True
+            # Use pyserial-asyncio-fast for zero-overhead I/O
+            reader, writer = await serial_asyncio_fast.open_serial_connection(
+                url=config.serial_port, baudrate=initial_baud
             )
 
             if negotiation_needed:
@@ -354,8 +171,8 @@ async def _open_serial_connection_with_retry(
                     await writer.wait_closed()
                     await asyncio.sleep(0.2)
 
-                    reader, writer = await OPEN_SERIAL_CONNECTION(
-                        url=config.serial_port, baudrate=target_baud, exclusive=True
+                    reader, writer = await serial_asyncio_fast.open_serial_connection(
+                        url=config.serial_port, baudrate=target_baud
                     )
                 else:
                     logger.warning(
@@ -363,11 +180,8 @@ async def _open_serial_connection_with_retry(
                     )
 
             # [SIL-2] Startup Noise Drain (BOOT LOOP FIX)
-            # Drain residual garbage, BUT enforce a strict timeout.
-            # If the MCU sends continuous data (e.g. Serial.print in loop), we must eventually
-            # break out and attempt protocol sync, otherwise the daemon hangs forever.
             drain_start_time = time.monotonic()
-            drain_timeout = 1.0  # Max time to spend draining before forcing start
+            drain_timeout = 1.0
 
             try:
                 while not reader.at_eof():
@@ -381,14 +195,11 @@ async def _open_serial_connection_with_retry(
                         break
 
                     try:
-                        # Non-blocking read of up to 4KB
                         garbage = await asyncio.wait_for(reader.read(4096), timeout=0.1)
                         if not garbage:
                             break
-                        # Use new SIL-2 hexdump format for clarity
                         logger.debug("Drained startup noise:\n%s", format_hexdump(garbage, prefix="  "))
                     except asyncio.TimeoutError:
-                        # 100ms silence detected - clean line
                         logger.debug("Serial line silence detected. Ready.")
                         break
             except (OSError, asyncio.TimeoutError) as e:
@@ -396,9 +207,10 @@ async def _open_serial_connection_with_retry(
 
             return reader, writer
 
-        except (SerialException, OSError, ExceptionGroup) as exc:
+        except (OSError, ExceptionGroup) as exc:
+            # pyserial-asyncio-fast raises OSError on connection failure
             if isinstance(exc, ExceptionGroup):
-                _, remainder = exc.split((SerialException, OSError))
+                _, remainder = exc.split((OSError,))
                 if remainder:
                     raise remainder
 
@@ -427,8 +239,6 @@ class SerialTransport:
         self.writer: asyncio.StreamWriter | None = None
 
     def _should_emit_parse_error_status(self) -> bool:
-        # Avoid sending MALFORMED/CRC_MISMATCH frames before link sync: it can
-        # confuse older firmwares and makes handshake recovery harder.
         return bool(getattr(self.state, "link_is_synchronized", False))
 
     async def run(self) -> None:
@@ -458,7 +268,7 @@ class SerialTransport:
                             "Error running post-connect hooks", exc_info=exc
                         )
 
-            except (SerialException, asyncio.IncompleteReadError) as exc:
+            except (OSError, asyncio.IncompleteReadError) as exc:
                 logger.error("Serial communication error: %s", exc)
             except ConnectionResetError:
                 logger.error("Serial connection reset.")
@@ -486,7 +296,6 @@ class SerialTransport:
         self.writer = None
         self.reader = None
         self.state.serial_writer = None
-        # Ensure pending senders are never stuck waiting for XON after a disconnect.
         self.state.serial_tx_allowed.set()
         try:
             await self.service.on_serial_disconnected()
@@ -504,7 +313,6 @@ class SerialTransport:
                 chunk = await self.reader.read(256)
             except (OSError, asyncio.IncompleteReadError) as exc:
                 logger.error(f"Serial I/O Error: {exc}")
-                self._connected = False
                 break
 
             if not chunk:
@@ -520,8 +328,6 @@ class SerialTransport:
                     if buffer:
                         encoded_packet = bytes(buffer)
                         buffer.clear()
-                        # [FIX] Await packet processing to prevent race conditions
-                        # processing sequential frames.
                         await self._process_packet(encoded_packet)
                     continue
 
@@ -530,25 +336,18 @@ class SerialTransport:
 
                 buffer.append(byte_value)
                 if len(buffer) > MAX_SERIAL_PACKET_BYTES:
-                    # Flush, warn, and start discarding tail
                     snapshot = bytes(buffer[:32])
                     buffer.clear()
                     discarding = True
                     self.state.record_serial_decode_error()
                     logger.warning("Serial packet too large, flushed.")
-                    # IMPORTANT: Do not emit MALFORMED statuses for oversized packets.
-                    # We don't have a reliable command ID hint here, and replying can
-                    # create a negative-ack feedback loop that increases congestion.
-                    _ = snapshot  # retained for potential future debug hooks
+                    _ = snapshot
 
     async def send_frame(self, command_id: int, payload: bytes) -> bool:
-        # Fast-fail: preserve legacy semantics (and avoid awaiting mocks) when
-        # no writer is available.
         writer = self.writer
         if writer is None or writer.is_closing():
             return False
 
-        # Global backpressure: MCU XOFF pauses all Linux->MCU traffic.
         serial_tx_allowed = getattr(self.state, "serial_tx_allowed", None)
         wait_fn = (
             getattr(serial_tx_allowed, "wait", None)
@@ -558,7 +357,6 @@ class SerialTransport:
         if wait_fn is not None and inspect.iscoroutinefunction(wait_fn):
             await wait_fn()
 
-        # Writer may have been closed while awaiting XON.
         writer = self.writer
         if writer is None or writer.is_closing():
             return False
@@ -572,7 +370,6 @@ class SerialTransport:
                     cmd_name = Command(command_id).name
                 except ValueError:
                     cmd_name = f"0x{command_id:02X}"
-                # [SIL-2] Canonical hexdump format for binary traffic debugging
                 if payload:
                     hexdump = format_hexdump(payload, prefix="       ")
                     logger.debug(
@@ -581,7 +378,7 @@ class SerialTransport:
                 else:
                     logger.debug("LINUX > %s (no payload)", cmd_name)
             return True
-        except (OSError, SerialException) as exc:
+        except OSError as exc:
             logger.error("Send failed 0x%02X: %s", command_id, exc)
             return False
 
@@ -597,7 +394,6 @@ class SerialTransport:
             raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
 
-            # RLE Decompression
             if frame.command_id & protocol.CMD_FLAG_COMPRESSED:
                 frame.command_id &= ~protocol.CMD_FLAG_COMPRESSED
                 try:
@@ -628,9 +424,6 @@ class SerialTransport:
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
         except cobs.DecodeError as exc:
-            # COBS decode errors strongly suggest mid-stream corruption (e.g. stray 0x00
-            # delimiter or dropped bytes). Replying with MALFORMED here is harmful because
-            # we don't have a trustworthy command ID and may trigger retransmit storms.
             self.state.record_serial_decode_error()
             header_hex = packet_bytes[:5].hex()
             logger.warning(
@@ -679,7 +472,7 @@ class SerialTransport:
             payload = struct.pack(protocol.UINT16_FORMAT, command_hint) + truncated
             try:
                 await self.service.send_frame(status.value, payload)
-            except (OSError, SerialException) as exc:
+            except OSError as exc:
                 logger.debug("Failed to send malformed status response: %s", exc)
 
 
@@ -688,4 +481,5 @@ __all__ = [
     "serial_sender_not_ready",
     "_open_serial_connection_with_retry",
     "format_hexdump",
+    "OPEN_SERIAL_CONNECTION",
 ]

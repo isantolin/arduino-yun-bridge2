@@ -10,7 +10,6 @@ from dataclasses import replace
 from typing import Any
 
 from aiomqtt.message import Message
-from ..transport.termios_serial import SerialException
 
 from ..config.settings import RuntimeConfig
 from ..const import TOPIC_FORBIDDEN_REASON
@@ -221,7 +220,7 @@ class BridgeService:
         except SerialHandshakeFatal as exc:
             fatal_error = exc
             handshake_ok = False
-        except (OSError, SerialException, ValueError, RuntimeError) as e:
+        except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to synchronise MCU link after reconnect: %s", e)
 
         if fatal_error is not None:
@@ -444,7 +443,7 @@ class BridgeService:
             return
         try:
             await self._serial_sender(status.value, payload)
-        except (OSError, SerialException, ValueError) as exc:
+        except (OSError, ValueError) as exc:
             logger.error(
                 "Failed to emit status 0x%02X for command 0x%02X: %s",
                 status.value,

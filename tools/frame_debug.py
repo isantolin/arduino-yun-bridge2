@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from collections.abc import Iterable
 
+import serial  # type: ignore
 from cobs import cobs
 from mcubridge.rpc.protocol import (
     DEFAULT_BAUDRATE,
@@ -25,7 +26,6 @@ from mcubridge.rpc.protocol import (
 from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.rpc.protocol import Command, Status
-from mcubridge.transport.termios_serial import TermiosSerial, SerialException
 
 
 @dataclass(slots=True)
@@ -130,25 +130,24 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     )
 
 
-def _open_serial_device(port: str, baud: int, timeout: float) -> TermiosSerial:
+def _open_serial_device(port: str, baud: int, timeout: float) -> serial.Serial:
     try:
-        return TermiosSerial(port=port, baudrate=baud, timeout=timeout)
-    except SerialException as exc:  # pragma: no cover - hardware path
+        return serial.Serial(port=port, baudrate=baud, timeout=timeout)
+    except serial.SerialException as exc:
         raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
 
-
-def _write_frame(device: TermiosSerial, encoded_packet: bytes) -> int:
+def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
     return int(written) if written is not None else 0
 
-
-def _read_frame(device: TermiosSerial, timeout: float) -> bytes | None:
+def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
     buffer = bytearray()
     deadline = time.monotonic() + timeout if timeout > 0 else None
     while True:
         if deadline is not None and time.monotonic() > deadline:
             return None
+        # Non-blocking read or timeout based read
         chunk = device.read(1)
         if not chunk:
             continue
@@ -158,11 +157,9 @@ def _read_frame(device: TermiosSerial, timeout: float) -> bytes | None:
             continue
         buffer.extend(chunk)
 
-
 def _decode_frame(encoded_packet: bytes) -> Frame:
     raw_frame = cobs.decode(encoded_packet)
     return Frame.from_bytes(raw_frame)
-
 
 def _print_response(frame: Frame) -> None:
     payload_hex = frame.payload.hex()
@@ -175,20 +172,17 @@ def _print_response(frame: Frame) -> None:
     sys.stdout.write(f"payload_len={len(frame.payload)}\n")
     sys.stdout.write(f"payload={payload_preview}\n")
 
-
 def _positive_float(value: str) -> float:
     candidate = float(value)
     if candidate <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
     return candidate
 
-
 def _non_negative_int(value: str) -> int:
     candidate = int(value)
     if candidate < 0:
         raise argparse.ArgumentTypeError("value must be >= 0")
     return candidate
-
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -262,7 +256,6 @@ def _iter_counts(count: int) -> Iterable[int]:
     else:
         yield from range(count)
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
@@ -274,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
         return 2
 
-    serial_device: TermiosSerial | None = None
+    serial_device: serial.Serial | None = None
     if args.port:
         serial_device = _open_serial_device(
             args.port,

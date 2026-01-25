@@ -116,7 +116,7 @@ def test_iter_counts() -> None:
     assert next(gen) == 2
 
 
-@patch("tools.frame_debug.TermiosSerial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_dry_run(mock_serial_cls: MagicMock) -> None:
     # Test running without --port (dry run)
     ret = frame_debug.main(
@@ -131,7 +131,7 @@ def test_main_dry_run(mock_serial_cls: MagicMock) -> None:
     mock_serial_cls.assert_not_called()
 
 
-@patch("tools.frame_debug.TermiosSerial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_with_serial_write(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10
@@ -153,7 +153,7 @@ def test_main_with_serial_write(mock_serial_cls: MagicMock) -> None:
     mock_serial.close.assert_called()
 
 
-@patch("tools.frame_debug.TermiosSerial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_with_serial_read_timeout(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10
@@ -176,7 +176,7 @@ def test_main_with_serial_read_timeout(mock_serial_cls: MagicMock) -> None:
     mock_serial.read.assert_called()
 
 
-@patch("tools.frame_debug.TermiosSerial")
+@patch("tools.frame_debug.serial.Serial")
 def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     mock_serial = mock_serial_cls.return_value
     mock_serial.write.return_value = 10

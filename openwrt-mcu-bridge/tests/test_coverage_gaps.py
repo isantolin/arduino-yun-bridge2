@@ -1,4 +1,4 @@
-"""Tests specifically targeting coverage gaps identified in the codebase."""
+"Tests specifically targeting coverage gaps identified in the codebase."
 
 from __future__ import annotations
 
@@ -273,7 +273,7 @@ async def test_start_async_generic_exception_returns_sentinel(
     process_component: ProcessComponent,
 ) -> None:
     """Cover generic exception branch in start_async subprocess creation."""
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
+    with patch.object(ProcessComponent, "_prepare_command", return_value=('/bin/true',)):
         with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
             mock_alloc.return_value = 55
             with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
@@ -322,7 +322,6 @@ def test_serial_ensure_raw_mode_no_fd() -> None:
     # Should not raise
     _ensure_raw_mode(mock_serial, "/dev/ttyS0")
 
-
 def test_serial_ensure_raw_mode_fd_none() -> None:
     """Cover line 77-78: Serial object with fd=None."""
     from mcubridge.transport.serial import _ensure_raw_mode
@@ -331,7 +330,6 @@ def test_serial_ensure_raw_mode_fd_none() -> None:
     mock_serial.fd = None
     # Should not raise
     _ensure_raw_mode(mock_serial, "/dev/ttyS0")
-
 
 def test_serial_ensure_raw_mode_exception() -> None:
     """Cover lines 84-87: Raw mode setting fails with exception."""
@@ -346,7 +344,6 @@ def test_serial_ensure_raw_mode_exception() -> None:
             mock_tty.setraw.side_effect = OSError("Permission denied")
             # Should not raise, just log warning
             _ensure_raw_mode(mock_serial, "/dev/ttyS0")
-
 
 def test_serial_ensure_raw_mode_termios_exception() -> None:
     """Cover termios.tcgetattr raising exception."""
@@ -666,7 +663,6 @@ async def test_allocate_pid_skips_zero(process_component: ProcessComponent) -> N
     pid = await process_component._allocate_pid()
     assert pid == 1  # Should skip 0 and return 1
 
-
 def test_kill_process_tree_sync_psutil_error() -> None:
     """Cover psutil.Error handling in _kill_process_tree_sync."""
     import psutil
@@ -675,7 +671,6 @@ def test_kill_process_tree_sync_psutil_error() -> None:
     with patch("psutil.Process", side_effect=psutil.NoSuchProcess(123)):
         # Should not raise
         ProcessComponent._kill_process_tree_sync(123)
-
 
 def test_kill_process_tree_sync_children_error() -> None:
     """Cover psutil.Error when getting children."""
@@ -691,7 +686,6 @@ def test_kill_process_tree_sync_children_error() -> None:
         ProcessComponent._kill_process_tree_sync(123)
         mock_proc.kill.assert_called_once()
 
-
 def test_kill_process_tree_sync_kill_error() -> None:
     """Cover psutil.Error when killing process."""
     import psutil
@@ -704,7 +698,6 @@ def test_kill_process_tree_sync_kill_error() -> None:
     with patch("psutil.Process", return_value=mock_proc):
         # Should not raise
         ProcessComponent._kill_process_tree_sync(123)
-
 
 def test_kill_process_tree_sync_child_kill_error() -> None:
     """Cover psutil.Error when killing child process."""

@@ -4,3 +4,4 @@ cobs==1.2.2
 paho-mqtt==2.1.0
 prometheus-client==0.23.1
 psutil==7.2.1
+pyserial-asyncio-fast==0.14

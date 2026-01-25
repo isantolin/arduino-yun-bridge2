@@ -17,7 +17,12 @@ from typing import (
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from mcubridge.rpc import protocol
-from uci import Uci
+
+try:
+    from uci import Uci
+except ImportError:
+    Uci = None
+
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -280,15 +285,30 @@ def get_uci_config() -> dict[str, str]:
 
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
     """
+    # Detect OpenWrt environment
+    is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
+
+    if Uci is None:
+        if is_openwrt:
+            logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
+            raise RuntimeError("Missing dependency: python3-uci")
+
+        logger.warning("UCI module not found; using default configuration.")
+        return get_default_config()
+
     try:
         with Uci() as cursor:
             section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
 
             if not section:
-                raise RuntimeError(
-                    f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
-                    "Re-install package to restore defaults."
-                )
+                if is_openwrt:
+                    raise RuntimeError(
+                        f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
+                        "Re-install package to restore defaults."
+                    )
+
+                logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
+                return get_default_config()
 
             # Clean internal UCI metadata (keys starting with dot/underscore)
             clean_config = get_default_config()
@@ -305,8 +325,12 @@ def get_uci_config() -> dict[str, str]:
             return clean_config
 
     except (OSError, ValueError) as e:
-        logger.critical("Failed to load UCI configuration: %s", e)
-        raise RuntimeError(f"Critical UCI failure: {e}") from e
+        if is_openwrt:
+            logger.critical("Failed to load UCI configuration: %s", e)
+            raise RuntimeError(f"Critical UCI failure: {e}") from e
+
+        logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
+        return get_default_config()
 
 
 def get_default_config() -> dict[str, str]:

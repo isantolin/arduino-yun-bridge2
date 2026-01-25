@@ -1,5 +1,11 @@
 #pragma once
 
+// [SIL-2] ETL Configuration
+// Disable C++ exceptions in ETL to support Arduino AVR compilers.
+#ifndef ETL_NO_CPP_EXTENSIONS
+#define ETL_NO_CPP_EXTENSIONS
+#endif
+
 // Compile-time configuration for the Arduino-side library.
 //
 // These are *not* protocol constants (they do not affect the on-wire format).

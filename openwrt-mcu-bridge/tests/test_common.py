@@ -11,8 +11,6 @@ from mcubridge.common import (
     build_mqtt_connect_properties,
     build_mqtt_properties,
     encode_status_reason,
-    get_default_config,
-    get_uci_config,
     normalise_allowed_commands,
     parse_bool,
     parse_float,
@@ -65,7 +63,7 @@ def test_get_uci_config_success():
     """Test successful UCI read."""
     mock_module = MagicMock()
     mock_module.UciException = Exception
-    
+
     mock_cursor = MagicMock()
     # Mock context manager: with uci.Uci() as cursor
     mock_module.Uci.return_value.__enter__.return_value = mock_cursor
@@ -89,10 +87,10 @@ def test_get_uci_config_success():
 def test_get_uci_config_missing_section_returns_defaults() -> None:
     mock_module = MagicMock()
     mock_module.UciException = Exception
-    
+
     mock_cursor = MagicMock()
     mock_module.Uci.return_value.__enter__.return_value = mock_cursor
-    
+
     # Simulate missing section (empty dict or None depending on library, usually None or empty)
     # common.py checks `if not section`
     mock_cursor.get_all.return_value = {}
@@ -106,7 +104,7 @@ def test_get_uci_config_missing_section_returns_defaults() -> None:
 def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
     mock_module = MagicMock()
     mock_module.UciException = Exception
-    
+
     mock_cursor = MagicMock()
     mock_module.Uci.return_value.__enter__.return_value = mock_cursor
 

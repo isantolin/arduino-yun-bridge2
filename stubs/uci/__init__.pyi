@@ -1,6 +1,7 @@
 from typing import Any, Dict, Optional
 from types import TracebackType
 
+class UciException(Exception): ...
 
 class Uci:
     def __init__(self) -> None: ...

@@ -163,7 +163,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
             return
 
         try:
-            raw_frame = cobs.decode(encoded_packet)
+            raw_frame = cobs.decode(bytes(encoded_packet))
             frame = Frame.from_bytes(raw_frame)
 
             if frame.command_id & protocol.CMD_FLAG_COMPRESSED:

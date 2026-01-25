@@ -336,11 +336,14 @@ echo "[INFO] Skipping system upgrade to maintain stability."
 
 echo "[STEP 4/6] Installing essential dependencies..."
 # Note: python3-pyserial removed - replaced by built-in termios
+# Added python3-msgspec and python3-marshmallow for new architecture
 ESSENTIAL_PACKAGES="\
 python3 \
 python3-asyncio \
 python3-uci \
 python3-psutil \
+python3-msgspec \
+python3-marshmallow \
 openssl-util \
 coreutils-stty \
 mosquitto-client-ssl \

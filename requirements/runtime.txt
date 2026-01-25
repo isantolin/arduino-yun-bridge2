@@ -1,7 +1,7 @@
-aiomqtt>=2.0.0
-cobs>=1.2.0
-marshmallow>=3.20.0
-psutil>=5.9.0
-prometheus-client>=0.17.0
-paho-mqtt>=1.6.1
-msgspec>=0.18.0
+aiomqtt==2.5.0
+paho-mqtt==2.1.0
+msgspec==0.20.0
+psutil==7.2.1
+marshmallow==3.26.1
+prometheus-client==0.24.1
+cobs==1.2.2

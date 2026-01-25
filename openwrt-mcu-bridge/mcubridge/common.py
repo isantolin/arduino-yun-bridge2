@@ -3,7 +3,6 @@
 import asyncio
 import functools
 import logging
-import os
 import random
 from collections.abc import Iterable, Awaitable, Callable
 from typing import (
@@ -313,7 +312,7 @@ def get_uci_config() -> dict[str, str]:
 def get_default_config() -> dict[str, str]:
     """Provide default MCU Bridge configuration values."""
     from .const import DEFAULT_SERIAL_SHARED_SECRET
-    
+
     default_secret = ""
     if DEFAULT_SERIAL_SHARED_SECRET is not None:
         default_secret = DEFAULT_SERIAL_SHARED_SECRET.decode("utf-8")

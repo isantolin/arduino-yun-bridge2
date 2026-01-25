@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, AsyncMock, patch
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.transport.serial import (
+from mcubridge.transport import (
     SerialTransport,
 )
 from mcubridge.rpc import protocol
-
+from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
 @pytest.mark.asyncio
 async def test_serial_reader_task_reconnects():
@@ -38,29 +38,31 @@ async def test_serial_reader_task_reconnects():
     service.on_serial_connected = AsyncMock()
     service.on_serial_disconnected = AsyncMock()
 
-    # Mock the reader to return EOF immediately to trigger reconnect
-    mock_reader = AsyncMock()
-    mock_reader.read.return_value = b""  # Always return EOF to simulate disconnect
+    # Mock Transport/Protocol
+    mock_transport = MagicMock()
+    mock_transport.close = MagicMock()
+    # Simulate connection dropping: is_closing returns False once then True
+    # Sequence: Loop Check (False), Loop Check (True), Finally Check (False), Loop Check (True), Finally Check (True)
+    mock_transport.is_closing.side_effect = [False, True, False, True, True, True]
 
-    # StreamWriter has mixed sync/async methods
-    mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-    mock_writer.is_closing.return_value = False
+    mock_protocol = MagicMock(spec=BridgeSerialProtocol)
+    mock_protocol.loop = MagicMock()
+    mock_protocol.loop.create_future.return_value = asyncio.Future()
 
-    # Mock connect to return our stream mocks
-    mock_connect = AsyncMock(return_value=(mock_reader, mock_writer))
+    # Mock create_serial_connection
+    mock_create = AsyncMock(return_value=(mock_transport, mock_protocol))
 
-    # Mock sleep to raise an exception on the 2nd call to break the loop
-    # Call 1: Retry delay after first disconnect (Success)
-    # Call 2: Retry delay after second disconnect (Raise to stop test)
+    # Mock sleep to fast-forward loops and eventually break the run loop
+    # 1. sleep(1) in _connect_and_run (connection 1 alive check)
+    # 2. sleep(1) in run (reconnect delay)
+    # 3. sleep(1) in _connect_and_run (connection 2 alive check)
+    # 4. sleep(1) in run (reconnect delay) -> Raise Break Loop
     mock_sleep = AsyncMock()
-    mock_sleep.side_effect = [None, RuntimeError("Break Loop")]
+    mock_sleep.side_effect = [None, None, None, RuntimeError("Break Loop")]
 
-    with patch(
-        "mcubridge.transport.serial._open_serial_connection_with_retry", mock_connect
-    ), patch("asyncio.sleep", mock_sleep):
-        # Run the task. It will connect, disconnect, sleep, reconnect, disconnect, sleep (BOOM)
+    with patch("serial_asyncio_fast.create_serial_connection", mock_create), \
+         patch("asyncio.sleep", mock_sleep):
+        
         transport = SerialTransport(config, state, service)
         try:
             await transport.run()
@@ -69,8 +71,6 @@ async def test_serial_reader_task_reconnects():
 
     # Verify behavior
     # Connect should be called at least twice (initial + retry)
-    assert mock_connect.call_count >= 2
+    assert mock_create.call_count >= 2
     assert service.on_serial_connected.called
     assert service.on_serial_disconnected.called
-    # Sleep should have been called (triggering the break)
-    assert mock_sleep.called

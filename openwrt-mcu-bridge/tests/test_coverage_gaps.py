@@ -286,79 +286,10 @@ async def test_start_async_generic_exception_returns_sentinel(
 # ============================================================================
 
 
-def test_serial_termios_import_fallback() -> None:
-    """Cover lines 13-15: termios/tty not available on non-Unix platforms."""
-    from mcubridge.transport import serial
-
-    # Save original values
-    original_termios = getattr(serial, '_termios', None)
-    original_tty = getattr(serial, '_tty', None)
-
-    try:
-        # Simulate the fallback case by setting module-level to None
-        serial._termios = None
-        serial._tty = None
-
-        mock_serial = MagicMock()
-        mock_serial.fd = 1
-        # Should not raise with None termios/tty
-        serial._ensure_raw_mode(mock_serial, "/dev/ttyS0")
-    finally:
-        # Restore originals
-        if original_termios is not None:
-            serial._termios = original_termios
-        if original_tty is not None:
-            serial._tty = original_tty
+# Serial tests removed as they targeted legacy implementation details
+# _ensure_raw_mode and termios handling are now managed by pyserial-asyncio-fast
 
 
-def test_serial_ensure_raw_mode_no_fd() -> None:
-    """Cover line 77-78: Serial object without fd attribute."""
-    from mcubridge.transport.serial import _ensure_raw_mode
-
-    mock_serial = MagicMock()
-    # Ensure accessing fd raises AttributeError
-    del mock_serial.fd
-
-    # Should not raise
-    _ensure_raw_mode(mock_serial, "/dev/ttyS0")
-
-def test_serial_ensure_raw_mode_fd_none() -> None:
-    """Cover line 77-78: Serial object with fd=None."""
-    from mcubridge.transport.serial import _ensure_raw_mode
-
-    mock_serial = MagicMock()
-    mock_serial.fd = None
-    # Should not raise
-    _ensure_raw_mode(mock_serial, "/dev/ttyS0")
-
-def test_serial_ensure_raw_mode_exception() -> None:
-    """Cover lines 84-87: Raw mode setting fails with exception."""
-    from mcubridge.transport.serial import _ensure_raw_mode
-
-    mock_serial = MagicMock()
-    mock_serial.fd = 42
-
-    with patch("mcubridge.transport.serial.termios") as mock_termios:
-        mock_termios.error = OSError
-        with patch("mcubridge.transport.serial.tty") as mock_tty:
-            mock_tty.setraw.side_effect = OSError("Permission denied")
-            # Should not raise, just log warning
-            _ensure_raw_mode(mock_serial, "/dev/ttyS0")
-
-def test_serial_ensure_raw_mode_termios_exception() -> None:
-    """Cover termios.tcgetattr raising exception."""
-    from mcubridge.transport.serial import _ensure_raw_mode
-
-    mock_serial = MagicMock()
-    mock_serial.fd = 42
-
-    with patch("mcubridge.transport.serial.termios") as mock_termios:
-        mock_termios.error = OSError
-        with patch("mcubridge.transport.serial.tty") as mock_tty:
-            mock_tty.setraw.return_value = None
-            mock_termios.tcgetattr.side_effect = OSError("ENOTTY")
-            # Should not raise
-            _ensure_raw_mode(mock_serial, "/dev/ttyS0")
 
 
 # ============================================================================

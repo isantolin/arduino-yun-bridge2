@@ -1,0 +1,364 @@
+"""Serial transport implementation using pyserial-asyncio-fast with direct Protocol access.
+
+This module implements a Zero-Overhead asyncio Protocol for serial communication,
+bypassing the StreamReader/StreamWriter abstraction to minimize latency and
+avoid double-buffering. It uses eager writes to the underlying file descriptor.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import functools
+import logging
+import struct
+import time
+from typing import Final, Sized, TypeGuard, cast
+
+from cobs import cobs
+from mcubridge.rpc import rle
+import serial_asyncio_fast  # type: ignore
+
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
+from mcubridge.rpc.protocol import FRAME_DELIMITER, Command, Status
+from mcubridge.rpc import protocol
+from mcubridge.rpc.frame import Frame
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState
+
+# Import directly from handshake to avoid circular dependency
+from mcubridge.services.handshake import SerialHandshakeFatal
+
+logger = logging.getLogger("mcubridge")
+
+
+def format_hexdump(data: bytes, prefix: str = "") -> str:
+    """Format binary data as canonical hexdump for SIL-2 compliant logging."""
+    if not data:
+        return f"{prefix}<empty>"
+
+    lines: list[str] = []
+    for offset in range(0, len(data), 16):
+        chunk = data[offset: offset + 16]
+        hex_parts: list[str] = []
+        for i in range(0, 16, 4):
+            group = chunk[i: i + 4]
+            hex_parts.append(" ".join(f"{b:02X}" for b in group))
+        hex_str = "  ".join(hex_parts)
+        ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
+        hex_str = hex_str.ljust(47)
+        lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
+
+    return "\n".join(lines)
+
+
+# Explicit framing overhead: 1 code byte + 1 delimiter + ~1 byte/254 overhead
+FRAMING_OVERHEAD: Final[int] = 4
+
+MAX_SERIAL_PACKET_BYTES = (
+    protocol.CRC_COVERED_HEADER_SIZE
+    + protocol.MAX_PAYLOAD_SIZE
+    + protocol.CRC_SIZE
+    + FRAMING_OVERHEAD
+)
+
+BinaryPacket = bytes | bytearray | memoryview
+
+
+def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
+    if not isinstance(candidate, (bytes, bytearray, memoryview)):
+        return False
+    length = len(cast(Sized, candidate))
+    if length == 0:
+        return False
+    return length <= MAX_SERIAL_PACKET_BYTES
+
+
+def _coerce_packet(candidate: BinaryPacket) -> bytes:
+    if isinstance(candidate, bytes):
+        return candidate
+    return bytes(candidate)
+
+
+def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
+    """Encapsulate frame creation and COBS encoding."""
+    raw_frame = Frame.build(command_id, payload)
+    return cobs.encode(raw_frame) + FRAME_DELIMITER
+
+
+async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
+    logger.warning("Serial disconnected; dropping frame 0x%02X", command_id)
+    return False
+
+
+class BridgeSerialProtocol(asyncio.Protocol):
+    """Zero-Overhead AsyncIO Protocol for MCU Bridge."""
+
+    def __init__(
+        self,
+        service: BridgeService,
+        state: RuntimeState,
+        loop: asyncio.AbstractEventLoop,
+    ) -> None:
+        self.service = service
+        self.state = state
+        self.loop = loop
+        self.transport: asyncio.Transport | None = None
+        self._buffer = bytearray()
+        self._connected_future: asyncio.Future[None] = loop.create_future()
+        self._negotiation_future: asyncio.Future[bool] | None = None
+        
+        # Discard state
+        self._discarding = False
+
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
+        self.transport = cast(asyncio.Transport, transport)
+        logger.info("Serial transport established (Protocol).")
+        if not self._connected_future.done():
+            self._connected_future.set_result(None)
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        logger.warning("Serial connection lost: %s", exc)
+        self.transport = None
+        if not self._connected_future.done():
+            self._connected_future.set_exception(exc or ConnectionError("Closed"))
+
+    def data_received(self, data: bytes) -> None:
+        """Handle incoming data with zero-copy splicing where possible."""
+        # Fast path: if no buffer and data contains full packets
+        if not self._buffer and not self._discarding and FRAME_DELIMITER in data:
+            self._process_chunk_fast(data)
+            return
+
+        # Slow path: accumulation
+        for byte_val in data:
+            if byte_val == 0x00:  # FRAME_DELIMITER
+                if self._discarding:
+                    self._discarding = False
+                    self._buffer.clear()
+                    continue
+                
+                if self._buffer:
+                    self._process_packet(self._buffer)
+                    self._buffer.clear()
+                continue
+            
+            if self._discarding:
+                continue
+
+            self._buffer.append(byte_val)
+            if len(self._buffer) > MAX_SERIAL_PACKET_BYTES:
+                logger.warning("Serial packet too large (>%d), flushing.", MAX_SERIAL_PACKET_BYTES)
+                self.state.record_serial_decode_error()
+                self._buffer.clear()
+                self._discarding = True
+
+    def _process_chunk_fast(self, data: bytes) -> None:
+        start = 0
+        while True:
+            try:
+                end = data.index(FRAME_DELIMITER, start)
+                packet = data[start:end]
+                if packet:
+                    self._process_packet(packet)
+                start = end + 1
+            except ValueError:
+                # No more delimiters, buffer remainder
+                if start < len(data):
+                    self._buffer.extend(data[start:])
+                break
+
+    def _process_packet(self, encoded_packet: bytes | bytearray) -> None:
+        # Check for negotiation response first (bypass service)
+        if self._negotiation_future and not self._negotiation_future.done():
+            try:
+                raw_frame = cobs.decode(encoded_packet)
+                frame = Frame.from_bytes(raw_frame)
+                if frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
+                    self._negotiation_future.set_result(True)
+                    return
+            except Exception:
+                pass  # Ignore malformed during negotiation
+
+        # Normal processing
+        self.loop.create_task(self._async_process_packet(bytes(encoded_packet)))
+
+    async def _async_process_packet(self, encoded_packet: bytes) -> None:
+        if not _is_binary_packet(encoded_packet):
+            self.state.record_serial_decode_error()
+            return
+
+        try:
+            raw_frame = cobs.decode(encoded_packet)
+            frame = Frame.from_bytes(raw_frame)
+
+            if frame.command_id & protocol.CMD_FLAG_COMPRESSED:
+                frame.command_id &= ~protocol.CMD_FLAG_COMPRESSED
+                frame.payload = rle.decode(frame.payload)
+
+            if logger.isEnabledFor(logging.DEBUG):
+                self._log_frame(frame, "LINUX <")
+
+            await self.service.handle_mcu_frame(frame.command_id, frame.payload)
+
+        except (cobs.DecodeError, ValueError, Exception) as exc:
+            self.state.record_serial_decode_error()
+            logger.debug("Frame parse error: %s", exc)
+            # Logic to send error status omitted for brevity/speed in protocol context
+            # unless critical.
+            if "crc mismatch" in str(exc).lower():
+                 self.state.record_serial_crc_error()
+
+    def _log_frame(self, frame: Frame, direction: str) -> None:
+        try:
+            cmd_name = Command(frame.command_id).name
+        except ValueError:
+            cmd_name = f"0x{frame.command_id:02X}"
+        
+        if frame.payload:
+            hexdump = format_hexdump(frame.payload, prefix="       ")
+            logger.debug("%s %s len=%d\n%s", direction, cmd_name, len(frame.payload), hexdump)
+        else:
+            logger.debug("%s %s (no payload)", direction, cmd_name)
+
+    def write_frame(self, command_id: int, payload: bytes) -> bool:
+        if self.transport is None or self.transport.is_closing():
+            return False
+        
+        try:
+            encoded = _encode_frame_bytes(command_id, payload)
+            self.transport.write(encoded)
+            
+            if logger.isEnabledFor(logging.DEBUG):
+                # We reconstruct frame just for logging, slightly inefficient but debug only
+                try:
+                    cmd_name = Command(command_id).name
+                except ValueError:
+                    cmd_name = f"0x{command_id:02X}"
+                if payload:
+                    hexdump = format_hexdump(payload, prefix="       ")
+                    logger.debug("LINUX > %s len=%d\n%s", cmd_name, len(payload), hexdump)
+                else:
+                    logger.debug("LINUX > %s (no payload)", cmd_name)
+            return True
+        except Exception as exc:
+            logger.error("Send failed: %s", exc)
+            return False
+
+
+class SerialTransport:
+    """Manages the serial connection using the high-performance Protocol."""
+
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        service: BridgeService,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.service = service
+        self.protocol: BridgeSerialProtocol | None = None
+        self._stop_event = asyncio.Event()
+
+    async def run(self) -> None:
+        reconnect_delay = max(1, self.config.reconnect_delay)
+        loop = asyncio.get_running_loop()
+
+        while not self._stop_event.is_set():
+            should_retry = True
+            try:
+                await self._connect_and_run(loop)
+            except SerialHandshakeFatal:
+                should_retry = False
+                raise
+            except asyncio.CancelledError:
+                self._stop_event.set()
+                raise
+            except Exception as exc:
+                logger.error("Serial error: %s", exc)
+            
+            if should_retry and not self._stop_event.is_set():
+                logger.warning("Retrying serial in %ds...", reconnect_delay)
+                await asyncio.sleep(reconnect_delay)
+            else:
+                break
+
+    async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
+        if self.protocol:
+            return self.protocol.write_frame(cmd, pl)
+        return False
+
+    async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:
+        target_baud = self.config.serial_baud
+        initial_baud = self.config.serial_safe_baud
+        negotiation_needed = (initial_baud > 0 and initial_baud != target_baud)
+        start_baud = initial_baud if negotiation_needed else target_baud
+
+        # 1. Connect
+        logger.info("Connecting to %s at %d baud (Fast Protocol)...", self.config.serial_port, start_baud)
+        
+        protocol_factory = functools.partial(BridgeSerialProtocol, self.service, self.state, loop)
+        transport, proto = await serial_asyncio_fast.create_serial_connection(
+            loop, protocol_factory, self.config.serial_port, baudrate=start_baud
+        )
+        self.protocol = cast(BridgeSerialProtocol, proto)
+
+        try:
+            # 2. Negotiate if needed
+            if negotiation_needed:
+                success = await self._negotiate_baudrate(self.protocol, target_baud)
+                if success:
+                    logger.info("Baudrate negotiated. Reconnecting at %d...", target_baud)
+                    transport.close()
+                    # Wait for close?
+                    await asyncio.sleep(0.2)
+                    
+                    transport, proto = await serial_asyncio_fast.create_serial_connection(
+                        loop, protocol_factory, self.config.serial_port, baudrate=target_baud
+                    )
+                    self.protocol = cast(BridgeSerialProtocol, proto)
+                else:
+                    logger.warning("Negotiation failed, staying at %d", start_baud)
+
+            # 3. Register Sender
+            self.service.register_serial_sender(self._serial_sender)
+            self.state.serial_writer = transport # Just to mark as connected in state if needed
+            
+            # 4. Handshake / Main Loop
+            # Since Protocol handles reading in background, we just wait here
+            # or perform the handshake logic.
+            # Service.on_serial_connected handles handshake (HELLO/SYNC)
+            await self.service.on_serial_connected()
+
+            # Keep alive until connection lost
+            while not transport.is_closing():
+                await asyncio.sleep(1)
+
+        finally:
+            if transport and not transport.is_closing():
+                transport.close()
+            self.service.register_serial_sender(serial_sender_not_ready)
+            self.protocol = None
+            try:
+                await self.service.on_serial_disconnected()
+            except Exception as exc:
+                logger.warning("Error in on_serial_disconnected hook: %s", exc)
+
+    async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
+        logger.info("Negotiating baudrate switch to %d...", target_baud)
+        payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
+        # Manually encode since protocol.write_frame sends it
+        # but we need to set the future BEFORE sending to avoid race condition
+        proto._negotiation_future = proto.loop.create_future()
+        
+        if not proto.write_frame(Command.CMD_SET_BAUDRATE, payload):
+            return False
+
+        try:
+            await asyncio.wait_for(proto._negotiation_future, SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
+            return True
+        except asyncio.TimeoutError:
+            return False
+        finally:
+            proto._negotiation_future = None

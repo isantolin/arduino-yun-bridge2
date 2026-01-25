@@ -49,7 +49,8 @@ define Package/$(PKG_NAME)
 		+python3-paho-mqtt \
 		+python3-cobs \
 		+python3-psutil \
-		+python3-prometheus-client
+		+python3-prometheus-client \
+		+python3-pyserial-asyncio-fast
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

@@ -1,6 +1,6 @@
 """Transport abstractions (serial, MQTT) for the MCU Bridge daemon."""
 
-from .serial import (
+from .serial_fast import (
     MAX_SERIAL_PACKET_BYTES,
     SerialTransport,
     format_hexdump,

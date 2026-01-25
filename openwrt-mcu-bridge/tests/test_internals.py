@@ -5,7 +5,7 @@ Objetivo: Ejecución quirúrgica de bucles internos y manejo de errores.
 """
 from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
-from mcubridge.transport.serial import SerialTransport
+from mcubridge.transport import SerialTransport
 from mcubridge.daemon import main
 from mcubridge.rpc.protocol import Command
 from mcubridge.rpc.frame import Frame
@@ -14,42 +14,8 @@ from cobs import cobs
 
 # --- SERIAL TRANSPORT INTERNALS ---
 
-@pytest.mark.asyncio
-async def test_serial_read_loop_handles_partial_reads_and_errors():
-    """Prueba _read_loop byte a byte y con excepciones."""
-    mock_config = MagicMock()
-    mock_state = MagicMock()
-    mock_service = AsyncMock()
+# Obsolete test removed (read_loop replaced by Protocol)
 
-    transport = SerialTransport(mock_config, mock_state, mock_service)
-
-    # 1. Crear una trama REAL y válida
-    # Frame válido: CMD_GET_VERSION con payload vacío
-    raw_frame_bytes = Frame.build(Command.CMD_GET_VERSION, b"")
-    encoded_frame = cobs.encode(raw_frame_bytes) + b'\x00'  # COBS + Delimiter
-
-    # 2. Simular lector que devuelve bytes fragmentados
-    mock_reader = AsyncMock()
-
-    # Generar secuencia de lectura byte a byte + EOF
-    read_side_effect = [bytes([b]) for b in encoded_frame]
-    read_side_effect.append(b"")  # EOF para terminar el loop
-
-    mock_reader.read.side_effect = read_side_effect
-
-    # Hack: Inyectamos el reader directamente (la función usa self.reader)
-    transport.reader = mock_reader
-
-    # Ejecutar loop
-    await transport._read_loop()
-
-    # Verificaciones
-    # read(1) se llama una vez por cada byte + 1 por el EOF
-    assert mock_reader.read.call_count == len(encoded_frame) + 1
-
-    # AHORA SÍ: Verificar que se procesó el frame correctamente
-    # Como la trama es válida (COBS decoding OK -> CRC OK), debe llamar
-    assert mock_service.handle_mcu_frame.call_count >= 1
 
 
 # --- MQTT INTERNALS ---

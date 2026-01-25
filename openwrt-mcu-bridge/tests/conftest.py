@@ -12,6 +12,10 @@ from unittest.mock import MagicMock
 if "uci" not in sys.modules:
     sys.modules["uci"] = MagicMock()
 
+# [TEST FIX] Mock 'pyserial-asyncio-fast' as it is a compiled extension not available in dev env.
+if "serial_asyncio_fast" not in sys.modules:
+    sys.modules["serial_asyncio_fast"] = MagicMock()
+
 import pytest
 
 from mcubridge import common

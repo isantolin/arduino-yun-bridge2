@@ -18,13 +18,12 @@ BridgeTransport* BridgeTransport::_instance = nullptr;
 BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
     : _stream(stream),
       _hardware_serial(hwSerial),
-      _last_raw_frame_len(0),
       _target_frame(nullptr),
       _frame_received(false),
       _parser()
 {
     _instance = this;
-    memset(_last_raw_frame, 0, sizeof(_last_raw_frame));
+    _last_raw_frame.clear();
 }
 
 void BridgeTransport::begin(unsigned long baudrate) {
@@ -36,7 +35,7 @@ void BridgeTransport::begin(unsigned long baudrate) {
     _packetSerial.setStream(&_stream);
     _packetSerial.setPacketHandler(onPacketReceived);
     
-    _last_raw_frame_len = 0;
+    _last_raw_frame.clear();
     _frame_received = false;
     _target_frame = nullptr;
 }
@@ -98,21 +97,26 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
     }
 
     rpc::FrameBuilder builder;
+    
+    // Ensure vector is sized for writing
+    _last_raw_frame.resize(_last_raw_frame.max_size());
+    
     size_t raw_len = builder.build(
-        _last_raw_frame,
-        sizeof(_last_raw_frame),
+        _last_raw_frame.data(),
+        _last_raw_frame.size(),
         command_id,
         payload,
         length);
 
     if (raw_len == 0) {
+        _last_raw_frame.clear();
         return false;
     }
 
-    _last_raw_frame_len = raw_len;
+    _last_raw_frame.resize(raw_len);
 
     // Send using PacketSerial (Handles COBS encoding and Delimiter)
-    _packetSerial.send(_last_raw_frame, raw_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();
@@ -149,9 +153,9 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
 }
 
 bool BridgeTransport::retransmitLastFrame() {
-    if (_last_raw_frame_len == 0) return false;
+    if (_last_raw_frame.empty()) return false;
 
-    _packetSerial.send(_last_raw_frame, _last_raw_frame_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();

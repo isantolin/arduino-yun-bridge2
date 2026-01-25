@@ -137,10 +137,17 @@ echo "[host-cpp] Building test_coverage_gaps"
   "${ARDUINO_RUNTIME_SOURCES[@]}" \
   -o "${BUILD_DIR}/test_coverage_gaps"
 
+echo "[host-cpp] Building test_bridge_transport"
+"${CXX}" "${COMMON_FLAGS[@]}" "${ARDUINO_TEST_DEFS[@]}" "${COMMON_INCLUDES[@]}" \
+  "${TEST_DIR}/test_bridge_transport.cpp" \
+  "${ARDUINO_RUNTIME_SOURCES[@]}" \
+  -o "${BUILD_DIR}/test_bridge_transport"
+
 run_one "${BUILD_DIR}/test_protocol"
 run_one "${BUILD_DIR}/test_bridge_components"
 run_one "${BUILD_DIR}/test_bridge_core"
 run_one "${BUILD_DIR}/test_coverage_extreme"
 run_one "${BUILD_DIR}/test_coverage_gaps"
+run_one "${BUILD_DIR}/test_bridge_transport"
 
 echo "[host-cpp] ALL HOST TESTS PASSED"

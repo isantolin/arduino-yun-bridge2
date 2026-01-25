@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+import struct
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

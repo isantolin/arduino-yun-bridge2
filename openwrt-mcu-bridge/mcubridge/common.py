@@ -1,5 +1,7 @@
 """Utility helpers shared across MCU Bridge packages."""
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import logging
@@ -232,7 +234,7 @@ def encode_status_reason(reason: str | None) -> bytes:
     return payload[: protocol.MAX_PAYLOAD_SIZE]
 
 
-def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
+def build_mqtt_properties(message: 'QueuedPublish') -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
     has_props = any(
         [

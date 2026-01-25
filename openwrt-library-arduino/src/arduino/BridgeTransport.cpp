@@ -8,7 +8,6 @@
  * - Frame construction and validation via rpc::FrameBuilder/FrameParser
  * - No dynamic memory allocation (PacketSerial uses internal buffer or Stream)
  * - CRC32 integrity check enabled
- * - Uses ETL vector for static buffer management
  */
 
 namespace bridge {
@@ -19,12 +18,13 @@ BridgeTransport* BridgeTransport::_instance = nullptr;
 BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
     : _stream(stream),
       _hardware_serial(hwSerial),
+      _last_raw_frame_len(0),
       _target_frame(nullptr),
       _frame_received(false),
       _parser()
 {
     _instance = this;
-    _last_raw_frame.clear();
+    memset(_last_raw_frame, 0, sizeof(_last_raw_frame));
 }
 
 void BridgeTransport::begin(unsigned long baudrate) {
@@ -36,7 +36,7 @@ void BridgeTransport::begin(unsigned long baudrate) {
     _packetSerial.setStream(&_stream);
     _packetSerial.setPacketHandler(onPacketReceived);
     
-    _last_raw_frame.clear();
+    _last_raw_frame_len = 0;
     _frame_received = false;
     _target_frame = nullptr;
 }
@@ -92,13 +92,15 @@ void BridgeTransport::onPacketReceived(const uint8_t* buffer, size_t size) {
 }
 
 bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, size_t length) {
+    // [SIL-2] GUARD CLAUSE: Strict Protocol Compliance
+    if (command_id < rpc::RPC_STATUS_CODE_MIN) {
+        return false;
+    }
+
     rpc::FrameBuilder builder;
-    
-    uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
-    
     size_t raw_len = builder.build(
-        raw_buffer,
-        sizeof(raw_buffer),
+        _last_raw_frame,
+        sizeof(_last_raw_frame),
         command_id,
         payload,
         length);
@@ -107,11 +109,10 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
         return false;
     }
 
-    // Update retransmission buffer
-    _last_raw_frame.assign(raw_buffer, raw_buffer + raw_len);
+    _last_raw_frame_len = raw_len;
 
     // Send using PacketSerial (Handles COBS encoding and Delimiter)
-    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
+    _packetSerial.send(_last_raw_frame, raw_len);
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();
@@ -123,18 +124,20 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
 }
 
 bool BridgeTransport::sendControlFrame(uint16_t command_id) {
+    // [SIL-2] GUARD CLAUSE: Validate control command ID
+    if (command_id < rpc::RPC_STATUS_CODE_MIN) {
+        return false;
+    }
+
     // Build a temporary frame for control messages to avoid overwriting _last_raw_frame
     // (preserving retransmission capability)
-    // Using ETL vector here too for consistency, though stack array is fine for temporary
-    etl::vector<uint8_t, 32> temp_buf; 
+    uint8_t temp_buf[32]; // Sufficient for Header + CRC
     rpc::FrameBuilder builder;
     
-    size_t raw_len = builder.build(temp_buf.data(), temp_buf.capacity(), command_id, nullptr, 0);
+    size_t raw_len = builder.build(temp_buf, sizeof(temp_buf), command_id, nullptr, 0);
     if (raw_len == 0) return false;
     
-    temp_buf.resize(raw_len);
-    
-    _packetSerial.send(temp_buf.data(), temp_buf.size());
+    _packetSerial.send(temp_buf, raw_len);
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();
@@ -146,9 +149,9 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
 }
 
 bool BridgeTransport::retransmitLastFrame() {
-    if (_last_raw_frame.empty()) return false;
+    if (_last_raw_frame_len == 0) return false;
 
-    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
+    _packetSerial.send(_last_raw_frame, _last_raw_frame_len);
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();

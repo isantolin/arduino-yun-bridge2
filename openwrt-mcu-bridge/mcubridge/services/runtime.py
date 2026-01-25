@@ -10,7 +10,7 @@ from dataclasses import replace
 from typing import Any
 
 from aiomqtt.message import Message
-from ..transport.serial import SerialException
+from ..transport.termios_serial import SerialException
 
 from ..config.settings import RuntimeConfig
 from ..const import TOPIC_FORBIDDEN_REASON

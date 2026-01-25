@@ -506,7 +506,8 @@ void test_bridge_dedup_console_write_retry() {
     stream.tx_buffer.clear();
 
     // Reset console RX state to a known baseline.
-    Console._rx_buffer.clear();
+    Console._rx_buffer_head = 0;
+    Console._rx_buffer_tail = 0;
     Console._xoff_sent = false;
 
     const uint8_t payload[] = { 'a', 'b', 'c' };
@@ -698,9 +699,7 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), big, sizeof(big)));
 
     // Fill queue.
-    while (!bridge._pending_tx_queue.full()) {
-        bridge._pending_tx_queue.push({});
-    }
+    bridge._pending_tx_count = rpc::RPC_MAX_PENDING_TX_FRAMES;
     TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), nullptr, 0));
 }
 
@@ -843,7 +842,7 @@ void test_bridge_malformed_frame() {
     
     enum { kEncodedCap = kMaxEncodedSize + 1 };
     uint8_t encoded[kEncodedCap];
-    (void)TestFrameBuilder::build(
+    const size_t encoded_len = TestFrameBuilder::build(
         encoded, sizeof(encoded), 0xFFFF, garbage, sizeof(garbage)); // 0xFFFF is invalid ID
 
     // We want to simulate MALFORMED, so let's corrupt the frame header *after* building valid COBS?

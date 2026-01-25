@@ -25,8 +25,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.3.0
-PKG_RELEASE:=1
+PKG_VERSION:=2.2.1
+PKG_RELEASE:=5
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
@@ -41,15 +41,13 @@ define Package/$(PKG_NAME)
 	PKG_ARCH:=all
 	DEPENDS:=+openwrt-mcu-core
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
-	# Versions are pinned to ensure deterministic SIL-2 environment
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
-		+python3-msgspec \
+		+python3-sqlite3 \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \
-		+python3-marshmallow \
 		+python3-psutil \
 		+python3-prometheus-client
 	# AUTO-GENERATED RUNTIME DEPENDS END

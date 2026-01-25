@@ -2,25 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
-import functools
 import logging
 import os
-import random
-from collections.abc import Iterable, Awaitable, Callable
+from collections.abc import Iterable
 from typing import (
     Final,
     TYPE_CHECKING,
     cast,
-    TypeVar,
-    ParamSpec,
-    Any,
 )
 
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 from mcubridge.rpc import protocol
-
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
@@ -54,125 +47,13 @@ from .const import (
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    pass
+    from mcubridge.mqtt.messages import QueuedPublish
 
 _TRUE_STRINGS: Final[frozenset[str]] = frozenset(
     {"1", "yes", "on", "true", "enable", "enabled"}
 )
 _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"
-
-P = ParamSpec("P")
-R = TypeVar("R")
-
-
-class _BackoffCall:
-    """Callable wrapper implementing retry logic."""
-    def __init__(
-        self,
-        func: Callable[..., Awaitable[Any]],
-        retries: int,
-        start_delay: float,
-        max_delay: float,
-        factor: float,
-        jitter: bool,
-        exceptions: tuple[type[BaseException], ...],
-    ) -> None:
-        self.func = func
-        self.retries = retries
-        self.start_delay = start_delay
-        self.max_delay = max_delay
-        self.factor = factor
-        self.jitter = jitter
-        self.exceptions = exceptions
-        functools.update_wrapper(self, func)
-
-    async def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        delay = self.start_delay
-        attempt = 0
-
-        while True:
-            try:
-                return await self.func(*args, **kwargs)
-            except Exception as e:
-                # Check for direct match
-                is_match = isinstance(e, self.exceptions)
-
-                # Check for ExceptionGroup match
-                if not is_match and isinstance(e, ExceptionGroup):
-                    matches, remainder = e.split(self.exceptions) # type: ignore
-                    if matches and not remainder:
-                        is_match = True
-                    elif matches and remainder:
-                        # Mixed group (fatal + non-fatal). Raise remainder.
-                        raise e
-
-                if not is_match:
-                    raise
-
-                attempt += 1
-                if self.retries != -1 and attempt > self.retries:
-                    logger.error(
-                        "Backoff limit reached for %s after %d attempts. Last error: %s",
-                        self.func.__name__, attempt, e # type: ignore
-                    )
-                    raise
-
-                sleep_time = delay
-                if self.jitter:
-                    sleep_time = random.uniform(delay * 0.5, delay * 1.5)
-
-                logger.warning(
-                    "Retrying %s in %.2fs (attempt %d/%s). Error: %s",
-                    self.func.__name__, sleep_time, attempt,
-                    "inf" if self.retries == -1 else self.retries, e # type: ignore
-                )
-
-                await asyncio.sleep(sleep_time)
-                delay = min(delay * self.factor, self.max_delay)
-
-
-class backoff:
-    """Decorator for exponential backoff retry logic.
-
-    Args:
-        retries: Maximum number of retries (default 3).
-                 Use -1 for infinite retries (use with caution).
-        start_delay: Initial delay in seconds.
-        max_delay: Maximum delay cap in seconds.
-        factor: Multiplier for exponential backoff.
-        jitter: Add randomness to delay.
-        exceptions: Tuple of exceptions to catch and retry on.
-    """
-    def __init__(
-        self,
-        retries: int = 3,
-        start_delay: float = 0.1,
-        max_delay: float = 5.0,
-        factor: float = 2.0,
-        jitter: bool = True,
-        exceptions: tuple[type[BaseException], ...] = (Exception,),
-    ) -> None:
-        self.retries = retries
-        self.start_delay = start_delay
-        self.max_delay = max_delay
-        self.factor = factor
-        self.jitter = jitter
-        self.exceptions = exceptions
-
-    def __call__(
-        self, func: Callable[P, Awaitable[R]]
-    ) -> Callable[P, Awaitable[R]]:
-        wrapper = _BackoffCall(
-            func,
-            self.retries,
-            self.start_delay,
-            self.max_delay,
-            self.factor,
-            self.jitter,
-            self.exceptions,
-        )
-        return cast(Callable[P, Awaitable[R]], wrapper)
 
 
 def parse_bool(value: object) -> bool:
@@ -229,7 +110,7 @@ def encode_status_reason(reason: str | None) -> bytes:
     return payload[: protocol.MAX_PAYLOAD_SIZE]
 
 
-def build_mqtt_properties(message: Any) -> Properties | None:
+def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
     """Construct Paho MQTT v5 properties from a message object."""
     has_props = any(
         [
@@ -282,72 +163,76 @@ def get_uci_config() -> dict[str, str]:
     """Read MCU Bridge configuration directly from OpenWrt's UCI system.
 
     [SIL-2] STRICT MODE: On OpenWrt, failure to load UCI is FATAL.
+    We do not fallback to defaults in production to avoid 'split-brain' configurations.
     """
+
+    # Detect OpenWrt environment
+    is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
+
     try:
-        from uci import Uci
+        from uci import Uci  # type: ignore
     except ImportError:
-        Uci = None
+        # In test environments (e.g. CI/Emulation), missing UCI is expected.
+        if is_openwrt:
+            # On actual OpenWrt, missing 'uci' module is a critical broken dependency.
+            logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
+            raise RuntimeError("Missing dependency: python3-uci")
 
-    if Uci is not None:
-        try:
-            with Uci() as cursor:
-                section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
+        logger.warning(
+            "UCI module not found (not running on OpenWrt?); using default configuration."
+        )
+        return get_default_config()
 
-                if not section:
-                    # Detect OpenWrt environment
-                    if os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version"):
-                        raise RuntimeError(
-                            f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
-                            "Re-install package to restore defaults."
-                        )
+    try:
+        with Uci() as cursor:
+            # OpenWrt's python3-uci returns a native dict in modern versions.
+            # We strictly expect the package 'mcubridge' and section 'general'.
+            section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
 
-                    logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
-                    return get_default_config()
+            if not section:
+                if is_openwrt:
+                    # In production, missing config is fatal.
+                    raise RuntimeError(
+                        f"UCI section '{_UCI_PACKAGE}.{_UCI_SECTION}' missing! "
+                        "Re-install package to restore defaults."
+                    )
 
-                # Clean internal UCI metadata (keys starting with dot/underscore)
-                clean_config = get_default_config()
-                for k, v in section.items():
-                    if k.startswith((".", "_")):
-                        continue
-                    if isinstance(v, (list, tuple)):
-                        # Explicitly cast v to Iterable to help type checker
-                        items = cast(Iterable[object], v)
-                        clean_config[k] = " ".join(str(item) for item in items)
-                    else:
-                        clean_config[k] = str(v)
+                logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
+                return get_default_config()
 
-                return clean_config
+            # Clean internal UCI metadata (keys starting with dot/underscore)
+            clean_config = get_default_config()
+            for k, v in section.items():
+                if k.startswith((".", "_")):
+                    continue
+                if isinstance(v, (list, tuple)):
+                    # Explicitly cast v to Iterable to help type checker
+                    items = cast(Iterable[object], v)
+                    clean_config[k] = " ".join(str(item) for item in items)
+                else:
+                    clean_config[k] = str(v)
 
-        except (OSError, ValueError) as e:
-            # Detect OpenWrt environment
-            if os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version"):
-                logger.critical("Failed to load UCI configuration: %s", e)
-                raise RuntimeError(f"Critical UCI failure: {e}") from e
+            return clean_config
 
-            logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
-            return get_default_config()
+    except (OSError, ValueError) as e:
+        if is_openwrt:
+            logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
+            raise RuntimeError(f"Critical UCI failure: {e}") from e
 
-    # Fallback when Uci is None
-    if os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version"):
-        logger.critical("CRITICAL: Running on OpenWrt but 'python3-uci' is missing!")
-        raise RuntimeError("Missing dependency: python3-uci")
-
-    logger.warning("UCI module not found; using default configuration.")
-    return get_default_config()
+        # Expected system errors (e.g. UCI file locked, parsing error) in non-critical envs
+        logger.error("Failed to load UCI configuration: %s. Using defaults.", e)
+        return get_default_config()
 
 
 def get_default_config() -> dict[str, str]:
     """Provide default MCU Bridge configuration values."""
-    from .const import DEFAULT_SERIAL_SHARED_SECRET
-
-    default_secret = ""
-    if DEFAULT_SERIAL_SHARED_SECRET is not None:
-        default_secret = DEFAULT_SERIAL_SHARED_SECRET.decode("utf-8")
-
     return {
         "mqtt_host": DEFAULT_MQTT_HOST,
         "mqtt_port": str(DEFAULT_MQTT_PORT),
         "mqtt_tls": "1",
+        # If enabled, clients will skip TLS hostname verification (equivalent to
+        # mosquitto_{pub,sub} --insecure). Certificate chain verification still
+        # applies unless explicitly disabled elsewhere.
         "mqtt_tls_insecure": "0",
         "mqtt_cafile": DEFAULT_MQTT_CAFILE,
         "mqtt_certfile": "",
@@ -359,7 +244,7 @@ def get_default_config() -> dict[str, str]:
         "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
         "serial_port": DEFAULT_SERIAL_PORT,
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-        "serial_shared_secret": default_secret,
+        "serial_shared_secret": "",
         "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
         "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
         "serial_retry_attempts": str(protocol.DEFAULT_RETRY_LIMIT),
@@ -406,7 +291,6 @@ def get_default_config() -> dict[str, str]:
 
 
 __all__: Final[tuple[str, ...]] = (
-    "backoff",
     "normalise_allowed_commands",
     "parse_bool",
     "parse_int",
@@ -432,18 +316,3 @@ def log_hexdump(
 
     hex_str = " ".join(f"{b:02X}" for b in data)
     logger_instance.log(level, "[%s] LEN=%d HEX=%s", label, len(data), hex_str)
-
-
-def format_hexdump(data: bytes, prefix: str = "") -> str:
-    """Return a multi-line canonical hexdump string."""
-    if not data:
-        return f"{prefix}<empty>"
-
-    lines: list[str] = []
-    for offset in range(0, len(data), 16):
-        chunk = data[offset : offset + 16]
-        hex_parts = [" ".join(f"{b:02X}" for b in chunk[i : i + 4]) for i in range(0, len(chunk), 4)]
-        hex_str = "  ".join(hex_parts).ljust(47)
-        ascii_str = "".join(chr(b) if 32 <= b < 127 else "." for b in chunk)
-        lines.append(f"{prefix}{offset:04X}  {hex_str}  |{ascii_str}|")
-    return "\n".join(lines)

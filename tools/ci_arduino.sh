@@ -21,23 +21,9 @@ arduino-cli core update-index
 echo "Installing arduino:avr core..."
 arduino-cli core install arduino:avr
 
-# [CI/CD] Managed Dependencies Directory
-DEPS_DIR="$PWD/openwrt-library-arduino/deps"
-mkdir -p "$DEPS_DIR"
-
-ensure_lib_git() {
-    local name="$1"
-    local url="$2"
-    local target="$DEPS_DIR/$name"
-    if [ ! -d "$target" ]; then
-        echo "[CI] Fetching $name from $url..."
-        git clone --depth 1 "$url" "$target"
-    fi
-}
-
+# Install dependencies
 echo "Installing libraries..."
-arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "TaskScheduler"
-ensure_lib_git "ETL" "https://github.com/ETLCPP/etl.git"
+arduino-cli lib install PacketSerial CRC32 Crypto
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/openwrt-library-arduino"
@@ -46,14 +32,6 @@ LIB_PATH="$PWD/openwrt-library-arduino"
 FQBN="arduino:avr:uno"
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
-
-# [SIL-2] Target-specific configuration for ETL
-# -DETL_NO_STL: Don't use system STL headers.
-# -DETL_NO_CPP_EXCEPTIONS: Disable C++ exceptions (mandatory for AVR).
-# -DETL_THROW_EXCEPTIONS=0: Tell ETL not to use throw.
-# -DETL_LOG_ERRORS: Enable safe error logging instead of crashing.
-ETL_INC="$DEPS_DIR/ETL/include"
-COMPILER_FLAGS="-I$ETL_INC -DETL_NO_STL -DETL_NO_CPP_EXTENSIONS -DETL_THROW_EXCEPTIONS=0 -DETL_LOG_ERRORS"
 
 echo "Compiling examples for $FQBN..."
 
@@ -64,25 +42,16 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
+    BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings default"
+    
     if [ -n "$BUILD_OUTPUT_DIR" ]; then
+        # Create specific output dir for this sketch to avoid overwrites
         SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/$sketch_name"
         mkdir -p "$SKETCH_BUILD_DIR"
-        
-        arduino-cli compile \
-            --fqbn "$FQBN" \
-            --library "$LIB_PATH" \
-            --build-path "$SKETCH_BUILD_DIR" \
-            --build-property "compiler.cpp.extra_flags=$COMPILER_FLAGS" \
-            --warnings default \
-            "$sketch"
-    else
-        arduino-cli compile \
-            --fqbn "$FQBN" \
-            --library "$LIB_PATH" \
-            --build-property "compiler.cpp.extra_flags=$COMPILER_FLAGS" \
-            --warnings default \
-            "$sketch"
+        BUILD_FLAGS="$BUILD_FLAGS --build-path $SKETCH_BUILD_DIR"
     fi
+
+    arduino-cli compile $BUILD_FLAGS "$sketch"
         
     if [ $? -ne 0 ]; then
         echo "✗ $sketch_name failed to compile!"

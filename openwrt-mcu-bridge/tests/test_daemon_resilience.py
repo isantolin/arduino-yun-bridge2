@@ -7,7 +7,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcubridge.transport.serial import SerialException
+from mcubridge.transport.termios_serial import SerialException
 
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.services.task_supervisor import supervise_task
@@ -29,7 +29,8 @@ async def test_open_serial_connection_retries_on_failure(
         ]
     )
     monkeypatch.setattr(
-                    "mcubridge.transport.serial._open_serial_connection",        mock_open,
+        "mcubridge.transport.serial.OPEN_SERIAL_CONNECTION",
+        mock_open,
     )
 
     # Patch sleep to avoid waiting during tests
@@ -148,7 +149,8 @@ async def test_open_serial_connection_handles_exception_group(
 
     mock_sleep = AsyncMock()
     monkeypatch.setattr(
-                    "mcubridge.transport.serial._open_serial_connection",        flaky_open,
+        "mcubridge.transport.serial.OPEN_SERIAL_CONNECTION",
+        flaky_open,
     )
     monkeypatch.setattr("mcubridge.transport.serial.asyncio.sleep", mock_sleep)
 
@@ -174,7 +176,8 @@ async def test_open_serial_connection_rejects_mixed_exception_group(
 
     mock_sleep = AsyncMock()
     monkeypatch.setattr(
-                    "mcubridge.transport.serial._open_serial_connection",        bad_open,
+        "mcubridge.transport.serial.OPEN_SERIAL_CONNECTION",
+        bad_open,
     )
     monkeypatch.setattr("mcubridge.transport.serial.asyncio.sleep", mock_sleep)
 

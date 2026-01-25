@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
 
 # Fix import paths for tools and sibling tests
 _REPO_ROOT = Path(__file__).parents[2]
@@ -16,6 +13,10 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 if str(_PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(_PKG_ROOT))
+
+from unittest.mock import MagicMock, patch  # noqa: E402
+
+import pytest  # noqa: E402
 
 from mcubridge.rpc.protocol import (  # noqa: E402
     Command,
@@ -115,11 +116,9 @@ def test_iter_counts() -> None:
     assert next(gen) == 2
 
 
-def test_main_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
+@patch("tools.frame_debug.TermiosSerial")
+def test_main_dry_run(mock_serial_cls: MagicMock) -> None:
     # Test running without --port (dry run)
-    mock_open = MagicMock()
-    monkeypatch.setattr(frame_debug, "_open_serial_device", mock_open)
-
     ret = frame_debug.main(
         [
             "--command",
@@ -129,17 +128,13 @@ def test_main_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
         ]
     )
     assert ret == 0
-    mock_open.assert_not_called()
+    mock_serial_cls.assert_not_called()
 
 
-def test_main_with_serial_write(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_open = MagicMock(return_value=123)
-    mock_write = MagicMock(return_value=10)
-    mock_close = MagicMock()
-
-    monkeypatch.setattr(frame_debug, "_open_serial_device", mock_open)
-    monkeypatch.setattr(frame_debug, "_write_frame", mock_write)
-    monkeypatch.setattr(frame_debug.os, "close", mock_close)
+@patch("tools.frame_debug.TermiosSerial")
+def test_main_with_serial_write(mock_serial_cls: MagicMock) -> None:
+    mock_serial = mock_serial_cls.return_value
+    mock_serial.write.return_value = 10
 
     ret = frame_debug.main(
         [
@@ -153,21 +148,17 @@ def test_main_with_serial_write(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert ret == 0
-    mock_open.assert_called_once()
-    mock_write.assert_called()
-    mock_close.assert_called_with(123)
+    mock_serial_cls.assert_called_once()
+    mock_serial.write.assert_called()
+    mock_serial.close.assert_called()
 
 
-def test_main_with_serial_read_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    mock_open = MagicMock(return_value=123)
-    mock_write = MagicMock(return_value=10)
-    mock_read = MagicMock(return_value=None)
-    mock_close = MagicMock()
-
-    monkeypatch.setattr(frame_debug, "_open_serial_device", mock_open)
-    monkeypatch.setattr(frame_debug, "_write_frame", mock_write)
-    monkeypatch.setattr(frame_debug, "_read_frame", mock_read)
-    monkeypatch.setattr(frame_debug.os, "close", mock_close)
+@patch("tools.frame_debug.TermiosSerial")
+def test_main_with_serial_read_timeout(mock_serial_cls: MagicMock) -> None:
+    mock_serial = mock_serial_cls.return_value
+    mock_serial.write.return_value = 10
+    # Simulate timeout (read returns empty bytes)
+    mock_serial.read.return_value = b""
 
     ret = frame_debug.main(
         [
@@ -182,25 +173,18 @@ def test_main_with_serial_read_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
     assert ret == 0
-    mock_read.assert_called()
+    mock_serial.read.assert_called()
 
 
-def test_main_with_serial_read_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    from cobs import cobs
-    from mcubridge.rpc.frame import Frame as RpcFrame
+@patch("tools.frame_debug.TermiosSerial")
+def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
+    mock_serial = mock_serial_cls.return_value
+    mock_serial.write.return_value = 10
 
-    frame = RpcFrame(Command.CMD_GET_VERSION_RESP.value, b"v2.0")
-    response = cobs.encode(frame.to_bytes()) + FRAME_DELIMITER
-
-    mock_open = MagicMock(return_value=123)
-    mock_write = MagicMock(return_value=10)
-    mock_read = MagicMock(return_value=response)
-    mock_close = MagicMock()
-
-    monkeypatch.setattr(frame_debug, "_open_serial_device", mock_open)
-    monkeypatch.setattr(frame_debug, "_write_frame", mock_write)
-    monkeypatch.setattr(frame_debug, "_read_frame", mock_read)
-    monkeypatch.setattr(frame_debug.os, "close", mock_close)
+    # Simulate reading a valid frame (COBS encoded)
+    # Frame(cmd=OK, payload=b"") -> raw: delimiter ... CRC
+    # Let's just use a simple mocked read sequence
+    mock_serial.read.side_effect = [bytes([1]), FRAME_DELIMITER, b""]
 
     with patch("tools.frame_debug._decode_frame") as mock_decode:
         mock_decode.return_value = frame_debug.Frame(

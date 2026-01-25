@@ -11,6 +11,10 @@ using boolean = bool;
 using byte = uint8_t;
 using word = uint16_t;
 
+// Placement new/delete for tests that reconstruct objects in-place.
+inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
+inline void operator delete(void*, void*) noexcept {}
+
 // Constants
 #define HIGH 1
 #define LOW 0
@@ -21,10 +25,10 @@ using word = uint16_t;
 
 // Math macros
 #define abs(x) ((x) > 0 ? (x) : -(x))
-template <class T, class L>
-auto min(T a, L b) -> decltype(a < b ? a : b) { return (a < b) ? a : b; }
-template <class T, class L>
-auto max(T a, L b) -> decltype(a > b ? a : b) { return (a > b) ? a : b; }
+#undef min
+#undef max
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
 #define round(x) ((x) >= 0 ? (long)((x) + 0.5) : (long)((x) - 0.5))
 
 // Stub functions

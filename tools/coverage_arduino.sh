@@ -55,33 +55,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-BUILD_DIR="${LIB_ROOT}/build-coverage"
-OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
-FORCE_REBUILD=0
-ENABLE_HTML=1
-
-# [CI/CD] Dependency Management
-DEP_DIR="${BUILD_DIR}/deps"
-mkdir -p "${DEP_DIR}"
-
-ensure_dep() {
-  local name="$1"
-  local url="$2"
-  local target="${DEP_DIR}/${name}"
-  if [ ! -d "${target}" ]; then
-    echo "[coverage_arduino] Downloading ${name}..."
-    local tmp
-    tmp=$(mktemp -d)
-    curl -fsSL "${url}" | tar xz -C "${tmp}" --strip-components=1
-    mv "${tmp}" "${target}"
-  fi
-}
-
-ensure_dep "etl" "https://github.com/ETLCPP/etl/archive/refs/tags/20.44.2.tar.gz"
-ensure_dep "taskscheduler" "https://github.com/arkhipenko/TaskScheduler/archive/refs/tags/v3.8.5.tar.gz"
-ensure_dep "fastcrc" "https://github.com/FrankBoesing/FastCRC/archive/refs/heads/master.tar.gz"
-ensure_dep "packetserial" "https://github.com/bakercp/PacketSerial/archive/refs/heads/master.tar.gz"
-
 SUMMARY_JSON_PATH="${OUTPUT_ROOT}/summary.json"
 
 PROTOCOL_SOURCES=(
@@ -124,10 +97,6 @@ COMPILE_FLAGS=(
   -I"${SRC_ROOT}"
   -I"${TEST_ROOT}/mocks"
   -I"${STUB_INCLUDE}"
-  -I"${DEP_DIR}/etl/include"
-  -I"${DEP_DIR}/taskscheduler/src"
-  -I"${DEP_DIR}/fastcrc/src"
-  -I"${DEP_DIR}/packetserial/src"
 )
 
 if ! command -v gcovr >/dev/null 2>&1; then

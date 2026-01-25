@@ -83,7 +83,7 @@ SPOOL_BACKOFF_MIN_SECONDS: float = 5.0
 SPOOL_BACKOFF_MAX_SECONDS: float = 60.0
 
 # -- File System Defaults --
-DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/mcubridge/files"
+DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/yun_files"
 DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
 DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 4194304
 # Warning threshold for files growing large in RAM (1MB)
@@ -119,7 +119,7 @@ DEFAULT_DEBUG_LOGGING: bool = False
 MIN_SERIAL_SHARED_SECRET_LEN: int = 8
 # SECURITY WARNING: This default secret is for initial setup only.
 # It MUST be rotated using 'mcubridge-rotate-credentials' before production use.
-DEFAULT_SERIAL_SHARED_SECRET: bytes | None = b"755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"
+DEFAULT_SERIAL_SHARED_SECRET: bytes | None = None
 ALLOWED_COMMAND_WILDCARD: str = "*"
 TOPIC_FORBIDDEN_REASON: str = "topic-action-forbidden"
 

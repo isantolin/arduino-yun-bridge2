@@ -187,7 +187,7 @@ def test_spool_disk_queue_initialization_failure() -> None:
     """Cover disk queue initialization failure fallback."""
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
-    with patch("mcubridge.mqtt.spool.FileDeque", side_effect=OSError("Permission denied")):
+    with patch("mcubridge.mqtt.spool.SqliteDeque", side_effect=OSError("Permission denied")):
         spool = MQTTPublishSpool(
             directory="/tmp/test_spool_fail",
             limit=100,
@@ -470,16 +470,11 @@ async def test_serial_send_frame_xon_wait() -> None:
     transport = SerialTransport(config, state, service)
 
     # Mock writer
-    mock_transport = MagicMock()
-    mock_transport.is_closing.return_value = False
-
-    # EagerSerialWriteProtocol mock
-    mock_protocol = MagicMock()
-    mock_protocol.transport = mock_transport
-    mock_protocol.write = MagicMock()
-    mock_protocol.drain_helper = AsyncMock()
-
-    transport.writer = mock_protocol
+    mock_writer = MagicMock()
+    mock_writer.is_closing.return_value = False
+    mock_writer.write = MagicMock()
+    mock_writer.drain = AsyncMock()
+    transport.writer = mock_writer
 
     # Set XON event
     state.serial_tx_allowed.set()

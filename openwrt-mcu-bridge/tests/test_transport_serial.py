@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import struct
-from unittest.mock import AsyncMock, MagicMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -70,61 +70,41 @@ def test_coerce_packet_returns_bytes() -> None:
 
 
 def test_ensure_raw_mode_noop_when_termios_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    pass
+    monkeypatch.setattr(serial, "termios", None)
+    monkeypatch.setattr(serial, "tty", None)
+    serial._ensure_raw_mode(SimpleNamespace(fd=123), "/dev/null")
 
-
-class _Termios:
-    # Minimal mock for termios module constants/methods
-    ECHO = 8 # Placeholder value
-    TCSANOW = 0
-    CS8 = 0
-    CREAD = 0
-    CLOCAL = 0
-    VMIN = 0
-    VTIME = 0
-    TIOCEXCL = 0
-    TCIOFLUSH = 0
-
-    class error(Exception):
-        pass
-
-    @staticmethod
-    def tcgetattr(fd: int):
-        cc = [0] * 32
-        return [0, 0, 0, _Termios.ECHO, 0, 0, cc]
-
-    @staticmethod
-    def tcsetattr(fd: int, _when: int, attrs) -> None:
-        pass
-
-    @staticmethod
-    def tcflush(fd: int, _queue: int) -> None:
-        pass
 
 def test_ensure_raw_mode_sets_raw_and_disables_echo(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[tuple[str, object]] = []
 
     termios_mod = pytest.importorskip("termios")
 
-    # Update mock with real ECHO value if available, though placeholder is fine for logic check
-    _Termios.ECHO = termios_mod.ECHO
+    class _TTY:
+        @staticmethod
+        def setraw(fd: int) -> None:
+            calls.append(("setraw", fd))
 
-    def mock_tcsetattr(fd: int, _when: int, attrs) -> None:
-        calls.append(("tcsetattr", attrs[3]))
+    class _Termios:
+        ECHO = termios_mod.ECHO
+        TCSANOW = 0
 
-    def mock_tcflush(fd: int, _queue: int) -> None:
-        calls.append(("tcflush", fd))
+        @staticmethod
+        def tcgetattr(fd: int):
+            # attrs[3] is lflag
+            return [0, 0, 0, _Termios.ECHO]
 
-    monkeypatch.setattr(termios_mod, "tcgetattr", _Termios.tcgetattr)
-    monkeypatch.setattr(termios_mod, "tcsetattr", mock_tcsetattr)
-    monkeypatch.setattr(termios_mod, "tcflush", mock_tcflush)
+        @staticmethod
+        def tcsetattr(fd: int, _when: int, attrs) -> None:
+            calls.append(("tcsetattr", attrs[3]))
 
+    monkeypatch.setattr(serial, "tty", _TTY)
+    monkeypatch.setattr(serial, "termios", _Termios)
 
-    serial.configure_serial_port(10, 115200)
-
-    assert ("setraw", 10) not in calls # tty.setraw not used directly anymore, custom logic
-    # Check manual raw mode flags
-    assert any(c[0] == "tcsetattr" and c[1] == 0 for c in calls) # lflag=0 (raw)
+    serial._ensure_raw_mode(SimpleNamespace(fd=10), "/dev/tty")
+    assert ("setraw", 10) in calls
+    # Expect ECHO bit to be cleared
+    assert ("tcsetattr", 0) in calls
 
 
 @pytest.mark.asyncio
@@ -132,7 +112,7 @@ async def test_flow_control_mixin_drain_unblocks_on_resume() -> None:
     mixin = serial.FlowControlMixin()
     mixin.pause_writing()
 
-    task = asyncio.create_task(mixin.drain_helper())
+    task = asyncio.create_task(mixin._drain_helper())
     await asyncio.sleep(0)
     assert not task.done()
 
@@ -145,7 +125,7 @@ async def test_flow_control_mixin_connection_lost_wakes_waiter() -> None:
     mixin = serial.FlowControlMixin()
     mixin.pause_writing()
 
-    task = asyncio.create_task(mixin.drain_helper())
+    task = asyncio.create_task(mixin._drain_helper())
     await asyncio.sleep(0)
 
     mixin.connection_lost(ConnectionError("boom"))
@@ -257,8 +237,6 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
     class FakeWriter:
         def __init__(self) -> None:
             self._closed = False
-            self.transport = MagicMock()
-            self.transport.close.side_effect = self.close
 
         def close(self) -> None:
             self._closed = True
@@ -266,14 +244,11 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
         async def wait_closed(self) -> None:
             return None
 
-        async def drain_helper(self) -> None:
-            return None
-
     w1 = FakeWriter()
     w2 = FakeWriter()
 
     opener = AsyncMock(side_effect=[(fake_reader, w1), (fake_reader, w2)])
-    monkeypatch.setattr(serial, "_open_serial_connection", opener)
+    monkeypatch.setattr(serial, "OPEN_SERIAL_CONNECTION", opener)
     monkeypatch.setattr(serial, "_negotiate_baudrate", AsyncMock(return_value=True))
     monkeypatch.setattr(serial.asyncio, "sleep", AsyncMock())
 
@@ -284,7 +259,7 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_send_frame_debug_logs_unknown_command(caplog: pytest.LogCaptureFixture) -> None:
+async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyPatch) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -294,8 +269,6 @@ async def test_send_frame_debug_logs_unknown_command(caplog: pytest.LogCaptureFi
     class _Writer:
         def __init__(self) -> None:
             self.writes: list[bytes] = []
-            self.transport = MagicMock()
-            self.transport.is_closing.return_value = False
 
         def is_closing(self) -> bool:
             return False
@@ -306,17 +279,17 @@ async def test_send_frame_debug_logs_unknown_command(caplog: pytest.LogCaptureFi
         async def drain(self) -> None:
             return None
 
-        async def drain_helper(self) -> None:
-            return None
-
     writer = _Writer()
     transport.writer = writer  # type: ignore[assignment]
 
-    with caplog.at_level(logging.DEBUG):
-        ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
-        assert ok is True
-        assert writer.writes
-        assert any("FE" in record.message for record in caplog.records)
+    monkeypatch.setattr(serial.logger, "isEnabledFor", lambda _lvl: True)
+    seen: dict[str, str] = {}
+    monkeypatch.setattr(serial.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
+
+    ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
+    assert ok is True
+    assert writer.writes
+    assert "0xFE" in seen.get("msg", "")
 
 
 @pytest.mark.asyncio
@@ -328,10 +301,6 @@ async def test_send_frame_returns_false_on_write_error() -> None:
     transport = serial.SerialTransport(config, state, service)
 
     class _Writer:
-        def __init__(self) -> None:
-            self.transport = MagicMock()
-            self.transport.is_closing.return_value = False
-
         def is_closing(self) -> bool:
             return False
 
@@ -339,9 +308,6 @@ async def test_send_frame_returns_false_on_write_error() -> None:
             raise OSError("boom")
 
         async def drain(self) -> None:
-            return None
-
-        async def drain_helper(self) -> None:
             return None
 
     transport.writer = _Writer()  # type: ignore[assignment]
@@ -360,8 +326,6 @@ async def test_send_frame_honors_xoff_xon_backpressure() -> None:
     class _Writer:
         def __init__(self) -> None:
             self.writes: list[bytes] = []
-            self.transport = MagicMock()
-            self.transport.is_closing.return_value = False
 
         def is_closing(self) -> bool:
             return False
@@ -370,9 +334,6 @@ async def test_send_frame_honors_xoff_xon_backpressure() -> None:
             self.writes.append(data)
 
         async def drain(self) -> None:
-            return None
-
-        async def drain_helper(self) -> None:
             return None
 
     writer = _Writer()

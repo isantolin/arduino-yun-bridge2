@@ -50,11 +50,8 @@ def test_spool_roundtrip(tmp_path: Path) -> None:
 
 def test_spool_trim_limit(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=2)
-    # Append 5 messages. Limit is 2. 3 should be dropped.
     for idx in range(5):
         spool.append(_make_message(f"topic/{idx}", str(idx)))
-
-    # Pending should be 2 (limit)
     assert spool.pending == 2
     snapshot = spool.snapshot()
     assert snapshot["dropped_due_to_limit"] == 3
@@ -83,38 +80,22 @@ def test_spool_skips_corrupt_rows(
     if queue is None:
         pytest.skip("Durable spool backend not available")
 
-    # Inject a corrupt entry directly into the filesystem.
-    # We use a timestamp that falls between "first" and "second" ideally,
-    # or just rely on sort order. FileDeque sorts by name.
-    # Existing files are like "timestamp.msg".
-    # We create a file that sorts after the first one.
-
-    # Wait a tiny bit to ensure timestamp diff or force name
-    import time
-    time.sleep(0.001)
-
-    corrupt_file = tmp_path / f"{time.time_ns()}_corrupt.msg"
-    corrupt_file.write_bytes(b"not-valid-msgpack-data")
-
-    time.sleep(0.001)
+    # Inject a corrupt entry directly into the underlying durable queue.
+    queue.append(b"not-a-dict")
     spool.append(_make_message("topic/second"))
 
     caplog.set_level(logging.WARNING, "mcubridge.mqtt.spool")
 
-    # Pop first (valid)
     restored_one = spool.pop_next()
-    assert restored_one is not None
-    assert restored_one.topic_name == "topic/first"
-
-    # Pop next should encounter corrupt file, log warning, delete it, and return second message
     restored_two = spool.pop_next()
 
+    assert restored_one is not None
+    assert restored_one.topic_name == "topic/first"
     assert restored_two is not None
     assert restored_two.topic_name == "topic/second"
     assert spool.pop_next() is None
-
-    # Check log for warning
-    assert "corrupt/unreadable spool file" in caplog.text
+    assert "Dropping corrupt MQTT spool entry" in caplog.text
+    assert spool.snapshot()["corrupt_dropped"] == 1
 
 
 def test_spool_fallback_on_disk_full(
@@ -144,25 +125,14 @@ def test_spool_fallback_on_disk_full(
     # Second append goes to memory
     spool.append(_make_message("topic/memory"))
 
-    # When fallback is active, pending counts memory queue + disk queue items (if readable)
-    # Here disk queue append failed, so item went to memory.
-    # Total pending: 2
     assert spool.pending == 2
 
     # Verify pops work from memory
-    # Note: pop_next drains disk first if possible, then memory.
-    # Since disk append failed, disk might be empty or have partial data?
-    # Actually FileDeque write uses atomic rename, so disk should be clean.
     msg1 = spool.pop_next()
     msg2 = spool.pop_next()
 
     assert msg1 is not None
     assert msg2 is not None
-
-    # Order depends on whether disk queue had anything. It was empty before failure.
-    # So both are in memory.
-    # Order preserved in memory queue? append() adds to memory queue on failure.
-
     assert msg1.topic_name == "topic/disk"
     assert msg2.topic_name == "topic/memory"
 
@@ -204,7 +174,6 @@ def test_spool_fallback_on_init_failure(
     def _fail_mkdir(*args, **kwargs):
         raise PermissionError("No access")
 
-    # We need to patch pathlib.Path.mkdir used in FileDeque init
     monkeypatch.setattr(Path, "mkdir", _fail_mkdir)
 
     spool = MQTTPublishSpool("/root/protected", limit=5)
@@ -283,7 +252,6 @@ def test_spool_pop_fallback(
     monkeypatch.setattr(queue, "popleft", _boom)
 
     # pop_next should trigger fallback and return None (since memory is empty initially)
-    # The item on disk is inaccessible.
     assert spool.pop_next() is None
     assert spool.is_degraded
 

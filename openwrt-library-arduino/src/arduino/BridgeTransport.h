@@ -4,7 +4,6 @@
 #include <Arduino.h>
 #include <Stream.h>
 #include <PacketSerial.h>
-#include <etl/vector.h>
 #include "../protocol/rpc_protocol.h"
 #include "../protocol/rpc_frame.h" // Needed for rpc::Frame and FrameParser::Error
 
@@ -47,8 +46,8 @@ private:
     PacketSerial _packetSerial;
     
     // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
-    // [SIL-2] Use ETL for safe static allocation
-    etl::vector<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;
+    uint8_t _last_raw_frame[rpc::MAX_RAW_FRAME_SIZE];
+    size_t _last_raw_frame_len;
     
     // State for processInput polling
     rpc::Frame* _target_frame;
@@ -59,6 +58,8 @@ private:
     
     // Global instance pointer for the static callback
     static BridgeTransport* _instance;
+    
+    bool _writeAll(const uint8_t* buffer, size_t size);
 };
 
 } // namespace bridge

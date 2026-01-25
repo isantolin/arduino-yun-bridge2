@@ -174,20 +174,20 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                 if payload:
                     flow.on_frame_received(Status.MALFORMED.value, b"")
                 else:
-                    # Process response immediately to clear flow state
-                    await service.handle_mcu_frame(
+                    asyncio.create_task(service.handle_mcu_frame(
                         Command.CMD_LINK_RESET_RESP.value,
                         b"",
-                    )
+                    ))
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                await service.handle_mcu_frame(
+                asyncio.create_task(service.handle_mcu_frame(
                     Command.CMD_LINK_SYNC_RESP.value,
                     response,
-                )
+                ))
             return True
+
         service.register_serial_sender(fake_sender)
 
         await service.on_serial_connected()

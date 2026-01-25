@@ -53,6 +53,11 @@ COMMON_INCLUDES=(
   -I"${SRC_DIR}"
   -I"${TEST_DIR}/mocks"
   -I"${STUB_DIR}"
+  -I"/tmp/arduino_libs/Embedded_Template_Library/include"
+  -I"/tmp/arduino_libs/TaskScheduler/src"
+  -I"/tmp/arduino_libs/FastCRC/src"
+  -I"/tmp/arduino_libs/PacketSerial/src"
+  -I"/tmp/arduino_libs/Crypto/src"
 )
 
 COMMON_FLAGS=(

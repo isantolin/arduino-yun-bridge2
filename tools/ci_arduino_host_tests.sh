@@ -49,18 +49,42 @@ ARDUINO_TEST_DEFS=(
   -DBRIDGE_TEST_NO_GLOBALS=1
 )
 
-COMMON_INCLUDES=(
-  -I"${SRC_DIR}"
-  -I"${TEST_DIR}/mocks"
-  -I"${STUB_DIR}"
-  -I"/tmp/etl/include"
-  -I"/tmp/taskscheduler/src"
-)
-
 COMMON_FLAGS=(
   -std=c++11
   -O0
   -g
+)
+
+# [CI/CD] Dependency Management
+DEP_DIR="${BUILD_DIR}/deps"
+mkdir -p "${DEP_DIR}"
+
+ensure_dep() {
+  local name="$1"
+  local url="$2"
+  local target="${DEP_DIR}/${name}"
+  if [ ! -d "${target}" ]; then
+    echo "[host-cpp] Downloading ${name}..."
+    local tmp
+    tmp=$(mktemp -d)
+    curl -fsSL "${url}" | tar xz -C "${tmp}" --strip-components=1
+    mv "${tmp}" "${target}"
+  fi
+}
+
+ensure_dep "etl" "https://github.com/ETLCPP/etl/archive/refs/tags/20.39.4.tar.gz"
+ensure_dep "taskscheduler" "https://github.com/arkhipenko/TaskScheduler/archive/refs/tags/v3.8.5.tar.gz"
+ensure_dep "fastcrc" "https://github.com/FrankBoesing/FastCRC/archive/refs/heads/master.tar.gz"
+ensure_dep "packetserial" "https://github.com/bakercp/PacketSerial/archive/refs/heads/master.tar.gz"
+
+COMMON_INCLUDES=(
+  -I"${SRC_DIR}"
+  -I"${TEST_DIR}/mocks"
+  -I"${STUB_DIR}"
+  -I"${DEP_DIR}/etl/include"
+  -I"${DEP_DIR}/taskscheduler/src"
+  -I"${DEP_DIR}/fastcrc/src"
+  -I"${DEP_DIR}/packetserial/src"
 )
 
 PROTOCOL_SOURCES=(

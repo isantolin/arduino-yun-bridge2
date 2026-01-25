@@ -25,7 +25,7 @@ arduino-cli core install arduino:avr
 echo "Installing libraries..."
 # FastCRC replaced CRC32 for high performance and SIL-2 compliance
 # ETL and TaskScheduler added for static memory and cooperative multitasking
-arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "Embedded Template Library" "TaskScheduler"
+arduino-cli lib install "PacketSerial" "FastCRC" "Crypto" "Embedded Template Library ETL" "TaskScheduler"
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/openwrt-library-arduino"

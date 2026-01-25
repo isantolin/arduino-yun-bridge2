@@ -103,8 +103,10 @@ def load_runtime_config() -> RuntimeConfig:
 
     for key in direct_keys:
         if key in raw:
+            val = raw[key]
             # Strip whitespace safely
-            val = str(raw[key]).strip()
+            if val is not None:
+                val = str(val).strip()
 
             if val == "" and key in ("mqtt_user", "mqtt_pass", "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile"):
                 val = None

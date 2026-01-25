@@ -48,8 +48,12 @@ EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 
 # [SIL-2] Target-specific configuration for ETL
-# Header include path
+# -DETL_NO_STL: Don't use system STL headers.
+# -DETL_NO_CPP_EXCEPTIONS: Disable C++ exceptions (mandatory for AVR).
+# -DETL_THROW_EXCEPTIONS=0: Tell ETL not to use throw.
+# -DETL_LOG_ERRORS: Enable safe error logging instead of crashing.
 ETL_INC="$DEPS_DIR/ETL/include"
+COMPILER_FLAGS="-I$ETL_INC -DETL_NO_STL -DETL_NO_CPP_EXCEPTIONS -DETL_THROW_EXCEPTIONS=0 -DETL_LOG_ERRORS"
 
 echo "Compiling examples for $FQBN..."
 
@@ -60,10 +64,6 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     echo "--------------------------------------------------"
     echo "Building $sketch_name..."
     
-    # We pass the build property with proper escaping for arduino-cli
-    # This combines includes and ETL configuration macros into a single property.
-    # Format: --build-property "compiler.cpp.extra_flags=-Ipath -DMACRO=1"
-    
     if [ -n "$BUILD_OUTPUT_DIR" ]; then
         SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/$sketch_name"
         mkdir -p "$SKETCH_BUILD_DIR"
@@ -72,14 +72,14 @@ find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
             --fqbn "$FQBN" \
             --library "$LIB_PATH" \
             --build-path "$SKETCH_BUILD_DIR" \
-            --build-property "compiler.cpp.extra_flags=-I$ETL_INC -DETL_NO_STL -DETL_THROW_EXCEPTIONS=0" \
+            --build-property "compiler.cpp.extra_flags=$COMPILER_FLAGS" \
             --warnings default \
             "$sketch"
     else
         arduino-cli compile \
             --fqbn "$FQBN" \
             --library "$LIB_PATH" \
-            --build-property "compiler.cpp.extra_flags=-I$ETL_INC -DETL_NO_STL -DETL_THROW_EXCEPTIONS=0" \
+            --build-property "compiler.cpp.extra_flags=$COMPILER_FLAGS" \
             --warnings default \
             "$sketch"
     fi

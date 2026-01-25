@@ -283,7 +283,7 @@ async def test_open_serial_connection_with_retry_negotiates_baudrate(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_send_frame_debug_logs_unknown_command(caplog: pytest.LogCaptureFixture) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -311,14 +311,11 @@ async def test_send_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyP
     writer = _Writer()
     transport.writer = writer  # type: ignore[assignment]
 
-    monkeypatch.setattr(serial.logger, "isEnabledFor", lambda _lvl: True)
-    seen: dict[str, str] = {}
-    monkeypatch.setattr(serial.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
-
-    ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
-    assert ok is True
-    assert writer.writes
-    assert "FE" in seen.get("msg", "")
+    with caplog.at_level(logging.DEBUG):
+        ok = await transport.send_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
+        assert ok is True
+        assert writer.writes
+        assert any("FE" in record.message for record in caplog.records)
 
 
 @pytest.mark.asyncio

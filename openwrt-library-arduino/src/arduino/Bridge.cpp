@@ -1,7 +1,16 @@
 /*
  * This file is part of Arduino MCU Ecosystem v2.
  */
-#include "Bridge.h"
+#include "../Bridge.h"
+#include <etl/error_handler.h>
+
+namespace etl {
+    // [SIL-2] Minimal error handler for ETL when exceptions are disabled.
+    void free_functions::exception_handler(const etl::exception& e) {
+        // Log or handle error if necessary. In SIL-2, we prefer deterministic 
+        // behavior over crashing.
+    }
+}
 
 // [SIL-2] Explicitly include Arduino.h to satisfy IntelliSense and ensure
 // noInterrupts()/interrupts() are available in all compilation contexts.

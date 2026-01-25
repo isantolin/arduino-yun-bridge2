@@ -22,11 +22,16 @@
 #ifndef BRIDGE_H
 #define BRIDGE_H
 
-#include <Arduino.h>
-#include <Stream.h>
-#include <etl/vector.h>
-#include <etl/circular_buffer.h>
-#include <TaskSchedulerDeclarations.h>
+// [SIL-2] ETL Configuration (Must be first)
+#ifndef ETL_THROW_EXCEPTIONS
+  #define ETL_THROW_EXCEPTIONS 0
+#endif
+#ifndef ETL_VERBOSE_ERRORS
+  #define ETL_VERBOSE_ERRORS 0
+#endif
+#ifndef ETL_USER_DEFINED_PROFILE
+  #define ETL_USER_DEFINED_PROFILE
+#endif
 
 #include "bridge_config.h"
 #include "etl_profile.h"

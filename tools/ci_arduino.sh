@@ -53,7 +53,7 @@ ETL_INC="$DEPS_DIR/ETL/include"
 
 echo "Compiling examples for $FQBN..."
 
-find "$EXAMPLES_DIR" -name "*.ino" | while read sketch;
+find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
     sketch_dir=$(dirname "$sketch")
     sketch_name=$(basename "$sketch_dir")
     

@@ -62,8 +62,8 @@ async def test_negotiate_baudrate_success() -> None:
     await asyncio.sleep(0) # Let task start
 
     # Simulate receiving response
-    assert proto._negotiation_future is not None
-    proto._negotiation_future.set_result(True)
+    assert proto.negotiation_future is not None
+    proto.negotiation_future.set_result(True)
 
     ok = await task
     assert ok is True
@@ -96,7 +96,7 @@ async def test_transport_run_handshake_fatal(sleep_spy: AsyncMock) -> None:
 
     transport = serial.SerialTransport(config, state, service)
     # Mock _connect_and_run to just call service.on_serial_connected
-    with patch.object(transport, "_connect_and_run", wraps=transport._connect_and_run):
+    with patch.object(transport, "_connect_and_run", new_callable=AsyncMock, wraps=transport._connect_and_run):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
 

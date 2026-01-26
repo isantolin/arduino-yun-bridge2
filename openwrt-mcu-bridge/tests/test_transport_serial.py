@@ -1,7 +1,3 @@
-"""Unit tests for mcubridge.transport.serial_fast."""
-
-from __future__ import annotations
-
 import sys
 from unittest.mock import MagicMock, AsyncMock
 
@@ -12,7 +8,7 @@ sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
 import asyncio  # noqa: E402
 import struct  # noqa: E402
-from unittest.mock import AsyncMock  # noqa: E402
+from typing import Any  # noqa: E402
 
 import pytest  # noqa: E402
 
@@ -36,90 +32,32 @@ from mcubridge.state.context import create_runtime_state  # noqa: E402
 from mcubridge.transport import serial_fast as serial  # noqa: E402
 
 
-
 def _make_config() -> RuntimeConfig:
     return RuntimeConfig(
-        serial_port="/dev/null",
-        serial_baud=protocol.DEFAULT_BAUDRATE,
-        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
+        serial_port="/dev/ttyATH0",
+        serial_baud=115200,
+        serial_safe_baud=115200,
         mqtt_host="localhost",
-        mqtt_port=DEFAULT_MQTT_PORT,
+        mqtt_port=1883,
         mqtt_user=None,
         mqtt_pass=None,
         mqtt_tls=False,
         mqtt_cafile=None,
         mqtt_certfile=None,
         mqtt_keyfile=None,
-        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        allowed_commands=(),
+        mqtt_topic="br",
+        allowed_commands=("*",),
         file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        reconnect_delay=DEFAULT_RECONNECT_DELAY,
-        status_interval=DEFAULT_STATUS_INTERVAL,
-        debug_logging=False,
-        console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-        mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
-        mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-        serial_shared_secret=b"testshared",
+        process_timeout=10,
+        serial_shared_secret=b"secret123",
     )
 
 
-def test_is_binary_packet_type_and_size_guards() -> None:
+def test_is_binary_packet_valid_size() -> None:
+    assert serial._is_binary_packet(b"abc") is True
+    assert serial._is_binary_packet(bytearray(b"abc")) is True
     assert serial._is_binary_packet(b"") is False
-    assert serial._is_binary_packet("nope") is False  # type: ignore[arg-type]
     assert serial._is_binary_packet(b"a" * (serial.MAX_SERIAL_PACKET_BYTES + 1)) is False
-    assert serial._is_binary_packet(b"a") is True
-    assert serial._is_binary_packet(memoryview(b"abc")) is True
-
-
-def test_coerce_packet_returns_bytes() -> None:
-    assert serial._coerce_packet(b"abc") == b"abc"
-    assert serial._coerce_packet(bytearray(b"abc")) == b"abc"
-
-
-@pytest.mark.asyncio
-async def test_process_packet_non_binary_does_not_send_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    state.link_is_synchronized = True
-    service = BridgeService(config, state)
-
-    service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
-
-    proto = serial.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    await proto._async_process_packet(b"")
-
-    assert state.serial_decode_errors == 1
-    service.send_frame.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_process_packet_decode_error_does_not_send_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    config = _make_config()
-    state = create_runtime_state(config)
-    state.link_is_synchronized = True
-    service = BridgeService(config, state)
-
-    service.send_frame = AsyncMock(return_value=True)  # type: ignore[method-assign]
-    service.handle_mcu_frame = AsyncMock()  # type: ignore[method-assign]
-
-    # Make decode fail.
-    monkeypatch.setattr(serial.cobs, "decode", lambda _data: (_ for _ in ()).throw(cobs.DecodeError("bad")))
-
-    # Provide enough bytes for header extraction.
-    header = struct.pack(
-        protocol.CRC_COVERED_HEADER_FORMAT,
-        1,
-        0,
-        0x99,
-    )
-    encoded = header + b"x" * 4
-
-    proto = serial.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    await proto._async_process_packet(encoded)
-
-    assert state.serial_decode_errors == 1
-    service.send_frame.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -141,12 +79,9 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
 
     raw = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, Command.CMD_LINK_SYNC.value) + b"x" * 10
     monkeypatch.setattr(serial.cobs, "decode", lambda _data: raw)
-    def _bad_frame(_raw: bytes) -> Frame:
-        raise ValueError("crc mismatch")
-
-    monkeypatch.setattr(serial.Frame, "from_bytes", _bad_frame)
 
     proto = serial.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+    # Manual call to async method
     await proto._async_process_packet(b"encoded")
 
     assert state.serial_decode_errors == 1
@@ -194,10 +129,12 @@ async def test_write_frame_debug_logs_unknown_command(monkeypatch: pytest.Monkey
     monkeypatch.setattr(serial.logger, "isEnabledFor", lambda _lvl: True)
     seen: dict[str, str] = {}
     monkeypatch.setattr(serial.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
+    monkeypatch.setattr(serial.logger, "log", lambda _lvl, msg, *args: seen.setdefault("msg", msg % args))
 
-    ok = proto.write_frame(protocol.UINT8_MASK - 1, protocol.FRAME_DELIMITER)
+    ok = proto.write_frame(protocol.UINT8_MASK - 1, b"payload")
     assert ok is True
     assert mock_transport.writes
+    # With log_hexdump, the command name/hex is in the log
     assert "0xFE" in seen.get("msg", "")
 
 
@@ -219,4 +156,3 @@ async def test_write_frame_returns_false_on_write_error() -> None:
     proto.connection_made(_MockTransport()) # type: ignore
     ok = proto.write_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False
-

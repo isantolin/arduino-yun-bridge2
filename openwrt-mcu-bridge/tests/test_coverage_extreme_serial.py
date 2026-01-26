@@ -1,7 +1,7 @@
 import sys
 from unittest.mock import MagicMock, AsyncMock, patch
 
-# Mock serial_asyncio_fast
+# Mock serial_asyncio_fast globally for this module
 mock_saf = MagicMock()
 mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
 sys.modules["serial_asyncio_fast"] = mock_saf
@@ -17,7 +17,7 @@ def _make_config():
     config = MagicMock()
     config.serial_port = "/dev/ttyTest"
     config.serial_baud = 115200
-    config.serial_safe_baud = 9600
+    config.serial_safe_baud = 115200  # Default to no negotiation
     config.reconnect_delay = 0.01
     return config
 
@@ -71,8 +71,10 @@ async def test_serial_process_packet_negotiation_full():
     proto._process_packet(f)
     assert proto.negotiation_future.result() is True
     proto.negotiation_future = asyncio.get_running_loop().create_future()
-    proto._process_packet(b"\x00")
-    assert not proto.negotiation_future.done()
+    # Mock decode to return junk
+    with patch("mcubridge.transport.serial_fast.cobs.decode", return_value=b"\x00"):
+        proto._process_packet(b"\x00")
+        assert not proto.negotiation_future.done()
 
 @pytest.mark.asyncio
 async def test_serial_async_process_packet_full_coverage():
@@ -106,10 +108,13 @@ async def test_serial_transport_run_and_connect_failures():
             transport._stop_event.set()
         asyncio.create_task(stop_transport())
         await transport.run()
+    transport._stop_event.set()
+    await transport.run()
 
 @pytest.mark.asyncio
 async def test_serial_transport_negotiation_failure_branch():
     config = _make_config()
+    config.serial_safe_baud = 9600
     transport = serial_fast.SerialTransport(config, MagicMock(), AsyncMock())
     with patch.object(transport, "_negotiate_baudrate", return_value=False):
         m_t, m_p = MagicMock(), MagicMock()
@@ -122,14 +127,13 @@ async def test_serial_transport_negotiation_failure_branch():
 @pytest.mark.asyncio
 async def test_serial_transport_disconnect_hook_coverage():
     config = _make_config()
-    # Disable negotiation to avoid future await issues in this specific path
     config.serial_safe_baud = 115200
-    config.serial_baud = 115200
     svc = AsyncMock()
+    # Ensure hook exception is caught and logged as per line 315
     svc.on_serial_disconnected.side_effect = Exception("boom")
     transport = serial_fast.SerialTransport(config, MagicMock(), svc)
-    m_t = MagicMock()
+    m_t, m_p = MagicMock(), MagicMock()
     m_t.is_closing.return_value = True
     with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
-               return_value=(m_t, MagicMock())):
+               return_value=(m_t, m_p)):
         await transport._connect_and_run(asyncio.get_running_loop())

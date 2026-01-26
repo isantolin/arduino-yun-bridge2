@@ -13,7 +13,7 @@ from mcubridge.config.settings import RuntimeConfig  # noqa: E402
 from mcubridge.services.runtime import BridgeService  # noqa: E402
 from mcubridge.services.handshake import SerialHandshakeFatal  # noqa: E402
 from mcubridge.state.context import create_runtime_state  # noqa: E402
-from mcubridge.transport import serial_fast as serial  # noqa: E402
+from mcubridge.transport import serial_fast  # noqa: E402
 
 
 def _make_config() -> RuntimeConfig:
@@ -52,8 +52,8 @@ async def test_negotiate_baudrate_success() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    transport = serial.SerialTransport(config, state, service)
-    proto = serial.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+    transport = serial_fast.SerialTransport(config, state, service)
+    proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
 
     # Mock write_frame to simulate sending request
     proto.write_frame = MagicMock(return_value=True) # type: ignore
@@ -75,13 +75,13 @@ async def test_negotiate_baudrate_timeout(monkeypatch: pytest.MonkeyPatch) -> No
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    transport = serial.SerialTransport(config, state, service)
-    proto = serial.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+    transport = serial_fast.SerialTransport(config, state, service)
+    proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
 
     proto.write_frame = MagicMock(return_value=True) # type: ignore
 
     # Short timeout for test
-    monkeypatch.setattr(serial, "SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01)
+    monkeypatch.setattr(serial_fast, "SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01)
 
     ok = await transport._negotiate_baudrate(proto, 115200)
     assert ok is False
@@ -94,7 +94,7 @@ async def test_transport_run_handshake_fatal(sleep_spy: AsyncMock) -> None:
     service = BridgeService(config, state)
     service.on_serial_connected = AsyncMock(side_effect=SerialHandshakeFatal("Fatal"))
 
-    transport = serial.SerialTransport(config, state, service)
+    transport = serial_fast.SerialTransport(config, state, service)
     # Mock _connect_and_run to just call service.on_serial_connected
     with patch.object(transport, "_connect_and_run", new_callable=AsyncMock, wraps=transport._connect_and_run):
         with pytest.raises(SerialHandshakeFatal):

@@ -13,7 +13,8 @@ dependencies = [
     "aiomqtt==2.5.0",        # STRICT: Python 3.13 compatible, validated against paho 2.1.0
     "cobs>=1.2.2",
     "psutil>=7.2.1",
-    "prometheus-client>=0.23.1"
+    "prometheus-client>=0.23.1",
+    "pyserial-asyncio-fast==0.16"
 ]
 
 [tool.setuptools]

@@ -55,6 +55,7 @@ test_bridge_components
 test_bridge_core
 test_bridge_refactor
 *.txt
+!requirements/runtime.txt
 PHASE_3_REPORT.md
 .gemini/
 gha-creds-*.json

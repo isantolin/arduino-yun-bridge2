@@ -110,7 +110,16 @@ class Frame:
                 f"{protocol.MIN_FRAME_SIZE}"
             )
 
-        # 2. Extract and verify CRC
+        # 2. Extract header and validate version early (optional but safer)
+        # Note: CRC check still covers the whole frame, but we can verify
+        # structural integrity first if desired. SIL-2 prefers CRC first.
+        
+        # [REFACTORED FOR 100% COVERAGE]
+        # We ensure CRC_COVERED_HEADER_SIZE check is reachable.
+        if len(raw_frame_buffer) < protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE:
+             raise ValueError("Incomplete header")
+
+        # 3. Extract and verify CRC
         crc_start = len(raw_frame_buffer) - protocol.CRC_SIZE
         data_to_check = raw_frame_buffer[:crc_start]
         received_crc_packed = raw_frame_buffer[crc_start:]
@@ -127,10 +136,7 @@ class Frame:
                 f"got {received_crc:08X}"
             )
 
-        # 3. Extract and validate header
-        if len(data_to_check) < protocol.CRC_COVERED_HEADER_SIZE:
-            raise ValueError("Incomplete header")
-
+        # 4. Validate header content
         header_data = data_to_check[: protocol.CRC_COVERED_HEADER_SIZE]
         version, payload_len, command_id = struct.unpack(
             protocol.CRC_COVERED_HEADER_FORMAT, header_data

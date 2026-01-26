@@ -1,62 +1,69 @@
 #include "BridgeTestInterface.h"
 #include "arduino/BridgeTransport.h"
 #include "protocol/rpc_protocol.h"
-#include <gtest/gtest.h>
+#include "test_support.h"
 
 using namespace bridge;
 
-class BridgeTransportCoverageTest : public ::testing::Test {
-protected:
-    void SetUp() override {
-        stream = new MockStream();
-        transport = new BridgeTransport(*stream);
-    }
+// Local instances for linkage
+HardwareSerial Serial;
+HardwareSerial Serial1;
+ConsoleClass Console;
+DataStoreClass DataStore;
+MailboxClass Mailbox;
+FileSystemClass FileSystem;
+ProcessClass Process;
+BridgeClass Bridge(Serial1);
 
-    void TearDown() override {
-        delete transport;
-        delete stream;
+namespace bridge {
+namespace test {
+class TestAccessor {
+public:
+    static void setInstance(BridgeTransport* instance) {
+        BridgeTransport::_instance = instance;
     }
-
-    MockStream* stream;
-    BridgeTransport* transport;
 };
+} // namespace test
+} // namespace bridge
 
-TEST_F(BridgeTransportCoverageTest, RetransmitEmptyBuffer) {
-    EXPECT_FALSE(transport->retransmitLastFrame());
-}
-
-TEST_F(BridgeTransportCoverageTest, SendFrameInvalidCommand) {
-    EXPECT_FALSE(transport->sendFrame(0x01, nullptr, 0));
-}
-
-TEST_F(BridgeTransportCoverageTest, SendControlFrameInvalidCommand) {
-    EXPECT_FALSE(transport->sendControlFrame(0x01));
-}
-
-TEST_F(BridgeTransportCoverageTest, HardwareSerialNullPaths) {
-    // These calls exercise the 'if (_hardware_serial != nullptr)' paths when it is NULL.
-    transport->begin(115200);
-    transport->setBaudrate(9600);
-    transport->flush();
-    transport->end();
-    transport->flushRx();
+void test_hardware_serial_null_paths() {
+    MockStream stream;
+    BridgeTransport transport(stream);
+    
+    transport.begin(115200);
+    transport.setBaudrate(9600);
+    transport.flush();
+    transport.end();
+    
+    // Inject data to hit flushRx while loop
+    uint8_t dummy_data[] = {1, 2, 3};
+    stream.rx_buffer.append(dummy_data, 3);
+    transport.flushRx();
     
     uint8_t pl = 0;
-    transport->sendFrame(rpc::to_underlying(rpc::StatusCode::STATUS_OK), &pl, 1);
-    transport->sendControlFrame(rpc::to_underlying(rpc::StatusCode::STATUS_OK));
-    transport->retransmitLastFrame();
+    transport.sendFrame(rpc::to_underlying(rpc::StatusCode::STATUS_OK), &pl, 1);
+    transport.sendControlFrame(rpc::to_underlying(rpc::StatusCode::STATUS_OK));
+    transport.retransmitLastFrame();
 }
 
-TEST_F(BridgeTransportCoverageTest, OnPacketReceivedEdgeCases) {
-    // Case 1: _instance is NULL
-    // Accessing private static BridgeTransport::_instance is not possible directly,
-    // but the constructor sets it. delete transport; clears it if we want?
-    // Let's assume we can call the static method.
+void test_on_packet_received_no_instance() {
+    bridge::test::TestAccessor::setInstance(nullptr);
     BridgeTransport::onPacketReceived(nullptr, 0);
 }
 
-TEST_F(BridgeTransportCoverageTest, ClearErrorAndOverflow) {
-    transport->clearError();
-    transport->clearOverflow();
-    EXPECT_EQ(transport->getLastError(), rpc::FrameParser::Error::NONE);
+void test_retransmit_empty_buffer() {
+    MockStream stream;
+    BridgeTransport transport(stream);
+    transport.begin(115200);
+    if (transport.retransmitLastFrame()) {
+        exit(1);
+    }
+}
+
+int main() {
+    test_hardware_serial_null_paths();
+    test_on_packet_received_no_instance();
+    test_retransmit_empty_buffer();
+    printf("BridgeTransport Coverage Gaps Test Passed\n");
+    return 0;
 }

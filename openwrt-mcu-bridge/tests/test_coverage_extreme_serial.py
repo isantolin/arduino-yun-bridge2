@@ -130,7 +130,7 @@ async def test_serial_transport_disconnect_hook_coverage():
     config.serial_safe_baud = 115200
     svc = AsyncMock()
     # Ensure hook exception is caught and logged as per line 315
-    svc.on_serial_disconnected.side_effect = Exception("boom")
+    svc.on_serial_disconnected.side_effect = RuntimeError("boom")
     transport = serial_fast.SerialTransport(config, MagicMock(), svc)
     m_t, m_p = MagicMock(), MagicMock()
     m_t.is_closing.return_value = True

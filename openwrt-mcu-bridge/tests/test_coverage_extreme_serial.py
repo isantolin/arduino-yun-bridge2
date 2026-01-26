@@ -122,6 +122,9 @@ async def test_serial_transport_negotiation_failure_branch():
 @pytest.mark.asyncio
 async def test_serial_transport_disconnect_hook_coverage():
     config = _make_config()
+    # Disable negotiation to avoid future await issues in this specific path
+    config.serial_safe_baud = 115200
+    config.serial_baud = 115200
     svc = AsyncMock()
     svc.on_serial_disconnected.side_effect = Exception("boom")
     transport = serial_fast.SerialTransport(config, MagicMock(), svc)

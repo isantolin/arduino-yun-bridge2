@@ -119,6 +119,7 @@ async def test_serial_transport_lifecycle_coverage():
         with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
                    return_value=(m_t, m_p)):
             await transport._connect_and_run(asyncio.get_running_loop())
+    config.serial_safe_baud = 115200 # Disable negotiation for disconnect test
     service.on_serial_disconnected.side_effect = Exception("hook error")
     transport.service = service
     m_t, m_p = MagicMock(), MagicMock()

@@ -31,7 +31,7 @@ async def test_serial_reader_task_reconnects():
         file_system_root="/tmp",
         process_timeout=5,
         reconnect_delay=1,
-        serial_shared_secret=b"unit-test-secret-1234",
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
     state = MagicMock()
     service = MagicMock()

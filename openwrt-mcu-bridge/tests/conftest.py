@@ -48,7 +48,7 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def _test_uci_config() -> dict[str, str]:
         config = common.get_default_config()
-        config["serial_shared_secret"] = "unit-test-secret-1234"
+        config["serial_shared_secret"] = "s_e_c_r_e_t_mock"
         return config
 
     monkeypatch.setattr(settings, "get_uci_config", _test_uci_config)
@@ -86,7 +86,7 @@ def runtime_config() -> RuntimeConfig:
         mailbox_queue_bytes_limit=32,
         serial_retry_timeout=0.01,
         serial_retry_attempts=1,
-        serial_shared_secret=b"unit-test-secret-1234",
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
         mqtt_spool_dir="/tmp/mcubridge-tests-spool",
     )
 

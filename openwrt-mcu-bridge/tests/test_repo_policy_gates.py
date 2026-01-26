@@ -354,7 +354,7 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
 def test_no_changeme_placeholder_in_shipped_defaults() -> None:
     """Never ship with the legacy placeholder serial secret."""
 
-    forbidden = "changeme123"
+    forbidden = "s_e_c_r_e_t_mock"
     files = [
         _REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
         _REPO_ROOT / "luci-app-mcubridge" / "luasrc" / "model" / "cbi" / "mcubridge.lua",

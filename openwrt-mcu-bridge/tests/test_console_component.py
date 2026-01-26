@@ -41,7 +41,7 @@ async def console_component() -> ConsoleComponent:
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
-        serial_shared_secret=b"testsecret",
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
     state = create_runtime_state(config)
     ctx = AsyncMock(spec=BridgeContext)

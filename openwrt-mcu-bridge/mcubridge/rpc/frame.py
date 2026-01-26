@@ -113,7 +113,7 @@ class Frame:
         # 2. Extract header and validate version early (optional but safer)
         # Note: CRC check still covers the whole frame, but we can verify
         # structural integrity first if desired. SIL-2 prefers CRC first.
-        
+
         # [REFACTORED FOR 100% COVERAGE]
         # We ensure CRC_COVERED_HEADER_SIZE check is reachable.
         if len(raw_frame_buffer) < protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE:

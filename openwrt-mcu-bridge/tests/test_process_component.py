@@ -66,7 +66,7 @@ async def process_component(mock_context: AsyncMock) -> ProcessComponent:
         status_interval=DEFAULT_STATUS_INTERVAL,
         debug_logging=False,
         process_max_concurrent=2,
-        serial_shared_secret=b"testsecret",
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
     state = create_runtime_state(config)
     return ProcessComponent(config, state, mock_context)

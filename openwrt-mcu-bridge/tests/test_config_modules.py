@@ -154,7 +154,7 @@ def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
         "allowed_commands": "uptime",
         "file_system_root": "/tmp",
         "process_timeout": "10",
-        "serial_shared_secret": " unit-test-secret-1234 ",
+        "serial_shared_secret": " s_e_c_r_e_t_mock ",
         "metrics_enabled": "0",
         "metrics_host": "0.0.0.0",
         "metrics_port": "9200",
@@ -187,7 +187,7 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
         "mqtt_spool_dir": "/data/spool",
         "allow_non_tmp_paths": "0",
         "process_timeout": "10",
-        "serial_shared_secret": " unit-test-secret-1234 ",
+        "serial_shared_secret": " s_e_c_r_e_t_mock ",
     }
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
@@ -226,7 +226,7 @@ def test_load_runtime_config_prefers_uci_config(
         "serial_port": "/dev/uci",
         "debug": "1",
         "mqtt_tls": "0",
-        "serial_shared_secret": " unit-test-secret-1234 ",
+        "serial_shared_secret": " s_e_c_r_e_t_mock ",
     }
 
     monkeypatch.setattr(settings, "get_uci_config", lambda: uci_config)
@@ -338,7 +338,7 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
         "allowed_commands": "uptime",
         "file_system_root": "/tmp",
         "process_timeout": "10",
-        "serial_shared_secret": " unit-test-secret-1234 ",
+        "serial_shared_secret": " s_e_c_r_e_t_mock ",
         "watchdog_enabled": "1",
         "watchdog_interval": "0.2",
     }

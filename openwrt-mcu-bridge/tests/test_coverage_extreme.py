@@ -31,7 +31,7 @@ import aiomqtt # noqa: E402
 def test_daemon_task_setup_logic():
     """Verifica que se crean las tareas correctas según la config."""
     mock_config = MagicMock()
-    mock_config.serial_shared_secret = "secret"
+    mock_config.serial_shared_secret = "s_e_c_r_e_t_mock"
     mock_config.watchdog_enabled = True
     mock_config.metrics_enabled = True
 
@@ -69,7 +69,7 @@ async def test_daemon_run_lifecycle():
     mock_config.bridge_summary_interval = 0.0
     mock_config.bridge_handshake_interval = 0.0
     mock_config.status_interval = 5.0
-    mock_config.serial_shared_secret = "secret"
+    mock_config.serial_shared_secret = "s_e_c_r_e_t_mock"
 
     with patch("mcubridge.daemon.create_runtime_state"), \
             patch("mcubridge.daemon.BridgeService") as MockService, \

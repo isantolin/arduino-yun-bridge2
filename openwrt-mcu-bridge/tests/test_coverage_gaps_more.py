@@ -45,7 +45,7 @@ def _make_config() -> RuntimeConfig:
         status_interval=DEFAULT_STATUS_INTERVAL,
         debug_logging=False,
         process_max_concurrent=2,
-        serial_shared_secret=b"testsecret",
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
 
 

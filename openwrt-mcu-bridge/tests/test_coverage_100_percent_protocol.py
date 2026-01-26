@@ -18,7 +18,8 @@ def test_frame_parse_coverage_all_errors():
             Frame.parse(b"1234567")
 
     # Line 125: CRC Mismatch
-    bad_crc_frame = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, protocol.PROTOCOL_VERSION, 0, 0x40) + b"\x00\x00\x00\x00"
+    bad_crc_frame = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, protocol.PROTOCOL_VERSION, 0, 0x40)
+    bad_crc_frame += b"\x00\x00\x00\x00"
     with pytest.raises(ValueError, match="CRC mismatch"):
         Frame.parse(bad_crc_frame)
 

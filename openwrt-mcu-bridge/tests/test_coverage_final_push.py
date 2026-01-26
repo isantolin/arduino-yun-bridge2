@@ -115,7 +115,7 @@ async def test_serial_transport_lifecycle_coverage():
     with patch.object(transport, "_negotiate_baudrate", return_value=False):
         m_t, m_p = MagicMock(), MagicMock()
         m_p.transport = m_t
-        m_t.is_closing.side_effect = [False, True]
+        m_t.is_closing.side_effect = [False, False, True, True, True, True]
         with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
                    return_value=(m_t, m_p)):
             await transport._connect_and_run(asyncio.get_running_loop())

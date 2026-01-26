@@ -45,16 +45,16 @@ private:
     
     PacketSerial _packetSerial;
     
-    // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
-    uint8_t _last_raw_frame[rpc::MAX_RAW_FRAME_SIZE];
-    size_t _last_raw_frame_len;
-    
     // State for processInput polling
     rpc::Frame* _target_frame;
     bool _frame_received;
     
     // Error tracking
     rpc::FrameParser _parser; // Helper for parsing, also tracks error enum
+
+    // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
+    uint8_t _last_raw_frame[rpc::MAX_RAW_FRAME_SIZE];
+    size_t _last_raw_frame_len;
     
     // Global instance pointer for the static callback
     static BridgeTransport* _instance;

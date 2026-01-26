@@ -16,7 +16,8 @@ if "uci" not in sys.modules:
 if "serial_asyncio_fast" not in sys.modules:
     from unittest.mock import AsyncMock
     mock_saf = MagicMock()
-    mock_saf.create_serial_connection = AsyncMock()
+    # Default return value is a tuple of mocks to satisfy 'transport, proto = await ...'
+    mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 import pytest

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 # Mock serial_asyncio_fast
 mock_serial_fast = MagicMock()
-mock_serial_fast.create_serial_connection = AsyncMock()
+mock_serial_fast.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
 sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
 import asyncio  # noqa: E402

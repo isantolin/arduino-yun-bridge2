@@ -1,11 +1,48 @@
-#include "BridgeTestInterface.h"
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "Bridge.h"
 #include "arduino/BridgeTransport.h"
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
 using namespace bridge;
 
-// Local instances for linkage
+class MockStream : public Stream {
+public:
+    ByteBuffer<8192> tx_buffer;
+    ByteBuffer<8192> rx_buffer;
+
+    size_t write(uint8_t c) override {
+        TEST_ASSERT(tx_buffer.push(c));
+        return 1;
+    }
+
+    size_t write(const uint8_t* buffer, size_t size) override {
+        TEST_ASSERT(tx_buffer.append(buffer, size));
+        return size;
+    }
+
+    int available() override {
+        return static_cast<int>(rx_buffer.remaining());
+    }
+
+    int read() override {
+        return rx_buffer.read_byte();
+    }
+
+    int peek() override {
+        return rx_buffer.peek_byte();
+    }
+
+    void flush() override {}
+};
+
+// Global instances required by Bridge.cpp linkage
 HardwareSerial Serial;
 HardwareSerial Serial1;
 ConsoleClass Console;

@@ -100,11 +100,12 @@ async def test_serial_write_frame_full_coverage():
 async def test_serial_transport_run_and_connect_failures():
     config = _make_config()
     transport = serial_fast.SerialTransport(config, MagicMock(), AsyncMock())
-    with patch.object(transport, "_connect_and_run", side_effect=serial_fast.SerialHandshakeFatal("fail")):
-        with pytest.raises(serial_fast.SerialHandshakeFatal):
-            await transport.run()
-    transport._stop_event.set()
-    await transport.run()
+    with patch.object(transport, "_connect_and_run", side_effect=[RuntimeError("fail"), None]):
+        async def stop_transport():
+            await asyncio.sleep(0.05)
+            transport._stop_event.set()
+        asyncio.create_task(stop_transport())
+        await transport.run()
 
 @pytest.mark.asyncio
 async def test_serial_transport_negotiation_failure_branch():

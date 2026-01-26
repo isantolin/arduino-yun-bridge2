@@ -8,22 +8,11 @@ sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
 import asyncio  # noqa: E402
 import struct  # noqa: E402
-from typing import Any  # noqa: E402
 
 import pytest  # noqa: E402
 
-from cobs import cobs  # noqa: E402
 
 from mcubridge.config.settings import RuntimeConfig  # noqa: E402
-from mcubridge.const import (  # noqa: E402
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-    DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_STATUS_INTERVAL,
-)
 from mcubridge.rpc import protocol  # noqa: E402
 from mcubridge.rpc.frame import Frame  # noqa: E402
 from mcubridge.rpc.protocol import Command  # noqa: E402
@@ -156,3 +145,4 @@ async def test_write_frame_returns_false_on_write_error() -> None:
     proto.connection_made(_MockTransport()) # type: ignore
     ok = proto.write_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False
+

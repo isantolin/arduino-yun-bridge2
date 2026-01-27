@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import aiomqtt
 # [REQ-PY3.13] Paho 2.x is used by aiomqtt internally, but aiomqtt > 2.0 handles the callback versioning.
 
-from mcubridge.common import build_mqtt_connect_properties, build_mqtt_properties
+from mcubridge.common import build_mqtt_connect_properties, build_mqtt_properties, log_hexdump
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import MQTT_TLS_MIN_VERSION
 from mcubridge.protocol import topic_path
@@ -65,6 +65,9 @@ async def _mqtt_publisher_loop(
         topic_name = message.topic_name
         props = build_mqtt_properties(message)
 
+        if logger.isEnabledFor(logging.DEBUG):
+            log_hexdump(logger, logging.DEBUG, f"MQTT PUB > {topic_name}", message.payload)
+
         try:
             await client.publish(
                 topic_name,
@@ -100,6 +103,12 @@ async def _mqtt_subscriber_loop(
             topic = str(message.topic)
             if not topic:
                 continue
+
+            if logger.isEnabledFor(logging.DEBUG):
+                # Ensure payload is bytes for hexdump
+                payload = message.payload if isinstance(message.payload, bytes) else str(message.payload).encode()
+                log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {topic}", payload)
+
             try:
                 await service.handle_mqtt_message(message)
             except (ValueError, TypeError, AttributeError, RuntimeError, KeyError) as e:

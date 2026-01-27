@@ -23,22 +23,22 @@
 #endif
 
 // Console ring buffers (MCU-side only; not part of the protocol).
-// Defaults to 64 bytes to keep SRAM usage predictable on AVR.
+// Defaults to 48 bytes to keep SRAM usage predictable on AVR.
 #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 64
+#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 48
 #endif
 
 #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 64
+#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 48
 #endif
 
 // Pending request queue sizes (MCU-side only; not part of the protocol).
 #ifndef BRIDGE_MAX_PENDING_DATASTORE
-#define BRIDGE_MAX_PENDING_DATASTORE 2
+#define BRIDGE_MAX_PENDING_DATASTORE 1
 #endif
 
 #ifndef BRIDGE_MAX_PENDING_PROCESS_POLLS
-#define BRIDGE_MAX_PENDING_PROCESS_POLLS 2
+#define BRIDGE_MAX_PENDING_PROCESS_POLLS 1
 #endif
 
 // File size warning threshold (bytes) - used by daemon for RAM monitoring.

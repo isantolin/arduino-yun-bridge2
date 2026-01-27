@@ -121,11 +121,6 @@ class BridgeClass {
   void process();
   bool isSynchronized() const { return _synchronized; }
 
-  // API
-  void pinMode(uint8_t pin, uint8_t mode);
-  void digitalWrite(uint8_t pin, uint8_t value);
-  void analogWrite(uint8_t pin, int value);
-
   // Events
   void onCommand(CommandHandler handler);
   void onDigitalReadResponse(DigitalReadHandler handler);

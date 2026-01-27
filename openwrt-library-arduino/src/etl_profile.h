@@ -5,8 +5,9 @@
 // This profile ensures no heap usage, no exceptions, and no RTTI.
 
 #define ETL_NO_EXCEPTIONS
+#define ETL_NO_STL
 #define ETL_NO_RTTI
-#define ETL_THROW_EXCEPTIONS 0
+#define ETL_LOG_ERRORS
 #define ETL_VERBOSE_ERRORS
 #define ETL_CHECK_PUSH_POP
 #define ETL_CALLBACK_ON_ERROR

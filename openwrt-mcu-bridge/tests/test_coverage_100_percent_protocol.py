@@ -4,9 +4,11 @@ import pytest
 from mcubridge.rpc.frame import Frame
 from mcubridge.rpc import protocol
 
+
 def _build_raw_with_crc(data_no_crc: bytes) -> bytes:
     c = crc32(data_no_crc) & protocol.CRC32_MASK
     return data_no_crc + struct.pack(protocol.CRC_FORMAT, c)
+
 
 def test_frame_parse_coverage_all_errors():
     # Line 120: Incomplete header
@@ -38,6 +40,7 @@ def test_frame_parse_coverage_all_errors():
     raw = _build_raw_with_crc(bad_len)
     with pytest.raises(ValueError, match="Payload length mismatch"):
         Frame.parse(raw)
+
 
 def test_frame_build_edge_cases():
     with pytest.raises(ValueError, match="outside 16-bit range"):

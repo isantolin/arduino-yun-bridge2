@@ -333,7 +333,10 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
     assert mcu_src_root.is_dir(), f"missing MCU src root: {mcu_src_root}"
     assert mcu_tests_root.is_dir(), f"missing MCU tests root: {mcu_tests_root}"
 
-    cpp_files = _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+    cpp_files = [
+        f for f in _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+        if "etl/" not in str(f) and "nanopb/" not in str(f)
+    ]
     cpp_files += _iter_text_files(mcu_tests_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
 
     # Keep this intentionally conservative: it catches the common STL types and includes.

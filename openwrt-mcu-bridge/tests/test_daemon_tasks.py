@@ -28,6 +28,7 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.services.runtime import SerialHandshakeFatal
 from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
+
 @dataclass
 class _SerialServiceStub:
     config: RuntimeConfig

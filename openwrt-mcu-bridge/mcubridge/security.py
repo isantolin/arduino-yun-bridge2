@@ -3,7 +3,6 @@
 [MIL-SPEC COMPLIANCE]
 This module provides security primitives resistant to:
 - Memory inspection after use (secure_zero)
-- Timing side-channel attacks (timing_safe_equal - use hmac.compare_digest)
 
 Reference standards:
 - NIST SP 800-90A (secure random)
@@ -14,7 +13,6 @@ Reference standards:
 from __future__ import annotations
 
 import ctypes
-import hmac
 import secrets
 import struct
 from typing import Final
@@ -80,30 +78,6 @@ def secure_zero_bytes_copy(data: bytes) -> bytes:
         Zeroed bytes object of the same length.
     """
     return bytes(len(data))
-
-
-def timing_safe_equal(a: bytes, b: bytes) -> bool:
-    """Timing-safe comparison of two byte strings.
-
-    [MIL-SPEC] Wrapper around hmac.compare_digest for clarity.
-    Compares in constant time regardless of where first difference occurs.
-
-    Use this for comparing:
-    - HMAC tags
-    - Authentication tokens
-    - Password hashes
-    - Any security-sensitive comparison
-
-    Args:
-        a: First bytes object.
-        b: Second bytes object.
-
-    Returns:
-        True if equal, False otherwise.
-
-    Reference: CWE-208 (Observable Timing Discrepancy)
-    """
-    return hmac.compare_digest(a, b)
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
@@ -196,6 +170,5 @@ __all__ = [
     "generate_nonce_with_counter",
     "secure_zero",
     "secure_zero_bytes_copy",
-    "timing_safe_equal",
     "validate_nonce_counter",
 ]

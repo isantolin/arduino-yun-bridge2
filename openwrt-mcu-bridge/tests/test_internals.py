@@ -13,8 +13,8 @@ from mcubridge.daemon import main
 # Obsolete test removed (read_loop replaced by Protocol)
 
 
-
 # --- MQTT INTERNALS ---
+
 
 @pytest.mark.asyncio
 async def test_mqtt_internal_tls_setup_branches():

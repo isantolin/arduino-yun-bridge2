@@ -117,7 +117,7 @@ class Frame:
         # [REFACTORED FOR 100% COVERAGE]
         # We ensure CRC_COVERED_HEADER_SIZE check is reachable.
         if len(raw_frame_buffer) < protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE:
-             raise ValueError("Incomplete header")
+            raise ValueError("Incomplete header")
 
         # 3. Extract and verify CRC
         crc_start = len(raw_frame_buffer) - protocol.CRC_SIZE

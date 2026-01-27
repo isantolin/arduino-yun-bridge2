@@ -32,7 +32,6 @@ from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from ..security import (
     generate_nonce_with_counter,
     secure_zero,
-    timing_safe_equal,
     validate_nonce_counter,
 )
 from ..state.context import RuntimeState, McuCapabilities
@@ -239,7 +238,7 @@ class SerialHandshakeManager:
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
         # [MIL-SPEC] Use timing-safe comparison to prevent side-channel attacks
-        tag_mismatch = not timing_safe_equal(tag_bytes, recalculated_tag)
+        tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
 
         # [MIL-SPEC] Validate nonce counter for anti-replay protection
         if not nonce_mismatch and not missing_expected_tag:

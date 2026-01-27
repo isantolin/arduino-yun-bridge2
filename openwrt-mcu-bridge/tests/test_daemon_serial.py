@@ -11,6 +11,7 @@ from mcubridge.transport import (
 from mcubridge.rpc import protocol
 from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
+
 @pytest.mark.asyncio
 async def test_serial_reader_task_reconnects():
     """Test that reader task re-establishes connection on failure."""

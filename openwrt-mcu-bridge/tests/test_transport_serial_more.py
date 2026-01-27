@@ -43,7 +43,7 @@ def sleep_spy():
         yield m
 
 
-from unittest.mock import patch # noqa: E402
+from unittest.mock import patch  # noqa: E402
 
 
 @pytest.mark.asyncio
@@ -56,10 +56,10 @@ async def test_negotiate_baudrate_success() -> None:
     proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
 
     # Mock write_frame to simulate sending request
-    proto.write_frame = MagicMock(return_value=True) # type: ignore
+    proto.write_frame = MagicMock(return_value=True)  # type: ignore
 
     task = asyncio.create_task(transport._negotiate_baudrate(proto, 115200))
-    await asyncio.sleep(0) # Let task start
+    await asyncio.sleep(0)  # Let task start
 
     # Simulate receiving response
     assert proto.negotiation_future is not None
@@ -78,7 +78,7 @@ async def test_negotiate_baudrate_timeout(monkeypatch: pytest.MonkeyPatch) -> No
     transport = serial_fast.SerialTransport(config, state, service)
     proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
 
-    proto.write_frame = MagicMock(return_value=True) # type: ignore
+    proto.write_frame = MagicMock(return_value=True)  # type: ignore
 
     # Short timeout for test
     monkeypatch.setattr(serial_fast, "SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01)

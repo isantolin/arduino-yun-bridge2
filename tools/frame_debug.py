@@ -136,10 +136,12 @@ def _open_serial_device(port: str, baud: int, timeout: float) -> serial.Serial:
     except serial.SerialException as exc:
         raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
 
+
 def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
     return int(written) if written is not None else 0
+
 
 def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
     buffer = bytearray()
@@ -157,9 +159,11 @@ def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
             continue
         buffer.extend(chunk)
 
+
 def _decode_frame(encoded_packet: bytes) -> Frame:
     raw_frame = cobs.decode(encoded_packet)
     return Frame.from_bytes(raw_frame)
+
 
 def _print_response(frame: Frame) -> None:
     payload_hex = frame.payload.hex()
@@ -172,17 +176,20 @@ def _print_response(frame: Frame) -> None:
     sys.stdout.write(f"payload_len={len(frame.payload)}\n")
     sys.stdout.write(f"payload={payload_preview}\n")
 
+
 def _positive_float(value: str) -> float:
     candidate = float(value)
     if candidate <= 0:
         raise argparse.ArgumentTypeError("value must be positive")
     return candidate
 
+
 def _non_negative_int(value: str) -> int:
     candidate = int(value)
     if candidate < 0:
         raise argparse.ArgumentTypeError("value must be >= 0")
     return candidate
+
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -255,6 +262,7 @@ def _iter_counts(count: int) -> Iterable[int]:
             iteration += 1
     else:
         yield from range(count)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()

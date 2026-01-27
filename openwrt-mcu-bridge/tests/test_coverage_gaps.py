@@ -290,8 +290,6 @@ async def test_start_async_generic_exception_returns_sentinel(
 # _ensure_raw_mode and termios handling are now managed by pyserial-asyncio-fast
 
 
-
-
 # ============================================================================
 # METRICS.PY COVERAGE GAPS (lines 47, 118, 160-163, 179-185, 199)
 # ============================================================================
@@ -594,6 +592,7 @@ async def test_allocate_pid_skips_zero(process_component: ProcessComponent) -> N
     pid = await process_component._allocate_pid()
     assert pid == 1  # Should skip 0 and return 1
 
+
 def test_kill_process_tree_sync_psutil_error() -> None:
     """Cover psutil.Error handling in _kill_process_tree_sync."""
     import psutil
@@ -602,6 +601,7 @@ def test_kill_process_tree_sync_psutil_error() -> None:
     with patch("psutil.Process", side_effect=psutil.NoSuchProcess(123)):
         # Should not raise
         ProcessComponent._kill_process_tree_sync(123)
+
 
 def test_kill_process_tree_sync_children_error() -> None:
     """Cover psutil.Error when getting children."""
@@ -617,6 +617,7 @@ def test_kill_process_tree_sync_children_error() -> None:
         ProcessComponent._kill_process_tree_sync(123)
         mock_proc.kill.assert_called_once()
 
+
 def test_kill_process_tree_sync_kill_error() -> None:
     """Cover psutil.Error when killing process."""
     import psutil
@@ -629,6 +630,7 @@ def test_kill_process_tree_sync_kill_error() -> None:
     with patch("psutil.Process", return_value=mock_proc):
         # Should not raise
         ProcessComponent._kill_process_tree_sync(123)
+
 
 def test_kill_process_tree_sync_child_kill_error() -> None:
     """Cover psutil.Error when killing child process."""

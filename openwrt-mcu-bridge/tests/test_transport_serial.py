@@ -113,7 +113,7 @@ async def test_write_frame_debug_logs_unknown_command(monkeypatch: pytest.Monkey
             self.writes.append(data)
 
     mock_transport = _MockTransport()
-    proto.connection_made(mock_transport) # type: ignore
+    proto.connection_made(mock_transport)  # type: ignore
 
     monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)
     seen: dict[str, str] = {}
@@ -142,7 +142,6 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         def write(self, _data: bytes) -> None:
             raise OSError("boom")
 
-    proto.connection_made(_MockTransport()) # type: ignore
+    proto.connection_made(_MockTransport())  # type: ignore
     ok = proto.write_frame(Command.CMD_CONSOLE_WRITE.value, b"hi")
     assert ok is False
-

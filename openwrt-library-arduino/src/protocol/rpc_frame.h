@@ -4,6 +4,11 @@
 #include <Arduino.h>
 #include "rpc_protocol.h"
 
+// ETL requires min/max from <algorithm>, but Arduino.h defines them as macros.
+#undef min
+#undef max
+#include "../etl/include/etl/array.h"
+
 namespace rpc {
 
 // --- Endianness-safe helpers for Big Endian (Network Byte Order) ---
@@ -52,7 +57,7 @@ constexpr size_t MAX_RAW_FRAME_SIZE =
 
 struct Frame {
   FrameHeader header;
-  uint8_t payload[MAX_PAYLOAD_SIZE];
+  etl::array<uint8_t, MAX_PAYLOAD_SIZE> payload;
 };
 
 class FrameParser {

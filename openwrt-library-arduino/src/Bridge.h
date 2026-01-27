@@ -33,6 +33,12 @@
 #include "protocol/rpc_protocol.h"
 #include "arduino/BridgeTransport.h"
 
+#undef min
+#undef max
+#include "etl/include/etl/array.h"
+#include "etl/include/etl/deque.h"
+#include "etl/include/etl/string.h"
+
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
 
@@ -132,7 +138,7 @@ class BridgeClass {
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
   void flushStream();
   void enterSafeState(); // [SIL-2] Force system into fail-safe state
-  uint8_t* getScratchBuffer() { return _scratch_payload; }
+  uint8_t* getScratchBuffer() { return _scratch_payload.data(); }
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
 
@@ -162,7 +168,7 @@ class BridgeClass {
 
   // Protocol Engine
   rpc::Frame _rx_frame;
-  uint8_t _scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _scratch_payload;
 
   // State
   bool _awaiting_ack;
@@ -190,11 +196,9 @@ class BridgeClass {
   struct PendingTxFrame {
     uint16_t command_id;
     uint16_t payload_length;
-    uint8_t payload[rpc::MAX_PAYLOAD_SIZE];
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
-  PendingTxFrame _pending_tx_frames[rpc::RPC_MAX_PENDING_TX_FRAMES];
-  uint8_t _pending_tx_head;
-  uint8_t _pending_tx_count;
+  etl::deque<PendingTxFrame, rpc::RPC_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
   bool _synchronized;
 
 #if BRIDGE_DEBUG_FRAMES
@@ -277,10 +281,7 @@ class DataStoreClass {
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
-  char _pending_datastore_keys[BRIDGE_MAX_PENDING_DATASTORE][rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1];
-  uint8_t _pending_datastore_key_lengths[BRIDGE_MAX_PENDING_DATASTORE];
-  uint8_t _pending_datastore_head;
-  uint8_t _pending_datastore_count;
+  etl::deque<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
   DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;

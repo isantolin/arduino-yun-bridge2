@@ -21,10 +21,11 @@ BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
       _target_frame(nullptr),
       _frame_received(false),
       _parser(),
+      _last_raw_frame(),
       _last_raw_frame_len(0)
 {
     _instance = this;
-    memset(_last_raw_frame, 0, sizeof(_last_raw_frame));
+    _last_raw_frame.fill(0);
 }
 
 void BridgeTransport::begin(unsigned long baudrate) {
@@ -100,8 +101,8 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
     rpc::FrameBuilder builder;
     
     size_t raw_len = builder.build(
-        _last_raw_frame,
-        sizeof(_last_raw_frame),
+        _last_raw_frame.data(),
+        _last_raw_frame.size(),
         command_id,
         payload,
         length);
@@ -114,7 +115,7 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
     _last_raw_frame_len = raw_len;
 
     // Send using PacketSerial (Handles COBS encoding and Delimiter)
-    _packetSerial.send(_last_raw_frame, _last_raw_frame_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame_len);
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();
@@ -153,7 +154,7 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
 bool BridgeTransport::retransmitLastFrame() {
     if (_last_raw_frame_len == 0) return false;
 
-    _packetSerial.send(_last_raw_frame, _last_raw_frame_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame_len);
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();

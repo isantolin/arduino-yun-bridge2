@@ -487,7 +487,7 @@ void test_bridge_file_write_incoming() {
     rpc::Frame frame;
     frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     frame.header.payload_length = sizeof(payload);
-    memcpy(frame.payload, payload, sizeof(payload));
+    memcpy(frame.payload.data(), payload, sizeof(payload));
 
     // Dispatch directly
     bridge.dispatch(frame);
@@ -515,7 +515,7 @@ void test_bridge_dedup_console_write_retry() {
     rpc::Frame frame;
     frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
     frame.header.payload_length = sizeof(payload);
-    memcpy(frame.payload, payload, sizeof(payload));
+    memcpy(frame.payload.data(), payload, sizeof(payload));
 
     const int before = Console.available();
     TEST_ASSERT_EQ_UINT(before, 0);
@@ -651,7 +651,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     rpc::Frame malformed{};
     malformed.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED);
     malformed.header.payload_length = 2;
-    rpc::write_u16_be(malformed.payload, bridge._last_command_id);
+    rpc::write_u16_be(malformed.payload.data(), bridge._last_command_id);
     g_test_millis = 50;
     bridge.dispatch(malformed);
     TEST_ASSERT_EQ_UINT(bridge._retry_count, 1);
@@ -699,7 +699,10 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), big, sizeof(big)));
 
     // Fill queue.
-    bridge._pending_tx_count = rpc::RPC_MAX_PENDING_TX_FRAMES;
+    // Forcing queue full state manually for this test branch
+    while(!bridge._pending_tx_queue.full()) {
+        bridge._enqueuePendingTx(0x1234, nullptr, 0);
+    }
     TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), nullptr, 0));
 }
 
@@ -744,7 +747,7 @@ void test_bridge_system_commands_and_baudrate_state_machine() {
     rpc::Frame baud{};
     baud.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE);
     baud.header.payload_length = 4;
-    rpc::write_u32_be(baud.payload, 57600);
+    rpc::write_u32_be(baud.payload.data(), 57600);
     g_test_millis = 1000;
     bridge._handleSystemCommand(baud);
     TEST_ASSERT(stream.tx_buffer.len > 0);

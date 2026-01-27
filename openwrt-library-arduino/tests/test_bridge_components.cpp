@@ -452,7 +452,7 @@ static void test_console_write_outbound_frame() {
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE));
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.payload_length, sizeof(msg) - 1);
-  TEST_ASSERT(test_memeq(frames.frames[0].payload, msg, sizeof(msg) - 1));
+  TEST_ASSERT(test_memeq(frames.frames[0].payload.data(), msg, sizeof(msg) - 1));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE));
   restore_bridge_to_serial();
@@ -491,9 +491,9 @@ static void test_mailbox_send_outbound_frame() {
   const rpc::Frame& f = frames.frames[0];
   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
   TEST_ASSERT(f.header.payload_length >= 2);
-  const uint16_t msg_len = rpc::read_u16_be(f.payload);
+  const uint16_t msg_len = rpc::read_u16_be(f.payload.data());
   TEST_ASSERT_EQ_UINT(msg_len, 2);
-  TEST_ASSERT(test_memeq(f.payload + 2, "hi", 2));
+  TEST_ASSERT(test_memeq(f.payload.data() + 2, "hi", 2));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
   restore_bridge_to_serial();
@@ -516,10 +516,10 @@ static void test_filesystem_write_outbound_frame() {
 
   const uint8_t path_len = f.payload[0];
   TEST_ASSERT_EQ_UINT(path_len, sizeof(path) - 1);
-  TEST_ASSERT(test_memeq(f.payload + 1, path, path_len));
-  const uint16_t data_len = rpc::read_u16_be(f.payload + 1 + path_len);
+  TEST_ASSERT(test_memeq(f.payload.data() + 1, path, path_len));
+  const uint16_t data_len = rpc::read_u16_be(f.payload.data() + 1 + path_len);
   TEST_ASSERT_EQ_UINT(data_len, sizeof(data));
-  TEST_ASSERT(test_memeq(f.payload + 3 + path_len, data, sizeof(data)));
+  TEST_ASSERT(test_memeq(f.payload.data() + 3 + path_len, data, sizeof(data)));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE));
   restore_bridge_to_serial();
@@ -538,7 +538,7 @@ static void test_process_kill_outbound_frame() {
   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL));
   TEST_ASSERT_EQ_UINT(f.header.payload_length, 2);
 
-  const uint16_t pid = rpc::read_u16_be(f.payload);
+  const uint16_t pid = rpc::read_u16_be(f.payload.data());
   TEST_ASSERT_EQ_UINT(pid, 123);
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL));
@@ -559,7 +559,7 @@ static void test_datastore_get_response_handler() {
   const uint8_t value[] = {'v', 'v'};
   f.header.payload_length = 1 + sizeof(value);
   f.payload[0] = static_cast<uint8_t>(sizeof(value));
-  memcpy(f.payload + 1, value, sizeof(value));
+  memcpy(f.payload.data() + 1, value, sizeof(value));
 
   DataStore.handleResponse(f);
 
@@ -581,8 +581,8 @@ static void test_mailbox_read_response_handler() {
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
   const uint8_t msg[] = {'o', 'k'};
   f.header.payload_length = 2 + sizeof(msg);
-  rpc::write_u16_be(f.payload, static_cast<uint16_t>(sizeof(msg)));
-  memcpy(f.payload + 2, msg, sizeof(msg));
+  rpc::write_u16_be(f.payload.data(), static_cast<uint16_t>(sizeof(msg)));
+  memcpy(f.payload.data() + 2, msg, sizeof(msg));
 
   Mailbox.handleResponse(f);
 
@@ -605,7 +605,7 @@ static void test_process_poll_response_handler() {
   const uint8_t stdout_msg[] = {'o'};
   const uint8_t stderr_msg[] = {'e'};
 
-  uint8_t* p = f.payload;
+  uint8_t* p = f.payload.data();
   p[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
   p[1] = TEST_EXIT_CODE;
   rpc::write_u16_be(p + 2, static_cast<uint16_t>(sizeof(stdout_msg)));
@@ -775,7 +775,7 @@ static void test_process_run_response_length_guards() {
   // Declared stdout length but missing stderr length: should not call.
   rpc::Frame f_bad{};
   f_bad.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  uint8_t* p = f_bad.payload;
+  uint8_t* p = f_bad.payload.data();
   p[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
   rpc::write_u16_be(p + 1, 2);
   p[3] = 'o';
@@ -787,7 +787,7 @@ static void test_process_run_response_length_guards() {
   // Full payload: should call.
   rpc::Frame f_ok{};
   f_ok.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  uint8_t* q = f_ok.payload;
+  uint8_t* q = f_ok.payload.data();
   q[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
   rpc::write_u16_be(q + 1, 1);
   q[3] = 'o';

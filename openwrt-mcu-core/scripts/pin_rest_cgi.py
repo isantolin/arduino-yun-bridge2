@@ -232,13 +232,22 @@ def main() -> None:
                 "message": f"Command to turn pin {pin} {state} sent via MQTT.",
             },
         )
-    except Exception as exc:  # pragma: no cover - protective guard
-        logger.exception("MQTT publish failed for pin %s", pin)
+    except (RuntimeError, TimeoutError) as exc:
+        logger.error("MQTT publish operation failed for pin %s: %s", pin, exc)
         send_response(
             500,
             {
                 "status": "error",
                 "message": f"Failed to send command for pin {pin}: {exc}",
+            },
+        )
+    except Exception:
+        logger.exception("Unexpected error during MQTT publish for pin %s", pin)
+        send_response(
+            500,
+            {
+                "status": "error",
+                "message": f"Internal server error while processing pin {pin}.",
             },
         )
 

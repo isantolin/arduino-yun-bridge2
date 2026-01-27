@@ -12,8 +12,11 @@ using byte = uint8_t;
 using word = uint16_t;
 
 // Placement new/delete for tests that reconstruct objects in-place.
+// Protected by __GLIBCXX__ to avoid conflict with standard library <new> header.
+#ifndef __GLIBCXX__
 inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
 inline void operator delete(void*, void*) noexcept {}
+#endif
 
 // Constants
 #define HIGH 1
@@ -29,7 +32,12 @@ inline void operator delete(void*, void*) noexcept {}
 #undef max
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
-#define round(x) ((x) >= 0 ? (long)((x) + 0.5) : (long)((x) - 0.5))
+
+// Replace round macro with a template to avoid conflict with cmath
+template <typename T>
+inline long round(T x) {
+    return (x >= 0) ? static_cast<long>(x + 0.5) : static_cast<long>(x - 0.5);
+}
 
 // Stub functions
 // Allow host tests to override timing behavior (e.g., time travel) by defining

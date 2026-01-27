@@ -7,13 +7,7 @@
 extern const char kDatastoreQueueFull[] PROGMEM;
 
 DataStoreClass::DataStoreClass() 
-  : _pending_datastore_head(0),
-    _pending_datastore_count(0),
-    _datastore_get_handler(nullptr) {
-  for (uint8_t i = 0; i < BRIDGE_MAX_PENDING_DATASTORE; i++) {
-      memset(_pending_datastore_keys[i], 0, rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1);
-  }
-  memset(_pending_datastore_key_lengths, 0, BRIDGE_MAX_PENDING_DATASTORE);
+  : _datastore_get_handler(nullptr) {
 }
 
 void DataStoreClass::put(const char* key, const char* value) {
@@ -77,7 +71,7 @@ void DataStoreClass::handleResponse(const rpc::Frame& frame) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   if (command == rpc::CommandId::CMD_DATASTORE_GET_RESP) {
       const size_t payload_length = frame.header.payload_length;
-      const uint8_t* payload_data = frame.payload;
+      const uint8_t* payload_data = frame.payload.data();
       
       if (payload_length >= 1 && payload_data != nullptr) {
         uint8_t value_len = payload_data[0];
@@ -106,40 +100,25 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
   if (info.length == 0 || info.overflowed) {
     return false;
   }
-  const size_t length = info.length;
 
-  if (_pending_datastore_count >= BRIDGE_MAX_PENDING_DATASTORE) {
+  if (_pending_datastore_keys.full()) {
     return false;
   }
 
-  uint8_t slot =
-      (_pending_datastore_head + _pending_datastore_count) %
-      BRIDGE_MAX_PENDING_DATASTORE;
-  memcpy(_pending_datastore_keys[slot], key, length);
-  _pending_datastore_keys[slot][length] = '\0';
-  _pending_datastore_key_lengths[slot] = static_cast<uint8_t>(length);
-  _pending_datastore_count++;
+  _pending_datastore_keys.push_back(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key));
   return true;
 }
 
 const char* DataStoreClass::_popPendingDatastoreKey() {
   static char key_buffer[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1] = {0};
-  if (_pending_datastore_count == 0) {
+  if (_pending_datastore_keys.empty()) {
     key_buffer[0] = '\0';
     return key_buffer;
   }
 
-  uint8_t slot = _pending_datastore_head;
-  uint8_t length = _pending_datastore_key_lengths[slot];
-  if (length > rpc::RPC_MAX_DATASTORE_KEY_LENGTH) {
-    length = rpc::RPC_MAX_DATASTORE_KEY_LENGTH;
-  }
-  memcpy(key_buffer, _pending_datastore_keys[slot], length);
-  key_buffer[length] = '\0';
-  _pending_datastore_head =
-      (_pending_datastore_head + 1) % BRIDGE_MAX_PENDING_DATASTORE;
-  _pending_datastore_count--;
-  _pending_datastore_key_lengths[slot] = 0;
-  _pending_datastore_keys[slot][0] = '\0';
+  const auto& key = _pending_datastore_keys.front();
+  strncpy(key_buffer, key.c_str(), rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
+  key_buffer[rpc::RPC_MAX_DATASTORE_KEY_LENGTH] = '\0';
+  _pending_datastore_keys.pop_front();
   return key_buffer;
 }

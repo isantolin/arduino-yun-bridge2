@@ -49,15 +49,13 @@ static void test_builder_roundtrip() {
   uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
   TEST_ASSERT(crc == CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE));
 
-  // [CAMBIO] En lugar de COBS encode -> decode, pasamos el buffer RAW directamente
-  // simulando que PacketSerial ya hizo su trabajo.
   bool parsed = parser.parse(raw, raw_len, frame);
   
   TEST_ASSERT(parsed);
   TEST_ASSERT(frame.header.version == PROTOCOL_VERSION);
   TEST_ASSERT(frame.header.command_id == command_id);
   TEST_ASSERT(frame.header.payload_length == sizeof(payload));
-  TEST_ASSERT(test_memeq(frame.payload, payload, sizeof(payload)));
+  TEST_ASSERT(test_memeq(frame.payload.data(), payload, sizeof(payload)));
 }
 
 // 4. Límite de Payload (Original)

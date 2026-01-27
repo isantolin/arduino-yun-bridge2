@@ -25,8 +25,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.2.1
-PKG_RELEASE:=5
+PKG_VERSION:=2.4.0
+PKG_RELEASE:=1
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
@@ -40,7 +40,8 @@ define Package/$(PKG_NAME)
 	TITLE:=MCU Bridge Python Daemon
 	PKG_ARCH:=all
 	DEPENDS:=+openwrt-mcu-core
-	# AUTO-GENERATED RUNTIME DEPENDS BEGIN (run tools/sync_runtime_deps.py)
+	# [OPENWRT 25.12] Modern apk-based dependencies.
+	# These packages MUST be available in the OpenWrt feeds.
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
@@ -51,13 +52,11 @@ define Package/$(PKG_NAME)
 		+python3-psutil \
 		+python3-prometheus-client \
 		+python3-pyserial-asyncio-fast
-	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description
   Modern Python daemon for the Arduino MCU Bridge v2 ecosystem.
-  Provides high-performance, asynchronous communication between OpenWrt Linux
-  and Arduino-compatible microcontrollers via Serial and MQTT.
+  Targeting OpenWrt 25.12+ with full apk support and asynchronous I/O.
 endef
 
 define Build/Compile

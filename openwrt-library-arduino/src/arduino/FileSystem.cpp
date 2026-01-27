@@ -68,7 +68,7 @@ void FileSystemClass::read(const char* filePath) {
 void FileSystemClass::handleResponse(const rpc::Frame& frame) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
-  const uint8_t* payload_data = frame.payload;
+  const uint8_t* payload_data = frame.payload.data();
 
   switch (command) {
     case rpc::CommandId::CMD_FILE_READ_RESP:

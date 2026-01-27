@@ -87,7 +87,7 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
     // --- Extract Payload ---
     if (out_frame.header.payload_length > 0) {
         const uint8_t* payload_src = buffer + sizeof(FrameHeader);
-        memcpy(out_frame.payload, payload_src, out_frame.header.payload_length);
+        memcpy(out_frame.payload.data(), payload_src, out_frame.header.payload_length);
     }
 
     return true;

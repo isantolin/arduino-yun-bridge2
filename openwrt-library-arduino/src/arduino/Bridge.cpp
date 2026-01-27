@@ -8,10 +8,11 @@
 #include <Arduino.h>
 
 // --- [SAFETY GUARD START] ---
-// CRITICAL: Prevent accidental STL usage on ALL architectures (memory fragmentation risk)
-// SIL 2 Requirement: Dynamic allocation via STL containers is forbidden globally.
-#if defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || defined(_GLIBCXX_MAP)
-  #error "CRITICAL: STL detected. Use standard arrays/pointers only to prevent heap fragmentation (SIL 2 Violation)."
+// CRITICAL: Prevent accidental standard STL usage on ALL architectures (memory fragmentation risk)
+// SIL 2 Requirement: Dynamic allocation via standard STL containers is forbidden globally.
+// We explicitly allow ETL (Embedded Template Library) as it uses static allocation.
+#if (defined(_GLIBCXX_VECTOR) || defined(_GLIBCXX_STRING) || defined(_GLIBCXX_MAP)) && !defined(ETL_VERSION) && !defined(BRIDGE_HOST_TEST)
+  #error "CRITICAL: Standard STL detected. Use ETL or standard arrays/pointers only to prevent heap fragmentation (SIL 2 Violation)."
 #endif
 // --- [SAFETY GUARD END] ---
 
@@ -33,6 +34,7 @@
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/security.h"
+#include "etl/include/etl/error_handler.h"
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection
@@ -159,18 +161,12 @@ BridgeClass::BridgeClass(HardwareSerial& arg_serial)
       _analog_read_handler(nullptr),
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
-      _pending_tx_head(0),
-      _pending_tx_count(0),
+      _pending_tx_queue(),
       _synchronized(false)
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
 {
-  for (uint8_t i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
-    _pending_tx_frames[i].command_id = 0;
-    _pending_tx_frames[i].payload_length = 0;
-    memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
-  }
 }
 
 BridgeClass::BridgeClass(Stream& arg_stream)
@@ -192,18 +188,12 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _analog_read_handler(nullptr),
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
-      _pending_tx_head(0),
-      _pending_tx_count(0),
+      _pending_tx_queue(),
       _synchronized(false)
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
 {
-  for (uint8_t i = 0; i < rpc::RPC_MAX_PENDING_TX_FRAMES; i++) {
-    _pending_tx_frames[i].command_id = 0;
-    _pending_tx_frames[i].payload_length = 0;
-    memset(_pending_tx_frames[i].payload, 0, rpc::MAX_PAYLOAD_SIZE);
-  }
 }
 
 void BridgeClass::begin(
@@ -266,7 +256,7 @@ bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
       raw,
       sizeof(raw),
       frame.header.command_id,
-      frame.payload,
+      frame.payload.data(),
       payload_len);
 
   if (raw_len < rpc::CRC_TRAILER_SIZE) {
@@ -304,7 +294,7 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
       raw,
       sizeof(raw),
       frame.header.command_id,
-      frame.payload,
+      frame.payload.data(),
       payload_len);
   if (raw_len < rpc::CRC_TRAILER_SIZE) {
     return;
@@ -438,7 +428,7 @@ void BridgeClass::flushStream() {
 void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
-  const uint8_t* payload_data = frame.payload;
+  const uint8_t* payload_data = frame.payload.data();
 
   switch (command) {
     case rpc::CommandId::CMD_GET_VERSION:
@@ -569,7 +559,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
           break;
         }
 
-        uint8_t* response = _scratch_payload;
+        uint8_t* response = _scratch_payload.data();
         if (payload_data) {
           memcpy(response, payload_data, nonce_length);
           if (has_secret) {
@@ -598,7 +588,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
-  const uint8_t* payload_data = frame.payload;
+  const uint8_t* payload_data = frame.payload.data();
 
   if (!payload_data) return;
 
@@ -658,7 +648,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
 
 void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
   if (static_cast<rpc::CommandId>(frame.header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
-    Console._push(frame.payload, frame.header.payload_length);
+    Console._push(frame.payload.data(), frame.header.payload_length);
   }
 }
 
@@ -671,12 +661,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   effective_frame.header.command_id = raw_command;
 
   if (is_compressed && frame.header.payload_length > 0) {
-    size_t decoded_len = rle::decode(frame.payload, frame.header.payload_length, _scratch_payload, rpc::MAX_PAYLOAD_SIZE);
+    size_t decoded_len = rle::decode(frame.payload.data(), frame.header.payload_length, _scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE);
     if (decoded_len == 0) {
       _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
       return;
     }
-    memcpy(effective_frame.payload, _scratch_payload, decoded_len);
+    memcpy(effective_frame.payload.data(), _scratch_payload.data(), decoded_len);
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   }
 
@@ -800,7 +790,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
         
         const rpc::StatusCode status = static_cast<rpc::StatusCode>(raw_command);
         const size_t payload_length = effective_frame.header.payload_length;
-        const uint8_t* payload_data = effective_frame.payload;
+        const uint8_t* payload_data = effective_frame.payload.data();
         
         switch (status) {
           case rpc::StatusCode::STATUS_ACK: {
@@ -866,7 +856,7 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHe
       i++;
     }
     length = static_cast<uint16_t>(i);
-    payload = _scratch_payload;
+    payload = _scratch_payload.data();
   }
   (void)sendFrame(status_code, payload, length);
   if (_status_handler) {
@@ -899,10 +889,10 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
 
   if (arg_length > 0 && rle::should_compress(arg_payload, arg_length)) {
     // Attempt compression into scratch buffer
-    size_t compressed_len = rle::encode(arg_payload, arg_length, _scratch_payload, rpc::MAX_PAYLOAD_SIZE);
+    size_t compressed_len = rle::encode(arg_payload, arg_length, _scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE);
     if (compressed_len > 0 && compressed_len < arg_length) {
       final_cmd |= rpc::RPC_CMD_FLAG_COMPRESSED;
-      final_payload = _scratch_payload;
+      final_payload = _scratch_payload.data();
       final_len = compressed_len;
     }
   }
@@ -1048,57 +1038,54 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  if (_awaiting_ack || _pending_tx_count == 0) {
+  if (_awaiting_ack || _pending_tx_queue.empty()) {
     return;
   }
-  PendingTxFrame frame;
-  if (!_dequeuePendingTx(frame)) {
-    return;
-  }
-    if (!_sendFrameImmediate(
+  
+  // Peek the front frame
+  const PendingTxFrame& frame = _pending_tx_queue.front();
+  
+  if (_sendFrameImmediate(
       frame.command_id,
-      frame.payload, frame.payload_length)) {
-    uint8_t previous_head =
-        (_pending_tx_head + rpc::RPC_MAX_PENDING_TX_FRAMES - 1) %
-        rpc::RPC_MAX_PENDING_TX_FRAMES;
-    _pending_tx_head = previous_head;
-    _pending_tx_frames[_pending_tx_head] = frame;
-    _pending_tx_count++;
+      frame.payload.data(), 
+      frame.payload_length)) {
+    // Successfully sent/queued for ACK, now remove it
+    _pending_tx_queue.pop_front();
   }
 }
 
 void BridgeClass::_clearPendingTxQueue() {
-  _pending_tx_head = 0;
-  _pending_tx_count = 0;
+  _pending_tx_queue.clear();
 }
 
 bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
-  if (_pending_tx_count >= rpc::RPC_MAX_PENDING_TX_FRAMES) {
+  if (_pending_tx_queue.full()) {
     return false;
   }
+  
   size_t payload_len = arg_length;
   if (payload_len > rpc::MAX_PAYLOAD_SIZE) {
     return false;
   }
-  uint8_t tail = (_pending_tx_head + _pending_tx_count) %
-      rpc::RPC_MAX_PENDING_TX_FRAMES;
-  _pending_tx_frames[tail].command_id = command_id;
-  _pending_tx_frames[tail].payload_length =
-      static_cast<uint16_t>(payload_len);
-  if (payload_len > 0) {
-    memcpy(_pending_tx_frames[tail].payload, arg_payload, payload_len);
+  
+  PendingTxFrame frame;
+  frame.command_id = command_id;
+  frame.payload_length = static_cast<uint16_t>(payload_len);
+  
+  if (payload_len > 0 && arg_payload) {
+    memcpy(frame.payload.data(), arg_payload, payload_len);
   }
-  _pending_tx_count++;
+  
+  _pending_tx_queue.push_back(frame);
   return true;
 }
 
 bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
-  if (_pending_tx_count == 0) {
+  if (_pending_tx_queue.empty()) {
     return false;
   }
-  frame = _pending_tx_frames[_pending_tx_head];
-  _pending_tx_head = (_pending_tx_head + 1) % rpc::RPC_MAX_PENDING_TX_FRAMES;
-  _pending_tx_count--; 
+  frame = _pending_tx_queue.front();
+  _pending_tx_queue.pop_front();
   return true;
 }
 
@@ -1111,6 +1098,27 @@ void BridgeClass::digitalWrite(uint8_t pin, uint8_t value) {
 }
 
 void BridgeClass::analogWrite(uint8_t pin, int value) {
+
   uint8_t val_u8 = static_cast<uint8_t>(constrain(value, static_cast<int>(rpc::RPC_DIGITAL_LOW), static_cast<int>(rpc::RPC_UINT8_MASK)));
+
   ::analogWrite(pin, static_cast<int>(val_u8));
+
+}
+
+
+
+// [SIL-2] ETL Error Handler Implementation
+
+// This is called by ETL when a container error occurs (e.g. overflow).
+
+namespace etl {
+
+void __attribute__((weak)) handle_error(const etl::exception& e) {
+
+  (void)e;
+
+  Bridge.enterSafeState();
+
+}
+
 }

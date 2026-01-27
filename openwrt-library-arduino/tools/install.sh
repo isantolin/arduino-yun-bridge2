@@ -7,10 +7,11 @@
 set -e
 set -u
 
-# Always work relative to the repository root
+# Always work relative to the script location
+# SCRIPT_DIR is .../openwrt-library-arduino/tools
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
+# LIB_ROOT is .../openwrt-library-arduino
+LIB_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 echo "================================================================================"
 echo " McuBridge Arduino Library Installer"
@@ -72,10 +73,13 @@ install_dependency() {
     local name=$1
     local url=$2
     local check_file=$3
-    local sub_path=${4:-""} # Optional subpath within the zip
+    local sub_path=${4:-}"" # Optional subpath within the zip
     local target_base=${5:-"$LIB_DIR"} # Optional target base directory
 
-    if [ -f "$target_base/$name/$check_file" ] || [ -f "$target_base/$name/src/$check_file" ] || [ -f "$target_base/$name/include/etl/$check_file" ]; then
+    # [SIL-2] Check if already installed
+    if [ -f "$target_base/$name/$check_file" ] || \
+       [ -f "$target_base/$name/src/$check_file" ] || \
+       [ -f "$target_base/$name/include/etl/$check_file" ]; then
         echo "[INFO] $name already installed."
         return 0
     fi
@@ -129,13 +133,13 @@ install_dependency "PacketSerial" "https://codeload.github.com/bakercp/PacketSer
 # Crypto is special as it's part of arduinolibs
 install_dependency "Crypto" "https://codeload.github.com/rweather/arduinolibs/zip/refs/heads/master" "Crypto.h" "libraries/Crypto"
 
-# 2. Bundled Dependencies (Installed to openwrt-library-arduino/src/ for local builds and IDE compliance)
+# 2. Bundled Dependencies (Installed to local src/ for build compatibility)
 # ETL is required to be at src/etl for our includes to work consistently.
-install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "" "openwrt-library-arduino/src"
+install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "" "${LIB_ROOT}/src"
 
 # Verify our own src directory exists
-if [ ! -d "openwrt-library-arduino/src" ]; then
-    echo "[ERROR] 'openwrt-library-arduino/src' directory not found." >&2
+if [ ! -d "${LIB_ROOT}/src" ]; then
+    echo "[ERROR] Source directory not found: ${LIB_ROOT}/src" >&2
     exit 1
 fi
 
@@ -145,10 +149,10 @@ echo "[INFO] Installing McuBridge to $LIB_DST..."
 rm -rf "$LIB_DST"
 mkdir -p "$LIB_DST"
 
-cp -a openwrt-library-arduino/library.properties "$LIB_DST/"
-cp -a openwrt-library-arduino/src "$LIB_DST/"
-if [ -d "openwrt-library-arduino/examples" ]; then
-    cp -a openwrt-library-arduino/examples "$LIB_DST/"
+cp -a "${LIB_ROOT}/library.properties" "$LIB_DST/"
+cp -a "${LIB_ROOT}/src" "$LIB_DST/"
+if [ -d "${LIB_ROOT}/examples" ]; then
+    cp -a "${LIB_ROOT}/examples" "$LIB_DST/"
 fi
 
 echo "================================================================================"

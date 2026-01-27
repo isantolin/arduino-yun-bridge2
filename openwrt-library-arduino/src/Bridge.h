@@ -35,9 +35,9 @@
 
 #undef min
 #undef max
-#include "etl/include/etl/array.h"
-#include "etl/include/etl/deque.h"
-#include "etl/include/etl/string.h"
+#include "etl/array.h"
+#include "etl/deque.h"
+#include "etl/string.h"
 
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");

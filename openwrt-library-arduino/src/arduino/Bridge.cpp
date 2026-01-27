@@ -34,7 +34,7 @@
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/security.h"
-#include "etl/include/etl/error_handler.h"
+#include "etl/error_handler.h"
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection

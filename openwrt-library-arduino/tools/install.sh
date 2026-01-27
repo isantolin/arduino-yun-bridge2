@@ -79,7 +79,7 @@ install_dependency() {
     # [SIL-2] Check if already installed
     if [ -f "$target_base/$name/$check_file" ] || \
        [ -f "$target_base/$name/src/$check_file" ] || \
-       [ -f "$target_base/$name/include/etl/$check_file" ]; then
+       [ -f "$target_base/$name/etl/$check_file" ]; then
         echo "[INFO] $name already installed."
         return 0
     fi
@@ -135,7 +135,8 @@ install_dependency "Crypto" "https://codeload.github.com/rweather/arduinolibs/zi
 
 # 2. Bundled Dependencies (Installed to local src/ for build compatibility)
 # ETL is required to be at src/etl for our includes to work consistently.
-install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "" "${LIB_ROOT}/src"
+# We extract only the 'include/etl' directory so that #include "etl/array.h" works.
+install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "include/etl" "${LIB_ROOT}/src"
 
 # Verify our own src directory exists
 if [ ! -d "${LIB_ROOT}/src" ]; then

@@ -105,7 +105,7 @@ async def _mqtt_subscriber_loop(
                 continue
 
             if logger.isEnabledFor(logging.DEBUG):
-                # Ensure payload is bytes for hexdump. 
+                # Ensure payload is bytes for hexdump.
                 # aiomqtt.Message.payload is typically bytes, but we cast to be safe.
                 # Use cast or simple conversion that is always hit.
                 log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {topic}", bytes(message.payload))

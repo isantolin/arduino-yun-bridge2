@@ -11,6 +11,12 @@ STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 BUILD_DIR="${LIB_DIR}/build-host-local"
 mkdir -p "${BUILD_DIR}"
 
+# [SIL-2] Ensure dependencies are present (ETL is ignored by git and must be downloaded)
+if [ ! -d "${SRC_DIR}/etl" ]; then
+  echo "[host-cpp] Missing ETL dependency. Running installer..."
+  "${LIB_DIR}/tools/install.sh"
+fi
+
 usage() {
   cat <<'EOF'
 Usage: tools/ci_arduino_host_tests.sh [--cxx COMPILER]

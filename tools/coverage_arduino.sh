@@ -111,6 +111,12 @@ fi
 
 mkdir -p "${BUILD_DIR}"
 
+# [SIL-2] Ensure dependencies are present (ETL is ignored by git and must be downloaded)
+if [ ! -d "${SRC_ROOT}/etl" ]; then
+  echo "[coverage_arduino] Missing ETL dependency. Running installer..."
+  "${LIB_ROOT}/tools/install.sh"
+fi
+
 BUILD_SIGNATURE_PATH="${BUILD_DIR}/.coverage_build_signature"
 
 RUN_BUILD=0

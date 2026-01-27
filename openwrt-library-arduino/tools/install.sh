@@ -73,8 +73,9 @@ install_dependency() {
     local url=$2
     local check_file=$3
     local sub_path=${4:-""} # Optional subpath within the zip
+    local target_base=${5:-"$LIB_DIR"} # Optional target base directory
 
-    if [ -f "$LIB_DIR/$name/$check_file" ] || [ -f "$LIB_DIR/$name/src/$check_file" ]; then
+    if [ -f "$target_base/$name/$check_file" ] || [ -f "$target_base/$name/src/$check_file" ] || [ -f "$target_base/$name/include/etl/$check_file" ]; then
         echo "[INFO] $name already installed."
         return 0
     fi
@@ -112,8 +113,9 @@ install_dependency() {
         source_path="$extracted_root/$sub_path"
     fi
 
-    rm -rf "$LIB_DIR/$name"
-    cp -a "$source_path" "$LIB_DIR/$name"
+    mkdir -p "$target_base"
+    rm -rf "$target_base/$name"
+    cp -a "$source_path" "$target_base/$name"
     echo "[OK] $name installed."
     
     rm -rf "$tmp_dir"
@@ -121,15 +123,19 @@ install_dependency() {
 
 # --- Main Installation ---
 
-# Dependencies
+# 1. External Dependencies (Installed to Arduino libraries folder)
 install_dependency "FastCRC" "https://codeload.github.com/FrankBoesing/FastCRC/zip/refs/heads/master" "FastCRC.h"
 install_dependency "PacketSerial" "https://codeload.github.com/bakercp/PacketSerial/zip/refs/heads/master" "PacketSerial.h"
 # Crypto is special as it's part of arduinolibs
 install_dependency "Crypto" "https://codeload.github.com/rweather/arduinolibs/zip/refs/heads/master" "Crypto.h" "libraries/Crypto"
 
+# 2. Bundled Dependencies (Installed to openwrt-library-arduino/src/ for local builds and IDE compliance)
+# ETL is required to be at src/etl for our includes to work consistently.
+install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "" "openwrt-library-arduino/src"
+
 # Verify our own src directory exists
-if [ ! -d "src" ]; then
-    echo "[ERROR] 'src' directory not found. Please run this script from the library root." >&2
+if [ ! -d "openwrt-library-arduino/src" ]; then
+    echo "[ERROR] 'openwrt-library-arduino/src' directory not found." >&2
     exit 1
 fi
 
@@ -139,10 +145,10 @@ echo "[INFO] Installing McuBridge to $LIB_DST..."
 rm -rf "$LIB_DST"
 mkdir -p "$LIB_DST"
 
-cp -a library.properties "$LIB_DST/"
-cp -a src "$LIB_DST/"
-if [ -d "examples" ]; then
-    cp -a examples "$LIB_DST/"
+cp -a openwrt-library-arduino/library.properties "$LIB_DST/"
+cp -a openwrt-library-arduino/src "$LIB_DST/"
+if [ -d "openwrt-library-arduino/examples" ]; then
+    cp -a openwrt-library-arduino/examples "$LIB_DST/"
 fi
 
 echo "================================================================================"

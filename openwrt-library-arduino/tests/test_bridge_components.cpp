@@ -742,18 +742,15 @@ static void test_process_poll_queue_full_and_pop_empty() {
   // Pop on empty returns sentinel.
   TEST_ASSERT_EQ_UINT(Process._popPendingProcessPid(), rpc::RPC_INVALID_ID_SENTINEL);
 
-  // Fill queue (BRIDGE_MAX_PENDING_PROCESS_POLLS == 2), third poll emits STATUS_ERROR.
+  // Fill queue (BRIDGE_MAX_PENDING_PROCESS_POLLS == 1), second poll emits STATUS_ERROR.
   Process.poll(10);
   Process.poll(11);
-  Process.poll(12);
 
   const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  TEST_ASSERT(frames.count >= 3);
+  TEST_ASSERT(frames.count >= 2);
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL));
   TEST_ASSERT_EQ_UINT(frames.frames[1].header.command_id,
-                      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL));
-  TEST_ASSERT_EQ_UINT(frames.frames[2].header.command_id,
                       rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
 
   restore_bridge_to_serial();
@@ -841,16 +838,13 @@ static void test_datastore_request_get_queue_full() {
 
   DataStore.requestGet("a");
   DataStore.requestGet("b");
-  DataStore.requestGet("c");
 
   const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  TEST_ASSERT(frames.count >= 3);
+  TEST_ASSERT(frames.count >= 2);
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET));
+  // Second should emit STATUS_ERROR.
   TEST_ASSERT_EQ_UINT(frames.frames[1].header.command_id,
-                      rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET));
-  // Third should emit STATUS_ERROR.
-  TEST_ASSERT_EQ_UINT(frames.frames[2].header.command_id,
                       rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
 
   restore_bridge_to_serial();

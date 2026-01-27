@@ -4,9 +4,9 @@
 #include <Arduino.h>
 #include <Stream.h>
 #include <PacketSerial.h>
-#include "../protocol/rpc_protocol.h"
-#include "../protocol/rpc_frame.h" // Needed for rpc::Frame and FrameParser::Error
-#include "../etl/include/etl/array.h"
+#include "protocol/rpc_protocol.h"
+#include "protocol/rpc_frame.h" // Needed for rpc::Frame and FrameParser::Error
+#include "etl/include/etl/array.h"
 
 namespace bridge {
 

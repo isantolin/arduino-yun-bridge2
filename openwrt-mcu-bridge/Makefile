@@ -52,7 +52,8 @@ define Package/$(PKG_NAME)
 		+python3-cobs \
 		+python3-psutil \
 		+python3-prometheus-client \
-		+python3-pyserial-asyncio-fast
+		+python3-pyserial-asyncio-fast \
+		+python3-tenacity
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

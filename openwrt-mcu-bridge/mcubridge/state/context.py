@@ -9,6 +9,8 @@ import time
 import pickle
 import sqlite3
 
+import tenacity
+
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
@@ -71,10 +73,10 @@ def _empty_spool_snapshot_factory() -> SpoolSnapshot:
 
 
 def _spool_wait_strategy_factory() -> Any:
-    return _ExponentialBackoff(
+    return tenacity.wait_exponential(
         multiplier=SPOOL_BACKOFF_MULTIPLIER,
-        min_val=SPOOL_BACKOFF_MIN_SECONDS,
-        max_val=SPOOL_BACKOFF_MAX_SECONDS,
+        min=SPOOL_BACKOFF_MIN_SECONDS,
+        max=SPOOL_BACKOFF_MAX_SECONDS,
     )
 
 
@@ -99,16 +101,19 @@ def _coerce_snapshot_int(snapshot: Mapping[str, Any], name: str, current: int) -
 
 
 class _ExponentialBackoff:
+    """Compatibility wrapper for tenacity wait strategy."""
+
     def __init__(self, min_val: float, max_val: float, multiplier: float) -> None:
-        self.min = min_val
-        self.max = max_val
-        self.multiplier = multiplier
+        self._strategy = tenacity.wait_exponential(
+            multiplier=multiplier,
+            min=min_val,
+            max=max_val,
+        )
 
     def __call__(self, retry_state: Any) -> float:
-        attempt = getattr(retry_state, "attempt_number", 1)
-        # Simple exponential backoff: multiplier * 2^(attempt-1)
-        delay = self.multiplier * (2 ** (attempt - 1))
-        return max(self.min, min(delay, self.max))
+        if not hasattr(retry_state, "attempt_number"):
+            retry_state.attempt_number = 1
+        return self._strategy(retry_state)
 
 
 def _command_name(command_id: int) -> str:

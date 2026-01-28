@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from typing import Any
 from collections.abc import Awaitable, Callable
 
+import tenacity
+
 from ..config.settings import RuntimeConfig
 from ..const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -297,30 +299,43 @@ class SerialHandshakeManager:
 
         # [SIL-2] Retry logic for capabilities discovery to handle bus contention
         # Increased attempts and backoff to ensure we eventually get through
-        for attempt in range(1, 6):
-            self._capabilities_future = loop.create_future()
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(5),
+            wait=tenacity.wait_incrementing(start=0.5, increment=0.5),
+            retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            reraise=False,
+        )
 
-            if attempt > 1:
-                # Progressive backoff to allow serial buffers to flush
-                # 0.5s, 1.0s, 1.5s...
-                await asyncio.sleep(0.5 * attempt)
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    self._capabilities_future = loop.create_future()
 
-            ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
-            if not ok:
-                self._logger.warning(f"Failed to send CMD_GET_CAPABILITIES (attempt {attempt})")
-                self._capabilities_future = None
-                continue
+                    ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
+                    if not ok:
+                        self._logger.warning(
+                            f"Failed to send CMD_GET_CAPABILITIES (attempt {attempt.retry_state.attempt_number})"
+                        )
+                        self._capabilities_future = None
+                        raise asyncio.TimeoutError("Send failed")
 
-            try:
-                # [SIL-2] Force ample timeout for cold boot capabilities discovery
-                timeout = max(5.0, self._timing.response_timeout_seconds)
-                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
-                self._parse_capabilities(payload)
-                return True
-            except asyncio.TimeoutError:
-                self._logger.warning(f"Timeout waiting for MCU capabilities (attempt {attempt})")
-            finally:
-                self._capabilities_future = None
+                    try:
+                        # [SIL-2] Force ample timeout for cold boot capabilities discovery
+                        timeout = max(5.0, self._timing.response_timeout_seconds)
+                        payload = await asyncio.wait_for(
+                            self._capabilities_future, timeout=timeout
+                        )
+                        self._parse_capabilities(payload)
+                        return True
+                    except asyncio.TimeoutError:
+                        self._logger.warning(
+                            f"Timeout waiting for MCU capabilities (attempt {attempt.retry_state.attempt_number})"
+                        )
+                        raise
+                    finally:
+                        self._capabilities_future = None
+        except tenacity.RetryError:
+            pass
 
         return False
 
@@ -510,11 +525,16 @@ class SerialHandshakeManager:
         threshold = 1 if fatal else 3
         if streak < threshold:
             return None
-        power = max(0, streak - threshold)
-        delay = min(
-            SERIAL_HANDSHAKE_BACKOFF_MAX,
-            SERIAL_HANDSHAKE_BACKOFF_BASE * (2**power),
+
+        # [SIL-2] Use tenacity for consistent backoff strategy
+        wait_strategy = tenacity.wait_exponential(
+            multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+            max=SERIAL_HANDSHAKE_BACKOFF_MAX,
         )
+        # attempt_number starts at 1 for tenacity
+        retry_state = type('RetryState', (), {'attempt_number': streak - threshold + 1})()
+        delay = wait_strategy(retry_state)
+
         self._state.handshake_backoff_until = time.monotonic() + delay
         return delay
 

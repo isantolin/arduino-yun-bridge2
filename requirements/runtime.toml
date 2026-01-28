@@ -56,3 +56,9 @@ name = "pyserial-asyncio-fast"
 openwrt = "python3-pyserial-asyncio-fast"
 pip = "pyserial-asyncio-fast==0.16"
 rationale = "Zero-Overhead Async I/O for Serial"
+
+[[dependency]]
+name = "tenacity"
+openwrt = "python3-tenacity"
+pip = "tenacity==9.0.0"
+rationale = "Declarative retrying library for robust task supervision and handshake"

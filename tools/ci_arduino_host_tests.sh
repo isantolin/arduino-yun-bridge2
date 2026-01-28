@@ -23,7 +23,7 @@ SOURCES=(
 echo "[host-cpp] Building integrated test suite..."
 echo "DEBUG: Current directory: $(pwd)"
 echo "DEBUG: SRC_DIR: ${SRC_DIR}"
-ls -R "${SRC_DIR}/etl" | head -n 5
+ls -F "${SRC_DIR}"
 g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
     -I"${SRC_DIR}" \
     -I"${TEST_DIR}/mocks" \

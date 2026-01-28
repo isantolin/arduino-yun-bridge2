@@ -113,7 +113,7 @@ async def supervise_task(
                         if state is not None:
                             state.mark_supervisor_healthy(name)
                         return
-            except tenacity.RetryError as e:
+            except tenacity.RetryError:
                 # This block is only entered if reraise=False (not our case)
                 log.error("%s exceeded max restarts (%s); giving up", name, max_restarts)
                 raise
@@ -122,7 +122,7 @@ async def supervise_task(
                 if state is not None:
                     state.record_supervisor_failure(name, backoff=0.0, exc=exc, fatal=True)
                 raise
-            except BaseException as exc:
+            except BaseException:
                 # If reraise=True, the last attempt's exception will pop out here
                 # when stop_after_attempt is reached.
                 if helper.is_healthy_runtime():
@@ -130,11 +130,11 @@ async def supervise_task(
                     if state is not None:
                         state.mark_supervisor_healthy(name)
                     continue
-                
+
                 # Check if we gave up
                 if max_restarts is not None and retryer.statistics['attempt_number'] >= (max_restarts + 1):
                     log.error("%s exceeded max restarts (%d) in window; giving up", name, max_restarts)
-                
+
                 raise
     except asyncio.CancelledError:
         log.debug("%s supervisor cancelled", name)

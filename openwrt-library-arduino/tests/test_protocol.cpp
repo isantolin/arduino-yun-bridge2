@@ -10,6 +10,8 @@
 
 using namespace rpc;
 
+extern BridgeClass Bridge;
+
 static FastCRC32 CRC32;
 
 // 1. Helpers Básicos (Original)

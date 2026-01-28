@@ -29,8 +29,8 @@
 
 namespace rpc {
 
-// Static FastCRC32 instance.
-static FastCRC32 CRC32;
+// FastCRC32 instance used by protocol.
+FastCRC32 CRC32;
 
 // --- FrameParser ---
 

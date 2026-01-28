@@ -35,4 +35,4 @@ endef
 
 $(eval $(call Py3Package,python3-tenacity))
 $(eval $(call BuildPackage,python3-tenacity))
-$(eval $(call BuildPackage,python3-tenacity-src))
+

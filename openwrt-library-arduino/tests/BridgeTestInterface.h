@@ -41,6 +41,14 @@ class TestAccessor {
     _bridge._retransmitLastFrame();
   }
 
+  void dispatch(const rpc::Frame& frame) {
+    _bridge.dispatch(frame);
+  }
+
+  void setSynchronized(bool synchronized) {
+    _bridge._synchronized = synchronized;
+  }
+
   static TestAccessor create(BridgeClass& bridge) {
     return TestAccessor(bridge);
   }

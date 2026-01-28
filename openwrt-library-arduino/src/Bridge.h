@@ -37,7 +37,10 @@
 #undef max
 #include "etl/array.h"
 #include "etl/deque.h"
+#include "etl/queue.h"
 #include "etl/string.h"
+#include "etl/circular_buffer.h"
+#include "etl/vector.h"
 
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
@@ -193,7 +196,8 @@ class BridgeClass {
     uint16_t payload_length;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
-  etl::deque<PendingTxFrame, rpc::RPC_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
+  // [SIL-2] Use queue adapter over deque for strict FIFO semantics
+  etl::queue<PendingTxFrame, rpc::RPC_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
   bool _synchronized;
 
 #if BRIDGE_DEBUG_FRAMES
@@ -253,12 +257,12 @@ class ConsoleClass : public Stream {
 
  private:
   bool _begun;
-  size_t _rx_buffer_head;
-  size_t _rx_buffer_tail;
-  size_t _tx_buffer_pos;
   bool _xoff_sent;
-  uint8_t _rx_buffer[BRIDGE_CONSOLE_RX_BUFFER_SIZE];
-  uint8_t _tx_buffer[BRIDGE_CONSOLE_TX_BUFFER_SIZE];
+  
+  // [SIL-2] Use ETL containers for safe buffer management
+  // Replaces manual circular buffer logic
+  etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
+  etl::vector<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 };
 extern ConsoleClass Console;
 

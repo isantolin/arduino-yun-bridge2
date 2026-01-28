@@ -7,41 +7,34 @@
 
 ConsoleClass::ConsoleClass()
     : _begun(false),
-      _rx_buffer_head(0),
-      _rx_buffer_tail(0),
-      _tx_buffer_pos(0),
-      _xoff_sent(false) {
-  memset(_rx_buffer, 0, sizeof(_rx_buffer));
-  memset(_tx_buffer, 0, sizeof(_tx_buffer));
+      _xoff_sent(false),
+      _rx_buffer(),
+      _tx_buffer() {
+  // ETL containers initialize themselves
 }
 
 void ConsoleClass::begin() {
   _begun = true;
-  _rx_buffer_head = 0;
-  _rx_buffer_tail = 0;
   _xoff_sent = false;
-  _tx_buffer_pos = 0;
-  memset(_rx_buffer, 0, sizeof(_rx_buffer));
-  memset(_tx_buffer, 0, sizeof(_tx_buffer));
+  _rx_buffer.clear();
+  _tx_buffer.clear();
 }
 
 size_t ConsoleClass::write(uint8_t c) {
   if (!_begun) return 0;
 
-  const size_t capacity = sizeof(_tx_buffer);
-  if (capacity == 0) {
-    return 0;
-  }
-
-  if (_tx_buffer_pos >= capacity) {
+  if (_tx_buffer.full()) {
     flush();
   }
 
-  if (_tx_buffer_pos < capacity) {
-    _tx_buffer[_tx_buffer_pos++] = c;
+  // Double check full in case flush didn't clear (e.g. comm failure)
+  if (!_tx_buffer.full()) {
+    _tx_buffer.push_back(c);
+  } else {
+    return 0; // Should not happen if flush works, but safe return
   }
 
-  if (_tx_buffer_pos >= capacity || c == '\n') {
+  if (_tx_buffer.full() || c == '\n') {
     flush();
   }
   return 1;
@@ -51,7 +44,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (!_begun) return 0;
 
   // If there's buffered data, flush it first to maintain order
-  if (_tx_buffer_pos > 0) {
+  if (!_tx_buffer.empty()) {
     flush();
   }
 
@@ -74,36 +67,28 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
 }
 
 int ConsoleClass::available() {
-  const size_t capacity = sizeof(_rx_buffer);
-  if (capacity == 0) {
+  if (_rx_buffer.empty()) {
     return 0;
   }
-
-  const size_t head = _rx_buffer_head;
-  const size_t tail = _rx_buffer_tail;
-  size_t used = (head + capacity - tail) % capacity;
-  if (head == tail) {
-    used = 0;
-  }
-  // Clamp to max buffer size (64 bytes) - always fits in int
-  return static_cast<int>(used);
+  return static_cast<int>(_rx_buffer.size());
 }
 
 int ConsoleClass::peek() {
-  if (_rx_buffer_head == _rx_buffer_tail) return -1;
-  return _rx_buffer[_rx_buffer_tail];
+  if (_rx_buffer.empty()) return -1;
+  return _rx_buffer.front();
 }
 
 int ConsoleClass::read() {
-  if (_rx_buffer_head == _rx_buffer_tail) return -1;
-  uint8_t c = _rx_buffer[_rx_buffer_tail];
-  _rx_buffer_tail = (_rx_buffer_tail + 1) % sizeof(_rx_buffer);
+  if (_rx_buffer.empty()) return -1;
+  
+  uint8_t c = _rx_buffer.front();
+  _rx_buffer.pop();
 
-  // [FIX] Reset _xoff_sent only if XON is successfully sent (or queued).
-  // With the Bridge fix, this will send immediately without queueing.
-  const size_t capacity = sizeof(_rx_buffer);
+  // High/Low watermark logic for XON/XOFF
+  const size_t capacity = _rx_buffer.capacity();
   const size_t low_water = (capacity * 1) / 4;
-  if (_xoff_sent && (size_t)available() < low_water) {
+  
+  if (_xoff_sent && _rx_buffer.size() < low_water) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XON)) {
       _xoff_sent = false;
     }
@@ -117,41 +102,48 @@ void ConsoleClass::flush() {
     return;
   }
   
-  if (_tx_buffer_pos > 0) {
-    size_t remaining = _tx_buffer_pos;
+  if (!_tx_buffer.empty()) {
+    size_t remaining = _tx_buffer.size();
     size_t offset = 0;
+    const uint8_t* data_ptr = _tx_buffer.data();
+
     while (remaining > 0) {
       size_t chunk = remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
       if (!Bridge.sendFrame(
               rpc::CommandId::CMD_CONSOLE_WRITE,
-              _tx_buffer + offset, chunk)) {
+              data_ptr + offset, chunk)) {
         break;
       }
       offset += chunk;
       remaining -= chunk;
     }
-    _tx_buffer_pos = 0;
+    _tx_buffer.clear();
   }
 
   Bridge.flushStream();
 }
 
 void ConsoleClass::_push(const uint8_t* data, size_t length) {
-  const size_t capacity = sizeof(_rx_buffer);
-  if (capacity == 0 || length == 0) {
+  if (_rx_buffer.capacity() == 0 || length == 0) {
     return;
   }
 
   for (size_t i = 0; i < length; i++) {
-    size_t next_head = (_rx_buffer_head + 1) % capacity;
-    if (next_head != _rx_buffer_tail) {
-      _rx_buffer[_rx_buffer_head] = data[i];
-      _rx_buffer_head = next_head;
+    if (!_rx_buffer.full()) {
+      _rx_buffer.push(data[i]);
+    } else {
+      // Overwrite oldest if configured, or drop?
+      // Standard Arduino Serial behavior drops new data if full.
+      // But we have flow control, so we should ideally not be here if XOFF worked.
+      // Let's drop new data to match typical behavior.
+      break; 
     }
   }
 
+  const size_t capacity = _rx_buffer.capacity();
   const size_t high_water = (capacity * 3) / 4;
-  if (!_xoff_sent && (size_t)available() > high_water) {
+  
+  if (!_xoff_sent && _rx_buffer.size() > high_water) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XOFF)) {
         _xoff_sent = true;
     }

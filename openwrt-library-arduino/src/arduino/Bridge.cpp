@@ -1050,12 +1050,15 @@ void BridgeClass::_flushPendingTxQueue() {
       frame.payload.data(), 
       frame.payload_length)) {
     // Successfully sent/queued for ACK, now remove it
-    _pending_tx_queue.pop_front();
+    _pending_tx_queue.pop();
   }
 }
 
 void BridgeClass::_clearPendingTxQueue() {
-  _pending_tx_queue.clear();
+  // etl::queue doesn't always have clear(), pop until empty
+  while (!_pending_tx_queue.empty()) {
+    _pending_tx_queue.pop();
+  }
 }
 
 bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
@@ -1076,7 +1079,7 @@ bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payl
     memcpy(frame.payload.data(), arg_payload, payload_len);
   }
   
-  _pending_tx_queue.push_back(frame);
+  _pending_tx_queue.push(frame);
   return true;
 }
 
@@ -1085,7 +1088,7 @@ bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
     return false;
   }
   frame = _pending_tx_queue.front();
-  _pending_tx_queue.pop_front();
+  _pending_tx_queue.pop();
   return true;
 }
 

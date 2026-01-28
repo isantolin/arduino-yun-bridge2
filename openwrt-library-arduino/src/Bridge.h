@@ -27,11 +27,11 @@
 
 #include <Arduino.h>
 #include <Stream.h>
+#include <PacketSerial.h>
 
 #include "bridge_config.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
-#include "arduino/BridgeTransport.h"
 
 #undef min
 #undef max
@@ -126,6 +126,10 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 0;
   #endif
 #endif
 
+namespace bridge {
+namespace test { class TestAccessor; }
+}
+
 class BridgeClass {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
@@ -139,6 +143,7 @@ class BridgeClass {
   #if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
   #endif
+  friend class bridge::test::TestAccessor;
  public:
   // Callbacks
   using CommandHandler = void (*)(const rpc::Frame&);
@@ -197,11 +202,20 @@ class BridgeClass {
   void resetTxDebugStats();
 #endif
 
+  // Internal Callback Trampoline for PacketSerial
+  static void onPacketReceived(const uint8_t* buffer, size_t size);
+
  private:
-  bridge::BridgeTransport _transport;
+  Stream& _stream;
+  HardwareSerial* _hardware_serial;
+  PacketSerial _packetSerial;
+  
   etl::vector<uint8_t, 32> _shared_secret;
 
   // Protocol Engine
+  rpc::Frame* _target_frame;
+  bool _frame_received;
+  rpc::FrameParser _parser;
   rpc::Frame _rx_frame;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _scratch_payload;
 
@@ -237,6 +251,9 @@ class BridgeClass {
   etl::queue<PendingTxFrame, BRIDGE_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
   bool _synchronized;
 
+  // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
+  etl::vector<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;
+
 #if BRIDGE_DEBUG_FRAMES
   mutable FrameDebugSnapshot _tx_debug;
 #endif
@@ -264,7 +281,7 @@ class BridgeClass {
 
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
-  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* payload, size_t length);
+  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length);
   bool _dequeuePendingTx(PendingTxFrame& frame);
   void _clearAckState();
 };

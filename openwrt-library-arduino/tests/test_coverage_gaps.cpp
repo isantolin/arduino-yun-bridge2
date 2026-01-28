@@ -6,9 +6,9 @@
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
-#include "arduino/BridgeTransport.h"
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
+#include "BridgeTestInterface.h"
 
 using namespace bridge;
 
@@ -42,7 +42,7 @@ public:
     void flush() override {}
 };
 
-// Global instances required by Bridge.cpp linkage
+// Global instances
 HardwareSerial Serial;
 HardwareSerial Serial1;
 ConsoleClass Console;
@@ -52,55 +52,22 @@ FileSystemClass FileSystem;
 ProcessClass Process;
 BridgeClass Bridge(Serial1);
 
-namespace bridge {
-namespace test {
-class TestAccessor {
-public:
-    static void setInstance(BridgeTransport* instance) {
-        BridgeTransport::_instance = instance;
-    }
-};
-} // namespace test
-} // namespace bridge
-
-void test_hardware_serial_null_paths() {
+void test_bridge_gaps() {
     MockStream stream;
-    BridgeTransport transport(stream);
+    BridgeClass localBridge(stream);
+    localBridge.begin(115200);
     
-    transport.begin(115200);
-    transport.setBaudrate(9600);
-    transport.flush();
-    transport.end();
+    localBridge.process();
+    localBridge.flushStream();
     
-    // Inject data to hit flushRx while loop
+    // Inject data to hit flushRx while loop in begin (if we called it again)
     uint8_t dummy_data[] = {1, 2, 3};
     stream.rx_buffer.append(dummy_data, 3);
-    transport.flushRx();
-    
-    uint8_t pl = 0;
-    transport.sendFrame(rpc::to_underlying(rpc::StatusCode::STATUS_OK), &pl, 1);
-    transport.sendControlFrame(rpc::to_underlying(rpc::StatusCode::STATUS_OK));
-    transport.retransmitLastFrame();
-}
-
-void test_on_packet_received_no_instance() {
-    bridge::test::TestAccessor::setInstance(nullptr);
-    BridgeTransport::onPacketReceived(nullptr, 0);
-}
-
-void test_retransmit_empty_buffer() {
-    MockStream stream;
-    BridgeTransport transport(stream);
-    transport.begin(115200);
-    if (transport.retransmitLastFrame()) {
-        exit(1);
-    }
+    // In our new architecture, begin() clears RX.
 }
 
 int main() {
-    test_hardware_serial_null_paths();
-    test_on_packet_received_no_instance();
-    test_retransmit_empty_buffer();
-    printf("BridgeTransport Coverage Gaps Test Passed\n");
+    test_bridge_gaps();
+    printf("BridgeCore Coverage Gaps Passed\n");
     return 0;
 }

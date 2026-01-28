@@ -63,7 +63,7 @@ async def test_publish_metrics_publishes_snapshot(
 
     message = captured["message"]
     expected_topic = "test/prefix/system/metrics"
-    
+
     assert message.topic_name == expected_topic
     assert json.loads(message.payload) == fake_snapshot
     assert message.content_type == "application/json"

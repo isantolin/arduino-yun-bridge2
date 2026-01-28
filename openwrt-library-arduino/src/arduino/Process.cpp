@@ -54,15 +54,15 @@ void ProcessClass::poll(int16_t pid) {
     return;
   }
 
-  uint8_t pid_payload[2];
-  rpc::write_u16_be(pid_payload, pid_u16);
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_POLL, pid_payload, 2);
+  etl::array<uint8_t, 2> pid_payload;
+  rpc::write_u16_be(pid_payload.data(), pid_u16);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_POLL, pid_payload.data(), pid_payload.size());
 }
 
 void ProcessClass::kill(int16_t pid) {
-  uint8_t pid_payload[2];
-  rpc::write_u16_be(pid_payload, static_cast<uint16_t>(pid));
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_KILL, pid_payload, 2);
+  etl::array<uint8_t, 2> pid_payload;
+  rpc::write_u16_be(pid_payload.data(), static_cast<uint16_t>(pid));
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_PROCESS_KILL, pid_payload.data(), pid_payload.size());
 }
 
 void ProcessClass::handleResponse(const rpc::Frame& frame) {

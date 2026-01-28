@@ -8,6 +8,7 @@ extern const char kDatastoreQueueFull[] PROGMEM;
 
 DataStoreClass::DataStoreClass() 
   : _datastore_get_handler(nullptr) {
+  _last_datastore_key.clear();
 }
 
 void DataStoreClass::put(const char* key, const char* value) {
@@ -110,15 +111,12 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
 }
 
 const char* DataStoreClass::_popPendingDatastoreKey() {
-  static char key_buffer[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1] = {0};
   if (_pending_datastore_keys.empty()) {
-    key_buffer[0] = '\0';
-    return key_buffer;
+    _last_datastore_key.clear();
+    return _last_datastore_key.c_str();
   }
 
-  const auto& key = _pending_datastore_keys.front();
-  strncpy(key_buffer, key.c_str(), rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
-  key_buffer[rpc::RPC_MAX_DATASTORE_KEY_LENGTH] = '\0';
+  _last_datastore_key = _pending_datastore_keys.front();
   _pending_datastore_keys.pop();
-  return key_buffer;
+  return _last_datastore_key.c_str();
 }

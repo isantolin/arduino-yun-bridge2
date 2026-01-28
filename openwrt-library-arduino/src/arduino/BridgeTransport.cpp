@@ -21,11 +21,10 @@ BridgeTransport::BridgeTransport(Stream& stream, HardwareSerial* hwSerial)
       _target_frame(nullptr),
       _frame_received(false),
       _parser(),
-      _last_raw_frame(),
-      _last_raw_frame_len(0)
+      _last_raw_frame()
 {
     _instance = this;
-    _last_raw_frame.fill(0);
+    _last_raw_frame.clear();
 }
 
 void BridgeTransport::begin(unsigned long baudrate) {
@@ -37,7 +36,7 @@ void BridgeTransport::begin(unsigned long baudrate) {
     _packetSerial.setStream(&_stream);
     _packetSerial.setPacketHandler(onPacketReceived);
     
-    _last_raw_frame_len = 0;
+    _last_raw_frame.clear();
     _frame_received = false;
     _target_frame = nullptr;
 }
@@ -100,6 +99,9 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
 
     rpc::FrameBuilder builder;
     
+    // Ensure vector is large enough for potential build
+    _last_raw_frame.resize(_last_raw_frame.capacity());
+
     size_t raw_len = builder.build(
         _last_raw_frame.data(),
         _last_raw_frame.size(),
@@ -108,14 +110,14 @@ bool BridgeTransport::sendFrame(uint16_t command_id, const uint8_t* payload, siz
         length);
 
     if (raw_len == 0) {
-        _last_raw_frame_len = 0;
+        _last_raw_frame.clear();
         return false;
     }
 
-    _last_raw_frame_len = raw_len;
+    _last_raw_frame.resize(raw_len);
 
     // Send using PacketSerial (Handles COBS encoding and Delimiter)
-    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();
@@ -134,13 +136,13 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
 
     // Build a temporary frame for control messages to avoid overwriting _last_raw_frame
     // (preserving retransmission capability)
-    uint8_t temp_buf[32]; // Sufficient for Header + CRC
+    etl::array<uint8_t, 32> temp_buf; // Sufficient for Header + CRC
     rpc::FrameBuilder builder;
     
-    size_t raw_len = builder.build(temp_buf, sizeof(temp_buf), command_id, nullptr, 0);
+    size_t raw_len = builder.build(temp_buf.data(), temp_buf.size(), command_id, nullptr, 0);
     if (raw_len == 0) return false;
     
-    _packetSerial.send(temp_buf, raw_len);
+    _packetSerial.send(temp_buf.data(), raw_len);
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();
@@ -152,9 +154,9 @@ bool BridgeTransport::sendControlFrame(uint16_t command_id) {
 }
 
 bool BridgeTransport::retransmitLastFrame() {
-    if (_last_raw_frame_len == 0) return false;
+    if (_last_raw_frame.empty()) return false;
 
-    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
 
     if (_hardware_serial != nullptr) {
         _hardware_serial->flush();

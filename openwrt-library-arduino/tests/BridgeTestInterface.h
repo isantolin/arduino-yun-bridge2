@@ -38,7 +38,7 @@ class TestAccessor {
   explicit TestAccessor(BridgeTransport& transport) : _transport(transport) {}
 
   // --- Read-only accessors for test assertions ---
-  size_t getLastRawFrameLen() const { return _transport._last_raw_frame_len; }
+  size_t getLastRawFrameLen() const { return _transport._last_raw_frame.size(); }
   
   rpc::FrameParser::Error getLastError() const {
     return _transport.getLastError();

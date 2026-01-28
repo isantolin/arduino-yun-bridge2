@@ -281,6 +281,7 @@ class DataStoreClass {
 
   // [SIL-2] Use queue adapter for strict FIFO semantics
   etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
+  etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
   DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;

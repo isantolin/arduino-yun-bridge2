@@ -433,23 +433,23 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
   switch (command) {
     case rpc::CommandId::CMD_GET_VERSION:
       if (payload_length == 0) {
-        uint8_t version_payload[2];
+        etl::array<uint8_t, 2> version_payload;
         version_payload[0] = static_cast<uint8_t>(kDefaultFirmwareVersionMajor);
         version_payload[1] = static_cast<uint8_t>(kDefaultFirmwareVersionMinor);
-        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, version_payload, sizeof(version_payload));
+        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, version_payload.data(), version_payload.size());
       }
       break;
     case rpc::CommandId::CMD_GET_FREE_MEMORY:
       if (payload_length == 0) {
         uint16_t free_mem = getFreeMemory();
-        uint8_t resp_payload[2];
-        rpc::write_u16_be(resp_payload, free_mem);
-        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload, 2);
+        etl::array<uint8_t, 2> resp_payload;
+        rpc::write_u16_be(resp_payload.data(), free_mem);
+        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload.data(), resp_payload.size());
       }
       break;
     case rpc::CommandId::CMD_GET_CAPABILITIES:
       if (payload_length == 0) {
-        uint8_t caps[8];
+        etl::array<uint8_t, 8> caps;
         caps[0] = rpc::PROTOCOL_VERSION;
         
         uint8_t arch = 0;
@@ -530,7 +530,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
         rpc::write_u32_be(&caps[4], features);
         
-        (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps, sizeof(caps));
+        (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
       }
       break;
     case rpc::CommandId::CMD_SET_BAUDRATE:
@@ -636,9 +636,9 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);
         #endif
-        uint8_t resp_payload[2];
-        rpc::write_u16_be(resp_payload, static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
-        (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload, sizeof(resp_payload));
+        etl::array<uint8_t, 2> resp_payload;
+        rpc::write_u16_be(resp_payload.data(), static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
+        (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload.data(), resp_payload.size());
       }
       break;
     default:
@@ -780,9 +780,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 
   if (requires_ack) {
-    uint8_t ack_payload[2];
-    rpc::write_u16_be(ack_payload, raw_command);
-    (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+    etl::array<uint8_t, 2> ack_payload;
+    rpc::write_u16_be(ack_payload.data(), raw_command);
+    (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload.data(), ack_payload.size());
   }
 
   if (!command_processed_internally) {
@@ -1031,9 +1031,9 @@ void BridgeClass::_resetLinkState() {
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
-  uint8_t ack_payload[2];
-  rpc::write_u16_be(ack_payload, command_id);
-  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload, sizeof(ack_payload));
+  etl::array<uint8_t, 2> ack_payload;
+  rpc::write_u16_be(ack_payload.data(), command_id);
+  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload.data(), ack_payload.size());
   _transport.flush();
 }
 

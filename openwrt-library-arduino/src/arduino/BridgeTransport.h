@@ -7,6 +7,7 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_frame.h" // Needed for rpc::Frame and FrameParser::Error
 #include "etl/array.h"
+#include "etl/vector.h"
 
 namespace bridge {
 
@@ -54,8 +55,7 @@ private:
     rpc::FrameParser _parser; // Helper for parsing, also tracks error enum
 
     // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
-    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;
-    size_t _last_raw_frame_len;
+    etl::vector<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;
     
     // Global instance pointer for the static callback
     static BridgeTransport* _instance;

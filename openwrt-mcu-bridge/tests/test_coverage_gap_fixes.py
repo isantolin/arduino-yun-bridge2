@@ -2,16 +2,12 @@
 
 import logging
 import asyncio
-import os
 import struct
-import json
 import time
 import sys
-import ssl
-import pickle
 import errno
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock, PropertyMock
+from unittest.mock import MagicMock, patch, AsyncMock
 from types import SimpleNamespace
 import pytest
 import tenacity
@@ -170,7 +166,7 @@ def test_common_gaps():
     """Cover missed lines in common.py."""
     # Line 99: empty candidate in normalise_allowed_commands
     assert common.normalise_allowed_commands(["", "  ", "CMD"]) == ("cmd",)
-    
+
     # Line 113: empty reason in encode_status_reason
     assert common.encode_status_reason(None) == b""
     assert common.encode_status_reason("") == b""
@@ -241,7 +237,7 @@ def test_get_uci_config_openwrt_failures(mock_uci_class, mock_exists):
     """Cover UCI failure paths on OpenWrt."""
     # Force is_openwrt to True
     mock_exists.return_value = True
-    
+
     mock_cursor = MagicMock()
     mock_uci_class.return_value.__enter__.return_value = mock_cursor
 
@@ -262,7 +258,7 @@ def test_get_uci_config_openwrt_failures(mock_uci_class, mock_exists):
     mock_uci_class.side_effect = OSError("Disk error")
     with pytest.raises(RuntimeError, match="Critical UCI failure"):
         common.get_uci_config()
-        
+
     # Case 4: Non-OpenWrt OSError (Line 218-219)
     mock_exists.return_value = False
     mock_uci_class.side_effect = OSError("Disk error")
@@ -293,7 +289,7 @@ def test_build_metrics_message_branches():
     """Cover branches in _build_metrics_message."""
     state = MagicMock()
     state.mqtt_topic_prefix = "br"
-    
+
     # Test spool degraded
     snapshot = {"mqtt_spool_degraded": True, "mqtt_spool_failure_reason": "disk-full"}
     msg = metrics._build_metrics_message(state, snapshot, expiry_seconds=60)
@@ -323,7 +319,7 @@ async def test_emit_bridge_snapshot_errors():
     state.build_bridge_snapshot.return_value = {}
     state.build_bridge_snapshot.side_effect = ValueError("Boom")
     enqueue = AsyncMock()
-    
+
     # Should log error and return (Line 158)
     with patch("mcubridge.metrics.logger.error") as mock_err:
         state.build_bridge_snapshot.side_effect = ValueError("Boom")
@@ -347,7 +343,7 @@ async def test_bridge_snapshot_loop_gaps():
     """Cover gaps in _bridge_snapshot_loop."""
     state = MagicMock()
     enqueue = AsyncMock()
-    
+
     # Cover initial emit error paths (Lines 182-187)
     with (
         patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=OSError("Boom")),
@@ -370,11 +366,11 @@ async def test_publish_metrics_gaps():
     """Cover gaps in publish_metrics."""
     state = MagicMock()
     enqueue = AsyncMock()
-    
+
     # Line 205: interval <= 0
     with pytest.raises(ValueError, match="greater than zero"):
         await metrics.publish_metrics(state, enqueue, interval=0)
-        
+
     # Line 212-213: CancelledError in initial emit
     with patch("mcubridge.metrics._emit_metrics_snapshot", side_effect=asyncio.CancelledError):
         with pytest.raises(asyncio.CancelledError):
@@ -398,16 +394,22 @@ async def test_publish_metrics_gaps():
     # Line 223-230: Loop errors
     # Line 226: CancelledError in loop
     with (
-        patch("mcubridge.metrics._emit_metrics_snapshot", side_effect=[None, asyncio.CancelledError, asyncio.CancelledError]),
-        patch("asyncio.sleep", side_effect=[None, None])
+        patch(
+            "mcubridge.metrics._emit_metrics_snapshot",
+            side_effect=[None, asyncio.CancelledError, asyncio.CancelledError],
+        ),
+        patch("asyncio.sleep", side_effect=[None, None]),
     ):
         with pytest.raises(asyncio.CancelledError):
             await metrics.publish_metrics(state, enqueue, interval=10)
 
     # Line 229-230: TypeError/ValueError in loop
     with (
-        patch("mcubridge.metrics._emit_metrics_snapshot", side_effect=[None, ValueError("Boom"), asyncio.CancelledError]),
-        patch("asyncio.sleep", side_effect=[None, None, asyncio.CancelledError])
+        patch(
+            "mcubridge.metrics._emit_metrics_snapshot",
+            side_effect=[None, ValueError("Boom"), asyncio.CancelledError],
+        ),
+        patch("asyncio.sleep", side_effect=[None, None, asyncio.CancelledError]),
     ):
         with pytest.raises(asyncio.CancelledError):
             await metrics.publish_metrics(state, enqueue, interval=10)
@@ -418,7 +420,7 @@ async def test_publish_bridge_snapshots_disabled():
     """Cover the 'disabled' path in publish_bridge_snapshots."""
     state = MagicMock()
     enqueue = AsyncMock()
-    
+
     with patch("asyncio.Event.wait", new_callable=AsyncMock) as mock_wait:
         # Mock wait to return immediately to avoid hanging the test
         await metrics.publish_bridge_snapshots(state, enqueue, summary_interval=0, handshake_interval=0)
@@ -430,7 +432,7 @@ async def test_publish_bridge_snapshots_exc_group():
     """Cover ExceptionGroup in publish_bridge_snapshots (Line 257->266)."""
     state = MagicMock()
     enqueue = AsyncMock()
-    
+
     # Trigger ExceptionGroup by having one task fail
     with (
         patch("mcubridge.metrics._bridge_snapshot_loop", side_effect=RuntimeError("Group Boom")),
@@ -449,8 +451,8 @@ def test_runtime_state_collector_collect_histogram_branches():
             "sum_ms": 100.0,
             "buckets": {
                 "le_100ms": 1,
-                "invalid": 0, # Should be skipped (Line 301-302)
-                "le_NaNms": 0, # Should be skipped (Line 304 ValueError branch)
+                "invalid": 0,  # Should be skipped (Line 301-302)
+                "le_NaNms": 0,  # Should be skipped (Line 304 ValueError branch)
             }
         }
     }
@@ -463,11 +465,11 @@ def test_metrics_flatten_branches():
     """Cover branches in _flatten."""
     state = MagicMock()
     collector = metrics._RuntimeStateCollector(state)
-    
+
     # Test None
     results = list(collector._flatten("test", None))
     assert results == [("info", "test", "null")]
-    
+
     # Test str
     results = list(collector._flatten("test", "val"))
     assert results == [("info", "test", "val")]
@@ -478,11 +480,11 @@ async def test_prometheus_exporter_gaps():
     """Cover gaps in PrometheusExporter."""
     state = MagicMock()
     exporter = metrics.PrometheusExporter(state, "127.0.0.1", 0)
-    
+
     # Coverage for start() while already started (Line 422)
     exporter._server = MagicMock()
     await exporter.start()
-    
+
     # Coverage for start() socket path (Lines 429-437)
     exporter._server = None
     with patch("asyncio.start_server", new_callable=AsyncMock) as mock_start:
@@ -497,20 +499,20 @@ async def test_prometheus_exporter_gaps():
     # Coverage for stop() while already stopped (Line 444)
     exporter._server = None
     await exporter.stop()
-    
+
     # Coverage for _handle_client error paths
     mock_reader = AsyncMock()
     # Use AsyncMock for writer to handle await writer.wait_closed()
     mock_writer = AsyncMock()
-    
+
     # Case: Empty request line
     mock_reader.readline.return_value = b""
     await exporter._handle_client(mock_reader, mock_writer)
-    
+
     # Case: Short request line (Line 468)
     mock_reader.readline.return_value = b"GET\n"
     await exporter._handle_client(mock_reader, mock_writer)
-    
+
     # Case: IndexError/ValueError in handler (Line 488-493)
     mock_reader.readline.side_effect = [b"GET /metrics HTTP/1.1\n", b"\n"]
     with patch.object(exporter, "_render_metrics", side_effect=IndexError("Boom")):
@@ -575,12 +577,12 @@ async def test_daemon_factories():
     """Cover factory methods in BridgeDaemon."""
     config = create_fake_config()
     daemon_obj = daemon.BridgeDaemon(config)
-    
+
     # Test branch where secret is missing
     config_no_secret = create_fake_config()
     config_no_secret.serial_shared_secret = b""
     daemon.BridgeDaemon(config_no_secret)
-    
+
     with (
         patch("mcubridge.daemon.SerialTransport.run", new_callable=AsyncMock) as mock_serial,
         patch("mcubridge.daemon.mqtt_task", new_callable=AsyncMock) as mock_mqtt,
@@ -590,16 +592,16 @@ async def test_daemon_factories():
     ):
         await daemon_obj._run_serial_link()
         assert mock_serial.called
-        
+
         await daemon_obj._run_mqtt_link()
         assert mock_mqtt.called
-        
+
         await daemon_obj._run_status_writer()
         assert mock_status.called
-        
+
         await daemon_obj._run_metrics_publisher()
         assert mock_metrics.called
-        
+
         await daemon_obj._run_bridge_snapshots()
         assert mock_snapshots.called
 
@@ -609,7 +611,7 @@ async def test_daemon_factories():
 def test_settings_load_runtime_config_coverage():
     """Cover load_runtime_config body."""
     from mcubridge.config.settings import load_runtime_config
-    
+
     raw_cfg = {
         "serial_port": "/dev/ttyFake",
         "serial_shared_secret": "secret_12345678",
@@ -618,7 +620,7 @@ def test_settings_load_runtime_config_coverage():
         "mqtt_tls": "0",
         "allow_non_tmp_paths": "1"
     }
-    
+
     with patch("mcubridge.config.settings._load_raw_config", return_value=raw_cfg):
         config = load_runtime_config()
         assert config.debug_logging is True
@@ -648,13 +650,13 @@ def test_settings_validation_errors():
         "process_timeout": 30,
         "serial_shared_secret": b"secret_12345678"
     }
-    
+
     # Test insecure placeholder
     bad_cfg = cfg_dict.copy()
     bad_cfg["serial_shared_secret"] = b"changeme123"
     with pytest.raises(ValueError, match="insecure"):
         RuntimeConfig(**bad_cfg)
-        
+
     # Test empty secret
     bad_cfg = cfg_dict.copy()
     bad_cfg["serial_shared_secret"] = b""
@@ -700,7 +702,7 @@ def test_settings_load_raw_config_error():
     with patch("mcubridge.config.settings.get_uci_config", side_effect=OSError("Boom")):
         res = _load_raw_config()
         assert isinstance(res, dict)
-    
+
     # Test empty uci values
     with patch("mcubridge.config.settings.get_uci_config", return_value={}):
         res = _load_raw_config()
@@ -712,7 +714,7 @@ def test_settings_normalize_path_empty():
     from mcubridge.config.settings import RuntimeConfig
     with pytest.raises(ValueError, match="non-empty path"):
         RuntimeConfig._normalize_path("", field_name="test", require_absolute=True)
-    
+
     with pytest.raises(ValueError, match="absolute path"):
         RuntimeConfig._normalize_path("relative/path", field_name="test", require_absolute=True)
 
@@ -721,17 +723,17 @@ def test_configure_logging_settings_dead_code():
     """Cover the dead configure_logging in settings.py."""
     from mcubridge.config.settings import configure_logging as settings_log
     config = create_fake_config()
-    
+
     # Create a real SysLogHandler mock that can be called
     mock_syslog = MagicMock()
-    
+
     # Case: Syslog OK
     with (
         patch("mcubridge.config.settings.os.path.exists", return_value=True),
         patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog)
     ):
         settings_log(config)
-        
+
     # Case: Syslog OSError
     with (
         patch("mcubridge.config.settings.os.path.exists", return_value=True),
@@ -749,10 +751,10 @@ def test_configure_logging_settings_dead_code():
 def test_logging_gaps():
     """Cover gaps in mcubridge.config.logging."""
     from mcubridge.config.logging import StructuredLogFormatter, _serialise_value, _build_handler
-    
+
     # Test _serialise_value with unknown type
     assert _serialise_value(set()) == "set()"
-    
+
     # Test StructuredLogFormatter with extras and exception
     formatter = StructuredLogFormatter()
     record = logging.LogRecord(
@@ -765,16 +767,16 @@ def test_logging_gaps():
         exc_info=None
     )
     record.custom_extra = "extra_val"
-    
+
     res = formatter.format(record)
     assert "extra_val" in res
-    
+
     # Test with exception
     try:
         raise ValueError("Boom")
     except ValueError:
         record.exc_info = sys.exc_info()
-    
+
     res = formatter.format(record)
     assert "exception" in res
     assert "Boom" in res
@@ -798,25 +800,25 @@ def test_security_gaps():
     mv = memoryview(buf)
     security.secure_zero(mv)
     assert buf == bytearray(4)
-    
+
     # secure_zero_bytes_copy
     res = security.secure_zero_bytes_copy(b"test")
     assert res == b"\x00\x00\x00\x00"
-    
+
     # extract_nonce_counter ValueError
     with pytest.raises(ValueError, match="Nonce must be 16 bytes"):
         security.extract_nonce_counter(b"short")
-        
+
     # validate_nonce_counter ValueError path
     res, _ = security.validate_nonce_counter(b"short", 0)
     assert res is False
-    
+
     # validate_nonce_counter replay branch (current <= last_counter)
     # Correct nonce is 16 bytes. Let's use a real one.
     nonce, next_counter = security.generate_nonce_with_counter(10)
     res, _ = security.validate_nonce_counter(nonce, 10)
     assert res is True
-    
+
     # Replay
     res, _ = security.validate_nonce_counter(nonce, 11)
     assert res is False
@@ -828,14 +830,14 @@ def test_topics_gaps():
     """Cover gaps in topics.py."""
     # _split_segments not path
     assert topics._split_segments("") == ()
-    
+
     # topic_path cleaned False branch
     res = topics.topic_path("prefix", "topic", "", " ", "segment")
     assert "segment" in res
-    
+
     # parse_topic ValueError (invalid topic)
     assert topics.parse_topic("br", "br/invalid/topic") is None
-    
+
     # TopicRoute identification/remainder
     from mcubridge.protocol.topics import TopicRoute, Topic
     tr_empty = TopicRoute("raw", "prefix", Topic.SYSTEM, ())
@@ -849,7 +851,7 @@ def test_topics_gaps():
 async def test_status_writer_gaps():
     """Cover gaps in status.py."""
     state = create_fake_state()
-    
+
     # Line 112-117: CancelledError during thread await
     with patch("asyncio.to_thread", side_effect=asyncio.CancelledError):
         with pytest.raises(asyncio.CancelledError):
@@ -860,14 +862,14 @@ async def test_status_writer_gaps():
     with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
         status.cleanup_status_file()
         assert mock_file.unlink.called
-        
+
         mock_file.unlink.side_effect = OSError("fail")
-        status.cleanup_status_file() # Should catch OSError
-        
+        status.cleanup_status_file()  # Should catch OSError
+
     # _write_status_file (Lines 131-140)
     with patch("mcubridge.state.status.NamedTemporaryFile") as mock_ntf, \
          patch("mcubridge.state.status.Path") as mock_path:
-        
+
         payload = {"test": 1}
         status._write_status_file(payload)
         assert mock_ntf.called
@@ -881,15 +883,15 @@ def test_mqtt_configure_tls_gaps():
     config = create_fake_config()
     config.tls_enabled = True
     config.mqtt_cafile = "/tmp/fake_ca"
-    
+
     # Case: CA file missing
     with patch("mcubridge.transport.mqtt.Path.exists", return_value=False):
         with pytest.raises(RuntimeError, match="CA file missing"):
             mqtt._configure_tls(config)
-            
+
     # Case: SSLError/ValueError during setup
     # Make sure CA file check passes
-    config.mqtt_cafile = "" # Avoid missing CA check
+    config.mqtt_cafile = ""  # Avoid missing CA check
     with (
         patch("mcubridge.transport.mqtt.Path.exists", return_value=True),
         patch("ssl.create_default_context", side_effect=ValueError("Boom")),
@@ -903,18 +905,18 @@ async def test_mqtt_publisher_loop_gaps():
     """Cover gaps in _mqtt_publisher_loop."""
     state = create_fake_state()
     mock_client = AsyncMock()
-    
+
     from mcubridge.mqtt.messages import QueuedPublish
     msg = QueuedPublish("t", b"p")
     await state.mqtt_publish_queue.put(msg)
-    
+
     # Case: CancelledError (Line 80-85)
     mock_client.publish.side_effect = asyncio.CancelledError
     with pytest.raises(asyncio.CancelledError):
         await mqtt._mqtt_publisher_loop(state, mock_client)
     # Verify message was requeued
     assert state.mqtt_publish_queue.qsize() == 1
-    
+
     # Case: MqttError (Line 90-91)
     await state.mqtt_publish_queue.get()
     await state.mqtt_publish_queue.put(msg)
@@ -929,24 +931,24 @@ async def test_mqtt_subscriber_loop_gaps():
     """Cover gaps in _mqtt_subscriber_loop."""
     service = MagicMock()
     mock_client = MagicMock()
-    
+
     class FakeMessage:
         def __init__(self, topic, payload):
             self.topic = topic
             self.payload = payload
-            
+
     # Case: payload types (str, int)
     msg_str = FakeMessage("t", "p")
     msg_int = FakeMessage("t", 42)
-    
+
     # Mock client.messages as an async iterator
     async def fake_messages():
         yield msg_str
         yield msg_int
         raise aiomqtt.MqttError("Boom")
-        
+
     mock_client.messages = fake_messages()
-    
+
     with pytest.raises(aiomqtt.MqttError):
         await mqtt._mqtt_subscriber_loop(service, mock_client)
 
@@ -957,7 +959,7 @@ async def test_mqtt_task_gaps():
     config = create_fake_config()
     state = create_fake_state()
     service = MagicMock()
-    
+
     # Case: MqttError, OSError in main loop
     with (
         patch("mcubridge.transport.mqtt.aiomqtt.Client", side_effect=OSError("Boom")),
@@ -980,123 +982,130 @@ async def test_dispatcher_gaps():
     is_allowed = MagicMock(return_value=True)
     reject = AsyncMock()
     snapshot = AsyncMock()
-    
+
     disp = dispatcher.BridgeDispatcher(
         mcu_reg, mqtt_reg, send, ack, is_sync, is_allowed, reject, snapshot
     )
-    
+
     # _handle_unexpected digital/analog read (pin is None)
     assert await disp._handle_unexpected_digital_read(b"") is False
     assert await disp._handle_unexpected_analog_read(b"") is False
-    
+
     # With pin component
     disp.pin = MagicMock()
     disp.pin.handle_unexpected_mcu_request = AsyncMock(return_value=True)
     assert await disp._handle_unexpected_digital_read(b"") is True
     assert await disp._handle_unexpected_analog_read(b"") is True
-    
+
     # dispatch_mcu_frame pre-sync rejection
     is_sync.return_value = False
     with patch("mcubridge.services.dispatcher.logger.warning") as mock_warn:
         await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
         assert mock_warn.called
-        
+
     # dispatch_mcu_frame handler exception
     is_sync.return_value = True
     mcu_reg.get.return_value = AsyncMock(side_effect=ValueError("Boom"))
     await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
     # Should send Error status back
     assert send.called
-    
+
     # orphan/unhandled command (no handler registered)
     mcu_reg.get.return_value = None
     # CMD_CONSOLE_WRITE is a request, so it should send NOT_IMPLEMENTED
     await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
     send.assert_called_with(Status.NOT_IMPLEMENTED.value, b"")
-    
+
     # orphan response (no one waiting)
     # CMD_GET_VERSION_RESP is a response ID
     await disp.dispatch_mcu_frame(Command.CMD_GET_VERSION_RESP.value, b"test")
-    
+
     # dispatch_mqtt_message route is None
-    parse_none = lambda x: None
+    def parse_none(_):
+        return None
+
     await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_none)
-    
+
     # dispatch_mqtt_message empty segments
-    parse_empty = lambda x: TopicRoute("raw", "prefix", Topic.SYSTEM, ())
+    def parse_empty(_):
+        return TopicRoute("raw", "prefix", Topic.SYSTEM, ())
+
     await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_empty)
-    
+
     # dispatch_mqtt_message exception
-    mqtt_reg.dispatch = AsyncMock(side_effect=RuntimeError("Boom") )
-    parse_ok = lambda x: TopicRoute("raw", "prefix", Topic.SYSTEM, ("seg",))
+    mqtt_reg.dispatch = AsyncMock(side_effect=RuntimeError("Boom"))
+
+    def parse_ok(_):
+        return TopicRoute("raw", "prefix", Topic.SYSTEM, ("seg",))
+
     await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_ok)
-    
+
     # Unhandled MQTT topic
     mqtt_reg.dispatch = AsyncMock(return_value=False)
     await disp.dispatch_mqtt_message(MagicMock(topic="t"), parse_ok)
-    
+
     # _handle_file_topic short segments
     route_short = TopicRoute("raw", "p", Topic.FILE, ("identifier",))
     assert await disp._handle_file_topic(route_short, MagicMock()) is False
-    
+
     # _handle_file_topic not allowed
     is_allowed.return_value = False
-    route_file = TopicRoute("raw", "p", Topic.FILE, ("id", "rem") )
+    route_file = TopicRoute("raw", "p", Topic.FILE, ("id", "rem"))
     assert await disp._handle_file_topic(route_file, MagicMock()) is True
     assert reject.called
-    
+
     # _handle_console_topic identifier != "in"
     route_cons = TopicRoute("raw", "p", Topic.CONSOLE, ("out",))
     assert await disp._handle_console_topic(route_cons, MagicMock()) is False
-    
+
     # _handle_console_topic not allowed
     is_allowed.return_value = False
     route_cons_in = TopicRoute("raw", "p", Topic.CONSOLE, ("in",))
     assert await disp._handle_console_topic(route_cons_in, MagicMock()) is True
-    
+
     # _handle_datastore_topic empty identifier
     route_ds_empty = TopicRoute("raw", "p", Topic.DATASTORE, ())
     assert await disp._handle_datastore_topic(route_ds_empty, MagicMock()) is False
-    
+
     # _handle_datastore_topic not allowed
     route_ds = TopicRoute("raw", "p", Topic.DATASTORE, ("id",))
     is_allowed.return_value = False
     assert await disp._handle_datastore_topic(route_ds, MagicMock()) is True
-    
+
     # _handle_mailbox_topic not allowed
     route_mb = TopicRoute("raw", "p", Topic.MAILBOX, ("id",))
     is_allowed.return_value = False
     assert await disp._handle_mailbox_topic(route_mb, MagicMock()) is True
-    
+
     # _handle_shell_topic not allowed
     route_sh = TopicRoute("raw", "p", Topic.SHELL, ("id",))
     is_allowed.return_value = False
     assert await disp._handle_shell_topic(route_sh, MagicMock()) is True
-    
+
     # _handle_pin_topic not allowed
     is_allowed.return_value = False
     msg_pin = MagicMock(topic="br/digital/13/write", payload=b"1")
-    route_pin = TopicRoute("br/digital/13/write", "br", Topic.DIGITAL, ("13", "write") )
+    route_pin = TopicRoute("br/digital/13/write", "br", Topic.DIGITAL, ("13", "write"))
     assert await disp._handle_pin_topic(route_pin, msg_pin) is True
-    
+
     # _handle_system_topic unhandled
     disp.system = MagicMock()
     disp.system.handle_mqtt = AsyncMock(return_value=False)
     route_sys = TopicRoute("raw", "p", Topic.SYSTEM, ("unknown",))
     assert await disp._handle_system_topic(route_sys, MagicMock()) is False
-    
+
     # _handle_bridge_topic empty remainder
     route_br_empty = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge",))
     assert await disp._handle_bridge_topic(route_br_empty, MagicMock()) is False
-    
+
     # _handle_bridge_topic handshake get
-    route_br_hand = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge", "handshake", "get") )
+    route_br_hand = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge", "handshake", "get"))
     assert await disp._handle_bridge_topic(route_br_hand, MagicMock()) is True
-    
+
     # _handle_bridge_topic summary get
-    route_br_summ = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge", "summary", "get") )
+    route_br_summ = TopicRoute("raw", "p", Topic.SYSTEM, ("bridge", "summary", "get"))
     assert await disp._handle_bridge_topic(route_br_summ, MagicMock()) is True
-    
+
     # _payload_bytes types
     assert disp._payload_bytes(bytearray(b"test")) == b"test"
     assert disp._payload_bytes(memoryview(b"test")) == b"test"
@@ -1116,13 +1125,13 @@ def test_context_helpers():
     assert context._coerce_snapshot_int(snap, "b", 42) == 42
     assert context._coerce_snapshot_int(snap, "c", 0) == 5
     assert context._coerce_snapshot_int(snap, "missing", 123) == 123
-    
+
     # _ExponentialBackoff hasattr False
     back = context._ExponentialBackoff(1, 10, 2)
-    retry_state = SimpleNamespace() # no attempt_number
+    retry_state = SimpleNamespace()  # no attempt_number
     back(retry_state)
     assert retry_state.attempt_number == 1
-    
+
     # _status_label unknown
     assert context._status_label(0xFF) == "0xFF"
     assert context._status_label(None) == "unknown"
@@ -1143,7 +1152,7 @@ def test_mcu_capabilities_branches():
     assert caps.is_3v3_logic is True
     assert caps.has_large_buffer is True
     assert caps.has_i2c is True
-    
+
     d = caps.as_dict()
     assert d["has_i2c"] is True
 
@@ -1151,18 +1160,18 @@ def test_mcu_capabilities_branches():
 def test_managed_process_gaps():
     """Cover ManagedProcess branches."""
     proc = context.ManagedProcess(pid=123)
-    
+
     # append_output with empty chunk
     proc.append_output(b"", b"", limit=100)
-    
+
     # append_output with limit <= 0
     proc.append_output(b"test", b"", limit=0)
     assert len(proc.stdout_buffer) == 4
-    
+
     # append_output trigger truncation
     proc.append_output(b"chunk", b"", limit=2)
     assert len(proc.stdout_buffer) == 2
-    
+
     # is_drained
     assert proc.is_drained() is False
     proc.stdout_buffer.clear()
@@ -1172,10 +1181,10 @@ def test_managed_process_gaps():
 def test_latency_stats_gaps():
     """Cover SerialLatencyStats branches."""
     stats = context.SerialLatencyStats()
-    
+
     # total_observations == 0 path in as_dict
     assert stats.as_dict()["avg_ms"] == 0.0
-    
+
     # overflow_count branch
     stats.record(10000.0)
     assert stats.overflow_count == 1
@@ -1186,10 +1195,10 @@ async def test_runtime_state_gaps():
     """Cover remaining gaps in RuntimeState."""
     config = create_fake_config()
     state = context.create_runtime_state(config)
-    
+
     # enqueue_console_chunk empty
     state.enqueue_console_chunk(b"", MagicMock())
-    
+
     # enqueue_console_chunk overflow (rejected)
     # Populate the queue first
     state.console_queue_limit_bytes = 10
@@ -1197,23 +1206,23 @@ async def test_runtime_state_gaps():
     # Now try to append more, triggering dropped_chunks
     state.enqueue_console_chunk(b"extra", MagicMock())
     assert state.console_dropped_chunks > 0
-    
+
     # trigger not accepted
     state.console_queue_limit_bytes = 0
     state.enqueue_console_chunk(b"fail", MagicMock())
-    
+
     # requeue_console_chunk_front
-    state.requeue_console_chunk_front(b"") # empty
+    state.requeue_console_chunk_front(b"")  # empty
     state.console_queue_limit_bytes = 5
-    state.requeue_console_chunk_front(b"long_chunk") # truncate
-    
+    state.requeue_console_chunk_front(b"long_chunk")  # truncate
+
     # enqueue_mailbox_message rejected
     state.mailbox_queue_limit = 0
     assert state.enqueue_mailbox_message(b"test", MagicMock()) is False
-    
+
     # enqueue_mailbox_incoming rejected
     assert state.enqueue_mailbox_incoming(b"test", MagicMock()) is False
-    
+
     # record_handshake_failure streak
     state.record_handshake_failure("fail")
     assert state.handshake_failure_streak == 1
@@ -1221,35 +1230,35 @@ async def test_runtime_state_gaps():
     assert state.handshake_failure_streak == 2
     state.record_handshake_failure("new")
     assert state.handshake_failure_streak == 1
-    
+
     # record_serial_flow_event invalid
     state.record_serial_flow_event("invalid")
-    
+
     # record_serial_pipeline_event attempt/timestamp None
     state.record_serial_pipeline_event({"event": "start", "command_id": 1, "attempt": None, "timestamp": None})
     assert state.serial_pipeline_inflight["attempt"] == 1
-    
+
     # record_serial_pipeline_event inflight None for ack/success
     state.serial_pipeline_inflight = None
     state.record_serial_pipeline_event({"event": "ack"})
     state.record_serial_pipeline_event({"event": "success"})
-    
+
     # record_serial_pipeline_event started invalid
     state.serial_pipeline_inflight = {"started_unix": "invalid"}
     state.record_serial_pipeline_event({"event": "success"})
-    
+
     # initialize_spool disabled
     state.mqtt_spool_limit = 0
     state.initialize_spool()
-    
+
     # ensure_spool disabled/backoff
     assert await state.ensure_spool() is False
     state.mqtt_spool_backoff_until = time.monotonic() + 100
     assert await state.ensure_spool() is False
-    
+
     # _apply_spool_observation non-int corrupt/last_trim
     state._apply_spool_observation({"corrupt_dropped": "none", "last_trim_unix": "none"})
-    
+
     # initialize_spool exception
     state.mqtt_spool_dir = "/non/existent/path/that/fails"
     state.mqtt_spool_limit = 100
@@ -1263,26 +1272,26 @@ async def test_runtime_state_spool_operations():
     """Cover spool interaction gaps."""
     config = create_fake_config()
     state = context.create_runtime_state(config)
-    
+
     # stash_mqtt_message spool is None
     state.mqtt_spool = None
     with patch("mcubridge.state.context.RuntimeState.ensure_spool", new_callable=AsyncMock) as mock_ensure:
         mock_ensure.return_value = False
         assert await state.stash_mqtt_message(QueuedPublish("t", b"p")) is False
-        
+
     # flush_mqtt_spool spool is None
     state.mqtt_spool = None
     with patch("mcubridge.state.context.RuntimeState.ensure_spool", new_callable=AsyncMock) as mock_ensure:
         mock_ensure.return_value = False
         await state.flush_mqtt_spool()
-        
+
     # flush_mqtt_spool loop breaks
     state.mqtt_publish_queue = MagicMock()
-    state.mqtt_publish_queue.qsize.return_value = 1000 # full
+    state.mqtt_publish_queue.qsize.return_value = 1000  # full
     state.mqtt_queue_limit = 100
     state.mqtt_spool = MagicMock()
     await state.flush_mqtt_spool()
-    
+
     # flush_mqtt_spool QueueFull requeue
     state.mqtt_publish_queue = asyncio.Queue(1)
     state.mqtt_publish_queue.put_nowait(QueuedPublish("t", b"p"))
@@ -1304,41 +1313,41 @@ def test_mqtt_spool_gaps():
             mock_conn.execute.return_value.fetchone.return_value = None
             with pytest.raises(IndexError):
                 dq.popleft()
-                
+
     # MQTTSpoolError original is None
     err = spool.MQTTSpoolError("test")
     assert str(err) == "test"
-    
+
     # MQTTPublishSpool non-tmp directory
     with patch("mcubridge.mqtt.spool.logger.warning") as mock_warn:
         s = spool.MQTTPublishSpool("/home/user", 100)
         assert s.is_degraded
         assert mock_warn.called
-        
+
     # MQTTPublishSpool initialization failure
     with patch("mcubridge.mqtt.spool.SqliteDeque", side_effect=OSError("Boom")):
         s = spool.MQTTPublishSpool("/tmp/fail", 100)
         assert s.is_degraded
-        
+
     # close() getattr else branch
     s = spool.MQTTPublishSpool("/tmp/close", 100)
     s._disk_queue = MagicMock(spec=["clear"])
     s.close()
     assert s._disk_queue is None
-    
+
     # append/requeue except branch
     s = spool.MQTTPublishSpool("/tmp/err", 100)
     s._disk_queue = MagicMock()
     s._disk_queue.append.side_effect = OSError("Boom")
     s.append(QueuedPublish("t", b"p"))
     assert s.is_degraded
-    
+
     s = spool.MQTTPublishSpool("/tmp/err2", 100)
     s._disk_queue = MagicMock()
     s._disk_queue.appendleft.side_effect = OSError("Boom")
     s.requeue(QueuedPublish("t", b"p"))
     assert s.is_degraded
-    
+
     # pop_next except branch during disk pop
     s = spool.MQTTPublishSpool("/tmp/poperr", 100)
     s._disk_queue = MagicMock()
@@ -1346,26 +1355,26 @@ def test_mqtt_spool_gaps():
     s._disk_queue.popleft.side_effect = OSError("Boom")
     assert s.pop_next() is None
     assert s.is_degraded
-    
+
     # pop_next corrupt entry
     s = spool.MQTTPublishSpool("/tmp/corrupt", 100)
-    s._memory_queue.append(MagicMock()) # Not a record
+    s._memory_queue.append(MagicMock())  # Not a record
     assert s.pop_next() is None
-    
+
     # pending except branch
     s = spool.MQTTPublishSpool("/tmp/pend", 100)
     s._disk_queue = MagicMock()
     # Mock __len__ to raise error
-    type(s._disk_queue).__len__ = MagicMock(side_effect=OSError("Boom") )
+    type(s._disk_queue).__len__ = MagicMock(side_effect=OSError("Boom"))
     assert s.pending >= 0
-        
+
     # _handle_disk_error disk_full branch
     s = spool.MQTTPublishSpool("/tmp/full", 100)
     exc = OSError()
     exc.errno = errno.ENOSPC
     s._handle_disk_error(exc, "test")
     assert s._fallback_active
-    
+
     # _trim_locked failure branch
     s = spool.MQTTPublishSpool("/tmp/trim", 1)
     s._disk_queue = MagicMock()
@@ -1383,10 +1392,10 @@ def test_handshake_timing_branches():
     window = handshake.SerialTimingWindow(100, 500, 5)
     assert window.ack_timeout_seconds == 0.1
     assert window.response_timeout_seconds == 0.5
-    
+
     cfg = create_fake_config()
-    cfg.serial_retry_timeout = 0.001 # Clamp to min
-    cfg.serial_response_timeout = 100.0 # Clamp to max
+    cfg.serial_retry_timeout = 0.001  # Clamp to min
+    cfg.serial_response_timeout = 100.0  # Clamp to max
     window2 = handshake.derive_serial_timing(cfg)
     assert window2.ack_timeout_ms >= handshake.protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
 
@@ -1398,17 +1407,17 @@ async def test_handshake_synchronize_gaps():
     state = create_fake_state()
     sender = AsyncMock(return_value=False)
     timing = handshake.derive_serial_timing(config)
-    
+
     comp = handshake.SerialHandshakeManager(
         config=config, state=state, serial_timing=timing,
         send_frame=sender, enqueue_mqtt=AsyncMock(), acknowledge_frame=AsyncMock()
     )
-    
+
     # reset_ok legacy branch (first RESET fails, second RESET b"" succeeds)
-    sender.side_effect = [False, True, True] # RESET fail, RESET b"" ok, SYNC ok
+    sender.side_effect = [False, True, True]  # RESET fail, RESET b"" ok, SYNC ok
     with patch.object(comp, "_wait_for_link_sync_confirmation", return_value=True):
         assert await comp.synchronize() is True
-        
+
     # link_sync_timeout branch pending_nonce != nonce
     sender.side_effect = [True, True]
     with patch.object(comp, "_wait_for_link_sync_confirmation", return_value=False):
@@ -1425,16 +1434,16 @@ async def test_handshake_handle_resp_gaps():
         config=config, state=state, serial_timing=handshake.derive_serial_timing(config),
         send_frame=AsyncMock(), enqueue_mqtt=AsyncMock(), acknowledge_frame=AsyncMock()
     )
-    
+
     # rate_limit branch
     state.link_handshake_nonce = b"n" * 16
     state.handshake_rate_limit_until = time.monotonic() + 100
     assert await comp.handle_link_sync_resp(b"payload") is False
-    
+
     # malformed length branch
     state.handshake_rate_limit_until = 0
     assert await comp.handle_link_sync_resp(b"too_short") is False
-    
+
     # replay detected branch
     state.link_handshake_nonce = b"n" * 16
     state.link_nonce_length = 16
@@ -1453,22 +1462,22 @@ async def test_handshake_handle_resp_gaps():
 async def test_handshake_other_gaps():
     """Cover miscellaneous handshake gaps."""
     comp = handshake.SerialHandshakeManager(
-        config=create_fake_config(), state=create_fake_state(), 
+        config=create_fake_config(), state=create_fake_state(),
         serial_timing=MagicMock(), send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(), acknowledge_frame=AsyncMock()
     )
-    
+
     # raise_if_handshake_fatal reason False
     comp._state.handshake_fatal_reason = None
-    comp.raise_if_handshake_fatal() # No exception
-    
+    comp.raise_if_handshake_fatal()  # No exception
+
     # _maybe_schedule_handshake_backoff streak < threshold
     comp._state.handshake_failure_streak = 1
     assert comp._maybe_schedule_handshake_backoff("io_error") is None
-    
+
     # _should_mark_failure_fatal _is_immediate_fatal True
     assert comp._should_mark_failure_fatal("sync_auth_mismatch") is True
-    
+
     # retryer exception in _fetch_capabilities
     with patch("asyncio.get_running_loop"), \
          patch("tenacity.AsyncRetrying.__aiter__", side_effect=tenacity.RetryError(MagicMock())):
@@ -1486,7 +1495,7 @@ async def test_handshake_send_failures():
     enqueue = AsyncMock()
     timing = MagicMock()
     ack = AsyncMock()
-    
+
     comp = SerialHandshakeManager(
         config=config,
         state=state,
@@ -1495,11 +1504,11 @@ async def test_handshake_send_failures():
         enqueue_mqtt=enqueue,
         acknowledge_frame=ack
     )
-    
+
     # Test LINK_RESET failure
     res = await comp.synchronize()
     assert res is False
-    
+
     # Test LINK_SYNC failure
     sender.side_effect = [True, False]
     res = await comp.synchronize()
@@ -1518,7 +1527,7 @@ async def test_handshake_sync_timeout():
     timing = MagicMock()
     timing.response_timeout_seconds = 0.1
     ack = AsyncMock()
-    
+
     comp = SerialHandshakeManager(
         config=config,
         state=state,
@@ -1527,7 +1536,7 @@ async def test_handshake_sync_timeout():
         enqueue_mqtt=enqueue,
         acknowledge_frame=ack
     )
-    
+
     with patch("asyncio.sleep", return_value=None):
         res = await comp.synchronize()
         assert res is False
@@ -1543,7 +1552,7 @@ async def test_handshake_unexpected_resp():
     enqueue = AsyncMock()
     timing = MagicMock()
     ack = AsyncMock()
-    
+
     comp = SerialHandshakeManager(
         config=config,
         state=state,
@@ -1568,7 +1577,7 @@ async def test_handshake_rate_limit():
     enqueue = AsyncMock()
     timing = MagicMock()
     ack = AsyncMock()
-    
+
     comp = SerialHandshakeManager(
         config=config,
         state=state,
@@ -1591,7 +1600,7 @@ async def test_handshake_fetch_capabilities_retry_error():
     timing = MagicMock()
     timing.response_timeout_seconds = 0.1
     ack = AsyncMock()
-    
+
     comp = SerialHandshakeManager(
         config=config,
         state=state,
@@ -1600,7 +1609,7 @@ async def test_handshake_fetch_capabilities_retry_error():
         enqueue_mqtt=enqueue,
         acknowledge_frame=ack
     )
-    
+
     # Mock asyncio.wait_for to always timeout
     with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
         res = await comp._fetch_capabilities()
@@ -1619,11 +1628,11 @@ def test_handshake_parse_capabilities_errors():
         enqueue_mqtt=AsyncMock(),
         acknowledge_frame=AsyncMock()
     )
-    
+
     # Short payload
     comp._parse_capabilities(b"short")
     assert state.mcu_capabilities is None
-    
+
     # Unpack error
     with patch("struct.unpack", side_effect=struct.error):
         comp._parse_capabilities(b"12345678")

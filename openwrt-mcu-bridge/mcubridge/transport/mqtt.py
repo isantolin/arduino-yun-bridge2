@@ -106,9 +106,16 @@ async def _mqtt_subscriber_loop(
 
             if logger.isEnabledFor(logging.DEBUG):
                 # Ensure payload is bytes for hexdump.
-                # aiomqtt.Message.payload is typically bytes, but we cast to be safe.
-                # Use cast or simple conversion that is always hit.
-                log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {topic}", bytes(message.payload))
+                payload_bytes: bytes = b""
+                if isinstance(message.payload, (bytes, bytearray)):
+                    payload_bytes = bytes(message.payload)
+                elif isinstance(message.payload, str):
+                    payload_bytes = message.payload.encode("utf-8")
+                elif message.payload is not None:
+                    # int/float fallback
+                    payload_bytes = str(message.payload).encode("ascii")
+                
+                log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {topic}", payload_bytes)
 
             try:
                 await service.handle_mqtt_message(message)

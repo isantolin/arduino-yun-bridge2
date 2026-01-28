@@ -1,15 +1,11 @@
 """Additional tests to boost Python coverage."""
 
 import asyncio
-import struct
 import errno
-import pickle
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from mcubridge.transport.serial_fast import BridgeSerialProtocol, MAX_SERIAL_PACKET_BYTES, SerialTransport
-from mcubridge.rpc.protocol import Command, FRAME_DELIMITER
-from mcubridge.rpc.frame import Frame
-from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.rpc.protocol import FRAME_DELIMITER
 
 @pytest.mark.asyncio
 async def test_protocol_large_packet_discard():
@@ -18,14 +14,14 @@ async def test_protocol_large_packet_discard():
     state = MagicMock()
     loop = asyncio.get_running_loop()
     proto = BridgeSerialProtocol(service, state, loop)
-    
+
     # Send a large chunk without delimiter
     large_data = b"A" * (MAX_SERIAL_PACKET_BYTES + 10)
     proto.data_received(large_data)
-    
+
     state.record_serial_decode_error.assert_called()
     assert proto._discarding is True
-    
+
     # Send delimiter, should stop discarding
     proto.data_received(FRAME_DELIMITER)
     assert proto._discarding is False
@@ -40,12 +36,12 @@ async def test_negotiate_baudrate_failure():
     config.serial_baud = 115200
     config.serial_safe_baud = 9600
     config.reconnect_delay = 1
-    
+
     transport_instance = SerialTransport(config, state, service)
     proto = MagicMock(spec=BridgeSerialProtocol)
     proto.loop = asyncio.get_running_loop()
     proto.write_frame.return_value = True
-    
+
     # Mock timeout by never setting result on negotiation_future
     with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
         success = await transport_instance._negotiate_baudrate(proto, 115200)
@@ -59,15 +55,16 @@ async def test_async_process_packet_crc_error():
     state = MagicMock()
     loop = asyncio.get_running_loop()
     proto = BridgeSerialProtocol(service, state, loop)
-    
+
     # Build a valid-length raw frame but with dummy data
+    # raw [VER][LEN_H][LEN_L][CMD_H][CMD_L][CRC32...]
     raw_frame = b"\x02\x00\x00\x40\x00\x00\x00\x00\x00" # 9 bytes
     fake_encoded = cobs.encode(raw_frame)
-    
+
     # Mock Frame.from_bytes to raise ValueError with CRC mismatch
     with patch("mcubridge.transport.serial_fast.Frame.from_bytes", side_effect=ValueError("CRC mismatch")):
         await proto._async_process_packet(fake_encoded)
-        
+
         state.record_serial_decode_error.assert_called()
         state.record_serial_crc_error.assert_called()
 
@@ -80,11 +77,11 @@ async def test_console_component_mqtt_input_paused():
     state.mcu_is_paused = True
     state.mqtt_topic_prefix = "br"
     ctx = AsyncMock()
-    
+
     console = ConsoleComponent(config, state, ctx)
     payload = b"hello"
     await console.handle_mqtt_input(payload)
-    
+
     # Should be queued, not sent
     state.enqueue_console_chunk.assert_called()
     ctx.send_frame.assert_not_called()
@@ -99,13 +96,13 @@ async def test_console_component_flush_queue_send_fail():
     state.mqtt_topic_prefix = "br"
     state.console_to_mcu_queue = [b"buffered"]
     state.pop_console_chunk.return_value = b"buffered"
-    
+
     ctx = AsyncMock()
     ctx.send_frame.return_value = False # Fail send
-    
+
     console = ConsoleComponent(config, state, ctx)
     await console.flush_queue()
-    
+
     state.requeue_console_chunk_front.assert_called_with(b"buffered")
 
 def test_daemon_main_base_exception():
@@ -125,7 +122,7 @@ async def test_metrics_snapshot_emit_exceptions():
     from mcubridge.metrics import _emit_metrics_snapshot
     state = MagicMock()
     enqueue = AsyncMock()
-    
+
     # Test TypeError/ValueError handling
     with patch("mcubridge.metrics.json.dumps", side_effect=TypeError("fail")):
         try:
@@ -139,12 +136,12 @@ async def test_latency_histogram_invalid_data():
     from mcubridge.metrics import _RuntimeStateCollector
     state = MagicMock()
     collector = _RuntimeStateCollector(state)
-    
+
     # Invalid buckets type
     invalid_data = {"buckets": "not-a-dict"}
     res = list(collector._emit_latency_histogram(invalid_data, MagicMock()))
     assert len(res) == 0
-    
+
     # Empty buckets
     invalid_data = {"buckets": {}}
     res = list(collector._emit_latency_histogram(invalid_data, MagicMock()))
@@ -154,16 +151,16 @@ def test_spool_disk_error_requeue():
     """Test MQTT spool requeue disk error handling."""
     from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
-    
+
     with patch("mcubridge.mqtt.spool.SqliteDeque") as mock_dq:
         mock_dq.return_value.appendleft.side_effect = OSError(errno.EIO, "IO error")
         spool = MQTTPublishSpool("/tmp/spool", limit=100)
-        
+
         msg = QueuedPublish(topic_name="t", payload=b"p")
         # Forcing requeue via appendleft
         spool._disk_queue = mock_dq.return_value
         spool._use_disk = True
-        
+
         spool.requeue(msg)
         assert spool._use_disk is False # Should have triggered fallback
 
@@ -174,7 +171,7 @@ def test_spool_pending_disk_error():
     spool._disk_queue = MagicMock()
     # SqliteDeque uses __len__
     spool._disk_queue.__len__.side_effect = OSError("fail")
-    
+
     count = spool.pending
     assert count == 0 # Memory was empty
 
@@ -184,9 +181,9 @@ def test_spool_trim_disk_error():
     spool = MQTTPublishSpool("/tmp/spool", limit=1)
     spool._disk_queue = MagicMock()
     spool._disk_queue.__len__.side_effect = OSError("fail")
-    
+
     # This triggers _trim_locked
     spool._memory_queue.append(MagicMock())
     spool._memory_queue.append(MagicMock())
-    spool._trim_locked() 
+    spool._trim_locked()
     # Should log and continue

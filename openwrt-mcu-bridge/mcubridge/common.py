@@ -13,7 +13,6 @@ from typing import (
 
 # [SIL-2] STRICT DEPENDENCY: On OpenWrt, 'uci' is a mandatory system package.
 # We do not use try-import here to enforce fail-fast behavior in production.
-# For tests, we expect 'uci' to be mocked in sys.modules.
 import uci
 
 from paho.mqtt.packettypes import PacketTypes

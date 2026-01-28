@@ -83,18 +83,8 @@ static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int16_t value)
 }
 #endif
 
-// [OPTIMIZATION] PROGMEM error strings with external linkage for cross-file use
-extern const char kSerialOverflowMessage[] PROGMEM;
-extern const char kProcessRunPayloadTooLarge[] PROGMEM;
-extern const char kProcessRunAsyncPayloadTooLarge[] PROGMEM;
-extern const char kProcessPollQueueFull[] PROGMEM;
-extern const char kDatastoreQueueFull[] PROGMEM;
-
-const char kSerialOverflowMessage[] PROGMEM = "serial_rx_overflow";
-const char kProcessRunPayloadTooLarge[] PROGMEM = "process_run_payload_too_large";
-const char kProcessRunAsyncPayloadTooLarge[] PROGMEM = "process_run_async_payload_too_large";
-const char kProcessPollQueueFull[] PROGMEM = "process_poll_queue_full";
-const char kDatastoreQueueFull[] PROGMEM = "datastore_queue_full";
+// [OPTIMIZATION] PROGMEM error strings removed to save Flash.
+// We use numerical status codes from rpc::StatusCode.
 
 namespace {
 constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
@@ -412,7 +402,7 @@ void BridgeClass::process() {
             _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
             break;
           case rpc::FrameParser::Error::OVERFLOW:
-            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, reinterpret_cast<const __FlashStringHelper*>(kSerialOverflowMessage));
+            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
             break;
           default:
             _emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);

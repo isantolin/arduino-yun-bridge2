@@ -3,8 +3,7 @@
 #include <string.h>
 #include "protocol/rpc_protocol.h"
 
-// [OPTIMIZATION] PROGMEM error string defined in Bridge.cpp
-extern const char kDatastoreQueueFull[] PROGMEM;
+// [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
 DataStoreClass::DataStoreClass() 
   : _datastore_get_handler(nullptr) {
@@ -59,7 +58,7 @@ void DataStoreClass::requestGet(const char* key) {
   memcpy(payload + 1, key, key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, reinterpret_cast<const __FlashStringHelper*>(kDatastoreQueueFull));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
     return;
   }
 

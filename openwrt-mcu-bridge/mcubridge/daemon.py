@@ -219,7 +219,8 @@ class BridgeDaemon:
         except* Exception as exc_group:
             for group_exc in exc_group.exceptions:
                 logger.critical(
-                    "Unhandled exception in main task group",
+                    "Unhandled exception in main task group: %s",
+                    group_exc,
                     exc_info=group_exc,
                 )
             raise

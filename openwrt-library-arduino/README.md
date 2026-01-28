@@ -24,8 +24,17 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 ### External dependencies
 
-- **Crypto**: The installer fetches the [Crypto](https://github.com/rweather/arduinolibs/tree/master/libraries/Crypto) library from `rweather/arduinolibs`. That package exposes the same `<HMAC.h>` / `<SHA256.h>` interfaces.
-- **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3) to ensure strict binary compatibility with the Python daemon and remove external dependency risks.
+- **Crypto**: The installer fetches the [Crypto](https://github.com/rweather/arduinolibs/tree/master/libraries/Crypto) library from `rweather/arduinolibs`.
+- **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`). This ensures SIL-2 compliance by avoiding dynamic heap allocation.
+- **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3).
+
+## SIL-2 Compliance & Safety
+
+This library follows IEC 61508 (SIL-2) guidelines for embedded software:
+- **No Dynamic Memory:** All buffers are statically allocated using ETL. No `malloc`/`new` after initialization.
+- **No Recursion:** Deterministic stack usage.
+- **Integrity:** All RPC frames are protected by CRC32.
+- **Fail-Fast:** System enters a safe state upon critical errors (buffer overflow, sync loss).
 
 ## Best Practices
 

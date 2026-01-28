@@ -12,11 +12,11 @@ The project also includes a LuCI web interface for configuration and monitoring,
 
 ### Key Technologies
 
-*   **Python:** The main daemon on the Linux MPU is written in Python, using `asyncio` for high-performance, non-blocking I/O.
-*   **C++:** The library for the Arduino MCU is written in C++.
+*   **Python:** The main daemon on the Linux MPU is written in Python (3.13+), using `asyncio` for high-performance, non-blocking I/O.
+*   **C++:** The library for the Arduino MCU is written in C++11, strictly adhering to **SIL-2** safety standards (no STL, no dynamic memory) via **ETL (Embedded Template Library)**.
 *   **Lua:** The LuCI web interface is written in Lua.
-*   **OpenWrt:** The target operating system for the Linux MPU is OpenWrt.
-*   **MQTT:** The bridge uses MQTT for communication with other devices and services on the network.
+*   **OpenWrt:** The target operating system is **OpenWrt 25.12** (APK based).
+*   **MQTT:** The bridge uses MQTT v5 for communication with other devices.
 *   **TOML:** The communication protocol is defined in a TOML file.
 
 ## Building and Running
@@ -25,11 +25,11 @@ The project provides a set of shell scripts to automate the build, deployment, a
 
 ### Building
 
-To build the project, run the `1_compile.sh` script. This script will:
+To build the project for OpenWrt 25.12, run the `1_compile.sh` script. This script will:
 
-1.  Download and configure the OpenWrt SDK.
+1.  Download and configure the OpenWrt SDK (25.12).
 2.  Copy the project's packages into the SDK.
-3.  Compile the packages to create `.apk` files.
+3.  Compile the packages to create `.apk` files (modern package format).
 4.  Place the resulting `.apk` files in the `bin/` directory.
 
 ```bash

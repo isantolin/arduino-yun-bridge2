@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiomqtt
-# [REQ-PY3.13] Paho 2.x is used by aiomqtt internally, but aiomqtt > 2.0 handles the callback versioning.
+import tenacity
 
 from mcubridge.common import build_mqtt_connect_properties, build_mqtt_properties, log_hexdump
 from mcubridge.config.settings import RuntimeConfig
@@ -42,7 +42,6 @@ def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
         context.minimum_version = MQTT_TLS_MIN_VERSION
 
         # Equivalent to mosquitto_{pub,sub} --insecure: disable hostname verification
-        # (useful when connecting via IP while the certificate CN/SAN is a DNS name).
         if getattr(config, "mqtt_tls_insecure", False):
             context.check_hostname = False
 
@@ -128,6 +127,15 @@ async def _mqtt_subscriber_loop(
         raise
 
 
+def _log_retry_attempt(retry_state: tenacity.RetryCallState) -> None:
+    if retry_state.attempt_number > 1:
+        logger.info(
+            "Reconnecting MQTT (attempt %d, next wait %.2fs)...",
+            retry_state.attempt_number,
+            retry_state.next_action.sleep if retry_state.next_action else 0,
+        )
+
+
 async def mqtt_task(
     config: RuntimeConfig,
     state: RuntimeState,
@@ -136,53 +144,60 @@ async def mqtt_task(
     tls_context = _configure_tls(config)
     reconnect_delay = max(1, config.reconnect_delay)
 
-    while True:
-        try:
-            connect_props = build_mqtt_connect_properties()
+    retryer = tenacity.AsyncRetrying(
+        wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
+        + tenacity.wait_random(0, 2),
+        retry=tenacity.retry_if_exception_type(
+            (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
+        ),
+        before_sleep=_log_retry_attempt,
+        reraise=True,
+    )
 
-            # [FIX-10/10] aiomqtt 2.x wraps Paho 2.x and handles CallbackAPIVersion internally.
-            # Passing callback_api_version explicitly is not supported in aiomqtt constructor.
-            async with aiomqtt.Client(
-                hostname=config.mqtt_host,
-                port=config.mqtt_port,
-                username=config.mqtt_user or None,
-                password=config.mqtt_pass or None,
-                tls_context=tls_context,
-                logger=logging.getLogger("mcubridge.mqtt.client"),
-                protocol=aiomqtt.ProtocolVersion.V5,
-                clean_session=None,
-                properties=connect_props,
-            ) as client:
-                logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+    async for attempt in retryer:
+        with attempt:
+            try:
+                connect_props = build_mqtt_connect_properties()
 
-                # Subscription List (no closures/lambdas; always read prefix from state)
-                topics: list[tuple[str, int]] = []
-                for topic_enum, segments, qos in MQTT_COMMAND_SUBSCRIPTIONS:
-                    topics.append(
-                        (
-                            topic_path(state.mqtt_topic_prefix, topic_enum, *segments),
-                            int(qos),
+                async with aiomqtt.Client(
+                    hostname=config.mqtt_host,
+                    port=config.mqtt_port,
+                    username=config.mqtt_user or None,
+                    password=config.mqtt_pass or None,
+                    tls_context=tls_context,
+                    logger=logging.getLogger("mcubridge.mqtt.client"),
+                    protocol=aiomqtt.ProtocolVersion.V5,
+                    clean_session=None,
+                    properties=connect_props,
+                ) as client:
+                    logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+
+                    # Subscription List
+                    topics: list[tuple[str, int]] = []
+                    for topic_enum, segments, qos in MQTT_COMMAND_SUBSCRIPTIONS:
+                        topics.append(
+                            (
+                                topic_path(state.mqtt_topic_prefix, topic_enum, *segments),
+                                int(qos),
+                            )
                         )
-                    )
 
-                for topic, qos in topics:
-                    await client.subscribe(topic, qos=qos)
+                    for topic, qos in topics:
+                        await client.subscribe(topic, qos=qos)
 
-                logger.info("Subscribed to %d command topics.", len(topics))
+                    logger.info("Subscribed to %d command topics.", len(topics))
 
-                async with asyncio.TaskGroup() as task_group:
-                    task_group.create_task(_mqtt_publisher_loop(state, client))
-                    task_group.create_task(_mqtt_subscriber_loop(service, client))
+                    async with asyncio.TaskGroup() as task_group:
+                        task_group.create_task(_mqtt_publisher_loop(state, client))
+                        task_group.create_task(_mqtt_subscriber_loop(service, client))
 
-        except* aiomqtt.MqttError as exc_group:
-            for exc in exc_group.exceptions:
-                logger.error("MQTT connection failed: %s", exc)
-        except* (OSError, asyncio.TimeoutError) as exc_group:
-            for exc in exc_group.exceptions:
-                logger.error("Network error: %s", exc)
-        except* asyncio.CancelledError:
-            logger.info("MQTT task stopping.")
-            raise
+            except* asyncio.CancelledError:
+                logger.info("MQTT task stopping.")
+                raise asyncio.CancelledError()
+            except* (aiomqtt.MqttError, OSError, asyncio.TimeoutError) as exc_group:
+                for exc in exc_group.exceptions:
+                    logger.error("MQTT connection error: %s", exc)
+                if len(exc_group.exceptions) == 1:
+                    raise exc_group.exceptions[0]
+                raise
 
-        logger.info("Reconnecting MQTT in %ds...", reconnect_delay)
-        await asyncio.sleep(reconnect_delay)

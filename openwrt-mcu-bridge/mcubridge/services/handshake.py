@@ -108,6 +108,19 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
 _STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
 
 
+def _retry_if_false(res: object) -> bool:
+    return res is False
+
+
+def _log_handshake_retry(retry_state: tenacity.RetryCallState) -> None:
+    h_logger = logging.getLogger("mcubridge.service.handshake")
+    h_logger.warning(
+        "Handshake attempt %d failed; retrying in %.2fs",
+        retry_state.attempt_number,
+        retry_state.next_action.sleep if retry_state.next_action else 0,
+    )
+
+
 class SerialHandshakeManager:
     """Encapsulates MCU serial handshake orchestration and telemetry."""
 
@@ -134,7 +147,29 @@ class SerialHandshakeManager:
         self._capabilities_future: asyncio.Future[bytes] | None = None
 
     async def synchronize(self) -> bool:
-        await self._respect_handshake_backoff()
+        # [SIL-2] Unified Retry Strategy for Link Synchronisation
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(self._fatal_threshold),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
+            retry=tenacity.retry_if_result(_retry_if_false),
+            before_sleep=_log_handshake_retry,
+            reraise=False,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    ok = await self._synchronize_attempt()
+                    if not ok:
+                        return False
+            return True
+        except tenacity.RetryError:
+            return False
+
+    async def _synchronize_attempt(self) -> bool:
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
         self._state.record_handshake_attempt()
 
@@ -148,36 +183,33 @@ class SerialHandshakeManager:
         self._state.link_nonce_length = nonce_length
         self._state.link_expected_tag = self._compute_handshake_tag(nonce)
         self._state.link_is_synchronized = False
+
         reset_ok = await self._send_frame(
             Command.CMD_LINK_RESET.value,
             self._reset_payload,
         )
         if not reset_ok and self._reset_payload:
             self._logger.warning(
-                "LINK_RESET rejected; retrying without timing payload (legacy firmware?)"
+                "LINK_RESET rejected; retrying without timing payload"
             )
             reset_ok = await self._send_frame(
                 Command.CMD_LINK_RESET.value,
                 b"",
             )
         if not reset_ok:
-            self._logger.warning("Failed to emit LINK_RESET during handshake")
             self._clear_handshake_expectations()
             await self._handle_handshake_failure("link_reset_send_failed")
             return False
+
         await asyncio.sleep(0.05)
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce)
         if not sync_ok:
-            self._logger.warning("Failed to emit LINK_SYNC during handshake")
             self._clear_handshake_expectations()
             await self._handle_handshake_failure("link_sync_send_failed")
             return False
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
-            self._logger.warning(
-                "MCU link synchronisation did not confirm within timeout"
-            )
             pending_nonce = self._state.link_handshake_nonce
             self._clear_handshake_expectations()
             if pending_nonce == nonce:
@@ -239,10 +271,8 @@ class SerialHandshakeManager:
         nonce_mismatch = nonce != expected
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.HANDSHAKE_TAG_LENGTH
-        # [MIL-SPEC] Use timing-safe comparison to prevent side-channel attacks
         tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
 
-        # [MIL-SPEC] Validate nonce counter for anti-replay protection
         if not nonce_mismatch and not missing_expected_tag:
             is_valid, _ = validate_nonce_counter(
                 nonce, self._state.link_last_nonce_counter
@@ -251,7 +281,7 @@ class SerialHandshakeManager:
                 self._logger.warning(
                     "LINK_SYNC_RESP replay detected (nonce counter too low)"
                 )
-                nonce_mismatch = True  # Treat as nonce mismatch
+                nonce_mismatch = True
 
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
             self._logger.warning(
@@ -270,35 +300,23 @@ class SerialHandshakeManager:
             )
             return False
 
-        payload = nonce  # Normalise for logging
-
+        payload = nonce
         self._state.link_is_synchronized = True
         self._clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
-
-        # Fire and forget capabilities fetch to avoid blocking the sync flow,
-        # but ensure it runs with a delay.
         asyncio.create_task(self._fetch_capabilities_with_delay())
-
         return True
 
     async def _fetch_capabilities_with_delay(self) -> None:
-        """Wait for bus settlement and then fetch capabilities."""
-        # [SIL-2] Mandatory settlement delay.
-        # This prevents collision with CMD_GET_VERSION (0x40) sent by daemon health checks.
         await asyncio.sleep(2.0)
         await self._fetch_capabilities()
 
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
-
-        # Log the command ID for verification (User Request: CMD Problem Investigation)
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug(f"Starting capabilities discovery using Command ID 0x{cmd_id:02X}")
 
-        # [SIL-2] Retry logic for capabilities discovery to handle bus contention
-        # Increased attempts and backoff to ensure we eventually get through
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
             wait=tenacity.wait_incrementing(start=0.5, increment=0.5),
@@ -310,17 +328,12 @@ class SerialHandshakeManager:
             async for attempt in retryer:
                 with attempt:
                     self._capabilities_future = loop.create_future()
-
                     ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
                     if not ok:
-                        self._logger.warning(
-                            f"Failed to send CMD_GET_CAPABILITIES (attempt {attempt.retry_state.attempt_number})"
-                        )
                         self._capabilities_future = None
                         raise asyncio.TimeoutError("Send failed")
 
                     try:
-                        # [SIL-2] Force ample timeout for cold boot capabilities discovery
                         timeout = max(5.0, self._timing.response_timeout_seconds)
                         payload = await asyncio.wait_for(
                             self._capabilities_future, timeout=timeout
@@ -328,9 +341,6 @@ class SerialHandshakeManager:
                         self._parse_capabilities(payload)
                         return True
                     except asyncio.TimeoutError:
-                        self._logger.warning(
-                            f"Timeout waiting for MCU capabilities (attempt {attempt.retry_state.attempt_number})"
-                        )
                         raise
                     finally:
                         self._capabilities_future = None
@@ -364,6 +374,47 @@ class SerialHandshakeManager:
         self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
         self._state.link_is_synchronized = False
         return True
+
+    async def _handle_handshake_failure(
+        self,
+        reason: str,
+        *,
+        detail: str | None = None,
+    ) -> None:
+        self._state.record_handshake_failure(reason)
+        is_fatal = self._should_mark_failure_fatal(reason)
+        fatal_detail = detail
+        if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
+            fatal_detail = detail or (
+                f"failure_streak_exceeded_{self._fatal_threshold}"
+            )
+        if is_fatal:
+            self._state.record_handshake_fatal(reason, fatal_detail)
+            self._logger.error(
+                "Fatal serial handshake failure reason=%s detail=%s",
+                reason,
+                fatal_detail or "",
+            )
+        self._maybe_schedule_handshake_backoff(reason)
+        extra: dict[str, Any] = {
+            "duration_seconds": round(
+                self._state.handshake_last_duration,
+                3,
+            )
+        }
+        extra["fatal"] = is_fatal
+        extra["fatal_count"] = self._state.handshake_fatal_count
+        extra["fatal_threshold"] = self._fatal_threshold
+        if self._state.handshake_fatal_count > 0:
+            extra["fatal_unix"] = self._state.handshake_fatal_unix
+            if self._state.handshake_fatal_detail:
+                extra["fatal_detail"] = self._state.handshake_fatal_detail
+        await self._publish_handshake_event(
+            "failure",
+            reason=reason,
+            detail=fatal_detail if is_fatal else detail,
+            extra=extra,
+        )
 
     async def handle_handshake_failure(
         self,
@@ -402,7 +453,6 @@ class SerialHandshakeManager:
         return self._state.link_is_synchronized and self._state.link_handshake_nonce is None
 
     def _clear_handshake_expectations(self) -> None:
-        # [MIL-SPEC] Securely zero sensitive handshake material before clearing
         if self._state.link_handshake_nonce is not None:
             nonce_buf = bytearray(self._state.link_handshake_nonce)
             secure_zero(nonce_buf)
@@ -419,22 +469,6 @@ class SerialHandshakeManager:
         if deadline <= 0:
             return 0.0
         return max(0.0, deadline - time.monotonic())
-
-    async def _respect_handshake_backoff(self) -> None:
-        delay = self._handshake_backoff_remaining()
-        if delay <= 0:
-            return
-        self._logger.warning(
-            "Delaying serial handshake for %.2fs due to prior failures",
-            delay,
-        )
-        await self._publish_handshake_event(
-            "backoff_wait",
-            reason=self._state.last_handshake_error,
-            detail="waiting_for_backoff",
-            extra={"delay_seconds": round(delay, 3)},
-        )
-        await asyncio.sleep(delay)
 
     async def _publish_handshake_event(
         self,
@@ -476,49 +510,6 @@ class SerialHandshakeManager:
             extra={"duration_seconds": duration},
         )
 
-    async def _handle_handshake_failure(
-        self,
-        reason: str,
-        *,
-        detail: str | None = None,
-    ) -> None:
-        self._state.record_handshake_failure(reason)
-        is_fatal = self._should_mark_failure_fatal(reason)
-        fatal_detail = detail
-        if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
-            fatal_detail = detail or (
-                f"failure_streak_exceeded_{self._fatal_threshold}"
-            )
-        if is_fatal:
-            self._state.record_handshake_fatal(reason, fatal_detail)
-            self._logger.error(
-                "Fatal serial handshake failure reason=%s detail=%s",
-                reason,
-                fatal_detail or "",
-            )
-        backoff = self._maybe_schedule_handshake_backoff(reason)
-        extra: dict[str, Any] = {
-            "duration_seconds": round(
-                self._state.handshake_last_duration,
-                3,
-            )
-        }
-        if backoff:
-            extra["backoff_seconds"] = round(backoff, 3)
-        extra["fatal"] = is_fatal
-        extra["fatal_count"] = self._state.handshake_fatal_count
-        extra["fatal_threshold"] = self._fatal_threshold
-        if self._state.handshake_fatal_count > 0:
-            extra["fatal_unix"] = self._state.handshake_fatal_unix
-            if self._state.handshake_fatal_detail:
-                extra["fatal_detail"] = self._state.handshake_fatal_detail
-        await self._publish_handshake_event(
-            "failure",
-            reason=reason,
-            detail=fatal_detail if is_fatal else detail,
-            extra=extra,
-        )
-
     def _maybe_schedule_handshake_backoff(self, reason: str) -> float | None:
         streak = max(1, self._state.handshake_failure_streak)
         fatal = self._is_immediate_fatal(reason)
@@ -526,12 +517,10 @@ class SerialHandshakeManager:
         if streak < threshold:
             return None
 
-        # [SIL-2] Use tenacity for consistent backoff strategy
         wait_strategy = tenacity.wait_exponential(
             multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
             max=SERIAL_HANDSHAKE_BACKOFF_MAX,
         )
-        # attempt_number starts at 1 for tenacity
         retry_state = tenacity.RetryCallState(
             retry_object=tenacity.AsyncRetrying(),
             fn=None,
@@ -551,7 +540,6 @@ class SerialHandshakeManager:
 
     @staticmethod
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        """Return the truncated HMAC tag defined by the serial spec."""
         if not secret:
             return b""
         digest = hmac.new(secret, nonce, hashlib.sha256).digest()
@@ -585,3 +573,4 @@ class SerialHandshakeManager:
     @staticmethod
     def _is_immediate_fatal(reason: str) -> bool:
         return reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
+

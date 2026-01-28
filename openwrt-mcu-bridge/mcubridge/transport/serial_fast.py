@@ -13,6 +13,7 @@ import logging
 import struct
 from typing import Final, Sized, TypeGuard, cast
 
+import tenacity
 from cobs import cobs
 from mcubridge.rpc import rle
 import serial_asyncio_fast  # type: ignore
@@ -63,6 +64,14 @@ def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
 async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     logger.warning("Serial disconnected; dropping frame 0x%02X", command_id)
     return False
+
+
+def _log_baud_retry(retry_state: tenacity.RetryCallState) -> None:
+    if retry_state.attempt_number > 1:
+        logger.warning(
+            "Baudrate negotiation timed out (attempt %d); retrying...",
+            retry_state.attempt_number
+        )
 
 
 class BridgeSerialProtocol(asyncio.Protocol):
@@ -317,17 +326,33 @@ class SerialTransport:
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
         payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
-        # Manually encode since protocol.write_frame sends it
-        # but we need to set the future BEFORE sending to avoid race condition
-        proto.negotiation_future = proto.loop.create_future()
 
-        if not proto.write_frame(Command.CMD_SET_BAUDRATE, payload):
-            return False
+        # [SIL-2] Retry logic for baudrate negotiation
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(3),
+            wait=tenacity.wait_fixed(0.5),
+            retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            before_sleep=_log_baud_retry,
+            reraise=False,
+        )
 
         try:
-            await asyncio.wait_for(proto.negotiation_future, SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
-            return True
-        except asyncio.TimeoutError:
-            return False
-        finally:
-            proto.negotiation_future = None
+            async for attempt in retryer:
+                with attempt:
+                    proto.negotiation_future = proto.loop.create_future()
+                    if not proto.write_frame(Command.CMD_SET_BAUDRATE, payload):
+                        proto.negotiation_future = None
+                        raise asyncio.TimeoutError("Write failed")
+
+                    try:
+                        await asyncio.wait_for(
+                            proto.negotiation_future,
+                            SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
+                        )
+                        return True
+                    finally:
+                        proto.negotiation_future = None
+        except tenacity.RetryError:
+            pass
+
+        return False

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import json
+import msgspec
 import logging
 import struct
 import subprocess
@@ -168,12 +168,12 @@ class ProcessComponent:
             ShellAction.RUN_ASYNC,
             protocol.MQTT_SUFFIX_ERROR,
         )
-        error_payload = json.dumps(
+        error_payload = msgspec.json.encode(
             {
                 "status": "error",
                 "reason": reason,
             }
-        ).encode("utf-8")
+        )
         await self.ctx.enqueue_mqtt(
             QueuedPublish(topic_name=topic, payload=error_payload)
         )
@@ -672,7 +672,7 @@ class ProcessComponent:
             str(pid),
             protocol.MQTT_SUFFIX_RESPONSE,
         )
-        payload = json.dumps(
+        payload = msgspec.json.encode(
             {
                 "status": batch.status_byte,
                 "exit_code": batch.exit_code,
@@ -684,7 +684,7 @@ class ProcessComponent:
                 "stderr_truncated": batch.stderr_truncated,
                 "finished": batch.finished,
             }
-        ).encode("utf-8")
+        )
         message = QueuedPublish(
             topic_name=topic,
             payload=payload,

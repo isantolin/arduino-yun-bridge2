@@ -6,7 +6,7 @@ import asyncio
 import logging
 import math
 import re
-import json
+import msgspec
 from dataclasses import replace
 from typing import (
     Any,
@@ -56,7 +56,7 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        payload=json.dumps(snapshot).encode("utf-8"),
+        payload=msgspec.json.encode(snapshot),
         content_type="application/json",
         message_expiry_interval=int(expiry_seconds),
     )
@@ -551,7 +551,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=json.dumps(snapshot).encode("utf-8"),
+        payload=msgspec.json.encode(snapshot),
         content_type="application/json",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import msgspec
 import logging
 import struct
 
@@ -54,7 +54,7 @@ class MailboxComponent:
             message_id = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
 
         if message_id is not None:
-            body = json.dumps({"message_id": message_id}).encode("utf-8")
+            body = msgspec.json.encode({"message_id": message_id})
         else:
             body = payload
 
@@ -271,7 +271,8 @@ class MailboxComponent:
             Topic.MAILBOX,
             MailboxAction.ERRORS,
         )
-        body = json.dumps(
+
+        body = msgspec.json.encode(
             {
                 "event": "write_overflow",
                 "reason": protocol.STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW,
@@ -281,7 +282,8 @@ class MailboxComponent:
                 "payload_bytes": payload_size,
                 "overflow_events": self.state.mailbox_outgoing_overflow_events,
             }
-        ).encode("utf-8")
+        )
+
         properties: tuple[tuple[str, str], ...]
         if inbound is not None:
             properties = (("bridge-error", Topic.MAILBOX.value),)

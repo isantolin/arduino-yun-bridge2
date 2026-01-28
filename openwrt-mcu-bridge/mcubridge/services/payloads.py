@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import msgspec
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -38,8 +38,8 @@ class ShellCommandPayload:
         candidate: Any
         if text.startswith("{"):
             try:
-                candidate = json.loads(text)
-            except json.JSONDecodeError:
+                candidate = msgspec.json.decode(text)
+            except msgspec.DecodeError:
                 candidate = {"command": text}
         else:
             candidate = {"command": text}

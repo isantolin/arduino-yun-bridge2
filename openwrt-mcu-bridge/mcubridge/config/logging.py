@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import msgspec
 import logging
 from datetime import datetime, timezone
 from logging import Handler
@@ -85,7 +85,7 @@ class StructuredLogFormatter(logging.Formatter):
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
 
-        return json.dumps(payload, ensure_ascii=False)
+        return msgspec.json.encode(payload).decode("utf-8")
 
 
 def _build_handler() -> Handler:

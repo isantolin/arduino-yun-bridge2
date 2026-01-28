@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import logging
 import struct
 import time
@@ -473,13 +473,13 @@ class BridgeService:
         log_method = logger.warning if status != Status.ACK else logger.debug
         log_method("MCU > %s %s", status.name, text)
 
-        report = json.dumps(
+        report = msgspec.json.encode(
             {
                 "status": status.value,
                 "name": status.name,
                 "message": text,
             }
-        ).encode("utf-8")
+        )
         status_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
@@ -532,7 +532,7 @@ class BridgeService:
         )
         message = QueuedPublish(
             topic_name=topic,
-            payload=json.dumps(snapshot).encode("utf-8"),
+            payload=msgspec.json.encode(snapshot),
             content_type="application/json",
             message_expiry_interval=30,
             user_properties=(("bridge-snapshot", flavor),),
@@ -562,13 +562,13 @@ class BridgeService:
             action or "<missing>",
             str(inbound.topic),
         )
-        payload = json.dumps(
+        payload = msgspec.json.encode(
             {
                 "status": "forbidden",
                 "topic": topic_value,
                 "action": action,
             }
-        ).encode("utf-8")
+        )
         status_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,

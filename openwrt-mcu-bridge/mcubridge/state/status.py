@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import logging
 import time
 from pathlib import Path
@@ -135,6 +135,6 @@ def _write_status_file(payload: dict[str, Any]) -> None:
         dir=STATUS_FILE.parent,
         delete=False,
     ) as handle:
-        json.dump(payload, handle, indent=2)
+        handle.write(msgspec.json.encode(payload).decode("utf-8"))
         temp_name = handle.name
     Path(temp_name).replace(STATUS_FILE)

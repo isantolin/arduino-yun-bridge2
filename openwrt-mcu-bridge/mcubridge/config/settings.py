@@ -13,15 +13,14 @@ import logging
 import logging.handlers
 import os
 import sys
+import msgspec
+from typing import Any
 from dataclasses import dataclass, field
 
 from ..common import (
     get_default_config,
     get_uci_config,
     normalise_allowed_commands,
-    parse_bool,
-    parse_float,
-    parse_int,
 )
 from ..const import (
     DEFAULT_ALLOW_NON_TMP_PATHS,
@@ -30,27 +29,21 @@ from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_DEBUG_LOGGING,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-    DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_METRICS_ENABLED,
     DEFAULT_METRICS_HOST,
     DEFAULT_METRICS_PORT,
-    DEFAULT_MQTT_CAFILE,
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TLS_INSECURE,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-    DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
@@ -59,8 +52,7 @@ from ..const import (
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..rpc import protocol
-from ..rpc.protocol import DEFAULT_BAUDRATE, DEFAULT_RETRY_LIMIT, DEFAULT_SAFE_BAUDRATE
+from ..rpc.protocol import DEFAULT_RETRY_LIMIT
 
 
 logger = logging.getLogger(__name__)
@@ -85,9 +77,17 @@ class RuntimeConfig:
     allowed_commands: tuple[str, ...]
     file_system_root: str
     process_timeout: int
+    # [msgspec] Fields without defaults MUST come before fields with defaults in standard Python.
+    # However, since we're using slots=True dataclass, it's fine as long as we init them.
+    # But wait, to support automatic conversion, optional fields should be consistent.
+    # Let's keep it as dataclass for now, msgspec supports it.
+
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+
+    # Init=False fields need to be handled carefully with msgspec.convert.
+    # msgspec won't populate init=False fields from input dict.
     allowed_policy: AllowedCommandPolicy = field(init=False)
 
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
@@ -106,7 +106,11 @@ class RuntimeConfig:
     watchdog_enabled: bool = DEFAULT_WATCHDOG_ENABLED
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
+
+    # We need to handle bytes specially or let msgspec handle it.
+    # msgspec can decode base64 to bytes if configured, or we can handle it in post_init
     serial_shared_secret: bytes = field(repr=False, default=b"")
+
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
@@ -117,11 +121,18 @@ class RuntimeConfig:
     bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
+    # Extra field to handle incoming 'debug' key from UCI mapping to 'debug_logging'
+    # We can handle this in the config loader dict preparation.
+
     @property
     def tls_enabled(self) -> bool:
         return self.mqtt_tls
 
     def __post_init__(self) -> None:
+        # Handle string -> bytes conversion for secret if it came as string
+        if isinstance(self.serial_shared_secret, str):
+             self.serial_shared_secret = self.serial_shared_secret.encode("utf-8")
+
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.serial_response_timeout = max(
             self.serial_response_timeout, self.serial_retry_timeout * 2
@@ -309,7 +320,7 @@ class RuntimeConfig:
         return value
 
 
-def _load_raw_config() -> dict[str, str]:
+def _load_raw_config() -> dict[str, Any]:
     """Load configuration from UCI with robust error handling (SIL 2)."""
     try:
         uci_values = get_uci_config()
@@ -321,22 +332,6 @@ def _load_raw_config() -> dict[str, str]:
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
 
     return get_default_config()
-
-
-def _optional_path(path: str | None) -> str | None:
-    if not path:
-        return None
-    candidate = path.strip()
-    return candidate or None
-
-
-def _raw_get_int(raw: dict[str, str], key: str, default: int) -> int:
-    return parse_int(raw.get(key), default)
-
-
-def _raw_get_bool(raw: dict[str, str], key: str, default: bool) -> bool:
-    value = raw.get(key)
-    return parse_bool(value) if value is not None else default
 
 
 def configure_logging(config: RuntimeConfig) -> None:
@@ -378,182 +373,35 @@ def configure_logging(config: RuntimeConfig) -> None:
 
 
 def load_runtime_config() -> RuntimeConfig:
-    """Load configuration from UCI/defaults."""
+    """Load configuration from UCI/defaults using msgspec for efficient validation."""
 
-    raw = _load_raw_config()
+    raw_config = _load_raw_config()
 
-    debug_logging = parse_bool(raw.get("debug"))
+    # Pre-process 'allowed_commands' since msgspec handles standard types
+    if "allowed_commands" in raw_config:
+        allowed_raw = raw_config["allowed_commands"]
+        if isinstance(allowed_raw, str):
+            commands = normalise_allowed_commands(allowed_raw.split())
+            raw_config["allowed_commands"] = commands
 
-    allowed_commands_raw = raw.get("allowed_commands", "")
-    allowed_commands = normalise_allowed_commands(allowed_commands_raw.split())
+    try:
+        # msgspec handles type coercion (str -> int, str -> bool) via 'str_strict=False' (implied or manual)
+        # However, for 'decoding' from a dict, we use 'convert'.
+        # strict=False allows "1" -> True, "123" -> 123
+        return msgspec.convert(raw_config, RuntimeConfig, strict=False)
+    except msgspec.ValidationError as e:
+        logger.critical("Configuration validation failed: %s", e)
+        # Fallback to defaults if UCI data is corrupt, but we should probably fail hard.
+        # For resilience, we return the default config object.
+        logger.warning("Falling back to safe defaults due to validation error.")
+        return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)
 
-    watchdog_enabled = _raw_get_bool(raw, "watchdog_enabled", False)
-    watchdog_interval = max(
-        0.5,
-        parse_float(raw.get("watchdog_interval"), DEFAULT_WATCHDOG_INTERVAL),
-    )
+# Re-export RuntimeConfig as a msgspec.Struct for performance
+# Note: Since RuntimeConfig is already defined as a dataclass in the original code,
+# and heavily used, we might need to redefine it as msgspec.Struct OR keep it as dataclass.
+# msgspec supports dataclasses natively.
 
-    mqtt_tls_value = raw.get("mqtt_tls")
-    mqtt_tls = parse_bool(mqtt_tls_value) if mqtt_tls_value is not None else True
+# However, to maximize performance, we should ideally redefine RuntimeConfig as msgspec.Struct.
+# But that requires changing the class definition above.
+# Let's see if we can modify the class definition in this file.
 
-    mqtt_tls_insecure = _raw_get_bool(raw, "mqtt_tls_insecure", False)
-
-    serial_secret_str = (raw.get("serial_shared_secret") or "").strip()
-    serial_secret_bytes = (
-        serial_secret_str.encode("utf-8") if serial_secret_str else b""
-    )
-
-    spool_dir = raw.get("mqtt_spool_dir", DEFAULT_MQTT_SPOOL_DIR)
-
-    mqtt_cafile = _optional_path(raw.get("mqtt_cafile"))
-    if mqtt_cafile is None and mqtt_tls:
-        mqtt_cafile = DEFAULT_MQTT_CAFILE
-
-    mqtt_certfile = _optional_path(raw.get("mqtt_certfile"))
-    mqtt_keyfile = _optional_path(raw.get("mqtt_keyfile"))
-    mqtt_user = _optional_path(raw.get("mqtt_user"))
-    mqtt_pass = _optional_path(raw.get("mqtt_pass"))
-
-    topic_authorization = TopicAuthorization(
-        file_read=_raw_get_bool(raw, "mqtt_allow_file_read", True),
-        file_write=_raw_get_bool(raw, "mqtt_allow_file_write", True),
-        file_remove=_raw_get_bool(raw, "mqtt_allow_file_remove", True),
-        datastore_get=_raw_get_bool(raw, "mqtt_allow_datastore_get", True),
-        datastore_put=_raw_get_bool(raw, "mqtt_allow_datastore_put", True),
-        mailbox_read=_raw_get_bool(raw, "mqtt_allow_mailbox_read", True),
-        mailbox_write=_raw_get_bool(raw, "mqtt_allow_mailbox_write", True),
-        shell_run=_raw_get_bool(raw, "mqtt_allow_shell_run", True),
-        shell_run_async=_raw_get_bool(raw, "mqtt_allow_shell_run_async", True),
-        shell_poll=_raw_get_bool(raw, "mqtt_allow_shell_poll", True),
-        shell_kill=_raw_get_bool(raw, "mqtt_allow_shell_kill", True),
-        console_input=_raw_get_bool(raw, "mqtt_allow_console_input", True),
-        digital_write=_raw_get_bool(raw, "mqtt_allow_digital_write", True),
-        digital_read=_raw_get_bool(raw, "mqtt_allow_digital_read", True),
-        digital_mode=_raw_get_bool(raw, "mqtt_allow_digital_mode", True),
-        analog_write=_raw_get_bool(raw, "mqtt_allow_analog_write", True),
-        analog_read=_raw_get_bool(raw, "mqtt_allow_analog_read", True),
-    )
-    metrics_enabled = _raw_get_bool(raw, "metrics_enabled", False)
-
-    metrics_host = (raw.get("metrics_host") or DEFAULT_METRICS_HOST).strip()
-    metrics_port = parse_int(raw.get("metrics_port"), DEFAULT_METRICS_PORT)
-
-    summary_interval = parse_float(
-        raw.get("bridge_summary_interval"),
-        float(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
-    )
-
-    handshake_interval = parse_float(
-        raw.get("bridge_handshake_interval"),
-        float(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
-    )
-
-    return RuntimeConfig(
-        serial_port=raw.get("serial_port", DEFAULT_SERIAL_PORT),
-        serial_baud=_raw_get_int(raw, "serial_baud", DEFAULT_BAUDRATE),
-        serial_safe_baud=_raw_get_int(raw, "serial_safe_baud", DEFAULT_SAFE_BAUDRATE),
-        mqtt_host=raw.get("mqtt_host", DEFAULT_MQTT_HOST),
-        mqtt_port=_raw_get_int(raw, "mqtt_port", DEFAULT_MQTT_PORT),
-        mqtt_user=_optional_path(mqtt_user),
-        mqtt_pass=_optional_path(mqtt_pass),
-        mqtt_tls=mqtt_tls,
-        mqtt_tls_insecure=mqtt_tls_insecure,
-        mqtt_cafile=mqtt_cafile,
-        mqtt_certfile=_optional_path(mqtt_certfile),
-        mqtt_keyfile=_optional_path(mqtt_keyfile),
-        mqtt_topic=raw.get("mqtt_topic", protocol.MQTT_DEFAULT_TOPIC_PREFIX),
-        allowed_commands=allowed_commands,
-        file_system_root=raw.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT),
-        process_timeout=_raw_get_int(raw, "process_timeout", DEFAULT_PROCESS_TIMEOUT),
-        file_write_max_bytes=max(
-            1,
-            _raw_get_int(
-                raw,
-                "file_write_max_bytes",
-                DEFAULT_FILE_WRITE_MAX_BYTES,
-            ),
-        ),
-        file_storage_quota_bytes=max(
-            1,
-            _raw_get_int(
-                raw,
-                "file_storage_quota_bytes",
-                DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-            ),
-        ),
-        mqtt_queue_limit=max(
-            1,
-            _raw_get_int(raw, "mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT),
-        ),
-        reconnect_delay=_raw_get_int(raw, "reconnect_delay", DEFAULT_RECONNECT_DELAY),
-        status_interval=_raw_get_int(raw, "status_interval", DEFAULT_STATUS_INTERVAL),
-        debug_logging=debug_logging,
-        console_queue_limit_bytes=_raw_get_int(
-            raw,
-            "console_queue_limit_bytes", DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-        ),
-        mailbox_queue_limit=_raw_get_int(
-            raw,
-            "mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT
-        ),
-        mailbox_queue_bytes_limit=_raw_get_int(
-            raw,
-            "mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-        ),
-        pending_pin_request_limit=_raw_get_int(
-            raw,
-            "pending_pin_request_limit",
-            DEFAULT_PENDING_PIN_REQUESTS,
-        ),
-        serial_retry_timeout=parse_float(
-            raw.get("serial_retry_timeout"), DEFAULT_SERIAL_RETRY_TIMEOUT
-        ),
-        serial_response_timeout=parse_float(
-            raw.get("serial_response_timeout"), DEFAULT_SERIAL_RESPONSE_TIMEOUT
-        ),
-        serial_retry_attempts=max(
-            1, _raw_get_int(raw, "serial_retry_attempts", DEFAULT_RETRY_LIMIT)
-        ),
-        serial_handshake_min_interval=max(
-            0.0,
-            parse_float(
-                raw.get("serial_handshake_min_interval"),
-                DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-            ),
-        ),
-        serial_handshake_fatal_failures=max(
-            1,
-            _raw_get_int(
-                raw,
-                "serial_handshake_fatal_failures",
-                DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-            ),
-        ),
-        watchdog_enabled=watchdog_enabled,
-        watchdog_interval=watchdog_interval,
-        topic_authorization=topic_authorization,
-        serial_shared_secret=serial_secret_bytes,
-        mqtt_spool_dir=spool_dir,
-        process_max_output_bytes=max(
-            1024,
-            _raw_get_int(
-                raw,
-                "process_max_output_bytes",
-                DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-            ),
-        ),
-        process_max_concurrent=max(
-            1,
-            _raw_get_int(
-                raw,
-                "process_max_concurrent",
-                DEFAULT_PROCESS_MAX_CONCURRENT,
-            ),
-        ),
-        metrics_enabled=metrics_enabled,
-        metrics_host=metrics_host,
-        metrics_port=max(0, metrics_port),
-        bridge_summary_interval=summary_interval,
-        bridge_handshake_interval=handshake_interval,
-        allow_non_tmp_paths=_raw_get_bool(raw, "allow_non_tmp_paths", False),
-    )

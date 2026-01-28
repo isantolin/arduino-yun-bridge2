@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-import json
+import msgspec
 import logging
 import struct
 import time
@@ -496,7 +496,7 @@ class SerialHandshakeManager:
             payload.update(extra)
         message = QueuedPublish(
             topic_name=handshake_topic(self._state.mqtt_topic_prefix),
-            payload=json.dumps(payload).encode("utf-8"),
+            payload=msgspec.json.encode(payload),
             content_type="application/json",
             user_properties=(("bridge-event", "handshake"),),
         )

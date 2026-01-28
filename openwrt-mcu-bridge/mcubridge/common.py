@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from typing import (
     Final,
     TYPE_CHECKING,
-    cast,
+    Any,
 )
 
 # [SIL-2] STRICT DEPENDENCY: On OpenWrt, 'uci' is a mandatory system package.
@@ -163,7 +163,7 @@ def build_mqtt_connect_properties() -> Properties:
     return props
 
 
-def get_uci_config() -> dict[str, str]:
+def get_uci_config() -> dict[str, Any]:
     """Read MCU Bridge configuration directly from OpenWrt's UCI system."""
 
     is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
@@ -171,16 +171,11 @@ def get_uci_config() -> dict[str, str]:
     try:
         with uci.Uci() as cursor:
             # OpenWrt's python3-uci returns a native dict in modern versions.
-            # We strictly expect the package 'mcubridge' and section 'general'.
             try:
                 section = cursor.get_all(_UCI_PACKAGE, _UCI_SECTION)
             except uci.UciException as e:
-                # Differentiate between "package missing" and "section missing" if possible,
-                # but generally catch the library's specific error.
                 if is_openwrt:
                     logger.critical("UCI failure reading %s.%s: %s", _UCI_PACKAGE, _UCI_SECTION, e)
-                    # On OpenWrt, we might want to fail hard, or fallback to defaults with a scream.
-                    # Given SIL-2 requirements for configuration determinism:
                     raise RuntimeError(f"Critical UCI failure: {e}") from e
                 logger.warning("UCI section '%s.%s' read failed: %s; using defaults.", _UCI_PACKAGE, _UCI_SECTION, e)
                 return get_default_config()
@@ -194,22 +189,21 @@ def get_uci_config() -> dict[str, str]:
                 logger.warning("UCI section '%s.%s' not found; using defaults.", _UCI_PACKAGE, _UCI_SECTION)
                 return get_default_config()
 
-            # Clean internal UCI metadata (keys starting with dot/underscore)
-            clean_config = get_default_config()
+            # Clean internal UCI metadata
+            clean_config: dict[str, Any] = get_default_config()
             for k, v in section.items():
                 if k.startswith((".", "_")):
                     continue
                 if isinstance(v, (list, tuple)):
-                    # Explicitly cast v to Iterable to help type checker
-                    items = cast(Iterable[object], v)
-                    clean_config[k] = " ".join(str(item) for item in items)
+                    clean_config[k] = " ".join(str(item) for item in v)
                 else:
-                    clean_config[k] = str(v)
+                    # msgspec handles type conversion better if we pass raw strings where possible,
+                    # but UCI returns strings anyway.
+                    clean_config[k] = v
 
             return clean_config
 
     except (OSError, ValueError) as e:
-        # Catch lower-level errors (e.g. file lock issues)
         if is_openwrt:
             logger.critical("Failed to load UCI configuration on OpenWrt: %s", e)
             raise RuntimeError(f"Critical UCI failure: {e}") from e
@@ -218,16 +212,13 @@ def get_uci_config() -> dict[str, str]:
         return get_default_config()
 
 
-def get_default_config() -> dict[str, str]:
+def get_default_config() -> dict[str, Any]:
     """Provide default MCU Bridge configuration values."""
     return {
         "mqtt_host": DEFAULT_MQTT_HOST,
-        "mqtt_port": str(DEFAULT_MQTT_PORT),
-        "mqtt_tls": "1",
-        # If enabled, clients will skip TLS hostname verification (equivalent to
-        # mosquitto_{pub,sub} --insecure). Certificate chain verification still
-        # applies unless explicitly disabled elsewhere.
-        "mqtt_tls_insecure": "0",
+        "mqtt_port": DEFAULT_MQTT_PORT,
+        "mqtt_tls": True,
+        "mqtt_tls_insecure": False,
         "mqtt_cafile": DEFAULT_MQTT_CAFILE,
         "mqtt_certfile": "",
         "mqtt_keyfile": "",
@@ -235,52 +226,52 @@ def get_default_config() -> dict[str, str]:
         "mqtt_pass": "",
         "mqtt_topic": protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         "mqtt_spool_dir": DEFAULT_MQTT_SPOOL_DIR,
-        "mqtt_queue_limit": str(DEFAULT_MQTT_QUEUE_LIMIT),
+        "mqtt_queue_limit": DEFAULT_MQTT_QUEUE_LIMIT,
         "serial_port": DEFAULT_SERIAL_PORT,
-        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_baud": protocol.DEFAULT_BAUDRATE,
         "serial_shared_secret": "",
-        "serial_retry_timeout": str(DEFAULT_SERIAL_RETRY_TIMEOUT),
-        "serial_response_timeout": str(DEFAULT_SERIAL_RESPONSE_TIMEOUT),
-        "serial_retry_attempts": str(protocol.DEFAULT_RETRY_LIMIT),
-        "serial_handshake_min_interval": str(DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL),
-        "serial_handshake_fatal_failures": str(DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES),
-        "debug": "0",
+        "serial_retry_timeout": DEFAULT_SERIAL_RETRY_TIMEOUT,
+        "serial_response_timeout": DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+        "serial_retry_attempts": protocol.DEFAULT_RETRY_LIMIT,
+        "serial_handshake_min_interval": DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+        "serial_handshake_fatal_failures": DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+        "debug": False,
         "allowed_commands": "",
         "file_system_root": DEFAULT_FILE_SYSTEM_ROOT,
-        "process_timeout": str(DEFAULT_PROCESS_TIMEOUT),
-        "process_max_output_bytes": str(DEFAULT_PROCESS_MAX_OUTPUT_BYTES),
-        "process_max_concurrent": str(DEFAULT_PROCESS_MAX_CONCURRENT),
-        "console_queue_limit_bytes": str(DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES),
-        "mailbox_queue_limit": str(DEFAULT_MAILBOX_QUEUE_LIMIT),
-        "mailbox_queue_bytes_limit": str(DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT),
-        "pending_pin_request_limit": str(DEFAULT_PENDING_PIN_REQUESTS),
-        "reconnect_delay": str(DEFAULT_RECONNECT_DELAY),
-        "status_interval": str(DEFAULT_STATUS_INTERVAL),
-        "bridge_summary_interval": str(DEFAULT_BRIDGE_SUMMARY_INTERVAL),
-        "bridge_handshake_interval": str(DEFAULT_BRIDGE_HANDSHAKE_INTERVAL),
-        "mqtt_allow_file_read": "1",
-        "mqtt_allow_file_write": "1",
-        "mqtt_allow_file_remove": "1",
-        "mqtt_allow_datastore_get": "1",
-        "mqtt_allow_datastore_put": "1",
-        "mqtt_allow_mailbox_read": "1",
-        "mqtt_allow_mailbox_write": "1",
-        "mqtt_allow_shell_run": "1",
-        "mqtt_allow_shell_run_async": "1",
-        "mqtt_allow_shell_poll": "1",
-        "mqtt_allow_shell_kill": "1",
-        "mqtt_allow_console_input": "1",
-        "mqtt_allow_digital_write": "1",
-        "mqtt_allow_digital_read": "1",
-        "mqtt_allow_digital_mode": "1",
-        "mqtt_allow_analog_write": "1",
-        "mqtt_allow_analog_read": "1",
-        "metrics_enabled": "0",
+        "process_timeout": DEFAULT_PROCESS_TIMEOUT,
+        "process_max_output_bytes": DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+        "process_max_concurrent": DEFAULT_PROCESS_MAX_CONCURRENT,
+        "console_queue_limit_bytes": DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+        "mailbox_queue_limit": DEFAULT_MAILBOX_QUEUE_LIMIT,
+        "mailbox_queue_bytes_limit": DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+        "pending_pin_request_limit": DEFAULT_PENDING_PIN_REQUESTS,
+        "reconnect_delay": DEFAULT_RECONNECT_DELAY,
+        "status_interval": DEFAULT_STATUS_INTERVAL,
+        "bridge_summary_interval": DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+        "bridge_handshake_interval": DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+        "mqtt_allow_file_read": True,
+        "mqtt_allow_file_write": True,
+        "mqtt_allow_file_remove": True,
+        "mqtt_allow_datastore_get": True,
+        "mqtt_allow_datastore_put": True,
+        "mqtt_allow_mailbox_read": True,
+        "mqtt_allow_mailbox_write": True,
+        "mqtt_allow_shell_run": True,
+        "mqtt_allow_shell_run_async": True,
+        "mqtt_allow_shell_poll": True,
+        "mqtt_allow_shell_kill": True,
+        "mqtt_allow_console_input": True,
+        "mqtt_allow_digital_write": True,
+        "mqtt_allow_digital_read": True,
+        "mqtt_allow_digital_mode": True,
+        "mqtt_allow_analog_write": True,
+        "mqtt_allow_analog_read": True,
+        "metrics_enabled": False,
         "metrics_host": DEFAULT_METRICS_HOST,
-        "metrics_port": str(DEFAULT_METRICS_PORT),
-        "watchdog_enabled": "1",
-        "watchdog_interval": "5",
-        "allow_non_tmp_paths": "0",
+        "metrics_port": DEFAULT_METRICS_PORT,
+        "watchdog_enabled": True,
+        "watchdog_interval": 5.0,
+        "allow_non_tmp_paths": False,
     }
 
 

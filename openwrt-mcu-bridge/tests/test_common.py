@@ -118,7 +118,7 @@ def test_get_uci_config_flattens_list_values_and_skips_internal_keys() -> None:
         importlib.reload(common)
         config = common.get_uci_config()
         assert config["mqtt_host"] == "example.com 1883"
-        assert config["mqtt_tls"] == "0"
+        assert config["mqtt_tls"] == 0
         assert ".type" not in config
         assert "_meta" not in config
 

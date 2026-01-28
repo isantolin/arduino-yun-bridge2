@@ -63,10 +63,9 @@ async def test_publish_metrics_publishes_snapshot(
 
     message = captured["message"]
     expected_topic = "test/prefix/system/metrics"
-    expected_payload = json.dumps(fake_snapshot).encode("utf-8")
-
+    
     assert message.topic_name == expected_topic
-    assert message.payload == expected_payload
+    assert json.loads(message.payload) == fake_snapshot
     assert message.content_type == "application/json"
     assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties

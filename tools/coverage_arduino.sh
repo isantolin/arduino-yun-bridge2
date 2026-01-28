@@ -11,6 +11,11 @@ BUILD_DIR="${LIB_ROOT}/build-coverage"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 mkdir -p "${BUILD_DIR}" "${OUTPUT_ROOT}"
 
+# [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
+echo "[coverage_arduino] Installing library dependencies..."
+DUMMY_ARDUINO_LIBS=$(mktemp -d)
+"${LIB_ROOT}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
+
 # Limpieza total
 find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
 find "${BUILD_DIR}" -name '*.gcno' -delete 2>/dev/null || true

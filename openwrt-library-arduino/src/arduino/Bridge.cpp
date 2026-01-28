@@ -55,10 +55,18 @@
   BridgeClass Bridge(Serial);
 #endif
 ConsoleClass Console;
+#if BRIDGE_ENABLE_DATASTORE
 DataStoreClass DataStore;
+#endif
+#if BRIDGE_ENABLE_MAILBOX
 MailboxClass Mailbox;
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
 FileSystemClass FileSystem;
+#endif
+#if BRIDGE_ENABLE_PROCESS
 ProcessClass Process;
+#endif
 #endif
 
 #if BRIDGE_DEBUG_IO
@@ -672,10 +680,18 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   const rpc::CommandId command = static_cast<rpc::CommandId>(raw_command);
   
+  #if BRIDGE_ENABLE_DATASTORE
   DataStore.handleResponse(effective_frame);
+  #endif
+  #if BRIDGE_ENABLE_MAILBOX
   Mailbox.handleResponse(effective_frame);
+  #endif
+  #if BRIDGE_ENABLE_FILESYSTEM
   FileSystem.handleResponse(effective_frame);
+  #endif
+  #if BRIDGE_ENABLE_PROCESS
   Process.handleResponse(effective_frame);
+  #endif
   
   bool command_processed_internally = false;
   bool requires_ack = false;
@@ -746,7 +762,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
             _sendAckAndFlush(raw_command);
             return;
           }
+          #if BRIDGE_ENABLE_MAILBOX
           Mailbox.handleResponse(effective_frame); 
+          #endif
           _markRxProcessed(effective_frame);
           command_processed_internally = true;
           requires_ack = true;
@@ -756,19 +774,49 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
             _sendAckAndFlush(raw_command);
             return;
           }
+          #if BRIDGE_ENABLE_FILESYSTEM
           FileSystem.handleResponse(effective_frame);
+          #endif
           _markRxProcessed(effective_frame);
           command_processed_internally = true;
           requires_ack = true;
           break;
         
         case rpc::CommandId::CMD_DATASTORE_GET_RESP:
+          #if BRIDGE_ENABLE_DATASTORE
+          command_processed_internally = true;
+          #else
+          command_processed_internally = false;
+          #endif
+          requires_ack = false; 
+          break;
         case rpc::CommandId::CMD_MAILBOX_READ_RESP:
         case rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP:
+          #if BRIDGE_ENABLE_MAILBOX
+          command_processed_internally = true;
+          #else
+          command_processed_internally = false;
+          #endif
+          requires_ack = false; 
+          break;
         case rpc::CommandId::CMD_FILE_READ_RESP:
+          #if BRIDGE_ENABLE_FILESYSTEM
+          command_processed_internally = true;
+          #else
+          command_processed_internally = false;
+          #endif
+          requires_ack = false; 
+          break;
         case rpc::CommandId::CMD_PROCESS_RUN_RESP:
         case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
         case rpc::CommandId::CMD_PROCESS_POLL_RESP:
+          #if BRIDGE_ENABLE_PROCESS
+          command_processed_internally = true;
+          #else
+          command_processed_internally = false;
+          #endif
+          requires_ack = false; 
+          break;
         case rpc::CommandId::CMD_LINK_SYNC_RESP:
           command_processed_internally = true;
           requires_ack = false; 
@@ -951,10 +999,19 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
     case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE):
     case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE):
     case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
+      return true;
+    #if BRIDGE_ENABLE_DATASTORE
     case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT):
+      return true;
+    #endif
+    #if BRIDGE_ENABLE_MAILBOX
     case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH):
+      return true;
+    #endif
+    #if BRIDGE_ENABLE_FILESYSTEM
     case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE):
       return true;
+    #endif
     default:
       return false;
   }

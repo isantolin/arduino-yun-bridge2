@@ -96,11 +96,49 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
 constexpr uint8_t kDefaultFirmwareVersionMinor = 0;
 #endif
 
+// --- Subsystem Enablement (RAM Optimization) ---
+
+#ifndef BRIDGE_ENABLE_DATASTORE
+#define BRIDGE_ENABLE_DATASTORE 1
+#endif
+
+#ifndef BRIDGE_ENABLE_FILESYSTEM
+#define BRIDGE_ENABLE_FILESYSTEM 1
+#endif
+
+#ifndef BRIDGE_ENABLE_MAILBOX
+#define BRIDGE_ENABLE_MAILBOX 1
+#endif
+
+#ifndef BRIDGE_ENABLE_PROCESS
+#define BRIDGE_ENABLE_PROCESS 1
+#endif
+
+// [SIL-2] Resource Allocation Tuning
+// On memory constrained AVR (Uno/Yun), we limit the pending queue to 1 frame.
+#if defined(ARDUINO_ARCH_AVR)
+  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+    #define BRIDGE_MAX_PENDING_TX_FRAMES 1
+  #endif
+#else
+  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+    #define BRIDGE_MAX_PENDING_TX_FRAMES rpc::RPC_MAX_PENDING_TX_FRAMES
+  #endif
+#endif
+
 class BridgeClass {
+  #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
+  #endif
+  #if BRIDGE_ENABLE_MAILBOX
   friend class MailboxClass;
+  #endif
+  #if BRIDGE_ENABLE_FILESYSTEM
   friend class FileSystemClass;
+  #endif
+  #if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
+  #endif
  public:
   // Callbacks
   using CommandHandler = void (*)(const rpc::Frame&);
@@ -197,7 +235,7 @@ class BridgeClass {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   };
   // [SIL-2] Use queue adapter over deque for strict FIFO semantics
-  etl::queue<PendingTxFrame, rpc::RPC_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
+  etl::queue<PendingTxFrame, BRIDGE_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
   bool _synchronized;
 
 #if BRIDGE_DEBUG_FRAMES
@@ -265,6 +303,7 @@ class ConsoleClass : public Stream {
 };
 extern ConsoleClass Console;
 
+#if BRIDGE_ENABLE_DATASTORE
 class DataStoreClass {
  public:
   using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
@@ -285,7 +324,9 @@ class DataStoreClass {
   DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;
+#endif
 
+#if BRIDGE_ENABLE_MAILBOX
 class MailboxClass {
  public:
   using MailboxHandler = void (*)(const uint8_t*, uint16_t);
@@ -305,7 +346,9 @@ class MailboxClass {
   MailboxAvailableHandler _mailbox_available_handler;
 };
 extern MailboxClass Mailbox;
+#endif
 
+#if BRIDGE_ENABLE_FILESYSTEM
 class FileSystemClass {
  public:
   using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
@@ -320,7 +363,9 @@ class FileSystemClass {
   FileSystemReadHandler _file_system_read_handler;
 };
 extern FileSystemClass FileSystem;
+#endif
 
+#if BRIDGE_ENABLE_PROCESS
 class ProcessClass {
  public:
   using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
@@ -352,5 +397,6 @@ class ProcessClass {
   ProcessRunAsyncHandler _process_run_async_handler;
 };
 extern ProcessClass Process;
+#endif
 
 #endif

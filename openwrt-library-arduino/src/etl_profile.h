@@ -6,6 +6,7 @@
 
 #define ETL_NO_EXCEPTIONS
 #define ETL_NO_STL
+#define ETL_STL_NOT_AVAILABLE
 #define ETL_NO_RTTI
 #define ETL_LOG_ERRORS
 #define ETL_VERBOSE_ERRORS

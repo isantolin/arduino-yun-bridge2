@@ -332,7 +332,7 @@ class _RuntimeStateCollector(Collector):
     def _emit_latency_histogram(
         self,
         latency_data: dict[str, Any],
-        HistogramMetricFamily: type,
+        metric_family_cls: type,
     ) -> Iterator[Any]:
         """Emit Prometheus histogram for RPC latency."""
         buckets_raw = latency_data.get("buckets", {})
@@ -365,7 +365,7 @@ class _RuntimeStateCollector(Collector):
         # Add +Inf bucket
         bucket_list.append((float("inf"), int(total_count)))
 
-        histogram = HistogramMetricFamily(
+        histogram = metric_family_cls(
             "mcubridge_serial_rpc_latency_seconds",
             "RPC command round-trip latency histogram",
         )

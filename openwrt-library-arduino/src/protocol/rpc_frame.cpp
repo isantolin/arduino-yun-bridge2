@@ -51,9 +51,9 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
         return false;
     }
     
-    size_t crc_start = size - CRC_TRAILER_SIZE;
-    uint32_t received_crc = read_u32_be(&buffer[crc_start]);
-    uint32_t calculated_crc = CRC32.crc32(buffer, crc_start);
+    const size_t crc_start = size - CRC_TRAILER_SIZE;
+    const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
+    const uint32_t calculated_crc = CRC32.crc32(buffer, crc_start);
 
     if (received_crc != calculated_crc) {
         _last_error = Error::CRC_MISMATCH;
@@ -61,34 +61,26 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
     }
 
     // --- Extract Header ---
-    size_t data_len = crc_start; // Length of data part (header + payload)
-    if (data_len < sizeof(FrameHeader)) {
+    if (crc_start < sizeof(FrameHeader)) {
         _last_error = Error::MALFORMED;
         return false;
     }
 
-    // Read header fields manually
-    const uint8_t* p = buffer;
-    out_frame.header.version = *p++;
-    out_frame.header.payload_length = read_u16_be(p);
-    p += 2;
-    out_frame.header.command_id = read_u16_be(p);
-    p += 2;
+    // Read header fields using fixed offsets
+    out_frame.header.version = buffer[0];
+    out_frame.header.payload_length = read_u16_be(&buffer[1]);
+    out_frame.header.command_id = read_u16_be(&buffer[3]);
 
     // --- Validate Header ---
     if (out_frame.header.version != PROTOCOL_VERSION ||
-        // [SIL-2] Defense in Depth: Validate against actual buffer size
-        out_frame.header.payload_length > sizeof(out_frame.payload) ||
-        (sizeof(FrameHeader) + out_frame.header.payload_length) != data_len) {
+        out_frame.header.payload_length > out_frame.payload.max_size() ||
+        (sizeof(FrameHeader) + out_frame.header.payload_length) != crc_start) {
         _last_error = Error::MALFORMED;
         return false;
     }
 
     // --- Extract Payload ---
-    if (out_frame.header.payload_length > 0) {
-        const uint8_t* payload_src = buffer + sizeof(FrameHeader);
-        memcpy(out_frame.payload.data(), payload_src, out_frame.header.payload_length);
-    }
+    out_frame.payload.assign(&buffer[sizeof(FrameHeader)], &buffer[sizeof(FrameHeader) + out_frame.header.payload_length]);
 
     return true;
 }
@@ -102,40 +94,33 @@ size_t FrameBuilder::build(uint8_t* buffer,
                            uint16_t command_id,
                            const uint8_t* payload,
                            size_t payload_len) {
-  if (payload_len > MAX_PAYLOAD_SIZE ||
-      payload_len > UINT16_MAX) {
+  if (payload_len > MAX_PAYLOAD_SIZE || payload_len > UINT16_MAX) {
     return 0;
   }
 
   const uint16_t payload_len_u16 = static_cast<uint16_t>(payload_len);
-
-  size_t data_len = sizeof(FrameHeader) + payload_len;
-  size_t total_len = data_len + CRC_TRAILER_SIZE;
+  const size_t data_len = sizeof(FrameHeader) + payload_len;
+  const size_t total_len = data_len + CRC_TRAILER_SIZE;
 
   if (total_len > buffer_size) {
     return 0; // Buffer overflow protection
   }
 
   // --- Header ---
-  // Write header fields manually to ensure correct Big Endian byte order
-  uint8_t* p = buffer;
-  *p++ = PROTOCOL_VERSION;
-  write_u16_be(p, payload_len_u16);
-  p += 2;
-  write_u16_be(p, command_id);
-  p += 2;
+  buffer[0] = PROTOCOL_VERSION;
+  write_u16_be(&buffer[1], payload_len_u16);
+  write_u16_be(&buffer[3], command_id);
 
-  // Copy payload into the buffer
+  // --- Payload ---
   if (payload && payload_len > 0) {
-    // using memcpy for raw buffer copy (No STL dependency)
-    memcpy(p, payload, payload_len);
+    memcpy(&buffer[sizeof(FrameHeader)], payload, payload_len);
   }
 
   // --- CRC ---
   uint32_t crc = CRC32.crc32(buffer, data_len);
-  write_u32_be(buffer + data_len, crc);
+  write_u32_be(&buffer[data_len], crc);
 
-  return total_len;  // Return total raw frame length
+  return total_len;
 }
 
 }  // namespace rpc

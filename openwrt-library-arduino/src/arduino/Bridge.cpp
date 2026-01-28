@@ -142,8 +142,7 @@ uint16_t getFreeMemory() {
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
     : _transport(arg_serial, &arg_serial),
-      _shared_secret(nullptr),
-      _shared_secret_len(0),
+      _shared_secret(),
       _rx_frame{},
       _awaiting_ack(false),
       _last_command_id(0),
@@ -169,8 +168,7 @@ BridgeClass::BridgeClass(HardwareSerial& arg_serial)
 
 BridgeClass::BridgeClass(Stream& arg_stream)
     : _transport(arg_stream, nullptr),
-      _shared_secret(nullptr),
-      _shared_secret_len(0),
+      _shared_secret(),
       _rx_frame{},
       _awaiting_ack(false),
       _last_command_id(0),
@@ -214,13 +212,14 @@ void BridgeClass::begin(
     last = now;
   }
 
-  _shared_secret = reinterpret_cast<const uint8_t*>(arg_secret);
-  if (_shared_secret && arg_secret_len > 0) {
-    _shared_secret_len = arg_secret_len;
-  } else if (_shared_secret) {
-    _shared_secret_len = strlen(arg_secret);
-  } else {
-    _shared_secret_len = 0;
+  _shared_secret.clear();
+  if (arg_secret) {
+    size_t actual_len = (arg_secret_len > 0) ? arg_secret_len : strlen(arg_secret);
+    if (actual_len > _shared_secret.capacity()) {
+      actual_len = _shared_secret.capacity();
+    }
+    _shared_secret.assign(reinterpret_cast<const uint8_t*>(arg_secret), 
+                         reinterpret_cast<const uint8_t*>(arg_secret) + actual_len);
   }
 
   _awaiting_ack = false;
@@ -303,7 +302,7 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
 }
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
-  if (_shared_secret_len == 0 || nonce_len == 0 || !_shared_secret) {
+  if (_shared_secret.empty() || nonce_len == 0 || !nonce) {
     memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
@@ -311,9 +310,9 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   SHA256 sha256;
   uint8_t digest[kSha256DigestSize];
 
-  sha256.resetHMAC(_shared_secret, _shared_secret_len);
+  sha256.resetHMAC(_shared_secret.data(), _shared_secret.size());
   sha256.update(nonce, nonce_len);
-  sha256.finalizeHMAC(_shared_secret, _shared_secret_len, digest, kSha256DigestSize);
+  sha256.finalizeHMAC(_shared_secret.data(), _shared_secret.size(), digest, kSha256DigestSize);
 
   memcpy(out_tag, digest, kHandshakeTagSize);
   rpc::security::secure_zero(digest, kSha256DigestSize);
@@ -549,7 +548,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         
         _resetLinkState();
         Console.begin();
-        const bool has_secret = (_shared_secret_len > 0);
+        const bool has_secret = !_shared_secret.empty();
         const size_t response_length = static_cast<size_t>(nonce_length) + (has_secret ? kHandshakeTagSize : 0);
         
         if (response_length > rpc::MAX_PAYLOAD_SIZE) {

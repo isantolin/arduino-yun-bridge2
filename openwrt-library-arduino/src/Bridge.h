@@ -199,8 +199,7 @@ class BridgeClass {
 
  private:
   bridge::BridgeTransport _transport;
-  const uint8_t* _shared_secret;
-  size_t _shared_secret_len;
+  etl::vector<uint8_t, 32> _shared_secret;
 
   // Protocol Engine
   rpc::Frame _rx_frame;

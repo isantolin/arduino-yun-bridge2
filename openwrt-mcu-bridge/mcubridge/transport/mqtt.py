@@ -114,7 +114,7 @@ async def _mqtt_subscriber_loop(
                 elif message.payload is not None:
                     # int/float fallback
                     payload_bytes = str(message.payload).encode("ascii")
-                
+
                 log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {topic}", payload_bytes)
 
             try:

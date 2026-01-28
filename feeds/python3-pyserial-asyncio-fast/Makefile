@@ -5,8 +5,13 @@ PKG_VERSION:=0.16
 PKG_RELEASE:=1
 
 PYPI_NAME:=pyserial-asyncio-fast
-PKG_SOURCE:=pyserial_asyncio_fast-$(PKG_VERSION).tar.gz
+PYPI_SOURCE_NAME:=pyserial_asyncio_fast
+PKG_SOURCE:=$(PYPI_SOURCE_NAME)-$(PKG_VERSION).tar.gz
 PKG_HASH:=fd52643380406739d777014b0aea0873d756b542eb62f7556567239cec007115
+
+PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/$(PYPI_SOURCE_NAME)-$(PKG_VERSION)
+
+PYTHON3_PKG_WHEEL_NAME:=pyserial_asyncio_fast
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause

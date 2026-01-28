@@ -21,9 +21,22 @@ SOURCES=(
 )
 
 echo "[host-cpp] Building integrated test suite..."
+echo "DEBUG: Current directory: $(pwd)"
+echo "DEBUG: SRC_DIR: ${SRC_DIR}"
+ls -R "${SRC_DIR}/etl" | head -n 5
 g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
-    -I"${SRC_DIR}" -I"${TEST_DIR}/mocks" -I"${STUB_DIR}" \
-    "${SOURCES[@]}" "${TEST_DIR}/test_integrated.cpp" -o "${BUILD_DIR}/test_integrated"
+    -I"${SRC_DIR}" \
+    -I"${TEST_DIR}/mocks" \
+    -I"${STUB_DIR}" \
+    "${SRC_DIR}/protocol/rpc_frame.cpp" \
+    "${SRC_DIR}/arduino/Bridge.cpp" \
+    "${SRC_DIR}/arduino/Console.cpp" \
+    "${SRC_DIR}/arduino/DataStore.cpp" \
+    "${SRC_DIR}/arduino/FileSystem.cpp" \
+    "${SRC_DIR}/arduino/Mailbox.cpp" \
+    "${SRC_DIR}/arduino/Process.cpp" \
+    "${TEST_DIR}/test_integrated.cpp" \
+    -o "${BUILD_DIR}/test_integrated"
 
 echo "[host-cpp] Running integrated tests..."
 "${BUILD_DIR}/test_integrated"

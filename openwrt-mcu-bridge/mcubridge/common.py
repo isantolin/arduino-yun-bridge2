@@ -9,6 +9,7 @@ from typing import (
     Final,
     TYPE_CHECKING,
     Any,
+    cast,
 )
 
 # [SIL-2] STRICT DEPENDENCY: On OpenWrt, 'uci' is a mandatory system package.
@@ -195,7 +196,7 @@ def get_uci_config() -> dict[str, Any]:
                 if k.startswith((".", "_")):
                     continue
                 if isinstance(v, (list, tuple)):
-                    clean_config[k] = " ".join(str(item) for item in v)
+                    clean_config[k] = " ".join(str(item) for item in cast(Iterable[Any], v))
                 else:
                     # msgspec handles type conversion better if we pass raw strings where possible,
                     # but UCI returns strings anyway.

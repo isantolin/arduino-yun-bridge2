@@ -532,7 +532,13 @@ class SerialHandshakeManager:
             max=SERIAL_HANDSHAKE_BACKOFF_MAX,
         )
         # attempt_number starts at 1 for tenacity
-        retry_state = type('RetryState', (), {'attempt_number': streak - threshold + 1})()
+        retry_state = tenacity.RetryCallState(
+            retry_object=tenacity.AsyncRetrying(),
+            fn=None,
+            args=(),
+            kwargs={},
+        )
+        retry_state.attempt_number = streak - threshold + 1
         delay = wait_strategy(retry_state)
 
         self._state.handshake_backoff_until = time.monotonic() + delay

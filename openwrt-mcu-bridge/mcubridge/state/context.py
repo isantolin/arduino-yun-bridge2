@@ -14,7 +14,7 @@ import tenacity
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
-from typing import Any, Deque, cast
+from typing import Any, Deque, Final, cast
 from collections.abc import Mapping
 
 from aiomqtt.message import Message
@@ -98,6 +98,16 @@ def _coerce_snapshot_int(snapshot: Mapping[str, Any], name: str, current: int) -
         except ValueError:
             return current
     return current
+
+
+__all__: Final[tuple[str, ...]] = (
+    "McuCapabilities",
+    "RuntimeState",
+    "PendingPinRequest",
+    "ManagedProcess",
+    "create_runtime_state",
+    "_ExponentialBackoff",
+)
 
 
 class _ExponentialBackoff:

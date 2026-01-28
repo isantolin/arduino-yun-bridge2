@@ -26,7 +26,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
 PKG_VERSION:=2.5.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3

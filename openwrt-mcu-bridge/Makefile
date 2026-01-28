@@ -42,6 +42,7 @@ define Package/$(PKG_NAME)
 	DEPENDS:=+openwrt-mcu-core
 	# [OPENWRT 25.12] Modern apk-based dependencies.
 	# These packages MUST be available in the OpenWrt feeds.
+	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
@@ -52,6 +53,7 @@ define Package/$(PKG_NAME)
 		+python3-psutil \
 		+python3-prometheus-client \
 		+python3-pyserial-asyncio-fast
+	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

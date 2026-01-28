@@ -260,7 +260,6 @@ class ConsoleClass : public Stream {
   bool _xoff_sent;
   
   // [SIL-2] Use ETL containers for safe buffer management
-  // Replaces manual circular buffer logic
   etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
   etl::vector<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 };
@@ -280,7 +279,8 @@ class DataStoreClass {
   bool _trackPendingDatastoreKey(const char* key);
   const char* _popPendingDatastoreKey();
 
-  etl::deque<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
+  // [SIL-2] Use queue adapter for strict FIFO semantics
+  etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
   DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;
@@ -343,9 +343,8 @@ class ProcessClass {
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 
-  uint16_t _pending_process_pids[BRIDGE_MAX_PENDING_PROCESS_POLLS];
-  uint8_t _pending_process_poll_head;
-  uint8_t _pending_process_poll_count;
+  // [SIL-2] Use circular buffer for safe PID tracking
+  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;
   
   ProcessRunHandler _process_run_handler;
   ProcessPollHandler _process_poll_handler;

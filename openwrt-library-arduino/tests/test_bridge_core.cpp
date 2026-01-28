@@ -503,12 +503,15 @@ void test_bridge_dedup_console_write_retry() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    
+    // 1. Synchronize the bridge (this sends SYNC_RESP)
+    sync_bridge(bridge, stream);
+    
+    // 2. Clear the SYNC_RESP from the output buffer so we only count new ACKs
     stream.tx_buffer.clear();
 
-    // Reset console RX state to a known baseline.
-    Console._rx_buffer_head = 0;
-    Console._rx_buffer_tail = 0;
-    Console._xoff_sent = false;
+    // 3. Reset Console state (clears Rx buffer, resets flags)
+    Console.begin();
 
     const uint8_t payload[] = { 'a', 'b', 'c' };
 
@@ -520,20 +523,36 @@ void test_bridge_dedup_console_write_retry() {
     const int before = Console.available();
     TEST_ASSERT_EQ_UINT(before, 0);
 
-    // First delivery: side-effect must apply.
+    // --- First Delivery ---
     g_test_millis = 0;
+    // Dispatch injects frame into RX processing logic
     bridge.dispatch(frame);
+    // CRITICAL: process() is needed to flush pending TX queue (ACKs) to the stream
+    bridge.process(); 
+
     const int after_first = Console.available();
     TEST_ASSERT_EQ_UINT(after_first, sizeof(payload));
 
-    // Second delivery (retry due to lost ACK): must be deduplicated.
+    // --- Second Delivery (Retry) ---
+    // Advance time beyond ACK timeout to simulate retry window
     g_test_millis = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS + 50;
+    
     bridge.dispatch(frame);
+    bridge.process(); // Flush second ACK
+
     const int after_second = Console.available();
+    // Should NOT increase (idempotency)
     TEST_ASSERT_EQ_UINT(after_second, sizeof(payload));
 
-    // But ACK should be sent for both deliveries.
+    // --- Verify ACKs ---
+    // We expect 2 ACKs: one for the first delivery, one for the retry.
     const size_t ack_count = count_status_ack_frames(stream.tx_buffer);
+    
+    if (ack_count != 2) {
+        // Debug output if assertion fails
+        fprintf(stderr, "[DEBUG] tx_buffer len: %zu, ack_count: %zu\n", stream.tx_buffer.len, ack_count);
+    }
+    
     TEST_ASSERT_EQ_UINT(ack_count, 2);
 }
 

@@ -105,7 +105,7 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
     return false;
   }
 
-  _pending_datastore_keys.push_back(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key));
+  _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key));
   return true;
 }
 
@@ -119,6 +119,6 @@ const char* DataStoreClass::_popPendingDatastoreKey() {
   const auto& key = _pending_datastore_keys.front();
   strncpy(key_buffer, key.c_str(), rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
   key_buffer[rpc::RPC_MAX_DATASTORE_KEY_LENGTH] = '\0';
-  _pending_datastore_keys.pop_front();
+  _pending_datastore_keys.pop();
   return key_buffer;
 }

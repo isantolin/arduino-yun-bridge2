@@ -19,14 +19,16 @@ from .protocol.topics import Topic, topic_path
 from .mqtt.messages import QueuedPublish
 from .state.context import RuntimeState
 
+from prometheus_client import CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client.registry import Collector
+from prometheus_client.core import (
+    GaugeMetricFamily,
+    HistogramMetricFamily,
+    InfoMetricFamily,
+)
+
 logger = logging.getLogger("mcubridge.metrics")
 
-
-if TYPE_CHECKING:
-    from prometheus_client.registry import Collector
-else:
-    class Collector:  # pragma: no cover
-        pass
 
 _SANITIZE_RE = re.compile(r"[^a-zA-Z0-9_]")
 _INFO_METRIC = "mcubridge_info"
@@ -291,13 +293,7 @@ class _RuntimeStateCollector(Collector):
         self._state = state
 
     def collect(self) -> Iterator[Any]:
-        # pragma: no cover - exercised via exporter
-        from prometheus_client.core import (
-            GaugeMetricFamily,
-            HistogramMetricFamily,
-            InfoMetricFamily,
-        )
-
+        # [SIL-2] Hard dependency: prometheus_client must be present.
         snapshot = self._state.build_metrics_snapshot()
 
         # [EXTENDED METRICS] Emit latency histogram if present
@@ -409,8 +405,6 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the Prometheus text format."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import CollectorRegistry
-
         self._state = state
         self._host = host
         self._port = port
@@ -486,7 +480,6 @@ class PrometheusExporter:
                 await self._write_response(writer, 404, b"")
                 return
             payload = self._render_metrics()
-            from prometheus_client import CONTENT_TYPE_LATEST
             await self._write_response(
                 writer,
                 200,
@@ -531,8 +524,6 @@ class PrometheusExporter:
         await writer.drain()
 
     def _render_metrics(self) -> bytes:
-        from prometheus_client import generate_latest
-
         return generate_latest(self._registry)
 
 

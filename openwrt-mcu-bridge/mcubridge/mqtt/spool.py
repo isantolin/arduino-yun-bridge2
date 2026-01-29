@@ -88,6 +88,7 @@ class FileSpoolDeque:
             if len(self) == 0:
                 self._head = 1000000000
                 self._tail = 1000000000 - 1
+
     def close(self) -> None:
         """No-op for file-based spool."""
         pass

@@ -46,11 +46,11 @@ define Package/$(PKG_NAME)
 	DEPENDS+= \
 		+python3 \
 		+python3-uci \
+		+python3-msgspec \
 		+python3-sqlite3 \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
 		+python3-cobs \
-		+python3-msgspec \
 		+python3-psutil \
 		+python3-prometheus-client \
 		+python3-pyserial-asyncio-fast \

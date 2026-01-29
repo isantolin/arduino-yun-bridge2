@@ -15,7 +15,6 @@ import os
 import sys
 import msgspec
 from typing import Any
-from dataclasses import dataclass, field
 
 from ..common import (
     get_default_config,
@@ -61,8 +60,7 @@ from ..rpc.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_B
 logger = logging.getLogger(__name__)
 
 
-@dataclass(slots=True)
-class RuntimeConfig:
+class RuntimeConfig(msgspec.Struct, kw_only=True):
     """Strongly typed configuration for the daemon."""
 
     serial_port: str = DEFAULT_SERIAL_PORT
@@ -85,9 +83,7 @@ class RuntimeConfig:
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
 
-    # Init=False fields need to be handled carefully with msgspec.convert.
-    # msgspec won't populate init=False fields from input dict.
-    allowed_policy: AllowedCommandPolicy | None = field(init=False, default=None)
+    allowed_policy: AllowedCommandPolicy | None = None
 
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: int = DEFAULT_RECONNECT_DELAY
@@ -104,11 +100,10 @@ class RuntimeConfig:
     serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     watchdog_enabled: bool = DEFAULT_WATCHDOG_ENABLED
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
+    topic_authorization: TopicAuthorization = TopicAuthorization()
 
-    # We need to handle bytes specially or let msgspec handle it.
-    # msgspec can decode base64 to bytes if configured, or we can handle it in post_init
-    serial_shared_secret: bytes = field(repr=False, default=b"")
+    # msgspec handle bytes naturally.
+    serial_shared_secret: bytes = b""
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -127,7 +122,7 @@ class RuntimeConfig:
     def __post_init__(self) -> None:
         # Handle string -> bytes conversion for secret if it came as string
         if isinstance(self.serial_shared_secret, str):
-            self.serial_shared_secret = self.serial_shared_secret.encode("utf-8")
+            self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
 
         # Normalize optional strings to None if empty
         self.mqtt_user = self._normalize_optional_string(self.mqtt_user)
@@ -301,7 +296,7 @@ class RuntimeConfig:
 
     @staticmethod
     def _build_topic_prefix(prefix: str) -> str:
-        segments = [segment for segment in prefix.split("/") if segment]
+        segments = [segment.strip() for segment in prefix.split("/") if segment.strip()]
         normalized = "/".join(segments)
         if not normalized:
             raise ValueError("mqtt_topic must contain at least one segment")
@@ -402,16 +397,19 @@ def load_runtime_config() -> RuntimeConfig:
     if "serial_shared_secret" in raw_config:
         secret = raw_config["serial_shared_secret"]
         if isinstance(secret, str):
-            raw_config["serial_shared_secret"] = secret.encode("utf-8")
+            raw_config["serial_shared_secret"] = secret.strip().encode("utf-8")
 
     try:
         # msgspec handles type coercion (str -> int, str -> bool) via 'str_strict=False' (implied or manual)
         # However, for 'decoding' from a dict, we use 'convert'.
         # strict=False allows "1" -> True, "123" -> 123
-        return msgspec.convert(raw_config, RuntimeConfig, strict=False)
-    except (msgspec.ValidationError, TypeError) as e:
+        config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
+        config.__post_init__()
+        return config
+    except (msgspec.ValidationError, TypeError, ValueError) as e:
         logger.critical("Configuration validation failed: %s", e)
-        # Fallback to defaults if UCI data is corrupt, but we should probably fail hard.
         # For resilience, we return the default config object.
         logger.warning("Falling back to safe defaults due to validation error.")
-        return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)
+        config = msgspec.convert(get_default_config(), RuntimeConfig, strict=False)
+        config.__post_init__()
+        return config

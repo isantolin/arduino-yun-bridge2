@@ -10,13 +10,14 @@ from mcubridge.common import (
     build_mqtt_connect_properties,
     build_mqtt_properties,
     encode_status_reason,
+    get_uci_config,
     normalise_allowed_commands,
     parse_bool,
-    parse_float,
     parse_int,
+    parse_float,
 )
-from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.rpc import protocol
+from mcubridge.mqtt.messages import QueuedPublish
 
 
 def test_parse_bool():
@@ -32,22 +33,25 @@ def test_parse_bool():
     assert parse_bool("on") is True
     assert parse_bool("enabled") is True
     assert parse_bool(None) is False
-    assert parse_bool("random") is False
+    assert parse_bool("invalid") is False
 
 
 def test_parse_int():
-    assert parse_int(10, 0) == 10
-    assert parse_int("10", 0) == 10
-    assert parse_int("10.5", 0) == 10
-    assert parse_int(None, 5) == 5
-    assert parse_int("invalid", 5) == 5
+    assert parse_int("123", 0) == 123
+    assert parse_int("123.45", 0) == 123
+    assert parse_int(123, 0) == 123
+    assert parse_int(123.9, 0) == 123
+    assert parse_int("abc", 42) == 42
+    assert parse_int(None, 42) == 42
 
 
 def test_parse_float():
-    assert parse_float(10.5, 0.0) == 10.5
-    assert parse_float("10.5", 0.0) == 10.5
-    assert parse_float(None, 1.0) == 1.0
-    assert parse_float("invalid", 1.0) == 1.0
+    assert parse_float("123.45", 0.0) == 123.45
+    assert parse_float("123", 0.0) == 123.0
+    assert parse_float(123.45, 0.0) == 123.45
+    assert parse_float(123, 0.0) == 123.0
+    assert parse_float("abc", 42.0) == 42.0
+    assert parse_float(None, 42.0) == 42.0
 
 
 def test_normalise_commands():

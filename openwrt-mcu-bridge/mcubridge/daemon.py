@@ -256,15 +256,18 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         logger.info("Daemon interrupted by user.")
         sys.exit(0)
     except RuntimeError as exc:
-        logger.critical("Startup aborted: %s", exc)
+        logger.critical("Startup aborted due to runtime error: %s", exc)
         sys.exit(1)
     except ExceptionGroup as exc_group:
         for group_exc in exc_group.exceptions:
-            logger.critical("Fatal error in main execution: %s", group_exc, exc_info=group_exc)
+            logger.critical("Fatal error in task group: %s", group_exc, exc_info=group_exc)
+        sys.exit(1)
+    except OSError as exc:
+        logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
         sys.exit(1)
     except BaseException as exc:
         logger.critical(
-            "CRITICAL: Unhandled exception in main loop. Terminating for fail-safe restart: %s",
+            "CRITICAL: Unhandled non-standard exception. Terminating: %s",
             exc,
             exc_info=True,
         )

@@ -328,7 +328,9 @@ class DataStoreClass {
   void put(const char* key, const char* value);
   void requestGet(const char* key);
   void handleResponse(const rpc::Frame& frame);
-  void onDataStoreGetResponse(DataStoreGetHandler handler);
+  inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
+    _datastore_get_handler = handler;
+  }
 
  private:
   bool _trackPendingDatastoreKey(const char* key);
@@ -354,8 +356,12 @@ class MailboxClass {
   void requestRead();
   void requestAvailable();
   void handleResponse(const rpc::Frame& frame);
-  void onMailboxMessage(MailboxHandler handler);
-  void onMailboxAvailableResponse(MailboxAvailableHandler handler);
+  inline void onMailboxMessage(MailboxHandler handler) {
+    _mailbox_handler = handler;
+  }
+  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) {
+    _mailbox_available_handler = handler;
+  }
 
  private:
   MailboxHandler _mailbox_handler;
@@ -373,7 +379,9 @@ class FileSystemClass {
   void remove(const char* filePath);
   void read(const char* filePath);
   void handleResponse(const rpc::Frame& frame);
-  void onFileSystemReadResponse(FileSystemReadHandler handler);
+  inline void onFileSystemReadResponse(FileSystemReadHandler handler) {
+    _file_system_read_handler = handler;
+  }
 
  private:
   FileSystemReadHandler _file_system_read_handler;
@@ -397,9 +405,15 @@ class ProcessClass {
   void kill(int16_t pid);
   void handleResponse(const rpc::Frame& frame);
   
-  void onProcessRunResponse(ProcessRunHandler handler);
-  void onProcessPollResponse(ProcessPollHandler handler);
-  void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler);
+  inline void onProcessRunResponse(ProcessRunHandler handler) {
+    _process_run_handler = handler;
+  }
+  inline void onProcessPollResponse(ProcessPollHandler handler) {
+    _process_poll_handler = handler;
+  }
+  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
+    _process_run_async_handler = handler;
+  }
 
  private:
   bool _pushPendingProcessPid(uint16_t pid);

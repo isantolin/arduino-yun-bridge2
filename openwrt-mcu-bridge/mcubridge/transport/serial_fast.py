@@ -11,6 +11,7 @@ import asyncio
 import functools
 import logging
 import struct
+import msgspec
 from typing import Final, Sized, TypeGuard, cast
 
 import tenacity
@@ -184,11 +185,14 @@ class BridgeSerialProtocol(asyncio.Protocol):
 
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
-        except (cobs.DecodeError, ValueError) as exc:
+        except (cobs.DecodeError, ValueError, msgspec.ValidationError) as exc:
             self.state.record_serial_decode_error()
             logger.debug("Frame parse error: %s", exc)
             if "crc mismatch" in str(exc).lower():
                 self.state.record_serial_crc_error()
+        except OSError as exc:
+            logger.error("OS error during packet processing: %s", exc)
+            self.state.record_serial_decode_error()
 
     def _log_frame(self, frame: Frame, direction: str) -> None:
         try:

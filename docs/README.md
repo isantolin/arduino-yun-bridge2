@@ -6,30 +6,21 @@
 
 Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el procesador Linux (MPU) en dispositivos OpenWrt, reemplazando la antigua solución basada en `python-bridge` por un daemon asíncrono y un protocolo RPC binario eficiente.
 
-> **Nota de Migración (Enero 2026):**
-> El proyecto ha sido renombrado de "Yun Bridge" a "MCU Bridge" para reflejar su capacidad de funcionar en cualquier dispositivo OpenWrt (no solo Arduino Yun) que disponga de un enlace serial con un MCU.
-> - Paquetes OpenWrt: `openwrt-yun-*` ahora son `openwrt-mcu-*`
-> - Módulos Python: `yunbridge` ahora es `mcubridge`
-> - Configuración UCI: `yunbridge` ahora es `mcubridge`
-
 ## Características Principales
 
-- **Límites configurables:** Los buffers interno de consola y mailbox se pueden ajustar vía UCI (`console_queue_limit_bytes`, `mailbox_queue_limit`, `mailbox_queue_bytes_limit`) para prevenir desbordes en escenarios con alto tráfico. A partir de noviembre 2025 también puedes fijar `pending_pin_request_limit` para controlar cuántas lecturas de GPIO quedan en vuelo entre MQTT y el MCU sin bloquear el bus serial, y los nuevos `file_write_max_bytes` / `file_storage_quota_bytes` imponen límites tanto por escritura como agregados dentro del sandbox de archivos para evitar que un sketch agote el overlay de OpenWrt.
-	- Todos los valores por defecto consumidos por el daemon viven ahora en `../openwrt-mcu-bridge/mcubridge/const.py` (`DEFAULT_MQTT_PORT`, `DEFAULT_SERIAL_RETRY_TIMEOUT`, etc.), lo que evita duplicar literales entre módulos y pruebas.
-- **Backpressure en MQTT con MQTT v5:** El tamaño de la cola de publicación hacia el broker se controla con `mqtt_queue_limit`, mientras que las conexiones salientes usan propiedades MQTT v5 (session expiry = 0, request/response info) para que los clientes sepan cuándo reiniciar suscripciones y puedan negociar flujos de respuesta.
-- **Respuestas correladas en MQTT:** Cada publicación originada por el daemon puede reutilizar el `response_topic` proporcionado por el cliente y propaga un `correlation_data` binario, de modo que las respuestas (GPIO, datastore, mailbox, sistema, procesos, etc.) se pueden asociar de manera inequívoca incluso si varios consumidores comparten el mismo prefijo. Las propiedades de usuario (`bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`, `bridge-status`, …) transportan metadatos humanamente legibles sin romper la compatibilidad con clientes MQTT v3.
-- **Handshake automático MCU ↔ Linux:** Tras cada reconexión, el daemon solicita `CMD_GET_VERSION` y publica la versión del firmware del sketch en `br/system/version/value`, de modo que los clientes pueden validar compatibilidad antes de ejecutar comandos.
-- **Protección ante frames serie malformados:** El lector COBS aplica un límite duro al tamaño de cada paquete y envía `STATUS_MALFORMED` al MCU cuando se detecta un frame que supera la especificación, evitando que un sketch ruidoso deje bloqueado el bucle asíncrono en Linux.
-- **Procesos asíncronos robustos:** Los polls sucesivos ahora entregan todo el `stdout`/`stderr` generado, incluso cuando los procesos producen más datos que un frame. El daemon mantiene buffers circulares por PID, conserva el `exit_code` hasta que el MCU confirma la lectura completa y vigila cada proceso en segundo plano para liberar el slot concurrente incluso si el cliente MQTT nunca vuelve a emitir `PROCESS_POLL`.
-- **Estado inmediato de buzón:** Los sketches pueden invocar `Mailbox.requestAvailable()` y recibir el conteo pendiente en `Bridge.onMailboxAvailableResponse`, lo que evita lecturas vacías y mantiene sincronizado al MCU con la cola de Linux.
-- **Lecturas de pin dirigidas desde Linux:** `CMD_DIGITAL_READ`/`CMD_ANALOG_READ` solo se originan desde el daemon; el MCU ya no expone APIs para iniciar lecturas de pin (evita patrones legacy que monopolizan el enlace serial).
+- **Límites configurables:** Los buffers internos de consola y mailbox se pueden ajustar vía UCI (`console_queue_limit_bytes`, `mailbox_queue_limit`, `mailbox_queue_bytes_limit`) para prevenir desbordes. Se incluyen límites estrictos como `pending_pin_request_limit`, `file_write_max_bytes` y `file_storage_quota_bytes`.
+- **Backpressure en MQTT con MQTT v5:** Control de flujo mediante `mqtt_queue_limit` y uso de propiedades MQTT v5 para negociar flujos de respuesta.
+- **Respuestas correladas en MQTT:** Propagación de `correlation_data` y `response_topic` para asociaciones inequívocas entre peticiones y respuestas.
+- **Seguridad Funcional (SIL-2):** Librería MCU escrita en C++11 sin STL y sin alocación dinámica, garantizando determinismo y estabilidad.
+- **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
 
-### Novedades (Enero 2026)
+### Novedades (OpenWrt 25.12)
 
-- **Detección de Hardware (Capabilities Discovery):** El protocolo ahora incluye un mecanismo robusto de introspección (`CMD_GET_CAPABILITIES`) que permite al daemon Linux conocer las características físicas del MCU conectado: cantidad de pines digitales/analógicos, arquitectura (AVR/MIPS/ARM), y soporte de periféricos críticos como **EEPROM**, **True DAC**, **FPU** (Punto Flotante), **I2C (Wire)**, puertos seriales extra y niveles lógicos (3.3V vs 5V). Esto permite al daemon validar comandos antes de enviarlos, rechazando operaciones no soportadas por el hardware.
-- **Nueva Pestaña en LuCI:** Se ha añadido la sección **"Device Capabilities"** en la interfaz web, donde se visualiza en tiempo real toda la información descubierta del MCU: versión del protocolo, arquitectura, conteo de pines y estado de todas las features detectadas.
-- **Soporte Extendido de Protocolo:** El bitmask de `features` se ha expandido para incluir flags de Watchdog, RLE, Debug, EEPROM, DAC, HW Serial, FPU, Lógica 3.3V, Big Buffer y I2C.
-- **Manejo de Excepciones SIL-2:** Refactorización profunda del manejo de errores en el daemon Python para eliminar capturas genéricas (`except Exception`) en favor de tipos específicos (`OSError`, `struct.error`, etc.), cumpliendo con directivas de seguridad funcional para evitar el enmascaramiento de fallos críticos.
+- **Detección de Hardware (Capabilities Discovery):** El protocolo incluye introspección (`CMD_GET_CAPABILITIES`) para conocer las características físicas del MCU (pines, arquitectura, features como EEPROM, DAC, FPU, I2C).
+- **Integración con APK:** Paquetización moderna utilizando el sistema de paquetes **APK** de OpenWrt 25.12.
+- **Transporte de Alto Rendimiento:** Uso de `python3-pyserial-asyncio-fast` para un manejo asíncrono del puerto serie con latencia mínima.
+- **Logging Hexadecimal:** Todo el tráfico binario se registra mediante volcados hexadecimales en syslog.
+- **Manejo de Excepciones SIL-2:** Refactorización profunda del manejo de errores para eliminar capturas genéricas.
 
 ### Novedades (noviembre 2025)
 
@@ -76,9 +67,9 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
-| Python (daemon en el MPU) | Base en Python 3.13.x (lo que entrega OpenWrt 25.12). | Mantener compatibilidad con futuras versiones ejecutando la suite completa antes de promover cambios. | `tox -e py313` (ver `../tox.ini`) ejecuta `pytest` sobre `../openwrt-mcu-bridge/tests`. |
-| Toolchain OpenWrt/AVR | `1_compile.sh` descarga por defecto el SDK 25.12.0-rc2. | Validar paridad con ramas legacy antes de hacer release, compilando ambos artefactos. | `./1_compile.sh 25.12.0-rc2` (por defecto) genera APKs; `./1_compile.sh 23.05.5` genera IPKs para comparar. |
-`../tools/coverage_arduino.sh` construye el harness con el `g++` disponible en `PATH`. | Ensayar la misma versión de GCC usada en la MCU final ejecutando el script dentro del SDK/contendor deseado o adelantando el `PATH` al toolchain adecuado. | `PATH=/opt/openwrt-sdk/staging_dir/toolchain-*/bin:$PATH ./tools/coverage_arduino.sh` recompila y reporta diferencias de warnings o cobertura. |
+| Python (daemon en el MPU) | Base en Python 3.13.9-r2. | Mantener compatibilidad con futuras versiones. | `tox -e py313` |
+| Toolchain OpenWrt | SDK 25.12.0 final. | Compilación de paquetes APK. | `./1_compile.sh` |
+| MCU Firmware | C++11 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/coverage_arduino.sh` |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
@@ -214,12 +205,11 @@ La forma más sencilla es compilar una imagen OpenWrt completa que ya incluye to
 
 ### Opción B: Instalación sobre OpenWrt existente
 
-Si ya tienes OpenWrt instalado y no quieres reflashear:
+Si ya tienes OpenWrt 25.12 instalado:
 
-1.  **Compilar paquetes:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes APK de OpenWRT (incluidas las dependencias Python en `feeds/`).
-2.  **Preparar almacenamiento:** Ejecuta `./2_expand.sh` para configurar extroot en la tarjeta SD y crear swap (el sistema reiniciará).
-3.  **Instalar:** Transfiere el proyecto a tu MCU y ejecuta `./3_install.sh` para instalar el software desde `bin/`.
-	- El script evita hacer upgrades del sistema (por estabilidad) y se centra en instalar/actualizar las dependencias necesarias para McuBridge.
+1.  **Compilar paquetes:** Ejecuta `./1_compile.sh` para preparar el SDK y compilar los paquetes **APK**.
+2.  **Preparar almacenamiento:** Ejecuta `./2_expand.sh` para configurar extroot.
+3.  **Instalar:** Transfiere los APKs y ejecuta `./3_install.sh`.
 
 ### Configuración post-instalación
 

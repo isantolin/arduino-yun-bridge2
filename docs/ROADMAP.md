@@ -1,21 +1,15 @@
 # Roadmap
 
-> **Current Release**: v2.0.1 (OpenWrt 25.12.0 compatible)
+> **Current Release**: v2.5.0 (OpenWrt 25.12.0 final compatible)
 
 ## Completed
 
-- **Extended Metrics** ✅ (Jan 2026): Added comprehensive observability metrics:
-  - `SerialLatencyStats`: RPC command latency histogram with configurable buckets
-  - `SerialThroughputStats`: Serial link bytes/frames sent/received counters
-  - `queue_depths`: Real-time queue monitoring (MQTT, console, mailbox, pending reads, processes)
-  - Prometheus histogram export for Grafana dashboards (`mcubridge_serial_rpc_latency_seconds`)
+- **OpenWrt 25.12 APK Support** ✅ (Jan 2026): Full migration to the new APK-based package system.
+- **SIL-2 Compliance (MCU)** ✅ (Jan 2026): Zero-STL policy and ETL-based memory management in the Arduino library.
+- **Extended Metrics** ✅ (Jan 2026): Added comprehensive observability metrics (Prometheus export).
+- **Python 3.13.9-r2 Migration** ✅ (Jan 2026): Full stack modernized for the latest OpenWrt stable.
 
-- **Performance Tuning** ✅ (Jan 2026): Analysis completed
-  - Dispatcher architecture already optimized with handler registry pattern
-  - No unnecessary allocations in hot path
-  - Serial flow optimized with static buffers
-
-## Pending (Requires Hardware)
+## Pending (Q1-Q2 2026)
 
 - **Hardware Verification**: Conduct extensive testing on physical Arduino MCU hardware.
 - **ESP32/ESP8266 Validation**: Test multi-platform watchdog support on real hardware.

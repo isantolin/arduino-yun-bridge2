@@ -149,6 +149,7 @@ BridgeClass::BridgeClass(HardwareSerial& arg_serial)
       _last_send_millis(0),
       _last_rx_crc(0),
       _last_rx_crc_millis(0),
+      _consecutive_crc_errors(0),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
       _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
@@ -183,6 +184,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _last_send_millis(0),
       _last_rx_crc(0),
       _last_rx_crc_millis(0),
+      _consecutive_crc_errors(0),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
       _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
@@ -294,10 +296,25 @@ void BridgeClass::process() {
   _target_frame = nullptr;
 
   if (_frame_received) {
+    _consecutive_crc_errors = 0;
     dispatch(_rx_frame);
   } else {
     rpc::FrameParser::Error error = _parser.getError();
     if (error != rpc::FrameParser::Error::NONE) {
+      if (error == rpc::FrameParser::Error::CRC_MISMATCH) {
+        _consecutive_crc_errors++;
+        if (_consecutive_crc_errors >= 5) {
+          // [SIL-2] Force Hardware Reset after persistent corruption
+          #if defined(ARDUINO_ARCH_AVR)
+            wdt_enable(WDTO_15MS);
+            while(1); 
+          #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+            ESP.restart();
+          #else
+            enterSafeState();
+          #endif
+        }
+      }
       if (_synchronized) {
         switch (error) {
           case rpc::FrameParser::Error::CRC_MISMATCH:

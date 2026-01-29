@@ -67,10 +67,11 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 
 ## Componentes
 
-- **BridgeService (Python)**: orquesta la comunicación MCU↔Linux, aplica políticas de topics y delega en componentes (`FileComponent`, `ProcessComponent`, etc.).
+- **BridgeService (Python 3.13.9-r2)**: orquesta la comunicación MCU↔Linux, aplica políticas de topics y delega en componentes (`FileComponent`, `ProcessComponent`, etc.).
 - **RuntimeState**: mantiene el estado mutable (colas MQTT, handshake, spool, métricas) y expone snapshots consistentes para status, MQTT y Prometheus.
+- **High-Performance Transport**: El daemon utiliza `pyserial-asyncio-fast` para minimizar la latencia y evitar el doble buffering en el enlace serie.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
-- **MCU Firmware (openwrt-library-arduino)**: implementa el protocolo binario y vela por el secreto compartido del enlace serie.
+- **MCU Firmware (openwrt-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` y puede exponer Prometheus por HTTP.
 
 ## Seguridad

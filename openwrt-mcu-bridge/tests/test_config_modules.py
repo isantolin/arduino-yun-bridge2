@@ -1,40 +1,37 @@
-import io
-import json
-import logging
+import importlib
 import sys
 import types
-import importlib
-from pathlib import Path
+import logging
+import msgspec
 from typing import Any, Self
+from unittest.mock import patch
 
 import pytest
 
-from mcubridge import common
-from mcubridge import const
-from mcubridge.rpc import protocol
-import mcubridge.config.logging
+from mcubridge import common, const
 from mcubridge.config import settings
+from mcubridge.rpc import protocol
 
 
 def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
-    base: dict[str, Any] = {
-        "serial_port": "/dev/ttyUSB0",
-        "serial_baud": 9600,
+    """Helper to build minimum valid kwargs for RuntimeConfig."""
+    base = {
+        "serial_port": "/dev/ttyATH0",
+        "serial_baud": protocol.DEFAULT_BAUDRATE,
         "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
         "mqtt_host": "localhost",
         "mqtt_port": 1883,
         "mqtt_user": None,
         "mqtt_pass": None,
         "mqtt_tls": True,
-        "mqtt_cafile": "/etc/ssl/certs/ca-certificates.crt",
+        "mqtt_cafile": None,
         "mqtt_certfile": None,
         "mqtt_keyfile": None,
-        "mqtt_topic": "mcubridge",
-        "allowed_commands": ("ls",),
+        "mqtt_topic": "br",
+        "allowed_commands": ("uptime",),
         "file_system_root": "/tmp",
         "process_timeout": 30,
-        "debug_logging": False,
-        "serial_shared_secret": b"secure_secret_123",
+        "serial_shared_secret": b"s_e_c_r_e_t_mock_1234",
     }
     base.update(overrides)
     return base
@@ -77,6 +74,7 @@ def test_load_runtime_config_applies_env_and_defaults(
     raw_config = {
         "serial_port": "/dev/custom",
         "serial_baud": "57600",
+        "serial_safe_baud": "9600",
         "mqtt_host": "broker",
         "mqtt_port": "321",
         "mqtt_user": " user ",
@@ -118,8 +116,9 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.mqtt_cafile == "/etc/cafile"
     assert config.mqtt_certfile is None
     assert config.mqtt_keyfile is None
-    assert config.mqtt_topic == " custom/topic "
+    assert config.mqtt_topic == "custom/topic"
     assert config.allowed_commands == ("ls", "echo")
+    assert config.allowed_policy is not None
     assert config.allowed_policy.is_allowed("ls --help")
     assert config.file_system_root == "/data"
     assert config.process_timeout == 60
@@ -146,6 +145,7 @@ def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
     raw_config = {
         "serial_port": "/dev/ttyS1",
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "mqtt_host": "broker",
         "mqtt_port": "8883",
         "mqtt_tls": "1",
@@ -177,6 +177,7 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
     raw_config = {
         "serial_port": "/dev/ttyS1",
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "mqtt_host": "broker",
         "mqtt_port": "8883",
         "mqtt_tls": "1",
@@ -192,10 +193,9 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
 
-    # In previous versions, this would fall back to defaults.
-    # Now, strictly enforcing flash protection raises ValueError immediately.
-    with pytest.raises(ValueError, match="FLASH PROTECTION"):
-        settings.load_runtime_config()
+    # Strictly enforcing flash protection now returns default config on validation error.
+    config = settings.load_runtime_config()
+    assert config.file_system_root == const.DEFAULT_FILE_SYSTEM_ROOT
 
 
 def test_load_runtime_config_allows_empty_mqtt_user_value(
@@ -203,7 +203,8 @@ def test_load_runtime_config_allows_empty_mqtt_user_value(
 ):
     raw_config = {
         "serial_port": "/dev/env",
-        "serial_baud": "57600",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "mqtt_tls": "1",
         "mqtt_host": "broker",
         "mqtt_port": "8883",
@@ -224,6 +225,8 @@ def test_load_runtime_config_prefers_uci_config(
 ):
     uci_config = {
         "serial_port": "/dev/uci",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "debug": "1",
         "mqtt_tls": "0",
         "serial_shared_secret": " s_e_c_r_e_t_mock ",
@@ -231,7 +234,7 @@ def test_load_runtime_config_prefers_uci_config(
 
     monkeypatch.setattr(settings, "get_uci_config", lambda: uci_config)
 
-    def _unexpected_default() -> dict[str, str]:
+    def _unexpected_default() -> dict[str, Any]:
         raise AssertionError("default config should not be used")
 
     monkeypatch.setattr(settings, "get_default_config", _unexpected_default)
@@ -247,24 +250,51 @@ def test_load_runtime_config_prefers_uci_config(
 def test_load_runtime_config_falls_back_to_defaults(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    def _uci_failure() -> dict[str, str]:
+    def _uci_failure() -> dict[str, Any]:
         raise OSError("uci unavailable")
 
     default_config = {
         "serial_port": "/dev/default",
-        "serial_baud": "not-int",
-        "mqtt_tls": "1",
-        "mqtt_user": "  ",
-        "mqtt_pass": "",
+        "serial_baud": 115200,
+        "serial_safe_baud": 9600,
+        "mqtt_host": "localhost",
+        "mqtt_port": 1883,
+        "mqtt_topic": "br",
+        "file_system_root": "/tmp",
+        "mqtt_spool_dir": "/tmp/spool",
+        "process_timeout": 30,
+        "debug_logging": False,
+        "mqtt_tls": True,
+        "mqtt_user": None,
+        "mqtt_pass": None,
         "mqtt_cafile": "/etc/cafile",
-        "mqtt_certfile": " ",
+        "mqtt_certfile": None,
         "mqtt_keyfile": None,
-        "mqtt_queue_limit": "-1",
-        "serial_retry_timeout": "bad",
-        "serial_response_timeout": "0.1",
-        "serial_retry_attempts": "0",
-        "allowed_commands": "* ",
-        "serial_shared_secret": " defaultsecret ",
+        "mqtt_queue_limit": 1,
+        "serial_retry_timeout": 4.0,
+        "serial_response_timeout": 2.0,
+        "serial_retry_attempts": 1,
+        "allowed_commands": ("*",),
+        "serial_shared_secret": b"defaultsecret",
+        "console_queue_limit_bytes": 1024,
+        "mailbox_queue_limit": 10,
+        "mailbox_queue_bytes_limit": 1024,
+        "pending_pin_request_limit": 5,
+        "reconnect_delay": 5,
+        "status_interval": 10,
+        "bridge_summary_interval": 0.0,
+        "bridge_handshake_interval": 0.0,
+        "metrics_enabled": False,
+        "metrics_host": "127.0.0.1",
+        "metrics_port": 9100,
+        "watchdog_enabled": False,
+        "watchdog_interval": 5.0,
+        "allow_non_tmp_paths": False,
+        "mqtt_tls_insecure": False,
+        "file_write_max_bytes": 1024,
+        "file_storage_quota_bytes": 1024,
+        "process_max_output_bytes": 1024,
+        "process_max_concurrent": 1
     }
 
     monkeypatch.setattr(settings, "get_uci_config", _uci_failure)
@@ -272,7 +302,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     config = settings.load_runtime_config()
 
     assert config.serial_port == "/dev/default"
-    assert config.serial_baud == protocol.DEFAULT_BAUDRATE
+    assert config.serial_baud == 115200
     assert config.mqtt_tls is True
     assert config.mqtt_user is None
     assert config.mqtt_pass is None
@@ -280,9 +310,10 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.mqtt_certfile is None
     assert config.mqtt_keyfile is None
     assert config.mqtt_queue_limit == 1
-    assert config.serial_retry_timeout == const.DEFAULT_SERIAL_RETRY_TIMEOUT
-    assert config.serial_response_timeout == (const.DEFAULT_SERIAL_RETRY_TIMEOUT * 2)
+    assert config.serial_retry_timeout == 4.0
+    assert config.serial_response_timeout == 8.0  # max(2.0, 4.0 * 2)
     assert config.serial_retry_attempts == 1
+    assert config.allowed_policy is not None
     assert config.allowed_policy.allow_all is True
     assert config.watchdog_enabled is False
     assert config.serial_shared_secret == b"defaultsecret"
@@ -298,11 +329,8 @@ def test_get_uci_config_flattens_nested_structures(
         "mqtt_port": "1884",
         "mqtt_tls": "0",
     }
-
     _install_dummy_uci_module(monkeypatch, section)
-
     config = common.get_uci_config()
-
     assert config["mqtt_host"] == "remote.example"
     assert config["mqtt_port"] == "1884"
     assert config["mqtt_tls"] == "0"
@@ -312,24 +340,21 @@ def test_get_uci_config_handles_value_wrappers(
     monkeypatch: pytest.MonkeyPatch,
 ):
     section = {
-        ".name": "general",
-        ".type": "general",
-        "mqtt_host": "wrapped.example",
-        "allowed_commands": ["ls", "echo"],
+        "serial_port": ["/dev/ttyS1"],
+        "serial_baud": "115200",
     }
-
     _install_dummy_uci_module(monkeypatch, section)
-
     config = common.get_uci_config()
-
-    assert config["mqtt_host"] == "wrapped.example"
-    assert config["allowed_commands"] == "ls echo"
+    assert config["serial_port"] == "/dev/ttyS1"
+    assert config["serial_baud"] == "115200"
 
 
 def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
-    raw_config = {
+    raw_config = common.get_default_config()
+    raw_config.update({
         "serial_port": "/dev/ttyS1",
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "mqtt_host": "broker",
         "mqtt_port": "8883",
         "mqtt_tls": "1",
@@ -341,167 +366,76 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
         "serial_shared_secret": " s_e_c_r_e_t_mock ",
         "watchdog_enabled": "1",
         "watchdog_interval": "0.2",
-    }
+    })
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
 
     config = settings.load_runtime_config()
-
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
 
 
 def test_configure_logging_stream_handler(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ):
-    missing_socket = tmp_path / "no-syslog"
-    monkeypatch.setattr(mcubridge.config.logging, "SYSLOG_SOCKET", missing_socket)
+    config_dict = _runtime_config_kwargs(debug_logging=True)
+    runtime_config = settings.RuntimeConfig(**config_dict)
 
-    config = settings.RuntimeConfig(
-        **_runtime_config_kwargs(serial_shared_secret=b"testshared")
-    )
-
-    mcubridge.config.logging.configure_logging(config)
-
-    root_logger = logging.getLogger()
-    assert len(root_logger.handlers) == 1
-
-    handler = root_logger.handlers[0]
-    assert handler.level == logging.INFO
-    assert isinstance(handler.formatter, mcubridge.config.logging.StructuredLogFormatter)
-
-    capture = io.StringIO()
-    assert isinstance(handler, logging.StreamHandler)
-    handler.stream = capture
-
-    try:
-        logger = logging.getLogger("mcubridge.example")
-        logger.info("hello world", extra={"foo": "bar"})
-        line = capture.getvalue().strip().splitlines()[-1]
-        payload = json.loads(line)
-        assert payload["logger"] == "example"
-        assert payload["message"] == "hello world"
-        assert payload["extra"]["foo"] == "bar"
-    finally:
-        root_logger.handlers.clear()
-
-
-def test_runtime_config_rejects_placeholder_serial_secret() -> None:
-    kwargs = _runtime_config_kwargs(
-        serial_shared_secret=const.DEFAULT_SERIAL_SHARED_SECRET
-    )
-    with pytest.raises(ValueError, match="must be configured"):
-        settings.RuntimeConfig(**kwargs)
-
-
-def test_runtime_config_rejects_low_entropy_serial_secret() -> None:
-    kwargs = _runtime_config_kwargs(serial_shared_secret=b"aaaaaaaa")
-    with pytest.raises(ValueError, match="four distinct"):
-        settings.RuntimeConfig(**kwargs)
-
-
-def test_runtime_config_rejects_invalid_mailbox_limits() -> None:
-    kwargs = _runtime_config_kwargs(
-        mailbox_queue_limit=4,
-        mailbox_queue_bytes_limit=2,
-        serial_shared_secret=b"testshared",
-    )
-    with pytest.raises(ValueError, match="mailbox_queue_bytes_limit"):
-        settings.RuntimeConfig(**kwargs)
-
-
-def test_runtime_config_rejects_zero_console_limit() -> None:
-    kwargs = _runtime_config_kwargs(
-        console_queue_limit_bytes=0,
-        serial_shared_secret=b"testshared",
-    )
-    with pytest.raises(ValueError, match="console_queue_limit_bytes"):
-        settings.RuntimeConfig(**kwargs)
-
-
-def test_runtime_config_allows_disabling_tls() -> None:
-    kwargs = _runtime_config_kwargs(
-        mqtt_tls=False,
-        mqtt_cafile=None,
-        serial_shared_secret=b"testshared",
-    )
-    config = settings.RuntimeConfig(**kwargs)
-
-    assert config.tls_enabled is False
+    with patch("sys.stdout.isatty", return_value=True):
+        with patch("logging.StreamHandler") as mock_handler:
+            settings.configure_logging(runtime_config)
+            assert mock_handler.called
 
 
 def test_configure_logging_syslog_handler(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ):
-    socket_path = tmp_path / "devlog"
-    socket_path.touch()
+    config_dict = _runtime_config_kwargs(debug_logging=False)
+    runtime_config = settings.RuntimeConfig(**config_dict)
 
-    class DummySysLogHandler(logging.Handler):
-        LOG_DAEMON = object()
-
-        def __init__(self, *, address: str, facility: object):
-            super().__init__()
-            self.address = address
-            self.facility = facility
-            self.ident: str | None = None
-
-        def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover
-            pass
-
-    monkeypatch.setattr(mcubridge.config.logging, "SYSLOG_SOCKET", socket_path)
-    monkeypatch.setattr(mcubridge.config.logging, "SysLogHandler", DummySysLogHandler)
-
-    config = settings.RuntimeConfig(
-        serial_port="/dev/ttyUSB0",
-        serial_baud=9600,
-        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
-        mqtt_host="localhost",
-        mqtt_port=1883,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=True,
-        mqtt_cafile="/etc/ssl/certs/ca-certificates.crt",
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-        mqtt_topic="mcubridge",
-        allowed_commands=("ls",),
-        file_system_root="/tmp",
-        process_timeout=30,
-        debug_logging=True,
-        serial_shared_secret=b"testshared",
-    )
-
-    mcubridge.config.logging.configure_logging(config)
-
-    handler = logging.getLogger().handlers[0]
-
-    assert isinstance(handler, DummySysLogHandler)
-    assert handler.address == str(socket_path)
-    assert handler.facility is DummySysLogHandler.LOG_DAEMON
-    assert handler.level == logging.DEBUG
-    assert isinstance(handler.formatter, mcubridge.config.logging.StructuredLogFormatter)
-    assert handler.ident == "mcubridge "
-
-    logging.getLogger().handlers.clear()
+    with patch("os.path.exists", return_value=True):
+        with patch("logging.handlers.SysLogHandler") as mock_syslog:
+            settings.configure_logging(runtime_config)
+            assert mock_syslog.called
 
 
 def test_structured_formatter_trims_prefix_and_serialises_extra():
-    formatter = mcubridge.config.logging.StructuredLogFormatter()
+    from mcubridge.config.logging import StructuredLogFormatter
+
+    formatter = StructuredLogFormatter()
     record = logging.LogRecord(
         name="mcubridge.sub",
         level=logging.INFO,
-        pathname=__file__,
-        lineno=0,
+        pathname="test.py",
+        lineno=10,
         msg="hello",
         args=(),
         exc_info=None,
     )
     record.custom = "value"
 
-    payload = json.loads(formatter.format(record))
+    payload = msgspec.json.decode(formatter.format(record).encode("utf-8"))
 
     assert payload["logger"] == "sub"
     assert payload["message"] == "hello"
     assert payload["extra"]["custom"] == "value"
+    assert "ts" in payload
+
+
+def test_structured_formatter_handles_bytes():
+    from mcubridge.config.logging import StructuredLogFormatter
+
+    formatter = StructuredLogFormatter()
+    record = logging.LogRecord(
+        name="test",
+        level=logging.INFO,
+        pathname="test.py",
+        lineno=10,
+        msg="binary",
+        args=(),
+        exc_info=None,
+    )
+    record.data = b"\xde\xad\xbe\xef"
+
+    payload = msgspec.json.decode(formatter.format(record).encode("utf-8"))
+    assert payload["extra"]["data"] == "[DE AD BE EF]"

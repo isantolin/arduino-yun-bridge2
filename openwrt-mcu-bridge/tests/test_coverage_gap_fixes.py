@@ -612,14 +612,20 @@ def test_settings_load_runtime_config_coverage():
     """Cover load_runtime_config body."""
     from mcubridge.config.settings import load_runtime_config
 
-    raw_cfg = {
+    raw_cfg = common.get_default_config()
+    raw_cfg.update({
         "serial_port": "/dev/ttyFake",
+        "serial_baud": 57600,
+        "serial_safe_baud": 9600,
+        "mqtt_host": "localhost",
+        "mqtt_port": 1883,
+        "mqtt_topic": "bridge",
         "serial_shared_secret": "secret_12345678",
         "debug": "1",
         "watchdog_enabled": "1",
         "mqtt_tls": "0",
         "allow_non_tmp_paths": "1"
-    }
+    })
 
     with patch("mcubridge.config.settings._load_raw_config", return_value=raw_cfg):
         config = load_runtime_config()

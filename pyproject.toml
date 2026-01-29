@@ -14,7 +14,9 @@ dependencies = [
     "cobs>=1.2.2",
     "psutil>=7.2.1",
     "prometheus-client>=0.23.1",
-    "pyserial-asyncio-fast==0.16"
+    "pyserial-asyncio-fast==0.16",
+    "tenacity==9.1.2",
+    "msgspec==0.19.0"
 ]
 
 [tool.setuptools]

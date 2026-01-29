@@ -1,5 +1,5 @@
 import asyncio
-import json
+import msgspec
 from types import SimpleNamespace
 from typing import cast
 
@@ -19,7 +19,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
 
         def fake_write(payload: dict[str, object]) -> None:
             writes.append(payload)
-            status_path.write_text(json.dumps(payload))
+            status_path.write_bytes(msgspec.json.encode(payload))
 
         monkeypatch.setattr(status, "STATUS_FILE", status_path)
         monkeypatch.setattr(
@@ -161,7 +161,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         }
 
         assert status_path.exists()
-        file_payload = json.loads(status_path.read_text())
+        file_payload = msgspec.json.decode(status_path.read_bytes())
         assert file_payload["mqtt_queue_limit"] == 42
 
     asyncio.run(run())

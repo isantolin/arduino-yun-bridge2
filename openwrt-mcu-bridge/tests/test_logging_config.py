@@ -1,6 +1,6 @@
 "Tests for the logging configuration."
 
-import json
+import msgspec
 import logging
 from unittest.mock import patch
 
@@ -22,7 +22,7 @@ def test_serialise_value_handles_bytes_and_objects() -> None:
     record.custom_obj = object()  # type: ignore
 
     formatter = mcubridge.config.logging.StructuredLogFormatter()
-    payload = json.loads(formatter.format(record))
+    payload = msgspec.json.decode(formatter.format(record).encode("utf-8"))
 
     assert payload["logger"] == "test"
     assert payload["message"] == "hello"

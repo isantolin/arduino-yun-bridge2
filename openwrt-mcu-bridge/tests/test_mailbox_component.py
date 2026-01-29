@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import logging
 import struct
 from typing import Any, Protocol
@@ -110,7 +110,7 @@ def test_handle_processed_publishes_json(
         Topic.MAILBOX,
         "processed",
     )
-    assert json.loads(message.payload) == {"message_id": TEST_MSG_ID}
+    assert msgspec.json.decode(message.payload) == {"message_id": TEST_MSG_ID}
 
 
 def test_handle_push_stores_incoming_queue(
@@ -217,7 +217,7 @@ def test_handle_mqtt_write_overflow_signals_error(
         runtime_state.mqtt_topic_prefix
     )
     assert topics[1] == overflow_topic
-    error_payload = json.loads(bridge.published[1].payload)
+    error_payload = msgspec.json.decode(bridge.published[1].payload)
     assert error_payload["event"] == "write_overflow"
     assert error_payload["overflow_events"] == 1
 

@@ -2,12 +2,12 @@
 """CGI helper that toggles digital pins via MQTT using paho-mqtt."""
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
 import sys
 import time
+import msgspec
 from collections.abc import Callable
 from typing import Any
 
@@ -136,7 +136,7 @@ def get_pin_from_path() -> str | None:
 def send_response(status_code: int, data: dict[str, Any]) -> None:
     sys.stdout.write(f"Status: {status_code}\n")
     sys.stdout.write("Content-Type: application/json\n\n")
-    sys.stdout.write(json.dumps(data))
+    sys.stdout.write(msgspec.json.encode(data).decode("utf-8"))
     sys.stdout.write("\n")
     sys.stdout.flush()
 
@@ -198,9 +198,9 @@ def main() -> None:
         else:
             body = sys.stdin.read()
 
-        data: dict[str, Any] = json.loads(body) if body else {}
+        data: dict[str, Any] = msgspec.json.decode(body) if body else {}
         state = str(data.get("state", "")).upper()
-    except (ValueError, json.JSONDecodeError):
+    except (ValueError, msgspec.DecodeError):
         logger.exception("POST body parse error")
         send_response(
             400,

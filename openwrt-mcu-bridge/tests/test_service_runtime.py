@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import struct
 import time
 from types import SimpleNamespace
@@ -226,7 +226,7 @@ async def test_reject_topic_action_enqueues_status() -> None:
     queued = state.mqtt_publish_queue.get_nowait()
     status_topic = topic_path(state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS)
     assert queued.topic_name == status_topic
-    body = json.loads(queued.payload.decode("utf-8"))
+    body = msgspec.json.decode(queued.payload)
     assert body["status"] == "forbidden"
 
 

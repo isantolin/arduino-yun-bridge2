@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import logging
 import struct
 from unittest.mock import patch
@@ -913,7 +913,7 @@ def test_mqtt_mailbox_write_blocked_when_topic_disabled(
 
         assert not runtime_state.mailbox_queue
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["topic"] == "mailbox"
         assert payload["action"] == "write"
         runtime_state.mqtt_publish_queue.task_done()
@@ -994,7 +994,7 @@ def test_mqtt_datastore_put_blocked_when_topic_disabled(
             "status",
         )
         assert queued.topic_name == expected_topic
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["status"] == "forbidden"
         assert payload["topic"] == "datastore"
         assert payload["action"] == "put"
@@ -1030,7 +1030,7 @@ def test_mqtt_shell_run_blocked_when_topic_disabled(
             "status",
         )
         assert queued.topic_name == expected_topic
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["status"] == "forbidden"
         assert payload["topic"] == Topic.SHELL.value
         assert payload["action"] == "run"
@@ -1070,7 +1070,7 @@ def test_mqtt_bridge_handshake_topic_returns_snapshot(
             "handshake",
             "value",
         )
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["attempts"] == 3
         assert payload["synchronised"] is True
         assert ("bridge-snapshot", "handshake") in queued.user_properties
@@ -1109,7 +1109,7 @@ def test_mqtt_bridge_summary_topic_returns_snapshot(
             "summary",
             "value",
         )
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["serial_link"]["connected"] is True
         assert payload["handshake"]["successes"] == 5
         assert ("bridge-snapshot", "summary") in queued.user_properties
@@ -1305,7 +1305,7 @@ def test_mqtt_file_write_blocked_when_topic_disabled(
         )
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["topic"] == "file"
         assert payload["action"] == "write"
         runtime_state.mqtt_publish_queue.task_done()
@@ -1601,7 +1601,7 @@ def test_process_run_async_failure_emits_error(
             "error",
         )
         assert queued.topic_name == expected_topic
-        payload = json.loads(queued.payload.decode())
+        payload = msgspec.json.decode(queued.payload)
         assert payload["status"] == "error"
         assert payload["reason"] == "process_run_async_failed"
         runtime_state.mqtt_publish_queue.task_done()

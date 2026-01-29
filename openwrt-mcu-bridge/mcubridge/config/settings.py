@@ -21,6 +21,7 @@ from ..common import (
     get_default_config,
     get_uci_config,
     normalise_allowed_commands,
+    parse_bool,
 )
 from ..const import (
     DEFAULT_ALLOW_NON_TMP_PATHS,
@@ -29,6 +30,7 @@ from ..const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_DEBUG_LOGGING,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+    DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
@@ -44,6 +46,7 @@ from ..const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+    DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
@@ -52,7 +55,7 @@ from ..const import (
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..rpc.protocol import DEFAULT_RETRY_LIMIT
+from ..rpc.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE
 
 
 logger = logging.getLogger(__name__)
@@ -62,25 +65,21 @@ logger = logging.getLogger(__name__)
 class RuntimeConfig:
     """Strongly typed configuration for the daemon."""
 
-    serial_port: str
-    serial_baud: int
-    serial_safe_baud: int
-    mqtt_host: str
-    mqtt_port: int
-    mqtt_user: str | None
-    mqtt_pass: str | None
-    mqtt_tls: bool
-    mqtt_cafile: str | None
-    mqtt_certfile: str | None
-    mqtt_keyfile: str | None
-    mqtt_topic: str
-    allowed_commands: tuple[str, ...]
-    file_system_root: str
-    process_timeout: int
-    # [msgspec] Fields without defaults MUST come before fields with defaults in standard Python.
-    # However, since we're using slots=True dataclass, it's fine as long as we init them.
-    # But wait, to support automatic conversion, optional fields should be consistent.
-    # Let's keep it as dataclass for now, msgspec supports it.
+    serial_port: str = DEFAULT_SERIAL_PORT
+    serial_baud: int = DEFAULT_BAUDRATE
+    serial_safe_baud: int = DEFAULT_SAFE_BAUDRATE
+    mqtt_host: str = DEFAULT_METRICS_HOST
+    mqtt_port: int = DEFAULT_METRICS_PORT
+    mqtt_user: str | None = None
+    mqtt_pass: str | None = None
+    mqtt_tls: bool = True
+    mqtt_cafile: str | None = None
+    mqtt_certfile: str | None = None
+    mqtt_keyfile: str | None = None
+    mqtt_topic: str = "br"
+    allowed_commands: tuple[str, ...] = ()
+    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
+    process_timeout: int = 30
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
@@ -88,7 +87,7 @@ class RuntimeConfig:
 
     # Init=False fields need to be handled carefully with msgspec.convert.
     # msgspec won't populate init=False fields from input dict.
-    allowed_policy: AllowedCommandPolicy = field(init=False)
+    allowed_policy: AllowedCommandPolicy | None = field(init=False, default=None)
 
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: int = DEFAULT_RECONNECT_DELAY
@@ -121,9 +120,6 @@ class RuntimeConfig:
     bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
-    # Extra field to handle incoming 'debug' key from UCI mapping to 'debug_logging'
-    # We can handle this in the config loader dict preparation.
-
     @property
     def tls_enabled(self) -> bool:
         return self.mqtt_tls
@@ -131,7 +127,14 @@ class RuntimeConfig:
     def __post_init__(self) -> None:
         # Handle string -> bytes conversion for secret if it came as string
         if isinstance(self.serial_shared_secret, str):
-             self.serial_shared_secret = self.serial_shared_secret.encode("utf-8")
+            self.serial_shared_secret = self.serial_shared_secret.encode("utf-8")
+
+        # Normalize optional strings to None if empty
+        self.mqtt_user = self._normalize_optional_string(self.mqtt_user)
+        self.mqtt_pass = self._normalize_optional_string(self.mqtt_pass)
+        self.mqtt_cafile = self._normalize_optional_string(self.mqtt_cafile)
+        self.mqtt_certfile = self._normalize_optional_string(self.mqtt_certfile)
+        self.mqtt_keyfile = self._normalize_optional_string(self.mqtt_keyfile)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.serial_response_timeout = max(
@@ -163,7 +166,7 @@ class RuntimeConfig:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
             raise ValueError(
-                "serial_shared_secret must be at least %d bytes"
+                "serial_shared_secret must be at least %d bytes" 
                 % MIN_SERIAL_SHARED_SECRET_LEN
             )
         if self.serial_shared_secret == b"changeme123":
@@ -178,6 +181,13 @@ class RuntimeConfig:
         self._normalize_topic_prefix()
         self._validate_flash_protection()
         self._validate_operational_limits()
+
+    @staticmethod
+    def _normalize_optional_string(value: str | None) -> str | None:
+        if not value:
+            return None
+        s = value.strip()
+        return s if s else None
 
     def _validate_queue_limits(self) -> None:
         mailbox_limit = self._require_positive(
@@ -278,7 +288,7 @@ class RuntimeConfig:
                 "watchdog_interval",
                 float(self.watchdog_interval),
             )
-            self.watchdog_interval = interval
+            self.watchdog_interval = max(0.5, interval)
 
         self.bridge_summary_interval = max(
             0.0,
@@ -384,24 +394,24 @@ def load_runtime_config() -> RuntimeConfig:
             commands = normalise_allowed_commands(allowed_raw.split())
             raw_config["allowed_commands"] = commands
 
+    # Map 'debug' (from UCI) to 'debug_logging' (internal)
+    if "debug" in raw_config and "debug_logging" not in raw_config:
+        raw_config["debug_logging"] = parse_bool(raw_config.pop("debug"))
+
+    # Pre-process 'serial_shared_secret' to handle string -> bytes conversion
+    if "serial_shared_secret" in raw_config:
+        secret = raw_config["serial_shared_secret"]
+        if isinstance(secret, str):
+            raw_config["serial_shared_secret"] = secret.encode("utf-8")
+
     try:
         # msgspec handles type coercion (str -> int, str -> bool) via 'str_strict=False' (implied or manual)
         # However, for 'decoding' from a dict, we use 'convert'.
         # strict=False allows "1" -> True, "123" -> 123
         return msgspec.convert(raw_config, RuntimeConfig, strict=False)
-    except msgspec.ValidationError as e:
+    except (msgspec.ValidationError, TypeError) as e:
         logger.critical("Configuration validation failed: %s", e)
         # Fallback to defaults if UCI data is corrupt, but we should probably fail hard.
         # For resilience, we return the default config object.
         logger.warning("Falling back to safe defaults due to validation error.")
         return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)
-
-# Re-export RuntimeConfig as a msgspec.Struct for performance
-# Note: Since RuntimeConfig is already defined as a dataclass in the original code,
-# and heavily used, we might need to redefine it as msgspec.Struct OR keep it as dataclass.
-# msgspec supports dataclasses natively.
-
-# However, to maximize performance, we should ideally redefine RuntimeConfig as msgspec.Struct.
-# But that requires changing the class definition above.
-# Let's see if we can modify the class definition in this file.
-

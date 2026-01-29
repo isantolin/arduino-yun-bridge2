@@ -20,7 +20,7 @@ Architecture:
         ├── metrics-publisher (publish_metrics)
         ├── bridge-snapshots (optional)
         ├── watchdog (optional)
-        └── prometheus-exporter (optional)
+        ├── prometheus-exporter (optional)
 
 Usage:
     $ python -m mcubridge.daemon
@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, NoReturn
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.const import DEFAULT_SERIAL_SHARED_SECRET
-from mcubridge.metrics import publish_bridge_snapshots, publish_metrics
+from mcubridge.metrics import publish_bridge_snapshots, publish_metrics, PrometheusExporter
 from mcubridge.services.runtime import (
     BridgeService,
     SerialHandshakeFatal,
@@ -178,8 +178,6 @@ class BridgeDaemon:
             ))
 
         if self.config.metrics_enabled:
-            from mcubridge.metrics import PrometheusExporter
-
             self.exporter = PrometheusExporter(
                 self.state,
                 self.config.metrics_host,

@@ -124,7 +124,7 @@ async def test_metrics_snapshot_emit_exceptions():
     enqueue = AsyncMock()
 
     # Test TypeError/ValueError handling
-    with patch("mcubridge.metrics.json.dumps", side_effect=TypeError("fail")):
+    with patch("mcubridge.metrics.msgspec.json.encode", side_effect=TypeError("fail")):
         try:
             await _emit_metrics_snapshot(state, enqueue, expiry_seconds=10)
         except TypeError:

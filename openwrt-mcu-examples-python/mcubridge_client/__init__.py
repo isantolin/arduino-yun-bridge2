@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import logging
 import secrets
 import shlex
@@ -518,8 +518,8 @@ class Bridge:
             timeout=timeout,
         )
         try:
-            payload = json.loads(response.decode("utf-8"))
-        except json.JSONDecodeError as exc:
+            payload = msgspec.json.decode(response)
+        except msgspec.DecodeError as exc:
             raise ValueError("Malformed process poll response") from exc
         if not isinstance(payload, dict):
             raise ValueError("Process poll response must be an object")

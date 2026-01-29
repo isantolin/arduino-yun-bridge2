@@ -40,6 +40,12 @@ pip = "cobs==1.2.2"
 rationale = "COBS framing for the RPC protocol"
 
 [[dependency]]
+name = "msgspec"
+openwrt = "python3-msgspec"
+pip = "msgspec==0.19.0"
+rationale = "High-performance JSON/MessagePack library"
+
+[[dependency]]
 name = "psutil"
 openwrt = "python3-psutil"
 pip = "psutil==7.2.1"

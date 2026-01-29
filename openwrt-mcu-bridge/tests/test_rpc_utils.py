@@ -15,18 +15,15 @@ def test_get_default_config_matches_constants():
     config = common.get_default_config()
 
     assert config["mqtt_host"] == const.DEFAULT_MQTT_HOST
-    assert config["mqtt_port"] == str(const.DEFAULT_MQTT_PORT)
+    assert config["mqtt_port"] == const.DEFAULT_MQTT_PORT
     assert config["serial_port"] == const.DEFAULT_SERIAL_PORT
-    assert config["serial_baud"] == str(protocol.DEFAULT_BAUDRATE)
-    assert config["serial_retry_attempts"] == str(protocol.DEFAULT_RETRY_LIMIT)
-    assert config["serial_retry_timeout"] == str(const.DEFAULT_SERIAL_RETRY_TIMEOUT)
-    assert config["serial_response_timeout"] == str(
-        const.DEFAULT_SERIAL_RESPONSE_TIMEOUT
-    )
-    assert all(isinstance(value, str) for value in config.values())
+    assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE
+    assert config["serial_retry_attempts"] == protocol.DEFAULT_RETRY_LIMIT
+    assert config["serial_retry_timeout"] == const.DEFAULT_SERIAL_RETRY_TIMEOUT
+    assert config["serial_response_timeout"] == const.DEFAULT_SERIAL_RESPONSE_TIMEOUT
 
 
-def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
+def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
     class FakeCursor:
         def __init__(self, payload: dict[str, object]) -> None:
             self._payload = payload
@@ -62,7 +59,7 @@ def test_get_uci_config_stringifies_values(monkeypatch: pytest.MonkeyPatch):
 
     assert config["serial_port"] == "uci-port"
     assert config["allowed_commands"] == "ls echo"
-    assert config["mqtt_queue_limit"] == "42"
+    assert config["mqtt_queue_limit"] == 42
 
 
 def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):

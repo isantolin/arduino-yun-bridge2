@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import io
-import json
+import msgspec
 import sys
 from importlib.abc import Loader
 from pathlib import Path
@@ -201,7 +201,7 @@ def test_publish_with_retries_times_out(
         )
 
 
-def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     module = _load_pin_rest_cgi()
 
     fake_config = SimpleNamespace(
@@ -236,21 +236,21 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         module.sys,
         "stdin",
-        io.StringIO(json.dumps({"state": "ON"})),
+        io.StringIO(msgspec.json.encode({"state": "ON"}).decode("utf-8")),
     )
-    output = io.StringIO()
-    monkeypatch.setattr(module.sys, "stdout", output)
+    # No monkeypatching stdout, rely on capsys
 
     module.main()
 
-    body = output.getvalue().split("\n\n", 1)[1]
-    response = json.loads(body)
+    captured_out = capsys.readouterr()
+    body = captured_out.out.split("\n\n", 1)[1]
+    response = msgspec.json.decode(body.encode("utf-8"))
     assert response["status"] == "ok"
     assert captured["topic"] == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/7"
     assert captured["payload"] == "1"
 
 
-def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     module = _load_pin_rest_cgi()
 
     fake_config = SimpleNamespace(
@@ -279,14 +279,14 @@ def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         module.sys,
         "stdin",
-        io.StringIO(json.dumps({"state": "MAYBE"})),
+        io.StringIO(msgspec.json.encode({"state": "MAYBE"}).decode("utf-8")),
     )
-    output = io.StringIO()
-    monkeypatch.setattr(module.sys, "stdout", output)
+    # No monkeypatching stdout, rely on capsys
 
     module.main()
 
-    body = output.getvalue().split("\n\n", 1)[1]
-    response = json.loads(body)
+    captured_out = capsys.readouterr()
+    body = captured_out.out.split("\n\n", 1)[1]
+    response = msgspec.json.decode(body.encode("utf-8"))
     assert response["status"] == "error"
     assert "State must" in response["message"]

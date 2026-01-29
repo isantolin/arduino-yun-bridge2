@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 import struct
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -255,7 +255,7 @@ async def test_handle_run_async_validation_error_publishes_error(
 
         assert mock_context.enqueue_mqtt.await_count == 1
         queued = mock_context.enqueue_mqtt.call_args[0][0]
-        body = json.loads(queued.payload.decode("utf-8"))
+        body = msgspec.json.decode(queued.payload)
         assert body["status"] == "error"
         assert body["reason"] == "command_validation_failed"
 

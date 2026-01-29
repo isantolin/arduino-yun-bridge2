@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
+import msgspec
 from unittest.mock import patch
 
 import pytest
@@ -65,7 +65,7 @@ async def test_publish_metrics_publishes_snapshot(
     expected_topic = "test/prefix/system/metrics"
 
     assert message.topic_name == expected_topic
-    assert json.loads(message.payload) == fake_snapshot
+    assert msgspec.json.decode(message.payload) == fake_snapshot
     assert message.content_type == "application/json"
     assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties

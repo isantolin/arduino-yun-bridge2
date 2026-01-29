@@ -590,7 +590,8 @@ class RuntimeState:
     )
 
     def configure(self, config: RuntimeConfig) -> None:
-        self.allowed_policy = config.allowed_policy
+        if config.allowed_policy is not None:
+            self.allowed_policy = config.allowed_policy
         self.process_timeout = config.process_timeout
         self.file_system_root = config.file_system_root
         self.allow_non_tmp_paths = config.allow_non_tmp_paths

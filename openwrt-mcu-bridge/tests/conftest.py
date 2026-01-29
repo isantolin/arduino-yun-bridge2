@@ -9,15 +9,15 @@ def logging_mock_level_fix():
     # Capture existing loggers
     loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
     loggers.append(logging.getLogger()) # Root logger
-    
+
     for logger in loggers:
         for handler in logger.handlers:
             if isinstance(handler.level, MagicMock):
                 original_handlers.append((handler, handler.level))
                 handler.level = logging.NOTSET
-                
+
     yield
-    
+
     # Restore (though usually not necessary for tests)
     for handler, level in original_handlers:
         handler.level = level

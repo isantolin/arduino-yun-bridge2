@@ -166,7 +166,7 @@ class RuntimeConfig:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
             raise ValueError(
-                "serial_shared_secret must be at least %d bytes" 
+                "serial_shared_secret must be at least %d bytes"
                 % MIN_SERIAL_SHARED_SECRET_LEN
             )
         if self.serial_shared_secret == b"changeme123":

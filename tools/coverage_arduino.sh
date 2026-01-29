@@ -48,11 +48,19 @@ COMPILE_FLAGS=(
     -I"${STUB_INCLUDE}"
 )
 
-echo "[coverage_arduino] Compilando binario integrado..."
-g++ "${COMPILE_FLAGS[@]}" "${SOURCES[@]}" "${TEST_ROOT}/test_integrated.cpp" -o "${BUILD_DIR}/test_integrated"
+TEST_FILES=(
+    "${TEST_ROOT}/test_integrated.cpp"
+    "${TEST_ROOT}/test_extreme_coverage.cpp"
+    "${TEST_ROOT}/test_extreme_coverage_v2.cpp"
+)
 
-echo "[coverage_arduino] Ejecutando tests integrados..."
-"${BUILD_DIR}/test_integrated"
+echo "[coverage_arduino] Compilando y ejecutando suites secuencialmente..."
+for test_file in "${TEST_FILES[@]}"; do
+    test_name=$(basename "${test_file}" .cpp)
+    echo "  -> Procesando ${test_name}..."
+    g++ "${COMPILE_FLAGS[@]}" "${SOURCES[@]}" "${test_file}" -o "${BUILD_DIR}/${test_name}"
+    "${BUILD_DIR}/${test_name}"
+done
 
 echo "[coverage_arduino] Generando informes..."
 gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --print-summary >"${OUTPUT_ROOT}/summary.txt"

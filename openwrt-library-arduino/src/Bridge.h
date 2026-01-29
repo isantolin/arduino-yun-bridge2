@@ -168,11 +168,11 @@ class BridgeClass {
   bool isSynchronized() const { return _synchronized; }
 
   // Events
-  void onCommand(CommandHandler handler);
-  void onDigitalReadResponse(DigitalReadHandler handler);
-  void onAnalogReadResponse(AnalogReadHandler handler);
-  void onGetFreeMemoryResponse(GetFreeMemoryHandler handler);
-  void onStatus(StatusHandler handler);
+  inline void onCommand(CommandHandler handler) { _command_handler = handler; }
+  inline void onDigitalReadResponse(DigitalReadHandler handler) { _digital_read_handler = handler; }
+  inline void onAnalogReadResponse(AnalogReadHandler handler) { _analog_read_handler = handler; }
+  inline void onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
+  inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
   // Internal / Lower Level
   bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);

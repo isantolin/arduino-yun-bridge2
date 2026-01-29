@@ -87,8 +87,15 @@ void DataStoreClass::handleResponse(const rpc::Frame& frame) {
   }
 }
 
-void DataStoreClass::onDataStoreGetResponse(DataStoreGetHandler handler) {
-  _datastore_get_handler = handler;
+const char* DataStoreClass::_popPendingDatastoreKey() {
+  if (_pending_datastore_keys.empty()) {
+    _last_datastore_key.clear();
+    return _last_datastore_key.c_str();
+  }
+
+  _last_datastore_key = _pending_datastore_keys.front();
+  _pending_datastore_keys.pop();
+  return _last_datastore_key.c_str();
 }
 
 bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
@@ -107,15 +114,4 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
 
   _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key));
   return true;
-}
-
-const char* DataStoreClass::_popPendingDatastoreKey() {
-  if (_pending_datastore_keys.empty()) {
-    _last_datastore_key.clear();
-    return _last_datastore_key.c_str();
-  }
-
-  _last_datastore_key = _pending_datastore_keys.front();
-  _pending_datastore_keys.pop();
-  return _last_datastore_key.c_str();
 }

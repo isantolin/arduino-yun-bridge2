@@ -702,12 +702,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 }
 
-void BridgeClass::onCommand(CommandHandler handler) { _command_handler = handler; }
-void BridgeClass::onDigitalReadResponse(DigitalReadHandler handler) { _digital_read_handler = handler; }
-void BridgeClass::onAnalogReadResponse(AnalogReadHandler handler) { _analog_read_handler = handler; }
-void BridgeClass::onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
-void BridgeClass::onStatus(StatusHandler handler) { _status_handler = handler; }
-
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;

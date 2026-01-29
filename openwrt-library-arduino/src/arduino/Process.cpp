@@ -111,10 +111,6 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
   }
 }
 
-void ProcessClass::onProcessRunResponse(ProcessRunHandler handler) { _process_run_handler = handler; }
-void ProcessClass::onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
-void ProcessClass::onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
-
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {
   if (_pending_process_pids.full()) {
     return false;

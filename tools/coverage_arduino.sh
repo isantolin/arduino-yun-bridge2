@@ -50,8 +50,12 @@ COMPILE_FLAGS=(
 
 TEST_FILES=(
     "${TEST_ROOT}/test_integrated.cpp"
+    "${TEST_ROOT}/test_bridge_core.cpp"
+    "${TEST_ROOT}/test_bridge_components.cpp"
+    "${TEST_ROOT}/test_protocol.cpp"
     "${TEST_ROOT}/test_extreme_coverage.cpp"
     "${TEST_ROOT}/test_extreme_coverage_v2.cpp"
+    "${TEST_ROOT}/test_arduino_100_coverage.cpp"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites secuencialmente..."

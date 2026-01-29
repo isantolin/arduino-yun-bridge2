@@ -819,12 +819,11 @@ static void test_mailbox_request_frames_and_available_handler() {
   MailboxAvailableState::instance = &st;
   Mailbox.onMailboxAvailableResponse(mailbox_available_trampoline);
 
-  rpc::Frame f{};
-  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
-  f.header.payload_length = 1;
-  f.payload[0] = 7;
-  Mailbox.handleResponse(f);
-  TEST_ASSERT(st.called);
+      rpc::Frame f{};
+      f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+      f.header.payload_length = 2;
+      rpc::write_u16_be(f.payload.data(), 7);
+      Mailbox.handleResponse(f);  TEST_ASSERT(st.called);
   TEST_ASSERT_EQ_UINT(st.count, 7);
 
   MailboxAvailableState::instance = nullptr;

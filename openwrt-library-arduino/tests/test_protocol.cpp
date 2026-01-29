@@ -4,13 +4,21 @@
 
 #include <FastCRC.h>
 
+#include "Bridge.h"
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
 #include "test_support.h"
 
 using namespace rpc;
 
-extern BridgeClass Bridge;
+HardwareSerial Serial;
+HardwareSerial Serial1;
+BridgeClass Bridge(Serial1);
+ConsoleClass Console;
+DataStoreClass DataStore;
+MailboxClass Mailbox;
+FileSystemClass FileSystem;
+ProcessClass Process;
 
 static FastCRC32 CRC32;
 

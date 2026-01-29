@@ -52,12 +52,15 @@ void MailboxClass::handleResponse(const rpc::Frame& frame) {
   const uint8_t* payload_data = frame.payload.data();
   const size_t payload_length = frame.header.payload_length;
 
-  if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
-      if (_mailbox_handler) {
-        _mailbox_handler(payload_data, static_cast<uint16_t>(payload_length));
-      }
-  } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
-      if (_mailbox_available_handler && payload_length >= 2) {
+      if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
+          if (_mailbox_handler && payload_length >= 2) {
+            uint16_t msg_len = rpc::read_u16_be(payload_data);
+            const uint8_t* msg_ptr = payload_data + 2;
+            if (payload_length >= static_cast<size_t>(2 + msg_len)) {
+              _mailbox_handler(msg_ptr, msg_len);
+            }
+          }
+      } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {      if (_mailbox_available_handler && payload_length >= 2) {
         uint16_t count = rpc::read_u16_be(payload_data);
         _mailbox_available_handler(count);
       }

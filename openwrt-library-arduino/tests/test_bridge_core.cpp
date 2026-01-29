@@ -563,11 +563,16 @@ void test_bridge_dedup_window_edges() {
 
     // Dedup logic is independent of synchronization.
     rpc::Frame frame;
+    uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE];
+    rpc::FrameBuilder builder;
+    const uint8_t payload[] = {'x', 'y', 'z'};
+    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), payload, sizeof(payload));
+    
+    // Extract calculated CRC from raw_frame
     frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-    frame.header.payload_length = 3;
-    frame.payload[0] = 'x';
-    frame.payload[1] = 'y';
-    frame.payload[2] = 'z';
+    frame.header.payload_length = sizeof(payload);
+    memcpy(frame.payload.data(), payload, sizeof(payload));
+    frame.crc = rpc::read_u32_be(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE]);
 
     // No prior CRC -> not duplicate.
     bridge._last_rx_crc = 0;

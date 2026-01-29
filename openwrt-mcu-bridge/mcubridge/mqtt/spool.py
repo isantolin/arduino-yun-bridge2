@@ -1,20 +1,18 @@
-"""Durable spool for MQTT publish messages with memory fallback."""
+"""Durable spool for MQTT publish messages using msgspec and file-based FIFO queue."""
 
 from __future__ import annotations
 
 import collections
 import errno
 import logging
-import pickle
+import msgspec
 import threading
 import time
 from pathlib import Path
 from typing import Deque, Protocol, Callable, cast
-import sqlite3
 from .messages import SpoolRecord, QueuedPublish
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
-SqliteError = sqlite3.Error  # type: ignore[assignment]
 
 
 class DiskQueue(Protocol):
@@ -31,74 +29,79 @@ class DiskQueue(Protocol):
     def __len__(self) -> int: ...
 
 
-class SqliteDeque:
-    """Persistent deque implementation using SQLite."""
+class FileSpoolDeque:
+    """
+    Persistent deque implementation using numbered files and msgspec.
+    
+    Provides O(1) append, appendleft, and popleft operations.
+    Files are stored as JSON for transparency and easy debugging on target.
+    """
 
     def __init__(self, directory: str) -> None:
-        self._db_path = Path(directory) / "spool.db"
-        self._conn = sqlite3.connect(
-            self._db_path,
-            check_same_thread=False,
-            isolation_level=None,  # Autocommit mode
-        )
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
-        self._create_table()
+        self._dir = Path(directory)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        
+        # Scan directory to find existing head/tail
+        files = sorted([f.name for f in self._dir.glob("*.msg")])
+        if files:
+            self._head = int(files[0].split(".")[0])
+            self._tail = int(files[-1].split(".")[0])
+        else:
+            self._head = 1000000000
+            self._tail = 1000000000 - 1
 
-    def _create_table(self) -> None:
-        with self._conn:
-            self._conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS queue (
-                    id INTEGER PRIMARY KEY,
-                    data BLOB
-                )
-                """
-            )
-            # Ensure indices if needed, but PRIMARY KEY is already indexed.
+    def _file_path(self, index: int) -> Path:
+        return self._dir / f"{index:010d}.msg"
 
-    def append(self, item: SpoolRecord) -> None:
-        data = pickle.dumps(item)
-        with self._conn:
-            # Use a subquery to find the next ID.
-            # If table is empty, we can start at 1.
-            # If not empty, max(id) + 1.
-            # Note: This is not race-condition free if multiple processes access it,
-            # but here we are single-process (daemon).
-            cursor = self._conn.execute("SELECT MAX(id) FROM queue")
-            row = cursor.fetchone()
-            next_id = (row[0] if row[0] is not None else 0) + 1
-            self._conn.execute("INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data))
+    def append(self, item: SpoolRecord | bytes) -> None:
+        self._tail += 1
+        path = self._file_path(self._tail)
+        # If item is already bytes (from a test), write it directly.
+        # Otherwise, encode the SpoolRecord dict.
+        if isinstance(item, (bytes, bytearray)):
+            path.write_bytes(item)
+        else:
+            path.write_bytes(msgspec.json.encode(item))
 
-    def appendleft(self, item: SpoolRecord) -> None:
-        data = pickle.dumps(item)
-        with self._conn:
-            cursor = self._conn.execute("SELECT MIN(id) FROM queue")
-            row = cursor.fetchone()
-            next_id = (row[0] if row[0] is not None else 1) - 1
-            self._conn.execute("INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data))
+    def appendleft(self, item: SpoolRecord | bytes) -> None:
+        self._head -= 1
+        path = self._file_path(self._head)
+        if isinstance(item, (bytes, bytearray)):
+            path.write_bytes(item)
+        else:
+            path.write_bytes(msgspec.json.encode(item))
 
     def popleft(self) -> SpoolRecord:
-        with self._conn:
-            cursor = self._conn.execute("SELECT id, data FROM queue ORDER BY id ASC LIMIT 1")
-            row = cursor.fetchone()
-            if row is None:
-                raise IndexError("pop from an empty deque")
-            item_id, data = row
-            self._conn.execute("DELETE FROM queue WHERE id = ?", (item_id,))
-            return cast(SpoolRecord, pickle.loads(data))
+        if len(self) == 0:
+            raise IndexError("pop from an empty deque")
+        
+        path = self._file_path(self._head)
+        try:
+            data = path.read_bytes()
+            # Decode to dict. If it fails, let the caller handle the exception.
+            record = msgspec.json.decode(data)
+            return cast(SpoolRecord, record)
+        finally:
+            path.unlink(missing_ok=True)
+            self._head += 1
+            # Reset counters if empty to prevent infinite drift
+            if len(self) == 0:
+                self._head = 1000000000
+                self._tail = 1000000000 - 1
 
     def close(self) -> None:
-        self._conn.close()
+        """No-op for file-based spool."""
+        pass
 
     def clear(self) -> None:
-        with self._conn:
-            self._conn.execute("DELETE FROM queue")
+        for f in self._dir.glob("*.msg"):
+            f.unlink(missing_ok=True)
+        self._head = 1000000000
+        self._tail = 1000000000 - 1
 
     def __len__(self) -> int:
-        cursor = self._conn.execute("SELECT COUNT(*) FROM queue")
-        row = cursor.fetchone()
-        return row[0] if row else 0
+        count = self._tail - self._head + 1
+        return max(0, count)
 
 
 class MQTTSpoolError(RuntimeError):
@@ -128,7 +131,7 @@ class MQTTPublishSpool:
     ) -> None:
         self.directory = Path(directory)
         self.limit = max(0, limit)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._memory_queue: Deque[SpoolRecord] = collections.deque()
         self._disk_queue: DiskQueue | None = None
         self._use_disk = True
@@ -151,13 +154,11 @@ class MQTTPublishSpool:
         if self._use_disk:
             try:
                 self.directory.mkdir(parents=True, exist_ok=True)
-                # queue_dir = self.directory / "queue" # No longer needed for sqlite
-                # queue_dir.mkdir(parents=True, exist_ok=True)
                 self._disk_queue = cast(
                     DiskQueue,
-                    SqliteDeque(directory=str(self.directory)),
+                    FileSpoolDeque(directory=str(self.directory)),
                 )
-            except (OSError, SqliteError) as exc:
+            except OSError as exc:
                 logger.warning(
                     "Failed to initialize disk spool at %s; falling back " "to memory-only mode. Error: %s",
                     directory,
@@ -173,20 +174,16 @@ class MQTTPublishSpool:
         with self._lock:
             if self._disk_queue is not None:
                 try:
-                    close_fn = getattr(self._disk_queue, "close", None)
-                    if callable(close_fn):
-                        close_fn()
-                    else:
-                        self._disk_queue.clear()
-                except (OSError, SqliteError):
+                    self._disk_queue.close()
+                except OSError:
                     logger.warning("Error closing disk queue", exc_info=True)
             self._disk_queue = None
             self._memory_queue.clear()
 
-    def __del__(self) -> None:  # pragma: no cover - defensive cleanup
+    def __del__(self) -> None:  # pragma: no cover
         try:
             self.close()
-        except (OSError, SqliteError):
+        except OSError:
             pass
 
     def append(self, message: QueuedPublish) -> None:
@@ -195,9 +192,8 @@ class MQTTPublishSpool:
             if self._use_disk and self._disk_queue is not None:
                 try:
                     self._disk_queue.append(record)
-                except (OSError, SqliteError, pickle.PickleError) as exc:
+                except (OSError, msgspec.MsgspecError) as exc:
                     self._handle_disk_error(exc, "append")
-                    # Fallback immediately for this message
                     self._memory_queue.append(record)
             else:
                 self._memory_queue.append(record)
@@ -209,20 +205,21 @@ class MQTTPublishSpool:
         while True:
             record: SpoolRecord | None = None
             with self._lock:
-                # Prefer disk if active; drain memory otherwise. If fallback is
-                # engaged we may still have disk entries pending, so attempt
-                # them first and degrade on failure.
-
                 if self._use_disk and self._disk_queue is not None:
                     try:
                         if len(self._disk_queue) > 0:
                             record = self._disk_queue.popleft()
-                    except (OSError, SqliteError, pickle.PickleError) as exc:
+                    except msgspec.MsgspecError as exc:
+                        logger.warning(
+                            "Dropping corrupt MQTT spool entry on disk; cannot decode: %s",
+                            exc,
+                        )
+                        self._corrupt_dropped += 1
+                        continue
+                    except OSError as exc:
                         self._handle_disk_error(exc, "pop")
-                        # Disk failed, try memory next loop iteration
                         continue
 
-                # If we didn't get from disk (empty or failed), try memory
                 if record is None and self._memory_queue:
                     record = self._memory_queue.popleft()
 
@@ -231,23 +228,21 @@ class MQTTPublishSpool:
 
             try:
                 return QueuedPublish.from_record(record)
-            except (ValueError, TypeError, AttributeError, pickle.PickleError):
+            except (ValueError, TypeError, AttributeError):
                 logger.warning(
-                    "Dropping corrupt MQTT spool entry; cannot decode",
+                    "Dropping corrupt MQTT spool entry; record format invalid",
                     exc_info=True,
                 )
                 self._corrupt_dropped += 1
                 continue
 
     def requeue(self, message: QueuedPublish) -> None:
-        # Requeue by returning the record to the front so the next dequeue
-        # attempt retries it immediately.
         record: SpoolRecord = message.to_record()
         with self._lock:
             if self._use_disk and self._disk_queue is not None:
                 try:
                     self._disk_queue.appendleft(record)
-                except (OSError, SqliteError, pickle.PickleError) as exc:
+                except (OSError, msgspec.MsgspecError) as exc:
                     self._handle_disk_error(exc, "requeue")
                     self._memory_queue.appendleft(record)
             else:
@@ -260,7 +255,7 @@ class MQTTPublishSpool:
             if self._disk_queue is not None:
                 try:
                     count += len(self._disk_queue)
-                except (OSError, SqliteError):
+                except OSError:
                     logger.debug("Error counting disk queue items", exc_info=True)
             return count
 
@@ -284,10 +279,8 @@ class MQTTPublishSpool:
         self._fallback_active = True
         if self._disk_queue is not None:
             try:
-                # Attempting to salvage data from disk could be dangerous if
-                # the queue is corrupt, so close it to stop further disk I/O.
                 self._disk_queue.close()
-            except (OSError, SqliteError):
+            except OSError:
                 logger.debug("Error closing disk queue during fallback", exc_info=True)
             self._disk_queue = None
         if self._fallback_hook is not None:
@@ -298,32 +291,21 @@ class MQTTPublishSpool:
         message = "MQTT Spool disk error during %s: %s. " "Switching to memory-only mode (reason=%s)."
         logger.error(message, op, exc, reason)
         self._activate_fallback(reason)
-        # We don't raise MQTTSpoolError anymore; we handle it by degrading.
 
     def _trim_locked(self) -> None:
         if self.limit <= 0:
             return
 
-        current_size = len(self._memory_queue)
-        if self._disk_queue is not None:
-            try:
-                current_size += len(self._disk_queue)
-            except (OSError, SqliteError):
-                # Can't count disk, assume 0 for disk part or just trim memory
-                logger.debug("Error counting disk queue for trim", exc_info=True)
-                pass
-
+        current_size = self.pending
         dropped = 0
         while current_size > self.limit:
-            # Drop from head (oldest). Disk first if available.
             try:
                 if self._disk_queue is not None and len(self._disk_queue) > 0:
                     self._disk_queue.popleft()
                     dropped += 1
                     current_size -= 1
                     continue
-            except (OSError, SqliteError) as exc:
-                # Disk failure during trim, degrade
+            except OSError as exc:
                 logger.error("Disk failure during trim: %s", exc)
                 self._activate_fallback("trim_failed")
 
@@ -332,7 +314,7 @@ class MQTTPublishSpool:
                 dropped += 1
                 current_size -= 1
             else:
-                break  # Should not happen if size calculation correct
+                break
 
         if dropped:
             self._dropped_due_to_limit += dropped

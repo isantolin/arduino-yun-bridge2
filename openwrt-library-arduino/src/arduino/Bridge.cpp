@@ -135,15 +135,10 @@ BridgeClass* g_bridge_instance = nullptr;
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
     : _stream(arg_serial),
-      _hardware_serial(&arg_serial),
-      _packetSerial(),
-      _shared_secret(),
-      _target_frame(nullptr),
       _frame_received(false),
       _parser(),
       _rx_frame{},
       _scratch_payload(),
-      _awaiting_ack(false),
       _last_command_id(0),
       _retry_count(0),
       _last_send_millis(0),
@@ -159,7 +154,7 @@ BridgeClass::BridgeClass(HardwareSerial& arg_serial)
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
       _pending_tx_queue(),
-      _synchronized(false),
+      _state(BridgeState::Unsynchronized),
       _last_raw_frame()
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
@@ -178,7 +173,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _parser(),
       _rx_frame{},
       _scratch_payload(),
-      _awaiting_ack(false),
       _last_command_id(0),
       _retry_count(0),
       _last_send_millis(0),
@@ -194,7 +188,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
       _pending_tx_queue(),
-      _synchronized(false),
+      _state(BridgeState::Unsynchronized),
       _last_raw_frame()
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
@@ -232,7 +226,7 @@ void BridgeClass::begin(
                          reinterpret_cast<const uint8_t*>(arg_secret) + actual_len);
   }
 
-  _awaiting_ack = false;
+  _state = BridgeState::Unsynchronized;
   _last_command_id = 0;
   _retry_count = 0;
   _last_send_millis = 0;
@@ -244,7 +238,7 @@ void BridgeClass::begin(
 #endif
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
-  while (!_synchronized) {
+  while (_state == BridgeState::Unsynchronized) {
     process();
   }
 #endif
@@ -315,7 +309,7 @@ void BridgeClass::process() {
           #endif
         }
       }
-      if (_synchronized) {
+      if (_state != BridgeState::Unsynchronized) {
         switch (error) {
           case rpc::FrameParser::Error::CRC_MISMATCH:
             _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
@@ -481,7 +475,8 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
             memcpy(response + nonce_length, tag, kHandshakeTagSize);
           }
           (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, response, response_length);
-          _synchronized = true;
+          // [SIL-2] Handshake complete -> Transition to Idle
+          _state = BridgeState::Idle;
         }
       }
       break;
@@ -758,13 +753,29 @@ bool BridgeClass::sendFrame(rpc::StatusCode status_code, const uint8_t* arg_payl
   return _sendFrame(rpc::to_underlying(status_code), arg_payload, arg_length);
 }
 
+bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
+  return (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
+         (command_id == rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||
+         (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP)) ||
+         (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP));
+}
+
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
-  if (!_synchronized) {
-    bool allowed = (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
-                   (command_id == rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||
-                   (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP)) ||
-                   (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP));
-    if (!allowed) return false;
+  // [SIL-2] Finite State Machine - Outbound Filter
+  switch (_state) {
+    case BridgeState::Unsynchronized:
+      // Only allow handshake commands during startup
+      if (!_isHandshakeCommand(command_id)) return false;
+      break;
+    
+    case BridgeState::Fault:
+      // Safety State: Drop all outbound traffic
+      return false;
+
+    case BridgeState::Idle:
+    case BridgeState::AwaitingAck:
+      // Allowed
+      break;
   }
 
   uint16_t final_cmd = command_id;
@@ -780,17 +791,27 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
     }
   }
 
-  if (!_requiresAck(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED)) {
+  const bool critical = _requiresAck(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED);
+
+  // [SIL-2] State-Driven Sending Logic
+  if (!critical) {
     return _sendFrameImmediate(final_cmd, final_payload, final_len);
   }
 
-  if (_awaiting_ack) {
+  // Critical frames logic
+  if (_state == BridgeState::AwaitingAck) {
+    // Already waiting? Queue it.
     if (_enqueuePendingTx(final_cmd, final_payload, final_len)) return true;
+    
+    // Queue full? Try to process timeout to free space (Emergency Valve)
     _processAckTimeout();
-    if (!_awaiting_ack && _enqueuePendingTx(final_cmd, final_payload, final_len)) return true;
-    return false;
+    if (_state != BridgeState::AwaitingAck && _enqueuePendingTx(final_cmd, final_payload, final_len)) {
+        return true;
+    }
+    return false; // Dropped
   }
 
+  // Idle -> Send & Transition
   return _sendFrameImmediate(final_cmd, final_payload, final_len);
 }
 
@@ -808,7 +829,7 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
   flushStream();
 
   if (_requiresAck(command_id)) {
-    _awaiting_ack = true;
+    _state = BridgeState::AwaitingAck;
     _retry_count = 0;
     _last_send_millis = millis();
     _last_command_id = command_id;
@@ -838,10 +859,15 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
   }
 }
 
-void BridgeClass::_clearAckState() { _awaiting_ack = false; _retry_count = 0; }
+void BridgeClass::_clearAckState() { 
+  if (_state == BridgeState::AwaitingAck) {
+    _state = BridgeState::Idle; 
+  }
+  _retry_count = 0; 
+}
 
 void BridgeClass::_handleAck(uint16_t command_id) {
-  if (_awaiting_ack && (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id)) {
+  if (_state == BridgeState::AwaitingAck && (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id)) {
     _clearAckState();
     _flushPendingTxQueue();
   }
@@ -852,7 +878,7 @@ void BridgeClass::_handleMalformed(uint16_t command_id) {
 }
 
 void BridgeClass::_retransmitLastFrame() {
-  if (_awaiting_ack && !_last_raw_frame.empty()) {
+  if (_state == BridgeState::AwaitingAck && !_last_raw_frame.empty()) {
     _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
     _retry_count++;
     _last_send_millis = millis();
@@ -861,7 +887,7 @@ void BridgeClass::_retransmitLastFrame() {
 }
 
 void BridgeClass::_processAckTimeout() {
-  if (!_awaiting_ack) return;
+  if (_state != BridgeState::AwaitingAck) return;
   unsigned long now = millis();
   if ((now - _last_send_millis) < _ack_timeout_ms) return;
   if (_retry_count >= _ack_retry_limit) {
@@ -873,7 +899,7 @@ void BridgeClass::_processAckTimeout() {
 }
 
 void BridgeClass::enterSafeState() {
-  _synchronized = false;
+  _state = BridgeState::Unsynchronized;
   _clearAckState();
   _clearPendingTxQueue();
   _frame_received = false;
@@ -890,7 +916,7 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  if (_awaiting_ack || _pending_tx_queue.empty()) return;
+  if (_state == BridgeState::AwaitingAck || _pending_tx_queue.empty()) return;
   const PendingTxFrame& frame = _pending_tx_queue.front();
   if (_sendFrameImmediate(frame.command_id, frame.payload.data(), frame.payload_length)) _pending_tx_queue.pop();
 }

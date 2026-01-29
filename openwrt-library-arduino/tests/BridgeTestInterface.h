@@ -29,7 +29,7 @@ class TestAccessor {
     return _bridge._parser.getError();
   }
 
-  bool isAwaitingAck() const { return _bridge._awaiting_ack; }
+  bool isAwaitingAck() const { return _bridge._state == BridgeState::AwaitingAck; }
   uint16_t getLastCommandId() const { return _bridge._last_command_id; }
 
   // --- Methods ---
@@ -46,7 +46,7 @@ class TestAccessor {
   }
 
   void setSynchronized(bool synchronized) {
-    _bridge._synchronized = synchronized;
+    _bridge._state = synchronized ? BridgeState::Idle : BridgeState::Unsynchronized;
   }
 
   static TestAccessor create(BridgeClass& bridge) {

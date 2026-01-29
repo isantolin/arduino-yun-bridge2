@@ -130,6 +130,14 @@ namespace bridge {
 namespace test { class TestAccessor; }
 }
 
+// [SIL-2] Finite State Machine (Deterministic State)
+enum class BridgeState : uint8_t {
+  Unsynchronized,      // Startup / Reset state. Only Handshake commands allowed.
+  Idle,                // Connected & Synchronized. Ready for commands.
+  AwaitingAck,         // Sent critical command, waiting for ACK. Queueing non-critical.
+  Fault                // Safety state (optional, currently resets to Unsynchronized)
+};
+
 class BridgeClass {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
@@ -165,7 +173,7 @@ class BridgeClass {
       ,
              const char* secret = nullptr, size_t secret_len = 0);
   void process();
-  bool isSynchronized() const { return _synchronized; }
+  bool isSynchronized() const { return _state != BridgeState::Unsynchronized; }
 
   // Events
   inline void onCommand(CommandHandler handler) { _command_handler = handler; }
@@ -220,7 +228,6 @@ class BridgeClass {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _scratch_payload;
 
   // State
-  bool _awaiting_ack;
   uint16_t _last_command_id;
   uint8_t _retry_count;
   unsigned long _last_send_millis;
@@ -250,7 +257,8 @@ class BridgeClass {
   };
   // [SIL-2] Use queue adapter over deque for strict FIFO semantics
   etl::queue<PendingTxFrame, BRIDGE_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
-  bool _synchronized;
+
+  BridgeState _state;
 
   // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
   etl::vector<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;
@@ -266,6 +274,7 @@ class BridgeClass {
 
   bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
   void _markRxProcessed(const rpc::Frame& frame);
+  bool _isHandshakeCommand(uint16_t command_id) const;
 
   void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);

@@ -113,11 +113,10 @@ def cleanup_status_file() -> None:
 def _write_status_file(payload: dict[str, Any]) -> None:
     STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
     with NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
+        "wb",
         dir=STATUS_FILE.parent,
         delete=False,
     ) as handle:
-        handle.write(msgspec.json.encode(payload).decode("utf-8"))
+        handle.write(msgspec.json.encode(payload))
         temp_name = handle.name
     Path(temp_name).replace(STATUS_FILE)

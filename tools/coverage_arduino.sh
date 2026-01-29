@@ -64,6 +64,7 @@ done
 
 echo "[coverage_arduino] Generando informes..."
 gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --print-summary >"${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --json-summary "${OUTPUT_ROOT}/summary.json"
 gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --xml "${OUTPUT_ROOT}/coverage.xml"
 gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --html-details "${OUTPUT_ROOT}/index.html"
 

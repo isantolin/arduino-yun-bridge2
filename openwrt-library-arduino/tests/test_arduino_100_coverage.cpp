@@ -51,7 +51,7 @@ void setup_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
-    Bridge._synchronized = true;
+    Bridge._state = BridgeState::Idle;
 }
 
 // --- TARGET: rpc_frame.cpp Gaps ---
@@ -149,12 +149,12 @@ void test_bridge_extra_gaps() {
     Bridge.sendFrame(rpc::StatusCode::STATUS_ACK);
 
     // Gap: sendFrame while not synchronized (allowed commands)
-    Bridge._synchronized = false;
+    Bridge._state = BridgeState::Unsynchronized;
     assert(Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP));
     assert(Bridge.sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP));
     assert(Bridge.sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP));
     assert(!Bridge.sendFrame(rpc::CommandId::CMD_DIGITAL_WRITE));
-    Bridge._synchronized = true;
+    Bridge._state = BridgeState::Idle;
 
     // Gap: _enqueuePendingTx with full queue
     for(int i=0; i<BRIDGE_MAX_PENDING_TX_FRAMES; ++i) {
@@ -171,13 +171,13 @@ void test_bridge_extra_gaps() {
     assert(!Bridge._dequeuePendingTx(pf));
 
     // Gap: _handleAck with invalid ID
-    Bridge._awaiting_ack = true;
+    Bridge._state = BridgeState::AwaitingAck;
     Bridge._last_command_id = 0x60;
     Bridge._handleAck(rpc::RPC_INVALID_ID_SENTINEL);
-    assert(!Bridge._awaiting_ack);
+    assert(Bridge._state != BridgeState::AwaitingAck);
 
     // Gap: _handleMalformed with invalid ID
-    Bridge._awaiting_ack = true;
+    Bridge._state = BridgeState::AwaitingAck;
     Bridge._last_command_id = 0x60;
     Bridge._handleMalformed(rpc::RPC_INVALID_ID_SENTINEL);
 

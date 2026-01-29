@@ -49,7 +49,7 @@ void setup_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
-    Bridge._synchronized = true;
+    Bridge._state = BridgeState::Idle;
 }
 
 // --- COBERTURA BRIDGE.CPP ---
@@ -105,7 +105,7 @@ void test_bridge_gaps() {
     Bridge.process(); 
 
     // Gap: Retransmission logic and failure streak
-    Bridge._awaiting_ack = true;
+    Bridge._state = BridgeState::AwaitingAck;
     Bridge._retry_count = 0;
     Bridge._last_send_millis = millis() - 5000; 
     Bridge._ack_timeout_ms = 1000;

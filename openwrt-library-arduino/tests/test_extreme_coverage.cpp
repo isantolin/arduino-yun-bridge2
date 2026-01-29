@@ -41,8 +41,11 @@ public:
 void setup_test_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
-    Bridge.begin();
-    Bridge._synchronized = true;
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    
+    // Manually force sync state to enable command processing
+    Bridge._state = BridgeState::Idle;
+    Console.begin();
 }
 
 // --- TEST: SISTEMA Y GPIO (BRIDGE.CPP) ---

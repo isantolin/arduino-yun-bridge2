@@ -63,7 +63,7 @@ class FileComponent:
             )
             return False
 
-        path = payload[cursor:cursor + path_len].decode("utf-8", errors="ignore")
+        path = payload[cursor : cursor + path_len].decode("utf-8", errors="ignore")
 
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
         # Bloqueamos explícitamente rutas absolutas o relativas peligrosas antes de procesar datos.
@@ -88,17 +88,15 @@ class FileComponent:
             return False
 
         cursor += path_len
-        data_len = int.from_bytes(payload[cursor:cursor + 2], "big")
+        data_len = int.from_bytes(payload[cursor : cursor + 2], "big")
         cursor += 2
 
-        file_data = payload[cursor:cursor + data_len]
+        file_data = payload[cursor : cursor + data_len]
         if len(file_data) != data_len:
             logger.warning("File write payload truncated. Expected %d bytes.", data_len)
             return False
 
-        success, _, reason = await self._perform_file_operation(
-            FileAction.WRITE, path, file_data
-        )
+        success, _, reason = await self._perform_file_operation(FileAction.WRITE, path, file_data)
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
             return True
@@ -126,10 +124,8 @@ class FileComponent:
             )
             return
 
-        filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
-        success, content, reason = await self._perform_file_operation(
-            FileAction.READ, filename
-        )
+        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
+        success, content, reason = await self._perform_file_operation(FileAction.READ, filename)
 
         if not success:
             await self.ctx.send_frame(
@@ -168,10 +164,8 @@ class FileComponent:
             )
             return False
 
-        filename = payload[1:1 + path_len].decode("utf-8", errors="ignore")
-        success, _, reason = await self._perform_file_operation(
-            FileAction.REMOVE, filename
-        )
+        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
+        success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
             return True
@@ -205,9 +199,7 @@ class FileComponent:
             )
             match action:
                 case FileAction.WRITE:
-                    success, _, reason = await self._perform_file_operation(
-                        FileAction.WRITE, filename, payload
-                    )
+                    success, _, reason = await self._perform_file_operation(FileAction.WRITE, filename, payload)
                     if not success:
                         outcome["status"] = reason or "write_failed"
                         logger.error(
@@ -257,9 +249,7 @@ class FileComponent:
                     )
 
                 case FileAction.REMOVE:
-                    success, _, reason = await self._perform_file_operation(
-                        FileAction.REMOVE, filename
-                    )
+                    success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
                     if not success:
                         outcome["status"] = reason or "remove_failed"
                         logger.error(
@@ -413,10 +403,7 @@ class FileComponent:
             if payload_size > limit:
                 self.state.file_write_limit_rejections += 1
                 logger.warning(
-                    (
-                        "Rejecting %d-byte file write to %s: exceeds "
-                        "per-write limit of %d byte(s)."
-                    ),
+                    ("Rejecting %d-byte file write to %s: exceeds " "per-write limit of %d byte(s)."),
                     payload_size,
                     path,
                     limit,
@@ -434,10 +421,7 @@ class FileComponent:
             if projected_usage > quota:
                 self.state.file_storage_limit_rejections += 1
                 logger.warning(
-                    (
-                        "Rejecting file write to %s: projected usage %d "
-                        "byte(s) exceeds quota of %d byte(s)."
-                    ),
+                    ("Rejecting file write to %s: projected usage %d " "byte(s) exceeds quota of %d byte(s)."),
                     path,
                     projected_usage,
                     quota,

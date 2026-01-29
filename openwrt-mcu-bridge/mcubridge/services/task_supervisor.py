@@ -65,9 +65,7 @@ class _SupervisorRetryState:
             # If next_action is None, tenacity has stopped retrying
             is_last = retry_state.next_action is None
             delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
-            self.state.record_supervisor_failure(
-                self.name, backoff=delay, exc=exc, fatal=is_last
-            )
+            self.state.record_supervisor_failure(self.name, backoff=delay, exc=exc, fatal=is_last)
 
 
 async def supervise_task(
@@ -91,8 +89,7 @@ async def supervise_task(
     retryer = tenacity.AsyncRetrying(
         wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
         retry=tenacity.retry_if_not_exception_type(
-            (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit)
-            + fatal_exceptions
+            (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit) + fatal_exceptions
         ),
         stop=tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never,
         before_sleep=helper.before_sleep,
@@ -132,7 +129,7 @@ async def supervise_task(
                     continue
 
                 # Check if we gave up
-                if max_restarts is not None and retryer.statistics['attempt_number'] >= (max_restarts + 1):
+                if max_restarts is not None and retryer.statistics["attempt_number"] >= (max_restarts + 1):
                     log.error("%s exceeded max restarts (%d) in window; giving up", name, max_restarts)
 
                 raise

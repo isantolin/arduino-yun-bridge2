@@ -3,8 +3,10 @@ test_coverage_extreme.py (V3 Fixed).
 
 Objetivo: 100% Cobertura Real en Daemon y Transportes (Py3.13 Compatible).
 """
+
 import sys
 from unittest.mock import MagicMock, AsyncMock
+
 # Mock serial_asyncio_fast
 mock_saf = MagicMock()
 mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
@@ -43,9 +45,7 @@ def test_daemon_task_setup_logic():
     mock_config.metrics_host = "localhost"
     mock_config.metrics_port = 9090
 
-    with patch("mcubridge.daemon.create_runtime_state"), \
-            patch("mcubridge.daemon.BridgeService"):
-
+    with patch("mcubridge.daemon.create_runtime_state"), patch("mcubridge.daemon.BridgeService"):
         daemon = BridgeDaemon(mock_config)
         specs = daemon._setup_supervision()
 
@@ -71,11 +71,11 @@ async def test_daemon_run_lifecycle():
     mock_config.status_interval = 5.0
     mock_config.serial_shared_secret = "s_e_c_r_e_t_mock"
 
-    with patch("mcubridge.daemon.create_runtime_state"), \
-            patch("mcubridge.daemon.BridgeService") as MockService, \
-            patch("mcubridge.daemon.supervise_task",
-                  new_callable=AsyncMock) as mock_supervise:
-
+    with (
+        patch("mcubridge.daemon.create_runtime_state"),
+        patch("mcubridge.daemon.BridgeService") as MockService,
+        patch("mcubridge.daemon.supervise_task", new_callable=AsyncMock) as mock_supervise,
+    ):
         # Hacer que supervise_task retorne inmediatamente para no bloquear
         mock_supervise.return_value = None
 
@@ -99,6 +99,7 @@ async def test_daemon_run_lifecycle():
 async def test_serial_read_loop_corruption_and_recovery():
     """Simula flujo de bytes corruptos y recuperación usando Protocol."""
     from mcubridge.transport.serial_fast import BridgeSerialProtocol
+
     mock_service = AsyncMock()
     mock_state = MagicMock()
 
@@ -106,9 +107,7 @@ async def test_serial_read_loop_corruption_and_recovery():
     proto = BridgeSerialProtocol(mock_service, mock_state, asyncio.get_running_loop())
 
     # Data stream: [Valid] [Corrupt] [Huge] [Noise]
-    valid_frame = cobs.encode(
-        Frame.build(Command.CMD_GET_VERSION, b"")
-    ) + FRAME_DELIMITER
+    valid_frame = cobs.encode(Frame.build(Command.CMD_GET_VERSION, b"")) + FRAME_DELIMITER
     bad_cobs = bytes([5, UINT8_MASK, UINT8_MASK]) + FRAME_DELIMITER
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
     TEST_PAYLOAD_BYTE = 0xAA
@@ -132,6 +131,7 @@ async def test_serial_read_loop_corruption_and_recovery():
 async def test_serial_write_flow_control():
     """Prueba protecciones de escritura."""
     from mcubridge.transport.serial_fast import BridgeSerialProtocol
+
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), MagicMock())
     proto.transport = None
     assert proto.write_frame(Command.CMD_GET_VERSION.value, b"") is False
@@ -157,11 +157,13 @@ async def test_mqtt_connection_backoff_and_auth_fail():
     mock_ctx = MagicMock()
 
     # Fallos secuenciales -> Cancelación
-    mock_ctx.__aenter__ = AsyncMock(side_effect=[
-        aiomqtt.MqttError("Network Unreachable"),
-        OSError("No route to host"),
-        asyncio.CancelledError("Stop Test")
-    ])
+    mock_ctx.__aenter__ = AsyncMock(
+        side_effect=[
+            aiomqtt.MqttError("Network Unreachable"),
+            OSError("No route to host"),
+            asyncio.CancelledError("Stop Test"),
+        ]
+    )
     mock_ctx.__aexit__ = AsyncMock()
     mock_client_cls.return_value = mock_ctx
 
@@ -192,10 +194,7 @@ async def test_mqtt_publisher_loop_error_handling():
     mock_state.flush_mqtt_spool = AsyncMock()
 
     mock_client = MagicMock()
-    mock_client.publish = AsyncMock(side_effect=[
-        aiomqtt.MqttError("Pub failed"),
-        asyncio.CancelledError("Stop")
-    ])
+    mock_client.publish = AsyncMock(side_effect=[aiomqtt.MqttError("Pub failed"), asyncio.CancelledError("Stop")])
     mock_client.subscribe = AsyncMock()
 
     mock_ctx = MagicMock()
@@ -205,12 +204,9 @@ async def test_mqtt_publisher_loop_error_handling():
     tg_mock.__aenter__ = AsyncMock(return_value=tg_mock)
     tg_mock.create_task = MagicMock()
 
-    with patch("mcubridge.transport.mqtt.aiomqtt.Client",
-               return_value=mock_ctx):
+    with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_ctx):
         with patch("asyncio.TaskGroup", return_value=tg_mock):
-            task = asyncio.create_task(
-                mqtt_task(mock_config, mock_state, AsyncMock())
-            )
+            task = asyncio.create_task(mqtt_task(mock_config, mock_state, AsyncMock()))
             await asyncio.sleep(0.01)
             task.cancel()
             try:

@@ -8,11 +8,8 @@ from typing import Self
 from .topic import TopicLike
 from .types import PayloadType
 
-if sys.version_info >= (3, 11):
-    ...
-else:
-    ...
-
+if sys.version_info >= (3, 11): ...
+else: ...
 
 class Message:
     """Wraps the paho-mqtt message class to allow using our own matching logic.
@@ -42,8 +39,9 @@ class Message:
         properties (paho.mqtt.properties.Properties | None):
             (MQTT v5.0 only) The properties associated with the message.
     """
-    def __init__(self, topic: TopicLike, payload: PayloadType, qos: int, retain: bool, mid: int, properties: Properties | None) -> None:
-        ...
+    def __init__(
+        self, topic: TopicLike, payload: PayloadType, qos: int, retain: bool, mid: int, properties: Properties | None
+    ) -> None: ...
 
     topic: TopicLike
     payload: PayloadType
@@ -52,5 +50,4 @@ class Message:
     mid: int
     properties: Properties | None
 
-    def __lt__(self, other: Self) -> bool:
-        ...
+    def __lt__(self, other: Self) -> bool: ...

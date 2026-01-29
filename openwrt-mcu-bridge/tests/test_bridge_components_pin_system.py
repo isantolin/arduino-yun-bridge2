@@ -51,9 +51,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
 
     service.register_serial_sender(fake_sender)
 
-    runtime_state.pending_digital_reads.append(
-        PendingPinRequest(pin=7, reply_context=None)
-    )
+    runtime_state.pending_digital_reads.append(PendingPinRequest(pin=7, reply_context=None))
 
     await service.handle_mcu_frame(
         Command.CMD_DIGITAL_READ_RESP.value,
@@ -74,9 +72,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == struct.pack(
-        protocol.UINT16_FORMAT, Command.CMD_DIGITAL_READ_RESP.value
-    )
+    assert ack_payload == struct.pack(protocol.UINT16_FORMAT, Command.CMD_DIGITAL_READ_RESP.value)
 
 
 @pytest.mark.asyncio
@@ -94,9 +90,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
 
     service.register_serial_sender(fake_sender)
 
-    runtime_state.pending_analog_reads.append(
-        PendingPinRequest(pin=3, reply_context=None)
-    )
+    runtime_state.pending_analog_reads.append(PendingPinRequest(pin=3, reply_context=None))
 
     TEST_EXIT_CODE = 0x7F
     await service.handle_mcu_frame(
@@ -221,9 +215,7 @@ async def test_mcu_digital_read_request_yields_not_implemented(
     assert sent_frames == [
         (
             Status.NOT_IMPLEMENTED.value,
-            encode_status_reason(
-                "pin-read-origin-mcu:linux_gpio_read_not_available"
-            ),
+            encode_status_reason("pin-read-origin-mcu:linux_gpio_read_not_available"),
         )
     ]
 
@@ -262,9 +254,7 @@ async def test_mcu_free_memory_response_enqueues_value(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == struct.pack(
-        protocol.UINT16_FORMAT, Command.CMD_GET_FREE_MEMORY_RESP.value
-    )
+    assert ack_payload == struct.pack(protocol.UINT16_FORMAT, Command.CMD_GET_FREE_MEMORY_RESP.value)
 
 
 @pytest.mark.asyncio
@@ -326,9 +316,7 @@ async def test_mqtt_shell_run_publishes_response(
 
     calls: list[tuple[object, str]] = []
 
-    async def fake_run(
-        self: object, command: str
-    ) -> tuple[int, bytes, bytes, int | None]:
+    async def fake_run(self: object, command: str) -> tuple[int, bytes, bytes, int | None]:
         calls.append((self, command))
         return Status.OK.value, b"ok\n", b"", 0
 

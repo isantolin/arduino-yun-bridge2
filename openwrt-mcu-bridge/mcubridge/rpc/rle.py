@@ -17,6 +17,7 @@ Examples:
 
 Only encodes runs of 4+ identical bytes (break-even at 3).
 """
+
 from __future__ import annotations
 
 from typing import Final
@@ -54,9 +55,7 @@ def encode(data: bytes) -> bytes:
 
         # Count consecutive identical bytes
         run_len = 1
-        while (src_pos + run_len < src_len and
-               data[src_pos + run_len] == current and
-               run_len < MAX_RUN_LENGTH):
+        while src_pos + run_len < src_len and data[src_pos + run_len] == current and run_len < MAX_RUN_LENGTH:
             run_len += 1
 
         if run_len >= MIN_RUN_LENGTH:
@@ -117,8 +116,7 @@ def decode(data: bytes) -> bytes:
             # Encoded run: need at least 2 more bytes
             if src_pos + 2 > src_len:
                 raise ValueError(
-                    f"Malformed RLE: escape at position {src_pos - 1} "
-                    f"but only {src_len - src_pos} bytes remaining"
+                    f"Malformed RLE: escape at position {src_pos - 1} " f"but only {src_len - src_pos} bytes remaining"
                 )
 
             count_minus_2 = data[src_pos]

@@ -115,9 +115,7 @@ async def test_acknowledge_mcu_frame_truncates_extra_payload() -> None:
     assert sent
     status_cmd, payload = sent[0]
     assert status_cmd == Status.MALFORMED.value
-    assert payload.startswith(
-        struct.pack(protocol.UINT16_FORMAT, protocol.Command.CMD_GET_FREE_MEMORY.value)
-    )
+    assert payload.startswith(struct.pack(protocol.UINT16_FORMAT, protocol.Command.CMD_GET_FREE_MEMORY.value))
     assert len(payload) <= protocol.MAX_PAYLOAD_SIZE
 
 

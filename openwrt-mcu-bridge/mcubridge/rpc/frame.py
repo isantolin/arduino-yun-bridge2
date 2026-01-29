@@ -64,10 +64,7 @@ class Frame:
         """Build a raw frame (header + payload + CRC) for COBS encoding."""
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload too large ({payload_len} bytes); "
-                f"max is {protocol.MAX_PAYLOAD_SIZE}"
-            )
+            raise ValueError(f"Payload too large ({payload_len} bytes); " f"max is {protocol.MAX_PAYLOAD_SIZE}")
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
@@ -105,9 +102,7 @@ class Frame:
         # 1. Verify minimum size
         if len(raw_frame_buffer) < protocol.MIN_FRAME_SIZE:
             raise ValueError(
-                "Incomplete frame: size "
-                f"{len(raw_frame_buffer)} is less than minimum "
-                f"{protocol.MIN_FRAME_SIZE}"
+                "Incomplete frame: size " f"{len(raw_frame_buffer)} is less than minimum " f"{protocol.MIN_FRAME_SIZE}"
             )
 
         # 2. Extract header and validate version early (optional but safer)
@@ -131,42 +126,28 @@ class Frame:
         calculated_crc = crc32(data_to_check) & protocol.CRC32_MASK
 
         if received_crc != calculated_crc:
-            raise ValueError(
-                f"CRC mismatch. Expected {calculated_crc:08X}, "
-                f"got {received_crc:08X}"
-            )
+            raise ValueError(f"CRC mismatch. Expected {calculated_crc:08X}, " f"got {received_crc:08X}")
 
         # 4. Validate header content
         header_data = data_to_check[: protocol.CRC_COVERED_HEADER_SIZE]
-        version, payload_len, command_id = struct.unpack(
-            protocol.CRC_COVERED_HEADER_FORMAT, header_data
-        )
+        version, payload_len, command_id = struct.unpack(protocol.CRC_COVERED_HEADER_FORMAT, header_data)
 
         if version != protocol.PROTOCOL_VERSION:
-            raise ValueError(
-                "Invalid version. Expected "
-                f"{protocol.PROTOCOL_VERSION}, got {version}"
-            )
+            raise ValueError("Invalid version. Expected " f"{protocol.PROTOCOL_VERSION}, got {version}")
 
         # [SIL-2] Semantic Validation: Reject invalid/reserved command IDs (e.g. 0x00)
         # This prevents "noise" frames (valid CRC but nonsense ID) from reaching the
         # dispatcher and flooding logs with "Link not synchronized" warnings.
         if command_id < protocol.STATUS_CODE_MIN:
-            raise ValueError(
-                f"Invalid command id {command_id} (reserved/below minimum "
-                f"{protocol.STATUS_CODE_MIN})"
-            )
+            raise ValueError(f"Invalid command id {command_id} (reserved/below minimum " f"{protocol.STATUS_CODE_MIN})")
 
         # 4. Validate payload length against actual data length
         actual_payload_len = len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
         if payload_len != actual_payload_len:
-            raise ValueError(
-                "Payload length mismatch. Header says "
-                f"{payload_len}, but got {actual_payload_len}"
-            )
+            raise ValueError("Payload length mismatch. Header says " f"{payload_len}, but got {actual_payload_len}")
 
         # 5. Extract payload
-        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE:]
+        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE :]
 
         return command_id, payload
 

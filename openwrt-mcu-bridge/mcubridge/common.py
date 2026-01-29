@@ -54,9 +54,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from mcubridge.mqtt.messages import QueuedPublish
 
-_TRUE_STRINGS: Final[frozenset[str]] = frozenset(
-    {"1", "yes", "on", "true", "enable", "enabled"}
-)
+_TRUE_STRINGS: Final[frozenset[str]] = frozenset({"1", "yes", "on", "true", "enable", "enabled"})
 _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"
 
@@ -289,9 +287,7 @@ __all__: Final[tuple[str, ...]] = (
 )
 
 
-def log_hexdump(
-    logger_instance: logging.Logger, level: int, label: str, data: bytes
-) -> None:
+def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:
     """Log binary data in hexadecimal format using syslog-friendly output.
 
     Format: [HEXDUMP] %s: %s

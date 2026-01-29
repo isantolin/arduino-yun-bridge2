@@ -58,6 +58,7 @@ constexpr size_t MAX_RAW_FRAME_SIZE =
 struct Frame {
   FrameHeader header;
   etl::array<uint8_t, MAX_PAYLOAD_SIZE> payload;
+  uint32_t crc;
 };
 
 class FrameParser {

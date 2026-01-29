@@ -118,9 +118,7 @@ def test_publish_with_retries_configures_tls(
     # Mock ssl to avoid file not found errors
     import ssl
 
-    monkeypatch.setattr(
-        ssl, "create_default_context", lambda **kwargs: "FAKE_TLS_CONTEXT"
-    )
+    monkeypatch.setattr(ssl, "create_default_context", lambda **kwargs: "FAKE_TLS_CONTEXT")
 
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"

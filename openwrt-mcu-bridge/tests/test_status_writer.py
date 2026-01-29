@@ -99,9 +99,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
 
         assert payload["mqtt_queue_limit"] == 42
         assert payload["mqtt_messages_dropped"] == 3
-        assert payload["mqtt_drop_counts"] == {
-            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 2
-        }
+        assert payload["mqtt_drop_counts"] == {f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test": 2}
         assert payload["datastore_keys"] == ["foo"]
         assert payload["mailbox_size"] == 1
         assert payload["mailbox_bytes"] == 3

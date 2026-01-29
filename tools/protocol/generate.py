@@ -122,9 +122,7 @@ def _write_python_mqtt_subscriptions(out: TextIO, spec: dict[str, Any]) -> None:
     if not mqtt_subscriptions:
         return
 
-    out.write(
-        "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (\n"
-    )
+    out.write("MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (\n")
 
     action_member_by_prefix = _python_action_member_by_prefix(spec)
 
@@ -188,167 +186,93 @@ def _write_python_status_reasons(out: TextIO, spec: dict[str, Any]) -> None:
 def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write(f"{HEADER}\n")
     out.write("#ifndef RPC_PROTOCOL_H\n#define RPC_PROTOCOL_H\n\n")
-    out.write('#include <stddef.h>\n')
-    out.write('#include <stdint.h>\n\n')
+    out.write("#include <stddef.h>\n")
+    out.write("#include <stdint.h>\n\n")
 
     out.write("namespace rpc {\n\n")
 
     consts = spec["constants"]
-    out.write(
-        f"constexpr uint8_t PROTOCOL_VERSION = {consts['protocol_version']};\n"
-    )
-    out.write(
-        f"constexpr unsigned long RPC_DEFAULT_BAUDRATE = {consts['default_baudrate']};\n"
-    )
+    out.write(f"constexpr uint8_t PROTOCOL_VERSION = {consts['protocol_version']};\n")
+    out.write(f"constexpr unsigned long RPC_DEFAULT_BAUDRATE = {consts['default_baudrate']};\n")
     if "default_safe_baudrate" in consts:
-        out.write(
-            f"constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = {consts['default_safe_baudrate']};\n"
-        )
+        out.write(f"constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = {consts['default_safe_baudrate']};\n")
     if "max_payload_size" in consts:
-        out.write(
-            f"constexpr size_t MAX_PAYLOAD_SIZE = {consts['max_payload_size']};\n"
-        )
+        out.write(f"constexpr size_t MAX_PAYLOAD_SIZE = {consts['max_payload_size']};\n")
     if "max_filepath_length" in consts:
-        out.write(
-            f"constexpr size_t RPC_MAX_FILEPATH_LENGTH = {consts['max_filepath_length']};\n"
-        )
+        out.write(f"constexpr size_t RPC_MAX_FILEPATH_LENGTH = {consts['max_filepath_length']};\n")
     if "max_datastore_key_length" in consts:
-        out.write(
-            f"constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = {consts['max_datastore_key_length']};\n"
-        )
+        out.write(f"constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = {consts['max_datastore_key_length']};\n")
     if "default_ack_timeout_ms" in consts:
-        out.write(
-            f"constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = {consts['default_ack_timeout_ms']};\n"
-        )
+        out.write(f"constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = {consts['default_ack_timeout_ms']};\n")
     if "default_retry_limit" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = {consts['default_retry_limit']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_DEFAULT_RETRY_LIMIT = {consts['default_retry_limit']};\n")
     if "max_pending_tx_frames" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = {consts['max_pending_tx_frames']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_MAX_PENDING_TX_FRAMES = {consts['max_pending_tx_frames']};\n")
     if "invalid_id_sentinel" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_INVALID_ID_SENTINEL = {consts['invalid_id_sentinel']};\n"
-        )
+        out.write(f"constexpr uint16_t RPC_INVALID_ID_SENTINEL = {consts['invalid_id_sentinel']};\n")
     if "cmd_flag_compressed" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_CMD_FLAG_COMPRESSED = {consts['cmd_flag_compressed']};\n"
-        )
+        out.write(f"constexpr uint16_t RPC_CMD_FLAG_COMPRESSED = {consts['cmd_flag_compressed']};\n")
     if "uint8_mask" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_UINT8_MASK = {consts['uint8_mask']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_UINT8_MASK = {consts['uint8_mask']};\n")
     if "uint16_max" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_UINT16_MAX = {consts['uint16_max']};\n"
-        )
+        out.write(f"constexpr uint16_t RPC_UINT16_MAX = {consts['uint16_max']};\n")
     if "process_default_exit_code" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = {consts['process_default_exit_code']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_PROCESS_DEFAULT_EXIT_CODE = {consts['process_default_exit_code']};\n")
     if "crc32_mask" in consts:
-        out.write(
-            f"constexpr uint32_t RPC_CRC32_MASK = {consts['crc32_mask']};\n"
-        )
+        out.write(f"constexpr uint32_t RPC_CRC32_MASK = {consts['crc32_mask']};\n")
     if "crc_initial" in consts:
-        out.write(
-            f"constexpr uint32_t RPC_CRC_INITIAL = {consts['crc_initial']};\n"
-        )
+        out.write(f"constexpr uint32_t RPC_CRC_INITIAL = {consts['crc_initial']};\n")
     if "crc_polynomial" in consts:
-        out.write(
-            f"constexpr uint32_t RPC_CRC_POLYNOMIAL = {consts['crc_polynomial']};\n"
-        )
+        out.write(f"constexpr uint32_t RPC_CRC_POLYNOMIAL = {consts['crc_polynomial']};\n")
     if "frame_delimiter" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_FRAME_DELIMITER = {consts['frame_delimiter']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_FRAME_DELIMITER = {consts['frame_delimiter']};\n")
     if "digital_low" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_DIGITAL_LOW = {consts['digital_low']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_DIGITAL_LOW = {consts['digital_low']};\n")
     if "digital_high" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_DIGITAL_HIGH = {consts['digital_high']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_DIGITAL_HIGH = {consts['digital_high']};\n")
     if "status_code_min" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_STATUS_CODE_MIN = {consts['status_code_min']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_STATUS_CODE_MIN = {consts['status_code_min']};\n")
     if "status_code_max" in consts:
-        out.write(
-            f"constexpr uint8_t RPC_STATUS_CODE_MAX = {consts['status_code_max']};\n"
-        )
+        out.write(f"constexpr uint8_t RPC_STATUS_CODE_MAX = {consts['status_code_max']};\n")
     if "system_command_min" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = {consts['system_command_min']};\n"
-        )
+        out.write(f"constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = {consts['system_command_min']};\n")
     if "system_command_max" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = {consts['system_command_max']};\n"
-        )
+        out.write(f"constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = {consts['system_command_max']};\n")
     if "gpio_command_min" in consts:
-        out.write(
-            f"constexpr uint16_t RPC_GPIO_COMMAND_MIN = {consts['gpio_command_min']};\n"
-        )
+        out.write(f"constexpr uint16_t RPC_GPIO_COMMAND_MIN = {consts['gpio_command_min']};\n")
     out.write("\n")
 
     handshake = spec.get("handshake", {})
     if handshake:
-        out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = {handshake['nonce_length']};\n"
-        )
-        out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = {handshake['tag_length']};\n"
-        )
+        out.write(f"constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = {handshake['nonce_length']};\n")
+        out.write(f"constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = {handshake['tag_length']};\n")
         out.write("constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;\n")
-        out.write(
-            f"constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n"
-        )
-        out.write(
-            f"constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n"
-        )
+        out.write(f"constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = {handshake['ack_timeout_min_ms']};\n")
+        out.write(f"constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = {handshake['ack_timeout_max_ms']};\n")
         out.write(
             f"constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = {handshake['response_timeout_min_ms']};\n"
         )
         out.write(
             f"constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = {handshake['response_timeout_max_ms']};\n"
         )
-        out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {handshake['retry_limit_min']};\n"
-        )
-        out.write(
-            f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n"
-        )
+        out.write(f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = {handshake['retry_limit_min']};\n")
+        out.write(f"constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = {handshake['retry_limit_max']};\n")
 
         # [MIL-SPEC] HKDF and anti-replay constants
         if "hkdf_salt" in handshake:
-            salt = handshake['hkdf_salt']
-            salt_bytes = ', '.join(f"0x{ord(c):02X}" for c in salt)
-            out.write(
-                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{salt_bytes}}};\n"
-            )
-            out.write(
-                f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(salt)};\n"
-            )
+            salt = handshake["hkdf_salt"]
+            salt_bytes = ", ".join(f"0x{ord(c):02X}" for c in salt)
+            out.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{salt_bytes}}};\n")
+            out.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(salt)};\n")
         if "hkdf_info_auth" in handshake:
-            info = handshake['hkdf_info_auth']
-            info_bytes = ', '.join(f"0x{ord(c):02X}" for c in info)
-            out.write(
-                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{info_bytes}}};\n"
-            )
-            out.write(
-                f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(info)};\n"
-            )
+            info = handshake["hkdf_info_auth"]
+            info_bytes = ", ".join(f"0x{ord(c):02X}" for c in info)
+            out.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{info_bytes}}};\n")
+            out.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(info)};\n")
         if "hkdf_output_length" in handshake:
-            out.write(
-                f"constexpr unsigned int RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH = {handshake['hkdf_output_length']};\n"
-            )
+            out.write(f"constexpr unsigned int RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH = {handshake['hkdf_output_length']};\n")
         if "nonce_random_bytes" in handshake:
-            out.write(
-                f"constexpr unsigned int RPC_HANDSHAKE_NONCE_RANDOM_BYTES = {handshake['nonce_random_bytes']};\n"
-            )
+            out.write(f"constexpr unsigned int RPC_HANDSHAKE_NONCE_RANDOM_BYTES = {handshake['nonce_random_bytes']};\n")
         if "nonce_counter_bytes" in handshake:
             out.write(
                 f"constexpr unsigned int RPC_HANDSHAKE_NONCE_COUNTER_BYTES = {handshake['nonce_counter_bytes']};\n"
@@ -390,163 +314,89 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
     out.write(f"PROTOCOL_VERSION: Final[int] = {consts['protocol_version']}\n")
     out.write(f"DEFAULT_BAUDRATE: Final[int] = {consts['default_baudrate']}\n")
     if "default_safe_baudrate" in consts:
-        out.write(
-            f"DEFAULT_SAFE_BAUDRATE: Final[int] = {consts['default_safe_baudrate']}\n"
-        )
+        out.write(f"DEFAULT_SAFE_BAUDRATE: Final[int] = {consts['default_safe_baudrate']}\n")
     out.write(f"MAX_PAYLOAD_SIZE: Final[int] = {consts['max_payload_size']}\n")
     if "max_filepath_length" in consts:
-        out.write(
-            f"MAX_FILEPATH_LENGTH: Final[int] = {consts['max_filepath_length']}\n"
-        )
+        out.write(f"MAX_FILEPATH_LENGTH: Final[int] = {consts['max_filepath_length']}\n")
     if "max_datastore_key_length" in consts:
-        out.write(
-            f"MAX_DATASTORE_KEY_LENGTH: Final[int] = {consts['max_datastore_key_length']}\n"
-        )
+        out.write(f"MAX_DATASTORE_KEY_LENGTH: Final[int] = {consts['max_datastore_key_length']}\n")
     if "default_ack_timeout_ms" in consts:
-        out.write(
-            f"DEFAULT_ACK_TIMEOUT_MS: Final[int] = {consts['default_ack_timeout_ms']}\n"
-        )
+        out.write(f"DEFAULT_ACK_TIMEOUT_MS: Final[int] = {consts['default_ack_timeout_ms']}\n")
     if "default_retry_limit" in consts:
-        out.write(
-            f"DEFAULT_RETRY_LIMIT: Final[int] = {consts['default_retry_limit']}\n"
-        )
+        out.write(f"DEFAULT_RETRY_LIMIT: Final[int] = {consts['default_retry_limit']}\n")
     if "max_pending_tx_frames" in consts:
-        out.write(
-            f"MAX_PENDING_TX_FRAMES: Final[int] = {consts['max_pending_tx_frames']}\n"
-        )
+        out.write(f"MAX_PENDING_TX_FRAMES: Final[int] = {consts['max_pending_tx_frames']}\n")
     if "invalid_id_sentinel" in consts:
-        out.write(
-            f"INVALID_ID_SENTINEL: Final[int] = {consts['invalid_id_sentinel']}\n"
-        )
+        out.write(f"INVALID_ID_SENTINEL: Final[int] = {consts['invalid_id_sentinel']}\n")
     if "cmd_flag_compressed" in consts:
-        out.write(
-            f"CMD_FLAG_COMPRESSED: Final[int] = {consts['cmd_flag_compressed']}\n"
-        )
+        out.write(f"CMD_FLAG_COMPRESSED: Final[int] = {consts['cmd_flag_compressed']}\n")
     if "uint8_mask" in consts:
-        out.write(
-            f"UINT8_MASK: Final[int] = {consts['uint8_mask']}\n"
-        )
+        out.write(f"UINT8_MASK: Final[int] = {consts['uint8_mask']}\n")
     if "uint16_max" in consts:
-        out.write(
-            f"UINT16_MAX: Final[int] = {consts['uint16_max']}\n"
-        )
+        out.write(f"UINT16_MAX: Final[int] = {consts['uint16_max']}\n")
     if "process_default_exit_code" in consts:
-        out.write(
-            f"PROCESS_DEFAULT_EXIT_CODE: Final[int] = {consts['process_default_exit_code']}\n"
-        )
+        out.write(f"PROCESS_DEFAULT_EXIT_CODE: Final[int] = {consts['process_default_exit_code']}\n")
     if "crc32_mask" in consts:
-        out.write(
-            f"CRC32_MASK: Final[int] = {consts['crc32_mask']}\n"
-        )
+        out.write(f"CRC32_MASK: Final[int] = {consts['crc32_mask']}\n")
     if "crc_initial" in consts:
-        out.write(
-            f"CRC_INITIAL: Final[int] = {consts['crc_initial']}\n"
-        )
+        out.write(f"CRC_INITIAL: Final[int] = {consts['crc_initial']}\n")
     if "crc_polynomial" in consts:
-        out.write(
-            f"CRC_POLYNOMIAL: Final[int] = {consts['crc_polynomial']}\n"
-        )
+        out.write(f"CRC_POLYNOMIAL: Final[int] = {consts['crc_polynomial']}\n")
     if "frame_delimiter" in consts:
-        out.write(
-            f"FRAME_DELIMITER: Final[bytes] = bytes([{consts['frame_delimiter']}])\n"
-        )
+        out.write(f"FRAME_DELIMITER: Final[bytes] = bytes([{consts['frame_delimiter']}])\n")
     if "digital_low" in consts:
-        out.write(
-            f"DIGITAL_LOW: Final[int] = {consts['digital_low']}\n"
-        )
+        out.write(f"DIGITAL_LOW: Final[int] = {consts['digital_low']}\n")
     if "digital_high" in consts:
-        out.write(
-            f"DIGITAL_HIGH: Final[int] = {consts['digital_high']}\n"
-        )
+        out.write(f"DIGITAL_HIGH: Final[int] = {consts['digital_high']}\n")
     if "status_code_min" in consts:
-        out.write(
-            f"STATUS_CODE_MIN: Final[int] = {consts['status_code_min']}\n"
-        )
+        out.write(f"STATUS_CODE_MIN: Final[int] = {consts['status_code_min']}\n")
     if "status_code_max" in consts:
-        out.write(
-            f"STATUS_CODE_MAX: Final[int] = {consts['status_code_max']}\n"
-        )
+        out.write(f"STATUS_CODE_MAX: Final[int] = {consts['status_code_max']}\n")
     if "system_command_min" in consts:
-        out.write(
-            f"SYSTEM_COMMAND_MIN: Final[int] = {consts['system_command_min']}\n"
-        )
+        out.write(f"SYSTEM_COMMAND_MIN: Final[int] = {consts['system_command_min']}\n")
     if "system_command_max" in consts:
-        out.write(
-            f"SYSTEM_COMMAND_MAX: Final[int] = {consts['system_command_max']}\n"
-        )
+        out.write(f"SYSTEM_COMMAND_MAX: Final[int] = {consts['system_command_max']}\n")
     if "gpio_command_min" in consts:
-        out.write(
-            f"GPIO_COMMAND_MIN: Final[int] = {consts['gpio_command_min']}\n"
-        )
+        out.write(f"GPIO_COMMAND_MIN: Final[int] = {consts['gpio_command_min']}\n")
     out.write("\n")
 
     handshake = spec.get("handshake", {})
     if handshake:
         out.write(f"HANDSHAKE_NONCE_LENGTH: Final[int] = {handshake['nonce_length']}\n")
         out.write(f"HANDSHAKE_TAG_LENGTH: Final[int] = {handshake['tag_length']}\n")
-        out.write(
-            f"HANDSHAKE_TAG_ALGORITHM: Final[str] = \"{handshake['tag_algorithm']}\"\n"
-        )
+        out.write(f"HANDSHAKE_TAG_ALGORITHM: Final[str] = \"{handshake['tag_algorithm']}\"\n")
         _write_python_str_constant(
             out,
             "HANDSHAKE_TAG_DESCRIPTION",
             handshake["tag_description"],
         )
-        out.write(
-            f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n"
-        )
+        out.write(f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n")
         _write_python_str_constant(
             out,
             "HANDSHAKE_CONFIG_DESCRIPTION",
             handshake["config_description"],
         )
-        out.write(
-            "HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n"
-        )
-        out.write(
-            f"HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = {handshake['ack_timeout_min_ms']}\n"
-        )
-        out.write(
-            f"HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = {handshake['ack_timeout_max_ms']}\n"
-        )
-        out.write(
-            f"HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = {handshake['response_timeout_min_ms']}\n"
-        )
-        out.write(
-            f"HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = {handshake['response_timeout_max_ms']}\n"
-        )
-        out.write(
-            f"HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = {handshake['retry_limit_min']}\n"
-        )
-        out.write(
-            f"HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = {handshake['retry_limit_max']}\n"
-        )
+        out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n")
+        out.write(f"HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = {handshake['ack_timeout_min_ms']}\n")
+        out.write(f"HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = {handshake['ack_timeout_max_ms']}\n")
+        out.write(f"HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = {handshake['response_timeout_min_ms']}\n")
+        out.write(f"HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = {handshake['response_timeout_max_ms']}\n")
+        out.write(f"HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = {handshake['retry_limit_min']}\n")
+        out.write(f"HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = {handshake['retry_limit_max']}\n")
 
         # [MIL-SPEC] HKDF and anti-replay constants
         if "hkdf_algorithm" in handshake:
-            out.write(
-                f"HANDSHAKE_HKDF_ALGORITHM: Final[str] = \"{handshake['hkdf_algorithm']}\"\n"
-            )
+            out.write(f"HANDSHAKE_HKDF_ALGORITHM: Final[str] = \"{handshake['hkdf_algorithm']}\"\n")
         if "hkdf_salt" in handshake:
-            out.write(
-                f"HANDSHAKE_HKDF_SALT: Final[bytes] = b\"{handshake['hkdf_salt']}\"\n"
-            )
+            out.write(f"HANDSHAKE_HKDF_SALT: Final[bytes] = b\"{handshake['hkdf_salt']}\"\n")
         if "hkdf_info_auth" in handshake:
-            out.write(
-                f"HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b\"{handshake['hkdf_info_auth']}\"\n"
-            )
+            out.write(f"HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b\"{handshake['hkdf_info_auth']}\"\n")
         if "hkdf_output_length" in handshake:
-            out.write(
-                f"HANDSHAKE_HKDF_OUTPUT_LENGTH: Final[int] = {handshake['hkdf_output_length']}\n"
-            )
+            out.write(f"HANDSHAKE_HKDF_OUTPUT_LENGTH: Final[int] = {handshake['hkdf_output_length']}\n")
         if "nonce_random_bytes" in handshake:
-            out.write(
-                f"HANDSHAKE_NONCE_RANDOM_BYTES: Final[int] = {handshake['nonce_random_bytes']}\n"
-            )
+            out.write(f"HANDSHAKE_NONCE_RANDOM_BYTES: Final[int] = {handshake['nonce_random_bytes']}\n")
         if "nonce_counter_bytes" in handshake:
-            out.write(
-                f"HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = {handshake['nonce_counter_bytes']}\n"
-            )
+            out.write(f"HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = {handshake['nonce_counter_bytes']}\n")
         out.write("\n")
 
     capabilities = spec.get("capabilities", {})
@@ -572,24 +422,12 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
             out.write(f"CAPABILITIES_FORMAT: Final[str] = \"{formats['capabilities_format']}\"\n")
         if "nonce_counter_format" in formats:
             out.write(f"NONCE_COUNTER_FORMAT: Final[str] = \"{formats['nonce_counter_format']}\"\n")
-        out.write(
-            f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n"
-        )
-        out.write(
-            "DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n"
-        )
-        out.write(
-            f"DATASTORE_VALUE_LEN_FORMAT: Final[str] = \"{formats['datastore_value_len_format']}\"\n"
-        )
-        out.write(
-            "DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n"
-        )
-        out.write(
-            f"CRC_COVERED_HEADER_FORMAT: Final[str] = \"{formats['crc_covered_header_format']}\"\n"
-        )
-        out.write(
-            "CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n"
-        )
+        out.write(f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n")
+        out.write("DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n")
+        out.write(f"DATASTORE_VALUE_LEN_FORMAT: Final[str] = \"{formats['datastore_value_len_format']}\"\n")
+        out.write("DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n")
+        out.write(f"CRC_COVERED_HEADER_FORMAT: Final[str] = \"{formats['crc_covered_header_format']}\"\n")
+        out.write("CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n")
         out.write(f"CRC_FORMAT: Final[str] = \"{formats['crc_format']}\"\n")
         out.write("CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
         out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n\n")
@@ -611,9 +449,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
     if "topics" in spec:
         out.write("class Topic(StrEnum):\n")
         for topic in spec["topics"]:
-            out.write(
-                f"    {topic['name']} = \"{topic['value']}\"  # {topic['description']}\n"
-            )
+            out.write(f"    {topic['name']} = \"{topic['value']}\"  # {topic['description']}\n")
         out.write("\n\n")
 
     if "actions" in spec:
@@ -636,9 +472,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
             for action in actions:
                 raw_name = str(action["name"])
                 _prefix, suffix = raw_name.split("_", 1)
-                out.write(
-                    f"    {suffix} = \"{action['value']}\"  # {action['description']}\n"
-                )
+                out.write(f"    {suffix} = \"{action['value']}\"  # {action['description']}\n")
             out.write("\n\n")
 
     # Emit subscriptions after action enums so we can reference FooAction.BAR.value
@@ -647,9 +481,7 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
 
     out.write("class Status(IntEnum):\n")
     for status in spec["statuses"]:
-        out.write(
-            f"    {status['name']} = {status['value']}  # {status['description']}\n"
-        )
+        out.write(f"    {status['name']} = {status['value']}  # {status['description']}\n")
     out.write("\n\n")
 
     out.write("class Command(IntEnum):\n")

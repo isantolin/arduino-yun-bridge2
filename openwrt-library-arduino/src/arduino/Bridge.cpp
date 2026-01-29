@@ -928,25 +928,14 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
 }
 
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
-  if (frame.header.payload_length > rpc::MAX_PAYLOAD_SIZE) return false;
-  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
-  rpc::FrameBuilder builder;
-  const size_t raw_len = builder.build(raw, sizeof(raw), frame.header.command_id, frame.payload.data(), frame.header.payload_length);
-  if (raw_len < rpc::CRC_TRAILER_SIZE) return false;
-  const uint32_t crc = rpc::read_u32_be(&raw[raw_len - rpc::CRC_TRAILER_SIZE]);
-  if (_last_rx_crc == 0 || crc != _last_rx_crc) return false;
+  if (_last_rx_crc == 0 || frame.crc != _last_rx_crc) return false;
   const unsigned long elapsed = millis() - _last_rx_crc_millis;
   if (_ack_timeout_ms > 0 && elapsed < static_cast<unsigned long>(_ack_timeout_ms)) return false;
   return elapsed <= (static_cast<unsigned long>(_ack_timeout_ms) * (_ack_retry_limit + 1));
 }
 
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
-  if (frame.header.payload_length > rpc::MAX_PAYLOAD_SIZE) return;
-  uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
-  rpc::FrameBuilder builder;
-  const size_t raw_len = builder.build(raw, sizeof(raw), frame.header.command_id, frame.payload.data(), frame.header.payload_length);
-  if (raw_len < rpc::CRC_TRAILER_SIZE) return;
-  _last_rx_crc = rpc::read_u32_be(&raw[raw_len - rpc::CRC_TRAILER_SIZE]);
+  _last_rx_crc = frame.crc;
   _last_rx_crc_millis = millis();
 }
 

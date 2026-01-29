@@ -18,23 +18,17 @@ SqliteError = sqlite3.Error  # type: ignore[assignment]
 
 
 class DiskQueue(Protocol):
-    def append(self, item: SpoolRecord) -> None:
-        ...
+    def append(self, item: SpoolRecord) -> None: ...
 
-    def appendleft(self, item: SpoolRecord) -> None:
-        ...
+    def appendleft(self, item: SpoolRecord) -> None: ...
 
-    def popleft(self) -> SpoolRecord:
-        ...
+    def popleft(self) -> SpoolRecord: ...
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
 
-    def clear(self) -> None:
-        ...
+    def clear(self) -> None: ...
 
-    def __len__(self) -> int:
-        ...
+    def __len__(self) -> int: ...
 
 
 class SqliteDeque:
@@ -74,9 +68,7 @@ class SqliteDeque:
             cursor = self._conn.execute("SELECT MAX(id) FROM queue")
             row = cursor.fetchone()
             next_id = (row[0] if row[0] is not None else 0) + 1
-            self._conn.execute(
-                "INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data)
-            )
+            self._conn.execute("INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data))
 
     def appendleft(self, item: SpoolRecord) -> None:
         data = pickle.dumps(item)
@@ -84,15 +76,11 @@ class SqliteDeque:
             cursor = self._conn.execute("SELECT MIN(id) FROM queue")
             row = cursor.fetchone()
             next_id = (row[0] if row[0] is not None else 1) - 1
-            self._conn.execute(
-                "INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data)
-            )
+            self._conn.execute("INSERT INTO queue (id, data) VALUES (?, ?)", (next_id, data))
 
     def popleft(self) -> SpoolRecord:
         with self._conn:
-            cursor = self._conn.execute(
-                "SELECT id, data FROM queue ORDER BY id ASC LIMIT 1"
-            )
+            cursor = self._conn.execute("SELECT id, data FROM queue ORDER BY id ASC LIMIT 1")
             row = cursor.fetchone()
             if row is None:
                 raise IndexError("pop from an empty deque")
@@ -171,8 +159,7 @@ class MQTTPublishSpool:
                 )
             except (OSError, SqliteError) as exc:
                 logger.warning(
-                    "Failed to initialize disk spool at %s; falling back "
-                    "to memory-only mode. Error: %s",
+                    "Failed to initialize disk spool at %s; falling back " "to memory-only mode. Error: %s",
                     directory,
                     exc,
                 )
@@ -308,10 +295,7 @@ class MQTTPublishSpool:
 
     def _handle_disk_error(self, exc: Exception, op: str) -> None:
         reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
-        message = (
-            "MQTT Spool disk error during %s: %s. "
-            "Switching to memory-only mode (reason=%s)."
-        )
+        message = "MQTT Spool disk error during %s: %s. " "Switching to memory-only mode (reason=%s)."
         logger.error(message, op, exc, reason)
         self._activate_fallback(reason)
         # We don't raise MQTTSpoolError anymore; we handle it by degrading.

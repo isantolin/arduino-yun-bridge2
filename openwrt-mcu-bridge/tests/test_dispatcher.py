@@ -345,9 +345,7 @@ async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request() ->
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
     await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
 
-    assert any(
-        name == "send_frame" and args[0] == Status.ERROR.value for name, args in calls.items
-    )
+    assert any(name == "send_frame" and args[0] == Status.ERROR.value for name, args in calls.items)
 
 
 @pytest.mark.asyncio
@@ -357,10 +355,7 @@ async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented() -> N
 
     await dispatcher.dispatch_mcu_frame(Command.CMD_LINK_SYNC.value, b"")
 
-    assert any(
-        name == "send_frame" and args[0] == Status.NOT_IMPLEMENTED.value
-        for name, args in calls.items
-    )
+    assert any(name == "send_frame" and args[0] == Status.NOT_IMPLEMENTED.value for name, args in calls.items)
 
 
 @pytest.mark.asyncio
@@ -543,51 +538,30 @@ async def test_system_topic_bridge_get_handlers_and_fallback_to_component() -> N
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    inbound1 = make_inbound_message(
-        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
-    )
+    inbound1 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get")
     route1 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound1.topic))
     assert route1 is not None
     assert await dispatcher._handle_system_topic(route1, inbound1) is True
     assert ("publish_bridge_snapshot", ("handshake", inbound1)) in calls.items
 
-    inbound2 = make_inbound_message(
-        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/get"
-    )
+    inbound2 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/get")
     route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
     assert route2 is not None
     assert await dispatcher._handle_system_topic(route2, inbound2) is True
     assert ("publish_bridge_snapshot", ("summary", inbound2)) in calls.items
 
-    inbound3 = make_inbound_message(
-        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/nope"
-    )
+    inbound3 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/nope")
     route3 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound3.topic))
     assert route3 is not None
     assert await dispatcher._handle_system_topic(route3, inbound3) is False
 
 
 def test_pin_action_from_parts_variants() -> None:
-    assert BridgeDispatcher._pin_action_from_parts(
-        [protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital"]
-    ) is None
+    assert BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital"]) is None
+    assert BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13"]) == "write"
+    assert BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13", ""]) is None
     assert (
-        BridgeDispatcher._pin_action_from_parts(
-            [protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13"]
-        )
-        == "write"
-    )
-    assert (
-        BridgeDispatcher._pin_action_from_parts(
-            [protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13", ""]
-        )
-        is None
-    )
-    assert (
-        BridgeDispatcher._pin_action_from_parts(
-            [protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13", "READ"]
-        )
-        == "read"
+        BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13", "READ"]) == "read"
     )
 
 

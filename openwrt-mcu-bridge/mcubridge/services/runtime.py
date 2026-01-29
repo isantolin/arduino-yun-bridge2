@@ -228,9 +228,7 @@ class BridgeService:
 
         if not handshake_ok:
             self._raise_if_handshake_fatal()
-            logger.error(
-                "Skipping post-connect initialisation because MCU link " "sync failed"
-            )
+            logger.error("Skipping post-connect initialisation because MCU link " "sync failed")
             return
 
         try:
@@ -256,8 +254,7 @@ class BridgeService:
         total_pending = pending_digital + pending_analog
         if total_pending:
             logger.warning(
-                "Serial link lost; clearing %d pending request(s) "
-                "(digital=%d analog=%d)",
+                "Serial link lost; clearing %d pending request(s) " "(digital=%d analog=%d)",
                 total_pending,
                 pending_digital,
                 pending_analog,
@@ -337,9 +334,7 @@ class BridgeService:
                     correlation_data=reply_correlation,
                 )
             origin_topic = str(reply_context.topic)
-            user_properties = message_to_queue.user_properties + (
-                ("bridge-request-topic", origin_topic),
-            )
+            user_properties = message_to_queue.user_properties + (("bridge-request-topic", origin_topic),)
             message_to_queue = replace(
                 message_to_queue,
                 user_properties=user_properties,
@@ -362,11 +357,7 @@ class BridgeService:
                 stored = await self.state.stash_mqtt_message(dropped)
                 spool_note: str
                 if stored:
-                    pending = (
-                        self.state.mqtt_spool.pending
-                        if self.state.mqtt_spool is not None
-                        else 0
-                    )
+                    pending = self.state.mqtt_spool.pending if self.state.mqtt_spool is not None else 0
                     spool_note = f"; spooled_pending={pending}"
                 else:
                     reason = self.state.mqtt_spool_failure_reason or "unknown"
@@ -374,13 +365,9 @@ class BridgeService:
                         0.0,
                         self.state.mqtt_spool_backoff_until - time.monotonic(),
                     )
-                    spool_note = (
-                        "; spool_unavailable reason=%s backoff_remaining=%.1fs"
-                        % (reason, backoff_remaining)
-                    )
+                    spool_note = "; spool_unavailable reason=%s backoff_remaining=%.1fs" % (reason, backoff_remaining)
                 logger.warning(
-                    "MQTT publish queue saturated (%d/%d); dropping oldest "
-                    "topic=%s%s",
+                    "MQTT publish queue saturated (%d/%d); dropping oldest " "topic=%s%s",
                     self.state.mqtt_publish_queue.qsize(),
                     self.state.mqtt_queue_limit,
                     drop_topic,
@@ -509,9 +496,7 @@ class BridgeService:
     ) -> tuple[bytes, bytes, bool, bool]:
         return self._process.trim_buffers(stdout_buffer, stderr_buffer)
 
-    async def _handle_process_kill(
-        self, payload: bytes, *, send_ack: bool = True
-    ) -> bool:
+    async def _handle_process_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
         return await self._process.handle_kill(payload, send_ack=send_ack)
 
     async def _publish_bridge_snapshot(

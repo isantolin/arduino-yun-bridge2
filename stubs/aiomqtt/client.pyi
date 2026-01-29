@@ -16,30 +16,23 @@ from paho.mqtt.subscribeoptions import SubscribeOptions
 from .message import Message
 from .types import PayloadType, SocketOption, SubscribeTopic, WebSocketHeaders
 
-if sys.version_info >= (3, 11):
-    ...
-else:
-    ...
-
+if sys.version_info >= (3, 11): ...
+else: ...
 
 MQTT_LOGGER = ...
 
-
 ClientT = TypeVar("ClientT", bound="Client")
-
 
 _FuncT = TypeVar("_FuncT", bound=Callable[..., Any])
 
-
 def _outgoing_call(func: _FuncT) -> _FuncT: ...
-
 
 class ProtocolVersion(enum.IntEnum):
     """Map paho-mqtt protocol versions to an Enum for use in type hints."""
+
     V31 = ...
     V311 = ...
     V5 = ...
-
 
 @dataclasses.dataclass(frozen=True)
 class TLSParameters:
@@ -51,11 +44,17 @@ class TLSParameters:
     ciphers: str | None = ...
     keyfile_password: str | None = ...
 
-
 class ProxySettings:
-    def __init__(self, *, proxy_type: int, proxy_addr: str, proxy_rdns: bool | None = ..., proxy_username: str | None = ..., proxy_password: str | None = ..., proxy_port: int | None = ...) -> None:
-        ...
-
+    def __init__(
+        self,
+        *,
+        proxy_type: int,
+        proxy_addr: str,
+        proxy_rdns: bool | None = ...,
+        proxy_username: str | None = ...,
+        proxy_password: str | None = ...,
+        proxy_port: int | None = ...,
+    ) -> None: ...
 
 @dataclasses.dataclass(frozen=True)
 class Will:
@@ -65,22 +64,14 @@ class Will:
     retain: bool = ...
     properties: Properties | None = ...
 
-
 class MessagesIterator:
     """Dynamic view of the client's message queue."""
-    def __init__(self, client: "Client") -> None:
-        ...
-
-    def __aiter__(self) -> AsyncIterator[Message]:
-        ...
-
-    async def __anext__(self) -> Message:
-        ...
-
+    def __init__(self, client: "Client") -> None: ...
+    def __aiter__(self) -> AsyncIterator[Message]: ...
+    async def __anext__(self) -> Message: ...
     def __len__(self) -> int:
         """Return the number of messages in the message queue."""
         ...
-
 
 class Client:
     """Asynchronous context manager for the connection to the MQTT broker.
@@ -128,9 +119,38 @@ class Client:
         websocket_path: The path to use for websockets.
         websocket_headers: The headers to use for websockets.
     """
-    def __init__(self, hostname: str, port: int = ..., *, username: str | None = ..., password: str | None = ..., logger: logging.Logger | None = ..., identifier: str | None = ..., queue_type: type[asyncio.Queue[Message]] | None = ..., protocol: ProtocolVersion | None = ..., will: Will | None = ..., clean_session: bool | None = ..., transport: Literal["tcp", "websockets", "unix"] = ..., timeout: float | None = ..., keepalive: int = ..., bind_address: str = ..., bind_port: int = ..., clean_start: Any = ..., max_queued_incoming_messages: int | None = ..., max_queued_outgoing_messages: int | None = ..., max_inflight_messages: int | None = ..., max_concurrent_outgoing_calls: int | None = ..., properties: Properties | None = ..., tls_context: ssl.SSLContext | None = ..., tls_params: TLSParameters | None = ..., tls_insecure: bool | None = ..., proxy: ProxySettings | None = ..., socket_options: Iterable[SocketOption] | None = ..., websocket_path: str | None = ..., websocket_headers: WebSocketHeaders | None = ...) -> None:
-        ...
-
+    def __init__(
+        self,
+        hostname: str,
+        port: int = ...,
+        *,
+        username: str | None = ...,
+        password: str | None = ...,
+        logger: logging.Logger | None = ...,
+        identifier: str | None = ...,
+        queue_type: type[asyncio.Queue[Message]] | None = ...,
+        protocol: ProtocolVersion | None = ...,
+        will: Will | None = ...,
+        clean_session: bool | None = ...,
+        transport: Literal["tcp", "websockets", "unix"] = ...,
+        timeout: float | None = ...,
+        keepalive: int = ...,
+        bind_address: str = ...,
+        bind_port: int = ...,
+        clean_start: Any = ...,
+        max_queued_incoming_messages: int | None = ...,
+        max_queued_outgoing_messages: int | None = ...,
+        max_inflight_messages: int | None = ...,
+        max_concurrent_outgoing_calls: int | None = ...,
+        properties: Properties | None = ...,
+        tls_context: ssl.SSLContext | None = ...,
+        tls_params: TLSParameters | None = ...,
+        tls_insecure: bool | None = ...,
+        proxy: ProxySettings | None = ...,
+        socket_options: Iterable[SocketOption] | None = ...,
+        websocket_path: str | None = ...,
+        websocket_headers: WebSocketHeaders | None = ...,
+    ) -> None: ...
     @property
     def identifier(self) -> str:
         """The client's identifier.
@@ -146,7 +166,17 @@ class Client:
         ...
 
     @_outgoing_call
-    async def subscribe(self, /, topic: SubscribeTopic, qos: int = ..., options: SubscribeOptions | None = ..., properties: Properties | None = ..., *args: Any, timeout: float | None = ..., **kwargs: Any) -> tuple[int, ...] | list[ReasonCode]:
+    async def subscribe(
+        self,
+        /,
+        topic: SubscribeTopic,
+        qos: int = ...,
+        options: SubscribeOptions | None = ...,
+        properties: Properties | None = ...,
+        *args: Any,
+        timeout: float | None = ...,
+        **kwargs: Any,
+    ) -> tuple[int, ...] | list[ReasonCode]:
         """Subscribe to a topic or wildcard.
 
         Args:
@@ -165,7 +195,15 @@ class Client:
         ...
 
     @_outgoing_call
-    async def unsubscribe(self, /, topic: str | list[str], properties: Properties | None = ..., *args: Any, timeout: float | None = ..., **kwargs: Any) -> None:
+    async def unsubscribe(
+        self,
+        /,
+        topic: str | list[str],
+        properties: Properties | None = ...,
+        *args: Any,
+        timeout: float | None = ...,
+        **kwargs: Any,
+    ) -> None:
         """Unsubscribe from a topic or wildcard.
 
         Args:
@@ -181,7 +219,18 @@ class Client:
         ...
 
     @_outgoing_call
-    async def publish(self, /, topic: str, payload: PayloadType = ..., qos: int = ..., retain: bool = ..., properties: Properties | None = ..., *args: Any, timeout: float | None = ..., **kwargs: Any) -> None:
+    async def publish(
+        self,
+        /,
+        topic: str,
+        payload: PayloadType = ...,
+        qos: int = ...,
+        retain: bool = ...,
+        properties: Properties | None = ...,
+        *args: Any,
+        timeout: float | None = ...,
+        **kwargs: Any,
+    ) -> None:
         """Publish a message to the broker.
 
         Args:
@@ -203,6 +252,8 @@ class Client:
         """Connect to the broker."""
         ...
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> None:
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         """Disconnect from the broker."""
         ...

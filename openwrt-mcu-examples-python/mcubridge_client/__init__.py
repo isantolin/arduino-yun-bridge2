@@ -343,8 +343,7 @@ class Bridge:
                 subscribed = True
             except MqttError:
                 logger.debug(
-                    "Subscription to response topics %s failed; "
-                    "relying on reply topic",
+                    "Subscription to response topics %s failed; " "relying on reply topic",
                     topics,
                 )
 
@@ -476,13 +475,9 @@ class Bridge:
         )
         return int(response.decode("utf-8"))
 
-    async def run_sketch_command(
-        self, command_parts: list[str], timeout: float = 10
-    ) -> bytes:
+    async def run_sketch_command(self, command_parts: list[str], timeout: float = 10) -> bytes:
         command_str = _format_shell_command(command_parts)
-        logger.warning(
-            "run_sketch_command falls back to a synchronous shell " "command via MQTT."
-        )
+        logger.warning("run_sketch_command falls back to a synchronous shell " "command via MQTT.")
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run",
             command_str.encode("utf-8"),
@@ -491,9 +486,7 @@ class Bridge:
         )
         return response
 
-    async def run_shell_command_async(
-        self, command_parts: list[str], timeout: float = 10
-    ) -> int:
+    async def run_shell_command_async(self, command_parts: list[str], timeout: float = 10) -> int:
         command_str = _format_shell_command(command_parts)
         response = await self._publish_and_wait(
             f"{self.topic_prefix}/sh/run_async",

@@ -522,9 +522,7 @@ def test_normalise_filename_strips_traversal(filename: str) -> None:
         "file_with_underscores.txt",
     ],
 )
-def test_get_safe_path_confines_to_root(
-    file_component: tuple[FileComponent, DummyBridge], filename: str
-) -> None:
+def test_get_safe_path_confines_to_root(file_component: tuple[FileComponent, DummyBridge], filename: str) -> None:
     component, _ = file_component
     base_dir = Path(component.state.file_system_root).expanduser().resolve()
     safe_path = component._get_safe_path(filename)

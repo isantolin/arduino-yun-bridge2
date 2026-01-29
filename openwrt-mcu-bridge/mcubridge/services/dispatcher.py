@@ -242,9 +242,7 @@ class BridgeDispatcher:
                 handled_successfully = result is not False
             except (OSError, ValueError, TypeError, AttributeError, KeyError, IndexError, RuntimeError) as exc:
                 # [RESILIENCE] Catch component crashes so the Dispatcher stays alive.
-                logger.critical(
-                    "Critical: Exception in handler for command %s: %s", command_name, exc, exc_info=True
-                )
+                logger.critical("Critical: Exception in handler for command %s: %s", command_name, exc, exc_info=True)
                 # Optionally send an error status back to MCU if it was a request
                 if response_to_request(command_id) is None:
                     # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR

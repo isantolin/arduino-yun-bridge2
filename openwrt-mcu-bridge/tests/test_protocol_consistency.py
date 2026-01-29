@@ -1,4 +1,3 @@
-
 import io
 import sys
 import tomllib
@@ -26,8 +25,7 @@ def test_protocol_python_is_up_to_date():
         current_content = f.read()
 
     assert generated_content == current_content, (
-        "Python protocol definition is out of sync with spec.toml. "
-        "Run 'tools/protocol/generate.py' to update."
+        "Python protocol definition is out of sync with spec.toml. " "Run 'tools/protocol/generate.py' to update."
     )
 
 
@@ -47,6 +45,5 @@ def test_protocol_cpp_is_up_to_date():
         current_content = f.read()
 
     assert generated_content == current_content, (
-        "C++ protocol definition is out of sync with spec.toml. "
-        "Run 'tools/protocol/generate.py' to update."
+        "C++ protocol definition is out of sync with spec.toml. " "Run 'tools/protocol/generate.py' to update."
     )

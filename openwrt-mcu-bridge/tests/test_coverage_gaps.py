@@ -273,7 +273,7 @@ async def test_start_async_generic_exception_returns_sentinel(
     process_component: ProcessComponent,
 ) -> None:
     """Cover generic exception branch in start_async subprocess creation."""
-    with patch.object(ProcessComponent, "_prepare_command", return_value=('/bin/true',)):
+    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
         with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
             mock_alloc.return_value = 55
             with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
@@ -574,9 +574,7 @@ def test_process_trim_buffers_both_have_remaining(process_component: ProcessComp
     stdout_buf = bytearray(b"A" * 10000)
     stderr_buf = bytearray(b"B" * 10000)
 
-    stdout_chunk, stderr_chunk, trunc_out, trunc_err = process_component.trim_buffers(
-        stdout_buf, stderr_buf
-    )
+    stdout_chunk, stderr_chunk, trunc_out, trunc_err = process_component.trim_buffers(stdout_buf, stderr_buf)
 
     # Both should be truncated
     assert trunc_out is True or trunc_err is True

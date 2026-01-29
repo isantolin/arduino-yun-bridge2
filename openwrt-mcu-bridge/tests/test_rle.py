@@ -1,4 +1,5 @@
 """Tests for RLE compression implementation."""
+
 from __future__ import annotations
 
 import pytest
@@ -121,23 +122,26 @@ class TestRLEDecode:
 class TestRLERoundtrip:
     """Roundtrip tests: encode then decode should return original."""
 
-    @pytest.mark.parametrize("data", [
-        b"",
-        b"A",
-        b"AB",
-        b"ABC",
-        b"AAAA",
-        b"AAAABBBBCCCC",
-        b"Hello, World!",
-        bytes(range(256)),
-        b"\x00" * 100,
-        b"\xFF" * 100,
-        b"A" * 257,  # Exactly at max run boundary
-        b"A" * 258,  # Just over max run boundary
-        b"A" * 1000,
-        # Mixed content
-        b"Start" + b"\x00" * 50 + b"Middle" + b"\xFF" * 30 + b"End",
-    ])
+    @pytest.mark.parametrize(
+        "data",
+        [
+            b"",
+            b"A",
+            b"AB",
+            b"ABC",
+            b"AAAA",
+            b"AAAABBBBCCCC",
+            b"Hello, World!",
+            bytes(range(256)),
+            b"\x00" * 100,
+            b"\xff" * 100,
+            b"A" * 257,  # Exactly at max run boundary
+            b"A" * 258,  # Just over max run boundary
+            b"A" * 1000,
+            # Mixed content
+            b"Start" + b"\x00" * 50 + b"Middle" + b"\xff" * 30 + b"End",
+        ],
+    )
     def test_roundtrip(self, data: bytes) -> None:
         """Encode then decode returns original data."""
         encoded = encode(data)

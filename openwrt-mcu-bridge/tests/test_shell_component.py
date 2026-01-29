@@ -32,9 +32,7 @@ class RecordingBridgeContext:
         self.sent_frames.append((command_id, payload))
         return True
 
-    async def enqueue_mqtt(
-        self, message: QueuedPublish, *, reply_context: Message | None = None
-    ) -> None:
+    async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         self.enqueued.append((message, reply_context))
 
     def is_command_allowed(self, command: str) -> bool:

@@ -110,9 +110,7 @@ def test_enqueue_mailbox_incoming_respects_limits(
 
     warnings = [record.getMessage() for record in handler.records]
     assert any("Mailbox incoming message truncated" in message for message in warnings)
-    assert any(
-        "Dropping oldest mailbox incoming message" in message for message in warnings
-    )
+    assert any("Dropping oldest mailbox incoming message" in message for message in warnings)
 
 
 def test_requeue_console_chunk_front_restores_bytes(

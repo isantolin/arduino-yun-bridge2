@@ -38,10 +38,7 @@ logger = logging.getLogger("mcubridge")
 FRAMING_OVERHEAD: Final[int] = 4
 
 MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE
-    + protocol.MAX_PAYLOAD_SIZE
-    + protocol.CRC_SIZE
-    + FRAMING_OVERHEAD
+    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE + FRAMING_OVERHEAD
 )
 
 BinaryPacket = bytes | bytearray | memoryview
@@ -69,10 +66,7 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
 
 def _log_baud_retry(retry_state: tenacity.RetryCallState) -> None:
     if retry_state.attempt_number > 1:
-        logger.warning(
-            "Baudrate negotiation timed out (attempt %d); retrying...",
-            retry_state.attempt_number
-        )
+        logger.warning("Baudrate negotiation timed out (attempt %d); retrying...", retry_state.attempt_number)
 
 
 class BridgeSerialProtocol(asyncio.Protocol):
@@ -274,7 +268,7 @@ class SerialTransport:
     async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:
         target_baud = self.config.serial_baud
         initial_baud = self.config.serial_safe_baud
-        negotiation_needed = (initial_baud > 0 and initial_baud != target_baud)
+        negotiation_needed = initial_baud > 0 and initial_baud != target_baud
         start_baud = initial_baud if negotiation_needed else target_baud
 
         # 1. Connect
@@ -349,10 +343,7 @@ class SerialTransport:
                         raise asyncio.TimeoutError("Write failed")
 
                     try:
-                        await asyncio.wait_for(
-                            proto.negotiation_future,
-                            SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
-                        )
+                        await asyncio.wait_for(proto.negotiation_future, SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
                         return True
                     finally:
                         proto.negotiation_future = None

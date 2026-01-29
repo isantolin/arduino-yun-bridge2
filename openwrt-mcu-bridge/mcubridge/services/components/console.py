@@ -116,10 +116,7 @@ class ConsoleComponent:
         if not payload:
             return []
         chunk_size = MAX_PAYLOAD_SIZE
-        return [
-            payload[index:index + chunk_size]
-            for index in range(0, len(payload), chunk_size)
-        ]
+        return [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
 
 
 __all__ = ["ConsoleComponent"]

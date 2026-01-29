@@ -55,10 +55,7 @@ def collect_pip_specs(deps: Sequence[dict]) -> list[str]:
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
 
     # 2. Filtrar paquetes marcados como SYSTEM_ONLY
-    filtered = {
-        s for s in specs
-        if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-    }
+    filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
 
@@ -92,9 +89,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
 def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
-        raise ManifestError(
-            "Makefile is missing dependency markers; cannot inject dependencies"
-        )
+        raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
     tokens = [f"+{pkg}" for pkg in collect_openwrt_packages(deps)]
     if tokens:
         block_lines = ["\tDEPENDS+= \\"]

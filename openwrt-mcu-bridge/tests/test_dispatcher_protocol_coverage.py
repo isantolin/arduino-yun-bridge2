@@ -204,9 +204,7 @@ def test_all_mcu_to_linux_commands_have_registered_handlers() -> None:
         if registry.get(value) is None:
             missing.append(value)
 
-    assert not missing, "Missing MCU handlers for command ids: " + ", ".join(
-        f"0x{value:02X}" for value in missing
-    )
+    assert not missing, "Missing MCU handlers for command ids: " + ", ".join(f"0x{value:02X}" for value in missing)
 
 
 def test_ack_required_mcu_to_linux_commands_are_registered() -> None:

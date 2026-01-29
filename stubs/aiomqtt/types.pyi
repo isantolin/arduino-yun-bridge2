@@ -8,14 +8,14 @@ import sys
 from typing import Any, Callable, ParamSpec, TypeAlias, TypeVar
 from paho.mqtt.subscribeoptions import SubscribeOptions
 
-if sys.version_info >= (3, 10):
-    ...
-else:
-    ...
+if sys.version_info >= (3, 10): ...
+else: ...
 T = TypeVar("T")
 P = ParamSpec("P")
 PayloadType: TypeAlias = "str | bytes | bytearray | int | float | None"
-SubscribeTopic: TypeAlias = "str | tuple[str, SubscribeOptions] | list[tuple[str, SubscribeOptions]] | list[tuple[str, int]]"
+SubscribeTopic: TypeAlias = (
+    "str | tuple[str, SubscribeOptions] | list[tuple[str, SubscribeOptions]] | list[tuple[str, int]]"
+)
 WebSocketHeaders: TypeAlias = "dict[str, str] | Callable[[dict[str, str]], dict[str, str]]"
 PahoSocket: TypeAlias = "socket.socket | ssl.SSLSocket | Any"
 SocketOption: TypeAlias = "tuple[int, int, int | bytes] | tuple[int, int, None, int]"

@@ -17,7 +17,7 @@ import textwrap
 from pathlib import Path
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("emulation-runner")
 
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
@@ -83,11 +83,7 @@ def main():
     # 3. Setup Virtual Serial Port
     logger.info("Starting socat...")
     # socat -d -d pty,raw,echo=0,link=/tmp/ttyBRIDGE0 pty,raw,echo=0,link=/tmp/ttyBRIDGE1
-    socat_cmd = [
-        "socat", "-d", "-d",
-        f"pty,raw,echo=0,link={SOCAT_PORT0}",
-        f"pty,raw,echo=0,link={SOCAT_PORT1}"
-    ]
+    socat_cmd = ["socat", "-d", "-d", f"pty,raw,echo=0,link={SOCAT_PORT0}", f"pty,raw,echo=0,link={SOCAT_PORT1}"]
 
     socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
 
@@ -110,12 +106,7 @@ def main():
         # 4. Start SimAVR
         logger.info(f"Starting simavr with {firmware_path}...")
 
-        simavr_cmd = [
-            "simavr",
-            "-m", "atmega32u4",
-            "-f", "16000000",
-            str(firmware_path)
-        ]
+        simavr_cmd = ["simavr", "-m", "atmega32u4", "-f", "16000000", str(firmware_path)]
 
         simavr_proc = subprocess.Popen(simavr_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
@@ -170,15 +161,9 @@ def main():
 
         # Inject openwrt-mcu-bridge into PYTHONPATH
         current_pythonpath = daemon_env.get("PYTHONPATH", "")
-        daemon_env["PYTHONPATH"] = (
-            f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_pythonpath}"
-        )
+        daemon_env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_pythonpath}"
 
-        daemon_cmd = [
-            sys.executable,
-            "-m", "mcubridge.daemon",
-            "--debug"
-        ]
+        daemon_cmd = [sys.executable, "-m", "mcubridge.daemon", "--debug"]
 
         daemon_proc = subprocess.Popen(daemon_cmd, env=daemon_env)
 

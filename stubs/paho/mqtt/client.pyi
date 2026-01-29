@@ -1,18 +1,32 @@
 from typing import Any, Callable
 
-
 MQTTv5: int = ...
-
 
 class MQTTMessageInfo:
     mid: int
     def is_published(self) -> bool: ...
     def wait_for_publish(self) -> None: ...
 
-
 class Client:
-    def __init__(self, client_id: str = ..., clean_session: bool | None = ..., userdata: Any = ..., protocol: int = ..., transport: str = ..., reconnect_on_failure: bool = ..., callback_api_version: Any = ...) -> None: ...
-    def tls_set(self, ca_certs: str | None = ..., certfile: str | None = ..., keyfile: str | None = ..., cert_reqs: Any | None = ..., tls_version: Any | None = ..., ciphers: str | None = ...) -> None: ...
+    def __init__(
+        self,
+        client_id: str = ...,
+        clean_session: bool | None = ...,
+        userdata: Any = ...,
+        protocol: int = ...,
+        transport: str = ...,
+        reconnect_on_failure: bool = ...,
+        callback_api_version: Any = ...,
+    ) -> None: ...
+    def tls_set(
+        self,
+        ca_certs: str | None = ...,
+        certfile: str | None = ...,
+        keyfile: str | None = ...,
+        cert_reqs: Any | None = ...,
+        tls_version: Any | None = ...,
+        ciphers: str | None = ...,
+    ) -> None: ...
     def username_pw_set(self, username: str, password: str | None = ...) -> None: ...
     def connect(self, host: str, port: int = ..., keepalive: int = ..., bind_address: str = ...) -> Any: ...
     def loop_start(self) -> None: ...

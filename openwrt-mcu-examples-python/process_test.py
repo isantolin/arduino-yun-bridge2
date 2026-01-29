@@ -60,10 +60,7 @@ async def _stream_poll_updates(
                 )
             else:
                 logger.info(
-                    (
-                        "Process %d completed with exit code %s "
-                        "(final chunk logged above)"
-                    ),
+                    ("Process %d completed with exit code %s " "(final chunk logged above)"),
                     pid,
                     exit_code,
                 )
@@ -106,11 +103,7 @@ async def main() -> None:
     command_to_run: list[str] = [
         "bash",
         "-c",
-        (
-            "for i in $(seq 1 4); do "
-            'echo "tick:$i"; sleep 0.5; '
-            "done; >&2 echo 'process complete'"
-        ),
+        ("for i in $(seq 1 4); do " 'echo "tick:$i"; sleep 0.5; ' "done; >&2 echo 'process complete'"),
     ]
 
     try:

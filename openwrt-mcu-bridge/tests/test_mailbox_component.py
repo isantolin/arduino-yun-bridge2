@@ -34,8 +34,7 @@ class EnqueueHook(Protocol):
         message: QueuedPublish,
         *,
         reply_context: Message | None = None,
-    ) -> Awaitable[None]:
-        ...
+    ) -> Awaitable[None]: ...
 
 
 class DummyBridge(BridgeContext):
@@ -159,9 +158,7 @@ def test_handle_read_success_publishes_available(
     assert command_id == Command.CMD_MAILBOX_READ_RESP.value
     assert payload == struct.pack(protocol.UINT16_FORMAT, 7) + b"payload"
 
-    assert bridge.published[-1].topic_name == (
-        mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix)
-    )
+    assert bridge.published[-1].topic_name == (mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix))
     assert bridge.published[-1].payload == b"0"
 
 
@@ -189,9 +186,7 @@ def test_handle_mqtt_write_enqueues_and_notifies(
     asyncio.run(component.handle_mqtt(MailboxAction.WRITE, b"mqtt"))
 
     assert list(runtime_state.mailbox_queue) == [b"mqtt"]
-    assert bridge.published[-1].topic_name == (
-        mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix)
-    )
+    assert bridge.published[-1].topic_name == (mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix))
     assert bridge.published[-1].payload == b"1"
 
 
@@ -213,9 +208,7 @@ def test_handle_mqtt_write_overflow_signals_error(
         Topic.MAILBOX,
         "errors",
     )
-    assert topics[0] == mailbox_outgoing_available_topic(
-        runtime_state.mqtt_topic_prefix
-    )
+    assert topics[0] == mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix)
     assert topics[1] == overflow_topic
     error_payload = msgspec.json.decode(bridge.published[1].payload)
     assert error_payload["event"] == "write_overflow"

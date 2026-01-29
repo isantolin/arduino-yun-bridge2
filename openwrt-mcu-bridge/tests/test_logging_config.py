@@ -58,9 +58,10 @@ def test_configure_logging_syslog(tmp_path) -> None:
     with patch("mcubridge.config.logging.SYSLOG_SOCKET", fake_socket):
         # [SIL-2] Mock logging.getLogger to prevent side-effects (IO errors) during test
         # We must patch 'mcubridge.config.logging.dictConfig' because the module imports it directly.
-        with patch("mcubridge.config.logging.dictConfig") as mock_dict_config, \
-             patch("logging.getLogger") as mock_get_logger:
-
+        with (
+            patch("mcubridge.config.logging.dictConfig") as mock_dict_config,
+            patch("logging.getLogger") as mock_get_logger,
+        ):
             mcubridge.config.logging.configure_logging(config)
 
             mock_dict_config.assert_called_once()

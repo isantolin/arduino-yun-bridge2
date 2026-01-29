@@ -30,11 +30,11 @@ def check_cpp_syntax() -> bool:
     flags = ["-fsyntax-only", "-std=c++11", "-Wall", "-Werror"]
 
     success = True
-    for file_path in files_to_check:
+    for file_path in sources:
         cmd = ["g++"] + flags + include_paths + [file_path]
         sys.stdout.write(f"Checking syntax for {os.path.basename(file_path)}...\n")
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             if result.returncode != 0:
                 sys.stderr.write(f"FAILED: {file_path}\n")
                 sys.stderr.write(result.stderr)

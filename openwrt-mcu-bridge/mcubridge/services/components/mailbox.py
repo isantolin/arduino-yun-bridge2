@@ -70,7 +70,7 @@ class MailboxComponent:
             return False
 
         msg_len = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
-        data = payload[2:2 + msg_len]
+        data = payload[2 : 2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
                 "MAILBOX_PUSH length mismatch. Expected %d bytes, got %d.",
@@ -100,9 +100,7 @@ class MailboxComponent:
 
         await self.ctx.enqueue_mqtt(
             QueuedPublish(
-                topic_name=mailbox_incoming_available_topic(
-                    self.state.mqtt_topic_prefix
-                ),
+                topic_name=mailbox_incoming_available_topic(self.state.mqtt_topic_prefix),
                 payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
             )
         )
@@ -141,9 +139,7 @@ class MailboxComponent:
             message_payload = message_payload[: protocol.MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
-        response_payload = (
-            struct.pack(protocol.UINT16_FORMAT, msg_len) + message_payload
-        )
+        response_payload = struct.pack(protocol.UINT16_FORMAT, msg_len) + message_payload
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,
@@ -156,9 +152,7 @@ class MailboxComponent:
 
         await self.ctx.enqueue_mqtt(
             QueuedPublish(
-                topic_name=mailbox_outgoing_available_topic(
-                    self.state.mqtt_topic_prefix
-                ),
+                topic_name=mailbox_outgoing_available_topic(self.state.mqtt_topic_prefix),
                 payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
             )
         )

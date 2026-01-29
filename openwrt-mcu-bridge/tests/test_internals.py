@@ -3,6 +3,7 @@ test_internals.py.
 
 Objetivo: Ejecución quirúrgica de bucles internos y manejo de errores.
 """
+
 from unittest.mock import MagicMock, patch
 import pytest
 from mcubridge.daemon import main
@@ -25,6 +26,7 @@ async def test_mqtt_internal_tls_setup_branches():
 
     # Accedemos a la función privada via import directo
     from mcubridge.transport.mqtt import _configure_tls
+
     assert _configure_tls(mock_cfg) is None
 
     # Caso 2: TLS habilitado sin cafile (usa trust store)
@@ -67,14 +69,16 @@ async def test_mqtt_internal_tls_setup_branches():
 
 # --- DAEMON ENTRY POINT ---
 
+
 def test_main_entry_point_success():
     """Prueba la función main() real simulando todo el entorno."""
-    with patch("mcubridge.daemon.load_runtime_config") as mock_load, \
-            patch("mcubridge.daemon.configure_logging"), \
-            patch("mcubridge.daemon.BridgeDaemon") as MockDaemon, \
-            patch("mcubridge.daemon.asyncio.run") as mock_run, \
-            patch("sys.exit") as mock_exit:
-
+    with (
+        patch("mcubridge.daemon.load_runtime_config") as mock_load,
+        patch("mcubridge.daemon.configure_logging"),
+        patch("mcubridge.daemon.BridgeDaemon") as MockDaemon,
+        patch("mcubridge.daemon.asyncio.run") as mock_run,
+        patch("sys.exit") as mock_exit,
+    ):
         # Configurar mocks
         mock_cfg = MagicMock()
         mock_cfg.serial_shared_secret = "safe"  # Evita warning critico
@@ -91,13 +95,13 @@ def test_main_entry_point_success():
 
 def test_main_entry_point_errors():
     """Prueba main() ante excepciones fatales."""
-    with patch("mcubridge.daemon.load_runtime_config") as mock_load, \
-            patch("mcubridge.daemon.configure_logging"), \
-            patch("mcubridge.daemon.BridgeDaemon"), \
-            patch("mcubridge.daemon.asyncio.run",
-                  side_effect=RuntimeError("Boot fail")), \
-            patch("sys.exit") as mock_exit:
-
+    with (
+        patch("mcubridge.daemon.load_runtime_config") as mock_load,
+        patch("mcubridge.daemon.configure_logging"),
+        patch("mcubridge.daemon.BridgeDaemon"),
+        patch("mcubridge.daemon.asyncio.run", side_effect=RuntimeError("Boot fail")),
+        patch("sys.exit") as mock_exit,
+    ):
         mock_load.return_value = MagicMock()
 
         main()

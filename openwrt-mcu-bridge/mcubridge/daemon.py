@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-from typing import TYPE_CHECKING, NoReturn
+from typing import NoReturn
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
@@ -60,10 +60,6 @@ from mcubridge.watchdog import WatchdogKeepalive
 
 
 logger = logging.getLogger("mcubridge")
-
-
-if TYPE_CHECKING:
-    from mcubridge.metrics import PrometheusExporter
 
 
 class BridgeDaemon:
@@ -153,15 +149,16 @@ class BridgeDaemon:
         ]
 
         # 3. Optional Features
-        if self.config.bridge_summary_interval > 0.0 or \
-           self.config.bridge_handshake_interval > 0.0:
-            specs.append(SupervisedTaskSpec(
-                name="bridge-snapshots",
-                factory=self._run_bridge_snapshots,
-                max_restarts=5,
-                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
-                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
-            ))
+        if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
+            specs.append(
+                SupervisedTaskSpec(
+                    name="bridge-snapshots",
+                    factory=self._run_bridge_snapshots,
+                    max_restarts=5,
+                    restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
+                    max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
+                )
+            )
 
         if self.config.watchdog_enabled:
             self.watchdog = WatchdogKeepalive(
@@ -169,13 +166,15 @@ class BridgeDaemon:
                 state=self.state,
             )
             logger.info("Watchdog enabled (interval=%.2fs)", self.config.watchdog_interval)
-            specs.append(SupervisedTaskSpec(
-                name="watchdog",
-                factory=self.watchdog.run,
-                max_restarts=5,
-                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
-                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
-            ))
+            specs.append(
+                SupervisedTaskSpec(
+                    name="watchdog",
+                    factory=self.watchdog.run,
+                    max_restarts=5,
+                    restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
+                    max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
+                )
+            )
 
         if self.config.metrics_enabled:
             self.exporter = PrometheusExporter(
@@ -183,12 +182,14 @@ class BridgeDaemon:
                 self.config.metrics_host,
                 self.config.metrics_port,
             )
-            specs.append(SupervisedTaskSpec(
-                name="prometheus-exporter",
-                factory=self.exporter.run,
-                max_restarts=5,
-                restart_interval=SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
-            ))
+            specs.append(
+                SupervisedTaskSpec(
+                    name="prometheus-exporter",
+                    factory=self.exporter.run,
+                    max_restarts=5,
+                    restart_interval=SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
+                )
+            )
 
         return specs
 

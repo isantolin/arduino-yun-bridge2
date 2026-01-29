@@ -37,9 +37,7 @@ def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def _install_dummy_uci_module(
-    monkeypatch: pytest.MonkeyPatch, section: dict[str, Any]
-) -> None:
+def _install_dummy_uci_module(monkeypatch: pytest.MonkeyPatch, section: dict[str, Any]) -> None:
     class _DummyCursor:
         def __init__(self, payload: dict[str, Any]):
             self._payload = payload
@@ -294,7 +292,7 @@ def test_load_runtime_config_falls_back_to_defaults(
         "file_write_max_bytes": 1024,
         "file_storage_quota_bytes": 1024,
         "process_max_output_bytes": 1024,
-        "process_max_concurrent": 1
+        "process_max_concurrent": 1,
     }
 
     monkeypatch.setattr(settings, "get_uci_config", _uci_failure)
@@ -351,22 +349,24 @@ def test_get_uci_config_handles_value_wrappers(
 
 def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     raw_config = common.get_default_config()
-    raw_config.update({
-        "serial_port": "/dev/ttyS1",
-        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
-        "mqtt_host": "broker",
-        "mqtt_port": "8883",
-        "mqtt_tls": "1",
-        "mqtt_cafile": "/etc/ca.pem",
-        "mqtt_topic": "br",
-        "allowed_commands": "uptime",
-        "file_system_root": "/tmp",
-        "process_timeout": "10",
-        "serial_shared_secret": " s_e_c_r_e_t_mock ",
-        "watchdog_enabled": "1",
-        "watchdog_interval": "0.2",
-    })
+    raw_config.update(
+        {
+            "serial_port": "/dev/ttyS1",
+            "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+            "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
+            "mqtt_host": "broker",
+            "mqtt_port": "8883",
+            "mqtt_tls": "1",
+            "mqtt_cafile": "/etc/ca.pem",
+            "mqtt_topic": "br",
+            "allowed_commands": "uptime",
+            "file_system_root": "/tmp",
+            "process_timeout": "10",
+            "serial_shared_secret": " s_e_c_r_e_t_mock ",
+            "watchdog_enabled": "1",
+            "watchdog_interval": "0.2",
+        }
+    )
 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
 

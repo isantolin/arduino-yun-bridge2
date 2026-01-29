@@ -29,9 +29,7 @@ from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:
-    assert frame_debug._resolve_command(
-        f"0x{Command.CMD_LINK_RESET.value:02X}"
-    ) == Command.CMD_LINK_RESET.value
+    assert frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value
     assert frame_debug._resolve_command(f"0X{UINT8_MASK:02X}") == UINT8_MASK
     assert frame_debug._resolve_command("10") == 10  # Just an integer
 
@@ -187,9 +185,7 @@ def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     mock_serial.read.side_effect = [bytes([1]), FRAME_DELIMITER, b""]
 
     with patch("tools.frame_debug._decode_frame") as mock_decode:
-        mock_decode.return_value = frame_debug.Frame(
-            Status.OK.value, b"response"
-        )
+        mock_decode.return_value = frame_debug.Frame(Status.OK.value, b"response")
 
         ret = frame_debug.main(
             [

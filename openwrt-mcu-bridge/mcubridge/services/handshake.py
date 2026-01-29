@@ -174,9 +174,7 @@ class SerialHandshakeManager:
         self._state.record_handshake_attempt()
 
         # [MIL-SPEC] Generate nonce with anti-replay counter
-        nonce, new_counter = generate_nonce_with_counter(
-            self._state.link_nonce_counter
-        )
+        nonce, new_counter = generate_nonce_with_counter(self._state.link_nonce_counter)
         self._state.link_nonce_counter = new_counter
 
         self._state.link_handshake_nonce = nonce
@@ -189,9 +187,7 @@ class SerialHandshakeManager:
             self._reset_payload,
         )
         if not reset_ok and self._reset_payload:
-            self._logger.warning(
-                "LINK_RESET rejected; retrying without timing payload"
-            )
+            self._logger.warning("LINK_RESET rejected; retrying without timing payload")
             reset_ok = await self._send_frame(
                 Command.CMD_LINK_RESET.value,
                 b"",
@@ -274,13 +270,9 @@ class SerialHandshakeManager:
         tag_mismatch = not hmac.compare_digest(tag_bytes, recalculated_tag)
 
         if not nonce_mismatch and not missing_expected_tag:
-            is_valid, _ = validate_nonce_counter(
-                nonce, self._state.link_last_nonce_counter
-            )
+            is_valid, _ = validate_nonce_counter(nonce, self._state.link_last_nonce_counter)
             if not is_valid:
-                self._logger.warning(
-                    "LINK_SYNC_RESP replay detected (nonce counter too low)"
-                )
+                self._logger.warning("LINK_SYNC_RESP replay detected (nonce counter too low)")
                 nonce_mismatch = True
 
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
@@ -335,9 +327,7 @@ class SerialHandshakeManager:
 
                     try:
                         timeout = max(5.0, self._timing.response_timeout_seconds)
-                        payload = await asyncio.wait_for(
-                            self._capabilities_future, timeout=timeout
-                        )
+                        payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
                         self._parse_capabilities(payload)
                         return True
                     except asyncio.TimeoutError:
@@ -360,11 +350,7 @@ class SerialHandshakeManager:
         try:
             ver, arch, dig, ana, feat = struct.unpack(protocol.CAPABILITIES_FORMAT, payload[:8])
             self._state.mcu_capabilities = McuCapabilities(
-                protocol_version=ver,
-                board_arch=arch,
-                num_digital_pins=dig,
-                num_analog_inputs=ana,
-                features=feat
+                protocol_version=ver, board_arch=arch, num_digital_pins=dig, num_analog_inputs=ana, features=feat
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except struct.error:
@@ -385,9 +371,7 @@ class SerialHandshakeManager:
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
         if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
-            fatal_detail = detail or (
-                f"failure_streak_exceeded_{self._fatal_threshold}"
-            )
+            fatal_detail = detail or (f"failure_streak_exceeded_{self._fatal_threshold}")
         if is_fatal:
             self._state.record_handshake_fatal(reason, fatal_detail)
             self._logger.error(
@@ -436,9 +420,7 @@ class SerialHandshakeManager:
             "Verify mcubridge.general.serial_shared_secret (configured via UCI/LuCI) "
             "matches the BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
-        raise SerialHandshakeFatal(
-            "MCU rejected the serial shared secret " f"(reason={reason}). {hint}"
-        )
+        raise SerialHandshakeFatal("MCU rejected the serial shared secret " f"(reason={reason}). {hint}")
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         loop = asyncio.get_running_loop()
@@ -573,4 +555,3 @@ class SerialHandshakeManager:
     @staticmethod
     def _is_immediate_fatal(reason: str) -> bool:
         return reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
-

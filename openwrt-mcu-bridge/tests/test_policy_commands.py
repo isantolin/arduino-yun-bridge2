@@ -22,9 +22,7 @@ FORBIDDEN_SUBSTRINGS = ("$(", "${", "&&", "||")
         (["grep", "foo", "bar"], "", "\n"),
     ],
 )
-def test_tokenizer_accepts_safe_tokens(
-    tokens: list[str], prefix: str, suffix: str
-) -> None:
+def test_tokenizer_accepts_safe_tokens(tokens: list[str], prefix: str, suffix: str) -> None:
     command = prefix + " ".join(tokens) + suffix
     assert tokenize_shell_command(command) == tuple(tokens)
 

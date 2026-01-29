@@ -32,9 +32,7 @@ def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
         if config.mqtt_cafile:
             if not Path(config.mqtt_cafile).exists():
                 raise RuntimeError(f"MQTT TLS CA file missing: {config.mqtt_cafile}")
-            context = ssl.create_default_context(
-                ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile
-            )
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile)
         else:
             # Use system trust store.
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
@@ -145,11 +143,8 @@ async def mqtt_task(
     reconnect_delay = max(1, config.reconnect_delay)
 
     retryer = tenacity.AsyncRetrying(
-        wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60)
-        + tenacity.wait_random(0, 2),
-        retry=tenacity.retry_if_exception_type(
-            (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
-        ),
+        wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
+        retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
         before_sleep=_log_retry_attempt,
         reraise=True,
     )
@@ -200,4 +195,3 @@ async def mqtt_task(
                 if len(exc_group.exceptions) == 1:
                     raise exc_group.exceptions[0]
                 raise
-

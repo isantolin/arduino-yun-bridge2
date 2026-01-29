@@ -32,9 +32,7 @@ class RecordingBridgeContext:
         self.sent_frames.append((command_id, payload))
         return self.send_frame_result
 
-    async def enqueue_mqtt(
-        self, message: QueuedPublish, *, reply_context: Message | None = None
-    ) -> None:
+    async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         self.enqueued.append((message, reply_context))
 
     def is_command_allowed(self, command: str) -> bool:
@@ -134,9 +132,7 @@ async def test_handle_digital_read_resp_with_pending_request_uses_reply_context(
     runtime_state: RuntimeState,
 ) -> None:
     inbound = _fake_inbound()
-    runtime_state.pending_digital_reads.append(
-        PendingPinRequest(pin=7, reply_context=inbound)
-    )
+    runtime_state.pending_digital_reads.append(PendingPinRequest(pin=7, reply_context=inbound))
 
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
@@ -159,9 +155,7 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     runtime_state: RuntimeState,
 ) -> None:
     inbound = _fake_inbound()
-    runtime_state.pending_analog_reads.append(
-        PendingPinRequest(pin=3, reply_context=inbound)
-    )
+    runtime_state.pending_analog_reads.append(PendingPinRequest(pin=3, reply_context=inbound))
 
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)

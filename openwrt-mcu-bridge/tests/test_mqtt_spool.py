@@ -70,9 +70,7 @@ def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
     assert snapshot["corrupt_dropped"] == 0
 
 
-def test_spool_skips_corrupt_rows(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
+def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     spool.append(_make_message("topic/first"))
 
@@ -165,9 +163,7 @@ def test_spool_fallback_invokes_hook(
     assert spool.is_degraded
 
 
-def test_spool_fallback_on_init_failure(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Spool degrades if directory creation fails."""
 
     # Force Path.mkdir to fail

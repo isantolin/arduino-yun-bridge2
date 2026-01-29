@@ -129,21 +129,14 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_keyfile = self._normalize_optional_string(self.mqtt_keyfile)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
-        self.serial_response_timeout = max(
-            self.serial_response_timeout, self.serial_retry_timeout * 2
-        )
-        self.serial_handshake_min_interval = max(
-            0.0, self.serial_handshake_min_interval
-        )
+        self.serial_response_timeout = max(self.serial_response_timeout, self.serial_retry_timeout * 2)
+        self.serial_handshake_min_interval = max(0.0, self.serial_handshake_min_interval)
         self.serial_handshake_fatal_failures = self._require_positive(
             "serial_handshake_fatal_failures",
             int(self.serial_handshake_fatal_failures),
         )
         if not self.mqtt_tls:
-            logger.warning(
-                "MQTT TLS is disabled; MQTT credentials and payloads "
-                "will be sent in plaintext."
-            )
+            logger.warning("MQTT TLS is disabled; MQTT credentials and payloads " "will be sent in plaintext.")
         else:
             if self.mqtt_tls_insecure:
                 logger.warning(
@@ -151,24 +144,17 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                     "this is less secure and should be used only for known/self-hosted brokers."
                 )
             if not self.mqtt_cafile:
-                logger.info(
-                    "MQTT TLS is enabled with no mqtt_cafile configured; using system trust store."
-                )
+                logger.info("MQTT TLS is enabled with no mqtt_cafile configured; using system trust store.")
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
-            raise ValueError(
-                "serial_shared_secret must be at least %d bytes"
-                % MIN_SERIAL_SHARED_SECRET_LEN
-            )
+            raise ValueError("serial_shared_secret must be at least %d bytes" % MIN_SERIAL_SHARED_SECRET_LEN)
         if self.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
         self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
-            raise ValueError(
-                "serial_shared_secret must contain at least " "four distinct bytes"
-            )
+            raise ValueError("serial_shared_secret must contain at least " "four distinct bytes")
         self._validate_queue_limits()
         self._normalize_topic_prefix()
         self._validate_flash_protection()
@@ -191,10 +177,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             self.mailbox_queue_bytes_limit,
         )
         if mailbox_bytes_limit < mailbox_limit:
-            raise ValueError(
-                "mailbox_queue_bytes_limit must be greater than or equal to "
-                "mailbox_queue_limit"
-            )
+            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to " "mailbox_queue_limit")
         console_limit = self._require_positive(
             "console_queue_limit_bytes",
             self.console_queue_limit_bytes,
@@ -270,10 +253,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             setattr(self, field_name, validated)
 
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
-            raise ValueError(
-                "file_storage_quota_bytes must be greater than or equal to "
-                "file_write_max_bytes"
-            )
+            raise ValueError("file_storage_quota_bytes must be greater than or equal to " "file_write_max_bytes")
 
         if self.watchdog_enabled:
             interval = self._require_positive_float(
@@ -345,9 +325,7 @@ def configure_logging(config: RuntimeConfig) -> None:
     for h in root.handlers[:]:
         root.removeHandler(h)
 
-    formatter = logging.Formatter(
-        "%(name)s: %(levelname)s %(message)s"
-    )
+    formatter = logging.Formatter("%(name)s: %(levelname)s %(message)s")
 
     handlers: list[logging.Handler] = []
 
@@ -355,8 +333,7 @@ def configure_logging(config: RuntimeConfig) -> None:
     if os.path.exists("/dev/log"):
         try:
             syslog_handler = logging.handlers.SysLogHandler(
-                address="/dev/log",
-                facility=logging.handlers.SysLogHandler.LOG_DAEMON
+                address="/dev/log", facility=logging.handlers.SysLogHandler.LOG_DAEMON
             )
             syslog_handler.setFormatter(formatter)
             handlers.append(syslog_handler)

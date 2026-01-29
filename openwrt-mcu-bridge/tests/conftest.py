@@ -16,6 +16,7 @@ if "uci" not in sys.modules:
 # [TEST FIX] Mock 'pyserial-asyncio-fast' as it is a compiled extension not available in dev env.
 if "serial_asyncio_fast" not in sys.modules:
     from unittest.mock import AsyncMock
+
     mock_saf = MagicMock()
     # Default return value is a tuple of mocks to satisfy 'transport, proto = await ...'
     mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
@@ -42,11 +43,11 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 
 @pytest.fixture(autouse=True)
 def logging_mock_level_fix():
-    """ Ensure all handlers have a numeric level to avoid comparisons with MagicMock. """
+    """Ensure all handlers have a numeric level to avoid comparisons with MagicMock."""
     original_handlers = []
     # Capture existing loggers
     loggers = [logging.getLogger(name) for name in logging.root.manager.loggerDict]
-    loggers.append(logging.getLogger()) # Root logger
+    loggers.append(logging.getLogger())  # Root logger
 
     for logger in loggers:
         for handler in logger.handlers:

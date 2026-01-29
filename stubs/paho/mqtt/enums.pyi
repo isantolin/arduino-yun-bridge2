@@ -1,6 +1,5 @@
 from enum import IntEnum
 
-
 class CallbackAPIVersion(IntEnum):
     VERSION1 = ...
     VERSION2 = ...

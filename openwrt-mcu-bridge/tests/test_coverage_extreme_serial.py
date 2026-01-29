@@ -5,9 +5,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 # Mock serial_asyncio_fast at the very beginning
 mock_saf = MagicMock()
-mock_saf.create_serial_connection = AsyncMock(
-    return_value=(MagicMock(), MagicMock())
-)
+mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
 sys.modules["serial_asyncio_fast"] = mock_saf
 
 from mcubridge.transport import serial_fast  # noqa: E402
@@ -128,9 +126,7 @@ async def test_serial_transport_lifecycle_100_percent():
 
     # 1. run() exception & retry (Lines 281-289)
     # Force _connect_and_run to fail with OSError
-    with patch.object(
-        transport_mgr, "_connect_and_run", side_effect=[OSError("tty busy"), None]
-    ):
+    with patch.object(transport_mgr, "_connect_and_run", side_effect=[OSError("tty busy"), None]):
 
         async def stop_soon():
             await asyncio.sleep(0.05)

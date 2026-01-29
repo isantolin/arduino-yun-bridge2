@@ -6,14 +6,10 @@ import dataclasses
 import sys
 from typing import TypeAlias
 
-if sys.version_info >= (3, 10):
-    ...
-else:
-    ...
-
+if sys.version_info >= (3, 10): ...
+else: ...
 
 MAX_TOPIC_LENGTH = ...
-
 
 @dataclasses.dataclass(frozen=True)
 class Wildcard:
@@ -29,17 +25,14 @@ class Wildcard:
     Attributes:
         value: The wildcard string.
     """
-    value: str
-    def __str__(self) -> str:
-        ...
 
+    value: str
+    def __str__(self) -> str: ...
     def __post_init__(self) -> None:
         """Validate the wildcard."""
         ...
 
-
 WildcardLike: TypeAlias = "str | Wildcard"
-
 
 @dataclasses.dataclass(frozen=True)
 class Topic(Wildcard):
@@ -65,6 +58,5 @@ class Topic(Wildcard):
             True if the topic matches the wildcard, False otherwise.
         """
         ...
-
 
 TopicLike: TypeAlias = "str | Topic"

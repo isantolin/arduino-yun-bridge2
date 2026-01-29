@@ -78,8 +78,7 @@ def _resolve_command(candidate: str) -> int:
         return Status[normalized_upper].value
     except KeyError as exc:
         raise ValueError(
-            f"Unknown command '{candidate}'. Use integer (e.g. 10, 0x0A) "
-            "or a Command/Status enum name."
+            f"Unknown command '{candidate}'. Use integer (e.g. 10, 0x0A) " "or a Command/Status enum name."
         ) from exc
 
 
@@ -113,7 +112,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     raw_frame = Frame(command_id, payload).to_bytes()
-    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE:], "big")
+    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
@@ -194,18 +193,14 @@ def _non_negative_int(value: str) -> int:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect and optionally send MCU Bridge RPC frames. "
-            "Stop the mcubridge daemon before using --port."
+            "Inspect and optionally send MCU Bridge RPC frames. " "Stop the mcubridge daemon before using --port."
         )
     )
     parser.add_argument(
         "--command",
         "-c",
         default="CMD_GET_FREE_MEMORY",
-        help=(
-            "Command to build. Accepts enum name (e.g. CMD_LINK_RESET) "
-            "or hex literal such as 0x03."
-        ),
+        help=("Command to build. Accepts enum name (e.g. CMD_LINK_RESET) " "or hex literal such as 0x03."),
     )
     parser.add_argument(
         "--payload",
@@ -232,10 +227,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--count",
         type=_non_negative_int,
         default=1,
-        help=(
-            "Number of frames to send. 0 means run indefinitely without "
-            "delay between iterations."
-        ),
+        help=("Number of frames to send. 0 means run indefinitely without " "delay between iterations."),
     )
     parser.add_argument(
         "--read-response",
@@ -246,10 +238,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--read-timeout",
         type=_positive_float,
         default=2.0,
-        help=(
-            "Seconds to wait for a response when --read-response is set "
-            "(default: 2)."
-        ),
+        help=("Seconds to wait for a response when --read-response is set " "(default: 2)."),
     )
     return parser
 
@@ -282,9 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             args.baud,
             args.read_timeout,
         )
-        sys.stdout.write(
-            f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud\n"
-        )
+        sys.stdout.write(f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud\n")
 
     try:
         for iteration in _iter_counts(args.count):
@@ -292,23 +279,16 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(snapshot.render() + "\n")
             if serial_device:
                 written = _write_frame(serial_device, snapshot.encoded_packet)
-                sys.stdout.write(
-                    f"[FrameDebug] wrote {written} bytes to serial port\n"
-                )
+                sys.stdout.write(f"[FrameDebug] wrote {written} bytes to serial port\n")
                 if args.read_response:
-                    encoded_response = _read_frame(
-                        serial_device, timeout=args.read_timeout
-                    )
+                    encoded_response = _read_frame(serial_device, timeout=args.read_timeout)
                     if not encoded_response:
                         sys.stdout.write("[FrameDebug] No response before timeout\n")
                     else:
                         try:
                             response_frame = _decode_frame(encoded_response)
                         except Exception as exc:
-                            sys.stderr.write(
-                                "[FrameDebug] Failed to decode MCU response: "
-                                f"{exc}\n"
-                            )
+                            sys.stderr.write("[FrameDebug] Failed to decode MCU response: " f"{exc}\n")
                         else:
                             _print_response(response_frame)
             if args.count == 0 or iteration + 1 < args.count:

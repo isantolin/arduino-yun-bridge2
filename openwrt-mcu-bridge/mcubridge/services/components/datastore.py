@@ -102,7 +102,7 @@ class DatastoreComponent:
             await self.ctx.send_frame(Status.MALFORMED.value, b"data_get_key")
             return False
 
-        key_bytes = payload[1:1 + key_len]
+        key_bytes = payload[1 : 1 + key_len]
         key = key_bytes.decode("utf-8", errors="ignore")
         value = self.state.datastore.get(key, "")
         value_bytes = value.encode("utf-8")

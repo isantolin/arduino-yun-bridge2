@@ -81,6 +81,7 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
 
     // --- Extract Payload ---
     out_frame.payload.assign(&buffer[sizeof(FrameHeader)], &buffer[sizeof(FrameHeader) + out_frame.header.payload_length]);
+    out_frame.crc = calculated_crc;
 
     return true;
 }

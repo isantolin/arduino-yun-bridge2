@@ -34,7 +34,5 @@ def test_frame_build_masks_crc_to_protocol_size(
         payload,
     ).to_bytes()
 
-    expected_len = (
-        protocol.CRC_COVERED_HEADER_SIZE + len(payload) + frame.protocol.CRC_SIZE
-    )
+    expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + frame.protocol.CRC_SIZE
     assert len(raw) == expected_len

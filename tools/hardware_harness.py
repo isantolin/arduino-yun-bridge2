@@ -126,17 +126,13 @@ def load_manifest(path: Path) -> list[Target]:
 
         user = entry.get("user", default_user)
         ssh_value = entry.get("ssh")
-        ssh_args = (
-            _coerce_list(ssh_value) if ssh_value is not None else list(default_ssh)
-        )
+        ssh_args = _coerce_list(ssh_value) if ssh_value is not None else list(default_ssh)
         tags = default_tags | _coerce_tags(entry.get("tags"))
         extra_value = entry.get("extra_args")
         extra_args = _coerce_list(extra_value) if extra_value is not None else []
         timeout_value = entry.get("timeout")
         if timeout_value is None:
-            timeout_val = (
-                float(default_timeout) if default_timeout is not None else None
-            )
+            timeout_val = float(default_timeout) if default_timeout is not None else None
         else:
             timeout_val = float(timeout_value)
         retries = int(entry.get("retries", default_retries))
@@ -296,17 +292,12 @@ async def run_target(
 def format_summary(results: Sequence[Result]) -> str:
     timestamp = datetime.now().isoformat(timespec="seconds")
     lines = [f"{len(results)} target(s) processed at {timestamp}"]
-    header = (
-        f"{'STATUS':8} {'TARGET':20} {'HOST':22} " f"{'ATTEMPTS':8} {'DURATION':10}"
-    )
+    header = f"{'STATUS':8} {'TARGET':20} {'HOST':22} " f"{'ATTEMPTS':8} {'DURATION':10}"
     lines.append(header)
     lines.append("-" * len(header))
     for res in results:
         host = res.target.host or "local"
-        lines.append(
-            f"{res.status_label:8} {res.target.name:20} {host:22} "
-            f"{res.attempts:>8} {res.duration:>9.1f}s"
-        )
+        lines.append(f"{res.status_label:8} {res.target.name:20} {host:22} " f"{res.attempts:>8} {res.duration:>9.1f}s")
         if not res.success and not res.skipped:
             snippet = res.stderr.strip() or res.stdout.strip()
             if snippet:

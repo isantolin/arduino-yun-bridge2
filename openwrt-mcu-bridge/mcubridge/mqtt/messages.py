@@ -83,9 +83,7 @@ class QueuedPublish:
             "message_expiry_interval": self.message_expiry_interval,
             "response_topic": self.response_topic,
             "correlation_data": (
-                base64.b64encode(self.correlation_data).decode("ascii")
-                if self.correlation_data is not None
-                else None
+                base64.b64encode(self.correlation_data).decode("ascii") if self.correlation_data is not None else None
             ),
             "user_properties": list(self.user_properties),
         }

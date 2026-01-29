@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """CGI helper that toggles digital pins via MQTT using paho-mqtt."""
+
 from __future__ import annotations
 
 import logging
@@ -111,10 +112,7 @@ def publish_with_retries(
 
         except Exception as exc:
             last_error = exc
-            logger.warning(
-                "Publish attempt %d/%d failed: %s",
-                attempt, retries, exc
-            )
+            logger.warning("Publish attempt %d/%d failed: %s", attempt, retries, exc)
             try:
                 client.loop_stop()
                 client.disconnect()
@@ -176,9 +174,7 @@ def main() -> None:
             405,
             {
                 "status": "error",
-                "message": (
-                    "Only POST is supported. Subscribe via MQTT for state."
-                ),
+                "message": ("Only POST is supported. Subscribe via MQTT for state."),
             },
         )
         return

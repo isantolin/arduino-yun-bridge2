@@ -75,18 +75,22 @@ def test_on_serial_connected_flushes_console_queue(
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
                 # Use create_task to avoid deadlock with write_lock held by sender
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value,
-                    b"",
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_RESET_RESP.value,
+                        b"",
+                    )
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    response,
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_SYNC_RESP.value,
+                        response,
+                    )
+                )
             elif command_id == Command.CMD_GET_VERSION.value:
                 # Direct flow injection bypasses lock issues
                 flow.on_frame_received(
@@ -109,11 +113,7 @@ def test_on_serial_connected_flushes_console_queue(
         await service.on_serial_connected()
 
         assert sent_frames
-        reset_payloads = [
-            payload
-            for frame_id, payload in sent_frames
-            if frame_id == Command.CMD_LINK_RESET.value
-        ]
+        reset_payloads = [payload for frame_id, payload in sent_frames if frame_id == Command.CMD_LINK_RESET.value]
         assert reset_payloads
         reset_payload = reset_payloads[0]
         assert len(reset_payload) == protocol.HANDSHAKE_CONFIG_SIZE
@@ -140,9 +140,7 @@ def test_on_serial_connected_flushes_console_queue(
             Command.CMD_LINK_SYNC.value,
         ]
         assert Command.CMD_GET_VERSION.value in frame_ids
-        assert any(
-            frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames
-        )
+        assert any(frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
         assert runtime_state.console_queue_bytes == 0
         assert runtime_state.mcu_version is None
         assert runtime_state.handshake_attempts == 1
@@ -174,29 +172,29 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                 if payload:
                     flow.on_frame_received(Status.MALFORMED.value, b"")
                 else:
-                    asyncio.create_task(service.handle_mcu_frame(
-                        Command.CMD_LINK_RESET_RESP.value,
-                        b"",
-                    ))
+                    asyncio.create_task(
+                        service.handle_mcu_frame(
+                            Command.CMD_LINK_RESET_RESP.value,
+                            b"",
+                        )
+                    )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._compute_handshake_tag(nonce)
                 response = nonce + tag
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    response,
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_SYNC_RESP.value,
+                        response,
+                    )
+                )
             return True
 
         service.register_serial_sender(fake_sender)
 
         await service.on_serial_connected()
 
-        reset_payloads = [
-            payload
-            for frame_id, payload in sent_frames
-            if frame_id == Command.CMD_LINK_RESET.value
-        ]
+        reset_payloads = [payload for frame_id, payload in sent_frames if frame_id == Command.CMD_LINK_RESET.value]
         assert len(reset_payloads) >= 2
         assert len(reset_payloads[0]) == protocol.HANDSHAKE_CONFIG_SIZE
         assert reset_payloads[1] == b""
@@ -206,9 +204,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
     asyncio.run(_run())
 
 
-def test_sync_link_rejects_invalid_handshake_tag(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
+def test_sync_link_rejects_invalid_handshake_tag(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     async def _run() -> None:
         # Reduce timeout to fail fast
         runtime_config.serial_response_timeout = 0.01
@@ -220,20 +216,24 @@ def test_sync_link_rejects_invalid_handshake_tag(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value,
-                    b"",
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_RESET_RESP.value,
+                        b"",
+                    )
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= protocol.UINT8_MASK
                 response = nonce + bytes(tag)
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    response,
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_SYNC_RESP.value,
+                        response,
+                    )
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -250,12 +250,11 @@ def test_sync_link_rejects_invalid_handshake_tag(
         assert runtime_state.handshake_failures == 1
         assert runtime_state.handshake_successes == 0
         # fatal count assertions removed due to tenacity retry abstraction mismatch in async mocks
+
     asyncio.run(_run())
 
 
-def test_sync_link_rejects_truncated_response(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
+def test_sync_link_rejects_truncated_response(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     async def _run() -> None:
         # Reduce timeout to fail fast
         runtime_config.serial_response_timeout = 0.01
@@ -267,17 +266,21 @@ def test_sync_link_rejects_truncated_response(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value,
-                    b"",
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_RESET_RESP.value,
+                        b"",
+                    )
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 # Return truncated response (nonce only, no tag)
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    nonce,
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_SYNC_RESP.value,
+                        nonce,
+                    )
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -293,6 +296,7 @@ def test_sync_link_rejects_truncated_response(
         assert runtime_state.handshake_attempts == 1
         assert runtime_state.handshake_failures == 1
         # fatal count assertions removed
+
     asyncio.run(_run())
 
 
@@ -339,9 +343,7 @@ def test_link_sync_resp_respects_rate_limit(
             )
 
             if command_id == Command.CMD_GET_CAPABILITIES.value:
-                service._handshake.handle_capabilities_resp(
-                    b"\x02\x00\x14\x06\x00\x00\x00\x00"
-                )
+                service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
 
         service.register_serial_sender(fake_sender)
@@ -479,19 +481,23 @@ def test_on_serial_connected_raises_on_secret_mismatch(
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_RESET_RESP.value,
-                    b"",
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_RESET_RESP.value,
+                        b"",
+                    )
+                )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = bytearray(service._compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= protocol.UINT8_MASK
-                asyncio.create_task(service.handle_mcu_frame(
-                    Command.CMD_LINK_SYNC_RESP.value,
-                    nonce + bytes(tag),
-                ))
+                asyncio.create_task(
+                    service.handle_mcu_frame(
+                        Command.CMD_LINK_SYNC_RESP.value,
+                        nonce + bytes(tag),
+                    )
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -579,9 +585,7 @@ def test_mailbox_available_flow(
         assert sent_frames[-2][1] == bytes([len(runtime_state.mailbox_queue)])
         # Final frame should be ACK referencing the original command.
         assert frame_ids[-1] == Status.ACK.value
-        assert sent_frames[-1][1] == struct.pack(
-            protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
-        )
+        assert sent_frames[-1][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value)
 
     asyncio.run(_run())
 
@@ -609,9 +613,7 @@ def test_mailbox_available_rejects_payload(
         assert sent_frames
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         assert frame_ids[-1] == Status.MALFORMED.value
-        assert sent_frames[-1][1] == struct.pack(
-            protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value
-        )
+        assert sent_frames[-1][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value)
         assert Command.CMD_MAILBOX_AVAILABLE_RESP.value not in frame_ids
         assert Status.ACK.value not in frame_ids
 
@@ -826,9 +828,7 @@ def test_on_serial_disconnected_clears_pending(
                 PendingPinRequest(pin=2, reply_context=None),
             ]
         )
-        runtime_state.pending_analog_reads.append(
-            PendingPinRequest(pin=3, reply_context=None)
-        )
+        runtime_state.pending_analog_reads.append(PendingPinRequest(pin=3, reply_context=None))
         runtime_state.mcu_is_paused = True
         runtime_state.enqueue_console_chunk(b"keep", logging.getLogger())
 
@@ -840,9 +840,7 @@ def test_on_serial_disconnected_clears_pending(
         assert runtime_state.mcu_is_paused is False
         assert runtime_state.console_to_mcu_queue
         assert runtime_state.console_to_mcu_queue[0] == b"keep"
-        assert runtime_state.console_queue_bytes == len(
-            runtime_state.console_to_mcu_queue[0]
-        )
+        assert runtime_state.console_queue_bytes == len(runtime_state.console_to_mcu_queue[0])
         assert any("clearing" in record.message for record in caplog.records)
         assert runtime_state.serial_link_connected is False
 
@@ -872,9 +870,7 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
         )
 
         assert runtime_state.mqtt_publish_queue.qsize() == 2
-        topic_payloads = [
-            runtime_state.mqtt_publish_queue.get_nowait() for _ in range(2)
-        ]
+        topic_payloads = [runtime_state.mqtt_publish_queue.get_nowait() for _ in range(2)]
         # First message is the payload, second is the availability update.
         assert topic_payloads[0].topic_name == topic_path(
             runtime_state.mqtt_topic_prefix,
@@ -882,9 +878,7 @@ def test_mqtt_mailbox_read_preserves_empty_payload(
             "incoming",
         )
         assert topic_payloads[0].payload == b""
-        incoming_available_topic = mailbox_incoming_available_topic(
-            runtime_state.mqtt_topic_prefix
-        )
+        incoming_available_topic = mailbox_incoming_available_topic(runtime_state.mqtt_topic_prefix)
         assert topic_payloads[1].topic_name == incoming_available_topic
         for _ in topic_payloads:
             runtime_state.mqtt_publish_queue.task_done()
@@ -1376,9 +1370,7 @@ def test_enqueue_mqtt_drops_oldest_when_full(
         await service.enqueue_mqtt(second)
 
         assert runtime_state.mqtt_dropped_messages == 1
-        assert runtime_state.mqtt_drop_counts.get(
-            f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one"
-        ) == 1
+        assert runtime_state.mqtt_drop_counts.get(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/one") == 1
         assert runtime_state.mqtt_publish_queue.qsize() == 1
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
@@ -1393,9 +1385,7 @@ def test_run_command_respects_allow_list(
     runtime_state: RuntimeState,
 ) -> None:
     async def _run() -> None:
-        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(
-            ["/usr/bin/id"]
-        )
+        runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["/usr/bin/id"])
         service = BridgeService(runtime_config, runtime_state)
 
         status, _, stderr, _ = await service._process.run_sync("/bin/true")
@@ -1406,9 +1396,7 @@ def test_run_command_respects_allow_list(
         runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
         service_with_wildcard = BridgeService(runtime_config, runtime_state)
 
-        status_ok, _, stderr_ok, _ = await service_with_wildcard._process.run_sync(
-            "/bin/true"
-        )
+        status_ok, _, stderr_ok, _ = await service_with_wildcard._process.run_sync("/bin/true")
 
         assert status_ok == Status.OK.value
         assert stderr_ok == b""

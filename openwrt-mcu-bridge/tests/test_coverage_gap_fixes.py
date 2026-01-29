@@ -31,6 +31,7 @@ from mcubridge.mqtt.messages import QueuedPublish
 
 # --- Helpers ---
 
+
 def create_fake_config():
     """Create a real namespace config object to avoid MagicMock comparison issues."""
     return SimpleNamespace(
@@ -79,7 +80,7 @@ def create_fake_config():
         watchdog_interval=5.0,
         allow_non_tmp_paths=False,
         topic_authorization=MagicMock(),
-        tls_enabled=False
+        tls_enabled=False,
     )
 
 
@@ -162,6 +163,7 @@ def create_fake_state():
 
 # --- mcubridge.common ---
 
+
 def test_common_gaps():
     """Cover missed lines in common.py."""
     # Line 99: empty candidate in normalise_allowed_commands
@@ -205,7 +207,7 @@ def test_build_mqtt_properties_branches():
         content_type="application/json",
         payload_format_indicator=1,
         response_topic="resp",
-        correlation_data=b"corr"
+        correlation_data=b"corr",
     )
     props = common.build_mqtt_properties(msg)
     assert props.MessageExpiryInterval == 3600
@@ -267,6 +269,7 @@ def test_get_uci_config_openwrt_failures(mock_uci_class, mock_exists):
 
 
 # --- mcubridge.metrics ---
+
 
 @pytest.mark.asyncio
 async def test_publish_metrics_error_recovery():
@@ -347,7 +350,7 @@ async def test_bridge_snapshot_loop_gaps():
     # Cover initial emit error paths (Lines 182-187)
     with (
         patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=OSError("Boom")),
-        patch("asyncio.sleep", side_effect=asyncio.CancelledError)
+        patch("asyncio.sleep", side_effect=asyncio.CancelledError),
     ):
         with pytest.raises(asyncio.CancelledError):
             await metrics._bridge_snapshot_loop(state, enqueue, flavor="summary", seconds=10)
@@ -355,7 +358,7 @@ async def test_bridge_snapshot_loop_gaps():
     # Line 191 loop emit
     with (
         patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=[None, None]),
-        patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError])
+        patch("asyncio.sleep", side_effect=[None, asyncio.CancelledError]),
     ):
         with pytest.raises(asyncio.CancelledError):
             await metrics._bridge_snapshot_loop(state, enqueue, flavor="summary", seconds=10)
@@ -379,14 +382,14 @@ async def test_publish_metrics_gaps():
     # Line 215, 217: Initial emit errors
     with (
         patch("mcubridge.metrics._emit_metrics_snapshot", side_effect=OSError("Boom")),
-        patch("asyncio.sleep", side_effect=asyncio.CancelledError)
+        patch("asyncio.sleep", side_effect=asyncio.CancelledError),
     ):
         with pytest.raises(asyncio.CancelledError):
             await metrics.publish_metrics(state, enqueue, interval=10)
 
     with (
         patch("mcubridge.metrics._emit_metrics_snapshot", side_effect=AttributeError("Boom")),
-        patch("asyncio.sleep", side_effect=asyncio.CancelledError)
+        patch("asyncio.sleep", side_effect=asyncio.CancelledError),
     ):
         with pytest.raises(asyncio.CancelledError):
             await metrics.publish_metrics(state, enqueue, interval=10)
@@ -436,7 +439,7 @@ async def test_publish_bridge_snapshots_exc_group():
     # Trigger ExceptionGroup by having one task fail
     with (
         patch("mcubridge.metrics._bridge_snapshot_loop", side_effect=RuntimeError("Group Boom")),
-        pytest.raises(ExceptionGroup)
+        pytest.raises(ExceptionGroup),
     ):
         await metrics.publish_bridge_snapshots(state, enqueue, summary_interval=10, handshake_interval=0)
 
@@ -453,7 +456,7 @@ def test_runtime_state_collector_collect_histogram_branches():
                 "le_100ms": 1,
                 "invalid": 0,  # Should be skipped (Line 301-302)
                 "le_NaNms": 0,  # Should be skipped (Line 304 ValueError branch)
-            }
+            },
         }
     }
     collector = metrics._RuntimeStateCollector(state)
@@ -521,6 +524,7 @@ async def test_prometheus_exporter_gaps():
 
 # --- mcubridge.daemon ---
 
+
 @pytest.mark.asyncio
 @patch("mcubridge.daemon.cleanup_status_file")
 async def test_daemon_run_lifecycle_coverage(mock_cleanup):
@@ -539,7 +543,7 @@ async def test_daemon_run_lifecycle_coverage(mock_cleanup):
     mock_cleanup.reset_mock()
     with (
         patch("asyncio.TaskGroup.__aenter__", side_effect=RuntimeError("Generic failure")),
-        pytest.raises((RuntimeError, ExceptionGroup))
+        pytest.raises((RuntimeError, ExceptionGroup)),
     ):
         # On Python 3.11+, TaskGroup raises ExceptionGroup
         await daemon_obj.run()
@@ -551,7 +555,7 @@ def test_daemon_main_abort():
     with (
         patch("mcubridge.daemon.load_runtime_config", side_effect=RuntimeError("Abort")),
         patch("mcubridge.daemon.configure_logging"),
-        patch("sys.exit") as mock_exit
+        patch("sys.exit") as mock_exit,
     ):
         with pytest.raises(RuntimeError, match="Abort"):
             daemon.main()
@@ -565,7 +569,7 @@ def test_daemon_main_base_exception():
         patch("mcubridge.daemon.load_runtime_config", return_value=config),
         patch("mcubridge.daemon.configure_logging"),
         patch("mcubridge.daemon.BridgeDaemon", side_effect=BaseException("Fatal")),
-        patch("sys.exit") as mock_exit
+        patch("sys.exit") as mock_exit,
     ):
         daemon.main()
         # Coverage for line 276
@@ -588,7 +592,7 @@ async def test_daemon_factories():
         patch("mcubridge.daemon.mqtt_task", new_callable=AsyncMock) as mock_mqtt,
         patch("mcubridge.daemon.status_writer", new_callable=AsyncMock) as mock_status,
         patch("mcubridge.daemon.publish_metrics", new_callable=AsyncMock) as mock_metrics,
-        patch("mcubridge.daemon.publish_bridge_snapshots", new_callable=AsyncMock) as mock_snapshots
+        patch("mcubridge.daemon.publish_bridge_snapshots", new_callable=AsyncMock) as mock_snapshots,
     ):
         await daemon_obj._run_serial_link()
         assert mock_serial.called
@@ -608,24 +612,27 @@ async def test_daemon_factories():
 
 # --- mcubridge.config.settings ---
 
+
 def test_settings_load_runtime_config_coverage():
     """Cover load_runtime_config body."""
     from mcubridge.config.settings import load_runtime_config
 
     raw_cfg = common.get_default_config()
-    raw_cfg.update({
-        "serial_port": "/dev/ttyFake",
-        "serial_baud": 57600,
-        "serial_safe_baud": 9600,
-        "mqtt_host": "localhost",
-        "mqtt_port": 1883,
-        "mqtt_topic": "bridge",
-        "serial_shared_secret": "secret_12345678",
-        "debug": "1",
-        "watchdog_enabled": "1",
-        "mqtt_tls": "0",
-        "allow_non_tmp_paths": "1"
-    })
+    raw_cfg.update(
+        {
+            "serial_port": "/dev/ttyFake",
+            "serial_baud": 57600,
+            "serial_safe_baud": 9600,
+            "mqtt_host": "localhost",
+            "mqtt_port": 1883,
+            "mqtt_topic": "bridge",
+            "serial_shared_secret": "secret_12345678",
+            "debug": "1",
+            "watchdog_enabled": "1",
+            "mqtt_tls": "0",
+            "allow_non_tmp_paths": "1",
+        }
+    )
 
     with patch("mcubridge.config.settings._load_raw_config", return_value=raw_cfg):
         config = load_runtime_config()
@@ -638,6 +645,7 @@ def test_settings_load_runtime_config_coverage():
 def test_settings_validation_errors():
     """Cover validation errors in RuntimeConfig."""
     from mcubridge.config.settings import RuntimeConfig
+
     cfg_dict = {
         "serial_port": "/dev/ttyS0",
         "serial_baud": 115200,
@@ -654,7 +662,7 @@ def test_settings_validation_errors():
         "allowed_commands": (),
         "file_system_root": "/tmp/files",
         "process_timeout": 30,
-        "serial_shared_secret": b"secret_12345678"
+        "serial_shared_secret": b"secret_12345678",
     }
 
     # Test insecure placeholder
@@ -705,6 +713,7 @@ def test_settings_validation_errors():
 def test_settings_load_raw_config_error():
     """Cover error path in _load_raw_config."""
     from mcubridge.config.settings import _load_raw_config
+
     with patch("mcubridge.config.settings.get_uci_config", side_effect=OSError("Boom")):
         res = _load_raw_config()
         assert isinstance(res, dict)
@@ -718,6 +727,7 @@ def test_settings_load_raw_config_error():
 def test_settings_normalize_path_empty():
     """Cover empty path in _normalize_path."""
     from mcubridge.config.settings import RuntimeConfig
+
     with pytest.raises(ValueError, match="non-empty path"):
         RuntimeConfig._normalize_path("", field_name="test", require_absolute=True)
 
@@ -728,6 +738,7 @@ def test_settings_normalize_path_empty():
 def test_configure_logging_settings_dead_code():
     """Cover the dead configure_logging in settings.py."""
     from mcubridge.config.settings import configure_logging as settings_log
+
     config = create_fake_config()
 
     # Create a real SysLogHandler mock that can be called
@@ -736,7 +747,7 @@ def test_configure_logging_settings_dead_code():
     # Case: Syslog OK
     with (
         patch("mcubridge.config.settings.os.path.exists", return_value=True),
-        patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog)
+        patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog),
     ):
         settings_log(config)
 
@@ -744,7 +755,7 @@ def test_configure_logging_settings_dead_code():
     with (
         patch("mcubridge.config.settings.os.path.exists", return_value=True),
         patch("mcubridge.config.settings.logging.handlers.SysLogHandler", side_effect=OSError("fail")),
-        patch("sys.stderr.write") as mock_write
+        patch("sys.stderr.write") as mock_write,
     ):
         settings_log(config)
         assert mock_write.called
@@ -770,7 +781,7 @@ def test_logging_gaps():
         lineno=1,
         msg="test message",
         args=(),
-        exc_info=None
+        exc_info=None,
     )
     record.custom_extra = "extra_val"
 
@@ -798,6 +809,7 @@ def test_logging_gaps():
 
 
 # --- mcubridge.security ---
+
 
 def test_security_gaps():
     """Cover gaps in security.py."""
@@ -832,6 +844,7 @@ def test_security_gaps():
 
 # --- mcubridge.protocol.topics ---
 
+
 def test_topics_gaps():
     """Cover gaps in topics.py."""
     # _split_segments not path
@@ -846,12 +859,14 @@ def test_topics_gaps():
 
     # TopicRoute identification/remainder
     from mcubridge.protocol.topics import TopicRoute, Topic
+
     tr_empty = TopicRoute("raw", "prefix", Topic.SYSTEM, ())
     assert tr_empty.identifier == ""
     assert tr_empty.remainder == ()
 
 
 # --- mcubridge.state.status ---
+
 
 @pytest.mark.asyncio
 async def test_status_writer_gaps():
@@ -873,9 +888,10 @@ async def test_status_writer_gaps():
         status.cleanup_status_file()  # Should catch OSError
 
     # _write_status_file (Lines 131-140)
-    with patch("mcubridge.state.status.NamedTemporaryFile") as mock_ntf, \
-         patch("mcubridge.state.status.Path") as mock_path:
-
+    with (
+        patch("mcubridge.state.status.NamedTemporaryFile") as mock_ntf,
+        patch("mcubridge.state.status.Path") as mock_path,
+    ):
         payload = {"test": 1}
         status._write_status_file(payload)
         assert mock_ntf.called
@@ -883,6 +899,7 @@ async def test_status_writer_gaps():
 
 
 # --- mcubridge.transport.mqtt ---
+
 
 def test_mqtt_configure_tls_gaps():
     """Cover gaps in mqtt._configure_tls."""
@@ -901,7 +918,7 @@ def test_mqtt_configure_tls_gaps():
     with (
         patch("mcubridge.transport.mqtt.Path.exists", return_value=True),
         patch("ssl.create_default_context", side_effect=ValueError("Boom")),
-        pytest.raises(RuntimeError, match="TLS setup failed")
+        pytest.raises(RuntimeError, match="TLS setup failed"),
     ):
         mqtt._configure_tls(config)
 
@@ -913,6 +930,7 @@ async def test_mqtt_publisher_loop_gaps():
     mock_client = AsyncMock()
 
     from mcubridge.mqtt.messages import QueuedPublish
+
     msg = QueuedPublish("t", b"p")
     await state.mqtt_publish_queue.put(msg)
 
@@ -969,13 +987,14 @@ async def test_mqtt_task_gaps():
     # Case: MqttError, OSError in main loop
     with (
         patch("mcubridge.transport.mqtt.aiomqtt.Client", side_effect=OSError("Boom")),
-        patch("asyncio.sleep", side_effect=asyncio.CancelledError)
+        patch("asyncio.sleep", side_effect=asyncio.CancelledError),
     ):
         with pytest.raises(asyncio.CancelledError):
             await mqtt.mqtt_task(config, state, service)
 
 
 # --- mcubridge.services.dispatcher ---
+
 
 @pytest.mark.asyncio
 async def test_dispatcher_gaps():
@@ -989,9 +1008,7 @@ async def test_dispatcher_gaps():
     reject = AsyncMock()
     snapshot = AsyncMock()
 
-    disp = dispatcher.BridgeDispatcher(
-        mcu_reg, mqtt_reg, send, ack, is_sync, is_allowed, reject, snapshot
-    )
+    disp = dispatcher.BridgeDispatcher(mcu_reg, mqtt_reg, send, ack, is_sync, is_allowed, reject, snapshot)
 
     # _handle_unexpected digital/analog read (pin is None)
     assert await disp._handle_unexpected_digital_read(b"") is False
@@ -1122,6 +1139,7 @@ async def test_dispatcher_gaps():
 
 
 # --- mcubridge.state.context ---
+
 
 def test_context_helpers():
     """Cover helper functions in context.py."""
@@ -1310,6 +1328,7 @@ async def test_runtime_state_spool_operations():
 
 # --- mcubridge.mqtt.spool ---
 
+
 def test_mqtt_spool_gaps():
     """Cover remaining gaps in spool.py."""
     # SqliteDeque popleft IndexError
@@ -1393,6 +1412,7 @@ def test_mqtt_spool_gaps():
 
 # --- mcubridge.services.handshake ---
 
+
 def test_handshake_timing_branches():
     """Cover SerialTimingWindow and derive_serial_timing branches."""
     window = handshake.SerialTimingWindow(100, 500, 5)
@@ -1415,8 +1435,12 @@ async def test_handshake_synchronize_gaps():
     timing = handshake.derive_serial_timing(config)
 
     comp = handshake.SerialHandshakeManager(
-        config=config, state=state, serial_timing=timing,
-        send_frame=sender, enqueue_mqtt=AsyncMock(), acknowledge_frame=AsyncMock()
+        config=config,
+        state=state,
+        serial_timing=timing,
+        send_frame=sender,
+        enqueue_mqtt=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
     )
 
     # reset_ok legacy branch (first RESET fails, second RESET b"" succeeds)
@@ -1437,8 +1461,12 @@ async def test_handshake_handle_resp_gaps():
     config = create_fake_config()
     state = create_fake_state()
     comp = handshake.SerialHandshakeManager(
-        config=config, state=state, serial_timing=handshake.derive_serial_timing(config),
-        send_frame=AsyncMock(), enqueue_mqtt=AsyncMock(), acknowledge_frame=AsyncMock()
+        config=config,
+        state=state,
+        serial_timing=handshake.derive_serial_timing(config),
+        send_frame=AsyncMock(),
+        enqueue_mqtt=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
     )
 
     # rate_limit branch
@@ -1468,9 +1496,12 @@ async def test_handshake_handle_resp_gaps():
 async def test_handshake_other_gaps():
     """Cover miscellaneous handshake gaps."""
     comp = handshake.SerialHandshakeManager(
-        config=create_fake_config(), state=create_fake_state(),
-        serial_timing=MagicMock(), send_frame=AsyncMock(),
-        enqueue_mqtt=AsyncMock(), acknowledge_frame=AsyncMock()
+        config=create_fake_config(),
+        state=create_fake_state(),
+        serial_timing=MagicMock(),
+        send_frame=AsyncMock(),
+        enqueue_mqtt=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
     )
 
     # raise_if_handshake_fatal reason False
@@ -1485,12 +1516,15 @@ async def test_handshake_other_gaps():
     assert comp._should_mark_failure_fatal("sync_auth_mismatch") is True
 
     # retryer exception in _fetch_capabilities
-    with patch("asyncio.get_running_loop"), \
-         patch("tenacity.AsyncRetrying.__aiter__", side_effect=tenacity.RetryError(MagicMock())):
+    with (
+        patch("asyncio.get_running_loop"),
+        patch("tenacity.AsyncRetrying.__aiter__", side_effect=tenacity.RetryError(MagicMock())),
+    ):
         assert await comp._fetch_capabilities() is False
 
 
 # --- mcubridge.services.handshake ---
+
 
 @pytest.mark.asyncio
 async def test_handshake_send_failures():
@@ -1503,12 +1537,7 @@ async def test_handshake_send_failures():
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
-        config=config,
-        state=state,
-        serial_timing=timing,
-        send_frame=sender,
-        enqueue_mqtt=enqueue,
-        acknowledge_frame=ack
+        config=config, state=state, serial_timing=timing, send_frame=sender, enqueue_mqtt=enqueue, acknowledge_frame=ack
     )
 
     # Test LINK_RESET failure
@@ -1535,12 +1564,7 @@ async def test_handshake_sync_timeout():
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
-        config=config,
-        state=state,
-        serial_timing=timing,
-        send_frame=sender,
-        enqueue_mqtt=enqueue,
-        acknowledge_frame=ack
+        config=config, state=state, serial_timing=timing, send_frame=sender, enqueue_mqtt=enqueue, acknowledge_frame=ack
     )
 
     with patch("asyncio.sleep", return_value=None):
@@ -1560,12 +1584,7 @@ async def test_handshake_unexpected_resp():
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
-        config=config,
-        state=state,
-        serial_timing=timing,
-        send_frame=sender,
-        enqueue_mqtt=enqueue,
-        acknowledge_frame=ack
+        config=config, state=state, serial_timing=timing, send_frame=sender, enqueue_mqtt=enqueue, acknowledge_frame=ack
     )
     res = await comp.handle_link_sync_resp(b"payload")
     assert res is False
@@ -1585,12 +1604,7 @@ async def test_handshake_rate_limit():
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
-        config=config,
-        state=state,
-        serial_timing=timing,
-        send_frame=sender,
-        enqueue_mqtt=enqueue,
-        acknowledge_frame=ack
+        config=config, state=state, serial_timing=timing, send_frame=sender, enqueue_mqtt=enqueue, acknowledge_frame=ack
     )
     res = await comp.handle_link_sync_resp(b"nonce" + b"tag")
     assert res is False
@@ -1608,12 +1622,7 @@ async def test_handshake_fetch_capabilities_retry_error():
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
-        config=config,
-        state=state,
-        serial_timing=timing,
-        send_frame=sender,
-        enqueue_mqtt=enqueue,
-        acknowledge_frame=ack
+        config=config, state=state, serial_timing=timing, send_frame=sender, enqueue_mqtt=enqueue, acknowledge_frame=ack
     )
 
     # Mock asyncio.wait_for to always timeout
@@ -1632,7 +1641,7 @@ def test_handshake_parse_capabilities_errors():
         serial_timing=MagicMock(),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
-        acknowledge_frame=AsyncMock()
+        acknowledge_frame=AsyncMock(),
     )
 
     # Short payload
@@ -1651,6 +1660,7 @@ def test_handshake_calculate_tag_no_secret():
 
 # --- mcubridge.__init__ ---
 
+
 def test_init_check_dependencies_direct():
     """Directly test _check_dependencies when attr is missing."""
     import mcubridge
@@ -1658,7 +1668,7 @@ def test_init_check_dependencies_direct():
     with (
         patch("mcubridge.logger.critical") as mock_crit,
         patch("sys.exit") as mock_exit,
-        patch("mcubridge.hasattr", return_value=False)
+        patch("mcubridge.hasattr", return_value=False),
     ):
         mcubridge._check_dependencies()
         assert mock_crit.called
@@ -1666,6 +1676,7 @@ def test_init_check_dependencies_direct():
 
 
 # --- mcubridge/services/handshake.py ---
+
 
 def test_derive_serial_timing_clamping():
     """Cover clamping and limits in derive_serial_timing."""

@@ -144,9 +144,7 @@ async def test_handle_kill_with_process_lookup_error(
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    with patch.object(
-        ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
-    ) as mock_term:
+    with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
         mock_term.side_effect = ProcessLookupError("already gone")
 
         result = await process_component.handle_kill(
@@ -181,9 +179,7 @@ async def test_handle_kill_with_general_exception(
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    with patch.object(
-        ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
-    ) as mock_term:
+    with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
         mock_term.side_effect = RuntimeError("unexpected")
 
         with pytest.raises(RuntimeError, match="unexpected"):

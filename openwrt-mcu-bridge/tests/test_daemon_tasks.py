@@ -38,13 +38,9 @@ class _SerialServiceStub:
         self.received_frames: Deque[tuple[int, bytes]] = deque()
         self.serial_connected = asyncio.Event()
         self.serial_disconnected = asyncio.Event()
-        self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = (
-            None
-        )
+        self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
 
-    def register_serial_sender(
-        self, sender: Callable[[int, bytes], Awaitable[bool]]
-    ) -> None:
+    def register_serial_sender(self, sender: Callable[[int, bytes], Awaitable[bool]]) -> None:
         self._serial_sender = sender
 
     async def on_serial_connected(self) -> None:
@@ -206,9 +202,7 @@ async def test_serial_reader_task_limits_packet_size(
     service = _SerialServiceStub(runtime_config, state)
 
     TEST_PAYLOAD_BYTE = 0xAA
-    oversized = bytes([TEST_PAYLOAD_BYTE]) * (
-        MAX_SERIAL_PACKET_BYTES + 16
-    )
+    oversized = bytes([TEST_PAYLOAD_BYTE]) * (MAX_SERIAL_PACKET_BYTES + 16)
 
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
@@ -304,9 +298,7 @@ async def test_mqtt_task_handles_incoming_message(
 
     runtime_config.mqtt_tls = False
 
-    task = asyncio.create_task(
-        mqtt_task(runtime_config, state, cast(Any, service))
-    )
+    task = asyncio.create_task(mqtt_task(runtime_config, state, cast(Any, service)))
 
     await asyncio.wait_for(service.handled.wait(), timeout=1)
 

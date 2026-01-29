@@ -165,9 +165,7 @@ def test_handle_run_respects_concurrency_limit(
 
         captured: list[tuple[int, bytes]] = []
 
-        async def _fake_send_frame(
-            self: BridgeService, command_id: int, payload: bytes = b""
-        ) -> bool:
+        async def _fake_send_frame(self: BridgeService, command_id: int, payload: bytes = b"") -> bool:
             captured.append((command_id, payload))
             return True
 

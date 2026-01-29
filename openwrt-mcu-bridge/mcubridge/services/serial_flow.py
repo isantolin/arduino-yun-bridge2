@@ -104,9 +104,7 @@ class SerialFlowController:
     def set_metrics_callback(self, callback: Callable[[str], None] | None) -> None:
         self._metrics_callback = callback
 
-    def set_pipeline_observer(
-        self, observer: Callable[[dict[str, Any]], None] | None
-    ) -> None:
+    def set_pipeline_observer(self, observer: Callable[[dict[str, Any]], None] | None) -> None:
         self._pipeline_observer = observer
 
     async def reset(self) -> None:

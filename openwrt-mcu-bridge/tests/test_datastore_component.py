@@ -63,16 +63,11 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
     value = b"value1"
     # Payload: key_len (1 byte) + key + value_len (1 byte) + value
     payload = (
-        struct.pack(protocol.UINT8_FORMAT, len(key))
-        + key
-        + struct.pack(protocol.UINT8_FORMAT, len(value))
-        + value
+        struct.pack(protocol.UINT8_FORMAT, len(key)) + key + struct.pack(protocol.UINT8_FORMAT, len(value)) + value
     )
 
     # Mock _publish_value
-    with patch.object(
-        datastore_component, "_publish_value", new_callable=AsyncMock
-    ) as mock_pub:
+    with patch.object(datastore_component, "_publish_value", new_callable=AsyncMock) as mock_pub:
         result = await datastore_component.handle_put(payload)
 
         assert result is True

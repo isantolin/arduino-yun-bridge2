@@ -1,19 +1,23 @@
 import asyncio
 from typing import Any, Callable, Coroutine
 
-
 async def null_callback(*args: Any) -> None: ...
-
-
 def wrap_func(func: Callable[..., Any]) -> Callable[..., Coroutine[Any, Any, Any]]:
     """wrap in a coroutine"""
     ...
 
-
 class Cron:
-    def __init__(self, spec: str, func: Callable[..., Any] | None = ..., args: tuple[Any, ...] = ..., kwargs: dict[str, Any] | None = ..., start: bool = ..., uuid: str | None = ..., loop: asyncio.AbstractEventLoop | None = ..., tz: Any | None = ...) -> None:
-        ...
-
+    def __init__(
+        self,
+        spec: str,
+        func: Callable[..., Any] | None = ...,
+        args: tuple[Any, ...] = ...,
+        kwargs: dict[str, Any] | None = ...,
+        start: bool = ...,
+        uuid: str | None = ...,
+        loop: asyncio.AbstractEventLoop | None = ...,
+        tz: Any | None = ...,
+    ) -> None: ...
     def start(self) -> None:
         """Start scheduling"""
         ...
@@ -51,12 +55,15 @@ class Cron:
         """Used as a decorator"""
         ...
 
-    def __str__(self) -> str:
-        ...
+    def __str__(self) -> str: ...
+    def __repr__(self) -> str: ...
 
-    def __repr__(self) -> str:
-        ...
-
-
-def crontab(spec: str, func: Callable[..., Any] | None = ..., args: tuple[Any, ...] = ..., kwargs: dict[str, Any] | None = ..., start: bool = ..., loop: asyncio.AbstractEventLoop | None = ..., tz: Any | None = ...) -> "Cron":
-    ...
+def crontab(
+    spec: str,
+    func: Callable[..., Any] | None = ...,
+    args: tuple[Any, ...] = ...,
+    kwargs: dict[str, Any] | None = ...,
+    start: bool = ...,
+    loop: asyncio.AbstractEventLoop | None = ...,
+    tz: Any | None = ...,
+) -> "Cron": ...

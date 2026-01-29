@@ -9,4 +9,21 @@ from .topic import Topic, TopicLike, Wildcard, WildcardLike
 
 __version__ = ...
 __version_tuple__ = ...
-__all__ = ["Client", "Message", "MessagesIterator", "MqttCodeError", "MqttError", "MqttReentrantError", "ProtocolVersion", "ProxySettings", "TLSParameters", "Topic", "TopicLike", "Wildcard", "WildcardLike", "Will", "__version__", "__version_tuple__"]
+__all__ = [
+    "Client",
+    "Message",
+    "MessagesIterator",
+    "MqttCodeError",
+    "MqttError",
+    "MqttReentrantError",
+    "ProtocolVersion",
+    "ProxySettings",
+    "TLSParameters",
+    "Topic",
+    "TopicLike",
+    "Wildcard",
+    "WildcardLike",
+    "Will",
+    "__version__",
+    "__version_tuple__",
+]

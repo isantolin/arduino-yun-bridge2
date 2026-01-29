@@ -145,6 +145,7 @@ def _status_label(code: int | None) -> str:
 @dataclass(slots=True)
 class McuCapabilities:
     """Hardware capabilities reported by the MCU."""
+
     protocol_version: int = 0
     board_arch: int = 0
     num_digital_pins: int = 0
@@ -335,6 +336,7 @@ class SerialThroughputStats:
 
     [SIL-2] Simple counters with monotonic increments only.
     """
+
     bytes_sent: int = 0
     bytes_received: int = 0
     frames_sent: int = 0
@@ -375,6 +377,7 @@ class SerialLatencyStats:
     [SIL-2] Fixed bucket boundaries, no dynamic allocation.
     Buckets represent cumulative counts (Prometheus histogram style).
     """
+
     # Histogram bucket counts (cumulative, le=bucket_ms)
     bucket_counts: list[int] = field(default_factory=_latency_bucket_counts_factory)
     # Total observations above largest bucket
@@ -403,16 +406,9 @@ class SerialLatencyStats:
             self.overflow_count += 1
 
     def as_dict(self) -> dict[str, Any]:
-        avg = (
-            self.total_latency_ms / self.total_observations
-            if self.total_observations > 0
-            else 0.0
-        )
+        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
         return {
-            "buckets": {
-                f"le_{int(b)}ms": self.bucket_counts[i]
-                for i, b in enumerate(LATENCY_BUCKETS_MS)
-            },
+            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
             "overflow": self.overflow_count,
             "count": self.total_observations,
             "sum_ms": self.total_latency_ms,
@@ -464,9 +460,7 @@ class RuntimeState:
 
     serial_writer: asyncio.BaseTransport | None = None
     serial_link_connected: bool = False
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(
-        default_factory=_mqtt_queue_factory
-    )
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(default_factory=_mqtt_queue_factory)
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
     mqtt_drop_counts: dict[str, int] = field(default_factory=_str_int_dict_factory)
@@ -507,9 +501,7 @@ class RuntimeState:
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = field(
-        default_factory=_process_map_factory
-    )
+    running_processes: dict[int, ManagedProcess] = field(default_factory=_process_map_factory)
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = field(default_factory=_policy_factory)
@@ -526,12 +518,8 @@ class RuntimeState:
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     watchdog_beats: int = 0
     last_watchdog_beat: float = 0.0
-    pending_digital_reads: Deque[PendingPinRequest] = field(
-        default_factory=_pending_pin_deque_factory
-    )
-    pending_analog_reads: Deque[PendingPinRequest] = field(
-        default_factory=_pending_pin_deque_factory
-    )
+    pending_digital_reads: Deque[PendingPinRequest] = field(default_factory=_pending_pin_deque_factory)
+    pending_analog_reads: Deque[PendingPinRequest] = field(default_factory=_pending_pin_deque_factory)
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -585,9 +573,7 @@ class RuntimeState:
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counters: dict[str, int] = field(default_factory=_str_int_dict_factory)
-    supervisor_stats: dict[str, SupervisorStats] = field(
-        default_factory=_supervisor_stats_factory
-    )
+    supervisor_stats: dict[str, SupervisorStats] = field(default_factory=_supervisor_stats_factory)
 
     def configure(self, config: RuntimeConfig) -> None:
         if config.allowed_policy is not None:
@@ -643,10 +629,7 @@ class RuntimeState:
             self.console_truncated_bytes += evt.truncated_bytes
         if evt.dropped_chunks:
             logger.warning(
-                (
-                    "Dropping oldest console chunk(s): %d item(s), %d "
-                    "bytes to respect limit."
-                ),
+                ("Dropping oldest console chunk(s): %d item(s), %d " "bytes to respect limit."),
                 evt.dropped_chunks,
                 evt.dropped_bytes,
             )
@@ -675,7 +658,7 @@ class RuntimeState:
         chunk_len = len(chunk)
         # The caller should ensure the chunk fits within the configured limit.
         if chunk_len > self.console_queue_limit_bytes:
-            data = bytes(chunk[-self.console_queue_limit_bytes:])
+            data = bytes(chunk[-self.console_queue_limit_bytes :])
             chunk_len = len(data)
         else:
             data = bytes(chunk)
@@ -704,10 +687,7 @@ class RuntimeState:
             self.mailbox_truncated_bytes += evt.truncated_bytes
         if evt.dropped_chunks:
             logger.warning(
-                (
-                    "Dropping oldest mailbox message(s): %d item(s), %d "
-                    "bytes to honor limits."
-                ),
+                ("Dropping oldest mailbox message(s): %d item(s), %d " "bytes to honor limits."),
                 evt.dropped_chunks,
                 evt.dropped_bytes,
             )
@@ -753,10 +733,7 @@ class RuntimeState:
             self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
         if evt.dropped_chunks:
             logger.warning(
-                (
-                    "Dropping oldest mailbox incoming message(s): %d "
-                    "item(s), %d bytes to honor limits."
-                ),
+                ("Dropping oldest mailbox incoming message(s): %d " "item(s), %d bytes to honor limits."),
                 evt.dropped_chunks,
                 evt.dropped_bytes,
             )
@@ -808,9 +785,7 @@ class RuntimeState:
 
     def record_watchdog_beat(self, timestamp: float | None = None) -> None:
         self.watchdog_beats += 1
-        self.last_watchdog_beat = (
-            timestamp if timestamp is not None else time.monotonic()
-        )
+        self.last_watchdog_beat = timestamp if timestamp is not None else time.monotonic()
 
     def record_handshake_attempt(self) -> None:
         self.handshake_attempts += 1
@@ -1044,9 +1019,7 @@ class RuntimeState:
             self.mqtt_spool_retry_attempts + 1,
             6,
         )
-        retry_state = SimpleNamespace(
-            attempt_number=max(1, self.mqtt_spool_retry_attempts)
-        )
+        retry_state = SimpleNamespace(attempt_number=max(1, self.mqtt_spool_retry_attempts))
         delay = self._spool_wait_strategy(retry_state)
         self.mqtt_spool_backoff_until = time.monotonic() + delay
 
@@ -1235,9 +1208,7 @@ class RuntimeState:
             "watchdog_interval": self.watchdog_interval,
             "watchdog_beats": self.watchdog_beats,
             "watchdog_last_unix": self.last_watchdog_beat,
-            "supervisors": {
-                name: stats.as_dict() for name, stats in self.supervisor_stats.items()
-            },
+            "supervisors": {name: stats.as_dict() for name, stats in self.supervisor_stats.items()},
             "bridge": self.build_bridge_snapshot(),
         }
         snapshot.update(
@@ -1252,9 +1223,7 @@ class RuntimeState:
             mailbox_incoming_bytes=self.mailbox_incoming_queue_bytes,
             mailbox_incoming_dropped_messages=(self.mailbox_incoming_dropped_messages),
             mailbox_incoming_dropped_bytes=(self.mailbox_incoming_dropped_bytes),
-            mailbox_incoming_truncated_messages=(
-                self.mailbox_incoming_truncated_messages
-            ),
+            mailbox_incoming_truncated_messages=(self.mailbox_incoming_truncated_messages),
             mailbox_incoming_truncated_bytes=(self.mailbox_incoming_truncated_bytes),
             mailbox_incoming_overflow_events=(self.mailbox_incoming_overflow_events),
             mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
@@ -1292,11 +1261,7 @@ class RuntimeState:
         }
 
     def build_serial_pipeline_snapshot(self) -> dict[str, Any]:
-        inflight = (
-            self.serial_pipeline_inflight.copy()
-            if self.serial_pipeline_inflight
-            else None
-        )
+        inflight = self.serial_pipeline_inflight.copy() if self.serial_pipeline_inflight else None
         last = self.serial_pipeline_last.copy() if self.serial_pipeline_last else None
         return {
             "inflight": inflight,

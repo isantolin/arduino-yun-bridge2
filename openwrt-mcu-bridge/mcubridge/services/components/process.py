@@ -59,9 +59,7 @@ class ProcessComponent:
     config: RuntimeConfig
     state: RuntimeState
     ctx: BridgeContext
-    _process_slots: asyncio.BoundedSemaphore | None = field(
-        init=False, repr=False, default=None
-    )
+    _process_slots: asyncio.BoundedSemaphore | None = field(init=False, repr=False, default=None)
 
     def __post_init__(self) -> None:
         limit = max(0, self.config.process_max_concurrent)
@@ -174,9 +172,7 @@ class ProcessComponent:
                 "reason": reason,
             }
         )
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(topic_name=topic, payload=error_payload)
-        )
+        await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=error_payload))
 
     async def handle_poll(self, payload: bytes) -> bool:
         if len(payload) != 2:
@@ -261,9 +257,7 @@ class ProcessComponent:
                     if slot.handle is not None:
                         released_slot = True
                     slot.handle = None
-                    slot.exit_code = (
-                        proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
-                    )
+                    slot.exit_code = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
                     if slot.is_drained():
                         self.state.running_processes.pop(pid, None)
             if released_slot:
@@ -567,17 +561,13 @@ class ProcessComponent:
                 break
             buffer.extend(chunk)
 
-    async def _read_process_pipes(
-        self, pid: int, proc: Process
-    ) -> tuple[bytes, bytes]:
+    async def _read_process_pipes(self, pid: int, proc: Process) -> tuple[bytes, bytes]:
         async with asyncio.TaskGroup() as tg:
             stdout_task = tg.create_task(self._read_stream_chunk(pid, proc.stdout))
             stderr_task = tg.create_task(self._read_stream_chunk(pid, proc.stderr))
         return stdout_task.result(), stderr_task.result()
 
-    async def _drain_process_pipes(
-        self, pid: int, proc: Process
-    ) -> tuple[bytes, bytes]:
+    async def _drain_process_pipes(self, pid: int, proc: Process) -> tuple[bytes, bytes]:
         async with asyncio.TaskGroup() as tg:
             stdout_task = tg.create_task(self._drain_stream(pid, proc.stdout))
             stderr_task = tg.create_task(self._drain_stream(pid, proc.stderr))
@@ -795,9 +785,7 @@ class ProcessComponent:
         except psutil.Error:
             pass
 
-    def _build_sync_response(
-        self, status: int, stdout_bytes: bytes, stderr_bytes: bytes
-    ) -> bytes:
+    def _build_sync_response(self, status: int, stdout_bytes: bytes, stderr_bytes: bytes) -> bytes:
         max_payload = MAX_PAYLOAD_SIZE - 5
         stdout_trim = stdout_bytes[:max_payload]
         remaining = max_payload - len(stdout_trim)

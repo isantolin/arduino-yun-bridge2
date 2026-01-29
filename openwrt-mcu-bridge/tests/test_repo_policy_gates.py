@@ -229,9 +229,7 @@ def _find_shadowing_and_scope_escapes(py_files: list[Path]) -> list[tuple[Path, 
             self.generic_visit(node)
 
         def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
-            for arg in (
-                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
-            ):
+            for arg in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
                 self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
             if node.args.vararg is not None:
                 self._check_name(node.args.vararg.arg, node.lineno, "*args")
@@ -241,9 +239,7 @@ def _find_shadowing_and_scope_escapes(py_files: list[Path]) -> list[tuple[Path, 
             self.generic_visit(node)
 
         def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
-            for arg in (
-                list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs)
-            ):
+            for arg in list(node.args.posonlyargs) + list(node.args.args) + list(node.args.kwonlyargs):
                 self._check_name(arg.arg, arg.lineno or node.lineno, "argument")
             if node.args.vararg is not None:
                 self._check_name(node.args.vararg.arg, node.lineno, "*args")
@@ -334,7 +330,8 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
     assert mcu_tests_root.is_dir(), f"missing MCU tests root: {mcu_tests_root}"
 
     cpp_files = [
-        f for f in _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
+        f
+        for f in _iter_text_files(mcu_src_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
         if "etl/" not in str(f) and "nanopb/" not in str(f)
     ]
     cpp_files += _iter_text_files(mcu_tests_root, ("*.h", "*.hpp", "*.c", "*.cpp"))
@@ -348,9 +345,7 @@ def test_no_stl_in_mcu_src_or_tests() -> None:
     hits = _find_matches(cpp_files, stl_regex)
 
     message = "STL usage is not allowed in openwrt-library-arduino/src or tests:\n"
-    message += "\n".join(
-        f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits
-    )
+    message += "\n".join(f"{path.relative_to(_REPO_ROOT)}:{line_no}: {line}" for path, line_no, line in hits)
     assert not hits, message
 
 

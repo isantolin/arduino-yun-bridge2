@@ -5,8 +5,11 @@ PKG_VERSION:=0.20.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=msgspec
-PKG_HASH:=93f23528edc51d9f686808a361728e903d6f2be55c901d6f5c92e44c6d546bfc
+PKG_HASH:=692349e588fde322875f8d3025ac01689fead5901e7fb18d6870a44519d62a29
 
+PKG_BUILD_DEPENDS:=python-setuptools/host python-build/host python-installer/host python-wheel/host
+
+include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
@@ -16,7 +19,7 @@ define Package/python3-msgspec
   SUBMENU:=Python
   TITLE:=High-performance JSON/MessagePack library
   URL:=https://github.com/jcrist/msgspec
-  DEPENDS:=+python3-light
+  DEPENDS:=+python3
 endef
 
 define Package/python3-msgspec/description

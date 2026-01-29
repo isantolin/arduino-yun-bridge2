@@ -134,8 +134,11 @@ install_dependency "PacketSerial" "https://codeload.github.com/bakercp/PacketSer
 install_dependency "Crypto" "https://codeload.github.com/rweather/arduinolibs/zip/refs/heads/master" "Crypto.h" "libraries/Crypto"
 
 # 2. Bundled Dependencies
-# ETL is installed as a top-level library so #include "etl/array.h" works correctly.
+# ETL is installed in two locations:
+#   1. Global Arduino libraries (standard practice)
+#   2. Local src/ directory (required for host-based unit tests and SIL-2 isolation)
 install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "include/etl" "$LIB_DIR"
+install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "include/etl" "${LIB_ROOT}/src"
 
 # Verify our own src directory exists
 if [ ! -d "${LIB_ROOT}/src" ]; then
@@ -145,9 +148,6 @@ fi
 
 LIB_DST="$LIB_DIR/McuBridge"
 echo "[INFO] Installing McuBridge to $LIB_DST..."
-
-# Clean up local src/etl if it exists from previous legacy installs
-rm -rf "${LIB_ROOT}/src/etl"
 
 rm -rf "$LIB_DST"
 mkdir -p "$LIB_DST"

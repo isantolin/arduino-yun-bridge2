@@ -167,7 +167,7 @@ def test_spool_disk_error_requeue():
     from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
 
-    with patch("mcubridge.mqtt.spool.SqliteDeque") as mock_dq:
+    with patch("mcubridge.mqtt.spool.FileSpoolDeque") as mock_dq:
         mock_dq.return_value.appendleft.side_effect = OSError(errno.EIO, "IO error")
         spool = MQTTPublishSpool("/tmp/spool", limit=100)
 
@@ -186,7 +186,7 @@ def test_spool_pending_disk_error():
 
     spool = MQTTPublishSpool("/tmp/spool", limit=100)
     spool._disk_queue = MagicMock()
-    # SqliteDeque uses __len__
+    # FileSpoolDeque uses __len__
     spool._disk_queue.__len__.side_effect = OSError("fail")
 
     count = spool.pending

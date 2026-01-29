@@ -6,8 +6,7 @@ import asyncio
 import collections
 import logging
 import time
-import pickle
-import sqlite3
+import msgspec
 
 import tenacity
 
@@ -53,7 +52,6 @@ from ..rpc.protocol import (
 )
 
 logger = logging.getLogger("mcubridge.state")
-SqliteError = sqlite3.Error  # type: ignore[assignment]
 
 SpoolSnapshot = dict[str, int | float]
 
@@ -980,7 +978,7 @@ class RuntimeState:
             self.mqtt_spool_retry_attempts = 0
             self.mqtt_spool_backoff_until = 0.0
             self.mqtt_spool_last_error = None
-        except (OSError, SqliteError, MQTTSpoolError) as exc:
+        except (OSError, MQTTSpoolError) as exc:
             self._handle_mqtt_spool_failure("initialization_failed", exc=exc)
 
     async def ensure_spool(self) -> bool:
@@ -997,7 +995,7 @@ class RuntimeState:
                 self.mqtt_spool_limit,
                 on_fallback=self._on_spool_fallback,
             )
-        except (OSError, SqliteError, MQTTSpoolError) as exc:
+        except (OSError, MQTTSpoolError) as exc:
             self._handle_mqtt_spool_failure("reactivation_failed", exc=exc)
             return False
         self.mqtt_spool = spool
@@ -1033,7 +1031,7 @@ class RuntimeState:
         if spool is not None:
             try:
                 spool.close()
-            except (OSError, SqliteError, MQTTSpoolError, RuntimeError):
+            except (OSError, MQTTSpoolError, RuntimeError):
                 logger.debug(
                     "Failed to close MQTT spool during disable.",
                     exc_info=True,
@@ -1072,7 +1070,7 @@ class RuntimeState:
             await asyncio.to_thread(spool.append, message)
             self.mqtt_spooled_messages += 1
             return True
-        except (OSError, SqliteError, pickle.PickleError, MQTTSpoolError) as exc:
+        except (OSError, msgspec.MsgspecError, MQTTSpoolError) as exc:
             reason = "append_failed"
             if isinstance(exc, MQTTSpoolError):
                 reason = exc.reason
@@ -1090,7 +1088,7 @@ class RuntimeState:
                 break
             try:
                 message = await asyncio.to_thread(spool.pop_next)
-            except (OSError, SqliteError, pickle.PickleError, MQTTSpoolError) as exc:
+            except (OSError, msgspec.MsgspecError, MQTTSpoolError) as exc:
                 reason = "pop_failed"
                 if isinstance(exc, MQTTSpoolError):
                     reason = exc.reason
@@ -1108,7 +1106,7 @@ class RuntimeState:
             except asyncio.QueueFull:
                 try:
                     await asyncio.to_thread(spool.requeue, message)
-                except (OSError, SqliteError, pickle.PickleError, MQTTSpoolError) as exc:
+                except (OSError, msgspec.MsgspecError, MQTTSpoolError) as exc:
                     reason = "requeue_failed"
                     if isinstance(exc, MQTTSpoolError):
                         reason = exc.reason

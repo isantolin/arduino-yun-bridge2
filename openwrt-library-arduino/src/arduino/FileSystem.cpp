@@ -16,19 +16,23 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
     length = max_data;
   }
 
-  // [OPTIMIZATION] Use shared scratch buffer
-  uint8_t* payload = Bridge.getScratchBuffer();
+  // Use ETL vector as a safe buffer builder
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  payload.push_back(static_cast<uint8_t>(path_len));
+  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(filePath), reinterpret_cast<const uint8_t*>(filePath) + path_len);
   
-  payload[0] = static_cast<uint8_t>(path_len);
-  memcpy(payload + 1, filePath, path_len);
-  rpc::write_u16_be(payload + 1 + path_len, static_cast<uint16_t>(length));
+  uint8_t len_bytes[2];
+  rpc::write_u16_be(len_bytes, static_cast<uint16_t>(length));
+  payload.push_back(len_bytes[0]);
+  payload.push_back(len_bytes[1]);
+
   if (length > 0) {
-    memcpy(payload + 3 + path_len, data, length);
+    payload.insert(payload.end(), data, data + length);
   }
 
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_FILE_WRITE,
-      payload, static_cast<uint16_t>(path_len + length + 3));
+      payload.data(), static_cast<uint16_t>(payload.size()));
 }
 
 void FileSystemClass::remove(const char* filePath) {
@@ -38,14 +42,14 @@ void FileSystemClass::remove(const char* filePath) {
   if (path_info.length == 0 || path_info.overflowed) return;
   const size_t path_len = path_info.length;
 
-  // [OPTIMIZATION] Use shared scratch buffer
-  uint8_t* payload = Bridge.getScratchBuffer();
-  
-  payload[0] = static_cast<uint8_t>(path_len);
-  memcpy(payload + 1, filePath, path_len);
+  // Use ETL vector as a safe buffer builder
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  payload.push_back(static_cast<uint8_t>(path_len));
+  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(filePath), reinterpret_cast<const uint8_t*>(filePath) + path_len);
+
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_FILE_REMOVE,
-      payload, static_cast<uint16_t>(path_len + 1));
+      payload.data(), static_cast<uint16_t>(payload.size()));
 }
 
 void FileSystemClass::read(const char* filePath) {
@@ -57,12 +61,12 @@ void FileSystemClass::read(const char* filePath) {
     return;
   }
 
-  uint8_t* payload = Bridge.getScratchBuffer();
-  payload[0] = static_cast<uint8_t>(len);
-  memcpy(payload + 1, filePath, len);
-  const uint16_t total = static_cast<uint16_t>(
-      len + 1);
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_FILE_READ, payload, total);
+  // Use ETL vector as a safe buffer builder
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  payload.push_back(static_cast<uint8_t>(len));
+  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(filePath), reinterpret_cast<const uint8_t*>(filePath) + len);
+
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_FILE_READ, payload.data(), static_cast<uint16_t>(payload.size()));
 }
 
 void FileSystemClass::handleResponse(const rpc::Frame& frame) {

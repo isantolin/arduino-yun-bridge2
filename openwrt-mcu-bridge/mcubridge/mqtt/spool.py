@@ -32,7 +32,7 @@ class DiskQueue(Protocol):
 class FileSpoolDeque:
     """
     Persistent deque implementation using numbered files and msgspec.
-    
+
     Provides O(1) append, appendleft, and popleft operations.
     Files are stored as JSON for transparency and easy debugging on target.
     """
@@ -40,7 +40,7 @@ class FileSpoolDeque:
     def __init__(self, directory: str) -> None:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Scan directory to find existing head/tail
         files = sorted([f.name for f in self._dir.glob("*.msg")])
         if files:
@@ -74,7 +74,7 @@ class FileSpoolDeque:
     def popleft(self) -> SpoolRecord:
         if len(self) == 0:
             raise IndexError("pop from an empty deque")
-        
+
         path = self._file_path(self._head)
         try:
             data = path.read_bytes()
@@ -88,7 +88,6 @@ class FileSpoolDeque:
             if len(self) == 0:
                 self._head = 1000000000
                 self._tail = 1000000000 - 1
-
     def close(self) -> None:
         """No-op for file-based spool."""
         pass
@@ -174,7 +173,9 @@ class MQTTPublishSpool:
         with self._lock:
             if self._disk_queue is not None:
                 try:
-                    self._disk_queue.close()
+                    close_fn = getattr(self._disk_queue, "close", None)
+                    if callable(close_fn):
+                        close_fn()
                 except OSError:
                     logger.warning("Error closing disk queue", exc_info=True)
             self._disk_queue = None

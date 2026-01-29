@@ -1331,13 +1331,18 @@ async def test_runtime_state_spool_operations():
 
 def test_mqtt_spool_gaps():
     """Cover remaining gaps in spool.py."""
-    # SqliteDeque popleft IndexError
-    with patch("sqlite3.connect"):
-        dq = spool.SqliteDeque("/tmp")
-        with patch.object(dq, "_conn") as mock_conn:
-            mock_conn.execute.return_value.fetchone.return_value = None
-            with pytest.raises(IndexError):
-                dq.popleft()
+    # FileSpoolDeque popleft IndexError
+    dq = spool.FileSpoolDeque("/tmp/spool_test")
+    dq.clear()
+    with pytest.raises(IndexError):
+        dq.popleft()
+
+    # FileSpoolDeque popleft coverage
+    msg = {"topic_name": "t", "payload": "cA=="}  # Base64 for b'p'
+    dq.append(msg)
+    assert len(dq) == 1
+    dq.popleft()
+    assert len(dq) == 0
 
     # MQTTSpoolError original is None
     err = spool.MQTTSpoolError("test")
@@ -1350,7 +1355,7 @@ def test_mqtt_spool_gaps():
         assert mock_warn.called
 
     # MQTTPublishSpool initialization failure
-    with patch("mcubridge.mqtt.spool.SqliteDeque", side_effect=OSError("Boom")):
+    with patch("mcubridge.mqtt.spool.FileSpoolDeque", side_effect=OSError("Boom")):
         s = spool.MQTTPublishSpool("/tmp/fail", 100)
         assert s.is_degraded
 

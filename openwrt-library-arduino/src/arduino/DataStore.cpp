@@ -31,17 +31,16 @@ void DataStoreClass::put(const char* key, const char* value) {
   const size_t payload_len = 2 + key_len + value_len;
   if (payload_len > rpc::MAX_PAYLOAD_SIZE) return;
 
-  // [OPTIMIZATION] Use shared scratch buffer instead of stack allocation
-  uint8_t* payload = Bridge.getScratchBuffer();
-  
-  payload[0] = static_cast<uint8_t>(key_len);
-  memcpy(payload + 1, key, key_len);
-  payload[1 + key_len] = static_cast<uint8_t>(value_len);
-  memcpy(payload + 2 + key_len, value, value_len);
+  // Use ETL vector as a safe buffer builder
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  payload.push_back(static_cast<uint8_t>(key_len));
+  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(key), reinterpret_cast<const uint8_t*>(key) + key_len);
+  payload.push_back(static_cast<uint8_t>(value_len));
+  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(value), reinterpret_cast<const uint8_t*>(value) + value_len);
 
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_DATASTORE_PUT,
-      payload, static_cast<uint16_t>(payload_len));
+      payload.data(), static_cast<uint16_t>(payload.size()));
 }
 
 void DataStoreClass::requestGet(const char* key) {
@@ -51,11 +50,10 @@ void DataStoreClass::requestGet(const char* key) {
   if (key_info.length == 0 || key_info.overflowed) return;
   const size_t key_len = key_info.length;
 
-  // [OPTIMIZATION] Use shared scratch buffer
-  uint8_t* payload = Bridge.getScratchBuffer();
-  
-  payload[0] = static_cast<uint8_t>(key_len);
-  memcpy(payload + 1, key, key_len);
+  // Use ETL vector as a safe buffer builder
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  payload.push_back(static_cast<uint8_t>(key_len));
+  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(key), reinterpret_cast<const uint8_t*>(key) + key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
@@ -64,7 +62,7 @@ void DataStoreClass::requestGet(const char* key) {
 
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_DATASTORE_GET,
-      payload, static_cast<uint16_t>(key_len + 1));
+      payload.data(), static_cast<uint16_t>(payload.size()));
 }
 
 void DataStoreClass::handleResponse(const rpc::Frame& frame) {

@@ -67,15 +67,21 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload.data();
 
+  if (!payload_data || payload_length == 0) return;
+
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (_process_run_handler && payload_length >= 1 && payload_data) {
+      if (_process_run_handler && payload_length >= 5) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
-        if (payload_length >= 5) {
-            uint16_t stdout_len = rpc::read_u16_be(payload_data + 1);
+        uint16_t stdout_len = rpc::read_u16_be(payload_data + 1);
+        
+        // Safety check: payload must contain at least (status + stdout_len_header + stdout + stderr_len_header)
+        if (payload_length >= static_cast<size_t>(1 + 2 + stdout_len + 2)) {
             const uint8_t* stdout_ptr = payload_data + 3;
-            if (payload_length >= static_cast<size_t>(3 + stdout_len + 2)) {
-                uint16_t stderr_len = rpc::read_u16_be(payload_data + 3 + stdout_len);
+            uint16_t stderr_len = rpc::read_u16_be(payload_data + 3 + stdout_len);
+            
+            // Final safety check: total payload must accommodate stderr
+            if (payload_length >= static_cast<size_t>(3 + stdout_len + 2 + stderr_len)) {
                 const uint8_t* stderr_ptr = payload_data + 3 + stdout_len + 2;
                 _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
             }
@@ -83,23 +89,24 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
       }
       break;
     case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-      if (_process_run_async_handler && payload_length >= 2 && payload_data) {
+      if (_process_run_async_handler && payload_length >= 2) {
         uint16_t pid = rpc::read_u16_be(payload_data);
         _process_run_async_handler(static_cast<int>(pid));
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (_process_poll_handler && payload_length >= 2 && payload_data) {
+      if (_process_poll_handler && payload_length >= 6) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
         uint8_t running = payload_data[1];
         
         _popPendingProcessPid(); 
         
-        if (payload_length >= 6) {
-             uint16_t stdout_len = rpc::read_u16_be(payload_data + 2);
+        uint16_t stdout_len = rpc::read_u16_be(payload_data + 2);
+        if (payload_length >= static_cast<size_t>(4 + stdout_len + 2)) {
              const uint8_t* stdout_ptr = payload_data + 4;
-             if (payload_length >= static_cast<size_t>(4 + stdout_len + 2)) {
-                 uint16_t stderr_len = rpc::read_u16_be(payload_data + 4 + stdout_len);
+             uint16_t stderr_len = rpc::read_u16_be(payload_data + 4 + stdout_len);
+             
+             if (payload_length >= static_cast<size_t>(4 + stdout_len + 2 + stderr_len)) {
                  const uint8_t* stderr_ptr = payload_data + 4 + stdout_len + 2;
                  _process_poll_handler(status, running, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
              }

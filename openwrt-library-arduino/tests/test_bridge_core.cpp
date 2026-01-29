@@ -513,14 +513,29 @@ void test_bridge_dedup_console_write_retry() {
     // 3. Reset Console state (clears Rx buffer, resets flags)
     Console.begin();
 
-    const uint8_t payload[] = { 'a', 'b', 'c' };
+        const uint8_t payload[] = { 'a', 'b', 'c' };
 
-    rpc::Frame frame;
-    frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-    frame.header.payload_length = sizeof(payload);
-    memcpy(frame.payload.data(), payload, sizeof(payload));
+        rpc::Frame frame;
 
-    const int before = Console.available();
+        uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE];
+
+        rpc::FrameBuilder builder;
+
+        size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), payload, sizeof(payload));
+
+        
+
+        frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+
+        frame.header.payload_length = sizeof(payload);
+
+        memcpy(frame.payload.data(), payload, sizeof(payload));
+
+        frame.crc = rpc::read_u32_be(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE]);
+
+    
+
+        const int before = Console.available();
     TEST_ASSERT_EQ_UINT(before, 0);
 
     // --- First Delivery ---

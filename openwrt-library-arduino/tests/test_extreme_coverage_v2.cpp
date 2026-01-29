@@ -83,6 +83,7 @@ void test_bridge_gaps() {
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
     f.header.payload_length = 2;
     f.payload[0] = 13; f.payload[1] = 1;
+    f.crc = 0x12345678; // Dummy CRC
     Bridge._ack_timeout_ms = 0; // Force immediate match regardless of millis()
     Bridge._markRxProcessed(f);
     assert(Bridge._isRecentDuplicateRx(f));

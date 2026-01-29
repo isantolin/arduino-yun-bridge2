@@ -10,7 +10,6 @@ from mcubridge.common import (
     build_mqtt_connect_properties,
     build_mqtt_properties,
     encode_status_reason,
-    get_uci_config,
     normalise_allowed_commands,
     parse_bool,
     parse_int,

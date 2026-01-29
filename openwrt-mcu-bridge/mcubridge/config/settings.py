@@ -16,6 +16,7 @@ import sys
 import msgspec
 from typing import Any
 
+
 from ..common import (
     get_default_config,
     get_uci_config,
@@ -120,10 +121,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         return self.mqtt_tls
 
     def __post_init__(self) -> None:
-        # Handle string -> bytes conversion for secret if it came as string
-        if isinstance(self.serial_shared_secret, str):
-            self.serial_shared_secret = self.serial_shared_secret.strip().encode("utf-8")
-
         # Normalize optional strings to None if empty
         self.mqtt_user = self._normalize_optional_string(self.mqtt_user)
         self.mqtt_pass = self._normalize_optional_string(self.mqtt_pass)

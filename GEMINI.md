@@ -13,7 +13,8 @@ The project also includes a LuCI web interface for configuration and monitoring,
 ### Key Technologies
 
 *   **Python:** The main daemon on the Linux MPU is written in Python (3.13.9-r2), using `asyncio` for high-performance, non-blocking I/O.
-*   **C++:** The library for the Arduino MCU is written in C++11, strictly adhering to **SIL-2** safety standards (no STL, no dynamic memory) via **ETL (Embedded Template Library)**.
+*   **C++:** The library for the Arduino MCU is written in C++11, strictly adhering to **SIL-2** safety standards (no STL, no dynamic memory) and **MIL-SPEC** (FIPS 140-3) for cryptographic integrity.
+*   **Cryptography:** Implements **HKDF-SHA256** (RFC 5869) for key derivation and mandatory **Power-On Self-Tests (POST/KAT)** at startup.
 *   **Lua:** The LuCI web interface is written in Lua.
 *   **OpenWrt:** The target operating system is **OpenWrt 25.12.0** (APK based).
 *   **MQTT:** The bridge uses MQTT v5 for communication with other devices.

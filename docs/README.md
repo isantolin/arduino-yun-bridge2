@@ -12,7 +12,15 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Backpressure en MQTT con MQTT v5:** Control de flujo mediante `mqtt_queue_limit` y uso de propiedades MQTT v5 para negociar flujos de respuesta.
 - **Respuestas correladas en MQTT:** Propagación de `correlation_data` y `response_topic` para asociaciones inequívocas entre peticiones y respuestas.
 - **Seguridad Funcional (SIL-2):** Librería MCU escrita en C++11 sin STL y sin alocación dinámica, garantizando determinismo y estabilidad.
+- **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
+
+### Novedades (enero 2026)
+
+- **Cryptographic Self-Tests (KAT):** El sistema ahora realiza pruebas de respuesta conocida (Known Answer Tests) para SHA256 y HMAC-SHA256 al iniciar. Si las pruebas fallan, el sistema aborta el arranque (**Fail-Secure**).
+- **Derivación de Claves HKDF (RFC 5869):** El handshake serie ya no usa el secreto compartido directamente; utiliza HKDF-SHA256 para derivar claves de autenticación efímeras, mejorando el aislamiento de claves.
+- **Refactorización SIL-2 (C++):** Unificación de constructores delegados y validación defensiva de rangos en GPIO para prevenir accesos a memoria fuera de límites.
+- **Compatibilidad Python 3.13:** Soporte completo para Python 3.13.9-r2 y uso de `asyncio.TaskGroup` para una gestión de tareas más robusta.
 
 ### Novedades (OpenWrt 25.12)
 

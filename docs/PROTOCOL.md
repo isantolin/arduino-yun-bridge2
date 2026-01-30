@@ -77,8 +77,10 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 ## Seguridad
 
 1. **TLS recomendado**: `mqtt_tls=1` por defecto y se exige `mqtt_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
-2. **Secreto serie fuerte**: handshake MCU↔Linux con nonce de 16 bytes y `HMAC-SHA256(secret, nonce)` truncado a 16 bytes. El daemon rechaza el placeholder `changeme123`.
-3. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se aplica al ejecutar procesos/shell.
+2. **Derivación de Claves (HKDF)**: Se utiliza **HKDF-SHA256 (RFC 5869)** para derivar la clave de autenticación del handshake a partir del `serial_shared_secret`. Esto evita el uso directo del secreto en el bus y proporciona aislamiento criptográfico.
+3. **Secreto serie fuerte**: handshake MCU↔Linux con nonce de 16 bytes y `HMAC-SHA256(derived_key, nonce)` truncado a 16 bytes. El daemon rechaza el placeholder `changeme123`.
+4. **Auto-Validación (KAT)**: Tanto el MCU como el daemon realizan **Known Answer Tests (KAT)** para SHA256 y HMAC-SHA256 en cada arranque. Si la validación falla, el sistema entra en modo **Fail-Secure** y aborta la operación.
+5. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se aplica al ejecutar procesos/shell.
 4. **Topics sensibles**: `TopicAuthorization` gobierna toggles `mqtt_allow_*` (consola, archivos, datastore, mailbox, shell, GPIO, etc.).
 5. **Sandbox de archivos**: `FileComponent` normaliza rutas, bloquea `..`, obliga a permanecer bajo `file_system_root`, aplica `file_write_max_bytes` y `file_storage_quota_bytes`.
 

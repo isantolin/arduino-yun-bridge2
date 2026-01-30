@@ -8,6 +8,7 @@
 - **SIL-2 Compliance (MCU)** ✅ (Jan 2026): Zero-STL policy and ETL-based memory management in the Arduino library.
 - **Extended Metrics** ✅ (Jan 2026): Added comprehensive observability metrics (Prometheus export).
 - **Python 3.13.9-r2 Migration** ✅ (Jan 2026): Full stack modernized for the latest OpenWrt stable.
+- **MIL-SPEC Security (FIPS 140-3)** ✅ (Jan 2026): Implementation of HKDF-SHA256 and Cryptographic Power-On Self-Tests (POST/KAT) for both Python and C++.
 
 ## Pending (Q1-Q2 2026)
 

@@ -38,5 +38,14 @@ All serial communication requires a successful handshake using a pre-shared secr
 - **RAM-only storage:** The daemon enforces that frequent writes (like MQTT spooling and file operations) occur in `/tmp` (volatile memory) to prevent flash wear and hardware degradation on OpenWrt devices.
 - **Strict Boundaries:** Payloads are strictly bounded to `MAX_PAYLOAD_SIZE` (128 bytes) to prevent buffer overflows.
 
-### 4. Determinism (C++)
+### 4. Cryptographic Self-Validation
+
+- **Power-On Self-Tests (POST):** The system implements Known Answer Tests (KAT) for SHA256 and HMAC-SHA256 based on NIST vectors.
+
+- **Fail-Secure:** Initialization aborts if the cryptographic engine fails the startup tests, ensuring no communication happens over an untrustworthy link.
+
+
+
+### 5. Determinism (C++)
+
 - **No STL / No Dynamic Memory:** The Arduino library uses the Embedded Template Library (ETL) with static allocation to ensure deterministic behavior and prevent heap fragmentation.

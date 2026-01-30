@@ -27,6 +27,52 @@ namespace rpc {
 namespace security {
 
 /**
+ * @brief Securely zero memory, resistant to compiler optimization.
+ *
+ * [MIL-SPEC] This function uses volatile pointer access and a memory
+ * barrier to prevent the compiler from optimizing away the zeroing
+ * operation, even if the buffer is not used afterward.
+ *
+ * Use this to clear sensitive data like:
+ * - Cryptographic keys
+ * - HMAC digests after comparison
+ * - Nonces after use
+ * - Shared secrets in temporary buffers
+ *
+ * @param buf   Pointer to buffer to zero
+ * @param len   Number of bytes to zero
+ *
+ * Reference: CWE-14, CERT C MSC06-C
+ */
+inline void secure_zero(volatile uint8_t* buf, size_t len) {
+  while (len--) {
+    *buf++ = 0;
+  }
+  // Memory barrier prevents compiler from reordering or eliminating
+#if defined(__GNUC__) || defined(__clang__)
+  asm volatile("" ::: "memory");
+#endif
+}
+
+/**
+ * @brief Portable version of secure_zero for non-volatile buffers.
+ *
+ * Casts to volatile internally to ensure zeroing is not optimized away.
+ *
+ * @param buf   Pointer to buffer to zero
+ * @param len   Number of bytes to zero
+ */
+inline void secure_zero_portable(void* buf, size_t len) {
+  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf);
+  while (len--) {
+    *p++ = 0;
+  }
+#if defined(__GNUC__) || defined(__clang__)
+  asm volatile("" ::: "memory");
+#endif
+}
+
+/**
  * @brief HKDF-SHA256 Extract function (RFC 5869).
  */
 inline void hkdf_sha256_extract(
@@ -73,52 +119,6 @@ inline void hkdf_sha256(
   hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk);
   hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len);
   secure_zero(prk, 32);
-}
-
-/**
- * @brief Securely zero memory, resistant to compiler optimization.
- *
- * [MIL-SPEC] This function uses volatile pointer access and a memory
- * barrier to prevent the compiler from optimizing away the zeroing
- * operation, even if the buffer is not used afterward.
- *
- * Use this to clear sensitive data like:
- * - Cryptographic keys
- * - HMAC digests after comparison
- * - Nonces after use
- * - Shared secrets in temporary buffers
- *
- * @param buf   Pointer to buffer to zero
- * @param len   Number of bytes to zero
- *
- * Reference: CWE-14, CERT C MSC06-C
- */
-inline void secure_zero(volatile uint8_t* buf, size_t len) {
-  while (len--) {
-    *buf++ = 0;
-  }
-  // Memory barrier prevents compiler from reordering or eliminating
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
-#endif
-}
-
-/**
- * @brief Portable version of secure_zero for non-volatile buffers.
- *
- * Casts to volatile internally to ensure zeroing is not optimized away.
- *
- * @param buf   Pointer to buffer to zero
- * @param len   Number of bytes to zero
- */
-inline void secure_zero_portable(void* buf, size_t len) {
-  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf);
-  while (len--) {
-    *p++ = 0;
-  }
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
-#endif
 }
 
 /**

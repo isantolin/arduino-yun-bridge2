@@ -108,6 +108,47 @@ inline void hkdf_sha256(
 }
 
 /**
+ * @brief Known Answer Tests (KAT) for cryptographic primitives.
+ *
+ * [MIL-SPEC COMPLIANCE - FIPS 140-3]
+ * Mandatory self-tests at startup to ensure the cryptographic engine
+ * (SHA256/HMAC) is operating correctly.
+ *
+ * @return true if all tests pass, false otherwise.
+ */
+inline bool run_cryptographic_self_tests() {
+  // 1. SHA256 KAT ("abc")
+  SHA256 sha256;
+  const uint8_t msg[] = {'a', 'b', 'c'};
+  const uint8_t expected_sha[] = {
+      0xBA, 0x78, 0x16, 0xBF, 0x8F, 0x01, 0xCF, 0xEA, 0x41, 0x41, 0x40,
+      0xDE, 0x5D, 0xAE, 0x22, 0x23, 0xB0, 0x03, 0x61, 0xA3, 0x96, 0x17,
+      0x7A, 0x9C, 0xB4, 0x10, 0xFF, 0x61, 0xF2, 0x00, 0x15, 0xAD};
+  uint8_t actual_sha[32];
+  sha256.update(msg, sizeof(msg));
+  sha256.finalize(actual_sha, sizeof(actual_sha));
+  if (memcmp(actual_sha, expected_sha, 32) != 0) return false;
+
+  // 2. HMAC-SHA256 KAT
+  const uint8_t key[] = {'k', 'e', 'y'};
+  const uint8_t data[] = {
+      'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b', 'r', 'o', 'w', 'n',
+      ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e', 'r',
+      ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'};
+  const uint8_t expected_hmac[] = {
+      0xF7, 0xBC, 0x83, 0xF4, 0x30, 0x53, 0x84, 0x24, 0xB1, 0x32, 0x98,
+      0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
+      0x17, 0x59, 0x97, 0x47, 0x9D, 0xBC, 0x2D, 0x1A, 0x3C, 0xD8};
+  uint8_t actual_hmac[32];
+  sha256.resetHMAC(key, sizeof(key));
+  sha256.update(data, sizeof(data));
+  sha256.finalizeHMAC(key, sizeof(key), actual_hmac, sizeof(actual_hmac));
+  if (memcmp(actual_hmac, expected_hmac, 32) != 0) return false;
+
+  return true;
+}
+
+/**
  * @brief Timing-safe memory comparison.
  */
 inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {

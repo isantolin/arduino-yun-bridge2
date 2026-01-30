@@ -39,6 +39,7 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.const import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.metrics import publish_bridge_snapshots, publish_metrics, PrometheusExporter
+from mcubridge.security import verify_crypto_integrity
 from mcubridge.services.runtime import (
     BridgeService,
     SerialHandshakeFatal,
@@ -231,6 +232,11 @@ class BridgeDaemon:
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
     config = load_runtime_config()
     configure_logging(config)
+
+    # [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
+    if not verify_crypto_integrity():
+        logger.critical("CRYPTOGRAPHIC INTEGRITY CHECK FAILED! Aborting for security.")
+        sys.exit(1)
 
     logger.info(
         "Starting MCU Bridge daemon. Serial: %s@%d MQTT: %s:%d",

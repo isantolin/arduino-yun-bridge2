@@ -175,6 +175,15 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 void BridgeClass::begin(
     unsigned long arg_baudrate, const char* arg_secret, size_t arg_secret_len) {
   
+  // [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
+  if (!rpc::security::run_cryptographic_self_tests()) {
+    // CRITICAL: Cryptographic engine is untrustworthy.
+    // Enter safe state and disable the bridge to prevent insecure operation.
+    enterSafeState();
+    _state = BridgeState::Fault;
+    return;
+  }
+
   // [SIL-2] USB Serial Initialization Fix
   // On ATmega32U4 (Yun/Leonardo), Serial is USB CDC and acts as a Stream,
   // bypassing the _hardware_serial check below. We must explicitly initialize it.

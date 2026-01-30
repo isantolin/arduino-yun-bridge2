@@ -45,6 +45,10 @@ class TestAccessor {
     _bridge._state = synchronized ? BridgeState::Idle : BridgeState::Unsynchronized;
   }
 
+  void setState(BridgeState state) {
+    _bridge._state = state;
+  }
+
   static TestAccessor create(BridgeClass& bridge) {
     return TestAccessor(bridge);
   }

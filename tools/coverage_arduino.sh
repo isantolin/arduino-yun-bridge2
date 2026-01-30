@@ -23,6 +23,7 @@ find "${BUILD_DIR}" -name '*.o' -delete 2>/dev/null || true
 
 SOURCES=(
     "${SRC_ROOT}/protocol/rpc_frame.cpp"
+    "${SRC_ROOT}/protocol/security.cpp"
     "${SRC_ROOT}/arduino/Bridge.cpp"
     "${SRC_ROOT}/arduino/Console.cpp"
     "${SRC_ROOT}/arduino/DataStore.cpp"
@@ -46,6 +47,9 @@ COMPILE_FLAGS=(
     -I"${SRC_ROOT}"
     -I"${TEST_ROOT}/mocks"
     -I"${STUB_INCLUDE}"
+    -I"${DUMMY_ARDUINO_LIBS}/Crypto"
+    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
+    -I"${DUMMY_ARDUINO_LIBS}/FastCRC"
 )
 
 TEST_FILES=(

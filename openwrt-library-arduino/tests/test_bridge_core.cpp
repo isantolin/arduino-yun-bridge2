@@ -23,6 +23,8 @@
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
 #include "test_support.h"
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "BridgeTestInterface.h"
 
 // Define global Serial instances for the stub
 HardwareSerial Serial;
@@ -735,14 +737,19 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
 
     uint8_t big[rpc::MAX_PAYLOAD_SIZE + 1];
     test_memfill(big, sizeof(big), TEST_BYTE_BB);
-    TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), big, sizeof(big)));
+    // Over-sized payload should fail
+    TEST_ASSERT(!bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, big, sizeof(big)));
 
     // Fill queue.
-    // Forcing queue full state manually for this test branch
+    // Transition to AwaitingAck so subsequent frames get queued
+    auto accessor = bridge::test::TestAccessor::create(bridge);
+    accessor.setState(BridgeState::AwaitingAck);
+
     while(!bridge._pending_tx_queue.full()) {
-        bridge._enqueuePendingTx(0x1234, nullptr, 0);
+        bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0);
     }
-    TEST_ASSERT(!bridge._enqueuePendingTx(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), nullptr, 0));
+    // Queue is full, this should fail
+    TEST_ASSERT(!bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0));
 }
 
 void test_bridge_emit_status_message_variants() {

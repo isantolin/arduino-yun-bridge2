@@ -214,25 +214,22 @@ def verify_crypto_integrity() -> bool:
 
     Vectors from NIST/RFC 4231.
     """
-    try:
-        # 1. SHA256 KAT ("abc")
-        msg = b"abc"
-        expected_sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        actual_sha = hashlib.sha256(msg).hexdigest()
-        if actual_sha != expected_sha:
-            return False
-
-        # 2. HMAC-SHA256 KAT
-        key = b"key"
-        data = b"The quick brown fox jumps over the lazy dog"
-        expected_hmac = "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
-        actual_hmac = hmac.new(key, data, hashlib.sha256).hexdigest()
-        if actual_hmac != expected_hmac:
-            return False
-
-        return True
-    except Exception:
+    # 1. SHA256 KAT ("abc")
+    msg = b"abc"
+    expected_sha = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    actual_sha = hashlib.sha256(msg).hexdigest()
+    if actual_sha != expected_sha:
         return False
+
+    # 2. HMAC-SHA256 KAT
+    key = b"key"
+    data = b"The quick brown fox jumps over the lazy dog"
+    expected_hmac = "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"
+    actual_hmac = hmac.new(key, data, hashlib.sha256).hexdigest()
+    if actual_hmac != expected_hmac:
+        return False
+
+    return True
 
 
 __all__ = [

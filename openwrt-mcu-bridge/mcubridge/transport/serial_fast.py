@@ -83,7 +83,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         self.loop = loop
         self.transport: asyncio.Transport | None = None
         self._buffer = bytearray()
-        self._connected_future: asyncio.Future[None] = loop.create_future()
+        self.connected_future: asyncio.Future[None] = loop.create_future()
         self.negotiation_future: asyncio.Future[bool] | None = None
 
         # Discard state
@@ -92,14 +92,14 @@ class BridgeSerialProtocol(asyncio.Protocol):
     def connection_made(self, transport: asyncio.BaseTransport) -> None:
         self.transport = cast(asyncio.Transport, transport)
         logger.info("Serial transport established (Protocol).")
-        if not self._connected_future.done():
-            self._connected_future.set_result(None)
+        if not self.connected_future.done():
+            self.connected_future.set_result(None)
 
     def connection_lost(self, exc: Exception | None) -> None:
         logger.warning("Serial connection lost: %s", exc)
         self.transport = None
-        if not self._connected_future.done():
-            self._connected_future.set_exception(exc or ConnectionError("Closed"))
+        if not self.connected_future.done():
+            self.connected_future.set_exception(exc or ConnectionError("Closed"))
 
     def data_received(self, data: bytes) -> None:
         """Handle incoming data with zero-copy splicing where possible."""
@@ -279,7 +279,7 @@ class SerialTransport:
             loop, protocol_factory, self.config.serial_port, baudrate=start_baud
         )
         self.protocol = cast(BridgeSerialProtocol, proto)
-        await self.protocol._connected_future
+        await self.protocol.connected_future
 
         try:
             # 2. Negotiate if needed
@@ -295,7 +295,7 @@ class SerialTransport:
                         loop, protocol_factory, self.config.serial_port, baudrate=target_baud
                     )
                     self.protocol = cast(BridgeSerialProtocol, proto)
-                    await self.protocol._connected_future
+                    await self.protocol.connected_future
                 else:
                     logger.warning("Negotiation failed, staying at %d", start_baud)
 

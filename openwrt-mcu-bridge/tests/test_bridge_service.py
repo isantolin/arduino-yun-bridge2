@@ -437,6 +437,7 @@ async def test_transient_handshake_failures_eventually_backoff(
     runtime_state: RuntimeState,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    runtime_config.serial_handshake_fatal_failures = 3
     runtime_state.link_is_synchronized = False
     service = BridgeService(runtime_config, runtime_state)
 

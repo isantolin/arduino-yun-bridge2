@@ -242,8 +242,8 @@ async def test_serial_reader_task_propagates_handshake_fatal(
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
     mock_protocol = MagicMock()
-    mock_protocol._connected_future = asyncio.get_running_loop().create_future()
-    mock_protocol._connected_future.set_result(None)
+    mock_protocol.connected_future = asyncio.get_running_loop().create_future()
+    mock_protocol.connected_future.set_result(None)
 
     async def _fake_create(*_: object, **__: object):
         return mock_transport, mock_protocol

@@ -134,33 +134,8 @@ BridgeClass* g_bridge_instance = nullptr;
 } // namespace
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
-    : _stream(arg_serial),
-      _frame_received(false),
-      _parser(),
-      _rx_frame{},
-      _scratch_payload(),
-      _last_command_id(0),
-      _retry_count(0),
-      _last_send_millis(0),
-      _last_rx_crc(0),
-      _last_rx_crc_millis(0),
-      _consecutive_crc_errors(0),
-      _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
-      _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
-      _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS),
-      _command_handler(nullptr),
-      _digital_read_handler(nullptr),
-      _analog_read_handler(nullptr),
-      _get_free_memory_handler(nullptr),
-      _status_handler(nullptr),
-      _pending_tx_queue(),
-      _state(BridgeState::Unsynchronized),
-      _last_raw_frame()
-#if BRIDGE_DEBUG_FRAMES
-      , _tx_debug{}
-#endif
-{
-    g_bridge_instance = this;
+    : BridgeClass(static_cast<Stream&>(arg_serial)) {
+  _hardware_serial = &arg_serial;
 }
 
 BridgeClass::BridgeClass(Stream& arg_stream)
@@ -516,6 +491,9 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t mode = payload_data[1];
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
         ::pinMode(pin, mode);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("pinMode"), pin, mode);
@@ -526,6 +504,9 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t value = payload_data[1] ? HIGH : LOW;
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
         ::digitalWrite(pin, value);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalWrite"), pin, value == HIGH ? 1 : 0);
@@ -534,12 +515,22 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       break;
     case rpc::CommandId::CMD_ANALOG_WRITE:
       if (payload_length == 2) {
-        ::analogWrite(payload_data[0], static_cast<int>(payload_data[1]));
+        uint8_t pin = payload_data[0];
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) return;
+#endif
+        ::analogWrite(pin, static_cast<int>(payload_data[1]));
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
+#ifdef NUM_DIGITAL_PINS
+        if (pin >= NUM_DIGITAL_PINS) {
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+          return;
+        }
+#endif
         int16_t value = ::digitalRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
@@ -551,6 +542,12 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_ANALOG_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
+#ifdef NUM_ANALOG_INPUTS
+        if (pin >= NUM_ANALOG_INPUTS) {
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+          return;
+        }
+#endif
         int16_t value = ::analogRead(pin);
         #if BRIDGE_DEBUG_IO
         if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);
@@ -915,6 +912,11 @@ void BridgeClass::enterSafeState() {
   _clearPendingTxQueue();
   _frame_received = false;
   _target_frame = nullptr;
+  _last_command_id = 0;
+  _last_rx_crc = 0;
+  _last_rx_crc_millis = 0;
+  _consecutive_crc_errors = 0;
+  _last_raw_frame.clear();
 }
 
 void BridgeClass::_resetLinkState() { enterSafeState(); }

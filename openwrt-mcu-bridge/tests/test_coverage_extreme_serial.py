@@ -138,8 +138,8 @@ async def test_serial_transport_lifecycle_100_percent():
     # 2. _connect_and_run hook exception (Line 315)
     mock_service.on_serial_disconnected.side_effect = RuntimeError("hook crash")
     m_t, m_p = MagicMock(), MagicMock()
-    m_p._connected_future = asyncio.get_running_loop().create_future()
-    m_p._connected_future.set_result(None)
+    m_p.connected_future = asyncio.get_running_loop().create_future()
+    m_p.connected_future.set_result(None)
     m_t.is_closing.return_value = True
     with patch(
         "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
@@ -159,8 +159,8 @@ async def test_serial_transport_negotiation_fail_coverage():
     # Negotiation fail branch (Line 315)
     with patch.object(transport_mgr, "_negotiate_baudrate", return_value=False):
         m_t, m_p = RealAsyncTransport(), MagicMock()
-        m_p._connected_future = asyncio.get_running_loop().create_future()
-        m_p._connected_future.set_result(None)
+        m_p.connected_future = asyncio.get_running_loop().create_future()
+        m_p.connected_future.set_result(None)
         m_p.transport = m_t
         # Make transport closing after one loop to exit
         m_t._closing = True

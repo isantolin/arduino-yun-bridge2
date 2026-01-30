@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, AsyncMock
 # Mock serial_asyncio_fast
 mock_serial_fast = MagicMock()
 _mock_proto = MagicMock()
-_mock_proto._connected_future = asyncio.Future()
-_mock_proto._connected_future.set_result(None)
+_mock_proto.connected_future = asyncio.Future()
+_mock_proto.connected_future.set_result(None)
 mock_serial_fast.create_serial_connection = AsyncMock(return_value=(MagicMock(), _mock_proto))
 sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
@@ -100,8 +100,8 @@ async def test_transport_run_handshake_fatal(sleep_spy: AsyncMock) -> None:
     transport = serial_fast.SerialTransport(config, state, service)
 
     m_p = MagicMock()
-    m_p._connected_future = asyncio.get_running_loop().create_future()
-    m_p._connected_future.set_result(None)
+    m_p.connected_future = asyncio.get_running_loop().create_future()
+    m_p.connected_future.set_result(None)
 
     # Mock _connect_and_run to just call service.on_serial_connected
     pth = "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection"

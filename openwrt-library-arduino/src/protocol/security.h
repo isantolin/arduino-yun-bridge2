@@ -22,45 +22,93 @@
 #include <stdint.h>
 #include <string.h>
 #include <SHA256.h>
-#include <HKDF.h>
 
 namespace rpc {
 namespace security {
 
 /**
- * @brief Derive a key using HKDF-SHA256 from the Crypto library.
+ * @brief Securely zero memory, resistant to compiler optimization.
+ *
+ * [MIL-SPEC] This function uses volatile pointer access and a memory
+ * barrier to prevent the compiler from optimizing away the zeroing
+ * operation, even if the buffer is not used afterward.
+ */
+inline void secure_zero(volatile uint8_t* buf, size_t len) {
+  while (len--) {
+    *buf++ = 0;
+  }
+#if defined(__GNUC__) || defined(__clang__)
+  asm volatile("" ::: "memory");
+#endif
+}
+
+/**
+ * @brief Portable version of secure_zero for non-volatile buffers.
+ */
+inline void secure_zero_portable(void* buf, size_t len) {
+  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf);
+  while (len--) {
+    *p++ = 0;
+  }
+#if defined(__GNUC__) || defined(__clang__)
+  asm volatile("" ::: "memory");
+#endif
+}
+
+/**
+ * @brief HKDF-SHA256 Extract function (RFC 5869).
+ */
+inline void hkdf_sha256_extract(
+    const uint8_t* salt, size_t salt_len,
+    const uint8_t* ikm, size_t ikm_len,
+    uint8_t* out_prk) {
+  SHA256 sha256;
+  sha256.resetHMAC(salt, salt_len);
+  sha256.update(ikm, ikm_len);
+  sha256.finalizeHMAC(salt, salt_len, out_prk, 32);
+}
+
+/**
+ * @brief HKDF-SHA256 Expand function (RFC 5869).
+ * Currently supports output length <= 32 bytes (one block) for handshake needs.
+ */
+inline void hkdf_sha256_expand(
+    const uint8_t* prk, size_t prk_len,
+    const uint8_t* info, size_t info_len,
+    uint8_t* out_okm, size_t okm_len) {
+  if (okm_len > 32) return; 
+  
+  SHA256 sha256;
+  sha256.resetHMAC(prk, prk_len);
+  if (info && info_len > 0) {
+    sha256.update(info, info_len);
+  }
+  uint8_t counter = 1;
+  sha256.update(&counter, 1);
+  uint8_t full_okm[32];
+  sha256.finalizeHMAC(prk, prk_len, full_okm, 32);
+  memcpy(out_okm, full_okm, okm_len);
+  secure_zero(full_okm, 32);
+}
+
+/**
+ * @brief Derive a key using HKDF-SHA256.
+ * 
+ * This is the primary entry point for MIL-SPEC key derivation.
  */
 inline void hkdf_sha256(
     const uint8_t* ikm, size_t ikm_len,
     const uint8_t* salt, size_t salt_len,
     const uint8_t* info, size_t info_len,
     uint8_t* out_okm, size_t okm_len) {
-  HKDF<SHA256> context;
-  context.setKey(ikm, ikm_len, salt, salt_len);
-  context.extract(out_okm, okm_len, info, info_len);
-  context.clear();
+  uint8_t prk[32];
+  hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk);
+  hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len);
+  secure_zero(prk, 32);
 }
 
 /**
  * @brief Timing-safe memory comparison.
- *
- * [MIL-SPEC] This function compares two buffers in constant time,
- * regardless of where the first difference occurs. This prevents
- * timing side-channel attacks that could leak information about
- * secret data through execution time variations.
- *
- * Use this for comparing:
- * - HMAC tags
- * - Authentication tokens
- * - Password hashes
- * - Any security-sensitive comparison
- *
- * @param a     First buffer
- * @param b     Second buffer
- * @param len   Number of bytes to compare
- * @return      true if buffers are equal, false otherwise
- *
- * Reference: CWE-208 (Observable Timing Discrepancy)
  */
 inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
   volatile uint8_t result = 0;
@@ -71,55 +119,16 @@ inline bool timing_safe_equal(const uint8_t* a, const uint8_t* b, size_t len) {
 }
 
 /**
- * @brief Timing-safe comparison with volatile result.
- *
- * Additional hardening: uses volatile for the result accumulator
- * to further prevent optimization.
- *
- * @param a     First buffer
- * @param b     Second buffer
- * @param len   Number of bytes to compare
- * @return      true if buffers are equal, false otherwise
- */
-inline bool timing_safe_equal_hardened(
-    const volatile uint8_t* a,
-    const volatile uint8_t* b,
-    size_t len) {
-  volatile uint8_t result = 0;
-  for (size_t i = 0; i < len; i++) {
-    result |= a[i] ^ b[i];
-  }
-  // Additional barrier to prevent branch prediction optimization
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
-#endif
-  return result == 0;
-}
-
-/**
  * @brief Generate nonce with monotonic counter (anti-replay).
- *
- * [MIL-SPEC] Generates a 16-byte nonce with structure:
- * - Bytes 0-7:  Random data (entropy)
- * - Bytes 8-15: Monotonic counter (big-endian, anti-replay)
- *
- * The counter prevents replay attacks by ensuring each nonce
- * is unique and can be validated as newer than previous nonces.
- *
- * @param out_nonce     Output buffer (must be 16 bytes)
- * @param counter       Reference to monotonic counter (will be incremented)
- * @param random_func   Function to generate random byte (e.g., random(256))
  */
 template <typename RandomFunc>
 inline void generate_nonce_with_counter(
     uint8_t* out_nonce,
     uint64_t& counter,
     RandomFunc random_func) {
-  // Random part (8 bytes)
   for (int i = 0; i < 8; i++) {
     out_nonce[i] = static_cast<uint8_t>(random_func() & 0xFF);
   }
-  // Counter part (8 bytes, big-endian)
   counter++;
   for (int i = 0; i < 8; i++) {
     out_nonce[15 - i] = static_cast<uint8_t>((counter >> (i * 8)) & 0xFF);
@@ -128,9 +137,6 @@ inline void generate_nonce_with_counter(
 
 /**
  * @brief Extract counter from nonce (for validation).
- *
- * @param nonce   16-byte nonce with counter in bytes 8-15
- * @return        64-bit counter value
  */
 inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
   uint64_t counter = 0;
@@ -142,18 +148,11 @@ inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
 
 /**
  * @brief Validate nonce counter is strictly greater than last seen.
- *
- * [MIL-SPEC] Anti-replay protection: rejects any nonce with a counter
- * less than or equal to the last accepted counter.
- *
- * @param nonce         16-byte nonce to validate
- * @param last_counter  Reference to last accepted counter (updated on success)
- * @return              true if counter is valid (strictly greater), false otherwise
  */
 inline bool validate_nonce_counter(const uint8_t* nonce, uint64_t& last_counter) {
   uint64_t current = extract_nonce_counter(nonce);
   if (current <= last_counter) {
-    return false;  // Replay detected
+    return false;
   }
   last_counter = current;
   return true;

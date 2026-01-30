@@ -22,103 +22,23 @@
 #include <stdint.h>
 #include <string.h>
 #include <SHA256.h>
+#include <HKDF.h>
 
 namespace rpc {
 namespace security {
 
 /**
- * @brief Securely zero memory, resistant to compiler optimization.
- *
- * [MIL-SPEC] This function uses volatile pointer access and a memory
- * barrier to prevent the compiler from optimizing away the zeroing
- * operation, even if the buffer is not used afterward.
- *
- * Use this to clear sensitive data like:
- * - Cryptographic keys
- * - HMAC digests after comparison
- * - Nonces after use
- * - Shared secrets in temporary buffers
- *
- * @param buf   Pointer to buffer to zero
- * @param len   Number of bytes to zero
- *
- * Reference: CWE-14, CERT C MSC06-C
- */
-inline void secure_zero(volatile uint8_t* buf, size_t len) {
-  while (len--) {
-    *buf++ = 0;
-  }
-  // Memory barrier prevents compiler from reordering or eliminating
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
-#endif
-}
-
-/**
- * @brief Portable version of secure_zero for non-volatile buffers.
- *
- * Casts to volatile internally to ensure zeroing is not optimized away.
- *
- * @param buf   Pointer to buffer to zero
- * @param len   Number of bytes to zero
- */
-inline void secure_zero_portable(void* buf, size_t len) {
-  volatile uint8_t* p = static_cast<volatile uint8_t*>(buf);
-  while (len--) {
-    *p++ = 0;
-  }
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" ::: "memory");
-#endif
-}
-
-/**
- * @brief HKDF-SHA256 Extract function (RFC 5869).
- */
-inline void hkdf_sha256_extract(
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* ikm, size_t ikm_len,
-    uint8_t* out_prk) {
-  SHA256 sha256;
-  sha256.resetHMAC(salt, salt_len);
-  sha256.update(ikm, ikm_len);
-  sha256.finalizeHMAC(salt, salt_len, out_prk, 32);
-}
-
-/**
- * @brief HKDF-SHA256 Expand function (RFC 5869).
- * Currently supports output length <= 32 bytes (one block).
- */
-inline void hkdf_sha256_expand(
-    const uint8_t* prk, size_t prk_len,
-    const uint8_t* info, size_t info_len,
-    uint8_t* out_okm, size_t okm_len) {
-  if (okm_len > 32) return; // Simple implementation for handshake needs
-  
-  SHA256 sha256;
-  sha256.resetHMAC(prk, prk_len);
-  if (info && info_len > 0) {
-    sha256.update(info, info_len);
-  }
-  uint8_t counter = 1;
-  sha256.update(&counter, 1);
-  uint8_t full_okm[32];
-  sha256.finalizeHMAC(prk, prk_len, full_okm, 32);
-  memcpy(out_okm, full_okm, okm_len);
-}
-
-/**
- * @brief Derive a key using HKDF-SHA256.
+ * @brief Derive a key using HKDF-SHA256 from the Crypto library.
  */
 inline void hkdf_sha256(
     const uint8_t* ikm, size_t ikm_len,
     const uint8_t* salt, size_t salt_len,
     const uint8_t* info, size_t info_len,
     uint8_t* out_okm, size_t okm_len) {
-  uint8_t prk[32];
-  hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk);
-  hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len);
-  secure_zero(prk, 32);
+  HKDF<SHA256> context;
+  context.setKey(ikm, ikm_len, salt, salt_len);
+  context.extract(out_okm, okm_len, info, info_len);
+  context.clear();
 }
 
 /**

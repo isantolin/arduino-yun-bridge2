@@ -98,7 +98,7 @@ async def test_transport_run_handshake_fatal(sleep_spy: AsyncMock) -> None:
     service.on_serial_connected = AsyncMock(side_effect=SerialHandshakeFatal("Fatal"))
 
     transport = serial_fast.SerialTransport(config, state, service)
-    
+
     m_p = MagicMock()
     m_p._connected_future = asyncio.get_running_loop().create_future()
     m_p._connected_future.set_result(None)

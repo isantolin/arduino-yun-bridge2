@@ -10,12 +10,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 from types import SimpleNamespace
 import pytest
-import tenacity
+from unittest import mock
 import aiomqtt
-import mcubridge.common as common
-import mcubridge.metrics as metrics
-import mcubridge.daemon as daemon
-import mcubridge.security as security
+import tenacity
+from mcubridge import security, common, metrics, daemon
 import mcubridge.protocol.topics as topics
 import mcubridge.transport.mqtt as mqtt
 import mcubridge.state.status as status
@@ -840,6 +838,23 @@ def test_security_gaps():
     # Replay
     res, _ = security.validate_nonce_counter(nonce, 11)
     assert res is False
+
+    # hkdf_sha256_extract with empty salt
+    prk = security.hkdf_sha256_extract(b"", b"ikm")
+    assert len(prk) == 32
+
+    # hkdf_sha256_expand with length too long
+    with pytest.raises(ValueError, match="Requested KDF length too long"):
+        security.hkdf_sha256_expand(b"prk", b"info", 255 * 32 + 1)
+
+    # verify_crypto_integrity failure branches (mocking hashlib/hmac)
+    with mock.patch("hashlib.sha256") as mock_sha:
+        mock_sha.return_value.hexdigest.return_value = "wrong"
+        assert security.verify_crypto_integrity() is False
+
+    with mock.patch("hmac.new") as mock_hmac:
+        mock_hmac.return_value.hexdigest.return_value = "wrong"
+        assert security.verify_crypto_integrity() is False
 
 
 # --- mcubridge.protocol.topics ---

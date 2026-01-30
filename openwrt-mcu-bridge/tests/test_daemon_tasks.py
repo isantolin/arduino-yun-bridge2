@@ -112,7 +112,7 @@ async def test_serial_reader_task_processes_frame(
     # We need a real protocol to test data processing logic, or at least one with real methods
     # But BridgeSerialProtocol depends on asyncio loop.
     mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    mock_protocol.transport = mock_transport
+    mock_protocol.connection_made(mock_transport)
 
     async def _fake_create(*_: object, **__: object):
         return mock_transport, mock_protocol
@@ -165,7 +165,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
     mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    mock_protocol.transport = mock_transport
+    mock_protocol.connection_made(mock_transport)
 
     async def _fake_create(*_: object, **__: object):
         return mock_transport, mock_protocol
@@ -207,7 +207,7 @@ async def test_serial_reader_task_limits_packet_size(
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
     mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-    mock_protocol.transport = mock_transport
+    mock_protocol.connection_made(mock_transport)
 
     async def _fake_create(*_: object, **__: object):
         return mock_transport, mock_protocol
@@ -242,6 +242,8 @@ async def test_serial_reader_task_propagates_handshake_fatal(
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
     mock_protocol = MagicMock()
+    mock_protocol._connected_future = asyncio.get_running_loop().create_future()
+    mock_protocol._connected_future.set_result(None)
 
     async def _fake_create(*_: object, **__: object):
         return mock_transport, mock_protocol

@@ -49,6 +49,8 @@ async def test_serial_reader_task_reconnects():
     mock_protocol = MagicMock(spec=BridgeSerialProtocol)
     mock_protocol.loop = MagicMock()
     mock_protocol.loop.create_future.return_value = asyncio.Future()
+    mock_protocol._connected_future = asyncio.Future()
+    mock_protocol._connected_future.set_result(None)
 
     # Mock create_serial_connection
     mock_create = AsyncMock(return_value=(mock_transport, mock_protocol))

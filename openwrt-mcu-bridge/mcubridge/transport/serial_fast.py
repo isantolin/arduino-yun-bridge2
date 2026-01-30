@@ -279,6 +279,7 @@ class SerialTransport:
             loop, protocol_factory, self.config.serial_port, baudrate=start_baud
         )
         self.protocol = cast(BridgeSerialProtocol, proto)
+        await self.protocol._connected_future
 
         try:
             # 2. Negotiate if needed
@@ -294,6 +295,7 @@ class SerialTransport:
                         loop, protocol_factory, self.config.serial_port, baudrate=target_baud
                     )
                     self.protocol = cast(BridgeSerialProtocol, proto)
+                    await self.protocol._connected_future
                 else:
                     logger.warning("Negotiation failed, staying at %d", start_baud)
 

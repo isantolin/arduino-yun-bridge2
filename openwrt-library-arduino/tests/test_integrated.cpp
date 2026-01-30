@@ -5,6 +5,7 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
+#include "protocol/security.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_frame.h"
@@ -154,6 +155,7 @@ void integrated_test_error_branches() {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("flash"));
     Bridge.enterSafeState();
+    TEST_ASSERT(rpc::security::run_cryptographic_self_tests());
 }
 
 void integrated_test_extreme_coverage() {

@@ -84,11 +84,6 @@ static_assert(
 );
 constexpr size_t kSha256DigestSize = 32;
 
-#if defined(ARDUINO_ARCH_AVR)
-extern "C" char __heap_start;
-extern "C" char* __brkval;
-#endif
-
 struct BaudrateChangeState {
   uint32_t pending_baudrate;
   unsigned long change_timestamp_ms;
@@ -98,35 +93,19 @@ struct BaudrateChangeState {
   bool isReady(unsigned long now_ms) const {
     return pending_baudrate > 0 && (now_ms - change_timestamp_ms) > kSettleDelayMs;
   }
-  
-  void schedule(uint32_t baudrate, unsigned long now_ms) {
-    pending_baudrate = baudrate;
+
+  void schedule(uint32_t baud, unsigned long now_ms) {
+    pending_baudrate = baud;
     change_timestamp_ms = now_ms;
   }
-  
+
   void clear() {
     pending_baudrate = 0;
+    change_timestamp_ms = 0;
   }
 };
 
 static BaudrateChangeState g_baudrate_state = {0, 0};
-
-uint16_t getFreeMemory() {
-#if defined(ARDUINO_ARCH_AVR)
-  char stack_top;
-  char* heap_end = __brkval ? __brkval : &__heap_start;
-  intptr_t free_bytes = &stack_top - heap_end;
-  if (free_bytes < 0) {
-    free_bytes = 0;
-  }
-  if (static_cast<size_t>(free_bytes) > rpc::RPC_UINT16_MAX) {
-    free_bytes = rpc::RPC_UINT16_MAX;
-  }
-  return static_cast<uint16_t>(free_bytes);
-#else
-  return 0;
-#endif
-}
 
 // Global instance pointer for PacketSerial static callback
 BridgeClass* g_bridge_instance = nullptr;
@@ -962,8 +941,11 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
     return;
   }
 
-  // [MIL-SPEC] Use HKDF derived key for handshake authentication
-  uint8_t handshake_key[32];
+  // [MIL-SPEC] Use HKDF derived key for handshake authentication.
+  // [OPTIMIZATION] Reuse scratch buffer to avoid 64 bytes of stack allocation (key + digest).
+  uint8_t* handshake_key = _scratch_payload.data(); // 32 bytes
+  uint8_t* digest = _scratch_payload.data() + 32;   // 32 bytes
+
   rpc::security::hkdf_sha256(
       _shared_secret.data(), _shared_secret.size(),
       rpc::RPC_HANDSHAKE_HKDF_SALT, rpc::RPC_HANDSHAKE_HKDF_SALT_LEN,
@@ -971,7 +953,6 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
       handshake_key, 32);
 
   SHA256 sha256;
-  uint8_t digest[kSha256DigestSize];
   sha256.resetHMAC(handshake_key, 32);
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(handshake_key, 32, digest, kSha256DigestSize);

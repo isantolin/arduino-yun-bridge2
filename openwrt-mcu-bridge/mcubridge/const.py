@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from ssl import TLSVersion
 
-from .rpc.protocol import Status
+from .rpc import protocol
 
 # ==============================================================================
 # SECTION 1: STATUS CODES (Application Logic)
@@ -33,15 +33,15 @@ from .rpc.protocol import Status
 # -- Status Codes --
 SERIAL_FAILURE_STATUS_CODES: frozenset[int] = frozenset(
     {
-        Status.ERROR.value,
-        Status.CMD_UNKNOWN.value,
-        Status.MALFORMED.value,
-        Status.CRC_MISMATCH.value,
-        Status.TIMEOUT.value,
-        Status.NOT_IMPLEMENTED.value,
+        protocol.Status.ERROR.value,
+        protocol.Status.CMD_UNKNOWN.value,
+        protocol.Status.MALFORMED.value,
+        protocol.Status.CRC_MISMATCH.value,
+        protocol.Status.TIMEOUT.value,
+        protocol.Status.NOT_IMPLEMENTED.value,
     }
 )
-SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({Status.OK.value})
+SERIAL_SUCCESS_STATUS_CODES: frozenset[int] = frozenset({protocol.Status.OK.value})
 
 
 # ==============================================================================
@@ -55,17 +55,17 @@ DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
 # Initial wait for serial port availability (reconnect loop)
 DEFAULT_RECONNECT_DELAY: int = 5
 # Timeout for general serial operations (not strict RPC)
-DEFAULT_SERIAL_RETRY_TIMEOUT: float = 4.0
-DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 6.0
+DEFAULT_SERIAL_RETRY_TIMEOUT: float = 10.0
+DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 15.0
 # Baudrate negotiation timeout
 SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT: float = 2.0
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL: float = 0.0
 # How many fatal handshake failures before restarting the serial task
-DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES: int = 3
+DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES: int = 15
 # Backoff strategy for handshake retries
 SERIAL_HANDSHAKE_BACKOFF_BASE: float = 1.0
 SERIAL_HANDSHAKE_BACKOFF_MAX: float = 60.0
-SERIAL_MIN_ACK_TIMEOUT: float = 0.05
+SERIAL_MIN_ACK_TIMEOUT: float = 0.5
 
 # -- MQTT Defaults --
 DEFAULT_MQTT_HOST: str = "127.0.0.1"
@@ -124,7 +124,7 @@ TOPIC_FORBIDDEN_REASON: str = "topic-action-forbidden"
 # -- Watchdog --
 WATCHDOG_TRIGGER_TOKEN: bytes = b"WATCHDOG=trigger\n"
 DEFAULT_WATCHDOG_ENABLED: bool = False
-DEFAULT_WATCHDOG_INTERVAL: float = 5.0
+DEFAULT_WATCHDOG_INTERVAL: float = 10.0
 WATCHDOG_MIN_INTERVAL: float = 0.5
 
 # -- Task Supervisor --

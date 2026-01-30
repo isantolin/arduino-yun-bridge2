@@ -395,7 +395,9 @@ fi
 # --- System & LuCI Configuration ---
 echo "[STEP 6/6] Finalizing system configuration..."
 [ -f /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart
+# Force reload of procd/rpcd to pick up new service files
 [ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
+/etc/init.d/system reload || true
 
 echo "[FINAL] Finalizing setup..."
 
@@ -405,10 +407,14 @@ if command -v uci >/dev/null 2>&1; then
     uci commit mcubridge >/dev/null 2>&1 || true
 fi
 
-if [ -x "$INIT_SCRIPT" ]; then
+if [ -f "$INIT_SCRIPT" ]; then
     echo "[INFO] Enabling and starting mcubridge daemon..."
-    $INIT_SCRIPT enable
-    $INIT_SCRIPT restart
+    # Ensure init script is executable
+    chmod +x "$INIT_SCRIPT"
+    
+    # Enable and start with error tolerance
+    "$INIT_SCRIPT" enable || echo "[WARN] Failed to enable service (non-fatal)"
+    "$INIT_SCRIPT" restart || echo "[WARN] Failed to start service (non-fatal)"
 else
     echo "[WARNING] mcubridge init script not found (installation incomplete?)."
 fi

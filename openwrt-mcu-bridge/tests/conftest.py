@@ -47,7 +47,7 @@ def enable_uvloop_if_available():
     import uvloop
     import asyncio
     asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    print("NOTICE: uvloop installed and enabled for tests.")
+    logging.info("NOTICE: uvloop installed and enabled for tests.")
 
 
 @pytest.fixture(autouse=True)

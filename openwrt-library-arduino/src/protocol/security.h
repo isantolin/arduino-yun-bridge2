@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <SHA256.h>
+#include <HKDF.h>
 
 namespace rpc {
 namespace security {
@@ -55,63 +56,7 @@ inline void secure_zero_portable(void* buf, size_t len) {
 #endif
 }
 
-/**
- * @brief HKDF-SHA256 Extract function (RFC 5869).
- */
-inline void hkdf_sha256_extract(
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* ikm, size_t ikm_len,
-    uint8_t* out_prk) {
-  SHA256 sha256;
-  if (!salt || salt_len == 0) {
-    uint8_t zero_salt[32];
-    memset(zero_salt, 0, 32);
-    sha256.resetHMAC(zero_salt, 32);
-  } else {
-    sha256.resetHMAC(salt, salt_len);
-  }
-  sha256.update(ikm, ikm_len);
-  sha256.finalizeHMAC(salt, salt_len, out_prk, 32);
-}
 
-/**
- * @brief HKDF-SHA256 Expand function (RFC 5869).
- * Currently supports output length <= 32 bytes (one block) for handshake needs.
- */
-inline void hkdf_sha256_expand(
-    const uint8_t* prk, size_t prk_len,
-    const uint8_t* info, size_t info_len,
-    uint8_t* out_okm, size_t okm_len) {
-  if (okm_len > 32) return; 
-  
-  SHA256 sha256;
-  sha256.resetHMAC(prk, prk_len);
-  if (info && info_len > 0) {
-    sha256.update(info, info_len);
-  }
-  uint8_t counter = 1;
-  sha256.update(&counter, 1);
-  uint8_t full_okm[32];
-  sha256.finalizeHMAC(prk, prk_len, full_okm, 32);
-  memcpy(out_okm, full_okm, okm_len);
-  secure_zero(full_okm, 32);
-}
-
-/**
- * @brief Derive a key using HKDF-SHA256.
- * 
- * This is the primary entry point for MIL-SPEC key derivation.
- */
-inline void hkdf_sha256(
-    const uint8_t* ikm, size_t ikm_len,
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* info, size_t info_len,
-    uint8_t* out_okm, size_t okm_len) {
-  uint8_t prk[32];
-  hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk);
-  hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len);
-  secure_zero(prk, 32);
-}
 
 /**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.

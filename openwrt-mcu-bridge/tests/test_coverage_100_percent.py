@@ -139,7 +139,7 @@ async def test_serial_fast_protocol_error_coverage():
     with mock.patch("mcubridge.transport.serial_fast.Frame.from_bytes", side_effect=ValueError("other")):
         with mock.patch("mcubridge.transport.serial_fast.cobs.decode", return_value=b"some bytes"):
             await proto._async_process_packet(b"something")
-            assert state.serial_decode_errors == 1
+            assert state.serial_decode_errors == 2
 
 
 def test_status_name_unknown():

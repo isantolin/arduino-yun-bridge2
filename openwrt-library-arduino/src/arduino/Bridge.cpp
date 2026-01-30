@@ -946,11 +946,9 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   uint8_t* handshake_key = _scratch_payload.data(); // 32 bytes
   uint8_t* digest = _scratch_payload.data() + 32;   // 32 bytes
 
-  rpc::security::hkdf_sha256(
-      _shared_secret.data(), _shared_secret.size(),
-      rpc::RPC_HANDSHAKE_HKDF_SALT, rpc::RPC_HANDSHAKE_HKDF_SALT_LEN,
-      rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN,
-      handshake_key, 32);
+  HKDF<SHA256> hkdf;
+  hkdf.extract(rpc::RPC_HANDSHAKE_HKDF_SALT, rpc::RPC_HANDSHAKE_HKDF_SALT_LEN, _shared_secret.data(), _shared_secret.size());
+  hkdf.expand(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN, handshake_key, 32);
 
   SHA256 sha256;
   sha256.resetHMAC(handshake_key, 32);

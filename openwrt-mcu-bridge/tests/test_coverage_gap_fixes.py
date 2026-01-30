@@ -14,13 +14,13 @@ from unittest import mock
 import aiomqtt
 import tenacity
 from mcubridge import security, common, metrics, daemon
-import mcubridge.protocol.topics as topics
-import mcubridge.transport.mqtt as mqtt
-import mcubridge.state.status as status
-import mcubridge.services.dispatcher as dispatcher
-import mcubridge.state.context as context
-import mcubridge.mqtt.spool as spool
-import mcubridge.services.handshake as handshake
+from mcubridge.protocol import topics
+from mcubridge.transport import mqtt
+from mcubridge.state import status
+from mcubridge.services import dispatcher
+from mcubridge.state import context
+from mcubridge.mqtt import spool
+from mcubridge.services import handshake
 from mcubridge.rpc.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
@@ -735,7 +735,7 @@ def test_settings_normalize_path_empty():
 
 def test_configure_logging_settings_dead_code():
     """Cover the dead configure_logging in settings.py."""
-    from mcubridge.config.settings import configure_logging as settings_log
+    from mcubridge.config.settings import configure_logging
 
     config = create_fake_config()
 
@@ -747,7 +747,7 @@ def test_configure_logging_settings_dead_code():
         patch("mcubridge.config.settings.os.path.exists", return_value=True),
         patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog),
     ):
-        settings_log(config)
+        configure_logging(config)
 
     # Case: Syslog OSError
     with (
@@ -755,12 +755,12 @@ def test_configure_logging_settings_dead_code():
         patch("mcubridge.config.settings.logging.handlers.SysLogHandler", side_effect=OSError("fail")),
         patch("sys.stderr.write") as mock_write,
     ):
-        settings_log(config)
+        configure_logging(config)
         assert mock_write.called
 
     # Case: No Syslog
     with patch("mcubridge.config.settings.os.path.exists", return_value=False):
-        settings_log(config)
+        configure_logging(config)
 
 
 def test_logging_gaps():

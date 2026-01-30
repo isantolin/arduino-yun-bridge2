@@ -200,6 +200,16 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 void BridgeClass::begin(
     unsigned long arg_baudrate, const char* arg_secret, size_t arg_secret_len) {
   
+  // [SIL-2] USB Serial Initialization Fix
+  // On ATmega32U4 (Yun/Leonardo), Serial is USB CDC and acts as a Stream,
+  // bypassing the _hardware_serial check below. We must explicitly initialize it.
+  #if BRIDGE_USE_USB_SERIAL
+    Serial.begin(arg_baudrate);
+    // Optional: Wait for host to open the port, but with a timeout to avoid hanging if headless
+    // unsigned long timeout = millis();
+    // while (!Serial && (millis() - timeout < 3000)); 
+  #endif
+
   if (_hardware_serial != nullptr) {
       _hardware_serial->begin(arg_baudrate);
   }

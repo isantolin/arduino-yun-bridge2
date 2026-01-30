@@ -104,7 +104,9 @@ async def test_transport_run_handshake_fatal(sleep_spy: AsyncMock) -> None:
     m_p._connected_future.set_result(None)
 
     # Mock _connect_and_run to just call service.on_serial_connected
-    with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection", return_value=(MagicMock(), m_p)):
+    pth = "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection"
+    with patch(pth, return_value=(MagicMock(),
+                                  m_p)):
         with patch.object(transport, "_connect_and_run", new_callable=AsyncMock, wraps=transport._connect_and_run):
             with pytest.raises(SerialHandshakeFatal):
                 await transport.run()

@@ -247,11 +247,12 @@ void BridgeClass::begin(
   _tx_debug = {};
 #endif
 
-#ifndef BRIDGE_TEST_NO_GLOBALS
-  while (_state == BridgeState::Unsynchronized) {
-    process();
-  }
-#endif
+//#ifndef BRIDGE_TEST_NO_GLOBALS
+//  while (_state == BridgeState::Unsynchronized) {
+//    process();
+//  }
+//#endif
+
 }
 
 void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {

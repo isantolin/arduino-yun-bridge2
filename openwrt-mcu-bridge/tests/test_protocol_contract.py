@@ -109,8 +109,11 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
 
 
 def test_handshake_tag_reference_vector_matches_spec() -> None:
+    from mcubridge.security import derive_handshake_key
     secret = b"mcubridge-shared"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
-    expected = hmac.new(secret, nonce, hashlib.sha256).digest()[: protocol.HANDSHAKE_TAG_LENGTH]
+    # [MIL-SPEC] Test must use HKDF derived key to match runtime implementation
+    auth_key = derive_handshake_key(secret)
+    expected = hmac.new(auth_key, nonce, hashlib.sha256).digest()[: protocol.HANDSHAKE_TAG_LENGTH]
     computed = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     assert computed == expected

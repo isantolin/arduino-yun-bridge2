@@ -32,6 +32,7 @@ from ..protocol.topics import handshake_topic
 from ..rpc import protocol
 from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
 from ..security import (
+    derive_handshake_key,
     generate_nonce_with_counter,
     secure_zero,
     validate_nonce_counter,
@@ -524,7 +525,9 @@ class SerialHandshakeManager:
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
         if not secret:
             return b""
-        digest = hmac.new(secret, nonce, hashlib.sha256).digest()
+        # [MIL-SPEC] Use HKDF derived key for handshake authentication
+        auth_key = derive_handshake_key(secret)
+        digest = hmac.new(auth_key, nonce, hashlib.sha256).digest()
         return digest[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:

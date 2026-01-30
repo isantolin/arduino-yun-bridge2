@@ -958,12 +958,23 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
     memset(out_tag, 0, kHandshakeTagSize);
     return;
   }
+
+  // [MIL-SPEC] Use HKDF derived key for handshake authentication
+  uint8_t handshake_key[32];
+  rpc::security::hkdf_sha256(
+      _shared_secret.data(), _shared_secret.size(),
+      rpc::RPC_HANDSHAKE_HKDF_SALT, rpc::RPC_HANDSHAKE_HKDF_SALT_LEN,
+      rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN,
+      handshake_key, 32);
+
   SHA256 sha256;
   uint8_t digest[kSha256DigestSize];
-  sha256.resetHMAC(_shared_secret.data(), _shared_secret.size());
+  sha256.resetHMAC(handshake_key, 32);
   sha256.update(nonce, nonce_len);
-  sha256.finalizeHMAC(_shared_secret.data(), _shared_secret.size(), digest, kSha256DigestSize);
+  sha256.finalizeHMAC(handshake_key, 32, digest, kSha256DigestSize);
   memcpy(out_tag, digest, kHandshakeTagSize);
+  
+  rpc::security::secure_zero(handshake_key, 32);
   rpc::security::secure_zero(digest, kSha256DigestSize);
 }
 

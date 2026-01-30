@@ -20,9 +20,60 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+#include <SHA256.h>
 
 namespace rpc {
 namespace security {
+
+/**
+ * @brief HKDF-SHA256 Extract function (RFC 5869).
+ */
+inline void hkdf_sha256_extract(
+    const uint8_t* salt, size_t salt_len,
+    const uint8_t* ikm, size_t ikm_len,
+    uint8_t* out_prk) {
+  SHA256 sha256;
+  sha256.resetHMAC(salt, salt_len);
+  sha256.update(ikm, ikm_len);
+  sha256.finalizeHMAC(salt, salt_len, out_prk, 32);
+}
+
+/**
+ * @brief HKDF-SHA256 Expand function (RFC 5869).
+ * Currently supports output length <= 32 bytes (one block).
+ */
+inline void hkdf_sha256_expand(
+    const uint8_t* prk, size_t prk_len,
+    const uint8_t* info, size_t info_len,
+    uint8_t* out_okm, size_t okm_len) {
+  if (okm_len > 32) return; // Simple implementation for handshake needs
+  
+  SHA256 sha256;
+  sha256.resetHMAC(prk, prk_len);
+  if (info && info_len > 0) {
+    sha256.update(info, info_len);
+  }
+  uint8_t counter = 1;
+  sha256.update(&counter, 1);
+  uint8_t full_okm[32];
+  sha256.finalizeHMAC(prk, prk_len, full_okm, 32);
+  memcpy(out_okm, full_okm, okm_len);
+}
+
+/**
+ * @brief Derive a key using HKDF-SHA256.
+ */
+inline void hkdf_sha256(
+    const uint8_t* ikm, size_t ikm_len,
+    const uint8_t* salt, size_t salt_len,
+    const uint8_t* info, size_t info_len,
+    uint8_t* out_okm, size_t okm_len) {
+  uint8_t prk[32];
+  hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk);
+  hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len);
+  secure_zero(prk, 32);
+}
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.

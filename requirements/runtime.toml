@@ -62,3 +62,9 @@ name = "tenacity"
 openwrt = "python3-tenacity"
 pip = "tenacity==9.1.2"
 rationale = "Declarative retrying library for robust task supervision and handshake"
+
+[[dependency]]
+name = "uvloop"
+openwrt = "python3-uvloop"
+pip = "uvloop"
+rationale = "Ultra-fast asyncio event loop implementation (libuv)"

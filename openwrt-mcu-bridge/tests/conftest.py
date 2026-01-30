@@ -41,6 +41,15 @@ from mcubridge.rpc.protocol import (
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
+@pytest.fixture(scope="session", autouse=True)
+def enable_uvloop_if_available():
+    """Enable uvloop event loop policy for the entire test session."""
+    import uvloop
+    import asyncio
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    print("NOTICE: uvloop installed and enabled for tests.")
+
+
 @pytest.fixture(autouse=True)
 def logging_mock_level_fix():
     """Ensure all handlers have a numeric level to avoid comparisons with MagicMock."""

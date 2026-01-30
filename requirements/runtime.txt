@@ -7,3 +7,4 @@ prometheus-client==0.23.1
 psutil==7.2.1
 pyserial-asyncio-fast==0.16
 tenacity==9.1.2
+uvloop

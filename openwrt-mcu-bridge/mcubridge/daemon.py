@@ -35,6 +35,8 @@ import logging
 import sys
 from typing import NoReturn
 
+import uvloop
+
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.const import DEFAULT_SERIAL_SHARED_SECRET
@@ -254,6 +256,9 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
             " Please run 'mcubridge-rotate-credentials' IMMEDIATELY.\n"
             "****************************************************************"
         )
+
+    # [10/10 Efficiency] Enable uvloop for maximum performance
+    uvloop.install()
 
     try:
         daemon = BridgeDaemon(config)

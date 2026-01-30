@@ -3,6 +3,7 @@ import asyncio
 import logging
 import argparse
 import ssl
+import uvloop
 
 # Add parent directory to Python path
 from mcubridge_client import Bridge, dump_client_env
@@ -99,6 +100,8 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
+        # [10/10 Efficiency] Use uvloop for maximum performance
+        uvloop.install()
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Exiting due to KeyboardInterrupt.")

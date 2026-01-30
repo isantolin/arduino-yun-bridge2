@@ -278,7 +278,6 @@ class BridgeClass {
 
   void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
-  bool _sendFrameImmediate(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _requiresAck(uint16_t command_id) const;
   void _retransmitLastFrame();
   void _processAckTimeout();
@@ -291,8 +290,6 @@ class BridgeClass {
 
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
-  bool _enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length);
-  bool _dequeuePendingTx(PendingTxFrame& frame);
   void _clearAckState();
 };
 

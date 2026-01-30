@@ -33,10 +33,6 @@ class TestAccessor {
   uint16_t getLastCommandId() const { return _bridge._last_command_id; }
 
   // --- Methods ---
-  bool sendControlFrame(uint16_t command_id) {
-    return _bridge._sendFrameImmediate(command_id, nullptr, 0);
-  }
-
   void retransmitLastFrame() {
     _bridge._retransmitLastFrame();
   }

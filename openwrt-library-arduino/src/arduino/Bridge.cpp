@@ -811,32 +811,27 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   const bool critical = _requiresAck(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED);
 
   // [SIL-2] State-Driven Sending Logic
-  if (!critical) {
-    return _sendFrameImmediate(final_cmd, final_payload, final_len);
-  }
-
-  // Critical frames logic
-  if (_state == BridgeState::AwaitingAck) {
+  if (critical && _state == BridgeState::AwaitingAck) {
     // Already waiting? Queue it.
-    if (_enqueuePendingTx(final_cmd, final_payload, final_len)) return true;
-    
-    // Queue full? Try to process timeout to free space (Emergency Valve)
-    _processAckTimeout();
-    if (_state != BridgeState::AwaitingAck && _enqueuePendingTx(final_cmd, final_payload, final_len)) {
-        return true;
+    if (_pending_tx_queue.full() || final_len > rpc::MAX_PAYLOAD_SIZE) {
+      // Queue full? Try to process timeout to free space (Emergency Valve)
+      _processAckTimeout();
+      if (_state == BridgeState::AwaitingAck || _pending_tx_queue.full()) return false;
     }
-    return false; // Dropped
+    
+    // Inlined _enqueuePendingTx
+    PendingTxFrame frame;
+    frame.command_id = final_cmd;
+    frame.payload_length = static_cast<uint16_t>(final_len);
+    if (final_len > 0 && final_payload) memcpy(frame.payload.data(), final_payload, final_len);
+    _pending_tx_queue.push(frame);
+    return true;
   }
 
-  // Idle -> Send & Transition
-  return _sendFrameImmediate(final_cmd, final_payload, final_len);
-}
-
-bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
-                                      const uint8_t* arg_payload, size_t arg_length) {
+  // Inlined _sendFrameImmediate
   rpc::FrameBuilder builder;
   _last_raw_frame.resize(_last_raw_frame.capacity());
-  size_t raw_len = builder.build(_last_raw_frame.data(), _last_raw_frame.size(), command_id, arg_payload, arg_length);
+  size_t raw_len = builder.build(_last_raw_frame.data(), _last_raw_frame.size(), final_cmd, final_payload, final_len);
   if (raw_len == 0) {
     _last_raw_frame.clear();
     return false;
@@ -845,11 +840,11 @@ bool BridgeClass::_sendFrameImmediate(uint16_t command_id,
   _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
   flushStream();
 
-  if (_requiresAck(command_id)) {
+  if (critical) {
     _state = BridgeState::AwaitingAck;
     _retry_count = 0;
     _last_send_millis = millis();
-    _last_command_id = command_id;
+    _last_command_id = final_cmd;
   }
   return true;
 }
@@ -940,27 +935,26 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 void BridgeClass::_flushPendingTxQueue() {
   if (_state == BridgeState::AwaitingAck || _pending_tx_queue.empty()) return;
   const PendingTxFrame& frame = _pending_tx_queue.front();
-  if (_sendFrameImmediate(frame.command_id, frame.payload.data(), frame.payload_length)) _pending_tx_queue.pop();
+
+  rpc::FrameBuilder builder;
+  _last_raw_frame.resize(_last_raw_frame.capacity());
+  size_t raw_len = builder.build(_last_raw_frame.data(), _last_raw_frame.size(), frame.command_id, frame.payload.data(), frame.payload_length);
+  if (raw_len > 0) {
+    _last_raw_frame.resize(raw_len);
+    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
+    flushStream();
+
+    _state = BridgeState::AwaitingAck;
+    _retry_count = 0;
+    _last_send_millis = millis();
+    _last_command_id = frame.command_id;
+    _pending_tx_queue.pop();
+  } else {
+    _last_raw_frame.clear();
+  }
 }
 
 void BridgeClass::_clearPendingTxQueue() { while (!_pending_tx_queue.empty()) _pending_tx_queue.pop(); }
-
-bool BridgeClass::_enqueuePendingTx(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
-  if (_pending_tx_queue.full() || arg_length > rpc::MAX_PAYLOAD_SIZE) return false;
-  PendingTxFrame frame;
-  frame.command_id = command_id;
-  frame.payload_length = static_cast<uint16_t>(arg_length);
-  if (arg_length > 0 && arg_payload) memcpy(frame.payload.data(), arg_payload, arg_length);
-  _pending_tx_queue.push(frame);
-  return true;
-}
-
-bool BridgeClass::_dequeuePendingTx(PendingTxFrame& frame) {
-  if (_pending_tx_queue.empty()) return false;
-  frame = _pending_tx_queue.front();
-  _pending_tx_queue.pop();
-  return true;
-}
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret.empty() || nonce_len == 0 || !nonce) {

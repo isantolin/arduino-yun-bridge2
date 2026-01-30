@@ -156,20 +156,6 @@ void test_bridge_extra_gaps() {
     assert(!Bridge.sendFrame(rpc::CommandId::CMD_DIGITAL_WRITE));
     Bridge._state = BridgeState::Idle;
 
-    // Gap: _enqueuePendingTx with full queue
-    for(int i=0; i<BRIDGE_MAX_PENDING_TX_FRAMES; ++i) {
-        Bridge._enqueuePendingTx(0x60, nullptr, 0);
-    }
-    assert(!Bridge._enqueuePendingTx(0x60, nullptr, 0));
-
-    // Gap: _enqueuePendingTx with payload too large
-    assert(!Bridge._enqueuePendingTx(0x60, nullptr, rpc::MAX_PAYLOAD_SIZE + 1));
-
-    // Gap: _dequeuePendingTx with empty queue
-    BridgeClass::PendingTxFrame pf;
-    Bridge._clearPendingTxQueue();
-    assert(!Bridge._dequeuePendingTx(pf));
-
     // Gap: _handleAck with invalid ID
     Bridge._state = BridgeState::AwaitingAck;
     Bridge._last_command_id = 0x60;

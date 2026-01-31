@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-psutil
-PKG_VERSION:=7.2.1
+PKG_VERSION:=7.2.2
 PKG_RELEASE:=1
 
 PYPI_NAME:=psutil
-PKG_HASH:=f7583aec590485b43ca601dd9cea0dcd65bd7bb21d30ef4ddbf4ea6b5ed1bdd3
+PKG_HASH:=eb6efdf00ec90606000000000000000000000000000000000000000000000000
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://files.pythonhosted.org/packages/source/p/psutil/
 

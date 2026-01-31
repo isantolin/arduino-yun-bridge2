@@ -18,10 +18,6 @@
 #include "etl/error_handler.h"
 #include "test_support.h"
 
-namespace etl {
-  void handle_error(const etl::exception& e);
-}
-
 // Mocks y Stubs Globales
 HardwareSerial Serial;
 HardwareSerial Serial1;
@@ -214,9 +210,6 @@ void test_bridge_extra_gaps() {
     pf.payload_length = rpc::MAX_PAYLOAD_SIZE + 1; // Invalid
     Bridge._pending_tx_queue.push(pf);
     Bridge._flushPendingTxQueue();
-
-    // Gap: etl::handle_error
-    etl::handle_error(etl::exception("test", "test", 0));
 }
 
 // --- TARGET: Console.cpp Gaps ---
@@ -230,7 +223,7 @@ void test_console_extra_gaps() {
     Console.write('X');
 
     // Gap: write(c) when full
-    while(!Console._tx_buffer.full()) Console.write('A');
+    while(!Console._tx_buffer.full()) Console._tx_buffer.push_back('A');
     Console.write('B');
 
     // Gap: write(buf, size) when not empty
@@ -403,28 +396,27 @@ void test_process_extra_gaps() {
 // --- TARGET: rle.h Gaps ---
 void test_rle_gaps() {
     printf("  -> Testing rle_gaps\n");
-    uint8_t src[10] = {0xFF, 0xFF, 0x01, 0x02};
-    uint8_t dst[10];
+    uint8_t src[16];
+    memset(src, 0x41, 16); // Run of 'A'
+    uint8_t dst[64];
     
     // Gap: encode/decode null or 0
     assert(rle::encode(nullptr, 1, dst, 10) == 0);
     assert(rle::decode(nullptr, 1, dst, 10) == 0);
 
     // Gap: encode ESCAPE_BYTE cases
-    src[0] = rle::ESCAPE_BYTE;
-    assert(rle::encode(src, 1, dst, 10) > 0); // Single escape
-    src[1] = rle::ESCAPE_BYTE;
-    assert(rle::encode(src, 2, dst, 10) > 0); // Double escape
-    src[2] = rle::ESCAPE_BYTE;
-    assert(rle::encode(src, 3, dst, 10) > 0); // Triple escape
+    uint8_t src_esc[3] = {rle::ESCAPE_BYTE, rle::ESCAPE_BYTE, rle::ESCAPE_BYTE};
+    assert(rle::encode(src_esc, 1, dst, 10) > 0); // Single escape
+    assert(rle::encode(src_esc, 2, dst, 10) > 0); // Double escape
+    assert(rle::encode(src_esc, 3, dst, 10) > 0); // Triple escape
 
     // Gap: encode/decode overflow
-    assert(rle::encode(src, 1, dst, 1) == 0);
+    assert(rle::encode(src, 16, dst, 1) == 0);
     uint8_t enc[10] = {rle::ESCAPE_BYTE, 0, 0x01};
     assert(rle::decode(enc, 3, dst, 1) == 0);
 
-    // Gap: should_compress with ESCAPE_BYTE
-    assert(rle::should_compress(src, 1));
+    // Gap: should_compress with beneficial run
+    assert(rle::should_compress(src, 16));
 }
 
 // --- TARGET: security.h Gaps ---

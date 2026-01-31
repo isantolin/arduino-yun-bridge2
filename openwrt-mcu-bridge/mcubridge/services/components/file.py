@@ -428,7 +428,12 @@ class FileComponent:
                 )
                 return False, None, "storage_quota_exceeded"
 
-            await asyncio.to_thread(self._write_file_sync, path, data)
+            try:
+                await asyncio.to_thread(self._write_file_sync, path, data)
+            except OSError as exc:
+                logger.error("Failed to write file %s: %s", path, exc)
+                return False, None, str(exc)
+
             self.state.file_storage_bytes_used = projected_usage
             logger.info("Wrote %d bytes to %s", payload_size, path)
             return True, None, "ok"
@@ -439,7 +444,12 @@ class FileComponent:
     ) -> tuple[bool, bytes | None, str | None]:
         async with self._storage_lock:
             removed_bytes = self._existing_file_size(path)
-            await asyncio.to_thread(path.unlink)
+            try:
+                await asyncio.to_thread(path.unlink)
+            except OSError as exc:
+                logger.error("Failed to remove file %s: %s", path, exc)
+                return False, None, str(exc)
+
             self._decrement_storage_usage(removed_bytes)
             logger.info("Removed file %s", path)
             return True, None, "ok"

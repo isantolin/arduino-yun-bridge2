@@ -13,7 +13,7 @@ import tenacity
 from asyncio.subprocess import Process
 from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
-from typing import Any, Deque, Final, cast
+from typing import Any, Deque, Final
 from collections.abc import Mapping
 
 from aiomqtt.message import Message
@@ -288,6 +288,38 @@ def _spool_wait_strategy_factory() -> Any:
         min=SPOOL_BACKOFF_MIN_SECONDS,
         max=SPOOL_BACKOFF_MAX_SECONDS,
     )
+
+
+def _mqtt_publish_queue_factory() -> asyncio.Queue[QueuedPublish]:
+    return asyncio.Queue()
+
+
+def _mqtt_drop_counts_factory() -> dict[str, int]:
+    return {}
+
+
+def _last_spool_snapshot_factory() -> SpoolSnapshot:
+    return {}
+
+
+def _datastore_factory() -> dict[str, str]:
+    return {}
+
+
+def _running_processes_factory() -> dict[int, ManagedProcess]:
+    return {}
+
+
+def _pending_pin_reads_factory() -> collections.deque[PendingPinRequest]:
+    return collections.deque()
+
+
+def _mcu_status_counters_factory() -> dict[str, int]:
+    return {}
+
+
+def _supervisor_stats_factory() -> dict[str, SupervisorStats]:
+    return {}
 
 
 def _serial_tx_allowed_factory() -> asyncio.Event:

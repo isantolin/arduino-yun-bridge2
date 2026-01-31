@@ -231,4 +231,3 @@ async def test_mqtt_publisher_loop_error_handling():
     # Clean up any remaining leaked coros (like the subscriber one)
     for c in captured_coros:
         c.close()
-

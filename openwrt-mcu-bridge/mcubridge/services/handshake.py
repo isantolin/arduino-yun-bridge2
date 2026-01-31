@@ -340,9 +340,10 @@ class SerialHandshakeManager:
 
         return False
 
-    def handle_capabilities_resp(self, payload: bytes) -> None:
+    async def handle_capabilities_resp(self, payload: bytes) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():
             self._capabilities_future.set_result(payload)
+        return True
 
     def _parse_capabilities(self, payload: bytes) -> None:
         if len(payload) < 8:

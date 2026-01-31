@@ -8,50 +8,11 @@ import pytest
 mock_serial_fast = MagicMock()
 sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.runtime import BridgeService
-from mcubridge.services.handshake import SerialHandshakeFatal
-from mcubridge.state.context import create_runtime_state
-from mcubridge.transport import serial_fast
-
-
-@pytest.fixture
-def sleep_spy():
-    with patch("asyncio.sleep", new_callable=AsyncMock) as m:
-        yield m
-
-
-from unittest.mock import patch
-
-
-@pytest.mark.asyncio
-async def test_negotiate_baudrate_success() -> None:
-    _mock_proto = MagicMock()
-    _mock_proto.connected_future = asyncio.get_running_loop().create_future()
-    _mock_proto.connected_future.set_result(None)
-
-    with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection", new_callable=AsyncMock) as mock_create:
-        mock_create.return_value = (MagicMock(), _mock_proto)
-
-        config = _make_config()
-        state = create_runtime_state(config)
-        service = BridgeService(config, state)
-
-        transport = serial_fast.SerialTransport(config, state, service)
-        proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
-
-        # Mock write_frame to simulate sending request
-        proto.write_frame = MagicMock(return_value=True)  # type: ignore
-
-        task = asyncio.create_task(transport._negotiate_baudrate(proto, 115200))
-        await asyncio.sleep(0)  # Let task start
-
-        # Simulate receiving response
-        assert proto.negotiation_future is not None
-        proto.negotiation_future.set_result(True)
-
-        ok = await task
-        assert ok is True
+from mcubridge.config.settings import RuntimeConfig  # noqa: E402
+from mcubridge.services.runtime import BridgeService  # noqa: E402
+from mcubridge.services.handshake import SerialHandshakeFatal  # noqa: E402
+from mcubridge.state.context import create_runtime_state  # noqa: E402
+from mcubridge.transport import serial_fast  # noqa: E402
 
 
 def _make_config() -> RuntimeConfig:
@@ -75,13 +36,54 @@ def _make_config() -> RuntimeConfig:
     )
 
 
+@pytest.fixture
+def sleep_spy():
+    with patch("asyncio.sleep", new_callable=AsyncMock) as m:
+        yield m
+
+
+from unittest.mock import patch  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_negotiate_baudrate_success() -> None:
+    _mock_proto = MagicMock()
+    _mock_proto.connected_future = asyncio.get_running_loop().create_future()
+    _mock_proto.connected_future.set_result(None)
+
+    patch_path = "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_create:
+        mock_create.return_value = (MagicMock(), _mock_proto)
+
+        config = _make_config()
+        state = create_runtime_state(config)
+        service = BridgeService(config, state)
+
+        transport = serial_fast.SerialTransport(config, state, service)
+        proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+
+        # Mock write_frame to simulate sending request
+        proto.write_frame = MagicMock(return_value=True)  # type: ignore
+
+        task = asyncio.create_task(transport._negotiate_baudrate(proto, 115200))
+        await asyncio.sleep(0)  # Let task start
+
+        # Simulate receiving response
+        assert proto.negotiation_future is not None
+        proto.negotiation_future.set_result(True)
+
+        ok = await task
+        assert ok is True
+
+
 @pytest.mark.asyncio
 async def test_negotiate_baudrate_timeout(sleep_spy) -> None:
     _mock_proto = MagicMock()
     _mock_proto.connected_future = asyncio.get_running_loop().create_future()
     _mock_proto.connected_future.set_result(None)
 
-    with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection", new_callable=AsyncMock) as mock_create:
+    patch_path = "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_create:
         mock_create.return_value = (MagicMock(), _mock_proto)
 
         config = _make_config()
@@ -100,7 +102,6 @@ async def test_negotiate_baudrate_timeout(sleep_spy) -> None:
         assert sleep_spy.call_count >= 2
 
 
-
 @pytest.mark.asyncio
 async def test_transport_run_handshake_fatal() -> None:
     _mock_proto = MagicMock()
@@ -108,7 +109,8 @@ async def test_transport_run_handshake_fatal() -> None:
     _mock_proto.connected_future.set_result(None)
 
     # Patch create_serial_connection where it is used in serial_fast
-    with patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection", new_callable=AsyncMock) as mock_create:
+    patch_path = "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection"
+    with patch(patch_path, new_callable=AsyncMock) as mock_create:
         mock_create.return_value = (MagicMock(), _mock_proto)
 
         config = _make_config()

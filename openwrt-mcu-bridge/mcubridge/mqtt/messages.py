@@ -6,7 +6,7 @@ import base64
 from dataclasses import dataclass
 from enum import IntEnum
 from collections.abc import Iterable
-from typing import Any, Self, TypeGuard, TypedDict
+from typing import Any, Self, TypedDict
 
 
 class SpoolRecord(TypedDict, total=False):
@@ -42,10 +42,11 @@ def _normalize_user_properties(
         return ()
 
     normalized: list[UserProperty] = []
+    entry: Any
     for entry in raw:
         if not (isinstance(entry, Iterable) and not isinstance(entry, (bytes, str))):
             continue
-        entry_seq = list(entry)
+        entry_seq: list[Any] = list(entry)
         if len(entry_seq) < 2:
             continue
         normalized.append((str(entry_seq[0]), str(entry_seq[1])))

@@ -93,7 +93,7 @@ constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
 #ifdef BRIDGE_FIRMWARE_VERSION_MINOR
 constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
 #else
-constexpr uint8_t kDefaultFirmwareVersionMinor = 0;
+constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #endif
 
 // --- Subsystem Enablement (RAM Optimization) ---

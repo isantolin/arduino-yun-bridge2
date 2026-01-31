@@ -170,7 +170,7 @@ async def _bridge_snapshot_loop(
     enqueue: PublishEnqueue,
     *,
     flavor: str,
-    seconds: int,
+    seconds: int | float,
 ) -> None:
     # Initial emit
     try:

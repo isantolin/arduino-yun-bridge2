@@ -22,7 +22,6 @@ import serial_asyncio_fast  # type: ignore
 from mcubridge.common import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
-from mcubridge.rpc.protocol import FRAME_DELIMITER, Command
 from mcubridge.rpc import protocol
 from mcubridge.rpc.frame import Frame
 from mcubridge.services.runtime import BridgeService
@@ -56,7 +55,7 @@ def _is_binary_packet(candidate: object) -> TypeGuard[BinaryPacket]:
 def _encode_frame_bytes(command_id: int, payload: bytes) -> bytes:
     """Encapsulate frame creation and COBS encoding."""
     raw_frame = Frame.build(command_id, payload)
-    return cobs.encode(raw_frame) + FRAME_DELIMITER
+    return cobs.encode(raw_frame) + protocol.FRAME_DELIMITER
 
 
 async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
@@ -104,13 +103,13 @@ class BridgeSerialProtocol(asyncio.Protocol):
     def data_received(self, data: bytes) -> None:
         """Handle incoming data with zero-copy splicing where possible."""
         # Fast path: if no buffer and data contains full packets
-        if not self._buffer and not self._discarding and FRAME_DELIMITER in data:
+        if not self._buffer and not self._discarding and protocol.FRAME_DELIMITER in data:
             self._process_chunk_fast(data)
             return
 
         # Slow path: accumulation
         for byte_val in data:
-            if byte_val == 0x00:  # FRAME_DELIMITER
+            if byte_val == 0x00:  # protocol.FRAME_DELIMITER
                 if self._discarding:
                     self._discarding = False
                     self._buffer.clear()
@@ -135,7 +134,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         start = 0
         while True:
             try:
-                end = data.index(FRAME_DELIMITER, start)
+                end = data.index(protocol.FRAME_DELIMITER, start)
                 packet = data[start:end]
                 if packet:
                     self._process_packet(packet)
@@ -152,7 +151,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
             try:
                 raw_frame = cobs.decode(encoded_packet)
                 frame = Frame.from_bytes(raw_frame)
-                if frame.command_id == Command.CMD_SET_BAUDRATE_RESP:
+                if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP:
                     self.negotiation_future.set_result(True)
                     return
             except (cobs.DecodeError, ValueError):
@@ -182,6 +181,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         except (cobs.DecodeError, ValueError, msgspec.ValidationError) as exc:
             self.state.record_serial_decode_error()
             logger.debug("Frame parse error: %s", exc)
+            log_hexdump(logger, logging.DEBUG, "Corrupt Packet", encoded_packet)
             if "crc mismatch" in str(exc).lower():
                 self.state.record_serial_crc_error()
         except OSError as exc:
@@ -190,7 +190,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
 
     def _log_frame(self, frame: Frame, direction: str) -> None:
         try:
-            cmd_name = Command(frame.command_id).name
+            cmd_name = protocol.Command(frame.command_id).name
         except ValueError:
             cmd_name = f"0x{frame.command_id:02X}"
 
@@ -209,7 +209,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
 
             if logger.isEnabledFor(logging.DEBUG):
                 try:
-                    cmd_name = Command(command_id).name
+                    cmd_name = protocol.Command(command_id).name
                 except ValueError:
                     cmd_name = f"0x{command_id:02X}"
                 if payload:
@@ -340,7 +340,7 @@ class SerialTransport:
             async for attempt in retryer:
                 with attempt:
                     proto.negotiation_future = proto.loop.create_future()
-                    if not proto.write_frame(Command.CMD_SET_BAUDRATE, payload):
+                    if not proto.write_frame(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                         proto.negotiation_future = None
                         raise asyncio.TimeoutError("Write failed")
 

@@ -17,7 +17,7 @@ from mcubridge.const import (
 )
 from mcubridge.rpc.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS
 from mcubridge.rpc.contracts import (
-    expected_responses as rpc_expected_responses,
+    expected_responses,
     response_to_request,
 )
 from mcubridge.rpc.protocol import Status
@@ -150,7 +150,7 @@ class SerialFlowController:
 
         pending = PendingCommand(
             command_id=command_id,
-            expected_responses=set(rpc_expected_responses(command_id)),
+            expected_responses=set(expected_responses(command_id)),
         )
 
         async with self._condition:
@@ -250,7 +250,7 @@ class SerialFlowController:
             pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:
-        return bool(rpc_expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
+        return bool(expected_responses(command_id)) or command_id in ACK_ONLY_COMMANDS
 
     async def _execute_with_retries(
         self,

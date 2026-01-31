@@ -43,7 +43,9 @@ def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
         if getattr(config, "mqtt_tls_insecure", False):
             context.check_hostname = False
 
-        if config.mqtt_certfile and config.mqtt_keyfile:
+        if config.mqtt_certfile or config.mqtt_keyfile:
+            if not (config.mqtt_certfile and config.mqtt_keyfile):
+                raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
             context.load_cert_chain(config.mqtt_certfile, config.mqtt_keyfile)
 
         return context

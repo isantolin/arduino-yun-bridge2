@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "openwrt-mcu-bridge"
-version = "2.5.0"
+version = "2.5.1"
 description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
 requires-python = ">=3.13"
 dependencies = [
-    # pyserial removed: replaced by built-in termios (mcubridge.transport.termios_serial)
+    # Using high-performance pyserial-asyncio-fast for zero-overhead serial I/O
     "paho-mqtt==2.1.0",      # STRICT: Required for CallbackAPIVersion.VERSION2
     "aiomqtt==2.5.0",        # STRICT: Python 3.13 compatible, validated against paho 2.1.0
     "cobs>=1.2.2",

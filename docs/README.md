@@ -194,8 +194,6 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad, observabilidad y el contrato del protocolo? Revisa [`PROTOCOL.md`](PROTOCOL.md) para obtener el documento actualizado.
 
 > **Nota:** Todas las dependencias del daemon se compilan localmente como APKs en `feeds/` y se instalan desde `bin/` durante `3_install.sh`. Las librerías Python (`aiomqtt`, `paho-mqtt`, `cobs`, `prometheus-client`, `psutil`) tienen sus propios Makefiles en el feed `mcubridge`. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt` y refrescar los Makefiles.
->
-> **✅ Nota sobre pyserial:** La dependencia `pyserial` ha sido reemplazada por una implementación pura basada en `termios` (módulo built-in de Python). Esto elimina la dependencia externa y evita posibles incompatibilidades con futuras versiones de Python. Ver `mcubridge/transport/termios_serial.py`.
 
 ## Primeros Pasos
 

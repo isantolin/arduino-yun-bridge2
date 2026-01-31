@@ -44,7 +44,7 @@ class PendingCommand:
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_responses: set[int] = field(default_factory=_empty_int_set)
+    expected_resp_ids: set[int] = field(default_factory=_empty_int_set)
     completion: asyncio.Event = field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None
@@ -150,7 +150,7 @@ class SerialFlowController:
 
         pending = PendingCommand(
             command_id=command_id,
-            expected_responses=set(expected_responses(command_id)),
+            expected_resp_ids=set(expected_responses(command_id)),
         )
 
         async with self._condition:
@@ -206,7 +206,7 @@ class SerialFlowController:
             if not pending.ack_received:
                 pending.ack_received = True
                 self._notify_pipeline("ack", pending)
-            if pending.expected_responses:
+            if pending.expected_resp_ids:
                 return
             pending.mark_success()
             return
@@ -246,7 +246,7 @@ class SerialFlowController:
             pending.mark_failure(command_id)
             return
 
-        if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_responses:
+        if command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
             pending.mark_success()
 
     def _should_track(self, command_id: int) -> bool:

@@ -133,7 +133,7 @@ async def test_file_component_gaps(runtime_state: RuntimeState, real_config):
     with patch("pathlib.Path.exists", return_value=True), \
          patch("pathlib.Path.is_dir", return_value=False):
         assert comp._get_base_dir() is None
-    comp.config.file_write_max_bytes = 10
+    runtime_state.file_write_max_bytes = 10
     res = await comp._write_with_quota(Path("/tmp/f"), b"a" * 20)
     assert res[0] is False
     with patch("pathlib.Path.open", side_effect=OSError()):

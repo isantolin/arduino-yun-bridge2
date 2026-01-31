@@ -126,9 +126,11 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 0;
   #endif
 #endif
 
+#if defined(BRIDGE_HOST_TEST)
 namespace bridge {
 namespace test { class TestAccessor; }
 }
+#endif
 
 // [SIL-2] Finite State Machine (Deterministic State)
 enum class BridgeState : uint8_t {
@@ -151,7 +153,9 @@ class BridgeClass {
   #if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
   #endif
+  #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::TestAccessor;
+  #endif
  public:
   // Callbacks
   using CommandHandler = void (*)(const rpc::Frame&);

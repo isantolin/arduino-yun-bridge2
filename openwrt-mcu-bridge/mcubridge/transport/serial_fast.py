@@ -181,7 +181,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         except (cobs.DecodeError, ValueError, msgspec.ValidationError) as exc:
             self.state.record_serial_decode_error()
             logger.debug("Frame parse error: %s", exc)
-            log_hexdump(logger, logging.DEBUG, "Corrupt Packet", encoded_packet)
+            log_hexdump(logger, logging.DEBUG, "Corrupt Packet", bytes(encoded_packet))
             if "crc mismatch" in str(exc).lower():
                 self.state.record_serial_crc_error()
         except OSError as exc:

@@ -8,3 +8,4 @@ psutil==7.2.1
 pyserial-asyncio-fast==0.16
 tenacity==9.1.2
 uvloop==0.22.1
+cryptography==46.0.2

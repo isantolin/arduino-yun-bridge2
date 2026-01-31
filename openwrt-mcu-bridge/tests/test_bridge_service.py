@@ -170,7 +170,10 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
             if command_id == Command.CMD_LINK_RESET.value:
                 if payload:
-                    flow.on_frame_received(Status.MALFORMED.value, b"")
+                    # Enqueue status handling to simulate MCU processing
+                    asyncio.get_running_loop().call_soon(
+                        flow.on_frame_received, Status.MALFORMED.value, b""
+                    )
                 else:
                     asyncio.create_task(
                         service.handle_mcu_frame(
@@ -179,11 +182,17 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                         )
                     )
             elif command_id == Command.CMD_LINK_SYNC.value:
-                nonce = service.state.link_handshake_nonce or b""
+                # Capture current nonce to ensure response matches what daemon expects
+                nonce = bytes(payload)
                 tag = service.compute_handshake_tag(nonce)
                 response = nonce + tag
-                # ACK first
-                flow.on_frame_received(Status.ACK.value, struct.pack(protocol.UINT16_FORMAT, command_id))
+
+                # First, simulate the synchronous ACK from MCU
+                asyncio.get_running_loop().call_soon(
+                    flow.on_frame_received, Status.ACK.value, struct.pack(protocol.UINT16_FORMAT, command_id)
+                )
+
+                # Then, schedule the actual SYNC response
                 asyncio.create_task(
                     service.handle_mcu_frame(
                         Command.CMD_LINK_SYNC_RESP.value,

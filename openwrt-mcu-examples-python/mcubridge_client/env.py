@@ -12,10 +12,7 @@ from collections.abc import Iterable
 
 
 def _read_uci_general() -> dict[str, str]:
-    try:
-        from uci import Uci  # type: ignore
-    except ImportError:
-        return {}
+    from uci import Uci  # type: ignore
 
     try:
         with Uci() as cursor:

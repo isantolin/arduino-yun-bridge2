@@ -843,13 +843,9 @@ def test_security_gaps():
     res, _ = security.validate_nonce_counter(nonce, 11)
     assert res is False
 
-    # hkdf_sha256_extract with empty salt
-    prk = security.hkdf_sha256_extract(b"", b"ikm")
-    assert len(prk) == 32
-
-    # hkdf_sha256_expand with length too long
-    with pytest.raises(ValueError, match="Requested KDF length too long"):
-        security.hkdf_sha256_expand(b"prk", b"info", 255 * 32 + 1)
+    # hkdf_sha256 roundtrip verification
+    okm = security.hkdf_sha256(b"ikm", b"salt", b"info", 32)
+    assert len(okm) == 32
 
     # verify_crypto_integrity failure branches (mocking hashlib/hmac)
     with mock.patch("hashlib.sha256") as mock_sha:

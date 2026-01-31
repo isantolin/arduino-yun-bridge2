@@ -19,6 +19,9 @@ import secrets
 import struct
 from typing import Final
 
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
 from .rpc.protocol import (
     HANDSHAKE_HKDF_INFO_AUTH,
     HANDSHAKE_HKDF_SALT,
@@ -31,31 +34,15 @@ NONCE_COUNTER_BYTES: Final[int] = 8
 NONCE_TOTAL_BYTES: Final[int] = NONCE_RANDOM_BYTES + NONCE_COUNTER_BYTES
 
 
-def hkdf_sha256_extract(salt: bytes, ikm: bytes) -> bytes:
-    """HKDF-Extract(salt, IKM) -> PRK (RFC 5869)."""
-    if not salt:
-        salt = bytes(32)
-    return hmac.new(salt, ikm, hashlib.sha256).digest()
-
-
-def hkdf_sha256_expand(prk: bytes, info: bytes, length: int) -> bytes:
-    """HKDF-Expand(PRK, info, L) -> OKM (RFC 5869)."""
-    hash_len = 32  # SHA256
-    if length > 255 * hash_len:
-        raise ValueError("Requested KDF length too long")
-
-    okm = b""
-    t = b""
-    for i in range(1, (length + hash_len - 1) // hash_len + 1):
-        t = hmac.new(prk, t + info + bytes([i]), hashlib.sha256).digest()
-        okm += t
-    return okm[:length]
-
-
 def hkdf_sha256(ikm: bytes, salt: bytes, info: bytes, length: int) -> bytes:
-    """Derive a key using HKDF-SHA256."""
-    prk = hkdf_sha256_extract(salt, ikm)
-    return hkdf_sha256_expand(prk, info, length)
+    """Derive a key using HKDF-SHA256 via native cryptography library."""
+    hkdf = HKDF(
+        algorithm=hashes.SHA256(),
+        length=length,
+        salt=salt,
+        info=info,
+    )
+    return hkdf.derive(ikm)
 
 
 def derive_handshake_key(shared_secret: bytes) -> bytes:

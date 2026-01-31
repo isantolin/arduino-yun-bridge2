@@ -378,12 +378,10 @@ def load_runtime_config() -> RuntimeConfig:
         # However, for 'decoding' from a dict, we use 'convert'.
         # strict=False allows "1" -> True, "123" -> 123
         config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
-        config.__post_init__()
         return config
     except (msgspec.ValidationError, TypeError, ValueError) as e:
         logger.critical("Configuration validation failed: %s", e)
         # For resilience, we return the default config object.
         logger.warning("Falling back to safe defaults due to validation error.")
         config = msgspec.convert(get_default_config(), RuntimeConfig, strict=False)
-        config.__post_init__()
         return config

@@ -12,9 +12,15 @@
 #include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rle.h"
+#include "protocol/security.h"
 #include "arduino/StringUtils.h"
-#include "test_constants.h"
+#include "etl/error_handler.h"
 #include "test_support.h"
+
+namespace etl {
+  void handle_error(const etl::exception& e);
+}
 
 // Mocks y Stubs Globales
 HardwareSerial Serial;
@@ -175,20 +181,42 @@ void test_bridge_extra_gaps() {
     Bridge.begin(115200, "mysecret");
     assert(Bridge._shared_secret.size() == 8);
 
+    // Gap: begin with secret > capacity
+    char long_secret[64];
+    memset(long_secret, 'S', 63);
+    long_secret[63] = '\0';
+    Bridge.begin(115200, long_secret);
+    assert(Bridge._shared_secret.size() == 32);
+
     // Gap: flushStream with hardware serial
     Bridge.flushStream(); // Bridge was initialized with Serial1
 
     // Gap: CMD_LINK_SYNC with response_length > MAX_PAYLOAD_SIZE
-    // We need to force response_length > 128. 
-    // response_length = nonce_length (16) + tag_size (32) = 48.
-    // To exceed 128, we would need a very large nonce or tag, but they are fixed.
-    // Wait, the code says: if (response_length > rpc::MAX_PAYLOAD_SIZE)
-    // In our spec MAX_PAYLOAD_SIZE is 128.
-    // If we can't trigger it with current constants, it's fine, but let's try to fake it.
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-    // Use a large payload length to trick the logic if possible
     f.header.payload_length = 120; // 120 + 32 > 128
     Bridge._handleSystemCommand(f);
+
+    // Gap: _isRecentDuplicateRx branches
+    Bridge._last_rx_crc = 0x1234;
+    Bridge._last_rx_crc_millis = millis();
+    f.crc = 0x1234;
+    assert(Bridge._isRecentDuplicateRx(f) == false); // elapsed < ack_timeout
+
+    // Gap: _sendFrame with Fault state
+    Bridge._state = BridgeState::Fault;
+    assert(!Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION));
+    Bridge._state = BridgeState::Idle;
+
+    // Gap: _flushPendingTxQueue raw_len == 0 (force error)
+    Bridge._pending_tx_queue.clear();
+    BridgeClass::PendingTxFrame pf;
+    pf.command_id = 0x40;
+    pf.payload_length = rpc::MAX_PAYLOAD_SIZE + 1; // Invalid
+    Bridge._pending_tx_queue.push(pf);
+    Bridge._flushPendingTxQueue();
+
+    // Gap: etl::handle_error
+    etl::handle_error(etl::exception("test", "test", 0));
 }
 
 // --- TARGET: Console.cpp Gaps ---
@@ -201,6 +229,15 @@ void test_console_extra_gaps() {
     // Gap: write(c)
     Console.write('X');
 
+    // Gap: write(c) when full
+    while(!Console._tx_buffer.full()) Console.write('A');
+    Console.write('B');
+
+    // Gap: write(buf, size) when not empty
+    Console._tx_buffer.clear();
+    Console.write('A');
+    Console.write((const uint8_t*)"hello", 5);
+
     // Gap: peek()
     Console._rx_buffer.push('P');
     assert(Console.peek() == 'P');
@@ -211,6 +248,19 @@ void test_console_extra_gaps() {
     // Gap: read() empty
     Console._rx_buffer.clear();
     assert(Console.read() == -1);
+
+    // Gap: flush() not begun
+    Console._begun = false;
+    Console.flush();
+    Console._begun = true;
+
+    // Gap: _push empty or 0 capacity
+    Console._push(nullptr, 0);
+    
+    // Gap: _push when full
+    while(!Console._rx_buffer.full()) Console._rx_buffer.push('Z');
+    uint8_t data = 'X';
+    Console._push(&data, 1);
 }
 
 // --- TARGET: DataStore.cpp Gaps ---
@@ -223,8 +273,17 @@ void test_datastore_extra_gaps() {
     DataStore.put(nullptr, "val");
     DataStore.put("key", nullptr);
 
+    // Gap: put with too long key
+    char long_key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 10];
+    memset(long_key, 'k', sizeof(long_key));
+    long_key[sizeof(long_key)-1] = '\0';
+    DataStore.put(long_key, "val");
+
     // Gap: requestGet with null key
     DataStore.requestGet(nullptr);
+
+    // Gap: requestGet with too long key
+    DataStore.requestGet(long_key);
 
     // Gap: handleResponse with other command
     rpc::Frame f;
@@ -246,6 +305,10 @@ void test_datastore_extra_gaps() {
     const char* key = DataStore._popPendingDatastoreKey();
     assert(key != nullptr);
     assert(strlen(key) == 0);
+
+    // Gap: _trackPendingDatastoreKey empty or too long
+    assert(!DataStore._trackPendingDatastoreKey(""));
+    assert(!DataStore._trackPendingDatastoreKey(long_key));
 }
 
 // --- TARGET: Mailbox.cpp Gaps ---
@@ -311,8 +374,8 @@ void test_process_extra_gaps() {
     rpc::write_u16_be(&f.payload[3], 0);
     Process.handleResponse(f);
 
-    // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP without handler
-    Process.onProcessRunAsyncResponse(nullptr);
+    // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
+    Process.onProcessRunAsyncResponse([](int16_t pid){ (void)pid; });
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
     f.header.payload_length = 2;
     rpc::write_u16_be(f.payload.data(), 123);
@@ -337,6 +400,42 @@ void test_process_extra_gaps() {
     assert(Process._popPendingProcessPid() == rpc::RPC_INVALID_ID_SENTINEL);
 }
 
+// --- TARGET: rle.h Gaps ---
+void test_rle_gaps() {
+    printf("  -> Testing rle_gaps\n");
+    uint8_t src[10] = {0xFF, 0xFF, 0x01, 0x02};
+    uint8_t dst[10];
+    
+    // Gap: encode/decode null or 0
+    assert(rle::encode(nullptr, 1, dst, 10) == 0);
+    assert(rle::decode(nullptr, 1, dst, 10) == 0);
+
+    // Gap: encode ESCAPE_BYTE cases
+    src[0] = rle::ESCAPE_BYTE;
+    assert(rle::encode(src, 1, dst, 10) > 0); // Single escape
+    src[1] = rle::ESCAPE_BYTE;
+    assert(rle::encode(src, 2, dst, 10) > 0); // Double escape
+    src[2] = rle::ESCAPE_BYTE;
+    assert(rle::encode(src, 3, dst, 10) > 0); // Triple escape
+
+    // Gap: encode/decode overflow
+    assert(rle::encode(src, 1, dst, 1) == 0);
+    uint8_t enc[10] = {rle::ESCAPE_BYTE, 0, 0x01};
+    assert(rle::decode(enc, 3, dst, 1) == 0);
+
+    // Gap: should_compress with ESCAPE_BYTE
+    assert(rle::should_compress(src, 1));
+}
+
+// --- TARGET: security.h Gaps ---
+void test_security_gaps() {
+    printf("  -> Testing security_gaps\n");
+    uint8_t ikm[32] = {0};
+    uint8_t prk[32];
+    // Gap: hkdf_sha256_extract null salt
+    rpc::security::hkdf_sha256_extract(nullptr, 0, ikm, 32, prk);
+}
+
 // --- TARGET: StringUtils.h Gaps ---
 void test_string_utils_gaps() {
     printf("  -> Testing string_utils_gaps\n");
@@ -357,6 +456,8 @@ int main() {
     test_datastore_extra_gaps();
     test_mailbox_extra_gaps();
     test_process_extra_gaps();
+    test_rle_gaps();
+    test_security_gaps();
     test_string_utils_gaps();
     printf("ARDUINO 100%% COVERAGE TEST END\n");
     return 0;

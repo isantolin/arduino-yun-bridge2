@@ -257,12 +257,9 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
             "****************************************************************"
         )
 
-    # [10/10 Efficiency] Enable uvloop for maximum performance
-    uvloop.install()
-
     try:
         daemon = BridgeDaemon(config)
-        asyncio.run(daemon.run())
+        asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
         sys.exit(0)
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")

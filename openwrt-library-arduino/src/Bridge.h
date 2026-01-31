@@ -304,8 +304,6 @@ class ConsoleClass : public Stream {
   ConsoleClass();
   void begin();
   void end() {}
-  void buffer(uint8_t size) { (void)size; }
-  void noBuffer() {}
   bool connected() { return true; }
   
   size_t write(uint8_t c) override;

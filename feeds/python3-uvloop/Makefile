@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-uvloop
-PKG_VERSION:=0.21.0
+PKG_VERSION:=0.22.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=uvloop
 PKG_SOURCE:=uvloop-$(PKG_VERSION).tar.gz
-PKG_HASH:=779730c4436531d09e5362bf28a8d67280d9657b9d799f24345517173e6df060
+PKG_HASH:=6c84bae345b9147082b17371e3dd5d42775bddce91f885499017f4607fdaf39f
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=MIT
@@ -20,7 +20,7 @@ define Package/python3-uvloop
   SECTION:=lang
   CATEGORY:=Languages
   SUBMENU:=Python
-  TITLE:=Ultra fast asyncio event loop (v0.21.0)
+  TITLE:=Ultra fast asyncio event loop (v0.22.1)
   URL:=https://github.com/MagicStack/uvloop
   PKG_ARCH:=all
   DEPENDS:=+python3 +libuv

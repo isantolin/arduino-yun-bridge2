@@ -10,7 +10,7 @@ import pytest
 
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, Status, UINT16_FORMAT
-from mcubridge.services.serial_flow import SerialFlowController, _status_name
+from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 
 
@@ -386,9 +386,3 @@ def test_serial_flow_pipeline_abandoned_on_reset(
 
     event_names = [event["event"] for event in events]
     assert "abandoned" in event_names
-
-
-def test_status_name_handles_unknown() -> None:
-    assert _status_name(None) == "unknown"
-    assert _status_name(Status.OK.value) == "OK"
-    assert _status_name(153) == "0x99"

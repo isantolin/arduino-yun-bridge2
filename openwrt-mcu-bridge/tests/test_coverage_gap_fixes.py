@@ -503,8 +503,12 @@ async def test_prometheus_exporter_gaps():
 
     # Coverage for _handle_client error paths
     mock_reader = AsyncMock()
-    # Use AsyncMock for writer to handle await writer.wait_closed()
-    mock_writer = AsyncMock()
+    # Use MagicMock for writer and explicitly set AsyncMock for coroutines
+    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer.write = MagicMock()
+    mock_writer.close = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.wait_closed = AsyncMock()
 
     # Case: Empty request line
     mock_reader.readline.return_value = b""
@@ -1508,7 +1512,7 @@ async def test_handshake_handle_resp_gaps():
     # Let's craft a replay nonce (counter <= 100)
     nonce = b"r" * 8 + struct.pack(">Q", 50)
     state.link_handshake_nonce = nonce
-    tag = comp._compute_handshake_tag(nonce)
+    tag = comp.compute_handshake_tag(nonce)
     assert await comp.handle_link_sync_resp(nonce + tag) is False
 
 

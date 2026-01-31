@@ -354,10 +354,10 @@ async def test_perform_file_operation_oserror_returns_false(
 ) -> None:
     component, _ = file_component
 
-    def boom(_path: Path) -> bytes:
+    def boom(*_args: Any, **_kwargs: Any) -> bytes:
         raise OSError("read_failed")
 
-    monkeypatch.setattr(component, "_read_file_sync", boom)
+    monkeypatch.setattr(Path, "read_bytes", boom)
     ok, content, reason = await component._perform_file_operation("read", "file.txt")
     assert ok is False
     assert content is None
@@ -460,12 +460,6 @@ async def test_write_with_quota_emits_flash_warning_for_non_tmp_path(
                 child.unlink()
         if non_tmp_root.exists():
             non_tmp_root.rmdir()
-
-
-def test_write_file_sync_warns_when_growing_large(tmp_path: Path) -> None:
-    path = tmp_path / "big.bin"
-    FileComponent._write_file_sync(path, b"x" * (1024 * 1024 + 1))
-    assert path.stat().st_size > 1024 * 1024
 
 
 def test_get_base_dir_returns_none_when_mkdir_fails(

@@ -35,19 +35,15 @@ class QOSLevel(IntEnum):
     QOS_2 = 2
 
 
-def _is_iterable_sequence(value: Any) -> TypeGuard[IterableAny]:
-    return isinstance(value, Iterable) and not isinstance(value, (bytes, str))
-
-
 def _normalize_user_properties(
     raw: Any,
 ) -> tuple[UserProperty, ...]:
-    if not _is_iterable_sequence(raw):
+    if not (isinstance(raw, Iterable) and not isinstance(raw, (bytes, str))):
         return ()
 
     normalized: list[UserProperty] = []
     for entry in raw:
-        if not _is_iterable_sequence(entry):
+        if not (isinstance(entry, Iterable) and not isinstance(entry, (bytes, str))):
             continue
         entry_seq = list(entry)
         if len(entry_seq) < 2:

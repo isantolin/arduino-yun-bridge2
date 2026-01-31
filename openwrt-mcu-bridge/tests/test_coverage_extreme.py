@@ -202,7 +202,13 @@ async def test_mqtt_publisher_loop_error_handling():
 
     tg_mock = MagicMock()
     tg_mock.__aenter__ = AsyncMock(return_value=tg_mock)
-    tg_mock.create_task = MagicMock()
+    captured_coros = []
+
+    def _capture_coro(coro):
+        captured_coros.append(coro)
+        return MagicMock()
+
+    tg_mock.create_task = _capture_coro
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_ctx):
         with patch("asyncio.TaskGroup", return_value=tg_mock):
@@ -215,8 +221,14 @@ async def test_mqtt_publisher_loop_error_handling():
                 pass
 
                 # Extraer y ejecutar publisher loop aislado
-                if tg_mock.create_task.call_args_list:
-                    publisher_coro = tg_mock.create_task.call_args_list[0][0][0]
+                if captured_coros:
+                    publisher_coro = captured_coros[0]
                     with pytest.raises(aiomqtt.MqttError):
                         await publisher_coro
+
                 mock_client.publish.assert_called()
+
+    # Clean up any remaining leaked coros (like the subscriber one)
+    for c in captured_coros:
+        c.close()
+

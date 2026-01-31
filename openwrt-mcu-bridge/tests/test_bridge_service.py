@@ -83,7 +83,7 @@ def test_on_serial_connected_flushes_console_queue(
                 )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                tag = service._compute_handshake_tag(nonce)
+                tag = service.compute_handshake_tag(nonce)
                 response = nonce + tag
                 asyncio.create_task(
                     service.handle_mcu_frame(
@@ -180,8 +180,10 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                     )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                tag = service._compute_handshake_tag(nonce)
+                tag = service.compute_handshake_tag(nonce)
                 response = nonce + tag
+                # ACK first
+                flow.on_frame_received(Status.ACK.value, struct.pack(protocol.UINT16_FORMAT, command_id))
                 asyncio.create_task(
                     service.handle_mcu_frame(
                         Command.CMD_LINK_SYNC_RESP.value,
@@ -189,7 +191,6 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                     )
                 )
             return True
-
         service.register_serial_sender(fake_sender)
 
         await service.on_serial_connected()
@@ -224,7 +225,7 @@ def test_sync_link_rejects_invalid_handshake_tag(runtime_config: RuntimeConfig, 
                 )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                tag = bytearray(service._compute_handshake_tag(nonce))
+                tag = bytearray(service.compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= protocol.UINT8_MASK
                 response = nonce + bytes(tag)
@@ -356,7 +357,7 @@ def test_link_sync_resp_respects_rate_limit(
 
         def _prime_handshake(seed: int) -> bytes:
             nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
-            tag = service._compute_handshake_tag(nonce)
+            tag = service.compute_handshake_tag(nonce)
             runtime_state.link_is_synchronized = False
             runtime_state.link_handshake_nonce = nonce
             runtime_state.link_nonce_length = len(nonce)
@@ -364,12 +365,12 @@ def test_link_sync_resp_respects_rate_limit(
             return nonce + tag
 
         payload_ok = _prime_handshake(1)
-        result_ok = await service._handle_link_sync_resp(payload_ok)
+        result_ok = await service._handshake.handle_link_sync_resp(payload_ok)
         assert result_ok is True
 
         fake_clock.advance(0.1)
         payload_blocked = _prime_handshake(2)
-        rate_limited = await service._handle_link_sync_resp(payload_blocked)
+        rate_limited = await service._handshake.handle_link_sync_resp(payload_blocked)
         assert rate_limited is False
         assert runtime_state.last_handshake_error == "sync_rate_limited"
         assert runtime_state.handshake_failure_streak >= 1
@@ -399,7 +400,7 @@ def test_sync_auth_failure_schedules_backoff(
 
         def _prime_handshake(seed: int) -> tuple[bytes, bytes]:
             nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
-            tag = service._compute_handshake_tag(nonce)
+            tag = service.compute_handshake_tag(nonce)
             runtime_state.link_is_synchronized = False
             runtime_state.link_handshake_nonce = nonce
             runtime_state.link_nonce_length = len(nonce)
@@ -409,7 +410,7 @@ def test_sync_auth_failure_schedules_backoff(
         nonce_one, tag_one = _prime_handshake(3)
         broken_tag_one = bytearray(tag_one)
         broken_tag_one[0] ^= protocol.UINT8_MASK
-        await service._handle_link_sync_resp(nonce_one + bytes(broken_tag_one))
+        await service._handshake.handle_link_sync_resp(nonce_one + bytes(broken_tag_one))
         first_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert first_delay > 0
         assert runtime_state.last_handshake_error == "sync_auth_mismatch"
@@ -422,7 +423,7 @@ def test_sync_auth_failure_schedules_backoff(
         nonce_two, tag_two = _prime_handshake(4)
         broken_tag_two = bytearray(tag_two)
         broken_tag_two[-1] ^= protocol.UINT8_MASK
-        await service._handle_link_sync_resp(nonce_two + bytes(broken_tag_two))
+        await service._handshake.handle_link_sync_resp(nonce_two + bytes(broken_tag_two))
         second_delay = runtime_state.handshake_backoff_until - fake_clock.monotonic()
         assert second_delay > first_delay
         assert runtime_state.handshake_failure_streak >= 2
@@ -490,7 +491,7 @@ def test_on_serial_connected_raises_on_secret_mismatch(
                 )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
-                tag = bytearray(service._compute_handshake_tag(nonce))
+                tag = bytearray(service.compute_handshake_tag(nonce))
                 if tag:
                     tag[0] ^= protocol.UINT8_MASK
                 asyncio.create_task(

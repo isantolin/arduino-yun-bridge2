@@ -26,25 +26,12 @@ from mcubridge.rpc import rle, protocol
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 
-def _empty_int_set() -> set[int]:
-    return set()
-
-
-def _status_name(code: int | None) -> str:
-    if code is None:
-        return "unknown"
-    try:
-        return Status(code).name
-    except ValueError:
-        return f"0x{code:02X}"
-
-
 @dataclass
 class PendingCommand:
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = field(default_factory=_empty_int_set)
+    expected_resp_ids: set[int] = field(default_factory=set)
     completion: asyncio.Event = field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None
@@ -339,8 +326,12 @@ class SerialFlowController:
         if pending.success:
             return
 
-        status_name = _status_name(pending.failure_status)
         if pending.failure_status is not None:
+            try:
+                status_name = Status(pending.failure_status).name
+            except ValueError:
+                status_name = f"0x{pending.failure_status:02X}"
+
             self._logger.warning(
                 "MCU rejected command 0x%02X with status %s",
                 pending.command_id,

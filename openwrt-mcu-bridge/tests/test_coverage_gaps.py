@@ -147,17 +147,16 @@ async def test_run_sync_wait_task_result_exception(
 
     proc = _Proc()
 
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("echo", "hi")):
-        with patch("asyncio.create_subprocess_exec", return_value=proc):
-            # Make _wait_for_sync_completion raise an exception
-            async def _bad_wait(*args, **kwargs):
-                raise ValueError("test error")
+    with patch("asyncio.create_subprocess_exec", return_value=proc):
+        # Make _wait_for_sync_completion raise an exception
+        async def _bad_wait(*args, **kwargs):
+            raise ValueError("test error")
 
-            with patch.object(ProcessComponent, "_wait_for_sync_completion", side_effect=_bad_wait):
-                with pytest.raises(ExceptionGroup) as excinfo:
-                    await process_component.run_sync("echo hi")
+        with patch.object(ProcessComponent, "_wait_for_sync_completion", side_effect=_bad_wait):
+            with pytest.raises(ExceptionGroup) as excinfo:
+                await process_component.run_sync("echo hi")
 
-                assert "test error" in str(excinfo.value.exceptions[0])
+            assert "test error" in str(excinfo.value.exceptions[0])
 
 
 @pytest.mark.asyncio
@@ -273,12 +272,11 @@ async def test_start_async_generic_exception_returns_sentinel(
     process_component: ProcessComponent,
 ) -> None:
     """Cover generic exception branch in start_async subprocess creation."""
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
-        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
-            mock_alloc.return_value = 55
-            with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
-                pid = await process_component.start_async("/bin/true")
-                assert pid == protocol.INVALID_ID_SENTINEL
+    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+        mock_alloc.return_value = 55
+        with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
+            pid = await process_component.start_async("/bin/true")
+            assert pid == protocol.INVALID_ID_SENTINEL
 
 
 # ============================================================================

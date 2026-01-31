@@ -122,6 +122,7 @@ async def test_serial_transport_lifecycle_100_percent():
     config = _make_config()
     mock_state = MagicMock()
     mock_service = AsyncMock()
+    mock_service.register_serial_sender = MagicMock()
     transport_mgr = serial_fast.SerialTransport(config, mock_state, mock_service)
 
     # 1. run() exception & retry (Lines 281-289)
@@ -154,7 +155,9 @@ async def test_serial_transport_negotiation_fail_coverage():
     # Force negotiation needed
     config.serial_safe_baud = 9600
     config.serial_baud = 115200
-    transport_mgr = serial_fast.SerialTransport(config, MagicMock(), AsyncMock())
+    mock_service = AsyncMock()
+    mock_service.register_serial_sender = MagicMock()
+    transport_mgr = serial_fast.SerialTransport(config, MagicMock(), mock_service)
 
     # Negotiation fail branch (Line 315)
     with patch.object(transport_mgr, "_negotiate_baudrate", return_value=False):

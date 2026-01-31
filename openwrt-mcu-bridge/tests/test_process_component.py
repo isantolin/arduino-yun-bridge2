@@ -354,23 +354,23 @@ async def test_terminate_process_tree_kills_when_no_pid(
 
 @pytest.mark.asyncio
 async def test_run_sync_rejected_command_returns_error(process_component: ProcessComponent) -> None:
-    with patch.object(ProcessComponent, "_prepare_command", side_effect=CommandValidationError("nope")):
-        status, stdout, stderr, exit_code = await process_component.run_sync("blocked")
-        assert status == Status.ERROR.value
-        assert stdout == b""
-        assert b"nope" in stderr
-        assert exit_code is None
+    # Set allowed commands to empty to force rejection
+    process_component.ctx.is_command_allowed = lambda cmd: False
+    status, stdout, stderr, exit_code = await process_component.run_sync("blocked")
+    assert status == Status.ERROR.value
+    assert stdout == b""
+    assert b"not allowed" in stderr
+    assert exit_code is None
 
 
 @pytest.mark.asyncio
 async def test_run_sync_subprocess_oserror_returns_error(process_component: ProcessComponent) -> None:
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
-        with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
-            status, stdout, stderr, exit_code = await process_component.run_sync("/bin/true")
-            assert status == Status.ERROR.value
-            assert stdout == b""
-            assert b"bad" in stderr
-            assert exit_code is None
+    with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
+        status, stdout, stderr, exit_code = await process_component.run_sync("/bin/true")
+        assert status == Status.ERROR.value
+        assert stdout == b""
+        assert b"bad" in stderr
+        assert exit_code is None
 
 
 @pytest.mark.asyncio
@@ -401,32 +401,29 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
 
     fake_proc = _FakeProc()
 
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/sleep", "10")):
-        with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
-            with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-                status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep")
-                assert status == Status.TIMEOUT.value
-                assert exit_code == 9
-                mock_to_thread.assert_awaited()
+    with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
+        with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
+            status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep")
+            assert status == Status.TIMEOUT.value
+            assert exit_code == 9
+            mock_to_thread.assert_awaited()
 
 
 @pytest.mark.asyncio
 async def test_start_async_allocate_pid_failure_returns_sentinel(process_component: ProcessComponent) -> None:
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
-        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
-            mock_alloc.return_value = protocol.INVALID_ID_SENTINEL
-            pid = await process_component.start_async("/bin/true")
-            assert pid == protocol.INVALID_ID_SENTINEL
+    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+        mock_alloc.return_value = protocol.INVALID_ID_SENTINEL
+        pid = await process_component.start_async("/bin/true")
+        assert pid == protocol.INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio
 async def test_start_async_subprocess_oserror_returns_sentinel(process_component: ProcessComponent) -> None:
-    with patch.object(ProcessComponent, "_prepare_command", return_value=("/bin/true",)):
-        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
-            mock_alloc.return_value = 55
-            with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
-                pid = await process_component.start_async("/bin/true")
-                assert pid == protocol.INVALID_ID_SENTINEL
+    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+        mock_alloc.return_value = 55
+        with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
+            pid = await process_component.start_async("/bin/true")
+            assert pid == protocol.INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio

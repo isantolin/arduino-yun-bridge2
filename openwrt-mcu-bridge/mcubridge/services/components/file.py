@@ -29,6 +29,14 @@ from .base import BridgeContext
 logger = logging.getLogger("mcubridge.file")
 
 
+def _do_write_file(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("wb") as f:
+        f.write(data)
+        if f.tell() > FILE_LARGE_WARNING_BYTES:
+            logger.warning("File %s is growing large (>1MB) in RAM!", path)
+
+
 class FileComponent:
     """Encapsulate file read/write/remove logic."""
 
@@ -299,7 +307,7 @@ class FileComponent:
                     return await self._write_with_quota(safe_path, data)
 
                 case FileAction.READ:
-                    content = await asyncio.to_thread(self._read_file_sync, safe_path)
+                    content = await asyncio.to_thread(safe_path.read_bytes)
                     logger.info("Read %d bytes from %s", len(content), safe_path)
                     return True, content, "ok"
 
@@ -429,7 +437,7 @@ class FileComponent:
                 return False, None, "storage_quota_exceeded"
 
             try:
-                await asyncio.to_thread(self._write_file_sync, path, data)
+                await asyncio.to_thread(_do_write_file, path, data)
             except OSError as exc:
                 logger.error("Failed to write file %s: %s", path, exc)
                 return False, None, str(exc)
@@ -540,20 +548,6 @@ class FileComponent:
             return
         remaining = self.state.file_storage_bytes_used - bytes_removed
         self.state.file_storage_bytes_used = max(0, remaining)
-
-    @staticmethod
-    def _write_file_sync(path: Path, data: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # [SIL-2] Use "wb" (overwrite) instead of "ab" (append) to ensure determinism.
-        # This prevents unchecked file growth (resource exhaustion) if the client retries.
-        with path.open("wb") as f:
-            f.write(data)
-            if f.tell() > FILE_LARGE_WARNING_BYTES:
-                logger.warning("File %s is growing large (>1MB) in RAM!", path)
-
-    @staticmethod
-    def _read_file_sync(path: Path) -> bytes:
-        return path.read_bytes()
 
 
 __all__ = ["FileComponent"]

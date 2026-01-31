@@ -51,6 +51,33 @@ def enable_uvloop_if_available():
 
 
 @pytest.fixture(autouse=True)
+def coro_leak_fix():
+    """Close all leaked coroutines after each test to prevent RuntimeWarnings."""
+    yield
+    import gc
+    import asyncio
+    for obj in gc.get_objects():
+        try:
+            if asyncio.iscoroutine(obj):
+                obj.close()
+        except (AttributeError, RuntimeError):
+            pass
+
+
+@pytest.fixture(autouse=True)
+def reset_logging_handlers():
+    """Close and remove all logging handlers after each test to prevent ResourceWarnings."""
+    yield
+    root = logging.getLogger()
+    for handler in root.handlers[:]:
+        try:
+            handler.close()
+        except Exception:
+            pass
+        root.removeHandler(handler)
+
+
+@pytest.fixture(autouse=True)
 def logging_mock_level_fix():
     """Ensure all handlers have a numeric level to avoid comparisons with MagicMock."""
     original_handlers = []

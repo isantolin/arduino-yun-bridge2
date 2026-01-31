@@ -107,12 +107,22 @@ class BridgeService:
         self._shell = ShellComponent(config, state, self, self._process)
         self._system = SystemComponent(config, state, self)
 
+        self._handshake = SerialHandshakeManager(
+            config=config,
+            state=state,
+            serial_timing=self._serial_timing,
+            send_frame=self.send_frame,
+            enqueue_mqtt=self.enqueue_mqtt,
+            acknowledge_frame=self._acknowledge_mcu_frame,
+            logger_=logger,
+        )
+
         self._dispatcher = BridgeDispatcher(
             mcu_registry=MCUHandlerRegistry(),
             mqtt_router=MQTTRouter(),
             send_frame=self.send_frame,
             acknowledge_frame=self._acknowledge_mcu_frame,
-            is_link_synchronized=self._is_link_synchronized,
+            is_link_synchronized=self.is_link_synchronized,
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
@@ -128,12 +138,12 @@ class BridgeService:
             system=self._system,
         )
         self._dispatcher.register_system_handlers(
-            handle_link_sync_resp=self._handle_link_sync_resp,
-            handle_link_reset_resp=self._handle_link_reset_resp,
-            handle_get_capabilities_resp=self._handle_capabilities_resp,
+            handle_link_sync_resp=self._handshake.handle_link_sync_resp,
+            handle_link_reset_resp=self._handshake.handle_link_reset_resp,
+            handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
             handle_ack=self._handle_ack,
             status_handler_factory=self._status_handler,
-            handle_process_kill=self._handle_process_kill,
+            handle_process_kill=self._process.handle_kill,
         )
 
         state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
@@ -148,16 +158,6 @@ class BridgeService:
         )
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
-
-        self._handshake = SerialHandshakeManager(
-            config=config,
-            state=state,
-            serial_timing=self._serial_timing,
-            send_frame=self.send_frame,
-            enqueue_mqtt=self._enqueue_handshake_message,
-            acknowledge_frame=self._acknowledge_mcu_frame,
-            logger_=logger,
-        )
 
     async def __aenter__(self) -> BridgeService:
         self._task_group = asyncio.TaskGroup()
@@ -203,11 +203,19 @@ class BridgeService:
             name=name,
         )
 
-    def _is_link_synchronized(self) -> bool:
+    def is_link_synchronized(self) -> bool:
         return self.state.link_is_synchronized
 
-    def _parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
+    def parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
         return parse_topic(self.state.mqtt_topic_prefix, topic_name)
+
+    def compute_handshake_tag(self, nonce: bytes) -> bytes:
+        return self._handshake.compute_handshake_tag(nonce)
+
+    def trim_process_buffers(
+        self, stdout_buffer: bytearray, stderr_buffer: bytearray
+    ) -> tuple[bytes, bytes, bool, bool]:
+        return self._process.trim_buffers(stdout_buffer, stderr_buffer)
 
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""
@@ -227,7 +235,7 @@ class BridgeService:
             raise fatal_error
 
         if not handshake_ok:
-            self._raise_if_handshake_fatal()
+            self._handshake.raise_if_handshake_fatal()
             logger.error("Skipping post-connect initialisation because MCU link " "sync failed")
             return
 
@@ -266,7 +274,7 @@ class BridgeService:
         # Ensure we do not keep the console in a paused state between links.
         self._console.on_serial_disconnected()
         await self._serial_flow.reset()
-        self._clear_handshake_expectations()
+        self._handshake.clear_handshake_expectations()
 
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
@@ -288,7 +296,7 @@ class BridgeService:
         try:
             await self._dispatcher.dispatch_mqtt_message(
                 inbound,
-                self._parse_inbound_topic,
+                self.parse_inbound_topic,
             )
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
@@ -374,9 +382,6 @@ class BridgeService:
                     spool_note,
                 )
 
-    async def _enqueue_handshake_message(self, message: QueuedPublish) -> None:
-        await self.enqueue_mqtt(message)
-
     async def sync_link(self) -> bool:
         return await self._handshake.synchronize()
 
@@ -390,25 +395,6 @@ class BridgeService:
             reason,
             detail=detail,
         )
-
-    async def _handle_link_sync_resp(self, payload: bytes) -> bool:
-        return await self._handshake.handle_link_sync_resp(payload)
-
-    async def _handle_link_reset_resp(self, payload: bytes) -> bool:
-        return await self._handshake.handle_link_reset_resp(payload)
-
-    async def _handle_capabilities_resp(self, payload: bytes) -> bool:
-        self._handshake.handle_capabilities_resp(payload)
-        return True
-
-    def _raise_if_handshake_fatal(self) -> None:
-        self._handshake.raise_if_handshake_fatal()
-
-    def _compute_handshake_tag(self, nonce: bytes) -> bytes:
-        return self._handshake.compute_handshake_tag(nonce)
-
-    def _clear_handshake_expectations(self) -> None:
-        self._handshake.clear_handshake_expectations()
 
     async def _acknowledge_mcu_frame(
         self,
@@ -490,14 +476,6 @@ class BridgeService:
 
     def is_command_allowed(self, command: str) -> bool:
         return self.state.allowed_policy.is_allowed(command)
-
-    def _trim_process_buffers(
-        self, stdout_buffer: bytearray, stderr_buffer: bytearray
-    ) -> tuple[bytes, bytes, bool, bool]:
-        return self._process.trim_buffers(stdout_buffer, stderr_buffer)
-
-    async def _handle_process_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
-        return await self._process.handle_kill(payload, send_ack=send_ack)
 
     async def _publish_bridge_snapshot(
         self,

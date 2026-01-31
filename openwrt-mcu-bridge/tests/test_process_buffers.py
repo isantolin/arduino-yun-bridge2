@@ -61,7 +61,7 @@ def runtime_service() -> BridgeService:
     return BridgeService(config, state)
 
 
-def test_trim_process_buffers_mutates_in_place(
+def testtrim_process_buffers_mutates_in_place(
     runtime_service: BridgeService,
 ) -> None:
     stdout = bytearray(b"a" * MAX_PAYLOAD_SIZE)
@@ -69,7 +69,7 @@ def test_trim_process_buffers_mutates_in_place(
 
     trim = cast(
         Callable[[bytearray, bytearray], tuple[bytes, bytes, bool, bool]],
-        getattr(runtime_service, "_trim_process_buffers"),
+        getattr(runtime_service, "trim_process_buffers"),
     )
 
     (

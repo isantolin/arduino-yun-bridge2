@@ -10,10 +10,6 @@ from collections.abc import Iterable, Iterator
 _UNSET = object()
 
 
-def _bytes_deque_factory() -> Deque[bytes]:
-    return cast(Deque[bytes], deque())
-
-
 @dataclass(slots=True)
 class QueueEvent:
     """Outcome of a bounded queue mutation."""
@@ -45,7 +41,7 @@ class BoundedByteDeque:
     max_bytes: int | None = None
     _queue: Deque[bytes] = field(
         init=False,
-        default_factory=_bytes_deque_factory,
+        default_factory=deque,
         repr=False,
     )
     _bytes: int = field(init=False, default=0, repr=False)

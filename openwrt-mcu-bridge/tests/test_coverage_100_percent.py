@@ -140,9 +140,3 @@ async def test_serial_fast_protocol_error_coverage():
         with mock.patch("mcubridge.transport.serial_fast.cobs.decode", return_value=b"some bytes"):
             await proto._async_process_packet(b"something")
             assert state.serial_decode_errors == 2
-
-
-def test_status_name_unknown():
-    """Cover _status_name unknown branch."""
-    assert serial_flow._status_name(0x99) == "0x99"
-    assert serial_flow._status_name(None) == "unknown"

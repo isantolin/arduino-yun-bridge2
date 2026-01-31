@@ -301,7 +301,12 @@ async def test_process_component_gaps(runtime_state: RuntimeState, real_config):
 
     mock_task = MagicMock()
     mock_task.result.side_effect = RuntimeError()
-    with patch("asyncio.TaskGroup.create_task", return_value=mock_task), \
+
+    def _capture_and_close(coro):
+        coro.close()
+        return mock_task
+
+    with patch("asyncio.TaskGroup.create_task", side_effect=_capture_and_close), \
          patch("asyncio.create_subprocess_exec", return_value=AsyncMock()):
         await comp.run_sync("ls")
 
@@ -387,7 +392,7 @@ async def test_runtime_gaps(runtime_state: RuntimeState, real_config):
     svc._dispatcher.dispatch_mqtt_message = AsyncMock(side_effect=ValueError())
     await svc.handle_mqtt_message(MagicMock())
 
-    await svc._handle_capabilities_resp(b"")
+    svc._handshake.handle_capabilities_resp(b"")
 
     svc._serial_sender = None
     await svc._acknowledge_mcu_frame(0x40)
@@ -396,7 +401,7 @@ async def test_runtime_gaps(runtime_state: RuntimeState, real_config):
 
     await svc._handle_ack(b"")
     await svc.handle_status(Status.ERROR, b"error msg")
-    await svc._handle_process_kill(b"")
+    await svc._process.handle_kill(b"")
 
 
 def test_routers_overload():

@@ -267,11 +267,10 @@ class ProcessComponent:
         return send_ack
 
     async def run_sync(self, command: str) -> tuple[int, bytes, bytes, int | None]:
-        try:
-            tokens = self._prepare_command(command)
-        except CommandValidationError as exc:
-            logger.warning("Rejected command '%s': %s", command, exc)
-            return Status.ERROR.value, b"", exc.message.encode("utf-8"), None
+        tokens = tokenize_shell_command(command)
+        if not self.ctx.is_command_allowed(tokens[0]):
+            logger.warning("Rejected command '%s': access denied", tokens[0])
+            return Status.ERROR.value, b"", b"Command not allowed", None
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -367,11 +366,11 @@ class ProcessComponent:
             return True
 
     async def start_async(self, command: str) -> int:
-        try:
-            tokens = self._prepare_command(command)
-        except CommandValidationError as exc:
-            logger.warning("Rejected async command '%s': %s", command, exc)
-            raise
+        tokens = tokenize_shell_command(command)
+        if not self.ctx.is_command_allowed(tokens[0]):
+            logger.warning("Rejected async command '%s': access denied", tokens[0])
+            raise CommandValidationError(f"Command '{tokens[0]}' not allowed")
+
         if not await self._try_acquire_process_slot():
             logger.warning(
                 "Concurrent process limit reached (%d)",
@@ -412,16 +411,6 @@ class ProcessComponent:
         )
         logger.info("Started async process '%s' with PID %d", command, pid)
         return pid
-
-    def _prepare_command(self, command: str) -> tuple[str, ...]:
-        tokens = self._tokenize_command(command)
-        head = tokens[0]
-        if not self.ctx.is_command_allowed(head):
-            raise CommandValidationError(f"Command '{head}' not allowed")
-        return tokens
-
-    def _tokenize_command(self, command: str) -> tuple[str, ...]:
-        return tokenize_shell_command(command)
 
     async def collect_output(self, pid: int) -> ProcessOutputBatch:
         async with self.state.process_lock:

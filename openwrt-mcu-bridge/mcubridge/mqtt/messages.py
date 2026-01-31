@@ -6,7 +6,7 @@ import base64
 from dataclasses import dataclass
 from enum import IntEnum
 from collections.abc import Iterable
-from typing import Any, Self, TypedDict
+from typing import Any, Self, TypedDict, cast
 
 
 class SpoolRecord(TypedDict, total=False):
@@ -42,11 +42,10 @@ def _normalize_user_properties(
         return ()
 
     normalized: list[UserProperty] = []
-    entry: Any
-    for entry in raw:
+    for entry in cast("Iterable[Any]", raw):
         if not (isinstance(entry, Iterable) and not isinstance(entry, (bytes, str))):
             continue
-        entry_seq: list[Any] = list(entry)
+        entry_seq: list[Any] = list(cast("Iterable[Any]", entry))
         if len(entry_seq) < 2:
             continue
         normalized.append((str(entry_seq[0]), str(entry_seq[1])))
@@ -91,13 +90,13 @@ class QueuedPublish:
         payload = base64.b64decode(payload_b64.encode("ascii"))
 
         correlation_raw = record.get("correlation_data")
-        correlation_data = None
+        correlation_data: bytes | None = None
         if correlation_raw is not None:
             encoded = str(correlation_raw).encode("ascii")
             correlation_data = base64.b64decode(encoded)
 
         raw_properties = record.get("user_properties")
-        user_properties = _normalize_user_properties(raw_properties)
+        user_properties: tuple[UserProperty, ...] = _normalize_user_properties(raw_properties)
 
         return cls(
             topic_name=str(record.get("topic_name", "")),

@@ -461,10 +461,10 @@ class RuntimeState:
 
     serial_writer: asyncio.BaseTransport | None = None
     serial_link_connected: bool = False
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(default_factory=asyncio.Queue)
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(default_factory=_mqtt_publish_queue_factory)
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = field(default_factory=dict)
+    mqtt_drop_counts: dict[str, int] = field(default_factory=_mqtt_drop_counts_factory)
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
@@ -483,7 +483,7 @@ class RuntimeState:
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = field(
-        default_factory=dict,
+        default_factory=_last_spool_snapshot_factory,
         repr=False,
     )
     _spool_wait_strategy: Any = field(
@@ -491,7 +491,7 @@ class RuntimeState:
         init=False,
         repr=False,
     )
-    datastore: dict[str, str] = field(default_factory=dict)
+    datastore: dict[str, str] = field(default_factory=_datastore_factory)
     mailbox_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = field(default_factory=_serial_tx_allowed_factory)
@@ -502,7 +502,7 @@ class RuntimeState:
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = field(default_factory=dict)
+    running_processes: dict[int, ManagedProcess] = field(default_factory=_running_processes_factory)
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = field(default_factory=_policy_factory)
@@ -519,8 +519,8 @@ class RuntimeState:
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     watchdog_beats: int = 0
     last_watchdog_beat: float = 0.0
-    pending_digital_reads: Deque[PendingPinRequest] = field(default_factory=collections.deque)
-    pending_analog_reads: Deque[PendingPinRequest] = field(default_factory=collections.deque)
+    pending_digital_reads: Deque[PendingPinRequest] = field(default_factory=_pending_pin_reads_factory)
+    pending_analog_reads: Deque[PendingPinRequest] = field(default_factory=_pending_pin_reads_factory)
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -573,8 +573,8 @@ class RuntimeState:
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counters: dict[str, int] = field(default_factory=dict)
-    supervisor_stats: dict[str, SupervisorStats] = field(default_factory=dict)
+    mcu_status_counters: dict[str, int] = field(default_factory=_mcu_status_counters_factory)
+    supervisor_stats: dict[str, SupervisorStats] = field(default_factory=_supervisor_stats_factory)
 
     def configure(self, config: RuntimeConfig) -> None:
         if config.allowed_policy is not None:

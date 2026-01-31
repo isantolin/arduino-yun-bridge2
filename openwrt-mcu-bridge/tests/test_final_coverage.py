@@ -392,7 +392,7 @@ async def test_runtime_gaps(runtime_state: RuntimeState, real_config):
     svc._dispatcher.dispatch_mqtt_message = AsyncMock(side_effect=ValueError())
     await svc.handle_mqtt_message(MagicMock())
 
-    svc._handshake.handle_capabilities_resp(b"")
+    await svc._handshake.handle_capabilities_resp(b"")
 
     svc._serial_sender = None
     await svc._acknowledge_mcu_frame(0x40)

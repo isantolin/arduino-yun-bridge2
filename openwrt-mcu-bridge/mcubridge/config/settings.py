@@ -13,6 +13,7 @@ import logging
 import logging.handlers
 import os
 import sys
+# [SIL-2] Deterministic Import: msgspec is MANDATORY.
 import msgspec
 from typing import Any
 

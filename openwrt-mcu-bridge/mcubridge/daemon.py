@@ -7,6 +7,7 @@ the Arduino MCU over serial and MQTT.
 
 [SIL-2 COMPLIANCE]
 The daemon implements robust error handling:
+- Deterministic startup (Fail-Fast on missing deps)
 - Task supervision with automatic restart and backoff
 - Fatal exception handling for unrecoverable serial errors
 - Graceful shutdown on SIGTERM/SIGINT
@@ -21,11 +22,6 @@ Architecture:
         ├── bridge-snapshots (optional)
         ├── watchdog (optional)
         ├── prometheus-exporter (optional)
-
-Usage:
-    $ python -m mcubridge.daemon
-    # Or via init script:
-    $ /etc/init.d/mcubridge start
 """
 
 from __future__ import annotations
@@ -35,22 +31,25 @@ import logging
 import sys
 from typing import NoReturn
 
+# [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
+# This must fail immediately if python3-uvloop is not installed.
 import uvloop
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
-from mcubridge.const import DEFAULT_SERIAL_SHARED_SECRET
-from mcubridge.metrics import publish_bridge_snapshots, publish_metrics, PrometheusExporter
-from mcubridge.security import verify_crypto_integrity
-from mcubridge.services.runtime import (
-    BridgeService,
-    SerialHandshakeFatal,
-)
 from mcubridge.const import (
+    DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
     SUPERVISOR_STATUS_MAX_BACKOFF,
     SUPERVISOR_STATUS_RESTART_INTERVAL,
 )
+from mcubridge.metrics import (
+    PrometheusExporter,
+    publish_bridge_snapshots,
+    publish_metrics,
+)
+from mcubridge.security import verify_crypto_integrity
+from mcubridge.services.runtime import BridgeService, SerialHandshakeFatal
 from mcubridge.services.task_supervisor import SupervisedTaskSpec, supervise_task
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import cleanup_status_file, status_writer
@@ -60,7 +59,6 @@ from mcubridge.transport import (
     serial_sender_not_ready,
 )
 from mcubridge.watchdog import WatchdogKeepalive
-
 
 logger = logging.getLogger("mcubridge")
 
@@ -259,6 +257,7 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
 
     try:
         daemon = BridgeDaemon(config)
+        # [SIL-2] Enforce uvloop for deterministic async performance
         asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
         sys.exit(0)
     except KeyboardInterrupt:

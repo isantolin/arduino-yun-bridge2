@@ -6,8 +6,8 @@ from mcubridge.state import context
 from mcubridge.rpc.protocol import Status, UINT8_MASK
 
 
-def test_command_name_formats_unknown_command_id() -> None:
-    assert context._command_name(UINT8_MASK) == "0xFF"
+def test_resolve_command_id_formats_unknown_command_id() -> None:
+    assert context.resolve_command_id(UINT8_MASK) == "0xFF"
 
 
 def test_status_label_covers_none_and_unknown_code() -> None:

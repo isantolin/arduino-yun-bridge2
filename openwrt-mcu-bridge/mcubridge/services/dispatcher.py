@@ -9,7 +9,7 @@ from mcubridge.rpc.protocol import (
     Command,
     Status,
 )
-from mcubridge.state.context import _command_name
+from mcubridge.state.context import resolve_command_id
 from mcubridge.rpc.contracts import response_to_request
 from mcubridge.protocol.topics import Topic, TopicRoute
 from .routers import MCUHandlerRegistry, MQTTRouter
@@ -228,7 +228,7 @@ class BridgeDispatcher:
 
         # 2. Handler Resolution
         handler = self.mcu_registry.get(command_id)
-        command_name = _command_name(command_id)
+        command_name = resolve_command_id(command_id)
 
         # 3. Safe Execution Strategy
         handled_successfully = False

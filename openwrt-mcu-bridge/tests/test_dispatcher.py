@@ -369,13 +369,13 @@ async def test_dispatch_mcu_frame_orphaned_response_is_ignored() -> None:
     assert not any(name == "send_frame" for name, _ in calls.items)
 
 
-def test_command_name_resolves_command_status_unknown() -> None:
-    """Verify _command_name resolves Command, Status, and unknown IDs."""
-    from mcubridge.state.context import _command_name
+def test_resolve_command_id_handles_command_status_unknown() -> None:
+    """Verify resolve_command_id resolves Command, Status, and unknown IDs."""
+    from mcubridge.state.context import resolve_command_id
 
-    assert _command_name(Command.CMD_CONSOLE_WRITE.value) == "CMD_CONSOLE_WRITE"
-    assert _command_name(Status.ACK.value) == "ACK"
-    assert _command_name(0xEE) == "0xEE"
+    assert resolve_command_id(Command.CMD_CONSOLE_WRITE.value) == "CMD_CONSOLE_WRITE"
+    assert resolve_command_id(Status.ACK.value) == "ACK"
+    assert resolve_command_id(0xEE) == "0xEE"
 
 
 @pytest.mark.asyncio

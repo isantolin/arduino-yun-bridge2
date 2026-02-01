@@ -60,7 +60,7 @@ SpoolSnapshot = dict[str, int | float]
 def _serial_pipeline_base_payload(command_id: int, attempt: int) -> dict[str, Any]:
     return {
         "command_id": command_id,
-        "command_name": _command_name(command_id),
+        "command_name": resolve_command_id(command_id),
         "attempt": attempt,
     }
 
@@ -103,7 +103,7 @@ class _ExponentialBackoff:
         return self._strategy(retry_state)
 
 
-def _command_name(command_id: int) -> str:
+def resolve_command_id(command_id: int) -> str:
     """Resolve command/status ID to human-readable name."""
     try:
         return Command(command_id).name

@@ -10,8 +10,6 @@ not used as overrides.
 from __future__ import annotations
 
 import logging
-import logging.handlers
-import sys
 from pathlib import Path
 # [SIL-2] Deterministic Import: msgspec is MANDATORY.
 import msgspec
@@ -315,41 +313,6 @@ def _load_raw_config() -> dict[str, Any]:
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
 
     return get_default_config()
-
-
-def configure_logging(config: RuntimeConfig) -> None:
-    """Configure logging for OpenWrt environment (Syslog)."""
-    root = logging.getLogger()
-    root.setLevel(logging.DEBUG if config.debug_logging else logging.INFO)
-
-    # Remove existing handlers to avoid duplication
-    for h in root.handlers[:]:
-        root.removeHandler(h)
-
-    formatter = logging.Formatter("%(name)s: %(levelname)s %(message)s")
-
-    handlers: list[logging.Handler] = []
-
-    # [SIL-2] Syslog Hook for OpenWrt
-    if Path("/dev/log").exists():
-        try:
-            syslog_handler = logging.handlers.SysLogHandler(
-                address="/dev/log", facility=logging.handlers.SysLogHandler.LOG_DAEMON
-            )
-            syslog_handler.setFormatter(formatter)
-            handlers.append(syslog_handler)
-        except (OSError, ConnectionError) as e:
-            # Fallback if /dev/log exists but is inaccessible (rare)
-            sys.stderr.write(f"Failed to connect to syslog: {e}\n")
-
-    # Fallback/Development: Stderr
-    if not handlers or sys.stdout.isatty():
-        stream_handler = logging.StreamHandler()
-        stream_handler.setFormatter(formatter)
-        handlers.append(stream_handler)
-
-    for handler in handlers:
-        root.addHandler(handler)
 
 
 def load_runtime_config() -> RuntimeConfig:

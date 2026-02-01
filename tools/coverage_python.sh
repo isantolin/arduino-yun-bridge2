@@ -79,6 +79,8 @@ python -m pytest \
   -q \
   -o log_cli=false \
   --disable-warnings \
+  --timeout=30 \
+  --timeout-method=thread \
   --cov=mcubridge \
   --cov-branch \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \

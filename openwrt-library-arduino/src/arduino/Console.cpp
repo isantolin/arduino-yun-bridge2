@@ -3,6 +3,7 @@
 // Note: <limits.h> removed - INT_MAX check replaced with explicit size_t cast
 
 #include "protocol/rpc_protocol.h"
+#include <etl/algorithm.h>
 
 ConsoleClass::ConsoleClass()
     : _begun(false),
@@ -127,16 +128,14 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     return;
   }
 
-  for (size_t i = 0; i < length; i++) {
-    if (!_rx_buffer.full()) {
-      _rx_buffer.push(data[i]);
-    } else {
-      // Overwrite oldest if configured, or drop?
-      // Standard Arduino Serial behavior drops new data if full.
-      // But we have flow control, so we should ideally not be here if XOFF worked.
-      // Let's drop new data to match typical behavior.
-      break; 
-    }
+  // [SIL-2] Calculate available space first, then copy deterministically
+  // Standard Arduino Serial behavior: drop new data if buffer full
+  const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
+  const size_t to_copy = etl::min(length, available);
+  
+  const uint8_t* const end = data + to_copy;
+  while (data != end) {
+    _rx_buffer.push(*data++);
   }
 
   const size_t capacity = _rx_buffer.capacity();

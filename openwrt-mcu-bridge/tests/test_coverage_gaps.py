@@ -92,8 +92,9 @@ async def test_handle_kill_process_wait_timeout_logs_warning(
 
         async def wait(self) -> None:
             # First wait call (the 0.5s timeout one) never completes
+            # Use short sleep to avoid CI timeout
             if not self._killed:
-                await asyncio.sleep(10)
+                await asyncio.sleep(0.6)
             # After kill, returns immediately
             self.returncode = 137
 

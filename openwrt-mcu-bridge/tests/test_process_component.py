@@ -301,8 +301,8 @@ async def test_handle_kill_terminates_and_cleans_slot(
             self.returncode: int | None = None
 
         async def wait(self) -> None:
-            # Ensure we hit the timeout path.
-            await asyncio.sleep(1)
+            # Ensure we hit the timeout path (short sleep for CI performance)
+            await asyncio.sleep(0.1)
 
         def kill(self) -> None:
             return None

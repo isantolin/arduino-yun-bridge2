@@ -156,8 +156,9 @@ async def test_mqtt_task_requeues_on_publish_failure(
         def messages(self):
             async def _iter():
                 # Will be cancelled when publisher fails.
+                # Use short sleep to avoid CI timeout if cancellation is delayed.
                 while True:
-                    await asyncio.sleep(3600)
+                    await asyncio.sleep(0.01)
                     yield None
 
             return _iter()

@@ -1,7 +1,6 @@
 #include "Bridge.h"
 
 // Note: <limits.h> removed - INT_MAX check replaced with explicit size_t cast
-#include <string.h> // memset
 
 #include "protocol/rpc_protocol.h"
 

@@ -25,7 +25,7 @@
 #include "rpc_protocol.h"
 #include <FastCRC.h>
 
-#include <string.h>
+#include "etl/algorithm.h"
 
 namespace rpc {
 
@@ -114,7 +114,7 @@ size_t FrameBuilder::build(uint8_t* buffer,
 
   // --- Payload ---
   if (payload && payload_len > 0) {
-    memcpy(&buffer[sizeof(FrameHeader)], payload, payload_len);
+    etl::copy_n(payload, payload_len, &buffer[sizeof(FrameHeader)]);
   }
 
   // --- CRC ---

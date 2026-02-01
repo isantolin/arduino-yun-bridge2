@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Iterable
+from pathlib import Path
 from typing import (
     Final,
     TYPE_CHECKING,
@@ -69,22 +69,6 @@ def parse_bool(value: object) -> bool:
         return False
     s = str(value).lower().strip()
     return s in _TRUE_STRINGS
-
-
-def parse_int(value: object, default: int) -> int:
-    """Parse an integer value safely, handling floats and strings."""
-    try:
-        return int(float(value))  # type: ignore
-    except (ValueError, TypeError):
-        return default
-
-
-def parse_float(value: object, default: float) -> float:
-    """Parse a float value safely."""
-    try:
-        return float(value)  # type: ignore
-    except (ValueError, TypeError):
-        return default
 
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
@@ -165,7 +149,7 @@ def build_mqtt_connect_properties() -> Properties:
 def get_uci_config() -> dict[str, Any]:
     """Read MCU Bridge configuration directly from OpenWrt's UCI system."""
 
-    is_openwrt = os.path.exists("/etc/openwrt_release") or os.path.exists("/etc/openwrt_version")
+    is_openwrt = Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
 
     try:
         with uci.Uci() as cursor:

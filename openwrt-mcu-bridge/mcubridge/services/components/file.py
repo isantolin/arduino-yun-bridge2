@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import struct
 from contextlib import AsyncExitStack
+from os import scandir
 from pathlib import Path, PurePosixPath
 
 from aiomqtt.message import Message
@@ -76,8 +76,8 @@ class FileComponent:
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
         # Bloqueamos explícitamente rutas absolutas o relativas peligrosas antes de procesar datos.
         # Esto actúa como primera línea de defensa (Fail Fast).
-        clean_path = os.path.normpath(path)
-        path_parts = clean_path.split(os.path.sep)
+        posix_path = PurePosixPath(path)
+        path_parts = posix_path.parts
 
         if ".." in path_parts:
             logger.warning("Security Alert: Path traversal attempt blocked: %s", path)
@@ -87,7 +87,7 @@ class FileComponent:
             )
             return False
 
-        if os.path.isabs(clean_path):
+        if posix_path.is_absolute():
             logger.warning("Security Alert: Absolute paths not allowed: %s", path)
             await self.ctx.send_frame(
                 Status.ERROR.value,
@@ -484,7 +484,7 @@ class FileComponent:
         while stack:
             current = stack.pop()
             try:
-                with os.scandir(current) as iterator:
+                with scandir(current) as iterator:
                     for entry in iterator:
                         if entry.is_symlink():
                             continue

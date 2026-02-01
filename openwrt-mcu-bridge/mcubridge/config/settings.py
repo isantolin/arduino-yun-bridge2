@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 import logging.handlers
-import os
 import sys
+from pathlib import Path
 # [SIL-2] Deterministic Import: msgspec is MANDATORY.
 import msgspec
 from typing import Any
@@ -290,9 +290,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         candidate = (value or "").strip()
         if not candidate:
             raise ValueError(f"{field_name} must be a non-empty path")
-        expanded = os.path.expanduser(candidate)
-        normalized = os.path.abspath(expanded)
-        if require_absolute and not os.path.isabs(expanded):
+        expanded = Path(candidate).expanduser()
+        normalized = str(expanded.resolve())
+        if require_absolute and not expanded.is_absolute():
             raise ValueError(f"{field_name} must be an absolute path")
         return normalized
 
@@ -331,7 +331,7 @@ def configure_logging(config: RuntimeConfig) -> None:
     handlers: list[logging.Handler] = []
 
     # [SIL-2] Syslog Hook for OpenWrt
-    if os.path.exists("/dev/log"):
+    if Path("/dev/log").exists():
         try:
             syslog_handler = logging.handlers.SysLogHandler(
                 address="/dev/log", facility=logging.handlers.SysLogHandler.LOG_DAEMON

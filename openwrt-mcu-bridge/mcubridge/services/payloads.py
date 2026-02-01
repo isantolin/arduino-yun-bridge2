@@ -1,10 +1,13 @@
-"""Typed payload models for MQTT-driven actions."""
+"""Typed payload models for MQTT-driven actions.
+
+Uses msgspec.Struct for zero-copy deserialization with built-in validation.
+"""
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import msgspec
-from dataclasses import dataclass
-from typing import Any, cast
 
 from mcubridge.rpc.protocol import UINT16_MAX
 
@@ -13,6 +16,9 @@ __all__ = [
     "ShellCommandPayload",
     "ShellPidPayload",
 ]
+
+# Constraints for msgspec validation
+_MAX_COMMAND_LEN = 512
 
 
 class PayloadValidationError(ValueError):
@@ -23,60 +29,59 @@ class PayloadValidationError(ValueError):
         self.message = message
 
 
-@dataclass(slots=True)
-class ShellCommandPayload:
-    """Represents a shell command request coming from MQTT."""
+class ShellCommandPayload(msgspec.Struct, frozen=True):
+    """Represents a shell command request coming from MQTT.
 
-    command: str
+    Accepts either plain text or JSON: {"command": "..."}.
+    """
+
+    command: Annotated[str, msgspec.Meta(min_length=1, max_length=_MAX_COMMAND_LEN)]
 
     @classmethod
     def from_mqtt(cls, payload: bytes) -> ShellCommandPayload:
+        """Parse MQTT payload into a validated ShellCommandPayload."""
         text = payload.decode("utf-8", errors="ignore").strip()
         if not text:
             raise PayloadValidationError("Shell command payload is empty")
 
-        candidate: Any
+        # Accept both plain text and JSON format
         if text.startswith("{"):
             try:
-                candidate = msgspec.json.decode(text)
+                result = msgspec.json.decode(text, type=cls)
+                # Normalize whitespace
+                normalized = result.command.strip()
+                if not normalized:
+                    raise PayloadValidationError("Shell command payload is empty")
+                return cls(command=normalized)
+            except msgspec.ValidationError as exc:
+                raise PayloadValidationError(str(exc)) from exc
             except msgspec.DecodeError:
-                candidate = {"command": text}
-        else:
-            candidate = {"command": text}
+                # Malformed JSON - treat entire text as command
+                pass
 
-        if not isinstance(candidate, dict):
-            raise PayloadValidationError("Payload must be an object")
-
-        mapping: dict[str, Any] = cast(dict[str, Any], candidate)
-
-        raw_command = mapping.get("command")
-        if not isinstance(raw_command, str):
-            raise PayloadValidationError("Field 'command' must be a string")
-
-        normalized = raw_command.strip()
-        if not normalized:
-            raise PayloadValidationError("Shell command payload is empty")
-        if len(normalized) > 512:
+        # Plain text command
+        if len(text) > _MAX_COMMAND_LEN:
             raise PayloadValidationError("Command cannot exceed 512 characters")
+        return cls(command=text)
 
-        return cls(command=normalized)
 
-
-@dataclass(slots=True)
-class ShellPidPayload:
+class ShellPidPayload(msgspec.Struct, frozen=True):
     """MQTT payload specifying an async shell PID to operate on."""
 
-    pid: int
+    pid: Annotated[int, msgspec.Meta(gt=0, le=UINT16_MAX)]
 
     @classmethod
     def from_topic_segment(cls, segment: str) -> ShellPidPayload:
+        """Parse a topic segment into a validated ShellPidPayload."""
         try:
             value = int(segment, 10)
         except ValueError as exc:
             raise PayloadValidationError("PID segment must be an integer") from exc
 
+        # Validate constraints manually since msgspec.Struct only validates during decode
         if value <= 0:
             raise PayloadValidationError("PID must be a positive integer")
         if value > UINT16_MAX:
             raise PayloadValidationError("PID cannot exceed 65535")
+
         return cls(pid=value)

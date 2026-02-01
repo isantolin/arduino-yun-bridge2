@@ -1,0 +1,15 @@
+*:*etl*
+*:*arduino_stub*
+functionStatic
+knownConditionTrueFalse
+variableScope
+unreadVariable
+shadowFunction
+constParameterReference
+constVariableReference
+constVariablePointer
+redundantAssignment
+redundantInitialization
+missingOverride
+duplInheritedMember
+noExplicitConstructor

@@ -48,13 +48,21 @@ from mcubridge.rpc.protocol import (
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
-@pytest.fixture(scope="session", autouse=True)
-def enable_uvloop_if_available():
-    """Enable uvloop event loop policy for the entire test session."""
+@pytest.fixture(scope="session")
+def event_loop_policy():
+    """Provide uvloop event loop policy for pytest-asyncio."""
+    import warnings
     import uvloop
-    import asyncio
-    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    logging.info("NOTICE: uvloop installed and enabled for tests.")
+    # Suppress deprecation warnings from uvloop internals (Python 3.16 preparation)
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*AbstractEventLoopPolicy.*",
+            category=DeprecationWarning,
+        )
+        policy = uvloop.EventLoopPolicy()
+    logging.info("NOTICE: uvloop event loop policy enabled for tests.")
+    return policy
 
 
 @pytest.fixture(autouse=True)

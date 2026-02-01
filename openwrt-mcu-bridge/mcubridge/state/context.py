@@ -8,6 +8,7 @@ import logging
 import time
 import msgspec
 
+import psutil
 import tenacity
 
 from asyncio.subprocess import Process
@@ -453,6 +454,46 @@ class SupervisorStats:
             "backoff_seconds": self.backoff_seconds,
             "fatal": self.fatal,
         }
+
+
+def _collect_system_metrics() -> dict[str, Any]:
+    """Collect system-level metrics using psutil.
+
+    Returns a dictionary with CPU, memory and load average metrics.
+    Gracefully handles errors to avoid breaking metrics collection.
+    """
+    result: dict[str, Any] = {}
+    try:
+        # CPU metrics (non-blocking, percentage since last call)
+        result["cpu_percent"] = psutil.cpu_percent(interval=None)
+        result["cpu_count"] = psutil.cpu_count() or 1
+    except (OSError, AttributeError):
+        result["cpu_percent"] = None
+        result["cpu_count"] = None
+
+    try:
+        # Memory metrics
+        mem = psutil.virtual_memory()
+        result["memory_total_bytes"] = mem.total
+        result["memory_available_bytes"] = mem.available
+        result["memory_percent"] = mem.percent
+    except (OSError, AttributeError):
+        result["memory_total_bytes"] = None
+        result["memory_available_bytes"] = None
+        result["memory_percent"] = None
+
+    try:
+        # Load average (1, 5, 15 minutes) - Unix only
+        load = psutil.getloadavg()
+        result["load_avg_1m"] = load[0]
+        result["load_avg_5m"] = load[1]
+        result["load_avg_15m"] = load[2]
+    except (OSError, AttributeError):
+        result["load_avg_1m"] = None
+        result["load_avg_5m"] = None
+        result["load_avg_15m"] = None
+
+    return result
 
 
 @dataclass(slots=True)
@@ -1239,6 +1280,8 @@ class RuntimeState:
             mqtt_spool_recoveries=self.mqtt_spool_recoveries,
         )
         snapshot.update({f"spool_{k}": v for k, v in spool_snapshot.items()})
+        # [EXTENDED METRICS] System-level metrics via psutil
+        snapshot["system"] = _collect_system_metrics()
         return snapshot
 
     def build_handshake_snapshot(self) -> dict[str, Any]:

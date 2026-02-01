@@ -19,6 +19,21 @@ unsigned long millis() { return g_test_millis; }
 using namespace rpc;
 using namespace bridge;
 
+/*
+ * [SIL-2 RECOMMENDED PATTERN]
+ * For production code, prefer ETL containers and algorithms:
+ *
+ *   #include "etl/algorithm.h"
+ *
+ *   template<typename T, size_t N>
+ *   inline void safe_copy(etl::array<T, N>& dest, const T* src, size_t count) {
+ *       const size_t n = (count < N) ? count : N;
+ *       etl::copy_n(src, n, dest.begin());
+ *   }
+ *
+ * Test code uses memcpy for compatibility with host toolchain.
+ */
+
 // --- MOCKS ---
 class BetterMockStream : public Stream {
 public:

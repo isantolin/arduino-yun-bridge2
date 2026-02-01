@@ -130,7 +130,7 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
    public:
     using PacketHandler = void (*)(const uint8_t* buffer, size_t size);
 
-    BridgePacketSerial() : _stream(nullptr), _handler(nullptr), _buffer_idx(0) {}
+    BridgePacketSerial() : _stream(nullptr), _handler(nullptr), _buffer{}, _buffer_idx(0) {}
 
     void setStream(Stream* stream) { _stream = stream; }
     void setPacketHandler(PacketHandler handler) { _handler = handler; }

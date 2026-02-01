@@ -130,9 +130,9 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #endif
 
 // [SIL-2] Optimize PacketSerial buffer (Global)
-// Payload (64) + Header (5) + CRC (4) + Overhead ~= 80 bytes.
-// We use 96 bytes globally to save RAM on all architectures compared to default 256.
-using BridgePacketSerial = PacketSerial_<COBS, 0, 96>;
+// Reverted to standard PacketSerial (256 bytes) because custom template
+// PacketSerial_<COBS, 0, 96> is not available in the CI library version.
+using BridgePacketSerial = PacketSerial;
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {

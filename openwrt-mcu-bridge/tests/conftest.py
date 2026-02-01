@@ -10,8 +10,15 @@ from unittest.mock import MagicMock
 
 # [TEST FIX] Mock 'uci' module strictly before importing mcubridge.common.
 # This simulates the OpenWrt environment where 'uci' is available.
+# We use the stub from stubs/uci/ which provides proper UciException and Uci classes.
 if "uci" not in sys.modules:
-    sys.modules["uci"] = MagicMock()
+    # Add stubs to path and import the real stub
+    _stubs_path = str(Path(__file__).parent.parent.parent / "stubs")
+    if _stubs_path not in sys.path:
+        sys.path.insert(0, _stubs_path)
+    import uci  # This imports from stubs/uci/
+
+    sys.modules["uci"] = uci
 
 # [TEST FIX] Mock 'pyserial-asyncio-fast' as it is a compiled extension not available in dev env.
 if "serial_asyncio_fast" not in sys.modules:

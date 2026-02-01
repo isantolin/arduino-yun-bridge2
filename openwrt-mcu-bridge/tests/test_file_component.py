@@ -422,7 +422,10 @@ def test_scan_directory_size_handles_scandir_failures(
             raise OSError("nope")
         return FakeScandir(p)
 
-    monkeypatch.setattr(os, "scandir", fake_scandir)
+    monkeypatch.setattr(
+        "mcubridge.services.components.file.scandir",
+        fake_scandir,
+    )
 
     # stack contains: root, then missing/broken are simulated via Path names.
     (tmp_path / "missing").mkdir()

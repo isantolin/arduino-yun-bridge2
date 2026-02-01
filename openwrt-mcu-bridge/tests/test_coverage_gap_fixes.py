@@ -223,17 +223,28 @@ def test_build_mqtt_properties_branches():
     assert not hasattr(props_skip_rt, "ResponseTopic")
 
 
-@patch("mcubridge.common.os.path.exists")
-@patch("mcubridge.common.uci.Uci")
-def test_get_uci_config_openwrt_failures(mock_uci_class, mock_exists):
+def test_get_uci_config_openwrt_failures(monkeypatch):
     """Cover UCI failure paths on OpenWrt."""
-    # Force is_openwrt to True
-    mock_exists.return_value = True
+    from mcubridge.common import uci as common_uci
 
+    # Force is_openwrt to True by making Path.exists return True for OpenWrt markers
+    original_exists = Path.exists
+
+    def fake_exists(path_self):
+        path_str = str(path_self)
+        if path_str in ("/etc/openwrt_release", "/etc/openwrt_version"):
+            return True
+        return original_exists(path_self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists)
+
+    # Create mock UCI class
     mock_cursor = MagicMock()
+    mock_uci_class = MagicMock()
     mock_uci_class.return_value.__enter__.return_value = mock_cursor
 
-    from mcubridge.common import uci as common_uci
+    # Patch the Uci class in the uci module (where common.py imports it from)
+    monkeypatch.setattr(common_uci, "Uci", mock_uci_class)
 
     # Case 1: UciException -> re-raises as RuntimeError
     mock_cursor.get_all.side_effect = common_uci.UciException("Failure")
@@ -252,7 +263,13 @@ def test_get_uci_config_openwrt_failures(mock_uci_class, mock_exists):
         common.get_uci_config()
 
     # Case 4: Non-OpenWrt OSError (Line 218-219)
-    mock_exists.return_value = False
+    def fake_exists_non_openwrt(path_self):
+        path_str = str(path_self)
+        if path_str in ("/etc/openwrt_release", "/etc/openwrt_version"):
+            return False
+        return original_exists(path_self)
+
+    monkeypatch.setattr(Path, "exists", fake_exists_non_openwrt)
     mock_uci_class.side_effect = OSError("Disk error")
     res = common.get_uci_config()
     assert isinstance(res, dict)
@@ -729,7 +746,7 @@ def test_settings_normalize_path_empty():
         RuntimeConfig._normalize_path("relative/path", field_name="test", require_absolute=True)
 
 
-def test_configure_logging_settings_dead_code():
+def test_configure_logging_settings_dead_code(monkeypatch):
     """Cover the dead configure_logging in settings.py."""
     from mcubridge.config.settings import configure_logging
 
@@ -738,16 +755,26 @@ def test_configure_logging_settings_dead_code():
     # Create a real SysLogHandler mock that can be called
     mock_syslog = MagicMock()
 
+    original_exists = Path.exists
+
+    def fake_exists_yes(path_self):
+        if str(path_self) == "/dev/log":
+            return True
+        return original_exists(path_self)
+
+    def fake_exists_no(path_self):
+        if str(path_self) == "/dev/log":
+            return False
+        return original_exists(path_self)
+
     # Case: Syslog OK
-    with (
-        patch("mcubridge.config.settings.os.path.exists", return_value=True),
-        patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog),
-    ):
+    monkeypatch.setattr(Path, "exists", fake_exists_yes)
+    with patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog):
         configure_logging(config)
 
     # Case: Syslog OSError
+    monkeypatch.setattr(Path, "exists", fake_exists_yes)
     with (
-        patch("mcubridge.config.settings.os.path.exists", return_value=True),
         patch("mcubridge.config.settings.logging.handlers.SysLogHandler", side_effect=OSError("fail")),
         patch("sys.stderr.write") as mock_write,
     ):
@@ -755,8 +782,8 @@ def test_configure_logging_settings_dead_code():
         assert mock_write.called
 
     # Case: No Syslog
-    with patch("mcubridge.config.settings.os.path.exists", return_value=False):
-        configure_logging(config)
+    monkeypatch.setattr(Path, "exists", fake_exists_no)
+    configure_logging(config)
 
 
 def test_logging_gaps():

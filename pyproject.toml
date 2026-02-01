@@ -31,6 +31,7 @@ testpaths = [
     "openwrt-mcu-bridge/tests",
 ]
 pythonpath = [
+    "stubs",
     ".",
     "openwrt-mcu-bridge"
 ]

@@ -226,7 +226,7 @@ class BridgeClass {
 
   // Protocol Engine
   rpc::Frame* _target_frame;
-  bool _frame_received;
+  volatile bool _frame_received;
   rpc::FrameParser _parser;
   rpc::Frame _rx_frame;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _scratch_payload;
@@ -239,7 +239,7 @@ class BridgeClass {
   // Incoming deduplication (idempotency for retries)
   uint32_t _last_rx_crc;
   unsigned long _last_rx_crc_millis;
-  uint8_t _consecutive_crc_errors;
+  volatile uint8_t _consecutive_crc_errors;
 
   // Config
   uint16_t _ack_timeout_ms;

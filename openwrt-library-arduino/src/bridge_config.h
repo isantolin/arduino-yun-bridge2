@@ -47,10 +47,23 @@
 #define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576
 #endif
 
+// [SIL-2] Magic Numbers extracted to constants for clarity and safety tuning
+#ifndef BRIDGE_STARTUP_STABILIZATION_MS
+#define BRIDGE_STARTUP_STABILIZATION_MS 100
+#endif
+
+#ifndef BRIDGE_BAUDRATE_SETTLE_MS
+#define BRIDGE_BAUDRATE_SETTLE_MS 50
+#endif
+
+#ifndef BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS
+#define BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS 5
+#endif
+
 // [SIL-2] Serial Port Configuration
 // Force Bridge to use the USB CDC port (Serial) instead of Hardware UART (Serial1)
 // on compatible boards (Yun, Leonardo, etc.).
 // Essential for direct PC-to-MCU connection debugging.
 #ifndef BRIDGE_USE_USB_SERIAL
-#define BRIDGE_USE_USB_SERIAL 1
+#define BRIDGE_USE_USB_SERIAL 0
 #endif

@@ -89,7 +89,7 @@ struct BaudrateChangeState {
   uint32_t pending_baudrate;
   unsigned long change_timestamp_ms;
   
-  static constexpr unsigned long kSettleDelayMs = 50;
+  static constexpr unsigned long kSettleDelayMs = BRIDGE_BAUDRATE_SETTLE_MS;
   
   bool isReady(unsigned long now_ms) const {
     return pending_baudrate > 0 && (now_ms - change_timestamp_ms) > kSettleDelayMs;
@@ -184,7 +184,7 @@ void BridgeClass::begin(
 
   // [SIL-2] Startup Stabilization
   const unsigned long start = millis();
-  while ((millis() - start) < 100) {
+  while ((millis() - start) < BRIDGE_STARTUP_STABILIZATION_MS) {
     while (_stream.available() > 0) { _stream.read(); }
     const unsigned long now = millis();
     if (now == start) break;
@@ -272,7 +272,7 @@ void BridgeClass::process() {
     if (error != rpc::FrameParser::Error::NONE) {
       if (error == rpc::FrameParser::Error::CRC_MISMATCH) {
         _consecutive_crc_errors++;
-        if (_consecutive_crc_errors >= 5) {
+        if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
           // [SIL-2] Force Hardware Reset after persistent corruption
           #if defined(ARDUINO_ARCH_AVR)
             wdt_enable(WDTO_15MS);

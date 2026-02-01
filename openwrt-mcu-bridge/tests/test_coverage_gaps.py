@@ -568,7 +568,7 @@ async def test_file_get_base_dir_non_tmp_path_rejected(mock_context: AsyncMock) 
 
 
 def test_process_trim_buffers_both_have_remaining(process_component: ProcessComponent) -> None:
-    """Cover _trim_process_buffers with leftover data in both buffers."""
+    """Cover trim_buffers with leftover data in both buffers."""
     stdout_buf = bytearray(b"A" * 10000)
     stderr_buf = bytearray(b"B" * 10000)
 

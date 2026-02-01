@@ -618,13 +618,6 @@ class ProcessComponent:
         stdout_buffer: bytearray,
         stderr_buffer: bytearray,
     ) -> tuple[bytes, bytes, bool, bool]:
-        return self._trim_process_buffers(stdout_buffer, stderr_buffer)
-
-    def _trim_process_buffers(
-        self,
-        stdout_buffer: bytearray,
-        stderr_buffer: bytearray,
-    ) -> tuple[bytes, bytes, bool, bool]:
         max_payload = _PROCESS_POLL_BUDGET
         stdout_len = min(len(stdout_buffer), max_payload)
         stdout_chunk = bytes(stdout_buffer[:stdout_len])

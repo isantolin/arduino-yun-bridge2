@@ -180,7 +180,7 @@ class SerialHandshakeManager:
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = nonce_length
-        self._state.link_expected_tag = self._compute_handshake_tag(nonce)
+        self._state.link_expected_tag = self.compute_handshake_tag(nonce)
         self._state.link_is_synchronized = False
 
         reset_ok = await self._send_frame(
@@ -263,7 +263,7 @@ class SerialHandshakeManager:
         nonce = payload[:nonce_length]
         tag_bytes = payload[nonce_length:required_length]
         expected_tag = self._state.link_expected_tag
-        recalculated_tag = self._compute_handshake_tag(nonce)
+        recalculated_tag = self.compute_handshake_tag(nonce)
 
         nonce_mismatch = nonce != expected
         missing_expected_tag = expected_tag is None
@@ -532,9 +532,6 @@ class SerialHandshakeManager:
         return digest[: protocol.HANDSHAKE_TAG_LENGTH]
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
-        return self._compute_handshake_tag(nonce)
-
-    def _compute_handshake_tag(self, nonce: bytes) -> bytes:
         secret = self._config.serial_shared_secret
         return self.calculate_handshake_tag(secret, nonce)
 

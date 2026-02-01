@@ -12,7 +12,6 @@ import msgspec
 from collections.abc import Callable
 from typing import Any
 
-import tenacity
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 
@@ -84,20 +83,6 @@ def _configure_tls(client: Any, config: RuntimeConfig) -> None:
         client.tls_insecure_set(True)
 
 
-def _make_retry_decorator(
-    retries: int = DEFAULT_RETRIES,
-    base_delay: float = DEFAULT_BACKOFF_BASE,
-) -> tenacity.Retrying:
-    """Create tenacity retry decorator with configured parameters."""
-    return tenacity.retry(
-        stop=tenacity.stop_after_attempt(retries),
-        wait=tenacity.wait_exponential(multiplier=base_delay, max=10),
-        retry=tenacity.retry_if_exception_type((OSError, ConnectionError, TimeoutError)),
-        before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
-        reraise=False,
-    )
-
-
 def publish_with_retries(
     topic: str,
     payload: str,
@@ -109,9 +94,9 @@ def publish_with_retries(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
 ) -> None:
     """Publish an MQTT message with retry and timeout semantics."""
+    last_error: Exception | None = None
 
-    @_make_retry_decorator(retries=retries, base_delay=base_delay)
-    def _do_publish() -> None:
+    for attempt in range(1, retries + 1):
         client = Client(
             client_id=f"mcubridge_cgi_{time.time()}",
             protocol=MQTTv5,
@@ -132,6 +117,11 @@ def publish_with_retries(
                 if time.time() - start_time > publish_timeout:
                     raise TimeoutError("Publish timed out")
                 sleep_fn(poll_interval)
+            return  # Success
+
+        except (OSError, ConnectionError, TimeoutError) as exc:
+            last_error = exc
+            logger.warning("Publish attempt %d/%d failed: %s", attempt, retries, exc)
         finally:
             try:
                 client.loop_stop()
@@ -139,10 +129,10 @@ def publish_with_retries(
             except Exception:  # pragma: no cover - cleanup best-effort
                 pass
 
-    try:
-        _do_publish()
-    except tenacity.RetryError as exc:
-        raise RuntimeError(f"Failed to publish after {retries} attempts") from exc
+        if attempt < retries:
+            sleep_fn(base_delay * (2 ** (attempt - 1)))
+
+    raise RuntimeError(f"Failed to publish after {retries} attempts") from last_error
 
 
 def get_pin_from_path() -> str | None:

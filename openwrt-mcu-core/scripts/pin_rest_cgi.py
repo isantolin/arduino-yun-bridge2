@@ -12,6 +12,7 @@ import msgspec
 from collections.abc import Callable
 from typing import Any
 
+import tenacity
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 
@@ -83,6 +84,20 @@ def _configure_tls(client: Any, config: RuntimeConfig) -> None:
         client.tls_insecure_set(True)
 
 
+def _make_retry_decorator(
+    retries: int = DEFAULT_RETRIES,
+    base_delay: float = DEFAULT_BACKOFF_BASE,
+) -> tenacity.Retrying:
+    """Create tenacity retry decorator with configured parameters."""
+    return tenacity.retry(
+        stop=tenacity.stop_after_attempt(retries),
+        wait=tenacity.wait_exponential(multiplier=base_delay, max=10),
+        retry=tenacity.retry_if_exception_type((OSError, ConnectionError, TimeoutError)),
+        before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+        reraise=False,
+    )
+
+
 def publish_with_retries(
     topic: str,
     payload: str,
@@ -94,21 +109,19 @@ def publish_with_retries(
     poll_interval: float = DEFAULT_POLL_INTERVAL,
 ) -> None:
     """Publish an MQTT message with retry and timeout semantics."""
-    last_error: Exception | None = None
 
-    for attempt in range(1, retries + 1):
+    @_make_retry_decorator(retries=retries, base_delay=base_delay)
+    def _do_publish() -> None:
         client = Client(
             client_id=f"mcubridge_cgi_{time.time()}",
             protocol=MQTTv5,
             callback_api_version=CallbackAPIVersion.VERSION2,
         )
-
-        _configure_tls(client, config)
-
-        if config.mqtt_user:
-            client.username_pw_set(config.mqtt_user, config.mqtt_pass)
-
         try:
+            _configure_tls(client, config)
+            if config.mqtt_user:
+                client.username_pw_set(config.mqtt_user, config.mqtt_pass)
+
             client.connect(config.mqtt_host, config.mqtt_port, keepalive=10)
             client.loop_start()
 
@@ -119,24 +132,17 @@ def publish_with_retries(
                 if time.time() - start_time > publish_timeout:
                     raise TimeoutError("Publish timed out")
                 sleep_fn(poll_interval)
-
-            client.loop_stop()
-            client.disconnect()
-            return
-
-        except Exception as exc:
-            last_error = exc
-            logger.warning("Publish attempt %d/%d failed: %s", attempt, retries, exc)
+        finally:
             try:
                 client.loop_stop()
                 client.disconnect()
-            except Exception as cleanup_exc:  # pragma: no cover - cleanup best-effort
-                logger.debug("Cleanup failed during retry: %s", cleanup_exc)
+            except Exception:  # pragma: no cover - cleanup best-effort
+                pass
 
-            if attempt < retries:
-                sleep_fn(base_delay * (2 ** (attempt - 1)))
-
-    raise RuntimeError(f"Failed to publish after {retries} attempts") from last_error
+    try:
+        _do_publish()
+    except tenacity.RetryError as exc:
+        raise RuntimeError(f"Failed to publish after {retries} attempts") from exc
 
 
 def get_pin_from_path() -> str | None:

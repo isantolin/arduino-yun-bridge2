@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import sys
 import shlex
 import textwrap
 import time
+
+import msgspec
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -329,7 +330,7 @@ def write_json(results: Sequence[Result], path: Path) -> None:
         ],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2))
+    path.write_bytes(msgspec.json.encode(payload))
 
 
 def filter_targets(

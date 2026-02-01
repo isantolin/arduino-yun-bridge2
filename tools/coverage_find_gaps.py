@@ -15,12 +15,13 @@ writing tests.
 from __future__ import annotations
 
 import argparse
-import json
 import re
 import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
+
+import msgspec
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,7 @@ def load_python_gaps(xml_path: Path) -> list[FileGaps]:
 
 
 def load_arduino_gaps(json_path: Path) -> list[FileGaps]:
-    data = json.loads(json_path.read_text(encoding="utf-8"))
+    data = msgspec.json.decode(json_path.read_bytes())
 
     gaps: list[FileGaps] = []
     for file_entry in data.get("files", []):

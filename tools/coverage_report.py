@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
+
+import msgspec
 
 
 @dataclass
@@ -87,7 +88,7 @@ def _safe_percent(hit: int, total: int) -> float | None:
 def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    data = msgspec.json.decode(path.read_bytes())
     summaries = data.get("summaries")
     summary = None
     if isinstance(summaries, dict):
@@ -256,9 +257,8 @@ def main(argv: list[str]) -> int:
             for row in rows
         }
         Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.output_json).write_text(
-            json.dumps(payload, indent=2),
-            encoding="utf-8",
+        Path(args.output_json).write_bytes(
+            msgspec.json.format(msgspec.json.encode(payload), indent=2),
         )
 
     return 0

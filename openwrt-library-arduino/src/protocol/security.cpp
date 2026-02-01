@@ -4,6 +4,7 @@
  */
 #include "security.h"
 #include <Arduino.h>
+#include <etl/algorithm.h>
 
 #ifdef ARDUINO_ARCH_AVR
 #include <avr/pgmspace.h>
@@ -46,29 +47,20 @@ bool run_cryptographic_self_tests() {
 
   // 1. SHA256 KAT ("abc")
   size_t msg_len = sizeof(kat_sha256_msg);
-  for(size_t i = 0; i < msg_len; i++) {
-    buffer[i] = pgm_read_byte(&kat_sha256_msg[i]);
-  }
+  etl::copy_n(kat_sha256_msg, msg_len, buffer);
   sha256.update(buffer, msg_len);
   sha256.finalize(actual, 32);
-  
-  for(size_t i = 0; i < 32; i++) {
-    if (actual[i] != pgm_read_byte(&kat_sha256_expected[i])) return false;
-  }
+
+  if (!etl::equal(actual, actual + 32, kat_sha256_expected)) return false;
 
   // 2. HMAC-SHA256 KAT
   sha256.resetHMAC(kat_hmac_key, sizeof(kat_hmac_key)); // Note: resetHMAC copies key internally
   size_t data_len = sizeof(kat_hmac_data);
-  // Process in chunks if data is large to save stack
-  for(size_t i = 0; i < data_len; i++) {
-    buffer[i] = pgm_read_byte(&kat_hmac_data[i]);
-  }
+  etl::copy_n(kat_hmac_data, data_len, buffer);
   sha256.update(buffer, data_len);
   sha256.finalizeHMAC(kat_hmac_key, sizeof(kat_hmac_key), actual, 32);
 
-  for(size_t i = 0; i < 32; i++) {
-    if (actual[i] != pgm_read_byte(&kat_hmac_expected[i])) return false;
-  }
+  if (!etl::equal(actual, actual + 32, kat_hmac_expected)) return false;
 
   return true;
 }

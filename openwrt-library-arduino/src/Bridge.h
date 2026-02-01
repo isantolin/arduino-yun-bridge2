@@ -129,6 +129,11 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
   #endif
 #endif
 
+// [SIL-2] Optimize PacketSerial buffer (Global)
+// Payload (64) + Header (5) + CRC (4) + Overhead ~= 80 bytes.
+// We use 96 bytes globally to save RAM on all architectures compared to default 256.
+using BridgePacketSerial = PacketSerial_<COBS, 0, 96>;
+
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {
 namespace test { class TestAccessor; }
@@ -222,7 +227,7 @@ class BridgeClass {
  private:
   Stream& _stream;
   HardwareSerial* _hardware_serial;
-  PacketSerial _packetSerial;
+  BridgePacketSerial _packetSerial;
   
   etl::vector<uint8_t, 32> _shared_secret;
 

@@ -24,12 +24,23 @@
 
 // Console ring buffers (MCU-side only; not part of the protocol).
 // Defaults to 48 bytes to keep SRAM usage predictable on AVR.
-#ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_RX_BUFFER_SIZE 48
-#endif
+#if defined(ARDUINO_ARCH_AVR)
+  // [SIL-2] Reduce console buffers for AVR to save ~32 bytes
+  #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
+  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 32
+  #endif
 
-#ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-#define BRIDGE_CONSOLE_TX_BUFFER_SIZE 48
+  #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
+  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 32
+  #endif
+#else
+  #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
+  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 48
+  #endif
+
+  #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
+  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 48
+  #endif
 #endif
 
 // Pending request queue sizes (MCU-side only; not part of the protocol).

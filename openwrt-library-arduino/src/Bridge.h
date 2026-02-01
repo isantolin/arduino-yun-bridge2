@@ -288,6 +288,7 @@ class BridgeClass {
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);
   void _sendAckAndFlush(uint16_t command_id);  // Encapsulates ACK + flush sequence
+  void _doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length);
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
   void _applyTimingConfig(const uint8_t* payload, size_t length);
 

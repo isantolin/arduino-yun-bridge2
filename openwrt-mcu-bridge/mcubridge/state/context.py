@@ -717,88 +717,28 @@ class RuntimeState:
             self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
-        self._sync_mailbox_queue_limits()
-        evt = self.mailbox_queue.append(payload)
-        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
-        if evt.truncated_bytes:
-            logger.warning(
-                "Mailbox message truncated by %d bytes to respect limit.",
-                evt.truncated_bytes,
-            )
-            self.mailbox_truncated_messages += 1
-            self.mailbox_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            logger.warning(
-                ("Dropping oldest mailbox message(s): %d item(s), %d " "bytes to honor limits."),
-                evt.dropped_chunks,
-                evt.dropped_bytes,
-            )
-            self.mailbox_dropped_messages += evt.dropped_chunks
-            self.mailbox_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
-            logger.error(
-                ("Mailbox queue overflow; rejecting incoming message " "(%d bytes)."),
-                len(payload),
-            )
-            self.mailbox_dropped_messages += 1
-            self.mailbox_dropped_bytes += len(payload)
-            self.mailbox_outgoing_overflow_events += 1
-            return False
-        return True
+        return self._enqueue_mailbox(
+            payload, logger, self.mailbox_queue, "outgoing",
+        )
 
     def pop_mailbox_message(self) -> bytes | None:
-        self._sync_mailbox_queue_limits()
-        if not self.mailbox_queue:
-            return None
-        message = self.mailbox_queue.popleft()
-        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
-        return message
+        return self._pop_mailbox(self.mailbox_queue)
 
     def requeue_mailbox_message_front(self, payload: bytes) -> None:
-        self._sync_mailbox_queue_limits()
+        self._sync_mailbox_limits(self.mailbox_queue)
         evt = self.mailbox_queue.appendleft(payload)
-        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
+        self._update_mailbox_bytes()
         if evt.dropped_chunks:
             self.mailbox_dropped_messages += evt.dropped_chunks
             self.mailbox_dropped_bytes += evt.dropped_bytes
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
-        self._sync_mailbox_incoming_limits()
-        evt = self.mailbox_incoming_queue.append(payload)
-        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
-        if evt.truncated_bytes:
-            logger.warning(
-                ("Mailbox incoming message truncated by %d bytes to " "respect limit."),
-                evt.truncated_bytes,
-            )
-            self.mailbox_incoming_truncated_messages += 1
-            self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            logger.warning(
-                ("Dropping oldest mailbox incoming message(s): %d " "item(s), %d bytes to honor limits."),
-                evt.dropped_chunks,
-                evt.dropped_bytes,
-            )
-            self.mailbox_incoming_dropped_messages += evt.dropped_chunks
-            self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
-            logger.error(
-                ("Mailbox incoming queue overflow; rejecting message " "(%d bytes)."),
-                len(payload),
-            )
-            self.mailbox_incoming_dropped_messages += 1
-            self.mailbox_incoming_dropped_bytes += len(payload)
-            self.mailbox_incoming_overflow_events += 1
-            return False
-        return True
+        return self._enqueue_mailbox(
+            payload, logger, self.mailbox_incoming_queue, "incoming",
+        )
 
     def pop_mailbox_incoming(self) -> bytes | None:
-        self._sync_mailbox_incoming_limits()
-        if not self.mailbox_incoming_queue:
-            return None
-        message = self.mailbox_incoming_queue.popleft()
-        self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
-        return message
+        return self._pop_mailbox(self.mailbox_incoming_queue)
 
     def _sync_console_queue_limits(self) -> None:
         self.console_to_mcu_queue.update_limits(
@@ -807,19 +747,74 @@ class RuntimeState:
         )
         self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
-    def _sync_mailbox_queue_limits(self) -> None:
-        self.mailbox_queue.update_limits(
+    def _sync_mailbox_limits(self, queue: BoundedByteDeque) -> None:
+        queue.update_limits(
             max_items=self.mailbox_queue_limit,
             max_bytes=self.mailbox_queue_bytes_limit,
         )
-        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
 
-    def _sync_mailbox_incoming_limits(self) -> None:
-        self.mailbox_incoming_queue.update_limits(
-            max_items=self.mailbox_queue_limit,
-            max_bytes=self.mailbox_queue_bytes_limit,
-        )
+    def _update_mailbox_bytes(self) -> None:
+        self.mailbox_queue_bytes = self.mailbox_queue.bytes_used
         self.mailbox_incoming_queue_bytes = self.mailbox_incoming_queue.bytes_used
+
+    def _enqueue_mailbox(
+        self,
+        payload: bytes,
+        logger: logging.Logger,
+        queue: BoundedByteDeque,
+        direction: str,
+    ) -> bool:
+        """Unified mailbox enqueue for both outgoing and incoming queues."""
+        self._sync_mailbox_limits(queue)
+        evt = queue.append(payload)
+        self._update_mailbox_bytes()
+        is_incoming = direction == "incoming"
+        if evt.truncated_bytes:
+            logger.warning(
+                "Mailbox %s message truncated by %d bytes to respect limit.",
+                direction, evt.truncated_bytes,
+            )
+            if is_incoming:
+                self.mailbox_incoming_truncated_messages += 1
+                self.mailbox_incoming_truncated_bytes += evt.truncated_bytes
+            else:
+                self.mailbox_truncated_messages += 1
+                self.mailbox_truncated_bytes += evt.truncated_bytes
+        if evt.dropped_chunks:
+            logger.warning(
+                "Dropping oldest mailbox %s message(s): %d item(s), %d bytes.",
+                direction, evt.dropped_chunks, evt.dropped_bytes,
+            )
+            if is_incoming:
+                self.mailbox_incoming_dropped_messages += evt.dropped_chunks
+                self.mailbox_incoming_dropped_bytes += evt.dropped_bytes
+            else:
+                self.mailbox_dropped_messages += evt.dropped_chunks
+                self.mailbox_dropped_bytes += evt.dropped_bytes
+        if not evt.accepted:
+            logger.error(
+                "Mailbox %s queue overflow; rejecting message (%d bytes).",
+                direction, len(payload),
+            )
+            if is_incoming:
+                self.mailbox_incoming_dropped_messages += 1
+                self.mailbox_incoming_dropped_bytes += len(payload)
+                self.mailbox_incoming_overflow_events += 1
+            else:
+                self.mailbox_dropped_messages += 1
+                self.mailbox_dropped_bytes += len(payload)
+                self.mailbox_outgoing_overflow_events += 1
+            return False
+        return True
+
+    def _pop_mailbox(self, queue: BoundedByteDeque) -> bytes | None:
+        """Unified mailbox pop for both outgoing and incoming queues."""
+        self._sync_mailbox_limits(queue)
+        if not queue:
+            return None
+        message = queue.popleft()
+        self._update_mailbox_bytes()
+        return message
 
     def record_mqtt_drop(self, topic: str) -> None:
         self.mqtt_dropped_messages += 1

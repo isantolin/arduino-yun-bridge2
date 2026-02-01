@@ -85,8 +85,8 @@ def test_enqueue_mailbox_message_respects_limits(
     assert runtime_state.mailbox_dropped_bytes == 32
 
     warnings = [record.getMessage() for record in handler.records]
-    assert any("Mailbox message truncated" in message for message in warnings)
-    assert any("Dropping oldest mailbox message" in message for message in warnings)
+    assert any("Mailbox outgoing message truncated" in message for message in warnings)
+    assert any("Dropping oldest mailbox outgoing message" in message for message in warnings)
 
 
 def test_enqueue_mailbox_incoming_respects_limits(

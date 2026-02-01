@@ -711,6 +711,11 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 }
 
+void BridgeClass::_doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
+  (void)sendFrame(status_code, payload, length);
+  if (_status_handler) _status_handler(status_code, payload, length);
+}
+
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
@@ -719,8 +724,7 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) 
     length = static_cast<uint16_t>(info.length);
     payload = reinterpret_cast<const uint8_t*>(message);
   }
-  (void)sendFrame(status_code, payload, length);
-  if (_status_handler) _status_handler(status_code, payload, length);
+  _doEmitStatus(status_code, payload, length);
 }
 
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
@@ -738,8 +742,7 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHe
     length = static_cast<uint16_t>(i);
     payload = _scratch_payload.data();
   }
-  (void)sendFrame(status_code, payload, length);
-  if (_status_handler) _status_handler(status_code, payload, length);
+  _doEmitStatus(status_code, payload, length);
 }
 
 bool BridgeClass::sendFrame(rpc::CommandId command_id, const uint8_t* arg_payload, size_t arg_length) {

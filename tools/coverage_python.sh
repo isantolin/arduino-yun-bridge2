@@ -76,7 +76,7 @@ else
 fi
 
 python -m pytest \
-  -q \
+  -v \
   -o log_cli=false \
   --disable-warnings \
   --timeout=30 \

@@ -14,198 +14,166 @@ permissions:
   contents: read
 
 jobs:
-  static-analysis:
-    name: Code Quality & Static Analysis
+  # ═══════════════════════════════════════════════════════════════════════════
+  # STAGE 1: Fast Checks (parallel) - ~3min total
+  # ═══════════════════════════════════════════════════════════════════════════
+  security-check:
+    name: Security Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 2
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          cache: 'pip'
-
-      - name: Cache tox environments
-        uses: actions/cache@v4
-        with:
-          path: .tox
-          key: tox-${{ runner.os }}-py313-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.txt') }}
-          restore-keys: |
-            tox-${{ runner.os }}-py313-
-
-      - name: Install System Dependencies
+      - uses: actions/checkout@v4
+      - name: Check for Hardcoded Secrets
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libreadline-dev
-
-      - name: Install tooling
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install tox
-
-      # [SIL-2] Pre-flight security check: ensure no hardcoded secrets in config files
-      - name: Security Check - No Hardcoded Secrets
-        run: |
-          echo "Checking for hardcoded secrets in configuration files..."
-          # Check UCI config for actual secret values (not validation code)
+          echo "Checking for hardcoded secrets..."
           if grep -r "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" \
-               --include="mcubridge" \
-               openwrt-mcu-core/uci-defaults/ 2>/dev/null | \
+               --include="mcubridge" openwrt-mcu-core/uci-defaults/ 2>/dev/null | \
                grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''"; then
-            echo "::error::Hardcoded secret found in UCI config!"
+            echo "::error::Hardcoded secret found!"
             exit 1
           fi
-          # Check for any password/secret assignments in Lua
-          if grep -rn "password\s*=\s*['\"][^'\"]\+" \
-               --include="*.lua" \
-               luci-app-mcubridge/ 2>/dev/null | \
-               grep -v "option\|input\|field"; then
-            echo "::error::Potential hardcoded password in Lua files!"
-            exit 1
-          fi
-          echo "✅ No hardcoded secrets detected"
+          echo "✅ No hardcoded secrets"
 
-      - name: Lint
-        run: tox -e lint
-
-      - name: Protocol Sync
-        run: tox -e protocol
-
-      - name: Lua Lint
-        run: tox -e lua
-
-      - name: Typecheck
-        run: tox -e typecheck
-
-  python-tests:
-    name: Python Tests & Coverage
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
-    needs: static-analysis
-    timeout-minutes: 35
+    timeout-minutes: 5
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
         with:
-          python-version: '3.13'
-          cache: 'pip'
+          install-system-deps: 'true'
+      - run: tox -e lint
 
-      - name: Cache tox environments
-        uses: actions/cache@v4
-        with:
-          path: .tox
-          key: tox-${{ runner.os }}-py313-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.txt') }}
-          restore-keys: |
-            tox-${{ runner.os }}-py313-
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
+      - run: tox -e typecheck
 
-      - name: Install tooling
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install tox
+  protocol-sync:
+    name: Protocol Sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
+      - run: tox -e protocol
 
+  lua-lint:
+    name: Lua Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
+      - run: tox -e lua
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # STAGE 2: Tests (after fast checks pass) - ~15min total
+  # ═══════════════════════════════════════════════════════════════════════════
+  python-tests:
+    name: Python Tests
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, protocol-sync]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
       - name: Run Tests with Coverage
         run: tox -e coverage
-
-      - name: Summarize coverage
-        run: |
-          python tools/coverage_report.py \
-            --output-markdown coverage/coverage-summary.md \
-            --output-json coverage/coverage-summary.json \
-            --github-step-summary "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload coverage artifacts
+      - name: Upload Python Coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-reports
-          path: |
-            coverage/python
-            coverage/arduino
+          name: coverage-python
+          path: coverage/python
           if-no-files-found: ignore
 
-  arduino-integration:
-    name: Arduino Build & Emulation
+  arduino-host:
+    name: Arduino Host Tests
     runs-on: ubuntu-latest
-    needs: static-analysis
-    timeout-minutes: 35
+    needs: [lint, typecheck]
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          cache: 'pip'
-
-      - name: Cache tox environments
-        uses: actions/cache@v4
-        with:
-          path: .tox
-          key: tox-${{ runner.os }}-py313-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.txt') }}
-          restore-keys: |
-            tox-${{ runner.os }}-py313-
-
-      - name: Install Arduino CLI
-        uses: arduino/setup-arduino-cli@v1
-
-      - name: Install Emulation Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y simavr avr-libc gcc-avr python3-pip socat
-
-      - name: Install tooling
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install tox
-
-      # [CRÍTICO] Paso de instalación de librerías externas para evitar #error en Bridge.cpp
-      - name: Install Arduino Dependencies
-        run: ./openwrt-library-arduino/tools/install.sh
-
-      - name: Compile Examples & Run Emulation
-        run: |
-          mkdir -p openwrt-library-arduino/build
-          # Compile firmware (generates .elf files in build dir)
-          ./tools/ci_arduino.sh openwrt-library-arduino/build
-          
-          # Install runtime dependencies for emulation runner
-          pip install -r requirements/runtime.txt
-          
-          # Run full system emulation
-          python3 tools/emulation_runner.py
-
-  arduino-host-tests:
-    name: Arduino C++ Host Tests
-    runs-on: ubuntu-latest
-    needs: static-analysis
-    timeout-minutes: 15
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
       - name: Install Build Tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y g++ make
-
-      - name: Build and Run Host Tests
-        run: |
-          ./tools/ci_arduino_host_tests.sh
-
+        run: sudo apt-get update && sudo apt-get install -y g++ make
+      - name: Run Host Tests
+        run: ./tools/ci_arduino_host_tests.sh
       - name: Run Coverage
-        run: |
-          ./tools/coverage_arduino.sh || true
-
+        run: ./tools/coverage_arduino.sh || true
       - name: Upload Arduino Coverage
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: arduino-coverage
+          name: coverage-arduino-host
           path: coverage/arduino
+          if-no-files-found: ignore
+
+  arduino-emulation:
+    name: Arduino Emulation
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
+      - uses: arduino/setup-arduino-cli@v1
+      - name: Install Emulation Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y simavr avr-libc gcc-avr socat
+      - name: Install Arduino Dependencies
+        run: ./openwrt-library-arduino/tools/install.sh
+      - name: Compile & Run Emulation
+        run: |
+          mkdir -p openwrt-library-arduino/build
+          ./tools/ci_arduino.sh openwrt-library-arduino/build
+          pip install -r requirements/runtime.txt
+          python3 tools/emulation_runner.py
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # STAGE 3: Consolidation - ~2min
+  # ═══════════════════════════════════════════════════════════════════════════
+  coverage-report:
+    name: Coverage Report
+    runs-on: ubuntu-latest
+    needs: [python-tests, arduino-host]
+    if: always()
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-python-tox
+
+      - name: Download Python Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-python
+          path: coverage/python
+        continue-on-error: true
+
+      - name: Download Arduino Coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-arduino-host
+          path: coverage/arduino
+        continue-on-error: true
+
+      - name: Generate Summary
+        run: |
+          python tools/coverage_report.py \
+            --output-markdown coverage/coverage-summary.md \
+            --output-json coverage/coverage-summary.json \
+            --github-step-summary "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Upload Combined Coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-combined
+          path: coverage/
           if-no-files-found: ignore

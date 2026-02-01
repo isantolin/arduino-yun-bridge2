@@ -68,3 +68,9 @@ name = "uvloop"
 openwrt = "python3-uvloop"
 pip = "uvloop==0.22.1"
 rationale = "Ultra-fast asyncio event loop implementation (libuv)"
+
+[[dependency]]
+name = "cryptography"
+openwrt = "python3-cryptography"
+pip = "cryptography==46.0.4"
+rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"

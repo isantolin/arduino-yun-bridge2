@@ -116,8 +116,8 @@ def publish_with_retries(
             try:
                 client.loop_stop()
                 client.disconnect()
-            except Exception:
-                pass
+            except Exception as cleanup_exc:  # pragma: no cover - cleanup best-effort
+                logger.debug("Cleanup failed during retry: %s", cleanup_exc)
 
             if attempt < retries:
                 sleep_fn(base_delay * (2 ** (attempt - 1)))

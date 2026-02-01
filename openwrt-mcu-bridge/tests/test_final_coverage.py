@@ -216,7 +216,8 @@ async def test_metrics_gaps(runtime_state: RuntimeState):
     mock_writer.wait_closed = AsyncMock()
 
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
-    mock_reader.readline.side_effect = [b"GET /metrics HTTP/1.1\r\n", b"\r\n"]
+    # Provide enough lines: request, empty line to end headers
+    mock_reader.readline.side_effect = [b"GET /metrics HTTP/1.1\r\n", b"\r\n", b""]
 
     with patch.object(exporter, "_render_metrics", side_effect=RuntimeError("render fail")):
         await exporter._handle_client(mock_reader, mock_writer)

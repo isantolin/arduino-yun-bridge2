@@ -6,7 +6,6 @@ import logging
 import struct
 import time
 from collections.abc import Awaitable, Callable, Coroutine
-from dataclasses import replace
 from typing import Any
 
 from aiomqtt.message import Message
@@ -331,19 +330,19 @@ class BridgeService:
             resp_topic = getattr(props, "ResponseTopic", None) if props else None
             target_topic = resp_topic or message.topic_name
             if target_topic != message_to_queue.topic_name:
-                message_to_queue = replace(
+                message_to_queue = msgspec.structs.replace(
                     message_to_queue,
                     topic_name=target_topic,
                 )
             reply_correlation = getattr(props, "CorrelationData", None) if props else None
             if reply_correlation is not None:
-                message_to_queue = replace(
+                message_to_queue = msgspec.structs.replace(
                     message_to_queue,
                     correlation_data=reply_correlation,
                 )
             origin_topic = str(reply_context.topic)
             user_properties = message_to_queue.user_properties + (("bridge-request-topic", origin_topic),)
-            message_to_queue = replace(
+            message_to_queue = msgspec.structs.replace(
                 message_to_queue,
                 user_properties=user_properties,
             )

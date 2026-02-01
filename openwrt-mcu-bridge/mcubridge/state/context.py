@@ -11,7 +11,7 @@ import msgspec
 import tenacity
 
 from asyncio.subprocess import Process
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field  # kept for RuntimeState and internal state classes
 from types import SimpleNamespace
 from typing import Any, Deque, Final
 from collections.abc import Mapping
@@ -1099,7 +1099,7 @@ class RuntimeState:
                 break
             if message is None:
                 break
-            enriched = replace(
+            enriched = msgspec.structs.replace(
                 message,
                 user_properties=message.user_properties + (("bridge-spooled", "1"),),
             )

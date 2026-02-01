@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
+import msgspec
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # kept for BoundedByteDeque
 from collections.abc import Iterable, Iterator
 
 _UNSET = object()
 
 
-@dataclass(slots=True)
-class QueueEvent:
+class QueueEvent(msgspec.Struct):
     """Outcome of a bounded queue mutation."""
 
     truncated_bytes: int = 0

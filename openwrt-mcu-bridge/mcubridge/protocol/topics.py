@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import msgspec
 
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Topic
 
 
-@dataclass(frozen=True)
-class TopicRoute:
+class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""
 
     raw: str

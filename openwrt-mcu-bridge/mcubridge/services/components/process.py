@@ -11,7 +11,7 @@ import subprocess
 from asyncio import StreamReader
 from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field  # kept for ProcessComponent
 
 import psutil
 
@@ -39,8 +39,7 @@ logger = logging.getLogger("mcubridge.process")
 _PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
 
 
-@dataclass(slots=True)
-class ProcessOutputBatch:
+class ProcessOutputBatch(msgspec.Struct):
     """Structured payload describing PROCESS_POLL results."""
 
     status_byte: int

@@ -7,7 +7,6 @@ import logging
 import math
 import re
 import msgspec
-from dataclasses import replace
 from typing import (
     Any,
     cast,
@@ -100,7 +99,7 @@ def _with_user_property(
     key: str,
     value: str,
 ) -> QueuedPublish:
-    return replace(
+    return msgspec.structs.replace(
         message,
         user_properties=message.user_properties + ((key, value),),
     )

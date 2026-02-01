@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import dataclass
+import msgspec
 from enum import IntEnum
 from collections.abc import Iterable
 from typing import Any, Self, TypedDict, cast
@@ -53,8 +53,7 @@ def _normalize_user_properties(
     return tuple(normalized)
 
 
-@dataclass(slots=True)
-class QueuedPublish:
+class QueuedPublish(msgspec.Struct):
     """Serializable MQTT publish packet used by the durable spool."""
 
     topic_name: str

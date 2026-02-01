@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shlex
-from dataclasses import dataclass
+import msgspec
 from collections.abc import Iterable
 
 from .common import normalise_allowed_commands
@@ -53,8 +53,7 @@ def tokenize_shell_command(command: str) -> tuple[str, ...]:
     return tokens
 
 
-@dataclass(frozen=True, slots=True)
-class AllowedCommandPolicy:
+class AllowedCommandPolicy(msgspec.Struct, frozen=True):
     """Normalised allow-list for shell/process commands."""
 
     entries: tuple[str, ...]
@@ -86,8 +85,7 @@ class AllowedCommandPolicy:
         return cls(entries=normalised)
 
 
-@dataclass(frozen=True, slots=True)
-class TopicAuthorization:
+class TopicAuthorization(msgspec.Struct, frozen=True):
     """Per-topic allow flags for MQTT-driven actions."""
 
     file_read: bool = True

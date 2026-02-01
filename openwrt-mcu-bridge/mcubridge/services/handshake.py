@@ -16,7 +16,6 @@ import msgspec
 import logging
 import struct
 import time
-from dataclasses import dataclass
 from typing import Any
 from collections.abc import Awaitable, Callable
 
@@ -46,8 +45,7 @@ AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 logger = logging.getLogger("mcubridge.service.handshake")
 
 
-@dataclass(frozen=True, slots=True)
-class SerialTimingWindow:
+class SerialTimingWindow(msgspec.Struct, frozen=True):
     """Derived serial retry/response windows used by both MCU and MPU."""
 
     ack_timeout_ms: int

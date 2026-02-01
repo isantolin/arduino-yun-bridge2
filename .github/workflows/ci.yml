@@ -66,10 +66,12 @@ jobs:
   lua-lint:
     name: Lua Lint
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
+        with:
+          install-system-deps: 'true'
       - run: tox -e lua
 
   # ═══════════════════════════════════════════════════════════════════════════

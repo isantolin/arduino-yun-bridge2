@@ -172,16 +172,8 @@ def test_common_gaps():
     assert common.encode_status_reason("") == b""
 
 
-def test_parse_int_exception():
-    """Test parse_int fallback on invalid types."""
-    assert common.parse_int(None, 42) == 42
-    assert common.parse_int("invalid", 42) == 42
-
-
-def test_parse_float_exception():
-    """Test parse_float fallback on invalid types."""
-    assert common.parse_float(None, 3.14) == 3.14
-    assert common.parse_int("invalid", 42) == 42
+# NOTE: test_parse_int_exception and test_parse_float_exception removed
+# as parse_int/parse_float were eliminated during msgspec modernization
 
 
 def test_log_hexdump_disabled():

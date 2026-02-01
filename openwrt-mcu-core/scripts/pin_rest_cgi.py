@@ -17,7 +17,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
-from mcubridge.common import get_uci_config, parse_float, parse_int
+from mcubridge.common import get_uci_config
 from mcubridge.rpc import protocol
 
 
@@ -33,11 +33,25 @@ def _configure_fallback_logging() -> None:
     )
 
 
+def _safe_int(value: object, default: int) -> int:
+    try:
+        return int(float(value))  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(value: object, default: float) -> float:
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (ValueError, TypeError):
+        return default
+
+
 _UCI = get_uci_config()
-DEFAULT_RETRIES = max(1, parse_int(_UCI.get("pin_mqtt_retries"), 3))
-DEFAULT_PUBLISH_TIMEOUT = max(0.0, parse_float(_UCI.get("pin_mqtt_timeout"), 4.0))
-DEFAULT_BACKOFF_BASE = max(0.0, parse_float(_UCI.get("pin_mqtt_backoff"), 0.5))
-DEFAULT_POLL_INTERVAL = max(0.001, parse_float(_UCI.get("pin_mqtt_poll_interval"), 0.05))
+DEFAULT_RETRIES = max(1, _safe_int(_UCI.get("pin_mqtt_retries"), 3))
+DEFAULT_PUBLISH_TIMEOUT = max(0.0, _safe_float(_UCI.get("pin_mqtt_timeout"), 4.0))
+DEFAULT_BACKOFF_BASE = max(0.0, _safe_float(_UCI.get("pin_mqtt_backoff"), 0.5))
+DEFAULT_POLL_INTERVAL = max(0.001, _safe_float(_UCI.get("pin_mqtt_poll_interval"), 0.05))
 
 
 def _configure_tls(client: Any, config: RuntimeConfig) -> None:

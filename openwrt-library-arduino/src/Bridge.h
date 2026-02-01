@@ -123,16 +123,75 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
   #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
     #define BRIDGE_MAX_PENDING_TX_FRAMES 1
   #endif
+  
+  // [SIL-2] Minimal PacketSerial implementation to save RAM (96B vs 256B)
+  // Standard PacketSerial allocates 256 bytes. We only need ~80 bytes.
+  class BridgePacketSerial {
+   public:
+    using PacketHandler = void (*)(const uint8_t* buffer, size_t size);
+
+    BridgePacketSerial() : _stream(nullptr), _handler(nullptr), _buffer_idx(0) {}
+
+    void setStream(Stream* stream) { _stream = stream; }
+    void setPacketHandler(PacketHandler handler) { _handler = handler; }
+
+    void update() {
+      if (!_stream) return;
+      while (_stream->available() > 0) {
+        uint8_t data = _stream->read();
+        if (data == 0) {
+          if (_handler && _buffer_idx > 0) {
+            uint8_t decode_buffer[96];
+            size_t decoded_len = cobs_decode(_buffer, _buffer_idx, decode_buffer);
+            _handler(decode_buffer, decoded_len);
+          }
+          _buffer_idx = 0;
+        } else {
+          if (_buffer_idx < 96) {
+            _buffer[_buffer_idx++] = data;
+          } else {
+            _buffer_idx = 0; // Overflow: reset
+          }
+        }
+      }
+    }
+
+    void send(const uint8_t* buffer, size_t size) {
+      if (_stream && buffer && size > 0) {
+        _stream->write(buffer, size);
+      }
+    }
+
+   private:
+    Stream* _stream;
+    PacketHandler _handler;
+    uint8_t _buffer[96];
+    size_t _buffer_idx;
+
+    // Minimal in-place COBS decode helper
+    size_t cobs_decode(const uint8_t* src, size_t len, uint8_t* dst) {
+      size_t read_index = 0;
+      size_t write_index = 0;
+      uint8_t code = 0;
+      uint8_t i = 0;
+
+      while (read_index < len) {
+        code = src[read_index];
+        if (read_index + code > len && code != 1) return 0;
+        read_index++;
+        for (i = 1; i < code; i++) dst[write_index++] = src[read_index++];
+        if (code != 0xFF && read_index != len) dst[write_index++] = 0;
+      }
+      return write_index;
+    }
+  };
+
 #else
   #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
     #define BRIDGE_MAX_PENDING_TX_FRAMES rpc::RPC_MAX_PENDING_TX_FRAMES
   #endif
+  using BridgePacketSerial = PacketSerial;
 #endif
-
-// [SIL-2] Optimize PacketSerial buffer (Global)
-// Reverted to standard PacketSerial (256 bytes) because custom template
-// PacketSerial_<COBS, 0, 96> is not available in the CI library version.
-using BridgePacketSerial = PacketSerial;
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {

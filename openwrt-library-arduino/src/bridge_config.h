@@ -27,11 +27,11 @@
 #if defined(ARDUINO_ARCH_AVR)
   // [SIL-2] Reduce console buffers for AVR to save ~32 bytes
   #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 32
+  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 16
   #endif
 
   #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 32
+  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 16
   #endif
 #else
   #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE

@@ -251,13 +251,14 @@ def main() -> None:
                 "message": f"Failed to send command for pin {pin}: {exc}",
             },
         )
-    except Exception:
-        logger.exception("Unexpected error during MQTT publish for pin %s", pin)
+    except (OSError, ConnectionError, msgspec.DecodeError) as exc:
+        # [SIL-2] Specific exceptions for network/encoding errors
+        logger.exception("Network or encoding error during MQTT publish for pin %s", pin)
         send_response(
             500,
             {
                 "status": "error",
-                "message": f"Internal server error while processing pin {pin}.",
+                "message": f"Internal server error while processing pin {pin}: {exc}",
             },
         )
 

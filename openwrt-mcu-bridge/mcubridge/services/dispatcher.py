@@ -228,7 +228,7 @@ class BridgeDispatcher:
 
         # 2. Handler Resolution
         handler = self.mcu_registry.get(command_id)
-        command_name = self._resolve_command_name(command_id)
+        command_name = _command_name(command_id)
 
         # 3. Safe Execution Strategy
         handled_successfully = False
@@ -259,10 +259,6 @@ class BridgeDispatcher:
         # 4. Auto-Acknowledgement (if applicable)
         if handled_successfully and self._should_acknowledge_mcu_frame(command_id):
             await self.acknowledge_frame(command_id)
-
-    def _resolve_command_name(self, command_id: int) -> str:
-        """Helper to get a human-readable name for any ID."""
-        return _command_name(command_id)
 
     async def dispatch_mqtt_message(
         self,

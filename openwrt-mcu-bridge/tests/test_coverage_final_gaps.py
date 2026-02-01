@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-import tenacity
 
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.payloads import (
     PayloadValidationError,
     ShellCommandPayload,
@@ -21,7 +19,6 @@ from mcubridge.services.task_supervisor import (
     supervise_task,
     _SupervisorRetryState,
 )
-from mcubridge.state.context import RuntimeState
 from mcubridge.rpc.protocol import Status
 
 
@@ -101,14 +98,14 @@ async def test_serial_flow_reset_with_pending() -> None:
         max_attempts=3,
         logger=logging.getLogger("test"),
     )
-    
+
     # Manually set up a pending command
     pending = PendingCommand(command_id=0x01, expected_resp_ids={0x81})
     async with controller._condition:
         controller._current = pending
-    
+
     await controller.reset()
-    
+
     assert pending.success is False
     assert pending.completion.is_set()
 
@@ -122,13 +119,13 @@ async def test_serial_flow_on_frame_ack_wrong_target() -> None:
         max_attempts=3,
         logger=logging.getLogger("test"),
     )
-    
+
     pending = PendingCommand(command_id=0x01, expected_resp_ids={0x81})
     controller._current = pending
-    
+
     # ACK for different command
     controller.on_frame_received(Status.ACK.value, b"\x00\x02")  # ACK for cmd 0x02
-    
+
     assert pending.ack_received is False
 
 
@@ -141,16 +138,16 @@ async def test_serial_flow_failure_status_printable_ignored() -> None:
         max_attempts=3,
         logger=logging.getLogger("test"),
     )
-    
+
     pending = PendingCommand(command_id=0x01, expected_resp_ids={0x81})
     controller._current = pending
-    
+
     # Failure status with printable text - should be ignored
     controller.on_frame_received(
         Status.ERROR.value,  # Generic error
         b"serial_rx_overflow"
     )
-    
+
     # Not marked as failure because payload is printable
     assert pending.success is None
 
@@ -164,12 +161,12 @@ async def test_serial_flow_success_status() -> None:
         max_attempts=3,
         logger=logging.getLogger("test"),
     )
-    
+
     pending = PendingCommand(command_id=0x01, expected_resp_ids=set())
     controller._current = pending
-    
+
     controller.on_frame_received(Status.OK.value, b"")
-    
+
     assert pending.success is True
 
 
@@ -183,7 +180,7 @@ def test_serial_flow_metrics_callback() -> None:
         logger=logging.getLogger("test"),
         metrics_callback=events.append,
     )
-    
+
     controller._emit_metric("test_event")
     assert "test_event" in events
 
@@ -198,10 +195,10 @@ def test_serial_flow_pipeline_observer() -> None:
         logger=logging.getLogger("test"),
     )
     controller.set_pipeline_observer(observations.append)
-    
+
     pending = PendingCommand(command_id=0x01)
     controller._notify_pipeline("test", pending, status=None)
-    
+
     assert len(observations) == 1
     assert observations[0]["event"] == "test"
 
@@ -219,7 +216,7 @@ def test_supervisor_retry_state_not_healthy() -> None:
         state=None,
         window=5.0,
     )
-    
+
     assert state.is_healthy_runtime() is False
 
 
@@ -231,11 +228,11 @@ def test_supervisor_retry_state_healthy() -> None:
         state=None,
         window=0.01,  # Very short window
     )
-    
+
     state.mark_started()
     import time
     time.sleep(0.02)
-    
+
     assert state.is_healthy_runtime() is True
 
 
@@ -247,13 +244,13 @@ def test_supervisor_retry_state_before_sleep() -> None:
         state=None,
         window=5.0,
     )
-    
+
     mock_retry_state = MagicMock()
     mock_retry_state.outcome = MagicMock()
     mock_retry_state.outcome.exception.return_value = RuntimeError("test")
     mock_retry_state.next_action = MagicMock()
     mock_retry_state.next_action.sleep = 1.5
-    
+
     state.before_sleep(mock_retry_state)
     state.log.error.assert_called()
 
@@ -267,15 +264,15 @@ def test_supervisor_retry_state_after_with_state() -> None:
         state=mock_runtime,
         window=5.0,
     )
-    
+
     mock_retry_state = MagicMock()
     mock_retry_state.outcome = MagicMock()
     mock_retry_state.outcome.exception.return_value = RuntimeError("test")
     mock_retry_state.next_action = MagicMock()
     mock_retry_state.next_action.sleep = 2.0
-    
+
     helper.after(mock_retry_state)
-    
+
     mock_runtime.record_supervisor_failure.assert_called_once()
 
 
@@ -288,14 +285,14 @@ def test_supervisor_retry_state_after_no_exception() -> None:
         state=mock_runtime,
         window=5.0,
     )
-    
+
     mock_retry_state = MagicMock()
     mock_retry_state.outcome = MagicMock()
     mock_retry_state.outcome.exception.return_value = None
     mock_retry_state.next_action = None
-    
+
     helper.after(mock_retry_state)
-    
+
     # Should not call record_supervisor_failure
     mock_runtime.record_supervisor_failure.assert_not_called()
 
@@ -304,19 +301,19 @@ def test_supervisor_retry_state_after_no_exception() -> None:
 async def test_supervise_task_clean_exit() -> None:
     """Cover task that exits cleanly."""
     call_count = 0
-    
+
     async def simple_task() -> None:
         nonlocal call_count
         call_count += 1
-    
+
     mock_state = MagicMock()
-    
+
     await supervise_task(
         "test_task",
         simple_task,
         state=mock_state,
     )
-    
+
     assert call_count == 1
     mock_state.mark_supervisor_healthy.assert_called_with("test_task")
 
@@ -326,14 +323,14 @@ async def test_supervise_task_cancelled() -> None:
     """Cover task supervisor cancellation."""
     async def forever_task() -> None:
         await asyncio.sleep(1000)
-    
+
     task = asyncio.create_task(
         supervise_task("test_cancel", forever_task)
     )
-    
+
     await asyncio.sleep(0.01)
     task.cancel()
-    
+
     with pytest.raises(asyncio.CancelledError):
         await task
 
@@ -343,12 +340,12 @@ async def test_supervise_task_fatal_exception() -> None:
     """Cover task with fatal exception."""
     class FatalError(Exception):
         pass
-    
+
     async def fatal_task() -> None:
         raise FatalError("fatal!")
-    
+
     mock_state = MagicMock()
-    
+
     with pytest.raises(FatalError):
         await supervise_task(
             "test_fatal",
@@ -356,7 +353,7 @@ async def test_supervise_task_fatal_exception() -> None:
             fatal_exceptions=(FatalError,),
             state=mock_state,
         )
-    
+
     mock_state.record_supervisor_failure.assert_called()
 
 
@@ -364,12 +361,12 @@ async def test_supervise_task_fatal_exception() -> None:
 async def test_supervise_task_max_restarts() -> None:
     """Cover task that exceeds max restarts."""
     call_count = 0
-    
+
     async def failing_task() -> None:
         nonlocal call_count
         call_count += 1
         raise RuntimeError("always fails")
-    
+
     with pytest.raises(RuntimeError):
         await supervise_task(
             "test_max",
@@ -378,7 +375,7 @@ async def test_supervise_task_max_restarts() -> None:
             min_backoff=0.01,
             max_backoff=0.01,
         )
-    
+
     assert call_count == 3  # Initial + 2 restarts
 
 
@@ -391,7 +388,7 @@ def test_pending_command_mark_success() -> None:
     """Cover PendingCommand.mark_success()."""
     pending = PendingCommand(command_id=0x01)
     pending.mark_success()
-    
+
     assert pending.success is True
     assert pending.completion.is_set()
 
@@ -400,7 +397,7 @@ def test_pending_command_mark_failure() -> None:
     """Cover PendingCommand.mark_failure()."""
     pending = PendingCommand(command_id=0x01)
     pending.mark_failure(Status.CRC_MISMATCH.value)
-    
+
     assert pending.success is False
     assert pending.failure_status == Status.CRC_MISMATCH.value
     assert pending.completion.is_set()
@@ -409,14 +406,14 @@ def test_pending_command_mark_failure() -> None:
 def test_pending_command_double_set_event() -> None:
     """Cover that completion event is set only once."""
     pending = PendingCommand(command_id=0x01)
-    
+
     # First mark
     pending.mark_success()
     assert pending.completion.is_set()
-    
+
     # Second mark - event already set, should not crash
     pending.mark_failure(Status.TIMEOUT.value)
-    
+
     # Completion should still be set
     assert pending.completion.is_set()
 
@@ -430,9 +427,9 @@ def test_supervised_task_spec_defaults() -> None:
     """Cover SupervisedTaskSpec default values."""
     async def dummy() -> None:
         pass
-    
+
     spec = SupervisedTaskSpec(name="test", factory=dummy)
-    
+
     assert spec.name == "test"
     assert spec.fatal_exceptions == ()
     assert spec.max_restarts is None

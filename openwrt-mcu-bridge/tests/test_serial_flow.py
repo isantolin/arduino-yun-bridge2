@@ -167,7 +167,7 @@ def test_serial_flow_reset_abandons_pending(
         controller.set_sender(fake_sender)
 
         send_task = asyncio.create_task(controller.send(Command.CMD_DIGITAL_READ.value, b""))
-        await sender_called.wait()
+        await asyncio.wait_for(sender_called.wait(), timeout=1)
         await controller.reset()
         assert await send_task is False
 
@@ -378,7 +378,7 @@ def test_serial_flow_pipeline_abandoned_on_reset(
         controller.set_sender(fake_sender)
 
         send_task = asyncio.create_task(controller.send(Command.CMD_DIGITAL_READ.value, b""))
-        await sender_called.wait()
+        await asyncio.wait_for(sender_called.wait(), timeout=1)
         await controller.reset()
         assert await send_task is False
 

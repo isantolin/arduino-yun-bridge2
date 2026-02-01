@@ -104,8 +104,13 @@ class _ExponentialBackoff:
 
 
 def _command_name(command_id: int) -> str:
+    """Resolve command/status ID to human-readable name."""
     try:
         return Command(command_id).name
+    except ValueError:
+        pass
+    try:
+        return Status(command_id).name
     except ValueError:
         return f"0x{command_id:02X}"
 

@@ -375,7 +375,7 @@ def test_resolve_command_name_command_status_unknown() -> None:
 
     assert dispatcher._resolve_command_name(Command.CMD_CONSOLE_WRITE.value) == "CMD_CONSOLE_WRITE"
     assert dispatcher._resolve_command_name(Status.ACK.value) == "ACK"
-    assert dispatcher._resolve_command_name(0xEE).startswith("UNKNOWN(0x")
+    assert dispatcher._resolve_command_name(0xEE) == "0xEE"
 
 
 @pytest.mark.asyncio

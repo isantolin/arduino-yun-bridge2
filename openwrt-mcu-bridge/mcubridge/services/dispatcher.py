@@ -9,6 +9,7 @@ from mcubridge.rpc.protocol import (
     Command,
     Status,
 )
+from mcubridge.state.context import _command_name
 from mcubridge.rpc.contracts import response_to_request
 from mcubridge.protocol.topics import Topic, TopicRoute
 from .routers import MCUHandlerRegistry, MQTTRouter
@@ -261,13 +262,7 @@ class BridgeDispatcher:
 
     def _resolve_command_name(self, command_id: int) -> str:
         """Helper to get a human-readable name for any ID."""
-        try:
-            return Command(command_id).name
-        except ValueError:
-            try:
-                return Status(command_id).name
-            except ValueError:
-                return f"UNKNOWN(0x{command_id:02X})"
+        return _command_name(command_id)
 
     async def dispatch_mqtt_message(
         self,

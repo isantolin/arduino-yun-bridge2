@@ -31,7 +31,10 @@ logger = logging.getLogger("mcubridge.file")
 
 def _do_write_file(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("wb") as f:
+    # [SIL-2] Use 'ab' (append) to support chunked file writes from MCU.
+    # Since the protocol is stateless and frames are max 64 bytes, large files
+    # arrive as a sequence of CMD_FILE_WRITE. 'wb' would overwrite previous chunks.
+    with path.open("ab") as f:
         f.write(data)
         if f.tell() > FILE_LARGE_WARNING_BYTES:
             logger.warning("File %s is growing large (>1MB) in RAM!", path)

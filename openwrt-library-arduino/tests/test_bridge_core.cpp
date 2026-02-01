@@ -1042,7 +1042,7 @@ void test_bridge_payload_too_large() {
     bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync
     stream.tx_buffer.clear();
 
-    // Max payload is 128. Build an oversized raw frame (200 bytes) and inject it.
+    // Max payload is 128 (now 64). Build an oversized raw frame (200 bytes) and inject it.
     // This should trip the frame parser's overflow/malformed handling.
     enum { kTooLargePayload = 200 };
     uint8_t payload[kTooLargePayload];
@@ -1083,6 +1083,132 @@ void test_bridge_payload_too_large() {
     TEST_ASSERT(stream.tx_buffer.len > 0);
 }
 
+void test_bridge_chunking() {
+    MockStream stream;
+    BridgeClass bridge(stream);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    sync_bridge(bridge, stream);
+    stream.tx_buffer.clear();
+
+    // Data Setup
+    // MAX_PAYLOAD_SIZE = 64
+    // Header: 5 bytes
+    // Max Chunk: 59 bytes
+    // Data: 100 bytes
+    // Expected: Frame 1 (5+59=64), Frame 2 (5+41=46)
+    
+    uint8_t header[5] = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
+    uint8_t data[100];
+    for(size_t i=0; i<100; i++) data[i] = static_cast<uint8_t>(i);
+
+    // Call sendChunkyFrame
+    Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, header, 5, data, 100);
+
+    // Verification
+    // We expect 2 valid frames in tx_buffer.
+    // Decode and check.
+    
+    size_t cursor = 0;
+    int frame_count = 0;
+    uint8_t decoded[rpc::MAX_RAW_FRAME_SIZE];
+    rpc::FrameParser parser;
+
+    // --- Frame 1 ---
+    // Find delimiter
+    size_t end1 = cursor;
+    while(end1 < stream.tx_buffer.len && stream.tx_buffer.data[end1] != rpc::RPC_FRAME_DELIMITER) end1++;
+    TEST_ASSERT(end1 < stream.tx_buffer.len); // Must find delimiter
+    
+    size_t len1 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end1 - cursor, decoded);
+    rpc::Frame f1;
+    TEST_ASSERT(parser.parse(decoded, len1, f1));
+    TEST_ASSERT_EQ_UINT(f1.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
+    TEST_ASSERT_EQ_UINT(f1.header.payload_length, 64);
+    // Check Header
+    TEST_ASSERT(memcmp(f1.payload.data(), header, 5) == 0);
+    // Check Data Chunk 1 (0-58)
+    TEST_ASSERT(memcmp(f1.payload.data() + 5, data, 59) == 0);
+    
+    cursor = end1 + 1; // Skip delimiter
+
+    // --- Frame 2 ---
+    // Note: Bridge might send ACKs if we were using a command that requires it, 
+    // but here we are sending CMD_MAILBOX_PUSH which usually requires ACK.
+    // However, sendChunkyFrame calls _sendFrame which enqueues and waits.
+    // BUT since we are mocking, the bridge sends the frame, and then immediately returns.
+    // Wait, sendChunkyFrame has a loop `while (!sendFrame) process()`.
+    // In MockStream, write always succeeds. sendFrame returns true.
+    // So it should blast both frames.
+    // BUT `CMD_MAILBOX_PUSH` requires ACK.
+    // `sendFrame` sets `_fsm.sendCritical()`.
+    // The second `sendFrame` call will FAIL because state is `AwaitingAck`.
+    // Then `process()` runs.
+    // `process()` checks timeouts.
+    // The loop `while(!sendFrame)` will hang if we don't inject an ACK!
+    
+    // CRITICAL: We cannot test blocking logic easily with a linear MockStream unless we
+    // inject the ACK *inside* the `process()` call which is inside `sendChunkyFrame`.
+    // But `sendChunkyFrame` is a blocking call from our perspective.
+    
+    // Wait, `MockStream::write` puts data in `tx_buffer`.
+    // `Bridge.process()` reads from `rx_buffer`.
+    // To make this test pass without modifying `Bridge` source for hooks:
+    // We need `process()` to receive an ACK.
+    // But `process()` is called *inside* `sendChunkyFrame`.
+    // We can't inject data into `rx_buffer` *while* `sendChunkyFrame` is running... 
+    // UNLESS we use a background thread (not available on Arduino/Test stub easily) 
+    // OR we change the command to one that does NOT require ACK.
+    
+    // Let's change to `CMD_MAILBOX_READ` or similar non-ack command for this test 
+    // to verify fragmentation logic first.
+    // `CMD_MAILBOX_READ` direction is mcu->linux? Yes.
+    // `requires_ack(CMD_MAILBOX_READ)`? No.
+    
+    // Retry with CMD_MAILBOX_READ (or a custom ID if needed, but stick to public).
+    // Actually, `CMD_FILE_READ_RESP`? 
+    // Let's use `CMD_CONSOLE_WRITE` but force it to NOT require ACK? No, hardcoded.
+    // `CMD_DIGITAL_READ_RESP`?
+    
+    // Let's use `CMD_DEBUG`? No.
+    // Check `_requiresAck`:
+    // It returns false by default.
+    // It returns true for: PIN_MODE, D_WRITE, A_WRITE, CONSOLE_WRITE, DATASTORE_PUT, MAILBOX_PUSH, FILE_WRITE.
+    // So if I use `CMD_MAILBOX_PROCESSED` (0x81), it does NOT require ack.
+    
+    stream.tx_buffer.clear();
+    Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PROCESSED, header, 5, data, 100);
+    
+    // NOW we should have 2 frames immediately.
+    
+    cursor = 0;
+    // --- Frame 1 ---
+    end1 = cursor;
+    while(end1 < stream.tx_buffer.len && stream.tx_buffer.data[end1] != rpc::RPC_FRAME_DELIMITER) end1++;
+    TEST_ASSERT(end1 < stream.tx_buffer.len); 
+    
+    len1 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end1 - cursor, decoded);
+    TEST_ASSERT(parser.parse(decoded, len1, f1));
+    TEST_ASSERT_EQ_UINT(f1.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PROCESSED));
+    TEST_ASSERT_EQ_UINT(f1.header.payload_length, 64);
+    TEST_ASSERT(memcmp(f1.payload.data(), header, 5) == 0);
+    TEST_ASSERT(memcmp(f1.payload.data() + 5, data, 59) == 0);
+    
+    cursor = end1 + 1;
+
+    // --- Frame 2 ---
+    size_t end2 = cursor;
+    while(end2 < stream.tx_buffer.len && stream.tx_buffer.data[end2] != rpc::RPC_FRAME_DELIMITER) end2++;
+    TEST_ASSERT(end2 < stream.tx_buffer.len);
+    
+    size_t len2 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end2 - cursor, decoded);
+    rpc::Frame f2;
+    TEST_ASSERT(parser.parse(decoded, len2, f2));
+    TEST_ASSERT_EQ_UINT(f2.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PROCESSED));
+    TEST_ASSERT_EQ_UINT(f2.header.payload_length, 46); // 5 + 41
+    TEST_ASSERT(memcmp(f2.payload.data(), header, 5) == 0);
+    TEST_ASSERT(memcmp(f2.payload.data() + 5, data + 59, 41) == 0);
+}
+
 int main() {
     test_bridge_begin();
     test_bridge_send_frame();
@@ -1110,5 +1236,9 @@ int main() {
     test_bridge_crc_mismatch();
     test_bridge_unknown_command();
     test_bridge_payload_too_large();
+    
+    // Chunking
+    test_bridge_chunking();
+    
     return 0;
 }

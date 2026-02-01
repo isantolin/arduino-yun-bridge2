@@ -7,7 +7,7 @@ from typing import Final
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
 DEFAULT_SAFE_BAUDRATE: Final[int] = 115200
-MAX_PAYLOAD_SIZE: Final[int] = 128
+MAX_PAYLOAD_SIZE: Final[int] = 64
 MAX_FILEPATH_LENGTH: Final[int] = 64
 MAX_DATASTORE_KEY_LENGTH: Final[int] = 32
 DEFAULT_ACK_TIMEOUT_MS: Final[int] = 200

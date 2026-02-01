@@ -196,6 +196,7 @@ class BridgeFsm : public etl::fsm
 public:
   BridgeFsm()
     : etl::fsm(NUMBER_OF_STATES)
+    , state_list_{}
   {
   }
 

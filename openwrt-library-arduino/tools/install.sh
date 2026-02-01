@@ -130,8 +130,8 @@ install_dependency() {
 # 1. External Dependencies (Installed to Arduino libraries folder)
 install_dependency "FastCRC" "https://codeload.github.com/FrankBoesing/FastCRC/zip/refs/heads/master" "FastCRC.h"
 install_dependency "PacketSerial" "https://codeload.github.com/bakercp/PacketSerial/zip/refs/heads/master" "PacketSerial.h"
-# Crypto is special as it's part of arduinolibs
-install_dependency "Crypto" "https://codeload.github.com/rweather/arduinolibs/zip/refs/heads/master" "Crypto.h" "libraries/Crypto"
+# Crypto: Using OperatorFoundation standalone fork (simpler install, PlatformIO support)
+install_dependency "Crypto" "https://codeload.github.com/OperatorFoundation/Crypto/zip/refs/heads/master" "Crypto.h"
 
 # 2. Bundled Dependencies
 # ETL is installed in two locations:

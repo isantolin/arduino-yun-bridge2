@@ -423,9 +423,9 @@ void test_rle_gaps() {
 void test_security_gaps() {
     printf("  -> Testing security_gaps\n");
     uint8_t ikm[32] = {0};
-    uint8_t prk[32];
-    // Gap: hkdf_sha256_extract null salt
-    rpc::security::hkdf_sha256_extract(nullptr, 0, ikm, 32, prk);
+    uint8_t okm[32];
+    // Test HKDF with null salt (uses library's ::hkdf<SHA256>)
+    rpc::security::hkdf_sha256(ikm, 32, nullptr, 0, nullptr, 0, okm, 32);
 }
 
 // --- TARGET: StringUtils.h Gaps ---

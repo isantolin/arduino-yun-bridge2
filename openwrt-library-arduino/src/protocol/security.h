@@ -57,69 +57,28 @@ inline void secure_zero_portable(void* buf, size_t len) {
 }
 
 /**
- * @brief HKDF-SHA256 Extract function (RFC 5869).
- */
-inline void hkdf_sha256_extract(
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* ikm, size_t ikm_len,
-    uint8_t* out_prk) {
-  SHA256 sha256;
-  if (!salt || salt_len == 0) {
-    uint8_t zero_salt[32];
-    memset(zero_salt, 0, 32);
-    sha256.resetHMAC(zero_salt, 32);
-  } else {
-    sha256.resetHMAC(salt, salt_len);
-  }
-  sha256.update(ikm, ikm_len);
-  // Note: Crypto library's finalizeHMAC takes the key again, which is redundant but required.
-  if (!salt || salt_len == 0) {
-    uint8_t zero_salt[32];
-    memset(zero_salt, 0, 32);
-    sha256.finalizeHMAC(zero_salt, 32, out_prk, 32);
-  } else {
-    sha256.finalizeHMAC(salt, salt_len, out_prk, 32);
-  }
-}
-
-/**
- * @brief HKDF-SHA256 Expand function (RFC 5869).
- * Currently supports output length <= 32 bytes (one block) for handshake needs.
- */
-inline void hkdf_sha256_expand(
-    const uint8_t* prk, size_t prk_len,
-    const uint8_t* info, size_t info_len,
-    uint8_t* out_okm, size_t okm_len) {
-  if (okm_len > 32) return; 
-  
-  SHA256 sha256;
-  sha256.resetHMAC(prk, prk_len);
-  if (info && info_len > 0) {
-    sha256.update(info, info_len);
-  }
-  uint8_t counter = 1;
-  sha256.update(&counter, 1);
-  uint8_t full_okm[32];
-  sha256.finalizeHMAC(prk, prk_len, full_okm, 32);
-  memcpy(out_okm, full_okm, okm_len);
-  secure_zero(full_okm, 32);
-}
-
-/**
- * @brief Derive a key using HKDF-SHA256.
+ * @brief Derive a key using HKDF-SHA256 (RFC 5869).
  * 
- * This is the primary entry point for MIL-SPEC key derivation.
- * Uses manual implementation via SHA256 primitives to ensure compatibility and correctness.
+ * [MIL-SPEC] Uses OperatorFoundation/Crypto library implementation.
+ * The library provides automatic secure cleanup via HKDF destructor.
+ * 
+ * @param ikm Input Keying Material (shared secret)
+ * @param ikm_len Length of IKM
+ * @param salt Optional salt (can be NULL)
+ * @param salt_len Length of salt (0 if NULL)
+ * @param info Application-specific context info
+ * @param info_len Length of info
+ * @param out_okm Output buffer for derived key
+ * @param okm_len Desired output length (supports > 32 bytes)
  */
 inline void hkdf_sha256(
     const uint8_t* ikm, size_t ikm_len,
     const uint8_t* salt, size_t salt_len,
     const uint8_t* info, size_t info_len,
     uint8_t* out_okm, size_t okm_len) {
-  uint8_t prk[32];
-  hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk);
-  hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len);
-  secure_zero(prk, 32);
+  // Use library's optimized HKDF implementation
+  // The template function handles Extract+Expand and cleanup
+  ::hkdf<SHA256>(out_okm, okm_len, ikm, ikm_len, salt, salt_len, info, info_len);
 }
 
 /**

@@ -24,7 +24,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 ### External dependencies
 
-- **Crypto**: The installer fetches the [Crypto](https://github.com/rweather/arduinolibs/tree/master/libraries/Crypto) library from `rweather/arduinolibs`.
+- **Crypto**: The installer fetches the [Crypto](https://github.com/OperatorFoundation/Crypto) library (standalone fork maintained by Operator Foundation).
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`). This ensures SIL-2 compliance by avoiding dynamic heap allocation.
 - **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3).
 

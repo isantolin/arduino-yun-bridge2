@@ -42,6 +42,9 @@
 #include "etl/circular_buffer.h"
 #include "etl/vector.h"
 
+// [SIL-2] Lightweight FSM for deterministic state transitions
+#include "fsm/bridge_fsm.h"
+
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
 
@@ -132,14 +135,6 @@ namespace test { class TestAccessor; }
 }
 #endif
 
-// [SIL-2] Finite State Machine (Deterministic State)
-enum class BridgeState : uint8_t {
-  Unsynchronized,      // Startup / Reset state. Only Handshake commands allowed.
-  Idle,                // Connected & Synchronized. Ready for commands.
-  AwaitingAck,         // Sent critical command, waiting for ACK. Queueing non-critical.
-  Fault                // Safety state (optional, currently resets to Unsynchronized)
-};
-
 class BridgeClass {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
@@ -177,7 +172,14 @@ class BridgeClass {
       ,
              const char* secret = nullptr, size_t secret_len = 0);
   void process();
-  bool isSynchronized() const { return _state != BridgeState::Unsynchronized; }
+  bool isSynchronized() const { return _fsm.isSynchronized(); }
+  
+  // [SIL-2] FSM state accessors
+  bool isUnsynchronized() const { return _fsm.isUnsynchronized(); }
+  bool isIdle() const { return _fsm.isIdle(); }
+  bool isAwaitingAck() const { return _fsm.isAwaitingAck(); }
+  bool isFault() const { return _fsm.isFault(); }
+  bridge::fsm::StateId getStateId() const { return static_cast<bridge::fsm::StateId>(_fsm.get_state_id()); }
 
   // Events
   inline void onCommand(CommandHandler handler) { _command_handler = handler; }
@@ -262,7 +264,8 @@ class BridgeClass {
   // [SIL-2] Use queue adapter over deque for strict FIFO semantics
   etl::queue<PendingTxFrame, BRIDGE_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
 
-  BridgeState _state;
+  // [SIL-2] ETL FSM replaces manual state tracking
+  bridge::fsm::BridgeFsm _fsm;
 
   // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
   etl::vector<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;

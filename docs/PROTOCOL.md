@@ -92,6 +92,91 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
 - **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (tmpfs/RAM).
 
+## Máquina de Estados (ETL FSM) — IEC 61508 / SIL 2
+
+El sistema de comunicación MCU↔Linux implementa una **máquina de estados finita (FSM)** basada en la biblioteca [ETL (Embedded Template Library)](https://www.etlcpp.com/fsm.html) `etl::fsm`. Esta arquitectura garantiza transiciones deterministas y trazables, cumpliendo con IEC 61508 (SIL-2).
+
+### Estados
+
+| Estado | ID | Descripción |
+|--------|----|-------------|
+| `StateUnsynchronized` | 0 | Enlace no establecido. Esperando handshake. |
+| `StateIdle` | 1 | Enlace sincronizado, listo para operar. |
+| `StateAwaitingAck` | 2 | Frame crítico enviado, esperando confirmación. |
+| `StateFault` | 3 | Fallo criptográfico detectado. Estado terminal. |
+
+### Eventos
+
+| Evento | Descripción |
+|--------|-------------|
+| `EvHandshakeComplete` | Handshake HMAC validado exitosamente. |
+| `EvSendCritical` | Frame que requiere ACK enviado. |
+| `EvAckReceived` | ACK recibido para frame pendiente. |
+| `EvTimeout` | Timeout de ACK (retries agotados). |
+| `EvReset` | Solicitud de reset del enlace. |
+| `EvCryptoFault` | Fallo de integridad criptográfica (KAT fallido). |
+
+### Diagrama de Transiciones
+
+```
+                    ┌─────────────────────┐
+                    │   Unsynchronized    │◄────────────────┐
+                    │        (0)          │                 │
+                    └──────────┬──────────┘                 │
+                               │ EvHandshakeComplete        │ EvReset
+                               ▼                            │
+                    ┌─────────────────────┐                 │
+              ┌────►│        Idle         │─────────────────┤
+              │     │        (1)          │                 │
+              │     └──────────┬──────────┘                 │
+              │                │ EvSendCritical             │
+              │                ▼                            │
+              │     ┌─────────────────────┐                 │
+ EvAckReceived│     │    AwaitingAck      │─────────────────┘
+              │     │        (2)          │
+              │     └──────────┬──────────┘
+              │                │ EvTimeout
+              └────────────────┘
+
+                    ┌─────────────────────┐
+      EvCryptoFault │       Fault         │ (estado terminal)
+         ──────────►│        (3)          │
+                    └─────────────────────┘
+```
+
+### Implementación
+
+El FSM está implementado en `src/fsm/bridge_fsm.h` usando el framework `etl::fsm`:
+
+```cpp
+#include "fsm/bridge_fsm.h"
+
+// Consulta de estado
+bool synced = _fsm.isIdle() || _fsm.isAwaitingAck();
+bool waiting = _fsm.isAwaitingAck();
+bool failed = _fsm.isFault();
+
+// Transiciones via eventos
+_fsm.handshakeComplete();  // Unsynchronized → Idle
+_fsm.sendCritical();       // Idle → AwaitingAck
+_fsm.ackReceived();        // AwaitingAck → Idle
+_fsm.timeout();            // AwaitingAck → Idle
+_fsm.reset();              // Any → Unsynchronized
+_fsm.cryptoFault();        // Any → Fault
+```
+
+### Ventajas sobre enum + switch
+
+| Aspecto | Enum | ETL FSM |
+|---------|------|---------|
+| Validación de transiciones | Manual | Automática |
+| Trazabilidad | Difícil | `etl::fsm_state_id_t` |
+| Extensibilidad | Cambios dispersos | On-enter/on-exit hooks |
+| Testabilidad | Estado global | Estado encapsulado |
+| Conformidad SIL-2 | Requiere evidencia manual | Determinístico por diseño |
+
+---
+
 ## Estado Seguro (Fail-Safe State) — IEC 61508 / SIL 2
 
 Esta sección documenta formalmente el comportamiento del sistema ante condiciones de fallo, cumpliendo con los requisitos de Seguridad Funcional.

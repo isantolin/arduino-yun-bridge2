@@ -356,7 +356,7 @@ void test_bridge_begin() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Verify initial state
-    TEST_ASSERT(bridge._state == BridgeState::Unsynchronized);
+    TEST_ASSERT(bridge._fsm.isUnsynchronized());
     // TEST_ASSERT(bridge._transport.isFlowPaused() == false); // Flow control removed from Transport
 }
 
@@ -679,14 +679,14 @@ void test_bridge_ack_malformed_timeout_paths() {
     ModeStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._state = BridgeState::Idle;
+    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete();
     stream.clear_tx();
 
     // Send a command that requires ACK.
     const uint8_t payload[] = {TEST_BYTE_01};
     g_test_millis = 0;
     TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload)));
-    TEST_ASSERT(bridge._state == BridgeState::AwaitingAck);
+    TEST_ASSERT(bridge._fsm.isAwaitingAck());
 
     // Malformed for the last command triggers retransmission and increments retry count.
     rpc::Frame malformed{};
@@ -702,7 +702,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     ack_missing.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
     ack_missing.header.payload_length = 0;
     bridge.dispatch(ack_missing);
-    TEST_ASSERT(bridge._state != BridgeState::AwaitingAck);
+    TEST_ASSERT(!bridge._fsm.isAwaitingAck());
 
     // Timeout path when retry limit is exceeded calls status handler.
     StatusCapture status;
@@ -718,7 +718,7 @@ void test_bridge_ack_malformed_timeout_paths() {
 
     g_test_millis = 100;
     bridge._processAckTimeout();
-    TEST_ASSERT(bridge._state != BridgeState::AwaitingAck);
+    TEST_ASSERT(!bridge._fsm.isAwaitingAck());
     TEST_ASSERT(status.called);
     TEST_ASSERT(status.code == rpc::StatusCode::STATUS_TIMEOUT);
 
@@ -743,7 +743,7 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     // Fill queue.
     // Transition to AwaitingAck so subsequent frames get queued
     auto accessor = bridge::test::TestAccessor::create(bridge);
-    accessor.setState(BridgeState::AwaitingAck);
+    accessor.setAwaitingAck();
 
     while(!bridge._pending_tx_queue.full()) {
         bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0);
@@ -881,7 +881,7 @@ void test_bridge_malformed_frame() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._state = BridgeState::Idle; // [FIX] Enable sync so errors are reported
+    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync so errors are reported
     stream.tx_buffer.clear();
 
     // Inject garbage data into the stream to trigger malformed/overflow logic
@@ -1039,7 +1039,7 @@ void test_bridge_payload_too_large() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._state = BridgeState::Idle; // [FIX] Enable sync
+    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync
     stream.tx_buffer.clear();
 
     // Max payload is 128. Build an oversized raw frame (200 bytes) and inject it.

@@ -32,8 +32,9 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 This library follows IEC 61508 (SIL-2) and FIPS 140-3 (MIL-SPEC) guidelines:
 - **No Dynamic Memory:** All buffers are statically allocated using ETL. No `malloc`/`new` after initialization.
+- **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (Unsynchronized, Idle, AwaitingAck, Fault) and event-driven transitions.
 - **Cryptographic Self-Tests (POST):** Performs Known Answer Tests (KAT) for SHA256 and HMAC-SHA256 at startup.
-- **Fail-Secure:** Initialization aborts and the system enters a safe state if cryptographic integrity checks fail.
+- **Fail-Secure:** Initialization aborts and the system enters a safe state (StateFault) if cryptographic integrity checks fail.
 - **Key Isolation:** Uses **HKDF-SHA256** for key derivation, ensuring the shared secret is never used directly for authentication tags.
 - **No Recursion:** Deterministic stack usage.
 - **Integrity:** All RPC frames are protected by CRC32.

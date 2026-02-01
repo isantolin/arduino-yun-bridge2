@@ -143,7 +143,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
       _pending_tx_queue(),
-      _state(BridgeState::Unsynchronized),
+      _fsm(),
       _last_raw_frame()
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
@@ -155,12 +155,15 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 void BridgeClass::begin(
     unsigned long arg_baudrate, const char* arg_secret, size_t arg_secret_len) {
   
+  // [SIL-2] Start the ETL FSM before any other initialization
+  _fsm.begin();
+
   // [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
   if (!rpc::security::run_cryptographic_self_tests()) {
     // CRITICAL: Cryptographic engine is untrustworthy.
     // Enter safe state and disable the bridge to prevent insecure operation.
     enterSafeState();
-    _state = BridgeState::Fault;
+    _fsm.cryptoFault();  // Transition FSM to Fault state
     return;
   }
 
@@ -200,7 +203,8 @@ void BridgeClass::begin(
                          reinterpret_cast<const uint8_t*>(arg_secret) + actual_len);
   }
 
-  _state = BridgeState::Unsynchronized;
+  // [SIL-2] FSM reset to Unsynchronized state
+  _fsm.resetFsm();
   _last_command_id = 0;
   _retry_count = 0;
   _last_send_millis = 0;
@@ -284,7 +288,7 @@ void BridgeClass::process() {
           #endif
         }
       }
-      if (_state != BridgeState::Unsynchronized) {
+      if (!_fsm.isUnsynchronized()) {
         switch (error) {
           case rpc::FrameParser::Error::CRC_MISMATCH:
             _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
@@ -450,8 +454,8 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
             etl::copy_n(tag, kHandshakeTagSize, response + nonce_length);
           }
           (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, response, response_length);
-          // [SIL-2] Handshake complete -> Transition to Idle
-          _state = BridgeState::Idle;
+          // [SIL-2] Handshake complete -> Transition to Idle via FSM
+          _fsm.handshakeComplete();
         }
       }
       break;
@@ -761,22 +765,17 @@ bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
 }
 
 bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
-  // [SIL-2] Finite State Machine - Outbound Filter
-  switch (_state) {
-    case BridgeState::Unsynchronized:
-      // Only allow handshake commands during startup
-      if (!_isHandshakeCommand(command_id)) return false;
-      break;
-    
-    case BridgeState::Fault:
-      // Safety State: Drop all outbound traffic
-      return false;
-
-    case BridgeState::Idle:
-    case BridgeState::AwaitingAck:
-      // Allowed
-      break;
+  // [SIL-2] Finite State Machine - Outbound Filter via ETL FSM
+  if (_fsm.isFault()) {
+    // Safety State: Drop all outbound traffic
+    return false;
   }
+  
+  if (_fsm.isUnsynchronized()) {
+    // Only allow handshake commands during startup
+    if (!_isHandshakeCommand(command_id)) return false;
+  }
+  // Idle and AwaitingAck are allowed to send
 
   uint16_t final_cmd = command_id;
   const uint8_t* final_payload = arg_payload;
@@ -793,13 +792,13 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
 
   const bool critical = _requiresAck(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED);
 
-  // [SIL-2] State-Driven Sending Logic
-  if (critical && _state == BridgeState::AwaitingAck) {
+  // [SIL-2] State-Driven Sending Logic via ETL FSM
+  if (critical && _fsm.isAwaitingAck()) {
     // Already waiting? Queue it.
     if (_pending_tx_queue.full() || final_len > rpc::MAX_PAYLOAD_SIZE) {
       // Queue full? Try to process timeout to free space (Emergency Valve)
       _processAckTimeout();
-      if (_state == BridgeState::AwaitingAck || _pending_tx_queue.full()) return false;
+      if (_fsm.isAwaitingAck() || _pending_tx_queue.full()) return false;
     }
     
     // Inlined _enqueuePendingTx
@@ -824,7 +823,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   flushStream();
 
   if (critical) {
-    _state = BridgeState::AwaitingAck;
+    _fsm.sendCritical();  // Transition to AwaitingAck
     _retry_count = 0;
     _last_send_millis = millis();
     _last_command_id = final_cmd;
@@ -855,14 +854,14 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
 }
 
 void BridgeClass::_clearAckState() { 
-  if (_state == BridgeState::AwaitingAck) {
-    _state = BridgeState::Idle; 
+  if (_fsm.isAwaitingAck()) {
+    _fsm.ackReceived();  // Transition back to Idle
   }
   _retry_count = 0; 
 }
 
 void BridgeClass::_handleAck(uint16_t command_id) {
-  if (_state == BridgeState::AwaitingAck && (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id)) {
+  if (_fsm.isAwaitingAck() && (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id)) {
     _clearAckState();
     _flushPendingTxQueue();
   }
@@ -873,7 +872,7 @@ void BridgeClass::_handleMalformed(uint16_t command_id) {
 }
 
 void BridgeClass::_retransmitLastFrame() {
-  if (_state == BridgeState::AwaitingAck && !_last_raw_frame.empty()) {
+  if (_fsm.isAwaitingAck() && !_last_raw_frame.empty()) {
     _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
     _retry_count++;
     _last_send_millis = millis();
@@ -882,11 +881,12 @@ void BridgeClass::_retransmitLastFrame() {
 }
 
 void BridgeClass::_processAckTimeout() {
-  if (_state != BridgeState::AwaitingAck) return;
+  if (!_fsm.isAwaitingAck()) return;
   unsigned long now = millis();
   if ((now - _last_send_millis) < _ack_timeout_ms) return;
   if (_retry_count >= _ack_retry_limit) {
     if (_status_handler) _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
+    _fsm.timeout();  // Transition to Unsynchronized via FSM
     enterSafeState(); 
     return;
   }
@@ -894,8 +894,9 @@ void BridgeClass::_processAckTimeout() {
 }
 
 void BridgeClass::enterSafeState() {
-  _state = BridgeState::Unsynchronized;
-  _clearAckState();
+  _fsm.resetFsm();  // Transition to Unsynchronized via ETL FSM
+  // Note: _clearAckState() checks FSM state, so we skip to avoid redundant transition
+  _retry_count = 0;
   _clearPendingTxQueue();
   _frame_received = false;
   _target_frame = nullptr;
@@ -914,7 +915,7 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  if (_state == BridgeState::AwaitingAck || _pending_tx_queue.empty()) return;
+  if (_fsm.isAwaitingAck() || _pending_tx_queue.empty()) return;
   const PendingTxFrame& frame = _pending_tx_queue.front();
 
   rpc::FrameBuilder builder;
@@ -925,7 +926,7 @@ void BridgeClass::_flushPendingTxQueue() {
     _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
     flushStream();
 
-    _state = BridgeState::AwaitingAck;
+    _fsm.sendCritical();  // Transition to AwaitingAck via FSM
     _retry_count = 0;
     _last_send_millis = millis();
     _last_command_id = frame.command_id;

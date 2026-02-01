@@ -29,7 +29,10 @@ class TestAccessor {
     return _bridge._parser.getError();
   }
 
-  bool isAwaitingAck() const { return _bridge._state == BridgeState::AwaitingAck; }
+  bool isAwaitingAck() const { return _bridge._fsm.isAwaitingAck(); }
+  bool isIdle() const { return _bridge._fsm.isIdle(); }
+  bool isUnsynchronized() const { return _bridge._fsm.isUnsynchronized(); }
+  bool isFault() const { return _bridge._fsm.isFault(); }
   uint16_t getLastCommandId() const { return _bridge._last_command_id; }
 
   // --- Methods ---
@@ -41,12 +44,24 @@ class TestAccessor {
     _bridge.dispatch(frame);
   }
 
-  void setSynchronized(bool synchronized) {
-    _bridge._state = synchronized ? BridgeState::Idle : BridgeState::Unsynchronized;
+  // FSM state manipulation for tests
+  void setUnsynchronized() { _bridge._fsm.resetFsm(); }
+  void setIdle() { 
+    _bridge._fsm.resetFsm();
+    _bridge._fsm.handshakeComplete(); 
   }
+  void setAwaitingAck() { 
+    setIdle();
+    _bridge._fsm.sendCritical(); 
+  }
+  void setFault() { _bridge._fsm.cryptoFault(); }
 
-  void setState(BridgeState state) {
-    _bridge._state = state;
+  void setSynchronized(bool synchronized) {
+    if (synchronized) {
+      setIdle();
+    } else {
+      setUnsynchronized();
+    }
   }
 
   static TestAccessor create(BridgeClass& bridge) {

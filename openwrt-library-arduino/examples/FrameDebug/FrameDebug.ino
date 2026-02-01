@@ -181,7 +181,7 @@ void loop() {
 
 
 
-    delay(20);  // Allow time for the frame to flush over Serial1.
+    Bridge.flushStream();  // [SIL-2] Non-blocking flush replaces delay(20).
 
 
 
@@ -221,7 +221,7 @@ void loop() {
 
           Bridge.sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, rp, sizeof(rp));
 
-          delay(20);
+          Bridge.flushStream();  // [SIL-2] Non-blocking flush.
 
           printSnapshot(Bridge.getTxDebugSnapshot());
 

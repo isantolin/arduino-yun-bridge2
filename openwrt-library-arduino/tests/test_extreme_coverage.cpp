@@ -44,7 +44,7 @@ void setup_test_env(CaptureStream& stream) {
     Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Manually force sync state to enable command processing
-    Bridge._state = BridgeState::Idle;
+    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
     Console.begin();
 }
 

@@ -53,7 +53,7 @@ void setup_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
-    Bridge._state = BridgeState::Idle;
+    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
 }
 
 // --- TARGET: rpc_frame.cpp Gaps ---
@@ -151,21 +151,21 @@ void test_bridge_extra_gaps() {
     Bridge.sendFrame(rpc::StatusCode::STATUS_ACK);
 
     // Gap: sendFrame while not synchronized (allowed commands)
-    Bridge._state = BridgeState::Unsynchronized;
+    Bridge._fsm.resetFsm();
     assert(Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP));
     assert(Bridge.sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP));
     assert(Bridge.sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP));
     assert(!Bridge.sendFrame(rpc::CommandId::CMD_DIGITAL_WRITE));
-    Bridge._state = BridgeState::Idle;
+    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
 
     // Gap: _handleAck with invalid ID
-    Bridge._state = BridgeState::AwaitingAck;
+    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
     Bridge._last_command_id = 0x60;
     Bridge._handleAck(rpc::RPC_INVALID_ID_SENTINEL);
-    assert(Bridge._state != BridgeState::AwaitingAck);
+    assert(!Bridge._fsm.isAwaitingAck());
 
     // Gap: _handleMalformed with invalid ID
-    Bridge._state = BridgeState::AwaitingAck;
+    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
     Bridge._last_command_id = 0x60;
     Bridge._handleMalformed(rpc::RPC_INVALID_ID_SENTINEL);
 
@@ -199,9 +199,9 @@ void test_bridge_extra_gaps() {
     assert(Bridge._isRecentDuplicateRx(f) == false); // elapsed < ack_timeout
 
     // Gap: _sendFrame with Fault state
-    Bridge._state = BridgeState::Fault;
+    Bridge._fsm.cryptoFault();
     assert(!Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION));
-    Bridge._state = BridgeState::Idle;
+    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
 
     // Gap: _flushPendingTxQueue raw_len == 0 (force error)
     Bridge._pending_tx_queue.clear();

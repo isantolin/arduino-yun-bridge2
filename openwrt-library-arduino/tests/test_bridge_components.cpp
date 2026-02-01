@@ -304,7 +304,7 @@ static void reset_bridge_with_stream(RecordingStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin();
-  Bridge._state = BridgeState::Idle;
+  Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
   Console.begin();
 }
 

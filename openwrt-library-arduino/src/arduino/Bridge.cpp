@@ -430,7 +430,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         const size_t nonce_length = payload_length;
         if (nonce_length != rpc::RPC_HANDSHAKE_NONCE_LENGTH) break;
         
-        _resetLinkState();
+        enterSafeState();
         Console.begin();
         const bool has_secret = !_shared_secret.empty();
         const size_t response_length = static_cast<size_t>(nonce_length) + (has_secret ? kHandshakeTagSize : 0);
@@ -456,7 +456,7 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
       break;
     case rpc::CommandId::CMD_LINK_RESET:
       if (payload_length == 0 || payload_length == rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
-        _resetLinkState();
+        enterSafeState();
         _applyTimingConfig(payload_data, payload_length);
         Console.begin();
         (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
@@ -901,8 +901,6 @@ void BridgeClass::enterSafeState() {
   _consecutive_crc_errors = 0;
   _last_raw_frame.clear();
 }
-
-void BridgeClass::_resetLinkState() { enterSafeState(); }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
   etl::array<uint8_t, 2> ack_payload;

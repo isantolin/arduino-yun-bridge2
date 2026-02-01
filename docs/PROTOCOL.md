@@ -112,8 +112,8 @@ El **Estado Seguro** es la configuración a la que el sistema transiciona autom�
 | CRC Mismatch | Reset parser, emit `STATUS_CRC_MISMATCH` | Log + reintento | Link degradado |
 | Frame Malformed | Reset parser, emit `STATUS_MALFORMED` | Log + descarte | Link operativo |
 | Buffer Overflow | Reset parser, descarte silencioso | Log + descarte | Link operativo |
-| Handshake Timeout | `_resetLinkState()` | Backoff exponencial | Link no sincronizado |
-| Handshake Auth Fail | `_resetLinkState()` | `SerialHandshakeFatal` si > N fallos | Link rechazado |
+| Handshake Timeout | `enterSafeState()` | Backoff exponencial | Link no sincronizado |
+| Handshake Auth Fail | `enterSafeState()` | `SerialHandshakeFatal` si > N fallos | Link rechazado |
 | Serial Disconnect | N/A (hardware) | Clear queues, `serial_tx_allowed.set()` | Reconexión pendiente |
 | ACK Timeout (max retries) | `_awaiting_ack = false` | Log + siguiente frame | Frame perdido |
 | Watchdog Timeout | Reset MCU (AVR `wdt_reset()`) | Depende de procd | Reinicio completo |

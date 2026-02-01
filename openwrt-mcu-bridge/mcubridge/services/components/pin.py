@@ -22,6 +22,16 @@ from .base import BridgeContext
 logger = logging.getLogger("mcubridge.pin")
 
 
+def _parse_digital_value(payload: bytes) -> int:
+    """Parse single-byte digital pin value from MCU response."""
+    return payload[0]
+
+
+def _parse_analog_value(payload: bytes) -> int:
+    """Parse two-byte big-endian analog pin value from MCU response."""
+    return int.from_bytes(payload, "big")
+
+
 class PinComponent:
     """Encapsulate pin read/write logic."""
 
@@ -109,7 +119,7 @@ class PinComponent:
             expected_size=1,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            parse_value=lambda p: p[0],
+            parse_value=_parse_digital_value,
             pending_queue=self.state.pending_digital_reads,
         )
 
@@ -119,7 +129,7 @@ class PinComponent:
             expected_size=2,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            parse_value=lambda p: int.from_bytes(p, "big"),
+            parse_value=_parse_analog_value,
             pending_queue=self.state.pending_analog_reads,
         )
 

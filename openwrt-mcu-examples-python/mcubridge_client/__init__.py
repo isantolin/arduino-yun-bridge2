@@ -36,7 +36,7 @@ __all__ = [
 
 
 def _read_uci_general() -> dict[str, str]:
-    from uci import Uci  # type: ignore
+    from uci import Uci, UciException  # type: ignore
 
     try:
         with Uci() as cursor:
@@ -49,7 +49,7 @@ def _read_uci_general() -> dict[str, str]:
                     continue
                 clean[str(key)] = str(value)
             return clean
-    except Exception:
+    except (UciException, OSError, KeyError, TypeError):
         return {}
 
 
@@ -80,7 +80,7 @@ def _default_tls_context() -> ssl.SSLContext | None:
         if str(MQTT_TLS_INSECURE).strip() in {"1", "true", "yes", "on"}:
             ctx.check_hostname = False
         return ctx
-    except Exception:
+    except (ssl.SSLError, OSError, ValueError):
         return None
 
 
@@ -213,8 +213,8 @@ class Bridge:
             raise
         except MqttError as exc:
             logger.debug("MQTT listener stopped: %s", exc)
-        except Exception:
-            logger.exception("Unexpected error in MQTT listener")
+        except (OSError, ValueError, RuntimeError) as exc:
+            logger.error("Unexpected error in MQTT listener: %s", exc)
 
     async def _handle_inbound_message(self, message: Message) -> None:
         topic = str(message.topic)
@@ -539,8 +539,8 @@ class Bridge:
             message = await asyncio.wait_for(queue.get(), timeout=0.1)
         except TimeoutError:
             return None
-        except Exception:  # pragma: no cover - defensive logging
-            logger.exception("Error reading from console queue")
+        except (asyncio.CancelledError, OSError, RuntimeError) as exc:
+            logger.error("Error reading from console queue: %s", exc)
             return None
 
         payload = _payload_bytes(message.payload)
@@ -557,8 +557,8 @@ class Bridge:
             )
         except TimeoutError:
             return None
-        except Exception:  # pragma: no cover - defensive logging
-            logger.exception("Error waiting for mailbox message")
+        except (asyncio.CancelledError, MqttError, OSError) as exc:
+            logger.error("Error waiting for mailbox message: %s", exc)
             return None
 
         if not payload:

@@ -12,7 +12,7 @@ from collections.abc import Iterable
 
 
 def _read_uci_general() -> dict[str, str]:
-    from uci import Uci  # type: ignore
+    from uci import Uci, UciException  # type: ignore
 
     try:
         with Uci() as cursor:
@@ -25,7 +25,7 @@ def _read_uci_general() -> dict[str, str]:
                     continue
                 clean[str(key)] = str(value)
             return clean
-    except Exception:
+    except (UciException, OSError, KeyError, TypeError):
         return {}
 
 

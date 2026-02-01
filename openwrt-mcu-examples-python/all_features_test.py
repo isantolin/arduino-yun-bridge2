@@ -105,5 +105,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Exiting due to KeyboardInterrupt.")
-    except Exception:
-        logger.exception("An error occurred in main execution.")
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.critical("Fatal error in main execution: %s", exc)

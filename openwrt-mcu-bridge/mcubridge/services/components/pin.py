@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import collections
 import logging
 import struct
+from typing import Callable
 
 from aiomqtt.message import Message
 from mcubridge.rpc.protocol import Command, PinAction, Status
@@ -60,23 +62,35 @@ class PinComponent:
         )
         return False
 
-    async def handle_digital_read_resp(self, payload: bytes) -> None:
-        if len(payload) != 1:
+    async def _handle_pin_read_resp(
+        self,
+        *,
+        payload: bytes,
+        expected_size: int,
+        resp_name: str,
+        topic_type: Topic,
+        parse_value: Callable[[bytes], int],
+        pending_queue: collections.deque[PendingPinRequest],
+    ) -> None:
+        """Shared implementation for digital/analog read response handling."""
+        if len(payload) != expected_size:
             logger.warning(
-                "Malformed DIGITAL_READ_RESP payload: expected 1 byte, got %d",
+                "Malformed %s payload: expected %d byte(s), got %d",
+                resp_name,
+                expected_size,
                 len(payload),
             )
             return
 
-        value = payload[0]
+        value = parse_value(payload)
         request: PendingPinRequest | None = None
-        if self.state.pending_digital_reads:
-            request = self.state.pending_digital_reads.popleft()
+        if pending_queue:
+            request = pending_queue.popleft()
         else:
-            logger.warning("Received DIGITAL_READ_RESP without pending request.")
+            logger.warning("Received %s without pending request.", resp_name)
 
         pin_value = request.pin if request else None
-        topic = self._build_pin_topic(Topic.DIGITAL, pin_value)
+        topic = self._build_pin_topic(topic_type, pin_value)
         pin_label = str(pin_value) if pin_value is not None else "unknown"
         message = QueuedPublish(
             topic_name=topic,
@@ -87,35 +101,26 @@ class PinComponent:
         await self.ctx.enqueue_mqtt(
             message,
             reply_context=request.reply_context if request else None,
+        )
+
+    async def handle_digital_read_resp(self, payload: bytes) -> None:
+        await self._handle_pin_read_resp(
+            payload=payload,
+            expected_size=1,
+            resp_name="DIGITAL_READ_RESP",
+            topic_type=Topic.DIGITAL,
+            parse_value=lambda p: p[0],
+            pending_queue=self.state.pending_digital_reads,
         )
 
     async def handle_analog_read_resp(self, payload: bytes) -> None:
-        if len(payload) != 2:
-            logger.warning(
-                "Malformed ANALOG_READ_RESP payload: expected 2 bytes, got %d",
-                len(payload),
-            )
-            return
-
-        value = int.from_bytes(payload, "big")
-        request: PendingPinRequest | None = None
-        if self.state.pending_analog_reads:
-            request = self.state.pending_analog_reads.popleft()
-        else:
-            logger.warning("Received ANALOG_READ_RESP without pending request.")
-
-        pin_value = request.pin if request else None
-        topic = self._build_pin_topic(Topic.ANALOG, pin_value)
-        pin_label = str(pin_value) if pin_value is not None else "unknown"
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=str(value).encode("utf-8"),
-            message_expiry_interval=5,
-            user_properties=(("bridge-pin", pin_label),),
-        )
-        await self.ctx.enqueue_mqtt(
-            message,
-            reply_context=request.reply_context if request else None,
+        await self._handle_pin_read_resp(
+            payload=payload,
+            expected_size=2,
+            resp_name="ANALOG_READ_RESP",
+            topic_type=Topic.ANALOG,
+            parse_value=lambda p: int.from_bytes(p, "big"),
+            pending_queue=self.state.pending_analog_reads,
         )
 
     async def handle_mqtt(

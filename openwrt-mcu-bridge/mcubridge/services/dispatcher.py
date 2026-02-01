@@ -192,19 +192,19 @@ class BridgeDispatcher:
                 continue
             self.mcu_registry.register(status.value, status_handler_factory(status))
 
-    async def _handle_unexpected_digital_read(self, payload: bytes) -> bool:
+    async def _handle_unexpected_pin_read(self, command: Command, payload: bytes) -> bool:
+        """Route unexpected pin read from MCU to pin component (shared impl)."""
         pin = self.pin
         if pin is None:
-            logger.warning("Pin component not registered; dropping unexpected DIGITAL_READ")
+            logger.warning("Pin component not registered; dropping unexpected %s", command.name)
             return False
-        return await pin.handle_unexpected_mcu_request(Command.CMD_DIGITAL_READ, payload)
+        return await pin.handle_unexpected_mcu_request(command, payload)
+
+    async def _handle_unexpected_digital_read(self, payload: bytes) -> bool:
+        return await self._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, payload)
 
     async def _handle_unexpected_analog_read(self, payload: bytes) -> bool:
-        pin = self.pin
-        if pin is None:
-            logger.warning("Pin component not registered; dropping unexpected ANALOG_READ")
-            return False
-        return await pin.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, payload)
+        return await self._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, payload)
 
     async def dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """

@@ -4,7 +4,6 @@ import types
 import logging
 import msgspec
 from typing import Any, Self
-from unittest.mock import patch
 
 import pytest
 
@@ -373,30 +372,6 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     config = settings.load_runtime_config()
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
-
-
-def test_configure_logging_stream_handler(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    config_dict = _runtime_config_kwargs(debug_logging=True)
-    runtime_config = settings.RuntimeConfig(**config_dict)
-
-    with patch("sys.stdout.isatty", return_value=True):
-        with patch("logging.StreamHandler") as mock_handler:
-            settings.configure_logging(runtime_config)
-            assert mock_handler.called
-
-
-def test_configure_logging_syslog_handler(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    config_dict = _runtime_config_kwargs(debug_logging=False)
-    runtime_config = settings.RuntimeConfig(**config_dict)
-
-    with patch("os.path.exists", return_value=True):
-        with patch("logging.handlers.SysLogHandler") as mock_syslog:
-            settings.configure_logging(runtime_config)
-            assert mock_syslog.called
 
 
 def test_structured_formatter_trims_prefix_and_serialises_extra():

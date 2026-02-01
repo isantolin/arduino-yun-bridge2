@@ -67,7 +67,7 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload.data();
 
-  if (!payload_data || payload_length == 0) return;
+  if (payload_length == 0) return;
 
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:

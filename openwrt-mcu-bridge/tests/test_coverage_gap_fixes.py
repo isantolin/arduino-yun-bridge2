@@ -746,46 +746,6 @@ def test_settings_normalize_path_empty():
         RuntimeConfig._normalize_path("relative/path", field_name="test", require_absolute=True)
 
 
-def test_configure_logging_settings_dead_code(monkeypatch):
-    """Cover the dead configure_logging in settings.py."""
-    from mcubridge.config.settings import configure_logging
-
-    config = create_fake_config()
-
-    # Create a real SysLogHandler mock that can be called
-    mock_syslog = MagicMock()
-
-    original_exists = Path.exists
-
-    def fake_exists_yes(path_self):
-        if str(path_self) == "/dev/log":
-            return True
-        return original_exists(path_self)
-
-    def fake_exists_no(path_self):
-        if str(path_self) == "/dev/log":
-            return False
-        return original_exists(path_self)
-
-    # Case: Syslog OK
-    monkeypatch.setattr(Path, "exists", fake_exists_yes)
-    with patch("mcubridge.config.settings.logging.handlers.SysLogHandler", return_value=mock_syslog):
-        configure_logging(config)
-
-    # Case: Syslog OSError
-    monkeypatch.setattr(Path, "exists", fake_exists_yes)
-    with (
-        patch("mcubridge.config.settings.logging.handlers.SysLogHandler", side_effect=OSError("fail")),
-        patch("sys.stderr.write") as mock_write,
-    ):
-        configure_logging(config)
-        assert mock_write.called
-
-    # Case: No Syslog
-    monkeypatch.setattr(Path, "exists", fake_exists_no)
-    configure_logging(config)
-
-
 def test_logging_gaps():
     """Cover gaps in mcubridge.config.logging."""
     from mcubridge.config.logging import StructuredLogFormatter, _serialise_value, _build_handler

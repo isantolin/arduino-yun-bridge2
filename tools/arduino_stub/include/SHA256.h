@@ -203,7 +203,7 @@ class SHA256 {
 
   uint32_t state_[8];
   uint64_t bit_length_ = 0;
-  uint8_t buffer_[kBlockSize];
+  uint8_t buffer_[kBlockSize] = {};
   size_t buffer_len_ = 0;
   uint8_t ipad_[kBlockSize] = {};
   uint8_t opad_[kBlockSize] = {};

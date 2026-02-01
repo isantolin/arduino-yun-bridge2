@@ -384,6 +384,8 @@ class FileSystemClass {
  public:
   using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
 
+  FileSystemClass() : _file_system_read_handler(nullptr) {}
+
   void write(const char* filePath, const uint8_t* data, size_t length);
   void remove(const char* filePath);
   void read(const char* filePath);

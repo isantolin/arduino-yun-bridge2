@@ -137,8 +137,64 @@ install_dependency "Crypto" "https://codeload.github.com/OperatorFoundation/Cryp
 # ETL is installed in two locations:
 #   1. Global Arduino libraries (standard practice)
 #   2. Local src/ directory (required for host-based unit tests and SIL-2 isolation)
-install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "include/etl" "$LIB_DIR"
-install_dependency "etl" "https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master" "array.h" "include/etl" "${LIB_ROOT}/src"
+# [OPTIMIZATION] Download once, copy to both locations
+install_etl_dual() {
+    local url="https://codeload.github.com/ETLCPP/etl/zip/refs/heads/master"
+    local check_file="array.h"
+    local sub_path="include/etl"
+    local target1="$LIB_DIR"
+    local target2="${LIB_ROOT}/src"
+
+    local needs_t1=false
+    local needs_t2=false
+
+    # Check which targets need installation
+    if [ ! -f "$target1/etl/$check_file" ] && [ ! -f "$target1/etl/etl/$check_file" ]; then
+        needs_t1=true
+    else
+        echo "[INFO] etl already installed at $target1."
+    fi
+    if [ ! -f "$target2/etl/$check_file" ] && [ ! -f "$target2/etl/etl/$check_file" ]; then
+        needs_t2=true
+    else
+        echo "[INFO] etl already installed at $target2."
+    fi
+
+    if [ "$needs_t1" = false ] && [ "$needs_t2" = false ]; then
+        return 0
+    fi
+
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local zip_path="$tmp_dir/etl.zip"
+
+    if ! download_zip "etl" "$url" "$zip_path"; then
+        echo "[ERROR] Failed to download etl." >&2
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    unzip -q "$zip_path" -d "$tmp_dir"
+    local extracted_root
+    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d -name "etl-*" | head -n1)
+    local source_path="$extracted_root/$sub_path"
+
+    if [ "$needs_t1" = true ]; then
+        mkdir -p "$target1"
+        rm -rf "$target1/etl"
+        cp -a "$source_path" "$target1/etl"
+        echo "[OK] etl installed to $target1."
+    fi
+    if [ "$needs_t2" = true ]; then
+        mkdir -p "$target2"
+        rm -rf "$target2/etl"
+        cp -a "$source_path" "$target2/etl"
+        echo "[OK] etl installed to $target2."
+    fi
+
+    rm -rf "$tmp_dir"
+}
+install_etl_dual
 
 # Verify our own src directory exists
 if [ ! -d "${LIB_ROOT}/src" ]; then

@@ -33,6 +33,7 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/security.h"
 #include "etl/error_handler.h"
+#include "etl/algorithm.h"
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection
@@ -442,11 +443,11 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
 
         uint8_t* response = _scratch_payload.data();
         if (payload_data) {
-          memcpy(response, payload_data, nonce_length);
+          etl::copy_n(payload_data, nonce_length, response);
           if (has_secret) {
             uint8_t tag[kHandshakeTagSize];
             _computeHandshakeTag(payload_data, nonce_length, tag);
-            memcpy(response + nonce_length, tag, kHandshakeTagSize);
+            etl::copy_n(tag, kHandshakeTagSize, response + nonce_length);
           }
           (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, response, response_length);
           // [SIL-2] Handshake complete -> Transition to Idle
@@ -570,7 +571,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
       _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
       return;
     }
-    memcpy(effective_frame.payload.data(), _scratch_payload.data(), decoded_len);
+    etl::copy_n(_scratch_payload.data(), decoded_len, effective_frame.payload.data());
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   }
 
@@ -802,7 +803,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
     PendingTxFrame frame;
     frame.command_id = final_cmd;
     frame.payload_length = static_cast<uint16_t>(final_len);
-    if (final_len > 0 && final_payload) memcpy(frame.payload.data(), final_payload, final_len);
+    if (final_len > 0 && final_payload) etl::copy_n(final_payload, final_len, frame.payload.data());
     _pending_tx_queue.push(frame);
     return true;
   }
@@ -935,7 +936,7 @@ void BridgeClass::_clearPendingTxQueue() { while (!_pending_tx_queue.empty()) _p
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret.empty() || nonce_len == 0 || !nonce) {
-    memset(out_tag, 0, kHandshakeTagSize);
+    etl::fill_n(out_tag, kHandshakeTagSize, uint8_t{0});
     return;
   }
 
@@ -954,7 +955,7 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   sha256.resetHMAC(handshake_key, 32);
   sha256.update(nonce, nonce_len);
   sha256.finalizeHMAC(handshake_key, 32, digest, kSha256DigestSize);
-  memcpy(out_tag, digest, kHandshakeTagSize);
+  etl::copy_n(digest, kHandshakeTagSize, out_tag);
   
   rpc::security::secure_zero(handshake_key, 32);
   rpc::security::secure_zero(digest, kSha256DigestSize);

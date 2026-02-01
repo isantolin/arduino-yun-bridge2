@@ -1,6 +1,6 @@
 #include "Bridge.h"
 #include "arduino/StringUtils.h"
-#include <string.h>
+#include "etl/algorithm.h"
 #include "protocol/rpc_protocol.h"
 
 MailboxClass::MailboxClass() 
@@ -33,7 +33,7 @@ void MailboxClass::send(const uint8_t* data, size_t length) {
   uint8_t* payload = Bridge.getScratchBuffer();
   
     rpc::write_u16_be(payload, static_cast<uint16_t>(length));
-  memcpy(payload + 2, data, length);
+  etl::copy_n(data, length, payload + 2);
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_MAILBOX_PUSH,
       payload, static_cast<uint16_t>(length + 2));

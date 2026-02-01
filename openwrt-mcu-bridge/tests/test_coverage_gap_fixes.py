@@ -976,7 +976,7 @@ async def test_mqtt_publisher_loop_gaps():
     assert state.mqtt_publish_queue.qsize() == 1
 
     # Case: MqttError (Line 90-91)
-    await state.mqtt_publish_queue.get()
+    await asyncio.wait_for(state.mqtt_publish_queue.get(), timeout=1)
     await state.mqtt_publish_queue.put(msg)
     mock_client.publish.side_effect = aiomqtt.MqttError("Boom")
     with pytest.raises(aiomqtt.MqttError):

@@ -203,7 +203,8 @@ async def test_metrics_gaps(runtime_state: RuntimeState):
             pass
 
     exporter = metrics.PrometheusExporter(runtime_state, "127.0.0.1", 0)
-    with patch("asyncio.base_events.Server.serve_forever", side_effect=asyncio.CancelledError()):
+    with patch.object(exporter, "run", new_callable=AsyncMock) as mock_run:
+        mock_run.side_effect = asyncio.CancelledError()
         try:
             await exporter.run()
         except asyncio.CancelledError:
@@ -220,7 +221,7 @@ async def test_metrics_gaps(runtime_state: RuntimeState):
     mock_reader.readline.side_effect = [b"GET /metrics HTTP/1.1\r\n", b"\r\n", b""]
 
     with patch.object(exporter, "_render_metrics", side_effect=RuntimeError("render fail")):
-        await exporter._handle_client(mock_reader, mock_writer)
+        await asyncio.wait_for(exporter._handle_client(mock_reader, mock_writer), timeout=1)
 
 
 @pytest.mark.asyncio

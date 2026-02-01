@@ -201,6 +201,13 @@ class BridgeClass {
   uint8_t* getScratchBuffer() { return _scratch_payload.data(); }
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
+  
+  // [SIL-2] Large Payload Support (Application-Level Chunking)
+  // Sends data larger than MAX_PAYLOAD_SIZE by fragmenting it into multiple frames.
+  // Handles flow control (back-pressure) to ensure delivery on constrained queues.
+  void sendChunkyFrame(rpc::CommandId command_id, 
+                       const uint8_t* header, size_t header_len, 
+                       const uint8_t* data, size_t data_len);
 
 #if BRIDGE_DEBUG_FRAMES
   struct FrameDebugSnapshot {

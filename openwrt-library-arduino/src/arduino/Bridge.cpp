@@ -757,6 +757,49 @@ bool BridgeClass::sendFrame(rpc::StatusCode status_code, const uint8_t* arg_payl
   return _sendFrame(rpc::to_underlying(status_code), arg_payload, arg_length);
 }
 
+void BridgeClass::sendChunkyFrame(rpc::CommandId command_id, 
+                                  const uint8_t* header, size_t header_len, 
+                                  const uint8_t* data, size_t data_len) {
+  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return; // Header too big to fit any data
+  
+  const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
+  size_t offset = 0;
+
+  // Handle empty data case (send at least one frame with just header)
+  if (data_len == 0) {
+     uint8_t* buffer = getScratchBuffer();
+     if (header_len > 0) etl::copy_n(header, header_len, buffer);
+     while (!_sendFrame(rpc::to_underlying(command_id), buffer, header_len)) {
+       process();
+     }
+     return;
+  }
+
+  while (offset < data_len) {
+    size_t bytes_remaining = data_len - offset;
+    size_t chunk_size = (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
+
+    uint8_t* buffer = getScratchBuffer();
+    
+    // 1. Copy Header
+    if (header_len > 0) etl::copy_n(header, header_len, buffer);
+    
+    // 2. Copy Data Chunk
+    if (data) etl::copy_n(data + offset, chunk_size, buffer + header_len);
+
+    size_t payload_size = header_len + chunk_size;
+
+    // 3. Send with Back-pressure
+    // If the TX queue is full, we must pump the FSM (process()) to clear it
+    // before we can send the next chunk. This guarantees sequential delivery.
+    while (!_sendFrame(rpc::to_underlying(command_id), buffer, payload_size)) {
+      process();
+    }
+
+    offset += chunk_size;
+  }
+}
+
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
   return (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
          (command_id == rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||

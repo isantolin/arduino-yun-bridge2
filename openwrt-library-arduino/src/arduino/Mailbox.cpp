@@ -24,19 +24,15 @@ void MailboxClass::send(const char* message) {
 void MailboxClass::send(const uint8_t* data, size_t length) {
   if (!data || length == 0) return;
 
-  size_t max_payload = rpc::MAX_PAYLOAD_SIZE - 2;
-  if (length > max_payload) {
-    length = max_payload;
-  }
-
-  // [OPTIMIZATION] Use shared scratch buffer
-  uint8_t* payload = Bridge.getScratchBuffer();
-  
-    rpc::write_u16_be(payload, static_cast<uint16_t>(length));
-  etl::copy_n(data, length, payload + 2);
-  (void)Bridge.sendFrame(
-      rpc::CommandId::CMD_MAILBOX_PUSH,
-      payload, static_cast<uint16_t>(length + 2));
+  // [SIL-2] Large Message Support
+  // We remove the explicit 2-byte length prefix that was present in the old implementation
+  // because the Frame Header already contains the payload length.
+  // This allows us to use standard chunking for messages > 64 bytes.
+  // Note: The receiving side (Python) will receive these as separate messages.
+  // Reassembly is up to the application layer if needed.
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, 
+                         nullptr, 0, 
+                         data, length);
 }
 
 void MailboxClass::requestRead() {

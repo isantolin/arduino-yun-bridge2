@@ -194,23 +194,23 @@ class SerialHandshakeManager:
                 b"",
             )
         if not reset_ok:
-            self._clear_handshake_expectations()
-            await self._handle_handshake_failure("link_reset_send_failed")
+            self.clear_handshake_expectations()
+            await self.handle_handshake_failure("link_reset_send_failed")
             return False
 
         await asyncio.sleep(0.05)
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce)
         if not sync_ok:
-            self._clear_handshake_expectations()
-            await self._handle_handshake_failure("link_sync_send_failed")
+            self.clear_handshake_expectations()
+            await self.handle_handshake_failure("link_sync_send_failed")
             return False
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
             pending_nonce = self._state.link_handshake_nonce
-            self._clear_handshake_expectations()
+            self.clear_handshake_expectations()
             if pending_nonce == nonce:
-                await self._handle_handshake_failure("link_sync_timeout")
+                await self.handle_handshake_failure("link_sync_timeout")
             return False
         return True
 
@@ -223,7 +223,7 @@ class SerialHandshakeManager:
                 status=Status.MALFORMED,
                 extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
-            await self._handle_handshake_failure("unexpected_sync_resp")
+            await self.handle_handshake_failure("unexpected_sync_resp")
             return False
 
         nonce_length = self._state.link_nonce_length or len(expected)
@@ -241,7 +241,7 @@ class SerialHandshakeManager:
                     status=Status.MALFORMED,
                     extra=payload[:_STATUS_PAYLOAD_WINDOW],
                 )
-                await self._handle_handshake_failure("sync_rate_limited")
+                await self.handle_handshake_failure("sync_rate_limited")
                 return False
             self._state.handshake_rate_limit_until = now + rate_limit
 
@@ -256,8 +256,8 @@ class SerialHandshakeManager:
                 status=Status.MALFORMED,
                 extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
-            self._clear_handshake_expectations()
-            await self._handle_handshake_failure("sync_length_mismatch")
+            self.clear_handshake_expectations()
+            await self.handle_handshake_failure("sync_length_mismatch")
             return False
 
         nonce = payload[:nonce_length]
@@ -286,8 +286,8 @@ class SerialHandshakeManager:
                 status=Status.MALFORMED,
                 extra=payload[:_STATUS_PAYLOAD_WINDOW],
             )
-            self._clear_handshake_expectations()
-            await self._handle_handshake_failure(
+            self.clear_handshake_expectations()
+            await self.handle_handshake_failure(
                 "sync_auth_mismatch",
                 detail="nonce_or_tag_mismatch",
             )
@@ -295,7 +295,7 @@ class SerialHandshakeManager:
 
         payload = nonce
         self._state.link_is_synchronized = True
-        self._clear_handshake_expectations()
+        self.clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
         asyncio.create_task(self._fetch_capabilities_with_delay())
@@ -363,7 +363,7 @@ class SerialHandshakeManager:
         self._state.link_is_synchronized = False
         return True
 
-    async def _handle_handshake_failure(
+    async def handle_handshake_failure(
         self,
         reason: str,
         *,
@@ -402,17 +402,6 @@ class SerialHandshakeManager:
             extra=extra,
         )
 
-    async def handle_handshake_failure(
-        self,
-        reason: str,
-        *,
-        detail: str | None = None,
-    ) -> None:
-        await self._handle_handshake_failure(reason, detail=detail)
-
-    def clear_handshake_expectations(self) -> None:
-        self._clear_handshake_expectations()
-
     def raise_if_handshake_fatal(self) -> None:
         reason = self._fatal_handshake_reason()
         if not reason:
@@ -436,7 +425,7 @@ class SerialHandshakeManager:
             await asyncio.sleep(0.01)
         return self._state.link_is_synchronized and self._state.link_handshake_nonce is None
 
-    def _clear_handshake_expectations(self) -> None:
+    def clear_handshake_expectations(self) -> None:
         if self._state.link_handshake_nonce is not None:
             nonce_buf = bytearray(self._state.link_handshake_nonce)
             secure_zero(nonce_buf)

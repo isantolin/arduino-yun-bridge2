@@ -318,11 +318,11 @@ def test_repeated_sync_timeouts_become_fatal(
         runtime_config.serial_handshake_fatal_failures = 2
         service = BridgeService(runtime_config, runtime_state)
 
-        await service._handle_handshake_failure("link_sync_timeout")
+        await service.handle_handshake_failure("link_sync_timeout")
         assert runtime_state.handshake_fatal_count == 0
         assert runtime_state.handshake_failure_streak == 1
 
-        await service._handle_handshake_failure("link_sync_timeout")
+        await service.handle_handshake_failure("link_sync_timeout")
         assert runtime_state.handshake_fatal_count == 1
         assert runtime_state.handshake_fatal_reason == "link_sync_timeout"
         assert runtime_state.handshake_fatal_detail == ("failure_streak_exceeded_2")
@@ -458,7 +458,7 @@ async def test_transient_handshake_failures_eventually_backoff(
     )
 
     for attempt in range(1, 4):
-        await service._handle_handshake_failure("link_sync_timeout")
+        await service.handle_handshake_failure("link_sync_timeout")
         if attempt < 3:
             assert runtime_state.handshake_backoff_until == 0
         else:

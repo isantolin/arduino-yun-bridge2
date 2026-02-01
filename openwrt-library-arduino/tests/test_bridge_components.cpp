@@ -491,9 +491,8 @@ static void test_mailbox_send_outbound_frame() {
   const rpc::Frame& f = frames.frames[0];
   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
   TEST_ASSERT(f.header.payload_length >= 2);
-  const uint16_t msg_len = rpc::read_u16_be(f.payload.data());
-  TEST_ASSERT_EQ_UINT(msg_len, 2);
-  TEST_ASSERT(test_memeq(f.payload.data() + 2, "hi", 2));
+  // Payload is just the message "hi" (no length prefix)
+  TEST_ASSERT(test_memeq(f.payload.data(), "hi", 2));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
   restore_bridge_to_serial();
@@ -517,9 +516,9 @@ static void test_filesystem_write_outbound_frame() {
   const uint8_t path_len = f.payload[0];
   TEST_ASSERT_EQ_UINT(path_len, sizeof(path) - 1);
   TEST_ASSERT(test_memeq(f.payload.data() + 1, path, path_len));
-  const uint16_t data_len = rpc::read_u16_be(f.payload.data() + 1 + path_len);
-  TEST_ASSERT_EQ_UINT(data_len, sizeof(data));
-  TEST_ASSERT(test_memeq(f.payload.data() + 3 + path_len, data, sizeof(data)));
+  
+  // Data follows immediately after path (no length prefix for data in this protocol version)
+  TEST_ASSERT(test_memeq(f.payload.data() + 1 + path_len, data, sizeof(data)));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE));
   restore_bridge_to_serial();

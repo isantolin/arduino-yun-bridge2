@@ -14,7 +14,7 @@ from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.rpc.protocol import Command, Status, MAX_PAYLOAD_SIZE
+from mcubridge.rpc.protocol import Command, Status
 from mcubridge.services.components.base import BridgeContext
 from mcubridge.services.components.file import FileComponent
 from mcubridge.state.context import RuntimeState
@@ -110,19 +110,40 @@ async def test_handle_remove_sends_ok_on_success(
 
 
 @pytest.mark.asyncio
-async def test_handle_read_truncated_payload(
+async def test_handle_read_large_payload_chunking(
     file_component: tuple[FileComponent, DummyBridge],
     tmp_path: Path,
 ) -> None:
+    """
+    Test that reading a file larger than MAX_PAYLOAD_SIZE results in multiple
+    chunked frames being sent back to the MCU, ensuring full data delivery.
+    """
     component, bridge = file_component
-    (tmp_path / "long.bin").write_bytes(b"x" * 512)
-    payload = bytes([8]) + b"long.bin"
+
+    # Create a file significantly larger than MAX_PAYLOAD_SIZE (64)
+    # 128 bytes requires at least 3 chunks (since payload overhead is 2 bytes, data ~62 per frame)
+    original_data = b"x" * 128
+    (tmp_path / "read_large.txt").write_bytes(original_data)
+
+    payload = bytes([14]) + b"read_large.txt"
     await component.handle_read(payload)
 
-    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
-    # MAX_PAYLOAD_SIZE is 128, so max content is 128 - 2 = 126 bytes
-    expected_len = MAX_PAYLOAD_SIZE - 2
-    assert bridge.sent_frames[-1][1].startswith(bytes([0, expected_len]))
+    # Reconstruct what was sent
+    total_received = b""
+    frames_count = 0
+    for cmd, data in bridge.sent_frames:
+        if cmd == Command.CMD_FILE_READ_RESP.value:
+            frames_count += 1
+            # Format: [Len:2][Data]
+            chunk_len = int.from_bytes(data[:2], "big")
+            chunk_data = data[2:]
+            assert len(chunk_data) == chunk_len
+            total_received += chunk_data
+
+    assert len(total_received) == 128
+    assert total_received == original_data
+    # Verify it was actually chunked (more than 1 frame)
+    assert frames_count > 1
 
 
 @pytest.mark.asyncio
@@ -526,3 +547,42 @@ def test_get_safe_path_confines_to_root(file_component: tuple[FileComponent, Dum
     if safe_path is None:
         return
     assert safe_path.is_relative_to(base_dir)
+
+
+@pytest.mark.asyncio
+async def test_handle_read_large_payload_truncation_reproduction(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    """
+    Reproduction test: Reading a file larger than MAX_PAYLOAD_SIZE (64 bytes)
+    currently results in truncated data being sent back to the MCU.
+    """
+    component, bridge = file_component
+
+    # Create a file larger than MAX_PAYLOAD_SIZE (which is 64 total, so payload < 64)
+    # Let's say 128 bytes of data.
+    original_data = b"x" * 128
+    (tmp_path / "read_large.txt").write_bytes(original_data)
+
+    payload = bytes([14]) + b"read_large.txt"
+    await component.handle_read(payload)
+
+    # We expect multiple frames or a sequence that delivers all 128 bytes.
+    # But currently, the implementation explicitly truncates.
+
+    # Reconstruct what was sent
+    total_received = b""
+    for cmd, data in bridge.sent_frames:
+        if cmd == Command.CMD_FILE_READ_RESP.value:
+            # Format: [Len:2][Data]
+            chunk_len = int.from_bytes(data[:2], "big")
+            chunk_data = data[2:]
+            assert len(chunk_data) == chunk_len
+            total_received += chunk_data
+
+    # This assertion should FAIL currently because it only sends the first chunk (~62 bytes)
+    assert len(total_received) == 128
+    assert total_received == original_data
+
+

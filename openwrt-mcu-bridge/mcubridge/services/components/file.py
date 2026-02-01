@@ -147,16 +147,23 @@ class FileComponent:
 
         data = content or b""
         max_payload = MAX_PAYLOAD_SIZE - 2
-        if len(data) > max_payload:
-            logger.warning(
-                "File read response truncated from %d to %d bytes for %s",
-                len(data),
-                max_payload,
-                filename,
-            )
-            data = data[:max_payload]
-        response = struct.pack(protocol.UINT16_FORMAT, len(data)) + data
-        await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
+
+        # [SIL-2] Large Payload Support: Chunking
+        # Instead of truncating, we send multiple frames. The MCU side handles
+        # reassembly or streaming via repeated callbacks.
+        total_len = len(data)
+        if total_len == 0:
+             response = struct.pack(protocol.UINT16_FORMAT, 0)
+             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
+             return
+
+        offset = 0
+        while offset < total_len:
+            chunk = data[offset : offset + max_payload]
+            # Frame Format: [Len:2] [Data:N]
+            response = struct.pack(protocol.UINT16_FORMAT, len(chunk)) + chunk
+            await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
+            offset += len(chunk)
 
     async def handle_remove(self, payload: bytes) -> bool:
         if len(payload) < 1:

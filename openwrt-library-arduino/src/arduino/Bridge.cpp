@@ -46,7 +46,6 @@
 #else
   BridgeClass Bridge(Serial);
 #endif
-ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 DataStoreClass DataStore;
 #endif
@@ -59,20 +58,6 @@ FileSystemClass FileSystem;
 #if BRIDGE_ENABLE_PROCESS
 ProcessClass Process;
 #endif
-#endif
-
-#if BRIDGE_DEBUG_IO
-template <typename ActionText>
-static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int16_t value) {
-  if (!kBridgeDebugIo) return;
-  if (!Console) return;
-  Console.print(F("[GPIO] "));
-  Console.print(action);
-  Console.print(F(" D"));
-  Console.print(pin);
-  Console.print(F(" = "));
-  Console.println(value);
-}
 #endif
 
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
@@ -155,6 +140,8 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 void BridgeClass::begin(
     unsigned long arg_baudrate, const char* arg_secret, size_t arg_secret_len) {
   
+  (void)arg_baudrate; // Ensure usage in all paths
+  
   // [SIL-2] Start the ETL FSM before any other initialization
   _fsm.begin();
 
@@ -228,6 +215,9 @@ void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
         if (g_bridge_instance->_parser.parse(buffer, size, *g_bridge_instance->_target_frame)) {
             g_bridge_instance->_frame_received = true;
         }
+    } else {
+        (void)buffer;
+        (void)size;
     }
 }
 
@@ -436,7 +426,6 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         if (nonce_length != rpc::RPC_HANDSHAKE_NONCE_LENGTH) break;
         
         enterSafeState();
-        Console.begin();
         const bool has_secret = !_shared_secret.empty();
         const size_t response_length = static_cast<size_t>(nonce_length) + (has_secret ? kHandshakeTagSize : 0);
         
@@ -463,7 +452,6 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
       if (payload_length == 0 || payload_length == rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
         enterSafeState();
         _applyTimingConfig(payload_data, payload_length);
-        Console.begin();
         (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
       }
       break;
@@ -555,12 +543,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
   }
 }
 
-void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
-  if (static_cast<rpc::CommandId>(frame.header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
-    Console._push(frame.payload.data(), frame.header.payload_length);
-  }
-}
-
 void BridgeClass::dispatch(const rpc::Frame& frame) {
   uint16_t raw_command = frame.header.command_id;
   bool is_compressed = (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
@@ -633,16 +615,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
           _markRxProcessed(effective_frame);
           command_processed_internally = true;
           requires_ack = false;
-          break;
-        case rpc::CommandId::CMD_CONSOLE_WRITE:
-          if (_isRecentDuplicateRx(effective_frame)) {
-            _sendAckAndFlush(raw_command);
-            return;
-          }
-          _handleConsoleCommand(effective_frame);
-          _markRxProcessed(effective_frame);
-          command_processed_internally = true;
-          requires_ack = true;
           break;
         case rpc::CommandId::CMD_MAILBOX_PUSH:
           if (_isRecentDuplicateRx(effective_frame)) {
@@ -881,7 +853,6 @@ bool BridgeClass::_requiresAck(uint16_t command_id) const {
     case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE):
     case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE):
     case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE):
-    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
       return true;
     #if BRIDGE_ENABLE_DATASTORE
     case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT): return true;

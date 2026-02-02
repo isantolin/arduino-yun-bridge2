@@ -111,7 +111,6 @@ MQTT_WILDCARD_MULTI: Final[str] = "#"
 
 class Topic(StrEnum):
     ANALOG = "a"  # Analog pin operations
-    CONSOLE = "console"  # Remote console
     DATASTORE = "datastore"  # Key-value storage
     DIGITAL = "d"  # Digital pin operations
     FILE = "file"  # File system operations
@@ -152,12 +151,6 @@ class PinAction(StrEnum):
     READ = "read"  # Read pin value
 
 
-class ConsoleAction(StrEnum):
-    IN = "in"  # Console input
-    OUT = "out"  # Console output
-    INPUT = "input"  # Console input action
-
-
 class SystemAction(StrEnum):
     FREE_MEMORY = "free_memory"  # System free memory
     VERSION = "version"  # System version
@@ -187,7 +180,6 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
     (Topic.DIGITAL, (MQTT_WILDCARD_SINGLE,), 0),
     (Topic.ANALOG, (MQTT_WILDCARD_SINGLE, AnalogAction.READ.value,), 0),
     (Topic.ANALOG, (MQTT_WILDCARD_SINGLE,), 0),
-    (Topic.CONSOLE, (ConsoleAction.IN.value,), 0),
     (Topic.DATASTORE, (DatastoreAction.PUT.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.DATASTORE, (DatastoreAction.GET.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.MAILBOX, (MailboxAction.WRITE.value,), 0),
@@ -241,7 +233,6 @@ class Command(IntEnum):
     CMD_ANALOG_READ = 84
     CMD_DIGITAL_READ_RESP = 85
     CMD_ANALOG_READ_RESP = 86
-    CMD_CONSOLE_WRITE = 96
     CMD_DATASTORE_PUT = 112
     CMD_DATASTORE_GET = 113
     CMD_DATASTORE_GET_RESP = 114
@@ -268,7 +259,6 @@ ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
     Command.CMD_SET_PIN_MODE.value,
     Command.CMD_DIGITAL_WRITE.value,
     Command.CMD_ANALOG_WRITE.value,
-    Command.CMD_CONSOLE_WRITE.value,
     Command.CMD_DATASTORE_PUT.value,
     Command.CMD_MAILBOX_PUSH.value,
     Command.CMD_FILE_WRITE.value,

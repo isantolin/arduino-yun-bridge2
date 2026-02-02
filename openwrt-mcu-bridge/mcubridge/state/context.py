@@ -26,7 +26,6 @@ from .queues import BoundedByteDeque
 from ..config.settings import RuntimeConfig
 
 from ..const import (
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_WRITE_MAX_BYTES,
@@ -541,13 +540,6 @@ class RuntimeState:
     mailbox_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
     mcu_is_paused: bool = False
     serial_tx_allowed: asyncio.Event = field(default_factory=_serial_tx_allowed_factory)
-    console_to_mcu_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
-    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-    console_queue_bytes: int = 0
-    console_dropped_chunks: int = 0
-    console_truncated_chunks: int = 0
-    console_truncated_bytes: int = 0
-    console_dropped_bytes: int = 0
     running_processes: dict[int, ManagedProcess] = field(default_factory=_running_processes_factory)
     process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     next_pid: int = 1
@@ -634,7 +626,6 @@ class RuntimeState:
         self.file_write_limit_rejections = 0
         self.file_storage_limit_rejections = 0
         self.mqtt_topic_prefix = config.mqtt_topic
-        self.console_queue_limit_bytes = config.console_queue_limit_bytes
         self.mailbox_queue_limit = config.mailbox_queue_limit
         self.mailbox_queue_bytes_limit = config.mailbox_queue_bytes_limit
         self.mqtt_queue_limit = config.mqtt_queue_limit
@@ -644,10 +635,6 @@ class RuntimeState:
         self.topic_authorization = config.topic_authorization
         self.process_output_limit = config.process_max_output_bytes
         self.process_max_concurrent = config.process_max_concurrent
-        self.console_to_mcu_queue = BoundedByteDeque(
-            max_items=None,
-            max_bytes=self.console_queue_limit_bytes,
-        )
         self.mailbox_queue = BoundedByteDeque(
             max_items=self.mailbox_queue_limit,
             max_bytes=self.mailbox_queue_bytes_limit,
@@ -660,66 +647,6 @@ class RuntimeState:
     @property
     def allowed_commands(self) -> tuple[str, ...]:
         return self.allowed_policy.as_tuple()
-
-    def enqueue_console_chunk(self, chunk: bytes, logger: logging.Logger) -> None:
-        if not chunk:
-            return
-
-        self._sync_console_queue_limits()
-        evt = self.console_to_mcu_queue.append(chunk)
-        if evt.truncated_bytes:
-            logger.warning(
-                "Console chunk truncated by %d byte(s) to respect limit.",
-                evt.truncated_bytes,
-            )
-            self.console_truncated_chunks += 1
-            self.console_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            logger.warning(
-                ("Dropping oldest console chunk(s): %d item(s), %d " "bytes to respect limit."),
-                evt.dropped_chunks,
-                evt.dropped_bytes,
-            )
-            self.console_dropped_chunks += evt.dropped_chunks
-            self.console_dropped_bytes += evt.dropped_bytes
-        if not evt.accepted:
-            logger.error(
-                "Console queue overflow; rejected chunk of %d bytes.",
-                len(chunk),
-            )
-            self.console_dropped_chunks += 1
-            self.console_dropped_bytes += len(chunk)
-        else:
-            self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
-
-    def pop_console_chunk(self) -> bytes:
-        self._sync_console_queue_limits()
-        chunk = self.console_to_mcu_queue.popleft()
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
-        return chunk
-
-    def requeue_console_chunk_front(self, chunk: bytes) -> None:
-        if not chunk:
-            return
-
-        chunk_len = len(chunk)
-        # The caller should ensure the chunk fits within the configured limit.
-        if chunk_len > self.console_queue_limit_bytes:
-            data = bytes(chunk[-self.console_queue_limit_bytes :])
-            chunk_len = len(data)
-        else:
-            data = bytes(chunk)
-
-        self._sync_console_queue_limits()
-        evt = self.console_to_mcu_queue.appendleft(data)
-        if evt.truncated_bytes:
-            self.console_truncated_chunks += 1
-            self.console_truncated_bytes += evt.truncated_bytes
-        if evt.dropped_chunks:
-            self.console_dropped_chunks += evt.dropped_chunks
-            self.console_dropped_bytes += evt.dropped_bytes
-        if evt.accepted:
-            self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
 
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
         return self._enqueue_mailbox(
@@ -1204,7 +1131,6 @@ class RuntimeState:
             # Queue depths for real-time monitoring
             "queue_depths": {
                 "mqtt": self.mqtt_publish_queue.qsize(),
-                "console": len(self.console_to_mcu_queue),
                 "mailbox_outgoing": len(self.mailbox_queue),
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
                 "pending_digital_reads": len(self.pending_digital_reads),

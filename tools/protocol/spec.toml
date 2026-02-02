@@ -148,11 +148,6 @@ segments = ["+"]
 qos = 0
 
 [[mqtt_subscriptions]]
-topic = "CONSOLE"
-segments = ["in"]
-qos = 0
-
-[[mqtt_subscriptions]]
 topic = "DATASTORE"
 segments = ["put", "#"]
 qos = 0
@@ -238,10 +233,6 @@ name = "ANALOG"
 value = "a"
 description = "Analog pin operations"
 [[topics]]
-name = "CONSOLE"
-value = "console"
-description = "Remote console"
-[[topics]]
 name = "DATASTORE"
 value = "datastore"
 description = "Key-value storage"
@@ -319,14 +310,6 @@ name = "PIN_READ"
 value = "read"
 description = "Read pin value"
 [[actions]]
-name = "CONSOLE_IN"
-value = "in"
-description = "Console input"
-[[actions]]
-name = "CONSOLE_OUT"
-value = "out"
-description = "Console output"
-[[actions]]
 name = "MAILBOX_READ"
 value = "read"
 description = "Read from mailbox"
@@ -398,10 +381,6 @@ description = "Analog write"
 name = "ANALOG_READ"
 value = "read"
 description = "Analog read"
-[[actions]]
-name = "CONSOLE_INPUT"
-value = "input"
-description = "Console input action"
 
 # --- STATUS CODES REASSIGNED TO SAFE RANGE 0x30-0x3F ---
 [[statuses]]
@@ -563,14 +542,6 @@ name = "CMD_ANALOG_READ_RESP"
 value = 0x56
 category = "gpio"
 directions = ["mcu_to_linux"]
-
-# --- CONSOLE COMMANDS REASSIGNED TO 0x60 ---
-[[commands]]
-name = "CMD_CONSOLE_WRITE"
-value = 0x60
-category = "console"
-directions = ["linux_to_mcu", "mcu_to_linux"]
-requires_ack = true
 
 # --- DATASTORE COMMANDS REASSIGNED TO 0x70 ---
 [[commands]]

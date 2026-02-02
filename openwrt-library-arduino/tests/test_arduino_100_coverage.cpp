@@ -32,7 +32,9 @@ MailboxClass Mailbox;
 #if BRIDGE_ENABLE_FILESYSTEM
 FileSystemClass FileSystem;
 #endif
-
+#if BRIDGE_ENABLE_PROCESS
+ProcessClass Process;
+#endif
 
 namespace {
 
@@ -330,7 +332,66 @@ void test_mailbox_extra_gaps() {
     Mailbox.handleResponse(f);
 }
 
+// --- TARGET: Process.cpp Gaps ---
+void test_process_extra_gaps() {
+    printf("  -> Testing process_extra_gaps\n");
+    CaptureStream stream;
+    setup_env(stream);
 
+    // Gap: runAsync with null/empty
+    Process.runAsync(nullptr);
+    Process.runAsync("");
+
+    // Gap: runAsync too large
+    char long_cmd[rpc::MAX_PAYLOAD_SIZE + 5];
+    memset(long_cmd, 'c', sizeof(long_cmd));
+    long_cmd[sizeof(long_cmd)-1] = '\0';
+    Process.runAsync(long_cmd);
+
+    // Gap: poll with invalid PID
+    Process.poll(-1);
+
+    // Gap: poll with full pending queue
+    for(int i=0; i<BRIDGE_MAX_PENDING_PROCESS_POLLS; ++i) {
+        Process._pushPendingProcessPid(i+1);
+    }
+    Process.poll(99);
+
+    // Gap: handleResponse CMD_PROCESS_RUN_RESP without handler
+    Process.onProcessRunResponse(nullptr);
+    rpc::Frame f;
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
+    f.header.payload_length = 5;
+    f.payload[0] = 0x30;
+    rpc::write_u16_be(&f.payload[1], 0);
+    rpc::write_u16_be(&f.payload[3], 0);
+    Process.handleResponse(f);
+
+    // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
+    Process.onProcessRunAsyncResponse([](int16_t pid){ (void)pid; });
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
+    f.header.payload_length = 2;
+    rpc::write_u16_be(f.payload.data(), 123);
+    Process.handleResponse(f);
+
+    // Gap: handleResponse CMD_PROCESS_POLL_RESP without handler
+    Process.onProcessPollResponse(nullptr);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
+    f.header.payload_length = 6;
+    f.payload[0] = 0x30;
+    f.payload[1] = 0;
+    rpc::write_u16_be(&f.payload[2], 0);
+    rpc::write_u16_be(&f.payload[4], 0);
+    Process.handleResponse(f);
+
+    // Gap: handleResponse with other command
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+    Process.handleResponse(f);
+
+    // Gap: _popPendingProcessPid empty
+    Process._pending_process_pids.clear();
+    assert(Process._popPendingProcessPid() == rpc::RPC_INVALID_ID_SENTINEL);
+}
 
 // --- TARGET: rle.h Gaps ---
 void test_rle_gaps() {
@@ -385,7 +446,9 @@ int main() {
     test_bridge_extra_gaps();
     test_console_extra_gaps();
     test_datastore_extra_gaps();
-
+    test_mailbox_extra_gaps();
+    test_process_extra_gaps();
+    test_rle_gaps();
     test_security_gaps();
     test_string_utils_gaps();
     printf("ARDUINO 100%% COVERAGE TEST END\n");

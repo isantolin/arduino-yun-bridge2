@@ -95,6 +95,12 @@ STATUS_REASON_COMMAND_VALIDATION_FAILED: Final[str] = "command_validation_failed
 STATUS_REASON_INVALID_PATH: Final[str] = "invalid_path"
 STATUS_REASON_MAILBOX_INCOMING_OVERFLOW: Final[str] = "mailbox_incoming_overflow"
 STATUS_REASON_MAILBOX_OUTGOING_OVERFLOW: Final[str] = "mailbox_outgoing_overflow"
+STATUS_REASON_PROCESS_KILL_FAILED: Final[str] = "process_kill_failed"
+STATUS_REASON_PROCESS_KILL_MALFORMED: Final[str] = "process_kill_malformed"
+STATUS_REASON_PROCESS_LIMIT_REACHED: Final[str] = "process_limit_reached"
+STATUS_REASON_PROCESS_NOT_FOUND: Final[str] = "process_not_found"
+STATUS_REASON_PROCESS_RUN_ASYNC_FAILED: Final[str] = "process_run_async_failed"
+STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR: Final[str] = "process_run_internal_error"
 STATUS_REASON_READ_FAILED: Final[str] = "read_failed"
 STATUS_REASON_REMOVE_FAILED: Final[str] = "remove_failed"
 STATUS_REASON_WRITE_FAILED: Final[str] = "write_failed"
@@ -110,6 +116,7 @@ class Topic(StrEnum):
     DIGITAL = "d"  # Digital pin operations
     FILE = "file"  # File system operations
     MAILBOX = "mailbox"  # Message passing
+    SHELL = "sh"  # Shell command execution
     STATUS = "status"  # System status reporting
     SYSTEM = "system"  # System control and info
 
@@ -118,6 +125,13 @@ class FileAction(StrEnum):
     READ = "read"  # Read file content
     WRITE = "write"  # Write file content
     REMOVE = "remove"  # Remove file
+
+
+class ShellAction(StrEnum):
+    RUN = "run"  # Run shell command
+    RUN_ASYNC = "run_async"  # Run shell command asynchronously
+    POLL = "poll"  # Poll shell command status
+    KILL = "kill"  # Kill shell command
 
 
 class MailboxAction(StrEnum):
@@ -178,6 +192,10 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
     (Topic.DATASTORE, (DatastoreAction.GET.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.MAILBOX, (MailboxAction.WRITE.value,), 0),
     (Topic.MAILBOX, (MailboxAction.READ.value,), 0),
+    (Topic.SHELL, (ShellAction.RUN.value,), 0),
+    (Topic.SHELL, (ShellAction.RUN_ASYNC.value,), 0),
+    (Topic.SHELL, (ShellAction.POLL.value, MQTT_WILDCARD_MULTI,), 0),
+    (Topic.SHELL, (ShellAction.KILL.value, MQTT_WILDCARD_MULTI,), 0),
     (Topic.SYSTEM, (SystemAction.FREE_MEMORY.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.VERSION.value, SystemAction.GET.value,), 0),
     (Topic.SYSTEM, (SystemAction.BRIDGE.value, SystemAction.HANDSHAKE.value, SystemAction.GET.value,), 0),
@@ -237,6 +255,13 @@ class Command(IntEnum):
     CMD_FILE_READ = 145
     CMD_FILE_REMOVE = 146
     CMD_FILE_READ_RESP = 147
+    CMD_PROCESS_RUN = 160
+    CMD_PROCESS_RUN_ASYNC = 161
+    CMD_PROCESS_POLL = 162
+    CMD_PROCESS_KILL = 163
+    CMD_PROCESS_RUN_RESP = 164
+    CMD_PROCESS_RUN_ASYNC_RESP = 165
+    CMD_PROCESS_POLL_RESP = 166
 
 
 ACK_ONLY_COMMANDS: frozenset[int] = frozenset({

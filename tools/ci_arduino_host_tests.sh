@@ -34,6 +34,7 @@ g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
     "${SRC_DIR}/arduino/DataStore.cpp" \
     "${SRC_DIR}/arduino/FileSystem.cpp" \
     "${SRC_DIR}/arduino/Mailbox.cpp" \
+    "${SRC_DIR}/arduino/Process.cpp" \
     "${TEST_DIR}/test_integrated.cpp" \
     -o "${BUILD_DIR}/test_integrated"
 

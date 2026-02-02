@@ -5,6 +5,7 @@ from typing import cast
 
 import pytest
 
+from mcubridge.policy import AllowedCommandPolicy
 from mcubridge.state.context import RuntimeState, SupervisorStats
 from mcubridge.state import status
 from mcubridge.mqtt.spool import MQTTPublishSpool
@@ -54,6 +55,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         state.link_is_synchronized = True
         state.serial_link_connected = True
         state.handshake_attempts = 2
+        state.allowed_policy = AllowedCommandPolicy.from_iterable(["ls"])
         state.mcu_version = (2, 5)
         state.file_system_root = "/tmp/bridge"
         state.file_storage_bytes_used = 2048
@@ -116,6 +118,7 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["console_dropped_bytes"] == 8
         assert payload["console_truncated_chunks"] == 1
         assert payload["console_truncated_bytes"] == 4
+        assert payload["allowed_commands"] == ["ls"]
         assert payload["link_synchronised"] is True
         assert payload["mcu_version"] == {"major": 2, "minor": 5}
         assert payload["file_storage_root"] == "/tmp/bridge"

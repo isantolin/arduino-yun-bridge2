@@ -11,6 +11,7 @@ import msgspec
 import psutil
 import tenacity
 
+from asyncio.subprocess import Process
 from dataclasses import dataclass, field  # kept for RuntimeState and internal state classes
 from types import SimpleNamespace
 from typing import Any, Deque, Final
@@ -20,7 +21,7 @@ from aiomqtt.message import Message
 
 from ..mqtt.messages import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
-from ..policy import TopicAuthorization
+from ..policy import AllowedCommandPolicy, TopicAuthorization
 from .queues import BoundedByteDeque
 from ..config.settings import RuntimeConfig
 
@@ -34,6 +35,9 @@ from ..const import (
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_SPOOL_DIR,
+    DEFAULT_PROCESS_MAX_CONCURRENT,
+    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
@@ -77,6 +81,7 @@ __all__: Final[tuple[str, ...]] = (
     "McuCapabilities",
     "RuntimeState",
     "PendingPinRequest",
+    "ManagedProcess",
     "create_runtime_state",
     "_ExponentialBackoff",
 )
@@ -199,6 +204,86 @@ class PendingPinRequest:
     reply_context: Message | None
 
 
+@dataclass(slots=True)
+class ManagedProcess:
+    pid: int
+    command: str = ""
+    handle: Process | None = None
+    stdout_buffer: bytearray = field(default_factory=bytearray)
+    stderr_buffer: bytearray = field(default_factory=bytearray)
+    exit_code: int | None = None
+    io_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock,
+        repr=False,
+    )
+
+    def append_output(
+        self,
+        stdout_chunk: bytes,
+        stderr_chunk: bytes,
+        *,
+        limit: int,
+    ) -> tuple[bool, bool]:
+        truncated_stdout = _append_with_limit(
+            self.stdout_buffer,
+            stdout_chunk,
+            limit,
+        )
+        truncated_stderr = _append_with_limit(
+            self.stderr_buffer,
+            stderr_chunk,
+            limit,
+        )
+        return truncated_stdout, truncated_stderr
+
+    def pop_payload(
+        self,
+        budget: int,
+    ) -> tuple[bytes, bytes, bool, bool]:
+        return _trim_process_buffers(
+            self.stdout_buffer,
+            self.stderr_buffer,
+            budget,
+        )
+
+    def is_drained(self) -> bool:
+        return not self.stdout_buffer and not self.stderr_buffer
+
+
+def _append_with_limit(
+    buffer: bytearray,
+    chunk: bytes,
+    limit: int,
+) -> bool:
+    if not chunk:
+        return False
+    buffer.extend(chunk)
+    if limit <= 0 or len(buffer) <= limit:
+        return False
+    excess = len(buffer) - limit
+    del buffer[:excess]
+    return True
+
+
+def _trim_process_buffers(
+    stdout_buffer: bytearray,
+    stderr_buffer: bytearray,
+    budget: int,
+) -> tuple[bytes, bytes, bool, bool]:
+    stdout_len = min(len(stdout_buffer), budget)
+    stdout_chunk = bytes(stdout_buffer[:stdout_len])
+    del stdout_buffer[:stdout_len]
+
+    remaining = budget - len(stdout_chunk)
+    stderr_len = min(len(stderr_buffer), remaining)
+    stderr_chunk = bytes(stderr_buffer[:stderr_len])
+    del stderr_buffer[:stderr_len]
+
+    truncated_out = len(stdout_buffer) > 0
+    truncated_err = len(stderr_buffer) > 0
+    return stdout_chunk, stderr_chunk, truncated_out, truncated_err
+
+
 def _latency_bucket_counts_factory() -> list[int]:
     return [0] * len(LATENCY_BUCKETS_MS)
 
@@ -227,6 +312,10 @@ def _datastore_factory() -> dict[str, str]:
     return {}
 
 
+def _running_processes_factory() -> dict[int, ManagedProcess]:
+    return {}
+
+
 def _pending_pin_reads_factory() -> collections.deque[PendingPinRequest]:
     return collections.deque()
 
@@ -243,6 +332,10 @@ def _serial_tx_allowed_factory() -> asyncio.Event:
     evt = asyncio.Event()
     evt.set()
     return evt
+
+
+def _policy_factory() -> AllowedCommandPolicy:
+    return AllowedCommandPolicy.from_iterable(())
 
 
 # [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
@@ -455,7 +548,12 @@ class RuntimeState:
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
+    running_processes: dict[int, ManagedProcess] = field(default_factory=_running_processes_factory)
+    process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    next_pid: int = 1
+    allowed_policy: AllowedCommandPolicy = field(default_factory=_policy_factory)
     topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
+    process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
@@ -514,6 +612,8 @@ class RuntimeState:
     serial_latency_stats: SerialLatencyStats = field(default_factory=SerialLatencyStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
+    process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     serial_decode_errors: int = 0
     serial_crc_errors: int = 0
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
@@ -523,6 +623,9 @@ class RuntimeState:
     supervisor_stats: dict[str, SupervisorStats] = field(default_factory=_supervisor_stats_factory)
 
     def configure(self, config: RuntimeConfig) -> None:
+        if config.allowed_policy is not None:
+            self.allowed_policy = config.allowed_policy
+        self.process_timeout = config.process_timeout
         self.file_system_root = config.file_system_root
         self.allow_non_tmp_paths = config.allow_non_tmp_paths
         self.file_write_max_bytes = config.file_write_max_bytes
@@ -539,6 +642,8 @@ class RuntimeState:
         self.watchdog_interval = config.watchdog_interval
         self.pending_pin_request_limit = config.pending_pin_request_limit
         self.topic_authorization = config.topic_authorization
+        self.process_output_limit = config.process_max_output_bytes
+        self.process_max_concurrent = config.process_max_concurrent
         self.console_to_mcu_queue = BoundedByteDeque(
             max_items=None,
             max_bytes=self.console_queue_limit_bytes,
@@ -551,6 +656,10 @@ class RuntimeState:
             max_items=self.mailbox_queue_limit,
             max_bytes=self.mailbox_queue_bytes_limit,
         )
+
+    @property
+    def allowed_commands(self) -> tuple[str, ...]:
+        return self.allowed_policy.as_tuple()
 
     def enqueue_console_chunk(self, chunk: bytes, logger: logging.Logger) -> None:
         if not chunk:
@@ -1100,6 +1209,7 @@ class RuntimeState:
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
                 "pending_digital_reads": len(self.pending_digital_reads),
                 "pending_analog_reads": len(self.pending_analog_reads),
+                "running_processes": len(self.running_processes),
             },
             "mqtt_queue_size": self.mqtt_publish_queue.qsize(),
             "mqtt_queue_limit": self.mqtt_queue_limit,

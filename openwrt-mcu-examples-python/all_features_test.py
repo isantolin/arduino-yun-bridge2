@@ -72,9 +72,17 @@ async def main() -> None:
         free_memory: int = await bridge.get_free_memory()  # in the client
         logger.info(f"Free memory {free_memory}")
 
+        logger.info("Testing run_sketch_command (mapped to sync shell command)")
+        command_output: bytes = await bridge.run_sketch_command(["/bin/ls", "-l", "/"])
+        decoded_output = command_output.decode("utf-8", errors="ignore")
+        logger.info("Process output: %s", decoded_output)
 
-
-
+        logger.info("Testing run_shell_command_async")
+        async_command = ["sleep", "5", "&&", "echo", "Async command done"]
+        async_pid: int = await bridge.run_shell_command_async(async_command)
+        logger.info(f"Async process started with PID {async_pid}")
+        # In a real scenario, you'd poll for status or wait for a notification
+        await asyncio.sleep(1)  # Give it a moment to start
 
         logger.info("Testing console")
         await bridge.console_write("Hello world from client")

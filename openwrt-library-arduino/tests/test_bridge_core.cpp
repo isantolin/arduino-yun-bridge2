@@ -38,7 +38,7 @@ ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
-
+ProcessClass Process;
 // Note: Bridge instance is NOT defined globally here to allow local instantiation in tests,
 // BUT Bridge.cpp/Console.cpp might refer to 'Bridge'. 
 // We need a global 'Bridge' for Console.cpp to link.

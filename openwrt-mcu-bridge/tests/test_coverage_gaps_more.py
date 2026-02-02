@@ -13,6 +13,7 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (
     DEFAULT_MQTT_PORT,
+    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
@@ -39,9 +40,11 @@ def _make_config() -> RuntimeConfig:
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=("echo", "ls"),
         file_system_root="/tmp",
+        process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
         debug_logging=False,
+        process_max_concurrent=2,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
     )
 

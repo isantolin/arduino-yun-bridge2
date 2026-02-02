@@ -17,6 +17,7 @@ from aiomqtt.message import Message
 from mcubridge.config import logging as logging_config
 from mcubridge.config import settings
 from mcubridge.rpc import rle
+from mcubridge.services.components.console import ConsoleComponent
 from mcubridge.services.components.datastore import DatastoreComponent, DatastoreAction
 from mcubridge.services.components.file import FileComponent, FileAction
 from mcubridge.services.components.mailbox import MailboxComponent
@@ -65,6 +66,39 @@ def test_rle_decode_long_run_branch():
     encoded = rle.encode(data)
     decoded = rle.decode(encoded)
     assert decoded == data
+
+
+@pytest.mark.asyncio
+async def test_console_component_gaps(runtime_state: RuntimeState, real_config):
+    ctx = MagicMock()
+    comp = ConsoleComponent(real_config, runtime_state, ctx)
+    with patch.object(comp, "_iter_console_chunks", return_value=[b"a", b""]):
+        runtime_state.mcu_is_paused = True
+        await comp.handle_mqtt_input(b"payload")
+        assert any(b"a" == c for c in runtime_state.console_to_mcu_queue)
+    runtime_state.mcu_is_paused = False
+    with patch.object(comp, "_iter_console_chunks", return_value=[b""]):
+        await comp.handle_mqtt_input(b"payload")
+
+
+@pytest.mark.asyncio
+async def test_console_component_async_gaps(runtime_state: RuntimeState, real_config):
+    ctx = MagicMock()
+    ctx.send_frame = AsyncMock(return_value=False)
+    comp = ConsoleComponent(real_config, runtime_state, ctx)
+    runtime_state.mcu_is_paused = False
+    await comp.handle_mqtt_input(b"payload")
+    assert runtime_state.console_to_mcu_queue
+    runtime_state.console_to_mcu_queue.clear()
+    runtime_state.enqueue_console_chunk(b"abc", logging.getLogger())
+    with patch.object(comp, "_iter_console_chunks", return_value=[b""]):
+        await comp.flush_queue()
+    runtime_state.console_to_mcu_queue.clear()
+    runtime_state.enqueue_console_chunk(b"abc", logging.getLogger())
+    ctx.send_frame = AsyncMock(return_value=False)
+    with patch.object(comp, "_iter_console_chunks", return_value=[b"a"]):
+        await comp.flush_queue()
+    assert comp._iter_console_chunks(b"") == []
 
 
 @pytest.mark.asyncio
@@ -351,6 +385,7 @@ async def test_runtime_gaps(runtime_state: RuntimeState, real_config):
 
     svc.sync_link = AsyncMock(return_value=True)
     svc._system.request_mcu_version = AsyncMock(side_effect=OSError())
+    svc._console.flush_queue = AsyncMock(side_effect=OSError())
     await svc.on_serial_connected()
 
     svc._dispatcher.dispatch_mcu_frame = AsyncMock(side_effect=ValueError())

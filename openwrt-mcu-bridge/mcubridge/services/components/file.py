@@ -153,9 +153,9 @@ class FileComponent:
         # reassembly or streaming via repeated callbacks.
         total_len = len(data)
         if total_len == 0:
-            response = struct.pack(protocol.UINT16_FORMAT, 0)
-            await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
-            return
+             response = struct.pack(protocol.UINT16_FORMAT, 0)
+             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
+             return
 
         offset = 0
         while offset < total_len:

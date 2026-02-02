@@ -18,6 +18,7 @@
 HardwareSerial Serial;
 HardwareSerial Serial1;
 BridgeClass Bridge(Serial1);
+ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
@@ -44,6 +45,7 @@ void setup_test_env(CaptureStream& stream) {
     
     // Manually force sync state to enable command processing
     Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    Console.begin();
 }
 
 // --- TEST: SISTEMA Y GPIO (BRIDGE.CPP) ---

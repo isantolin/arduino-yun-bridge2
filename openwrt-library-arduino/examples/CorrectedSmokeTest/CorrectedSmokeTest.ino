@@ -1,9 +1,11 @@
 /*
   Corrected Smoke Test for MCU Bridge 2.0
-  Waits for sync to avoid spamming the bus before handshake.
+  Waits for Console connection to avoid spamming the bus before handshake.
 */
 
 #include <Bridge.h>
+// Console is already declared in Bridge.h in this library version
+// #include <Console.h> 
 
 // Secret from UCI (mcubridge.general.serial_shared_secret)
 // Must match the daemon's configuration to pass the handshake.
@@ -13,9 +15,12 @@ void setup() {
   // Initialize Bridge with the shared secret
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
   
+  // Initialize Console
+  Console.begin();
+  
   pinMode(13, OUTPUT);
 
-  // CRITICAL: Wait for Link Sync (Linux handshake complete)
+  // CRITICAL: Wait for Console to be ready (Linux handshake complete)
   // This prevents "Rejecting MCU frame before link synchronisation" errors.
   // We must call Bridge.process() to handle the handshake frames!
   // Use non-blocking blink to ensure we process serial data as fast as possible.
@@ -32,10 +37,21 @@ void setup() {
     }
   }
 
+  // Removed Console.println to avoid mixing console data with protocol frames
+  // Console messages can interfere with COBS framing
   digitalWrite(13, HIGH); // Indicate handshake complete
 }
 
 void loop() {
   // CRITICAL: Must call process() frequently to handle incoming commands (heartbeats, RPC)
   Bridge.process();
+
+  // Removed debug print to prevent serial collisions with RPC protocol
+  /*
+  static long lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    lastPrint = millis();
+    Console.println("Estado: 0x05 (TIMEOUT)");
+  }
+  */
 }

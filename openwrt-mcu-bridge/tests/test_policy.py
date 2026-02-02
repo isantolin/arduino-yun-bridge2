@@ -56,6 +56,7 @@ class TestTopicAuthorization:
             (Topic.SHELL.value, "run_async"),
             (Topic.SHELL.value, "poll"),
             (Topic.SHELL.value, "kill"),
+            (Topic.CONSOLE.value, "input"),
             (Topic.DIGITAL.value, "write"),
             (Topic.DIGITAL.value, "read"),
             (Topic.DIGITAL.value, "mode"),
@@ -73,6 +74,7 @@ class TestTopicAuthorization:
         [
             ("unknown_topic", "read"),
             (Topic.FILE.value, "unknown_action"),
+            (Topic.CONSOLE.value, ""),
         ],
     )
     def test_default_policy_denies_unknown_actions(self, topic: str, action: str) -> None:
@@ -100,6 +102,7 @@ class TestTopicAuthorization:
     @pytest.mark.parametrize(
         "kwargs, topic, action",
         [
+            ({"console_input": False}, Topic.CONSOLE.value, "input"),
             ({"digital_write": False}, Topic.DIGITAL.value, "write"),
             ({"digital_read": False}, Topic.DIGITAL.value, "read"),
             ({"digital_mode": False}, Topic.DIGITAL.value, "mode"),

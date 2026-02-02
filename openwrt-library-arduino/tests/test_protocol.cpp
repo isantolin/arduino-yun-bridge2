@@ -14,6 +14,7 @@ using namespace rpc;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 BridgeClass Bridge(Serial1);
+ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;

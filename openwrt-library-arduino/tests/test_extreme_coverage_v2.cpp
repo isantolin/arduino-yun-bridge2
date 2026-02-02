@@ -18,6 +18,7 @@
 HardwareSerial Serial;
 HardwareSerial Serial1;
 BridgeClass Bridge(Serial1);
+ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 DataStoreClass DataStore;
 #endif
@@ -126,6 +127,28 @@ void test_datastore_gaps() {
     }
 }
 
+// --- COBERTURA CONSOLE.CPP ---
+void test_console_gaps() {
+    CaptureStream stream;
+    setup_env(stream);
+    Console.begin();
+
+    // Gap: write(buffer, size) chunking
+    uint8_t large_buf[rpc::MAX_PAYLOAD_SIZE + 10];
+    memset(large_buf, 'A', sizeof(large_buf));
+    Console.write(large_buf, sizeof(large_buf));
+
+    // Gap: read() high/low watermarks
+    for(int i=0; i<BRIDGE_CONSOLE_RX_BUFFER_SIZE; ++i) Console._rx_buffer.push(i);
+    Console._xoff_sent = true;
+    while(!Console._rx_buffer.empty()) Console.read();
+    assert(!Console._xoff_sent);
+
+    // Gap: flush() with empty buffer
+    Console._tx_buffer.clear();
+    Console.flush();
+}
+
 // --- COBERTURA FILESYSTEM.CPP ---
 void test_filesystem_gaps() {
     CaptureStream stream;
@@ -211,6 +234,7 @@ int main() {
     printf("EXTREME ARDUINO COVERAGE V2 START\n");
     test_bridge_gaps();
     test_datastore_gaps();
+    test_console_gaps();
     test_filesystem_gaps();
     test_mailbox_gaps();
     test_process_gaps();

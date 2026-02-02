@@ -22,6 +22,7 @@ HardwareSerial Serial1;
 
 // Global instances required by the runtime
 BridgeClass Bridge(Serial1);
+ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
@@ -304,6 +305,7 @@ static void reset_bridge_with_stream(RecordingStream& stream) {
   new (&Bridge) BridgeClass(stream);
   Bridge.begin();
   Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+  Console.begin();
 }
 
 static void restore_bridge_to_serial() {
@@ -425,6 +427,35 @@ static void process_poll_trampoline(rpc::StatusCode status, uint8_t exit_code,
   if (stderr_data && stderr_len) {
     TEST_ASSERT(state->stderr_data.append(stderr_data, stderr_len));
   }
+}
+
+static void test_console_write_outbound_frame() {
+  RecordingStream stream;
+  reset_bridge_with_stream(stream);
+  stream.tx_buffer.clear();
+
+  const char msg[] = "hello";
+  const size_t sent = Console.write(reinterpret_cast<const uint8_t*>(msg), sizeof(msg) - 1);
+  TEST_ASSERT_EQ_UINT(sent, sizeof(msg) - 1);
+
+  // DEBUG: Print buffer content
+  printf("DEBUG: Stream TX buffer len: %zu\n", stream.tx_buffer.len);
+  for (size_t i = 0; i < stream.tx_buffer.len; i++) {
+      printf("%02X ", stream.tx_buffer.data[i]);
+  }
+  printf("\n");
+
+  const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
+  printf("DEBUG: Frames parsed: %zu\n", frames.count);
+  
+  TEST_ASSERT(frames.count >= 1);
+  TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
+                      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE));
+  TEST_ASSERT_EQ_UINT(frames.frames[0].header.payload_length, sizeof(msg) - 1);
+  TEST_ASSERT(test_memeq(frames.frames[0].payload.data(), msg, sizeof(msg) - 1));
+
+  inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE));
+  restore_bridge_to_serial();
 }
 
 static void test_datastore_put_outbound_frame() {
@@ -595,6 +626,48 @@ static void test_process_poll_response_handler() {
   TEST_ASSERT(test_memeq(state.stderr_data.data, stderr_msg, sizeof(stderr_msg)));
 
   ProcessPollState::instance = nullptr;
+}
+
+static void test_console_write_when_not_begun() {
+  // Directly exercise the guard branch.
+  Console._begun = false;
+  TEST_ASSERT_EQ_UINT(Console.write('a'), 0);
+  const uint8_t buf[] = {'x'};
+  TEST_ASSERT_EQ_UINT(Console.write(buf, sizeof(buf)), 0);
+}
+
+static void test_console_write_char_flush_on_newline() {
+  RecordingStream stream;
+  reset_bridge_with_stream(stream);
+  stream.tx_buffer.clear();
+
+  // Writing a newline flushes.
+  TEST_ASSERT_EQ_UINT(Console.write('h'), 1);
+  TEST_ASSERT_EQ_UINT(Console.write('\n'), 1);
+  TEST_ASSERT(stream.tx_buffer.len > 0);
+
+  const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
+  TEST_ASSERT(frames.count >= 1);
+  TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
+                      rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE));
+  restore_bridge_to_serial();
+}
+
+static void test_console_read_sends_xon_success_and_failure() {
+  // Success case: XON sent and _xoff_sent cleared.
+  RecordingStream stream;
+  reset_bridge_with_stream(stream);
+  stream.tx_buffer.clear();
+
+  Console._xoff_sent = true;
+  const uint8_t b = 'z';
+  Console._push(&b, 1);
+  TEST_ASSERT(Console.read() == 'z');
+  TEST_ASSERT(!Console._xoff_sent);
+  TEST_ASSERT(stream.tx_buffer.len > 0);
+  restore_bridge_to_serial();
+
+  // Failure case removed: PacketSerial does not report write failures, so sendFrame always returns true.
 }
 
 struct ProcessRunState {
@@ -801,6 +874,10 @@ static void test_filesystem_remove_and_read_outbound_guards() {
 } // namespace
 
 int main() {
+  test_console_write_outbound_frame();
+  test_console_write_when_not_begun();
+  test_console_write_char_flush_on_newline();
+  test_console_read_sends_xon_success_and_failure();
   test_datastore_put_outbound_frame();
   test_mailbox_send_outbound_frame();
   test_mailbox_request_frames_and_available_handler();

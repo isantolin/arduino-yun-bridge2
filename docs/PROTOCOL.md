@@ -319,6 +319,7 @@ Hay dos niveles distintos de “ACK” en este sistema:
   Esta lista está alineada con el spec (bindings Python: `ACK_ONLY_COMMANDS`):
 
 - `CMD_SET_PIN_MODE`, `CMD_DIGITAL_WRITE`, `CMD_ANALOG_WRITE` (Linux → MCU)
+- `CMD_CONSOLE_WRITE` (bidireccional)
 - `CMD_DATASTORE_PUT` (MCU → Linux)
 - `CMD_MAILBOX_PUSH` (bidireccional)
 - `CMD_FILE_WRITE` (bidireccional)
@@ -476,6 +477,12 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 - **`0x53` CMD_DIGITAL_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x55 CMD_DIGITAL_READ_RESP`: `[value: u8]`.
 - **`0x54` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `[value: u16]`.
 
+### 5.3 Consola (0x60)
+
+- **`0x60` CMD_CONSOLE_WRITE (bidireccional)**
+  - Payload: `chunk: byte[]` (máx. 128 bytes).
+  - Confirmación: `STATUS_ACK (0x38)`.
+
 ### 5.4 Datastore (0x70)
 
 - **`0x70` CMD_DATASTORE_PUT (MCU → Linux)**: `[key_len: u8, key: char[], value_len: u8, value: char[]]`.
@@ -542,6 +549,7 @@ El protocolo incluye una implementación de **Run-Length Encoding (RLE)** optimi
 
 | Tipo de dato | Compresión típica | Recomendación |
 | --- | --- | --- |
+| Console output con espacios/tabs | 1.2x - 2x | ✅ Usar |
 | Datos de sensores repetitivos | 2x - 10x | ✅ Usar |
 | Archivos con padding nulo | 10x - 50x | ✅ Usar |
 | Datos GPIO (1-2 bytes) | N/A | ❌ No usar |

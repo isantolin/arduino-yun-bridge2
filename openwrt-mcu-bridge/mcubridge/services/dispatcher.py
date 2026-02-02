@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     # [FIX] Pylance: Simplificamos import para evitar reportMissingModuleSource
     from aiomqtt import Message
     from .components import (
+        ConsoleComponent,
         DatastoreComponent,
         FileComponent,
         MailboxComponent,
@@ -71,6 +72,7 @@ class BridgeDispatcher:
         self.publish_bridge_snapshot = publish_bridge_snapshot
 
         # Components (populated via register_components)
+        self.console: ConsoleComponent | None = None
         self.datastore: DatastoreComponent | None = None
         self.file: FileComponent | None = None
         self.mailbox: MailboxComponent | None = None
@@ -81,6 +83,7 @@ class BridgeDispatcher:
 
     def register_components(
         self,
+        console: ConsoleComponent,
         datastore: DatastoreComponent,
         file: FileComponent,
         mailbox: MailboxComponent,
@@ -90,6 +93,7 @@ class BridgeDispatcher:
         system: SystemComponent,
     ) -> None:
         """Register all component handlers with the registries."""
+        self.console = console
         self.datastore = datastore
         self.file = file
         self.mailbox = mailbox
@@ -97,6 +101,12 @@ class BridgeDispatcher:
         self.process = process
         self.shell = shell
         self.system = system
+
+        # Console
+        self.mcu_registry.register(Command.CMD_XOFF.value, console.handle_xoff)
+        self.mcu_registry.register(Command.CMD_XON.value, console.handle_xon)
+        self.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, console.handle_write)
+        self.mqtt_router.register(Topic.CONSOLE, self._handle_console_topic)
 
         # Datastore
         self.mcu_registry.register(Command.CMD_DATASTORE_PUT.value, datastore.handle_put)
@@ -300,6 +310,20 @@ class BridgeDispatcher:
         payload = self._payload_bytes(inbound.payload)
         if self.file:
             await self.file.handle_mqtt(identifier, list(route.remainder), payload, inbound)
+        return True
+
+    async def _handle_console_topic(self, route: TopicRoute, inbound: Message) -> bool:
+        if route.identifier != "in":
+            return False
+        # Keep policy aligned with MQTT topic identifier: br/console/in
+        # (Backward compat is handled at the policy layer.)
+        action = route.identifier
+        if not self.is_topic_action_allowed(Topic.CONSOLE, action):
+            await self.reject_topic_action(inbound, Topic.CONSOLE, action)
+            return True
+        payload = self._payload_bytes(inbound.payload)
+        if self.console:
+            await self.console.handle_mqtt_input(payload, inbound)
         return True
 
     async def _handle_datastore_topic(self, route: TopicRoute, inbound: Message) -> bool:

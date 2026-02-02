@@ -11,6 +11,7 @@ from .const import ALLOWED_COMMAND_WILDCARD
 from .protocol.topics import Topic
 from .rpc.protocol import (
     AnalogAction,
+    ConsoleAction,
     DatastoreAction,
     DigitalAction,
     FileAction,
@@ -98,6 +99,7 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     shell_run_async: bool = True
     shell_poll: bool = True
     shell_kill: bool = True
+    console_input: bool = True
     digital_write: bool = True
     digital_read: bool = True
     digital_mode: bool = True
@@ -119,6 +121,10 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
             (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): self.shell_run_async,
             (Topic.SHELL.value, ShellAction.POLL.value): self.shell_poll,
             (Topic.SHELL.value, ShellAction.KILL.value): self.shell_kill,
+            # Console action historically used "input" internally, while MQTT uses "in".
+            # Treat both as equivalent to avoid breaking existing UCI configs / callers.
+            (Topic.CONSOLE.value, ConsoleAction.IN.value): self.console_input,
+            (Topic.CONSOLE.value, ConsoleAction.INPUT.value): self.console_input,
             (Topic.DIGITAL.value, DigitalAction.WRITE.value): self.digital_write,
             (Topic.DIGITAL.value, DigitalAction.READ.value): self.digital_read,
             (Topic.DIGITAL.value, DigitalAction.MODE.value): self.digital_mode,

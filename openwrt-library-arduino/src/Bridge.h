@@ -311,6 +311,35 @@ class BridgeClass {
 
 extern BridgeClass Bridge;
 
+class ConsoleClass : public Stream {
+ public:
+  ConsoleClass();
+  void begin();
+  void end() {}
+  bool connected() { return true; }
+  
+  size_t write(uint8_t c) override;
+  size_t write(const uint8_t *buffer, size_t size) override;
+  
+  void _push(const uint8_t* data, size_t length);
+  
+  int available() override;
+  int read() override;
+  int peek() override;
+  void flush() override;
+  
+  operator bool() { return connected(); }
+
+ private:
+  bool _begun;
+  bool _xoff_sent;
+  
+  // [SIL-2] Use ETL containers for safe buffer management
+  etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
+  etl::vector<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
+};
+extern ConsoleClass Console;
+
 #if BRIDGE_ENABLE_DATASTORE
 class DataStoreClass {
  public:

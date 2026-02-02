@@ -22,6 +22,7 @@
 HardwareSerial Serial;
 HardwareSerial Serial1;
 BridgeClass Bridge(Serial1);
+ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 DataStoreClass DataStore;
 #endif
@@ -209,6 +210,50 @@ void test_bridge_extra_gaps() {
     pf.payload_length = rpc::MAX_PAYLOAD_SIZE + 1; // Invalid
     Bridge._pending_tx_queue.push(pf);
     Bridge._flushPendingTxQueue();
+}
+
+// --- TARGET: Console.cpp Gaps ---
+void test_console_extra_gaps() {
+    printf("  -> Testing console_extra_gaps\n");
+    CaptureStream stream;
+    setup_env(stream);
+    Console.begin();
+
+    // Gap: write(c)
+    Console.write('X');
+
+    // Gap: write(c) when full
+    while(!Console._tx_buffer.full()) Console._tx_buffer.push_back('A');
+    Console.write('B');
+
+    // Gap: write(buf, size) when not empty
+    Console._tx_buffer.clear();
+    Console.write('A');
+    Console.write((const uint8_t*)"hello", 5);
+
+    // Gap: peek()
+    Console._rx_buffer.push('P');
+    assert(Console.peek() == 'P');
+
+    // Gap: available()
+    assert(Console.available() == 1);
+
+    // Gap: read() empty
+    Console._rx_buffer.clear();
+    assert(Console.read() == -1);
+
+    // Gap: flush() not begun
+    Console._begun = false;
+    Console.flush();
+    Console._begun = true;
+
+    // Gap: _push empty or 0 capacity
+    Console._push(nullptr, 0);
+    
+    // Gap: _push when full
+    while(!Console._rx_buffer.full()) Console._rx_buffer.push('Z');
+    uint8_t data = 'X';
+    Console._push(&data, 1);
 }
 
 // --- TARGET: DataStore.cpp Gaps ---
@@ -399,6 +444,7 @@ int main() {
     printf("ARDUINO 100%% COVERAGE TEST START\n");
     test_rpc_frame_gaps();
     test_bridge_extra_gaps();
+    test_console_extra_gaps();
     test_datastore_extra_gaps();
     test_mailbox_extra_gaps();
     test_process_extra_gaps();

@@ -18,11 +18,36 @@
 #include <Bridge.h>
 #include <string.h>
 
+void printHexValue(Print& target, uint16_t value, uint8_t width) {
+  if (width == 0) {
+    return;
+  }
+  if (width > 4) {
+    width = 4;
+  }
+  char buffer[4];
+  for (int i = width - 1; i >= 0; --i) {
+    buffer[i] = ("0123456789ABCDEF")[value & 0x0Fu];
+    value >>= 4;
+  }
+  for (uint8_t i = 0; i < width; ++i) {
+    target.print(buffer[i]);
+  }
+}
+
 void handleDigitalReadResponse(uint8_t value) {
+  // DISABLED: Console.print causes serial collisions
+  // Console.print("Respuesta asíncrona de lectura digital: ");
+  // Console.println(value);
   (void)value;
 }
 
 void handleCommand(const rpc::Frame& frame) {
+  // DISABLED: Console.print causes serial collisions
+  // Console.print("Comando RPC no manejado: ID=0x");
+  // printHexValue(Console, frame.header.command_id, 4);
+  // Console.print(", Payload Len=");
+  // Console.println(frame.header.payload_length);
   (void)frame;
 }
 
@@ -32,10 +57,19 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
     memcpy(msg_buf, buffer, size);
     msg_buf[size] = '\0';
 
+    // DISABLED: Console.print causes serial collisions
+    // Console.print("Mensaje de Mailbox recibido: ");
+    // Console.println(msg_buf);
+
     if (strcmp(msg_buf, "ON") == 0) {
       digitalWrite(13, HIGH);
+      // Console.println("LED 13 encendido por Mailbox");
     } else if (strcmp(msg_buf, "OFF") == 0) {
       digitalWrite(13, LOW);
+      // Console.println("LED 13 apagado por Mailbox");
+    } else {
+      // Console.print("Comando desconocido: ");
+      // Console.println(msg_buf);
     }
   }
   Mailbox.requestRead();
@@ -44,7 +78,14 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
 void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   (void)payload;
   (void)length;
+  // Silenced: printing on every status frame causes serial collisions
+  // Only uncomment for debugging specific issues
   (void)status_code;
+  /*
+  Console.print("Estado: 0x");
+  printHexValue(Console, rpc::to_underlying(status_code), 2);
+  Console.println();
+  */
 }
 
 void setup() {
@@ -73,6 +114,8 @@ void setup() {
     }
   }
   
+  // DISABLED: Console.print causes serial collisions
+  // Console.println("Bridge iniciado con secreto definido en Sketch.");
   Mailbox.requestRead();
 }
 

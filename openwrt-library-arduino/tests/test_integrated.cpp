@@ -73,6 +73,7 @@ public:
 BetterMockStream g_bridge_stream;
 HardwareSerial Serial;
 HardwareSerial Serial1;
+ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 DataStoreClass DataStore;
 #endif
@@ -142,11 +143,15 @@ void integrated_test_bridge_core() {
     gpio.payload[0] = 13; gpio.payload[1] = 1;
     accessor.dispatch(gpio);
     
-    localBridge.sendFrame(rpc::CommandId::CMD_DIGITAL_WRITE, (const uint8_t*)"\x0D\x01", 2);
+    localBridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, (const uint8_t*)"X", 1);
     accessor.retransmitLastFrame();
 }
 
 void integrated_test_components() {
+    Console.begin();
+    Console.write((uint8_t)'t');
+    Console.flush();
+    
     #if BRIDGE_ENABLE_DATASTORE
     DataStore.put("k", "v");
     #endif
@@ -264,7 +269,7 @@ void integrated_test_extreme_coverage() {
     accessor.setSynchronized(true);
     uint8_t large_pl[64];
     memset(large_pl, 'A', 64);
-    Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH, large_pl, 64);
+    Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, large_pl, 64);
 
     // 10. Más GPIO
     rpc::Frame f_gpio;
@@ -282,6 +287,22 @@ void integrated_test_extreme_coverage() {
     f_gpio.header.payload_length = 2;
     f_gpio.payload[0] = 3; f_gpio.payload[1] = 128;
     accessor.dispatch(f_gpio);
+
+    // 11. Console Watermarks y Write Large
+    {
+        uint8_t large_console_pl[300];
+        memset(large_console_pl, 'C', 300);
+        Console.write(large_console_pl, 300);
+    }
+    for (int i = 0; i < 40; i++) {
+        uint8_t b = (uint8_t)i;
+        Console._push(&b, 1);
+    }
+    while (Console.available() > 0) {
+        Console.read();
+    }
+    Console.peek(); // Empty peek
+    Console.read(); // Empty read
 
     // 12. FileSystem Casos de Borde
     {
@@ -376,7 +397,7 @@ void integrated_test_extreme_coverage() {
     
     // Simular espera de ACK y retransmisión
     g_test_millis = 1000;
-    Bridge.sendFrame(rpc::CommandId::CMD_DIGITAL_WRITE, (const uint8_t*)"\x0D\x01", 2);
+    Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, (const uint8_t*)"R", 1);
     
     // Avanzar tiempo para timeout
     g_test_millis += 500; // default ack timeout is 200ms
@@ -417,25 +438,24 @@ void integrated_test_extreme_coverage() {
     f_gpio.payload[0] = 13; f_gpio.payload[1] = 1;
     accessor.dispatch(f_gpio);
 
-    // 18b. Mailbox Push via Dispatch
-    rpc::Frame f_mb_p_t;
-    f_mb_p_t.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
-    f_mb_p_t.header.payload_length = 4;
-    uint8_t mb_p_data_t[] = {0, 2, 'O', 'K'};
-    memcpy(f_mb_p_t.payload.data(), mb_p_data_t, 4);
-    accessor.dispatch(f_mb_p_t);
+    // 18b. Console Write via Dispatch
+    rpc::Frame f_con;
+    f_con.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+    f_con.header.payload_length = 1;
+    f_con.payload[0] = 'D';
+    accessor.dispatch(f_con);
 
     // 18c. Compressed Frame Malformed
     rpc::Frame f_comp;
-    f_comp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH) | rpc::RPC_CMD_FLAG_COMPRESSED;
+    f_comp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE) | rpc::RPC_CMD_FLAG_COMPRESSED;
     f_comp.header.payload_length = 1;
     f_comp.payload[0] = 0xFF; // Invalid RLE
     accessor.dispatch(f_comp);
 
-    // 18d. Duplicate Mailbox Push
-    accessor.dispatch(f_mb_p_t); // Repetido
+    // 18d. Duplicate Console Write
+    accessor.dispatch(f_con); // Repetido
 
-    // 18e. Mailbox Push via Dispatch (Original)
+    // 18e. Mailbox Push via Dispatch
     rpc::Frame f_mb_p;
     f_mb_p.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     f_mb_p.header.payload_length = 4;

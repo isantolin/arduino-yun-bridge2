@@ -26,6 +26,7 @@ from ..const import (
     DEFAULT_ALLOW_NON_TMP_PATHS,
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_DEBUG_LOGGING,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
@@ -88,6 +89,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     reconnect_delay: int = DEFAULT_RECONNECT_DELAY
     status_interval: int = DEFAULT_STATUS_INTERVAL
     debug_logging: bool = DEFAULT_DEBUG_LOGGING
+    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
     pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
@@ -175,12 +177,17 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         )
         if mailbox_bytes_limit < mailbox_limit:
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to " "mailbox_queue_limit")
+        console_limit = self._require_positive(
+            "console_queue_limit_bytes",
+            self.console_queue_limit_bytes,
+        )
         mqtt_limit = self._require_positive(
             "mqtt_queue_limit",
             self.mqtt_queue_limit,
         )
         self.mailbox_queue_limit = mailbox_limit
         self.mailbox_queue_bytes_limit = mailbox_bytes_limit
+        self.console_queue_limit_bytes = console_limit
         self.mqtt_queue_limit = mqtt_limit
 
     @staticmethod

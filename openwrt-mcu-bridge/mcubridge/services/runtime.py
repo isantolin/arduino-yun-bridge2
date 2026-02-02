@@ -19,6 +19,7 @@ from ..rpc.protocol import Status  # Only Status from rpc.protocol needed
 
 from ..state.context import RuntimeState
 from .components import (
+    ConsoleComponent,
     DatastoreComponent,
     FileComponent,
     MailboxComponent,
@@ -31,6 +32,7 @@ from .dispatcher import BridgeDispatcher
 from .handshake import (
     SerialHandshakeFatal,
     SerialHandshakeManager,
+    SerialTimingWindow,
     SendFrameCallable,
     derive_serial_timing,
 )
@@ -92,9 +94,10 @@ class BridgeService:
         self.config = config
         self.state = state
         self._serial_sender: SendFrameCallable | None = None
-        self._serial_timing = derive_serial_timing(config)
+        self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
         self._task_group: asyncio.TaskGroup | None = None
 
+        self._console = ConsoleComponent(config, state, self)
         self._datastore = DatastoreComponent(config, state, self)
         self._file = FileComponent(config, state, self)
         self._mailbox = MailboxComponent(config, state, self)
@@ -124,6 +127,7 @@ class BridgeService:
             publish_bridge_snapshot=self._publish_bridge_snapshot,
         )
         self._dispatcher.register_components(
+            console=self._console,
             datastore=self._datastore,
             file=self._file,
             mailbox=self._mailbox,
@@ -241,6 +245,11 @@ class BridgeService:
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to request MCU version after reconnect: %s", e)
 
+        try:
+            await self._console.flush_queue()
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.exception("Failed to flush console backlog after reconnect: %s", e)
+
     async def on_serial_disconnected(self) -> None:
         """Reset transient MCU tracking when the serial link drops."""
 
@@ -261,6 +270,8 @@ class BridgeService:
         self.state.pending_digital_reads.clear()
         self.state.pending_analog_reads.clear()
 
+        # Ensure we do not keep the console in a paused state between links.
+        self._console.on_serial_disconnected()
         await self._serial_flow.reset()
         self._handshake.clear_handshake_expectations()
 

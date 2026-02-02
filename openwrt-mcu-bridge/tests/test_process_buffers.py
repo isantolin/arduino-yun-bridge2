@@ -12,6 +12,7 @@ from asyncio.subprocess import Process
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (
+    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
     DEFAULT_MQTT_PORT,
@@ -51,6 +52,7 @@ def runtime_service() -> BridgeService:
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
         debug_logging=False,
+        console_queue_limit_bytes=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
         mailbox_queue_limit=DEFAULT_MAILBOX_QUEUE_LIMIT,
         mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
         serial_shared_secret=b"testshared",

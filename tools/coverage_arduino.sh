@@ -25,7 +25,6 @@ SOURCES=(
     "${SRC_ROOT}/protocol/rpc_frame.cpp"
     "${SRC_ROOT}/protocol/security.cpp"
     "${SRC_ROOT}/arduino/Bridge.cpp"
-    "${SRC_ROOT}/arduino/Console.cpp"
     "${SRC_ROOT}/arduino/DataStore.cpp"
     "${SRC_ROOT}/arduino/Mailbox.cpp"
     "${SRC_ROOT}/arduino/FileSystem.cpp"

@@ -27,8 +27,6 @@ class BridgeContext(Protocol):
         reply_context: Message | None = None,
     ) -> None: ...
 
-    def is_command_allowed(self, command: str) -> bool: ...
-
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],

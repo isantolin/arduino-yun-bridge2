@@ -11,7 +11,6 @@ import pytest_asyncio
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
@@ -39,7 +38,6 @@ async def datastore_component() -> DatastoreComponent:
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
         serial_shared_secret=b"s_e_c_r_e_t_mock",

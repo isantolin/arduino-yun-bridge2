@@ -12,17 +12,10 @@ import pytest
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
-from mcubridge.protocol.topics import (
-    Topic,
-    mailbox_incoming_available_topic,
-    topic_path,
-)
-from mcubridge.services.runtime import BridgeService, SerialHandshakeFatal
-from mcubridge.state.context import (
-    PendingPinRequest,
-    RuntimeState,
-)
+from mcubridge.policy import TopicAuthorization
+from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,

@@ -672,13 +672,6 @@ class RuntimeState:
     def pop_mailbox_incoming(self) -> bytes | None:
         return self._pop_mailbox(self.mailbox_incoming_queue)
 
-    def _sync_console_queue_limits(self) -> None:
-        self.console_to_mcu_queue.update_limits(
-            max_items=None,
-            max_bytes=self.console_queue_limit_bytes,
-        )
-        self.console_queue_bytes = self.console_to_mcu_queue.bytes_used
-
     def _sync_mailbox_limits(self, queue: BoundedByteDeque) -> None:
         queue.update_limits(
             max_items=self.mailbox_queue_limit,

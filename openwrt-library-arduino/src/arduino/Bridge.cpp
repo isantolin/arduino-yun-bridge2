@@ -127,7 +127,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _frame_received(false),
       _parser(),
       _rx_frame{},
-      _scratch_payload(),
       _last_command_id(0),
       _retry_count(0),
       _last_send_millis(0),
@@ -445,7 +444,9 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
           break;
         }
 
-        uint8_t* response = _scratch_payload.data();
+        uint8_t buffer[rpc::MAX_PAYLOAD_SIZE]; // [RAM OPT] Stack allocation
+        uint8_t* response = buffer;
+        
         if (payload_data) {
           etl::copy_n(payload_data, nonce_length, response);
           if (has_secret) {
@@ -570,12 +571,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   effective_frame.header.command_id = raw_command;
 
   if (is_compressed && frame.header.payload_length > 0) {
-    size_t decoded_len = rle::decode(frame.payload.data(), frame.header.payload_length, _scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE);
+    // [RAM OPT] Stack allocation
+    uint8_t scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+    size_t decoded_len = rle::decode(frame.payload.data(), frame.header.payload_length, scratch_payload, rpc::MAX_PAYLOAD_SIZE);
     if (decoded_len == 0) {
       _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
       return;
     }
-    etl::copy_n(_scratch_payload.data(), decoded_len, effective_frame.payload.data());
+    etl::copy_n(scratch_payload, decoded_len, effective_frame.payload.data());
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   }
 
@@ -734,17 +737,19 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) 
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
+  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE]; // [RAM OPT] Stack allocation
+  
   if (message) {
     const char* p = reinterpret_cast<const char*>(message);
     size_t i = 0;
     while (i < rpc::MAX_PAYLOAD_SIZE) {
       uint8_t c = pgm_read_byte(p + i);
       if (c == 0) break;
-      _scratch_payload[i] = c;
+      buffer[i] = c;
       i++;
     }
     length = static_cast<uint16_t>(i);
-    payload = _scratch_payload.data();
+    payload = buffer;
   }
   _doEmitStatus(status_code, payload, length);
 }
@@ -762,12 +767,14 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
                                   const uint8_t* data, size_t data_len) {
   if (header_len >= rpc::MAX_PAYLOAD_SIZE) return; // Header too big to fit any data
   
+  // [RAM OPT] Migrate scratch buffer to stack
+  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+  
   const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
   size_t offset = 0;
 
   // Handle empty data case (send at least one frame with just header)
   if (data_len == 0) {
-     uint8_t* buffer = getScratchBuffer();
      if (header_len > 0) etl::copy_n(header, header_len, buffer);
      while (!_sendFrame(rpc::to_underlying(command_id), buffer, header_len)) {
        process();
@@ -779,8 +786,6 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
     size_t bytes_remaining = data_len - offset;
     size_t chunk_size = (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
 
-    uint8_t* buffer = getScratchBuffer();
-    
     // 1. Copy Header
     if (header_len > 0) etl::copy_n(header, header_len, buffer);
     
@@ -824,11 +829,14 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   const uint8_t* final_payload = arg_payload;
   size_t final_len = arg_length;
 
+  // [RAM OPT] Stack allocation for compression buffer
+  uint8_t scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+
   if (arg_length > 0 && rle::should_compress(arg_payload, arg_length)) {
-    size_t compressed_len = rle::encode(arg_payload, arg_length, _scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE);
+    size_t compressed_len = rle::encode(arg_payload, arg_length, scratch_payload, rpc::MAX_PAYLOAD_SIZE);
     if (compressed_len > 0 && compressed_len < arg_length) {
       final_cmd |= rpc::RPC_CMD_FLAG_COMPRESSED;
-      final_payload = _scratch_payload.data();
+      final_payload = scratch_payload;
       final_len = compressed_len;
     }
   }
@@ -1019,9 +1027,10 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   }
 
   // [MIL-SPEC] Use HKDF derived key for handshake authentication.
-  // [OPTIMIZATION] Reuse scratch buffer to avoid 64 bytes of stack allocation (key + digest).
-  uint8_t* handshake_key = _scratch_payload.data(); // 32 bytes
-  uint8_t* digest = _scratch_payload.data() + 32;   // 32 bytes
+  // [RAM OPT] Allocate scratch buffer on stack (32 bytes key + 32 bytes digest)
+  uint8_t key_and_digest[64];
+  uint8_t* handshake_key = key_and_digest;       // 32 bytes
+  uint8_t* digest = key_and_digest + 32;         // 32 bytes
 
   rpc::security::hkdf_sha256(
       _shared_secret.data(), _shared_secret.size(),

@@ -55,7 +55,8 @@ define Package/$(PKG_NAME)
 		+python3-pyserial-asyncio-fast \
 		+python3-tenacity \
 		+python3-uvloop \
-		+python3-cryptography
+		+python3-cryptography \
+		+python3-construct
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

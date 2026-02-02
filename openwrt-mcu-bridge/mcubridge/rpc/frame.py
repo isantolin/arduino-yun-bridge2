@@ -30,7 +30,20 @@ import struct
 from binascii import crc32
 from typing import Self
 
+from construct import Bytes, Int8ub, Int16ub, Int32ub, Struct, Terminated, this
+
 from . import protocol
+
+
+# Define the binary structure of the frame (excluding CRC trailer)
+# Corresponds to: [Version:1][PayloadLen:2][CommandId:2][Payload:N]
+HeaderPayloadStruct = Struct(
+    "version" / Int8ub,
+    "payload_len" / Int16ub,
+    "command_id" / Int16ub,
+    "payload" / Bytes(this.payload_len),
+    Terminated,
+)
 
 
 class Frame:
@@ -68,18 +81,17 @@ class Frame:
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
-        # Pack the header that will be part of the CRC calculation
-        crc_covered_header = struct.pack(
-            protocol.CRC_COVERED_HEADER_FORMAT,
-            protocol.PROTOCOL_VERSION,
-            payload_len,
-            command_id,
-        )
+        # Build the header and payload using Construct
+        container = {
+            "version": protocol.PROTOCOL_VERSION,
+            "payload_len": payload_len,
+            "command_id": command_id,
+            "payload": payload,
+        }
+        data_to_crc = HeaderPayloadStruct.build(container)
 
         # Calculate CRC over the header and payload, then mask it to the
         # exact number of bits declared by the protocol.
-        data_to_crc = crc_covered_header + payload
-
         # Calculate mask based on protocol size (usually 4 bytes -> 0xFFFFFFFF)
         crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
 
@@ -88,13 +100,10 @@ class Frame:
         crc = (crc32(data_to_crc) & protocol.CRC32_MASK) & crc_mask
 
         # Pack the CRC
-        crc_packed = struct.pack(
-            protocol.CRC_FORMAT,
-            crc,
-        )
+        crc_packed = Int32ub.build(crc)
 
         # Construct the full raw frame
-        return crc_covered_header + payload + crc_packed
+        return data_to_crc + crc_packed
 
     @staticmethod
     def parse(raw_frame_buffer: bytes) -> tuple[int, bytes]:
@@ -118,19 +127,27 @@ class Frame:
         crc_start = len(raw_frame_buffer) - protocol.CRC_SIZE
         data_to_check = raw_frame_buffer[:crc_start]
         received_crc_packed = raw_frame_buffer[crc_start:]
-        (received_crc,) = struct.unpack(
-            protocol.CRC_FORMAT,
-            received_crc_packed,
-        )
+        
+        try:
+            received_crc = Int32ub.parse(received_crc_packed)
+        except Exception as exc:
+            raise ValueError(f"Failed to parse CRC: {exc}") from exc
 
         calculated_crc = crc32(data_to_check) & protocol.CRC32_MASK
 
         if received_crc != calculated_crc:
             raise ValueError(f"CRC mismatch. Expected {calculated_crc:08X}, " f"got {received_crc:08X}")
 
-        # 4. Validate header content
-        header_data = data_to_check[: protocol.CRC_COVERED_HEADER_SIZE]
-        version, payload_len, command_id = struct.unpack(protocol.CRC_COVERED_HEADER_FORMAT, header_data)
+        # 4. Parse Header + Payload using Construct
+        # This implicitly validates payload length vs buffer size via Terminated
+        try:
+            container = HeaderPayloadStruct.parse(data_to_check)
+        except Exception as exc:
+            raise ValueError(f"Frame structure error: {exc}") from exc
+
+        version = container.version
+        command_id = container.command_id
+        payload = container.payload
 
         if version != protocol.PROTOCOL_VERSION:
             raise ValueError("Invalid version. Expected " f"{protocol.PROTOCOL_VERSION}, got {version}")
@@ -140,14 +157,6 @@ class Frame:
         # dispatcher and flooding logs with "Link not synchronized" warnings.
         if command_id < protocol.STATUS_CODE_MIN:
             raise ValueError(f"Invalid command id {command_id} (reserved/below minimum " f"{protocol.STATUS_CODE_MIN})")
-
-        # 4. Validate payload length against actual data length
-        actual_payload_len = len(data_to_check) - protocol.CRC_COVERED_HEADER_SIZE
-        if payload_len != actual_payload_len:
-            raise ValueError("Payload length mismatch. Header says " f"{payload_len}, but got {actual_payload_len}")
-
-        # 5. Extract payload
-        payload = data_to_check[protocol.CRC_COVERED_HEADER_SIZE :]
 
         return command_id, payload
 

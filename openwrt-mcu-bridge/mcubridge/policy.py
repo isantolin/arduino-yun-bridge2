@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import msgspec
+import fnmatch
 from collections.abc import Iterable
 
 from .common import normalise_allowed_commands
@@ -68,7 +69,12 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
             return False
         if self.allow_all:
             return True
-        return pieces[0].lower() in self.entries
+        
+        cmd = pieces[0].lower()
+        for pattern in self.entries:
+            if fnmatch.fnmatch(cmd, pattern):
+                return True
+        return False
 
     def __contains__(self, item: str) -> bool:  # pragma: no cover
         return item.lower() in self.entries

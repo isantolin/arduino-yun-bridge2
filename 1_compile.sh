@@ -397,7 +397,7 @@ fi
 REQUIRED_PKGS="openwrt-mcu-bridge openwrt-mcu-core luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
 # Se ELIMINÓ python3-twisted porque prometheus_client ha sido optimizado para no usarlo.
-REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt python3-tenacity mosquitto-client luaposix"
+REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt python3-tenacity mosquitto-client luaposix python3-construct"
 
 for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then
@@ -415,7 +415,7 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # [FIX] Orden de compilación: Primero librerías críticas
 # Nota: Ahora están en el feed 'mcubridge' que apunta a 'feeds/' plano
-for lib in python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil; do
+for lib in python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil python3-construct; do
     echo "[BUILD] Building library $lib..."
     make package/feeds/mcubridge/$lib/compile V=s
     

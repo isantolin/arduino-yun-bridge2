@@ -74,3 +74,9 @@ name = "cryptography"
 openwrt = "python3-cryptography"
 pip = "cryptography==46.0.4"
 rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
+
+[[dependency]]
+name = "construct"
+openwrt = "python3-construct"
+pip = "construct==2.10.70"
+rationale = "Declarative binary protocol parsing"

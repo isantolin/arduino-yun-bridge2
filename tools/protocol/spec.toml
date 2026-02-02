@@ -104,6 +104,7 @@ read_failed = "read_failed"
 remove_failed = "remove_failed"
 write_failed = "write_failed"
 mailbox_incoming_overflow = "mailbox_incoming_overflow"
+mailbox_outgoing_overflow = "mailbox_outgoing_overflow"
 command_validation_failed = "command_validation_failed"
 
 

@@ -23,8 +23,6 @@ if TYPE_CHECKING:
         FileComponent,
         MailboxComponent,
         PinComponent,
-        ProcessComponent,
-        ShellComponent,
         SystemComponent,
     )
 
@@ -77,8 +75,6 @@ class BridgeDispatcher:
         self.file: FileComponent | None = None
         self.mailbox: MailboxComponent | None = None
         self.pin: PinComponent | None = None
-        self.process: ProcessComponent | None = None
-        self.shell: ShellComponent | None = None
         self.system: SystemComponent | None = None
 
     def register_components(
@@ -88,18 +84,11 @@ class BridgeDispatcher:
         file: FileComponent,
         mailbox: MailboxComponent,
         pin: PinComponent,
-        process: ProcessComponent,
-        shell: ShellComponent,
         system: SystemComponent,
     ) -> None:
         """Register all component handlers with the registries."""
-        self.console = console
-        self.datastore = datastore
-        self.file = file
         self.mailbox = mailbox
         self.pin = pin
-        self.process = process
-        self.shell = shell
         self.system = system
 
         # Console
@@ -125,18 +114,6 @@ class BridgeDispatcher:
         self.mcu_registry.register(Command.CMD_FILE_READ.value, file.handle_read)
         self.mcu_registry.register(Command.CMD_FILE_REMOVE.value, file.handle_remove)
         self.mqtt_router.register(Topic.FILE, self._handle_file_topic)
-
-        # Process
-        self.mcu_registry.register(Command.CMD_PROCESS_RUN.value, process.handle_run)
-        self.mcu_registry.register(
-            Command.CMD_PROCESS_RUN_ASYNC.value,
-            process.handle_run_async,
-        )
-        self.mcu_registry.register(Command.CMD_PROCESS_POLL.value, process.handle_poll)
-        # CMD_PROCESS_KILL is handled via register_system_handlers or manually if needed
-
-        # Shell (MQTT only)
-        self.mqtt_router.register(Topic.SHELL, self._handle_shell_topic)
 
         # Pin (GPIO)
         self.mcu_registry.register(
@@ -180,12 +157,10 @@ class BridgeDispatcher:
         handle_get_capabilities_resp: Callable[[bytes], Awaitable[bool]],
         handle_ack: Callable[[bytes], Awaitable[None]],
         status_handler_factory: Callable[[Status], Callable[[bytes], Awaitable[None]]],
-        handle_process_kill: Callable[[bytes], Awaitable[bool | None]],
     ) -> None:
         self.mcu_registry.register(Command.CMD_LINK_SYNC_RESP.value, handle_link_sync_resp)
         self.mcu_registry.register(Command.CMD_LINK_RESET_RESP.value, handle_link_reset_resp)
         self.mcu_registry.register(Command.CMD_GET_CAPABILITIES_RESP.value, handle_get_capabilities_resp)
-        self.mcu_registry.register(Command.CMD_PROCESS_KILL.value, handle_process_kill)
 
         self.mcu_registry.register(Status.ACK.value, handle_ack)
         for status in Status:
@@ -347,16 +322,6 @@ class BridgeDispatcher:
         payload = self._payload_bytes(inbound.payload)
         if self.mailbox:
             await self.mailbox.handle_mqtt(identifier, payload, inbound)
-        return True
-
-    async def _handle_shell_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        identifier = route.identifier
-        if identifier and not self.is_topic_action_allowed(route.topic, identifier):
-            await self.reject_topic_action(inbound, route.topic, identifier)
-            return True
-        payload = self._payload_bytes(inbound.payload)
-        if self.shell:
-            await self.shell.handle_mqtt(route.raw.split("/"), payload, inbound)
         return True
 
     async def _handle_pin_topic(self, route: TopicRoute, inbound: Message) -> bool:

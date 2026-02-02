@@ -4,41 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
+from mcubridge.policy import TopicAuthorization
 from mcubridge.protocol.topics import Topic
-
-
-class TestAllowedCommandPolicy:
-    def test_allow_all_wildcard(self) -> None:
-        """Verify the wildcard allows any command."""
-        policy = AllowedCommandPolicy.from_iterable(["/bin/ls", "*", "cat"])
-        assert policy.allow_all
-        assert policy.is_allowed("/usr/bin/python -c 'import os'")
-        assert policy.is_allowed("anything")
-        assert not policy.is_allowed("  ")  # Empty/whitespace is not allowed
-
-    def test_specific_commands_are_normalized(self) -> None:
-        """Verify commands are lowercased and matched correctly."""
-        policy = AllowedCommandPolicy.from_iterable(["/bin/ls", "CAT", "dmesg "])
-        assert not policy.allow_all
-        assert policy.is_allowed("/bin/ls -la")
-        assert policy.is_allowed("cat /etc/passwd")
-        assert policy.is_allowed("dmesg")
-        assert not policy.is_allowed("/bin/grep")
-        assert not policy.is_allowed("  ")
-
-    def test_only_first_token_is_checked(self) -> None:
-        """Verify only the command itself is checked, not arguments."""
-        policy = AllowedCommandPolicy.from_iterable(["ls"])
-        assert policy.is_allowed("ls -la /")
-        assert not policy.is_allowed("/bin/ls")
-
-    def test_empty_policy_allows_nothing(self) -> None:
-        """Verify an empty policy denies all commands."""
-        policy = AllowedCommandPolicy.from_iterable([])
-        assert not policy.allow_all
-        assert not policy.is_allowed("ls")
-        assert not policy.is_allowed("")
 
 
 class TestTopicAuthorization:
@@ -52,10 +19,6 @@ class TestTopicAuthorization:
             (Topic.DATASTORE.value, "put"),
             (Topic.MAILBOX.value, "read"),
             (Topic.MAILBOX.value, "write"),
-            (Topic.SHELL.value, "run"),
-            (Topic.SHELL.value, "run_async"),
-            (Topic.SHELL.value, "poll"),
-            (Topic.SHELL.value, "kill"),
             (Topic.CONSOLE.value, "input"),
             (Topic.DIGITAL.value, "write"),
             (Topic.DIGITAL.value, "read"),
@@ -87,17 +50,14 @@ class TestTopicAuthorization:
         policy = TopicAuthorization(
             file_write=False,
             datastore_put=False,
-            shell_run=False,
         )
         assert policy.allows(Topic.FILE.value, "write") is False
         assert policy.allows(Topic.DATASTORE.value, "put") is False
-        assert policy.allows(Topic.SHELL.value, "run") is False
 
         # Check that others are still allowed
         assert policy.allows(Topic.FILE.value, "read") is True
         assert policy.allows(Topic.DATASTORE.value, "get") is True
         assert policy.allows(Topic.MAILBOX.value, "write") is True
-        assert policy.allows(Topic.SHELL.value, "kill") is True
 
     @pytest.mark.parametrize(
         "kwargs, topic, action",

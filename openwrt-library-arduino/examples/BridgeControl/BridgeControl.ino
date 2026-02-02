@@ -4,7 +4,6 @@
  */
 #define BRIDGE_ENABLE_DATASTORE 0
 #define BRIDGE_ENABLE_FILESYSTEM 0
-#define BRIDGE_ENABLE_PROCESS 0
 
 // CONFIGURACIÓN DEL SECRETO
 // Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)

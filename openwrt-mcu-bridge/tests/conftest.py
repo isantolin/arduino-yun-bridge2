@@ -36,7 +36,6 @@ from mcubridge.config import settings
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
@@ -148,9 +147,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_certfile=None,
         mqtt_keyfile=None,
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        allowed_commands=(),
         file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
         mqtt_queue_limit=8,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,

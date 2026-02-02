@@ -54,8 +54,6 @@ local function ensure_general_section()
             -- Default to tmpfs to avoid Flash wear on devices without external storage.
             file_system_root = "/tmp/yun_files",
             mqtt_spool_dir = "/tmp/mcubridge/spool",
-            process_timeout = "10",
-            allowed_commands = "",
         })
     end
 
@@ -236,16 +234,6 @@ fs_root.description = translate(
     "Directory exposed for MCU file operations. Use /tmp for tmpfs (Flash-safe) or /mnt/<device> for external storage."
 )
 
-local process_timeout = s:option(Value, "process_timeout", translate("Process Timeout (s)"))
-process_timeout.datatype = "uinteger"
-process_timeout.placeholder = "10"
-process_timeout.rmempty = false
-
-local allowed_commands = s:option(Value, "allowed_commands", translate("Allowed Shell Commands"))
-allowed_commands.placeholder = "date uptime"
-allowed_commands.rmempty = true
-allowed_commands.description = translate("Space separated whitelist for shell execution (leave empty to disable).")
-
 -- MQTT topic permissions ----------------------------------------------------
 local function mqtt_acl_option(key, label, description)
     local opt = s:option(Flag, key, translate(label))
@@ -291,26 +279,6 @@ mqtt_acl_option(
     "mqtt_allow_mailbox_write",
     "Allow mailbox write",
     "Permit MQTT writes into the MCU mailbox queue."
-)
-mqtt_acl_option(
-    "mqtt_allow_shell_run",
-    "Allow shell run",
-    "Allow synchronous shell execution via br/sh/run."
-)
-mqtt_acl_option(
-    "mqtt_allow_shell_run_async",
-    "Allow shell run_async",
-    "Allow asynchronous shell execution via br/sh/run_async."
-)
-mqtt_acl_option(
-    "mqtt_allow_shell_poll",
-    "Allow shell poll",
-    "Allow polling of asynchronous shell jobs via br/sh/poll."
-)
-mqtt_acl_option(
-    "mqtt_allow_shell_kill",
-    "Allow shell kill",
-    "Allow canceling asynchronous shell jobs via br/sh/kill."
 )
 mqtt_acl_option(
     "mqtt_allow_console_input",

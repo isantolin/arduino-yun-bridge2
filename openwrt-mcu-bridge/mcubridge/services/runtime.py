@@ -24,8 +24,6 @@ from .components import (
     FileComponent,
     MailboxComponent,
     PinComponent,
-    ProcessComponent,
-    ShellComponent,
     SystemComponent,
 )
 from .dispatcher import BridgeDispatcher
@@ -102,8 +100,6 @@ class BridgeService:
         self._file = FileComponent(config, state, self)
         self._mailbox = MailboxComponent(config, state, self)
         self._pin = PinComponent(config, state, self)
-        self._process = ProcessComponent(config, state, self)
-        self._shell = ShellComponent(config, state, self, self._process)
         self._system = SystemComponent(config, state, self)
 
         self._handshake = SerialHandshakeManager(
@@ -132,8 +128,6 @@ class BridgeService:
             file=self._file,
             mailbox=self._mailbox,
             pin=self._pin,
-            process=self._process,
-            shell=self._shell,
             system=self._system,
         )
         self._dispatcher.register_system_handlers(
@@ -142,7 +136,6 @@ class BridgeService:
             handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
             handle_ack=self._handle_ack,
             status_handler_factory=self._status_handler,
-            handle_process_kill=self._process.handle_kill,
         )
 
         state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
@@ -210,11 +203,6 @@ class BridgeService:
 
     def compute_handshake_tag(self, nonce: bytes) -> bytes:
         return self._handshake.compute_handshake_tag(nonce)
-
-    def trim_process_buffers(
-        self, stdout_buffer: bytearray, stderr_buffer: bytearray
-    ) -> tuple[bytes, bytes, bool, bool]:
-        return self._process.trim_buffers(stdout_buffer, stderr_buffer)
 
     async def on_serial_connected(self) -> None:
         """Run post-connection initialisation for the MCU link."""

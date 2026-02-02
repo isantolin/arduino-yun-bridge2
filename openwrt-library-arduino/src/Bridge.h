@@ -113,117 +113,19 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #define BRIDGE_ENABLE_MAILBOX 1
 #endif
 
-#ifndef BRIDGE_ENABLE_PROCESS
-#define BRIDGE_ENABLE_PROCESS 1
-#endif
+
 
 // [SIL-2] Resource Allocation Tuning
 // On memory constrained AVR (Uno/Yun), we limit the pending queue to 1 frame.
-#if defined(ARDUINO_ARCH_AVR)
-  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+#ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+  #if defined(ARDUINO_ARCH_AVR)
     #define BRIDGE_MAX_PENDING_TX_FRAMES 1
-  #endif
-  
-  // [SIL-2] Minimal PacketSerial implementation to save RAM (96B vs 256B)
-  // Standard PacketSerial allocates 256 bytes. We only need ~80 bytes.
-  class BridgePacketSerial {
-   public:
-    using PacketHandler = void (*)(const uint8_t* buffer, size_t size);
-
-    BridgePacketSerial() : _stream(nullptr), _handler(nullptr), _buffer{0}, _buffer_idx(0) {}
-
-    void setStream(Stream* stream) { _stream = stream; }
-    void setPacketHandler(PacketHandler handler) { _handler = handler; }
-
-    void update() {
-      if (!_stream) return;
-      while (_stream->available() > 0) {
-        uint8_t data = _stream->read();
-        if (data == 0) {
-          if (_handler && _buffer_idx > 0) {
-            uint8_t decode_buffer[96];
-            size_t decoded_len = cobs_decode(_buffer, _buffer_idx, decode_buffer);
-            _handler(decode_buffer, decoded_len);
-          }
-          _buffer_idx = 0;
-        } else {
-          if (_buffer_idx < 96) {
-            _buffer[_buffer_idx++] = data;
-          } else {
-            _buffer_idx = 0; // Overflow: reset
-          }
-        }
-      }
-    }
-
-    void send(const uint8_t* buffer, size_t size) {
-      if (_stream && buffer && size > 0) {
-        uint8_t encode_buffer[110]; // Enough for 96 bytes + overhead
-        size_t encoded_len = cobs_encode(buffer, size, encode_buffer);
-        if (encoded_len > 0) {
-          _stream->write(encode_buffer, encoded_len);
-          _stream->write(0); // Delimiter
-        }
-      }
-    }
-
-   private:
-    Stream* _stream;
-    PacketHandler _handler;
-    uint8_t _buffer[96];
-    size_t _buffer_idx;
-
-    // Minimal in-place COBS decode helper
-    size_t cobs_decode(const uint8_t* src, size_t len, uint8_t* dst) {
-      size_t read_index = 0;
-      size_t write_index = 0;
-      uint8_t code = 0;
-      uint8_t i = 0;
-
-      while (read_index < len) {
-        code = src[read_index];
-        if (read_index + code > len && code != 1) return 0;
-        read_index++;
-        for (i = 1; i < code; i++) dst[write_index++] = src[read_index++];
-        if (code != 0xFF && read_index != len) dst[write_index++] = 0;
-      }
-      return write_index;
-    }
-
-    // Minimal COBS encode helper
-    size_t cobs_encode(const uint8_t* src, size_t len, uint8_t* dst) {
-      size_t read_index = 0;
-      size_t write_index = 1;
-      size_t code_index = 0;
-      uint8_t code = 1;
-
-      while (read_index < len) {
-        if (src[read_index] == 0) {
-          dst[code_index] = code;
-          code = 1;
-          code_index = write_index++;
-          read_index++;
-        } else {
-          dst[write_index++] = src[read_index++];
-          code++;
-          if (code == 0xFF) {
-            dst[code_index] = code;
-            code = 1;
-            code_index = write_index++;
-          }
-        }
-      }
-      dst[code_index] = code;
-      return write_index;
-    }
-  };
-
-#else
-  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+  #else
     #define BRIDGE_MAX_PENDING_TX_FRAMES rpc::RPC_MAX_PENDING_TX_FRAMES
   #endif
-  using BridgePacketSerial = PacketSerial;
 #endif
+
+using BridgePacketSerial = PacketSerial;
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {
@@ -240,9 +142,6 @@ class BridgeClass {
   #endif
   #if BRIDGE_ENABLE_FILESYSTEM
   friend class FileSystemClass;
-  #endif
-  #if BRIDGE_ENABLE_PROCESS
-  friend class ProcessClass;
   #endif
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::TestAccessor;
@@ -506,44 +405,6 @@ class FileSystemClass {
 extern FileSystemClass FileSystem;
 #endif
 
-#if BRIDGE_ENABLE_PROCESS
-class ProcessClass {
- public:
-  using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
-                                     const uint8_t*, uint16_t);
-  using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
-                                      uint16_t, const uint8_t*, uint16_t);
-  using ProcessRunAsyncHandler = void (*)(int16_t);  // PID from daemon (signed for error sentinel)
 
-  ProcessClass();
-  void run(const char* command);
-  void runAsync(const char* command);
-  void poll(int16_t pid);
-  void kill(int16_t pid);
-  void handleResponse(const rpc::Frame& frame);
-  
-  inline void onProcessRunResponse(ProcessRunHandler handler) {
-    _process_run_handler = handler;
-  }
-  inline void onProcessPollResponse(ProcessPollHandler handler) {
-    _process_poll_handler = handler;
-  }
-  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
-    _process_run_async_handler = handler;
-  }
-
- private:
-  bool _pushPendingProcessPid(uint16_t pid);
-  uint16_t _popPendingProcessPid();
-
-  // [SIL-2] Use circular buffer for safe PID tracking
-  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;
-  
-  ProcessRunHandler _process_run_handler;
-  ProcessPollHandler _process_poll_handler;
-  ProcessRunAsyncHandler _process_run_async_handler;
-};
-extern ProcessClass Process;
-#endif
 
 #endif

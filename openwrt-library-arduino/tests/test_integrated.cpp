@@ -83,9 +83,7 @@ MailboxClass Mailbox;
 #if BRIDGE_ENABLE_FILESYSTEM
 FileSystemClass FileSystem;
 #endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
+
 BridgeClass Bridge(g_bridge_stream);
 
 class FullMockStream : public Stream {
@@ -161,9 +159,7 @@ void integrated_test_components() {
     #if BRIDGE_ENABLE_FILESYSTEM
     FileSystem.read("f");
     #endif
-    #if BRIDGE_ENABLE_PROCESS
-    Process.run("ls");
-    #endif
+
 }
 
 void integrated_test_error_branches() {
@@ -238,11 +234,8 @@ void integrated_test_extreme_coverage() {
     FileSystem.write(long_path, (const uint8_t*)"d", 1);
 
     // 6. Responses Malformadas
+
     rpc::Frame resp;
-    resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-    resp.header.payload_length = 1;
-    Process.handleResponse(resp);
-    
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
     resp.header.payload_length = 1;
     resp.payload[0] = 50; // Longitud mentirosa
@@ -340,40 +333,7 @@ void integrated_test_extreme_coverage() {
     f_mb.header.payload_length = 1; // Truncado
     Mailbox.handleResponse(f_mb);
 
-    // 14. Process Casos de Borde
-    {
-        char huge_cmd[rpc::MAX_PAYLOAD_SIZE + 10];
-        memset(huge_cmd, 'S', sizeof(huge_cmd));
-        huge_cmd[sizeof(huge_cmd)-1] = '\0';
-        Process.run(huge_cmd);
-        Process.runAsync(huge_cmd);
-    }
-    for (int i = 0; i < 10; i++) Process.poll(i); // Fill queue
 
-    rpc::Frame f_proc;
-    f_proc.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-    // Success Case Process Run
-    // payload: status(1), out_len(2), out..., err_len(2), err...
-    uint8_t proc_run_data[] = {0x30, 0, 2, 'O', 'K', 0, 1, 'E'};
-    f_proc.header.payload_length = 8;
-    memcpy(f_proc.payload.data(), proc_run_data, 8);
-    Process.handleResponse(f_proc);
-
-    f_proc.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-    f_proc.header.payload_length = 4; // Truncado (necesita status(1) + out_len(2) + out... + err_len(2))
-    Process.handleResponse(f_proc);
-
-    f_proc.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-    // Success Case Process Poll
-    // payload: status(1), running(1), out_len(2), out..., err_len(2), err...
-    uint8_t proc_poll_data[] = {0x30, 0, 0, 1, 'X', 0, 1, 'Y'};
-    f_proc.header.payload_length = 8;
-    memcpy(f_proc.payload.data(), proc_poll_data, 8);
-    Process.handleResponse(f_proc);
-
-    f_proc.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-    f_proc.header.payload_length = 5; // Truncado
-    Process.handleResponse(f_proc);
 
     // 14b. DataStore Casos de Borde
     {
@@ -485,9 +445,7 @@ void integrated_test_extreme_coverage() {
     // 20. DataStore / FileSystem Callbacks
     DataStore.onDataStoreGetResponse([](const char* k, const uint8_t* v, uint16_t l) { (void)k; (void)v; (void)l; });
     FileSystem.onFileSystemReadResponse([](const uint8_t* d, uint16_t l) { (void)d; (void)l; });
-    Process.onProcessRunResponse([](rpc::StatusCode s, const uint8_t* out, uint16_t ol, const uint8_t* err, uint16_t el) { (void)s; (void)out; (void)ol; (void)err; (void)el; });
-    Process.onProcessPollResponse([](rpc::StatusCode s, uint8_t ec, const uint8_t* out, uint16_t ol, const uint8_t* err, uint16_t el) { (void)s; (void)ec; (void)out; (void)ol; (void)err; (void)el; });
-    Process.onProcessRunAsyncResponse([](int16_t p) { (void)p; });
+
     Mailbox.onMailboxMessage([](const uint8_t* m, uint16_t l) { (void)m; (void)l; });
     Mailbox.onMailboxAvailableResponse([](uint16_t c) { (void)c; });
 }

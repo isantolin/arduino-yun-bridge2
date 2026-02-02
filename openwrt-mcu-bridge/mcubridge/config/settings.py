@@ -19,7 +19,6 @@ from typing import Any
 from ..common import (
     get_default_config,
     get_uci_config,
-    normalise_allowed_commands,
     parse_bool,
 )
 from ..const import (
@@ -40,8 +39,6 @@ from ..const import (
     DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TLS_INSECURE,
     DEFAULT_PENDING_PIN_REQUESTS,
-    DEFAULT_PROCESS_MAX_CONCURRENT,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
@@ -53,7 +50,7 @@ from ..const import (
     DEFAULT_WATCHDOG_INTERVAL,
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
-from ..policy import AllowedCommandPolicy, TopicAuthorization
+from ..policy import TopicAuthorization
 from ..rpc.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE
 
 
@@ -75,15 +72,11 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_certfile: str | None = None
     mqtt_keyfile: str | None = None
     mqtt_topic: str = "br"
-    allowed_commands: tuple[str, ...] = ()
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: int = 30
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
-
-    allowed_policy: AllowedCommandPolicy | None = None
 
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: int = DEFAULT_RECONNECT_DELAY
@@ -106,8 +99,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_shared_secret: bytes = b""
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
     metrics_host: str = DEFAULT_METRICS_HOST
     metrics_port: int = DEFAULT_METRICS_PORT
@@ -127,7 +118,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_certfile = self._normalize_optional_string(self.mqtt_certfile)
         self.mqtt_keyfile = self._normalize_optional_string(self.mqtt_keyfile)
 
-        self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.serial_response_timeout = max(self.serial_response_timeout, self.serial_retry_timeout * 2)
         self.serial_handshake_min_interval = max(0.0, self.serial_handshake_min_interval)
         self.serial_handshake_fatal_failures = self._require_positive(
@@ -239,9 +229,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         positive_int_fields = (
             "reconnect_delay",
             "status_interval",
-            "process_timeout",
-            "process_max_output_bytes",
-            "process_max_concurrent",
             "serial_handshake_fatal_failures",
             "file_write_max_bytes",
             "file_storage_quota_bytes",
@@ -319,13 +306,6 @@ def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults using msgspec for efficient validation."""
 
     raw_config = _load_raw_config()
-
-    # Pre-process 'allowed_commands' since msgspec handles standard types
-    if "allowed_commands" in raw_config:
-        allowed_raw = raw_config["allowed_commands"]
-        if isinstance(allowed_raw, str):
-            commands = normalise_allowed_commands(allowed_raw.split())
-            raw_config["allowed_commands"] = commands
 
     # Map 'debug' (from UCI) to 'debug_logging' (internal)
     if "debug" in raw_config and "debug_logging" not in raw_config:

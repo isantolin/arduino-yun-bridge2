@@ -56,9 +56,7 @@ MailboxClass Mailbox;
 #if BRIDGE_ENABLE_FILESYSTEM
 FileSystemClass FileSystem;
 #endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
+
 #endif
 
 #if BRIDGE_DEBUG_IO
@@ -590,9 +588,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   #if BRIDGE_ENABLE_FILESYSTEM
   FileSystem.handleResponse(effective_frame);
   #endif
-  #if BRIDGE_ENABLE_PROCESS
-  Process.handleResponse(effective_frame);
-  #endif
+
   
   bool command_processed_internally = false;
   bool requires_ack = false;

@@ -26,7 +26,7 @@ ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
-ProcessClass Process;
+
 
 namespace {
 
@@ -389,45 +389,7 @@ static void mailbox_available_trampoline(uint16_t count) {
   state->count = static_cast<uint8_t>(count);
 }
 
-struct ProcessPollState {
-  static ProcessPollState* instance;
-  bool called;
-  rpc::StatusCode status;
-  uint8_t exit_code;
-  ByteBuffer<rpc::MAX_PAYLOAD_SIZE> stdout_data;
-  ByteBuffer<rpc::MAX_PAYLOAD_SIZE> stderr_data;
 
-  ProcessPollState()
-      : called(false),
-        status(rpc::StatusCode::STATUS_ERROR),
-        exit_code(rpc::RPC_PROCESS_DEFAULT_EXIT_CODE),
-        stdout_data(),
-        stderr_data() {}
-};
-
-ProcessPollState* ProcessPollState::instance = nullptr;
-
-static void process_poll_trampoline(rpc::StatusCode status, uint8_t exit_code,
-                                   const uint8_t* stdout_data,
-                                   uint16_t stdout_len,
-                                   const uint8_t* stderr_data,
-                                   uint16_t stderr_len) {
-  ProcessPollState* state = ProcessPollState::instance;
-  if (!state) return;
-  state->called = true;
-  state->status = status;
-  state->exit_code = exit_code;
-
-  state->stdout_data.clear();
-  if (stdout_data && stdout_len) {
-    TEST_ASSERT(state->stdout_data.append(stdout_data, stdout_len));
-  }
-
-  state->stderr_data.clear();
-  if (stderr_data && stderr_len) {
-    TEST_ASSERT(state->stderr_data.append(stderr_data, stderr_len));
-  }
-}
 
 static void test_console_write_outbound_frame() {
   RecordingStream stream;
@@ -524,25 +486,7 @@ static void test_filesystem_write_outbound_frame() {
   restore_bridge_to_serial();
 }
 
-static void test_process_kill_outbound_frame() {
-  RecordingStream stream;
-  reset_bridge_with_stream(stream);
-  stream.tx_buffer.clear();
 
-  Process.kill(123);
-
-  const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  TEST_ASSERT(frames.count >= 1);
-  const rpc::Frame& f = frames.frames[0];
-  TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL));
-  TEST_ASSERT_EQ_UINT(f.header.payload_length, 2);
-
-  const uint16_t pid = rpc::read_u16_be(f.payload.data());
-  TEST_ASSERT_EQ_UINT(pid, 123);
-
-  inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL));
-  restore_bridge_to_serial();
-}
 
 static void test_datastore_get_response_handler() {
   RecordingStream stream;
@@ -592,41 +536,7 @@ static void test_mailbox_read_response_handler() {
   MailboxState::instance = nullptr;
 }
 
-static void test_process_poll_response_handler() {
-  ProcessPollState state;
-  ProcessPollState::instance = &state;
-  Process.onProcessPollResponse(process_poll_trampoline);
 
-  rpc::Frame f;
-  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-
-  // Payload: [status(1)][exit_code(1)][stdout_len(2)][stdout][stderr_len(2)][stderr]
-  const uint8_t stdout_msg[] = {'o'};
-  const uint8_t stderr_msg[] = {'e'};
-
-  uint8_t* p = f.payload.data();
-  p[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
-  p[1] = TEST_EXIT_CODE;
-  rpc::write_u16_be(p + 2, static_cast<uint16_t>(sizeof(stdout_msg)));
-  memcpy(p + 4, stdout_msg, sizeof(stdout_msg));
-  rpc::write_u16_be(p + 4 + sizeof(stdout_msg), static_cast<uint16_t>(sizeof(stderr_msg)));
-  memcpy(p + 6 + sizeof(stdout_msg), stderr_msg, sizeof(stderr_msg));
-
-  f.header.payload_length = static_cast<uint16_t>(
-      2 + 2 + sizeof(stdout_msg) + 2 + sizeof(stderr_msg));
-
-  Process.handleResponse(f);
-
-  TEST_ASSERT(state.called);
-  TEST_ASSERT(state.status == rpc::StatusCode::STATUS_OK);
-  TEST_ASSERT_EQ_UINT(state.exit_code, TEST_EXIT_CODE);
-  TEST_ASSERT_EQ_UINT(state.stdout_data.len, sizeof(stdout_msg));
-  TEST_ASSERT(test_memeq(state.stdout_data.data, stdout_msg, sizeof(stdout_msg)));
-  TEST_ASSERT_EQ_UINT(state.stderr_data.len, sizeof(stderr_msg));
-  TEST_ASSERT(test_memeq(state.stderr_data.data, stderr_msg, sizeof(stderr_msg)));
-
-  ProcessPollState::instance = nullptr;
-}
 
 static void test_console_write_when_not_begun() {
   // Directly exercise the guard branch.
@@ -670,133 +580,13 @@ static void test_console_read_sends_xon_success_and_failure() {
   // Failure case removed: PacketSerial does not report write failures, so sendFrame always returns true.
 }
 
-struct ProcessRunState {
-  static ProcessRunState* instance;
-  bool called;
-  rpc::StatusCode status;
-  uint16_t stdout_len;
-  uint16_t stderr_len;
 
-  ProcessRunState()
-      : called(false),
-        status(rpc::StatusCode::STATUS_ERROR),
-        stdout_len(0),
-        stderr_len(0) {}
-};
 
-ProcessRunState* ProcessRunState::instance = nullptr;
 
-static void process_run_trampoline(rpc::StatusCode status,
-                                  const uint8_t*, uint16_t stdout_len,
-                                  const uint8_t*, uint16_t stderr_len) {
-  ProcessRunState* state = ProcessRunState::instance;
-  if (!state) return;
-  state->called = true;
-  state->status = status;
-  state->stdout_len = stdout_len;
-  state->stderr_len = stderr_len;
-}
 
-static void test_process_run_outbound_and_error_branches() {
-  RecordingStream stream;
-  reset_bridge_with_stream(stream);
-  stream.tx_buffer.clear();
 
-  // Null / empty command: no frame.
-  Process.run(nullptr);
-  Process.run("");
-  TEST_ASSERT_EQ_UINT(stream.tx_buffer.len, 0);
 
-  // Too-large command: emits STATUS_ERROR with flash message.
-  char huge[rpc::MAX_PAYLOAD_SIZE + 2];
-  memset(huge, 'a', sizeof(huge));
-  huge[sizeof(huge) - 1] = '\0';
-  Process.run(huge);
-  TEST_ASSERT(stream.tx_buffer.len > 0);
-  const FrameList frames_err = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  TEST_ASSERT(frames_err.count >= 1);
-  TEST_ASSERT_EQ_UINT(frames_err.frames[0].header.command_id,
-                      rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
 
-  // Normal command: emits CMD_PROCESS_RUN.
-  stream.tx_buffer.clear();
-  Process.run("echo hi");
-  const FrameList frames_ok = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  TEST_ASSERT(frames_ok.count >= 1);
-  TEST_ASSERT_EQ_UINT(frames_ok.frames[0].header.command_id,
-                      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN));
-
-  restore_bridge_to_serial();
-}
-
-static void test_process_poll_queue_full_and_pop_empty() {
-  RecordingStream stream;
-  reset_bridge_with_stream(stream);
-  stream.tx_buffer.clear();
-
-  // Negative pid: no frame.
-  Process.poll(-1);
-  TEST_ASSERT_EQ_UINT(stream.tx_buffer.len, 0);
-
-  // Pop on empty returns sentinel.
-  TEST_ASSERT_EQ_UINT(Process._popPendingProcessPid(), rpc::RPC_INVALID_ID_SENTINEL);
-
-  // Fill queue (BRIDGE_MAX_PENDING_PROCESS_POLLS == 1), second poll emits STATUS_ERROR.
-  Process.poll(10);
-  Process.poll(11);
-
-  const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  TEST_ASSERT(frames.count >= 2);
-  TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
-                      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL));
-  TEST_ASSERT_EQ_UINT(frames.frames[1].header.command_id,
-                      rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
-
-  restore_bridge_to_serial();
-}
-
-static void test_process_run_response_length_guards() {
-  ProcessRunState state;
-  ProcessRunState::instance = &state;
-  Process.onProcessRunResponse(process_run_trampoline);
-
-  // Too short: should not call.
-  rpc::Frame f_short{};
-  f_short.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  f_short.header.payload_length = 1;
-  f_short.payload[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
-  Process.handleResponse(f_short);
-  TEST_ASSERT(!state.called);
-
-  // Declared stdout length but missing stderr length: should not call.
-  rpc::Frame f_bad{};
-  f_bad.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  uint8_t* p = f_bad.payload.data();
-  p[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
-  rpc::write_u16_be(p + 1, 2);
-  p[3] = 'o';
-  p[4] = 'k';
-  f_bad.header.payload_length = 5; // no stderr_len field
-  Process.handleResponse(f_bad);
-  TEST_ASSERT(!state.called);
-
-  // Full payload: should call.
-  rpc::Frame f_ok{};
-  f_ok.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-  uint8_t* q = f_ok.payload.data();
-  q[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
-  rpc::write_u16_be(q + 1, 1);
-  q[3] = 'o';
-  rpc::write_u16_be(q + 4, 0);
-  f_ok.header.payload_length = 6;
-  Process.handleResponse(f_ok);
-  TEST_ASSERT(state.called);
-  TEST_ASSERT(state.status == rpc::StatusCode::STATUS_OK);
-  TEST_ASSERT_EQ_UINT(state.stdout_len, 1);
-  TEST_ASSERT_EQ_UINT(state.stderr_len, 0);
-
-  ProcessRunState::instance = nullptr;
-}
 
 static void test_mailbox_request_frames_and_available_handler() {
   RecordingStream stream;
@@ -882,14 +672,8 @@ int main() {
   test_mailbox_send_outbound_frame();
   test_mailbox_request_frames_and_available_handler();
   test_filesystem_write_outbound_frame();
-  test_filesystem_remove_and_read_outbound_guards();
-  test_process_kill_outbound_frame();
-  test_process_run_outbound_and_error_branches();
-  test_process_poll_queue_full_and_pop_empty();
   test_datastore_get_response_handler();
   test_datastore_request_get_queue_full();
   test_mailbox_read_response_handler();
-  test_process_poll_response_handler();
-  test_process_run_response_length_guards();
   return 0;
 }

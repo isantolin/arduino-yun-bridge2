@@ -24,28 +24,9 @@
 #include "rpc_frame.h"
 #include "rpc_protocol.h"
 
-#ifdef ARDUINO_ARCH_AVR
-  // [SIL-2] AVR Optimization: Use software CRC32 to save ~1KB RAM (FastCRC table)
-  // The table-based approach is too heavy for ATmega32u4 (2.5KB RAM).
-  // This loop is slower but perfectly adequate for 115200 baud.
-  namespace {
-    uint32_t soft_crc32(const uint8_t *data, size_t length) {
-        uint32_t crc = 0xFFFFFFFF;
-        for (size_t i = 0; i < length; i++) {
-            crc ^= data[i];
-            for (uint8_t j = 0; j < 8; j++) {
-                if (crc & 1) crc = (crc >> 1) ^ 0xEDB88320;
-                else crc >>= 1;
-            }
-        }
-        return ~crc;
-    }
-  }
-#else
-  #include <FastCRC.h>
-  // FastCRC32 instance used by protocol (Table-based, fast for ARM/ESP)
-  FastCRC32 CRC32;
-#endif
+#include <FastCRC.h>
+// FastCRC32 instance used by protocol (Table-based, fast for ARM/ESP)
+FastCRC32 CRC32;
 
 #include "etl/algorithm.h"
 
@@ -73,11 +54,7 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
     const size_t crc_start = size - CRC_TRAILER_SIZE;
     const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
     
-    #ifdef ARDUINO_ARCH_AVR
-    const uint32_t calculated_crc = soft_crc32(buffer, crc_start);
-    #else
     const uint32_t calculated_crc = CRC32.crc32(buffer, crc_start);
-    #endif
 
     if (received_crc != calculated_crc) {
         _last_error = Error::CRC_MISMATCH;
@@ -142,11 +119,7 @@ size_t FrameBuilder::build(uint8_t* buffer,
   }
 
   // --- CRC ---
-  #ifdef ARDUINO_ARCH_AVR
-  uint32_t crc = soft_crc32(buffer, data_len);
-  #else
   uint32_t crc = CRC32.crc32(buffer, data_len);
-  #endif
   
   write_u32_be(&buffer[data_len], crc);
 

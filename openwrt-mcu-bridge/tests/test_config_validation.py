@@ -10,7 +10,6 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.const import (
     DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
 )
 from mcubridge.rpc import protocol
 
@@ -29,9 +28,7 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
         "mqtt_certfile": None,
         "mqtt_keyfile": None,
         "mqtt_topic": "mcubridge",
-        "allowed_commands": (),
         "file_system_root": "/tmp",
-        "process_timeout": DEFAULT_PROCESS_TIMEOUT,
         "serial_shared_secret": b"abcd1234",
     }
     base.update(overrides)

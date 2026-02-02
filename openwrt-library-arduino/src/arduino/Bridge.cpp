@@ -142,8 +142,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
       _pending_tx_queue(),
-      _fsm(),
-      _last_raw_frame()
+      _fsm()
 #if BRIDGE_DEBUG_FRAMES
       , _tx_debug{}
 #endif
@@ -209,7 +208,6 @@ void BridgeClass::begin(
   _last_send_millis = 0;
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
-  _last_raw_frame.clear();
 #if BRIDGE_DEBUG_FRAMES
   _tx_debug = {};
 #endif
@@ -844,8 +842,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   const bool critical = _requiresAck(final_cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED);
 
   // [SIL-2] State-Driven Sending Logic via ETL FSM
-  if (critical && _fsm.isAwaitingAck()) {
-    // Already waiting? Queue it.
+  if (critical) {
     // [SIL-2] ISR Protection for Queue Access
     noInterrupts();
     bool queue_full = _pending_tx_queue.full();
@@ -853,13 +850,15 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
 
     if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) {
       // Queue full? Try to process timeout to free space (Emergency Valve)
-      _processAckTimeout();
+      // Only if we are already waiting for an ACK (meaning the queue head is active)
+      if (_fsm.isAwaitingAck()) {
+        _processAckTimeout();
+        noInterrupts();
+        queue_full = _pending_tx_queue.full();
+        interrupts();
+      }
       
-      noInterrupts();
-      queue_full = _pending_tx_queue.full();
-      interrupts();
-      
-      if (_fsm.isAwaitingAck() || queue_full) return false;
+      if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) return false;
     }
     
     // Inlined _enqueuePendingTx
@@ -871,27 +870,25 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
     noInterrupts();
     _pending_tx_queue.push(frame);
     interrupts();
+
+    // If we are not waiting for an ACK, we can start sending this frame immediately.
+    // _flushPendingTxQueue will pick it up (it's at the front).
+    if (!_fsm.isAwaitingAck()) {
+        _flushPendingTxQueue();
+    }
     return true;
   }
 
-  // Inlined _sendFrameImmediate
+  // Non-critical frame: Send immediately using stack buffer
+  uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
   rpc::FrameBuilder builder;
-  _last_raw_frame.resize(_last_raw_frame.capacity());
-  size_t raw_len = builder.build(_last_raw_frame.data(), _last_raw_frame.size(), final_cmd, final_payload, final_len);
-  if (raw_len == 0) {
-    _last_raw_frame.clear();
-    return false;
+  size_t raw_len = builder.build(raw_buffer, sizeof(raw_buffer), final_cmd, final_payload, final_len);
+  
+  if (raw_len > 0) {
+    _packetSerial.send(raw_buffer, raw_len);
+    flushStream();
   }
-  _last_raw_frame.resize(raw_len);
-  _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
-  flushStream();
 
-  if (critical) {
-    _fsm.sendCritical();  // Transition to AwaitingAck
-    _retry_count = 0;
-    _last_send_millis = millis();
-    _last_command_id = final_cmd;
-  }
   return true;
 }
 
@@ -927,6 +924,14 @@ void BridgeClass::_clearAckState() {
 void BridgeClass::_handleAck(uint16_t command_id) {
   if (_fsm.isAwaitingAck() && (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id)) {
     _clearAckState();
+    
+    // [SIL-2] ACK received -> Safe to remove frame from queue
+    noInterrupts();
+    if (!_pending_tx_queue.empty()) {
+       _pending_tx_queue.pop();
+    }
+    interrupts();
+
     _flushPendingTxQueue();
   }
 }
@@ -936,11 +941,19 @@ void BridgeClass::_handleMalformed(uint16_t command_id) {
 }
 
 void BridgeClass::_retransmitLastFrame() {
-  if (_fsm.isAwaitingAck() && !_last_raw_frame.empty()) {
-    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
-    _retry_count++;
-    _last_send_millis = millis();
-    flushStream();
+  if (_fsm.isAwaitingAck() && !_pending_tx_queue.empty()) {
+    const PendingTxFrame& frame = _pending_tx_queue.front();
+    
+    uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
+    rpc::FrameBuilder builder;
+    size_t raw_len = builder.build(raw_buffer, sizeof(raw_buffer), frame.command_id, frame.payload.data(), frame.payload_length);
+    
+    if (raw_len > 0) {
+      _packetSerial.send(raw_buffer, raw_len);
+      _retry_count++;
+      _last_send_millis = millis();
+      flushStream();
+    }
   }
 }
 
@@ -968,7 +981,6 @@ void BridgeClass::enterSafeState() {
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
   _consecutive_crc_errors = 0;
-  _last_raw_frame.clear();
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
@@ -989,24 +1001,19 @@ void BridgeClass::_flushPendingTxQueue() {
   const PendingTxFrame& frame = _pending_tx_queue.front();
   interrupts();
 
+  uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
   rpc::FrameBuilder builder;
-  _last_raw_frame.resize(_last_raw_frame.capacity());
-  size_t raw_len = builder.build(_last_raw_frame.data(), _last_raw_frame.size(), frame.command_id, frame.payload.data(), frame.payload_length);
+  size_t raw_len = builder.build(raw_buffer, sizeof(raw_buffer), frame.command_id, frame.payload.data(), frame.payload_length);
+  
   if (raw_len > 0) {
-    _last_raw_frame.resize(raw_len);
-    _packetSerial.send(_last_raw_frame.data(), _last_raw_frame.size());
+    _packetSerial.send(raw_buffer, raw_len);
     flushStream();
 
     _fsm.sendCritical();  // Transition to AwaitingAck via FSM
     _retry_count = 0;
     _last_send_millis = millis();
     _last_command_id = frame.command_id;
-    
-    noInterrupts();
-    _pending_tx_queue.pop();
-    interrupts();
-  } else {
-    _last_raw_frame.clear();
+    // NOTE: We do NOT pop here. We pop only when ACK is received.
   }
 }
 

@@ -118,14 +118,15 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #endif
 
 // [SIL-2] Resource Allocation Tuning
-// On memory constrained AVR (Uno/Yun), we limit the pending queue to 1 frame.
+// On memory constrained AVR (Uno/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).
+// Previously this was 1, but we merged the active frame buffer into the queue.
 #if defined(ARDUINO_ARCH_AVR)
   #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-    #define BRIDGE_MAX_PENDING_TX_FRAMES 1
+    #define BRIDGE_MAX_PENDING_TX_FRAMES 2
   #endif
 #else
   #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-    #define BRIDGE_MAX_PENDING_TX_FRAMES rpc::RPC_MAX_PENDING_TX_FRAMES
+    #define BRIDGE_MAX_PENDING_TX_FRAMES (rpc::RPC_MAX_PENDING_TX_FRAMES + 1)
   #endif
 #endif
 
@@ -272,9 +273,6 @@ class BridgeClass {
 
   // [SIL-2] ETL FSM replaces manual state tracking
   bridge::fsm::BridgeFsm _fsm;
-
-  // Buffer for retransmission (Raw Frame: Header + Payload + CRC)
-  etl::vector<uint8_t, rpc::MAX_RAW_FRAME_SIZE> _last_raw_frame;
 
 #if BRIDGE_DEBUG_FRAMES
   mutable FrameDebugSnapshot _tx_debug;

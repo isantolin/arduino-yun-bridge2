@@ -838,10 +838,20 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   // [SIL-2] State-Driven Sending Logic via ETL FSM
   if (critical && _fsm.isAwaitingAck()) {
     // Already waiting? Queue it.
-    if (_pending_tx_queue.full() || final_len > rpc::MAX_PAYLOAD_SIZE) {
+    // [SIL-2] ISR Protection for Queue Access
+    noInterrupts();
+    bool queue_full = _pending_tx_queue.full();
+    interrupts();
+
+    if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) {
       // Queue full? Try to process timeout to free space (Emergency Valve)
       _processAckTimeout();
-      if (_fsm.isAwaitingAck() || _pending_tx_queue.full()) return false;
+      
+      noInterrupts();
+      queue_full = _pending_tx_queue.full();
+      interrupts();
+      
+      if (_fsm.isAwaitingAck() || queue_full) return false;
     }
     
     // Inlined _enqueuePendingTx
@@ -849,7 +859,10 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
     frame.command_id = final_cmd;
     frame.payload_length = static_cast<uint16_t>(final_len);
     if (final_len > 0 && final_payload) etl::copy_n(final_payload, final_len, frame.payload.data());
+    
+    noInterrupts();
     _pending_tx_queue.push(frame);
+    interrupts();
     return true;
   }
 
@@ -958,8 +971,15 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  if (_fsm.isAwaitingAck() || _pending_tx_queue.empty()) return;
+  noInterrupts();
+  bool empty = _pending_tx_queue.empty();
+  interrupts();
+
+  if (_fsm.isAwaitingAck() || empty) return;
+  
+  noInterrupts();
   const PendingTxFrame& frame = _pending_tx_queue.front();
+  interrupts();
 
   rpc::FrameBuilder builder;
   _last_raw_frame.resize(_last_raw_frame.capacity());
@@ -973,13 +993,24 @@ void BridgeClass::_flushPendingTxQueue() {
     _retry_count = 0;
     _last_send_millis = millis();
     _last_command_id = frame.command_id;
+    
+    noInterrupts();
     _pending_tx_queue.pop();
+    interrupts();
   } else {
     _last_raw_frame.clear();
   }
 }
 
-void BridgeClass::_clearPendingTxQueue() { while (!_pending_tx_queue.empty()) _pending_tx_queue.pop(); }
+void BridgeClass::_clearPendingTxQueue() { 
+  while (true) {
+    noInterrupts();
+    bool empty = _pending_tx_queue.empty();
+    if (!empty) _pending_tx_queue.pop();
+    interrupts();
+    if (empty) break;
+  }
+}
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {
   if (_shared_secret.empty() || nonce_len == 0 || !nonce) {

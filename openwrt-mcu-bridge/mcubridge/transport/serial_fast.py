@@ -244,24 +244,40 @@ class SerialTransport:
         reconnect_delay = max(1, self.config.reconnect_delay)
         loop = asyncio.get_running_loop()
 
-        while not self._stop_event.is_set():
-            should_retry = True
-            try:
-                await self._connect_and_run(loop)
-            except SerialHandshakeFatal:
-                should_retry = False
-                raise
-            except asyncio.CancelledError:
-                self._stop_event.set()
-                raise
-            except (OSError, RuntimeError) as exc:
-                logger.error("Serial error: %s", exc)
+        def _log_reconnect(retry_state: tenacity.RetryCallState) -> None:
+            if retry_state.attempt_number > 1:
+                logger.warning(
+                    "Retrying serial connection in %ds... (Attempt %d)",
+                    reconnect_delay,
+                    retry_state.attempt_number,
+                )
 
-            if should_retry and not self._stop_event.is_set():
-                logger.warning("Retrying serial in %ds...", reconnect_delay)
-                await asyncio.sleep(reconnect_delay)
-            else:
-                break
+        retryer = tenacity.AsyncRetrying(
+            retry=tenacity.retry_if_not_exception_type(
+                (SerialHandshakeFatal, asyncio.CancelledError)
+            ),
+            wait=tenacity.wait_fixed(reconnect_delay),
+            before_sleep=_log_reconnect,
+            reraise=True,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    if self._stop_event.is_set():
+                        # Clean exit if stopped
+                        return
+                    await self._connect_and_run(loop)
+        except SerialHandshakeFatal:
+            logger.critical("Serial Handshake Fatal Error - Giving up.")
+            raise
+        except asyncio.CancelledError:
+            self._stop_event.set()
+            raise
+        except Exception as exc:
+            # Fallback for unexpected errors that bubbled up
+            logger.error("Serial transport stopped unexpectedly: %s", exc)
+            raise
 
     async def _serial_sender(self, cmd: int, pl: bytes) -> bool:
         if self.protocol:

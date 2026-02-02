@@ -130,7 +130,7 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
    public:
     using PacketHandler = void (*)(const uint8_t* buffer, size_t size);
 
-    BridgePacketSerial() : _stream(nullptr), _handler(nullptr), _buffer{}, _buffer_idx(0) {}
+    BridgePacketSerial() : _stream(nullptr), _handler(nullptr), _buffer{0}, _buffer_idx(0) {}
 
     void setStream(Stream* stream) { _stream = stream; }
     void setPacketHandler(PacketHandler handler) { _handler = handler; }
@@ -158,7 +158,12 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 
     void send(const uint8_t* buffer, size_t size) {
       if (_stream && buffer && size > 0) {
-        _stream->write(buffer, size);
+        uint8_t encode_buffer[110]; // Enough for 96 bytes + overhead
+        size_t encoded_len = cobs_encode(buffer, size, encode_buffer);
+        if (encoded_len > 0) {
+          _stream->write(encode_buffer, encoded_len);
+          _stream->write(0); // Delimiter
+        }
       }
     }
 
@@ -182,6 +187,33 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
         for (i = 1; i < code; i++) dst[write_index++] = src[read_index++];
         if (code != 0xFF && read_index != len) dst[write_index++] = 0;
       }
+      return write_index;
+    }
+
+    // Minimal COBS encode helper
+    size_t cobs_encode(const uint8_t* src, size_t len, uint8_t* dst) {
+      size_t read_index = 0;
+      size_t write_index = 1;
+      size_t code_index = 0;
+      uint8_t code = 1;
+
+      while (read_index < len) {
+        if (src[read_index] == 0) {
+          dst[code_index] = code;
+          code = 1;
+          code_index = write_index++;
+          read_index++;
+        } else {
+          dst[write_index++] = src[read_index++];
+          code++;
+          if (code == 0xFF) {
+            dst[code_index] = code;
+            code = 1;
+            code_index = write_index++;
+          }
+        }
+      }
+      dst[code_index] = code;
       return write_index;
     }
   };

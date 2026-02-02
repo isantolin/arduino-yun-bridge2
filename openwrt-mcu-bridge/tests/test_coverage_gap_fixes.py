@@ -2,7 +2,6 @@
 
 import logging
 import asyncio
-import struct
 import time
 import sys
 import errno
@@ -21,6 +20,7 @@ from mcubridge.services import dispatcher
 from mcubridge.state import context
 from mcubridge.mqtt import spool
 from mcubridge.services import handshake
+from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
@@ -1485,7 +1485,7 @@ async def test_handshake_handle_resp_gaps():
     # Correct length payload: nonce(16) + tag(16) = 32
     # Nonce counter is in last 8 bytes.
     # Let's craft a replay nonce (counter <= 100)
-    nonce = b"r" * 8 + struct.pack(">Q", 50)
+    nonce = b"r" * 8 + protocol.NONCE_COUNTER_STRUCT.build(50)
     state.link_handshake_nonce = nonce
     tag = comp.compute_handshake_tag(nonce)
     assert await comp.handle_link_sync_resp(nonce + tag) is False
@@ -1648,7 +1648,7 @@ def test_handshake_parse_capabilities_errors():
     assert state.mcu_capabilities is None
 
     # Unpack error
-    with patch("struct.unpack", side_effect=struct.error):
+    with patch("mcubridge.rpc.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception):
         comp._parse_capabilities(b"12345678")
 
 

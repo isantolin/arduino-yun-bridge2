@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import struct
 from collections.abc import Coroutine
 from typing import Any
 
@@ -101,7 +100,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         # pyright: ignore[reportPrivateUsage]
         component._pending_free_memory.append(inbound)
 
-        await component.handle_get_free_memory_resp(struct.pack(protocol.UINT16_FORMAT, 100))
+        await component.handle_get_free_memory_resp(protocol.UINT16_STRUCT.build(100))
 
         assert len(ctx.published) == 2
         message, reply_context = ctx.published[0]
@@ -133,7 +132,7 @@ def test_handle_get_free_memory_resp_ignores_malformed(
 
         caplog.set_level("WARNING", logger="mcubridge.system")
 
-        await component.handle_get_free_memory_resp(struct.pack(protocol.UINT8_FORMAT, protocol.DIGITAL_HIGH))
+        await component.handle_get_free_memory_resp(protocol.UINT8_STRUCT.build(protocol.DIGITAL_HIGH))
 
         assert not ctx.published
         # pyright: ignore[reportPrivateUsage]

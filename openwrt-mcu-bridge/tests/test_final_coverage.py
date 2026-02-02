@@ -8,7 +8,6 @@ import os
 import ssl
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
-import struct
 import tenacity
 import pytest
 import msgspec
@@ -357,16 +356,13 @@ async def test_handshake_gaps(runtime_state: RuntimeState, real_config):
     assert await mgr._fetch_capabilities() is False
 
     mgr._parse_capabilities(b"short")
-    with patch("struct.unpack", side_effect=struct.error()):
+    with patch("mcubridge.rpc.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception()):
         mgr._parse_capabilities(b"a" * 8)
 
     runtime_state.handshake_backoff_until = 0
     assert mgr._handshake_backoff_remaining() == 0.0
 
     await mgr._publish_handshake_event("test", extra={"foo": "bar"})
-
-    with patch("mcubridge.rpc.protocol.HANDSHAKE_CONFIG_FORMAT", ""):
-        assert mgr._build_reset_payload() == b""
 
 
 @pytest.mark.asyncio

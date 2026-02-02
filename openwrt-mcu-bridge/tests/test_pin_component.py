@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import struct
 from collections.abc import Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -113,7 +112,7 @@ async def test_handle_digital_read_resp_without_pending_request_publishes_unknow
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_digital_read_resp(struct.pack(protocol.PIN_READ_FORMAT, 1))
+    await component.handle_digital_read_resp(protocol.PIN_READ_STRUCT.build(1))
 
     assert len(ctx.enqueued) == 1
     message, reply_context = ctx.enqueued[0]
@@ -160,7 +159,7 @@ async def test_handle_analog_read_resp_with_pending_request_decodes_big_endian(
     ctx = RecordingBridgeContext(runtime_config, runtime_state)
     component = PinComponent(runtime_config, runtime_state, ctx)
 
-    await component.handle_analog_read_resp(struct.pack(protocol.UINT16_FORMAT, 256))
+    await component.handle_analog_read_resp(protocol.UINT16_STRUCT.build(256))
 
     message, reply_context = ctx.enqueued[0]
     assert reply_context is inbound
@@ -195,7 +194,7 @@ async def test_handle_mqtt_mode_command_valid_payload_sends_frame(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_SET_PIN_MODE.value
-    assert payload == struct.pack(protocol.PIN_WRITE_FORMAT, 2, 1)
+    assert payload == protocol.PIN_WRITE_STRUCT.build(dict(pin=2, value=1))
 
 
 @pytest.mark.asyncio
@@ -305,7 +304,7 @@ async def test_handle_mqtt_read_command_appends_pending_on_success(
     assert ctx.sent_frames
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == struct.pack(protocol.PIN_READ_FORMAT, 3)
+    assert payload == protocol.PIN_READ_STRUCT.build(3)
     assert runtime_state.pending_analog_reads
     request = runtime_state.pending_analog_reads[-1]
     assert request.pin == 3
@@ -328,7 +327,7 @@ async def test_handle_mqtt_write_digital_accepts_empty_payload_as_zero(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == struct.pack(protocol.PIN_WRITE_FORMAT, 5, protocol.DIGITAL_LOW)
+    assert payload == protocol.PIN_WRITE_STRUCT.build(dict(pin=5, value=protocol.DIGITAL_LOW))
 
 
 @pytest.mark.asyncio
@@ -364,4 +363,4 @@ async def test_handle_mqtt_parses_analog_pin_identifier_prefix_a(
 
     command_id, payload = ctx.sent_frames[-1]
     assert command_id == Command.CMD_ANALOG_WRITE.value
-    assert payload == struct.pack(protocol.PIN_WRITE_FORMAT, 1, 10)
+    assert payload == protocol.PIN_WRITE_STRUCT.build(dict(pin=1, value=10))

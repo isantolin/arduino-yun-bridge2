@@ -1,5 +1,4 @@
 import random
-import struct
 import pytest
 from cobs import cobs
 from mcubridge.rpc.frame import Frame
@@ -15,7 +14,7 @@ def test_frame_parsing_resilience_to_fuzzing():
     """Fuzzing test to ensure Frame.from_bytes never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
 
-    valid_exceptions = (ValueError, struct.error, cobs.DecodeError)
+    valid_exceptions = (ValueError, cobs.DecodeError)
 
     for i in range(FUZZ_ITERATIONS):
         # Generate random length between 0 and 200 bytes
@@ -68,7 +67,7 @@ def test_frame_header_parsing_resilience():
 
         try:
             _ = Frame.from_bytes(raw_data)
-        except (ValueError, struct.error):
+        except ValueError:
             pass
         except Exception as e:
             pytest.fail(f"Header parsing crashed on iteration {i} with: {e}")

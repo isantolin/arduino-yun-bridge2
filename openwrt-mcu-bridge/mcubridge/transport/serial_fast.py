@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-import struct
 import msgspec
 from typing import Final, Sized, TypeGuard, cast
 
@@ -240,24 +239,25 @@ class SerialTransport:
         self.protocol: BridgeSerialProtocol | None = None
         self._stop_event = asyncio.Event()
 
+    def _before_sleep_log(self, retry_state: tenacity.RetryCallState) -> None:
+        reconnect_delay = max(1, self.config.reconnect_delay)
+        if retry_state.attempt_number > 1:
+            logger.warning(
+                "Retrying serial connection in %ds... (Attempt %d)",
+                reconnect_delay,
+                retry_state.attempt_number,
+            )
+
     async def run(self) -> None:
         reconnect_delay = max(1, self.config.reconnect_delay)
         loop = asyncio.get_running_loop()
-
-        def _log_reconnect(retry_state: tenacity.RetryCallState) -> None:
-            if retry_state.attempt_number > 1:
-                logger.warning(
-                    "Retrying serial connection in %ds... (Attempt %d)",
-                    reconnect_delay,
-                    retry_state.attempt_number,
-                )
 
         retryer = tenacity.AsyncRetrying(
             retry=tenacity.retry_if_not_exception_type(
                 (SerialHandshakeFatal, asyncio.CancelledError)
             ),
             wait=tenacity.wait_fixed(reconnect_delay),
-            before_sleep=_log_reconnect,
+            before_sleep=self._before_sleep_log,
             reraise=True,
         )
 
@@ -332,6 +332,8 @@ class SerialTransport:
             while not transport.is_closing():
                 await asyncio.sleep(1)
 
+            raise ConnectionError("Serial connection lost")
+
         finally:
             if transport and not transport.is_closing():
                 transport.close()
@@ -344,7 +346,7 @@ class SerialTransport:
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
-        payload = struct.pack(protocol.UINT32_FORMAT, target_baud)
+        payload = protocol.UINT32_STRUCT.build(target_baud)
 
         # [SIL-2] Retry logic for baudrate negotiation
         retryer = tenacity.AsyncRetrying(

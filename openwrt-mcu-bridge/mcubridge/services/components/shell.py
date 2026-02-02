@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import struct
 from contextlib import AsyncExitStack
 
 from aiomqtt.message import Message
@@ -208,7 +207,7 @@ class ShellComponent:
 
     async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
         await self.process.handle_kill(
-            struct.pack(protocol.UINT16_FORMAT, pid_model.pid),
+            protocol.UINT16_STRUCT.build(pid_model.pid),
             send_ack=False,
         )
 

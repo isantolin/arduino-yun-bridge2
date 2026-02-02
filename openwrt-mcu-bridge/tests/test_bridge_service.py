@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import msgspec
 import logging
-import struct
 from unittest.mock import patch
 
 import pytest
@@ -100,7 +99,7 @@ def test_on_serial_connected_flushes_console_queue(
             elif command_id == Command.CMD_CONSOLE_WRITE.value:
                 flow.on_frame_received(
                     Status.ACK.value,
-                    struct.pack(protocol.UINT16_FORMAT, Command.CMD_CONSOLE_WRITE.value),
+                    protocol.UINT16_STRUCT.build(Command.CMD_CONSOLE_WRITE.value),
                 )
             return True
 
@@ -118,13 +117,10 @@ def test_on_serial_connected_flushes_console_queue(
         reset_payload = reset_payloads[0]
         assert len(reset_payload) == protocol.HANDSHAKE_CONFIG_SIZE
         timing = derive_serial_timing(runtime_config)
-        unpacked = struct.unpack(
-            protocol.HANDSHAKE_CONFIG_FORMAT,
-            reset_payload,
-        )
-        assert unpacked[0] == timing.ack_timeout_ms
-        assert unpacked[1] == timing.retry_limit
-        assert unpacked[2] == timing.response_timeout_ms
+        unpacked = protocol.HANDSHAKE_CONFIG_STRUCT.parse(reset_payload)
+        assert unpacked.ack_timeout_ms == timing.ack_timeout_ms
+        assert unpacked.ack_retry_limit == timing.retry_limit
+        assert unpacked.response_timeout_ms == timing.response_timeout_ms
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         handshake_ids = [
             frame_id
@@ -189,7 +185,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
                 # First, simulate the synchronous ACK from MCU
                 asyncio.get_running_loop().call_soon(
-                    flow.on_frame_received, Status.ACK.value, struct.pack(protocol.UINT16_FORMAT, command_id)
+                    flow.on_frame_received, Status.ACK.value, protocol.UINT16_STRUCT.build(command_id)
                 )
 
                 # Then, schedule the actual SYNC response
@@ -346,7 +342,7 @@ def test_link_sync_resp_respects_rate_limit(
             sent_frames.append((command_id, payload))
 
             # Auto-ACK to prevent serial_flow from blocking on frozen clock
-            ack_payload = struct.pack(protocol.UINT16_FORMAT, command_id)
+            ack_payload = protocol.UINT16_STRUCT.build(command_id)
             service._serial_flow.on_frame_received(
                 Status.ACK.value,
                 ack_payload,
@@ -596,7 +592,7 @@ def test_mailbox_available_flow(
         assert sent_frames[-2][1] == bytes([len(runtime_state.mailbox_queue)])
         # Final frame should be ACK referencing the original command.
         assert frame_ids[-1] == Status.ACK.value
-        assert sent_frames[-1][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value)
+        assert sent_frames[-1][1] == protocol.UINT16_STRUCT.build(Command.CMD_MAILBOX_AVAILABLE.value)
 
     asyncio.run(_run())
 
@@ -624,7 +620,7 @@ def test_mailbox_available_rejects_payload(
         assert sent_frames
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         assert frame_ids[-1] == Status.MALFORMED.value
-        assert sent_frames[-1][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_AVAILABLE.value)
+        assert sent_frames[-1][1] == protocol.UINT16_STRUCT.build(Command.CMD_MAILBOX_AVAILABLE.value)
         assert Command.CMD_MAILBOX_AVAILABLE_RESP.value not in frame_ids
         assert Status.ACK.value not in frame_ids
 
@@ -647,7 +643,7 @@ def test_mailbox_push_overflow_returns_error(
 
         service.register_serial_sender(fake_sender)
 
-        payload = struct.pack(protocol.UINT16_FORMAT, 3) + b"abc"
+        payload = protocol.UINT16_STRUCT.build(3) + b"abc"
         await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, payload)
 
         assert runtime_state.mailbox_incoming_queue_bytes == 0
@@ -697,7 +693,7 @@ def test_mailbox_read_requeues_on_send_failure(
         assert send_attempts[1][0] == Command.CMD_MAILBOX_READ_RESP.value
         # Final send is the ACK covering the MCU command.
         assert send_attempts[2][0] == Status.ACK.value
-        assert send_attempts[2][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_MAILBOX_READ.value)
+        assert send_attempts[2][1] == protocol.UINT16_STRUCT.build(Command.CMD_MAILBOX_READ.value)
 
     asyncio.run(_run())
 
@@ -731,7 +727,7 @@ def test_datastore_get_from_mcu_returns_cached_value(
         assert sent_frames[0][0] == Command.CMD_DATASTORE_GET_RESP.value
         assert sent_frames[0][1] == bytes([len(b"42")]) + b"42"
         assert sent_frames[1][0] == Status.ACK.value
-        assert sent_frames[1][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_DATASTORE_GET.value)
+        assert sent_frames[1][1] == protocol.UINT16_STRUCT.build(Command.CMD_DATASTORE_GET.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(
@@ -820,7 +816,7 @@ def test_datastore_put_from_mcu_updates_cache_and_mqtt(
 
         assert len(sent_frames) == 1
         assert sent_frames[0][0] == Status.ACK.value
-        assert sent_frames[0][1] == struct.pack(protocol.UINT16_FORMAT, Command.CMD_DATASTORE_PUT.value)
+        assert sent_frames[0][1] == protocol.UINT16_STRUCT.build(Command.CMD_DATASTORE_PUT.value)
 
     asyncio.run(_run())
 
@@ -1464,7 +1460,7 @@ def test_process_run_async_accepts_complex_arguments(
             status_id, status_payload = sent_frames[0]
             assert status_id == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
             # Payload should be the PID (123)
-            assert status_payload == struct.pack(protocol.UINT16_FORMAT, 123)
+            assert status_payload == protocol.UINT16_STRUCT.build(123)
 
     asyncio.run(_run())
 
@@ -1590,7 +1586,7 @@ def test_process_run_async_failure_emits_error(
 
         ack_id, ack_payload = sent_frames[1]
         assert ack_id == Status.ACK.value
-        assert ack_payload == struct.pack(protocol.UINT16_FORMAT, Command.CMD_PROCESS_RUN_ASYNC.value)
+        assert ack_payload == protocol.UINT16_STRUCT.build(Command.CMD_PROCESS_RUN_ASYNC.value)
 
         queued = runtime_state.mqtt_publish_queue.get_nowait()
         expected_topic = topic_path(

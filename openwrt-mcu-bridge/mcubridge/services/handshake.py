@@ -14,7 +14,6 @@ import hashlib
 import hmac
 import msgspec
 import logging
-import struct
 import time
 from typing import Any
 from collections.abc import Awaitable, Callable
@@ -348,13 +347,17 @@ class SerialHandshakeManager:
             self._logger.warning("Short capabilities payload: %s", payload.hex())
             return
         try:
-            ver, arch, dig, ana, feat = struct.unpack(protocol.CAPABILITIES_FORMAT, payload[:8])
+            cap = protocol.CAPABILITIES_STRUCT.parse(payload[:8])
             self._state.mcu_capabilities = McuCapabilities(
-                protocol_version=ver, board_arch=arch, num_digital_pins=dig, num_analog_inputs=ana, features=feat
+                protocol_version=cap.ver,
+                board_arch=cap.arch,
+                num_digital_pins=cap.dig,
+                num_analog_inputs=cap.ana,
+                features=cap.feat
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except struct.error:
-            self._logger.warning("Failed to unpack capabilities")
+        except Exception as exc:
+            self._logger.warning("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:
         self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
@@ -523,16 +526,11 @@ class SerialHandshakeManager:
         return self.calculate_handshake_tag(secret, nonce)
 
     def _build_reset_payload(self) -> bytes:
-        fmt = protocol.HANDSHAKE_CONFIG_FORMAT
-        if not fmt:
-            return b""
-        packed = struct.pack(
-            fmt,
-            self._timing.ack_timeout_ms,
-            self._timing.retry_limit,
-            self._timing.response_timeout_ms,
-        )
-        return packed
+        return protocol.HANDSHAKE_CONFIG_STRUCT.build({
+            "ack_timeout_ms": self._timing.ack_timeout_ms,
+            "ack_retry_limit": self._timing.retry_limit,
+            "response_timeout_ms": self._timing.response_timeout_ms,
+        })
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         if self._is_immediate_fatal(reason):

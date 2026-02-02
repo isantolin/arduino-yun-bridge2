@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import msgspec
-import struct
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from typing import cast
@@ -134,7 +133,7 @@ async def test_handle_run_async_success(process_component: ProcessComponent, moc
 
         mock_start.assert_awaited_once_with("sleep 10")
         mock_context.send_frame.assert_awaited_once_with(
-            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, struct.pack(protocol.UINT16_FORMAT, 123)
+            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, protocol.UINT16_STRUCT.build(123)
         )
         # Should also enqueue MQTT message
         mock_context.enqueue_mqtt.assert_awaited_once()
@@ -155,7 +154,7 @@ async def test_handle_run_async_failure(process_component: ProcessComponent, moc
 @pytest.mark.asyncio
 async def test_handle_poll_success(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
     pid = 123
-    payload = struct.pack(protocol.UINT16_FORMAT, pid)
+    payload = protocol.UINT16_STRUCT.build(pid)
 
     batch = ProcessOutputBatch(
         status_byte=1,  # Running
@@ -281,7 +280,7 @@ async def test_handle_kill_unknown_pid_returns_ack(
     mock_context: AsyncMock,
 ) -> None:
     pid = 123
-    payload = struct.pack(protocol.UINT16_FORMAT, pid)
+    payload = protocol.UINT16_STRUCT.build(pid)
     assert await process_component.handle_kill(payload, send_ack=True) is True
     mock_context.send_frame.assert_awaited_once_with(
         Status.ERROR.value,
@@ -317,7 +316,7 @@ async def test_handle_kill_terminates_and_cleans_slot(
 
     with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
         ok = await process_component.handle_kill(
-            struct.pack(protocol.UINT16_FORMAT, pid),
+            protocol.UINT16_STRUCT.build(pid),
             send_ack=True,
         )
         assert ok is True

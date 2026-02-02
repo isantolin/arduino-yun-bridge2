@@ -1,7 +1,6 @@
 """Tests to reach 100% code coverage."""
 
 import asyncio
-import struct
 import logging
 import pytest
 from unittest import mock
@@ -52,7 +51,7 @@ async def test_serial_flow_ack_mismatch_and_status_coverage():
     pending = pipeline._current
     assert pending is not None
 
-    mismatched_ack_payload = struct.pack(">H", 0x1234)
+    mismatched_ack_payload = protocol.UINT16_STRUCT.build(0x1234)
     pipeline.on_frame_received(Status.ACK.value, mismatched_ack_payload)
     assert not pending.ack_received
 

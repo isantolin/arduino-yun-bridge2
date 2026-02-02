@@ -6,7 +6,6 @@ import asyncio
 import base64
 import msgspec
 import logging
-import struct
 import subprocess
 from asyncio import StreamReader
 from asyncio.subprocess import Process
@@ -143,7 +142,7 @@ class ProcessComponent:
             case _:
                 await self.ctx.send_frame(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    struct.pack(protocol.UINT16_FORMAT, pid),
+                    protocol.UINT16_STRUCT.build(pid),
                 )
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
@@ -181,21 +180,21 @@ class ProcessComponent:
                 b"".join(
                     [
                         bytes([Status.MALFORMED.value, PROCESS_DEFAULT_EXIT_CODE]),
-                        struct.pack(protocol.UINT16_FORMAT, 0),
-                        struct.pack(protocol.UINT16_FORMAT, 0),
+                        protocol.UINT16_STRUCT.build(0),
+                        protocol.UINT16_STRUCT.build(0),
                     ]
                 ),
             )
             return False
 
-        pid = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
+        pid = protocol.UINT16_STRUCT.parse(payload[:2])
         batch = await self.collect_output(pid)
 
         response_payload = b"".join(
             [
                 bytes([batch.status_byte, batch.exit_code]),
-                struct.pack(protocol.UINT16_FORMAT, len(batch.stdout_chunk)),
-                struct.pack(protocol.UINT16_FORMAT, len(batch.stderr_chunk)),
+                protocol.UINT16_STRUCT.build(len(batch.stdout_chunk)),
+                protocol.UINT16_STRUCT.build(len(batch.stderr_chunk)),
                 batch.stdout_chunk,
                 batch.stderr_chunk,
             ]
@@ -220,7 +219,7 @@ class ProcessComponent:
             )
             return False
 
-        pid = struct.unpack(protocol.UINT16_FORMAT, payload[:2])[0]
+        pid = protocol.UINT16_STRUCT.parse(payload[:2])
 
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
@@ -774,9 +773,9 @@ class ProcessComponent:
         return b"".join(
             [
                 bytes([status & UINT8_MASK]),
-                struct.pack(protocol.UINT16_FORMAT, len(stdout_trim)),
+                protocol.UINT16_STRUCT.build(len(stdout_trim)),
                 stdout_trim,
-                struct.pack(protocol.UINT16_FORMAT, len(stderr_trim)),
+                protocol.UINT16_STRUCT.build(len(stderr_trim)),
                 stderr_trim,
             ]
         )

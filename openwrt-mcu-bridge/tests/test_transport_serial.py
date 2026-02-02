@@ -7,7 +7,6 @@ mock_serial_fast.create_serial_connection = AsyncMock(return_value=(MagicMock(),
 sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
 import asyncio  # noqa: E402
-import struct  # noqa: E402
 
 import pytest  # noqa: E402
 
@@ -66,7 +65,11 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
     # for speed, unless we re-added it. The code I wrote:
     # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
 
-    raw = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 1, 0, Command.CMD_LINK_SYNC.value) + b"x" * 10
+    raw = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+        version=1,
+        payload_len=0,
+        command_id=Command.CMD_LINK_SYNC.value
+    )) + b"x" * 10
     monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: raw)
 
     proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())

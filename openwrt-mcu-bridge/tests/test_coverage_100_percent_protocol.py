@@ -1,4 +1,3 @@
-import struct
 from binascii import crc32
 import pytest
 from mcubridge.rpc.frame import Frame
@@ -7,7 +6,7 @@ from mcubridge.rpc import protocol
 
 def _build_raw_with_crc(data_no_crc: bytes) -> bytes:
     c = crc32(data_no_crc) & protocol.CRC32_MASK
-    return data_no_crc + struct.pack(protocol.CRC_FORMAT, c)
+    return data_no_crc + protocol.CRC_STRUCT.build(c)
 
 
 def test_frame_parse_coverage_all_errors():
@@ -20,25 +19,41 @@ def test_frame_parse_coverage_all_errors():
             Frame.parse(b"1234567")
 
     # Line 125: CRC Mismatch
-    bad_crc_frame = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, protocol.PROTOCOL_VERSION, 0, 0x40)
+    bad_crc_frame = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+        version=protocol.PROTOCOL_VERSION,
+        payload_len=0,
+        command_id=0x40
+    ))
     bad_crc_frame += b"\x00\x00\x00\x00"
     with pytest.raises(ValueError, match="CRC mismatch"):
         Frame.parse(bad_crc_frame)
 
     # Line 140: Invalid version
-    bad_ver = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, 255, 0, 0x40)
+    bad_ver = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+        version=255,
+        payload_len=0,
+        command_id=0x40
+    ))
     with pytest.raises(ValueError, match="Invalid version"):
         Frame.parse(_build_raw_with_crc(bad_ver))
 
     # Line 149: Invalid command id (reserved)
-    bad_cmd = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, protocol.PROTOCOL_VERSION, 0, 0)
+    bad_cmd = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+        version=protocol.PROTOCOL_VERSION,
+        payload_len=0,
+        command_id=0
+    ))
     with pytest.raises(ValueError, match="Invalid command id"):
         Frame.parse(_build_raw_with_crc(bad_cmd))
 
     # Line 157: Payload length mismatch
-    bad_len = struct.pack(protocol.CRC_COVERED_HEADER_FORMAT, protocol.PROTOCOL_VERSION, 10, 0x40)
+    bad_len = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+        version=protocol.PROTOCOL_VERSION,
+        payload_len=10,
+        command_id=0x40
+    ))
     raw = _build_raw_with_crc(bad_len)
-    with pytest.raises(ValueError, match="Payload length mismatch"):
+    with pytest.raises(ValueError, match="Frame structure error"):
         Frame.parse(raw)
 
 

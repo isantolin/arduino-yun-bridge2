@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import struct
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -86,7 +85,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     process_component: ProcessComponent, mock_context: AsyncMock
 ) -> None:
     pid = 1
-    payload = struct.pack(protocol.UINT16_FORMAT, pid)
+    payload = protocol.UINT16_STRUCT.build(pid)
 
     batch = SimpleNamespace(
         status_byte=Status.OK.value,
@@ -326,7 +325,7 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
     with patch.object(mcubridge.services.components.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-                ok = await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))
+                ok = await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -358,7 +357,7 @@ async def test_handle_kill_process_lookup_error_is_handled(process_component: Pr
         side_effect=ProcessLookupError,
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))
+            ok = await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -391,4 +390,4 @@ async def test_handle_kill_unexpected_exception_is_handled(process_component: Pr
     ):
         with patch.object(ProcessComponent, "_release_process_slot"):
             with pytest.raises(RuntimeError, match="boom"):
-                await process_component.handle_kill(struct.pack(protocol.UINT16_FORMAT, pid))
+                await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))

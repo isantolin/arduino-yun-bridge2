@@ -69,7 +69,7 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
             return False
         if self.allow_all:
             return True
-        
+
         cmd = pieces[0].lower()
         for pattern in self.entries:
             if fnmatch.fnmatch(cmd, pattern):

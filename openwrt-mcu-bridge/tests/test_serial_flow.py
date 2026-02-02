@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 
 import pytest
 
 from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status, UINT16_FORMAT
+from mcubridge.rpc.protocol import Command, Status
 from mcubridge.services.serial_flow import SerialFlowController
 from mcubridge.state.context import RuntimeState
 
@@ -28,7 +27,7 @@ async def _send_ack(
         await asyncio.sleep(delay)
     controller.on_frame_received(
         Status.ACK.value,
-        struct.pack(UINT16_FORMAT, command_id),
+        protocol.UINT16_STRUCT.build(command_id),
     )
 
 

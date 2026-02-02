@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-import struct
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,7 +95,7 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     fmt = handshake["config_format"]
     assert fmt, "Handshake config format missing in spec"
 
-    packed_size = struct.calcsize(fmt)
+    packed_size = protocol.HANDSHAKE_CONFIG_STRUCT.sizeof()
     assert packed_size == protocol.HANDSHAKE_CONFIG_SIZE
 
     header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
@@ -104,7 +103,11 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     assert match, "RPC_HANDSHAKE_CONFIG_SIZE missing in header"
     assert int(match.group(1)) == packed_size
 
-    sample_payload = struct.pack(fmt, 750, 3, 120000)
+    sample_payload = protocol.HANDSHAKE_CONFIG_STRUCT.build(dict(
+        ack_timeout_ms=750,
+        ack_retry_limit=3,
+        response_timeout_ms=120000
+    ))
     assert len(sample_payload) == packed_size
 
 

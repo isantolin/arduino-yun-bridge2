@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import struct
 
 from aiomqtt.message import Message
 from ...mqtt.messages import QueuedPublish
@@ -12,7 +11,7 @@ from ...config.settings import RuntimeConfig
 from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
 from mcubridge.rpc.protocol import (
-    DATASTORE_VALUE_LEN_FORMAT,
+    DATASTORE_VALUE_LEN_STRUCT,
     DATASTORE_VALUE_LEN_SIZE,
     Command,
     DatastoreAction,
@@ -114,7 +113,7 @@ class DatastoreComponent:
             )
             value_bytes = value_bytes[:255]
 
-        response_payload = struct.pack(DATASTORE_VALUE_LEN_FORMAT, len(value_bytes)) + value_bytes
+        response_payload = DATASTORE_VALUE_LEN_STRUCT.build(len(value_bytes)) + value_bytes
 
         send_ok = await self.ctx.send_frame(
             Command.CMD_DATASTORE_GET_RESP.value,

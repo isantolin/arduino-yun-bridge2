@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import struct
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Awaitable, Callable
@@ -135,7 +134,7 @@ class SerialFlowController:
                 if len(compressed) < len(payload):
                     final_cmd |= protocol.CMD_FLAG_COMPRESSED
                     final_payload = compressed
-            except (ValueError, TypeError, struct.error) as e:
+            except (ValueError, TypeError, Exception) as e:
                 self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
 
         if not self._should_track(command_id):
@@ -193,7 +192,7 @@ class SerialFlowController:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if len(payload) >= 2:
-                ack_target = int.from_bytes(payload[:2], "big")
+                ack_target = protocol.UINT16_STRUCT.parse(payload[:2])
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
@@ -228,7 +227,7 @@ class SerialFlowController:
                 return
 
             if len(payload) >= 2:
-                target = int.from_bytes(payload[:2], "big")
+                target = protocol.UINT16_STRUCT.parse(payload[:2])
                 if target == pending.command_id:
                     pending.mark_failure(command_id)
                     return

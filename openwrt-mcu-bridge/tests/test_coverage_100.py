@@ -8,7 +8,6 @@ harder to reach in normal testing.
 from __future__ import annotations
 
 import asyncio
-import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -148,7 +147,7 @@ async def test_handle_kill_with_process_lookup_error(
         mock_term.side_effect = ProcessLookupError("already gone")
 
         result = await process_component.handle_kill(
-            struct.pack(protocol.UINT16_FORMAT, pid),
+            protocol.UINT16_STRUCT.build(pid),
             send_ack=True,
         )
         assert result is True
@@ -184,7 +183,7 @@ async def test_handle_kill_with_general_exception(
 
         with pytest.raises(RuntimeError, match="unexpected"):
             await process_component.handle_kill(
-                struct.pack(protocol.UINT16_FORMAT, pid),
+                protocol.UINT16_STRUCT.build(pid),
                 send_ack=True,
             )
         mock_context.send_frame.assert_not_awaited()

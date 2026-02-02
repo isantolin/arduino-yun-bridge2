@@ -26,11 +26,10 @@ Example:
     >>> encoded = cobs.encode(frame) + bytes([0])
 """
 
-import struct
 from binascii import crc32
 from typing import Self
 
-from construct import Bytes, Int8ub, Int16ub, Int32ub, Struct, Terminated, this
+from construct import Bytes, Int8ub, Int16ub, Struct, Terminated, this
 
 from . import protocol
 
@@ -100,7 +99,7 @@ class Frame:
         crc = (crc32(data_to_crc) & protocol.CRC32_MASK) & crc_mask
 
         # Pack the CRC
-        crc_packed = Int32ub.build(crc)
+        crc_packed = protocol.CRC_STRUCT.build(crc)
 
         # Construct the full raw frame
         return data_to_crc + crc_packed
@@ -127,9 +126,9 @@ class Frame:
         crc_start = len(raw_frame_buffer) - protocol.CRC_SIZE
         data_to_check = raw_frame_buffer[:crc_start]
         received_crc_packed = raw_frame_buffer[crc_start:]
-        
+
         try:
-            received_crc = Int32ub.parse(received_crc_packed)
+            received_crc = protocol.CRC_STRUCT.parse(received_crc_packed)
         except Exception as exc:
             raise ValueError(f"Failed to parse CRC: {exc}") from exc
 

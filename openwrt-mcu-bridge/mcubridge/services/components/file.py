@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import struct
 from contextlib import AsyncExitStack
 from os import scandir
 from pathlib import Path, PurePosixPath
@@ -153,7 +152,7 @@ class FileComponent:
         # reassembly or streaming via repeated callbacks.
         total_len = len(data)
         if total_len == 0:
-             response = struct.pack(protocol.UINT16_FORMAT, 0)
+             response = protocol.UINT16_STRUCT.build(0)
              await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
              return
 
@@ -161,7 +160,7 @@ class FileComponent:
         while offset < total_len:
             chunk = data[offset : offset + max_payload]
             # Frame Format: [Len:2] [Data:N]
-            response = struct.pack(protocol.UINT16_FORMAT, len(chunk)) + chunk
+            response = protocol.UINT16_STRUCT.build(len(chunk)) + chunk
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
             offset += len(chunk)
 

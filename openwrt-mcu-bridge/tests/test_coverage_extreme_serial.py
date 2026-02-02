@@ -146,7 +146,8 @@ async def test_serial_transport_lifecycle_100_percent():
         "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
         return_value=(m_t, m_p),
     ):
-        await transport_mgr._connect_and_run(asyncio.get_running_loop())
+        with pytest.raises(ConnectionError, match="Serial connection lost"):
+            await transport_mgr._connect_and_run(asyncio.get_running_loop())
 
 
 @pytest.mark.asyncio
@@ -171,4 +172,5 @@ async def test_serial_transport_negotiation_fail_coverage():
             "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
             return_value=(m_t, m_p),
         ):
-            await transport_mgr._connect_and_run(asyncio.get_running_loop())
+            with pytest.raises(ConnectionError, match="Serial connection lost"):
+                await transport_mgr._connect_and_run(asyncio.get_running_loop())

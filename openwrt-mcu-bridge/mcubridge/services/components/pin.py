@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import collections
 import logging
-import struct
+
 from typing import Callable
 
 from aiomqtt.message import Message
@@ -195,7 +195,7 @@ class PinComponent:
 
         await self.ctx.send_frame(
             Command.CMD_SET_PIN_MODE.value,
-            struct.pack(protocol.PIN_WRITE_FORMAT, pin, mode),
+            protocol.PIN_WRITE_STRUCT.build(dict(pin=pin, value=mode)),
         )
 
     async def _handle_read_command(
@@ -236,7 +236,7 @@ class PinComponent:
 
         send_ok = await self.ctx.send_frame(
             command.value,
-            struct.pack(protocol.PIN_READ_FORMAT, pin),
+            protocol.PIN_READ_STRUCT.build(pin),
         )
         if not send_ok:
             # Remove pending request if send failed
@@ -264,7 +264,7 @@ class PinComponent:
         command = Command.CMD_DIGITAL_WRITE if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
         await self.ctx.send_frame(
             command.value,
-            struct.pack(protocol.PIN_WRITE_FORMAT, pin, value),
+            protocol.PIN_WRITE_STRUCT.build(dict(pin=pin, value=value)),
         )
 
     def _parse_pin_identifier(self, pin_str: str) -> int:

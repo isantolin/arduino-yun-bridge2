@@ -24,10 +24,25 @@ HEADER = """/*
 
 PY_HEADER = """\"\"\"Auto-generated protocol bindings. Do not edit manually.\"\"\"
 from __future__ import annotations
-import struct
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct
 from enum import IntEnum, StrEnum
 from typing import Final
 """
+
+# Mapping from spec keys to Construct definitions
+CONSTRUCT_MAPPING = {
+    "datastore_key_len_format": "Int8ub",
+    "datastore_value_len_format": "Int8ub",
+    "crc_covered_header_format": 'Struct("version" / Int8ub, "payload_len" / Int16ub, "command_id" / Int16ub)',
+    "crc_format": "Int32ub",
+    "uint8_format": "Int8ub",
+    "uint16_format": "Int16ub",
+    "uint32_format": "Int32ub",
+    "pin_read_format": "Int8ub",
+    "pin_write_format": 'Struct("pin" / Int8ub, "value" / Int8ub)',
+    "capabilities_format": 'Struct("ver" / Int8ub, "arch" / Int8ub, "dig" / Int8ub, "ana" / Int8ub, "feat" / Int32ub)',
+    "nonce_counter_format": "Int64ub",
+}
 
 
 def _write_python_str_constant(
@@ -371,12 +386,16 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
             handshake["tag_description"],
         )
         out.write(f"HANDSHAKE_CONFIG_FORMAT: Final[str] = \"{handshake['config_format']}\"\n")
+        out.write(
+            "HANDSHAKE_CONFIG_STRUCT: Final = Struct("
+            "'ack_timeout_ms' / Int16ub, 'ack_retry_limit' / Int8ub, 'response_timeout_ms' / Int32ub)\n"
+        )
         _write_python_str_constant(
             out,
             "HANDSHAKE_CONFIG_DESCRIPTION",
             handshake["config_description"],
         )
-        out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = struct.calcsize(HANDSHAKE_CONFIG_FORMAT)\n")
+        out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()\n")
         out.write(f"HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = {handshake['ack_timeout_min_ms']}\n")
         out.write(f"HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = {handshake['ack_timeout_max_ms']}\n")
         out.write(f"HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = {handshake['response_timeout_min_ms']}\n")
@@ -408,28 +427,17 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
 
     formats = spec.get("data_formats", {})
     if formats:
-        if "uint8_format" in formats:
-            out.write(f"UINT8_FORMAT: Final[str] = \"{formats['uint8_format']}\"\n")
-        if "uint16_format" in formats:
-            out.write(f"UINT16_FORMAT: Final[str] = \"{formats['uint16_format']}\"\n")
-        if "uint32_format" in formats:
-            out.write(f"UINT32_FORMAT: Final[str] = \"{formats['uint32_format']}\"\n")
-        if "pin_read_format" in formats:
-            out.write(f"PIN_READ_FORMAT: Final[str] = \"{formats['pin_read_format']}\"\n")
-        if "pin_write_format" in formats:
-            out.write(f"PIN_WRITE_FORMAT: Final[str] = \"{formats['pin_write_format']}\"\n")
-        if "capabilities_format" in formats:
-            out.write(f"CAPABILITIES_FORMAT: Final[str] = \"{formats['capabilities_format']}\"\n")
-        if "nonce_counter_format" in formats:
-            out.write(f"NONCE_COUNTER_FORMAT: Final[str] = \"{formats['nonce_counter_format']}\"\n")
-        out.write(f"DATASTORE_KEY_LEN_FORMAT: Final[str] = \"{formats['datastore_key_len_format']}\"\n")
-        out.write("DATASTORE_KEY_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_KEY_LEN_FORMAT)\n")
-        out.write(f"DATASTORE_VALUE_LEN_FORMAT: Final[str] = \"{formats['datastore_value_len_format']}\"\n")
-        out.write("DATASTORE_VALUE_LEN_SIZE: Final[int] = struct.calcsize(DATASTORE_VALUE_LEN_FORMAT)\n")
-        out.write(f"CRC_COVERED_HEADER_FORMAT: Final[str] = \"{formats['crc_covered_header_format']}\"\n")
-        out.write("CRC_COVERED_HEADER_SIZE: Final[int] = struct.calcsize(CRC_COVERED_HEADER_FORMAT)\n")
-        out.write(f"CRC_FORMAT: Final[str] = \"{formats['crc_format']}\"\n")
-        out.write("CRC_SIZE: Final[int] = struct.calcsize(CRC_FORMAT)\n")
+        for key, val in formats.items():
+            name = key.upper()
+            out.write(f"{name}: Final[str] = \"{val}\"\n")
+            if key in CONSTRUCT_MAPPING:
+                struct_name = name.replace("_FORMAT", "_STRUCT")
+                out.write(f"{struct_name}: Final = {CONSTRUCT_MAPPING[key]}\n")
+
+        out.write("DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()\n")
+        out.write("DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()\n")
+        out.write("CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()\n")
+        out.write("CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()\n")
         out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n\n")
 
     mqtt_suffixes = spec.get("mqtt_suffixes", {})

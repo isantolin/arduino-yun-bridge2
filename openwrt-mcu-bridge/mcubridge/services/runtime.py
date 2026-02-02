@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import msgspec
 import logging
-import struct
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any
@@ -402,7 +401,7 @@ class BridgeService:
         status: Status = Status.ACK,
         extra: bytes = b"",
     ) -> None:
-        payload = struct.pack(protocol.UINT16_FORMAT, command_id)
+        payload = protocol.UINT16_STRUCT.build(command_id)
         if extra:
             remaining = _MAX_PAYLOAD_BYTES - len(payload)
             if remaining > 0:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import struct
 from collections.abc import Coroutine
 from typing import Any, cast
 from unittest.mock import AsyncMock
@@ -278,7 +277,7 @@ async def test_shell_kill_packs_pid_and_suppresses_ack(
     )
 
     process.handle_kill.assert_awaited_once_with(
-        struct.pack(protocol.UINT16_FORMAT, 42),
+        protocol.UINT16_STRUCT.build(42),
         send_ack=False,
     )
 

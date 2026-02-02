@@ -584,5 +584,3 @@ async def test_handle_read_large_payload_truncation_reproduction(
     # This assertion should FAIL currently because it only sends the first chunk (~62 bytes)
     assert len(total_received) == 128
     assert total_received == original_data
-
-

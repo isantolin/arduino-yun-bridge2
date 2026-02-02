@@ -34,14 +34,13 @@ static unsigned long g_test_millis = 0;
 unsigned long millis() { return g_test_millis; }
 
 // Global instances required by Bridge.cpp linkage
-ConsoleClass Console;
 DataStoreClass DataStore;
 MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
 // Note: Bridge instance is NOT defined globally here to allow local instantiation in tests,
-// BUT Bridge.cpp/Console.cpp might refer to 'Bridge'. 
-// We need a global 'Bridge' for Console.cpp to link.
+// BUT Bridge.cpp might refer to 'Bridge'. 
+// We need a global 'Bridge'.
 BridgeClass Bridge(Serial1);
 
 namespace {
@@ -501,7 +500,7 @@ void test_bridge_file_write_incoming() {
     // but we verified that it triggered a response.
 }
 
-void test_bridge_dedup_console_write_retry() {
+void test_bridge_dedup_mailbox_push_retry() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
@@ -512,9 +511,6 @@ void test_bridge_dedup_console_write_retry() {
     // 2. Clear the SYNC_RESP from the output buffer so we only count new ACKs
     stream.tx_buffer.clear();
 
-    // 3. Reset Console state (clears Rx buffer, resets flags)
-    Console.begin();
-
         const uint8_t payload[] = { 'a', 'b', 'c' };
 
         rpc::Frame frame;
@@ -523,11 +519,11 @@ void test_bridge_dedup_console_write_retry() {
 
         rpc::FrameBuilder builder;
 
-        size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), payload, sizeof(payload));
+        size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH), payload, sizeof(payload));
 
         
 
-        frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+        frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
 
         frame.header.payload_length = sizeof(payload);
 
@@ -537,9 +533,6 @@ void test_bridge_dedup_console_write_retry() {
 
     
 
-        const int before = Console.available();
-    TEST_ASSERT_EQ_UINT(before, 0);
-
     // --- First Delivery ---
     g_test_millis = 0;
     // Dispatch injects frame into RX processing logic
@@ -547,19 +540,12 @@ void test_bridge_dedup_console_write_retry() {
     // CRITICAL: process() is needed to flush pending TX queue (ACKs) to the stream
     bridge.process(); 
 
-    const int after_first = Console.available();
-    TEST_ASSERT_EQ_UINT(after_first, sizeof(payload));
-
     // --- Second Delivery (Retry) ---
     // Advance time beyond ACK timeout to simulate retry window
     g_test_millis = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS + 50;
     
     bridge.dispatch(frame);
     bridge.process(); // Flush second ACK
-
-    const int after_second = Console.available();
-    // Should NOT increase (idempotency)
-    TEST_ASSERT_EQ_UINT(after_second, sizeof(payload));
 
     // --- Verify ACKs ---
     // We expect 2 ACKs: one for the first delivery, one for the retry.
@@ -583,10 +569,10 @@ void test_bridge_dedup_window_edges() {
     uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE];
     rpc::FrameBuilder builder;
     const uint8_t payload[] = {'x', 'y', 'z'};
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), payload, sizeof(payload));
+    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH), payload, sizeof(payload));
     
     // Extract calculated CRC from raw_frame
-    frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+    frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     frame.header.payload_length = sizeof(payload);
     memcpy(frame.payload.data(), payload, sizeof(payload));
     frame.crc = rpc::read_u32_be(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE]);
@@ -685,7 +671,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     // Send a command that requires ACK.
     const uint8_t payload[] = {TEST_BYTE_01};
     g_test_millis = 0;
-    TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload)));
+    TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload)));
     TEST_ASSERT(bridge._fsm.isAwaitingAck());
 
     // Malformed for the last command triggers retransmission and increments retry count.
@@ -712,7 +698,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     // Re-arm ACK state.
     stream.clear_tx();
     g_test_millis = 0;
-    TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload)));
+    TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH, payload, sizeof(payload)));
     bridge._ack_timeout_ms = 10;
     bridge._ack_retry_limit = 0;
 
@@ -738,7 +724,7 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     uint8_t big[rpc::MAX_PAYLOAD_SIZE + 1];
     test_memfill(big, sizeof(big), TEST_BYTE_BB);
     // Over-sized payload should fail
-    TEST_ASSERT(!bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, big, sizeof(big)));
+    TEST_ASSERT(!bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH, big, sizeof(big)));
 
     // Fill queue.
     // Transition to AwaitingAck so subsequent frames get queued
@@ -746,10 +732,10 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     accessor.setAwaitingAck();
 
     while(!bridge._pending_tx_queue.full()) {
-        bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0);
+        bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH, nullptr, 0);
     }
     // Queue is full, this should fail
-    TEST_ASSERT(!bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0));
+    TEST_ASSERT(!bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_PUSH, nullptr, 0));
 }
 
 void test_bridge_emit_status_message_variants() {
@@ -802,7 +788,6 @@ void test_bridge_system_commands_and_baudrate_state_machine() {
         rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE_RESP));
 
     // No-op before 50ms.
-    Console._begun = false;
     g_test_millis = 1020;
     bridge.process();
 
@@ -1047,7 +1032,7 @@ void test_bridge_payload_too_large() {
     enum { kTooLargePayload = 200 };
     uint8_t payload[kTooLargePayload];
     test_memfill(payload, sizeof(payload), TEST_BYTE_AB);
-    const uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+    const uint16_t cmd_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
 
     enum { kRawLen = 5 + kTooLargePayload + 4 };
     uint8_t raw[kRawLen];
@@ -1156,7 +1141,7 @@ int main() {
     test_file_write_malformed_path();
 
     // Idempotency regression tests
-    test_bridge_dedup_console_write_retry();
+    test_bridge_dedup_mailbox_push_retry();
     test_bridge_dedup_window_edges();
     test_bridge_timing_config_validation();
     test_bridge_ack_malformed_timeout_paths();

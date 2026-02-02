@@ -461,9 +461,6 @@ class BridgeService:
     # Process management
     # ------------------------------------------------------------------
 
-    def is_command_allowed(self, command: str) -> bool:
-        return self.state.allowed_policy.is_allowed(command)
-
     async def _publish_bridge_snapshot(
         self,
         flavor: str,

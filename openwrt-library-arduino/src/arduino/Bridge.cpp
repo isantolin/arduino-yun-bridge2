@@ -1005,7 +1005,7 @@ void BridgeClass::_flushPendingTxQueue() {
 
   if (_fsm.isAwaitingAck() || empty) return;
   
-  PendingTxFrame frame;
+  PendingTxFrame frame{};
   BRIDGE_ATOMIC_BLOCK {
     frame = _pending_tx_queue.front();
   }

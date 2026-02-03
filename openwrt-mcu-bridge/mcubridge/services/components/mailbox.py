@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import msgspec
 import logging
+from typing import Any, cast
 
+import msgspec
 from aiomqtt.message import Message
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
@@ -50,7 +51,7 @@ class MailboxComponent:
         )
         message_id: int | None = None
         if len(payload) >= 2:
-            message_id = protocol.UINT16_STRUCT.parse(payload[:2])
+            message_id = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
 
         if message_id is not None:
             body = msgspec.json.encode({"message_id": message_id})
@@ -68,7 +69,7 @@ class MailboxComponent:
             )
             return False
 
-        msg_len = protocol.UINT16_STRUCT.parse(payload[:2])
+        msg_len = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
         data = payload[2 : 2 + msg_len]
         if len(data) != msg_len:
             logger.warning(
@@ -112,7 +113,7 @@ class MailboxComponent:
         if payload:
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
-                protocol.UINT16_STRUCT.build(Command.CMD_MAILBOX_AVAILABLE.value),
+                cast(Any, protocol.UINT16_STRUCT).build(Command.CMD_MAILBOX_AVAILABLE.value),
             )
             return False
 
@@ -138,7 +139,7 @@ class MailboxComponent:
             message_payload = message_payload[: protocol.MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
-        response_payload = protocol.UINT16_STRUCT.build(msg_len) + message_payload
+        response_payload = cast(Any, protocol.UINT16_STRUCT).build(msg_len) + message_payload
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,

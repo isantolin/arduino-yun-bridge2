@@ -1,8 +1,8 @@
 """Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct  # type: ignore
 from enum import IntEnum, StrEnum
-from typing import Final
+from typing import Any, Final, cast
 
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
@@ -36,13 +36,15 @@ HANDSHAKE_TAG_ALGORITHM: Final[str] = "HMAC-SHA256"
 HANDSHAKE_TAG_DESCRIPTION: Final[str] = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
 HANDSHAKE_CONFIG_FORMAT: Final[str] = ">HBI"
 HANDSHAKE_CONFIG_STRUCT: Final = Struct(
-    'ack_timeout_ms' / Int16ub, 'ack_retry_limit' / Int8ub, 'response_timeout_ms' / Int32ub
+    cast(Any, 'ack_timeout_ms') / Int16ub,
+    cast(Any, 'ack_retry_limit') / Int8ub,
+    cast(Any, 'response_timeout_ms') / Int32ub,
 )
 HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = (
     "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), "
     "response_timeout_ms (uint32)"
 )
-HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()
+HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
 HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = 25
 HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = 60000
 HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = 100
@@ -73,7 +75,11 @@ DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
 DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
 CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
-CRC_COVERED_HEADER_STRUCT: Final = Struct("version" / Int8ub, "payload_len" / Int16ub, "command_id" / Int16ub)
+CRC_COVERED_HEADER_STRUCT: Final = Struct(
+    cast(Any, "version") / Int8ub,
+    cast(Any, "payload_len") / Int16ub,
+    cast(Any, "command_id") / Int16ub,
+)
 CRC_FORMAT: Final[str] = ">I"
 CRC_STRUCT: Final = Int32ub
 UINT8_FORMAT: Final[str] = ">B"
@@ -85,15 +91,24 @@ UINT32_STRUCT: Final = Int32ub
 PIN_READ_FORMAT: Final[str] = ">B"
 PIN_READ_STRUCT: Final = Int8ub
 PIN_WRITE_FORMAT: Final[str] = ">BB"
-PIN_WRITE_STRUCT: Final = Struct("pin" / Int8ub, "value" / Int8ub)
+PIN_WRITE_STRUCT: Final = Struct(
+    cast(Any, "pin") / Int8ub,
+    cast(Any, "value") / Int8ub,
+)
 CAPABILITIES_FORMAT: Final[str] = ">BBBBI"
-CAPABILITIES_STRUCT: Final = Struct("ver" / Int8ub, "arch" / Int8ub, "dig" / Int8ub, "ana" / Int8ub, "feat" / Int32ub)
+CAPABILITIES_STRUCT: Final = Struct(
+    cast(Any, "ver") / Int8ub,
+    cast(Any, "arch") / Int8ub,
+    cast(Any, "dig") / Int8ub,
+    cast(Any, "ana") / Int8ub,
+    cast(Any, "feat") / Int32ub,
+)
 NONCE_COUNTER_FORMAT: Final[str] = ">Q"
 NONCE_COUNTER_STRUCT: Final = Int64ub
-DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()
-DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()
-CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()
-CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()
+DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()  # type: ignore
+DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()  # type: ignore
+CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()  # type: ignore
+CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()  # type: ignore
 MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
 
 

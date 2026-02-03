@@ -27,20 +27,20 @@ Example:
 """
 
 from binascii import crc32
-from typing import Self
+from typing import Any, Self, cast
 
-from construct import Bytes, Int8ub, Int16ub, Struct, Terminated, this
+from construct import Bytes, Int8ub, Int16ub, Struct, Terminated, this  # type: ignore
 
 from . import protocol
 
 
 # Define the binary structure of the frame (excluding CRC trailer)
 # Corresponds to: [Version:1][PayloadLen:2][CommandId:2][Payload:N]
-HeaderPayloadStruct = Struct(
-    "version" / Int8ub,
-    "payload_len" / Int16ub,
-    "command_id" / Int16ub,
-    "payload" / Bytes(this.payload_len),
+HeaderPayloadStruct: Any = Struct(
+    cast(Any, "version") / Int8ub,
+    cast(Any, "payload_len") / Int16ub,
+    cast(Any, "command_id") / Int16ub,
+    cast(Any, "payload") / Bytes(this.payload_len),
     Terminated,
 )
 
@@ -99,7 +99,7 @@ class Frame:
         crc = (crc32(data_to_crc) & protocol.CRC32_MASK) & crc_mask
 
         # Pack the CRC
-        crc_packed = protocol.CRC_STRUCT.build(crc)
+        crc_packed = cast(Any, protocol.CRC_STRUCT).build(crc)
 
         # Construct the full raw frame
         return data_to_crc + crc_packed
@@ -128,7 +128,7 @@ class Frame:
         received_crc_packed = raw_frame_buffer[crc_start:]
 
         try:
-            received_crc = protocol.CRC_STRUCT.parse(received_crc_packed)
+            received_crc = cast(Any, protocol.CRC_STRUCT).parse(received_crc_packed)
         except Exception as exc:
             raise ValueError(f"Failed to parse CRC: {exc}") from exc
 

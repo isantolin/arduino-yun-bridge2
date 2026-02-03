@@ -15,7 +15,7 @@ import hmac
 import msgspec
 import logging
 import time
-from typing import Any
+from typing import Any, cast
 from collections.abc import Awaitable, Callable
 
 import tenacity
@@ -347,7 +347,7 @@ class SerialHandshakeManager:
             self._logger.warning("Short capabilities payload: %s", payload.hex())
             return
         try:
-            cap = protocol.CAPABILITIES_STRUCT.parse(payload[:8])
+            cap = cast(Any, protocol.CAPABILITIES_STRUCT).parse(payload[:8])
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
@@ -526,7 +526,7 @@ class SerialHandshakeManager:
         return self.calculate_handshake_tag(secret, nonce)
 
     def _build_reset_payload(self) -> bytes:
-        return protocol.HANDSHAKE_CONFIG_STRUCT.build({
+        return cast(Any, protocol.HANDSHAKE_CONFIG_STRUCT).build({
             "ack_timeout_ms": self._timing.ack_timeout_ms,
             "ack_retry_limit": self._timing.retry_limit,
             "response_timeout_ms": self._timing.response_timeout_ms,

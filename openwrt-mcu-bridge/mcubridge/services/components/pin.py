@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import collections
 import logging
-
-from typing import Callable
+from typing import Any, Callable, cast
 
 from aiomqtt.message import Message
 from mcubridge.rpc.protocol import Command, PinAction, Status
@@ -195,7 +194,7 @@ class PinComponent:
 
         await self.ctx.send_frame(
             Command.CMD_SET_PIN_MODE.value,
-            protocol.PIN_WRITE_STRUCT.build(dict(pin=pin, value=mode)),
+            cast(Any, protocol.PIN_WRITE_STRUCT).build(dict(pin=pin, value=mode)),
         )
 
     async def _handle_read_command(
@@ -236,7 +235,7 @@ class PinComponent:
 
         send_ok = await self.ctx.send_frame(
             command.value,
-            protocol.PIN_READ_STRUCT.build(pin),
+            cast(Any, protocol.PIN_READ_STRUCT).build(pin),
         )
         if not send_ok:
             # Remove pending request if send failed
@@ -264,7 +263,7 @@ class PinComponent:
         command = Command.CMD_DIGITAL_WRITE if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
         await self.ctx.send_frame(
             command.value,
-            protocol.PIN_WRITE_STRUCT.build(dict(pin=pin, value=value)),
+            cast(Any, protocol.PIN_WRITE_STRUCT).build(dict(pin=pin, value=value)),
         )
 
     def _parse_pin_identifier(self, pin_str: str) -> int:

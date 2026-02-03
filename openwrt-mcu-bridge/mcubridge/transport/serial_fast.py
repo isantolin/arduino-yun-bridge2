@@ -11,7 +11,7 @@ import asyncio
 import functools
 import logging
 import msgspec
-from typing import Final, Sized, TypeGuard, cast
+from typing import Any, Final, Sized, TypeGuard, cast
 
 import tenacity
 from cobs import cobs
@@ -346,7 +346,7 @@ class SerialTransport:
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
-        payload = protocol.UINT32_STRUCT.build(target_baud)
+        payload = cast(Any, protocol.UINT32_STRUCT).build(target_baud)
 
         # [SIL-2] Retry logic for baudrate negotiation
         retryer = tenacity.AsyncRetrying(

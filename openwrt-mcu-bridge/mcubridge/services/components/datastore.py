@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 from aiomqtt.message import Message
 from ...mqtt.messages import QueuedPublish
@@ -113,7 +114,7 @@ class DatastoreComponent:
             )
             value_bytes = value_bytes[:255]
 
-        response_payload = DATASTORE_VALUE_LEN_STRUCT.build(len(value_bytes)) + value_bytes
+        response_payload = cast(Any, DATASTORE_VALUE_LEN_STRUCT).build(len(value_bytes)) + value_bytes
 
         send_ok = await self.ctx.send_frame(
             Command.CMD_DATASTORE_GET_RESP.value,

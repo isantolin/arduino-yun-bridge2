@@ -67,30 +67,51 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
 }
 
 int ConsoleClass::available() {
-  if (_rx_buffer.empty()) {
-    return 0;
+  int size = 0;
+  BRIDGE_ATOMIC_BLOCK {
+    if (_rx_buffer.empty()) {
+      size = 0;
+    } else {
+      size = static_cast<int>(_rx_buffer.size());
+    }
   }
-  return static_cast<int>(_rx_buffer.size());
+  return size;
 }
 
 int ConsoleClass::peek() {
-  if (_rx_buffer.empty()) return -1;
-  return _rx_buffer.front();
+  int c = -1;
+  BRIDGE_ATOMIC_BLOCK {
+    if (!_rx_buffer.empty()) {
+      c = _rx_buffer.front();
+    }
+  }
+  return c;
 }
 
 int ConsoleClass::read() {
-  if (_rx_buffer.empty()) return -1;
-  
-  uint8_t c = _rx_buffer.front();
-  _rx_buffer.pop();
+  int c = -1;
+  bool xon_needed = false;
 
-  // High/Low watermark logic for XON/XOFF
-  const size_t capacity = _rx_buffer.capacity();
-  const size_t low_water = (capacity * 1) / 4;
-  
-  if (_xoff_sent && _rx_buffer.size() < low_water) {
+  BRIDGE_ATOMIC_BLOCK {
+    if (!_rx_buffer.empty()) {
+      c = _rx_buffer.front();
+      _rx_buffer.pop();
+
+      // High/Low watermark logic for XON/XOFF
+      const size_t capacity = _rx_buffer.capacity();
+      const size_t low_water = (capacity * 1) / 4;
+      
+      if (_xoff_sent && _rx_buffer.size() < low_water) {
+        xon_needed = true;
+      }
+    }
+  }
+
+  if (xon_needed) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XON)) {
-      _xoff_sent = false;
+      BRIDGE_ATOMIC_BLOCK {
+        _xoff_sent = false;
+      }
     }
   }
 
@@ -124,26 +145,36 @@ void ConsoleClass::flush() {
 }
 
 void ConsoleClass::_push(const uint8_t* data, size_t length) {
-  if (_rx_buffer.capacity() == 0 || length == 0) {
-    return;
+  if (length == 0) return;
+
+  bool xoff_needed = false;
+
+  BRIDGE_ATOMIC_BLOCK {
+    if (_rx_buffer.capacity() == 0) return;
+
+    // [SIL-2] Calculate available space first, then copy deterministically
+    // Standard Arduino Serial behavior: drop new data if buffer full
+    const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
+    const size_t to_copy = etl::min(length, available);
+    
+    const uint8_t* const end = data + to_copy;
+    while (data != end) {
+      _rx_buffer.push(*data++);
+    }
+
+    const size_t capacity = _rx_buffer.capacity();
+    const size_t high_water = (capacity * 3) / 4;
+    
+    if (!_xoff_sent && _rx_buffer.size() > high_water) {
+      xoff_needed = true;
+    }
   }
 
-  // [SIL-2] Calculate available space first, then copy deterministically
-  // Standard Arduino Serial behavior: drop new data if buffer full
-  const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
-  const size_t to_copy = etl::min(length, available);
-  
-  const uint8_t* const end = data + to_copy;
-  while (data != end) {
-    _rx_buffer.push(*data++);
-  }
-
-  const size_t capacity = _rx_buffer.capacity();
-  const size_t high_water = (capacity * 3) / 4;
-  
-  if (!_xoff_sent && _rx_buffer.size() > high_water) {
+  if (xoff_needed) {
     if (Bridge.sendFrame(rpc::CommandId::CMD_XOFF)) {
-        _xoff_sent = true;
+        BRIDGE_ATOMIC_BLOCK {
+          _xoff_sent = true;
+        }
     }
   }
 }

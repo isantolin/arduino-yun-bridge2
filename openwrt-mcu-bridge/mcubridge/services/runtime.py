@@ -5,7 +5,7 @@ import msgspec
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any
+from typing import Any, cast
 
 from aiomqtt.message import Message
 
@@ -401,7 +401,7 @@ class BridgeService:
         status: Status = Status.ACK,
         extra: bytes = b"",
     ) -> None:
-        payload = protocol.UINT16_STRUCT.build(command_id)
+        payload = cast(Any, protocol.UINT16_STRUCT).build(command_id)
         if extra:
             remaining = _MAX_PAYLOAD_BYTES - len(payload)
             if remaining > 0:

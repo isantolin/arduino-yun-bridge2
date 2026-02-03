@@ -16,7 +16,7 @@ import ctypes
 import hashlib
 import hmac
 import secrets
-from typing import Final
+from typing import Any, Final, cast
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -135,7 +135,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """
     new_counter = counter + 1
     random_part = secrets.token_bytes(NONCE_RANDOM_BYTES)
-    counter_part = protocol.NONCE_COUNTER_STRUCT.build(new_counter)  # Big-endian uint64
+    counter_part = cast(Any, protocol.NONCE_COUNTER_STRUCT).build(new_counter)  # Big-endian uint64
     return random_part + counter_part, new_counter
 
 
@@ -153,7 +153,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """
     if len(nonce) != NONCE_TOTAL_BYTES:
         raise ValueError(f"Nonce must be {NONCE_TOTAL_BYTES} bytes, got {len(nonce)}")
-    return protocol.NONCE_COUNTER_STRUCT.parse(nonce[NONCE_RANDOM_BYTES:])
+    return cast(Any, protocol.NONCE_COUNTER_STRUCT).parse(nonce[NONCE_RANDOM_BYTES:])
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

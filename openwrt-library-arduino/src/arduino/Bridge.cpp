@@ -229,10 +229,12 @@ void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
 }
 
 void BridgeClass::process() {
-  noInterrupts();
-  bool ready = g_baudrate_state.isReady(millis());
-  uint32_t new_baud = g_baudrate_state.pending_baudrate;
-  interrupts();
+  bool ready = false;
+  uint32_t new_baud = 0;
+  BRIDGE_ATOMIC_BLOCK {
+    ready = g_baudrate_state.isReady(millis());
+    new_baud = g_baudrate_state.pending_baudrate;
+  }
 
   if (ready) {
     if (_hardware_serial != nullptr) {
@@ -240,9 +242,9 @@ void BridgeClass::process() {
         _hardware_serial->end();
         _hardware_serial->begin(new_baud);
     }
-    noInterrupts();
-    g_baudrate_state.clear();
-    interrupts();
+    BRIDGE_ATOMIC_BLOCK {
+      g_baudrate_state.clear();
+    }
   }
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -260,12 +262,16 @@ void BridgeClass::process() {
 #endif
 
   // Polling Input Logic
-  _target_frame = &_rx_frame;
-  _frame_received = false;
-  _packetSerial.update();
-  _target_frame = nullptr;
+  bool frame_received = false;
+  BRIDGE_ATOMIC_BLOCK {
+    _target_frame = &_rx_frame;
+    _frame_received = false;
+    _packetSerial.update();
+    frame_received = _frame_received;
+    _target_frame = nullptr;
+  }
 
-  if (_frame_received) {
+  if (frame_received) {
     _consecutive_crc_errors = 0;
     dispatch(_rx_frame);
   } else {
@@ -422,9 +428,9 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
         (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         flushStream();
-        noInterrupts();
-        g_baudrate_state.schedule(new_baud, millis());
-        interrupts();
+        BRIDGE_ATOMIC_BLOCK {
+          g_baudrate_state.schedule(new_baud, millis());
+        }
       }
       break;
     case rpc::CommandId::CMD_LINK_SYNC:
@@ -766,7 +772,7 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
   if (header_len >= rpc::MAX_PAYLOAD_SIZE) return; // Header too big to fit any data
   
   // [RAM OPT] Migrate scratch buffer to stack
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
+  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE] = {0};
   
   const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
   size_t offset = 0;
@@ -844,18 +850,19 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   // [SIL-2] State-Driven Sending Logic via ETL FSM
   if (critical) {
     // [SIL-2] ISR Protection for Queue Access
-    noInterrupts();
-    bool queue_full = _pending_tx_queue.full();
-    interrupts();
+    bool queue_full = false;
+    BRIDGE_ATOMIC_BLOCK {
+      queue_full = _pending_tx_queue.full();
+    }
 
     if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) {
       // Queue full? Try to process timeout to free space (Emergency Valve)
       // Only if we are already waiting for an ACK (meaning the queue head is active)
       if (_fsm.isAwaitingAck()) {
         _processAckTimeout();
-        noInterrupts();
-        queue_full = _pending_tx_queue.full();
-        interrupts();
+        BRIDGE_ATOMIC_BLOCK {
+          queue_full = _pending_tx_queue.full();
+        }
       }
       
       if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) return false;
@@ -867,9 +874,9 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
     frame.payload_length = static_cast<uint16_t>(final_len);
     if (final_len > 0 && final_payload) etl::copy_n(final_payload, final_len, frame.payload.data());
     
-    noInterrupts();
-    _pending_tx_queue.push(frame);
-    interrupts();
+    BRIDGE_ATOMIC_BLOCK {
+      _pending_tx_queue.push(frame);
+    }
 
     // If we are not waiting for an ACK, we can start sending this frame immediately.
     // _flushPendingTxQueue will pick it up (it's at the front).
@@ -926,11 +933,11 @@ void BridgeClass::_handleAck(uint16_t command_id) {
     _clearAckState();
     
     // [SIL-2] ACK received -> Safe to remove frame from queue
-    noInterrupts();
-    if (!_pending_tx_queue.empty()) {
-       _pending_tx_queue.pop();
+    BRIDGE_ATOMIC_BLOCK {
+      if (!_pending_tx_queue.empty()) {
+         _pending_tx_queue.pop();
+      }
     }
-    interrupts();
 
     _flushPendingTxQueue();
   }
@@ -991,15 +998,17 @@ void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
 }
 
 void BridgeClass::_flushPendingTxQueue() {
-  noInterrupts();
-  bool empty = _pending_tx_queue.empty();
-  interrupts();
+  bool empty = false;
+  BRIDGE_ATOMIC_BLOCK {
+    empty = _pending_tx_queue.empty();
+  }
 
   if (_fsm.isAwaitingAck() || empty) return;
   
-  noInterrupts();
-  const PendingTxFrame& frame = _pending_tx_queue.front();
-  interrupts();
+  PendingTxFrame frame;
+  BRIDGE_ATOMIC_BLOCK {
+    frame = _pending_tx_queue.front();
+  }
 
   uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
   rpc::FrameBuilder builder;
@@ -1019,10 +1028,11 @@ void BridgeClass::_flushPendingTxQueue() {
 
 void BridgeClass::_clearPendingTxQueue() { 
   while (true) {
-    noInterrupts();
-    bool empty = _pending_tx_queue.empty();
-    if (!empty) _pending_tx_queue.pop();
-    interrupts();
+    bool empty = false;
+    BRIDGE_ATOMIC_BLOCK {
+      empty = _pending_tx_queue.empty();
+      if (!empty) _pending_tx_queue.pop();
+    }
     if (empty) break;
   }
 }

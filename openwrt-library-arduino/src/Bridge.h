@@ -29,6 +29,21 @@
 #include <Stream.h>
 #include <PacketSerial.h>
 
+// [SIL-2] ISR Safety: Atomic Blocks
+#if defined(ARDUINO_ARCH_AVR)
+  #include <util/atomic.h>
+  #define BRIDGE_ATOMIC_BLOCK ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+#else
+  // Fallback for non-AVR architectures: use interrupts() / noInterrupts()
+  // This is a simplified version of ATOMIC_BLOCK for portability.
+  struct BridgeAtomicGuard {
+    BridgeAtomicGuard() { noInterrupts(); }
+    ~BridgeAtomicGuard() { interrupts(); }
+  };
+  #define BRIDGE_ATOMIC_BLOCK for (int _guard_active = 1; _guard_active; _guard_active = 0) \
+                               for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
+#endif
+
 #include "bridge_config.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"

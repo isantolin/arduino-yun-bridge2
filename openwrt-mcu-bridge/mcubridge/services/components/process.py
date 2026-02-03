@@ -11,6 +11,7 @@ from asyncio import StreamReader
 from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field  # kept for ProcessComponent
+from typing import Any, cast
 
 import psutil
 
@@ -142,7 +143,7 @@ class ProcessComponent:
             case _:
                 await self.ctx.send_frame(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    protocol.UINT16_STRUCT.build(pid),
+                    cast(Any, protocol.UINT16_STRUCT).build(pid),
                 )
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
@@ -180,21 +181,21 @@ class ProcessComponent:
                 b"".join(
                     [
                         bytes([Status.MALFORMED.value, PROCESS_DEFAULT_EXIT_CODE]),
-                        protocol.UINT16_STRUCT.build(0),
-                        protocol.UINT16_STRUCT.build(0),
+                        cast(Any, protocol.UINT16_STRUCT).build(0),
+                        cast(Any, protocol.UINT16_STRUCT).build(0),
                     ]
                 ),
             )
             return False
 
-        pid = protocol.UINT16_STRUCT.parse(payload[:2])
+        pid = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
         batch = await self.collect_output(pid)
 
         response_payload = b"".join(
             [
                 bytes([batch.status_byte, batch.exit_code]),
-                protocol.UINT16_STRUCT.build(len(batch.stdout_chunk)),
-                protocol.UINT16_STRUCT.build(len(batch.stderr_chunk)),
+                cast(Any, protocol.UINT16_STRUCT).build(len(batch.stdout_chunk)),
+                cast(Any, protocol.UINT16_STRUCT).build(len(batch.stderr_chunk)),
                 batch.stdout_chunk,
                 batch.stderr_chunk,
             ]
@@ -219,7 +220,7 @@ class ProcessComponent:
             )
             return False
 
-        pid = protocol.UINT16_STRUCT.parse(payload[:2])
+        pid = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
 
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
@@ -773,9 +774,9 @@ class ProcessComponent:
         return b"".join(
             [
                 bytes([status & UINT8_MASK]),
-                protocol.UINT16_STRUCT.build(len(stdout_trim)),
+                cast(Any, protocol.UINT16_STRUCT).build(len(stdout_trim)),
                 stdout_trim,
-                protocol.UINT16_STRUCT.build(len(stderr_trim)),
+                cast(Any, protocol.UINT16_STRUCT).build(len(stderr_trim)),
                 stderr_trim,
             ]
         )

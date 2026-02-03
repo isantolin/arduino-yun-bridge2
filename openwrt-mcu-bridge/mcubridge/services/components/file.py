@@ -7,6 +7,7 @@ import logging
 from contextlib import AsyncExitStack
 from os import scandir
 from pathlib import Path, PurePosixPath
+from typing import Any, cast
 
 from aiomqtt.message import Message
 from mcubridge.rpc import protocol
@@ -152,15 +153,15 @@ class FileComponent:
         # reassembly or streaming via repeated callbacks.
         total_len = len(data)
         if total_len == 0:
-             response = protocol.UINT16_STRUCT.build(0)
-             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
-             return
+            response = cast(Any, protocol.UINT16_STRUCT).build(0)
+            await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
+            return
 
         offset = 0
         while offset < total_len:
             chunk = data[offset : offset + max_payload]
             # Frame Format: [Len:2] [Data:N]
-            response = protocol.UINT16_STRUCT.build(len(chunk)) + chunk
+            response = cast(Any, protocol.UINT16_STRUCT).build(len(chunk)) + chunk
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
             offset += len(chunk)
 

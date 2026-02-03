@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 from collections.abc import Awaitable, Callable
 
 import tenacity
@@ -192,7 +192,7 @@ class SerialFlowController:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if len(payload) >= 2:
-                ack_target = protocol.UINT16_STRUCT.parse(payload[:2])
+                ack_target = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
@@ -227,7 +227,7 @@ class SerialFlowController:
                 return
 
             if len(payload) >= 2:
-                target = protocol.UINT16_STRUCT.parse(payload[:2])
+                target = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
                 if target == pending.command_id:
                     pending.mark_failure(command_id)
                     return

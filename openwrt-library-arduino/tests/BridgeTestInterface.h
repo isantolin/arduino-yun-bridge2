@@ -23,7 +23,6 @@ class TestAccessor {
   explicit TestAccessor(BridgeClass& bridge) : _bridge(bridge) {}
 
   // --- Read-only accessors ---
-  size_t getLastRawFrameLen() const { return _bridge._last_raw_frame.size(); }
   
   rpc::FrameParser::Error getLastError() const {
     return _bridge._parser.getError();

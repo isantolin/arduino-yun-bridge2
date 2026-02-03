@@ -2,6 +2,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#define ARDUINO_STUB_CUSTOM_MILLIS 1
+static unsigned long g_test_millis = 10000; // Start at non-zero
+unsigned long millis() { return g_test_millis++; }
+
 #define private public
 #define protected public
 #include "Bridge.h"
@@ -48,7 +52,7 @@ public:
 void setup_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
-    Bridge.begin();
+    Bridge.begin(115200);
     Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
 }
 
@@ -84,8 +88,10 @@ void test_bridge_gaps() {
     f.header.payload_length = 2;
     f.payload[0] = 13; f.payload[1] = 1;
     f.crc = 0x12345678; // Dummy CRC
-    Bridge._ack_timeout_ms = 0; // Force immediate match regardless of millis()
+    Bridge._ack_timeout_ms = 1000; 
+    Bridge._ack_retry_limit = 3;
     Bridge._markRxProcessed(f);
+    g_test_millis += 1500; // Move into the retry window (elapsed > ack_timeout)
     assert(Bridge._isRecentDuplicateRx(f));
 
     // Gap: enterSafeState reset logic
@@ -110,7 +116,10 @@ void test_bridge_gaps() {
     Bridge._last_send_millis = millis() - 5000; 
     Bridge._ack_timeout_ms = 1000;
     Bridge._ack_retry_limit = 1;
-    Bridge.process(); // Retry 1
+    Bridge.process(); // Attempt retransmission
+    
+    // Manually increment retry count as queue is empty and _retransmitLastFrame won't do it
+    Bridge._retry_count = 1;
     Bridge._last_send_millis = millis() - 5000; 
     Bridge.process(); // Timeout -> enterSafeState
     assert(!Bridge.isSynchronized());

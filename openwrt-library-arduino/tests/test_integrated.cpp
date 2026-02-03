@@ -14,7 +14,9 @@
 #include <FastCRC.h>
 
 static unsigned long g_test_millis = 0;
-unsigned long millis() { return g_test_millis; }
+unsigned long millis() { 
+    return g_test_millis++; 
+}
 
 using namespace rpc;
 using namespace bridge;
@@ -494,12 +496,31 @@ void integrated_test_extreme_coverage() {
 
 int main() {
     printf("INTEGRATED ARDUINO TEST START\n");
+    fflush(stdout);
+    
+    Bridge.begin(115200);
+    // Synchronize global bridge for component tests
+    bridge::test::TestAccessor::create(Bridge).setIdle();
+
+    printf("Running: integrated_test_rle\n"); fflush(stdout);
     integrated_test_rle();
+    
+    printf("Running: integrated_test_protocol\n"); fflush(stdout);
     integrated_test_protocol();
+    
+    printf("Running: integrated_test_bridge_core\n"); fflush(stdout);
     integrated_test_bridge_core();
+    
+    printf("Running: integrated_test_components\n"); fflush(stdout);
     integrated_test_components();
+    
+    printf("Running: integrated_test_error_branches\n"); fflush(stdout);
     integrated_test_error_branches();
+    
+    printf("Running: integrated_test_extreme_coverage\n"); fflush(stdout);
     integrated_test_extreme_coverage();
+    
     printf("INTEGRATED ARDUINO TEST END\n");
+    fflush(stdout);
     return 0;
 }

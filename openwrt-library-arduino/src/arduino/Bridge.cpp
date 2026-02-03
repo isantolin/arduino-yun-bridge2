@@ -802,6 +802,7 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
     // If the TX queue is full, we must pump the FSM (process()) to clear it
     // before we can send the next chunk. This guarantees sequential delivery.
     while (!_sendFrame(rpc::to_underlying(command_id), buffer, payload_size)) {
+      if (!_fsm.isSynchronized()) return; // [SAFETY] Don't loop if we lost synchronization
       process();
     }
 

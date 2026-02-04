@@ -61,20 +61,6 @@ ProcessClass Process;
 #endif
 #endif
 
-#if BRIDGE_DEBUG_IO
-template <typename ActionText>
-static void bridge_debug_log_gpio(ActionText action, uint8_t pin, int16_t value) {
-  if (!kBridgeDebugIo) return;
-  if (!Console) return;
-  Console.print(F("[GPIO] "));
-  Console.print(action);
-  Console.print(F(" D"));
-  Console.print(pin);
-  Console.print(F(" = "));
-  Console.println(value);
-}
-#endif
-
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
 namespace {
@@ -170,9 +156,6 @@ void BridgeClass::begin(
   // bypassing the _hardware_serial check below. We must explicitly initialize it.
   #if BRIDGE_USE_USB_SERIAL
     Serial.begin(arg_baudrate);
-    // Optional: Wait for host to open the port, but with a timeout to avoid hanging if headless
-    // unsigned long timeout = millis();
-    // while (!Serial && (millis() - timeout < 3000)); 
   #endif
 
   if (_hardware_serial != nullptr) {
@@ -211,12 +194,6 @@ void BridgeClass::begin(
 #if BRIDGE_DEBUG_FRAMES
   _tx_debug = {};
 #endif
-
-//#ifndef BRIDGE_TEST_NO_GLOBALS
-//  while (_state == BridgeState::Unsynchronized) {
-//    process();
-//  }
-//#endif
 
 }
 
@@ -493,9 +470,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         if (pin >= NUM_DIGITAL_PINS) return;
 #endif
         ::pinMode(pin, mode);
-        #if BRIDGE_DEBUG_IO
-        if (kBridgeDebugIo) bridge_debug_log_gpio(F("pinMode"), pin, mode);
-        #endif
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_WRITE:
@@ -506,9 +480,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         if (pin >= NUM_DIGITAL_PINS) return;
 #endif
         ::digitalWrite(pin, value);
-        #if BRIDGE_DEBUG_IO
-        if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalWrite"), pin, value == HIGH ? 1 : 0);
-        #endif
       }
       break;
     case rpc::CommandId::CMD_ANALOG_WRITE:
@@ -530,9 +501,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         }
 #endif
         int16_t value = ::digitalRead(pin);
-        #if BRIDGE_DEBUG_IO
-        if (kBridgeDebugIo) bridge_debug_log_gpio(F("digitalRead"), pin, value);
-        #endif
         uint8_t resp_payload = static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK);
         (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, &resp_payload, 1);
       }
@@ -547,9 +515,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         }
 #endif
         int16_t value = ::analogRead(pin);
-        #if BRIDGE_DEBUG_IO
-        if (kBridgeDebugIo) bridge_debug_log_gpio(F("analogRead"), pin, value);
-        #endif
         etl::array<uint8_t, 2> resp_payload;
         rpc::write_u16_be(resp_payload.data(), static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
         (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload.data(), resp_payload.size());
@@ -588,18 +553,25 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   const rpc::CommandId command = static_cast<rpc::CommandId>(raw_command);
   
-  #if BRIDGE_ENABLE_DATASTORE
-  DataStore.handleResponse(effective_frame);
-  #endif
-  #if BRIDGE_ENABLE_MAILBOX
-  Mailbox.handleResponse(effective_frame);
-  #endif
-  #if BRIDGE_ENABLE_FILESYSTEM
-  FileSystem.handleResponse(effective_frame);
-  #endif
-  #if BRIDGE_ENABLE_PROCESS
-  Process.handleResponse(effective_frame);
-  #endif
+  // [OPTIMIZATION] Route to specific component based on ID range (0x10 blocks)
+  // This avoids monolithic broadcasting and saves stack frames.
+  if (raw_command >= 0x70 && raw_command <= 0x7F) {
+    #if BRIDGE_ENABLE_DATASTORE
+    DataStore.handleResponse(effective_frame);
+    #endif
+  } else if (raw_command >= 0x80 && raw_command <= 0x8F) {
+    #if BRIDGE_ENABLE_MAILBOX
+    Mailbox.handleResponse(effective_frame);
+    #endif
+  } else if (raw_command >= 0x90 && raw_command <= 0x9F) {
+    #if BRIDGE_ENABLE_FILESYSTEM
+    FileSystem.handleResponse(effective_frame);
+    #endif
+  } else if (raw_command >= 0xA0 && raw_command <= 0xAF) {
+    #if BRIDGE_ENABLE_PROCESS
+    Process.handleResponse(effective_frame);
+    #endif
+  }
   
   bool command_processed_internally = false;
   bool requires_ack = false;
@@ -745,14 +717,8 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHe
   
   if (message) {
     const char* p = reinterpret_cast<const char*>(message);
-    size_t i = 0;
-    while (i < rpc::MAX_PAYLOAD_SIZE) {
-      uint8_t c = pgm_read_byte(p + i);
-      if (c == 0) break;
-      buffer[i] = c;
-      i++;
-    }
-    length = static_cast<uint16_t>(i);
+    length = strnlen_P(p, rpc::MAX_PAYLOAD_SIZE);
+    memcpy_P(buffer, p, length);
     payload = buffer;
   }
   _doEmitStatus(status_code, payload, length);

@@ -21,16 +21,14 @@
  *   - payload_length (2 bytes): Length of payload in bytes
  *   - command_id (2 bytes): Command or status code
  */
+#include "../etl_profile.h"
 #include "rpc_frame.h"
 #include "rpc_protocol.h"
-#include <FastCRC.h>
+#include "etl/crc32.h"
 
 #include "etl/algorithm.h"
 
 namespace rpc {
-
-// FastCRC32 instance used by protocol (Table-based, fast for ARM/ESP/AVR)
-static FastCRC32 CRC32;
 
 // --- FrameParser ---
 
@@ -54,7 +52,9 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
     const size_t crc_start = size - CRC_TRAILER_SIZE;
     const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
     
-    const uint32_t calculated_crc = CRC32.crc32(buffer, crc_start);
+    etl::crc32 crc_calculator;
+    crc_calculator.add(buffer, buffer + crc_start);
+    const uint32_t calculated_crc = crc_calculator.value();
 
     if (received_crc != calculated_crc) {
         _last_error = Error::CRC_MISMATCH;
@@ -119,7 +119,9 @@ size_t FrameBuilder::build(uint8_t* buffer,
   }
 
   // --- CRC ---
-  uint32_t crc = CRC32.crc32(buffer, data_len);
+  etl::crc32 crc_calculator;
+  crc_calculator.add(buffer, buffer + data_len);
+  uint32_t crc = crc_calculator.value();
   
   write_u32_be(&buffer[data_len], crc);
 

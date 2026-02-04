@@ -25,6 +25,9 @@
 #ifndef BRIDGE_H
 #define BRIDGE_H
 
+// [SIL-2] ETL Configuration MUST be first to ensure consistent profile (e.g. no CRC tables)
+#include "etl_profile.h"
+
 #include <Arduino.h>
 #include <Stream.h>
 #include <PacketSerial.h>

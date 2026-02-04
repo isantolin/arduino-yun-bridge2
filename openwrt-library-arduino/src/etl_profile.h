@@ -13,6 +13,10 @@
 #define ETL_CHECK_PUSH_POP
 #define ETL_CALLBACK_ON_ERROR
 
+// [MEMORY OPT] Disable CRC32 Lookup Table (saves ~1KB - 2KB RAM)
+// Force calculation on the fly.
+#define ETL_CRC32_USE_TABLE 0
+
 // Detected compiler-specific optimizations
 #if defined(__AVR__)
   #define ETL_COMPILER_GCC

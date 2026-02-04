@@ -717,7 +717,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     bridge._ack_retry_limit = 0;
 
     g_test_millis = 100;
-    bridge._processAckTimeout();
+    bridge._onAckTimeout();
     TEST_ASSERT(!bridge._fsm.isAwaitingAck());
     TEST_ASSERT(status.called);
     TEST_ASSERT(status.code == rpc::StatusCode::STATUS_TIMEOUT);

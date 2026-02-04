@@ -25,6 +25,7 @@
 
 #include "etl/fsm.h"
 #include "etl/message.h"
+#include "etl/callback_timer.h"
 
 namespace bridge {
 namespace fsm {
@@ -239,6 +240,24 @@ private:
 };
 
 }  // namespace fsm
+
+// ============================================================================
+// Timer IDs - ETL Callback Timer Service
+// [SIL-2] Centralized scheduler IDs for deterministic timing
+// ============================================================================
+namespace scheduler {
+
+enum TimerId : uint8_t {
+  TIMER_ACK_TIMEOUT = 0,
+  TIMER_RX_DEDUPE = 1,
+  TIMER_BAUDRATE_CHANGE = 2,
+  TIMER_STARTUP_STABILIZATION = 3,
+  NUMBER_OF_TIMERS = 4
+};
+
+using BridgeTimerService = etl::callback_timer<NUMBER_OF_TIMERS>;
+
+}  // namespace scheduler
 }  // namespace bridge
 
 #endif  // BRIDGE_FSM_H

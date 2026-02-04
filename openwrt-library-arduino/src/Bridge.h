@@ -61,10 +61,7 @@
 #include "etl/vector.h"
 #include "etl/delegate.h"
 
-// [SIL-2] Centralized Scheduler/Timer
-#include "scheduler/bridge_scheduler.h"
-
-// [SIL-2] Lightweight FSM for deterministic state transitions
+// [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
 
 // [SIL-2] ETL Message Router for command dispatch

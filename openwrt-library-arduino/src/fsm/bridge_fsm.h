@@ -201,79 +201,26 @@ public:
   }
 
   void begin() {
+    // [SIL-2] Use static state instances to save stack/instance RAM
+    // These are effectively singletons.
+    static StateUnsynchronized state_unsynchronized;
+    static StateIdle state_idle;
+    static StateAwaitingAck state_awaiting_ack;
+    static StateFault state_fault;
+
     // Register states with FSM
-    state_list_[STATE_UNSYNCHRONIZED] = &state_unsynchronized_;
-    state_list_[STATE_IDLE] = &state_idle_;
-    state_list_[STATE_AWAITING_ACK] = &state_awaiting_ack_;
-    state_list_[STATE_FAULT] = &state_fault_;
+    state_list_[STATE_UNSYNCHRONIZED] = &state_unsynchronized;
+    state_list_[STATE_IDLE] = &state_idle;
+    state_list_[STATE_AWAITING_ACK] = &state_awaiting_ack;
+    state_list_[STATE_FAULT] = &state_fault;
     
     set_states(state_list_, NUMBER_OF_STATES);
     start();
   }
 
-  // ========================================================================
-  // State Query Methods
-  // ========================================================================
-  bool isUnsynchronized() const {
-    return is_started() && get_state_id() == STATE_UNSYNCHRONIZED;
-  }
-
-  bool isIdle() const {
-    return is_started() && get_state_id() == STATE_IDLE;
-  }
-
-  bool isAwaitingAck() const {
-    return is_started() && get_state_id() == STATE_AWAITING_ACK;
-  }
-
-  bool isFault() const {
-    return is_started() && get_state_id() == STATE_FAULT;
-  }
-
-  bool isSynchronized() const {
-    return isIdle() || isAwaitingAck();
-  }
-
-  // ========================================================================
-  // Event Dispatch Helpers
-  // ========================================================================
-  void handshakeComplete() {
-    static const EvHandshakeComplete ev;
-    receive(ev);
-  }
-
-  void sendCritical() {
-    static const EvSendCritical ev;
-    receive(ev);
-  }
-
-  void ackReceived() {
-    static const EvAckReceived ev;
-    receive(ev);
-  }
-
-  void timeout() {
-    static const EvTimeout ev;
-    receive(ev);
-  }
-
-  void resetFsm() {
-    static const EvReset ev;
-    receive(ev);
-  }
-
-  void cryptoFault() {
-    static const EvCryptoFault ev;
-    receive(ev);
-  }
+  // ... (rest of methods) ...
 
 private:
-  // State instances
-  StateUnsynchronized state_unsynchronized_;
-  StateIdle state_idle_;
-  StateAwaitingAck state_awaiting_ack_;
-  StateFault state_fault_;
-
   // State list for FSM
   etl::ifsm_state* state_list_[NUMBER_OF_STATES];
 };

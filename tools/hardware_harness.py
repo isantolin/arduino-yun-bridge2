@@ -340,8 +340,8 @@ def filter_targets(
     tags: Sequence[str] | None,
 ) -> list[Target]:
     filtered = []
-    name_set = {name for name in names} if names else None
-    tag_set = {tag for tag in tags} if tags else None
+    name_set = set(names) if names else None
+    tag_set = set(tags) if tags else None
     for target in targets:
         if name_set and target.name not in name_set:
             continue

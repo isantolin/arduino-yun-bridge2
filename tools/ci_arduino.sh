@@ -29,7 +29,7 @@ arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
 LIB_PATH="$PWD/openwrt-library-arduino"
 
 # Compile examples
-FQBN="arduino:avr:uno"
+FQBN="arduino:avr:mega"
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 

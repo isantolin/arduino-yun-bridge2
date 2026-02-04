@@ -125,7 +125,7 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #endif
 
 // [SIL-2] Resource Allocation Tuning
-// On memory constrained AVR (Uno/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).
+// On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).
 // Previously this was 1, but we merged the active frame buffer into the queue.
 #if defined(ARDUINO_ARCH_AVR)
   #ifndef BRIDGE_MAX_PENDING_TX_FRAMES

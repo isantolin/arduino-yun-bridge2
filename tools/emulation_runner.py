@@ -106,7 +106,7 @@ def main():
         # 4. Start SimAVR
         logger.info(f"Starting simavr with {firmware_path}...")
 
-        simavr_cmd = ["simavr", "-m", "atmega32u4", "-f", "16000000", str(firmware_path)]
+        simavr_cmd = ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)]
 
         simavr_proc = subprocess.Popen(simavr_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 

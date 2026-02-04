@@ -54,9 +54,7 @@
 #undef min
 #undef max
 #include "etl/array.h"
-#include "etl/deque.h"
 #include "etl/queue.h"
-#include "etl/string.h"
 #include "etl/circular_buffer.h"
 #include "etl/vector.h"
 #include "etl/delegate.h"
@@ -353,6 +351,7 @@ class ConsoleClass : public Stream {
 extern ConsoleClass Console;
 
 #if BRIDGE_ENABLE_DATASTORE
+#include "etl/string.h"
 class DataStoreClass {
  public:
   using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);

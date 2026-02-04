@@ -12,7 +12,8 @@ enum TimerId : uint8_t {
   TIMER_ACK_TIMEOUT = 0,
   TIMER_RX_DEDUPE = 1,
   TIMER_BAUDRATE_CHANGE = 2,
-  NUMBER_OF_TIMERS = 3
+  TIMER_STARTUP_STABILIZATION = 3,
+  NUMBER_OF_TIMERS = 4
 };
 
 // [SIL-2] Use ETL's callback_timer instead of custom implementation

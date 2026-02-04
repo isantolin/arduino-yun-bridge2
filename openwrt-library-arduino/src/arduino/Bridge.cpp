@@ -108,6 +108,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _fsm(),
       _timer_service(),
       _last_tick_millis(0),
+      _startup_stabilizing(false),
       _command_router()
 {
     g_bridge_instance = this;
@@ -136,6 +137,9 @@ void BridgeClass::begin(
 
   _cb_baudrate_change = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_onBaudrateChange>(*this);
   _timer_service.register_timer(_cb_baudrate_change, BRIDGE_BAUDRATE_SETTLE_MS, false);
+
+  _cb_startup_stabilized = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_onStartupStabilized>(*this);
+  _timer_service.register_timer(_cb_startup_stabilized, BRIDGE_STARTUP_STABILIZATION_MS, false);
   
   _timer_service.enable(true);
   _last_tick_millis = millis();
@@ -164,13 +168,10 @@ void BridgeClass::begin(
   _packetSerial.setStream(&_stream);
   _packetSerial.setPacketHandler(onPacketReceived);
 
-  // [SIL-2] Startup Stabilization
-  const unsigned long start = millis();
-  while ((millis() - start) < BRIDGE_STARTUP_STABILIZATION_MS) {
-    while (_stream.available() > 0) { _stream.read(); }
-    const unsigned long now = millis();
-    if (now == start) break;
-  }
+  // [SIL-2] Non-blocking Startup Stabilization
+  // Start timer and set flag - process() will drain the buffer during this period
+  _startup_stabilizing = true;
+  _timer_service.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION, false);
 
   _shared_secret.clear();
   if (arg_secret) {
@@ -214,14 +215,24 @@ void BridgeClass::process() {
   }
 #endif
 
-  // Polling Input Logic
+  // [SIL-2] Non-blocking Startup Stabilization Phase
+  // During startup, drain the serial buffer to discard garbage
+  // Timer will call _onStartupStabilized() when complete
+  if (_startup_stabilizing) {
+    while (_stream.available() > 0) { _stream.read(); }
+    // Continue to timer tick at the bottom of process()
+  }
+
+  // Polling Input Logic (skip during stabilization)
   bool frame_received = false;
-  BRIDGE_ATOMIC_BLOCK {
-    _target_frame = &_rx_frame;
-    _frame_received = false;
-    _packetSerial.update();
-    frame_received = _frame_received;
-    _target_frame = nullptr;
+  if (!_startup_stabilizing) {
+    BRIDGE_ATOMIC_BLOCK {
+      _target_frame = &_rx_frame;
+      _frame_received = false;
+      _packetSerial.update();
+      frame_received = _frame_received;
+      _target_frame = nullptr;
+    }
   }
 
   if (frame_received) {
@@ -970,9 +981,18 @@ void BridgeClass::_onBaudrateChange() {
       }
 }
 
+void BridgeClass::_onStartupStabilized() {
+  // [SIL-2] Non-blocking startup stabilization complete
+  // Final drain of any remaining garbage in the buffer
+  while (_stream.available() > 0) { _stream.read(); }
+  _startup_stabilizing = false;
+}
+
 void BridgeClass::enterSafeState() {
   _fsm.resetFsm();  // Transition to Unsynchronized via ETL FSM
   _timer_service.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
+  _timer_service.stop(bridge::scheduler::TIMER_STARTUP_STABILIZATION);
+  _startup_stabilizing = false;
   
   // Note: _clearAckState() checks FSM state, so we skip to avoid redundant transition
   _retry_count = 0;

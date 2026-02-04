@@ -200,6 +200,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
   void _onAckTimeout();
   void _onBaudrateChange();
   void _onRxDedupe();
+  void _onStartupStabilized();
 
   // Events
   inline void onCommand(CommandHandler handler) { _command_handler = handler; }
@@ -282,6 +283,10 @@ class BridgeClass : public bridge::router::ICommandHandler {
   etl::delegate<void()> _cb_ack_timeout;
   etl::delegate<void()> _cb_rx_dedupe;
   etl::delegate<void()> _cb_baudrate_change;
+  etl::delegate<void()> _cb_startup_stabilized;
+
+  // [SIL-2] Non-blocking startup stabilization flag
+  volatile bool _startup_stabilizing;
 
   // [SIL-2] ETL Message Router for flattened command dispatch
   bridge::router::CommandRouter _command_router;

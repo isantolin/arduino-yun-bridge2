@@ -177,7 +177,7 @@ void test_bridge_extra_gaps() {
 
     // Gap: begin with secret > capacity
     char long_secret[64];
-    memset(long_secret, 'S', 63);
+    etl::fill_n(long_secret, 63, 'S');
     long_secret[63] = '\0';
     Bridge.begin(115200, long_secret);
     assert(Bridge._shared_secret.size() == 32);
@@ -266,7 +266,7 @@ void test_datastore_extra_gaps() {
 
     // Gap: put with too long key
     char long_key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 10];
-    memset(long_key, 'k', sizeof(long_key));
+    etl::fill_n(long_key, sizeof(long_key), 'k');
     long_key[sizeof(long_key)-1] = '\0';
     DataStore.put(long_key, "val");
 
@@ -314,7 +314,7 @@ void test_mailbox_extra_gaps() {
 
     // Gap: send with large message
     char large_msg[rpc::MAX_PAYLOAD_SIZE + 10];
-    memset(large_msg, 'M', sizeof(large_msg));
+    etl::fill_n(large_msg, sizeof(large_msg), 'M');
     large_msg[sizeof(large_msg)-1] = '\0';
     Mailbox.send(large_msg);
 
@@ -342,7 +342,7 @@ void test_process_extra_gaps() {
 
     // Gap: runAsync too large
     char long_cmd[rpc::MAX_PAYLOAD_SIZE + 5];
-    memset(long_cmd, 'c', sizeof(long_cmd));
+    etl::fill_n(long_cmd, sizeof(long_cmd), 'c');
     long_cmd[sizeof(long_cmd)-1] = '\0';
     Process.runAsync(long_cmd);
 
@@ -395,7 +395,7 @@ void test_process_extra_gaps() {
 void test_rle_gaps() {
     printf("  -> Testing rle_gaps\n");
     uint8_t src[16];
-    memset(src, 0x41, 16); // Run of 'A'
+    etl::fill_n(src, 16, uint8_t{0x41}); // Run of 'A'
     uint8_t dst[64];
     
     // Gap: encode/decode null or 0

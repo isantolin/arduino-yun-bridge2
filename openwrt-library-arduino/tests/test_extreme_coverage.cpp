@@ -85,7 +85,7 @@ void test_extreme_datastore() {
     
     // 2. Put con Key/Value excediendo límites
     char long_key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 10];
-    memset(long_key, 'k', sizeof(long_key));
+    etl::fill_n(long_key, sizeof(long_key), 'k');
     long_key[sizeof(long_key)-1] = '\0';
     DataStore.put(long_key, "val");
 
@@ -108,7 +108,7 @@ void test_extreme_filesystem() {
 
     // 2. Write con path extremadamente largo
     char long_path[200];
-    memset(long_path, 'a', sizeof(long_path));
+    etl::fill_n(long_path, sizeof(long_path), 'a');
     long_path[sizeof(long_path)-1] = '\0';
     FileSystem.write(long_path, (const uint8_t*)"d", 1);
 

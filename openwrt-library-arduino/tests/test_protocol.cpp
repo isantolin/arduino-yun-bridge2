@@ -80,7 +80,7 @@ static void test_parser_incomplete_packets() {
   Frame frame{};
   
   uint8_t raw[10]; // Buffer dummy insuficiente para un frame real
-  memset(raw, 0, sizeof(raw));
+  etl::fill_n(raw, sizeof(raw), uint8_t{0});
 
   // FrameParser.parse debe retornar false si el tamaño es menor al mínimo (Header + CRC)
   TEST_ASSERT(!parser.parse(raw, 4, frame)); // Menor que header
@@ -132,7 +132,7 @@ static void test_parser_overflow_guard() {
   Frame frame{};
 
   uint8_t huge_buffer[rpc::MAX_RAW_FRAME_SIZE + 50];
-  memset(huge_buffer, 0, sizeof(huge_buffer));
+  etl::fill_n(huge_buffer, sizeof(huge_buffer), uint8_t{0});
 
   // Intentar parsear un buffer que excede el máximo permitido por el protocolo
   TEST_ASSERT(!parser.parse(huge_buffer, sizeof(huge_buffer), frame));

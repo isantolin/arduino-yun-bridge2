@@ -94,7 +94,7 @@ struct FixedString {
   char buf[N];
   size_t len;
 
-  FixedString() : buf(), len(0) { memset(buf, 0, sizeof(buf)); }
+  FixedString() : buf(), len(0) { etl::fill_n(buf, sizeof(buf), '\0'); }
 
   void clear() {
     len = 0;
@@ -708,7 +708,7 @@ static void test_process_run_outbound_and_error_branches() {
 
   // Too-large command: emits STATUS_ERROR with flash message.
   char huge[rpc::MAX_PAYLOAD_SIZE + 2];
-  memset(huge, 'a', sizeof(huge));
+  etl::fill_n(huge, sizeof(huge), 'a');
   huge[sizeof(huge) - 1] = '\0';
   Process.run(huge);
   TEST_ASSERT(stream.tx_buffer.len > 0);

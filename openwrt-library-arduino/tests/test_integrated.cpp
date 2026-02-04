@@ -134,7 +134,7 @@ void integrated_test_bridge_core() {
     rpc::Frame sync;
     sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
     sync.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-    memset(sync.payload.data(), 0xAA, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+    etl::fill_n(sync.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xAA});
     accessor.dispatch(sync);
     TEST_ASSERT(localBridge.isSynchronized());
     
@@ -235,7 +235,7 @@ void integrated_test_extreme_coverage() {
 
     // 5. FileSystem Put Nulls / Largos
     FileSystem.write(nullptr, (const uint8_t*)"d", 1);
-    char long_path[200]; memset(long_path, 'a', 199); long_path[199] = '\0';
+    char long_path[200]; etl::fill_n(long_path, 199, 'a'); long_path[199] = '\0';
     FileSystem.write(long_path, (const uint8_t*)"d", 1);
 
     // 6. Responses Malformadas
@@ -269,7 +269,7 @@ void integrated_test_extreme_coverage() {
     // 9. Compresión (Payload repetitivo)
     accessor.setSynchronized(true);
     uint8_t large_pl[64];
-    memset(large_pl, 'A', 64);
+    etl::fill_n(large_pl, 64, uint8_t{'A'});
     Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, large_pl, 64);
 
     // 10. Más GPIO
@@ -292,7 +292,7 @@ void integrated_test_extreme_coverage() {
     // 11. Console Watermarks y Write Large
     {
         uint8_t large_console_pl[300];
-        memset(large_console_pl, 'C', 300);
+        etl::fill_n(large_console_pl, 300, uint8_t{'C'});
         Console.write(large_console_pl, 300);
     }
     for (int i = 0; i < 40; i++) {
@@ -308,7 +308,7 @@ void integrated_test_extreme_coverage() {
     // 12. FileSystem Casos de Borde
     {
         char huge_path[rpc::RPC_MAX_FILEPATH_LENGTH + 10];
-        memset(huge_path, 'P', sizeof(huge_path));
+        etl::fill_n(huge_path, sizeof(huge_path), 'P');
         huge_path[sizeof(huge_path)-1] = '\0';
         FileSystem.write(huge_path, (const uint8_t*)"X", 1);
         FileSystem.remove(huge_path);
@@ -327,7 +327,7 @@ void integrated_test_extreme_coverage() {
     // 13. Mailbox Casos de Borde
     {
         char huge_msg[rpc::MAX_PAYLOAD_SIZE + 10];
-        memset(huge_msg, 'M', sizeof(huge_msg));
+        etl::fill_n(huge_msg, sizeof(huge_msg), 'M');
         huge_msg[sizeof(huge_msg)-1] = '\0';
         Mailbox.send(huge_msg);
     }
@@ -344,7 +344,7 @@ void integrated_test_extreme_coverage() {
     // 14. Process Casos de Borde
     {
         char huge_cmd[rpc::MAX_PAYLOAD_SIZE + 10];
-        memset(huge_cmd, 'S', sizeof(huge_cmd));
+        etl::fill_n(huge_cmd, sizeof(huge_cmd), 'S');
         huge_cmd[sizeof(huge_cmd)-1] = '\0';
         Process.run(huge_cmd);
         Process.runAsync(huge_cmd);
@@ -379,7 +379,7 @@ void integrated_test_extreme_coverage() {
     // 14b. DataStore Casos de Borde
     {
         char huge_key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 10];
-        memset(huge_key, 'K', sizeof(huge_key));
+        etl::fill_n(huge_key, sizeof(huge_key), 'K');
         huge_key[sizeof(huge_key)-1] = '\0';
         DataStore.put(huge_key, "V");
         DataStore.requestGet(huge_key);

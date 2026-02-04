@@ -101,7 +101,7 @@ void test_bridge_gaps() {
     Bridge._shared_secret.clear();
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
     f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-    memset(f.payload.data(), 0xA, rpc::RPC_HANDSHAKE_NONCE_LENGTH);
+    etl::fill_n(f.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xA});
     Bridge._handleSystemCommand(f);
 
     // Gap: onPacketReceived with various errors
@@ -147,7 +147,7 @@ void test_console_gaps() {
 
     // Gap: write(buffer, size) chunking
     uint8_t large_buf[rpc::MAX_PAYLOAD_SIZE + 10];
-    memset(large_buf, 'A', sizeof(large_buf));
+    etl::fill_n(large_buf, sizeof(large_buf), uint8_t{'A'});
     Console.write(large_buf, sizeof(large_buf));
 
     // Gap: read() high/low watermarks
@@ -174,7 +174,7 @@ void test_filesystem_gaps() {
     FileSystem.read(nullptr);
     FileSystem.read("");
     char long_path[rpc::RPC_MAX_FILEPATH_LENGTH + 5];
-    memset(long_path, 'p', sizeof(long_path));
+    etl::fill_n(long_path, sizeof(long_path), 'p');
     long_path[sizeof(long_path)-1] = '\0';
     FileSystem.read(long_path);
 

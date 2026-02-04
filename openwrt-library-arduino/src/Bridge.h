@@ -59,6 +59,7 @@
 #include "etl/string.h"
 #include "etl/circular_buffer.h"
 #include "etl/vector.h"
+#include "etl/delegate.h"
 
 // [SIL-2] Centralized Scheduler/Timer
 #include "scheduler/bridge_scheduler.h"
@@ -146,7 +147,7 @@ namespace test { class TestAccessor; }
 }
 #endif
 
-class BridgeClass : public bridge::scheduler::TimerHandler {
+class BridgeClass {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
   #endif
@@ -192,8 +193,10 @@ class BridgeClass : public bridge::scheduler::TimerHandler {
   bool isFault() const { return _fsm.isFault(); }
   bridge::fsm::StateId getStateId() const { return static_cast<bridge::fsm::StateId>(_fsm.get_state_id()); }
 
-  // [SIL-2] ETL Timer Handler
-  void on_timer(bridge::scheduler::TimerId id) override;
+  // [SIL-2] ETL Timer Callbacks
+  void _onAckTimeout();
+  void _onBaudrateChange();
+  void _onRxDedupe();
 
   // Events
   inline void onCommand(CommandHandler handler) { _command_handler = handler; }
@@ -267,9 +270,15 @@ class BridgeClass : public bridge::scheduler::TimerHandler {
   // [SIL-2] ETL FSM replaces manual state tracking
   bridge::fsm::BridgeFsm _fsm;
 
-  // [SIL-2] ETL Timer Service
-  bridge::scheduler::TimerService _timer_service;
+  // [SIL-2] ETL Timer Service (Native)
+  bridge::scheduler::BridgeTimerService _timer_service;
   unsigned long _last_tick_millis;
+  
+  // [SIL-2] Timer callback delegates - must persist for object lifetime
+  // ETL callback_timer stores pointer to delegate, so they cannot be stack locals
+  etl::delegate<void()> _cb_ack_timeout;
+  etl::delegate<void()> _cb_rx_dedupe;
+  etl::delegate<void()> _cb_baudrate_change;
 
   // Methods
   void _handleSystemCommand(const rpc::Frame& frame);

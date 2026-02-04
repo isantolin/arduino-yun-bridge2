@@ -29,4 +29,16 @@
   #define ETL_CPP11_SUPPORTED 1
 #endif
 
+// [SIL-2] ETL Callback Timer locking for Arduino
+#if defined(ARDUINO)
+  #define ETL_CALLBACK_TIMER_USE_INTERRUPT_LOCK
+  #define ETL_CALLBACK_TIMER_DISABLE_INTERRUPTS noInterrupts()
+  #define ETL_CALLBACK_TIMER_ENABLE_INTERRUPTS interrupts()
+#else
+  // Host / Generic (Single-threaded test environment)
+  #define ETL_CALLBACK_TIMER_USE_INTERRUPT_LOCK
+  #define ETL_CALLBACK_TIMER_DISABLE_INTERRUPTS
+  #define ETL_CALLBACK_TIMER_ENABLE_INTERRUPTS
+#endif
+
 #endif

@@ -258,6 +258,18 @@ public:
 void sync_bridge(BridgeClass& bridge, MockStream& stream) {
     stream.tx_buffer.clear(); // Clear any initial traffic
     
+    // Ensure bridge has a shared secret for handshake (required for HMAC)
+    if (bridge._shared_secret.empty()) {
+        const char* test_secret = "test_secret";
+        bridge._shared_secret.assign(
+            reinterpret_cast<const uint8_t*>(test_secret),
+            reinterpret_cast<const uint8_t*>(test_secret) + strlen(test_secret)
+        );
+    }
+    
+    // Skip startup stabilization phase for testing (normally handled by timer)
+    bridge._startup_stabilizing = false;
+    
     // Construct a CMD_LINK_SYNC frame
     const uint8_t nonce[rpc::RPC_HANDSHAKE_NONCE_LENGTH] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
     
@@ -401,6 +413,7 @@ void test_bridge_handshake() {
     const char* secret = "secret";
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret, strlen(secret));
     stream.tx_buffer.clear();
+    bridge._startup_stabilizing = false;  // Skip startup phase for test
     
     // Create a 16-byte nonce
     uint8_t nonce[16];
@@ -678,6 +691,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     ModeStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    bridge._startup_stabilizing = false;  // Skip startup phase for test
     bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete();
     stream.clear_tx();
 
@@ -880,6 +894,7 @@ void test_bridge_malformed_frame() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    bridge._startup_stabilizing = false;  // Skip startup phase for test
     bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync so errors are reported
     stream.tx_buffer.clear();
 
@@ -906,6 +921,9 @@ void test_file_write_eeprom_parsing() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    bridge._startup_stabilizing = false;  // Skip startup phase for test
+    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete();  // Enable frame processing
+    stream.tx_buffer.clear();
     
     // Case 1: Valid EEPROM write
     // Path: "/eeprom/10" (len 10)
@@ -1038,6 +1056,7 @@ void test_bridge_payload_too_large() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    bridge._startup_stabilizing = false;  // Skip startup phase for test
     bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync
     stream.tx_buffer.clear();
 

@@ -67,6 +67,9 @@
 // [SIL-2] Lightweight FSM for deterministic state transitions
 #include "fsm/bridge_fsm.h"
 
+// [SIL-2] ETL Message Router for command dispatch
+#include "router/command_router.h"
+
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
 
@@ -147,7 +150,7 @@ namespace test { class TestAccessor; }
 }
 #endif
 
-class BridgeClass {
+class BridgeClass : public bridge::router::ICommandHandler {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
   #endif
@@ -280,10 +283,24 @@ class BridgeClass {
   etl::delegate<void()> _cb_rx_dedupe;
   etl::delegate<void()> _cb_baudrate_change;
 
+  // [SIL-2] ETL Message Router for flattened command dispatch
+  bridge::router::CommandRouter _command_router;
+
   // Methods
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
   void _handleConsoleCommand(const rpc::Frame& frame);
+
+  // [SIL-2] ICommandHandler interface implementation
+  void onStatusCommand(const bridge::router::CommandContext& ctx) override;
+  void onSystemCommand(const bridge::router::CommandContext& ctx) override;
+  void onGpioCommand(const bridge::router::CommandContext& ctx) override;
+  void onConsoleCommand(const bridge::router::CommandContext& ctx) override;
+  void onDataStoreCommand(const bridge::router::CommandContext& ctx) override;
+  void onMailboxCommand(const bridge::router::CommandContext& ctx) override;
+  void onFileSystemCommand(const bridge::router::CommandContext& ctx) override;
+  void onProcessCommand(const bridge::router::CommandContext& ctx) override;
+  void onUnknownCommand(const bridge::router::CommandContext& ctx) override;
 
   bool _isRecentDuplicateRx(const rpc::Frame& frame) const;
   void _markRxProcessed(const rpc::Frame& frame);
@@ -295,6 +312,7 @@ class BridgeClass {
   void _retransmitLastFrame();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);
+  void _sendAck(uint16_t command_id);          // Send ACK without flush
   void _sendAckAndFlush(uint16_t command_id);  // Encapsulates ACK + flush sequence
   void _doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length);
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);

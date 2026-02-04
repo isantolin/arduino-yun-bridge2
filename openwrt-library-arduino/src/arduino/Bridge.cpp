@@ -107,7 +107,8 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _pending_tx_queue(),
       _fsm(),
       _timer_service(),
-      _last_tick_millis(0)
+      _last_tick_millis(0),
+      _command_router()
 {
     g_bridge_instance = this;
 }
@@ -117,6 +118,9 @@ void BridgeClass::begin(
   
   // [SIL-2] Start the ETL FSM before any other initialization
   _fsm.begin();
+  
+  // [SIL-2] Initialize ETL Message Router
+  _command_router.setHandler(this);
   
   // [SIL-2] Initialize ETL Callback Timer Service
   _timer_service.clear();
@@ -521,6 +525,7 @@ void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
+  // [SIL-2] Phase 1: Decompress if needed
   uint16_t raw_command = frame.header.command_id;
   bool is_compressed = (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   raw_command &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
@@ -529,7 +534,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   effective_frame.header.command_id = raw_command;
 
   if (is_compressed && frame.header.payload_length > 0) {
-    // [RAM OPT] Stack allocation
     uint8_t scratch_payload[rpc::MAX_PAYLOAD_SIZE];
     size_t decoded_len = rle::decode(frame.payload.data(), frame.header.payload_length, scratch_payload, rpc::MAX_PAYLOAD_SIZE);
     if (decoded_len == 0) {
@@ -540,147 +544,169 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   }
 
-  const rpc::CommandId command = static_cast<rpc::CommandId>(raw_command);
+  // [SIL-2] Phase 2: Build context and route via ETL message_router
+  bridge::router::CommandContext ctx;
+  ctx.frame = &effective_frame;
+  ctx.raw_command = raw_command;
+  ctx.is_duplicate = _isRecentDuplicateRx(effective_frame);
+  ctx.requires_ack = false;
+
+  _command_router.route(ctx);
+}
+
+// ============================================================================
+// [SIL-2] ICommandHandler Implementation - ETL Message Router Callbacks
+// ============================================================================
+
+void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
+  const rpc::StatusCode status = static_cast<rpc::StatusCode>(ctx.raw_command);
+  const size_t payload_length = ctx.frame->header.payload_length;
+  const uint8_t* payload_data = ctx.frame->payload.data();
   
-  // [OPTIMIZATION] Route to specific component based on ID range (0x10 blocks)
-  // This avoids monolithic broadcasting and saves stack frames.
-  if (raw_command >= 0x70 && raw_command <= 0x7F) {
-    #if BRIDGE_ENABLE_DATASTORE
-    DataStore.handleResponse(effective_frame);
-    #endif
-  } else if (raw_command >= 0x80 && raw_command <= 0x8F) {
-    #if BRIDGE_ENABLE_MAILBOX
-    Mailbox.handleResponse(effective_frame);
-    #endif
-  } else if (raw_command >= 0x90 && raw_command <= 0x9F) {
-    #if BRIDGE_ENABLE_FILESYSTEM
-    FileSystem.handleResponse(effective_frame);
-    #endif
-  } else if (raw_command >= 0xA0 && raw_command <= 0xAF) {
-    #if BRIDGE_ENABLE_PROCESS
-    Process.handleResponse(effective_frame);
-    #endif
+  switch (status) {
+    case rpc::StatusCode::STATUS_ACK: {
+      uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
+      if (payload_length >= 2 && payload_data) ack_id = rpc::read_u16_be(payload_data);
+      _handleAck(ack_id);
+      break;
+    }
+    case rpc::StatusCode::STATUS_MALFORMED: {
+      uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
+      if (payload_length >= 2 && payload_data) malformed_id = rpc::read_u16_be(payload_data);
+      _handleMalformed(malformed_id);
+      break;
+    }
+    default:
+      break;
+  }
+  if (_status_handler) _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
+}
+
+void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
+  const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
+  
+  if (command == rpc::CommandId::CMD_LINK_RESET) {
+    if (ctx.is_duplicate) {
+      _sendAckAndFlush(ctx.raw_command);
+      return;
+    }
+    _sendAckAndFlush(ctx.raw_command);
   }
   
-  bool command_processed_internally = false;
-  bool requires_ack = false;
-
-  if (raw_command >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_command <= rpc::RPC_SYSTEM_COMMAND_MAX) {
-      if (command == rpc::CommandId::CMD_LINK_RESET) {
-          if (_isRecentDuplicateRx(effective_frame)) {
-            _sendAckAndFlush(raw_command);
-            return;
-          }
-          _sendAckAndFlush(raw_command);
-          _handleSystemCommand(effective_frame);
-          command_processed_internally = true;
-          requires_ack = false;
-      } else {
-          _handleSystemCommand(effective_frame);
-          command_processed_internally = true;
-          requires_ack = (command == rpc::CommandId::CMD_LINK_SYNC);
-      }
-    } else if (raw_command >= rpc::RPC_GPIO_COMMAND_MIN) {
-      switch(command) {
-        case rpc::CommandId::CMD_SET_PIN_MODE:
-        case rpc::CommandId::CMD_DIGITAL_WRITE:
-        case rpc::CommandId::CMD_ANALOG_WRITE:
-          if (_isRecentDuplicateRx(effective_frame)) {
-            _sendAckAndFlush(raw_command);
-            return;
-          }
-          _handleGpioCommand(effective_frame);
-          _markRxProcessed(effective_frame);
-          command_processed_internally = true;
-          requires_ack = true;
-          break;
-        case rpc::CommandId::CMD_DIGITAL_READ:
-        case rpc::CommandId::CMD_ANALOG_READ:
-          if (_isRecentDuplicateRx(effective_frame)) return;
-          _handleGpioCommand(effective_frame);
-          _markRxProcessed(effective_frame);
-          command_processed_internally = true;
-          requires_ack = false;
-          break;
-        case rpc::CommandId::CMD_CONSOLE_WRITE:
-          if (_isRecentDuplicateRx(effective_frame)) {
-            _sendAckAndFlush(raw_command);
-            return;
-          }
-          _handleConsoleCommand(effective_frame);
-          _markRxProcessed(effective_frame);
-          command_processed_internally = true;
-          requires_ack = true;
-          break;
-        case rpc::CommandId::CMD_MAILBOX_PUSH:
-          if (_isRecentDuplicateRx(effective_frame)) {
-            _sendAckAndFlush(raw_command);
-            return;
-          }
-          #if BRIDGE_ENABLE_MAILBOX
-          Mailbox.handleResponse(effective_frame); 
-          #endif
-          _markRxProcessed(effective_frame);
-          command_processed_internally = true;
-          requires_ack = true;
-          break;
-        case rpc::CommandId::CMD_FILE_WRITE:
-          if (_isRecentDuplicateRx(effective_frame)) {
-            _sendAckAndFlush(raw_command);
-            return;
-          }
-          #if BRIDGE_ENABLE_FILESYSTEM
-          FileSystem.handleResponse(effective_frame);
-          #endif
-          _markRxProcessed(effective_frame);
-          command_processed_internally = true;
-          requires_ack = true;
-          break;
-        default:
-          break;
-      }
+  _handleSystemCommand(*ctx.frame);
+  
+  if (command == rpc::CommandId::CMD_LINK_SYNC) {
+    // Note: LINK_SYNC sends its own response, no ACK needed
   }
+}
 
-  if (requires_ack) {
-    etl::array<uint8_t, 2> ack_payload;
-    rpc::write_u16_be(ack_payload.data(), raw_command);
-    (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload.data(), ack_payload.size());
-  }
-
-  if (!command_processed_internally) {
-      if (raw_command >= rpc::RPC_STATUS_CODE_MIN && raw_command <= rpc::RPC_STATUS_CODE_MAX) {
-        const rpc::StatusCode status = static_cast<rpc::StatusCode>(raw_command);
-        const size_t payload_length = effective_frame.header.payload_length;
-        const uint8_t* payload_data = effective_frame.payload.data();
-        
-        switch (status) {
-          case rpc::StatusCode::STATUS_ACK: {
-            uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
-            if (payload_length >= 2 && payload_data) ack_id = rpc::read_u16_be(payload_data);
-            _handleAck(ack_id);
-            break;
-          }
-          case rpc::StatusCode::STATUS_MALFORMED: {
-            uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
-            if (payload_length >= 2 && payload_data) malformed_id = rpc::read_u16_be(payload_data);
-            _handleMalformed(malformed_id);
-            break;
-          }
-          default:
-            break;
-        }
-        if (_status_handler) _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
+void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
+  const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
+  
+  switch(command) {
+    case rpc::CommandId::CMD_SET_PIN_MODE:
+    case rpc::CommandId::CMD_DIGITAL_WRITE:
+    case rpc::CommandId::CMD_ANALOG_WRITE:
+      if (ctx.is_duplicate) {
+        _sendAckAndFlush(ctx.raw_command);
         return;
       }
+      _handleGpioCommand(*ctx.frame);
+      _markRxProcessed(*ctx.frame);
+      _sendAck(ctx.raw_command);
+      break;
+      
+    case rpc::CommandId::CMD_DIGITAL_READ:
+    case rpc::CommandId::CMD_ANALOG_READ:
+      if (ctx.is_duplicate) return;
+      _handleGpioCommand(*ctx.frame);
+      _markRxProcessed(*ctx.frame);
+      break;
+      
+    default:
+      break;
   }
+}
 
-  if (!command_processed_internally && _command_handler) {
-    _command_handler(effective_frame);
-  } else if (!command_processed_internally) {
-    if (raw_command < rpc::RPC_STATUS_CODE_MIN || raw_command > rpc::RPC_STATUS_CODE_MAX) {
-        (void)sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN);
-    }
+void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
+  if (ctx.is_duplicate) {
+    _sendAckAndFlush(ctx.raw_command);
+    return;
   }
+  _handleConsoleCommand(*ctx.frame);
+  _markRxProcessed(*ctx.frame);
+  _sendAck(ctx.raw_command);
+}
+
+void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
+  #if BRIDGE_ENABLE_DATASTORE
+  DataStore.handleResponse(*ctx.frame);
+  #else
+  (void)ctx;
+  #endif
+}
+
+void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
+  const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
+  
+  if (command == rpc::CommandId::CMD_MAILBOX_PUSH) {
+    if (ctx.is_duplicate) {
+      _sendAckAndFlush(ctx.raw_command);
+      return;
+    }
+    #if BRIDGE_ENABLE_MAILBOX
+    Mailbox.handleResponse(*ctx.frame);
+    #endif
+    _markRxProcessed(*ctx.frame);
+    _sendAck(ctx.raw_command);
+  } else {
+    #if BRIDGE_ENABLE_MAILBOX
+    Mailbox.handleResponse(*ctx.frame);
+    #endif
+  }
+}
+
+void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
+  const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
+  
+  if (command == rpc::CommandId::CMD_FILE_WRITE) {
+    if (ctx.is_duplicate) {
+      _sendAckAndFlush(ctx.raw_command);
+      return;
+    }
+    #if BRIDGE_ENABLE_FILESYSTEM
+    FileSystem.handleResponse(*ctx.frame);
+    #endif
+    _markRxProcessed(*ctx.frame);
+    _sendAck(ctx.raw_command);
+  } else {
+    #if BRIDGE_ENABLE_FILESYSTEM
+    FileSystem.handleResponse(*ctx.frame);
+    #endif
+  }
+}
+
+void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
+  #if BRIDGE_ENABLE_PROCESS
+  Process.handleResponse(*ctx.frame);
+  #else
+  (void)ctx;
+  #endif
+}
+
+void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
+  if (_command_handler) {
+    _command_handler(*ctx.frame);
+  } else {
+    (void)sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN);
+  }
+}
+
+// Helper for sending ACK without flush
+void BridgeClass::_sendAck(uint16_t command_id) {
+  etl::array<uint8_t, 2> ack_payload;
+  rpc::write_u16_be(ack_payload.data(), command_id);
+  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload.data(), ack_payload.size());
 }
 
 void BridgeClass::_doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {

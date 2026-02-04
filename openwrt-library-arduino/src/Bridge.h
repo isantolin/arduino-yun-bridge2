@@ -68,19 +68,6 @@ static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits
 
 // --- Configuration ---
 
-
-#ifndef BRIDGE_DEBUG_FRAMES
-constexpr bool kBridgeDebugFrames = false;
-#else
-constexpr bool kBridgeDebugFrames = (BRIDGE_DEBUG_FRAMES != 0);
-#endif
-
-#ifndef BRIDGE_DEBUG_IO
-constexpr bool kBridgeDebugIo = false;
-#else
-constexpr bool kBridgeDebugIo = (BRIDGE_DEBUG_IO != 0);
-#endif
-
 #ifndef BRIDGE_ENABLE_WATCHDOG
 constexpr bool kBridgeEnableWatchdog = true;
 #else
@@ -224,25 +211,6 @@ class BridgeClass {
                        const uint8_t* header, size_t header_len, 
                        const uint8_t* data, size_t data_len);
 
-#if BRIDGE_DEBUG_FRAMES
-  struct FrameDebugSnapshot {
-    uint16_t tx_count;
-    uint16_t build_failures;
-    uint16_t write_shortfall_events;
-    uint16_t last_command_id;
-    uint16_t payload_length;
-    uint16_t raw_length;
-    uint16_t cobs_length;
-    uint16_t expected_serial_bytes;
-    uint16_t last_write_return;
-    uint16_t last_shortfall;
-    uint16_t crc;
-  };
-
-  FrameDebugSnapshot getTxDebugSnapshot() const;
-  void resetTxDebugStats();
-#endif
-
   // Internal Callback Trampoline for PacketSerial
   static void onPacketReceived(const uint8_t* buffer, size_t size);
 
@@ -291,10 +259,6 @@ class BridgeClass {
 
   // [SIL-2] ETL FSM replaces manual state tracking
   bridge::fsm::BridgeFsm _fsm;
-
-#if BRIDGE_DEBUG_FRAMES
-  mutable FrameDebugSnapshot _tx_debug;
-#endif
 
   // Methods
   void _handleSystemCommand(const rpc::Frame& frame);

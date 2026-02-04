@@ -129,9 +129,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _status_handler(nullptr),
       _pending_tx_queue(),
       _fsm()
-#if BRIDGE_DEBUG_FRAMES
-      , _tx_debug{}
-#endif
 {
     g_bridge_instance = this;
 }
@@ -191,9 +188,6 @@ void BridgeClass::begin(
   _last_send_millis = 0;
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
-#if BRIDGE_DEBUG_FRAMES
-  _tx_debug = {};
-#endif
 
 }
 
@@ -1059,11 +1053,6 @@ void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
   _last_rx_crc = frame.crc;
   _last_rx_crc_millis = millis();
 }
-
-#if BRIDGE_DEBUG_FRAMES
-BridgeClass::FrameDebugSnapshot BridgeClass::getTxDebugSnapshot() const { return _tx_debug; }
-void BridgeClass::resetTxDebugStats() { _tx_debug = {}; }
-#endif
 
 // [SIL-2] ETL Error Handler Implementation
 namespace etl {

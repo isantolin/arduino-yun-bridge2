@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "etl/algorithm.h"
 
 /**
  * RLE (Run-Length Encoding) implementation for MCU Bridge protocol.
@@ -151,9 +152,8 @@ inline size_t decode(const uint8_t* src_buf, size_t src_len,
       
       if (dst_pos + run_len > dst_max) return 0;  // Overflow
       
-      for (size_t i = 0; i < run_len; i++) {
-        dst_buf[dst_pos++] = byte_val;
-      }
+      etl::fill_n(dst_buf + dst_pos, run_len, byte_val);
+      dst_pos += run_len;
     } else {
       // Literal byte
       if (dst_pos + 1 > dst_max) return 0;

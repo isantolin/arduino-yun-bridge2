@@ -6,11 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <FastCRC.h>
+#include "etl/crc32.h"
 
 static inline uint32_t crc32_ieee(const void *data, size_t len) {
-  FastCRC32 crc_calc;
-  return crc_calc.crc32((const uint8_t*)data, (uint16_t)len);
+  etl::crc32 crc_calc;
+  crc_calc.add(reinterpret_cast<const uint8_t*>(data), reinterpret_cast<const uint8_t*>(data) + len);
+  return crc_calc.value();
 }
 
 #define TEST_ASSERT(cond)                                                      \

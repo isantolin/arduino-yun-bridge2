@@ -12,7 +12,6 @@ unsigned long millis() { return g_test_millis++; }
 #undef private
 #undef protected
 
-#include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "test_constants.h"

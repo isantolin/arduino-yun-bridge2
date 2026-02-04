@@ -128,7 +128,6 @@ install_dependency() {
 # --- Main Installation ---
 
 # 1. External Dependencies (Installed to Arduino libraries folder)
-install_dependency "FastCRC" "https://codeload.github.com/FrankBoesing/FastCRC/zip/refs/heads/master" "FastCRC.h"
 install_dependency "PacketSerial" "https://codeload.github.com/bakercp/PacketSerial/zip/refs/heads/master" "PacketSerial.h"
 # Crypto: Using OperatorFoundation standalone fork (simpler install, PlatformIO support)
 install_dependency "Crypto" "https://codeload.github.com/OperatorFoundation/Crypto/zip/refs/heads/master" "Crypto.h"

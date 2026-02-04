@@ -9,7 +9,6 @@
 #undef private
 #undef protected
 
-#include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rle.h"
@@ -73,20 +72,19 @@ void test_rpc_frame_gaps() {
 
     // Gap: parse with invalid version
     uint8_t bad_version[] = {0xFF, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
-    FastCRC32 crc32;
-    uint32_t c = crc32.crc32(bad_version, 6);
+    uint32_t c = crc32_ieee(bad_version, 6);
     rpc::write_u32_be(&bad_version[6], c);
     assert(!parser.parse(bad_version, 10, f));
 
     // Gap: parse with payload_length > max_size
     uint8_t bad_len[] = {0x02, 0xFF, 0xFF, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00};
-    c = crc32.crc32(bad_len, 5);
+    c = crc32_ieee(bad_len, 5);
     rpc::write_u32_be(&bad_len[5], c);
     assert(!parser.parse(bad_len, 9, f));
 
     // Gap: parse with (sizeof(FrameHeader) + payload_length) != crc_start
     uint8_t len_mismatch[] = {0x02, 0x00, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
-    c = crc32.crc32(len_mismatch, 6);
+    c = crc32_ieee(len_mismatch, 6);
     rpc::write_u32_be(&len_mismatch[6], c);
     assert(!parser.parse(len_mismatch, 10, f));
 

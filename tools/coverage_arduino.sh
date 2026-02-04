@@ -49,7 +49,6 @@ COMPILE_FLAGS=(
     -I"${STUB_INCLUDE}"
     -I"${DUMMY_ARDUINO_LIBS}/Crypto"
     -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
-    -I"${DUMMY_ARDUINO_LIBS}/FastCRC"
 )
 
 TEST_FILES=(

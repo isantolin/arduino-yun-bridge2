@@ -11,7 +11,6 @@
 #include "protocol/rpc_frame.h"
 #include "test_support.h"
 #include "BridgeTestInterface.h"
-#include <FastCRC.h>
 
 static unsigned long g_test_millis = 0;
 unsigned long millis() { 

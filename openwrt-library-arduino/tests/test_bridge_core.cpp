@@ -19,7 +19,6 @@
 #undef protected
 
 #include "protocol/rpc_protocol.h"
-#include <FastCRC.h>
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
 #include "test_support.h"

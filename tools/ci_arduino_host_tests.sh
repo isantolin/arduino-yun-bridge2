@@ -26,7 +26,6 @@ g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
     -I"${STUB_DIR}" \
     -I"${DUMMY_ARDUINO_LIBS}/Crypto" \
     -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
-    -I"${DUMMY_ARDUINO_LIBS}/FastCRC" \
     "${SRC_DIR}/protocol/rpc_frame.cpp" \
     "${SRC_DIR}/protocol/security.cpp" \
     "${SRC_DIR}/arduino/Bridge.cpp" \

@@ -2,8 +2,6 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <FastCRC.h>
-
 #include "Bridge.h"
 #include "protocol/rpc_frame.h"
 #include "test_constants.h"
@@ -20,8 +18,6 @@ MailboxClass Mailbox;
 FileSystemClass FileSystem;
 ProcessClass Process;
 
-static FastCRC32 CRC32;
-
 // 1. Helpers Básicos (Original)
 static void test_endianness_helpers() {
   uint8_t buffer[2] = {
@@ -37,7 +33,7 @@ static void test_endianness_helpers() {
 // 2. Helpers CRC (Original)
 static void test_crc_helpers() {
   const uint8_t data[] = {TEST_PAYLOAD_BYTE, TEST_BYTE_BB, TEST_BYTE_CC, TEST_BYTE_DD};
-  uint32_t crc = CRC32.crc32(data, sizeof(data));
+  uint32_t crc = crc32_ieee(data, sizeof(data));
   TEST_ASSERT(crc == TEST_CRC32_VECTOR_EXPECTED);
 }
 
@@ -57,7 +53,7 @@ static void test_builder_roundtrip() {
   TEST_ASSERT(raw_len == sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
 
   uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
-  TEST_ASSERT(crc == CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE));
+  TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
   bool parsed = parser.parse(raw, raw_len, frame);
   
@@ -123,7 +119,7 @@ static void test_parser_header_validation() {
   raw[0] = PROTOCOL_VERSION + 1;
   
   // Recalcular CRC para que el fallo sea de Header y no de CRC
-  uint32_t new_crc = CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE);
+  uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
 
   TEST_ASSERT(!parser.parse(raw, raw_len, frame));
@@ -158,7 +154,7 @@ static void test_parser_header_logical_validation_mismatch() {
   raw[2] = 3;
   
   // Recalcular CRC para pasar la primera validación
-  uint32_t new_crc = CRC32.crc32(raw, raw_len - CRC_TRAILER_SIZE);
+  uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
   
   // Debe fallar porque el header dice length=3 pero el buffer raw solo tiene espacio para 2

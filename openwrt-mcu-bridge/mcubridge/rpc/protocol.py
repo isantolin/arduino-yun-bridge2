@@ -6,8 +6,8 @@ from typing import Any, Final, cast
 
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
-DEFAULT_SAFE_BAUDRATE: Final[int] = 115200
 MAX_PAYLOAD_SIZE: Final[int] = 64
+DEFAULT_SAFE_BAUDRATE: Final[int] = 115200
 MAX_FILEPATH_LENGTH: Final[int] = 64
 MAX_DATASTORE_KEY_LENGTH: Final[int] = 32
 DEFAULT_ACK_TIMEOUT_MS: Final[int] = 200
@@ -43,31 +43,31 @@ PROCESS_COMMAND_MAX: Final[int] = 175
 
 HANDSHAKE_NONCE_LENGTH: Final[int] = 16
 HANDSHAKE_TAG_LENGTH: Final[int] = 16
-HANDSHAKE_TAG_ALGORITHM: Final[str] = "HMAC-SHA256"
-HANDSHAKE_TAG_DESCRIPTION: Final[str] = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
-HANDSHAKE_CONFIG_FORMAT: Final[str] = ">HBI"
-HANDSHAKE_CONFIG_STRUCT: Final = Struct(
-    cast(Any, 'ack_timeout_ms') / Int16ub,
-    cast(Any, 'ack_retry_limit') / Int8ub,
-    cast(Any, 'response_timeout_ms') / Int32ub,
-)
-HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = (
-    "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), "
-    "response_timeout_ms (uint32)"
-)
-HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
 HANDSHAKE_ACK_TIMEOUT_MIN_MS: Final[int] = 25
 HANDSHAKE_ACK_TIMEOUT_MAX_MS: Final[int] = 60000
 HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS: Final[int] = 100
 HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS: Final[int] = 180000
 HANDSHAKE_RETRY_LIMIT_MIN: Final[int] = 1
 HANDSHAKE_RETRY_LIMIT_MAX: Final[int] = 8
-HANDSHAKE_HKDF_ALGORITHM: Final[str] = "HKDF-SHA256"
-HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
-HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
 HANDSHAKE_HKDF_OUTPUT_LENGTH: Final[int] = 32
 HANDSHAKE_NONCE_RANDOM_BYTES: Final[int] = 8
 HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = 8
+HANDSHAKE_TAG_ALGORITHM: Final[str] = "HMAC-SHA256"
+HANDSHAKE_TAG_DESCRIPTION: Final[str] = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
+HANDSHAKE_CONFIG_FORMAT: Final[str] = ">HBI"
+HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = (
+    "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), "
+    "response_timeout_ms (uint32)"
+)
+HANDSHAKE_HKDF_ALGORITHM: Final[str] = "HKDF-SHA256"
+HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
+HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
+HANDSHAKE_CONFIG_STRUCT: Final = Struct(
+    cast(Any, 'ack_timeout_ms') / Int16ub,
+    cast(Any, 'ack_retry_limit') / Int8ub,
+    cast(Any, 'response_timeout_ms') / Int32ub,
+)
+HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
 
 CAPABILITY_WATCHDOG: Final[int] = 1
 CAPABILITY_RLE: Final[int] = 2

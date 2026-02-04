@@ -14,8 +14,8 @@ namespace rpc {
 
 constexpr uint8_t PROTOCOL_VERSION = 2;
 constexpr unsigned long RPC_DEFAULT_BAUDRATE = 115200;
-constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = 115200;
 constexpr size_t MAX_PAYLOAD_SIZE = 64;
+constexpr unsigned long RPC_DEFAULT_SAFE_BAUDRATE = 115200;
 constexpr size_t RPC_MAX_FILEPATH_LENGTH = 64;
 constexpr size_t RPC_MAX_DATASTORE_KEY_LENGTH = 32;
 constexpr unsigned int RPC_DEFAULT_ACK_TIMEOUT_MS = 200;
@@ -51,20 +51,20 @@ constexpr uint16_t RPC_PROCESS_COMMAND_MAX = 175;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;
-constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;
 constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS = 25;
 constexpr uint32_t RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS = 60000;
 constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS = 100;
 constexpr uint32_t RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS = 180000;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MIN = 1;
 constexpr unsigned int RPC_HANDSHAKE_RETRY_LIMIT_MAX = 8;
+constexpr unsigned int RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH = 32;
+constexpr unsigned int RPC_HANDSHAKE_NONCE_RANDOM_BYTES = 8;
+constexpr unsigned int RPC_HANDSHAKE_NONCE_COUNTER_BYTES = 8;
+constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;
 constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {0x6D, 0x63, 0x75, 0x62, 0x72, 0x69, 0x64, 0x67, 0x65, 0x2D, 0x76, 0x32};
 constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = 12;
 constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {0x68, 0x61, 0x6E, 0x64, 0x73, 0x68, 0x61, 0x6B, 0x65, 0x2D, 0x61, 0x75, 0x74, 0x68};
 constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = 14;
-constexpr unsigned int RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH = 32;
-constexpr unsigned int RPC_HANDSHAKE_NONCE_RANDOM_BYTES = 8;
-constexpr unsigned int RPC_HANDSHAKE_NONCE_COUNTER_BYTES = 8;
 
 constexpr uint32_t RPC_CAPABILITY_WATCHDOG = 1;
 constexpr uint32_t RPC_CAPABILITY_RLE = 2;

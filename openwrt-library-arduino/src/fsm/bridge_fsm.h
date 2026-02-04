@@ -218,7 +218,20 @@ public:
     start();
   }
 
-  // ... (rest of methods) ...
+  // State Accessors
+  bool isUnsynchronized() const { return get_state_id() == STATE_UNSYNCHRONIZED; }
+  bool isIdle() const { return get_state_id() == STATE_IDLE; }
+  bool isAwaitingAck() const { return get_state_id() == STATE_AWAITING_ACK; }
+  bool isFault() const { return get_state_id() == STATE_FAULT; }
+  bool isSynchronized() const { return isIdle() || isAwaitingAck(); }
+
+  // Event Triggers
+  void handshakeComplete() { receive(EvHandshakeComplete()); }
+  void sendCritical() { receive(EvSendCritical()); }
+  void ackReceived() { receive(EvAckReceived()); }
+  void timeout() { receive(EvTimeout()); }
+  void cryptoFault() { receive(EvCryptoFault()); }
+  void resetFsm() { receive(EvReset()); }
 
 private:
   // State list for FSM

@@ -60,6 +60,9 @@
 #include "etl/circular_buffer.h"
 #include "etl/vector.h"
 
+// [SIL-2] Centralized Scheduler/Timer
+#include "scheduler/bridge_scheduler.h"
+
 // [SIL-2] Lightweight FSM for deterministic state transitions
 #include "fsm/bridge_fsm.h"
 
@@ -143,7 +146,7 @@ namespace test { class TestAccessor; }
 }
 #endif
 
-class BridgeClass {
+class BridgeClass : public bridge::scheduler::TimerHandler {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
   #endif
@@ -189,6 +192,9 @@ class BridgeClass {
   bool isFault() const { return _fsm.isFault(); }
   bridge::fsm::StateId getStateId() const { return static_cast<bridge::fsm::StateId>(_fsm.get_state_id()); }
 
+  // [SIL-2] ETL Timer Handler
+  void on_timer(bridge::scheduler::TimerId id) override;
+
   // Events
   inline void onCommand(CommandHandler handler) { _command_handler = handler; }
   inline void onDigitalReadResponse(DigitalReadHandler handler) { _digital_read_handler = handler; }
@@ -229,7 +235,8 @@ class BridgeClass {
   // State
   uint16_t _last_command_id;
   uint8_t _retry_count;
-  unsigned long _last_send_millis;
+  
+  uint32_t _pending_baudrate;
 
   // Incoming deduplication (idempotency for retries)
   uint32_t _last_rx_crc;
@@ -260,6 +267,10 @@ class BridgeClass {
   // [SIL-2] ETL FSM replaces manual state tracking
   bridge::fsm::BridgeFsm _fsm;
 
+  // [SIL-2] ETL Timer Service
+  bridge::scheduler::TimerService _timer_service;
+  unsigned long _last_tick_millis;
+
   // Methods
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
@@ -273,7 +284,6 @@ class BridgeClass {
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _requiresAck(uint16_t command_id) const;
   void _retransmitLastFrame();
-  void _processAckTimeout();
   void _handleAck(uint16_t command_id);
   void _handleMalformed(uint16_t command_id);
   void _sendAckAndFlush(uint16_t command_id);  // Encapsulates ACK + flush sequence

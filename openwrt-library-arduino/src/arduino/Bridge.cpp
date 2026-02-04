@@ -71,29 +71,6 @@ static_assert(
 );
 constexpr size_t kSha256DigestSize = 32;
 
-struct BaudrateChangeState {
-  uint32_t pending_baudrate;
-  unsigned long change_timestamp_ms;
-  
-  static constexpr unsigned long kSettleDelayMs = BRIDGE_BAUDRATE_SETTLE_MS;
-  
-  bool isReady(unsigned long now_ms) const {
-    return pending_baudrate > 0 && (now_ms - change_timestamp_ms) > kSettleDelayMs;
-  }
-
-  void schedule(uint32_t baud, unsigned long now_ms) {
-    pending_baudrate = baud;
-    change_timestamp_ms = now_ms;
-  }
-
-  void clear() {
-    pending_baudrate = 0;
-    change_timestamp_ms = 0;
-  }
-};
-
-static BaudrateChangeState g_baudrate_state = {0, 0};
-
 // Global instance pointer for PacketSerial static callback
 BridgeClass* g_bridge_instance = nullptr;
 
@@ -115,7 +92,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _rx_frame{},
       _last_command_id(0),
       _retry_count(0),
-      _last_send_millis(0),
+      _pending_baudrate(0),
       _last_rx_crc(0),
       _last_rx_crc_millis(0),
       _consecutive_crc_errors(0),
@@ -128,7 +105,9 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _get_free_memory_handler(nullptr),
       _status_handler(nullptr),
       _pending_tx_queue(),
-      _fsm()
+      _fsm(),
+      _timer_service(),
+      _last_tick_millis(0)
 {
     g_bridge_instance = this;
 }
@@ -138,6 +117,8 @@ void BridgeClass::begin(
   
   // [SIL-2] Start the ETL FSM before any other initialization
   _fsm.begin();
+  _timer_service.clear();
+  _last_tick_millis = millis();
 
   // [MIL-SPEC] FIPS 140-3 Power-On Self-Tests (POST)
   if (!rpc::security::run_cryptographic_self_tests()) {
@@ -185,7 +166,6 @@ void BridgeClass::begin(
   _fsm.resetFsm();
   _last_command_id = 0;
   _retry_count = 0;
-  _last_send_millis = 0;
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
 
@@ -200,24 +180,6 @@ void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
 }
 
 void BridgeClass::process() {
-  bool ready = false;
-  uint32_t new_baud = 0;
-  BRIDGE_ATOMIC_BLOCK {
-    ready = g_baudrate_state.isReady(millis());
-    new_baud = g_baudrate_state.pending_baudrate;
-  }
-
-  if (ready) {
-    if (_hardware_serial != nullptr) {
-        _hardware_serial->flush();
-        _hardware_serial->end();
-        _hardware_serial->begin(new_baud);
-    }
-    BRIDGE_ATOMIC_BLOCK {
-      g_baudrate_state.clear();
-    }
-  }
-
 #if defined(ARDUINO_ARCH_AVR)
   if (kBridgeEnableWatchdog) {
     wdt_reset();
@@ -282,7 +244,16 @@ void BridgeClass::process() {
     }
   }
 
-  _processAckTimeout();
+  // [SIL-2] Centralized Scheduler Tick
+  // Replaces manual timeout checks with ETL Timer Service
+  unsigned long now = millis();
+  unsigned long delta = now - _last_tick_millis;
+  // Handle millis() rollover (overflow) by implicit unsigned arithmetic
+  if (delta > 0) {
+      _timer_service.tick(static_cast<uint32_t>(delta));
+      _last_tick_millis = now;
+  }
+
   _flushPendingTxQueue();
 }
 
@@ -399,9 +370,9 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         uint32_t new_baud = rpc::read_u32_be(payload_data);
         (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
         flushStream();
-        BRIDGE_ATOMIC_BLOCK {
-          g_baudrate_state.schedule(new_baud, millis());
-        }
+        
+        _pending_baudrate = new_baud;
+        _timer_service.register_timer(this, bridge::scheduler::TIMER_BAUDRATE_CHANGE, BRIDGE_BAUDRATE_SETTLE_MS, false);
       }
       break;
     case rpc::CommandId::CMD_LINK_SYNC:
@@ -817,16 +788,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
     }
 
     if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) {
-      // Queue full? Try to process timeout to free space (Emergency Valve)
-      // Only if we are already waiting for an ACK (meaning the queue head is active)
-      if (_fsm.isAwaitingAck()) {
-        _processAckTimeout();
-        BRIDGE_ATOMIC_BLOCK {
-          queue_full = _pending_tx_queue.full();
-        }
-      }
-      
-      if (queue_full || final_len > rpc::MAX_PAYLOAD_SIZE) return false;
+      return false;
     }
     
     // Inlined _enqueuePendingTx
@@ -893,6 +855,9 @@ void BridgeClass::_handleAck(uint16_t command_id) {
   if (_fsm.isAwaitingAck() && (command_id == rpc::RPC_INVALID_ID_SENTINEL || command_id == _last_command_id)) {
     _clearAckState();
     
+    // [SIL-2] Stop ACK Timer
+    _timer_service.unregister_timer(bridge::scheduler::TIMER_ACK_TIMEOUT);
+
     // [SIL-2] ACK received -> Safe to remove frame from queue
     BRIDGE_ATOMIC_BLOCK {
       if (!_pending_tx_queue.empty()) {
@@ -919,27 +884,42 @@ void BridgeClass::_retransmitLastFrame() {
     if (raw_len > 0) {
       _packetSerial.send(raw_buffer, raw_len);
       _retry_count++;
-      _last_send_millis = millis();
       flushStream();
     }
   }
 }
 
-void BridgeClass::_processAckTimeout() {
-  if (!_fsm.isAwaitingAck()) return;
-  unsigned long now = millis();
-  if ((now - _last_send_millis) < _ack_timeout_ms) return;
-  if (_retry_count >= _ack_retry_limit) {
-    if (_status_handler) _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
-    _fsm.timeout();  // Transition to Unsynchronized via FSM
-    enterSafeState(); 
-    return;
+void BridgeClass::on_timer(bridge::scheduler::TimerId id) {
+  if (id == bridge::scheduler::TIMER_ACK_TIMEOUT) {
+    if (!_fsm.isAwaitingAck()) return;
+
+    if (_retry_count >= _ack_retry_limit) {
+      if (_status_handler) _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
+      _fsm.timeout();  // Transition to Unsynchronized via FSM
+      enterSafeState(); 
+      return;
+    }
+    
+    _retransmitLastFrame();
+    
+    // Restart timer for next retry
+    _timer_service.register_timer(this, bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms, false);
+  } else if (id == bridge::scheduler::TIMER_BAUDRATE_CHANGE) {
+      if (_pending_baudrate > 0) {
+        if (_hardware_serial != nullptr) {
+            _hardware_serial->flush();
+            _hardware_serial->end();
+            _hardware_serial->begin(_pending_baudrate);
+        }
+        _pending_baudrate = 0;
+      }
   }
-  _retransmitLastFrame();
 }
 
 void BridgeClass::enterSafeState() {
   _fsm.resetFsm();  // Transition to Unsynchronized via ETL FSM
+  _timer_service.unregister_timer(bridge::scheduler::TIMER_ACK_TIMEOUT);
+  
   // Note: _clearAckState() checks FSM state, so we skip to avoid redundant transition
   _retry_count = 0;
   _clearPendingTxQueue();
@@ -981,7 +961,10 @@ void BridgeClass::_flushPendingTxQueue() {
 
     _fsm.sendCritical();  // Transition to AwaitingAck via FSM
     _retry_count = 0;
-    _last_send_millis = millis();
+    
+    // [SIL-2] Start ACK Timer
+    _timer_service.register_timer(this, bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms, false);
+    
     _last_command_id = frame.command_id;
     // NOTE: We do NOT pop here. We pop only when ACK is received.
   }

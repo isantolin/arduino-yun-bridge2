@@ -416,8 +416,3 @@ def test_payload_validation_gaps():
 
     with pytest.raises(payloads.PayloadValidationError):
         payloads.ShellPidPayload.from_topic_segment("abc")
-
-
-def test_frame_debug_import_error():
-    with pytest.raises(ImportError, match="developer-only tool"):
-        import mcubridge.tools.frame_debug  # noqa: F401

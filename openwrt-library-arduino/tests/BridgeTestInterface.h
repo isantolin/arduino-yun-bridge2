@@ -28,10 +28,11 @@ class TestAccessor {
     return _bridge._parser.getError();
   }
 
-  bool isAwaitingAck() const { return _bridge._fsm.isAwaitingAck(); }
-  bool isIdle() const { return _bridge._fsm.isIdle(); }
-  bool isUnsynchronized() const { return _bridge._fsm.isUnsynchronized(); }
-  bool isFault() const { return _bridge._fsm.isFault(); }
+  // Use public BridgeClass accessors (no direct _fsm access needed)
+  bool isAwaitingAck() const { return _bridge.isAwaitingAck(); }
+  bool isIdle() const { return _bridge.isIdle(); }
+  bool isUnsynchronized() const { return _bridge.isUnsynchronized(); }
+  bool isFault() const { return _bridge.isFault(); }
   uint16_t getLastCommandId() const { return _bridge._last_command_id; }
 
   // --- Methods ---

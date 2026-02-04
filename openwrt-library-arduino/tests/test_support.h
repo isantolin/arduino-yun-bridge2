@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <etl/algorithm.h>
 #include "etl/crc32.h"
 
 static inline uint32_t crc32_ieee(const void *data, size_t len) {
@@ -36,9 +37,7 @@ static inline uint32_t crc32_ieee(const void *data, size_t len) {
   } while (0)
 
 static inline void test_memfill(uint8_t *buf, size_t len, uint8_t value) {
-  for (size_t i = 0; i < len; ++i) {
-    buf[i] = value;
-  }
+  etl::fill_n(buf, len, value);
 }
 
 static inline int test_memeq(const void *a, const void *b, size_t len) {
@@ -50,7 +49,7 @@ template <size_t N> struct ByteBuffer {
   size_t len;
   size_t pos;
 
-  ByteBuffer() : len(0), pos(0) { memset(data, 0, sizeof(data)); }
+  ByteBuffer() : len(0), pos(0) { etl::fill_n(data, N, uint8_t{0}); }
 
   void clear() {
     len = 0;
@@ -74,7 +73,7 @@ template <size_t N> struct ByteBuffer {
     if (len + n > N) {
       return false;
     }
-    memcpy(data + len, src, n);
+    etl::copy_n(src, n, data + len);
     len += n;
     return true;
   }

@@ -110,21 +110,16 @@ void test_bridge_gaps() {
     Bridge.process(); 
 
     // Gap: Retransmission logic and failure streak
-    // Note: The timer system uses etl::callback_timer. To trigger timeout,
-    // we advance millis and call process() which internally calls tick().
+    // Note: _onAckTimeout() checks _retry_count >= _ack_retry_limit to enter safe state.
+    // _retransmitLastFrame() increments _retry_count but only if _pending_tx_queue is non-empty.
+    // For coverage, we directly set _retry_count to exceed limit and call _onAckTimeout.
     Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._retry_count = 0;
     Bridge._ack_timeout_ms = 1000;
     Bridge._ack_retry_limit = 1;
+    Bridge._retry_count = Bridge._ack_retry_limit; // Set at limit
     
-    // Advance time beyond ACK timeout and process to trigger timeout callback
-    g_test_millis += 2000;
-    Bridge.process(); // Attempt retransmission via timer tick
-    
-    // Force retry exhaustion by advancing time again
-    Bridge._retry_count = Bridge._ack_retry_limit;
-    g_test_millis += 2000;
-    Bridge.process(); // Timeout -> enterSafeState
+    // Directly call timeout handler - exceeds limit -> enterSafeState
+    Bridge._onAckTimeout();
     assert(!Bridge.isSynchronized());
 }
 

@@ -104,6 +104,17 @@ class __FlashStringHelper;
 #define pgm_read_byte(p) (*reinterpret_cast<const uint8_t*>(p))
 #define pgm_read_word(p) (*reinterpret_cast<const uint16_t*>(p))
 
+inline size_t strnlen_P(const char* s, size_t maxlen) {
+    // Basic implementation for host stub
+    const char* end = (const char*)memchr(s, '\0', maxlen);
+    if (end == nullptr) return maxlen;
+    return end - s;
+}
+
+inline void* memcpy_P(void* dest, const void* src, size_t n) {
+    return memcpy(dest, src, n);
+}
+
 // Base classes needed for HardwareSerial
 class Print {
 public:

@@ -37,6 +37,17 @@ constexpr uint8_t RPC_STATUS_CODE_MAX = 63;
 constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = 64;
 constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = 79;
 constexpr uint16_t RPC_GPIO_COMMAND_MIN = 80;
+constexpr uint16_t RPC_GPIO_COMMAND_MAX = 95;
+constexpr uint16_t RPC_CONSOLE_COMMAND_MIN = 96;
+constexpr uint16_t RPC_CONSOLE_COMMAND_MAX = 111;
+constexpr uint16_t RPC_DATASTORE_COMMAND_MIN = 112;
+constexpr uint16_t RPC_DATASTORE_COMMAND_MAX = 127;
+constexpr uint16_t RPC_MAILBOX_COMMAND_MIN = 128;
+constexpr uint16_t RPC_MAILBOX_COMMAND_MAX = 143;
+constexpr uint16_t RPC_FILESYSTEM_COMMAND_MIN = 144;
+constexpr uint16_t RPC_FILESYSTEM_COMMAND_MAX = 159;
+constexpr uint16_t RPC_PROCESS_COMMAND_MIN = 160;
+constexpr uint16_t RPC_PROCESS_COMMAND_MAX = 175;
 
 constexpr unsigned int RPC_HANDSHAKE_NONCE_LENGTH = 16;
 constexpr unsigned int RPC_HANDSHAKE_TAG_LENGTH = 16;

@@ -274,6 +274,28 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
         out.write(f"constexpr uint16_t RPC_SYSTEM_COMMAND_MAX = {consts['system_command_max']};\n")
     if "gpio_command_min" in consts:
         out.write(f"constexpr uint16_t RPC_GPIO_COMMAND_MIN = {consts['gpio_command_min']};\n")
+    if "gpio_command_max" in consts:
+        out.write(f"constexpr uint16_t RPC_GPIO_COMMAND_MAX = {consts['gpio_command_max']};\n")
+    if "console_command_min" in consts:
+        out.write(f"constexpr uint16_t RPC_CONSOLE_COMMAND_MIN = {consts['console_command_min']};\n")
+    if "console_command_max" in consts:
+        out.write(f"constexpr uint16_t RPC_CONSOLE_COMMAND_MAX = {consts['console_command_max']};\n")
+    if "datastore_command_min" in consts:
+        out.write(f"constexpr uint16_t RPC_DATASTORE_COMMAND_MIN = {consts['datastore_command_min']};\n")
+    if "datastore_command_max" in consts:
+        out.write(f"constexpr uint16_t RPC_DATASTORE_COMMAND_MAX = {consts['datastore_command_max']};\n")
+    if "mailbox_command_min" in consts:
+        out.write(f"constexpr uint16_t RPC_MAILBOX_COMMAND_MIN = {consts['mailbox_command_min']};\n")
+    if "mailbox_command_max" in consts:
+        out.write(f"constexpr uint16_t RPC_MAILBOX_COMMAND_MAX = {consts['mailbox_command_max']};\n")
+    if "filesystem_command_min" in consts:
+        out.write(f"constexpr uint16_t RPC_FILESYSTEM_COMMAND_MIN = {consts['filesystem_command_min']};\n")
+    if "filesystem_command_max" in consts:
+        out.write(f"constexpr uint16_t RPC_FILESYSTEM_COMMAND_MAX = {consts['filesystem_command_max']};\n")
+    if "process_command_min" in consts:
+        out.write(f"constexpr uint16_t RPC_PROCESS_COMMAND_MIN = {consts['process_command_min']};\n")
+    if "process_command_max" in consts:
+        out.write(f"constexpr uint16_t RPC_PROCESS_COMMAND_MAX = {consts['process_command_max']};\n")
     out.write("\n")
 
     handshake = spec.get("handshake", {})
@@ -392,6 +414,28 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:  # noqa: C901
         out.write(f"SYSTEM_COMMAND_MAX: Final[int] = {consts['system_command_max']}\n")
     if "gpio_command_min" in consts:
         out.write(f"GPIO_COMMAND_MIN: Final[int] = {consts['gpio_command_min']}\n")
+    if "gpio_command_max" in consts:
+        out.write(f"GPIO_COMMAND_MAX: Final[int] = {consts['gpio_command_max']}\n")
+    if "console_command_min" in consts:
+        out.write(f"CONSOLE_COMMAND_MIN: Final[int] = {consts['console_command_min']}\n")
+    if "console_command_max" in consts:
+        out.write(f"CONSOLE_COMMAND_MAX: Final[int] = {consts['console_command_max']}\n")
+    if "datastore_command_min" in consts:
+        out.write(f"DATASTORE_COMMAND_MIN: Final[int] = {consts['datastore_command_min']}\n")
+    if "datastore_command_max" in consts:
+        out.write(f"DATASTORE_COMMAND_MAX: Final[int] = {consts['datastore_command_max']}\n")
+    if "mailbox_command_min" in consts:
+        out.write(f"MAILBOX_COMMAND_MIN: Final[int] = {consts['mailbox_command_min']}\n")
+    if "mailbox_command_max" in consts:
+        out.write(f"MAILBOX_COMMAND_MAX: Final[int] = {consts['mailbox_command_max']}\n")
+    if "filesystem_command_min" in consts:
+        out.write(f"FILESYSTEM_COMMAND_MIN: Final[int] = {consts['filesystem_command_min']}\n")
+    if "filesystem_command_max" in consts:
+        out.write(f"FILESYSTEM_COMMAND_MAX: Final[int] = {consts['filesystem_command_max']}\n")
+    if "process_command_min" in consts:
+        out.write(f"PROCESS_COMMAND_MIN: Final[int] = {consts['process_command_min']}\n")
+    if "process_command_max" in consts:
+        out.write(f"PROCESS_COMMAND_MAX: Final[int] = {consts['process_command_max']}\n")
     out.write("\n")
 
     handshake = spec.get("handshake", {})

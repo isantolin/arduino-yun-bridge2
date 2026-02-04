@@ -27,6 +27,17 @@ status_code_max = 0x3F
 system_command_min = 0x40
 system_command_max = 0x4F
 gpio_command_min = 0x50
+gpio_command_max = 0x5F
+console_command_min = 0x60
+console_command_max = 0x6F
+datastore_command_min = 0x70
+datastore_command_max = 0x7F
+mailbox_command_min = 0x80
+mailbox_command_max = 0x8F
+filesystem_command_min = 0x90
+filesystem_command_max = 0x9F
+process_command_min = 0xA0
+process_command_max = 0xAF
 
 # RLE compression constants
 rle_escape_byte = 0xFF

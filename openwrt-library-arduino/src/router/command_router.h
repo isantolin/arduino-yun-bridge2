@@ -4,19 +4,20 @@
  * 
  * [SIL-2 COMPLIANCE - IEC 61508]
  * This module implements message-based command routing using ETL's
- * message_router framework. Commands are categorized by ID ranges and
+ * message_router framework. Commands are categorized by ID ranges
+ * (defined in rpc_protocol.h, auto-generated from spec.toml) and
  * dispatched to appropriate handlers with minimal stack depth.
  *
- * Command Categories (Message IDs):
- *   - MSG_STATUS (0): Status codes 0x30-0x3F
- *   - MSG_SYSTEM (1): System commands 0x40-0x4F
- *   - MSG_GPIO (2): GPIO commands 0x50-0x5F
- *   - MSG_CONSOLE (3): Console commands 0x60-0x6F
- *   - MSG_DATASTORE (4): DataStore responses 0x70-0x7F
- *   - MSG_MAILBOX (5): Mailbox responses 0x80-0x8F
- *   - MSG_FILESYSTEM (6): FileSystem responses 0x90-0x9F
- *   - MSG_PROCESS (7): Process responses 0xA0-0xAF
- *   - MSG_UNKNOWN (8): Unrecognized commands
+ * Command Categories (from rpc_protocol.h):
+ *   - MSG_STATUS: RPC_STATUS_CODE_MIN..MAX
+ *   - MSG_SYSTEM: RPC_SYSTEM_COMMAND_MIN..MAX
+ *   - MSG_GPIO: RPC_GPIO_COMMAND_MIN..MAX
+ *   - MSG_CONSOLE: RPC_CONSOLE_COMMAND_MIN..MAX
+ *   - MSG_DATASTORE: RPC_DATASTORE_COMMAND_MIN..MAX
+ *   - MSG_MAILBOX: RPC_MAILBOX_COMMAND_MIN..MAX
+ *   - MSG_FILESYSTEM: RPC_FILESYSTEM_COMMAND_MIN..MAX
+ *   - MSG_PROCESS: RPC_PROCESS_COMMAND_MIN..MAX
+ *   - MSG_UNKNOWN: Unrecognized commands
  */
 #ifndef COMMAND_ROUTER_H
 #define COMMAND_ROUTER_H
@@ -114,28 +115,22 @@ inline MessageId categorize_command(uint16_t raw_command) {
   if (raw_command >= rpc::RPC_SYSTEM_COMMAND_MIN && raw_command <= rpc::RPC_SYSTEM_COMMAND_MAX) {
     return MSG_SYSTEM;
   }
-  // GPIO: 0x50-0x5F (80-95)
-  if (raw_command >= 0x50 && raw_command <= 0x5F) {
+  if (raw_command >= rpc::RPC_GPIO_COMMAND_MIN && raw_command <= rpc::RPC_GPIO_COMMAND_MAX) {
     return MSG_GPIO;
   }
-  // Console: 0x60-0x6F (96-111)
-  if (raw_command >= 0x60 && raw_command <= 0x6F) {
+  if (raw_command >= rpc::RPC_CONSOLE_COMMAND_MIN && raw_command <= rpc::RPC_CONSOLE_COMMAND_MAX) {
     return MSG_CONSOLE;
   }
-  // DataStore: 0x70-0x7F (112-127)
-  if (raw_command >= 0x70 && raw_command <= 0x7F) {
+  if (raw_command >= rpc::RPC_DATASTORE_COMMAND_MIN && raw_command <= rpc::RPC_DATASTORE_COMMAND_MAX) {
     return MSG_DATASTORE;
   }
-  // Mailbox: 0x80-0x8F (128-143)
-  if (raw_command >= 0x80 && raw_command <= 0x8F) {
+  if (raw_command >= rpc::RPC_MAILBOX_COMMAND_MIN && raw_command <= rpc::RPC_MAILBOX_COMMAND_MAX) {
     return MSG_MAILBOX;
   }
-  // FileSystem: 0x90-0x9F (144-159)
-  if (raw_command >= 0x90 && raw_command <= 0x9F) {
+  if (raw_command >= rpc::RPC_FILESYSTEM_COMMAND_MIN && raw_command <= rpc::RPC_FILESYSTEM_COMMAND_MAX) {
     return MSG_FILESYSTEM;
   }
-  // Process: 0xA0-0xAF (160-175)
-  if (raw_command >= 0xA0 && raw_command <= 0xAF) {
+  if (raw_command >= rpc::RPC_PROCESS_COMMAND_MIN && raw_command <= rpc::RPC_PROCESS_COMMAND_MAX) {
     return MSG_PROCESS;
   }
   return MSG_UNKNOWN;

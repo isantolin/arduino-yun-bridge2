@@ -74,7 +74,7 @@ async def test_daemon_run_lifecycle():
     with (
         patch("mcubridge.daemon.create_runtime_state"),
         patch("mcubridge.daemon.BridgeService") as MockService,
-        patch("mcubridge.daemon.supervise_task", new_callable=AsyncMock) as mock_supervise,
+        patch.object(BridgeDaemon, "_supervise_task", new_callable=AsyncMock) as mock_supervise,
     ):
         # Hacer que supervise_task retorne inmediatamente para no bloquear
         mock_supervise.return_value = None

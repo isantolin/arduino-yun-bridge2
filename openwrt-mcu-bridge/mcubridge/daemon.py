@@ -29,7 +29,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import NoReturn
+
+import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 # This must fail immediately if python3-uvloop is not installed.
@@ -39,6 +44,9 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
+    SUPERVISOR_DEFAULT_MAX_BACKOFF,
+    SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
     SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
     SUPERVISOR_STATUS_MAX_BACKOFF,
     SUPERVISOR_STATUS_RESTART_INTERVAL,
@@ -50,8 +58,7 @@ from mcubridge.metrics import (
 )
 from mcubridge.security import verify_crypto_integrity
 from mcubridge.services.runtime import BridgeService, SerialHandshakeFatal
-from mcubridge.services.task_supervisor import SupervisedTaskSpec, supervise_task
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.status import cleanup_status_file, status_writer
 from mcubridge.transport import (
     SerialTransport,
@@ -61,6 +68,17 @@ from mcubridge.transport import (
 from mcubridge.watchdog import WatchdogKeepalive
 
 logger = logging.getLogger("mcubridge")
+
+
+@dataclass(slots=True)
+class SupervisedTaskSpec:
+    name: str
+    factory: Callable[[], Awaitable[None]]
+    fatal_exceptions: tuple[type[BaseException], ...] = ()
+    max_restarts: int | None = None
+    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
+    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
+    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
 
 
 class BridgeDaemon:
@@ -194,6 +212,109 @@ class BridgeDaemon:
 
         return specs
 
+    def _supervisor_before_sleep(self, retry_state: tenacity.RetryCallState) -> None:
+        """Callback before supervisor sleeps for retry."""
+        log = logging.getLogger("mcubridge.supervisor")
+        # Extract task name from the retry_state if possible, or context.
+        # Since tenacity doesn't pass user context easily, we might need a partial.
+        # But wait, we can't use nested functions or lambdas to bind 'name'.
+        # Solution: Use a bound method that doesn't need 'name' from closure,
+        # OR accept that we need to use 'functools.partial' which might be allowed.
+        # BUT 'functools.partial' creates a callable object.
+        
+        # Let's see. The 'log' object was local.
+        
+        # Alternative: We can define a helper class or just use 'partial'.
+        # The policy forbids "nested defs" and "lambdas". It likely allows partials.
+        pass
+
+    # WAIT. The simplest way is to define them as standalone private functions 
+    # that take 'name' and 'log' as arguments, and use 'functools.partial' in the method.
+    
+    # Let's try to stick to the class method approach if possible.
+    # But tenacity callbacks only take 'retry_state'.
+    
+    # I will use a small helper class 'SupervisorCallbacks' to hold context.
+    # This avoids nested functions and keeps it clean.
+
+    async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
+        """Run *coro_factory* restarting it on failures using tenacity."""
+        log = logging.getLogger("mcubridge.supervisor")
+        callbacks = _SupervisorCallbacks(spec.name, log, self.state)
+
+        retryer = tenacity.AsyncRetrying(
+            wait=tenacity.wait_exponential(multiplier=spec.min_backoff, max=spec.max_backoff),
+            retry=tenacity.retry_if_not_exception_type(
+                (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit) + spec.fatal_exceptions
+            ),
+            stop=tenacity.stop_after_attempt(spec.max_restarts + 1) if spec.max_restarts is not None else tenacity.stop_never,
+            before_sleep=callbacks.before_sleep,
+            after=callbacks.after_retry,
+            reraise=True,
+        )
+
+        last_start_time = 0.0
+
+        try:
+            while True:
+                try:
+                    async for attempt in retryer:
+                        with attempt:
+                            last_start_time = time.monotonic()
+                            await spec.factory()
+
+                            # If we get here, the task exited cleanly.
+                            log.warning("%s task exited cleanly; supervisor exiting", spec.name)
+                            if self.state is not None:
+                                self.state.mark_supervisor_healthy(spec.name)
+                            return
+                except tenacity.RetryError:
+                    log.error("%s exceeded max restarts (%s); giving up", spec.name, spec.max_restarts)
+                    raise
+                except spec.fatal_exceptions as exc:
+                    log.critical("%s failed with fatal exception: %s", spec.name, exc)
+                    if self.state is not None:
+                        self.state.record_supervisor_failure(spec.name, backoff=0.0, exc=exc, fatal=True)
+                    raise
+                except BaseException:
+                    # Check for healthy runtime to reset backoff
+                    if last_start_time > 0 and (time.monotonic() - last_start_time) > max(10.0, spec.restart_interval):
+                         log.info("%s was healthy long enough; resetting backoff", spec.name)
+                         if self.state is not None:
+                             self.state.mark_supervisor_healthy(spec.name)
+                         continue
+                    
+                    # Reraise to let tenacity handle retry or stop
+                    raise
+
+        except asyncio.CancelledError:
+            log.debug("%s supervisor cancelled", spec.name)
+            raise
+
+
+class _SupervisorCallbacks:
+    """Helper to avoid nested functions in supervisor."""
+    
+    __slots__ = ("name", "log", "state")
+
+    def __init__(self, name: str, log: logging.Logger, state: RuntimeState | None):
+        self.name = name
+        self.log = log
+        self.state = state
+
+    def before_sleep(self, retry_state: tenacity.RetryCallState) -> None:
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
+        self.log.error("%s failed (%s); restarting in %.1fs", self.name, exc, delay)
+
+    def after_retry(self, retry_state: tenacity.RetryCallState) -> None:
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        if self.state is not None and exc:
+            is_last = retry_state.next_action is None
+            delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
+            self.state.record_supervisor_failure(self.name, backoff=delay, exc=exc, fatal=is_last)
+
+
     async def run(self) -> None:
         """Main async entry point."""
         supervised_tasks = self._setup_supervision()
@@ -202,18 +323,7 @@ class BridgeDaemon:
             async with self.service:
                 async with asyncio.TaskGroup() as task_group:
                     for spec in supervised_tasks:
-                        task_group.create_task(
-                            supervise_task(
-                                spec.name,
-                                spec.factory,
-                                fatal_exceptions=spec.fatal_exceptions,
-                                min_backoff=spec.min_backoff,
-                                max_backoff=spec.max_backoff,
-                                state=self.state,
-                                max_restarts=spec.max_restarts,
-                                restart_interval=spec.restart_interval,
-                            )
-                        )
+                        task_group.create_task(self._supervise_task(spec))
         except* asyncio.CancelledError:
             logger.info("Main task cancelled; shutting down.")
         except* Exception as exc_group:

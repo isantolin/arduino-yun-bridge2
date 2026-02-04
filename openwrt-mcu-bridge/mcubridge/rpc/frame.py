@@ -26,8 +26,9 @@ Example:
     >>> encoded = cobs.encode(frame) + bytes([0])
 """
 
+import msgspec
 from binascii import crc32
-from typing import Any, Self, cast
+from typing import Any, cast
 
 from construct import Bytes, Int8ub, Int16ub, Struct, Terminated, this  # type: ignore
 
@@ -45,7 +46,7 @@ HeaderPayloadStruct: Any = Struct(
 )
 
 
-class Frame:
+class Frame(msgspec.Struct):
     """Represents an RPC frame for MCU-Linux communication.
 
     This class provides both object-oriented and static methods for
@@ -56,20 +57,13 @@ class Frame:
         payload: The frame payload (0 to MAX_PAYLOAD_SIZE bytes).
 
     Example:
-        >>> frame = Frame(Command.CMD_CONSOLE_WRITE, b"Hello")
+        >>> frame = Frame(command_id=Command.CMD_CONSOLE_WRITE, payload=b"Hello")
         >>> raw = frame.to_bytes()  # Build raw frame
         >>> parsed = Frame.from_bytes(raw)  # Parse back
     """
 
-    def __init__(self, command_id: int, payload: bytes = b"") -> None:
-        """Initialize a Frame instance.
-
-        Args:
-            command_id: RPC command or status code (0-65535).
-            payload: Frame payload bytes (default empty).
-        """
-        self.command_id = command_id
-        self.payload = payload
+    command_id: int
+    payload: bytes = b""
 
     @staticmethod
     def build(command_id: int, payload: bytes = b"") -> bytes:
@@ -165,8 +159,8 @@ class Frame:
         return self.build(self.command_id, self.payload)
 
     @classmethod
-    def from_bytes(cls, raw_frame_buffer: bytes) -> Self:
+    def from_bytes(cls, raw_frame_buffer: bytes) -> "Frame":
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
 
         command_id, payload = cls.parse(raw_frame_buffer)
-        return cls(command_id, payload)
+        return cls(command_id=command_id, payload=payload)

@@ -212,42 +212,19 @@ class BridgeDaemon:
 
         return specs
 
-    def _supervisor_before_sleep(self, retry_state: tenacity.RetryCallState) -> None:
-        """Callback before supervisor sleeps for retry."""
-        log = logging.getLogger("mcubridge.supervisor")
-        # Extract task name from the retry_state if possible, or context.
-        # Since tenacity doesn't pass user context easily, we might need a partial.
-        # But wait, we can't use nested functions or lambdas to bind 'name'.
-        # Solution: Use a bound method that doesn't need 'name' from closure,
-        # OR accept that we need to use 'functools.partial' which might be allowed.
-        # BUT 'functools.partial' creates a callable object.
-        
-        # Let's see. The 'log' object was local.
-        
-        # Alternative: We can define a helper class or just use 'partial'.
-        # The policy forbids "nested defs" and "lambdas". It likely allows partials.
-        pass
-
-    # WAIT. The simplest way is to define them as standalone private functions 
-    # that take 'name' and 'log' as arguments, and use 'functools.partial' in the method.
-    
-    # Let's try to stick to the class method approach if possible.
-    # But tenacity callbacks only take 'retry_state'.
-    
-    # I will use a small helper class 'SupervisorCallbacks' to hold context.
-    # This avoids nested functions and keeps it clean.
-
     async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
         """Run *coro_factory* restarting it on failures using tenacity."""
         log = logging.getLogger("mcubridge.supervisor")
-        callbacks = _SupervisorCallbacks(spec.name, log, self.state)
+        callbacks = self._SupervisorCallbacks(spec.name, log, self.state)
 
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=spec.min_backoff, max=spec.max_backoff),
             retry=tenacity.retry_if_not_exception_type(
                 (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit) + spec.fatal_exceptions
             ),
-            stop=tenacity.stop_after_attempt(spec.max_restarts + 1) if spec.max_restarts is not None else tenacity.stop_never,
+            stop=tenacity.stop_after_attempt(
+                spec.max_restarts + 1
+            ) if spec.max_restarts is not None else tenacity.stop_never,
             before_sleep=callbacks.before_sleep,
             after=callbacks.after_retry,
             reraise=True,
@@ -265,25 +242,22 @@ class BridgeDaemon:
 
                             # If we get here, the task exited cleanly.
                             log.warning("%s task exited cleanly; supervisor exiting", spec.name)
-                            if self.state is not None:
-                                self.state.mark_supervisor_healthy(spec.name)
+                            self.state.mark_supervisor_healthy(spec.name)
                             return
                 except tenacity.RetryError:
                     log.error("%s exceeded max restarts (%s); giving up", spec.name, spec.max_restarts)
                     raise
                 except spec.fatal_exceptions as exc:
                     log.critical("%s failed with fatal exception: %s", spec.name, exc)
-                    if self.state is not None:
-                        self.state.record_supervisor_failure(spec.name, backoff=0.0, exc=exc, fatal=True)
+                    self.state.record_supervisor_failure(spec.name, backoff=0.0, exc=exc, fatal=True)
                     raise
                 except BaseException:
                     # Check for healthy runtime to reset backoff
                     if last_start_time > 0 and (time.monotonic() - last_start_time) > max(10.0, spec.restart_interval):
-                         log.info("%s was healthy long enough; resetting backoff", spec.name)
-                         if self.state is not None:
-                             self.state.mark_supervisor_healthy(spec.name)
-                         continue
-                    
+                        log.info("%s was healthy long enough; resetting backoff", spec.name)
+                        self.state.mark_supervisor_healthy(spec.name)
+                        continue
+
                     # Reraise to let tenacity handle retry or stop
                     raise
 
@@ -291,29 +265,27 @@ class BridgeDaemon:
             log.debug("%s supervisor cancelled", spec.name)
             raise
 
+    class _SupervisorCallbacks:
+        """Helper to avoid nested functions in supervisor."""
 
-class _SupervisorCallbacks:
-    """Helper to avoid nested functions in supervisor."""
-    
-    __slots__ = ("name", "log", "state")
+        __slots__ = ("name", "log", "state")
 
-    def __init__(self, name: str, log: logging.Logger, state: RuntimeState | None):
-        self.name = name
-        self.log = log
-        self.state = state
+        def __init__(self, name: str, log: logging.Logger, state: RuntimeState | None):
+            self.name = name
+            self.log = log
+            self.state = state
 
-    def before_sleep(self, retry_state: tenacity.RetryCallState) -> None:
-        exc = retry_state.outcome.exception() if retry_state.outcome else None
-        delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
-        self.log.error("%s failed (%s); restarting in %.1fs", self.name, exc, delay)
-
-    def after_retry(self, retry_state: tenacity.RetryCallState) -> None:
-        exc = retry_state.outcome.exception() if retry_state.outcome else None
-        if self.state is not None and exc:
-            is_last = retry_state.next_action is None
+        def before_sleep(self, retry_state: tenacity.RetryCallState) -> None:
+            exc = retry_state.outcome.exception() if retry_state.outcome else None
             delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
-            self.state.record_supervisor_failure(self.name, backoff=delay, exc=exc, fatal=is_last)
+            self.log.error("%s failed (%s); restarting in %.1fs", self.name, exc, delay)
 
+        def after_retry(self, retry_state: tenacity.RetryCallState) -> None:
+            exc = retry_state.outcome.exception() if retry_state.outcome else None
+            if self.state is not None and exc:
+                is_last = retry_state.next_action is None
+                delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
+                self.state.record_supervisor_failure(self.name, backoff=delay, exc=exc, fatal=is_last)
 
     async def run(self) -> None:
         """Main async entry point."""

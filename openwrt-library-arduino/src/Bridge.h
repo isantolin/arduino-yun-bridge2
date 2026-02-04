@@ -334,8 +334,6 @@ class ConsoleClass : public Stream {
  public:
   ConsoleClass();
   void begin();
-  void end() {}
-  bool connected() { return true; }
   
   size_t write(uint8_t c) override;
   size_t write(const uint8_t *buffer, size_t size) override;
@@ -346,8 +344,6 @@ class ConsoleClass : public Stream {
   int read() override;
   int peek() override;
   void flush() override;
-  
-  operator bool() { return connected(); }
 
  private:
   bool _begun;

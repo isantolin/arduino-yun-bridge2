@@ -30,7 +30,7 @@ from binascii import crc32
 from dataclasses import dataclass
 from typing import Any, cast
 
-from construct import Bytes, Checksum, ChecksumError, Int8ub, Int16ub, Int32ub, RawCopy, Struct, this  # type: ignore
+from construct import Bytes, Checksum, ChecksumError, Int8ub, Int16ub, Int32ub, RawCopy, Struct, this
 
 from . import protocol
 
@@ -116,8 +116,7 @@ class Frame:
         try:
             container = FrameStruct.parse(raw_frame_buffer)
         except ChecksumError as exc:
-            safe_exc = cast(Exception, exc)  # type: ignore
-            raise ValueError(f"CRC mismatch: {safe_exc}") from safe_exc
+            raise ValueError(f"CRC mismatch: {exc}") from exc
         except Exception as exc:
             raise ValueError(f"Frame structure error: {exc}") from exc
 

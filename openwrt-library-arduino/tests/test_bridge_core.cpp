@@ -337,7 +337,9 @@ static bool parse_first_frame(const ByteBuffer<8192>& buffer, rpc::Frame& out_fr
             if (packet_idx > 0) {
                 size_t decoded_len = TestCOBS::decode(packet_buf, packet_idx, decoded_buf);
                 if (decoded_len > 0) {
-                    if (parser.parse(decoded_buf, decoded_len, out_frame)) {
+                    auto result = parser.parse(decoded_buf, decoded_len);
+                    if (result) {
+                        out_frame = result.value();
                         return true;
                     }
                 }
@@ -1137,8 +1139,9 @@ void test_bridge_chunking() {
     TEST_ASSERT(end1 < stream.tx_buffer.len); // Must find delimiter
     
     size_t len1 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end1 - cursor, decoded);
-    rpc::Frame f1;
-    TEST_ASSERT(parser.parse(decoded, len1, f1));
+    auto result1 = parser.parse(decoded, len1);
+    TEST_ASSERT(result1.has_value());
+    rpc::Frame f1 = result1.value();
     TEST_ASSERT_EQ_UINT(f1.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PROCESSED));
     TEST_ASSERT_EQ_UINT(f1.header.payload_length, 64);
     // Check Header
@@ -1154,8 +1157,9 @@ void test_bridge_chunking() {
     TEST_ASSERT(end2 < stream.tx_buffer.len);
     
     size_t len2 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end2 - cursor, decoded);
-    rpc::Frame f2;
-    TEST_ASSERT(parser.parse(decoded, len2, f2));
+    auto result2 = parser.parse(decoded, len2);
+    TEST_ASSERT(result2.has_value());
+    rpc::Frame f2 = result2.value();
     TEST_ASSERT_EQ_UINT(f2.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PROCESSED));
     TEST_ASSERT_EQ_UINT(f2.header.payload_length, 46); // 5 + 41
     TEST_ASSERT(memcmp(f2.payload.data(), header, 5) == 0);

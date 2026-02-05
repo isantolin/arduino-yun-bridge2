@@ -124,6 +124,7 @@ class BridgeService:
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
+            record_unknown_command=state.record_unknown_command_id,
         )
         self._dispatcher.register_components(
             console=self._console,

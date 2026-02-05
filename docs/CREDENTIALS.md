@@ -2,6 +2,31 @@
 
 Secure deployments require the MCU, the Linux daemon, and the MQTT broker to agree on the same shared materials. This guide explains how to regenerate those secrets with the provided tooling and how to keep the Arduino firmware synchronized without leaking credentials into version control.
 
+## Rotation Flow Overview
+
+```mermaid
+flowchart TD
+    subgraph Workstation
+        A[rotate_credentials.sh] -->|SSH| B
+    end
+
+    subgraph MCU Device
+        B[mcubridge-rotate-credentials] --> C[Generate 32-byte secret]
+        C --> D[Write to UCI config]
+        D --> E[Restart daemon]
+        E --> F[Return SERIAL_SECRET=...]
+    end
+
+    subgraph Arduino IDE
+        F -->|Copy snippet| G[#define BRIDGE_SERIAL_SHARED_SECRET]
+        G --> H[Compile & Upload sketch]
+    end
+
+    H --> I{Handshake OK?}
+    I -->|Yes| J[✓ Link synchronized]
+    I -->|No| K[Check troubleshooting]
+```
+
 ## When to rotate
 
 - **Before shipping a device**: The repository ships with placeholder secrets so the bridge works immediately after flashing. Rotate them before exposing the hardware outside of a lab network.
@@ -57,3 +82,54 @@ The **Services → McuBridge → Credentials & TLS** page now shows an "Arduino 
 - Store TLS assets separately from the credential file. If you use mutual TLS (mTLS), manage client certificates explicitly and keep them out of version control.
 
 Following this workflow keeps the MCU and daemon secrets aligned and makes rotations a repeatable, scriptable process that you can embed in CI, provisioning scripts, or LuCI itself.
+
+## Troubleshooting
+
+### Common HMAC / Handshake Errors
+
+| Symptom | Likely Cause | Resolution |
+|---------|--------------|------------|
+| `serial handshake rejected` | MCU secret differs from daemon | Re-upload sketch with correct `BRIDGE_SERIAL_SHARED_SECRET` |
+| `HMAC verification failed` | Secret mismatch or corrupted frame | Verify hex string has no typos; check serial baud rate (115200) |
+| `Handshake timeout` | MCU not responding | Confirm MCU is powered and serial link connected |
+| `Anti-replay: nonce reused` | MCU reset without daemon restart | Restart daemon: `service mcubridge restart` |
+| `Key derivation error` | Invalid secret length | Ensure secret is exactly 64 hex chars (32 bytes) |
+
+### Manual Verification with MQTT
+
+After rotation, verify end-to-end connectivity using `mosquitto_pub` and `mosquitto_sub`:
+
+```sh
+# Terminal 1: Subscribe to status topic
+mosquitto_sub -h 127.0.0.1 -p 8883 \
+  --cafile /etc/mcubridge/ca.crt \
+  -t 'br/system/status' -v
+
+# Terminal 2: Request system info (triggers MCU response)
+mosquitto_pub -h 127.0.0.1 -p 8883 \
+  --cafile /etc/mcubridge/ca.crt \
+  -t 'br/system/info' -m ''
+```
+
+Expected output on Terminal 1:
+```json
+br/system/status {"synchronised":true,"mcu_version":{"major":1,"minor":0},...}
+```
+
+If `synchronised` is `false`, the handshake failed—check the errors above.
+
+### Log Analysis
+
+```sh
+# Real-time daemon logs (filter handshake events)
+logread -f | grep -E 'mcubridge.*(handshake|HMAC|nonce)'
+
+# Last 50 handshake-related entries
+logread | grep mcubridge | grep -i handshake | tail -50
+```
+
+Key log fields to inspect:
+- `handshake_state`: Should progress `IDLE → CHALLENGE_SENT → SYNCHRONIZED`
+- `hmac_valid`: Must be `true` for successful authentication
+- `nonce_counter`: Should increment monotonically (anti-replay protection)
+

@@ -61,6 +61,7 @@ class BridgeDispatcher:
         is_topic_action_allowed: Callable[[Topic | str, str], bool],
         reject_topic_action: Callable[[Message, Topic | str, str], Awaitable[None]],
         publish_bridge_snapshot: Callable[[str, Message | None], Awaitable[None]],
+        record_unknown_command: Callable[[int], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry
         self.mqtt_router = mqtt_router
@@ -70,6 +71,7 @@ class BridgeDispatcher:
         self.is_topic_action_allowed = is_topic_action_allowed
         self.reject_topic_action = reject_topic_action
         self.publish_bridge_snapshot = publish_bridge_snapshot
+        self.record_unknown_command = record_unknown_command
 
         # Components (populated via register_components)
         self.console: ConsoleComponent | None = None
@@ -251,6 +253,8 @@ class BridgeDispatcher:
 
         elif response_to_request(command_id) is None:
             logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)
+            if self.record_unknown_command is not None:
+                self.record_unknown_command(command_id)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:
             # It's a response ID but no one was waiting for it (or it arrived late)

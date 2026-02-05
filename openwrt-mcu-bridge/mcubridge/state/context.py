@@ -616,6 +616,8 @@ class RuntimeState:
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     serial_decode_errors: int = 0
     serial_crc_errors: int = 0
+    unknown_command_ids: int = 0
+    config_source: str = "uci"
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
@@ -958,6 +960,18 @@ class RuntimeState:
     def record_serial_crc_error(self) -> None:
         self.serial_crc_errors += 1
 
+    def record_unknown_command_id(self, command_id: int) -> None:
+        """Record receipt of an unrecognized command/status ID.
+        
+        This metric helps detect protocol version drift between MCU and daemon.
+        """
+        self.unknown_command_ids += 1
+        logger.warning(
+            "Unknown command/status ID received: 0x%02X (total: %d)",
+            command_id,
+            self.unknown_command_ids,
+        )
+
     def record_serial_tx(self, nbytes: int) -> None:
         """Record bytes transmitted on serial link for throughput metrics."""
         self.serial_throughput_stats.record_tx(nbytes)
@@ -1245,6 +1259,8 @@ class RuntimeState:
             "link_synchronised": self.link_is_synchronized,
             "serial_decode_errors": self.serial_decode_errors,
             "serial_crc_errors": self.serial_crc_errors,
+            "unknown_command_ids": self.unknown_command_ids,
+            "config_source": self.config_source,
             "mcu_status": dict(self.mcu_status_counters),
             "watchdog_enabled": self.watchdog_enabled,
             "watchdog_interval": self.watchdog_interval,

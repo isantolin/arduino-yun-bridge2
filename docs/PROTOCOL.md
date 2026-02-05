@@ -404,6 +404,61 @@ Notas:
   - Petición: `nonce: byte[16]`.
   - Respuesta (`0x45 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`.
 
+#### Handshake Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant D as Daemon (Linux)
+    participant M as MCU (Arduino)
+
+    Note over D,M: Phase 1: Challenge
+    D->>D: Generate nonce (16 bytes)
+    D->>D: derived_key = HKDF(secret, "serial-auth")
+    D->>D: expected_tag = HMAC-SHA256(derived_key, nonce)[:16]
+    D->>M: CMD_LINK_SYNC (0x44) [nonce]
+
+    Note over D,M: Phase 2: Response
+    M->>M: derived_key = HKDF(secret, "serial-auth")
+    M->>M: tag = HMAC-SHA256(derived_key, nonce)[:16]
+    M->>D: CMD_LINK_SYNC_RESP (0x45) [nonce || tag]
+
+    Note over D,M: Phase 3: Verification
+    D->>D: Verify tag == expected_tag
+    alt Tag Valid
+        D->>D: link_is_synchronized = true
+        D->>D: FSM → Idle state
+        Note over D,M: ✓ Handshake Complete
+    else Tag Invalid
+        D->>D: handshake_failure_streak++
+        D->>D: Exponential backoff
+        alt Streak > threshold
+            D->>D: SerialHandshakeFatal
+            Note over D,M: ✗ Fatal: Check secrets
+        else Retry
+            D->>M: CMD_LINK_SYNC (retry)
+        end
+    end
+```
+
+#### Handshake Frame Example (Hex Dump)
+
+```
+# CMD_LINK_SYNC request (Linux → MCU)
+# Header: version=0x02, payload_len=16, cmd_id=0x0044
+# Payload: 16-byte nonce
+# CRC32: IEEE 802.3
+
+Raw (before COBS):
+  02 00 10 00 44                  # Header (5 bytes)
+  A1 B2 C3 D4 E5 F6 07 18         # Nonce bytes 0-7
+  29 3A 4B 5C 6D 7E 8F 90         # Nonce bytes 8-15
+  XX XX XX XX                     # CRC32 (4 bytes)
+
+COBS-encoded (wire format):
+  03 02 00 10 00 44 09 A1 B2 C3 D4 E5 F6 07 18 ...
+  00                              # Frame delimiter
+```
+
 - **`0x46` CMD_LINK_RESET (Linux → MCU)**
   - Petición: opcionalmente `[ack_timeout: u16, retry_limit: u8, response_timeout: u32]`.
   - Respuesta (`0x47 CMD_LINK_RESET_RESP`): sin payload.
@@ -476,6 +531,36 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 - **`0x52` CMD_ANALOG_WRITE (Linux → MCU)**: `[pin: u8, value: u8]`.
 - **`0x53` CMD_DIGITAL_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x55 CMD_DIGITAL_READ_RESP`: `[value: u8]`.
 - **`0x54` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `[value: u16]`.
+
+#### GPIO Frame Examples (Hex Dump)
+
+```
+# CMD_DIGITAL_WRITE: Set pin 13 HIGH
+# Header: version=0x02, payload_len=2, cmd_id=0x0051
+# Payload: [pin=13, value=1]
+
+Raw (before COBS):
+  02 00 02 00 51                  # Header (5 bytes)
+  0D 01                           # pin=13, value=HIGH
+  B7 A3 2C 1F                     # CRC32 (example)
+
+# CMD_ANALOG_READ: Read analog pin A0
+# cmd_id=0x0054, payload=[pin=14]
+
+Raw:
+  02 00 01 00 54                  # Header
+  0E                              # pin=14 (A0)
+  XX XX XX XX                     # CRC32
+
+# CMD_ANALOG_READ_RESP: Value = 512 (0x0200)
+# cmd_id=0x0056, payload=[value_hi, value_lo]
+
+Raw:
+  02 00 02 00 56                  # Header
+  02 00                           # value=512 (Big Endian)
+  XX XX XX XX                     # CRC32
+```
+
 
 ### 5.3 Consola (0x60)
 
@@ -649,3 +734,129 @@ Además de los comandos anteriores, el daemon expone endpoints de lectura de est
 - `br/system/bridge/state/get` → publica `br/system/bridge/summary/value` (alias histórico).
 
 Estos topics forman parte del contrato operativo y deben estar definidos en `tools/protocol/spec.toml`.
+
+---
+
+## 8. Troubleshooting & Error Resolution
+
+### 8.1 Status Code Resolution Table
+
+| Status Code | Name | Typical Cause | Resolution |
+|-------------|------|---------------|------------|
+| `0x31` | `STATUS_ERROR` | Generic handler failure | Check daemon logs for specific error context |
+| `0x32` | `STATUS_CMD_UNKNOWN` | Unsupported command ID | Verify protocol version match (MCU vs daemon) |
+| `0x33` | `STATUS_MALFORMED` | Invalid payload structure | Check payload length and field encoding |
+| `0x34` | `STATUS_OVERFLOW` | Frame exceeds buffer limits | Reduce payload size (max 128 bytes) |
+| `0x35` | `STATUS_CRC_MISMATCH` | Corrupted frame | Check baud rate (115200), serial cable, noise |
+| `0x36` | `STATUS_TIMEOUT` | No response within deadline | Increase `response_timeout_ms`, check MCU load |
+| `0x37` | `STATUS_NOT_IMPLEMENTED` | Feature disabled on MCU | Enable feature via `BRIDGE_ENABLE_*` macros |
+
+### 8.2 Common Error Scenarios
+
+| Symptom | Log Pattern | Root Cause | Fix |
+|---------|-------------|------------|-----|
+| Repeated CRC errors | `serial_crc_errors` incrementing | Baud rate mismatch or electrical noise | Verify both sides at 115200; use shielded cable |
+| Handshake never completes | `handshake_failure_streak > 0` | Secret mismatch | Rotate credentials, recompile sketch |
+| Commands timeout | `STATUS_TIMEOUT` responses | MCU busy or queue full | Check `CMD_XOFF`/`CMD_XON` flow; reduce rate |
+| Frame parse errors | `COBS decode failed` | Kernel console noise on ttyATH0 | Apply `kernel.printk = 0 0 0 0` (see §Platform Notes) |
+| GPIO rejected | `STATUS_MALFORMED` on pin ops | Pin number exceeds `num_digital_pins` | Query `CMD_GET_CAPABILITIES` first |
+| File write rejected | `STATUS_ERROR` with quota message | Storage quota exceeded | Increase `file_storage_quota_bytes` or clean up |
+
+### 8.3 Debug Commands
+
+```sh
+# Real-time frame analysis (daemon debug mode)
+UCI_CONFIG_DIR=/etc/config mcubridge --debug-frames
+
+# Parse raw hex frame (offline tool)
+python3 tools/frame_debug.py 02001000044A1B2C3D4...
+
+# Monitor serial link health
+watch -n1 'cat /tmp/mcubridge_status.json | jq .serial_flow_stats'
+
+# Check handshake state
+mosquitto_sub -h 127.0.0.1 -p 8883 --cafile /etc/mcubridge/ca.crt \
+  -t 'br/system/bridge/handshake/value' -C 1 | jq .
+```
+
+---
+
+## 9. Fallback & Degradation Behavior
+
+El sistema implementa múltiples estrategias de fallback para mantener operación en condiciones adversas (Fail-Operational, SIL-2).
+
+### 9.1 Matriz de Fallbacks
+
+| Componente | Trigger | Fallback | Observable | Auto-Recovery |
+|------------|---------|----------|------------|---------------|
+| **MQTT Spool** | I/O error, ENOSPC, non-/tmp | Memory-only queue | `mqtt_spool_degraded=true` | ✅ Retry con backoff |
+| **UCI Config** | OSError, ValidationError | Defaults hardcoded | `config_source="defaults"` | ❌ Requiere reinicio |
+| **Serial Link** | Desconexión, timeout | Reconexión exponencial | `serial_link_connected` | ✅ Automático |
+| **Handshake** | Auth failure streak | Backoff exponencial | `handshake_failure_streak` | ✅ Con límite fatal |
+| **Command Resolution** | Unknown enum ID | Hex string `0xNN` | `unknown_command_ids` | N/A |
+| **MQTT Auth** | Sin credenciales | Conexión anónima | Warning en logs | N/A |
+
+### 9.2 Observabilidad de Fallbacks
+
+Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prometheus:
+
+```json
+{
+  "config_source": "uci",           // "uci" o "defaults"
+  "mqtt_spool_degraded": false,     // true si usando memoria
+  "mqtt_spool_failure_reason": null,// "disk_full", "io_error", etc.
+  "unknown_command_ids": 0,         // Contador de IDs no reconocidos
+  "serial_link_connected": true,
+  "handshake_failure_streak": 0
+}
+```
+
+### 9.3 Comportamiento en Modo Degradado
+
+#### MQTT Spool Degradado
+- **Causa**: Disco lleno, error de I/O, directorio fuera de `/tmp`
+- **Comportamiento**: Mensajes se almacenan en RAM
+- **Riesgo**: Pérdida de mensajes si el daemon reinicia antes de publicar
+- **Acción**: Monitorear `mqtt_spool_degraded` y liberar espacio en disco
+
+#### UCI Config Fallback
+- **Causa**: Archivo UCI corrupto, permisos incorrectos
+- **Comportamiento**: Usa valores defaults seguros
+- **Riesgo**: Configuración puede no coincidir con expectativas del operador
+- **Acción**: Verificar `config_source` en status; corregir `/etc/config/mcubridge`
+
+#### Unknown Command IDs
+- **Causa**: Drift de versión entre MCU y daemon
+- **Comportamiento**: Responde `STATUS_NOT_IMPLEMENTED`, incrementa contador
+- **Riesgo**: Funcionalidad degradada si muchos comandos no reconocidos
+- **Acción**: Verificar versiones de protocolo; regenerar bindings si es necesario
+
+### 9.4 Alertas Recomendadas
+
+```sh
+# Prometheus alert rules (ejemplo)
+- alert: McuBridgeSpoolDegraded
+  expr: mcubridge_mqtt_spool_degraded == 1
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "MQTT spool en modo memoria-only"
+
+- alert: McuBridgeConfigFallback
+  expr: mcubridge_config_source_info{source="defaults"} == 1
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "Daemon usando configuración por defecto"
+
+- alert: McuBridgeUnknownCommands
+  expr: rate(mcubridge_unknown_command_ids_total[5m]) > 0
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Comandos no reconocidos detectados (protocol drift)"
+```
+

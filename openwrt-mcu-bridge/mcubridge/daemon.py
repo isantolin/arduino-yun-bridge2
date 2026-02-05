@@ -41,7 +41,7 @@ import tenacity
 import uvloop
 
 from mcubridge.config.logging import configure_logging
-from mcubridge.config.settings import RuntimeConfig, load_runtime_config
+from mcubridge.config.settings import RuntimeConfig, load_runtime_config, get_config_source
 from mcubridge.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
@@ -104,6 +104,7 @@ class BridgeDaemon:
         """
         self.config = config
         self.state = create_runtime_state(config)
+        self.state.config_source = get_config_source()
         self.service = BridgeService(config, self.state)
         # Initialize dependencies
         self.service.register_serial_sender(serial_sender_not_ready)

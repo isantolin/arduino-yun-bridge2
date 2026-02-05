@@ -301,24 +301,39 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         return value
 
 
-def _load_raw_config() -> dict[str, Any]:
-    """Load configuration from UCI with robust error handling (SIL 2)."""
+def _load_raw_config() -> tuple[dict[str, Any], str]:
+    """Load configuration from UCI with robust error handling (SIL 2).
+    
+    Returns:
+        Tuple of (config_dict, source) where source is 'uci' or 'defaults'.
+    """
     try:
         uci_values = get_uci_config()
         if uci_values:
-            return uci_values
+            return uci_values, "uci"
     except (OSError, ValueError) as err:
         # [SIL-2] Catch specific errors to differentiate operational issues from bugs.
         # Fallback to defaults is acceptable here to ensure Fail-Operational behavior.
         logger.error("Failed to load UCI configuration (Operational Error): %s", err)
 
-    return get_default_config()
+    logger.warning("Using default configuration (UCI unavailable)")
+    return get_default_config(), "defaults"
+
+
+# Module-level variable to track config source for observability
+_config_source: str = "uci"
+
+
+def get_config_source() -> str:
+    """Return the source of the last loaded configuration ('uci' or 'defaults')."""
+    return _config_source
 
 
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults using msgspec for efficient validation."""
+    global _config_source
 
-    raw_config = _load_raw_config()
+    raw_config, _config_source = _load_raw_config()
 
     # Pre-process 'allowed_commands' since msgspec handles standard types
     if "allowed_commands" in raw_config:

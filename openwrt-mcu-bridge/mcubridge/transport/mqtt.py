@@ -156,6 +156,13 @@ async def mqtt_task(
             try:
                 connect_props = build_mqtt_connect_properties()
 
+                # [SIL-2] Warn if connecting without authentication
+                if not config.mqtt_user:
+                    logger.warning(
+                        "MQTT connecting without authentication (anonymous); "
+                        "consider setting mqtt_user/mqtt_pass for production"
+                    )
+
                 async with aiomqtt.Client(
                     hostname=config.mqtt_host,
                     port=config.mqtt_port,

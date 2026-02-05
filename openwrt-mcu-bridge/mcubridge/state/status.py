@@ -70,6 +70,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 "watchdog_last_beat": state.last_watchdog_beat,
                 "running_processes": list(state.running_processes.keys()),
                 "allowed_commands": list(state.allowed_commands),
+                "config_source": state.config_source,
                 "link_synchronised": state.link_is_synchronized,
                 "handshake_attempts": state.handshake_attempts,
                 "handshake_successes": state.handshake_successes,

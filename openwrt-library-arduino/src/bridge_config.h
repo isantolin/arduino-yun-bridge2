@@ -71,6 +71,22 @@
 #define BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS 5
 #endif
 
+// [SIL-2] RX Deduplication reset interval (ms)
+// After this period, the same CRC will be accepted again (retry recovery)
+#ifndef BRIDGE_RX_DEDUPE_INTERVAL_MS
+#define BRIDGE_RX_DEDUPE_INTERVAL_MS 1000
+#endif
+
+// [SIL-2] HMAC key derivation buffer sizes (SHA256 specific)
+// Buffer holds handshake_key (32 bytes) + digest (32 bytes)
+#ifndef BRIDGE_HKDF_KEY_LENGTH
+#define BRIDGE_HKDF_KEY_LENGTH 32
+#endif
+
+#ifndef BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE
+#define BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE 64
+#endif
+
 // [SIL-2] Serial Port Configuration
 // Force Bridge to use the USB CDC port (Serial) instead of Hardware UART (Serial1)
 // on compatible boards (Yun, Leonardo, etc.).

@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import msgspec
 from aiomqtt.message import Message
+from construct import ConstructError
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import (
     UINT8_MASK,
@@ -65,7 +66,7 @@ class MailboxComponent:
     async def handle_push(self, payload: bytes) -> bool:
         try:
             packet = MailboxPushPacket.parse(payload)
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning(
                 "Malformed MAILBOX_PUSH payload: %s",
                 payload.hex(),

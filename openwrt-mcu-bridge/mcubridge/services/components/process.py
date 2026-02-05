@@ -16,6 +16,7 @@ from typing import Any, cast
 import psutil
 
 from ...common import encode_status_reason
+from ...const import PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
 from ...protocol.topics import Topic, topic_path
 from ...mqtt.messages import QueuedPublish
 from ...state.context import ManagedProcess, RuntimeState
@@ -237,7 +238,7 @@ class ProcessComponent:
         try:
             await self._terminate_process_tree(proc)
             try:
-                async with asyncio.timeout(0.5):
+                async with asyncio.timeout(PROCESS_KILL_WAIT_TIMEOUT):
                     await proc.wait()
             except TimeoutError:
                 logger.warning(
@@ -355,7 +356,7 @@ class ProcessComponent:
         except TimeoutError:
             await self._terminate_process_tree(proc)
             try:
-                async with asyncio.timeout(1):
+                async with asyncio.timeout(PROCESS_SYNC_KILL_WAIT_TIMEOUT):
                     await proc.wait()
             except TimeoutError:
                 logger.warning(

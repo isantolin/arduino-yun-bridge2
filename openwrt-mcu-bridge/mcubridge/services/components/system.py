@@ -7,6 +7,7 @@ import logging
 from typing import Awaitable, Callable, Deque, cast
 
 from aiomqtt.message import Message
+from construct import ConstructError
 from mcubridge.rpc.protocol import Command, SystemAction
 from mcubridge.rpc.structures import FreeMemoryResponsePacket, VersionResponsePacket
 
@@ -85,7 +86,7 @@ class SystemComponent:
         try:
             packet = VersionResponsePacket.parse(payload)
             major, minor = packet.major, packet.minor
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
             return
 

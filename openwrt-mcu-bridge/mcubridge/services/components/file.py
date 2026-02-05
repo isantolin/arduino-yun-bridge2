@@ -10,6 +10,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from aiomqtt.message import Message
+from construct import ConstructError
 from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
@@ -60,7 +61,7 @@ class FileComponent:
     async def handle_write(self, payload: bytes) -> bool:
         try:
             packet = FileWritePacket.parse(payload)
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning(
                 "Invalid file write payload: parse failed, hex=%s",
                 payload.hex() if payload else "(empty)",
@@ -107,7 +108,7 @@ class FileComponent:
     async def handle_read(self, payload: bytes) -> None:
         try:
             packet = FileReadPacket.parse(payload)
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning(
                 "Invalid file read payload: parse failed, hex=%s",
                 payload.hex() if payload else "(empty)",
@@ -147,7 +148,7 @@ class FileComponent:
     async def handle_remove(self, payload: bytes) -> bool:
         try:
             packet = FileRemovePacket.parse(payload)
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning(
                 "Invalid file remove payload: parse failed, hex=%s",
                 payload.hex() if payload else "(empty)",

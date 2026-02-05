@@ -6,6 +6,7 @@ import logging
 from typing import Any, cast
 
 from aiomqtt.message import Message
+from construct import ConstructError
 from ...mqtt.messages import QueuedPublish
 from ...state.context import RuntimeState
 from ...config.settings import RuntimeConfig
@@ -39,7 +40,7 @@ class DatastoreComponent:
         """Process CMD_DATASTORE_PUT received from the MCU."""
         try:
             packet = DatastorePutPacket.parse(payload)
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning(
                 "Malformed DATASTORE_PUT payload: %s",
                 payload.hex(),
@@ -58,7 +59,7 @@ class DatastoreComponent:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
         try:
             packet = DatastoreGetPacket.parse(payload)
-        except Exception:
+        except (ConstructError, ValueError):
             logger.warning(
                 "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",

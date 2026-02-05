@@ -133,7 +133,7 @@ void BridgeClass::begin(
   _timer_service.register_timer(_cb_ack_timeout, _ack_timeout_ms, false);
 
   _cb_rx_dedupe = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_onRxDedupe>(*this);
-  _timer_service.register_timer(_cb_rx_dedupe, 1000, false);
+  _timer_service.register_timer(_cb_rx_dedupe, BRIDGE_RX_DEDUPE_INTERVAL_MS, false);
 
   _cb_baudrate_change = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_onBaudrateChange>(*this);
   _timer_service.register_timer(_cb_baudrate_change, BRIDGE_BAUDRATE_SETTLE_MS, false);
@@ -241,14 +241,14 @@ void BridgeClass::process() {
   }
 
   if (frame_received) {
-    _consecutive_crc_errors = 0;
+    BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors = 0; }
     dispatch(_rx_frame);
   } else {
     // [SIL-2] Type-safe error handling with etl::expected
     if (_last_parse_error.has_value()) {
       rpc::FrameError error = _last_parse_error.value();
       if (error == rpc::FrameError::CRC_MISMATCH) {
-        _consecutive_crc_errors++;
+        BRIDGE_ATOMIC_BLOCK { _consecutive_crc_errors++; }
         if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
           // [SIL-2] Force Hardware Reset after persistent corruption
           #if defined(ARDUINO_ARCH_AVR)
@@ -970,7 +970,10 @@ void BridgeClass::_onAckTimeout() {
 }
 
 void BridgeClass::_onRxDedupe() {
-  // Placeholder
+  // [SIL-2] Reset RX deduplication state to allow accepting retried frames.
+  // This timer fires periodically to prevent stale CRC from blocking legitimate retries.
+  _last_rx_crc = 0;
+  _last_rx_crc_millis = 0;
 }
 
 void BridgeClass::_onBaudrateChange() {
@@ -1066,24 +1069,24 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
   }
 
   // [MIL-SPEC] Use HKDF derived key for handshake authentication.
-  // [RAM OPT] Allocate scratch buffer on stack (32 bytes key + 32 bytes digest)
-  uint8_t key_and_digest[64];
-  uint8_t* handshake_key = key_and_digest;       // 32 bytes
-  uint8_t* digest = key_and_digest + 32;         // 32 bytes
+  // [RAM OPT] Allocate scratch buffer on stack (key + digest)
+  uint8_t key_and_digest[BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE];
+  uint8_t* handshake_key = key_and_digest;                        // BRIDGE_HKDF_KEY_LENGTH bytes
+  uint8_t* digest = key_and_digest + BRIDGE_HKDF_KEY_LENGTH;      // BRIDGE_HKDF_KEY_LENGTH bytes
 
   rpc::security::hkdf_sha256(
       _shared_secret.data(), _shared_secret.size(),
       rpc::RPC_HANDSHAKE_HKDF_SALT, rpc::RPC_HANDSHAKE_HKDF_SALT_LEN,
       rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN,
-      handshake_key, 32);
+      handshake_key, BRIDGE_HKDF_KEY_LENGTH);
 
   SHA256 sha256;
-  sha256.resetHMAC(handshake_key, 32);
+  sha256.resetHMAC(handshake_key, BRIDGE_HKDF_KEY_LENGTH);
   sha256.update(nonce, nonce_len);
-  sha256.finalizeHMAC(handshake_key, 32, digest, kSha256DigestSize);
+  sha256.finalizeHMAC(handshake_key, BRIDGE_HKDF_KEY_LENGTH, digest, kSha256DigestSize);
   etl::copy_n(digest, kHandshakeTagSize, out_tag);
   
-  rpc::security::secure_zero(handshake_key, 32);
+  rpc::security::secure_zero(handshake_key, BRIDGE_HKDF_KEY_LENGTH);
   rpc::security::secure_zero(digest, kSha256DigestSize);
 }
 

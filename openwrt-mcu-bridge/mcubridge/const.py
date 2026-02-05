@@ -96,6 +96,11 @@ SYSTEMD_PRIVATE_PREFIX: str = "systemd-private-"
 DEFAULT_PROCESS_TIMEOUT: int = 10
 DEFAULT_PROCESS_MAX_OUTPUT_BYTES: int = 65536
 DEFAULT_PROCESS_MAX_CONCURRENT: int = 4
+# [SIL-2] Process kill timeouts (seconds)
+# Timeout to wait for process termination after SIGKILL
+PROCESS_KILL_WAIT_TIMEOUT: float = 0.5
+# Timeout to wait for sync process termination after kill
+PROCESS_SYNC_KILL_WAIT_TIMEOUT: float = 1.0
 DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES: int = 16384
 DEFAULT_MAILBOX_QUEUE_LIMIT: int = 64
 DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT: int = 65536

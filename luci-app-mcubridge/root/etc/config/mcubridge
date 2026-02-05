@@ -7,6 +7,8 @@ config general 'general'
     # [SERIAL] Velocidad estándar (Legacy Compatibility)
     option serial_port '/dev/ttyATH0'
     option serial_baud '115200'
+    # [SERIAL] Fallback baudrate for recovery mode
+    option serial_safe_baud '115200'
     
     # [SEGURIDAD] Secreto compartido (se genera automáticamente en primer boot)
 
@@ -27,3 +29,16 @@ config general 'general'
 
     # [TIMEOUTS]
     option process_timeout '15'
+    
+    # [PROCESS] Límites de procesos concurrentes
+    option process_max_concurrent '4'
+    option process_max_output_bytes '65536'
+
+    # [WATCHDOG] Configuración del hardware watchdog
+    option watchdog_enabled '0'
+    option watchdog_interval '10.0'
+
+    # [METRICS] Prometheus metrics exporter (disabled by default)
+    option metrics_enabled '0'
+    option metrics_host '127.0.0.1'
+    option metrics_port '9130'

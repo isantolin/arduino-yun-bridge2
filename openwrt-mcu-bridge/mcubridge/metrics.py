@@ -438,10 +438,10 @@ class PrometheusExporter:
             try:
                 writer.close()
                 await writer.wait_closed()
-            except (OSError, ValueError):
-                pass
             except (OSError, ValueError, RuntimeError):
-                logger.debug("Error closing metrics client", exc_info=True)
+                # [SIL-2] Connection close errors are non-fatal during cleanup.
+                # Log at debug level to avoid noise during normal shutdown.
+                logger.debug("Error closing metrics client connection", exc_info=True)
 
     async def _write_response(
         self,

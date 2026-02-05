@@ -12,7 +12,7 @@ from tools.protocol.generate import generate_python, generate_cpp  # noqa: E402
 def test_protocol_python_is_up_to_date():
     """Ensure generated Python protocol matches the spec."""
     spec_path = PROJECT_ROOT / "tools/protocol/spec.toml"
-    py_path = PROJECT_ROOT / "openwrt-mcu-bridge/mcubridge/rpc/protocol.py"
+    py_path = PROJECT_ROOT / "openwrt-mcu-bridge/mcubridge/protocol/protocol.py"
 
     with open(spec_path, "rb") as f:
         spec = tomllib.load(f)

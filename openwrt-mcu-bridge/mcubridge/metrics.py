@@ -21,7 +21,6 @@ from prometheus_client import CollectorRegistry, generate_latest, CONTENT_TYPE_L
 from prometheus_client.registry import Collector
 from prometheus_client.core import (
     GaugeMetricFamily,
-    HistogramMetricFamily,
     InfoMetricFamily,
 )
 
@@ -35,11 +34,6 @@ _INFO_DOC = "McuBridge informational metric"
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
-
-
-def _bucket_sort_key(item: tuple[float, int]) -> float:
-    """Sort key for histogram buckets by upper bound."""
-    return item[0]
 
 
 def _build_metrics_message(
@@ -290,12 +284,11 @@ class _RuntimeStateCollector(Collector):
         # [SIL-2] Hard dependency: prometheus_client must be present.
         snapshot = self._state.build_metrics_snapshot()
 
-        # [EXTENDED METRICS] Emit latency histogram if present
-        latency_data = snapshot.get("serial_latency")
-        if isinstance(latency_data, dict):
-            latency_dict: dict[str, Any] = cast(dict[str, Any], latency_data)
-            if latency_dict.get("count", 0) > 0:
-                yield from self._emit_latency_histogram(latency_dict, HistogramMetricFamily)
+        # [EXTENDED METRICS] Native prometheus Summary handles latency
+        # The SerialLatencyStats.initialize_prometheus() registers the Summary
+        # with our registry, so it's automatically exported.
+        # We skip manual histogram emission here as Summary provides better
+        # percentile accuracy (p50, p90, p99) without bucket configuration.
 
         info_values: list[tuple[str, str]] = []
         for metric_type, name, value in self._flatten(
@@ -323,53 +316,6 @@ class _RuntimeStateCollector(Collector):
                     {"value": value},
                 )
             yield info_metric
-
-    def _emit_latency_histogram(
-        self,
-        latency_data: dict[str, Any],
-        metric_family_cls: type,
-    ) -> Iterator[Any]:
-        """Emit Prometheus histogram for RPC latency."""
-        buckets_raw = latency_data.get("buckets", {})
-        if not isinstance(buckets_raw, dict):
-            return
-
-        buckets_dict: dict[str, Any] = cast(dict[str, Any], buckets_raw)
-
-        # Build bucket list: [(upper_bound, cumulative_count), ...]
-        bucket_list: list[tuple[float, int]] = []
-        for raw_key, raw_count in buckets_dict.items():
-            key = str(raw_key)
-            if key.startswith("le_") and key.endswith("ms"):
-                try:
-                    bound_ms = float(key[3:-2])  # Extract number from "le_Xms"
-                    bound_s = bound_ms / 1000.0  # Convert to seconds
-                    count_val = int(raw_count) if isinstance(raw_count, (int, float)) else 0
-                    bucket_list.append((bound_s, count_val))
-                except (ValueError, TypeError):
-                    continue
-
-        bucket_list.sort(key=_bucket_sort_key)
-
-        if not bucket_list:
-            return
-
-        total_count = latency_data.get("count", 0)
-        total_sum = latency_data.get("sum_ms", 0.0) / 1000.0  # Convert to seconds
-
-        # Add +Inf bucket
-        bucket_list.append((float("inf"), int(total_count)))
-
-        histogram = metric_family_cls(
-            "mcubridge_serial_rpc_latency_seconds",
-            "RPC command round-trip latency histogram",
-        )
-        histogram.add_metric(
-            [],
-            buckets=bucket_list,
-            sum_value=total_sum,
-        )
-        yield histogram
 
     def _flatten(
         self,
@@ -407,6 +353,8 @@ class PrometheusExporter:
         self._registry = CollectorRegistry()
         self._collector = _RuntimeStateCollector(state)
         self._registry.register(self._collector)
+        # [OPTIMIZATION] Initialize native prometheus Summary for percentiles
+        state.serial_latency_stats.initialize_prometheus(self._registry)
 
     @property
     def port(self) -> int:

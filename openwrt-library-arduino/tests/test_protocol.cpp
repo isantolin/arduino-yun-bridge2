@@ -41,7 +41,6 @@ static void test_crc_helpers() {
 static void test_builder_roundtrip() {
   FrameBuilder builder;
   FrameParser parser;
-  Frame frame{};
 
   const uint16_t command_id = TEST_CMD_ID;
   const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, TEST_BYTE_01, rpc::RPC_UINT8_MASK, TEST_BYTE_02, rpc::RPC_FRAME_DELIMITER};
@@ -55,9 +54,11 @@ static void test_builder_roundtrip() {
   uint32_t crc = read_u32_be(raw + raw_len - CRC_TRAILER_SIZE);
   TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
-  bool parsed = parser.parse(raw, raw_len, frame);
+  // [SIL-2] New etl::expected API
+  auto result = parser.parse(raw, raw_len);
   
-  TEST_ASSERT(parsed);
+  TEST_ASSERT(result.has_value());
+  Frame frame = result.value();
   TEST_ASSERT(frame.header.version == PROTOCOL_VERSION);
   TEST_ASSERT(frame.header.command_id == command_id);
   TEST_ASSERT(frame.header.payload_length == sizeof(payload));
@@ -77,21 +78,22 @@ static void test_builder_payload_limit() {
 // 5. Paquetes Incompletos (Adaptado a API parse)
 static void test_parser_incomplete_packets() {
   FrameParser parser;
-  Frame frame{};
   
   uint8_t raw[10]; // Buffer dummy insuficiente para un frame real
   etl::fill_n(raw, sizeof(raw), uint8_t{0});
 
-  // FrameParser.parse debe retornar false si el tamaño es menor al mínimo (Header + CRC)
-  TEST_ASSERT(!parser.parse(raw, 4, frame)); // Menor que header
-  TEST_ASSERT(!parser.parse(raw, sizeof(FrameHeader), frame)); // Header sin CRC
+  // [SIL-2] etl::expected API - parse returns error for incomplete packets
+  auto result1 = parser.parse(raw, 4); // Menor que header
+  TEST_ASSERT(!result1.has_value());
+  
+  auto result2 = parser.parse(raw, sizeof(FrameHeader)); // Header sin CRC
+  TEST_ASSERT(!result2.has_value());
 }
 
 // 6. Fallo de CRC (Adaptado)
 static void test_parser_crc_failure() {
   FrameBuilder builder;
   FrameParser parser;
-  Frame frame{};
 
   const uint8_t payload[] = {TEST_BYTE_10, TEST_BYTE_20, TEST_BYTE_30};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
@@ -100,15 +102,16 @@ static void test_parser_crc_failure() {
 
   raw[sizeof(FrameHeader)] ^= rpc::RPC_UINT8_MASK;  // Corromper payload
 
-  TEST_ASSERT(!parser.parse(raw, raw_len, frame));
-  TEST_ASSERT(parser.getError() == FrameParser::Error::CRC_MISMATCH);
+  // [SIL-2] etl::expected API
+  auto result = parser.parse(raw, raw_len);
+  TEST_ASSERT(!result.has_value());
+  TEST_ASSERT(result.error() == FrameError::CRC_MISMATCH);
 }
 
 // 7. Validación de Header (Versión) (Adaptado)
 static void test_parser_header_validation() {
   FrameBuilder builder;
   FrameParser parser;
-  Frame frame{};
 
   const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
@@ -122,28 +125,29 @@ static void test_parser_header_validation() {
   uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
 
-  TEST_ASSERT(!parser.parse(raw, raw_len, frame));
-  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
+  // [SIL-2] etl::expected API
+  auto result = parser.parse(raw, raw_len);
+  TEST_ASSERT(!result.has_value());
+  TEST_ASSERT(result.error() == FrameError::MALFORMED);
 }
 
 // 8. Buffer Overflow Guard (Adaptado)
 static void test_parser_overflow_guard() {
   FrameParser parser;
-  Frame frame{};
 
   uint8_t huge_buffer[rpc::MAX_RAW_FRAME_SIZE + 50];
   etl::fill_n(huge_buffer, sizeof(huge_buffer), uint8_t{0});
 
-  // Intentar parsear un buffer que excede el máximo permitido por el protocolo
-  TEST_ASSERT(!parser.parse(huge_buffer, sizeof(huge_buffer), frame));
-  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
+  // [SIL-2] etl::expected API - Intentar parsear un buffer que excede el máximo
+  auto result = parser.parse(huge_buffer, sizeof(huge_buffer));
+  TEST_ASSERT(!result.has_value());
+  TEST_ASSERT(result.error() == FrameError::MALFORMED);
 }
 
 // 9. Lógica de Header inconsistente (Recuperado del original y adaptado)
 static void test_parser_header_logical_validation_mismatch() {
   FrameBuilder builder;
   FrameParser parser;
-  Frame frame{};
   
   uint8_t payload[] = {0x11, 0x22};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
@@ -157,9 +161,10 @@ static void test_parser_header_logical_validation_mismatch() {
   uint32_t new_crc = crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE);
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
   
-  // Debe fallar porque el header dice length=3 pero el buffer raw solo tiene espacio para 2
-  TEST_ASSERT(!parser.parse(raw, raw_len, frame));
-  TEST_ASSERT(parser.getError() == FrameParser::Error::MALFORMED);
+  // [SIL-2] etl::expected API - debe fallar porque header dice length=3 pero buffer tiene 2
+  auto result = parser.parse(raw, raw_len);
+  TEST_ASSERT(!result.has_value());
+  TEST_ASSERT(result.error() == FrameError::MALFORMED);
 }
 
 // 10. Buffer de Builder muy pequeño (Recuperado del original)

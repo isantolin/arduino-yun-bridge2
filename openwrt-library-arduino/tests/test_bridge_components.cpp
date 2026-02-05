@@ -251,14 +251,14 @@ class TestFrameBuilder {
 struct FrameList {
   rpc::Frame frames[16];
   size_t count;
-  rpc::FrameParser::Error last_error;
+  etl::optional<rpc::FrameError> last_error;  // [SIL-2] Optional error using etl::expected pattern
 };
 
 // Updated parse_frames to simulate PacketSerial's packet extraction + FrameParser
 static FrameList parse_frames(const uint8_t* bytes, size_t len) {
   FrameList out;
   out.count = 0;
-  out.last_error = rpc::FrameParser::Error::NONE;
+  out.last_error.reset();  // No error initially
 
   rpc::FrameParser parser;
   
@@ -274,16 +274,13 @@ static FrameList parse_frames(const uint8_t* bytes, size_t len) {
         // Decode COBS
         size_t decoded_len = TestCOBS::decode(packet_buf, packet_idx, decoded_buf);
         if (decoded_len > 0) {
-            // Parse Frame
+            // Parse Frame using etl::expected API
             if (out.count < (sizeof(out.frames) / sizeof(out.frames[0]))) {
-                rpc::Frame f;
-                if (parser.parse(decoded_buf, decoded_len, f)) {
-                    out.frames[out.count++] = f;
-                }
-                const rpc::FrameParser::Error err = parser.getError();
-                if (err != rpc::FrameParser::Error::NONE) {
-                    out.last_error = err;
-                    parser.clearError();
+                auto result = parser.parse(decoded_buf, decoded_len);
+                if (result.has_value()) {
+                    out.frames[out.count++] = result.value();
+                } else {
+                    out.last_error = result.error();
                 }
             }
         }

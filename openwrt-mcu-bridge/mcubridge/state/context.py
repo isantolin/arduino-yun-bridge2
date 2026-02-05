@@ -18,6 +18,7 @@ from typing import Any, Deque, Final
 from collections.abc import Mapping
 
 from aiomqtt.message import Message
+from prometheus_client import Summary, CollectorRegistry
 
 from ..mqtt.messages import QueuedPublish
 from ..mqtt.spool import MQTTPublishSpool, MQTTSpoolError
@@ -383,9 +384,12 @@ class SerialLatencyStats:
 
     [SIL-2] Fixed bucket boundaries, no dynamic allocation.
     Buckets represent cumulative counts (Prometheus histogram style).
+    
+    [OPTIMIZATION] Now also tracks prometheus Summary for native percentiles.
+    The Summary provides p50/p90/p99 without manual bucket management.
     """
 
-    # Histogram bucket counts (cumulative, le=bucket_ms)
+    # Histogram bucket counts (cumulative, le=bucket_ms) - kept for JSON snapshot compatibility
     bucket_counts: list[int] = field(default_factory=_latency_bucket_counts_factory)
     # Total observations above largest bucket
     overflow_count: int = 0
@@ -395,9 +399,26 @@ class SerialLatencyStats:
     # Min/max tracking
     min_latency_ms: float = float("inf")
     max_latency_ms: float = 0.0
+    # [NEW] Prometheus Summary for native percentiles
+    _summary: Summary | None = field(default=None, repr=False)
+    _registry: CollectorRegistry | None = field(default=None, repr=False)
+
+    def initialize_prometheus(self, registry: CollectorRegistry | None = None) -> None:
+        """Initialize prometheus Summary metrics.
+        
+        Args:
+            registry: Optional custom registry. If None, uses default.
+        """
+        self._registry = registry
+        # Summary provides p50 (0.5), p90 (0.9), p99 (0.99) quantiles automatically
+        self._summary = Summary(
+            "mcubridge_rpc_latency_seconds",
+            "RPC command round-trip latency",
+            registry=registry,
+        )
 
     def record(self, latency_ms: float) -> None:
-        """Record a latency observation into histogram buckets."""
+        """Record a latency observation into histogram buckets and Summary."""
         self.total_observations += 1
         self.total_latency_ms += latency_ms
         if latency_ms < self.min_latency_ms:
@@ -405,12 +426,16 @@ class SerialLatencyStats:
         if latency_ms > self.max_latency_ms:
             self.max_latency_ms = latency_ms
 
-        # Cumulative bucket counts (le style)
+        # Cumulative bucket counts (le style) for JSON compatibility
         for i, bucket in enumerate(LATENCY_BUCKETS_MS):
             if latency_ms <= bucket:
                 self.bucket_counts[i] += 1
         if latency_ms > LATENCY_BUCKETS_MS[-1]:
             self.overflow_count += 1
+        
+        # Record to prometheus Summary (in seconds)
+        if self._summary is not None:
+            self._summary.observe(latency_ms / 1000.0)
 
     def as_dict(self) -> dict[str, Any]:
         avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0

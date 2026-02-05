@@ -32,23 +32,17 @@ namespace rpc {
 
 // --- FrameParser ---
 
-FrameParser::FrameParser() : _last_error(Error::NONE) {
-}
-
-bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
-    _last_error = Error::NONE;
-
+etl::expected<Frame, FrameError> FrameParser::parse(const uint8_t* buffer, size_t size) {
+    // [SIL-2] Early validation with explicit error returns
     if (size == 0 || size > MAX_RAW_FRAME_SIZE) {
-        _last_error = Error::MALFORMED;
-        return false;
+        return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
 
-    // --- Validate CRC ---
     if (size < CRC_TRAILER_SIZE) {
-        _last_error = Error::MALFORMED;
-        return false;
+        return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
     
+    // --- Validate CRC ---
     const size_t crc_start = size - CRC_TRAILER_SIZE;
     const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
     
@@ -57,34 +51,32 @@ bool FrameParser::parse(const uint8_t* buffer, size_t size, Frame& out_frame) {
     const uint32_t calculated_crc = crc_calculator.value();
 
     if (received_crc != calculated_crc) {
-        _last_error = Error::CRC_MISMATCH;
-        return false;
+        return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
     }
 
     // --- Extract Header ---
     if (crc_start < sizeof(FrameHeader)) {
-        _last_error = Error::MALFORMED;
-        return false;
+        return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
 
-    // Read header fields using fixed offsets
-    out_frame.header.version = buffer[0];
-    out_frame.header.payload_length = read_u16_be(&buffer[1]);
-    out_frame.header.command_id = read_u16_be(&buffer[3]);
+    Frame result;
+    result.header.version = buffer[0];
+    result.header.payload_length = read_u16_be(&buffer[1]);
+    result.header.command_id = read_u16_be(&buffer[3]);
 
     // --- Validate Header ---
-    if (out_frame.header.version != PROTOCOL_VERSION ||
-        out_frame.header.payload_length > out_frame.payload.max_size() ||
-        (sizeof(FrameHeader) + out_frame.header.payload_length) != crc_start) {
-        _last_error = Error::MALFORMED;
-        return false;
+    if (result.header.version != PROTOCOL_VERSION ||
+        result.header.payload_length > result.payload.max_size() ||
+        (sizeof(FrameHeader) + result.header.payload_length) != crc_start) {
+        return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
 
     // --- Extract Payload ---
-    out_frame.payload.assign(&buffer[sizeof(FrameHeader)], &buffer[sizeof(FrameHeader) + out_frame.header.payload_length]);
-    out_frame.crc = calculated_crc;
+    result.payload.assign(&buffer[sizeof(FrameHeader)], 
+                          &buffer[sizeof(FrameHeader) + result.header.payload_length]);
+    result.crc = calculated_crc;
 
-    return true;
+    return result;
 }
 
 // --- FrameBuilder ---

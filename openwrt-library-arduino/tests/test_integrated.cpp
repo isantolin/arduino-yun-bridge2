@@ -117,11 +117,13 @@ void integrated_test_rle() {
 void integrated_test_protocol() {
     FrameBuilder b;
     FrameParser p;
-    Frame f;
     uint8_t raw[128];
     uint8_t pl[] = {0x01, 0x02, 0x03};
     size_t rl = b.build(raw, 128, 0x100, pl, 3);
-    TEST_ASSERT(p.parse(raw, rl, f));
+    // [SIL-2] etl::expected API
+    auto result = p.parse(raw, rl);
+    TEST_ASSERT(result.has_value());
+    Frame f = result.value();
     TEST_ASSERT(f.header.command_id == 0x100);
 }
 

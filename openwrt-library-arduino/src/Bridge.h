@@ -58,6 +58,7 @@
 #include "etl/circular_buffer.h"
 #include "etl/vector.h"
 #include "etl/delegate.h"
+#include "etl/optional.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
@@ -234,6 +235,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
   volatile bool _frame_received;
   rpc::FrameParser _parser;
   rpc::Frame _rx_frame;
+  etl::optional<rpc::FrameError> _last_parse_error;  // [SIL-2] Type-safe error tracking
   // State
   uint16_t _last_command_id;
   uint8_t _retry_count;

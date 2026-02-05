@@ -194,8 +194,13 @@ void BridgeClass::begin(
 
 void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
     if (g_bridge_instance && g_bridge_instance->_target_frame) {
-        if (g_bridge_instance->_parser.parse(buffer, size, *g_bridge_instance->_target_frame)) {
+        auto result = g_bridge_instance->_parser.parse(buffer, size);
+        if (result.has_value()) {
+            *g_bridge_instance->_target_frame = result.value();
             g_bridge_instance->_frame_received = true;
+            g_bridge_instance->_last_parse_error.reset();
+        } else {
+            g_bridge_instance->_last_parse_error = result.error();
         }
     }
 }
@@ -239,9 +244,10 @@ void BridgeClass::process() {
     _consecutive_crc_errors = 0;
     dispatch(_rx_frame);
   } else {
-    rpc::FrameParser::Error error = _parser.getError();
-    if (error != rpc::FrameParser::Error::NONE) {
-      if (error == rpc::FrameParser::Error::CRC_MISMATCH) {
+    // [SIL-2] Type-safe error handling with etl::expected
+    if (_last_parse_error.has_value()) {
+      rpc::FrameError error = _last_parse_error.value();
+      if (error == rpc::FrameError::CRC_MISMATCH) {
         _consecutive_crc_errors++;
         if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
           // [SIL-2] Force Hardware Reset after persistent corruption
@@ -257,21 +263,18 @@ void BridgeClass::process() {
       }
       if (!_fsm.isUnsynchronized()) {
         switch (error) {
-          case rpc::FrameParser::Error::CRC_MISMATCH:
+          case rpc::FrameError::CRC_MISMATCH:
             _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
             break;
-          case rpc::FrameParser::Error::MALFORMED:
+          case rpc::FrameError::MALFORMED:
             _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
             break;
-          case rpc::FrameParser::Error::OVERFLOW:
+          case rpc::FrameError::OVERFLOW:
             _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
-            break;
-          default:
-            _emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
             break;
         }
       }
-      _parser.clearError();
+      _last_parse_error.reset();
     }
   }
 

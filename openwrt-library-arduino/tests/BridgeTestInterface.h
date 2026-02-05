@@ -24,9 +24,8 @@ class TestAccessor {
 
   // --- Read-only accessors ---
   
-  rpc::FrameParser::Error getLastError() const {
-    return _bridge._parser.getError();
-  }
+  // [SIL-2] getLastError() removed - use etl::expected result from parse() directly
+  // The new API returns errors inline with the parse result.
 
   // Use public BridgeClass accessors (no direct _fsm access needed)
   bool isAwaitingAck() const { return _bridge.isAwaitingAck(); }

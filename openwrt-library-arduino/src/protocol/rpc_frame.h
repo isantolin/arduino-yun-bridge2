@@ -8,6 +8,7 @@
 #undef min
 #undef max
 #include "etl/array.h"
+#include "etl/expected.h"
 
 namespace rpc {
 
@@ -61,25 +62,39 @@ struct Frame {
   uint32_t crc;
 };
 
+/**
+ * @brief Parse error codes for FrameParser.
+ * [SIL-2] Explicit error types enable type-safe error handling.
+ */
+enum class FrameError {
+  CRC_MISMATCH,   ///< CRC32 validation failed
+  MALFORMED,      ///< Frame structure invalid (size, version, lengths)
+  OVERFLOW        ///< Payload exceeds maximum allowed size
+};
+
 class FrameParser {
  public:
-  FrameParser();
+  FrameParser() = default;
   
-  // Parses a DECODED buffer (already stripped of COBS by PacketSerial).
-  // Validates CRC and Protocol rules.
-  bool parse(const uint8_t* buffer, size_t size, Frame& out_frame);
+  /**
+   * @brief Parse a decoded frame buffer.
+   * 
+   * [SIL-2 COMPLIANT] Uses etl::expected for type-safe error handling.
+   * Returns either a valid Frame or an error code, eliminating the
+   * bool + out_param pattern that can lead to use-after-failure bugs.
+   * 
+   * @param buffer Decoded frame data (post-COBS)
+   * @param size Size of buffer in bytes
+   * @return etl::expected<Frame, FrameError> - Frame on success, error on failure
+   */
+  etl::expected<Frame, FrameError> parse(const uint8_t* buffer, size_t size);
   
-  enum class Error {
-    NONE,
-    CRC_MISMATCH,
-    MALFORMED,
-    OVERFLOW
-  };
-  Error getError() const { return _last_error; }
-  void clearError() { _last_error = Error::NONE; }
-
- private:
-  Error _last_error;
+  // Legacy compatibility aliases (deprecated, will be removed)
+  using Error = FrameError;
+  static constexpr FrameError Error_NONE = static_cast<FrameError>(-1); // Sentinel for legacy code
+  static constexpr FrameError Error_CRC_MISMATCH = FrameError::CRC_MISMATCH;
+  static constexpr FrameError Error_MALFORMED = FrameError::MALFORMED;
+  static constexpr FrameError Error_OVERFLOW = FrameError::OVERFLOW;
 };
 
 class FrameBuilder {

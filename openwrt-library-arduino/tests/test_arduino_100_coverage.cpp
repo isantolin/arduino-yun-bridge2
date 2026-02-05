@@ -58,35 +58,39 @@ void setup_env(CaptureStream& stream) {
 // --- TARGET: rpc_frame.cpp Gaps ---
 void test_rpc_frame_gaps() {
     printf("  -> Testing rpc_frame_gaps\n");
-    rpc::Frame f;
     rpc::FrameParser parser;
     
-    // Gap: parse with size too small for CRC
+    // [SIL-2] etl::expected API - Gap: parse with size too small for CRC
     uint8_t short_data[] = {0x01, 0x02};
-    assert(!parser.parse(short_data, sizeof(short_data), f));
-    assert(parser.getError() == rpc::FrameParser::Error::MALFORMED);
+    auto result1 = parser.parse(short_data, sizeof(short_data));
+    assert(!result1.has_value());
+    assert(result1.error() == rpc::FrameError::MALFORMED);
 
     // Gap: parse with crc_start < sizeof(FrameHeader)
     uint8_t header_short[] = {0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00}; // 8 bytes, header is 5, crc 4. 8-4 = 4 < 5.
-    assert(!parser.parse(header_short, sizeof(header_short), f));
+    auto result2 = parser.parse(header_short, sizeof(header_short));
+    assert(!result2.has_value());
 
     // Gap: parse with invalid version
     uint8_t bad_version[] = {0xFF, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
     uint32_t c = crc32_ieee(bad_version, 6);
     rpc::write_u32_be(&bad_version[6], c);
-    assert(!parser.parse(bad_version, 10, f));
+    auto result3 = parser.parse(bad_version, 10);
+    assert(!result3.has_value());
 
     // Gap: parse with payload_length > max_size
     uint8_t bad_len[] = {0x02, 0xFF, 0xFF, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00};
     c = crc32_ieee(bad_len, 5);
     rpc::write_u32_be(&bad_len[5], c);
-    assert(!parser.parse(bad_len, 9, f));
+    auto result4 = parser.parse(bad_len, 9);
+    assert(!result4.has_value());
 
     // Gap: parse with (sizeof(FrameHeader) + payload_length) != crc_start
     uint8_t len_mismatch[] = {0x02, 0x00, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
     c = crc32_ieee(len_mismatch, 6);
     rpc::write_u32_be(&len_mismatch[6], c);
-    assert(!parser.parse(len_mismatch, 10, f));
+    auto result5 = parser.parse(len_mismatch, 10);
+    assert(!result5.has_value());
 
     // Gap: build with payload_len > MAX_PAYLOAD_SIZE
     rpc::FrameBuilder builder;
@@ -121,20 +125,16 @@ void test_bridge_extra_gaps() {
     f.header.payload_length = 0;
     Bridge.dispatch(f);
 
-    // Gap: process() with overflow error
-    Bridge._parser._last_error = rpc::FrameParser::Error::OVERFLOW;
+    // [SIL-2] etl::expected API - Gap: process() with parse errors via _last_parse_error
+    Bridge._last_parse_error = rpc::FrameError::OVERFLOW;
     Bridge.process();
 
     // Gap: process() with CRC_MISMATCH error
-    Bridge._parser._last_error = rpc::FrameParser::Error::CRC_MISMATCH;
+    Bridge._last_parse_error = rpc::FrameError::CRC_MISMATCH;
     Bridge.process();
 
     // Gap: process() with MALFORMED error
-    Bridge._parser._last_error = rpc::FrameParser::Error::MALFORMED;
-    Bridge.process();
-
-    // Gap: process() with other error
-    Bridge._parser._last_error = (rpc::FrameParser::Error)99;
+    Bridge._last_parse_error = rpc::FrameError::MALFORMED;
     Bridge.process();
 
     // Gap: _applyTimingConfig with null payload or short length

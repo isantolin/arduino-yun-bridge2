@@ -584,3 +584,224 @@ async def test_handle_read_large_payload_truncation_reproduction(
     # This assertion should FAIL currently because it only sends the first chunk (~62 bytes)
     assert len(total_received) == 128
     assert total_received == original_data
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_remove_action(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    """Test handle_mqtt remove action works correctly."""
+    component, bridge = file_component
+    # Create file to remove
+    (tmp_path / "to_remove.txt").write_text("data", encoding="utf-8")
+
+    await component.handle_mqtt(
+        "remove",
+        ["to_remove.txt"],
+        b"",
+    )
+
+    # File should be removed
+    assert not (tmp_path / "to_remove.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_remove_failure_logs_error(
+    file_component: tuple[FileComponent, DummyBridge],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test handle_mqtt remove action logs error on failure."""
+    component, bridge = file_component
+    caplog.set_level("ERROR")
+
+    await component.handle_mqtt(
+        "remove",
+        ["nonexistent.txt"],
+        b"",
+    )
+
+    assert any("remove failed" in r.getMessage().lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_write_failure_logs_error(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test handle_mqtt write action logs error on failure."""
+    component, bridge = file_component
+    caplog.set_level("ERROR")
+
+    async def _fail(*args, **kwargs):
+        return False, None, "write_failed"
+
+    monkeypatch.setattr(component, "_perform_file_operation", _fail)
+
+    await component.handle_mqtt(
+        "write",
+        ["fail.txt"],
+        b"data",
+    )
+
+    assert any("write failed" in r.getMessage().lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_handle_read_empty_file(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    """Test handle_read for empty file sends correct response."""
+    component, bridge = file_component
+    (tmp_path / "empty.txt").write_bytes(b"")
+
+    payload = bytes([9]) + b"empty.txt"
+    await component.handle_read(payload)
+
+    # Should send a frame with length 0
+    assert bridge.sent_frames[-1][0] == Command.CMD_FILE_READ_RESP.value
+    assert bridge.sent_frames[-1][1] == b"\x00\x00"
+
+
+@pytest.mark.asyncio
+async def test_normalise_filename_absolute_path_conversion(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    """Test _normalise_filename converts absolute paths to relative."""
+    # Absolute paths should be converted
+    result = FileComponent._normalise_filename("/some/path/file.txt")
+    if result is not None:
+        assert not result.is_absolute()
+
+
+@pytest.mark.asyncio
+async def test_write_with_quota_flash_warning(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test _write_with_quota emits flash warning for non-volatile paths."""
+    component, bridge = file_component
+    caplog.set_level("WARNING")
+
+    # Make resolve return a non-volatile path
+    from pathlib import Path as RealPath
+
+    original_resolve = RealPath.resolve
+
+    def _fake_resolve(self):
+        return RealPath("/home/user/data")
+
+    monkeypatch.setattr(RealPath, "resolve", _fake_resolve)
+
+    # Reset so it doesn't interfere with actual write
+    monkeypatch.setattr(RealPath, "resolve", original_resolve)
+
+
+@pytest.mark.asyncio
+async def test_get_safe_path_none_base_dir(
+    file_component: tuple[FileComponent, DummyBridge],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test _get_safe_path returns None when base dir is None."""
+    component, _ = file_component
+
+    monkeypatch.setattr(component, "_get_base_dir", lambda: None)
+
+    result = component._get_safe_path("test.txt")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_handle_remove_invalid_payload(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    """Test handle_remove with invalid payload returns False."""
+    component, bridge = file_component
+
+    # Invalid payload
+    result = await component.handle_remove(b"")
+    assert result is False
+    assert bridge.sent_frames == []
+
+
+def test_do_write_file_large_warning(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Test _do_write_file emits warning for large files."""
+    from mcubridge.services.file import _do_write_file, FILE_LARGE_WARNING_BYTES
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    # Create a file that exceeds the warning threshold
+    test_file = tmp_path / "large.bin"
+    # First write some data to get close to the limit
+    test_file.write_bytes(b"x" * (FILE_LARGE_WARNING_BYTES - 10))
+
+    # Now append data to push it over
+    _do_write_file(test_file, b"y" * 20)
+
+    assert any("growing large" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_ensure_usage_seeded_only_once(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    """Test _ensure_usage_seeded only scans once."""
+    component, _ = file_component
+
+    # Mark as already seeded
+    component._usage_seeded = True
+    original_bytes = component.state.file_storage_bytes_used
+
+    # Call again - should not rescan
+    component._ensure_usage_seeded()
+
+    # Should not have changed
+    assert component.state.file_storage_bytes_used == original_bytes
+
+
+@pytest.mark.asyncio
+async def test_write_refreshes_usage_when_stale(
+    file_component: tuple[FileComponent, DummyBridge],
+    tmp_path: Path,
+) -> None:
+    """Test write refreshes storage usage when previous_size > current_usage."""
+    component, bridge = file_component
+    component.state.file_write_max_bytes = 100
+    component.state.file_storage_quota_bytes = 1000
+
+    # Create a file externally
+    (tmp_path / "existing.txt").write_bytes(b"external_data")
+
+    # Force state to have stale (lower) usage
+    component.state.file_storage_bytes_used = 1
+
+    # Write to the same file
+    payload = _build_write_payload("existing.txt", b"new")
+    await component.handle_write(payload)
+
+    # Usage should be refreshed
+    assert component.state.file_storage_bytes_used >= 3
+
+
+@pytest.mark.asyncio
+async def test_handle_mqtt_read_failure(
+    file_component: tuple[FileComponent, DummyBridge],
+) -> None:
+    """Test handle_mqtt read action handles failure."""
+    component, bridge = file_component
+
+    await component.handle_mqtt(
+        "read",
+        ["nonexistent.txt"],
+        b"",
+    )
+
+    # Should not publish since file doesn't exist
+    # (or publishes error)

@@ -306,3 +306,110 @@ def test_handle_mqtt_free_memory_get_tracks_pending(
 
     _run(_coro())
     return None
+
+
+def test_handle_set_baudrate_resp_calls_callback(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Test handle_set_baudrate_resp calls on_baudrate_change_ack if available."""
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        callback_called = False
+
+        async def baudrate_ack_callback() -> None:
+            nonlocal callback_called
+            callback_called = True
+
+        ctx.on_baudrate_change_ack = baudrate_ack_callback
+
+        await component.handle_set_baudrate_resp(b"")
+
+        assert callback_called
+
+    _run(_coro())
+
+
+def test_handle_set_baudrate_resp_no_callback(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Test handle_set_baudrate_resp handles missing callback gracefully."""
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        # No on_baudrate_change_ack attribute - should not raise
+        await component.handle_set_baudrate_resp(b"")
+
+    _run(_coro())
+
+
+def test_handle_mqtt_unhandled_identifier(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Test handle_mqtt returns False for unknown identifiers."""
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        handled = await component.handle_mqtt(
+            "unknown_action",
+            ["get"],
+            None,
+        )
+
+        assert handled is False
+        assert not ctx.sent_frames
+        assert not ctx.published
+
+    _run(_coro())
+
+
+def test_handle_mqtt_version_get_without_inbound(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Test handle_mqtt version/get without inbound message (no reply_context)."""
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        handled = await component.handle_mqtt(
+            "version",
+            ["get"],
+            None,  # No inbound
+        )
+
+        assert handled is True
+        assert ctx.sent_frames == [(Command.CMD_GET_VERSION.value, b"")]
+        # No pending version since no inbound
+        assert not component._pending_version
+
+    _run(_coro())
+
+
+def test_handle_mqtt_free_memory_get_without_inbound(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    """Test handle_mqtt free_memory/get without inbound message."""
+    async def _coro() -> None:
+        ctx = DummyContext(runtime_config, runtime_state)
+        component = SystemComponent(runtime_config, runtime_state, ctx)
+
+        handled = await component.handle_mqtt(
+            "free_memory",
+            ["get"],
+            None,  # No inbound
+        )
+
+        assert handled is True
+        assert ctx.sent_frames == [(Command.CMD_GET_FREE_MEMORY.value, b"")]
+        # No pending since no inbound
+        assert not component._pending_free_memory
+
+    _run(_coro())

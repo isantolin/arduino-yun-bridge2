@@ -582,5 +582,5 @@ async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
     dispatcher.pin = None
-    assert await dispatcher._handle_unexpected_digital_read(b"") is False
-    assert await dispatcher._handle_unexpected_analog_read(b"") is False
+    assert await dispatcher._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
+    assert await dispatcher._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is False

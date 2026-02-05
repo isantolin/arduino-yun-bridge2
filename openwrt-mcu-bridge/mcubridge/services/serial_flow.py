@@ -27,22 +27,24 @@ from mcubridge.protocol import rle, protocol
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 
+def _set_factory() -> set[int]:
+    return set()
+
+
+def _event_factory() -> asyncio.Event:
+    return asyncio.Event()
+
+
 class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] | None = None
-    completion: asyncio.Event | None = None
+    expected_resp_ids: set[int] = msgspec.field(default_factory=_set_factory)
+    completion: asyncio.Event = msgspec.field(default_factory=_event_factory)
     attempts: int = 0
     success: bool | None = None
     failure_status: int | None = None
     ack_received: bool = False
-
-    def __post_init__(self) -> None:
-        if self.expected_resp_ids is None:
-            object.__setattr__(self, "expected_resp_ids", set())
-        if self.completion is None:
-            object.__setattr__(self, "completion", asyncio.Event())
 
     def mark_success(self) -> None:
         self.success = True

@@ -31,19 +31,21 @@ def _normalize_limit(value: object) -> int | None:
     return None  # Default fallback logic handled by caller if needed, or None
 
 
+def _deque_factory() -> deque[bytes]:
+    return deque()
+
+
 class BoundedByteDeque(msgspec.Struct):
     """Deque that enforces both item-count and byte-length limits."""
 
     max_items: int | None = None
     max_bytes: int | None = None
-    _queue: deque[bytes] | None = None
+    _queue: deque[bytes] = msgspec.field(default_factory=_deque_factory)
     _bytes: int = 0
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "max_items", _normalize_limit(self.max_items))
         object.__setattr__(self, "max_bytes", _normalize_limit(self.max_bytes))
-        if self._queue is None:
-            object.__setattr__(self, "_queue", deque())
 
     def __len__(self) -> int:
         return len(self._queue)

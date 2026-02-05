@@ -155,9 +155,9 @@ async def test_mqtt_task_requeues_on_publish_failure(
         @property
         def messages(self):
             async def _iter():
-                # Long sleep to prevent yielding None before cancel
+                # Short sleep to allow quick cancellation
                 while True:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(0.01)
                     yield None  # Never reached
 
             return _iter()
@@ -224,13 +224,9 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel(
         @property
         def messages(self):
             async def _iter():
-                # Sleep briefly then check for cancellation
-                try:
-                    while True:
-                        await asyncio.sleep(0.01)
-                except asyncio.CancelledError:
-                    return  # Allow clean exit when TaskGroup cancels
-                yield None  # pragma: no cover
+                # Wait indefinitely - responds instantly to cancellation
+                await asyncio.Event().wait()
+                yield None  # pragma: no cover - never reached
 
             return _iter()
 

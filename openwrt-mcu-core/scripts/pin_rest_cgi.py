@@ -17,7 +17,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
-from mcubridge.common import get_uci_config
+from mcubridge.config.common import get_uci_config
 from mcubridge.protocol import protocol
 
 

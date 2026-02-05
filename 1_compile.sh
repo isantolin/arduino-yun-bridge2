@@ -61,8 +61,8 @@ done
 
 set -- "${POSITIONAL[@]}"
 
-# [CONFIG] Target Final OpenWrt 25.12.0
-OPENWRT_VERSION=${1:-"25.12.0"}
+# [CONFIG] Target Final OpenWrt 25.12.0-rc4
+OPENWRT_VERSION=${1:-"25.12.0-rc4"}
 OPENWRT_TARGET=${2:-"malta/be"}
 
 OPENWRT_URL="downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"
@@ -177,7 +177,7 @@ python3 "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
 echo "[INFO] Regenerating protocol files from spec..."
 python3 "$REPO_ROOT/tools/protocol/generate.py" \
     --spec "$REPO_ROOT/tools/protocol/spec.toml" \
-    --py "$REPO_ROOT/openwrt-mcu-bridge/mcubridge/rpc/protocol.py" \
+    --py "$REPO_ROOT/openwrt-mcu-bridge/mcubridge/protocol/protocol.py" \
     --cpp "$REPO_ROOT/openwrt-library-arduino/src/protocol/rpc_protocol.h" || exit 1
 
 # --- BOOTSTRAP PYTHON CHECKS ---

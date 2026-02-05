@@ -326,12 +326,13 @@ def test_repeated_sync_timeouts_become_fatal(
     asyncio.run(_run())
 
 
-@pytest.mark.skip(reason="Fixing async deadlock/timeout interaction with FakeMonotonic")
 def test_link_sync_resp_respects_rate_limit(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Test that rapid successive LINK_SYNC_RESP are rate limited."""
+
     async def _run() -> None:
         runtime_config.serial_handshake_min_interval = 5.0
         service = BridgeService(runtime_config, runtime_state)
@@ -340,25 +341,22 @@ def test_link_sync_resp_respects_rate_limit(
 
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
-
-            # Auto-ACK to prevent serial_flow from blocking on frozen clock
+            # Auto-ACK to prevent serial_flow from blocking
             ack_payload = protocol.UINT16_STRUCT.build(command_id)
-            service._serial_flow.on_frame_received(
-                Status.ACK.value,
-                ack_payload,
-            )
-
+            service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
             if command_id == Command.CMD_GET_CAPABILITIES.value:
                 service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
             return True
 
         service.register_serial_sender(fake_sender)
 
+        # Patch time.monotonic in all modules that use it
         fake_clock = _FakeMonotonic(100.0)
-        monkeypatch.setattr(
+        for module_path in [
             "mcubridge.services.handshake.time.monotonic",
-            fake_clock.monotonic,
-        )
+            "mcubridge.state.context.time.monotonic",
+        ]:
+            monkeypatch.setattr(module_path, fake_clock.monotonic)
 
         def _prime_handshake(seed: int) -> bytes:
             nonce = bytes([seed]) * protocol.HANDSHAKE_NONCE_LENGTH
@@ -369,16 +367,21 @@ def test_link_sync_resp_respects_rate_limit(
             runtime_state.link_expected_tag = tag
             return nonce + tag
 
+        # First handshake should succeed
         payload_ok = _prime_handshake(1)
         result_ok = await service._handshake.handle_link_sync_resp(payload_ok)
         assert result_ok is True
 
+        # Advance by only 0.1s (less than 5.0s rate limit)
         fake_clock.advance(0.1)
+
+        # Second handshake should be rate limited
         payload_blocked = _prime_handshake(2)
         rate_limited = await service._handshake.handle_link_sync_resp(payload_blocked)
         assert rate_limited is False
         assert runtime_state.last_handshake_error == "sync_rate_limited"
         assert runtime_state.handshake_failure_streak >= 1
+        # Rate limited requests send MALFORMED status
         assert any(frame_id == Status.MALFORMED.value for frame_id, _ in sent_frames)
 
     asyncio.run(_run())

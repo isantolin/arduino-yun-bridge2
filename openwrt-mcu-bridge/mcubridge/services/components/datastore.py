@@ -18,6 +18,7 @@ from mcubridge.rpc.protocol import (
     DatastoreAction,
     Status,
 )
+from mcubridge.rpc.structures import DatastoreGetPacket, DatastorePutPacket
 
 logger = logging.getLogger("mcubridge.datastore")
 
@@ -37,42 +38,17 @@ class DatastoreComponent:
 
     async def handle_put(self, payload: bytes) -> bool:
         """Process CMD_DATASTORE_PUT received from the MCU."""
-        mv = memoryview(payload)
-        if len(mv) < 2:
+        try:
+            packet = DatastorePutPacket.parse(payload)
+        except Exception:
             logger.warning(
-                "Malformed DATASTORE_PUT payload: too short (%d bytes), hex=%s",
-                len(mv),
+                "Malformed DATASTORE_PUT payload: %s",
                 payload.hex(),
             )
             return False
 
-        key_len = mv[0]
-        cursor = 1
-        header_len = 1 + int(key_len) + DATASTORE_VALUE_LEN_SIZE
-        if len(mv) < header_len:
-            logger.warning(
-                "Malformed DATASTORE_PUT payload: missing key/value data, hex=%s",
-                payload.hex(),
-            )
-            return False
-
-        key_end = cursor + int(key_len)
-        key_bytes = bytes(mv[cursor:key_end])
-        cursor = key_end
-
-        value_len = mv[cursor]
-        cursor += DATASTORE_VALUE_LEN_SIZE
-
-        expected_total_len = cursor + int(value_len)
-        if len(mv) != expected_total_len:
-            logger.warning(
-                "Malformed DATASTORE_PUT payload: value length mismatch, hex=%s",
-                payload.hex(),
-            )
-            return False
-
-        value_bytes = bytes(mv[cursor:expected_total_len])
-        key = key_bytes.decode("utf-8", errors="ignore")
+        key = packet.key
+        value_bytes = packet.value
         value = value_bytes.decode("utf-8", errors="ignore")
 
         self.state.datastore[key] = value
@@ -81,29 +57,20 @@ class DatastoreComponent:
 
     async def handle_get_request(self, payload: bytes) -> bool:
         """Handle CMD_DATASTORE_GET initiated by the MCU."""
-        if len(payload) < 1:
+        try:
+            packet = DatastoreGetPacket.parse(payload)
+        except Exception:
             logger.warning(
-                "Malformed DATASTORE_GET payload: too short (%d bytes), hex=%s",
-                len(payload),
+                "Malformed DATASTORE_GET payload: %s",
                 payload.hex() if payload else "(empty)",
             )
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
-                b"data_get_short",
+                b"data_get_malformed",
             )
             return False
 
-        key_len = payload[0]
-        if len(payload) < 1 + key_len:
-            logger.warning(
-                "Malformed DATASTORE_GET payload: missing key bytes, hex=%s",
-                payload.hex(),
-            )
-            await self.ctx.send_frame(Status.MALFORMED.value, b"data_get_key")
-            return False
-
-        key_bytes = payload[1 : 1 + key_len]
-        key = key_bytes.decode("utf-8", errors="ignore")
+        key = packet.key
         value = self.state.datastore.get(key, "")
         value_bytes = value.encode("utf-8")
         if len(value_bytes) > 255:

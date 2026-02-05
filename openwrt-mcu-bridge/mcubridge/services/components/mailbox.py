@@ -14,6 +14,7 @@ from mcubridge.rpc.protocol import (
     MailboxAction,
     Status,
 )
+from mcubridge.rpc.structures import MailboxPushPacket
 
 from ...common import encode_status_reason
 from ...mqtt.messages import QueuedPublish
@@ -62,22 +63,16 @@ class MailboxComponent:
         return True
 
     async def handle_push(self, payload: bytes) -> bool:
-        if len(payload) < 2:
+        try:
+            packet = MailboxPushPacket.parse(payload)
+        except Exception:
             logger.warning(
                 "Malformed MAILBOX_PUSH payload: %s",
                 payload.hex(),
             )
             return False
 
-        msg_len = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
-        data = payload[2 : 2 + msg_len]
-        if len(data) != msg_len:
-            logger.warning(
-                "MAILBOX_PUSH length mismatch. Expected %d bytes, got %d.",
-                msg_len,
-                len(data),
-            )
-            return False
+        data = packet.data
 
         stored = self.state.enqueue_mailbox_incoming(data, logger)
         if not stored:

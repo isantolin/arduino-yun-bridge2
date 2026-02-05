@@ -31,3 +31,38 @@ VersionResponsePacket = Struct(
     "major" / Int8ub,
     "minor" / Int8ub,
 )
+
+FreeMemoryResponsePacket = Struct(
+    "value" / Int16ub,
+)
+
+# --- Pin Packets ---
+
+DigitalReadResponsePacket = Struct(
+    "value" / Int8ub,
+)
+
+AnalogReadResponsePacket = Struct(
+    "value" / Int16ub,
+)
+
+# --- Datastore Packets ---
+
+DatastoreGetPacket = Struct(
+    "key_len" / Int8ub,
+    "key" / PaddedString(this.key_len, "utf-8"),
+)
+
+DatastorePutPacket = Struct(
+    "key_len" / Int8ub,
+    "key" / PaddedString(this.key_len, "utf-8"),
+    "value_len" / Int8ub,
+    "value" / Bytes(this.value_len),
+)
+
+# --- Mailbox Packets ---
+
+MailboxPushPacket = Struct(
+    "msg_len" / Int16ub,
+    "data" / Bytes(this.msg_len),
+)

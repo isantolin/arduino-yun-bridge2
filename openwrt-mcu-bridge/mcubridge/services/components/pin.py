@@ -9,7 +9,7 @@ from typing import Any, Callable, cast
 from aiomqtt.message import Message
 from mcubridge.rpc.protocol import Command, PinAction, Status
 from mcubridge.rpc import protocol
-
+from mcubridge.rpc.structures import AnalogReadResponsePacket, DigitalReadResponsePacket
 
 from ...protocol.topics import Topic, topic_path
 from ...mqtt.messages import QueuedPublish
@@ -23,12 +23,12 @@ logger = logging.getLogger("mcubridge.pin")
 
 def _parse_digital_value(payload: bytes) -> int:
     """Parse single-byte digital pin value from MCU response."""
-    return payload[0]
+    return DigitalReadResponsePacket.parse(payload).value
 
 
 def _parse_analog_value(payload: bytes) -> int:
     """Parse two-byte big-endian analog pin value from MCU response."""
-    return int.from_bytes(payload, "big")
+    return AnalogReadResponsePacket.parse(payload).value
 
 
 class PinComponent:

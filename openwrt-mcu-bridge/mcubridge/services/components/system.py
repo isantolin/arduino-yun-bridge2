@@ -8,7 +8,7 @@ from typing import Awaitable, Callable, Deque, cast
 
 from aiomqtt.message import Message
 from mcubridge.rpc.protocol import Command, SystemAction
-from mcubridge.rpc.structures import VersionResponsePacket
+from mcubridge.rpc.structures import FreeMemoryResponsePacket, VersionResponsePacket
 
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
@@ -53,7 +53,8 @@ class SystemComponent:
             logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
             return
 
-        free_memory = int.from_bytes(payload, "big")
+        packet = FreeMemoryResponsePacket.parse(payload)
+        free_memory = packet.value
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SYSTEM,
@@ -77,6 +78,10 @@ class SystemComponent:
         await self.ctx.enqueue_mqtt(message)
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
+        if len(payload) != 2:
+            logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
+            return
+
         try:
             packet = VersionResponsePacket.parse(payload)
             major, minor = packet.major, packet.minor

@@ -172,8 +172,9 @@ class BridgeSerialProtocol(asyncio.Protocol):
             frame = Frame.from_bytes(raw_frame)
 
             if frame.command_id & protocol.CMD_FLAG_COMPRESSED:
-                frame.command_id &= ~protocol.CMD_FLAG_COMPRESSED
-                frame.payload = rle.decode(frame.payload)
+                new_cmd = frame.command_id & ~protocol.CMD_FLAG_COMPRESSED
+                new_payload = rle.decode(frame.payload)
+                frame = Frame(command_id=new_cmd, payload=new_payload)
 
             if logger.isEnabledFor(logging.DEBUG):
                 self._log_frame(frame, "MCU >")

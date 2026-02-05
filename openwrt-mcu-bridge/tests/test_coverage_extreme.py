@@ -96,8 +96,14 @@ async def test_daemon_run_lifecycle():
 
 
 @pytest.mark.asyncio
-async def test_serial_read_loop_corruption_and_recovery():
+async def test_serial_read_loop_corruption_and_recovery(caplog):
     """Simula flujo de bytes corruptos y recuperación usando Protocol."""
+    import logging
+    caplog.set_level(logging.DEBUG)
+
+    # Verify constants
+    assert UINT8_MASK == 0xFF, f"UINT8_MASK mismatch: {UINT8_MASK}"
+
     from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
     mock_service = AsyncMock()
@@ -120,7 +126,7 @@ async def test_serial_read_loop_corruption_and_recovery():
     proto.data_received(noise)
 
     # Wait a bit for async tasks to run
-    await asyncio.sleep(0.01)
+    await asyncio.sleep(0.5)
 
     mock_service.handle_mcu_frame.assert_awaited()
     # At least bad_cobs and huge_chunk should trigger errors

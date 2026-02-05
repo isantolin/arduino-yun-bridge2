@@ -1,7 +1,5 @@
 """Regression tests for RPC protocol helpers."""
 
-import pytest
-
 from mcubridge.rpc import frame, protocol
 
 
@@ -12,29 +10,16 @@ def test_crc_is_32bit() -> None:
 
 def test_frame_build_appends_crc_bytes() -> None:
     payload = b"\x01\x02\x03"
-    raw = frame.Frame(
-        protocol.Command.CMD_LINK_RESET.value,
-        payload,
-    ).to_bytes()
+    raw = frame.Frame.build(protocol.Command.CMD_LINK_RESET.value, payload)
     expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + protocol.CRC_SIZE
     assert len(raw) == expected_len
 
 
-def test_frame_build_masks_crc_to_protocol_size(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Frame serialization must honor the CRC size from the protocol spec."""
-    from construct import Int16ub
-
-    monkeypatch.setattr("mcubridge.rpc.protocol.CRC_FORMAT", ">H", raising=False)
-    monkeypatch.setattr("mcubridge.rpc.protocol.CRC_SIZE", 2, raising=False)
-    monkeypatch.setattr("mcubridge.rpc.protocol.CRC_STRUCT", Int16ub, raising=False)
-
+def test_frame_build_uses_crc32() -> None:
+    """Frame serialization uses CRC32 (4 bytes) via Construct Checksum."""
     payload = b"\xaa" * 4
-    raw = frame.Frame(
-        protocol.Command.CMD_LINK_RESET.value,
-        payload,
-    ).to_bytes()
+    raw = frame.Frame.build(protocol.Command.CMD_LINK_RESET.value, payload)
 
-    expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + frame.protocol.CRC_SIZE
+    # CRC is always 4 bytes (Int32ub) via Construct Checksum
+    expected_len = protocol.CRC_COVERED_HEADER_SIZE + len(payload) + 4
     assert len(raw) == expected_len

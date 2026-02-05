@@ -5,7 +5,7 @@ between the Linux daemon and the Arduino MCU.
 
 [SIL-2 COMPLIANCE]
 The frame format is designed for reliable communication:
-- CRC32 integrity check on every frame
+- CRC32 integrity check on every frame (via Construct Checksum)
 - Explicit length fields prevent buffer overruns
 - Version field ensures protocol compatibility
 - Big-endian byte order for cross-platform consistency
@@ -26,27 +26,39 @@ Example:
     >>> encoded = cobs.encode(frame) + bytes([0])
 """
 
-import msgspec
 from binascii import crc32
+from dataclasses import dataclass
 from typing import Any, cast
 
-from construct import Bytes, Int8ub, Int16ub, Struct, Terminated, this  # type: ignore
+from construct import Bytes, Checksum, ChecksumError, Int8ub, Int16ub, Int32ub, RawCopy, Struct, this  # type: ignore
 
 from . import protocol
 
 
-# Define the binary structure of the frame (excluding CRC trailer)
-# Corresponds to: [Version:1][PayloadLen:2][CommandId:2][Payload:N]
-HeaderPayloadStruct: Any = Struct(
-    cast(Any, "version") / Int8ub,
-    cast(Any, "payload_len") / Int16ub,
-    cast(Any, "command_id") / Int16ub,
-    cast(Any, "payload") / Bytes(this.payload_len),
-    Terminated,
+def _crc32_hash(data: bytes) -> int:
+    """Compute CRC32 (IEEE 802.3) masked to 32-bit unsigned."""
+    return crc32(data) & protocol.CRC32_MASK
+
+
+# Frame structure with integrated CRC validation via Construct Checksum.
+# RawCopy captures the header+payload bytes for CRC computation.
+# Checksum automatically validates on parse and computes on build.
+FrameStruct: Any = Struct(
+    cast(Any, "body")
+    / RawCopy(
+        Struct(
+            cast(Any, "version") / Int8ub,
+            cast(Any, "payload_len") / Int16ub,
+            cast(Any, "command_id") / Int16ub,
+            cast(Any, "payload") / Bytes(this.payload_len),
+        )
+    ),
+    cast(Any, "crc") / Checksum(Int32ub, _crc32_hash, this.body.data),
 )
 
 
-class Frame(msgspec.Struct):
+@dataclass(frozen=True, slots=True)
+class Frame:
     """Represents an RPC frame for MCU-Linux communication.
 
     This class provides both object-oriented and static methods for
@@ -74,29 +86,18 @@ class Frame(msgspec.Struct):
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
-        # Build the header and payload using Construct
+        # Build frame using Construct with integrated CRC computation
         container = {
-            "version": protocol.PROTOCOL_VERSION,
-            "payload_len": payload_len,
-            "command_id": command_id,
-            "payload": payload,
+            "body": {
+                "value": {
+                    "version": protocol.PROTOCOL_VERSION,
+                    "payload_len": payload_len,
+                    "command_id": command_id,
+                    "payload": payload,
+                }
+            },
         }
-        data_to_crc = HeaderPayloadStruct.build(container)
-
-        # Calculate CRC over the header and payload, then mask it to the
-        # exact number of bits declared by the protocol.
-        # Calculate mask based on protocol size (usually 4 bytes -> 0xFFFFFFFF)
-        crc_mask = (1 << (protocol.CRC_SIZE * 8)) - 1
-
-        # Use binascii.crc32 directly (standard IEEE 802.3) and mask to 32-bit unsigned,
-        # then apply the protocol size mask.
-        crc = (crc32(data_to_crc) & protocol.CRC32_MASK) & crc_mask
-
-        # Pack the CRC
-        crc_packed = cast(Any, protocol.CRC_STRUCT).build(crc)
-
-        # Construct the full raw frame
-        return data_to_crc + crc_packed
+        return FrameStruct.build(container)
 
     @staticmethod
     def parse(raw_frame_buffer: bytes) -> tuple[int, bytes]:
@@ -107,41 +108,26 @@ class Frame(msgspec.Struct):
                 "Incomplete frame: size " f"{len(raw_frame_buffer)} is less than minimum " f"{protocol.MIN_FRAME_SIZE}"
             )
 
-        # 2. Extract header and validate version early (optional but safer)
-        # Note: CRC check still covers the whole frame, but we can verify
-        # structural integrity first if desired. SIL-2 prefers CRC first.
-
-        # [REFACTORED FOR 100% COVERAGE]
-        # We ensure CRC_COVERED_HEADER_SIZE check is reachable.
+        # 2. Verify header completeness before parsing
         if len(raw_frame_buffer) < protocol.CRC_COVERED_HEADER_SIZE + protocol.CRC_SIZE:
             raise ValueError("Incomplete header")
 
-        # 3. Extract and verify CRC
-        crc_start = len(raw_frame_buffer) - protocol.CRC_SIZE
-        data_to_check = raw_frame_buffer[:crc_start]
-        received_crc_packed = raw_frame_buffer[crc_start:]
-
+        # 3. Parse with integrated CRC validation via Construct
         try:
-            received_crc = cast(Any, protocol.CRC_STRUCT).parse(received_crc_packed)
-        except Exception as exc:
-            raise ValueError(f"Failed to parse CRC: {exc}") from exc
-
-        calculated_crc = crc32(data_to_check) & protocol.CRC32_MASK
-
-        if received_crc != calculated_crc:
-            raise ValueError(f"CRC mismatch. Expected {calculated_crc:08X}, " f"got {received_crc:08X}")
-
-        # 4. Parse Header + Payload using Construct
-        # This implicitly validates payload length vs buffer size via Terminated
-        try:
-            container = HeaderPayloadStruct.parse(data_to_check)
+            container = FrameStruct.parse(raw_frame_buffer)
+        except ChecksumError as exc:
+            safe_exc = cast(Exception, exc)  # type: ignore
+            raise ValueError(f"CRC mismatch: {safe_exc}") from safe_exc
         except Exception as exc:
             raise ValueError(f"Frame structure error: {exc}") from exc
 
-        version = container.version
-        command_id = container.command_id
-        payload = container.payload
+        # Extract fields from RawCopy container
+        body = container.body.value
+        version = body.version
+        command_id = body.command_id
+        payload = bytes(body.payload)
 
+        # 4. Validate protocol version
         if version != protocol.PROTOCOL_VERSION:
             raise ValueError("Invalid version. Expected " f"{protocol.PROTOCOL_VERSION}, got {version}")
 

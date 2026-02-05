@@ -2,4 +2,4 @@
 
 from .const import *  # noqa: F401, F403
 from .common import *  # noqa: F401, F403
-from . import logging, settings
+from . import logging as logging, settings as settings  # noqa: F401

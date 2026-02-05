@@ -23,13 +23,13 @@ find "${BUILD_DIR}" -name '*.o' -delete 2>/dev/null || true
 
 SOURCES=(
     "${SRC_ROOT}/protocol/rpc_frame.cpp"
-    "${SRC_ROOT}/protocol/security.cpp"
-    "${SRC_ROOT}/arduino/Bridge.cpp"
-    "${SRC_ROOT}/arduino/Console.cpp"
-    "${SRC_ROOT}/arduino/DataStore.cpp"
-    "${SRC_ROOT}/arduino/Mailbox.cpp"
-    "${SRC_ROOT}/arduino/FileSystem.cpp"
-    "${SRC_ROOT}/arduino/Process.cpp"
+    "${SRC_ROOT}/security/security.cpp"
+    "${SRC_ROOT}/services/Bridge.cpp"
+    "${SRC_ROOT}/services/Console.cpp"
+    "${SRC_ROOT}/services/DataStore.cpp"
+    "${SRC_ROOT}/services/Mailbox.cpp"
+    "${SRC_ROOT}/services/FileSystem.cpp"
+    "${SRC_ROOT}/services/Process.cpp"
 )
 
 COMPILE_FLAGS=(

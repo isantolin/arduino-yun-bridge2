@@ -27,13 +27,13 @@ g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
     -I"${DUMMY_ARDUINO_LIBS}/Crypto" \
     -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
     "${SRC_DIR}/protocol/rpc_frame.cpp" \
-    "${SRC_DIR}/protocol/security.cpp" \
-    "${SRC_DIR}/arduino/Bridge.cpp" \
-    "${SRC_DIR}/arduino/Console.cpp" \
-    "${SRC_DIR}/arduino/DataStore.cpp" \
-    "${SRC_DIR}/arduino/FileSystem.cpp" \
-    "${SRC_DIR}/arduino/Mailbox.cpp" \
-    "${SRC_DIR}/arduino/Process.cpp" \
+    "${SRC_DIR}/security/security.cpp" \
+    "${SRC_DIR}/services/Bridge.cpp" \
+    "${SRC_DIR}/services/Console.cpp" \
+    "${SRC_DIR}/services/DataStore.cpp" \
+    "${SRC_DIR}/services/FileSystem.cpp" \
+    "${SRC_DIR}/services/Mailbox.cpp" \
+    "${SRC_DIR}/services/Process.cpp" \
     "${TEST_DIR}/test_integrated.cpp" \
     -o "${BUILD_DIR}/test_integrated"
 

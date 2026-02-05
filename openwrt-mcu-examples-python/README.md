@@ -1,5 +1,10 @@
 # Arquitectura del Cliente del Puente de MCU v2
 
+[![Python](https://img.shields.io/badge/Python-3.13+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![MQTT](https://img.shields.io/badge/MQTT-v5-660066?logo=mqtt)](https://mqtt.org/)
+[![aiomqtt](https://img.shields.io/badge/aiomqtt-2.5+-blue)](https://sbtinstruments.github.io/aiomqtt/)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.0-00B5E2?logo=openwrt)](https://openwrt.org/)
+
 Este componente (`openwrt-mcu-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino MCU interactúen con el microcontrolador a través de `mcubridge/daemon.py`. Las utilidades de este paquete se apoyan ahora en **aiomqtt 2.5** (que incluye `paho-mqtt` 2.1) y hablan MQTT v5 de forma predeterminada, consumiendo directamente `aiomqtt.client.Message` junto con los DTOs serializables (`QueuedPublish`) y los helpers (`topic_name`, `correlation_data`) que expone el daemon sin recurrir a ningún shim intermedio.
 
 ## API de Comunicación: MQTT

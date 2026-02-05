@@ -6,7 +6,7 @@ set -e
 # Copyright (C) 2025 Ignacio Santolin and contributors
 #
 # compile.sh - Compila todos los paquetes del ecosistema Arduino MCU v2
-# Target: OpenWrt 25.12.0-rc2 (APK System)
+# Target: OpenWrt 25.12.0 (APK System)
 #
 
 usage() {
@@ -61,8 +61,8 @@ done
 
 set -- "${POSITIONAL[@]}"
 
-# [CONFIG] Target Final OpenWrt 25.12.0-rc2
-OPENWRT_VERSION=${1:-"25.12.0-rc2"}
+# [CONFIG] Target Final OpenWrt 25.12.0
+OPENWRT_VERSION=${1:-"25.12.0"}
 OPENWRT_TARGET=${2:-"malta/be"}
 
 OPENWRT_URL="downloads.openwrt.org/releases/${OPENWRT_VERSION}/targets/${OPENWRT_TARGET}/openwrt-sdk-${OPENWRT_VERSION}-$(echo "$OPENWRT_TARGET" | tr '/' '-')_gcc-14.3.0_musl.Linux-x86_64.tar.zst"

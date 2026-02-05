@@ -1,5 +1,11 @@
 # McuBridge Arduino Library
 
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-11-00599C?logo=cplusplus)](https://isocpp.org/)
+[![ETL](https://img.shields.io/badge/ETL-20.39+-green)](https://www.etlcpp.com/)
+[![SIL-2](https://img.shields.io/badge/IEC%2061508-SIL--2-brightgreen)](https://en.wikipedia.org/wiki/IEC_61508)
+[![FIPS 140-3](https://img.shields.io/badge/MIL--SPEC-FIPS%20140--3-critical)](https://csrc.nist.gov/publications/detail/fips/140/3/final)
+[![Arduino](https://img.shields.io/badge/Arduino-AVR%20|%20ESP32%20|%20SAMD-00979D?logo=arduino)](https://www.arduino.cc/)
+
 This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project. It complements the OpenWrt daemon by handling RPC frames, pin control, datastore access, mailbox messaging, filesystem helpers, and process control from the Arduino sketch.
 
 ## Directory Layout

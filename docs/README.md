@@ -1,6 +1,11 @@
 # Arduino MCU Bridge 2
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.0-00B5E2?logo=openwrt)](https://openwrt.org/releases/25.12.0)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
+[![C++ Standard](https://img.shields.io/badge/C%2B%2B-11-00599C?logo=cplusplus)](https://isocpp.org/)
+[![ETL](https://img.shields.io/badge/ETL-SIL--2%20Compliant-green)](https://www.etlcpp.com/)
+[![FIPS 140-3](https://img.shields.io/badge/Security-FIPS%20140--3-critical)](https://csrc.nist.gov/publications/detail/fips/140/3/final)
 
 **MCU Bridge 2 es un reemplazo moderno, robusto y agnóstico de hardware para el sistema Bridge original.**
 
@@ -77,14 +82,14 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.13.9-r2. | Mantener compatibilidad con futuras versiones. | `tox -e py313` |
-| Toolchain OpenWrt | SDK 25.12.0 final. | Compilación de paquetes APK. | `./1_compile.sh` |
+| Toolchain OpenWrt | SDK 25.12.0 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
 | MCU Firmware | C++11 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/coverage_arduino.sh` |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
 	./1_compile.sh 23.05.5 ath79/generic
 	```
-	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05 (genera IPKs), lo que permite medir divergencias respecto al build predeterminado (25.12.0-rc2 que genera APKs).
+	Esto reutiliza el pipeline de descarga y sincronización pero apunta al `gcc` publicado junto con OpenWrt 23.05 (genera IPKs), lo que permite medir divergencias respecto al build predeterminado (25.12.0 que genera APKs).
 - Este repositorio incluye `tox.ini` con el entorno `py313`; los intérpretes que falten se omiten automáticamente (`skip_missing_interpreters=true`), de modo que se puede ejecutar en laptops con un solo Python instalado y en CI.
 - Cuando se ejecute una rama candidata, usa el siguiente comando para asegurar que los tests pasan:
 	```sh

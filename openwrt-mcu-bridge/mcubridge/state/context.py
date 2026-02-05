@@ -12,7 +12,6 @@ import psutil
 import tenacity
 
 from asyncio.subprocess import Process
-from dataclasses import dataclass, field  # kept for RuntimeState and internal state classes
 from types import SimpleNamespace
 from typing import Any, Deque, Final
 from collections.abc import Mapping
@@ -125,8 +124,7 @@ def _status_label(code: int | None) -> str:
         return f"0x{code:02X}"
 
 
-@dataclass(slots=True)
-class McuCapabilities:
+class McuCapabilities(msgspec.Struct):
     """Hardware capabilities reported by the MCU."""
 
     protocol_version: int = 0
@@ -199,24 +197,31 @@ class McuCapabilities:
         }
 
 
-@dataclass(slots=True)
-class PendingPinRequest:
+class PendingPinRequest(msgspec.Struct):
+    """Pending pin read request."""
+
     pin: int
-    reply_context: Message | None
+    reply_context: Message | None = None
 
 
-@dataclass(slots=True)
-class ManagedProcess:
+class ManagedProcess(msgspec.Struct):
+    """Managed subprocess with output buffers."""
+
     pid: int
     command: str = ""
     handle: Process | None = None
-    stdout_buffer: bytearray = field(default_factory=bytearray)
-    stderr_buffer: bytearray = field(default_factory=bytearray)
+    stdout_buffer: bytearray | None = None
+    stderr_buffer: bytearray | None = None
     exit_code: int | None = None
-    io_lock: asyncio.Lock = field(
-        default_factory=asyncio.Lock,
-        repr=False,
-    )
+    io_lock: asyncio.Lock | None = None
+
+    def __post_init__(self) -> None:
+        if self.stdout_buffer is None:
+            object.__setattr__(self, "stdout_buffer", bytearray())
+        if self.stderr_buffer is None:
+            object.__setattr__(self, "stderr_buffer", bytearray())
+        if self.io_lock is None:
+            object.__setattr__(self, "io_lock", asyncio.Lock())
 
     def append_output(
         self,
@@ -343,8 +348,7 @@ def _policy_factory() -> AllowedCommandPolicy:
 LATENCY_BUCKETS_MS: tuple[float, ...] = (5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0)
 
 
-@dataclass(slots=True)
-class SerialThroughputStats:
+class SerialThroughputStats(msgspec.Struct):
     """Serial link throughput counters for observability.
 
     [SIL-2] Simple counters with monotonic increments only.
@@ -378,8 +382,7 @@ class SerialThroughputStats:
         }
 
 
-@dataclass(slots=True)
-class SerialLatencyStats:
+class SerialLatencyStats(msgspec.Struct):
     """RPC command latency histogram for performance monitoring.
 
     [SIL-2] Fixed bucket boundaries, no dynamic allocation.
@@ -390,7 +393,7 @@ class SerialLatencyStats:
     """
 
     # Histogram bucket counts (cumulative, le=bucket_ms) - kept for JSON snapshot compatibility
-    bucket_counts: list[int] = field(default_factory=_latency_bucket_counts_factory)
+    bucket_counts: list[int] | None = None
     # Total observations above largest bucket
     overflow_count: int = 0
     # Running totals for average calculation
@@ -400,8 +403,12 @@ class SerialLatencyStats:
     min_latency_ms: float = float("inf")
     max_latency_ms: float = 0.0
     # [NEW] Prometheus Summary for native percentiles
-    _summary: Summary | None = field(default=None, repr=False)
-    _registry: CollectorRegistry | None = field(default=None, repr=False)
+    _summary: Summary | None = None
+    _registry: CollectorRegistry | None = None
+
+    def __post_init__(self) -> None:
+        if self.bucket_counts is None:
+            object.__setattr__(self, "bucket_counts", [0] * len(LATENCY_BUCKETS_MS))
 
     def initialize_prometheus(self, registry: CollectorRegistry | None = None) -> None:
         """Initialize prometheus Summary metrics.
@@ -450,8 +457,9 @@ class SerialLatencyStats:
         }
 
 
-@dataclass(slots=True)
-class SerialFlowStats:
+class SerialFlowStats(msgspec.Struct):
+    """Serial flow control statistics."""
+
     commands_sent: int = 0
     commands_acked: int = 0
     retries: int = 0
@@ -468,8 +476,9 @@ class SerialFlowStats:
         }
 
 
-@dataclass(slots=True)
-class SupervisorStats:
+class SupervisorStats(msgspec.Struct):
+    """Task supervisor statistics."""
+
     restarts: int = 0
     last_failure_unix: float = 0.0
     last_exception: str | None = None
@@ -526,16 +535,15 @@ def _collect_system_metrics() -> dict[str, Any]:
     return result
 
 
-@dataclass(slots=True)
-class RuntimeState:
+class RuntimeState(msgspec.Struct):
     """Aggregated mutable state shared across the daemon layers."""
 
     serial_writer: asyncio.BaseTransport | None = None
     serial_link_connected: bool = False
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = field(default_factory=_mqtt_publish_queue_factory)
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] | None = None
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = field(default_factory=_mqtt_drop_counts_factory)
+    mqtt_drop_counts: dict[str, int] | None = None
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
@@ -553,31 +561,24 @@ class RuntimeState:
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = field(
-        default_factory=_last_spool_snapshot_factory,
-        repr=False,
-    )
-    _spool_wait_strategy: Any = field(
-        default_factory=_spool_wait_strategy_factory,
-        init=False,
-        repr=False,
-    )
-    datastore: dict[str, str] = field(default_factory=_datastore_factory)
-    mailbox_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
+    _last_spool_snapshot: SpoolSnapshot | None = None
+    _spool_wait_strategy: Any = None
+    datastore: dict[str, str] | None = None
+    mailbox_queue: BoundedByteDeque | None = None
     mcu_is_paused: bool = False
-    serial_tx_allowed: asyncio.Event = field(default_factory=_serial_tx_allowed_factory)
-    console_to_mcu_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
+    serial_tx_allowed: asyncio.Event | None = None
+    console_to_mcu_queue: BoundedByteDeque | None = None
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = field(default_factory=_running_processes_factory)
-    process_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    running_processes: dict[int, ManagedProcess] | None = None
+    process_lock: asyncio.Lock | None = None
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = field(default_factory=_policy_factory)
-    topic_authorization: TopicAuthorization = field(default_factory=TopicAuthorization)
+    allowed_policy: AllowedCommandPolicy | None = None
+    topic_authorization: TopicAuthorization | None = None
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
@@ -590,8 +591,8 @@ class RuntimeState:
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     watchdog_beats: int = 0
     last_watchdog_beat: float = 0.0
-    pending_digital_reads: Deque[PendingPinRequest] = field(default_factory=_pending_pin_reads_factory)
-    pending_analog_reads: Deque[PendingPinRequest] = field(default_factory=_pending_pin_reads_factory)
+    pending_digital_reads: Deque[PendingPinRequest] | None = None
+    pending_analog_reads: Deque[PendingPinRequest] | None = None
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
@@ -602,7 +603,7 @@ class RuntimeState:
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
-    mailbox_incoming_queue: BoundedByteDeque = field(default_factory=BoundedByteDeque)
+    mailbox_incoming_queue: BoundedByteDeque | None = None
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
@@ -632,9 +633,9 @@ class RuntimeState:
     handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
-    serial_flow_stats: SerialFlowStats = field(default_factory=SerialFlowStats)
-    serial_throughput_stats: SerialThroughputStats = field(default_factory=SerialThroughputStats)
-    serial_latency_stats: SerialLatencyStats = field(default_factory=SerialLatencyStats)
+    serial_flow_stats: SerialFlowStats | None = None
+    serial_throughput_stats: SerialThroughputStats | None = None
+    serial_latency_stats: SerialLatencyStats | None = None
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -646,8 +647,57 @@ class RuntimeState:
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counters: dict[str, int] = field(default_factory=_mcu_status_counters_factory)
-    supervisor_stats: dict[str, SupervisorStats] = field(default_factory=_supervisor_stats_factory)
+    mcu_status_counters: dict[str, int] | None = None
+    supervisor_stats: dict[str, SupervisorStats] | None = None
+
+    def __post_init__(self) -> None:
+        """Initialize mutable default fields."""
+        if self.mqtt_publish_queue is None:
+            object.__setattr__(self, "mqtt_publish_queue", asyncio.Queue())
+        if self.mqtt_drop_counts is None:
+            object.__setattr__(self, "mqtt_drop_counts", {})
+        if self._last_spool_snapshot is None:
+            object.__setattr__(self, "_last_spool_snapshot", {})
+        if self._spool_wait_strategy is None:
+            object.__setattr__(self, "_spool_wait_strategy", tenacity.wait_exponential(
+                multiplier=SPOOL_BACKOFF_MULTIPLIER,
+                min=SPOOL_BACKOFF_MIN_SECONDS,
+                max=SPOOL_BACKOFF_MAX_SECONDS,
+            ))
+        if self.datastore is None:
+            object.__setattr__(self, "datastore", {})
+        if self.mailbox_queue is None:
+            object.__setattr__(self, "mailbox_queue", BoundedByteDeque())
+        if self.serial_tx_allowed is None:
+            evt = asyncio.Event()
+            evt.set()
+            object.__setattr__(self, "serial_tx_allowed", evt)
+        if self.console_to_mcu_queue is None:
+            object.__setattr__(self, "console_to_mcu_queue", BoundedByteDeque())
+        if self.running_processes is None:
+            object.__setattr__(self, "running_processes", {})
+        if self.process_lock is None:
+            object.__setattr__(self, "process_lock", asyncio.Lock())
+        if self.allowed_policy is None:
+            object.__setattr__(self, "allowed_policy", AllowedCommandPolicy.from_iterable(()))
+        if self.topic_authorization is None:
+            object.__setattr__(self, "topic_authorization", TopicAuthorization())
+        if self.pending_digital_reads is None:
+            object.__setattr__(self, "pending_digital_reads", collections.deque())
+        if self.pending_analog_reads is None:
+            object.__setattr__(self, "pending_analog_reads", collections.deque())
+        if self.mailbox_incoming_queue is None:
+            object.__setattr__(self, "mailbox_incoming_queue", BoundedByteDeque())
+        if self.serial_flow_stats is None:
+            object.__setattr__(self, "serial_flow_stats", SerialFlowStats())
+        if self.serial_throughput_stats is None:
+            object.__setattr__(self, "serial_throughput_stats", SerialThroughputStats())
+        if self.serial_latency_stats is None:
+            object.__setattr__(self, "serial_latency_stats", SerialLatencyStats())
+        if self.mcu_status_counters is None:
+            object.__setattr__(self, "mcu_status_counters", {})
+        if self.supervisor_stats is None:
+            object.__setattr__(self, "supervisor_stats", {})
 
     def configure(self, config: RuntimeConfig) -> None:
         if config.allowed_policy is not None:

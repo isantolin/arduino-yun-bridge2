@@ -10,7 +10,6 @@ import subprocess
 from asyncio import StreamReader
 from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
-from dataclasses import dataclass, field  # kept for ProcessComponent
 from typing import Any, cast
 
 import psutil
@@ -52,21 +51,20 @@ class ProcessOutputBatch(msgspec.Struct):
     stderr_truncated: bool
 
 
-@dataclass(slots=True)
-class ProcessComponent:
+class ProcessComponent(msgspec.Struct):
     """Encapsulates shell/process interactions for BridgeService."""
 
     config: RuntimeConfig
     state: RuntimeState
     ctx: BridgeContext
-    _process_slots: asyncio.BoundedSemaphore | None = field(init=False, repr=False, default=None)
+    _process_slots: asyncio.BoundedSemaphore | None = None
 
     def __post_init__(self) -> None:
         limit = max(0, self.config.process_max_concurrent)
         if limit > 0:
-            self._process_slots = asyncio.BoundedSemaphore(limit)
+            object.__setattr__(self, "_process_slots", asyncio.BoundedSemaphore(limit))
         else:
-            self._process_slots = None
+            object.__setattr__(self, "_process_slots", None)
 
     async def handle_run(self, payload: bytes) -> None:
         command = payload.decode("utf-8", errors="ignore")

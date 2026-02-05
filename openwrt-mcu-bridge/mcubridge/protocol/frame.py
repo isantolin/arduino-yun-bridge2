@@ -26,10 +26,12 @@ Example:
     >>> encoded = cobs.encode(frame) + bytes([0])
 """
 
+from __future__ import annotations
+
 from binascii import crc32
-from dataclasses import dataclass
 from typing import Any, cast
 
+import msgspec
 from construct import Bytes, Checksum, ChecksumError, Int8ub, Int16ub, Int32ub, RawCopy, Struct, this
 
 from . import protocol
@@ -57,8 +59,7 @@ FrameStruct: Any = Struct(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class Frame:
+class Frame(msgspec.Struct, frozen=True, kw_only=True):
     """Represents an RPC frame for MCU-Linux communication.
 
     This class provides both object-oriented and static methods for

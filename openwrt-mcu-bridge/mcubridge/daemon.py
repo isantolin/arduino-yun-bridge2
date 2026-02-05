@@ -31,8 +31,9 @@ import logging
 import sys
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from typing import NoReturn
+
+import msgspec
 
 import tenacity
 
@@ -70,8 +71,9 @@ from mcubridge.watchdog import WatchdogKeepalive
 logger = logging.getLogger("mcubridge")
 
 
-@dataclass(slots=True)
-class SupervisedTaskSpec:
+class SupervisedTaskSpec(msgspec.Struct):
+    """Specification for a supervised async task."""
+
     name: str
     factory: Callable[[], Awaitable[None]]
     fatal_exceptions: tuple[type[BaseException], ...] = ()

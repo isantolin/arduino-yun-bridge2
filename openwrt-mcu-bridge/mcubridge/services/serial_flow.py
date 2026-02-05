@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+import msgspec
 from typing import Any, cast
 from collections.abc import Awaitable, Callable
 
@@ -27,21 +27,22 @@ from mcubridge.protocol import rle, protocol
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 
-def _create_empty_int_set() -> set[int]:
-    return set()
-
-
-@dataclass
-class PendingCommand:
+class PendingCommand(msgspec.Struct):
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = field(default_factory=_create_empty_int_set)
-    completion: asyncio.Event = field(default_factory=asyncio.Event)
+    expected_resp_ids: set[int] | None = None
+    completion: asyncio.Event | None = None
     attempts: int = 0
     success: bool | None = None
     failure_status: int | None = None
     ack_received: bool = False
+
+    def __post_init__(self) -> None:
+        if self.expected_resp_ids is None:
+            object.__setattr__(self, "expected_resp_ids", set())
+        if self.completion is None:
+            object.__setattr__(self, "completion", asyncio.Event())
 
     def mark_success(self) -> None:
         self.success = True

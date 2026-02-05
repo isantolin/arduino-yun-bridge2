@@ -431,7 +431,7 @@ class BridgeService:
 
     async def _handle_ack(self, payload: bytes) -> None:
         if len(payload) >= 2:
-            command_id = int.from_bytes(payload[:2], "big")
+            command_id = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
             logger.debug("MCU > ACK received for 0x%02X", command_id)
         else:
             logger.debug("MCU > ACK received")

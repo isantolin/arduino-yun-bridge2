@@ -232,6 +232,12 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel(
 
     monkeypatch.setattr(mqtt.aiomqtt, "Client", FakeClient)
 
+    # Stop when mqtt_task tries to reconnect after TaskGroup cancellation
+    async def _cancel_sleep(_seconds: float):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(mqtt.asyncio, "sleep", _cancel_sleep)
+
     with pytest.raises(asyncio.CancelledError):
         await mqtt.mqtt_task(config, state, service)
 

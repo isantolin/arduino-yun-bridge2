@@ -27,12 +27,16 @@ from mcubridge.rpc import rle, protocol
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
 
+def _create_empty_int_set() -> set[int]:
+    return set()
+
+
 @dataclass
 class PendingCommand:
     """Book-keeping for a tracked command in flight."""
 
     command_id: int
-    expected_resp_ids: set[int] = field(default_factory=set)
+    expected_resp_ids: set[int] = field(default_factory=_create_empty_int_set)
     completion: asyncio.Event = field(default_factory=asyncio.Event)
     attempts: int = 0
     success: bool | None = None

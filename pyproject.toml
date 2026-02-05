@@ -27,15 +27,21 @@ package-dir = {"" = "openwrt-mcu-bridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q --asyncio-mode=auto"
-testpaths = [
-    "openwrt-mcu-bridge/tests",
+addopts = "-ra -q"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+log_cli = true
+log_cli_level = "INFO"
+testpaths = ["openwrt-mcu-bridge/tests"]
+pythonpath = ["stubs", ".", "openwrt-mcu-bridge"]
+norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
+timeout = 30
+timeout_method = "thread"
+filterwarnings = [
+    "ignore:'asyncio.AbstractEventLoopPolicy':DeprecationWarning",
+    "ignore:'asyncio.set_event_loop_policy':DeprecationWarning",
 ]
-pythonpath = [
-    "stubs",
-    ".",
-    "openwrt-mcu-bridge"
-]
+markers = ["fuzz: mark a test as a fuzz test"]
 
 [tool.black]
 line-length = 88
@@ -65,15 +71,31 @@ use_parentheses = true
 ensure_newline_before_comments = true
 
 [tool.pyright]
-include = ["openwrt-mcu-bridge/mcubridge", "openwrt-mcu-examples-python"]
-exclude = ["**/__pycache__", "**/node_modules", "**/.*", ".venv_debug", '.venv']
-venv = ".venv"
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
+stubPath = "stubs"
+extraPaths = ["openwrt-mcu-bridge"]
+include = [
+    "openwrt-mcu-bridge/mcubridge",
+    "openwrt-mcu-examples-python/mcubridge_client",
+    "openwrt-mcu-core/scripts"
+]
+strict = [
+    "openwrt-mcu-bridge/mcubridge",
+    "openwrt-mcu-examples-python/mcubridge_client",
+    "openwrt-mcu-core/scripts"
+]
+exclude = [
+    "openwrt-sdk",
+    ".tox",
+    ".venv",
+    ".venv_debug",
+    "**/__pycache__",
+    "**/node_modules",
+    "**/.*"
+]
 reportMissingImports = true
 reportMissingTypeStubs = false
-pythonVersion = "3.13"
-executionEnvironments = [
-  { root = "openwrt-mcu-bridge/mcubridge" }
-]
 
 [tool.ruff]
 target-version = "py313"

@@ -15,15 +15,15 @@ from aiomqtt.message import Message
 from cobs import cobs
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.rpc.protocol import FRAME_DELIMITER
-from mcubridge.rpc.frame import Frame
+from mcubridge.protocol.protocol import FRAME_DELIMITER
+from mcubridge.protocol.frame import Frame
 from mcubridge.transport.mqtt import mqtt_task
 from mcubridge.transport import (
     MAX_SERIAL_PACKET_BYTES,
     SerialTransport,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.services.runtime import SerialHandshakeFatal
 from mcubridge.transport.serial_fast import BridgeSerialProtocol

@@ -9,9 +9,9 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.dispatcher import BridgeDispatcher, _PRE_SYNC_ALLOWED_COMMANDS
-from mcubridge.services.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

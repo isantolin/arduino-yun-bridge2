@@ -57,7 +57,7 @@ def main():
 
     # Add package to sys.path for direct imports in this script
     sys.path.insert(0, str(package_root))
-    from mcubridge.rpc import protocol
+    from mcubridge.protocol import protocol
 
     # Path to Firmware
     base_build_path = repo_root / "openwrt-library-arduino/build"

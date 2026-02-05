@@ -12,7 +12,9 @@ import pytest
 from unittest import mock
 import aiomqtt
 import tenacity
-from mcubridge import security, common, metrics, daemon
+from mcubridge.security import security
+from mcubridge.config import common
+from mcubridge import metrics, daemon
 from mcubridge.protocol import topics
 from mcubridge.transport import mqtt
 from mcubridge.state import status
@@ -20,8 +22,8 @@ from mcubridge.services import dispatcher
 from mcubridge.state import context
 from mcubridge.mqtt import spool
 from mcubridge.services import handshake
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
 from mcubridge.mqtt.messages import QueuedPublish
@@ -225,7 +227,7 @@ def test_build_mqtt_properties_branches():
 
 def test_get_uci_config_openwrt_failures(monkeypatch):
     """Cover UCI failure paths on OpenWrt."""
-    from mcubridge.common import uci as common_uci
+    from mcubridge.config.common import uci as common_uci
 
     # Force is_openwrt to True by making Path.exists return True for OpenWrt markers
     original_exists = Path.exists
@@ -1632,7 +1634,7 @@ def test_handshake_parse_capabilities_errors():
     assert state.mcu_capabilities is None
 
     # Unpack error
-    with patch("mcubridge.rpc.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception):
+    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception):
         comp._parse_capabilities(b"12345678")
 
 

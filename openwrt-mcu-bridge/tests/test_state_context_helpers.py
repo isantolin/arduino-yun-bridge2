@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from mcubridge.state import context
-from mcubridge.rpc.protocol import Status, UINT8_MASK
+from mcubridge.protocol.protocol import Status, UINT8_MASK
 
 
 def test_resolve_command_id_formats_unknown_command_id() -> None:

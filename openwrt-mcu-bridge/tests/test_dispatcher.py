@@ -6,10 +6,10 @@ from typing import Any, Callable
 import pytest
 
 from mcubridge.protocol.topics import TopicRoute, parse_topic
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status, Topic
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status, Topic
 from mcubridge.services.dispatcher import BridgeDispatcher
-from mcubridge.services.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 
 from .mqtt_helpers import make_inbound_message
 

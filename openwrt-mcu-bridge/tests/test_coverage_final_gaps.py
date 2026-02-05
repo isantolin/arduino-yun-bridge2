@@ -12,7 +12,7 @@ from mcubridge.services.payloads import (
     ShellPidPayload,
 )
 from mcubridge.services.serial_flow import SerialFlowController, PendingCommand
-from mcubridge.rpc.protocol import Status
+from mcubridge.protocol.protocol import Status
 
 
 # ============================================================================

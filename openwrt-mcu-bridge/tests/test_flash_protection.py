@@ -8,7 +8,7 @@ from mcubridge.config.settings import load_runtime_config
 class TestFlashProtection(unittest.TestCase):
     def test_file_system_root_must_be_volatile(self):
         """Ensure file_system_root raises ValueError if not in /tmp."""
-        from mcubridge import common, const
+        from mcubridge.config import common, const
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(
@@ -32,7 +32,7 @@ class TestFlashProtection(unittest.TestCase):
 
     def test_mqtt_spool_dir_must_be_volatile(self):
         """Ensure mqtt_spool_dir raises ValueError if not in /tmp."""
-        from mcubridge import common, const
+        from mcubridge.config import common, const
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(
@@ -56,7 +56,7 @@ class TestFlashProtection(unittest.TestCase):
 
     def test_override_flag_allows_unsafe_fs_root(self):
         """Ensure allow_non_tmp_paths=1 bypasses check for file_system_root."""
-        from mcubridge import common
+        from mcubridge.config import common
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(

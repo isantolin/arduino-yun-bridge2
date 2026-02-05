@@ -12,7 +12,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 - `src/`
   - Public headers available to sketches (`Bridge.h`, `Console.h`, `Mailbox.h`, etc.).
-  - `arduino/`: implementation files and classes that depend on the Arduino core (e.g. `Bridge.cpp`).
+  - `services/`: implementation files and classes that depend on the Arduino core (e.g. `Bridge.cpp`).
   - `protocol/`: protocol helpers shared with the Linux daemon (COBS encoder, CRC, frame builder).
 - `examples/`
   - Arduino sketches demonstrating usage of the library (`BridgeControl`).

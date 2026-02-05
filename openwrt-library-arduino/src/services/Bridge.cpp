@@ -28,10 +28,10 @@
 #endif
 #include <SHA256.h>
 
-#include "arduino/StringUtils.h"
+#include "util/string_utils.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/security.h"
+#include "security/security.h"
 #include "etl/error_handler.h"
 #include "etl/algorithm.h"
 

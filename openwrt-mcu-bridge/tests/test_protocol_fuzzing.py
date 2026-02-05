@@ -1,8 +1,8 @@
 import random
 import pytest
 from cobs import cobs
-from mcubridge.rpc.frame import Frame
-from mcubridge.rpc.protocol import CRC_COVERED_HEADER_SIZE
+from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 from tests.test_constants import TEST_RANDOM_SEED
 
 # Deterministic seed for reproducibility

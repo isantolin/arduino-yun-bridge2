@@ -5,15 +5,15 @@ from __future__ import annotations
 import importlib
 from unittest.mock import MagicMock, patch
 
-from mcubridge import common
-from mcubridge.common import (
+from mcubridge.config import common
+from mcubridge.config.common import (
     build_mqtt_connect_properties,
     build_mqtt_properties,
     encode_status_reason,
     normalise_allowed_commands,
     parse_bool,
 )
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 from mcubridge.mqtt.messages import QueuedPublish
 
 

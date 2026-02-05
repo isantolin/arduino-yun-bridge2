@@ -7,9 +7,9 @@ from typing import Any, Self
 
 import pytest
 
-from mcubridge import common, const
+from mcubridge.config import common, const
 from mcubridge.config import settings
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 
 def _runtime_config_kwargs(**overrides: Any) -> dict[str, Any]:

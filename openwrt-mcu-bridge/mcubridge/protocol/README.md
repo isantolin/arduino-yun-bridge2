@@ -15,7 +15,7 @@ The system is designed with a strict layering to separate the wire protocol from
 ### 2. The Application Defaults (`mcubridge.const`)
 - **Role:** Application Configuration Defaults & Environment Variables.
 - **Content:** Application-specific defaults (File paths, OS limits, MQTT topics) and Environment Variable names.
-- **Relation to Protocol:** It **does not** mirror protocol constants. Code requiring protocol constants (like Frame Delimiters or Command IDs) must import them directly from `mcubridge.rpc.protocol`.
+- **Relation to Protocol:** It **does not** mirror protocol constants. Code requiring protocol constants (like Frame Delimiters or Command IDs) must import them directly from `mcubridge.protocol.protocol`.
 
 ### 3. The Runtime Configuration (`mcubridge.config.settings`)
 - **Role:** Operational State.
@@ -25,5 +25,5 @@ The system is designed with a strict layering to separate the wire protocol from
 ## Authoritative Usage
 
 To ensure consistency and avoid "Magic Numbers":
-- **Protocol Constants:** Must be imported from `mcubridge.rpc.protocol`.
+- **Protocol Constants:** Must be imported from `mcubridge.protocol.protocol`.
 - **App Defaults:** Must be imported from `mcubridge.const`.

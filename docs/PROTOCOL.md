@@ -705,7 +705,7 @@ size_t decoded_len = rle::decode(output, compressed_len, decoded, sizeof(decoded
 
 **Python (daemon):**
 ```python
-from mcubridge.rpc.rle import encode, decode, should_compress
+from mcubridge.protocol.rle import encode, decode, should_compress
 
 data = b"A" * 100
 

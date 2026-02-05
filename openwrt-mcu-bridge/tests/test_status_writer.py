@@ -9,7 +9,7 @@ from mcubridge.policy import AllowedCommandPolicy
 from mcubridge.state.context import RuntimeState, SupervisorStats
 from mcubridge.state import status
 from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 
 def test_status_writer_publishes_metrics(monkeypatch, tmp_path):

@@ -13,20 +13,20 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
     Status,
 )
-from mcubridge.services.components.base import BridgeContext
-from mcubridge.services.components.process import ProcessComponent
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import ManagedProcess, create_runtime_state
 
 
@@ -441,7 +441,7 @@ def test_handshake_clamp_function() -> None:
 
 def test_common_encode_status_reason() -> None:
     """Cover encode_status_reason function."""
-    from mcubridge.common import encode_status_reason
+    from mcubridge.config.common import encode_status_reason
 
     result = encode_status_reason("test_reason")
     assert result == b"test_reason"

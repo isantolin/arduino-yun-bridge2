@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import msgspec
 
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Topic
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Topic
 
 
 class TopicRoute(msgspec.Struct, frozen=True):

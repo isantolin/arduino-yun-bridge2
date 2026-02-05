@@ -8,13 +8,13 @@ from typing import Awaitable, Callable, Deque, cast
 
 from aiomqtt.message import Message
 from construct import ConstructError
-from mcubridge.rpc.protocol import Command, SystemAction
-from mcubridge.rpc.structures import FreeMemoryResponsePacket, VersionResponsePacket
+from mcubridge.protocol.protocol import Command, SystemAction
+from mcubridge.protocol.structures import FreeMemoryResponsePacket, VersionResponsePacket
 
-from ...mqtt.messages import QueuedPublish
-from ...config.settings import RuntimeConfig
-from ...state.context import RuntimeState
-from ...protocol.topics import Topic, topic_path
+from ..mqtt.messages import QueuedPublish
+from ..config.settings import RuntimeConfig
+from ..state.context import RuntimeState
+from ..protocol.topics import Topic, topic_path
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.system")

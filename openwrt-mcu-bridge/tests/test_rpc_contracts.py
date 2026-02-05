@@ -6,8 +6,8 @@ from enum import IntEnum
 
 import pytest
 
-from mcubridge.rpc import contracts
-from mcubridge.rpc.protocol import Command
+from mcubridge.protocol import contracts
+from mcubridge.protocol.protocol import Command
 
 
 def test_expected_responses_infers_link_reset_pair() -> None:

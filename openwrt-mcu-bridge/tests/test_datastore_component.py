@@ -8,16 +8,16 @@ import pytest
 import pytest_asyncio
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command
-from mcubridge.services.components.base import BridgeContext
-from mcubridge.services.components.datastore import DatastoreComponent
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.datastore import DatastoreComponent
 from mcubridge.state.context import create_runtime_state
 
 

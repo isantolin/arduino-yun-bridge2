@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, AsyncMock, patch
 import pytest
 import msgspec
 
-from mcubridge.services.components.pin import PinComponent
-from mcubridge.services.components.process import ProcessComponent
+from mcubridge.services.pin import PinComponent
+from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import ManagedProcess
 from mcubridge.transport import mqtt
 from mcubridge.transport.serial_fast import BridgeSerialProtocol

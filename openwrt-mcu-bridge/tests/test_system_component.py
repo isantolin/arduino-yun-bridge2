@@ -12,9 +12,9 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command
-from mcubridge.services.components.system import SystemComponent
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command
+from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState
 from .mqtt_helpers import make_inbound_message
 

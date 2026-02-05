@@ -5,7 +5,7 @@ import errno
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from mcubridge.transport.serial_fast import BridgeSerialProtocol, MAX_SERIAL_PACKET_BYTES, SerialTransport
-from mcubridge.rpc.protocol import FRAME_DELIMITER
+from mcubridge.protocol.protocol import FRAME_DELIMITER
 
 
 @pytest.mark.asyncio
@@ -76,7 +76,7 @@ async def test_async_process_packet_crc_error():
 @pytest.mark.asyncio
 async def test_console_component_mqtt_input_paused():
     """Test console component behavior when MCU is paused."""
-    from mcubridge.services.components.console import ConsoleComponent
+    from mcubridge.services.console import ConsoleComponent
 
     config = MagicMock()
     state = MagicMock()
@@ -96,7 +96,7 @@ async def test_console_component_mqtt_input_paused():
 @pytest.mark.asyncio
 async def test_console_component_flush_queue_send_fail():
     """Test console component behavior when send fails during flush."""
-    from mcubridge.services.components.console import ConsoleComponent
+    from mcubridge.services.console import ConsoleComponent
 
     config = MagicMock()
     state = MagicMock()

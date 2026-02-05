@@ -12,9 +12,9 @@ import pytest  # noqa: E402
 
 
 from mcubridge.config.settings import RuntimeConfig  # noqa: E402
-from mcubridge.rpc import protocol  # noqa: E402
-from mcubridge.rpc.frame import Frame  # noqa: E402
-from mcubridge.rpc.protocol import Command  # noqa: E402
+from mcubridge.protocol import protocol  # noqa: E402
+from mcubridge.protocol.frame import Frame  # noqa: E402
+from mcubridge.protocol.protocol import Command  # noqa: E402
 from mcubridge.services.runtime import BridgeService  # noqa: E402
 from mcubridge.state.context import create_runtime_state  # noqa: E402
 from mcubridge.transport import serial_fast  # noqa: E402

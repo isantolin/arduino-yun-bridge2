@@ -15,14 +15,14 @@ from aiomqtt.message import Message
 
 from mcubridge.config import logging as logging_config
 from mcubridge.config import settings
-from mcubridge.rpc import rle
-from mcubridge.services.components.console import ConsoleComponent
-from mcubridge.services.components.datastore import DatastoreComponent, DatastoreAction
-from mcubridge.services.components.file import FileComponent, FileAction
-from mcubridge.services.components.mailbox import MailboxComponent
-from mcubridge.services.components.pin import PinComponent
-from mcubridge.services.components.process import ProcessComponent
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.protocol import rle
+from mcubridge.services.console import ConsoleComponent
+from mcubridge.services.datastore import DatastoreComponent, DatastoreAction
+from mcubridge.services.file import FileComponent, FileAction
+from mcubridge.services.mailbox import MailboxComponent
+from mcubridge.services.pin import PinComponent
+from mcubridge.services.process import ProcessComponent
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.state.context import RuntimeState, McuCapabilities
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.topics import Topic
@@ -356,7 +356,7 @@ async def test_handshake_gaps(runtime_state: RuntimeState, real_config):
     assert await mgr._fetch_capabilities() is False
 
     mgr._parse_capabilities(b"short")
-    with patch("mcubridge.rpc.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception()):
+    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception()):
         mgr._parse_capabilities(b"a" * 8)
 
     runtime_state.handshake_backoff_until = 0
@@ -403,7 +403,7 @@ async def test_runtime_gaps(runtime_state: RuntimeState, real_config):
 
 
 def test_routers_overload():
-    from mcubridge.services.routers import MCUHandlerRegistry
+    from mcubridge.router.routers import MCUHandlerRegistry
     reg = MCUHandlerRegistry()
     reg.register(0x40, AsyncMock())
     reg.register(0x40, AsyncMock())

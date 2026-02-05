@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from ..const import STATUS_FILE_PATH
+from ..config.const import STATUS_FILE_PATH
 from .context import RuntimeState
 
 logger = logging.getLogger("mcubridge.status")

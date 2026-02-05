@@ -9,8 +9,8 @@ mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMo
 sys.modules["serial_asyncio_fast"] = mock_saf
 
 from mcubridge.transport import serial_fast  # noqa: E402
-from mcubridge.rpc.protocol import Command, FRAME_DELIMITER  # noqa: E402
-from mcubridge.rpc.frame import Frame  # noqa: E402
+from mcubridge.protocol.protocol import Command, FRAME_DELIMITER  # noqa: E402
+from mcubridge.protocol.frame import Frame  # noqa: E402
 from cobs import cobs  # noqa: E402
 
 

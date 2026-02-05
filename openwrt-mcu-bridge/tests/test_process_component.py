@@ -12,22 +12,22 @@ import pytest
 import pytest_asyncio
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.policy import CommandValidationError
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
     DEFAULT_SAFE_BAUDRATE,
     Command,
     Status,
 )
-from mcubridge.services.components.base import BridgeContext
-from mcubridge.services.components.process import ProcessComponent, ProcessOutputBatch
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.process import ProcessComponent, ProcessOutputBatch
 from mcubridge.state.context import create_runtime_state
 
 

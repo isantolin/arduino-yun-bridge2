@@ -21,15 +21,15 @@ from collections.abc import Awaitable, Callable
 import tenacity
 
 from ..config.settings import RuntimeConfig
-from ..const import (
+from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import handshake_topic
-from ..rpc import protocol
-from ..rpc.protocol import Command, MAX_PAYLOAD_SIZE, Status
-from ..security import (
+from ..protocol import protocol
+from ..protocol.protocol import Command, MAX_PAYLOAD_SIZE, Status
+from ..security.security import (
     derive_handshake_key,
     generate_nonce_with_counter,
     secure_zero,

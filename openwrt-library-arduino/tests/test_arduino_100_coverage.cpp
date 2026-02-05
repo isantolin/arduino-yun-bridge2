@@ -12,8 +12,8 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rle.h"
-#include "protocol/security.h"
-#include "arduino/StringUtils.h"
+#include "security/security.h"
+#include "util/string_utils.h"
 #include "etl/error_handler.h"
 #include "test_support.h"
 

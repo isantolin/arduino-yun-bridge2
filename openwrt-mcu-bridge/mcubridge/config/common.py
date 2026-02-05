@@ -18,7 +18,7 @@ import uci
 
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 from .const import (
     ALLOWED_COMMAND_WILDCARD,

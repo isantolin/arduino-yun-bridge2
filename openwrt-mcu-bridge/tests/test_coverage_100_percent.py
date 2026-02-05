@@ -7,10 +7,10 @@ from unittest import mock
 
 from mcubridge.services import serial_flow
 from mcubridge.state.context import RuntimeState
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.components.process import ProcessComponent
+from mcubridge.services.process import ProcessComponent
 from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
 

@@ -15,17 +15,17 @@ from typing import Any, Final, Sized, TypeGuard, cast
 
 import tenacity
 from cobs import cobs
-from mcubridge.rpc import rle
+from mcubridge.protocol import rle
 
 # [SIL-2] Deterministic Import: pyserial-asyncio-fast is MANDATORY.
 # Do not catch ImportError. Fail immediately if dependency is missing.
 import serial_asyncio_fast  # type: ignore
 
-from mcubridge.common import log_hexdump
+from mcubridge.config.common import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
-from mcubridge.rpc import protocol
-from mcubridge.rpc.frame import Frame
+from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
+from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import Frame
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 

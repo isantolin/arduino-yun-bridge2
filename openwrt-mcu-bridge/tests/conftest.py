@@ -31,17 +31,17 @@ if "serial_asyncio_fast" not in sys.modules:
 
 import pytest
 
-from mcubridge import common
+from mcubridge.config import common
 from mcubridge.config import settings
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
     DEFAULT_SAFE_BAUDRATE,
 )

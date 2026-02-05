@@ -9,7 +9,7 @@ from typing import Annotated
 
 import msgspec
 
-from mcubridge.rpc.protocol import UINT16_MAX
+from mcubridge.protocol.protocol import UINT16_MAX
 
 __all__ = [
     "PayloadValidationError",

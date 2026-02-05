@@ -8,20 +8,20 @@ from typing import Any, cast
 import msgspec
 from aiomqtt.message import Message
 from construct import ConstructError
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     UINT8_MASK,
     Command,
     MailboxAction,
     Status,
 )
-from mcubridge.rpc.structures import MailboxPushPacket
+from mcubridge.protocol.structures import MailboxPushPacket
 
-from ...common import encode_status_reason
-from ...mqtt.messages import QueuedPublish
-from ...config.settings import RuntimeConfig
-from ...state.context import RuntimeState
-from ...protocol.topics import (
+from ..config.common import encode_status_reason
+from ..mqtt.messages import QueuedPublish
+from ..config.settings import RuntimeConfig
+from ..state.context import RuntimeState
+from ..protocol.topics import (
     Topic,
     mailbox_incoming_available_topic,
     mailbox_outgoing_available_topic,

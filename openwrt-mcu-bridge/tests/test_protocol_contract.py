@@ -10,7 +10,7 @@ from pathlib import Path
 
 import tomllib
 
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 from mcubridge.services.handshake import SerialHandshakeManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -112,7 +112,7 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
 
 
 def test_handshake_tag_reference_vector_matches_spec() -> None:
-    from mcubridge.security import derive_handshake_key
+    from mcubridge.security.security import derive_handshake_key
     secret = b"mcubridge-shared"
     nonce = bytes(range(protocol.HANDSHAKE_NONCE_LENGTH))
     # [MIL-SPEC] Test must use HKDF derived key to match runtime implementation

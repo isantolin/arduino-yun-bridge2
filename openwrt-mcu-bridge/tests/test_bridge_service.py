@@ -23,12 +23,12 @@ from mcubridge.state.context import (
     RuntimeState,
 )
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.const import (
+from mcubridge.config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status
-from mcubridge.services.components.process import ProcessComponent
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status
+from mcubridge.services.process import ProcessComponent
 from mcubridge.services.handshake import derive_serial_timing
 from .mqtt_helpers import make_inbound_message
 
@@ -1420,7 +1420,7 @@ def test_run_command_accepts_shell_metacharacters_as_literals(
         service = BridgeService(runtime_config, runtime_state)
 
         # Mock process component to avoid actual execution
-        with patch("mcubridge.services.components.process.ProcessComponent.run_sync") as mock_run:
+        with patch("mcubridge.services.process.ProcessComponent.run_sync") as mock_run:
             mock_run.return_value = (Status.OK.value, b"hello; ls\n", b"", 0)
 
             status, stdout, _, _ = await service._process.run_sync("echo hello; ls")
@@ -1448,7 +1448,7 @@ def test_process_run_async_accepts_complex_arguments(
         service.register_serial_sender(fake_sender)
 
         # Mock start_async to return a valid PID
-        with patch("mcubridge.services.components.process.ProcessComponent.start_async") as mock_start:
+        with patch("mcubridge.services.process.ProcessComponent.start_async") as mock_start:
             mock_start.return_value = 123
 
             await service.handle_mcu_frame(

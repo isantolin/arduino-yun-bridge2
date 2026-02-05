@@ -1,4 +1,4 @@
-"""Unit tests for mcubridge.services.components.shell."""
+"""Unit tests for mcubridge.services.shell."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.policy import CommandValidationError
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import ShellAction, Status
-from mcubridge.services.components.shell import ShellComponent
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import ShellAction, Status
+from mcubridge.services.shell import ShellComponent
 from mcubridge.state.context import RuntimeState
 
 

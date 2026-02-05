@@ -6,19 +6,19 @@ import logging
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol.protocol import (
     Command,
     Status,
 )
 from mcubridge.state.context import resolve_command_id
-from mcubridge.rpc.contracts import response_to_request
+from mcubridge.protocol.contracts import response_to_request
 from mcubridge.protocol.topics import Topic, TopicRoute
-from .routers import MCUHandlerRegistry, MQTTRouter
+from ..router.routers import MCUHandlerRegistry, MQTTRouter
 
 if TYPE_CHECKING:
     # [FIX] Pylance: Simplificamos import para evitar reportMissingModuleSource
     from aiomqtt import Message
-    from .components import (
+    from . import (
         ConsoleComponent,
         DatastoreComponent,
         FileComponent,

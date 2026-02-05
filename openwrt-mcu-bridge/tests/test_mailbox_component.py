@@ -11,7 +11,7 @@ from collections.abc import Awaitable, Coroutine
 import pytest
 from aiomqtt.message import Message
 
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.topics import (
     Topic,
@@ -20,9 +20,9 @@ from mcubridge.protocol.topics import (
     topic_path,
 )
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.rpc.protocol import Command, MailboxAction, Status
-from mcubridge.services.components.base import BridgeContext
-from mcubridge.services.components.mailbox import MailboxComponent
+from mcubridge.protocol.protocol import Command, MailboxAction, Status
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import RuntimeState
 from tests.test_constants import TEST_MSG_ID
 

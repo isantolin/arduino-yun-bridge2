@@ -5,7 +5,7 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
-#include "protocol/security.h"
+#include "security/security.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_frame.h"

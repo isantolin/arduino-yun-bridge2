@@ -6,9 +6,9 @@ from typing import Self
 
 import pytest
 
-from mcubridge import common
-from mcubridge import const
-from mcubridge.rpc import protocol
+from mcubridge.config import common
+from mcubridge.config import const
+from mcubridge.protocol import protocol
 
 
 def test_get_default_config_matches_constants():

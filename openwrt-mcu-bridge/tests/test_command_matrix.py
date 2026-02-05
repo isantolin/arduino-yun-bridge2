@@ -12,10 +12,10 @@ from typing import Any, Callable, cast
 import pytest
 
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
-from mcubridge.rpc.contracts import expected_responses
-from mcubridge.rpc.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Command, Status, Topic
+from mcubridge.protocol.contracts import expected_responses
+from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Command, Status, Topic
 from mcubridge.services.dispatcher import BridgeDispatcher
-from mcubridge.services.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 
 
 @dataclass(slots=True)

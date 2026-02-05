@@ -18,7 +18,7 @@ from paho.mqtt.enums import CallbackAPIVersion
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.common import get_uci_config
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 
 logger = logging.getLogger("mcubridge.pin_rest")

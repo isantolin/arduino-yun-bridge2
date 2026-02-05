@@ -8,11 +8,11 @@ from typing import Any
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
 )
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 
 def _config_kwargs(**overrides: Any) -> dict[str, Any]:

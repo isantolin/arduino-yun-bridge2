@@ -5,12 +5,12 @@ from __future__ import annotations
 import logging
 
 from aiomqtt.message import Message
-from mcubridge.rpc.protocol import Command, MAX_PAYLOAD_SIZE
+from mcubridge.protocol.protocol import Command, MAX_PAYLOAD_SIZE
 
-from ...protocol.topics import Topic, topic_path
-from ...mqtt.messages import QueuedPublish
-from ...config.settings import RuntimeConfig
-from ...state.context import RuntimeState
+from ..protocol.topics import Topic, topic_path
+from ..mqtt.messages import QueuedPublish
+from ..config.settings import RuntimeConfig
+from ..state.context import RuntimeState
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.console")

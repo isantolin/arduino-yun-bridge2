@@ -10,7 +10,7 @@ import pytest
 import aiomqtt
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
@@ -20,7 +20,7 @@ from mcubridge.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import mqtt

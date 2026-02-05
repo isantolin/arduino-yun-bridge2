@@ -1,7 +1,7 @@
 import pytest
 
-from mcubridge.rpc.frame import Frame
-from mcubridge.rpc import protocol
+from mcubridge.protocol.frame import Frame
+from mcubridge.protocol import protocol
 from tests.test_constants import TEST_CMD_ID
 
 

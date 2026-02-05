@@ -19,13 +19,13 @@ from collections.abc import Iterable
 
 import serial  # type: ignore
 from cobs import cobs
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
     FRAME_DELIMITER,
 )
-from mcubridge.rpc import protocol
-from mcubridge.rpc.frame import Frame
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.protocol import Command, Status
 
 
 @dataclass(slots=True)

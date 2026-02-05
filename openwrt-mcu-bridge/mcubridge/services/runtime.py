@@ -10,14 +10,14 @@ from typing import Any, cast
 from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
-from ..const import TOPIC_FORBIDDEN_REASON
+from ..config.const import TOPIC_FORBIDDEN_REASON
 from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
-from ..rpc import protocol
-from ..rpc.protocol import Status  # Only Status from rpc.protocol needed
+from ..protocol import protocol
+from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 
 from ..state.context import RuntimeState
-from .components import (
+from . import (
     ConsoleComponent,
     DatastoreComponent,
     FileComponent,
@@ -35,7 +35,7 @@ from .handshake import (
     SendFrameCallable,
     derive_serial_timing,
 )
-from .routers import MCUHandlerRegistry, MQTTRouter
+from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from .serial_flow import SerialFlowController
 
 logger = logging.getLogger("mcubridge.service")

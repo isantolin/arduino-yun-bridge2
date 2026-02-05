@@ -11,7 +11,7 @@ import pytest
 
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 
 def _make_message(

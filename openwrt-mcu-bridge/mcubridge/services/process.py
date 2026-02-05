@@ -15,16 +15,16 @@ from typing import Any, cast
 
 import psutil
 
-from ...common import encode_status_reason
-from ...const import PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
-from ...protocol.topics import Topic, topic_path
-from ...mqtt.messages import QueuedPublish
-from ...state.context import ManagedProcess, RuntimeState
-from ...config.settings import RuntimeConfig
-from ...policy import CommandValidationError, tokenize_shell_command
+from ..config.common import encode_status_reason
+from ..config.const import PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
+from ..protocol.topics import Topic, topic_path
+from ..mqtt.messages import QueuedPublish
+from ..state.context import ManagedProcess, RuntimeState
+from ..config.settings import RuntimeConfig
+from ..policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     INVALID_ID_SENTINEL,
     PROCESS_DEFAULT_EXIT_CODE,
     UINT8_MASK,

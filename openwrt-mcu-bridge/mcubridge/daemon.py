@@ -42,7 +42,7 @@ import uvloop
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config, get_config_source
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
@@ -56,7 +56,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.security import verify_crypto_integrity
+from mcubridge.security.security import verify_crypto_integrity
 from mcubridge.services.runtime import BridgeService, SerialHandshakeFatal
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.status import cleanup_status_file, status_writer

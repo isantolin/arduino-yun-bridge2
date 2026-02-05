@@ -7,10 +7,10 @@ import msgspec
 import fnmatch
 from collections.abc import Iterable
 
-from .common import normalise_allowed_commands
-from .const import ALLOWED_COMMAND_WILDCARD
+from .config.common import normalise_allowed_commands
+from .config.const import ALLOWED_COMMAND_WILDCARD
 from .protocol.topics import Topic
-from .rpc.protocol import (
+from .protocol.protocol import (
     AnalogAction,
     ConsoleAction,
     DatastoreAction,

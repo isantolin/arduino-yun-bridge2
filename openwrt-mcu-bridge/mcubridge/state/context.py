@@ -26,7 +26,7 @@ from ..policy import AllowedCommandPolicy, TopicAuthorization
 from .queues import BoundedByteDeque
 from ..config.settings import RuntimeConfig
 
-from ..const import (
+from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
@@ -46,8 +46,8 @@ from ..const import (
     SPOOL_BACKOFF_MIN_SECONDS,
     SPOOL_BACKOFF_MULTIPLIER,
 )
-from ..rpc import protocol
-from ..rpc.protocol import (
+from ..protocol import protocol
+from ..protocol.protocol import (
     Command,
     Status,
     DEFAULT_RETRY_LIMIT,

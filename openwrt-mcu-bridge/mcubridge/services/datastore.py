@@ -7,18 +7,18 @@ from typing import Any, cast
 
 from aiomqtt.message import Message
 from construct import ConstructError
-from ...mqtt.messages import QueuedPublish
-from ...state.context import RuntimeState
-from ...config.settings import RuntimeConfig
-from ...protocol.topics import Topic, topic_path
+from ..mqtt.messages import QueuedPublish
+from ..state.context import RuntimeState
+from ..config.settings import RuntimeConfig
+from ..protocol.topics import Topic, topic_path
 from .base import BridgeContext
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol.protocol import (
     DATASTORE_VALUE_LEN_STRUCT,
     Command,
     DatastoreAction,
     Status,
 )
-from mcubridge.rpc.structures import DatastoreGetPacket, DatastorePutPacket
+from mcubridge.protocol.structures import DatastoreGetPacket, DatastorePutPacket
 
 logger = logging.getLogger("mcubridge.datastore")
 

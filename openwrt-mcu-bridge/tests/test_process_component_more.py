@@ -8,21 +8,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.policy import CommandValidationError
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import (
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
     Status,
 )
-from mcubridge.services.components.base import BridgeContext
-from mcubridge.services.components.process import ProcessComponent
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import ManagedProcess, create_runtime_state
 
 
@@ -257,11 +257,11 @@ async def test_collect_output_finishing_process_releases_slot(
 
 @pytest.mark.asyncio
 async def test_allocate_pid_exhaustion_returns_sentinel(process_component: ProcessComponent) -> None:
-    import mcubridge.services.components.process
+    import mcubridge.services.process
 
     # Shrink the search space so we can exhaust it quickly.
-    original_max = mcubridge.services.components.process.UINT16_MAX
-    mcubridge.services.components.process.UINT16_MAX = 3
+    original_max = mcubridge.services.process.UINT16_MAX
+    mcubridge.services.process.UINT16_MAX = 3
     try:
         async with process_component.state.process_lock:
             process_component.state.next_pid = 1
@@ -273,7 +273,7 @@ async def test_allocate_pid_exhaustion_returns_sentinel(process_component: Proce
         pid = await process_component._allocate_pid()
         assert pid == protocol.INVALID_ID_SENTINEL
     finally:
-        mcubridge.services.components.process.UINT16_MAX = original_max
+        mcubridge.services.process.UINT16_MAX = original_max
 
 
 @pytest.mark.asyncio
@@ -299,7 +299,7 @@ async def test_finalize_async_process_slot_missing_releases(process_component: P
 
 @pytest.mark.asyncio
 async def test_handle_kill_timeout_releases_slot(process_component: ProcessComponent) -> None:
-    import mcubridge.services.components.process
+    import mcubridge.services.process
 
     pid = 11
 
@@ -322,7 +322,7 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
         async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
             return False
 
-    with patch.object(mcubridge.services.components.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
+    with patch.object(mcubridge.services.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
                 ok = await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))

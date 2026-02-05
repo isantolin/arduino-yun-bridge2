@@ -7,9 +7,9 @@ from collections.abc import Coroutine
 from typing import Any, Protocol
 
 from aiomqtt.message import Message
-from ...mqtt.messages import QueuedPublish
-from ...state.context import RuntimeState
-from ...config.settings import RuntimeConfig
+from ..mqtt.messages import QueuedPublish
+from ..state.context import RuntimeState
+from ..config.settings import RuntimeConfig
 
 
 class BridgeContext(Protocol):

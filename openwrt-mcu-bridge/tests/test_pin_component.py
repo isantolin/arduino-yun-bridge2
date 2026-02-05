@@ -1,4 +1,4 @@
-"""Unit tests for mcubridge.services.components.pin."""
+"""Unit tests for mcubridge.services.pin."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, PinAction, Status
-from mcubridge.services.components.pin import PinComponent
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, PinAction, Status
+from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
 
 

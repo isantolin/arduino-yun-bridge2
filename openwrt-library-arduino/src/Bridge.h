@@ -47,7 +47,7 @@
                                for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
 #endif
 
-#include "bridge_config.h"
+#include "config/bridge_config.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 

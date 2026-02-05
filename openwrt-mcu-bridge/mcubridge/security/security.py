@@ -21,8 +21,8 @@ from typing import Any, Final, cast
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from .rpc import protocol
-from .rpc.protocol import (
+from ..protocol import protocol
+from ..protocol.protocol import (
     HANDSHAKE_HKDF_INFO_AUTH,
     HANDSHAKE_HKDF_SALT,
 )

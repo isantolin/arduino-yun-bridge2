@@ -14,9 +14,9 @@ from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.rpc.protocol import Command, Status
-from mcubridge.services.components.base import BridgeContext
-from mcubridge.services.components.file import FileComponent
+from mcubridge.protocol.protocol import Command, Status
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.file import FileComponent
 from mcubridge.state.context import RuntimeState
 
 
@@ -444,7 +444,7 @@ def test_scan_directory_size_handles_scandir_failures(
         return FakeScandir(p)
 
     monkeypatch.setattr(
-        "mcubridge.services.components.file.scandir",
+        "mcubridge.services.file.scandir",
         fake_scandir,
     )
 

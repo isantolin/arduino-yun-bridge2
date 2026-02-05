@@ -1,7 +1,7 @@
 from binascii import crc32
 import pytest
-from mcubridge.rpc.frame import Frame
-from mcubridge.rpc import protocol
+from mcubridge.protocol.frame import Frame
+from mcubridge.protocol import protocol
 
 
 def _build_raw_with_crc(data_no_crc: bytes) -> bytes:

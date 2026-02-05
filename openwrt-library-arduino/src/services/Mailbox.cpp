@@ -1,5 +1,5 @@
 #include "Bridge.h"
-#include "arduino/StringUtils.h"
+#include "util/string_utils.h"
 #include "etl/algorithm.h"
 #include "protocol/rpc_protocol.h"
 

@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 
 
 def _load_pin_rest_cgi() -> ModuleType:

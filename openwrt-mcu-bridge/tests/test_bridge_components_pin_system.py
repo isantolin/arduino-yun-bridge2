@@ -6,10 +6,10 @@ import pytest
 from unittest.mock import patch
 
 from aiomqtt.message import Message
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Command, Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status
 
-from mcubridge.common import encode_status_reason
+from mcubridge.config.common import encode_status_reason
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
@@ -320,7 +320,7 @@ async def test_mqtt_shell_run_publishes_response(
         return Status.OK.value, b"ok\n", b"", 0
 
     with patch(
-        "mcubridge.services.components.process.ProcessComponent.run_sync",
+        "mcubridge.services.process.ProcessComponent.run_sync",
         new=fake_run,
     ):
         await service.handle_mqtt_message(
@@ -365,7 +365,7 @@ async def test_mqtt_shell_run_async_handles_not_allowed(
         return protocol.INVALID_ID_SENTINEL
 
     with patch(
-        "mcubridge.services.components.process." "ProcessComponent.start_async",
+        "mcubridge.services.process." "ProcessComponent.start_async",
         new=fake_start,
     ):
         await service.handle_mqtt_message(
@@ -416,7 +416,7 @@ async def test_mqtt_shell_kill_invokes_process_component(
         return True
 
     with patch(
-        "mcubridge.services.components.process." "ProcessComponent.handle_kill",
+        "mcubridge.services.process." "ProcessComponent.handle_kill",
         new=fake_kill,
     ):
         pid = 21

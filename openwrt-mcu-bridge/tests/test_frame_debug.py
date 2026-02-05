@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
 
-from mcubridge.rpc.protocol import (  # noqa: E402
+from mcubridge.protocol.protocol import (  # noqa: E402
     Command,
     FRAME_DELIMITER,
     Status,

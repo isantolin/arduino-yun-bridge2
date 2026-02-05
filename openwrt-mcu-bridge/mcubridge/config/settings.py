@@ -16,13 +16,13 @@ import msgspec
 from typing import Any
 
 
-from ..common import (
+from ..config.common import (
     get_default_config,
     get_uci_config,
     normalise_allowed_commands,
     parse_bool,
 )
-from ..const import (
+from ..config.const import (
     DEFAULT_ALLOW_NON_TMP_PATHS,
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
@@ -54,7 +54,7 @@ from ..const import (
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..rpc.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE
+from ..protocol.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE
 
 
 logger = logging.getLogger(__name__)

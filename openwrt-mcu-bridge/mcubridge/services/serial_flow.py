@@ -11,18 +11,18 @@ from collections.abc import Awaitable, Callable
 
 import tenacity
 
-from mcubridge.const import (
+from mcubridge.config.const import (
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from mcubridge.rpc.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS
-from mcubridge.rpc.contracts import (
+from mcubridge.protocol.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS
+from mcubridge.protocol.contracts import (
     expected_responses,
     response_to_request,
 )
-from mcubridge.rpc.protocol import Status
-from mcubridge.rpc import rle, protocol
+from mcubridge.protocol.protocol import Status
+from mcubridge.protocol import rle, protocol
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 

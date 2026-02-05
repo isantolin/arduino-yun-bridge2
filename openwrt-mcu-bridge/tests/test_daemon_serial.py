@@ -8,7 +8,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.transport import (
     SerialTransport,
 )
-from mcubridge.rpc import protocol
+from mcubridge.protocol import protocol
 from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
 

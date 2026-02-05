@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.const import (
+from mcubridge.config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
@@ -21,8 +21,8 @@ from mcubridge.const import (
 )
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.topics import Topic, topic_path
-from mcubridge.rpc import protocol
-from mcubridge.rpc.protocol import Status
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Status
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 

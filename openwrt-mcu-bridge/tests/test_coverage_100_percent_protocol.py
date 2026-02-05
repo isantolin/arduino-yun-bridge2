@@ -57,6 +57,20 @@ def test_frame_parse_coverage_all_errors():
         Frame.parse(raw)
 
 
+def test_frame_wrappers_and_min_size():
+    # Cover line 107: Incomplete frame (default check)
+    with pytest.raises(ValueError, match="Incomplete frame"):
+        Frame.parse(b"123")
+
+    # Cover line 144: to_bytes wrapper
+    f = Frame(command_id=0x40, payload=b"123")
+    assert f.to_bytes() == Frame.build(0x40, b"123")
+
+    # Cover line 151: from_bytes wrapper (implicitly used in other tests but ensuring explicit coverage)
+    f2 = Frame.from_bytes(f.to_bytes())
+    assert f2 == f
+
+
 def test_frame_build_edge_cases():
     with pytest.raises(ValueError, match="outside 16-bit range"):
         Frame.build(-1)

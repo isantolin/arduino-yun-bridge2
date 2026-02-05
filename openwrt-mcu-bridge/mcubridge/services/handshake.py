@@ -64,18 +64,14 @@ def _clamp(value: int, lower: int, upper: int) -> int:
     return max(lower, min(upper, value))
 
 
-def _seconds_to_ms(value: float) -> int:
-    return int(round(max(0.0, value) * 1000.0))
-
-
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
     ack_ms = _clamp(
-        _seconds_to_ms(config.serial_retry_timeout),
+        int(round(max(0.0, config.serial_retry_timeout) * 1000.0)),
         protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
         protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
     )
     response_ms = _clamp(
-        _seconds_to_ms(config.serial_response_timeout),
+        int(round(max(0.0, config.serial_response_timeout) * 1000.0)),
         protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
         protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
     )
@@ -106,10 +102,6 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
 _STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
 
 
-def _retry_if_false(res: object) -> bool:
-    return res is False
-
-
 def _log_handshake_retry(retry_state: tenacity.RetryCallState) -> None:
     h_logger = logging.getLogger("mcubridge.service.handshake")
     h_logger.warning(
@@ -117,6 +109,10 @@ def _log_handshake_retry(retry_state: tenacity.RetryCallState) -> None:
         retry_state.attempt_number,
         retry_state.next_action.sleep if retry_state.next_action else 0,
     )
+
+
+def _retry_if_false(res: Any) -> bool:
+    return res is False
 
 
 class SerialHandshakeManager:

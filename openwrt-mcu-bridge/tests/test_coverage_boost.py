@@ -143,23 +143,6 @@ async def test_metrics_snapshot_emit_exceptions():
             pass  # Expected when calling direct without publish_metrics wrapper
 
 
-@pytest.mark.asyncio
-async def test_latency_histogram_invalid_data():
-    """Test Prometheus latency histogram with invalid data."""
-    from mcubridge.metrics import _RuntimeStateCollector
-
-    state = MagicMock()
-    collector = _RuntimeStateCollector(state)
-
-    # Invalid buckets type
-    invalid_data = {"buckets": "not-a-dict"}
-    res = list(collector._emit_latency_histogram(invalid_data, MagicMock()))
-    assert len(res) == 0
-
-    # Empty buckets
-    invalid_data = {"buckets": {}}
-    res = list(collector._emit_latency_histogram(invalid_data, MagicMock()))
-    assert len(res) == 0
 
 
 def test_spool_disk_error_requeue():

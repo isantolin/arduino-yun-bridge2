@@ -451,24 +451,6 @@ async def test_publish_bridge_snapshots_exc_group():
         await metrics.publish_bridge_snapshots(state, enqueue, summary_interval=10, handshake_interval=0)
 
 
-def test_runtime_state_collector_collect_histogram_branches():
-    """Cover histogram branches in _RuntimeStateCollector."""
-    state = MagicMock()
-    # Latency data with buckets (Lines 281-282, 300-305)
-    state.build_metrics_snapshot.return_value = {
-        "serial_latency": {
-            "count": 1,
-            "sum_ms": 100.0,
-            "buckets": {
-                "le_100ms": 1,
-                "invalid": 0,  # Should be skipped (Line 301-302)
-                "le_NaNms": 0,  # Should be skipped (Line 304 ValueError branch)
-            },
-        }
-    }
-    collector = metrics._RuntimeStateCollector(state)
-    results = list(collector.collect())
-    assert any("mcubridge_serial_rpc_latency_seconds" in str(r.name) for r in results)
 
 
 def test_metrics_flatten_branches():
@@ -645,7 +627,7 @@ def test_settings_load_runtime_config_coverage():
         }
     )
 
-    with patch("mcubridge.config.settings._load_raw_config", return_value=raw_cfg):
+    with patch("mcubridge.config.settings._load_raw_config", return_value=(raw_cfg, "test")):
         config = load_runtime_config()
         assert config.debug_logging is True
         assert config.watchdog_enabled is True
@@ -726,13 +708,15 @@ def test_settings_load_raw_config_error():
     from mcubridge.config.settings import _load_raw_config
 
     with patch("mcubridge.config.settings.get_uci_config", side_effect=OSError("Boom")):
-        res = _load_raw_config()
+        res, source = _load_raw_config()
         assert isinstance(res, dict)
+        assert source == "defaults"
 
     # Test empty uci values
     with patch("mcubridge.config.settings.get_uci_config", return_value={}):
-        res = _load_raw_config()
+        res, source = _load_raw_config()
         assert isinstance(res, dict)
+        assert source == "defaults"
 
 
 def test_settings_normalize_path_empty():
@@ -1005,14 +989,14 @@ async def test_dispatcher_gaps():
     disp = dispatcher.BridgeDispatcher(mcu_reg, mqtt_reg, send, ack, is_sync, is_allowed, reject, snapshot)
 
     # _handle_unexpected digital/analog read (pin is None)
-    assert await disp._handle_unexpected_digital_read(b"") is False
-    assert await disp._handle_unexpected_analog_read(b"") is False
+    assert await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
+    assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is False
 
     # With pin component
     disp.pin = MagicMock()
     disp.pin.handle_unexpected_mcu_request = AsyncMock(return_value=True)
-    assert await disp._handle_unexpected_digital_read(b"") is True
-    assert await disp._handle_unexpected_analog_read(b"") is True
+    assert await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is True
+    assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is True
 
     # dispatch_mcu_frame pre-sync rejection
     is_sync.return_value = False

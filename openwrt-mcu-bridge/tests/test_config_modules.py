@@ -99,7 +99,7 @@ def test_load_runtime_config_applies_env_and_defaults(
         "watchdog_interval": "0.2",
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
 
@@ -157,7 +157,7 @@ def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
         "metrics_port": "9200",
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
 
@@ -188,7 +188,7 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
         "serial_shared_secret": " s_e_c_r_e_t_mock ",
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     # Strictly enforcing flash protection now returns default config on validation error.
     config = settings.load_runtime_config()
@@ -210,7 +210,7 @@ def test_load_runtime_config_allows_empty_mqtt_user_value(
         "serial_shared_secret": " envsecret ",
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
 
@@ -367,7 +367,7 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
         }
     )
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: raw_config)
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
     assert config.watchdog_enabled is True

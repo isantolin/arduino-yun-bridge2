@@ -321,19 +321,23 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
 
 
 # Module-level variable to track config source for observability
-_config_source: str = "uci"
+class ConfigState:
+    source: str = "uci"
+
+
+_CONFIG_STATE = ConfigState()
 
 
 def get_config_source() -> str:
     """Return the source of the last loaded configuration ('uci' or 'defaults')."""
-    return _config_source
+    return _CONFIG_STATE.source
 
 
 def load_runtime_config() -> RuntimeConfig:
     """Load configuration from UCI/defaults using msgspec for efficient validation."""
-    global _config_source
 
-    raw_config, _config_source = _load_raw_config()
+    raw_config, source = _load_raw_config()
+    _CONFIG_STATE.source = source
 
     # Pre-process 'allowed_commands' since msgspec handles standard types
     if "allowed_commands" in raw_config:

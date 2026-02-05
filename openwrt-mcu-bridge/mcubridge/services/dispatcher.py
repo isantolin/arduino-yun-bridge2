@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
 from mcubridge.rpc.protocol import (
@@ -151,11 +152,11 @@ class BridgeDispatcher:
         )
         self.mcu_registry.register(
             Command.CMD_DIGITAL_READ.value,
-            self._handle_unexpected_digital_read,
+            partial(self._handle_unexpected_pin_read, Command.CMD_DIGITAL_READ),
         )
         self.mcu_registry.register(
             Command.CMD_ANALOG_READ.value,
-            self._handle_unexpected_analog_read,
+            partial(self._handle_unexpected_pin_read, Command.CMD_ANALOG_READ),
         )
         self.mqtt_router.register(Topic.DIGITAL, self._handle_pin_topic)
         self.mqtt_router.register(Topic.ANALOG, self._handle_pin_topic)
@@ -202,12 +203,6 @@ class BridgeDispatcher:
             logger.warning("Pin component not registered; dropping unexpected %s", command.name)
             return False
         return await pin.handle_unexpected_mcu_request(command, payload)
-
-    async def _handle_unexpected_digital_read(self, payload: bytes) -> bool:
-        return await self._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, payload)
-
-    async def _handle_unexpected_analog_read(self, payload: bytes) -> bool:
-        return await self._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, payload)
 
     async def dispatch_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """

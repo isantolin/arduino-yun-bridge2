@@ -97,9 +97,9 @@ class ShellComponent:
         async with AsyncExitStack() as stack:
             stack.push_async_callback(
                 self.ctx.enqueue_mqtt,
-                self._build_response(
-                    response_topic,
-                    b"Error: shell handler failed unexpectedly",
+                QueuedPublish(
+                    topic_name=response_topic,
+                    payload=b"Error: shell handler failed unexpectedly",
                     content_type="text/plain; charset=utf-8",
                     message_expiry_interval=30,
                 ),
@@ -131,9 +131,9 @@ class ShellComponent:
 
             stack.pop_all()
             await self.ctx.enqueue_mqtt(
-                self._build_response(
-                    response_topic,
-                    response.encode("utf-8"),
+                QueuedPublish(
+                    topic_name=response_topic,
+                    payload=response.encode("utf-8"),
                     content_type="text/plain; charset=utf-8",
                     message_expiry_interval=30,
                 ),
@@ -174,29 +174,20 @@ class ShellComponent:
 
         if pid == protocol.INVALID_ID_SENTINEL:
             await self.ctx.enqueue_mqtt(
-                self._build_response(response_topic, b"error:not_allowed"),
+                QueuedPublish(
+                    topic_name=response_topic,
+                    payload=b"error:not_allowed",
+                ),
                 reply_context=inbound,
             )
             return
 
         await self.ctx.enqueue_mqtt(
-            self._build_response(response_topic, str(pid).encode("utf-8")),
+            QueuedPublish(
+                topic_name=response_topic,
+                payload=str(pid).encode("utf-8"),
+            ),
             reply_context=inbound,
-        )
-
-    def _build_response(
-        self,
-        topic_name: str,
-        payload: bytes,
-        *,
-        content_type: str | None = None,
-        message_expiry_interval: int | None = None,
-    ) -> QueuedPublish:
-        return QueuedPublish(
-            topic_name=topic_name,
-            payload=payload,
-            content_type=content_type,
-            message_expiry_interval=message_expiry_interval,
         )
 
     async def _handle_poll(self, pid_model: ShellPidPayload) -> None:

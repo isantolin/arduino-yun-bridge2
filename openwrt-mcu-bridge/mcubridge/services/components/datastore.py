@@ -13,7 +13,6 @@ from ...protocol.topics import Topic, topic_path
 from .base import BridgeContext
 from mcubridge.rpc.protocol import (
     DATASTORE_VALUE_LEN_STRUCT,
-    DATASTORE_VALUE_LEN_SIZE,
     Command,
     DatastoreAction,
     Status,

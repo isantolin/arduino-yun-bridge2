@@ -303,7 +303,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
     """Load configuration from UCI with robust error handling (SIL 2).
-    
+
     Returns:
         Tuple of (config_dict, source) where source is 'uci' or 'defaults'.
     """

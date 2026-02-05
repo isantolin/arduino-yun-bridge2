@@ -14,6 +14,7 @@ from mcubridge.rpc import protocol
 from mcubridge.rpc.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
 from ...common import encode_status_reason
+from ...config.settings import RuntimeConfig
 from ...const import (
     FILE_LARGE_WARNING_BYTES,
     MQTT_USER_PROP_FILE_PATH,
@@ -21,9 +22,9 @@ from ...const import (
     VOLATILE_STORAGE_PATHS,
 )
 from ...mqtt.messages import QueuedPublish
-from ...config.settings import RuntimeConfig
-from ...state.context import RuntimeState
 from ...protocol.topics import Topic, topic_path
+from ...rpc.structures import FileReadPacket, FileRemovePacket, FileWritePacket
+from ...state.context import RuntimeState
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.file")
@@ -57,24 +58,16 @@ class FileComponent:
         self._ensure_usage_seeded()
 
     async def handle_write(self, payload: bytes) -> bool:
-        if len(payload) < 3:
+        try:
+            packet = FileWritePacket.parse(payload)
+        except Exception:
             logger.warning(
-                "Invalid file write payload length: %d, hex=%s",
-                len(payload),
+                "Invalid file write payload: parse failed, hex=%s",
                 payload.hex() if payload else "(empty)",
             )
             return False
 
-        path_len = payload[0]
-        cursor = 1
-        if len(payload) < cursor + path_len + 2:
-            logger.warning(
-                "Invalid file write payload: missing data section, hex=%s",
-                payload[:32].hex() if len(payload) > 32 else payload.hex(),
-            )
-            return False
-
-        path = payload[cursor : cursor + path_len].decode("utf-8", errors="ignore")
+        path = packet.path
 
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
         # Bloqueamos explícitamente rutas absolutas o relativas peligrosas antes de procesar datos.
@@ -98,14 +91,7 @@ class FileComponent:
             )
             return False
 
-        cursor += path_len
-        data_len = int.from_bytes(payload[cursor : cursor + 2], "big")
-        cursor += 2
-
-        file_data = payload[cursor : cursor + data_len]
-        if len(file_data) != data_len:
-            logger.warning("File write payload truncated. Expected %d bytes.", data_len)
-            return False
+        file_data = packet.data
 
         success, _, reason = await self._perform_file_operation(FileAction.WRITE, path, file_data)
         if success:
@@ -119,23 +105,16 @@ class FileComponent:
         return False
 
     async def handle_read(self, payload: bytes) -> None:
-        if len(payload) < 1:
+        try:
+            packet = FileReadPacket.parse(payload)
+        except Exception:
             logger.warning(
-                "Invalid file read payload length: %d, hex=%s",
-                len(payload),
+                "Invalid file read payload: parse failed, hex=%s",
                 payload.hex() if payload else "(empty)",
             )
             return
 
-        path_len = payload[0]
-        if len(payload) < 1 + path_len:
-            logger.warning(
-                "Invalid file read payload: missing path bytes, hex=%s",
-                payload.hex(),
-            )
-            return
-
-        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
+        filename = packet.path
         success, content, reason = await self._perform_file_operation(FileAction.READ, filename)
 
         if not success:
@@ -166,23 +145,16 @@ class FileComponent:
             offset += len(chunk)
 
     async def handle_remove(self, payload: bytes) -> bool:
-        if len(payload) < 1:
+        try:
+            packet = FileRemovePacket.parse(payload)
+        except Exception:
             logger.warning(
-                "Invalid file remove payload length: %d, hex=%s",
-                len(payload),
+                "Invalid file remove payload: parse failed, hex=%s",
                 payload.hex() if payload else "(empty)",
             )
             return False
 
-        path_len = payload[0]
-        if len(payload) < 1 + path_len:
-            logger.warning(
-                "Invalid file remove payload: missing path bytes, hex=%s",
-                payload.hex(),
-            )
-            return False
-
-        filename = payload[1 : 1 + path_len].decode("utf-8", errors="ignore")
+        filename = packet.path
         success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")

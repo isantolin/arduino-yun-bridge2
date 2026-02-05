@@ -8,6 +8,7 @@ from typing import Awaitable, Callable, Deque, cast
 
 from aiomqtt.message import Message
 from mcubridge.rpc.protocol import Command, SystemAction
+from mcubridge.rpc.structures import VersionResponsePacket
 
 from ...mqtt.messages import QueuedPublish
 from ...config.settings import RuntimeConfig
@@ -76,11 +77,13 @@ class SystemComponent:
         await self.ctx.enqueue_mqtt(message)
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
-        if len(payload) != 2:
+        try:
+            packet = VersionResponsePacket.parse(payload)
+            major, minor = packet.major, packet.minor
+        except Exception:
             logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
             return
 
-        major, minor = payload[0], payload[1]
         self.state.mcu_version = (major, minor)
         reply_context = None
         if self._pending_version:

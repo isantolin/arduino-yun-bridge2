@@ -2,6 +2,7 @@
 #include "arduino/StringUtils.h"
 #include <string.h>
 #include "protocol/rpc_protocol.h"
+#include "etl/algorithm.h"
 
 void FileSystemClass::write(const char* filePath, const uint8_t* data,
                             size_t length) {
@@ -16,7 +17,9 @@ void FileSystemClass::write(const char* filePath, const uint8_t* data,
   // MAX_PAYLOAD_SIZE is 64, so path must be smaller.
   uint8_t header[rpc::RPC_MAX_FILEPATH_LENGTH + 1];
   header[0] = static_cast<uint8_t>(path_len);
-  memcpy(header + 1, filePath, path_len);
+  
+  // [SIL-2] Use etl::copy_n instead of memcpy
+  etl::copy_n(filePath, path_len, header + 1);
 
   // Send potentially large data using chunking
   Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 

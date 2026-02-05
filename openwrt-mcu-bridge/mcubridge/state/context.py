@@ -384,7 +384,7 @@ class SerialLatencyStats:
 
     [SIL-2] Fixed bucket boundaries, no dynamic allocation.
     Buckets represent cumulative counts (Prometheus histogram style).
-    
+
     [OPTIMIZATION] Now also tracks prometheus Summary for native percentiles.
     The Summary provides p50/p90/p99 without manual bucket management.
     """
@@ -405,7 +405,7 @@ class SerialLatencyStats:
 
     def initialize_prometheus(self, registry: CollectorRegistry | None = None) -> None:
         """Initialize prometheus Summary metrics.
-        
+
         Args:
             registry: Optional custom registry. If None, uses default.
         """
@@ -432,7 +432,7 @@ class SerialLatencyStats:
                 self.bucket_counts[i] += 1
         if latency_ms > LATENCY_BUCKETS_MS[-1]:
             self.overflow_count += 1
-        
+
         # Record to prometheus Summary (in seconds)
         if self._summary is not None:
             self._summary.observe(latency_ms / 1000.0)
@@ -987,7 +987,7 @@ class RuntimeState:
 
     def record_unknown_command_id(self, command_id: int) -> None:
         """Record receipt of an unrecognized command/status ID.
-        
+
         This metric helps detect protocol version drift between MCU and daemon.
         """
         self.unknown_command_ids += 1

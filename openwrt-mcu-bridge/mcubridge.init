@@ -52,9 +52,9 @@ start_service() {
     mkdir -p /tmp/run/mcubridge
     mkdir -p "$file_root"
     
-    # Asegurar permisos correctos (777 permite acceso a tools de usuario si es necesario)
-    chmod 777 "$spool_dir"
-    chmod 777 /tmp/run/mcubridge
+    # Asegurar permisos correctos (solo root necesita acceso a spool/runtime)
+    chmod 700 "$spool_dir"
+    chmod 700 /tmp/run/mcubridge
     chmod 755 "$file_root"
 
     procd_open_instance

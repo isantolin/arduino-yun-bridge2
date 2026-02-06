@@ -3,6 +3,14 @@
 
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
+// Response field sizes (bytes) for CMD_PROCESS_RUN_RESP / CMD_PROCESS_POLL_RESP
+static constexpr size_t kStatusFieldSize = 1;
+static constexpr size_t kLenFieldSize = 2;
+// CMD_PROCESS_RUN_RESP header: status(1) + stdout_len(2)
+static constexpr size_t kRunRespHeaderSize = kStatusFieldSize + kLenFieldSize;
+// CMD_PROCESS_POLL_RESP header: status(1) + running(1) + stdout_len(2)
+static constexpr size_t kPollRespHeaderSize = kStatusFieldSize + 1 + kLenFieldSize;
+
 ProcessClass::ProcessClass() 
   : _pending_process_pids(), // Auto-initialized by ETL
     _process_run_handler(nullptr),
@@ -74,18 +82,18 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
 
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (_process_run_handler && payload_length >= 5) {
+      if (_process_run_handler && payload_length >= kRunRespHeaderSize + kLenFieldSize) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
-        uint16_t stdout_len = rpc::read_u16_be(payload_data + 1);
+        uint16_t stdout_len = rpc::read_u16_be(payload_data + kStatusFieldSize);
         
         // Safety check: payload must contain at least (status + stdout_len_header + stdout + stderr_len_header)
-        if (payload_length >= static_cast<size_t>(1 + 2 + stdout_len + 2)) {
-            const uint8_t* stdout_ptr = payload_data + 3;
-            uint16_t stderr_len = rpc::read_u16_be(payload_data + 3 + stdout_len);
+        if (payload_length >= static_cast<size_t>(kRunRespHeaderSize + stdout_len + kLenFieldSize)) {
+            const uint8_t* stdout_ptr = payload_data + kRunRespHeaderSize;
+            uint16_t stderr_len = rpc::read_u16_be(payload_data + kRunRespHeaderSize + stdout_len);
             
             // Final safety check: total payload must accommodate stderr
-            if (payload_length >= static_cast<size_t>(3 + stdout_len + 2 + stderr_len)) {
-                const uint8_t* stderr_ptr = payload_data + 3 + stdout_len + 2;
+            if (payload_length >= static_cast<size_t>(kRunRespHeaderSize + stdout_len + kLenFieldSize + stderr_len)) {
+                const uint8_t* stderr_ptr = payload_data + kRunRespHeaderSize + stdout_len + kLenFieldSize;
                 _process_run_handler(status, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
             }
         }
@@ -98,19 +106,19 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (_process_poll_handler && payload_length >= 6) {
+      if (_process_poll_handler && payload_length >= kPollRespHeaderSize + kLenFieldSize) {
         rpc::StatusCode status = static_cast<rpc::StatusCode>(payload_data[0]);
         uint8_t running = payload_data[1];
         
         _popPendingProcessPid(); 
         
-        uint16_t stdout_len = rpc::read_u16_be(payload_data + 2);
-        if (payload_length >= static_cast<size_t>(4 + stdout_len + 2)) {
-             const uint8_t* stdout_ptr = payload_data + 4;
-             uint16_t stderr_len = rpc::read_u16_be(payload_data + 4 + stdout_len);
+        uint16_t stdout_len = rpc::read_u16_be(payload_data + kStatusFieldSize + 1);
+        if (payload_length >= static_cast<size_t>(kPollRespHeaderSize + stdout_len + kLenFieldSize)) {
+             const uint8_t* stdout_ptr = payload_data + kPollRespHeaderSize;
+             uint16_t stderr_len = rpc::read_u16_be(payload_data + kPollRespHeaderSize + stdout_len);
              
-             if (payload_length >= static_cast<size_t>(4 + stdout_len + 2 + stderr_len)) {
-                 const uint8_t* stderr_ptr = payload_data + 4 + stdout_len + 2;
+             if (payload_length >= static_cast<size_t>(kPollRespHeaderSize + stdout_len + kLenFieldSize + stderr_len)) {
+                 const uint8_t* stderr_ptr = payload_data + kPollRespHeaderSize + stdout_len + kLenFieldSize;
                  _process_poll_handler(status, running, stdout_ptr, stdout_len, stderr_ptr, stderr_len);
              }
         }

@@ -18,6 +18,7 @@ from ..protocol.encoding import encode_status_reason
 from ..config.settings import RuntimeConfig
 from ..config.const import (
     FILE_LARGE_WARNING_BYTES,
+    MQTT_EXPIRY_SHELL,
     MQTT_USER_PROP_FILE_PATH,
     SYSTEMD_PRIVATE_PREFIX,
     VOLATILE_STORAGE_PATHS,
@@ -230,7 +231,7 @@ class FileComponent:
                     message = QueuedPublish(
                         topic_name=response_topic,
                         payload=data,
-                        message_expiry_interval=30,
+                        message_expiry_interval=MQTT_EXPIRY_SHELL,
                         user_properties=((MQTT_USER_PROP_FILE_PATH, filename),),
                     )
 

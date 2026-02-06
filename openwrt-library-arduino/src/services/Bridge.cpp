@@ -360,45 +360,45 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         #endif
 
         uint32_t features = 0;
-        if (kBridgeEnableWatchdog) features |= 1;
-        features |= 2; 
+        if (kBridgeEnableWatchdog) features |= rpc::RPC_CAPABILITY_WATCHDOG;
+        features |= rpc::RPC_CAPABILITY_RLE; 
         #if BRIDGE_DEBUG_FRAMES
-        features |= 4;
+        features |= rpc::RPC_CAPABILITY_DEBUG_FRAMES;
         #endif
         #if BRIDGE_DEBUG_IO
-        features |= 8;
+        features |= rpc::RPC_CAPABILITY_DEBUG_IO;
         #endif
 
         #if defined(E2END) && (E2END > 0)
-        features |= (1 << 4);
+        features |= rpc::RPC_CAPABILITY_EEPROM;
         #endif
 
         #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
             defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)
-        features |= (1 << 5);
+        features |= rpc::RPC_CAPABILITY_DAC;
         #endif
 
         #if defined(HAVE_HWSERIAL1)
-        features |= (1 << 6);
+        features |= rpc::RPC_CAPABILITY_HW_SERIAL1;
         #endif
 
         #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-        features |= (1 << 7);
+        features |= rpc::RPC_CAPABILITY_FPU;
         #endif
 
         #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || \
             defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
             defined(ARDUINO_ARCH_RP2040)
-        features |= (1 << 8);
+        features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
         #endif
 
         #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-        features |= (1 << 9);
+        features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
         #endif
 
         #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
             defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-        features |= (1 << 10);
+        features |= rpc::RPC_CAPABILITY_I2C;
         #endif
 
         rpc::write_u32_be(&caps[4], features);

@@ -137,7 +137,7 @@ class SerialFlowController:
                 if len(compressed) < len(payload):
                     final_cmd |= protocol.CMD_FLAG_COMPRESSED
                     final_payload = compressed
-            except (ValueError, TypeError, Exception) as e:
+            except (ValueError, TypeError, OverflowError) as e:
                 self._logger.warning("Compression failed for command 0x%02X: %s", command_id, e)
 
         if not self._should_track(command_id):

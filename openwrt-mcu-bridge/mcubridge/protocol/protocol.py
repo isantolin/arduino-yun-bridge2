@@ -24,6 +24,10 @@ CRC_POLYNOMIAL: Final[int] = 3988292384
 FRAME_DELIMITER: Final[bytes] = bytes([0])
 DIGITAL_LOW: Final[int] = 0
 DIGITAL_HIGH: Final[int] = 1
+RLE_ESCAPE_BYTE: Final[int] = 255
+RLE_MIN_RUN_LENGTH: Final[int] = 4
+RLE_MAX_RUN_LENGTH: Final[int] = 256
+RLE_SINGLE_ESCAPE_MARKER: Final[int] = 255
 STATUS_CODE_MIN: Final[int] = 48
 STATUS_CODE_MAX: Final[int] = 63
 SYSTEM_COMMAND_MIN: Final[int] = 64
@@ -60,6 +64,9 @@ HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = (
     "response_timeout_ms (uint32)"
 )
 HANDSHAKE_HKDF_ALGORITHM: Final[str] = "HKDF-SHA256"
+HANDSHAKE_NONCE_FORMAT_DESCRIPTION: Final[str] = (
+    "random[8] || counter[8] - counter is big-endian uint64 for anti-replay"
+)
 HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
 HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
 HANDSHAKE_CONFIG_STRUCT: Final = Struct(
@@ -68,6 +75,11 @@ HANDSHAKE_CONFIG_STRUCT: Final = Struct(
     cast(Any, 'response_timeout_ms') / Int32ub,
 )
 HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
+
+class CompressionType(IntEnum):
+    NONE = 0
+    RLE = 1
+
 
 CAPABILITY_WATCHDOG: Final[int] = 1
 CAPABILITY_RLE: Final[int] = 2

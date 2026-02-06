@@ -27,6 +27,7 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
 from mcubridge.mqtt.messages import QueuedPublish
+from construct import ConstructError
 
 
 # --- Helpers ---
@@ -1634,7 +1635,7 @@ def test_handshake_parse_capabilities_errors():
     assert state.mcu_capabilities is None
 
     # Unpack error
-    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception):
+    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=ConstructError):
         comp._parse_capabilities(b"12345678")
 
 

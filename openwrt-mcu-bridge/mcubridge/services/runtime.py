@@ -10,7 +10,7 @@ from typing import Any, cast
 from aiomqtt.message import Message
 
 from ..config.settings import RuntimeConfig
-from ..config.const import TOPIC_FORBIDDEN_REASON
+from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
 from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
 from ..protocol import protocol
@@ -61,13 +61,8 @@ class _StatusHandler:
 
 
 STATUS_VALUES = {status.value for status in Status}
-_PRE_SYNC_ALLOWED_COMMANDS = {
-    protocol.Command.CMD_LINK_SYNC_RESP.value,
-    protocol.Command.CMD_LINK_RESET_RESP.value,
-}
 
 _MAX_PAYLOAD_BYTES = int(protocol.MAX_PAYLOAD_SIZE)
-_STATUS_PAYLOAD_WINDOW = max(0, _MAX_PAYLOAD_BYTES - 2)
 
 
 class BridgeService:
@@ -464,7 +459,7 @@ class BridgeService:
             topic_name=status_topic,
             payload=report,
             content_type="application/json",
-            message_expiry_interval=30,
+            message_expiry_interval=MQTT_EXPIRY_SHELL,
             user_properties=tuple(properties),
         )
         await self.enqueue_mqtt(message)
@@ -496,7 +491,7 @@ class BridgeService:
             topic_name=topic,
             payload=msgspec.json.encode(snapshot),
             content_type="application/json",
-            message_expiry_interval=30,
+            message_expiry_interval=MQTT_EXPIRY_SHELL,
             user_properties=(("bridge-snapshot", flavor),),
         )
         await self.enqueue_mqtt(message, reply_context=inbound)
@@ -540,7 +535,7 @@ class BridgeService:
             topic_name=status_topic,
             payload=payload,
             content_type="application/json",
-            message_expiry_interval=30,
+            message_expiry_interval=MQTT_EXPIRY_SHELL,
             user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
         )
         await self.enqueue_mqtt(message, reply_context=inbound)

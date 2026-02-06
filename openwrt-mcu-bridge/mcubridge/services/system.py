@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Awaitable, Callable, Deque, cast
+from typing import Awaitable, Callable, cast
 
 from aiomqtt.message import Message
 from construct import ConstructError
@@ -13,6 +13,7 @@ from mcubridge.protocol.structures import FreeMemoryResponsePacket, VersionRespo
 
 from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
+from ..config.const import MQTT_EXPIRY_DEFAULT, MQTT_EXPIRY_DATASTORE
 from ..state.context import RuntimeState
 from ..protocol.topics import Topic, topic_path
 from .base import BridgeContext
@@ -32,8 +33,8 @@ class SystemComponent:
         self.config = config
         self.state = state
         self.ctx = ctx
-        self._pending_free_memory: Deque[Message] = collections.deque()
-        self._pending_version: Deque[Message] = collections.deque()
+        self._pending_free_memory: collections.deque[Message] = collections.deque()
+        self._pending_version: collections.deque[Message] = collections.deque()
 
     async def request_mcu_version(self) -> bool:
         send_ok = await self.ctx.send_frame(Command.CMD_GET_VERSION.value, b"")
@@ -65,7 +66,7 @@ class SystemComponent:
         message = QueuedPublish(
             topic_name=topic,
             payload=str(free_memory).encode("utf-8"),
-            message_expiry_interval=10,
+            message_expiry_interval=MQTT_EXPIRY_DEFAULT,
             content_type="text/plain; charset=utf-8",
         )
         reply_context = None
@@ -138,7 +139,7 @@ class SystemComponent:
         message = QueuedPublish(
             topic_name=topic,
             payload=f"{major}.{minor}".encode(),
-            message_expiry_interval=60,
+            message_expiry_interval=MQTT_EXPIRY_DATASTORE,
             content_type="text/plain; charset=utf-8",
         )
         if reply_context is not None:

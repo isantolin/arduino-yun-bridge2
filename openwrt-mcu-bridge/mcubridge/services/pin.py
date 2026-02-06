@@ -14,6 +14,7 @@ from mcubridge.protocol.structures import AnalogReadResponsePacket, DigitalReadR
 from ..protocol.topics import Topic, topic_path
 from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
+from ..config.const import MQTT_EXPIRY_PIN
 from ..state.context import PendingPinRequest, RuntimeState
 from ..protocol.encoding import encode_status_reason
 from .base import BridgeContext
@@ -104,7 +105,7 @@ class PinComponent:
         message = QueuedPublish(
             topic_name=topic,
             payload=str(value).encode("utf-8"),
-            message_expiry_interval=5,
+            message_expiry_interval=MQTT_EXPIRY_PIN,
             user_properties=(("bridge-pin", pin_label),),
         )
         await self.ctx.enqueue_mqtt(
@@ -308,7 +309,7 @@ class PinComponent:
         message = QueuedPublish(
             topic_name=topic,
             payload=b"",
-            message_expiry_interval=5,
+            message_expiry_interval=MQTT_EXPIRY_PIN,
             user_properties=(
                 ("bridge-pin", str(pin)),
                 ("bridge-error", "pending-pin-overflow"),

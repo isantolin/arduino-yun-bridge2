@@ -15,7 +15,7 @@ from typing import Any, cast
 import psutil
 
 from ..protocol.encoding import encode_status_reason
-from ..config.const import PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
+from ..config.const import MQTT_EXPIRY_SHELL, PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
 from ..protocol.topics import Topic, topic_path
 from ..mqtt.messages import QueuedPublish
 from ..state.context import ManagedProcess, RuntimeState
@@ -659,7 +659,7 @@ class ProcessComponent(msgspec.Struct):
             topic_name=topic,
             payload=payload,
             content_type="application/json",
-            message_expiry_interval=30,
+            message_expiry_interval=MQTT_EXPIRY_SHELL,
             user_properties=(("bridge-process-pid", str(pid)),),
         )
         await self.ctx.enqueue_mqtt(message)

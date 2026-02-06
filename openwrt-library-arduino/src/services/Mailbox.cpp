@@ -9,7 +9,9 @@ MailboxClass::MailboxClass()
 
 void MailboxClass::send(const char* message) {
   if (!message) return;
-  const size_t max_payload = rpc::MAX_PAYLOAD_SIZE - 2;
+  // Reserve 2 bytes for framing overhead (length prefix in chunked sends)
+  static constexpr size_t kFramingOverhead = 2;
+  const size_t max_payload = rpc::MAX_PAYLOAD_SIZE - kFramingOverhead;
   const auto info = measure_bounded_cstring(message, max_payload);
   if (info.length == 0) {
     return;

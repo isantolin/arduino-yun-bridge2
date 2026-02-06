@@ -18,7 +18,8 @@ dependencies = [
     "tenacity==9.1.2",
     "msgspec==0.20.0",
     "cryptography==46.0.4",
-    "construct>=2.10.70"
+    "construct>=2.10.70",
+    "uvloop==0.22.0"
 ]
 
 [tool.setuptools]

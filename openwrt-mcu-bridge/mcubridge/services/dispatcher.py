@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
 from mcubridge.protocol.protocol import (
     Command,
+    MAX_PAYLOAD_SIZE,
     Status,
 )
 from mcubridge.state.context import resolve_command_id
@@ -16,7 +17,6 @@ from mcubridge.protocol.topics import Topic, TopicRoute
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 
 if TYPE_CHECKING:
-    # [FIX] Pylance: Simplificamos import para evitar reportMissingModuleSource
     from aiomqtt import Message
     from . import (
         ConsoleComponent,
@@ -36,7 +36,7 @@ _PRE_SYNC_ALLOWED_COMMANDS = {
     Command.CMD_LINK_SYNC_RESP.value,
     Command.CMD_LINK_RESET_RESP.value,
 }
-_STATUS_PAYLOAD_WINDOW = 126  # max(0, _MAX_PAYLOAD_BYTES - 2)
+_STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
 
 
 class BridgeDispatcher:
@@ -243,7 +243,6 @@ class BridgeDispatcher:
                 logger.critical("Critical: Exception in handler for command %s: %s", command_name, exc, exc_info=True)
                 # Optionally send an error status back to MCU if it was a request
                 if response_to_request(command_id) is None:
-                    # [FIX] Corregido Status.STATUS_ERROR -> Status.ERROR
                     await self.send_frame(Status.ERROR.value, b"Internal Error")
 
         elif response_to_request(command_id) is None:

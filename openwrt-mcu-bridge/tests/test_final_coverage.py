@@ -12,6 +12,7 @@ import tenacity
 import pytest
 import msgspec
 from aiomqtt.message import Message
+from construct import ConstructError
 
 from mcubridge.config import logging as logging_config
 from mcubridge.config import settings
@@ -356,7 +357,7 @@ async def test_handshake_gaps(runtime_state: RuntimeState, real_config):
     assert await mgr._fetch_capabilities() is False
 
     mgr._parse_capabilities(b"short")
-    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=Exception()):
+    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=ConstructError()):
         mgr._parse_capabilities(b"a" * 8)
 
     runtime_state.handshake_backoff_until = 0

@@ -112,10 +112,9 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     analog_write: bool = True
     analog_read: bool = True
 
-    def allows(self, topic: str, action: str) -> bool:
-        topic_key = topic.lower()
-        action_key = action.lower()
-        mapping = {
+    def _build_mapping(self) -> dict[tuple[str, str], bool]:
+        """Build the topic-action -> allowed mapping."""
+        return {
             (Topic.FILE.value, FileAction.READ.value): self.file_read,
             (Topic.FILE.value, FileAction.WRITE.value): self.file_write,
             (Topic.FILE.value, FileAction.REMOVE.value): self.file_remove,
@@ -127,8 +126,6 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
             (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): self.shell_run_async,
             (Topic.SHELL.value, ShellAction.POLL.value): self.shell_poll,
             (Topic.SHELL.value, ShellAction.KILL.value): self.shell_kill,
-            # Console action historically used "input" internally, while MQTT uses "in".
-            # Treat both as equivalent to avoid breaking existing UCI configs / callers.
             (Topic.CONSOLE.value, ConsoleAction.IN.value): self.console_input,
             (Topic.CONSOLE.value, ConsoleAction.INPUT.value): self.console_input,
             (Topic.DIGITAL.value, DigitalAction.WRITE.value): self.digital_write,
@@ -137,7 +134,11 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
             (Topic.ANALOG.value, AnalogAction.WRITE.value): self.analog_write,
             (Topic.ANALOG.value, AnalogAction.READ.value): self.analog_read,
         }
-        return mapping.get((topic_key, action_key), False)
+
+    def allows(self, topic: str, action: str) -> bool:
+        topic_key = topic.lower()
+        action_key = action.lower()
+        return self._build_mapping().get((topic_key, action_key), False)
 
 
 __all__ = [

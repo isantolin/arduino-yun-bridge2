@@ -32,6 +32,10 @@ constexpr uint32_t RPC_CRC_POLYNOMIAL = 3988292384;
 constexpr uint8_t RPC_FRAME_DELIMITER = 0;
 constexpr uint8_t RPC_DIGITAL_LOW = 0;
 constexpr uint8_t RPC_DIGITAL_HIGH = 1;
+constexpr uint8_t RPC_RLE_ESCAPE_BYTE = 255;
+constexpr uint8_t RPC_RLE_MIN_RUN_LENGTH = 4;
+constexpr uint16_t RPC_RLE_MAX_RUN_LENGTH = 256;
+constexpr uint8_t RPC_RLE_SINGLE_ESCAPE_MARKER = 255;
 constexpr uint8_t RPC_STATUS_CODE_MIN = 48;
 constexpr uint8_t RPC_STATUS_CODE_MAX = 63;
 constexpr uint16_t RPC_SYSTEM_COMMAND_MIN = 64;
@@ -65,6 +69,11 @@ constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {0x6D, 0x63, 0x75, 0x62, 0x72, 0x6
 constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = 12;
 constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {0x68, 0x61, 0x6E, 0x64, 0x73, 0x68, 0x61, 0x6B, 0x65, 0x2D, 0x61, 0x75, 0x74, 0x68};
 constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = 14;
+
+enum class CompressionType : uint8_t {
+    COMPRESSION_NONE = 0,
+    COMPRESSION_RLE = 1,
+};
 
 constexpr uint32_t RPC_CAPABILITY_WATCHDOG = 1;
 constexpr uint32_t RPC_CAPABILITY_RLE = 2;

@@ -9,7 +9,7 @@ import msgspec
 import threading
 import time
 from pathlib import Path
-from typing import Deque, Protocol, Callable, cast
+from typing import Protocol, Callable, cast
 from .messages import SpoolRecord, QueuedPublish
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
@@ -37,6 +37,9 @@ class FileSpoolDeque:
     Files are stored as JSON for transparency and easy debugging on target.
     """
 
+    # Starting index chosen to leave headroom for appendleft operations
+    _INITIAL_INDEX: int = 1_000_000_000
+
     def __init__(self, directory: str) -> None:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
@@ -47,8 +50,8 @@ class FileSpoolDeque:
             self._head = int(files[0].split(".")[0])
             self._tail = int(files[-1].split(".")[0])
         else:
-            self._head = 1000000000
-            self._tail = 1000000000 - 1
+            self._head = self._INITIAL_INDEX
+            self._tail = self._INITIAL_INDEX - 1
 
     def _file_path(self, index: int) -> Path:
         return self._dir / f"{index:010d}.msg"
@@ -86,8 +89,8 @@ class FileSpoolDeque:
             self._head += 1
             # Reset counters if empty to prevent infinite drift
             if len(self) == 0:
-                self._head = 1000000000
-                self._tail = 1000000000 - 1
+                self._head = self._INITIAL_INDEX
+                self._tail = self._INITIAL_INDEX - 1
 
     def close(self) -> None:
         """No-op for file-based spool."""
@@ -96,8 +99,8 @@ class FileSpoolDeque:
     def clear(self) -> None:
         for f in self._dir.glob("*.msg"):
             f.unlink(missing_ok=True)
-        self._head = 1000000000
-        self._tail = 1000000000 - 1
+        self._head = self._INITIAL_INDEX
+        self._tail = self._INITIAL_INDEX - 1
 
     def __len__(self) -> int:
         count = self._tail - self._head + 1
@@ -132,7 +135,7 @@ class MQTTPublishSpool:
         self.directory = Path(directory)
         self.limit = max(0, limit)
         self._lock = threading.RLock()
-        self._memory_queue: Deque[SpoolRecord] = collections.deque()
+        self._memory_queue: collections.deque[SpoolRecord] = collections.deque()
         self._disk_queue: DiskQueue | None = None
         self._use_disk = True
         self._dropped_due_to_limit = 0
@@ -323,7 +326,7 @@ class MQTTPublishSpool:
             self._trim_events += 1
             self._last_trim_unix = time.time()
             logger.warning(
-                "MQTT spool limit %d exceeded; dropped %d oldest entrie(s)",
+                "MQTT spool limit %d exceeded; dropped %d oldest entry/entries",
                 self.limit,
                 dropped,
             )

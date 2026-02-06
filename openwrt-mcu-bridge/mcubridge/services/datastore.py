@@ -10,6 +10,7 @@ from construct import ConstructError
 from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 from ..config.settings import RuntimeConfig
+from ..config.const import MQTT_EXPIRY_DATASTORE
 from ..protocol.topics import Topic, topic_path
 from .base import BridgeContext
 from mcubridge.protocol.protocol import (
@@ -200,7 +201,7 @@ class DatastoreComponent:
         message = QueuedPublish(
             topic_name=topic_name,
             payload=value,
-            message_expiry_interval=60,
+            message_expiry_interval=MQTT_EXPIRY_DATASTORE,
             content_type="text/plain; charset=utf-8",
             user_properties=tuple(properties),
         )

@@ -79,6 +79,11 @@ OPTIONAL_CONSTANTS: tuple[ConstDef, ...] = (
     ConstDef("frame_delimiter", "uint8_t", "RPC_FRAME_DELIMITER", "FRAME_DELIMITER", py_format="bytes([{value}])"),
     ConstDef("digital_low", "uint8_t", "RPC_DIGITAL_LOW", "DIGITAL_LOW"),
     ConstDef("digital_high", "uint8_t", "RPC_DIGITAL_HIGH", "DIGITAL_HIGH"),
+    # RLE compression constants
+    ConstDef("rle_escape_byte", "uint8_t", "RPC_RLE_ESCAPE_BYTE", "RLE_ESCAPE_BYTE"),
+    ConstDef("rle_min_run_length", "uint8_t", "RPC_RLE_MIN_RUN_LENGTH", "RLE_MIN_RUN_LENGTH"),
+    ConstDef("rle_max_run_length", "uint16_t", "RPC_RLE_MAX_RUN_LENGTH", "RLE_MAX_RUN_LENGTH"),
+    ConstDef("rle_single_escape_marker", "uint8_t", "RPC_RLE_SINGLE_ESCAPE_MARKER", "RLE_SINGLE_ESCAPE_MARKER"),
     # Command category ranges
     ConstDef("status_code_min", "uint8_t", "RPC_STATUS_CODE_MIN", "STATUS_CODE_MIN"),
     ConstDef("status_code_max", "uint8_t", "RPC_STATUS_CODE_MAX", "STATUS_CODE_MAX"),
@@ -134,6 +139,7 @@ HANDSHAKE_STRING_CONSTANTS: tuple[tuple[str, str], ...] = (
     ("config_format", "HANDSHAKE_CONFIG_FORMAT"),
     ("config_description", "HANDSHAKE_CONFIG_DESCRIPTION"),
     ("hkdf_algorithm", "HANDSHAKE_HKDF_ALGORITHM"),
+    ("nonce_format_description", "HANDSHAKE_NONCE_FORMAT_DESCRIPTION"),
 )
 
 # Handshake bytes constants (Python only)
@@ -331,6 +337,14 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
             out.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(info)};\n")
         out.write("\n")
 
+    # Compression types
+    compression = spec.get("compression", {})
+    if compression:
+        out.write("enum class CompressionType : uint8_t {\n")
+        for key, value in compression.items():
+            out.write(f"    COMPRESSION_{key.upper()} = {value},\n")
+        out.write("};\n\n")
+
     # Capabilities
     capabilities = spec.get("capabilities", {})
     if capabilities:
@@ -506,6 +520,14 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     handshake = spec.get("handshake", {})
     if handshake:
         _write_python_handshake(out, handshake)
+
+    # Compression types
+    compression = spec.get("compression", {})
+    if compression:
+        out.write("class CompressionType(IntEnum):\n")
+        for key, value in compression.items():
+            out.write(f"    {key.upper()} = {value}\n")
+        out.write("\n\n")
 
     # Capabilities
     capabilities = spec.get("capabilities", {})

@@ -10,6 +10,7 @@ from mcubridge.protocol.protocol import Command, MAX_PAYLOAD_SIZE
 from ..protocol.topics import Topic, topic_path
 from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
+from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..state.context import RuntimeState
 from .base import BridgeContext
 
@@ -38,7 +39,7 @@ class ConsoleComponent:
         message = QueuedPublish(
             topic_name=topic,
             payload=payload,
-            message_expiry_interval=5,
+            message_expiry_interval=MQTT_EXPIRY_CONSOLE,
         )
         await self.ctx.enqueue_mqtt(message)
 

@@ -13,6 +13,7 @@ from mcubridge.protocol.protocol import ShellAction, Status
 
 from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
+from ..config.const import MQTT_EXPIRY_SHELL
 from ..state.context import RuntimeState
 from ..protocol.topics import Topic, topic_path
 from ..policy import CommandValidationError
@@ -101,7 +102,7 @@ class ShellComponent:
                     topic_name=response_topic,
                     payload=b"Error: shell handler failed unexpectedly",
                     content_type="text/plain; charset=utf-8",
-                    message_expiry_interval=30,
+                    message_expiry_interval=MQTT_EXPIRY_SHELL,
                 ),
                 reply_context=inbound,
             )
@@ -135,7 +136,7 @@ class ShellComponent:
                     topic_name=response_topic,
                     payload=response.encode("utf-8"),
                     content_type="text/plain; charset=utf-8",
-                    message_expiry_interval=30,
+                    message_expiry_interval=MQTT_EXPIRY_SHELL,
                 ),
                 reply_context=inbound,
             )

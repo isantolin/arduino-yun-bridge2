@@ -149,7 +149,7 @@ async def _emit_bridge_snapshot(
             e,
             extra={"flavor": flavor},
         )
-    except (TypeError, ValueError, AttributeError, OSError) as e:
+    except AttributeError as e:
         logger.critical(
             "Unexpected error in bridge snapshot builder: %s",
             e,
@@ -171,8 +171,7 @@ async def _bridge_snapshot_loop(
     except (TypeError, ValueError, OSError):
         # Already logged in _emit_bridge_snapshot
         logger.debug("Bridge snapshot emit failed (initial)", exc_info=True)
-        pass
-    except (TypeError, ValueError, AttributeError, OSError):
+    except AttributeError:
         logger.critical("Bridge snapshot initial emit fatal error", exc_info=True)
 
     while True:

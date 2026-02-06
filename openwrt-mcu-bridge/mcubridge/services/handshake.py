@@ -19,6 +19,7 @@ from typing import Any, cast
 from collections.abc import Awaitable, Callable
 
 import tenacity
+from construct import ConstructError
 
 from ..config.settings import RuntimeConfig
 from ..config.const import (
@@ -301,7 +302,7 @@ class SerialHandshakeManager:
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
-        self._logger.debug(f"Starting capabilities discovery using Command ID 0x{cmd_id:02X}")
+        self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
@@ -352,7 +353,7 @@ class SerialHandshakeManager:
                 features=cap.feat
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except Exception as exc:
+        except (ConstructError, TypeError, ValueError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:

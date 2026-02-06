@@ -1,6 +1,6 @@
 """MCU Bridge Package Initialisation."""
 
-__version__ = "2.1.0"
+__version__ = "2.5.1"
 
 import logging
 import sys

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, cast
+from typing import Any, cast
 from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,7 +35,7 @@ class _SerialServiceStub:
     state: RuntimeState
 
     def __post_init__(self) -> None:
-        self.received_frames: Deque[tuple[int, bytes]] = deque()
+        self.received_frames: deque[tuple[int, bytes]] = deque()
         self.serial_connected = asyncio.Event()
         self.serial_disconnected = asyncio.Event()
         self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None

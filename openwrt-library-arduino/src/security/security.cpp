@@ -20,6 +20,11 @@
 namespace rpc {
 namespace security {
 
+/// SHA-256 digest size in bytes.
+constexpr size_t kSha256DigestSize = 32;
+/// KAT scratch buffer: large enough for both SHA-256 and HMAC-SHA256 inputs.
+constexpr size_t kKatBufferSize = kSha256DigestSize * 2;
+
 /**
  * [MIL-SPEC] Known Answer Test (KAT) Vectors.
  * Stored in Flash (PROGMEM) to save RAM on memory-constrained MCUs.
@@ -42,25 +47,25 @@ static const uint8_t kat_hmac_expected[] PROGMEM = {
 
 bool run_cryptographic_self_tests() {
   SHA256 sha256;
-  uint8_t actual[32];
-  uint8_t buffer[64]; // Temporary buffer for data loading
+  uint8_t actual[kSha256DigestSize];
+  uint8_t buffer[kKatBufferSize]; // Temporary buffer for data loading
 
   // 1. SHA256 KAT ("abc")
   size_t msg_len = sizeof(kat_sha256_msg);
   etl::copy_n(kat_sha256_msg, msg_len, buffer);
   sha256.update(buffer, msg_len);
-  sha256.finalize(actual, 32);
+  sha256.finalize(actual, kSha256DigestSize);
 
-  if (!etl::equal(actual, actual + 32, kat_sha256_expected)) return false;
+  if (!etl::equal(actual, actual + kSha256DigestSize, kat_sha256_expected)) return false;
 
   // 2. HMAC-SHA256 KAT
   sha256.resetHMAC(kat_hmac_key, sizeof(kat_hmac_key)); // Note: resetHMAC copies key internally
   size_t data_len = sizeof(kat_hmac_data);
   etl::copy_n(kat_hmac_data, data_len, buffer);
   sha256.update(buffer, data_len);
-  sha256.finalizeHMAC(kat_hmac_key, sizeof(kat_hmac_key), actual, 32);
+  sha256.finalizeHMAC(kat_hmac_key, sizeof(kat_hmac_key), actual, kSha256DigestSize);
 
-  if (!etl::equal(actual, actual + 32, kat_hmac_expected)) return false;
+  if (!etl::equal(actual, actual + kSha256DigestSize, kat_hmac_expected)) return false;
 
   return true;
 }

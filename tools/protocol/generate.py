@@ -2,7 +2,7 @@
 """Protocol binding generator for MCU Bridge v2.
 
 Reads spec.toml and generates:
-1. Python bindings (mcubridge/rpc/protocol.py)
+1. Python bindings (mcubridge/protocol/protocol.py)
 2. C++ bindings (openwrt-library-arduino/src/protocol/rpc_protocol.h)
 """
 
@@ -576,7 +576,7 @@ def main() -> None:
     default_spec = Path(__file__).resolve().parent / "spec.toml"
     repo_root = Path(__file__).resolve().parents[2]
     default_cpp = repo_root / "openwrt-library-arduino" / "src" / "protocol" / "rpc_protocol.h"
-    default_py = repo_root / "openwrt-mcu-bridge" / "mcubridge" / "rpc" / "protocol.py"
+    default_py = repo_root / "openwrt-mcu-bridge" / "mcubridge" / "protocol" / "protocol.py"
 
     parser = argparse.ArgumentParser(description="Generate protocol bindings")
     parser.add_argument("--spec", type=Path, default=default_spec, help=f"Path to spec.toml (default: {default_spec})")

@@ -4,11 +4,10 @@
 #include <stdlib.h>
 #include <stdio.h> // Added for debug printf
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
+
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "BridgeTestInterface.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -300,7 +299,8 @@ static void reset_bridge_with_stream(RecordingStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin();
-  Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.setIdle();
   Console.begin();
 }
 
@@ -547,7 +547,8 @@ static void test_datastore_get_response_handler() {
   DatastoreGetState state;
   DatastoreGetState::instance = &state;
   DataStore.onDataStoreGetResponse(datastore_get_trampoline);
-  TEST_ASSERT(DataStore._trackPendingDatastoreKey("k"));
+  auto dsa = bridge::test::DataStoreTestAccessor::create(DataStore);
+  TEST_ASSERT(dsa.trackPendingKey("k"));
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
@@ -626,7 +627,8 @@ static void test_process_poll_response_handler() {
 
 static void test_console_write_when_not_begun() {
   // Directly exercise the guard branch.
-  Console._begun = false;
+  auto ca = bridge::test::ConsoleTestAccessor::create(Console);
+  ca.setBegun(false);
   TEST_ASSERT_EQ_UINT(Console.write('a'), 0);
   const uint8_t buf[] = {'x'};
   TEST_ASSERT_EQ_UINT(Console.write(buf, sizeof(buf)), 0);
@@ -655,11 +657,12 @@ static void test_console_read_sends_xon_success_and_failure() {
   reset_bridge_with_stream(stream);
   stream.tx_buffer.clear();
 
-  Console._xoff_sent = true;
+  auto ca = bridge::test::ConsoleTestAccessor::create(Console);
+  ca.setXoffSent(true);
   const uint8_t b = 'z';
   Console._push(&b, 1);
   TEST_ASSERT(Console.read() == 'z');
-  TEST_ASSERT(!Console._xoff_sent);
+  TEST_ASSERT(!ca.getXoffSent());
   TEST_ASSERT(stream.tx_buffer.len > 0);
   restore_bridge_to_serial();
 
@@ -735,7 +738,8 @@ static void test_process_poll_queue_full_and_pop_empty() {
   TEST_ASSERT_EQ_UINT(stream.tx_buffer.len, 0);
 
   // Pop on empty returns sentinel.
-  TEST_ASSERT_EQ_UINT(Process._popPendingProcessPid(), rpc::RPC_INVALID_ID_SENTINEL);
+  auto pa = bridge::test::ProcessTestAccessor::create(Process);
+  TEST_ASSERT_EQ_UINT(pa.popPendingPid(), rpc::RPC_INVALID_ID_SENTINEL);
 
   // Fill queue (BRIDGE_MAX_PENDING_PROCESS_POLLS == 1), second poll emits STATUS_ERROR.
   Process.poll(10);

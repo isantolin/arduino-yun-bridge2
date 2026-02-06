@@ -1012,9 +1012,7 @@ void BridgeClass::enterSafeState() {
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {
-  etl::array<uint8_t, 2> ack_payload;
-  rpc::write_u16_be(ack_payload.data(), command_id);
-  (void)sendFrame(rpc::StatusCode::STATUS_ACK, ack_payload.data(), ack_payload.size());
+  _sendAck(command_id);
   flushStream();
 }
 

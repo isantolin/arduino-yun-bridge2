@@ -197,8 +197,12 @@ async def test_async_process_packet_os_error(
 
     from cobs import cobs
     from mcubridge.protocol.frame import Frame
+    from mcubridge.protocol.protocol import Command
 
-    frame = Frame(0x01, b"\x00").to_bytes()
+    # Use a valid command ID (>= STATUS_CODE_MIN) so the frame passes
+    # semantic validation and reaches handle_mcu_frame where the OSError
+    # is raised.
+    frame = Frame(command_id=Command.CMD_GET_VERSION.value, payload=b"\x00").to_bytes()
     encoded = cobs.encode(frame)
 
     caplog.set_level("ERROR")
@@ -224,7 +228,7 @@ async def test_async_process_packet_crc_mismatch(
     from mcubridge.protocol.frame import Frame
 
     # Create valid frame bytes then corrupt CRC
-    frame = Frame(0x01, b"\x00").to_bytes()
+    frame = Frame(command_id=0x01, payload=b"\x00").to_bytes()
     corrupted = bytearray(frame)
     corrupted[-1] ^= 0xFF  # Flip CRC byte
     encoded = cobs.encode(bytes(corrupted))

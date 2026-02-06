@@ -3,11 +3,10 @@
 #include <string.h>
 #include <stdio.h>
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
+
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "BridgeTestInterface.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -52,7 +51,8 @@ void setup_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin();
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setIdle();
 }
 
 // --- TARGET: rpc_frame.cpp Gaps ---
@@ -106,6 +106,7 @@ void test_bridge_extra_gaps() {
     printf("  -> Testing bridge_extra_gaps\n");
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
 
     // Gap: _emitStatus with null message
     Bridge._emitStatus(rpc::StatusCode::STATUS_OK, (const char*)nullptr);
@@ -118,69 +119,69 @@ void test_bridge_extra_gaps() {
     f.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED);
     f.header.payload_length = 2;
     rpc::write_u16_be(f.payload.data(), 0x40);
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // Gap: dispatch CMD_UNKNOWN
     f.header.command_id = 0x9999;
     f.header.payload_length = 0;
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // [SIL-2] etl::expected API - Gap: process() with parse errors via _last_parse_error
-    Bridge._last_parse_error = rpc::FrameError::OVERFLOW;
+    ba.setLastParseError(rpc::FrameError::OVERFLOW);
     Bridge.process();
 
     // Gap: process() with CRC_MISMATCH error
-    Bridge._last_parse_error = rpc::FrameError::CRC_MISMATCH;
+    ba.setLastParseError(rpc::FrameError::CRC_MISMATCH);
     Bridge.process();
 
     // Gap: process() with MALFORMED error
-    Bridge._last_parse_error = rpc::FrameError::MALFORMED;
+    ba.setLastParseError(rpc::FrameError::MALFORMED);
     Bridge.process();
 
     // Gap: _applyTimingConfig with null payload or short length
-    Bridge._applyTimingConfig(nullptr, 0);
+    ba.applyTimingConfig(nullptr, 0);
     uint8_t short_config[] = {0x01};
-    Bridge._applyTimingConfig(short_config, 1);
+    ba.applyTimingConfig(short_config, 1);
 
     // Gap: _requiresAck default case
-    assert(!Bridge._requiresAck(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)));
+    assert(!ba.requiresAck(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)));
 
     // Gap: sendFrame Status code
     Bridge.sendFrame(rpc::StatusCode::STATUS_ACK);
 
     // Gap: sendFrame while not synchronized (allowed commands)
-    Bridge._fsm.resetFsm();
+    ba.setUnsynchronized();
     assert(Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP));
     assert(Bridge.sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP));
     assert(Bridge.sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP));
     assert(!Bridge.sendFrame(rpc::CommandId::CMD_DIGITAL_WRITE));
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    ba.setIdle();
 
     // Gap: _handleAck with invalid ID
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._last_command_id = 0x60;
-    Bridge._handleAck(rpc::RPC_INVALID_ID_SENTINEL);
-    assert(!Bridge._fsm.isAwaitingAck());
+    ba.setUnsynchronized(); ba.fsmHandshakeComplete(); ba.fsmSendCritical();
+    ba.setLastCommandId(0x60);
+    ba.handleAck(rpc::RPC_INVALID_ID_SENTINEL);
+    assert(!ba.isAwaitingAck());
 
     // Gap: _handleMalformed with invalid ID
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._last_command_id = 0x60;
-    Bridge._handleMalformed(rpc::RPC_INVALID_ID_SENTINEL);
+    ba.setUnsynchronized(); ba.fsmHandshakeComplete(); ba.fsmSendCritical();
+    ba.setLastCommandId(0x60);
+    ba.handleMalformed(rpc::RPC_INVALID_ID_SENTINEL);
 
     // Gap: _computeHandshakeTag with null nonce
     uint8_t tag[32];
-    Bridge._computeHandshakeTag(nullptr, 0, tag);
+    ba.computeHandshakeTag(nullptr, 0, tag);
 
     // Gap: begin with secret
     Bridge.begin(115200, "mysecret");
-    assert(Bridge._shared_secret.size() == 8);
+    assert(ba.sharedSecretSize() == 8);
 
     // Gap: begin with secret > capacity
     char long_secret[64];
     etl::fill_n(long_secret, 63, 'S');
     long_secret[63] = '\0';
     Bridge.begin(115200, long_secret);
-    assert(Bridge._shared_secret.size() == 32);
+    assert(ba.sharedSecretSize() == 32);
 
     // Gap: flushStream with hardware serial
     Bridge.flushStream(); // Bridge was initialized with Serial1
@@ -188,26 +189,23 @@ void test_bridge_extra_gaps() {
     // Gap: CMD_LINK_SYNC with response_length > MAX_PAYLOAD_SIZE
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
     f.header.payload_length = 120; // 120 + 32 > 128
-    Bridge._handleSystemCommand(f);
+    ba.handleSystemCommand(f);
 
     // Gap: _isRecentDuplicateRx branches
-    Bridge._last_rx_crc = 0x1234;
-    Bridge._last_rx_crc_millis = millis();
+    ba.setLastRxCrc(0x1234);
+    ba.setLastRxCrcMillis(millis());
     f.crc = 0x1234;
-    assert(Bridge._isRecentDuplicateRx(f) == false); // elapsed < ack_timeout
+    assert(ba.isRecentDuplicateRx(f) == false); // elapsed < ack_timeout
 
     // Gap: _sendFrame with Fault state
-    Bridge._fsm.cryptoFault();
+    ba.setFault();
     assert(!Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION));
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    ba.setIdle();
 
     // Gap: _flushPendingTxQueue raw_len == 0 (force error)
-    Bridge._pending_tx_queue.clear();
-    BridgeClass::PendingTxFrame pf;
-    pf.command_id = 0x40;
-    pf.payload_length = rpc::MAX_PAYLOAD_SIZE + 1; // Invalid
-    Bridge._pending_tx_queue.push(pf);
-    Bridge._flushPendingTxQueue();
+    ba.clearPendingTxQueue();
+    ba.pushPendingTxFrame(0x40, rpc::MAX_PAYLOAD_SIZE + 1);
+    ba.flushPendingTxQueue();
 }
 
 // --- TARGET: Console.cpp Gaps ---
@@ -216,40 +214,41 @@ void test_console_extra_gaps() {
     CaptureStream stream;
     setup_env(stream);
     Console.begin();
+    auto ca = bridge::test::ConsoleTestAccessor::create(Console);
 
     // Gap: write(c)
     Console.write('X');
 
     // Gap: write(c) when full
-    while(!Console._tx_buffer.full()) Console._tx_buffer.push_back('A');
+    while(!ca.isTxBufferFull()) ca.pushTxByte('A');
     Console.write('B');
 
     // Gap: write(buf, size) when not empty
-    Console._tx_buffer.clear();
+    ca.clearTxBuffer();
     Console.write('A');
     Console.write((const uint8_t*)"hello", 5);
 
     // Gap: peek()
-    Console._rx_buffer.push('P');
+    ca.pushRxByte('P');
     assert(Console.peek() == 'P');
 
     // Gap: available()
     assert(Console.available() == 1);
 
     // Gap: read() empty
-    Console._rx_buffer.clear();
+    ca.clearRxBuffer();
     assert(Console.read() == -1);
 
     // Gap: flush() not begun
-    Console._begun = false;
+    ca.setBegun(false);
     Console.flush();
-    Console._begun = true;
+    ca.setBegun(true);
 
     // Gap: _push empty or 0 capacity
     Console._push(nullptr, 0);
     
     // Gap: _push when full
-    while(!Console._rx_buffer.full()) Console._rx_buffer.push('Z');
+    while(!ca.isRxBufferFull()) ca.pushRxByte('Z');
     uint8_t data = 'X';
     Console._push(&data, 1);
 }
@@ -292,14 +291,15 @@ void test_datastore_extra_gaps() {
     DataStore.handleResponse(f);
 
     // Gap: _popPendingDatastoreKey empty
-    DataStore._pending_datastore_keys.clear();
-    const char* key = DataStore._popPendingDatastoreKey();
+    auto dsa = bridge::test::DataStoreTestAccessor::create(DataStore);
+    dsa.clearPendingKeys();
+    const char* key = dsa.popPendingKey();
     assert(key != nullptr);
     assert(strlen(key) == 0);
 
     // Gap: _trackPendingDatastoreKey empty or too long
-    assert(!DataStore._trackPendingDatastoreKey(""));
-    assert(!DataStore._trackPendingDatastoreKey(long_key));
+    assert(!dsa.trackPendingKey(""));
+    assert(!dsa.trackPendingKey(long_key));
 }
 
 // --- TARGET: Mailbox.cpp Gaps ---
@@ -350,8 +350,9 @@ void test_process_extra_gaps() {
     Process.poll(-1);
 
     // Gap: poll with full pending queue
+    auto pa = bridge::test::ProcessTestAccessor::create(Process);
     for(int i=0; i<BRIDGE_MAX_PENDING_PROCESS_POLLS; ++i) {
-        Process._pushPendingProcessPid(i+1);
+        pa.pushPendingPid(i+1);
     }
     Process.poll(99);
 
@@ -387,8 +388,8 @@ void test_process_extra_gaps() {
     Process.handleResponse(f);
 
     // Gap: _popPendingProcessPid empty
-    Process._pending_process_pids.clear();
-    assert(Process._popPendingProcessPid() == rpc::RPC_INVALID_ID_SENTINEL);
+    pa.clearPendingPids();
+    assert(pa.popPendingPid() == rpc::RPC_INVALID_ID_SENTINEL);
 }
 
 // --- TARGET: rle.h Gaps ---

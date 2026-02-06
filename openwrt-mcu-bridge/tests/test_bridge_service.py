@@ -195,6 +195,16 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                         response,
                     )
                 )
+            elif command_id == Command.CMD_GET_VERSION.value:
+                flow.on_frame_received(
+                    Command.CMD_GET_VERSION_RESP.value,
+                    b"\x01\x02",
+                )
+            elif command_id == Command.CMD_CONSOLE_WRITE.value:
+                flow.on_frame_received(
+                    Status.ACK.value,
+                    protocol.UINT16_STRUCT.build(Command.CMD_CONSOLE_WRITE.value),
+                )
             return True
         service.register_serial_sender(fake_sender)
 

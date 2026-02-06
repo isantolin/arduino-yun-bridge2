@@ -6,11 +6,10 @@
 static unsigned long g_test_millis = 10000; // Start at non-zero
 unsigned long millis() { return g_test_millis++; }
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
+
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "BridgeTestInterface.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -52,57 +51,59 @@ void setup_env(CaptureStream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin(115200);
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setIdle();
 }
 
 // --- COBERTURA BRIDGE.CPP ---
 void test_bridge_gaps() {
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
 
     rpc::Frame f;
     
     // Gap: _handleSystemCommand default case
     f.header.command_id = 0x4F; 
-    Bridge._handleSystemCommand(f);
+    ba.handleSystemCommand(f);
 
     // Gap: _handleGpioCommand default case
     f.header.command_id = 0x5F;
     f.header.payload_length = 1;
     f.payload[0] = 13;
-    Bridge._handleGpioCommand(f);
+    ba.handleGpioCommand(f);
 
     // Gap: dispatch unexpected status codes
     f.header.command_id = 0x3F; // STATUS_CODE_MAX
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // Gap: dispatch with compressed flag but decode failure (short payload)
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE) | rpc::RPC_CMD_FLAG_COMPRESSED;
     f.header.payload_length = 1;
     f.payload[0] = 0xFF; // RLE escape sin datos
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // Gap: _isRecentDuplicateRx branches
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
     f.header.payload_length = 2;
     f.payload[0] = 13; f.payload[1] = 1;
     f.crc = 0x12345678; // Dummy CRC
-    Bridge._ack_timeout_ms = 1000; 
-    Bridge._ack_retry_limit = 3;
-    Bridge._markRxProcessed(f);
+    ba.setAckTimeoutMs(1000); 
+    ba.setAckRetryLimit(3);
+    ba.markRxProcessed(f);
     g_test_millis += 1500; // Move into the retry window (elapsed > ack_timeout)
-    assert(Bridge._isRecentDuplicateRx(f));
+    assert(ba.isRecentDuplicateRx(f));
 
     // Gap: enterSafeState reset logic
     Bridge.enterSafeState();
     assert(!Bridge.isSynchronized());
 
     // Gap: _handleSystemCommand CMD_LINK_SYNC without secret
-    Bridge._shared_secret.clear();
+    ba.clearSharedSecret();
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
     f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
     etl::fill_n(f.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xA});
-    Bridge._handleSystemCommand(f);
+    ba.handleSystemCommand(f);
 
     // Gap: onPacketReceived with various errors
     uint8_t crc_err[] = {0x02, 0x00, 0x00, 0x40, 0x00, 0xDE, 0xAD, 0xBE, 0xEF}; 
@@ -113,10 +114,10 @@ void test_bridge_gaps() {
     // Note: _onAckTimeout() checks _retry_count >= _ack_retry_limit to enter safe state.
     // _retransmitLastFrame() increments _retry_count but only if _pending_tx_queue is non-empty.
     // For coverage, we directly set _retry_count to exceed limit and call _onAckTimeout.
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._ack_timeout_ms = 1000;
-    Bridge._ack_retry_limit = 1;
-    Bridge._retry_count = Bridge._ack_retry_limit; // Set at limit
+    ba.setUnsynchronized(); ba.fsmHandshakeComplete(); ba.fsmSendCritical();
+    ba.setAckTimeoutMs(1000);
+    ba.setAckRetryLimit(1);
+    ba.setRetryCount(ba.getAckRetryLimit()); // Set at limit
     
     // Directly call timeout handler - exceeds limit -> enterSafeState
     Bridge._onAckTimeout();
@@ -139,6 +140,7 @@ void test_console_gaps() {
     CaptureStream stream;
     setup_env(stream);
     Console.begin();
+    auto ca = bridge::test::ConsoleTestAccessor::create(Console);
 
     // Gap: write(buffer, size) chunking
     uint8_t large_buf[rpc::MAX_PAYLOAD_SIZE + 10];
@@ -146,13 +148,13 @@ void test_console_gaps() {
     Console.write(large_buf, sizeof(large_buf));
 
     // Gap: read() high/low watermarks
-    for(int i=0; i<BRIDGE_CONSOLE_RX_BUFFER_SIZE; ++i) Console._rx_buffer.push(i);
-    Console._xoff_sent = true;
-    while(!Console._rx_buffer.empty()) Console.read();
-    assert(!Console._xoff_sent);
+    for(int i=0; i<BRIDGE_CONSOLE_RX_BUFFER_SIZE; ++i) ca.pushRxByte(static_cast<uint8_t>(i));
+    ca.setXoffSent(true);
+    while(!ca.isRxBufferEmpty()) Console.read();
+    assert(!ca.getXoffSent());
 
     // Gap: flush() with empty buffer
-    Console._tx_buffer.clear();
+    ca.clearTxBuffer();
     Console.flush();
 }
 

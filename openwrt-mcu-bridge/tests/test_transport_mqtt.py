@@ -186,14 +186,19 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Test publisher handles queue full during cancellation by logging warning."""
+    """Test publisher handles queue full during cancellation by logging warning.
+
+    On Python 3.14+, TaskGroup treats CancelledError raised by a child task
+    as cancellation of the group itself, so we test _mqtt_publisher_loop
+    directly and cancel the task with task.cancel() to trigger the
+    "queue full during shutdown" requeue path.
+    """
     config = _make_config(tls=False, cafile=None)
-    # Create a tiny queue that will overflow
+    # Queue with capacity 1 — after requeue it is full.
     config.mqtt_queue_limit = 1
     state = create_runtime_state(config)
-    service = BridgeService(config, state)
 
-    # Seed one message to be published when cancelled
+    # Seed one message.
     await state.mqtt_publish_queue.put(
         QueuedPublish(
             topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test/topic",
@@ -201,44 +206,33 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel(
         )
     )
 
-    created: list[object] = []
+    cancel_on_publish = asyncio.Event()
 
     class FakeClient:
-        def __init__(self, **_kwargs):
-            self.subscribed: list[tuple[str, int]] = []
-            created.append(self)
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, _tb):
-            return False
-
-        async def subscribe(self, topic: str, qos: int = 0):
-            self.subscribed.append((topic, qos))
+        """Stub client whose publish() signals the test to cancel the task."""
 
         async def publish(self, *_args, **_kwargs):
-            raise asyncio.CancelledError()  # Simulate cancellation during publish
+            cancel_on_publish.set()
+            # Yield control so the outer test code can call task.cancel()
+            # before we return.  The task will receive CancelledError at
+            # this await point — exactly as happens in production when the
+            # event loop cancels the publisher during shutdown.
+            await asyncio.sleep(10)
 
-        @property
-        def messages(self):
-            async def _iter():
-                # Wait indefinitely - responds instantly to cancellation
-                await asyncio.Event().wait()
-                yield None  # pragma: no cover - never reached
+    client = FakeClient()
 
-            return _iter()
+    # Launch the publisher loop as a standalone task.
+    task = asyncio.ensure_future(mqtt._mqtt_publisher_loop(state, client))
 
-    monkeypatch.setattr(mqtt.aiomqtt, "Client", FakeClient)
-
-    # Stop when mqtt_task tries to reconnect after TaskGroup cancellation
-    async def _cancel_sleep(_seconds: float):
-        raise asyncio.CancelledError
-
-    monkeypatch.setattr(mqtt.asyncio, "sleep", _cancel_sleep)
+    # Wait until publish() is entered, then cancel the task.
+    await cancel_on_publish.wait()
+    task.cancel()
 
     with pytest.raises(asyncio.CancelledError):
-        await mqtt.mqtt_task(config, state, service)
+        await task
+
+    # The CancelledError handler should have requeued the message.
+    assert state.mqtt_publish_queue.qsize() == 1
 
 
 @pytest.mark.asyncio
@@ -330,7 +324,12 @@ async def test_mqtt_subscriber_processes_message(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Test subscriber loop processes incoming messages."""
+    """Test subscriber loop processes incoming messages.
+
+    On Python 3.14+, TaskGroup treats CancelledError raised by a child
+    task as group cancellation, so we test _mqtt_subscriber_loop directly
+    to avoid the publisher task hanging indefinitely.
+    """
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -346,21 +345,6 @@ async def test_mqtt_subscriber_processes_message(
             self.properties = None
 
     class FakeClient:
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, _tb):
-            return False
-
-        async def subscribe(self, topic: str, qos: int = 0):
-            pass
-
-        async def publish(self, *_args, **_kwargs):
-            pass
-
         @property
         def messages(self):
             async def _iter():
@@ -368,14 +352,14 @@ async def test_mqtt_subscriber_processes_message(
                 while msg_count < 1:
                     msg_count += 1
                     yield FakeMsg()
+                # _mqtt_subscriber_loop catches CancelledError with pass,
+                # so the function returns normally after this.
                 raise asyncio.CancelledError()
 
             return _iter()
 
-    monkeypatch.setattr(mqtt.aiomqtt, "Client", FakeClient)
-
-    with pytest.raises(asyncio.CancelledError):
-        await mqtt.mqtt_task(config, state, service)
+    client = FakeClient()
+    await mqtt._mqtt_subscriber_loop(service, client)
 
     assert msg_count == 1
 
@@ -385,7 +369,11 @@ async def test_mqtt_subscriber_empty_topic_skipped(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Test subscriber loop skips messages with empty topics."""
+    """Test subscriber loop skips messages with empty topics.
+
+    Calls _mqtt_subscriber_loop directly to avoid Python 3.14 TaskGroup
+    hang (same rationale as test_mqtt_subscriber_processes_message).
+    """
     config = _make_config(tls=False, cafile=None)
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -401,21 +389,6 @@ async def test_mqtt_subscriber_empty_topic_skipped(
             self.properties = None
 
     class FakeClient:
-        def __init__(self, **_kwargs):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, _tb):
-            return False
-
-        async def subscribe(self, topic: str, qos: int = 0):
-            pass
-
-        async def publish(self, *_args, **_kwargs):
-            pass
-
         @property
         def messages(self):
             async def _iter():
@@ -427,7 +400,5 @@ async def test_mqtt_subscriber_empty_topic_skipped(
 
             return _iter()
 
-    monkeypatch.setattr(mqtt.aiomqtt, "Client", FakeClient)
-
-    with pytest.raises(asyncio.CancelledError):
-        await mqtt.mqtt_task(config, state, service)
+    client = FakeClient()
+    await mqtt._mqtt_subscriber_loop(service, client)

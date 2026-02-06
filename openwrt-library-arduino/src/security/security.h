@@ -23,9 +23,13 @@
 #include <string.h>
 #include <SHA256.h>
 #include <HKDF.h>
+#include "../protocol/rpc_protocol.h"
 
 namespace rpc {
 namespace security {
+
+/// Number of bits per byte (used for counter-to-byte shifting).
+constexpr int kBitsPerByte = 8;
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.
@@ -111,12 +115,13 @@ inline void generate_nonce_with_counter(
     uint8_t* out_nonce,
     uint64_t& counter,
     RandomFunc random_func) {
-  for (int i = 0; i < 8; i++) {
+  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_RANDOM_BYTES; i++) {
     out_nonce[i] = static_cast<uint8_t>(random_func() & 0xFF);
   }
   counter++;
-  for (int i = 0; i < 8; i++) {
-    out_nonce[15 - i] = static_cast<uint8_t>((counter >> (i * 8)) & 0xFF);
+  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
+    out_nonce[(RPC_HANDSHAKE_NONCE_LENGTH - 1) - i] =
+        static_cast<uint8_t>((counter >> (i * kBitsPerByte)) & 0xFF);
   }
 }
 
@@ -125,8 +130,8 @@ inline void generate_nonce_with_counter(
  */
 inline uint64_t extract_nonce_counter(const uint8_t* nonce) {
   uint64_t counter = 0;
-  for (int i = 0; i < 8; i++) {
-    counter = (counter << 8) | nonce[8 + i];
+  for (unsigned i = 0; i < RPC_HANDSHAKE_NONCE_COUNTER_BYTES; i++) {
+    counter = (counter << kBitsPerByte) | nonce[RPC_HANDSHAKE_NONCE_RANDOM_BYTES + i];
   }
   return counter;
 }

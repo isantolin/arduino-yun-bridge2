@@ -36,8 +36,7 @@ void FileSystemClass::remove(const char* filePath) {
 
   // Use ETL vector as a safe buffer builder
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  payload.push_back(static_cast<uint8_t>(path_len));
-  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(filePath), reinterpret_cast<const uint8_t*>(filePath) + path_len);
+  append_length_prefixed(payload, filePath, path_len);
 
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_FILE_REMOVE,
@@ -48,15 +47,14 @@ void FileSystemClass::read(const char* filePath) {
   if (!filePath || !*filePath) {
     return;
   }
-  size_t len = strlen(filePath);
-  if (len > rpc::RPC_MAX_FILEPATH_LENGTH) {
-    return;
-  }
+  const auto path_info = measure_bounded_cstring(
+      filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
+  if (path_info.length == 0 || path_info.overflowed) return;
+  const size_t path_len = path_info.length;
 
   // Use ETL vector as a safe buffer builder
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  payload.push_back(static_cast<uint8_t>(len));
-  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(filePath), reinterpret_cast<const uint8_t*>(filePath) + len);
+  append_length_prefixed(payload, filePath, path_len);
 
   (void)Bridge.sendFrame(rpc::CommandId::CMD_FILE_READ, payload.data(), static_cast<uint16_t>(payload.size()));
 }

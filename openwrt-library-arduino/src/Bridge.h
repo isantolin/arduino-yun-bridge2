@@ -142,7 +142,12 @@ using BridgePacketSerial = PacketSerial;
 
 #if defined(BRIDGE_HOST_TEST)
 namespace bridge {
-namespace test { class TestAccessor; }
+namespace test {
+  class TestAccessor;
+  class ConsoleTestAccessor;
+  class DataStoreTestAccessor;
+  class ProcessTestAccessor;
+}
 }
 #endif
 
@@ -282,7 +287,16 @@ class BridgeClass : public bridge::router::ICommandHandler {
   etl::delegate<void()> _cb_baudrate_change;
   etl::delegate<void()> _cb_startup_stabilized;
 
-  // [SIL-2] Non-blocking startup stabilization flag
+  // [SIL-2] Non-blocking startup stabilization flag.
+  // Rationale: marked `volatile` because it is written from a timer/callback
+  // context (startup-stabilization timer expiry) and read from the main
+  // loop context (BridgeClass::update / FSM transitions).  Without the
+  // volatile qualifier the compiler may cache the value in a register and
+  // the main loop would never observe the flag change, violating the
+  // single-writer / single-reader safety contract required at SIL-2.
+  // No additional synchronisation primitive is needed: the variable is a
+  // single bool (atomic on all supported AVR / ARM-M targets) with exactly
+  // one writer (timer callback) and one reader (main loop).
   volatile bool _startup_stabilizing;
 
   // [SIL-2] ETL Message Router for flattened command dispatch
@@ -328,6 +342,9 @@ class BridgeClass : public bridge::router::ICommandHandler {
 extern BridgeClass Bridge;
 
 class ConsoleClass : public Stream {
+  #if defined(BRIDGE_HOST_TEST)
+  friend class bridge::test::ConsoleTestAccessor;
+  #endif
  public:
   ConsoleClass();
   void begin();
@@ -355,6 +372,9 @@ extern ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 #include "etl/string.h"
 class DataStoreClass {
+  #if defined(BRIDGE_HOST_TEST)
+  friend class bridge::test::DataStoreTestAccessor;
+  #endif
  public:
   using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
 
@@ -427,6 +447,9 @@ extern FileSystemClass FileSystem;
 
 #if BRIDGE_ENABLE_PROCESS
 class ProcessClass {
+  #if defined(BRIDGE_HOST_TEST)
+  friend class bridge::test::ProcessTestAccessor;
+  #endif
  public:
   using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
                                      const uint8_t*, uint16_t);

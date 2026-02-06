@@ -22,7 +22,6 @@ define Package/python3-uvloop
   SUBMENU:=Python
   TITLE:=Ultra fast asyncio event loop (v0.22.1)
   URL:=https://github.com/MagicStack/uvloop
-  PKG_ARCH:=all
   DEPENDS:=+python3 +libuv
 endef
 

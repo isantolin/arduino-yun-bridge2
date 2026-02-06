@@ -16,11 +16,10 @@
 #include <string.h>
 #include <stdio.h>
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
+
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "BridgeTestInterface.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -66,7 +65,8 @@ void setup_env(Stream& stream) {
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(stream);
     Bridge.begin(115200);
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setIdle();
 }
 
 // --- BRIDGE.CPP: Stream flush without hardware serial (line 303) ---
@@ -103,7 +103,8 @@ void test_sendChunkyFrame_sync_loss() {
     etl::fill_n(data, sizeof(data), uint8_t{'X'});
     
     // Start send, then lose sync
-    Bridge._fsm.resetFsm();  // Unsynchronized
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setUnsynchronized();  // Unsynchronized
     Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, data, sizeof(data));
 }
 
@@ -114,14 +115,15 @@ void test_baudrate_change_callback() {
     // Reset with hardware serial to test baudrate change path
     Bridge.~BridgeClass();
     new (&Bridge) BridgeClass(Serial1);
-    Bridge._hardware_serial = &Serial1;  // Simulate hardware serial
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setHardwareSerial(&Serial1);  // Simulate hardware serial
     Bridge.begin(115200);
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    ba.setIdle();
     
     // Set pending baudrate and trigger callback
-    Bridge._pending_baudrate = 9600;
+    ba.setPendingBaudrate(9600);
     Bridge._onBaudrateChange();
-    assert(Bridge._pending_baudrate == 0);
+    assert(ba.getPendingBaudrate() == 0);
 }
 
 // --- BRIDGE.CPP: Duplicate handling paths ---
@@ -129,6 +131,7 @@ void test_duplicate_command_handling() {
     printf("  -> test_duplicate_command_handling\n");
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
     
     rpc::Frame f;
     bridge::router::CommandContext ctx;
@@ -139,7 +142,7 @@ void test_duplicate_command_handling() {
     ctx.frame = &f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
     f.header.payload_length = 0;
-    Bridge.onSystemCommand(ctx);
+    ba.routeSystemCommand(ctx);
     
     // GPIO duplicate - write commands (lines 625-626)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
@@ -147,7 +150,7 @@ void test_duplicate_command_handling() {
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
     f.header.payload_length = 2;
     f.payload[0] = 13; f.payload[1] = 1;
-    Bridge.onGpioCommand(ctx);
+    ba.routeGpioCommand(ctx);
     
     // GPIO duplicate - read commands (lines 640-641)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
@@ -155,7 +158,7 @@ void test_duplicate_command_handling() {
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
     f.header.payload_length = 1;
     f.payload[0] = 13;
-    Bridge.onGpioCommand(ctx);
+    ba.routeGpioCommand(ctx);
     
     // Console duplicate (lines 655, 657)
     Console.begin();
@@ -163,51 +166,51 @@ void test_duplicate_command_handling() {
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
     f.header.payload_length = 5;
-    Bridge.onConsoleCommand(ctx);
+    ba.routeConsoleCommand(ctx);
     
     // Mailbox duplicate - MAILBOX_PUSH (lines 668-669)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     f.header.payload_length = 0;
-    Bridge.onMailboxCommand(ctx);
+    ba.routeMailboxCommand(ctx);
     
     // FileSystem duplicate - FILE_WRITE (lines 688-689)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     f.header.payload_length = 10;
-    Bridge.onFileSystemCommand(ctx);
+    ba.routeFileSystemCommand(ctx);
     
     // FileSystem duplicate - FILE_READ (line 698)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ);
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ);
-    Bridge.onFileSystemCommand(ctx);
+    ba.routeFileSystemCommand(ctx);
     
     // FileSystem duplicate - FILE_REMOVE (line 703)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE);
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE);
-    Bridge.onFileSystemCommand(ctx);
+    ba.routeFileSystemCommand(ctx);
     
     // Process duplicate - PROCESS_RUN (line 713)
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN);
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN);
-    Bridge.onProcessCommand(ctx);
+    ba.routeProcessCommand(ctx);
     
     // Process duplicate - PROCESS_RUN_ASYNC
     ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC);
     ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC);
-    Bridge.onProcessCommand(ctx);
+    ba.routeProcessCommand(ctx);
     
     // Unknown command duplicate
     ctx.raw_command = 0xFFFF;
     ctx.is_duplicate = true;
     f.header.command_id = 0xFFFF;
-    Bridge.onUnknownCommand(ctx);
+    ba.routeUnknownCommand(ctx);
 }
 
 // --- CONSOLE.CPP: Buffer full after flush returns 0 (line 34) ---
@@ -216,14 +219,16 @@ void test_console_buffer_full_after_flush() {
     CaptureStream stream;
     setup_env(stream);
     Console.begin();
+    auto ca = bridge::test::ConsoleTestAccessor::create(Console);
     
     // Fill buffer
-    while (!Console._tx_buffer.full()) {
-        Console._tx_buffer.push_back('X');
+    while (!ca.isTxBufferFull()) {
+        ca.pushTxByte('X');
     }
     
     // Force unsync so flush doesn't actually send
-    Bridge._fsm.resetFsm();
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setUnsynchronized();
     
     // Write should attempt flush but fail
     size_t written = Console.write('Y');
@@ -236,14 +241,16 @@ void test_console_flush_sendframe_fails() {
     CaptureStream stream;
     setup_env(stream);
     Console.begin();
+    auto ca = bridge::test::ConsoleTestAccessor::create(Console);
     
     // Fill buffer with content
     for (int i = 0; i < 10; i++) {
-        Console._tx_buffer.push_back('A' + i);
+        ca.pushTxByte('A' + i);
     }
     
     // Force unsynchronized to make sendFrame fail
-    Bridge._fsm.resetFsm();
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setUnsynchronized();
     Console.flush();
 }
 
@@ -267,57 +274,58 @@ void test_fsm_all_transitions() {
     printf("  -> test_fsm_all_transitions\n");
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
     
     // Test StateUnsynchronized: EvReset (no change) - lines 93-94
-    Bridge._fsm.resetFsm();
-    assert(Bridge._fsm.isUnsynchronized());
-    Bridge._fsm.resetFsm();  // EvReset in Unsynchronized
-    assert(Bridge._fsm.isUnsynchronized());
+    ba.setUnsynchronized();
+    assert(ba.isUnsynchronized());
+    ba.fsmResetFsm();  // EvReset in Unsynchronized
+    assert(ba.isUnsynchronized());
     
     // Test StateIdle: on_enter_state - lines 113-114 (covered by transition)
-    Bridge._fsm.resetFsm();
-    Bridge._fsm.handshakeComplete();
-    assert(Bridge._fsm.isIdle());
+    ba.setUnsynchronized();
+    ba.fsmHandshakeComplete();
+    assert(ba.isIdle());
     
     // Test StateIdle: EvHandshakeComplete (no change) - lines 121-122
-    Bridge._fsm.handshakeComplete();  // While already Idle
-    assert(Bridge._fsm.isIdle());
+    ba.fsmHandshakeComplete();  // While already Idle
+    assert(ba.isIdle());
     
     // Test StateIdle: EvCryptoFault -> Fault - lines 125-126
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
-    Bridge._fsm.cryptoFault();
-    assert(Bridge._fsm.isFault());
+    ba.setIdle();
+    ba.fsmCryptoFault();
+    assert(ba.isFault());
     
     // Test StateAwaitingAck: EvSendCritical (no change) - lines 149-150
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
-    Bridge._fsm.sendCritical();
-    assert(Bridge._fsm.isAwaitingAck());
-    Bridge._fsm.sendCritical();  // While AwaitingAck
-    assert(Bridge._fsm.isAwaitingAck());
+    ba.setIdle();
+    ba.fsmSendCritical();
+    assert(ba.isAwaitingAck());
+    ba.fsmSendCritical();  // While AwaitingAck
+    assert(ba.isAwaitingAck());
     
     // Test StateAwaitingAck: EvReset -> Unsynchronized - lines 157-158
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._fsm.resetFsm();
-    assert(Bridge._fsm.isUnsynchronized());
+    ba.setAwaitingAck();
+    ba.fsmResetFsm();
+    assert(ba.isUnsynchronized());
     
     // Test StateAwaitingAck: EvCryptoFault -> Fault - lines 161-162
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._fsm.cryptoFault();
-    assert(Bridge._fsm.isFault());
+    ba.setAwaitingAck();
+    ba.fsmCryptoFault();
+    assert(ba.isFault());
     
     // Test StateFault: EvReset -> Unsynchronized - lines 183-184
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
-    Bridge._fsm.cryptoFault();
-    assert(Bridge._fsm.isFault());
-    Bridge._fsm.resetFsm();
-    assert(Bridge._fsm.isUnsynchronized());
+    ba.setIdle();
+    ba.fsmCryptoFault();
+    assert(ba.isFault());
+    ba.fsmResetFsm();
+    assert(ba.isUnsynchronized());
     
     // Test StateFault: EvCryptoFault (no change) - lines 187-188
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
-    Bridge._fsm.cryptoFault();
-    assert(Bridge._fsm.isFault());
-    Bridge._fsm.cryptoFault();  // Already in Fault
-    assert(Bridge._fsm.isFault());
+    ba.setIdle();
+    ba.fsmCryptoFault();
+    assert(ba.isFault());
+    ba.fsmCryptoFault();  // Already in Fault
+    assert(ba.isFault());
 }
 
 // --- COMMAND ROUTER: Null handler paths ---
@@ -435,10 +443,11 @@ void test_enter_safe_state_path() {
     printf("  -> test_enter_safe_state_path\n");
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
     
     // Direct enterSafeState call for coverage
     Bridge.enterSafeState();
-    assert(Bridge._fsm.isUnsynchronized());
+    assert(ba.isUnsynchronized());
 }
 
 // --- Additional edge cases for maximum coverage ---
@@ -446,6 +455,7 @@ void test_additional_edge_cases() {
     printf("  -> test_additional_edge_cases\n");
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
     
     // Test _onRxDedupe coverage
     Bridge._onRxDedupe();
@@ -454,8 +464,8 @@ void test_additional_edge_cases() {
     Bridge._onStartupStabilized();
     
     // Test _onAckTimeout coverage (needs AwaitingAck state)
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete(); Bridge._fsm.sendCritical();
-    Bridge._retry_count = 0;
+    ba.setAwaitingAck();
+    ba.setRetryCount(0);
     Bridge._onAckTimeout();
 }
 

@@ -328,14 +328,14 @@ Hay dos niveles distintos de “ACK” en este sistema:
 
 Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada frame codificado termina en `0x00` (definido como `RPC_FRAME_DELIMITER`).
 
-- `MAX_PAYLOAD_SIZE = 128` bytes.
+- `MAX_PAYLOAD_SIZE = 64` bytes.
 - Todos los enteros multi-byte se codifican en **Big Endian**.
 
 ## 3. Formato de frame (antes de COBS)
 
 ```
 +--------------------------+---------------------+----------+
-| Cabecera (5 bytes)       | Payload (0-128)     | CRC32    |
+| Cabecera (5 bytes)       | Payload (0-64)      | CRC32    |
 +--------------------------+---------------------+----------+
 ```
 
@@ -565,7 +565,7 @@ Raw:
 ### 5.3 Consola (0x60)
 
 - **`0x60` CMD_CONSOLE_WRITE (bidireccional)**
-  - Payload: `chunk: byte[]` (máx. 128 bytes).
+  - Payload: `chunk: byte[]` (máx. 64 bytes).
   - Confirmación: `STATUS_ACK (0x38)`.
 
 ### 5.4 Datastore (0x70)
@@ -746,7 +746,7 @@ Estos topics forman parte del contrato operativo y deben estar definidos en `too
 | `0x31` | `STATUS_ERROR` | Generic handler failure | Check daemon logs for specific error context |
 | `0x32` | `STATUS_CMD_UNKNOWN` | Unsupported command ID | Verify protocol version match (MCU vs daemon) |
 | `0x33` | `STATUS_MALFORMED` | Invalid payload structure | Check payload length and field encoding |
-| `0x34` | `STATUS_OVERFLOW` | Frame exceeds buffer limits | Reduce payload size (max 128 bytes) |
+| `0x34` | `STATUS_OVERFLOW` | Frame exceeds buffer limits | Reduce payload size (max 64 bytes) |
 | `0x35` | `STATUS_CRC_MISMATCH` | Corrupted frame | Check baud rate (115200), serial cable, noise |
 | `0x36` | `STATUS_TIMEOUT` | No response within deadline | Increase `response_timeout_ms`, check MCU load |
 | `0x37` | `STATUS_NOT_IMPLEMENTED` | Feature disabled on MCU | Enable feature via `BRIDGE_ENABLE_*` macros |

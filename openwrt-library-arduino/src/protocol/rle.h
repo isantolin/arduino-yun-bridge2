@@ -164,6 +164,12 @@ inline size_t decode(const uint8_t* src_buf, size_t src_len,
   return dst_pos;
 }
 
+/// Minimum input size below which compression is never attempted.
+constexpr size_t MIN_COMPRESS_INPUT_SIZE = 8;
+
+/// Minimum net byte savings required before compression is worthwhile.
+constexpr size_t MIN_COMPRESS_SAVINGS = 4;
+
 /**
  * Check if compression would be beneficial.
  * 
@@ -175,7 +181,7 @@ inline size_t decode(const uint8_t* src_buf, size_t src_len,
  * @return         True if compression is recommended
  */
 inline bool should_compress(const uint8_t* src_buf, size_t src_len) {
-  if (!src_buf || src_len < 8) return false;  // Too small to benefit
+  if (!src_buf || src_len < MIN_COMPRESS_INPUT_SIZE) return false;  // Too small to benefit
   
   size_t potential_savings = 0;
   size_t escape_count = 0;
@@ -207,7 +213,7 @@ inline bool should_compress(const uint8_t* src_buf, size_t src_len) {
   // Each escape byte in non-run context costs 2 extra bytes
   size_t escape_cost = escape_count * 2;
   
-  return potential_savings > escape_cost + 4;  // Need meaningful savings
+  return potential_savings > escape_cost + MIN_COMPRESS_SAVINGS;  // Need meaningful savings
 }
 
 }  // namespace rle

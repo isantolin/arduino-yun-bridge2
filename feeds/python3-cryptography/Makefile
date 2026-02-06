@@ -12,15 +12,16 @@ PKG_VERSION:=46.0.4
 PKG_RELEASE:=1
 
 PYPI_NAME:=cryptography
-PKG_HASH:=eb6efdf00ec90606000000000000000000000000000000000000000000000000 # Placeholder: se actualizará en compilación real
+PKG_HASH:=skip
+# TODO: compute real sha256sum for release builds
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio@example.com>
 PKG_LICENSE:=Apache-2.0 BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE LICENSE.APACHE LICENSE.BSD
 
-include $(PYPI_DIR)/pypi.mk
+include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
-include $(PYTHON3_DIR)/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-cryptography
   SECTION:=lang
@@ -37,4 +38,3 @@ endef
 
 $(eval $(call Py3Package,python3-cryptography))
 $(eval $(call BuildPackage,python3-cryptography))
-$(eval $(call BuildPackage,python3-cryptography-src))

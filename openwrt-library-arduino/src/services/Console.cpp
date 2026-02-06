@@ -5,6 +5,13 @@
 #include "protocol/rpc_protocol.h"
 #include <etl/algorithm.h>
 
+/// XON resume threshold: fraction of buffer capacity (numerator / denominator).
+static constexpr size_t kLowWaterNumerator = 1;
+/// XOFF pause threshold: fraction of buffer capacity (numerator / denominator).
+static constexpr size_t kHighWaterNumerator = 3;
+/// Common denominator for both watermark thresholds.
+static constexpr size_t kWatermarkDenominator = 4;
+
 ConsoleClass::ConsoleClass()
     : _begun(false),
       _xoff_sent(false),
@@ -99,7 +106,7 @@ int ConsoleClass::read() {
 
       // High/Low watermark logic for XON/XOFF
       const size_t capacity = _rx_buffer.capacity();
-      const size_t low_water = (capacity * 1) / 4;
+      const size_t low_water = (capacity * kLowWaterNumerator) / kWatermarkDenominator;
       
       if (_xoff_sent && _rx_buffer.size() < low_water) {
         xon_needed = true;
@@ -163,7 +170,7 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     }
 
     const size_t capacity = _rx_buffer.capacity();
-    const size_t high_water = (capacity * 3) / 4;
+    const size_t high_water = (capacity * kHighWaterNumerator) / kWatermarkDenominator;
     
     if (!_xoff_sent && _rx_buffer.size() > high_water) {
       xoff_needed = true;

@@ -45,14 +45,13 @@ class PacketSerial {
   size_t send(const uint8_t* buffer, size_t len) {
     if (!stream_ || !buffer || len == 0) return 0;
 
-    const size_t encoded_capacity = len + len / 254 + 2;
-    uint8_t* encoded = new uint8_t[encoded_capacity];
+    // [E4] Stack buffer replaces heap allocation (new/delete) for
+    // deterministic behaviour and SIL-2 alignment in test code.
+    static constexpr size_t kMaxEncodeLen = kBufferCapacity + kBufferCapacity / 254 + 2;
+    uint8_t encoded[kMaxEncodeLen];
     size_t written = 0;
-    if (encoded) {
-      size_t encoded_len = COBS::encode(buffer, len, encoded);
-      written = stream_->write(encoded, encoded_len);
-      delete[] encoded;
-    }
+    size_t encoded_len = COBS::encode(buffer, len, encoded);
+    written = stream_->write(encoded, encoded_len);
     stream_->write(static_cast<uint8_t>(0));
     return written;
   }

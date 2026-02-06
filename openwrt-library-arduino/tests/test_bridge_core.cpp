@@ -12,11 +12,7 @@
 
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
 
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_frame.h"
@@ -258,17 +254,19 @@ public:
 void sync_bridge(BridgeClass& bridge, MockStream& stream) {
     stream.tx_buffer.clear(); // Clear any initial traffic
     
+    auto ba = bridge::test::TestAccessor::create(bridge);
+
     // Ensure bridge has a shared secret for handshake (required for HMAC)
-    if (bridge._shared_secret.empty()) {
+    if (ba.isSharedSecretEmpty()) {
         const char* test_secret = "test_secret";
-        bridge._shared_secret.assign(
+        ba.assignSharedSecret(
             reinterpret_cast<const uint8_t*>(test_secret),
             reinterpret_cast<const uint8_t*>(test_secret) + strlen(test_secret)
         );
     }
     
     // Skip startup stabilization phase for testing (normally handled by timer)
-    bridge._startup_stabilizing = false;
+    ba.setStartupStabilizing(false);
     
     // Construct a CMD_LINK_SYNC frame
     const uint8_t nonce[rpc::RPC_HANDSHAKE_NONCE_LENGTH] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
@@ -369,7 +367,8 @@ void test_bridge_begin() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Verify initial state
-    TEST_ASSERT(bridge._fsm.isUnsynchronized());
+    auto ba = bridge::test::TestAccessor::create(bridge);
+    TEST_ASSERT(ba.isUnsynchronized());
     // TEST_ASSERT(bridge._transport.isFlowPaused() == false); // Flow control removed from Transport
 }
 
@@ -415,7 +414,8 @@ void test_bridge_handshake() {
     const char* secret = "secret";
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret, strlen(secret));
     stream.tx_buffer.clear();
-    bridge._startup_stabilizing = false;  // Skip startup phase for test
+    auto ba = bridge::test::TestAccessor::create(bridge);
+    ba.setStartupStabilizing(false);  // Skip startup phase for test
     
     // Create a 16-byte nonce
     uint8_t nonce[16];
@@ -488,6 +488,7 @@ void test_bridge_file_write_incoming() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    auto ba = bridge::test::TestAccessor::create(bridge);
     stream.tx_buffer.clear();
 
     // Construct a fake CMD_FILE_WRITE frame
@@ -506,7 +507,7 @@ void test_bridge_file_write_incoming() {
     memcpy(frame.payload.data(), payload, sizeof(payload));
 
     // Dispatch directly
-    bridge.dispatch(frame);
+    ba.dispatch(frame);
 
     // Expect an ACK response
     // ACK frame: [CMD_ACK][LEN=2][CMD_ID_ACKED]
@@ -554,10 +555,12 @@ void test_bridge_dedup_console_write_retry() {
         const int before = Console.available();
     TEST_ASSERT_EQ_UINT(before, 0);
 
+    auto ba = bridge::test::TestAccessor::create(bridge);
+
     // --- First Delivery ---
     g_test_millis = 0;
     // Dispatch injects frame into RX processing logic
-    bridge.dispatch(frame);
+    ba.dispatch(frame);
     // CRITICAL: process() is needed to flush pending TX queue (ACKs) to the stream
     bridge.process(); 
 
@@ -568,7 +571,7 @@ void test_bridge_dedup_console_write_retry() {
     // Advance time beyond ACK timeout to simulate retry window
     g_test_millis = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS + 50;
     
-    bridge.dispatch(frame);
+    ba.dispatch(frame);
     bridge.process(); // Flush second ACK
 
     const int after_second = Console.available();
@@ -591,6 +594,7 @@ void test_bridge_dedup_window_edges() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    auto ba = bridge::test::TestAccessor::create(bridge);
 
     // Dedup logic is independent of synchronization.
     rpc::Frame frame;
@@ -606,68 +610,69 @@ void test_bridge_dedup_window_edges() {
     frame.crc = rpc::read_u32_be(&raw_frame[raw_len - rpc::CRC_TRAILER_SIZE]);
 
     // No prior CRC -> not duplicate.
-    bridge._last_rx_crc = 0;
-    TEST_ASSERT(!bridge._isRecentDuplicateRx(frame));
+    ba.setLastRxCrc(0);
+    TEST_ASSERT(!ba.isRecentDuplicateRx(frame));
 
     // Mark processed at t=0.
     g_test_millis = 0;
-    bridge._markRxProcessed(frame);
+    ba.markRxProcessed(frame);
 
     // Too soon (< ack timeout) -> treat as a new command.
     g_test_millis = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS - 1;
-    TEST_ASSERT(!bridge._isRecentDuplicateRx(frame));
+    TEST_ASSERT(!ba.isRecentDuplicateRx(frame));
 
     // After ack timeout -> accept as duplicate (within retry window).
     g_test_millis = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS + 10;
-    TEST_ASSERT(bridge._isRecentDuplicateRx(frame));
+    TEST_ASSERT(ba.isRecentDuplicateRx(frame));
 
     // Beyond retry window -> not duplicate.
     const unsigned long window_ms =
         static_cast<unsigned long>(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS) *
         static_cast<unsigned long>(rpc::RPC_DEFAULT_RETRY_LIMIT + 1);
     g_test_millis = window_ms + 1000;
-    TEST_ASSERT(!bridge._isRecentDuplicateRx(frame));
+    TEST_ASSERT(!ba.isRecentDuplicateRx(frame));
 
     // Ack timeout set to 0 -> only accept duplicates at the exact same timestamp.
-    bridge._ack_timeout_ms = 0;
+    ba.setAckTimeoutMs(0);
     g_test_millis += 1;
-    TEST_ASSERT(!bridge._isRecentDuplicateRx(frame));
+    TEST_ASSERT(!ba.isRecentDuplicateRx(frame));
 
     // Payload too large -> never considered duplicate.
     frame.header.payload_length = rpc::MAX_PAYLOAD_SIZE + 1;
-    TEST_ASSERT(!bridge._isRecentDuplicateRx(frame));
+    TEST_ASSERT(!ba.isRecentDuplicateRx(frame));
 }
 
 void test_bridge_timing_config_validation() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    auto ba = bridge::test::TestAccessor::create(bridge);
 
     // Defaults when payload is missing/short.
-    bridge._applyTimingConfig(nullptr, 0);
-    TEST_ASSERT_EQ_UINT(bridge._ack_timeout_ms, rpc::RPC_DEFAULT_ACK_TIMEOUT_MS);
-    TEST_ASSERT_EQ_UINT(bridge._ack_retry_limit, rpc::RPC_DEFAULT_RETRY_LIMIT);
-    TEST_ASSERT_EQ_UINT(bridge._response_timeout_ms, rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+    ba.applyTimingConfig(nullptr, 0);
+    TEST_ASSERT_EQ_UINT(ba.getAckTimeoutMs(), rpc::RPC_DEFAULT_ACK_TIMEOUT_MS);
+    TEST_ASSERT_EQ_UINT(ba.getAckRetryLimit(), rpc::RPC_DEFAULT_RETRY_LIMIT);
+    TEST_ASSERT_EQ_UINT(ba.getResponseTimeoutMs(), rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
 
     // Out-of-range values fall back to defaults/min.
     uint8_t bad_payload[rpc::RPC_HANDSHAKE_CONFIG_SIZE];
     rpc::write_u16_be(&bad_payload[0], 1);  // too small
     bad_payload[2] = 99;                   // too large
     rpc::write_u32_be(&bad_payload[3], 1); // too small
-    bridge._applyTimingConfig(bad_payload, sizeof(bad_payload));
-    TEST_ASSERT_EQ_UINT(bridge._ack_timeout_ms, rpc::RPC_DEFAULT_ACK_TIMEOUT_MS);
-    TEST_ASSERT_EQ_UINT(bridge._ack_retry_limit, rpc::RPC_DEFAULT_RETRY_LIMIT);
-    TEST_ASSERT_EQ_UINT(bridge._response_timeout_ms, rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
+    ba.applyTimingConfig(bad_payload, sizeof(bad_payload));
+    TEST_ASSERT_EQ_UINT(ba.getAckTimeoutMs(), rpc::RPC_DEFAULT_ACK_TIMEOUT_MS);
+    TEST_ASSERT_EQ_UINT(ba.getAckRetryLimit(), rpc::RPC_DEFAULT_RETRY_LIMIT);
+    TEST_ASSERT_EQ_UINT(ba.getResponseTimeoutMs(), rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS);
 
     // Valid values are applied.
     uint8_t good_payload[rpc::RPC_HANDSHAKE_CONFIG_SIZE];
     rpc::write_u16_be(&good_payload[0], 500);
     good_payload[2] = 2;
     rpc::write_u32_be(&good_payload[3], 1000);
-    bridge._applyTimingConfig(good_payload, sizeof(good_payload));
-    TEST_ASSERT_EQ_UINT(bridge._ack_timeout_ms, 500);
-    TEST_ASSERT_EQ_UINT(bridge._ack_retry_limit, 2);
-    TEST_ASSERT_EQ_UINT(bridge._response_timeout_ms, 1000);
+    ba.applyTimingConfig(good_payload, sizeof(good_payload));
+    TEST_ASSERT_EQ_UINT(ba.getAckTimeoutMs(), 500);
+    TEST_ASSERT_EQ_UINT(ba.getAckRetryLimit(), 2);
+    TEST_ASSERT_EQ_UINT(ba.getResponseTimeoutMs(), 1000);
 }
 
 struct StatusCapture {
@@ -693,31 +698,32 @@ void test_bridge_ack_malformed_timeout_paths() {
     ModeStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._startup_stabilizing = false;  // Skip startup phase for test
-    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete();
+    auto ba = bridge::test::TestAccessor::create(bridge);
+    ba.setStartupStabilizing(false);  // Skip startup phase for test
+    ba.setIdle();
     stream.clear_tx();
 
     // Send a command that requires ACK.
     const uint8_t payload[] = {TEST_BYTE_01};
     g_test_millis = 0;
     TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload)));
-    TEST_ASSERT(bridge._fsm.isAwaitingAck());
+    TEST_ASSERT(ba.isAwaitingAck());
 
     // Malformed for the last command triggers retransmission and increments retry count.
     rpc::Frame malformed{};
     malformed.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED);
     malformed.header.payload_length = 2;
-    rpc::write_u16_be(malformed.payload.data(), bridge._last_command_id);
+    rpc::write_u16_be(malformed.payload.data(), ba.getLastCommandId());
     g_test_millis = 50;
-    bridge.dispatch(malformed);
-    TEST_ASSERT_EQ_UINT(bridge._retry_count, 1);
+    ba.dispatch(malformed);
+    TEST_ASSERT_EQ_UINT(ba.getRetryCount(), 1);
 
     // ACK with missing payload uses sentinel and still clears state.
     rpc::Frame ack_missing{};
     ack_missing.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_ACK);
     ack_missing.header.payload_length = 0;
-    bridge.dispatch(ack_missing);
-    TEST_ASSERT(!bridge._fsm.isAwaitingAck());
+    ba.dispatch(ack_missing);
+    TEST_ASSERT(!ba.isAwaitingAck());
 
     // Timeout path when retry limit is exceeded calls status handler.
     StatusCapture status;
@@ -728,21 +734,16 @@ void test_bridge_ack_malformed_timeout_paths() {
     stream.clear_tx();
     g_test_millis = 0;
     TEST_ASSERT(bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, payload, sizeof(payload)));
-    bridge._ack_timeout_ms = 10;
-    bridge._ack_retry_limit = 0;
+    ba.setAckTimeoutMs(10);
+    ba.setAckRetryLimit(0);
 
     g_test_millis = 100;
     bridge._onAckTimeout();
-    TEST_ASSERT(!bridge._fsm.isAwaitingAck());
+    TEST_ASSERT(!ba.isAwaitingAck());
     TEST_ASSERT(status.called);
     TEST_ASSERT(status.code == rpc::StatusCode::STATUS_TIMEOUT);
 
     StatusCapture::instance = nullptr;
-}
-
-void test_bridge_pending_queue_flush_failure_requeues() {
-    // Test removed: PacketSerial does not propagate write errors, so Bridge cannot detect
-    // transmission failures to requeue messages.
 }
 
 void test_bridge_enqueue_rejects_overflow_and_full() {
@@ -760,7 +761,7 @@ void test_bridge_enqueue_rejects_overflow_and_full() {
     auto accessor = bridge::test::TestAccessor::create(bridge);
     accessor.setAwaitingAck();
 
-    while(!bridge._pending_tx_queue.full()) {
+    while(!accessor.isPendingTxQueueFull()) {
         bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0);
     }
     // Queue is full, this should fail
@@ -773,14 +774,14 @@ void test_bridge_emit_status_message_variants() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
-    bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "");
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "");
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
         rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
 
     stream.tx_buffer.clear();
-    bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
@@ -797,7 +798,8 @@ void test_bridge_system_commands_and_baudrate_state_machine() {
     rpc::Frame free_mem{};
     free_mem.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
     free_mem.header.payload_length = 0;
-    bridge._handleSystemCommand(free_mem);
+    auto ba = bridge::test::TestAccessor::create(bridge);
+    ba.handleSystemCommand(free_mem);
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
@@ -810,14 +812,15 @@ void test_bridge_system_commands_and_baudrate_state_machine() {
     baud.header.payload_length = 4;
     rpc::write_u32_be(baud.payload.data(), 57600);
     g_test_millis = 1000;
-    bridge._handleSystemCommand(baud);
+    ba.handleSystemCommand(baud);
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
         rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE_RESP));
 
     // No-op before 50ms.
-    Console._begun = false;
+    auto ca = bridge::test::ConsoleTestAccessor::create(Console);
+    ca.setBegun(false);
     g_test_millis = 1020;
     bridge.process();
 
@@ -836,7 +839,8 @@ void test_bridge_link_reset_payload_variants() {
     rpc::Frame reset0{};
     reset0.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
     reset0.header.payload_length = 0;
-    bridge._handleSystemCommand(reset0);
+    auto ba2 = bridge::test::TestAccessor::create(bridge);
+    ba2.handleSystemCommand(reset0);
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
@@ -851,7 +855,7 @@ void test_bridge_link_reset_payload_variants() {
     rpc::write_u16_be(&reset_cfg.payload[0], 250);
     reset_cfg.payload[2] = 2;
     rpc::write_u32_be(&reset_cfg.payload[3], 1000);
-    bridge._handleSystemCommand(reset_cfg);
+    ba2.handleSystemCommand(reset_cfg);
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
@@ -862,6 +866,7 @@ void test_bridge_dispatch_gpio_ack_and_no_ack() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+    auto ba = bridge::test::TestAccessor::create(bridge);
     stream.tx_buffer.clear();
 
     // Commands that require an ACK.
@@ -870,14 +875,14 @@ void test_bridge_dispatch_gpio_ack_and_no_ack() {
     pinmode.header.payload_length = 2;
     pinmode.payload[0] = 13;
     pinmode.payload[1] = OUTPUT;
-    bridge.dispatch(pinmode);
+    ba.dispatch(pinmode);
 
     rpc::Frame dwrite{};
     dwrite.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
     dwrite.header.payload_length = 2;
     dwrite.payload[0] = 13;
     dwrite.payload[1] = HIGH;
-    bridge.dispatch(dwrite);
+    ba.dispatch(dwrite);
 
     const size_t ack_count = count_status_ack_frames(stream.tx_buffer);
     TEST_ASSERT(ack_count >= 2);
@@ -888,7 +893,7 @@ void test_bridge_dispatch_gpio_ack_and_no_ack() {
     dread.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
     dread.header.payload_length = 1;
     dread.payload[0] = 13;
-    bridge.dispatch(dread);
+    ba.dispatch(dread);
     TEST_ASSERT_EQ_UINT(count_status_ack_frames(stream.tx_buffer), 0);
 }
 
@@ -896,8 +901,9 @@ void test_bridge_malformed_frame() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._startup_stabilizing = false;  // Skip startup phase for test
-    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync so errors are reported
+    auto ba_m = bridge::test::TestAccessor::create(bridge);
+    ba_m.setStartupStabilizing(false);  // Skip startup phase for test
+    ba_m.setIdle(); // [FIX] Enable sync so errors are reported
     stream.tx_buffer.clear();
 
     // Inject garbage data into the stream to trigger malformed/overflow logic
@@ -923,8 +929,9 @@ void test_file_write_eeprom_parsing() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._startup_stabilizing = false;  // Skip startup phase for test
-    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete();  // Enable frame processing
+    auto ba_f = bridge::test::TestAccessor::create(bridge);
+    ba_f.setStartupStabilizing(false);  // Skip startup phase for test
+    ba_f.setIdle();  // Enable frame processing
     stream.tx_buffer.clear();
     
     // Case 1: Valid EEPROM write
@@ -1058,8 +1065,9 @@ void test_bridge_payload_too_large() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
-    bridge._startup_stabilizing = false;  // Skip startup phase for test
-    bridge._fsm.resetFsm(); bridge._fsm.handshakeComplete(); // [FIX] Enable sync
+    auto ba_pl = bridge::test::TestAccessor::create(bridge);
+    ba_pl.setStartupStabilizing(false);  // Skip startup phase for test
+    ba_pl.setIdle(); // [FIX] Enable sync
     stream.tx_buffer.clear();
 
     // Max payload is 128 (now 64). Build an oversized raw frame (200 bytes) and inject it.
@@ -1182,7 +1190,6 @@ int main() {
     test_bridge_dedup_window_edges();
     test_bridge_timing_config_validation();
     test_bridge_ack_malformed_timeout_paths();
-    test_bridge_pending_queue_flush_failure_requeues();
     test_bridge_enqueue_rejects_overflow_and_full();
     test_bridge_emit_status_message_variants();
     test_bridge_system_commands_and_baudrate_state_machine();

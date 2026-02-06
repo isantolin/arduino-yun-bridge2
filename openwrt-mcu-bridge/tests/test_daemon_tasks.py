@@ -102,7 +102,7 @@ async def test_serial_reader_task_processes_frame(
     service = _SerialServiceStub(runtime_config, state)
 
     payload = bytes([protocol.DIGITAL_HIGH])
-    frame = Frame(Command.CMD_DIGITAL_READ_RESP.value, payload).to_bytes()
+    frame = Frame(command_id=Command.CMD_DIGITAL_READ_RESP.value, payload=payload).to_bytes()
     encoded = cobs.encode(frame) + FRAME_DELIMITER
 
     # Mock Transport/Protocol
@@ -155,8 +155,8 @@ async def test_serial_reader_task_emits_crc_mismatch(
     service = _SerialServiceStub(runtime_config, state)
 
     frame = Frame(
-        Command.CMD_DIGITAL_READ_RESP.value,
-        bytes([protocol.DIGITAL_HIGH]),
+        command_id=Command.CMD_DIGITAL_READ_RESP.value,
+        payload=bytes([protocol.DIGITAL_HIGH]),
     ).to_bytes()
     corrupted = bytearray(cobs.encode(frame))
     corrupted[0] = protocol.UINT8_MASK  # Invalid COBS code

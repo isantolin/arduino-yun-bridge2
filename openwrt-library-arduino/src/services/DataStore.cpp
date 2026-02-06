@@ -33,10 +33,8 @@ void DataStoreClass::put(const char* key, const char* value) {
 
   // Use ETL vector as a safe buffer builder
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  payload.push_back(static_cast<uint8_t>(key_len));
-  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(key), reinterpret_cast<const uint8_t*>(key) + key_len);
-  payload.push_back(static_cast<uint8_t>(value_len));
-  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(value), reinterpret_cast<const uint8_t*>(value) + value_len);
+  append_length_prefixed(payload, key, key_len);
+  append_length_prefixed(payload, value, value_len);
 
   (void)Bridge.sendFrame(
       rpc::CommandId::CMD_DATASTORE_PUT,
@@ -52,8 +50,7 @@ void DataStoreClass::requestGet(const char* key) {
 
   // Use ETL vector as a safe buffer builder
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  payload.push_back(static_cast<uint8_t>(key_len));
-  payload.insert(payload.end(), reinterpret_cast<const uint8_t*>(key), reinterpret_cast<const uint8_t*>(key) + key_len);
+  append_length_prefixed(payload, key, key_len);
 
   if (!_trackPendingDatastoreKey(key)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);

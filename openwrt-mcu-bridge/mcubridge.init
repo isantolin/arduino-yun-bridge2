@@ -84,3 +84,8 @@ start_service() {
 
     procd_close_instance
 }
+
+service_triggers() {
+    # [F1] Restart daemon when UCI config changes (e.g. via LuCI or `uci commit`)
+    procd_add_reload_trigger "mcubridge"
+}

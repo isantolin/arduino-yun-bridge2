@@ -111,7 +111,7 @@ def _hex_with_spacing(data: bytes) -> str:
 
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
-    raw_frame = Frame(command_id, payload).to_bytes()
+    raw_frame = Frame(command_id=command_id, payload=payload).to_bytes()
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER

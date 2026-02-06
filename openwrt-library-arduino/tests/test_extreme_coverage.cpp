@@ -2,11 +2,10 @@
 #include <stdint.h>
 #include <string.h>
 
-#define private public
-#define protected public
 #include "Bridge.h"
-#undef private
-#undef protected
+
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include "BridgeTestInterface.h"
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -43,7 +42,8 @@ void setup_test_env(CaptureStream& stream) {
     Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     
     // Manually force sync state to enable command processing
-    Bridge._fsm.resetFsm(); Bridge._fsm.handshakeComplete();
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.setIdle();
     Console.begin();
 }
 
@@ -51,27 +51,28 @@ void setup_test_env(CaptureStream& stream) {
 void test_extreme_bridge_commands() {
     CaptureStream stream;
     setup_test_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
 
     rpc::Frame f;
     // 1. Comando de Sistema Desconocido (Fuera de rango)
     f.header.command_id = 0x4F; // Justo en el límite superior
     f.header.payload_length = 0;
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // 2. Comandos GPIO con payload inválido (null)
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
     f.header.payload_length = 0; // Debería fallar silenciosamente o con error
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // 3. Comando GET_CAPABILITIES (Cubre ramas de features)
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
     f.header.payload_length = 0;
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 
     // 4. SET_BAUDRATE con payload malformado (longitud != 4)
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE);
     f.header.payload_length = 2;
-    Bridge.dispatch(f);
+    ba.dispatch(f);
 }
 
 // --- TEST: DATASTORE LÍMITES (DATASTORE.CPP) ---

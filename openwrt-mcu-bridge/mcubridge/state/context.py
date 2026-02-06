@@ -84,6 +84,11 @@ __all__: Final[tuple[str, ...]] = (
     "ManagedProcess",
     "create_runtime_state",
     "_ExponentialBackoff",
+    "HandshakeSnapshot",
+    "SerialLinkSnapshot",
+    "McuVersionSnapshot",
+    "SerialPipelineSnapshot",
+    "BridgeSnapshot",
 )
 
 
@@ -391,15 +396,8 @@ class SerialThroughputStats(msgspec.Struct):
         self.frames_received += 1
         self.last_rx_unix = time.time()
 
-    def as_dict(self) -> dict[str, float | int]:
-        return {
-            "bytes_sent": self.bytes_sent,
-            "bytes_received": self.bytes_received,
-            "frames_sent": self.frames_sent,
-            "frames_received": self.frames_received,
-            "last_tx_unix": self.last_tx_unix,
-            "last_rx_unix": self.last_rx_unix,
-        }
+    def as_dict(self) -> dict[str, Any]:
+        return msgspec.structs.asdict(self)
 
 
 class SerialLatencyStats(msgspec.Struct):
@@ -482,14 +480,8 @@ class SerialFlowStats(msgspec.Struct):
     failures: int = 0
     last_event_unix: float = 0.0
 
-    def as_dict(self) -> dict[str, float | int]:
-        return {
-            "commands_sent": self.commands_sent,
-            "commands_acked": self.commands_acked,
-            "retries": self.retries,
-            "failures": self.failures,
-            "last_event_unix": self.last_event_unix,
-        }
+    def as_dict(self) -> dict[str, Any]:
+        return msgspec.structs.asdict(self)
 
 
 class SupervisorStats(msgspec.Struct):
@@ -502,13 +494,69 @@ class SupervisorStats(msgspec.Struct):
     fatal: bool = False
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "restarts": self.restarts,
-            "last_failure_unix": self.last_failure_unix,
-            "last_exception": self.last_exception,
-            "backoff_seconds": self.backoff_seconds,
-            "fatal": self.fatal,
-        }
+        return msgspec.structs.asdict(self)
+
+
+# ---------------------------------------------------------------------------
+# Typed snapshot structs for build_*() methods (Item 2).
+# These replace manual dict[str, Any] assembly with msgspec.Struct objects
+# that are directly serializable via msgspec.json.encode() and catch key
+# typos at static-analysis time.
+# ---------------------------------------------------------------------------
+
+
+class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    """Typed snapshot of handshake state for MQTT/status publication."""
+
+    synchronised: bool = False
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    failure_streak: int = 0
+    last_error: str | None = None
+    last_unix: float = 0.0
+    last_duration: float = 0.0
+    backoff_until: float = 0.0
+    rate_limit_until: float = 0.0
+    fatal_count: int = 0
+    fatal_reason: str | None = None
+    fatal_detail: str | None = None
+    fatal_unix: float = 0.0
+    pending_nonce: bool = False
+    nonce_length: int = 0
+
+
+class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    """Typed snapshot of serial link connection state."""
+
+    connected: bool = False
+    writer_attached: bool = False
+    synchronised: bool = False
+
+
+class McuVersionSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    """Typed snapshot of MCU firmware version."""
+
+    major: int = 0
+    minor: int = 0
+
+
+class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    """Typed snapshot of serial command pipeline state."""
+
+    inflight: dict[str, Any] | None = None
+    last_completion: dict[str, Any] | None = None
+
+
+class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    """Typed snapshot of bridge state for MQTT/status publication."""
+
+    serial_link: SerialLinkSnapshot
+    handshake: HandshakeSnapshot
+    serial_pipeline: SerialPipelineSnapshot
+    serial_flow: dict[str, Any]
+    mcu_version: McuVersionSnapshot | None = None
+    capabilities: dict[str, int | bool] | None = None
 
 
 def _collect_system_metrics() -> dict[str, Any]:
@@ -1342,56 +1390,56 @@ class RuntimeState(msgspec.Struct):
         snapshot["system"] = _collect_system_metrics()
         return snapshot
 
-    def build_handshake_snapshot(self) -> dict[str, Any]:
-        return {
-            "synchronised": self.link_is_synchronized,
-            "attempts": self.handshake_attempts,
-            "successes": self.handshake_successes,
-            "failures": self.handshake_failures,
-            "failure_streak": self.handshake_failure_streak,
-            "last_error": self.last_handshake_error,
-            "last_unix": self.last_handshake_unix,
-            "last_duration": self.handshake_last_duration,
-            "backoff_until": self.handshake_backoff_until,
-            "rate_limit_until": self.handshake_rate_limit_until,
-            "fatal_count": self.handshake_fatal_count,
-            "fatal_reason": self.handshake_fatal_reason,
-            "fatal_detail": self.handshake_fatal_detail,
-            "fatal_unix": self.handshake_fatal_unix,
-            "pending_nonce": bool(self.link_handshake_nonce),
-            "nonce_length": self.link_nonce_length,
-        }
+    def build_handshake_snapshot(self) -> HandshakeSnapshot:
+        return HandshakeSnapshot(
+            synchronised=self.link_is_synchronized,
+            attempts=self.handshake_attempts,
+            successes=self.handshake_successes,
+            failures=self.handshake_failures,
+            failure_streak=self.handshake_failure_streak,
+            last_error=self.last_handshake_error,
+            last_unix=self.last_handshake_unix,
+            last_duration=self.handshake_last_duration,
+            backoff_until=self.handshake_backoff_until,
+            rate_limit_until=self.handshake_rate_limit_until,
+            fatal_count=self.handshake_fatal_count,
+            fatal_reason=self.handshake_fatal_reason,
+            fatal_detail=self.handshake_fatal_detail,
+            fatal_unix=self.handshake_fatal_unix,
+            pending_nonce=bool(self.link_handshake_nonce),
+            nonce_length=self.link_nonce_length,
+        )
 
-    def build_serial_pipeline_snapshot(self) -> dict[str, Any]:
+    def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
         inflight = self.serial_pipeline_inflight.copy() if self.serial_pipeline_inflight else None
         last = self.serial_pipeline_last.copy() if self.serial_pipeline_last else None
-        return {
-            "inflight": inflight,
-            "last_completion": last,
-        }
+        return SerialPipelineSnapshot(
+            inflight=inflight,
+            last_completion=last,
+        )
 
-    def build_bridge_snapshot(self) -> dict[str, Any]:
+    def build_bridge_snapshot(self) -> BridgeSnapshot:
         mcu_version = None
         if self.mcu_version is not None:
-            mcu_version = {
-                "major": self.mcu_version[0],
-                "minor": self.mcu_version[1],
-            }
+            mcu_version = McuVersionSnapshot(
+                major=self.mcu_version[0],
+                minor=self.mcu_version[1],
+            )
 
         caps = self.mcu_capabilities.as_dict() if self.mcu_capabilities else None
 
-        return {
-            "serial_link": {
-                "connected": self.serial_link_connected,
-                "writer_attached": self.serial_writer is not None,
-                "synchronised": self.link_is_synchronized,
-            },
-            "handshake": self.build_handshake_snapshot(),
-            "serial_pipeline": self.build_serial_pipeline_snapshot(),
-            "serial_flow": self.serial_flow_stats.as_dict(),
-            "mcu_version": mcu_version,
-            "capabilities": caps,
-        }
+        return BridgeSnapshot(
+            serial_link=SerialLinkSnapshot(
+                connected=self.serial_link_connected,
+                writer_attached=self.serial_writer is not None,
+                synchronised=self.link_is_synchronized,
+            ),
+            handshake=self.build_handshake_snapshot(),
+            serial_pipeline=self.build_serial_pipeline_snapshot(),
+            serial_flow=self.serial_flow_stats.as_dict(),
+            mcu_version=mcu_version,
+            capabilities=caps,
+        )
 
     def _handshake_duration_since_start(self) -> float:
         if self._handshake_last_started <= 0.0:

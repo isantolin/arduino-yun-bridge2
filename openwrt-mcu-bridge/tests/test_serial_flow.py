@@ -55,7 +55,7 @@ def test_serial_flow_records_success_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.build_bridge_snapshot()["serial_flow"]
+    payload = runtime_state.build_bridge_snapshot().serial_flow
     assert payload["commands_sent"] == 1
     assert payload["commands_acked"] == 1
     assert payload["retries"] == 0
@@ -93,7 +93,7 @@ def test_serial_flow_records_retry_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.build_bridge_snapshot()["serial_flow"]
+    payload = runtime_state.build_bridge_snapshot().serial_flow
     assert payload["commands_sent"] == 2
     assert payload["commands_acked"] == 1
     assert payload["retries"] == 1
@@ -123,7 +123,7 @@ def test_serial_flow_records_failure_metrics(
 
     asyncio.run(_run())
 
-    payload = runtime_state.build_bridge_snapshot()["serial_flow"]
+    payload = runtime_state.build_bridge_snapshot().serial_flow
     assert payload["commands_sent"] == 0
     assert payload["commands_acked"] == 0
     assert payload["retries"] == 0

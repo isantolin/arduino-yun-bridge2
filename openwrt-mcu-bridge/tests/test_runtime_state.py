@@ -197,10 +197,10 @@ def test_handshake_snapshot_reflects_state(
 
     snapshot = runtime_state.build_handshake_snapshot()
 
-    assert snapshot["synchronised"] is True
-    assert snapshot["attempts"] == 4
-    assert snapshot["failures"] == 1
-    assert snapshot["nonce_length"] == 16
+    assert snapshot.synchronised is True
+    assert snapshot.attempts == 4
+    assert snapshot.failures == 1
+    assert snapshot.nonce_length == 16
 
 
 def test_serial_pipeline_snapshot_tracks_events(
@@ -235,8 +235,8 @@ def test_serial_pipeline_snapshot_tracks_events(
     )
 
     snapshot = runtime_state.build_serial_pipeline_snapshot()
-    assert snapshot["inflight"] is None
-    last = snapshot["last_completion"]
+    assert snapshot.inflight is None
+    last = snapshot.last_completion
     assert last is not None
     assert last["event"] == "success"
     assert last["status_name"] == "OK"
@@ -268,10 +268,12 @@ def test_bridge_snapshot_combines_sections(
     )
 
     bridge = runtime_state.build_bridge_snapshot()
-    assert bridge["serial_link"]["connected"] is True
-    assert bridge["handshake"]["attempts"] == 2
-    assert bridge["mcu_version"] == {"major": 1, "minor": 2}
-    last = bridge["serial_pipeline"]["last_completion"]
+    assert bridge.serial_link.connected is True
+    assert bridge.handshake.attempts == 2
+    assert bridge.mcu_version is not None
+    assert bridge.mcu_version.major == 1
+    assert bridge.mcu_version.minor == 2
+    last = bridge.serial_pipeline.last_completion
     assert last is not None and last["event"] == "failure"
 
 

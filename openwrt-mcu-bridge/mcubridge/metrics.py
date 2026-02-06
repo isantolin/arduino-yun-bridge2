@@ -322,6 +322,9 @@ class _RuntimeStateCollector(Collector):
         prefix: str,
         value: Any,
     ) -> Iterator[tuple[str, str, Any]]:
+        if isinstance(value, msgspec.Struct):
+            yield from self._flatten(prefix, msgspec.structs.asdict(value))
+            return
         if isinstance(value, dict):
             typed_dict = cast(dict[Any, Any], value)
             for raw_key, sub_value in typed_dict.items():
@@ -476,7 +479,7 @@ def _sanitize_metric_name(name: str) -> str:
 def _build_bridge_snapshot_message(
     state: RuntimeState,
     flavor: str,
-    snapshot: dict[str, Any],
+    snapshot: Any,
 ) -> QueuedPublish:
     segments: Sequence[str]
     if flavor == "handshake":

@@ -655,8 +655,12 @@ class RuntimeState(msgspec.Struct):
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     watchdog_beats: int = 0
     last_watchdog_beat: float = 0.0
-    pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(default_factory=_pending_pin_reads_factory)
-    pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(default_factory=_pending_pin_reads_factory)
+    pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
+        default_factory=_pending_pin_reads_factory,
+    )
+    pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
+        default_factory=_pending_pin_reads_factory,
+    )
     mailbox_incoming_topic: str = ""
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
     mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT

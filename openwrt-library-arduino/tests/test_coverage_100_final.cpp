@@ -435,7 +435,8 @@ void test_link_sync_response_too_large() {
     rpc::Frame f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP);
     f.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH + 10;  // Larger than expected
-    Bridge._handleSystemCommand(f);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.handleSystemCommand(f);
 }
 
 // --- BRIDGE.CPP: enterSafeState path (line 260) ---

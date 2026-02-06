@@ -774,14 +774,14 @@ void test_bridge_emit_status_message_variants() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     stream.tx_buffer.clear();
 
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "");
+    bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "");
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),
         rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
 
     stream.tx_buffer.clear();
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
+    bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
     TEST_ASSERT(stream.tx_buffer.len > 0);
     TEST_ASSERT_EQ_UINT(
         first_frame_command_id_or_sentinel(stream.tx_buffer),

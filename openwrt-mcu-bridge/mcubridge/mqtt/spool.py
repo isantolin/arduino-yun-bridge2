@@ -39,6 +39,9 @@ class FileSpoolDeque:
 
     # Starting index chosen to leave headroom for appendleft operations
     _INITIAL_INDEX: int = 1_000_000_000
+    _head: int
+    _tail: int
+    _dir: Path
 
     def __init__(self, directory: str) -> None:
         self._dir = Path(directory)

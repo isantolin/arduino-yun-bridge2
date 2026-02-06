@@ -462,11 +462,15 @@ class FileComponent:
         return self.state.file_storage_bytes_used
 
     @staticmethod
-    def _scan_directory_size(root: Path) -> int:
+    def _scan_directory_size(root: Path, max_depth: int = 10) -> int:
         total = 0
-        stack: list[Path] = [root]
+        # Stack stores (path, depth) tuples
+        stack: list[tuple[Path, int]] = [(root, 0)]
         while stack:
-            current = stack.pop()
+            current, depth = stack.pop()
+            if depth > max_depth:
+                continue
+
             try:
                 with scandir(current) as iterator:
                     for entry in iterator:
@@ -476,7 +480,7 @@ class FileComponent:
                             continue
                         try:
                             if entry.is_dir(follow_symlinks=False):
-                                stack.append(Path(entry.path))
+                                stack.append((Path(entry.path), depth + 1))
                                 continue
                             if entry.is_file(follow_symlinks=False):
                                 total += entry.stat(follow_symlinks=False).st_size

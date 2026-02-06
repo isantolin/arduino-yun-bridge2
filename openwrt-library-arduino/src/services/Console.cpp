@@ -61,6 +61,11 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   while (remaining > 0) {
     size_t chunk_size =
         remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
+    
+    // [SIL-2] Best Effort Delivery:
+    // If the internal TX queue is full, we stop writing and return the number
+    // of bytes successfully buffered. This matches standard Arduino Serial 
+    // behavior (drop on overflow) to prevent blocking the main loop indefinitely.
     if (!Bridge.sendFrame(
             rpc::CommandId::CMD_CONSOLE_WRITE,
             buffer + offset, chunk_size)) {

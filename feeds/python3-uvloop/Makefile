@@ -11,7 +11,8 @@ PKG_HASH:=6c84bae345b9147082b17371e3dd5d42775bddce91f885499017f4607fdaf39f
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
-# PKG_BUILD_DEPENDS:=python3-cython/host
+PKG_BUILD_DEPENDS:=python3-cython/host
+PYTHON3_PKG_BUILD_VARS:=UVLOOP_USE_SYSTEM_LIBUV=1
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

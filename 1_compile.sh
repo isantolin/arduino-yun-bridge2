@@ -252,6 +252,12 @@ fi
 # Bootstrap build deps inside SDK
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling==1.18.0"
 
+# [FIX] Force bootstrap Cython 3.x for uvloop
+if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
+    echo "[INFO] Bootstrapping Cython>=3.1 in SDK..."
+    "$SDK_DIR/staging_dir/hostpkg/bin/python3" -m pip install --upgrade --prefix "$SDK_DIR/staging_dir/hostpkg" "Cython>=3.1" || exit 1
+fi
+
 # 2. Package Sources
 # Prefer using the local feed (src-link) to avoid duplicated/copies drifting.
 # If you really need to copy sources directly into the SDK tree, set:
@@ -415,7 +421,7 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # [FIX] Orden de compilación: Primero librerías críticas
 # Nota: Ahora están en el feed 'mcubridge' que apunta a 'feeds/' plano
-for lib in python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil python3-construct; do
+for lib in python3-paho-mqtt python3-aiomqtt python3-tenacity python3-cobs python3-msgspec python3-prometheus-client python3-pyserial-asyncio-fast python3-psutil python3-construct python3-uvloop python3-cryptography; do
     echo "[BUILD] Building library $lib..."
     make package/feeds/mcubridge/$lib/compile V=s
     

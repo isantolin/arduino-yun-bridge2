@@ -15,7 +15,7 @@ from ..protocol.topics import Topic, topic_path
 from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..state.context import PendingPinRequest, RuntimeState
-from ..config.common import encode_status_reason
+from ..protocol.encoding import encode_status_reason
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.pin")

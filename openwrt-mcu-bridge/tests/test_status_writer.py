@@ -128,12 +128,9 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         assert payload["file_write_limit_rejections"] == 1
         assert payload["file_storage_limit_rejections"] == 2
         assert "bridge" in payload
-        bridge_snapshot = cast(dict[str, object], payload["bridge"])
-        handshake_snapshot = cast(
-            dict[str, object],
-            bridge_snapshot["handshake"],
-        )
-        assert handshake_snapshot["attempts"] == 2
+        bridge_snapshot = payload["bridge"]
+        handshake_snapshot = bridge_snapshot.handshake
+        assert handshake_snapshot.attempts == 2
         assert payload["mqtt_spooled_messages"] == 10
         assert payload["mqtt_spooled_replayed"] == 4
         assert payload["mqtt_spool_errors"] == 2

@@ -11,7 +11,8 @@ from typing import TYPE_CHECKING
 import aiomqtt
 import tenacity
 
-from mcubridge.config.common import build_mqtt_connect_properties, build_mqtt_properties, log_hexdump
+from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
+from mcubridge.util import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import MQTT_TLS_MIN_VERSION
 from mcubridge.protocol import topic_path

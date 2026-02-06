@@ -36,12 +36,16 @@ from ..config.const import (
     DEFAULT_METRICS_ENABLED,
     DEFAULT_METRICS_HOST,
     DEFAULT_METRICS_PORT,
+    DEFAULT_MQTT_CAFILE,
+    DEFAULT_MQTT_HOST,
+    DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_MQTT_SPOOL_DIR,
     DEFAULT_MQTT_TLS_INSECURE,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
@@ -49,12 +53,11 @@ from ..config.const import (
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
-    DEFAULT_WATCHDOG_ENABLED,
     DEFAULT_WATCHDOG_INTERVAL,
     MIN_SERIAL_SHARED_SECRET_LEN,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..protocol.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE
+from ..protocol.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE, MQTT_DEFAULT_TOPIC_PREFIX
 
 
 logger = logging.getLogger(__name__)
@@ -66,18 +69,18 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_port: str = DEFAULT_SERIAL_PORT
     serial_baud: int = DEFAULT_BAUDRATE
     serial_safe_baud: int = DEFAULT_SAFE_BAUDRATE
-    mqtt_host: str = DEFAULT_METRICS_HOST
-    mqtt_port: int = DEFAULT_METRICS_PORT
+    mqtt_host: str = DEFAULT_MQTT_HOST
+    mqtt_port: int = DEFAULT_MQTT_PORT
     mqtt_user: str | None = None
     mqtt_pass: str | None = None
     mqtt_tls: bool = True
-    mqtt_cafile: str | None = None
+    mqtt_cafile: str | None = DEFAULT_MQTT_CAFILE
     mqtt_certfile: str | None = None
     mqtt_keyfile: str | None = None
-    mqtt_topic: str = "br"
+    mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
     allowed_commands: tuple[str, ...] = ()
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: int = 30
+    process_timeout: int = DEFAULT_PROCESS_TIMEOUT
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
@@ -98,12 +101,14 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_retry_attempts: int = DEFAULT_RETRY_LIMIT
     serial_handshake_min_interval: float = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
     serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    watchdog_enabled: bool = DEFAULT_WATCHDOG_ENABLED
+    watchdog_enabled: bool = True
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization = TopicAuthorization()
 
     # msgspec handle bytes naturally.
-    serial_shared_secret: bytes = b""
+    # [SIL-2] SECURITY: This default enables initial setup only.
+    # It MUST be rotated using 'mcubridge-rotate-credentials'.
+    serial_shared_secret: bytes = b"failsafe_secret_mode"
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -346,8 +351,9 @@ def load_runtime_config() -> RuntimeConfig:
             commands = normalise_allowed_commands(allowed_raw.split())
             raw_config["allowed_commands"] = commands
 
-    # Map 'debug' (from UCI) to 'debug_logging' (internal)
-    if "debug" in raw_config and "debug_logging" not in raw_config:
+    # Map 'debug' (from UCI) to 'debug_logging' (internal).
+    # Always remap when 'debug' is present; UCI only exposes 'debug'.
+    if "debug" in raw_config:
         raw_config["debug_logging"] = parse_bool(raw_config.pop("debug"))
 
     # Pre-process 'serial_shared_secret' to handle string -> bytes conversion

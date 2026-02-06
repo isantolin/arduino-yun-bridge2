@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import psutil
 
-from ..config.common import encode_status_reason
+from ..protocol.encoding import encode_status_reason
 from ..config.const import PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
 from ..protocol.topics import Topic, topic_path
 from ..mqtt.messages import QueuedPublish

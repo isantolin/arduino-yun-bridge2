@@ -7,7 +7,6 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import (
     Final,
-    TYPE_CHECKING,
     Any,
     cast,
 )
@@ -16,43 +15,21 @@ from typing import (
 # We do not use try-import here to enforce fail-fast behavior in production.
 import uci
 
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
-from mcubridge.protocol import protocol
-
 from .const import (
     ALLOWED_COMMAND_WILDCARD,
-    DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-    DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_FILE_SYSTEM_ROOT,
-    DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-    DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_METRICS_HOST,
-    DEFAULT_METRICS_PORT,
-    DEFAULT_MQTT_CAFILE,
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_QUEUE_LIMIT,
-    DEFAULT_MQTT_SPOOL_DIR,
-    DEFAULT_PENDING_PIN_REQUESTS,
-    DEFAULT_PROCESS_MAX_CONCURRENT,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-    DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-    DEFAULT_SERIAL_PORT,
-    DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-    DEFAULT_SERIAL_RETRY_TIMEOUT,
-    DEFAULT_STATUS_INTERVAL,
 )
+
+# ------------------------------------------------------------------
+# Backward-compatible re-exports.
+# Canonical homes: mcubridge.mqtt, mcubridge.protocol.encoding,
+#                  mcubridge.util
+# ------------------------------------------------------------------
+from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties  # noqa: F401
+from mcubridge.protocol.encoding import encode_status_reason  # noqa: F401
+from mcubridge.util import log_hexdump  # noqa: F401
 
 
 logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from mcubridge.mqtt.messages import QueuedPublish
 
 _TRUE_STRINGS: Final[frozenset[str]] = frozenset({"1", "yes", "on", "true", "enable", "enabled"})
 _UCI_PACKAGE: Final[str] = "mcubridge"
@@ -87,63 +64,6 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
         seen.add(lowered)
         normalised.append(lowered)
     return tuple(normalised)
-
-
-def encode_status_reason(reason: str | None) -> bytes:
-    """Return a UTF-8 encoded payload trimming to MAX frame limits."""
-    if not reason:
-        return b""
-    payload = reason.encode("utf-8", errors="ignore")
-    return payload[: protocol.MAX_PAYLOAD_SIZE]
-
-
-def build_mqtt_properties(message: QueuedPublish) -> Properties | None:
-    """Construct Paho MQTT v5 properties from a message object."""
-    has_props = any(
-        [
-            message.content_type,
-            message.payload_format_indicator is not None,
-            message.message_expiry_interval is not None,
-            message.response_topic,
-            message.correlation_data is not None,
-            message.user_properties,
-        ]
-    )
-
-    if not has_props:
-        return None
-
-    props = Properties(PacketTypes.PUBLISH)
-
-    if message.content_type is not None:
-        props.ContentType = message.content_type
-
-    if message.payload_format_indicator is not None:
-        props.PayloadFormatIndicator = message.payload_format_indicator
-
-    if message.message_expiry_interval is not None:
-        props.MessageExpiryInterval = int(message.message_expiry_interval)
-
-    if message.response_topic:
-        props.ResponseTopic = message.response_topic
-
-    if message.correlation_data is not None:
-        props.CorrelationData = message.correlation_data
-
-    if message.user_properties:
-        props.UserProperty = list(message.user_properties)
-
-    return props
-
-
-def build_mqtt_connect_properties() -> Properties:
-    """Return default CONNECT properties for aiomqtt/paho clients."""
-
-    props = Properties(PacketTypes.CONNECT)
-    props.SessionExpiryInterval = 0
-    props.RequestResponseInformation = 1
-    props.RequestProblemInformation = 1
-    return props
 
 
 def get_uci_config() -> dict[str, Any]:
@@ -196,67 +116,51 @@ def get_uci_config() -> dict[str, Any]:
 
 
 def get_default_config() -> dict[str, Any]:
-    """Provide default MCU Bridge configuration values."""
-    return {
-        "mqtt_host": DEFAULT_MQTT_HOST,
-        "mqtt_port": DEFAULT_MQTT_PORT,
-        "mqtt_tls": True,
-        "mqtt_tls_insecure": False,
-        "mqtt_cafile": DEFAULT_MQTT_CAFILE,
-        "mqtt_certfile": "",
-        "mqtt_keyfile": "",
-        "mqtt_user": "",
-        "mqtt_pass": "",
-        "mqtt_topic": protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        "mqtt_spool_dir": DEFAULT_MQTT_SPOOL_DIR,
-        "mqtt_queue_limit": DEFAULT_MQTT_QUEUE_LIMIT,
-        "serial_port": DEFAULT_SERIAL_PORT,
-        "serial_baud": protocol.DEFAULT_BAUDRATE,
-        "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
-        "serial_shared_secret": b"failsafe_secret_mode",
-        "serial_retry_timeout": DEFAULT_SERIAL_RETRY_TIMEOUT,
-        "serial_response_timeout": DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-        "serial_retry_attempts": protocol.DEFAULT_RETRY_LIMIT,
-        "serial_handshake_min_interval": DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-        "serial_handshake_fatal_failures": DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-        "debug": False,
-        "allowed_commands": (),
-        "file_system_root": DEFAULT_FILE_SYSTEM_ROOT,
-        "process_timeout": DEFAULT_PROCESS_TIMEOUT,
-        "process_max_output_bytes": DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-        "process_max_concurrent": DEFAULT_PROCESS_MAX_CONCURRENT,
-        "console_queue_limit_bytes": DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-        "mailbox_queue_limit": DEFAULT_MAILBOX_QUEUE_LIMIT,
-        "mailbox_queue_bytes_limit": DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-        "pending_pin_request_limit": DEFAULT_PENDING_PIN_REQUESTS,
-        "reconnect_delay": DEFAULT_RECONNECT_DELAY,
-        "status_interval": DEFAULT_STATUS_INTERVAL,
-        "bridge_summary_interval": DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-        "bridge_handshake_interval": DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-        "mqtt_allow_file_read": True,
-        "mqtt_allow_file_write": True,
-        "mqtt_allow_file_remove": True,
-        "mqtt_allow_datastore_get": True,
-        "mqtt_allow_datastore_put": True,
-        "mqtt_allow_mailbox_read": True,
-        "mqtt_allow_mailbox_write": True,
-        "mqtt_allow_shell_run": True,
-        "mqtt_allow_shell_run_async": True,
-        "mqtt_allow_shell_poll": True,
-        "mqtt_allow_shell_kill": True,
-        "mqtt_allow_console_input": True,
-        "mqtt_allow_digital_write": True,
-        "mqtt_allow_digital_read": True,
-        "mqtt_allow_digital_mode": True,
-        "mqtt_allow_analog_write": True,
-        "mqtt_allow_analog_read": True,
-        "metrics_enabled": False,
-        "metrics_host": DEFAULT_METRICS_HOST,
-        "metrics_port": DEFAULT_METRICS_PORT,
-        "watchdog_enabled": True,
-        "watchdog_interval": 5.0,
-        "allow_non_tmp_paths": False,
-    }
+    """Provide default MCU Bridge configuration values.
+
+    Derived programmatically from ``RuntimeConfig`` field defaults via
+    ``msgspec.structs.fields()`` to ensure a **single source of truth**.
+
+    Extra keys that exist only in the UCI schema (``mqtt_allow_*``,
+    ``debug``) are appended here because they are consumed *before*
+    ``msgspec.convert()`` builds the struct.
+    """
+    import msgspec.structs as _structs
+
+    # Lazy import to break circular dependency (settings → common → settings).
+    from mcubridge.config.settings import RuntimeConfig
+
+    # Fields that are computed at __post_init__ time — not serialisable.
+    _SKIP_FIELDS = frozenset({"allowed_policy", "topic_authorization"})
+
+    defaults: dict[str, Any] = {}
+    for fi in _structs.fields(RuntimeConfig):
+        if fi.name in _SKIP_FIELDS:
+            continue
+        defaults[fi.name] = fi.default
+
+    # --- Keys consumed by pre-processing in load_runtime_config() ---
+    # 'debug' maps to 'debug_logging'; UCI exposes 'debug' only.
+    defaults["debug"] = False
+    # Topic authorisation flags (consumed by TopicAuthorization construction).
+    defaults["mqtt_allow_file_read"] = True
+    defaults["mqtt_allow_file_write"] = True
+    defaults["mqtt_allow_file_remove"] = True
+    defaults["mqtt_allow_datastore_get"] = True
+    defaults["mqtt_allow_datastore_put"] = True
+    defaults["mqtt_allow_mailbox_read"] = True
+    defaults["mqtt_allow_mailbox_write"] = True
+    defaults["mqtt_allow_shell_run"] = True
+    defaults["mqtt_allow_shell_run_async"] = True
+    defaults["mqtt_allow_shell_poll"] = True
+    defaults["mqtt_allow_shell_kill"] = True
+    defaults["mqtt_allow_console_input"] = True
+    defaults["mqtt_allow_digital_write"] = True
+    defaults["mqtt_allow_digital_read"] = True
+    defaults["mqtt_allow_digital_mode"] = True
+    defaults["mqtt_allow_analog_write"] = True
+    defaults["mqtt_allow_analog_read"] = True
+    return defaults
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -269,15 +173,3 @@ __all__: Final[tuple[str, ...]] = (
     "build_mqtt_properties",
     "log_hexdump",
 )
-
-
-def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:
-    """Log binary data in hexadecimal format using syslog-friendly output.
-
-    Format: [HEXDUMP] %s: %s
-    """
-    if not logger_instance.isEnabledFor(level):
-        return
-
-    hex_str = data.hex(" ").upper()
-    logger_instance.log(level, "[HEXDUMP] %s: %s", label, hex_str)

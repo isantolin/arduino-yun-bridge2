@@ -17,7 +17,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.protocol.structures import MailboxPushPacket
 
-from ..config.common import encode_status_reason
+from ..protocol.encoding import encode_status_reason
 from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..state.context import RuntimeState

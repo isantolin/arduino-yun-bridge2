@@ -14,7 +14,7 @@ from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, FileAction, MAX_PAYLOAD_SIZE, Status
 
-from ..config.common import encode_status_reason
+from ..protocol.encoding import encode_status_reason
 from ..config.settings import RuntimeConfig
 from ..config.const import (
     FILE_LARGE_WARNING_BYTES,

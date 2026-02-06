@@ -21,7 +21,7 @@ from mcubridge.protocol import rle
 # Do not catch ImportError. Fail immediately if dependency is missing.
 import serial_asyncio_fast  # type: ignore
 
-from mcubridge.config.common import log_hexdump
+from mcubridge.util import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
 from mcubridge.protocol import protocol

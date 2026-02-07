@@ -13,6 +13,9 @@ PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE
 
+# Disable source package generation
+PYTHON3_PKG_BUILD_SRC:=0
+
 # [FIX 1] Definir explícitamente el directorio de construcción para coincidir con el tarball de PyPI
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PYPI_NAME)-$(PKG_VERSION)
 

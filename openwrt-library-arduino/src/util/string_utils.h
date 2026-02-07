@@ -5,12 +5,17 @@
 #include <stdint.h>
 #include <string.h>
 #include <etl/vector.h>
+#include <etl/algorithm.h>
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;
 extern "C" char* __brkval;
 #endif
 
+/**
+ * @brief Get free RAM (AVR specific).
+ * @return Bytes free or 0 on non-AVR.
+ */
 inline uint16_t getFreeMemory() {
 #if defined(ARDUINO_ARCH_AVR)
   char stack_top;
@@ -33,40 +38,55 @@ struct BoundedStringInfo {
   bool overflowed;
 };
 
+/**
+ * @brief Measure string length with a safe upper bound.
+ *
+ * Checks up to max_len characters. If no null terminator is found
+ * within max_len, returns {max_len, true}.
+ *
+ * @param str The string to measure.
+ * @param max_len Maximum length to check.
+ * @return BoundedStringInfo containing length and overflow status.
+ */
 inline BoundedStringInfo measure_bounded_cstring(
     const char* str, size_t max_len) {
   if (!str || max_len == 0) {
     return {0, true};
   }
-  size_t measured = strnlen(str, max_len + 1U);
-  bool overflowed = measured > max_len;
-  if (overflowed) {
-    measured = max_len;
+  
+  size_t measured = 0;
+  while (measured < max_len) {
+    if (str[measured] == '\0') {
+      break;
+    }
+    measured++;
   }
-  return {measured, overflowed};
+  
+  // If we reached max_len, we assume overflow (no null terminator found within limit)
+  return {measured, measured >= max_len};
 }
 
 /**
  * @brief Append a length-prefixed C string to an ETL vector payload.
  *
- * Pushes a 1-byte length header followed by the string bytes.
- * This pattern is used by DataStore (key/value) and FileSystem (path).
+ * Standard serialization helper for Pascal-style strings.
  *
- * Uses etl::ivector to be capacity-agnostic (reduces template bloat).
- *
- * @param payload  Destination vector to append to.
+ * @param payload  Destination etl::ivector (capacity agnostic).
  * @param str  Null-terminated source string.
- * @param len  Number of bytes to copy (must fit in uint8_t).
+ * @param len  Number of bytes to copy (clamped to uint8_t range).
  */
 inline void append_length_prefixed(
     etl::ivector<uint8_t>& payload,
     const char* str,
     size_t len) {
+  if (len > 255) {
+      len = 255;
+  }
   payload.push_back(static_cast<uint8_t>(len));
-  payload.insert(
-      payload.end(),
-      reinterpret_cast<const uint8_t*>(str),
-      reinterpret_cast<const uint8_t*>(str) + len);
+  if (len > 0 && str != nullptr) {
+      const uint8_t* start = reinterpret_cast<const uint8_t*>(str);
+      payload.insert(payload.end(), start, start + len);
+  }
 }
 
 #endif

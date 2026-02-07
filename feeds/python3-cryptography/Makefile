@@ -19,6 +19,7 @@ PKG_LICENSE:=Apache-2.0 BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE LICENSE.APACHE LICENSE.BSD
 
 PKG_BUILD_DEPENDS:=python-cffi/host python-maturin/host
+HOST_PYTHON3_PKG_BUILD_DEPENDS:=python-cffi
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

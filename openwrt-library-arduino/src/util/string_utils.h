@@ -6,6 +6,7 @@
 #include <string.h>
 #include <etl/vector.h>
 #include <etl/algorithm.h>
+#include <etl/string_view.h>
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;
@@ -54,6 +55,8 @@ inline BoundedStringInfo measure_bounded_cstring(
     return {0, true};
   }
   
+  // Use etl::algorithm if applicable, but a simple loop is efficient here
+  // and avoids complex iterator setups for raw pointers.
   size_t measured = 0;
   while (measured < max_len) {
     if (str[measured] == '\0') {
@@ -62,30 +65,47 @@ inline BoundedStringInfo measure_bounded_cstring(
     measured++;
   }
   
-  // If we reached max_len, we assume overflow (no null terminator found within limit)
   return {measured, measured >= max_len};
+}
+
+/**
+ * @brief Append a length-prefixed string (Pascal-style) to an ETL vector payload.
+ * 
+ * Uses etl::string_view for safety and flexibility.
+ *
+ * @param payload Destination etl::ivector (capacity agnostic).
+ * @param str Source string view.
+ */
+inline void append_length_prefixed(
+    etl::ivector<uint8_t>& payload,
+    etl::string_view str) {
+  size_t len = str.length();
+  if (len > 255) {
+      len = 255;
+  }
+  payload.push_back(static_cast<uint8_t>(len));
+  if (len > 0) {
+      payload.insert(payload.end(), str.begin(), str.begin() + len);
+  }
 }
 
 /**
  * @brief Append a length-prefixed C string to an ETL vector payload.
  *
- * Standard serialization helper for Pascal-style strings.
+ * Legacy/convenience overload.
  *
- * @param payload  Destination etl::ivector (capacity agnostic).
- * @param str  Null-terminated source string.
- * @param len  Number of bytes to copy (clamped to uint8_t range).
+ * @param payload  Destination etl::ivector.
+ * @param str  Null-terminated source string (or raw buffer).
+ * @param len  Number of bytes to copy.
  */
 inline void append_length_prefixed(
     etl::ivector<uint8_t>& payload,
     const char* str,
     size_t len) {
-  if (len > 255) {
-      len = 255;
-  }
-  payload.push_back(static_cast<uint8_t>(len));
-  if (len > 0 && str != nullptr) {
-      const uint8_t* start = reinterpret_cast<const uint8_t*>(str);
-      payload.insert(payload.end(), start, start + len);
+  if (str == nullptr) {
+    append_length_prefixed(payload, etl::string_view());
+  } else {
+    append_length_prefixed(payload, etl::string_view(str, len));
   }
 }
 

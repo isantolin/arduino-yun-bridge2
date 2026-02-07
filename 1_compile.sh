@@ -252,6 +252,12 @@ fi
 # Bootstrap build deps inside SDK
 bootstrap_python_module_into_prefix "$SDK_DIR/staging_dir/hostpkg/bin/python3" "$SDK_DIR/staging_dir/hostpkg" "hatchling" "hatchling==1.18.0"
 
+# [FIX] Force bootstrap maturin for cryptography
+if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
+    echo "[INFO] Bootstrapping maturin>=1.4 in SDK..."
+    "$SDK_DIR/staging_dir/hostpkg/bin/python3" -m pip install --upgrade --prefix "$SDK_DIR/staging_dir/hostpkg" "maturin>=1.4" || exit 1
+fi
+
 # [FIX] Force bootstrap Cython 3.x for uvloop
 if [ -x "$SDK_DIR/staging_dir/hostpkg/bin/python3" ]; then
     echo "[INFO] Bootstrapping Cython>=3.1 in SDK..."

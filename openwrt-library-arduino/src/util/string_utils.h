@@ -52,14 +52,14 @@ inline BoundedStringInfo measure_bounded_cstring(
  * Pushes a 1-byte length header followed by the string bytes.
  * This pattern is used by DataStore (key/value) and FileSystem (path).
  *
- * @tparam N  Capacity of the destination vector.
+ * Uses etl::ivector to be capacity-agnostic (reduces template bloat).
+ *
  * @param payload  Destination vector to append to.
  * @param str  Null-terminated source string.
  * @param len  Number of bytes to copy (must fit in uint8_t).
  */
-template <size_t N>
 inline void append_length_prefixed(
-    etl::vector<uint8_t, N>& payload,
+    etl::ivector<uint8_t>& payload,
     const char* str,
     size_t len) {
   payload.push_back(static_cast<uint8_t>(len));

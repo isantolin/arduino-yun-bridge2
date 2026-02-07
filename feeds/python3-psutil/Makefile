@@ -6,7 +6,6 @@ PKG_RELEASE:=1
 
 PYPI_NAME:=psutil
 PKG_HASH:=skip
-# TODO: compute real sha256sum for release builds
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_SOURCE_URL:=https://files.pythonhosted.org/packages/source/p/psutil/
 

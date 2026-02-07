@@ -13,11 +13,12 @@ PKG_RELEASE:=1
 
 PYPI_NAME:=cryptography
 PKG_HASH:=skip
-# TODO: compute real sha256sum for release builds
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio@example.com>
 PKG_LICENSE:=Apache-2.0 BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE LICENSE.APACHE LICENSE.BSD
+
+PKG_BUILD_DEPENDS:=python-cffi/host python-maturin/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

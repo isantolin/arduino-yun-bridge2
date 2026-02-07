@@ -25,8 +25,11 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
-# Fix for PYO3 cross-compilation finding the wrong includes
-export PYO3_CROSS_INCLUDE_DIR=$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)
+PYTHON3_PKG_BUILD_VARS += \
+	PYO3_CROSS_INCLUDE_DIR="$(PYTHON3_INC_DIR)" \
+	PYO3_CROSS_LIB_DIR="$(PYTHON3_LIB_DIR)" \
+	OPENSSL_DIR="$(STAGING_DIR)/usr" \
+	OPENSSL_NO_VENDOR=1
 
 define Package/python3-cryptography
   SECTION:=lang

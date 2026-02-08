@@ -12,6 +12,7 @@ from .system import SystemComponent
 from .dispatcher import BridgeDispatcher
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, SerialTimingWindow
 from .runtime import BridgeService
+from . import payloads
 
 __all__ = [
     "BridgeContext",
@@ -28,4 +29,5 @@ __all__ = [
     "SerialTimingWindow",
     "ShellComponent",
     "SystemComponent",
+    "payloads",
 ]

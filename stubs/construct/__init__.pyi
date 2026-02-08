@@ -1,4 +1,4 @@
-from typing import Any, Dict, Generic, TypeVar, Union, Optional
+from typing import Any, Dict, Generic, TypeVar, Optional
 
 _ParsedType = TypeVar("_ParsedType")
 
@@ -18,7 +18,7 @@ class Renamed(Construct[_ParsedType]):
     name: str
 
 class FormatField(Construct[int]):
-    def __init__(self, endianness: str, format: str) -> None: ...
+    def __init__(self, endianness: str, fmt: str) -> None: ...
 
 Int8ub: FormatField
 Int16ub: FormatField

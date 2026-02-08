@@ -410,8 +410,10 @@ class BridgeDispatcher:
 
     @staticmethod
     def _payload_bytes(payload: Any) -> bytes:
-        if isinstance(payload, (bytes, bytearray, memoryview)):
+        if isinstance(payload, (bytes, bytearray)):
             return bytes(payload)
+        if isinstance(payload, memoryview):
+            return payload.tobytes()
         if payload is None:
             return b""
         if isinstance(payload, str):

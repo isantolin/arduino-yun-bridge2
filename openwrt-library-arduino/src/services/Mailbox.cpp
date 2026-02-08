@@ -9,18 +9,11 @@ MailboxClass::MailboxClass()
 
 void MailboxClass::send(const char* message) {
   if (!message) return;
-  // Reserve 2 bytes for framing overhead (length prefix in chunked sends)
-  static constexpr size_t kFramingOverhead = 2;
-  const size_t max_payload = rpc::MAX_PAYLOAD_SIZE - kFramingOverhead;
-  const auto info = measure_bounded_cstring(message, max_payload);
-  if (info.length == 0) {
-    return;
-  }
-  size_t length = info.length;
-  if (info.overflowed) {
-    length = max_payload;
-  }
-  send(reinterpret_cast<const uint8_t*>(message), length);
+  etl::string_view msg(message);
+  if (msg.empty()) return;
+  
+  // Use existing send(uint8_t*, size_t) which handles chunking
+  send(reinterpret_cast<const uint8_t*>(msg.data()), msg.length());
 }
 
 void MailboxClass::send(const uint8_t* data, size_t length) {

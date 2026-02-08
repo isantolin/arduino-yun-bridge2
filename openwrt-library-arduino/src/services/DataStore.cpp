@@ -11,55 +11,19 @@ DataStoreClass::DataStoreClass()
 }
 
 void DataStoreClass::put(const char* key, const char* value) {
-  if (!key || !value) return;
-
-  const auto key_info = measure_bounded_cstring(
-      key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
-  if (key_info.length == 0 || key_info.overflowed) {
-    return;
-  }
-
-  const auto value_info = measure_bounded_cstring(
-      value, rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
-  if (value_info.overflowed) {
-    return;
-  }
-
-  const size_t key_len = key_info.length;
-  const size_t value_len = value_info.length;
-
-  const size_t payload_len = 2 + key_len + value_len;
-  if (payload_len > rpc::MAX_PAYLOAD_SIZE) return;
-
-  // Use ETL vector as a safe buffer builder
-  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  append_length_prefixed(payload, key, key_len);
-  append_length_prefixed(payload, value, value_len);
-
-  (void)Bridge.sendFrame(
-      rpc::CommandId::CMD_DATASTORE_PUT,
-      payload.data(), static_cast<uint16_t>(payload.size()));
+  (void)Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, 
+                                key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH,
+                                value, rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
 }
 
 void DataStoreClass::requestGet(const char* key) {
-  if (!key) return;
-  const auto key_info = measure_bounded_cstring(
-      key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
-  if (key_info.length == 0 || key_info.overflowed) return;
-  const size_t key_len = key_info.length;
-
-  // Use ETL vector as a safe buffer builder
-  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  append_length_prefixed(payload, key, key_len);
-
   if (!_trackPendingDatastoreKey(key)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
     return;
   }
 
-  (void)Bridge.sendFrame(
-      rpc::CommandId::CMD_DATASTORE_GET,
-      payload.data(), static_cast<uint16_t>(payload.size()));
+  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, 
+                                key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
 }
 
 void DataStoreClass::handleResponse(const rpc::Frame& frame) {
@@ -94,12 +58,9 @@ const char* DataStoreClass::_popPendingDatastoreKey() {
 }
 
 bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
-  if (!key || !*key) {
-    return false;
-  }
-
-  const auto info = measure_bounded_cstring(key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH);
-  if (info.length == 0 || info.overflowed) {
+  if (!key) return false;
+  etl::string_view sv(key);
+  if (sv.empty() || sv.length() > rpc::RPC_MAX_DATASTORE_KEY_LENGTH) {
     return false;
   }
 
@@ -107,6 +68,6 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
     return false;
   }
 
-  _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key));
+  _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(sv.data(), sv.length()));
   return true;
 }

@@ -9,7 +9,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-cryptography
 PKG_VERSION:=46.0.4
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PYPI_NAME:=cryptography
 PKG_HASH:=skip
@@ -25,11 +25,16 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
+# FIX: Forzar rutas de include del Target para evitar contaminación del Host (/usr/include/python3.x)
+# Se inyecta explícitamente CFLAGS y PYO3_CROSS_INCLUDE_DIR apuntando a staging.
 PYTHON3_PKG_BUILD_VARS += \
 	PYO3_CROSS_INCLUDE_DIR="$(PYTHON3_INC_DIR)" \
 	PYO3_CROSS_LIB_DIR="$(PYTHON3_LIB_DIR)" \
 	OPENSSL_DIR="$(STAGING_DIR)/usr" \
-	OPENSSL_NO_VENDOR=1
+	OPENSSL_NO_VENDOR=1 \
+	CFLAGS="$(TARGET_CFLAGS) -I$(PYTHON3_INC_DIR) -I$(STAGING_DIR)/usr/include" \
+	CPPFLAGS="$(TARGET_CPPFLAGS) -I$(PYTHON3_INC_DIR) -I$(STAGING_DIR)/usr/include" \
+	LDFLAGS="$(TARGET_LDFLAGS) -L$(PYTHON3_LIB_DIR)"
 
 define Package/python3-cryptography
   SECTION:=lang
@@ -46,3 +51,4 @@ endef
 
 $(eval $(call Py3Package,python3-cryptography))
 $(eval $(call BuildPackage,python3-cryptography))
+

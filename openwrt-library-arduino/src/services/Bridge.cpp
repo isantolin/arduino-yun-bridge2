@@ -732,9 +732,9 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) 
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
   if (message && *message) {
-    const auto info = measure_bounded_cstring(message, rpc::MAX_PAYLOAD_SIZE);
-    length = static_cast<uint16_t>(info.length);
-    payload = reinterpret_cast<const uint8_t*>(message);
+    etl::string_view sv(message);
+    length = static_cast<uint16_t>(etl::min(sv.length(), rpc::MAX_PAYLOAD_SIZE));
+    payload = reinterpret_cast<const uint8_t*>(sv.data());
   }
   _doEmitStatus(status_code, payload, length);
 }
@@ -759,6 +759,23 @@ bool BridgeClass::sendFrame(rpc::CommandId command_id, const uint8_t* arg_payloa
 
 bool BridgeClass::sendFrame(rpc::StatusCode status_code, const uint8_t* arg_payload, size_t arg_length) {
   return _sendFrame(rpc::to_underlying(status_code), arg_payload, arg_length);
+}
+
+bool BridgeClass::sendStringCommand(rpc::CommandId command_id, etl::string_view str, size_t max_len) {
+  if (str.empty() || str.length() > max_len) return false;
+  
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  append_length_prefixed(payload, str);
+  return sendFrame(command_id, payload.data(), payload.size());
+}
+
+bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id, etl::string_view key, size_t max_key, etl::string_view val, size_t max_val) {
+  if (key.empty() || key.length() > max_key || val.length() > max_val) return false;
+
+  etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
+  append_length_prefixed(payload, key);
+  append_length_prefixed(payload, val);
+  return sendFrame(command_id, payload.data(), payload.size());
 }
 
 void BridgeClass::sendChunkyFrame(rpc::CommandId command_id, 

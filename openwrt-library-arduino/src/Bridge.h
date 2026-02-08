@@ -59,6 +59,7 @@
 #include "etl/vector.h"
 #include "etl/delegate.h"
 #include "etl/optional.h"
+#include "etl/string_view.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
@@ -213,6 +214,11 @@ class BridgeClass : public bridge::router::ICommandHandler {
   // Internal / Lower Level
   bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
+  
+  // [SIL-2] Consolidated String Command Helpers (DRY)
+  bool sendStringCommand(rpc::CommandId command_id, etl::string_view str, size_t max_len);
+  bool sendKeyValCommand(rpc::CommandId command_id, etl::string_view key, size_t max_key, etl::string_view val, size_t max_val);
+
   void flushStream();
   void enterSafeState(); // [SIL-2] Force system into fail-safe state
   void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);

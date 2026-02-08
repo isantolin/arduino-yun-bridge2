@@ -264,17 +264,9 @@ class BridgeDispatcher:
         parse_topic_func: Callable[[str], TopicRoute | None],
     ) -> None:
         inbound_topic = str(inbound.topic)
-        # We need parse_topic_func passed in or imported
         route = parse_topic_func(inbound_topic)
-        if route is None:
-            logger.debug(
-                "Ignoring MQTT message with unexpected prefix: %s",
-                inbound_topic,
-            )
-            return
-
-        if not route.segments:
-            logger.debug("MQTT topic missing identifier: %s", inbound_topic)
+        if route is None or not route.segments:
+            logger.debug("Ignoring MQTT message: %s", inbound_topic)
             return
 
         try:
@@ -286,6 +278,24 @@ class BridgeDispatcher:
         if not handled:
             logger.debug("Unhandled MQTT topic %s", inbound_topic)
 
+    def _should_reject_topic_action(self, route: TopicRoute) -> str | None:
+        """Deduce if an MQTT route should be rejected based on policy.
+        Returns the action name if it should be checked and is forbidden, else None.
+        """
+        match route.topic:
+            case Topic.SYSTEM:
+                return None  # System topics are not subject to TopicAuthorization
+            case Topic.DIGITAL | Topic.ANALOG:
+                action = self._pin_action_from_parts(route.raw.split("/"))
+            case Topic.CONSOLE:
+                action = "in" if route.identifier == "in" else None
+            case _:
+                action = route.identifier
+
+        if action and not self.is_topic_action_allowed(route.topic, action):
+            return action
+        return None
+
     def _should_acknowledge_mcu_frame(self, command_id: int) -> bool:
         return command_id not in STATUS_VALUES
 
@@ -296,104 +306,97 @@ class BridgeDispatcher:
             return True
         return command_id in _PRE_SYNC_ALLOWED_COMMANDS
 
-    # --- MQTT Handlers ---
+    # --- MQTT Handlers (Consolidated with match/case) ---
 
     async def _handle_file_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if len(route.segments) < 2:
             return False
-        identifier = route.identifier
-        if not self.is_topic_action_allowed(route.topic, identifier):
-            await self.reject_topic_action(inbound, route.topic, identifier)
+        if action := self._should_reject_topic_action(route):
+            await self.reject_topic_action(inbound, route.topic, action)
             return True
-        payload = self._payload_bytes(inbound.payload)
         if self.file:
-            await self.file.handle_mqtt(identifier, list(route.remainder), payload, inbound)
+            payload = self._payload_bytes(inbound.payload)
+            await self.file.handle_mqtt(route.identifier, list(route.remainder), payload, inbound)
         return True
 
     async def _handle_console_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if route.identifier != "in":
             return False
-        # Keep policy aligned with MQTT topic identifier: br/console/in
-        # (Backward compat is handled at the policy layer.)
-        action = route.identifier
-        if not self.is_topic_action_allowed(Topic.CONSOLE, action):
-            await self.reject_topic_action(inbound, Topic.CONSOLE, action)
+        if action := self._should_reject_topic_action(route):
+            await self.reject_topic_action(inbound, route.topic, action)
             return True
-        payload = self._payload_bytes(inbound.payload)
         if self.console:
+            payload = self._payload_bytes(inbound.payload)
             await self.console.handle_mqtt_input(payload, inbound)
         return True
 
     async def _handle_datastore_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        identifier = route.identifier
-        if not identifier:
+        if not route.identifier:
             return False
-        if not self.is_topic_action_allowed(route.topic, identifier):
-            await self.reject_topic_action(inbound, route.topic, identifier)
+        if action := self._should_reject_topic_action(route):
+            await self.reject_topic_action(inbound, route.topic, action)
             return True
-        payload = self._payload_bytes(inbound.payload)
-        payload_str = payload.decode("utf-8", errors="ignore")
         if self.datastore:
-            await self.datastore.handle_mqtt(identifier, list(route.remainder), payload, payload_str, inbound)
+            payload = self._payload_bytes(inbound.payload)
+            payload_str = payload.decode("utf-8", errors="ignore")
+            await self.datastore.handle_mqtt(route.identifier, list(route.remainder), payload, payload_str, inbound)
         return True
 
     async def _handle_mailbox_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        identifier = route.identifier
-        if identifier and not self.is_topic_action_allowed(route.topic, identifier):
-            await self.reject_topic_action(inbound, route.topic, identifier)
+        if not route.identifier:
+            return False
+        if action := self._should_reject_topic_action(route):
+            await self.reject_topic_action(inbound, route.topic, action)
             return True
-        payload = self._payload_bytes(inbound.payload)
         if self.mailbox:
-            await self.mailbox.handle_mqtt(identifier, payload, inbound)
+            payload = self._payload_bytes(inbound.payload)
+            await self.mailbox.handle_mqtt(route.identifier, payload, inbound)
         return True
 
     async def _handle_shell_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        identifier = route.identifier
-        if identifier and not self.is_topic_action_allowed(route.topic, identifier):
-            await self.reject_topic_action(inbound, route.topic, identifier)
+        if not route.identifier:
+            return False
+        if action := self._should_reject_topic_action(route):
+            await self.reject_topic_action(inbound, route.topic, action)
             return True
-        payload = self._payload_bytes(inbound.payload)
         if self.shell:
+            payload = self._payload_bytes(inbound.payload)
             await self.shell.handle_mqtt(route.raw.split("/"), payload, inbound)
         return True
 
     async def _handle_pin_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        payload = self._payload_bytes(inbound.payload)
-        payload_str = payload.decode("utf-8", errors="ignore")
-        parts = route.raw.split("/")
-        action = self._pin_action_from_parts(parts)
-        if action and not self.is_topic_action_allowed(route.topic, action):
+        if action := self._should_reject_topic_action(route):
             await self.reject_topic_action(inbound, route.topic, action)
             return True
+        parts = route.raw.split("/")
         if self.pin:
+            payload = self._payload_bytes(inbound.payload)
+            payload_str = payload.decode("utf-8", errors="ignore")
             await self.pin.handle_mqtt(route.topic, parts, payload_str, inbound)
         return True
 
     async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        if route.identifier == "bridge":
-            bridge_handled = await self._handle_bridge_topic(route, inbound)
-            if bridge_handled:
-                return True
-        if self.system:
-            handled = await self.system.handle_mqtt(route.identifier, list(route.remainder), inbound)
-            if not handled:
-                logger.debug("Unhandled MQTT system topic %s", route.raw)
-            return handled
+        match route.identifier:
+            case "bridge":
+                return await self._handle_bridge_topic(route, inbound)
+            case _:
+                if self.system:
+                    return await self.system.handle_mqtt(route.identifier, list(route.remainder), inbound)
         return False
 
     async def _handle_bridge_topic(self, route: TopicRoute, inbound: Message) -> bool:
         segments = list(route.remainder)
         if not segments:
             return False
-        category = segments[0]
-        action = segments[1] if len(segments) > 1 else ""
-        if category == "handshake" and action == "get":
-            await self.publish_bridge_snapshot("handshake", inbound)
-            return True
-        if category in {"summary", "state"} and action == "get":
-            await self.publish_bridge_snapshot("summary", inbound)
-            return True
-        return False
+        match segments:
+            case ["handshake", "get"]:
+                await self.publish_bridge_snapshot("handshake", inbound)
+                return True
+            case [("summary" | "state"), "get"]:
+                await self.publish_bridge_snapshot("summary", inbound)
+                return True
+            case _:
+                return False
 
     @staticmethod
     def _pin_action_from_parts(parts: list[str]) -> str | None:

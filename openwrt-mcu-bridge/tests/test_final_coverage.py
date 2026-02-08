@@ -411,7 +411,7 @@ def test_routers_overload():
 
 
 def test_payload_validation_gaps():
-    from mcubridge.services import payloads
+    import mcubridge.services.payloads as payloads
     with pytest.raises(payloads.PayloadValidationError):
         payloads.ShellCommandPayload.from_mqtt(b"")
 

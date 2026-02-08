@@ -109,7 +109,7 @@ class PinComponent:
             expected_size=1,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
-            parse_value=lambda p: DigitalReadResponsePacket.parse(p).value,
+            parse_value=self._parse_digital_read_value,
             pending_queue=self.state.pending_digital_reads,
         )
 
@@ -119,9 +119,17 @@ class PinComponent:
             expected_size=2,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
-            parse_value=lambda p: AnalogReadResponsePacket.parse(p).value,
+            parse_value=self._parse_analog_read_value,
             pending_queue=self.state.pending_analog_reads,
         )
+
+    @staticmethod
+    def _parse_digital_read_value(p: bytes) -> int:
+        return DigitalReadResponsePacket.parse(p).value
+
+    @staticmethod
+    def _parse_analog_read_value(p: bytes) -> int:
+        return AnalogReadResponsePacket.parse(p).value
 
     async def handle_mqtt(
         self,

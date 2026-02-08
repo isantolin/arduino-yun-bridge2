@@ -12,7 +12,6 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rle.h"
 #include "security/security.h"
-#include "util/string_utils.h"
 #include "etl/error_handler.h"
 #include "test_support.h"
 
@@ -427,16 +426,6 @@ void test_security_gaps() {
     rpc::security::hkdf_sha256(ikm, 32, nullptr, 0, nullptr, 0, okm, 32);
 }
 
-// --- TARGET: StringUtils.h Gaps ---
-void test_string_utils_gaps() {
-    printf("  -> Testing string_utils_gaps\n");
-    // Gap: measure_bounded_cstring with null or 0 max_len
-    auto info = measure_bounded_cstring(nullptr, 10);
-    assert(info.length == 0 && info.overflowed);
-    info = measure_bounded_cstring("test", 0);
-    assert(info.length == 0 && info.overflowed);
-}
-
 } // namespace
 
 int main() {
@@ -449,7 +438,6 @@ int main() {
     test_process_extra_gaps();
     test_rle_gaps();
     test_security_gaps();
-    test_string_utils_gaps();
     printf("ARDUINO 100%% COVERAGE TEST END\n");
     return 0;
 }

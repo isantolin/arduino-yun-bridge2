@@ -28,12 +28,29 @@
 #endif
 #include <SHA256.h>
 
-#include "util/string_utils.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
 #include "security/security.h"
 #include "etl/error_handler.h"
 #include "etl/algorithm.h"
+
+namespace {
+/**
+ * @brief Append a length-prefixed string (Pascal-style) to an ETL vector payload.
+ */
+inline void append_length_prefixed(
+    etl::ivector<uint8_t>& payload,
+    etl::string_view str) {
+  size_t len = str.length();
+  if (len > 255) {
+      len = 255;
+  }
+  payload.push_back(static_cast<uint8_t>(len));
+  if (len > 0) {
+      payload.insert(payload.end(), str.begin(), str.begin() + len);
+  }
+}
+}
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection

@@ -70,6 +70,32 @@
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
 
+#if defined(ARDUINO_ARCH_AVR)
+extern "C" char __heap_start;
+extern "C" char* __brkval;
+#endif
+
+/**
+ * @brief Get free RAM (AVR specific).
+ * @return Bytes free or 0 on non-AVR.
+ */
+inline uint16_t getFreeMemory() {
+#if defined(ARDUINO_ARCH_AVR)
+  char stack_top;
+  char* heap_end = __brkval ? __brkval : &__heap_start;
+  intptr_t free_bytes = &stack_top - heap_end;
+  if (free_bytes < 0) {
+    free_bytes = 0;
+  }
+  if (free_bytes > UINT16_MAX) {
+    free_bytes = UINT16_MAX;
+  }
+  return static_cast<uint16_t>(free_bytes);
+#else
+  return 0;
+#endif
+}
+
 // --- Configuration ---
 
 #ifndef BRIDGE_ENABLE_WATCHDOG

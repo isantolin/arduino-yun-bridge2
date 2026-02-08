@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from mcubridge.services.payloads import (
+from mcubridge.services.shell import (
     PayloadValidationError,
     ShellCommandPayload,
     ShellPidPayload,

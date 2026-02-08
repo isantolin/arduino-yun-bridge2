@@ -1,7 +1,5 @@
 #include "Bridge.h"
 
-// Note: <limits.h> removed - INT_MAX check replaced with explicit size_t cast
-
 #include "protocol/rpc_protocol.h"
 #include <etl/algorithm.h>
 
@@ -64,8 +62,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
     
     // [SIL-2] Best Effort Delivery:
     // If the internal TX queue is full, we stop writing and return the number
-    // of bytes successfully buffered. This matches standard Arduino Serial 
-    // behavior (drop on overflow) to prevent blocking the main loop indefinitely.
+    // of bytes successfully buffered to prevent blocking the main loop indefinitely.
     if (!Bridge.sendFrame(
             rpc::CommandId::CMD_CONSOLE_WRITE,
             buffer + offset, chunk_size)) {
@@ -165,7 +162,7 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     if (_rx_buffer.capacity() == 0) return;
 
     // [SIL-2] Calculate available space first, then copy deterministically
-    // Standard Arduino Serial behavior: drop new data if buffer full
+    // Drop new data if buffer is full.
     const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
     const size_t to_copy = etl::min(length, available);
     

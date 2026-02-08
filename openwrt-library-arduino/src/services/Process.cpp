@@ -19,7 +19,10 @@ ProcessClass::ProcessClass()
 }
 
 static bool _run_internal(rpc::CommandId cmd_id, etl::string_view command) {
-  if (command.empty() || command.length() > rpc::MAX_PAYLOAD_SIZE) {
+  if (command.empty()) {
+    return false;
+  }
+  if (command.length() > rpc::MAX_PAYLOAD_SIZE) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
     return false;
   }
@@ -27,10 +30,12 @@ static bool _run_internal(rpc::CommandId cmd_id, etl::string_view command) {
 }
 
 void ProcessClass::run(const char* command) {
+  if (command == nullptr) return;
   (void)_run_internal(rpc::CommandId::CMD_PROCESS_RUN, command);
 }
 
 void ProcessClass::runAsync(const char* command) {
+  if (command == nullptr) return;
   (void)_run_internal(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command);
 }
 

@@ -53,26 +53,8 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
     flush();
   }
 
-  size_t remaining = size;
-  size_t offset = 0;
-  size_t transmitted = 0;
-  while (remaining > 0) {
-    size_t chunk_size =
-        remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
-    
-    // [SIL-2] Best Effort Delivery:
-    // If the internal TX queue is full, we stop writing and return the number
-    // of bytes successfully buffered to prevent blocking the main loop indefinitely.
-    if (!Bridge.sendFrame(
-            rpc::CommandId::CMD_CONSOLE_WRITE,
-            buffer + offset, chunk_size)) {
-      break;
-    }
-    offset += chunk_size;
-    remaining -= chunk_size;
-    transmitted += chunk_size;
-  }
-  return transmitted;
+  Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, buffer, size);
+  return size;
 }
 
 int ConsoleClass::available() {
@@ -133,20 +115,7 @@ void ConsoleClass::flush() {
   }
   
   if (!_tx_buffer.empty()) {
-    size_t remaining = _tx_buffer.size();
-    size_t offset = 0;
-    const uint8_t* data_ptr = _tx_buffer.data();
-
-    while (remaining > 0) {
-      size_t chunk = remaining > rpc::MAX_PAYLOAD_SIZE ? rpc::MAX_PAYLOAD_SIZE : remaining;
-      if (!Bridge.sendFrame(
-              rpc::CommandId::CMD_CONSOLE_WRITE,
-              data_ptr + offset, chunk)) {
-        break;
-      }
-      offset += chunk;
-      remaining -= chunk;
-    }
+    Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, _tx_buffer.data(), _tx_buffer.size());
     _tx_buffer.clear();
   }
 

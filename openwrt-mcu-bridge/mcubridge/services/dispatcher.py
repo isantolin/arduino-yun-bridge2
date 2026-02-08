@@ -306,38 +306,42 @@ class BridgeDispatcher:
             return True
         return command_id in _PRE_SYNC_ALLOWED_COMMANDS
 
+    async def _guard_dispatch(self, route: TopicRoute, inbound: Message) -> bytes | None:
+        """Enforces policy. Returns payload if allowed, None if rejected (rejection sent)."""
+        if action := self._should_reject_topic_action(route):
+            await self.reject_topic_action(inbound, route.topic, action)
+            return None
+        return self._payload_bytes(inbound.payload)
+
     # --- MQTT Handlers (Consolidated with match/case) ---
 
     async def _handle_file_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if len(route.segments) < 2:
             return False
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
+        payload = await self._guard_dispatch(route, inbound)
+        if payload is None:
             return True
         if self.file:
-            payload = self._payload_bytes(inbound.payload)
             await self.file.handle_mqtt(route.identifier, list(route.remainder), payload, inbound)
         return True
 
     async def _handle_console_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if route.identifier != "in":
             return False
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
+        payload = await self._guard_dispatch(route, inbound)
+        if payload is None:
             return True
         if self.console:
-            payload = self._payload_bytes(inbound.payload)
             await self.console.handle_mqtt_input(payload, inbound)
         return True
 
     async def _handle_datastore_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if not route.identifier:
             return False
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
+        payload = await self._guard_dispatch(route, inbound)
+        if payload is None:
             return True
         if self.datastore:
-            payload = self._payload_bytes(inbound.payload)
             payload_str = payload.decode("utf-8", errors="ignore")
             await self.datastore.handle_mqtt(route.identifier, list(route.remainder), payload, payload_str, inbound)
         return True
@@ -345,32 +349,29 @@ class BridgeDispatcher:
     async def _handle_mailbox_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if not route.identifier:
             return False
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
+        payload = await self._guard_dispatch(route, inbound)
+        if payload is None:
             return True
         if self.mailbox:
-            payload = self._payload_bytes(inbound.payload)
             await self.mailbox.handle_mqtt(route.identifier, payload, inbound)
         return True
 
     async def _handle_shell_topic(self, route: TopicRoute, inbound: Message) -> bool:
         if not route.identifier:
             return False
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
+        payload = await self._guard_dispatch(route, inbound)
+        if payload is None:
             return True
         if self.shell:
-            payload = self._payload_bytes(inbound.payload)
             await self.shell.handle_mqtt(route.raw.split("/"), payload, inbound)
         return True
 
     async def _handle_pin_topic(self, route: TopicRoute, inbound: Message) -> bool:
-        if action := self._should_reject_topic_action(route):
-            await self.reject_topic_action(inbound, route.topic, action)
+        payload = await self._guard_dispatch(route, inbound)
+        if payload is None:
             return True
         parts = route.raw.split("/")
         if self.pin:
-            payload = self._payload_bytes(inbound.payload)
             payload_str = payload.decode("utf-8", errors="ignore")
             await self.pin.handle_mqtt(route.topic, parts, payload_str, inbound)
         return True
@@ -409,12 +410,8 @@ class BridgeDispatcher:
 
     @staticmethod
     def _payload_bytes(payload: Any) -> bytes:
-        if isinstance(payload, bytes):
-            return payload
-        if isinstance(payload, bytearray):
+        if isinstance(payload, (bytes, bytearray, memoryview)):
             return bytes(payload)
-        if isinstance(payload, memoryview):
-            return payload.tobytes()
         if payload is None:
             return b""
         if isinstance(payload, str):

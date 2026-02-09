@@ -31,8 +31,6 @@ g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
     "${SRC_DIR}/services/Bridge.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
-    "${SRC_DIR}/services/FileSystem.cpp" \
-    "${SRC_DIR}/services/Mailbox.cpp" \
     "${SRC_DIR}/services/Process.cpp" \
     "${TEST_DIR}/test_integrated.cpp" \
     -o "${BUILD_DIR}/test_integrated"

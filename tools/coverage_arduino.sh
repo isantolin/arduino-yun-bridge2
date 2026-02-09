@@ -27,8 +27,6 @@ SOURCES=(
     "${SRC_ROOT}/services/Bridge.cpp"
     "${SRC_ROOT}/services/Console.cpp"
     "${SRC_ROOT}/services/DataStore.cpp"
-    "${SRC_ROOT}/services/Mailbox.cpp"
-    "${SRC_ROOT}/services/FileSystem.cpp"
     "${SRC_ROOT}/services/Process.cpp"
 )
 

@@ -41,12 +41,10 @@ namespace {
 inline void append_length_prefixed(
     etl::ivector<uint8_t>& payload,
     etl::string_view str) {
-  size_t len = str.length();
-  if (len > 255) {
-      len = 255;
-  }
+  const size_t len = etl::min<size_t>(str.length(), 255);
   payload.push_back(static_cast<uint8_t>(len));
   if (len > 0) {
+      // [SIL-2] Use ETL-compatible insert
       payload.insert(payload.end(), str.begin(), str.begin() + len);
   }
 }

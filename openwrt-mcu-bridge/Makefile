@@ -82,16 +82,13 @@ define Build/Prepare
 	# tools/ contains developer-only stubs (frame_debug) not needed at runtime.
 	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
-	$(CP) ./mcubridge.sh $(PKG_BUILD_DIR)/
 endef
 
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/mcubridge
-	$(INSTALL_DIR) $(1)/usr/bin
 	$(INSTALL_DIR) $(1)/etc/init.d
 	# Copy both source (.py) and bytecode (.pyc)
 	$(CP) $(PKG_BUILD_DIR)/mcubridge $(1)/usr/libexec/mcubridge/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.sh $(1)/usr/bin/mcubridge
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.init $(1)/etc/init.d/mcubridge
 	
 	# Cleanup any __pycache__ directories if they were created by accident

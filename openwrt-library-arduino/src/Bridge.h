@@ -31,6 +31,7 @@
 #include <Arduino.h>
 #include <Stream.h>
 #include <PacketSerial.h>
+#include "etl/algorithm.h"
 
 // [SIL-2] ISR Safety: Atomic Blocks
 #if defined(ARDUINO_ARCH_AVR)
@@ -436,12 +437,59 @@ class MailboxClass {
   using MailboxHandler = void (*)(const uint8_t*, uint16_t);
   using MailboxAvailableHandler = void (*)(uint16_t);
 
-  MailboxClass();
-  void send(const char* message);
-  void send(const uint8_t* data, size_t length);
-  void requestRead();
-  void requestAvailable();
-  void handleResponse(const rpc::Frame& frame);
+  MailboxClass() : _mailbox_handler(nullptr), _mailbox_available_handler(nullptr) {}
+  
+  // [SIL-2] Inlined for optimization (-Os)
+  inline void send(const char* message) {
+    if (!message) return;
+    etl::string_view msg(message);
+    if (msg.empty()) return;
+    send(reinterpret_cast<const uint8_t*>(msg.data()), msg.length());
+  }
+
+  inline void send(const uint8_t* data, size_t length) {
+    if (!data || length == 0) return;
+
+    // [SIL-2] Large Message Support
+    // We remove the explicit 2-byte length prefix that was present in the old implementation
+    // because the Frame Header already contains the payload length.
+    // This allows us to use standard chunking for messages > 64 bytes.
+    // Note: The receiving side (Python) will receive these as separate messages.
+    // Reassembly is up to the application layer if needed.
+    Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, 
+                           nullptr, 0, 
+                           data, length);
+  }
+
+  inline void requestRead() {
+    (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
+  }
+
+  inline void requestAvailable() {
+    (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
+  }
+
+  inline void handleResponse(const rpc::Frame& frame) {
+    const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
+    const uint8_t* payload_data = frame.payload.data();
+    const size_t payload_length = frame.header.payload_length;
+
+    if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
+        if (_mailbox_handler && payload_length >= 2) {
+          uint16_t msg_len = rpc::read_u16_be(payload_data);
+          const uint8_t* msg_ptr = payload_data + 2;
+          if (payload_length >= static_cast<size_t>(2 + msg_len)) {
+            _mailbox_handler(msg_ptr, msg_len);
+          }
+        }
+    } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
+        if (_mailbox_available_handler && payload_length >= 2) {
+          uint16_t count = rpc::read_u16_be(payload_data);
+          _mailbox_available_handler(count);
+        }
+    }
+  }
+
   inline void onMailboxMessage(MailboxHandler handler) {
     _mailbox_handler = handler;
   }
@@ -463,10 +511,40 @@ class FileSystemClass {
 
   FileSystemClass() : _file_system_read_handler(nullptr) {}
 
-  void write(const char* filePath, const uint8_t* data, size_t length);
-  void remove(const char* filePath);
-  void read(const char* filePath);
-  void handleResponse(const rpc::Frame& frame);
+  inline void write(const char* filePath, const uint8_t* data, size_t length) {
+    if (!filePath || !data) return;
+    etl::string_view path(filePath);
+    if (path.empty() || path.length() > rpc::RPC_MAX_FILEPATH_LENGTH) return;
+
+    uint8_t header[rpc::RPC_MAX_FILEPATH_LENGTH + 1];
+    header[0] = static_cast<uint8_t>(path.length());
+    etl::copy_n(path.data(), path.length(), header + 1);
+
+    Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 
+                           header, path.length() + 1, 
+                           data, length);
+  }
+  
+  // [SIL-2] Inlined for optimization (-Os)
+  inline void remove(const char* filePath) {
+    (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
+                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
+  }
+
+  inline void read(const char* filePath) {
+    (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
+                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
+  }
+
+  inline void handleResponse(const rpc::Frame& frame) {
+    const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
+    if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
+        if (_file_system_read_handler) {
+          _file_system_read_handler(frame.payload.data(), frame.header.payload_length);
+        }
+    }
+  }
+
   inline void onFileSystemReadResponse(FileSystemReadHandler handler) {
     _file_system_read_handler = handler;
   }

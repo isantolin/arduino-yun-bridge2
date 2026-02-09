@@ -6,6 +6,7 @@ import shlex
 import msgspec
 import fnmatch
 from collections.abc import Iterable
+from typing import Final
 
 from .config.common import normalise_allowed_commands
 from .config.const import ALLOWED_COMMAND_WILDCARD
@@ -92,7 +93,10 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
 
 
 class TopicAuthorization(msgspec.Struct, frozen=True):
-    """Per-topic allow flags for MQTT-driven actions."""
+    """Per-topic allow flags for MQTT-driven actions.
+
+    Optimized for lookup speed using a pre-calculated frozenset of allowed (topic, action) tuples.
+    """
 
     file_read: bool = True
     file_write: bool = True
@@ -112,34 +116,52 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     analog_write: bool = True
     analog_read: bool = True
 
-    def _build_mapping(self) -> dict[tuple[str, str], bool]:
-        """Build the topic-action -> allowed mapping."""
-        return {
-            (Topic.FILE.value, FileAction.READ.value): self.file_read,
-            (Topic.FILE.value, FileAction.WRITE.value): self.file_write,
-            (Topic.FILE.value, FileAction.REMOVE.value): self.file_remove,
-            (Topic.DATASTORE.value, DatastoreAction.GET.value): self.datastore_get,
-            (Topic.DATASTORE.value, DatastoreAction.PUT.value): self.datastore_put,
-            (Topic.MAILBOX.value, MailboxAction.READ.value): self.mailbox_read,
-            (Topic.MAILBOX.value, MailboxAction.WRITE.value): self.mailbox_write,
-            (Topic.SHELL.value, ShellAction.RUN.value): self.shell_run,
-            (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): self.shell_run_async,
-            (Topic.SHELL.value, ShellAction.POLL.value): self.shell_poll,
-            (Topic.SHELL.value, ShellAction.KILL.value): self.shell_kill,
-            (Topic.CONSOLE.value, ConsoleAction.IN.value): self.console_input,
-            (Topic.CONSOLE.value, ConsoleAction.INPUT.value): self.console_input,
-            (Topic.DIGITAL.value, DigitalAction.WRITE.value): self.digital_write,
-            (Topic.DIGITAL.value, DigitalAction.READ.value): self.digital_read,
-            (Topic.DIGITAL.value, DigitalAction.MODE.value): self.digital_mode,
-            (Topic.ANALOG.value, AnalogAction.WRITE.value): self.analog_write,
-            (Topic.ANALOG.value, AnalogAction.READ.value): self.analog_read,
-        }
+    # Cache for allowed permissions (not serialized)
+    _allowed_cache: Final[frozenset[tuple[str, str]]] = msgspec.field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        """Build the optimized lookup cache."""
+        allowed = []
+        # Fast iteration over static mapping
+        for key, attr in _TOPIC_AUTH_MAPPING.items():
+            if getattr(self, attr):
+                allowed.append(key)
+        
+        # In-place update of the field (since it's a field, we can assign to it even if frozen=True? 
+        # No, frozen means __setattr__ is blocked. But msgspec might behave differently or we need object.__setattr__)
+        # Wait, msgspec structs are just C-structures. 
+        # If frozen=True, we cannot assign. 
+        # But previously it was `self._allowed_cache.add(key)`. `add` modifies the set object, it doesn't assign to `self._allowed_cache`.
+        # If I want to use frozenset, I must assign it. 
+        # Use object.__setattr__(self, "_allowed_cache", frozenset(allowed))
+        object.__setattr__(self, "_allowed_cache", frozenset(allowed))
 
     def allows(self, topic: str, action: str) -> bool:
-        topic_key = topic.lower()
-        action_key = action.lower()
-        return self._build_mapping().get((topic_key, action_key), False)
+        """Check if action is allowed on topic. O(1) complexity."""
+        return (topic.lower(), action.lower()) in self._allowed_cache
 
+
+# Static mapping to avoid recreation in __post_init__
+_TOPIC_AUTH_MAPPING: Final[dict[tuple[str, str], str]] = {
+    (Topic.FILE.value, FileAction.READ.value): "file_read",
+    (Topic.FILE.value, FileAction.WRITE.value): "file_write",
+    (Topic.FILE.value, FileAction.REMOVE.value): "file_remove",
+    (Topic.DATASTORE.value, DatastoreAction.GET.value): "datastore_get",
+    (Topic.DATASTORE.value, DatastoreAction.PUT.value): "datastore_put",
+    (Topic.MAILBOX.value, MailboxAction.READ.value): "mailbox_read",
+    (Topic.MAILBOX.value, MailboxAction.WRITE.value): "mailbox_write",
+    (Topic.SHELL.value, ShellAction.RUN.value): "shell_run",
+    (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): "shell_run_async",
+    (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
+    (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",
+    (Topic.CONSOLE.value, ConsoleAction.IN.value): "console_input",
+    (Topic.CONSOLE.value, ConsoleAction.INPUT.value): "console_input",
+    (Topic.DIGITAL.value, DigitalAction.WRITE.value): "digital_write",
+    (Topic.DIGITAL.value, DigitalAction.READ.value): "digital_read",
+    (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
+    (Topic.ANALOG.value, AnalogAction.WRITE.value): "analog_write",
+    (Topic.ANALOG.value, AnalogAction.READ.value): "analog_read",
+}
 
 __all__ = [
     "AllowedCommandPolicy",

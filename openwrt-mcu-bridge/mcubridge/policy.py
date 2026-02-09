@@ -117,23 +117,16 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     analog_read: bool = True
 
     # Cache for allowed permissions (not serialized)
-    _allowed_cache: Final[frozenset[tuple[str, str]]] = msgspec.field(default_factory=frozenset)
+    _allowed_cache: Final[frozenset[tuple[str, str]]] = frozenset()
 
     def __post_init__(self) -> None:
         """Build the optimized lookup cache."""
-        allowed = []
+        allowed: list[tuple[str, str]] = []
         # Fast iteration over static mapping
         for key, attr in _TOPIC_AUTH_MAPPING.items():
             if getattr(self, attr):
                 allowed.append(key)
-        
-        # In-place update of the field (since it's a field, we can assign to it even if frozen=True? 
-        # No, frozen means __setattr__ is blocked. But msgspec might behave differently or we need object.__setattr__)
-        # Wait, msgspec structs are just C-structures. 
-        # If frozen=True, we cannot assign. 
-        # But previously it was `self._allowed_cache.add(key)`. `add` modifies the set object, it doesn't assign to `self._allowed_cache`.
-        # If I want to use frozenset, I must assign it. 
-        # Use object.__setattr__(self, "_allowed_cache", frozenset(allowed))
+
         object.__setattr__(self, "_allowed_cache", frozenset(allowed))
 
     def allows(self, topic: str, action: str) -> bool:

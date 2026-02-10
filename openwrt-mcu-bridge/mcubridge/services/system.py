@@ -66,12 +66,21 @@ class SystemComponent:
         if self._pending_free_memory:
             reply_context = self._pending_free_memory.popleft()
 
+        payload_bytes = str(free_memory).encode("utf-8")
+        if reply_context is not None:
+            await self.ctx.publish(
+                topic=topic,
+                payload=payload_bytes,
+                expiry=MQTT_EXPIRY_DEFAULT,
+                content_type="text/plain; charset=utf-8",
+                reply_to=reply_context,
+            )
         await self.ctx.publish(
             topic=topic,
-            payload=str(free_memory).encode("utf-8"),
+            payload=payload_bytes,
             expiry=MQTT_EXPIRY_DEFAULT,
             content_type="text/plain; charset=utf-8",
-            reply_to=reply_context,
+            reply_to=None,
         )
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
@@ -131,12 +140,21 @@ class SystemComponent:
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
+        payload_bytes = f"{major}.{minor}".encode()
+        if reply_context is not None:
+            await self.ctx.publish(
+                topic=topic,
+                payload=payload_bytes,
+                expiry=MQTT_EXPIRY_DATASTORE,
+                content_type="text/plain; charset=utf-8",
+                reply_to=reply_context,
+            )
         await self.ctx.publish(
             topic=topic,
-            payload=f"{major}.{minor}".encode(),
+            payload=payload_bytes,
             expiry=MQTT_EXPIRY_DATASTORE,
             content_type="text/plain; charset=utf-8",
-            reply_to=reply_context,
+            reply_to=None,
         )
 
 

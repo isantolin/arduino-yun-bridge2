@@ -1456,7 +1456,7 @@ def test_run_command_accepts_shell_metacharacters_as_literals(
         with patch("mcubridge.services.process.ProcessComponent.run_sync") as mock_run:
             mock_run.return_value = (Status.OK.value, b"hello; ls\n", b"", 0)
 
-            status, stdout, _, _ = await service._process.run_sync("echo hello; ls")
+            status, stdout, _, _ = await service._process.run_sync("echo hello; ls", ["echo", "hello;", "ls"])
 
             assert status == Status.OK.value
             assert b"hello; ls" in stdout

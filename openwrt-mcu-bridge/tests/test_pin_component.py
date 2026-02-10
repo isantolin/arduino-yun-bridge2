@@ -31,6 +31,34 @@ class RecordingBridgeContext:
         self.sent_frames.append((command_id, payload))
         return self.send_frame_result
 
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        expiry: int | None = None,
+        properties: tuple[tuple[str, str], ...] = (),
+        content_type: str | None = None,
+        reply_to: Message | None = None,
+    ) -> None:
+        if isinstance(payload, str):
+            payload_bytes = payload.encode("utf-8")
+        else:
+            payload_bytes = payload
+
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=payload_bytes,
+            qos=qos,
+            retain=retain,
+            content_type=content_type,
+            message_expiry_interval=expiry,
+            user_properties=properties,
+        )
+        self.enqueued.append((message, reply_to))
+
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         self.enqueued.append((message, reply_context))
 

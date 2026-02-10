@@ -106,6 +106,7 @@ async def test_datastore_component_gaps(runtime_state: RuntimeState, real_config
     ctx = MagicMock()
     ctx.send_frame = AsyncMock(return_value=True)
     ctx.enqueue_mqtt = AsyncMock()
+    ctx.publish = AsyncMock()
     comp = DatastoreComponent(real_config, runtime_state, ctx)
     payload = bytes([1, 1, ord('k')])
     assert await comp.handle_put(payload) is False
@@ -146,6 +147,7 @@ async def test_mailbox_component_gaps(runtime_state: RuntimeState, real_config):
     ctx = MagicMock()
     ctx.enqueue_mqtt = AsyncMock()
     ctx.send_frame = AsyncMock(return_value=True)
+    ctx.publish = AsyncMock()
 
     comp = MailboxComponent(real_config, runtime_state, ctx)
     await comp.handle_processed(b"a")
@@ -170,6 +172,7 @@ async def test_pin_component_gaps(runtime_state: RuntimeState, real_config):
     ctx = MagicMock()
     ctx.send_frame = AsyncMock(return_value=True)
     ctx.enqueue_mqtt = AsyncMock()
+    ctx.publish = AsyncMock()
     comp = PinComponent(real_config, runtime_state, ctx)
     await comp.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, b"")
     await comp.handle_analog_read_resp(b"a")
@@ -299,7 +302,7 @@ async def test_process_component_gaps(runtime_state: RuntimeState, real_config):
     mock_proc.pid = 123
     with patch("asyncio.create_subprocess_exec", return_value=mock_proc), \
          patch("asyncio.TaskGroup.__aenter__", side_effect=OSError()):
-        await comp.run_sync("ls")
+        await comp.run_sync("ls", ["ls"])
 
     mock_task = MagicMock()
     mock_task.result.side_effect = RuntimeError()
@@ -310,10 +313,10 @@ async def test_process_component_gaps(runtime_state: RuntimeState, real_config):
 
     with patch("asyncio.TaskGroup.create_task", side_effect=_capture_and_close), \
          patch("asyncio.create_subprocess_exec", return_value=AsyncMock()):
-        await comp.run_sync("ls")
+        await comp.run_sync("ls", ["ls"])
 
     with patch("asyncio.create_subprocess_exec", side_effect=OSError()):
-        await comp.start_async("ls")
+        await comp.start_async("ls", ["ls"])
 
     assert (await comp.collect_output(999)).status_byte == Status.ERROR.value
 
@@ -369,8 +372,6 @@ async def test_handshake_gaps(runtime_state: RuntimeState, real_config):
 @pytest.mark.asyncio
 async def test_runtime_gaps(runtime_state: RuntimeState, real_config):
     from mcubridge.services import runtime
-
-    await runtime._background_task_runner(asyncio.sleep(0), task_name="test")
 
     svc = runtime.BridgeService(real_config, runtime_state)
 

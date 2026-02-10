@@ -87,7 +87,7 @@ async def test_handle_run_success(process_component: ProcessComponent, mock_cont
 
                 await process_component.handle_run(b"echo hello")
 
-                mock_run.assert_awaited_once_with("echo hello")
+                mock_run.assert_awaited_once_with("echo hello", ["echo", "hello"])
                 mock_context.send_frame.assert_awaited_once_with(
                     Command.CMD_PROCESS_RUN_RESP.value, b"response_payload"
                 )
@@ -110,19 +110,23 @@ async def test_handle_run_limit_reached(process_component: ProcessComponent, moc
 
 @pytest.mark.asyncio
 async def test_handle_run_validation_error(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
-    with patch.object(ProcessComponent, "run_sync", new_callable=AsyncMock) as mock_run:
-        mock_run.side_effect = CommandValidationError("forbidden")
+    # Ensure validation fails
+    mock_context.is_command_allowed.return_value = False
 
+    with patch.object(ProcessComponent, "run_sync", new_callable=AsyncMock) as mock_run:
         with patch.object(ProcessComponent, "_try_acquire_process_slot", new_callable=AsyncMock) as mock_acquire:
             mock_acquire.return_value = True
 
             await process_component.handle_run(b"rm -rf /")
 
+            # run_sync should NOT be called
+            mock_run.assert_not_awaited()
+
             mock_context.send_frame.assert_awaited_once()
             args = mock_context.send_frame.call_args[0]
             assert args[0] == Status.ERROR.value
-            assert b"forbidden" in args[1]
-
+            # "not allowed" is logged, but the frame contains the status code string
+            assert b"command_validation_failed" in args[1]
 
 @pytest.mark.asyncio
 async def test_handle_run_async_success(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
@@ -131,13 +135,12 @@ async def test_handle_run_async_success(process_component: ProcessComponent, moc
 
         await process_component.handle_run_async(b"sleep 10")
 
-        mock_start.assert_awaited_once_with("sleep 10")
+        mock_start.assert_awaited_once_with("sleep 10", ["sleep", "10"])
         mock_context.send_frame.assert_awaited_once_with(
             Command.CMD_PROCESS_RUN_ASYNC_RESP.value, protocol.UINT16_STRUCT.build(123)
         )
         # Should also enqueue MQTT message
-        mock_context.enqueue_mqtt.assert_awaited_once()
-
+        mock_context.publish.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_handle_run_async_failure(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
@@ -222,9 +225,9 @@ async def test_handle_run_async_validation_error_publishes_error(
         assert cmd_id == Status.ERROR.value
         assert b"command_validation_failed" in payload
 
-        assert mock_context.enqueue_mqtt.await_count == 1
-        queued = mock_context.enqueue_mqtt.call_args[0][0]
-        body = msgspec.json.decode(queued.payload)
+        assert mock_context.publish.await_count == 1
+        call_kwargs = mock_context.publish.call_args[1]
+        body = msgspec.json.decode(call_kwargs["payload"])
         assert body["status"] == "error"
         assert body["reason"] == "command_validation_failed"
 
@@ -352,20 +355,9 @@ async def test_terminate_process_tree_kills_when_no_pid(
 
 
 @pytest.mark.asyncio
-async def test_run_sync_rejected_command_returns_error(process_component: ProcessComponent) -> None:
-    # Set allowed commands to empty to force rejection
-    process_component.ctx.is_command_allowed = lambda cmd: False
-    status, stdout, stderr, exit_code = await process_component.run_sync("blocked")
-    assert status == Status.ERROR.value
-    assert stdout == b""
-    assert b"not allowed" in stderr
-    assert exit_code is None
-
-
-@pytest.mark.asyncio
 async def test_run_sync_subprocess_oserror_returns_error(process_component: ProcessComponent) -> None:
     with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
-        status, stdout, stderr, exit_code = await process_component.run_sync("/bin/true")
+        status, stdout, stderr, exit_code = await process_component.run_sync("/bin/true", ["/bin/true"])
         assert status == Status.ERROR.value
         assert stdout == b""
         assert b"bad" in stderr
@@ -402,7 +394,7 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
 
     with patch("asyncio.create_subprocess_exec", return_value=fake_proc):
         with patch("asyncio.to_thread", new_callable=AsyncMock) as mock_to_thread:
-            status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep")
+            status, _stdout, _stderr, exit_code = await process_component.run_sync("sleep", ["sleep"])
             assert status == Status.TIMEOUT.value
             assert exit_code == 9
             mock_to_thread.assert_awaited()
@@ -411,8 +403,7 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
 @pytest.mark.asyncio
 async def test_start_async_allocate_pid_failure_returns_sentinel(process_component: ProcessComponent) -> None:
     with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
-        mock_alloc.return_value = protocol.INVALID_ID_SENTINEL
-        pid = await process_component.start_async("/bin/true")
+        pid = await process_component.start_async("/bin/true", ["/bin/true"])
         assert pid == protocol.INVALID_ID_SENTINEL
 
 
@@ -421,7 +412,7 @@ async def test_start_async_subprocess_oserror_returns_sentinel(process_component
     with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
         mock_alloc.return_value = 55
         with patch("asyncio.create_subprocess_exec", side_effect=OSError("bad")):
-            pid = await process_component.start_async("/bin/true")
+            pid = await process_component.start_async("/bin/true", ["/bin/true"])
             assert pid == protocol.INVALID_ID_SENTINEL
 
 

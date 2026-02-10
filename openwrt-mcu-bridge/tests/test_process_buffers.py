@@ -146,7 +146,7 @@ def test_start_async_respects_concurrency_limit(
                 "",
                 cast(Process, object()),
             )
-        result = await process_component.start_async("/bin/true")
+        result = await process_component.start_async("/bin/true", ["/bin/true"])
         assert result == protocol.INVALID_ID_SENTINEL
 
     asyncio.run(_run())

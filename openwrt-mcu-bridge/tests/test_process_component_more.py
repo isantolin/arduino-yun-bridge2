@@ -130,7 +130,7 @@ async def test_run_sync_no_timeout_waits_for_process(process_component: ProcessC
     proc = _Proc()
 
     with patch("asyncio.create_subprocess_exec", return_value=proc):
-        status, _out, _err, exit_code = await process_component.run_sync("echo hi")
+        status, _out, _err, exit_code = await process_component.run_sync("echo hi", ["echo", "hi"])
 
     assert status == Status.OK.value
     assert exit_code == 0
@@ -144,7 +144,7 @@ async def test_run_sync_taskgroup_exception_returns_error(process_component: Pro
 
     with patch("asyncio.TaskGroup", return_value=mock_tg):
         with pytest.raises(RuntimeError, match="boom"):
-            await process_component.run_sync("echo hi")
+            await process_component.run_sync("echo hi", ["echo", "hi"])
 
 
 @pytest.mark.asyncio
@@ -177,7 +177,7 @@ async def test_run_sync_truncates_and_reports_timeout_flags(process_component: P
     proc = _Proc()
 
     with patch("asyncio.create_subprocess_exec", return_value=proc):
-        status, out, err, exit_code = await process_component.run_sync("echo hi")
+        status, out, err, exit_code = await process_component.run_sync("echo hi", ["echo", "hi"])
 
     assert status == Status.OK.value
     assert out == b"def"
@@ -200,21 +200,17 @@ async def test_consume_stream_breaks_on_reader_error(process_component: ProcessC
 async def test_start_async_rejects_when_slot_limit_reached(
     process_component: ProcessComponent,
 ) -> None:
-    with patch.object(ProcessComponent, "_try_acquire_process_slot", new_callable=AsyncMock) as mock_acquire:
-        mock_acquire.return_value = False
-        pid = await process_component.start_async("echo hi")
+    # Exhaust slots
+    guard = process_component._process_slots
+    assert guard is not None
+    # Assuming limit is 2 from fixture
+    await guard.acquire()
+    await guard.acquire()
+    
+    pid = await process_component.start_async("echo hi", ["echo", "hi"])
 
     assert pid == protocol.INVALID_ID_SENTINEL
 
-
-@pytest.mark.asyncio
-async def test_start_async_validation_error_propagates(
-    process_component: ProcessComponent,
-) -> None:
-    # Force access denial to trigger validation error
-    process_component.ctx.is_command_allowed = lambda cmd: False
-    with pytest.raises(CommandValidationError):
-        await process_component.start_async("blocked")
 
 
 @pytest.mark.asyncio
@@ -443,7 +439,7 @@ async def test_start_async_os_error_returns_sentinel(
             mock_alloc.return_value = 1
             with patch("asyncio.create_subprocess_exec", side_effect=OSError("exec failed")):
                 with patch.object(ProcessComponent, "_release_process_slot"):
-                    pid = await process_component.start_async("echo hi")
+                    pid = await process_component.start_async("echo hi", ["echo", "hi"])
 
     assert pid == protocol.INVALID_ID_SENTINEL
 

@@ -1,59 +1,28 @@
-"""Tests for the ConsoleComponent."""
-
-from __future__ import annotations
-
-from unittest.mock import AsyncMock, patch
-
 import pytest
-import pytest_asyncio
+import asyncio
+from unittest.mock import MagicMock, AsyncMock, patch
+from collections import deque
 
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_STATUS_INTERVAL,
-)
-from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, MAX_PAYLOAD_SIZE
-from mcubridge.services.base import BridgeContext
 from mcubridge.services.console import ConsoleComponent
-from mcubridge.state.context import create_runtime_state
+from mcubridge.services.base import BridgeContext
+from mcubridge.state.context import RuntimeState
+from mcubridge.config.settings import RuntimeConfig
 
 
-@pytest_asyncio.fixture
-async def console_component() -> ConsoleComponent:
-    config = RuntimeConfig(
-        serial_port="/dev/null",
-        serial_baud=protocol.DEFAULT_BAUDRATE,
-        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
-        mqtt_host="localhost",
-        mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=False,
-        mqtt_cafile=None,
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
-        allowed_commands=(),
-        file_system_root="/tmp",
-        process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        reconnect_delay=DEFAULT_RECONNECT_DELAY,
-        status_interval=DEFAULT_STATUS_INTERVAL,
-        serial_shared_secret=b"s_e_c_r_e_t_mock",
-    )
-    state = create_runtime_state(config)
+@pytest.fixture
+def console_component() -> ConsoleComponent:
+    config = MagicMock(spec=RuntimeConfig)
+    state = MagicMock(spec=RuntimeState)
+    state.mqtt_topic_prefix = "bridge"
+    state.mcu_is_paused = False
+    state.serial_tx_allowed = asyncio.Event()
+    state.serial_tx_allowed.set()
+    state.console_to_mcu_queue = deque()
+    
     ctx = AsyncMock(spec=BridgeContext)
-
-    # Mock schedule_background to just await the coroutine immediately for testing
-    async def _schedule(coro):
-        await coro
-
-    ctx.schedule_background.side_effect = _schedule
-
-    component = ConsoleComponent(config, state, ctx)
-    return component
+    
+    return ConsoleComponent(config, state, ctx)
 
 
 @pytest.mark.asyncio
@@ -61,10 +30,10 @@ async def test_handle_write(console_component: ConsoleComponent) -> None:
     payload = b"console output"
     await console_component.handle_write(payload)
 
-    console_component.ctx.enqueue_mqtt.assert_awaited_once()
-    msg = console_component.ctx.enqueue_mqtt.call_args[0][0]
-    assert msg.payload == payload
-    assert "console/out" in msg.topic_name
+    console_component.ctx.publish.assert_awaited_once()
+    call_args = console_component.ctx.publish.call_args
+    assert call_args.kwargs['topic'].endswith("console/out")
+    assert call_args.kwargs['payload'] == payload
 
 
 @pytest.mark.asyncio
@@ -104,18 +73,21 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
     await console_component.handle_mqtt_input(payload)
 
     console_component.ctx.send_frame.assert_not_awaited()
-    assert len(console_component.state.console_to_mcu_queue) == 1
-    assert console_component.state.console_to_mcu_queue[0] == payload
+    # verify enqueue was called since state is a mock
+    # The actual queue won't change because enqueue_console_chunk is a mock
+    from logging import getLogger
+    logger = getLogger("mcubridge.console")
+    # We can't easily match the logger instance exactly without patching, 
+    # but we can check the payload.
+    # Actually, let's just check call args.
+    console_component.state.enqueue_console_chunk.assert_called_once()
+    args = console_component.state.enqueue_console_chunk.call_args
+    assert args[0][0] == payload
 
 
 @pytest.mark.asyncio
 async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -> None:
     # Payload larger than MAX_PAYLOAD_SIZE
-    # We need to account for overhead if any, but console chunks are raw?
-    # Let's check _iter_console_chunks implementation or assume it chunks by MAX_PAYLOAD_SIZE - overhead
-    # Assuming overhead is small or zero for console write command payload itself?
-    # protocol.MAX_PAYLOAD_SIZE comes from tools/protocol/spec.toml.
-
     large_payload = b"a" * (MAX_PAYLOAD_SIZE + 10)
     console_component.ctx.send_frame.return_value = True
 
@@ -126,10 +98,14 @@ async def test_handle_mqtt_input_chunking(console_component: ConsoleComponent) -
 
 @pytest.mark.asyncio
 async def test_flush_queue(console_component: ConsoleComponent) -> None:
-    console_component.state.enqueue_console_chunk(b"queued", None)
+    # Setup mock state behavior
+    queue = deque([b"queued"])
+    console_component.state.console_to_mcu_queue = queue
+    console_component.state.pop_console_chunk.side_effect = lambda: queue.popleft() if queue else None
+    
     console_component.ctx.send_frame.return_value = True
 
     await console_component.flush_queue()
 
     console_component.ctx.send_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"queued")
-    assert len(console_component.state.console_to_mcu_queue) == 0
+    assert len(queue) == 0

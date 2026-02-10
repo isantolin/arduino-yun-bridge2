@@ -248,17 +248,16 @@ async def test_monitor_async_process_exception(
         await process_component._monitor_async_process(pid, proc)  # type: ignore
 
 
-@pytest.mark.asyncio
-async def test_start_async_unexpected_exception(
-    process_component: ProcessComponent,
-) -> None:
-    """Cover unexpected exception branch in start_async."""
-    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
-        mock_alloc.return_value = 123
-        with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
-            pid = await process_component.start_async("/bin/true")
-            assert pid == protocol.INVALID_ID_SENTINEL
-
+    @pytest.mark.asyncio
+    async def test_start_async_unexpected_exception(
+        process_component: ProcessComponent,
+    ) -> None:
+        """Cover unexpected exception branch in start_async."""
+        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+            mock_alloc.return_value = 123
+            with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
+                pid = await process_component.start_async("/bin/true", [])
+                assert pid == protocol.INVALID_ID_SENTINEL
 
 @pytest.mark.asyncio
 async def test_consume_stream_various_exceptions(

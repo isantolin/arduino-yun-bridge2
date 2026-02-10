@@ -526,9 +526,9 @@ class FileSystemClass {
   FileSystemClass() : _file_system_read_handler(nullptr) {}
 
   inline void write(const char* filePath, const uint8_t* data, size_t length) {
-    if (!filePath || !data) return;
+    if (!filePath || *filePath == '\0' || !data) return;
     etl::string_view path(filePath);
-    if (path.empty() || path.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
+    if (path.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
       Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
       return;
     }
@@ -544,6 +544,7 @@ class FileSystemClass {
   
   // [SIL-2] Inlined for optimization (-Os)
   inline void remove(const char* filePath) {
+    if (!filePath || *filePath == '\0') return;
     if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
                                   filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
       Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
@@ -551,6 +552,7 @@ class FileSystemClass {
   }
 
   inline void read(const char* filePath) {
+    if (!filePath || *filePath == '\0') return;
     if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
                                   filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
       Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));

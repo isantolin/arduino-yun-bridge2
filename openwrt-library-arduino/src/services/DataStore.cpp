@@ -10,6 +10,7 @@ DataStoreClass::DataStoreClass()
 }
 
 void DataStoreClass::put(const char* key, const char* value) {
+  if (!key || *key == '\0' || !value) return;
   if (!Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, 
                                 key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH,
                                 value, rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
@@ -18,8 +19,9 @@ void DataStoreClass::put(const char* key, const char* value) {
 }
 
 void DataStoreClass::requestGet(const char* key) {
+  if (!key || *key == '\0') return;
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Invalid key"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Key too long"));
     return;
   }
 

@@ -7,7 +7,7 @@ PKG_RELEASE:=1
 PYPI_NAME:=cryptography
 PKG_HASH:=bfd019f60f8abc2ed1b9be4ddc21cfef059c841d86d710bb69909a688cbb8f59
 
-PKG_BUILD_DEPENDS:=python3-maturin/host python3-cffi/host
+PKG_BUILD_DEPENDS:=libffi/host python-maturin/host python-cffi/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

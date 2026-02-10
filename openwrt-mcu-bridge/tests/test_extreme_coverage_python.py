@@ -21,6 +21,7 @@ async def test_pin_component_extreme_gaps(runtime_config, runtime_state):
     ctx = MagicMock()
     ctx.send_frame = AsyncMock(return_value=True)
     ctx.enqueue_mqtt = AsyncMock()
+    ctx.publish = AsyncMock()
     ctx.is_command_allowed = MagicMock(return_value=True)
     comp = PinComponent(runtime_config, runtime_state, ctx)
 

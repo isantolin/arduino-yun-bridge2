@@ -63,6 +63,30 @@ class DummyBridge(BridgeContext):
             return
         self.published.append(message)
 
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        expiry: int | None = None,
+        properties: tuple[tuple[str, str], ...] = (),
+        content_type: str | None = None,
+        reply_to: Message | None = None,
+    ) -> None:
+        payload_bytes = payload.encode("utf-8") if isinstance(payload, str) else payload
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=payload_bytes,
+            qos=qos,
+            retain=retain,
+            content_type=content_type,
+            message_expiry_interval=expiry,
+            user_properties=properties,
+        )
+        await self.enqueue_mqtt(message, reply_context=reply_to)
+
     def set_enqueue_hook(self, hook: EnqueueHook | None) -> None:
         self._enqueue_hook = hook
 

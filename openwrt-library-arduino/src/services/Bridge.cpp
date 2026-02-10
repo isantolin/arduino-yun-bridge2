@@ -476,6 +476,15 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
   }
 }
 
+// [SIL-2] Pin Validation Helper
+static inline bool _isValidPin(uint8_t pin) {
+#ifdef NUM_DIGITAL_PINS
+  return pin < NUM_DIGITAL_PINS;
+#else
+  return true;
+#endif
+}
+
 void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
   const size_t payload_length = frame.header.payload_length;
@@ -488,9 +497,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t mode = payload_data[1];
-#ifdef NUM_DIGITAL_PINS
-        if (pin >= NUM_DIGITAL_PINS) return;
-#endif
+        if (!_isValidPin(pin)) return;
         ::pinMode(pin, mode);
       }
       break;
@@ -498,30 +505,24 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
         uint8_t value = payload_data[1] ? HIGH : LOW;
-#ifdef NUM_DIGITAL_PINS
-        if (pin >= NUM_DIGITAL_PINS) return;
-#endif
+        if (!_isValidPin(pin)) return;
         ::digitalWrite(pin, value);
       }
       break;
     case rpc::CommandId::CMD_ANALOG_WRITE:
       if (payload_length == 2) {
         uint8_t pin = payload_data[0];
-#ifdef NUM_DIGITAL_PINS
-        if (pin >= NUM_DIGITAL_PINS) return;
-#endif
+        if (!_isValidPin(pin)) return;
         ::analogWrite(pin, static_cast<int>(payload_data[1]));
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_READ:
       if (payload_length == 1) {
         uint8_t pin = payload_data[0];
-#ifdef NUM_DIGITAL_PINS
-        if (pin >= NUM_DIGITAL_PINS) {
+        if (!_isValidPin(pin)) {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
           return;
         }
-#endif
         int16_t value = ::digitalRead(pin);
         uint8_t resp_payload = static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK);
         (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, &resp_payload, 1);
@@ -534,6 +535,11 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
         if (pin >= NUM_ANALOG_INPUTS) {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
           return;
+        }
+#else
+        if (!_isValidPin(pin)) {
+             (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+             return;
         }
 #endif
         int16_t value = ::analogRead(pin);

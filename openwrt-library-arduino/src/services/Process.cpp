@@ -18,25 +18,14 @@ ProcessClass::ProcessClass()
     _process_run_async_handler(nullptr) {
 }
 
-static bool _run_internal(rpc::CommandId cmd_id, etl::string_view command) {
-  if (command.empty()) {
-    return false;
-  }
-  if (command.length() > rpc::MAX_PAYLOAD_SIZE) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
-    return false;
-  }
-  return Bridge.sendFrame(cmd_id, reinterpret_cast<const uint8_t*>(command.data()), command.length());
-}
-
 void ProcessClass::run(const char* command) {
-  if (command == nullptr) return;
-  (void)_run_internal(rpc::CommandId::CMD_PROCESS_RUN, command);
+  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, 
+                                command, rpc::MAX_PAYLOAD_SIZE);
 }
 
 void ProcessClass::runAsync(const char* command) {
-  if (command == nullptr) return;
-  (void)_run_internal(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, command);
+  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 
+                                command, rpc::MAX_PAYLOAD_SIZE);
 }
 
 // Helper: build a 2-byte PID payload and send a single frame.

@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections import deque
-from dataclasses import dataclass
 from typing import Any, cast
-from collections.abc import Awaitable, Callable, Coroutine
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiomqtt.message import Message
 
 from cobs import cobs
 
@@ -24,74 +20,12 @@ from mcubridge.transport import (
 )
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 from mcubridge.services.runtime import SerialHandshakeFatal
 from mcubridge.transport.serial_fast import BridgeSerialProtocol
 
-
-@dataclass
-class _SerialServiceStub:
-    config: RuntimeConfig
-    state: RuntimeState
-
-    def __post_init__(self) -> None:
-        self.received_frames: deque[tuple[int, bytes]] = deque()
-        self.serial_connected = asyncio.Event()
-        self.serial_disconnected = asyncio.Event()
-        self._serial_sender: Callable[[int, bytes], Awaitable[bool]] | None = None
-
-    def register_serial_sender(self, sender: Callable[[int, bytes], Awaitable[bool]]) -> None:
-        self._serial_sender = sender
-
-    async def on_serial_connected(self) -> None:
-        self.serial_connected.set()
-
-    async def on_serial_disconnected(self) -> None:
-        self.serial_disconnected.set()
-
-    async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
-        self.received_frames.append((command_id, payload))
-
-    async def send_frame(self, command_id: int, payload: bytes = b"") -> bool:
-        if self._serial_sender is None:
-            return False
-        return await self._serial_sender(command_id, payload)
-
-    async def enqueue_mqtt(self, *_: object, **__: object) -> None:
-        return None
-
-    def is_command_allowed(self, _command: str) -> bool:
-        return False
-
-    async def schedule_background(
-        self,
-        coroutine: Coroutine[Any, Any, None],
-        *,
-        name: str | None = None,
-    ) -> asyncio.Task[Any]:
-        return asyncio.create_task(coroutine, name=name)
-
-
-class _MQTTServiceStub:
-    def __init__(self, state: RuntimeState) -> None:
-        self.state = state
-        self.handled = asyncio.Event()
-
-    async def handle_mqtt_message(self, inbound: Message) -> None:
-        self.handled.set()
-
-    async def schedule_background(
-        self,
-        coroutine: Coroutine[Any, Any, None],
-        *,
-        name: str | None = None,
-    ) -> asyncio.Task[Any]:
-        return asyncio.create_task(coroutine, name=name)
-
-
-class _FatalSerialServiceStub(_SerialServiceStub):
-    async def on_serial_connected(self) -> None:
-        raise SerialHandshakeFatal("fatal-handshake")
+# [REDUCTION] Use shared mocks to avoid duplication
+from tests.mocks import MockSerialService, MockFatalSerialService, MockMQTTService
 
 
 @pytest.mark.asyncio
@@ -99,7 +33,7 @@ async def test_serial_reader_task_processes_frame(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
     state = create_runtime_state(runtime_config)
-    service = _SerialServiceStub(runtime_config, state)
+    service = MockSerialService(runtime_config, state)
 
     payload = bytes([protocol.DIGITAL_HIGH])
     frame = Frame(command_id=Command.CMD_DIGITAL_READ_RESP.value, payload=payload).to_bytes()
@@ -110,7 +44,6 @@ async def test_serial_reader_task_processes_frame(
     mock_transport.is_closing.return_value = False
 
     # We need a real protocol to test data processing logic, or at least one with real methods
-    # But BridgeSerialProtocol depends on asyncio loop.
     mock_protocol = BridgeSerialProtocol(service, state, asyncio.get_running_loop())
     mock_protocol.connection_made(mock_transport)
 
@@ -152,7 +85,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
 ) -> None:
     state = create_runtime_state(runtime_config)
     state.link_is_synchronized = True
-    service = _SerialServiceStub(runtime_config, state)
+    service = MockSerialService(runtime_config, state)
 
     frame = Frame(
         command_id=Command.CMD_DIGITAL_READ_RESP.value,
@@ -199,7 +132,7 @@ async def test_serial_reader_task_limits_packet_size(
 ) -> None:
     state = create_runtime_state(runtime_config)
     state.link_is_synchronized = True
-    service = _SerialServiceStub(runtime_config, state)
+    service = MockSerialService(runtime_config, state)
 
     TEST_PAYLOAD_BYTE = 0xAA
     oversized = bytes([TEST_PAYLOAD_BYTE]) * (MAX_SERIAL_PACKET_BYTES + 16)
@@ -237,7 +170,7 @@ async def test_serial_reader_task_propagates_handshake_fatal(
     monkeypatch: pytest.MonkeyPatch, runtime_config: RuntimeConfig
 ) -> None:
     state = create_runtime_state(runtime_config)
-    service = _FatalSerialServiceStub(runtime_config, state)
+    service = MockFatalSerialService(runtime_config, state)
 
     mock_transport = MagicMock()
     mock_transport.is_closing.return_value = False
@@ -269,7 +202,7 @@ async def test_mqtt_task_handles_incoming_message(
 ) -> None:
     state = create_runtime_state(runtime_config)
     state.mqtt_topic_prefix = runtime_config.mqtt_topic
-    service = _MQTTServiceStub(state)
+    service = MockMQTTService(state)
 
     # Mock aiomqtt Client
     mock_client = AsyncMock()

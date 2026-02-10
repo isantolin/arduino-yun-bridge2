@@ -41,16 +41,6 @@ from .serial_flow import SerialFlowController
 logger = logging.getLogger("mcubridge.service")
 
 
-async def _background_task_runner(
-    coroutine: Coroutine[Any, Any, None],
-    *,
-    task_name: str | None,
-) -> None:
-    # Exceptions bubble up to the TaskGroup, which cancels siblings and
-    # raises ExceptionGroup in the main loop.
-    await coroutine
-
-
 class _StatusHandler:
     def __init__(self, service: "BridgeService", status: Status) -> None:
         self._service = service
@@ -120,6 +110,7 @@ class BridgeService:
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
             record_unknown_command=state.record_unknown_command_id,
+            on_frame_received=self._serial_flow.on_frame_received,
         )
         self._dispatcher.register_components(
             console=self._console,
@@ -192,10 +183,7 @@ class BridgeService:
         if not self._task_group:
             raise RuntimeError("BridgeService context not entered")
 
-        return self._task_group.create_task(
-            _background_task_runner(coroutine, task_name=name),
-            name=name,
-        )
+        return self._task_group.create_task(coroutine, name=name)
 
     def is_link_synchronized(self) -> bool:
         return self.state.link_is_synchronized
@@ -272,8 +260,7 @@ class BridgeService:
 
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
-
-        self._serial_flow.on_frame_received(command_id, payload)
+        # Dispatcher handles flow control notification internally
         try:
             await self._dispatcher.dispatch_mcu_frame(command_id, payload)
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:

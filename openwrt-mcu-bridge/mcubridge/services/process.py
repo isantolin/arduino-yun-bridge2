@@ -66,8 +66,24 @@ class ProcessComponent(msgspec.Struct):
         else:
             object.__setattr__(self, "_process_slots", None)
 
-    async def handle_run(self, payload: bytes) -> None:
+    def _prepare_command(self, payload: bytes) -> tuple[str, list[str]]:
+        """Decode payload, tokenize command, and check allowed policy."""
         command = payload.decode("utf-8", errors="ignore")
+        tokens = tokenize_shell_command(command)
+        if not tokens or not self.ctx.is_command_allowed(tokens[0]):
+            raise CommandValidationError(f"Command '{tokens[0] if tokens else ''}' not allowed")
+        return command, tokens
+
+    async def handle_run(self, payload: bytes) -> None:
+        try:
+            command, tokens = self._prepare_command(payload)
+        except CommandValidationError as exc:
+            logger.warning("Rejected sync command: %s", exc)
+            await self.ctx.send_frame(
+                Status.ERROR.value,
+                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
+            )
+            return
 
         if not await self._try_acquire_process_slot():
             logger.warning(
@@ -80,9 +96,9 @@ class ProcessComponent(msgspec.Struct):
             )
             return
 
-        await self.ctx.schedule_background(self._execute_sync_command(command))
+        await self.ctx.schedule_background(self._execute_sync_command(command, tokens))
 
-    async def _execute_sync_command(self, command: str) -> None:
+    async def _execute_sync_command(self, command: str, tokens: list[str]) -> None:
         async with AsyncExitStack() as stack:
             stack.callback(self._release_process_slot)
             try:
@@ -91,7 +107,7 @@ class ProcessComponent(msgspec.Struct):
                     stdout_bytes,
                     stderr_bytes,
                     exit_code,
-                ) = await self.run_sync(command)
+                ) = await self.run_sync(command, tokens)
                 response = self._build_sync_response(
                     status,
                     stdout_bytes,
@@ -102,11 +118,6 @@ class ProcessComponent(msgspec.Struct):
                     "Sent PROCESS_RUN_RESP status=%d exit=%s",
                     status,
                     exit_code,
-                )
-            except CommandValidationError as exc:
-                await self.ctx.send_frame(
-                    Status.ERROR.value,
-                    encode_status_reason(exc.message),
                 )
             except (OSError, ValueError) as e:
                 logger.error(
@@ -120,11 +131,11 @@ class ProcessComponent(msgspec.Struct):
                 )
 
     async def handle_run_async(self, payload: bytes) -> None:
-        command = payload.decode("utf-8", errors="ignore")
         try:
-            pid = await self.start_async(command)
+            command, tokens = self._prepare_command(payload)
+            pid = await self.start_async(command, tokens)
         except CommandValidationError as exc:
-            logger.warning("Rejected async command '%s': %s", command, exc)
+            logger.warning("Rejected async command: %s", exc)
             await self.ctx.send_frame(
                 Status.ERROR.value,
                 encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
@@ -264,12 +275,8 @@ class ProcessComponent(msgspec.Struct):
         await self.ctx.send_frame(Status.OK.value, b"")
         return send_ack
 
-    async def run_sync(self, command: str) -> tuple[int, bytes, bytes, int | None]:
-        tokens = tokenize_shell_command(command)
-        if not self.ctx.is_command_allowed(tokens[0]):
-            logger.warning("Rejected command '%s': access denied", tokens[0])
-            return Status.ERROR.value, b"", b"Command not allowed", None
-
+    async def run_sync(self, command: str, tokens: list[str]) -> tuple[int, bytes, bytes, int | None]:
+        # Validation is done by caller via _prepare_command
         try:
             proc = await asyncio.create_subprocess_exec(
                 *tokens,
@@ -363,12 +370,8 @@ class ProcessComponent(msgspec.Struct):
                 )
             return True
 
-    async def start_async(self, command: str) -> int:
-        tokens = tokenize_shell_command(command)
-        if not self.ctx.is_command_allowed(tokens[0]):
-            logger.warning("Rejected async command '%s': access denied", tokens[0])
-            raise CommandValidationError(f"Command '{tokens[0]}' not allowed")
-
+    async def start_async(self, command: str, tokens: list[str]) -> int:
+        # Validation is done by caller via _prepare_command
         if not await self._try_acquire_process_slot():
             logger.warning(
                 "Concurrent process limit reached (%d)",

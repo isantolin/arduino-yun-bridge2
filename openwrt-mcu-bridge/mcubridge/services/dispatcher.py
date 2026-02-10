@@ -63,6 +63,7 @@ class BridgeDispatcher:
         reject_topic_action: Callable[[Message, Topic | str, str], Awaitable[None]],
         publish_bridge_snapshot: Callable[[str, Message | None], Awaitable[None]],
         record_unknown_command: Callable[[int], None] | None = None,
+        on_frame_received: Callable[[int, bytes], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry
         self.mqtt_router = mqtt_router
@@ -73,6 +74,7 @@ class BridgeDispatcher:
         self.reject_topic_action = reject_topic_action
         self.publish_bridge_snapshot = publish_bridge_snapshot
         self.record_unknown_command = record_unknown_command
+        self.on_frame_received_callback = on_frame_received
 
         # Components (populated via register_components)
         self.console: ConsoleComponent | None = None
@@ -212,6 +214,10 @@ class BridgeDispatcher:
         and wraps handler execution in a safety try/except block to prevent
         service crashes due to component failures.
         """
+        # 0. Notify Flow Controller (if registered)
+        if self.on_frame_received_callback:
+            self.on_frame_received_callback(command_id, payload)
+
         # 1. Security Check: Link Synchronization
         if not self._is_frame_allowed_pre_sync(command_id):
             logger.warning(

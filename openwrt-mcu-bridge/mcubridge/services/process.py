@@ -69,7 +69,7 @@ class ProcessComponent(msgspec.Struct):
     def _prepare_command(self, payload: bytes) -> tuple[str, list[str]]:
         """Decode payload, tokenize command, and check allowed policy."""
         command = payload.decode("utf-8", errors="ignore")
-        tokens = tokenize_shell_command(command)
+        tokens = list(tokenize_shell_command(command))
         if not tokens or not self.ctx.is_command_allowed(tokens[0]):
             raise CommandValidationError(f"Command '{tokens[0] if tokens else ''}' not allowed")
         return command, tokens

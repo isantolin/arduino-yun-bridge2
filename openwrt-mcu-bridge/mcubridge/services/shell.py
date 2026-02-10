@@ -16,7 +16,7 @@ from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_SHELL
 from ..state.context import RuntimeState
 from ..protocol.topics import Topic, topic_path
-from ..policy import CommandValidationError
+from ..policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
 from .process import ProcessComponent
 from .payloads import (
@@ -89,6 +89,10 @@ class ShellComponent:
     ) -> None:
         command = payload.command
         logger.info("Executing shell command from MQTT: '%s'", command)
+
+        # [Fix] Tokenize and validate before execution
+        tokens = list(tokenize_shell_command(command))
+
         response_topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.SHELL,
@@ -111,7 +115,7 @@ class ShellComponent:
                 stdout_bytes,
                 stderr_bytes,
                 exit_code,
-            ) = await self.process.run_sync(command)
+            ) = await self.process.run_sync(command, tokens)
 
             stdout_text = stdout_bytes.decode("utf-8", errors="ignore")
             stderr_text = stderr_bytes.decode("utf-8", errors="ignore")
@@ -149,7 +153,8 @@ class ShellComponent:
         command = payload.command
         logger.info("MQTT async shell command: '%s'", command)
         try:
-            pid = await self.process.start_async(command)
+            tokens = list(tokenize_shell_command(command))
+            pid = await self.process.start_async(command, tokens)
         except CommandValidationError as exc:
             response_topic = topic_path(
                 self.state.mqtt_topic_prefix,

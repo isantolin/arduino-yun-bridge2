@@ -27,6 +27,7 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.state.context import RuntimeState, McuCapabilities
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.topics import Topic
+from mcubridge.util import chunk_bytes
 
 
 @pytest.fixture
@@ -72,12 +73,12 @@ def test_rle_decode_long_run_branch():
 async def test_console_component_gaps(runtime_state: RuntimeState, real_config):
     ctx = MagicMock()
     comp = ConsoleComponent(real_config, runtime_state, ctx)
-    with patch.object(comp, "_iter_console_chunks", return_value=[b"a", b""]):
+    with patch("mcubridge.services.console.chunk_bytes", return_value=[b"a", b""]):
         runtime_state.mcu_is_paused = True
         await comp.handle_mqtt_input(b"payload")
         assert any(b"a" == c for c in runtime_state.console_to_mcu_queue)
     runtime_state.mcu_is_paused = False
-    with patch.object(comp, "_iter_console_chunks", return_value=[b""]):
+    with patch("mcubridge.services.console.chunk_bytes", return_value=[b""]):
         await comp.handle_mqtt_input(b"payload")
 
 
@@ -91,14 +92,14 @@ async def test_console_component_async_gaps(runtime_state: RuntimeState, real_co
     assert runtime_state.console_to_mcu_queue
     runtime_state.console_to_mcu_queue.clear()
     runtime_state.enqueue_console_chunk(b"abc", logging.getLogger())
-    with patch.object(comp, "_iter_console_chunks", return_value=[b""]):
+    with patch("mcubridge.services.console.chunk_bytes", return_value=[b""]):
         await comp.flush_queue()
     runtime_state.console_to_mcu_queue.clear()
     runtime_state.enqueue_console_chunk(b"abc", logging.getLogger())
     ctx.send_frame = AsyncMock(return_value=False)
-    with patch.object(comp, "_iter_console_chunks", return_value=[b"a"]):
+    with patch("mcubridge.services.console.chunk_bytes", return_value=[b"a"]):
         await comp.flush_queue()
-    assert comp._iter_console_chunks(b"") == []
+    assert chunk_bytes(b"", 1) == []
 
 
 @pytest.mark.asyncio

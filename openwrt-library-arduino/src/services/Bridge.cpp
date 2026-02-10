@@ -642,13 +642,10 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
     case rpc::CommandId::CMD_SET_PIN_MODE:
     case rpc::CommandId::CMD_DIGITAL_WRITE:
     case rpc::CommandId::CMD_ANALOG_WRITE:
-      if (ctx.is_duplicate) {
-        _sendAckAndFlush(ctx.raw_command);
-        return;
-      }
-      _handleGpioCommand(*ctx.frame);
-      _markRxProcessed(*ctx.frame);
-      _sendAck(ctx.raw_command);
+      _handleDedupAck(
+          ctx,
+          [this, &ctx]() { _handleGpioCommand(*ctx.frame); },
+          true);
       break;
       
     case rpc::CommandId::CMD_DIGITAL_READ:
@@ -664,13 +661,10 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) {
-    _sendAckAndFlush(ctx.raw_command);
-    return;
-  }
-  _handleConsoleCommand(*ctx.frame);
-  _markRxProcessed(*ctx.frame);
-  _sendAck(ctx.raw_command);
+  _handleDedupAck(
+      ctx,
+      [this, &ctx]() { _handleConsoleCommand(*ctx.frame); },
+      true);
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
@@ -685,15 +679,16 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
   
   if (command == rpc::CommandId::CMD_MAILBOX_PUSH) {
-    if (ctx.is_duplicate) {
-      _sendAckAndFlush(ctx.raw_command);
-      return;
-    }
-    #if BRIDGE_ENABLE_MAILBOX
-    Mailbox.handleResponse(*ctx.frame);
-    #endif
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
+    _handleDedupAck(
+        ctx,
+        [this, &ctx]() {
+#if BRIDGE_ENABLE_MAILBOX
+          Mailbox.handleResponse(*ctx.frame);
+#else
+          (void)ctx;
+#endif
+        },
+        true);
   } else {
     #if BRIDGE_ENABLE_MAILBOX
     Mailbox.handleResponse(*ctx.frame);
@@ -705,15 +700,16 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
   
   if (command == rpc::CommandId::CMD_FILE_WRITE) {
-    if (ctx.is_duplicate) {
-      _sendAckAndFlush(ctx.raw_command);
-      return;
-    }
-    #if BRIDGE_ENABLE_FILESYSTEM
-    FileSystem.handleResponse(*ctx.frame);
-    #endif
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
+    _handleDedupAck(
+        ctx,
+        [this, &ctx]() {
+#if BRIDGE_ENABLE_FILESYSTEM
+          FileSystem.handleResponse(*ctx.frame);
+#else
+          (void)ctx;
+#endif
+        },
+        true);
   } else {
     #if BRIDGE_ENABLE_FILESYSTEM
     FileSystem.handleResponse(*ctx.frame);

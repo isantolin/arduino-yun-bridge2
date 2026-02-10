@@ -9,24 +9,33 @@ from __future__ import annotations
 import logging
 import sys
 from collections.abc import Iterable
+from pathlib import Path
+
+
+def _is_openwrt() -> bool:
+    return Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
 
 
 def _read_uci_general() -> dict[str, str]:
-    from uci import Uci, UciException  # type: ignore
+    try:
+        from mcubridge.config.common import get_uci_config
+    except (ImportError, RuntimeError):
+        return {}
+
+    if not _is_openwrt():
+        return {}
 
     try:
-        with Uci() as cursor:
-            section = cursor.get_all("mcubridge", "general")
-            if not section:
-                return {}
-            clean: dict[str, str] = {}
-            for key, value in section.items():
-                if str(key).startswith((".", "_")):
-                    continue
-                clean[str(key)] = str(value)
-            return clean
-    except (UciException, OSError, KeyError, TypeError):
+        config = get_uci_config()
+    except RuntimeError:
         return {}
+
+    clean: dict[str, str] = {}
+    for key, value in config.items():
+        if str(key).startswith((".", "_")):
+            continue
+        clean[str(key)] = str(value)
+    return clean
 
 
 def dump_client_env(logger: logging.Logger | None = None) -> None:

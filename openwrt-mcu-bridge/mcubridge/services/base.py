@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
+import logging
+from collections.abc import Awaitable, Callable, Coroutine, Mapping
 from typing import Any, Protocol
 
 from aiomqtt.message import Message
@@ -49,5 +50,19 @@ class BridgeContext(Protocol):
         name: str | None = None,
     ) -> asyncio.Task[Any]: ...
 
+async def dispatch_mqtt_action(
+    action: str,
+    handlers: Mapping[str, Callable[[], Awaitable[None]]],
+    *,
+    logger: logging.Logger,
+    component: str,
+) -> bool:
+    handler = handlers.get(action)
+    if handler is None:
+        logger.debug("Ignoring %s action '%s'", component, action)
+        return False
+    await handler()
+    return True
 
-__all__ = ["BridgeContext"]
+
+__all__ = ["BridgeContext", "dispatch_mqtt_action"]

@@ -11,6 +11,7 @@ from ..protocol.topics import Topic, topic_path
 from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..state.context import RuntimeState
+from ..util import chunk_bytes
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.console")
@@ -57,7 +58,7 @@ class ConsoleComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        chunks = self._iter_console_chunks(payload)
+        chunks = chunk_bytes(payload, MAX_PAYLOAD_SIZE)
         if self.state.mcu_is_paused:
             logger.warning(
                 "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
@@ -89,7 +90,7 @@ class ConsoleComponent:
     async def flush_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buffered = self.state.pop_console_chunk()
-            chunks = self._iter_console_chunks(buffered)
+            chunks = chunk_bytes(buffered or b"", MAX_PAYLOAD_SIZE)
             for index, chunk in enumerate(chunks):
                 if not chunk:
                     continue
@@ -110,12 +111,6 @@ class ConsoleComponent:
     def on_serial_disconnected(self) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
-
-    def _iter_console_chunks(self, payload: bytes) -> list[bytes]:
-        if not payload:
-            return []
-        chunk_size = MAX_PAYLOAD_SIZE
-        return [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
 
 
 __all__ = ["ConsoleComponent"]

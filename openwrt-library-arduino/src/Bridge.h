@@ -363,6 +363,20 @@ class BridgeClass : public bridge::router::ICommandHandler {
   void _handleMalformed(uint16_t command_id);
   void _sendAck(uint16_t command_id);          // Send ACK without flush
   void _sendAckAndFlush(uint16_t command_id);  // Encapsulates ACK + flush sequence
+  template <typename Handler>
+  void _handleDedupAck(const bridge::router::CommandContext& ctx, Handler handler, bool flush_on_duplicate) {
+    if (ctx.is_duplicate) {
+      if (flush_on_duplicate) {
+        _sendAckAndFlush(ctx.raw_command);
+      } else {
+        _sendAck(ctx.raw_command);
+      }
+      return;
+    }
+    handler();
+    _markRxProcessed(*ctx.frame);
+    _sendAck(ctx.raw_command);
+  }
   void _doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length);
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
   void _applyTimingConfig(const uint8_t* payload, size_t length);

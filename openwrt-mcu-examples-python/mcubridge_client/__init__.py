@@ -25,7 +25,7 @@ from .definitions import (
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
 )
-from .env import dump_client_env
+from .env import dump_client_env, _read_uci_general
 
 __all__ = [
     "Bridge",
@@ -33,24 +33,6 @@ __all__ = [
     "MqttError",
     "QOSLevel",
 ]
-
-
-def _read_uci_general() -> dict[str, str]:
-    from uci import Uci, UciException  # type: ignore
-
-    try:
-        with Uci() as cursor:
-            section = cursor.get_all("mcubridge", "general")
-            if not section:
-                return {}
-            clean: dict[str, str] = {}
-            for key, value in section.items():
-                if key.startswith((".", "_")):
-                    continue
-                clean[str(key)] = str(value)
-            return clean
-    except (UciException, OSError, KeyError, TypeError):
-        return {}
 
 
 _UCI_GENERAL = _read_uci_general()

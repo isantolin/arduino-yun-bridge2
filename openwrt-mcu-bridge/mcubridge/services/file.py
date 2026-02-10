@@ -26,7 +26,8 @@ from ..config.const import (
 from ..protocol.topics import Topic, topic_path
 from ..protocol.structures import FileReadPacket, FileRemovePacket, FileWritePacket
 from ..state.context import RuntimeState
-from .base import BridgeContext
+from ..util import chunk_bytes
+from .base import BridgeContext, dispatch_mqtt_action
 
 logger = logging.getLogger("mcubridge.file")
 
@@ -131,19 +132,15 @@ class FileComponent:
         # [SIL-2] Large Payload Support: Chunking
         # Instead of truncating, we send multiple frames. The MCU side handles
         # reassembly or streaming via repeated callbacks.
-        total_len = len(data)
-        if total_len == 0:
+        chunks = chunk_bytes(data, max_payload)
+        if not chunks:
             response = cast(Any, protocol.UINT16_STRUCT).build(0)
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
             return
 
-        offset = 0
-        while offset < total_len:
-            chunk = data[offset : offset + max_payload]
-            # Frame Format: [Len:2] [Data:N]
+        for chunk in chunks:
             response = cast(Any, protocol.UINT16_STRUCT).build(len(chunk)) + chunk
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
-            offset += len(chunk)
 
     async def handle_remove(self, payload: bytes) -> bool:
         try:
@@ -188,67 +185,75 @@ class FileComponent:
                 filename,
                 outcome,
             )
-            match action:
-                case FileAction.WRITE:
-                    success, _, reason = await self._perform_file_operation(FileAction.WRITE, filename, payload)
-                    if not success:
-                        outcome["status"] = reason or "write_failed"
-                        logger.error(
-                            "MQTT file write failed for %s: %s",
-                            filename,
-                            reason or "unknown_reason",
-                        )
-                    else:
-                        outcome["status"] = "ok"
 
-                case FileAction.READ:
-                    (
-                        success,
-                        content,
-                        reason,
-                    ) = await self._perform_file_operation(
-                        FileAction.READ,
+            async def _handle_write() -> None:
+                success, _, reason = await self._perform_file_operation(FileAction.WRITE, filename, payload)
+                if not success:
+                    outcome["status"] = reason or "write_failed"
+                    logger.error(
+                        "MQTT file write failed for %s: %s",
                         filename,
+                        reason or "unknown_reason",
                     )
-                    if not success:
-                        outcome["status"] = reason or "read_failed"
-                        logger.error(
-                            "MQTT file read failed for %s: %s",
-                            filename,
-                            reason or "unknown_reason",
-                        )
-                        return
+                else:
                     outcome["status"] = "ok"
-                    data = content or b""
-                    response_topic = topic_path(
-                        self.state.mqtt_topic_prefix,
-                        Topic.FILE,
-                        FileAction.READ,
-                        protocol.MQTT_SUFFIX_RESPONSE,
-                        *tuple(segment for segment in filename.split("/") if segment),
-                    )
-                    await self.ctx.publish(
-                        topic=response_topic,
-                        payload=data,
-                        expiry=MQTT_EXPIRY_SHELL,
-                        properties=((MQTT_USER_PROP_FILE_PATH, filename),),
-                        reply_to=inbound,
-                    )
 
-                case FileAction.REMOVE:
-                    success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
-                    if not success:
-                        outcome["status"] = reason or "remove_failed"
-                        logger.error(
-                            "MQTT file remove failed for %s: %s",
-                            filename,
-                            reason or "unknown_reason",
-                        )
-                    else:
-                        outcome["status"] = "ok"
+            async def _handle_read() -> None:
+                (
+                    success,
+                    content,
+                    reason,
+                ) = await self._perform_file_operation(
+                    FileAction.READ,
+                    filename,
+                )
+                if not success:
+                    outcome["status"] = reason or "read_failed"
+                    logger.error(
+                        "MQTT file read failed for %s: %s",
+                        filename,
+                        reason or "unknown_reason",
+                    )
+                    return
+                outcome["status"] = "ok"
+                data = content or b""
+                response_topic = topic_path(
+                    self.state.mqtt_topic_prefix,
+                    Topic.FILE,
+                    FileAction.READ,
+                    protocol.MQTT_SUFFIX_RESPONSE,
+                    *tuple(segment for segment in filename.split("/") if segment),
+                )
+                await self.ctx.publish(
+                    topic=response_topic,
+                    payload=data,
+                    expiry=MQTT_EXPIRY_SHELL,
+                    properties=((MQTT_USER_PROP_FILE_PATH, filename),),
+                    reply_to=inbound,
+                )
 
-                case _:
-                    logger.debug("Ignoring unknown file action '%s'", action)
+            async def _handle_remove() -> None:
+                success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
+                if not success:
+                    outcome["status"] = reason or "remove_failed"
+                    logger.error(
+                        "MQTT file remove failed for %s: %s",
+                        filename,
+                        reason or "unknown_reason",
+                    )
+                else:
+                    outcome["status"] = "ok"
+
+            await dispatch_mqtt_action(
+                action,
+                {
+                    FileAction.WRITE: _handle_write,
+                    FileAction.READ: _handle_read,
+                    FileAction.REMOVE: _handle_remove,
+                },
+                logger=logger,
+                component="file",
+            )
 
     @staticmethod
     def _log_mqtt_outcome(

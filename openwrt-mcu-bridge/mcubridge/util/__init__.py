@@ -5,8 +5,17 @@ from __future__ import annotations
 import logging
 
 __all__ = [
+    "chunk_bytes",
     "log_hexdump",
 ]
+
+def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
+    """Split payload into fixed-size chunks."""
+    if not payload:
+        return []
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
+    return [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
 
 
 def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:

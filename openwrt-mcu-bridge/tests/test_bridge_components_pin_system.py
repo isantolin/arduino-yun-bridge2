@@ -315,7 +315,7 @@ async def test_mqtt_shell_run_publishes_response(
 
     calls: list[tuple[object, str]] = []
 
-    async def fake_run(self: object, command: str) -> tuple[int, bytes, bytes, int | None]:
+    async def fake_run(self: object, command: str, tokens: list[str]) -> tuple[int, bytes, bytes, int | None]:
         calls.append((self, command))
         return Status.OK.value, b"ok\n", b"", 0
 
@@ -360,7 +360,7 @@ async def test_mqtt_shell_run_async_handles_not_allowed(
 
     calls: list[tuple[object, str]] = []
 
-    async def fake_start(self: object, command: str) -> int:
+    async def fake_start(self: object, command: str, tokens: list[str]) -> int:
         calls.append((self, command))
         return protocol.INVALID_ID_SENTINEL
 

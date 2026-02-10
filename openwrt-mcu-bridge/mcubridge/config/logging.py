@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import msgspec
 import logging
+import os
 from datetime import datetime, timezone
 from logging import Handler
 from logging.config import dictConfig
@@ -87,6 +88,9 @@ class StructuredLogFormatter(logging.Formatter):
 
 
 def _build_handler() -> Handler:
+    if os.environ.get("MCUBRIDGE_LOG_STREAM"):
+        return logging.StreamHandler()
+
     candidates: tuple[Path, ...]
     if str(SYSLOG_SOCKET) == "/dev/log":
         candidates = (SYSLOG_SOCKET, SYSLOG_SOCKET_FALLBACK)

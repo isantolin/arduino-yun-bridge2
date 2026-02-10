@@ -125,6 +125,24 @@ class BridgeService:
             record_unknown_command=state.record_unknown_command_id,
             on_frame_received=self._serial_flow.on_frame_received,
         )
+        self._dispatcher.register_components(
+            console=self._console,
+            datastore=self._datastore,
+            file=self._file,
+            mailbox=self._mailbox,
+            pin=self._pin,
+            process=self._process,
+            shell=self._shell,
+            system=self._system,
+        )
+        self._dispatcher.register_system_handlers(
+            handle_link_sync_resp=self._handshake.handle_link_sync_resp,
+            handle_link_reset_resp=self._handshake.handle_link_reset_resp,
+            handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
+            handle_ack=self._handle_ack,
+            status_handler_factory=self._status_handler,
+            handle_process_kill=self._process.handle_kill,
+        )
 
     async def __aenter__(self) -> BridgeService:
         self._task_group = asyncio.TaskGroup()

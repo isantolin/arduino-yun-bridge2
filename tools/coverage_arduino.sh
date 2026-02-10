@@ -8,8 +8,13 @@ TEST_ROOT="${LIB_ROOT}/tests"
 STUB_INCLUDE="${ROOT_DIR}/tools/arduino_stub/include"
 
 BUILD_DIR="${LIB_ROOT}/build-coverage"
-OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
+OUTPUT_ROOT="${ROOT_ROOT:-${ROOT_DIR}}/coverage/arduino"
 mkdir -p "${BUILD_DIR}" "${OUTPUT_ROOT}"
+
+# [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
+echo "[coverage_arduino] Installing library dependencies..."
+DUMMY_ARDUINO_LIBS=$(mktemp -d)
+"${LIB_ROOT}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
 # [SIL-2] Use local stubs for host coverage (offline-safe).
 echo "[coverage_arduino] Using local Arduino stubs for dependencies..."
@@ -43,6 +48,8 @@ COMPILE_FLAGS=(
     -I"${SRC_ROOT}"
     -I"${TEST_ROOT}/mocks"
     -I"${STUB_INCLUDE}"
+    -I"${DUMMY_ARDUINO_LIBS}/Crypto"
+    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
 )
 
 TEST_FILES=(

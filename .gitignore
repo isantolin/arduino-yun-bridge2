@@ -65,4 +65,4 @@ feeds/openwrt-mcu-bridge
 feeds/openwrt-mcu-core
 test_protocol_bin
 .VSCodeCounter/
-# openwrt-library-arduino/src/etl/ (DO NOT IGNORE)
+openwrt-library-arduino/src/etl/

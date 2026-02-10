@@ -27,6 +27,7 @@ from mcubridge.config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
 )
 from mcubridge.protocol import protocol
+from mcubridge.protocol.encoding import encode_status_reason
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.process import ProcessComponent
 from mcubridge.services.handshake import derive_serial_timing
@@ -1416,14 +1417,15 @@ def test_run_command_respects_allow_list(
         # Let's assume we should call service.is_command_allowed check manually or use handle_run.
         # But handle_run is async and handles response sending.
         # Let's check if the previous code validated in run_sync.
-        
+
         # If I change the test to call `handle_run`, I need to capture the response.
         # Alternatively, if run_sync IS supposed to validate (comment says "Validation is done by caller"),
         # then calling it directly bypasses validation.
-        
-        # FIX: The test expects validation failure. But since run_sync doesn't validate, it succeeds (executes /bin/true).
+
+        # FIX: The test expects validation failure. But since run_sync doesn't validate,
+        # it succeeds (executes /bin/true).
         # We should invoke the validation logic.
-        
+
         if not service.is_command_allowed("/bin/true"):
              status = Status.ERROR.value
              stderr = b"not allowed"

@@ -315,8 +315,9 @@ fi
 cd "$SDK_DIR" || exit 1
 MAX_RETRIES=5; RETRY=0; SUCCESS=0
 while [ "$RETRY" -lt "$MAX_RETRIES" ]; do
-    # [FIX] Pre-emptive cleanup of uboot-ath79
+    # [FIX] Pre-emptive cleanup of uboot-ath79 and nginx (recursive dependency in some SDKs)
     [ -d "package/feeds/base/uboot-ath79" ] && rm -rf package/feeds/base/uboot-ath79
+    [ -d "package/feeds/packages/nginx" ] && rm -rf package/feeds/packages/nginx
     
     if ./scripts/feeds update -a; then
         SUCCESS=1; break
@@ -377,11 +378,15 @@ fi
 if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     echo "[INFO] Installing mcubridge feed overrides..."
     
-    # [FIX] Eliminar conflicto Paho MQTT (System vs Local)
-    if [ -d "package/feeds/packages/python-paho-mqtt" ]; then
-        echo "[FIX] Removing upstream python-paho-mqtt (v1.6) to prioritize local mcubridge version (v2.1)..."
-        rm -rf package/feeds/packages/python-paho-mqtt
-    fi
+    # [FIX] Eliminar conflictos de paquetes Python (System vs Local)
+    # Estos paquetes existen en el feed oficial 'packages' pero necesitamos las versiones
+    # optimizadas o más recientes del feed 'mcubridge'.
+    for pkg_conflict in python-paho-mqtt python-cryptography python-psutil; do
+        if [ -d "package/feeds/packages/$pkg_conflict" ]; then
+            echo "[FIX] Removing upstream $pkg_conflict to prioritize local mcubridge version..."
+            rm -rf "package/feeds/packages/$pkg_conflict"
+        fi
+    done
     
     ./scripts/feeds install -f -p mcubridge -a
 fi

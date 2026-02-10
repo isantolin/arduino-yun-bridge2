@@ -26,7 +26,7 @@ from ..protocol.topics import (
     mailbox_outgoing_available_topic,
     topic_path,
 )
-from .base import BridgeContext, dispatch_mqtt_action
+from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.mailbox")
 
@@ -155,15 +155,13 @@ class MailboxComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        await dispatch_mqtt_action(
-            action,
-            {
-                MailboxAction.WRITE: lambda: self._handle_mqtt_write(payload, inbound),
-                MailboxAction.READ: lambda: self._handle_mqtt_read(inbound),
-            },
-            logger=logger,
-            component="mailbox",
-        )
+        if action == MailboxAction.WRITE:
+            await self._handle_mqtt_write(payload, inbound)
+            return
+        if action == MailboxAction.READ:
+            await self._handle_mqtt_read(inbound)
+            return
+        logger.debug("Ignoring mailbox action '%s'", action)
 
     async def _handle_mqtt_write(
         self,

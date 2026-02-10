@@ -27,6 +27,19 @@ class BridgeContext(Protocol):
         reply_context: Message | None = None,
     ) -> None: ...
 
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        expiry: int | None = None,
+        properties: tuple[tuple[str, str], ...] = (),
+        content_type: str | None = None,
+        reply_to: Message | None = None,
+    ) -> None: ...
+
     def is_command_allowed(self, command: str) -> bool: ...
 
     async def schedule_background(

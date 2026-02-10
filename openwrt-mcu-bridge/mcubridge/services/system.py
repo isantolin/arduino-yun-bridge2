@@ -11,7 +11,6 @@ from construct import ConstructError
 from mcubridge.protocol.protocol import Command, SystemAction
 from mcubridge.protocol.structures import FreeMemoryResponsePacket, VersionResponsePacket
 
-from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_DEFAULT, MQTT_EXPIRY_DATASTORE
 from ..state.context import RuntimeState
@@ -63,21 +62,17 @@ class SystemComponent:
             SystemAction.FREE_MEMORY,
             SystemAction.VALUE,
         )
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=str(free_memory).encode("utf-8"),
-            message_expiry_interval=MQTT_EXPIRY_DEFAULT,
-            content_type="text/plain; charset=utf-8",
-        )
         reply_context = None
         if self._pending_free_memory:
             reply_context = self._pending_free_memory.popleft()
-        if reply_context is not None:
-            await self.ctx.enqueue_mqtt(
-                message,
-                reply_context=reply_context,
-            )
-        await self.ctx.enqueue_mqtt(message)
+
+        await self.ctx.publish(
+            topic=topic,
+            payload=str(free_memory).encode("utf-8"),
+            expiry=MQTT_EXPIRY_DEFAULT,
+            content_type="text/plain; charset=utf-8",
+            reply_to=reply_context,
+        )
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
         if len(payload) != 2:
@@ -136,18 +131,13 @@ class SystemComponent:
             SystemAction.VERSION,
             SystemAction.VALUE,
         )
-        message = QueuedPublish(
-            topic_name=topic,
+        await self.ctx.publish(
+            topic=topic,
             payload=f"{major}.{minor}".encode(),
-            message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+            expiry=MQTT_EXPIRY_DATASTORE,
             content_type="text/plain; charset=utf-8",
+            reply_to=reply_context,
         )
-        if reply_context is not None:
-            await self.ctx.enqueue_mqtt(
-                message,
-                reply_context=reply_context,
-            )
-        await self.ctx.enqueue_mqtt(message)
 
 
 __all__ = ["SystemComponent"]

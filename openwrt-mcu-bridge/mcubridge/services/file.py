@@ -23,7 +23,6 @@ from ..config.const import (
     SYSTEMD_PRIVATE_PREFIX,
     VOLATILE_STORAGE_PATHS,
 )
-from ..mqtt.messages import QueuedPublish
 from ..protocol.topics import Topic, topic_path
 from ..protocol.structures import FileReadPacket, FileRemovePacket, FileWritePacket
 from ..state.context import RuntimeState
@@ -228,16 +227,12 @@ class FileComponent:
                         protocol.MQTT_SUFFIX_RESPONSE,
                         *tuple(segment for segment in filename.split("/") if segment),
                     )
-                    message = QueuedPublish(
-                        topic_name=response_topic,
+                    await self.ctx.publish(
+                        topic=response_topic,
                         payload=data,
-                        message_expiry_interval=MQTT_EXPIRY_SHELL,
-                        user_properties=((MQTT_USER_PROP_FILE_PATH, filename),),
-                    )
-
-                    await self.ctx.enqueue_mqtt(
-                        message,
-                        reply_context=inbound,
+                        expiry=MQTT_EXPIRY_SHELL,
+                        properties=((MQTT_USER_PROP_FILE_PATH, filename),),
+                        reply_to=inbound,
                     )
 
                 case FileAction.REMOVE:

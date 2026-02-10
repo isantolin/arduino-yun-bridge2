@@ -11,7 +11,6 @@ from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import ShellAction, Status
 
-from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_SHELL
 from ..state.context import RuntimeState
@@ -101,14 +100,12 @@ class ShellComponent:
 
         async with AsyncExitStack() as stack:
             stack.push_async_callback(
-                self.ctx.enqueue_mqtt,
-                QueuedPublish(
-                    topic_name=response_topic,
-                    payload=b"Error: shell handler failed unexpectedly",
-                    content_type="text/plain; charset=utf-8",
-                    message_expiry_interval=MQTT_EXPIRY_SHELL,
-                ),
-                reply_context=inbound,
+                self.ctx.publish,
+                topic=response_topic,
+                payload=b"Error: shell handler failed unexpectedly",
+                content_type="text/plain; charset=utf-8",
+                expiry=MQTT_EXPIRY_SHELL,
+                reply_to=inbound,
             )
             (
                 status,
@@ -135,14 +132,12 @@ class ShellComponent:
                 response = f"Error: {error_detail}"
 
             stack.pop_all()
-            await self.ctx.enqueue_mqtt(
-                QueuedPublish(
-                    topic_name=response_topic,
-                    payload=response.encode("utf-8"),
-                    content_type="text/plain; charset=utf-8",
-                    message_expiry_interval=MQTT_EXPIRY_SHELL,
-                ),
-                reply_context=inbound,
+            await self.ctx.publish(
+                topic=response_topic,
+                payload=response.encode("utf-8"),
+                content_type="text/plain; charset=utf-8",
+                expiry=MQTT_EXPIRY_SHELL,
+                reply_to=inbound,
             )
 
     async def _handle_run_async(
@@ -162,12 +157,10 @@ class ShellComponent:
                 ShellAction.RUN_ASYNC,
                 "error",
             )
-            await self.ctx.enqueue_mqtt(
-                QueuedPublish(
-                    topic_name=response_topic,
-                    payload=f"error:{exc.message}".encode(),
-                ),
-                reply_context=inbound,
+            await self.ctx.publish(
+                topic=response_topic,
+                payload=f"error:{exc.message}".encode(),
+                reply_to=inbound,
             )
             return
 
@@ -179,21 +172,17 @@ class ShellComponent:
         )
 
         if pid == protocol.INVALID_ID_SENTINEL:
-            await self.ctx.enqueue_mqtt(
-                QueuedPublish(
-                    topic_name=response_topic,
-                    payload=b"error:not_allowed",
-                ),
-                reply_context=inbound,
+            await self.ctx.publish(
+                topic=response_topic,
+                payload=b"error:not_allowed",
+                reply_to=inbound,
             )
             return
 
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=response_topic,
-                payload=str(pid).encode("utf-8"),
-            ),
-            reply_context=inbound,
+        await self.ctx.publish(
+            topic=response_topic,
+            payload=str(pid).encode("utf-8"),
+            reply_to=inbound,
         )
 
     async def _handle_poll(self, pid_model: ShellPidPayload) -> None:

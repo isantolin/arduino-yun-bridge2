@@ -7,7 +7,6 @@ from typing import Any, cast
 
 from aiomqtt.message import Message
 from construct import ConstructError
-from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_DATASTORE
@@ -198,16 +197,14 @@ class DatastoreComponent:
         properties: list[tuple[str, str]] = [("bridge-datastore-key", key)]
         if error_reason:
             properties.append(("bridge-error", error_reason))
-        message = QueuedPublish(
-            topic_name=topic_name,
+
+        await self.ctx.publish(
+            topic=topic_name,
             payload=value,
-            message_expiry_interval=MQTT_EXPIRY_DATASTORE,
+            expiry=MQTT_EXPIRY_DATASTORE,
             content_type="text/plain; charset=utf-8",
-            user_properties=tuple(properties),
-        )
-        await self.ctx.enqueue_mqtt(
-            message,
-            reply_context=reply_context,
+            properties=tuple(properties),
+            reply_to=reply_context,
         )
 
 

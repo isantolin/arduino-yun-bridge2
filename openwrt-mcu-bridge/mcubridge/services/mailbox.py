@@ -18,7 +18,6 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.structures import MailboxPushPacket
 
 from ..protocol.encoding import encode_status_reason
-from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..state.context import RuntimeState
 from ..protocol.topics import (
@@ -60,7 +59,7 @@ class MailboxComponent:
         else:
             body = payload
 
-        await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic_name, payload=body))
+        await self.ctx.publish(topic=topic_name, payload=body)
         return True
 
     async def handle_push(self, payload: bytes) -> bool:
@@ -92,13 +91,11 @@ class MailboxComponent:
             Topic.MAILBOX,
             MailboxAction.INCOMING,
         )
-        await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=data))
+        await self.ctx.publish(topic=topic, payload=data)
 
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=mailbox_incoming_available_topic(self.state.mqtt_topic_prefix),
-                payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
-            )
+        await self.ctx.publish(
+            topic=mailbox_incoming_available_topic(self.state.mqtt_topic_prefix),
+            payload=str(len(self.state.mailbox_incoming_queue)).encode("utf-8"),
         )
         return True
 
@@ -146,11 +143,9 @@ class MailboxComponent:
                 self.state.requeue_mailbox_message_front(original_payload)
             return False
 
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=mailbox_outgoing_available_topic(self.state.mqtt_topic_prefix),
-                payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
-            )
+        await self.ctx.publish(
+            topic=mailbox_outgoing_available_topic(self.state.mqtt_topic_prefix),
+            payload=str(len(self.state.mailbox_queue)).encode("utf-8"),
         )
         return True
 
@@ -204,15 +199,11 @@ class MailboxComponent:
                 await self._publish_incoming_available()
                 return
 
-            message = QueuedPublish(
-                topic_name=topic,
-                payload=message_payload,
-            )
-
             try:
-                await self.ctx.enqueue_mqtt(
-                    message,
-                    reply_context=inbound,
+                await self.ctx.publish(
+                    topic=topic,
+                    payload=message_payload,
+                    reply_to=inbound,
                 )
             finally:
                 await self._publish_incoming_available()
@@ -222,14 +213,11 @@ class MailboxComponent:
         if message_payload is None:
             return
 
-        message = QueuedPublish(
-            topic_name=topic,
-            payload=message_payload,
-        )
         try:
-            await self.ctx.enqueue_mqtt(
-                message,
-                reply_context=inbound,
+            await self.ctx.publish(
+                topic=topic,
+                payload=message_payload,
+                reply_to=inbound,
             )
         finally:
             await self._publish_outgoing_available()
@@ -279,13 +267,14 @@ class MailboxComponent:
             properties = (("bridge-error", Topic.MAILBOX.value),)
         else:
             properties = ()
-        message = QueuedPublish(
-            topic_name=overflow_topic,
+
+        await self.ctx.publish(
+            topic=overflow_topic,
             payload=body,
             content_type="application/json",
-            user_properties=properties,
+            properties=properties,
+            reply_to=inbound,
         )
-        await self.ctx.enqueue_mqtt(message, reply_context=inbound)
 
     async def _publish_incoming_available(self) -> None:
         await self._publish_queue_depth(
@@ -305,11 +294,9 @@ class MailboxComponent:
         topic_name: str,
         length: int,
     ) -> None:
-        await self.ctx.enqueue_mqtt(
-            QueuedPublish(
-                topic_name=topic_name,
-                payload=str(length).encode("utf-8"),
-            )
+        await self.ctx.publish(
+            topic=topic_name,
+            payload=str(length).encode("utf-8"),
         )
 
 

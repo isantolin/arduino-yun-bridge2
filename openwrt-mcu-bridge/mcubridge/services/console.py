@@ -8,7 +8,6 @@ from aiomqtt.message import Message
 from mcubridge.protocol.protocol import Command, MAX_PAYLOAD_SIZE
 
 from ..protocol.topics import Topic, topic_path
-from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..state.context import RuntimeState
@@ -36,12 +35,11 @@ class ConsoleComponent:
             Topic.CONSOLE,
             "out",
         )
-        message = QueuedPublish(
-            topic_name=topic,
+        await self.ctx.publish(
+            topic=topic,
             payload=payload,
-            message_expiry_interval=MQTT_EXPIRY_CONSOLE,
+            expiry=MQTT_EXPIRY_CONSOLE,
         )
-        await self.ctx.enqueue_mqtt(message)
 
     async def handle_xoff(self, _: bytes) -> None:
         logger.warning("MCU > XOFF received, pausing serial output.")

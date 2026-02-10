@@ -17,7 +17,6 @@ import psutil
 from ..protocol.encoding import encode_status_reason
 from ..config.const import MQTT_EXPIRY_SHELL, PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
 from ..protocol.topics import Topic, topic_path
-from ..mqtt.messages import QueuedPublish
 from ..state.context import ManagedProcess, RuntimeState
 from ..config.settings import RuntimeConfig
 from ..policy import CommandValidationError, tokenize_shell_command
@@ -161,11 +160,9 @@ class ProcessComponent(msgspec.Struct):
                     ShellAction.RUN_ASYNC,
                     protocol.MQTT_SUFFIX_RESPONSE,
                 )
-                await self.ctx.enqueue_mqtt(
-                    QueuedPublish(
-                        topic_name=topic,
-                        payload=str(pid).encode(),
-                    )
+                await self.ctx.publish(
+                    topic=topic,
+                    payload=str(pid).encode(),
                 )
 
     async def _publish_run_async_error(self, reason: str) -> None:
@@ -181,7 +178,7 @@ class ProcessComponent(msgspec.Struct):
                 "reason": reason,
             }
         )
-        await self.ctx.enqueue_mqtt(QueuedPublish(topic_name=topic, payload=error_payload))
+        await self.ctx.publish(topic=topic, payload=error_payload)
 
     async def handle_poll(self, payload: bytes) -> bool:
         if len(payload) != 2:
@@ -658,14 +655,13 @@ class ProcessComponent(msgspec.Struct):
                 "finished": batch.finished,
             }
         )
-        message = QueuedPublish(
-            topic_name=topic,
+        await self.ctx.publish(
+            topic=topic,
             payload=payload,
             content_type="application/json",
-            message_expiry_interval=MQTT_EXPIRY_SHELL,
-            user_properties=(("bridge-process-pid", str(pid)),),
+            expiry=MQTT_EXPIRY_SHELL,
+            properties=(("bridge-process-pid", str(pid)),),
         )
-        await self.ctx.enqueue_mqtt(message)
 
     async def _allocate_pid(self) -> int:
         async with self.state.process_lock:

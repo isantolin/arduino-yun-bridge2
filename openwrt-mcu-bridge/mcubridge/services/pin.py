@@ -12,7 +12,6 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import AnalogReadResponsePacket, DigitalReadResponsePacket
 
 from ..protocol.topics import Topic, topic_path
-from ..mqtt.messages import QueuedPublish
 from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_PIN
 from ..state.context import PendingPinRequest, RuntimeState
@@ -92,15 +91,13 @@ class PinComponent:
         pin_value = request.pin if request else None
         topic = self._build_pin_topic(topic_type, pin_value)
         pin_label = str(pin_value) if pin_value is not None else "unknown"
-        message = QueuedPublish(
-            topic_name=topic,
+
+        await self.ctx.publish(
+            topic=topic,
             payload=str(value).encode("utf-8"),
-            message_expiry_interval=MQTT_EXPIRY_PIN,
-            user_properties=(("bridge-pin", pin_label),),
-        )
-        await self.ctx.enqueue_mqtt(
-            message,
-            reply_context=request.reply_context if request else None,
+            expiry=MQTT_EXPIRY_PIN,
+            properties=(("bridge-pin", pin_label),),
+            reply_to=request.reply_context if request else None,
         )
 
     async def handle_digital_read_resp(self, payload: bytes) -> None:
@@ -304,18 +301,15 @@ class PinComponent:
         inbound: Message | None,
     ) -> None:
         topic = self._build_pin_topic(topic_type, pin)
-        message = QueuedPublish(
-            topic_name=topic,
+        await self.ctx.publish(
+            topic=topic,
             payload=b"",
-            message_expiry_interval=MQTT_EXPIRY_PIN,
-            user_properties=(
+            expiry=MQTT_EXPIRY_PIN,
+            properties=(
                 ("bridge-pin", str(pin)),
                 ("bridge-error", "pending-pin-overflow"),
             ),
-        )
-        await self.ctx.enqueue_mqtt(
-            message,
-            reply_context=inbound,
+            reply_to=inbound,
         )
 
     def _validate_pin_access(self, pin: int, is_analog_input: bool) -> bool:

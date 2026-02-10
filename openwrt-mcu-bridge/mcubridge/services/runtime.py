@@ -363,6 +363,35 @@ class BridgeService:
                     spool_note,
                 )
 
+    async def publish(
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        qos: int = 0,
+        retain: bool = False,
+        expiry: int | None = None,
+        properties: tuple[tuple[str, str], ...] = (),
+        content_type: str | None = None,
+        reply_to: Message | None = None,
+    ) -> None:
+        """Helper to enqueue an MQTT message without manually creating QueuedPublish."""
+        if isinstance(payload, str):
+            payload_bytes = payload.encode("utf-8")
+        else:
+            payload_bytes = payload
+
+        message = QueuedPublish(
+            topic_name=topic,
+            payload=payload_bytes,
+            qos=qos,
+            retain=retain,
+            content_type=content_type,
+            message_expiry_interval=expiry,
+            user_properties=properties,
+        )
+        await self.enqueue_mqtt(message, reply_context=reply_to)
+
     async def sync_link(self) -> bool:
         return await self._handshake.synchronize()
 
@@ -442,14 +471,13 @@ class BridgeService:
         properties: list[tuple[str, str]] = [("bridge-status", status.name)]
         if text:
             properties.append(("bridge-status-message", text))
-        message = QueuedPublish(
-            topic_name=status_topic,
+        await self.publish(
+            topic=status_topic,
             payload=report,
             content_type="application/json",
-            message_expiry_interval=MQTT_EXPIRY_SHELL,
-            user_properties=tuple(properties),
+            expiry=MQTT_EXPIRY_SHELL,
+            properties=tuple(properties),
         )
-        await self.enqueue_mqtt(message)
 
     # ------------------------------------------------------------------
     # Process management
@@ -474,14 +502,14 @@ class BridgeService:
             Topic.SYSTEM,
             *topic_segments,
         )
-        message = QueuedPublish(
-            topic_name=topic,
+        await self.publish(
+            topic=topic,
             payload=msgspec.json.encode(snapshot),
             content_type="application/json",
-            message_expiry_interval=MQTT_EXPIRY_SHELL,
-            user_properties=(("bridge-snapshot", flavor),),
+            expiry=MQTT_EXPIRY_SHELL,
+            properties=(("bridge-snapshot", flavor),),
+            reply_to=inbound,
         )
-        await self.enqueue_mqtt(message, reply_context=inbound)
 
     def _is_topic_action_allowed(
         self,
@@ -518,11 +546,11 @@ class BridgeService:
             Topic.SYSTEM,
             Topic.STATUS,
         )
-        message = QueuedPublish(
-            topic_name=status_topic,
+        await self.publish(
+            topic=status_topic,
             payload=payload,
             content_type="application/json",
-            message_expiry_interval=MQTT_EXPIRY_SHELL,
-            user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
+            expiry=MQTT_EXPIRY_SHELL,
+            properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
+            reply_to=inbound,
         )
-        await self.enqueue_mqtt(message, reply_context=inbound)

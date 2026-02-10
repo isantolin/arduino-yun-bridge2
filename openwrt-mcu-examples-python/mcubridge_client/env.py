@@ -16,7 +16,7 @@ def _is_openwrt() -> bool:
     return Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
 
 
-def _read_uci_general() -> dict[str, str]:
+def read_uci_general() -> dict[str, str]:
     try:
         from mcubridge.config.common import get_uci_config
     except (ImportError, RuntimeError):
@@ -49,7 +49,7 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
             sys.stdout.flush()
 
     _emit("MCU Bridge client configuration snapshot (UCI):")
-    cfg = _read_uci_general()
+    cfg = read_uci_general()
     if not cfg:
         _emit("  <UCI unavailable or mcubridge.general missing>")
         return
@@ -72,4 +72,4 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
             _emit(f"  {key}='{value}'")
 
 
-__all__: Iterable[str] = ("dump_client_env",)
+__all__: Iterable[str] = ("dump_client_env", "read_uci_general")

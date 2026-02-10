@@ -25,7 +25,7 @@ from .definitions import (
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
 )
-from .env import dump_client_env, _read_uci_general
+from .env import dump_client_env, read_uci_general
 
 __all__ = [
     "Bridge",
@@ -35,7 +35,7 @@ __all__ = [
 ]
 
 
-_UCI_GENERAL = _read_uci_general()
+_UCI_GENERAL = read_uci_general()
 
 MQTT_HOST = _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
 MQTT_PORT = int(_UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))

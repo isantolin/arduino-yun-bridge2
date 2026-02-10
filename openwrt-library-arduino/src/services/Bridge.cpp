@@ -779,7 +779,7 @@ bool BridgeClass::sendFrame(rpc::StatusCode status_code, const uint8_t* arg_payl
 }
 
 bool BridgeClass::sendStringCommand(rpc::CommandId command_id, etl::string_view str, size_t max_len) {
-  if (str.empty() || str.length() > max_len) return false;
+  if (str.empty() || str.length() > max_len || str.length() >= rpc::MAX_PAYLOAD_SIZE) return false;
   
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   append_length_prefixed(payload, str);
@@ -788,6 +788,9 @@ bool BridgeClass::sendStringCommand(rpc::CommandId command_id, etl::string_view 
 
 bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id, etl::string_view key, size_t max_key, etl::string_view val, size_t max_val) {
   if (key.empty() || key.length() > max_key || val.length() > max_val) return false;
+
+  // Ensure total payload (including 2 length bytes) fits in MAX_PAYLOAD_SIZE
+  if (key.length() + val.length() + 2 > rpc::MAX_PAYLOAD_SIZE) return false;
 
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   append_length_prefixed(payload, key);
@@ -921,25 +924,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
 }
 
 bool BridgeClass::_requiresAck(uint16_t command_id) const {
-  if (command_id >= rpc::RPC_STATUS_CODE_MIN && command_id <= rpc::RPC_STATUS_CODE_MAX) return false;
-  if (command_id == rpc::to_underlying(rpc::CommandId::CMD_XOFF) || command_id == rpc::to_underlying(rpc::CommandId::CMD_XON)) return false;
-  switch (command_id) {
-    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE):
-    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE):
-    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE):
-    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
-      return true;
-    #if BRIDGE_ENABLE_DATASTORE
-    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT): return true;
-    #endif
-    #if BRIDGE_ENABLE_MAILBOX
-    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH): return true;
-    #endif
-    #if BRIDGE_ENABLE_FILESYSTEM
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE): return true;
-    #endif
-    default: return false;
-  }
+  return rpc::requires_ack(command_id);
 }
 
 void BridgeClass::_clearAckState() { 

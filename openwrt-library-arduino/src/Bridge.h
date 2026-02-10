@@ -528,7 +528,10 @@ class FileSystemClass {
   inline void write(const char* filePath, const uint8_t* data, size_t length) {
     if (!filePath || !data) return;
     etl::string_view path(filePath);
-    if (path.empty() || path.length() > rpc::RPC_MAX_FILEPATH_LENGTH) return;
+    if (path.empty() || path.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
+      Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
+      return;
+    }
 
     uint8_t header[rpc::RPC_MAX_FILEPATH_LENGTH + 1];
     header[0] = static_cast<uint8_t>(path.length());
@@ -541,13 +544,17 @@ class FileSystemClass {
   
   // [SIL-2] Inlined for optimization (-Os)
   inline void remove(const char* filePath) {
-    (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
-                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
+    if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
+                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
+      Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
+    }
   }
 
   inline void read(const char* filePath) {
-    (void)Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
-                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH);
+    if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
+                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
+      Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
+    }
   }
 
   inline void handleResponse(const rpc::Frame& frame) {

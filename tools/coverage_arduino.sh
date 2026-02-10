@@ -11,10 +11,8 @@ BUILD_DIR="${LIB_ROOT}/build-coverage"
 OUTPUT_ROOT="${ROOT_DIR}/coverage/arduino"
 mkdir -p "${BUILD_DIR}" "${OUTPUT_ROOT}"
 
-# [SIL-2] Ensure dependencies are present (ETL is required in src/etl)
-echo "[coverage_arduino] Installing library dependencies..."
-DUMMY_ARDUINO_LIBS=$(mktemp -d)
-"${LIB_ROOT}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
+# [SIL-2] Use local stubs for host coverage (offline-safe).
+echo "[coverage_arduino] Using local Arduino stubs for dependencies..."
 
 # Limpieza total
 find "${BUILD_DIR}" -name '*.gcda' -delete 2>/dev/null || true
@@ -45,8 +43,6 @@ COMPILE_FLAGS=(
     -I"${SRC_ROOT}"
     -I"${TEST_ROOT}/mocks"
     -I"${STUB_INCLUDE}"
-    -I"${DUMMY_ARDUINO_LIBS}/Crypto"
-    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
 )
 
 TEST_FILES=(
@@ -69,9 +65,13 @@ for test_file in "${TEST_FILES[@]}"; do
 done
 
 echo "[coverage_arduino] Generando informes..."
-gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --print-summary >"${OUTPUT_ROOT}/summary.txt"
-gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --json-summary "${OUTPUT_ROOT}/summary.json"
-gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --xml "${OUTPUT_ROOT}/coverage.xml"
-gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" --html-details "${OUTPUT_ROOT}/index.html"
+GCOVR_EXCLUDES=(
+    --exclude "${SRC_ROOT}/etl"
+)
+
+gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" "${GCOVR_EXCLUDES[@]}" --print-summary >"${OUTPUT_ROOT}/summary.txt"
+gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" "${GCOVR_EXCLUDES[@]}" --json-summary "${OUTPUT_ROOT}/summary.json"
+gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" "${GCOVR_EXCLUDES[@]}" --xml "${OUTPUT_ROOT}/coverage.xml"
+gcovr --root "${SRC_ROOT}" --object-directory "${BUILD_DIR}" --filter "${SRC_ROOT}" "${GCOVR_EXCLUDES[@]}" --html-details "${OUTPUT_ROOT}/index.html"
 
 echo "[coverage_arduino] Reporte finalizado en ${OUTPUT_ROOT}"

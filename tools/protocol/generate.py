@@ -360,22 +360,35 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
 
     # Command enum
     out.write("enum class CommandId : uint16_t {\n")
+    ack_only_cmds = []
     for cmd in spec["commands"]:
         out.write(f"    {cmd['name']} = {cmd['value']},\n")
+        if cmd.get("requires_ack", False):
+            ack_only_cmds.append(cmd['name'])
     out.write("};\n\n")
 
     # Helper functions
-    out.write(
-        """
-constexpr uint8_t to_underlying(StatusCode value) {
-    return static_cast<uint8_t>(value);
-}
+    out.write("constexpr uint8_t to_underlying(StatusCode value) {\n")
+    out.write("    return static_cast<uint8_t>(value);\n")
+    out.write("}\n\n")
+    out.write("constexpr uint16_t to_underlying(CommandId value) {\n")
+    out.write("    return static_cast<uint16_t>(value);\n")
+    out.write("}\n\n")
 
-constexpr uint16_t to_underlying(CommandId value) {
-    return static_cast<uint16_t>(value);
-}
-"""
-    )
+    # requires_ack Helper
+    out.write("constexpr bool requires_ack(CommandId command_id) {\n")
+    if ack_only_cmds:
+        out.write("    return ")
+        out.write(" ||\n           ".join([f"(command_id == CommandId::{cmd_name})" for cmd_name in ack_only_cmds]))
+        out.write(";\n")
+    else:
+        out.write("    return false;\n")
+    out.write("}\n\n")
+
+    out.write("constexpr bool requires_ack(uint16_t command_id) {\n")
+    out.write("    return requires_ack(static_cast<CommandId>(command_id));\n")
+    out.write("}\n\n")
+
     out.write("} // namespace rpc\n#endif\n")
 
 

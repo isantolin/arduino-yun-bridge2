@@ -19,13 +19,19 @@ ProcessClass::ProcessClass()
 }
 
 void ProcessClass::run(const char* command) {
-  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, 
-                                command, rpc::MAX_PAYLOAD_SIZE);
+  if (!command || *command == '\0') return;
+  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, 
+                               command, rpc::MAX_PAYLOAD_SIZE - 1)) {
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Command too long"));
+  }
 }
 
 void ProcessClass::runAsync(const char* command) {
-  (void)Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 
-                                command, rpc::MAX_PAYLOAD_SIZE);
+  if (!command || *command == '\0') return;
+  if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 
+                               command, rpc::MAX_PAYLOAD_SIZE - 1)) {
+    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Command too long"));
+  }
 }
 
 // Helper: build a 2-byte PID payload and send a single frame.

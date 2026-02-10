@@ -144,7 +144,6 @@ enum class CommandId : uint16_t {
     CMD_PROCESS_POLL_RESP = 166,
 };
 
-
 constexpr uint8_t to_underlying(StatusCode value) {
     return static_cast<uint8_t>(value);
 }
@@ -152,5 +151,20 @@ constexpr uint8_t to_underlying(StatusCode value) {
 constexpr uint16_t to_underlying(CommandId value) {
     return static_cast<uint16_t>(value);
 }
+
+constexpr bool requires_ack(CommandId command_id) {
+    return (command_id == CommandId::CMD_SET_PIN_MODE) ||
+           (command_id == CommandId::CMD_DIGITAL_WRITE) ||
+           (command_id == CommandId::CMD_ANALOG_WRITE) ||
+           (command_id == CommandId::CMD_CONSOLE_WRITE) ||
+           (command_id == CommandId::CMD_DATASTORE_PUT) ||
+           (command_id == CommandId::CMD_MAILBOX_PUSH) ||
+           (command_id == CommandId::CMD_FILE_WRITE);
+}
+
+constexpr bool requires_ack(uint16_t command_id) {
+    return requires_ack(static_cast<CommandId>(command_id));
+}
+
 } // namespace rpc
 #endif

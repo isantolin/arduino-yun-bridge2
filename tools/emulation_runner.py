@@ -162,7 +162,7 @@ def main():
         # Inject openwrt-mcu-bridge into PYTHONPATH
         current_pythonpath = daemon_env.get("PYTHONPATH", "")
         daemon_env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_pythonpath}"
-        
+
         # [DEBUG] Force logging to stderr for CI visibility
         daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
 

@@ -19,9 +19,9 @@ def console_component() -> ConsoleComponent:
     state.serial_tx_allowed = asyncio.Event()
     state.serial_tx_allowed.set()
     state.console_to_mcu_queue = deque()
-    
+
     ctx = AsyncMock(spec=BridgeContext)
-    
+
     return ConsoleComponent(config, state, ctx)
 
 
@@ -75,11 +75,8 @@ async def test_handle_mqtt_input_paused(console_component: ConsoleComponent) -> 
     console_component.ctx.send_frame.assert_not_awaited()
     # verify enqueue was called since state is a mock
     # The actual queue won't change because enqueue_console_chunk is a mock
-    from logging import getLogger
-    logger = getLogger("mcubridge.console")
-    # We can't easily match the logger instance exactly without patching, 
+    # We can't easily match the logger instance exactly without patching,
     # but we can check the payload.
-    # Actually, let's just check call args.
     console_component.state.enqueue_console_chunk.assert_called_once()
     args = console_component.state.enqueue_console_chunk.call_args
     assert args[0][0] == payload
@@ -102,7 +99,7 @@ async def test_flush_queue(console_component: ConsoleComponent) -> None:
     queue = deque([b"queued"])
     console_component.state.console_to_mcu_queue = queue
     console_component.state.pop_console_chunk.side_effect = lambda: queue.popleft() if queue else None
-    
+
     console_component.ctx.send_frame.return_value = True
 
     await console_component.flush_queue()

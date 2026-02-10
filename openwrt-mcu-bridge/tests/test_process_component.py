@@ -402,7 +402,7 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
 
 @pytest.mark.asyncio
 async def test_start_async_allocate_pid_failure_returns_sentinel(process_component: ProcessComponent) -> None:
-    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock):
         pid = await process_component.start_async("/bin/true", ["/bin/true"])
         assert pid == protocol.INVALID_ID_SENTINEL
 

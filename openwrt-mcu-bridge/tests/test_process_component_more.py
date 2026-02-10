@@ -14,7 +14,6 @@ from mcubridge.config.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.policy import CommandValidationError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
@@ -206,12 +205,10 @@ async def test_start_async_rejects_when_slot_limit_reached(
     # Assuming limit is 2 from fixture
     await guard.acquire()
     await guard.acquire()
-    
+
     pid = await process_component.start_async("echo hi", ["echo", "hi"])
 
     assert pid == protocol.INVALID_ID_SENTINEL
-
-
 
 @pytest.mark.asyncio
 async def test_collect_output_finishing_process_releases_slot(

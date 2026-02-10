@@ -100,37 +100,6 @@ class BridgeService:
             logger_=logger,
         )
 
-        self._dispatcher = BridgeDispatcher(
-            mcu_registry=MCUHandlerRegistry(),
-            mqtt_router=MQTTRouter(),
-            send_frame=self.send_frame,
-            acknowledge_frame=self._acknowledge_mcu_frame,
-            is_link_synchronized=self.is_link_synchronized,
-            is_topic_action_allowed=self._is_topic_action_allowed,
-            reject_topic_action=self._reject_topic_action,
-            publish_bridge_snapshot=self._publish_bridge_snapshot,
-            record_unknown_command=state.record_unknown_command_id,
-            on_frame_received=self._serial_flow.on_frame_received,
-        )
-        self._dispatcher.register_components(
-            console=self._console,
-            datastore=self._datastore,
-            file=self._file,
-            mailbox=self._mailbox,
-            pin=self._pin,
-            process=self._process,
-            shell=self._shell,
-            system=self._system,
-        )
-        self._dispatcher.register_system_handlers(
-            handle_link_sync_resp=self._handshake.handle_link_sync_resp,
-            handle_link_reset_resp=self._handshake.handle_link_reset_resp,
-            handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
-            handle_ack=self._handle_ack,
-            status_handler_factory=self._status_handler,
-            handle_process_kill=self._process.handle_kill,
-        )
-
         state.serial_ack_timeout_ms = self._serial_timing.ack_timeout_ms
         state.serial_response_timeout_ms = self._serial_timing.response_timeout_ms
         state.serial_retry_limit = self._serial_timing.retry_limit
@@ -143,6 +112,19 @@ class BridgeService:
         )
         self._serial_flow.set_metrics_callback(state.record_serial_flow_event)
         self._serial_flow.set_pipeline_observer(state.record_serial_pipeline_event)
+
+        self._dispatcher = BridgeDispatcher(
+            mcu_registry=MCUHandlerRegistry(),
+            mqtt_router=MQTTRouter(),
+            send_frame=self.send_frame,
+            acknowledge_frame=self._acknowledge_mcu_frame,
+            is_link_synchronized=self.is_link_synchronized,
+            is_topic_action_allowed=self._is_topic_action_allowed,
+            reject_topic_action=self._reject_topic_action,
+            publish_bridge_snapshot=self._publish_bridge_snapshot,
+            record_unknown_command=state.record_unknown_command_id,
+            on_frame_received=self._serial_flow.on_frame_received,
+        )
 
     async def __aenter__(self) -> BridgeService:
         self._task_group = asyncio.TaskGroup()

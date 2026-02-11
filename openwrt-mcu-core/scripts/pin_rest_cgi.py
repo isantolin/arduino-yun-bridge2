@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""CGI helper that toggles digital pins via MQTT using paho-mqtt."""
+"""CGI helper that toggles digital pins via MQTT using paho-mqtt.
+
+Refactored for OpenWrt 25.12 / Python 3.13:
+- Replaced deprecated 'cgi' module with standard 'os.environ' parsing.
+- Replaced manual retry loops with 'tenacity' library.
+- Strict typing and logging.
+"""
 
 from __future__ import annotations
 
@@ -9,11 +15,11 @@ import re
 import sys
 import time
 import msgspec
-from collections.abc import Callable
 from typing import Any
 
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
@@ -47,11 +53,11 @@ def _safe_float(value: object, default: float) -> float:
         return default
 
 
+# Load defaults from UCI once at module level
 _UCI = get_uci_config()
 DEFAULT_RETRIES = max(1, _safe_int(_UCI.get("pin_mqtt_retries"), 3))
 DEFAULT_PUBLISH_TIMEOUT = max(0.0, _safe_float(_UCI.get("pin_mqtt_timeout"), 4.0))
 DEFAULT_BACKOFF_BASE = max(0.0, _safe_float(_UCI.get("pin_mqtt_backoff"), 0.5))
-DEFAULT_POLL_INTERVAL = max(0.001, _safe_float(_UCI.get("pin_mqtt_poll_interval"), 0.05))
 
 
 def _configure_tls(client: Any, config: RuntimeConfig) -> None:
@@ -83,56 +89,48 @@ def _configure_tls(client: Any, config: RuntimeConfig) -> None:
         client.tls_insecure_set(True)
 
 
-def publish_with_retries(
-    topic: str,
-    payload: str,
-    config: RuntimeConfig,
-    retries: int = DEFAULT_RETRIES,
-    publish_timeout: float = DEFAULT_PUBLISH_TIMEOUT,
-    base_delay: float = DEFAULT_BACKOFF_BASE,
-    sleep_fn: Callable[[float], None] = time.sleep,
-    poll_interval: float = DEFAULT_POLL_INTERVAL,
-) -> None:
-    """Publish an MQTT message with retry and timeout semantics."""
-    last_error: Exception | None = None
+@retry(
+    stop=stop_after_attempt(DEFAULT_RETRIES),
+    wait=wait_exponential(multiplier=DEFAULT_BACKOFF_BASE, min=DEFAULT_BACKOFF_BASE, max=4.0),
+    retry=retry_if_exception_type((OSError, ConnectionError, TimeoutError)),
+    reraise=True,
+)
+def publish_safe(topic: str, payload: str, config: RuntimeConfig) -> None:
+    """Publish an MQTT message with retry semantics managed by Tenacity.
+    
+    Creates a fresh connection per attempt to ensure recovery from broken
+    socket states.
+    """
+    client = Client(
+        client_id=f"mcubridge_cgi_{time.time()}",
+        protocol=MQTTv5,
+        callback_api_version=CallbackAPIVersion.VERSION2,
+    )
+    try:
+        _configure_tls(client, config)
+        if config.mqtt_user:
+            client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 
-    for attempt in range(1, retries + 1):
-        client = Client(
-            client_id=f"mcubridge_cgi_{time.time()}",
-            protocol=MQTTv5,
-            callback_api_version=CallbackAPIVersion.VERSION2,
-        )
+        client.connect(config.mqtt_host, config.mqtt_port, keepalive=10)
+        client.loop_start()
+
+        info = client.publish(topic, payload, qos=1)
+
+        start_time = time.time()
+        while not info.is_published():
+            if time.time() - start_time > DEFAULT_PUBLISH_TIMEOUT:
+                raise TimeoutError("Publish timed out")
+            time.sleep(0.05)
+            
+    except Exception as exc:
+        logger.warning("Publish attempt failed: %s", exc)
+        raise  # Trigger Tenacity retry
+    finally:
         try:
-            _configure_tls(client, config)
-            if config.mqtt_user:
-                client.username_pw_set(config.mqtt_user, config.mqtt_pass)
-
-            client.connect(config.mqtt_host, config.mqtt_port, keepalive=10)
-            client.loop_start()
-
-            info = client.publish(topic, payload, qos=1)
-
-            start_time = time.time()
-            while not info.is_published():
-                if time.time() - start_time > publish_timeout:
-                    raise TimeoutError("Publish timed out")
-                sleep_fn(poll_interval)
-            return  # Success
-
-        except (OSError, ConnectionError, TimeoutError) as exc:
-            last_error = exc
-            logger.warning("Publish attempt %d/%d failed: %s", attempt, retries, exc)
-        finally:
-            try:
-                client.loop_stop()
-                client.disconnect()
-            except Exception:  # pragma: no cover - cleanup best-effort
-                pass
-
-        if attempt < retries:
-            sleep_fn(base_delay * (2 ** (attempt - 1)))
-
-    raise RuntimeError(f"Failed to publish after {retries} attempts") from last_error
+            client.loop_stop()
+            client.disconnect()
+        except Exception:
+            pass
 
 
 def get_pin_from_path() -> str | None:
@@ -153,7 +151,7 @@ def main() -> None:
     try:
         config = load_runtime_config()
         configure_logging(config)
-    except Exception as exc:  # pragma: no cover - configuration failures
+    except Exception as exc:
         _configure_fallback_logging()
         logger.exception("Failed to load runtime configuration")
         send_response(
@@ -198,9 +196,9 @@ def main() -> None:
 
         if content_length > 0:
             body = sys.stdin.read(content_length)
-            remainder = sys.stdin.read()
-            if remainder:
-                body += remainder
+            # Handle potential buffering issues in some CGI environments
+            if len(body) < content_length:
+                body += sys.stdin.read()
         else:
             body = sys.stdin.read()
 
@@ -228,7 +226,7 @@ def main() -> None:
     payload = "1" if state == "ON" else "0"
 
     try:
-        publish_with_retries(topic, payload, config)
+        publish_safe(topic, payload, config)
         send_response(
             200,
             {
@@ -238,23 +236,14 @@ def main() -> None:
                 "message": f"Command to turn pin {pin} {state} sent via MQTT.",
             },
         )
-    except (RuntimeError, TimeoutError) as exc:
-        logger.error("MQTT publish operation failed for pin %s: %s", pin, exc)
+    except Exception as exc:
+        # Catch-all for final failure after retries
+        logger.error("MQTT publish operation failed for pin %s after retries: %s", pin, exc)
         send_response(
             500,
             {
                 "status": "error",
                 "message": f"Failed to send command for pin {pin}: {exc}",
-            },
-        )
-    except (OSError, ConnectionError, msgspec.DecodeError) as exc:
-        # [SIL-2] Specific exceptions for network/encoding errors
-        logger.exception("Network or encoding error during MQTT publish for pin %s", pin)
-        send_response(
-            500,
-            {
-                "status": "error",
-                "message": f"Internal server error while processing pin {pin}: {exc}",
             },
         )
 

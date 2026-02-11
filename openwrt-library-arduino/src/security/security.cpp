@@ -19,6 +19,9 @@
 #ifndef memcpy_P
 #define memcpy_P memcpy
 #endif
+#ifndef memcmp_P
+#define memcmp_P memcmp
+#endif
 #endif
 
 namespace rpc {

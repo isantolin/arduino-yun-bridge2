@@ -13,9 +13,9 @@ static constexpr size_t kPollRespHeaderSize = kStatusFieldSize + 1 + kLenFieldSi
 
 ProcessClass::ProcessClass() 
   : _pending_process_pids(), // Auto-initialized by ETL
-    _process_run_handler(nullptr),
-    _process_poll_handler(nullptr),
-    _process_run_async_handler(nullptr) {
+    _process_run_handler(),
+    _process_poll_handler(),
+    _process_run_async_handler() {
 }
 
 void ProcessClass::run(const char* command) {

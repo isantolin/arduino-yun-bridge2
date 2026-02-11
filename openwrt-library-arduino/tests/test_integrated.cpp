@@ -485,14 +485,29 @@ void integrated_test_extreme_coverage() {
         bridge_hs.begin(115200);
     }
 
+// 20. DataStore / FileSystem Callbacks (Static functions for ETL delegates)
+static void test_ds_cb(const char* k, const uint8_t* v, uint16_t l) { (void)k; (void)v; (void)l; }
+static void test_fs_cb(const uint8_t* d, uint16_t l) { (void)d; (void)l; }
+static void test_pr_run_cb(rpc::StatusCode s, const uint8_t* out, uint16_t ol, const uint8_t* err, uint16_t el) { 
+    (void)s; (void)out; (void)ol; (void)err; (void)el; 
+}
+static void test_pr_poll_cb(rpc::StatusCode s, uint8_t ec, const uint8_t* out, uint16_t ol, const uint8_t* err, uint16_t el) {
+    (void)s; (void)ec; (void)out; (void)ol; (void)err; (void)el;
+}
+static void test_pr_async_cb(int16_t p) { (void)p; }
+static void test_mb_cb(const uint8_t* m, uint16_t l) { (void)m; (void)l; }
+static void test_mb_avail_cb(uint16_t c) { (void)c; }
+
+void integrated_test_extreme_coverage() {
+// ... (previous code)
     // 20. DataStore / FileSystem Callbacks
-    DataStore.onDataStoreGetResponse([](const char* k, const uint8_t* v, uint16_t l) { (void)k; (void)v; (void)l; });
-    FileSystem.onFileSystemReadResponse([](const uint8_t* d, uint16_t l) { (void)d; (void)l; });
-    Process.onProcessRunResponse([](rpc::StatusCode s, const uint8_t* out, uint16_t ol, const uint8_t* err, uint16_t el) { (void)s; (void)out; (void)ol; (void)err; (void)el; });
-    Process.onProcessPollResponse([](rpc::StatusCode s, uint8_t ec, const uint8_t* out, uint16_t ol, const uint8_t* err, uint16_t el) { (void)s; (void)ec; (void)out; (void)ol; (void)err; (void)el; });
-    Process.onProcessRunAsyncResponse([](int16_t p) { (void)p; });
-    Mailbox.onMailboxMessage([](const uint8_t* m, uint16_t l) { (void)m; (void)l; });
-    Mailbox.onMailboxAvailableResponse([](uint16_t c) { (void)c; });
+    DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<test_ds_cb>());
+    FileSystem.onFileSystemReadResponse(FileSystemClass::FileSystemReadHandler::create<test_fs_cb>());
+    Process.onProcessRunResponse(ProcessClass::ProcessRunHandler::create<test_pr_run_cb>());
+    Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<test_pr_poll_cb>());
+    Process.onProcessRunAsyncResponse(ProcessClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
+    Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<test_mb_cb>());
+    Mailbox.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
 }
 
 int main() {

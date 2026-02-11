@@ -5,7 +5,7 @@
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
 DataStoreClass::DataStoreClass() 
-  : _datastore_get_handler(nullptr) {
+  : _datastore_get_handler() {
   _last_datastore_key.clear();
 }
 

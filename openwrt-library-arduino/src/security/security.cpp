@@ -79,7 +79,7 @@ bool run_cryptographic_self_tests() {
   size_t data_len = sizeof(kat_hmac_data);
   memcpy_P(buffer.data(), kat_hmac_data, data_len);
   sha256.update(buffer.data(), data_len);
-  sha256.finalizeHMAC(key_buf, key_len, actual.data(), kSha256DigestSize);
+  sha256.finalizeHMAC(key_buf.data(), key_len, actual.data(), kSha256DigestSize);
 
   if (memcmp_P(actual.data(), kat_hmac_expected, kSha256DigestSize) != 0) return false;
 

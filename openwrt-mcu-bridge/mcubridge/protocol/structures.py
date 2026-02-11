@@ -32,10 +32,14 @@ class FileWritePacket(BaseStruct, frozen=True):
     data: bytes
     @classmethod
     def _decode(cls, data: bytes) -> FileWritePacket:
+        if len(data) < 3: raise ValueError("Too short")
         path_len = data[0]
+        if len(data) < 3 + path_len: raise ValueError("Truncated path/header")
         path = data[1:1+path_len].decode("utf-8")
         data_len = struct.unpack(">H", data[1+path_len:3+path_len])[0]
-        return FileWritePacket(path=path, data=data[3+path_len:3+path_len+data_len])
+        file_data = data[3+path_len:3+path_len+data_len]
+        if len(file_data) < data_len: raise ValueError("Truncated data")
+        return FileWritePacket(path=path, data=file_data)
 
 class FileReadPacket(BaseStruct, frozen=True):
     path: str

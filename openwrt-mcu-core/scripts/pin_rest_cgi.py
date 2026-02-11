@@ -134,8 +134,8 @@ def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:
 
     if state not in ("ON", "OFF"):
         return json_response(
-            start_response, 
-            "400 Bad Request", 
+            start_response,
+            "400 Bad Request",
             {"status": "error", "message": "Invalid state"}
         )
 

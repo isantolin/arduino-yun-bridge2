@@ -101,7 +101,7 @@ def _configure_tls(client: Any, config: RuntimeConfig) -> None:
 )
 def publish_safe(topic: str, payload: str, config: RuntimeConfig) -> None:
     """Publica un mensaje MQTT con semántica de reintento gestionada por Tenacity.
-    
+
     Crea una conexión nueva por intento para asegurar recuperación de estados
     de socket rotos.
     """
@@ -125,7 +125,7 @@ def publish_safe(topic: str, payload: str, config: RuntimeConfig) -> None:
             if time.time() - start_time > DEFAULT_PUBLISH_TIMEOUT:
                 raise TimeoutError("Publish timed out")
             time.sleep(0.05)
-            
+
     except Exception as exc:
         logger.warning("Publish attempt failed: %s", exc)
         raise

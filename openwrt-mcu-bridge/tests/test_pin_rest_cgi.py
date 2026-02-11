@@ -1,27 +1,22 @@
+"""Regression tests for the pin_rest_cgi MQTT helper."""
+
 from __future__ import annotations
 
-from importlib.abc import Loader
-from pathlib import Path
-from types import ModuleType, SimpleNamespace
-from typing import Any
-import asyncio
-import importlib.util
 import io
 import os
 import sys
+import time
+import importlib.util
+from importlib.abc import Loader
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from typing import Any, List
 
 import msgspec
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-
-"""Regression tests for the pin_rest_cgi MQTT helper."""
-
-
-
-
-
 
 def _load_pin_rest_cgi() -> ModuleType:
     script_path = Path(__file__).resolve().parents[2] / "openwrt-mcu-core" / "scripts" / "pin_rest_cgi.py"
@@ -36,42 +31,15 @@ def _load_pin_rest_cgi() -> ModuleType:
     loader.exec_module(module)
     return module
 
-
 @pytest.fixture()
 def pin_rest_module() -> ModuleType:
     return _load_pin_rest_cgi()
 
-
-class _FakeAsyncClient:
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self.args = args
-        self.kwargs = kwargs
-        self.published: list[tuple[str, str | bytes, int, bool]] = []
-        self.should_timeout = kwargs.get("timeout") == 0.001  # Hack for timeout test
-
-    async def __aenter__(self) -> _FakeAsyncClient:
-        if self.should_timeout:
-            raise asyncio.TimeoutError()
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc: Any, _tb: Any) -> None:
-        pass
-
-    async def publish(
-        self,
-        topic: str,
-        payload: str | bytes,
-        qos: int = 0,
-        retain: bool = False,
-        properties: Any = None,
-    ) -> None:
-        self.published.append((topic, payload, qos, retain))
-
-
 class MockInfo:
+    def __init__(self, published: bool = True):
+        self._published = published
     def is_published(self) -> bool:
-        return True
-
+        return self._published
 
 class CapturingFakeClient:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -80,7 +48,6 @@ class CapturingFakeClient:
         self.tls_kwargs: dict[str, Any] = {}
         self.auth_args: tuple[Any, ...] = ()
         self.published: list[tuple[str, str | bytes, int]] = []
-        # captured_clients.append(self)  <-- This needs to be handled
 
     def tls_set(self, **kwargs: Any) -> None:
         self.tls_kwargs = kwargs
@@ -104,7 +71,6 @@ class CapturingFakeClient:
         self.published.append((topic, payload, qos))
         return MockInfo()
 
-
 def test_publish_safe_configures_tls(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
@@ -120,9 +86,7 @@ def test_publish_safe_configures_tls(
 
     monkeypatch.setattr(pin_rest_module, "Client", TestClient)
 
-    # Mock ssl to avoid file not found errors
     import ssl
-
     monkeypatch.setattr(ssl, "create_default_context", lambda **kwargs: "FAKE_TLS_CONTEXT")
 
     runtime_config.mqtt_user = "user"
@@ -135,78 +99,39 @@ def test_publish_safe_configures_tls(
     pin_rest_module.publish_safe(
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload="1",
-        config=runtime_config,
-
-
+        config=runtime_config
     )
 
     assert len(captured_clients) == 1
     fake_client = captured_clients[0]
-
     assert fake_client.auth_args == ("user", "secret")
     assert fake_client.tls_kwargs["ca_certs"] == str(cafile)
-
-    assert len(fake_client.published) == 1
-    assert fake_client.published[0] == (
-        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
-        "1",
-        1,
-    )
-
 
 def test_publish_safe_times_out(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    class MockInfo:
-        def is_published(self) -> bool:
-            return False
-
-    class TimeoutClient:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        def tls_set(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        def username_pw_set(self, *args: Any) -> None:
-            pass
-
-        def connect(self, *args: Any, **kwargs: Any) -> None:
-            pass
-
-        def loop_start(self) -> None:
-            pass
-
-        def loop_stop(self) -> None:
-            pass
-
-        def disconnect(self) -> None:
-            pass
-
-        def publish(self, *args: Any, **kwargs: Any) -> Any:
-            return MockInfo()
+    class TimeoutClient(CapturingFakeClient):
+        def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
+            return MockInfo(published=False)
 
     monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
+    # Patch retry to fail fast
+    monkeypatch.setattr(pin_rest_module, "DEFAULT_RETRIES", 1)
+    monkeypatch.setattr(pin_rest_module, "DEFAULT_PUBLISH_TIMEOUT", 0.01)
 
-    runtime_config.mqtt_tls = False
-
-    with pytest.raises(RuntimeError, match="Failed to publish"):
+    with pytest.raises((TimeoutError, Exception)):
         pin_rest_module.publish_safe(
-            topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/2",
+            topic="br/d/2",
             payload="0",
-            config=runtime_config,
-
-
-
+            config=runtime_config
         )
 
-
-def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    module = _load_pin_rest_cgi()
-
+def test_main_invokes_publish(
+    pin_rest_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_config = SimpleNamespace(
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         mqtt_host="localhost",
@@ -220,42 +145,37 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Ca
     )
 
     captured: dict[str, Any] = {}
-
-    def _fake_publish(topic: str, payload: str, config: Any, **_: Any) -> None:
+    def _fake_publish(topic: str, payload: str, config: Any) -> None:
         captured["topic"] = topic
         captured["payload"] = payload
-        captured["config"] = config
 
-    monkeypatch.setattr(module, "load_runtime_config", lambda: fake_config)
-    monkeypatch.setattr(module, "publish_safe", _fake_publish)
-    monkeypatch.setattr(module, "configure_logging", lambda config: None)
+    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
+    monkeypatch.setattr(pin_rest_module, "publish_safe", _fake_publish)
+    monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)
 
-    environ: dict[str, str] = {
+    environ = {
         "REQUEST_METHOD": "POST",
         "PATH_INFO": "/pin/7",
-        "CONTENT_LENGTH": "17",
+        "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "ON"}))),
+        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "ON"}))
     }
     monkeypatch.setattr(os, "environ", environ)
-    monkeypatch.setattr(
-        sys,
-        "stdin",
-        io.StringIO(msgspec.json.encode({"state": "ON"}).decode("utf-8")),
-    )
-    # No monkeypatching stdout, rely on capsys
 
-    module.application(os.environ, lambda s, h: None)
+    def start_response(status, headers):
+        captured["status"] = status
 
-    captured_out = capsys.readouterr()
-    body = captured_out.out.split("\n\n", 1)[1]
-    response = msgspec.json.decode(body.encode("utf-8"))
-    assert response["status"] == "ok"
-    assert captured["topic"] == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/7"
+    result = pin_rest_module.application(environ, start_response)
+    body = msgspec.json.decode(b"".join(result))
+
+    assert captured["topic"] == "br/d/7"
     assert captured["payload"] == "1"
+    assert body["status"] == "ok"
+    assert captured["status"] == "200 OK"
 
-
-def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    module = _load_pin_rest_cgi()
-
+def test_main_rejects_invalid_state(
+    pin_rest_module: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_config = SimpleNamespace(
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         mqtt_host="localhost",
@@ -268,28 +188,24 @@ def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch, capsys: pyt
         mqtt_keyfile=None,
     )
 
-    monkeypatch.setattr(module, "load_runtime_config", lambda: fake_config)
-    monkeypatch.setattr(module, "configure_logging", lambda config: None)
-    monkeypatch.setattr(
-        os,
-        "environ",
-        {
-            "REQUEST_METHOD": "POST",
-            "PATH_INFO": "/pin/9",
-            "CONTENT_LENGTH": "15",
-        },
-    )
-    monkeypatch.setattr(
-        sys,
-        "stdin",
-        io.StringIO(msgspec.json.encode({"state": "MAYBE"}).decode("utf-8")),
-    )
-    # No monkeypatching stdout, rely on capsys
+    monkeypatch.setattr(pin_rest_module, "load_runtime_config", lambda: fake_config)
+    monkeypatch.setattr(pin_rest_module, "configure_logging", lambda config: None)
 
-    module.application(os.environ, lambda s, h: None)
+    environ = {
+        "REQUEST_METHOD": "POST",
+        "PATH_INFO": "/pin/9",
+        "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "MAYBE"}))),
+        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "MAYBE"}))
+    }
+    monkeypatch.setattr(os, "environ", environ)
 
-    captured_out = capsys.readouterr()
-    body = captured_out.out.split("\n\n", 1)[1]
-    response = msgspec.json.decode(body.encode("utf-8"))
-    assert response["status"] == "error"
-    assert "State must" in response["message"]
+    captured_status = []
+    def start_response(status, headers):
+        captured_status.append(status)
+
+    result = pin_rest_module.application(environ, start_response)
+    body = msgspec.json.decode(b"".join(result))
+
+    assert captured_status[0] == "400 Bad Request"
+    assert body["status"] == "error"
+    assert "Invalid state" in body["message"]

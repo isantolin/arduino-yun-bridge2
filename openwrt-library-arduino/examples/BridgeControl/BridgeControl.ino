@@ -94,10 +94,10 @@ void setup() {
   // Argumento 2: El secreto compartido
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
 
-  Bridge.onDigitalReadResponse(handleDigitalReadResponse);
-  Bridge.onCommand(handleCommand);
-  Mailbox.onMailboxMessage(handleMailboxMessage);
-  Bridge.onStatus(handleStatusFrame);
+  Bridge.onDigitalReadResponse(BridgeClass::DigitalReadHandler::create<handleDigitalReadResponse>());
+  Bridge.onCommand(BridgeClass::CommandHandler::create<handleCommand>());
+  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<handleMailboxMessage>());
+  Bridge.onStatus(BridgeClass::StatusHandler::create<handleStatusFrame>());
   
   pinMode(13, OUTPUT);
   // delay(2000); // Removed blocking delay

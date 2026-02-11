@@ -150,7 +150,7 @@ async def test_file_component_additional_gaps(runtime_state, real_config):
     with patch("mcubridge.services.file.scandir", side_effect=OSError("Scan fail")):
         assert comp._scan_directory_size(Path("/tmp")) == 0
     from mcubridge.services.file import _do_write_file
-    with patch("builtins.open", side_effect=OSError("Write fail")):
+    with patch("pathlib.Path.open", side_effect=OSError("Write fail")):
         with pytest.raises(OSError):
             _do_write_file(Path("/tmp/fail"), b"data")
 

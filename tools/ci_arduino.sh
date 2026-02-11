@@ -56,7 +56,9 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
             BUILD_FLAGS="$BUILD_FLAGS --build-path $SKETCH_BUILD_DIR"
         fi
 
-        if ! arduino-cli compile $BUILD_FLAGS "$sketch"; then
+        # Force clean build to ensure hardware characteristics (macros, MCU type) are strictly respected
+        # and not polluted by cached artifacts from previous targets in the loop.
+        if ! arduino-cli compile --clean $BUILD_FLAGS "$sketch"; then
             echo "✗ $sketch_name failed to compile for $FQBN!"
             if [ "$FQBN" == "arduino:avr:mega" ]; then
                 echo "Critical failure for target $FQBN. Aborting."

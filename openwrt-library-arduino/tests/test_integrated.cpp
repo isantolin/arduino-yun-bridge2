@@ -119,9 +119,9 @@ void integrated_test_protocol() {
     FrameParser p;
     uint8_t raw[128];
     uint8_t pl[] = {0x01, 0x02, 0x03};
-    size_t rl = b.build(raw, 128, 0x100, pl, 3);
+    size_t rl = b.build(etl::span<uint8_t>(raw, 128), 0x100, etl::span<const uint8_t>(pl, 3));
     // [SIL-2] etl::expected API
-    auto result = p.parse(raw, rl);
+    auto result = p.parse(etl::span<const uint8_t>(raw, rl));
     TEST_ASSERT(result.has_value());
     Frame f = result.value();
     TEST_ASSERT(f.header.command_id == 0x100);
@@ -299,7 +299,7 @@ void integrated_test_extreme_coverage() {
     }
     for (int i = 0; i < 40; i++) {
         uint8_t b = (uint8_t)i;
-        Console._push(&b, 1);
+        Console._push(etl::span<const uint8_t>(&b, 1));
     }
     while (Console.available() > 0) {
         Console.read();

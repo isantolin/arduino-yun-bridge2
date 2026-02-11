@@ -9,7 +9,7 @@ from mcubridge.transport import (
     SerialTransport,
 )
 from mcubridge.protocol import protocol
-from mcubridge.transport.serial_fast import BridgeSerialProtocol
+from mcubridge.transport.serial import BridgeSerialProtocol
 
 
 @pytest.mark.asyncio
@@ -64,7 +64,7 @@ async def test_serial_reader_task_reconnects():
     mock_sleep.side_effect = [None, None, None, RuntimeError("Break Loop")]
 
     with (
-        patch("mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection", mock_create),
+        patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", mock_create),
         patch("asyncio.sleep", mock_sleep),
     ):
         transport = SerialTransport(config, state, service)

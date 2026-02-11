@@ -4,7 +4,7 @@ import asyncio
 import errno
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from mcubridge.transport.serial_fast import BridgeSerialProtocol, MAX_SERIAL_PACKET_BYTES, SerialTransport
+from mcubridge.transport.serial import BridgeSerialProtocol, MAX_SERIAL_PACKET_BYTES, SerialTransport
 from mcubridge.protocol.protocol import FRAME_DELIMITER
 
 
@@ -66,7 +66,7 @@ async def test_async_process_packet_crc_error():
     fake_encoded = cobs.encode(raw_frame)
 
     # Mock Frame.from_bytes to raise ValueError with CRC mismatch
-    with patch("mcubridge.transport.serial_fast.Frame.from_bytes", side_effect=ValueError("CRC mismatch")):
+    with patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("CRC mismatch")):
         await proto._async_process_packet(fake_encoded)
 
         state.record_serial_decode_error.assert_called()

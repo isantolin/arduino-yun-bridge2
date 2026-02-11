@@ -104,7 +104,7 @@ async def test_serial_read_loop_corruption_and_recovery(caplog):
     # Verify constants
     assert UINT8_MASK == 0xFF, f"UINT8_MASK mismatch: {UINT8_MASK}"
 
-    from mcubridge.transport.serial_fast import BridgeSerialProtocol
+    from mcubridge.transport.serial import BridgeSerialProtocol
 
     mock_service = AsyncMock()
     mock_state = MagicMock()
@@ -136,7 +136,7 @@ async def test_serial_read_loop_corruption_and_recovery(caplog):
 @pytest.mark.asyncio
 async def test_serial_write_flow_control():
     """Prueba protecciones de escritura."""
-    from mcubridge.transport.serial_fast import BridgeSerialProtocol
+    from mcubridge.transport.serial import BridgeSerialProtocol
 
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), MagicMock())
     proto.transport = None

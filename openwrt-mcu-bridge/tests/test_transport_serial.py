@@ -17,7 +17,7 @@ from mcubridge.protocol.frame import Frame  # noqa: E402
 from mcubridge.protocol.protocol import Command  # noqa: E402
 from mcubridge.services.runtime import BridgeService  # noqa: E402
 from mcubridge.state.context import create_runtime_state  # noqa: E402
-from mcubridge.transport import serial_fast  # noqa: E402
+from mcubridge.transport import serial as serial_fast  # noqa: E402
 
 
 def _make_config() -> RuntimeConfig:

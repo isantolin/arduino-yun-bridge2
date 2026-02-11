@@ -8,7 +8,7 @@ from mcubridge.services.pin import PinComponent
 from mcubridge.services.process import ProcessComponent
 from mcubridge.state.context import ManagedProcess
 from mcubridge.transport import mqtt
-from mcubridge.transport.serial_fast import BridgeSerialProtocol
+from mcubridge.transport.serial import BridgeSerialProtocol
 from mcubridge.config.logging import StructuredLogFormatter, configure_logging
 from mcubridge.services.handshake import SerialHandshakeManager, SerialTimingWindow
 
@@ -136,7 +136,7 @@ async def test_serial_fast_extreme_gaps(runtime_config, runtime_state):
     # Gap: _log_frame with exceptions
     frame = MagicMock()
     frame.command_id = 0x99  # Non-existent command
-    with patch("mcubridge.transport.serial_fast.logger.debug", side_effect=Exception("Log Error")):
+    with patch("mcubridge.transport.serial.logger.debug", side_effect=Exception("Log Error")):
         proto._log_frame(frame, "TX")
 
 

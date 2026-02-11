@@ -37,6 +37,10 @@
 #if defined(ARDUINO_ARCH_AVR)
   #include <util/atomic.h>
   #define BRIDGE_ATOMIC_BLOCK ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
+  // [Compatibility] Polyfill for boards missing SERIAL_PORT_USBVIRTUAL (e.g. Mega 2560)
+  #ifndef SERIAL_PORT_USBVIRTUAL
+    #define SERIAL_PORT_USBVIRTUAL Serial
+  #endif
 #else
   // Fallback for non-AVR architectures: use interrupts() / noInterrupts()
   // This is a simplified version of ATOMIC_BLOCK for portability.

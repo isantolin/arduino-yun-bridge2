@@ -8,7 +8,7 @@ mock_saf = MagicMock()
 mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
 sys.modules["serial_asyncio_fast"] = mock_saf
 
-from mcubridge.transport import serial_fast  # noqa: E402
+from mcubridge.transport import serial as serial_fast  # noqa: E402
 from mcubridge.protocol.protocol import Command, FRAME_DELIMITER  # noqa: E402
 from mcubridge.protocol.frame import Frame  # noqa: E402
 from cobs import cobs  # noqa: E402
@@ -99,7 +99,7 @@ async def test_serial_protocol_100_percent_coverage():
 
     # Frame parse error & CRC Mismatch (Line 211)
     with patch(
-        "mcubridge.transport.serial_fast.Frame.from_bytes",
+        "mcubridge.transport.serial.Frame.from_bytes",
         side_effect=ValueError("it is a crc mismatch error"),
     ):
         await proto._async_process_packet(cobs.encode(b"any"))
@@ -143,7 +143,7 @@ async def test_serial_transport_lifecycle_100_percent():
     m_p.connected_future.set_result(None)
     m_t.is_closing.return_value = True
     with patch(
-        "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
+        "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
         return_value=(m_t, m_p),
     ):
         with pytest.raises(ConnectionError, match="Serial connection lost"):
@@ -169,7 +169,7 @@ async def test_serial_transport_negotiation_fail_coverage():
         # Make transport closing after one loop to exit
         m_t._closing = True
         with patch(
-            "mcubridge.transport.serial_fast.serial_asyncio_fast.create_serial_connection",
+            "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection",
             return_value=(m_t, m_p),
         ):
             with pytest.raises(ConnectionError, match="Serial connection lost"):

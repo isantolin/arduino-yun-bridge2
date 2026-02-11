@@ -11,7 +11,7 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.process import ProcessComponent
-from mcubridge.transport.serial_fast import BridgeSerialProtocol
+from mcubridge.transport.serial import BridgeSerialProtocol
 
 
 @pytest.mark.asyncio
@@ -128,14 +128,14 @@ async def test_serial_fast_protocol_error_coverage():
 
     # 1. ValueError containing "crc mismatch"
     # We must patch Frame.from_bytes where it is CALLED, which is in mcubridge.transport.serial_fast
-    with mock.patch("mcubridge.transport.serial_fast.Frame.from_bytes", side_effect=ValueError("crc mismatch")):
+    with mock.patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("crc mismatch")):
         # We need to provide something that COBS can decode, or mock cobs.decode
-        with mock.patch("mcubridge.transport.serial_fast.cobs.decode", return_value=b"some bytes"):
+        with mock.patch("mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"):
             await proto._async_process_packet(b"something")
             assert state.serial_crc_errors == 1
 
     # 2. Generic Decode Error
-    with mock.patch("mcubridge.transport.serial_fast.Frame.from_bytes", side_effect=ValueError("other")):
-        with mock.patch("mcubridge.transport.serial_fast.cobs.decode", return_value=b"some bytes"):
+    with mock.patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("other")):
+        with mock.patch("mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"):
             await proto._async_process_packet(b"something")
             assert state.serial_decode_errors == 2

@@ -274,7 +274,7 @@ async def test_transport_mqtt_gaps(runtime_state: RuntimeState, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_transport_serial_fast_gaps(runtime_state: RuntimeState):
-    from mcubridge.transport import serial_fast
+    from mcubridge.transport import serial as serial_fast
     assert serial_fast._is_binary_packet(b"") is False
     retry_state = MagicMock()
     retry_state.attempt_number = 2

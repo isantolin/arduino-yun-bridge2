@@ -195,7 +195,8 @@ void BridgeClass::begin(
     if (actual_len > _shared_secret.capacity()) {
       actual_len = _shared_secret.capacity();
     }
-    _shared_secret.assign(arg_secret.begin(), arg_secret.begin() + actual_len);
+    const uint8_t* start = reinterpret_cast<const uint8_t*>(arg_secret.data());
+    _shared_secret.assign(start, start + actual_len);
   }
 
   // [SIL-2] FSM reset to Unsynchronized state

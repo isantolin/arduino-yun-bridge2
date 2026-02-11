@@ -9,8 +9,8 @@ DataStoreClass::DataStoreClass()
   _last_datastore_key.clear();
 }
 
-void DataStoreClass::put(const char* key, const char* value) {
-  if (!key || *key == '\0' || !value) return;
+void DataStoreClass::put(etl::string_view key, etl::string_view value) {
+  if (key.empty() || value.empty()) return;
   if (!Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, 
                                 key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH,
                                 value, rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
@@ -18,8 +18,8 @@ void DataStoreClass::put(const char* key, const char* value) {
   }
 }
 
-void DataStoreClass::requestGet(const char* key) {
-  if (!key || *key == '\0') return;
+void DataStoreClass::requestGet(etl::string_view key) {
+  if (key.empty()) return;
   if (!_trackPendingDatastoreKey(key)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Key too long"));
     return;
@@ -44,7 +44,7 @@ void DataStoreClass::handleResponse(const rpc::Frame& frame) {
         if (payload_length >= expected) {
           const uint8_t* value_ptr = payload_data + 1;
           const char* key = _popPendingDatastoreKey();
-          if (_datastore_get_handler) {
+          if (_datastore_get_handler.is_valid()) {
             _datastore_get_handler(key, value_ptr, value_len);
           }
         }
@@ -63,10 +63,8 @@ const char* DataStoreClass::_popPendingDatastoreKey() {
   return _last_datastore_key.c_str();
 }
 
-bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
-  if (!key) return false;
-  etl::string_view sv(key);
-  if (sv.empty() || sv.length() > rpc::RPC_MAX_DATASTORE_KEY_LENGTH) {
+bool DataStoreClass::_trackPendingDatastoreKey(etl::string_view key) {
+  if (key.empty() || key.length() > rpc::RPC_MAX_DATASTORE_KEY_LENGTH) {
     return false;
   }
 
@@ -74,6 +72,6 @@ bool DataStoreClass::_trackPendingDatastoreKey(const char* key) {
     return false;
   }
 
-  _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(sv.data(), sv.length()));
+  _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key.data(), key.length()));
   return true;
 }

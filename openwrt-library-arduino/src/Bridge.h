@@ -196,25 +196,24 @@ class BridgeClass : public bridge::router::ICommandHandler {
   friend class bridge::test::TestAccessor;
   #endif
  public:
-  // Callbacks
-  using CommandHandler = void (*)(const rpc::Frame&);
-  using DigitalReadHandler = void (*)(uint8_t);
-  using AnalogReadHandler = void (*)(uint16_t);
-  using GetFreeMemoryHandler = void (*)(uint16_t);
-  using StatusHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t);
+  // Callbacks - [SIL-2] Using etl::delegate for safer, object-oriented callbacks
+  using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
+  using DigitalReadHandler = etl::delegate<void(uint8_t)>;
+  using AnalogReadHandler = etl::delegate<void(uint16_t)>;
+  using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
+  using StatusHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
 
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
 
-  void begin(
-      unsigned long baudrate =
+  void begin(unsigned long baudrate = 
 #ifdef BRIDGE_BAUDRATE
           BRIDGE_BAUDRATE
 #else
           rpc::RPC_DEFAULT_BAUDRATE
 #endif
       ,
-             const char* secret = nullptr, size_t secret_len = 0);
+             etl::string_view secret = {}, size_t secret_len = 0);
   void process();
   bool isSynchronized() const { return _fsm.isSynchronized(); }
   
@@ -248,7 +247,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
 
   void flushStream();
   void enterSafeState(); // [SIL-2] Force system into fail-safe state
-  void _emitStatus(rpc::StatusCode status_code, const char* message = nullptr);
+  void _emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
   
   // [SIL-2] Large Payload Support (Application-Level Chunking)
@@ -423,18 +422,18 @@ class DataStoreClass {
   friend class bridge::test::DataStoreTestAccessor;
   #endif
  public:
-  using DataStoreGetHandler = void (*)(const char*, const uint8_t*, uint16_t);
+  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
 
   DataStoreClass();
-  void put(const char* key, const char* value);
-  void requestGet(const char* key);
+  void put(etl::string_view key, etl::string_view value);
+  void requestGet(etl::string_view key);
   void handleResponse(const rpc::Frame& frame);
   inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
     _datastore_get_handler = handler;
   }
 
  private:
-  bool _trackPendingDatastoreKey(const char* key);
+  bool _trackPendingDatastoreKey(etl::string_view key);
   const char* _popPendingDatastoreKey();
 
   // [SIL-2] Use queue adapter for strict FIFO semantics
@@ -448,17 +447,15 @@ extern DataStoreClass DataStore;
 #if BRIDGE_ENABLE_MAILBOX
 class MailboxClass {
  public:
-  using MailboxHandler = void (*)(const uint8_t*, uint16_t);
-  using MailboxAvailableHandler = void (*)(uint16_t);
+  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
 
   MailboxClass() : _mailbox_handler(nullptr), _mailbox_available_handler(nullptr) {}
   
   // [SIL-2] Inlined for optimization (-Os)
-  inline void send(const char* message) {
-    if (!message) return;
-    etl::string_view msg(message);
-    if (msg.empty()) return;
-    send(reinterpret_cast<const uint8_t*>(msg.data()), msg.length());
+  inline void send(etl::string_view message) {
+    if (message.empty()) return;
+    send(reinterpret_cast<const uint8_t*>(message.data()), message.length());
   }
 
   inline void send(const uint8_t* data, size_t length) {
@@ -489,7 +486,7 @@ class MailboxClass {
     const size_t payload_length = frame.header.payload_length;
 
     if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
-        if (_mailbox_handler && payload_length >= 2) {
+        if (_mailbox_handler.is_valid() && payload_length >= 2) {
           uint16_t msg_len = rpc::read_u16_be(payload_data);
           const uint8_t* msg_ptr = payload_data + 2;
           if (payload_length >= static_cast<size_t>(2 + msg_len)) {
@@ -497,7 +494,7 @@ class MailboxClass {
           }
         }
     } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
-        if (_mailbox_available_handler && payload_length >= 2) {
+        if (_mailbox_available_handler.is_valid() && payload_length >= 2) {
           uint16_t count = rpc::read_u16_be(payload_data);
           _mailbox_available_handler(count);
         }
@@ -521,38 +518,38 @@ extern MailboxClass Mailbox;
 #if BRIDGE_ENABLE_FILESYSTEM
 class FileSystemClass {
  public:
-  using FileSystemReadHandler = void (*)(const uint8_t*, uint16_t);
+  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
 
   FileSystemClass() : _file_system_read_handler(nullptr) {}
 
-  inline void write(const char* filePath, const uint8_t* data, size_t length) {
-    if (!filePath || *filePath == '\0' || !data) return;
-    etl::string_view path(filePath);
-    if (path.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
+  inline void write(etl::string_view filePath, const uint8_t* data, size_t length) {
+    if (filePath.empty() || !data) return;
+    
+    if (filePath.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
       Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
       return;
     }
 
     etl::array<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 1> header;
-    header[0] = static_cast<uint8_t>(path.length());
-    etl::copy_n(path.data(), path.length(), header.begin() + 1);
+    header[0] = static_cast<uint8_t>(filePath.length());
+    etl::copy_n(filePath.data(), filePath.length(), header.begin() + 1);
 
     Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 
-                           header.data(), path.length() + 1, 
+                           header.data(), filePath.length() + 1, 
                            data, length);
   }
   
   // [SIL-2] Inlined for optimization (-Os)
-  inline void remove(const char* filePath) {
-    if (!filePath || *filePath == '\0') return;
+  inline void remove(etl::string_view filePath) {
+    if (filePath.empty()) return;
     if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
                                   filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
       Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
     }
   }
 
-  inline void read(const char* filePath) {
-    if (!filePath || *filePath == '\0') return;
+  inline void read(etl::string_view filePath) {
+    if (filePath.empty()) return;
     if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
                                   filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
       Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
@@ -562,7 +559,7 @@ class FileSystemClass {
   inline void handleResponse(const rpc::Frame& frame) {
     const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
     if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
-        if (_file_system_read_handler) {
+        if (_file_system_read_handler.is_valid()) {
           _file_system_read_handler(frame.payload.data(), frame.header.payload_length);
         }
     }
@@ -584,15 +581,15 @@ class ProcessClass {
   friend class bridge::test::ProcessTestAccessor;
   #endif
  public:
-  using ProcessRunHandler = void (*)(rpc::StatusCode, const uint8_t*, uint16_t,
-                                     const uint8_t*, uint16_t);
-  using ProcessPollHandler = void (*)(rpc::StatusCode, uint8_t, const uint8_t*,
-                                      uint16_t, const uint8_t*, uint16_t);
-  using ProcessRunAsyncHandler = void (*)(int16_t);  // PID from daemon (signed for error sentinel)
+  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t,
+                                     const uint8_t*, uint16_t)>;
+  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*,
+                                      uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;  // PID from daemon (signed for error sentinel)
 
   ProcessClass();
-  void run(const char* command);
-  void runAsync(const char* command);
+  void run(etl::string_view command);
+  void runAsync(etl::string_view command);
   void poll(int16_t pid);
   void kill(int16_t pid);
   void handleResponse(const rpc::Frame& frame);

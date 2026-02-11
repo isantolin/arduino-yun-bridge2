@@ -5,6 +5,7 @@
 #include "security.h"
 #include <Arduino.h>
 #include <etl/algorithm.h>
+#include <etl/array.h>
 
 #ifdef ARDUINO_ARCH_AVR
 #include <avr/pgmspace.h>
@@ -14,6 +15,9 @@
 #endif
 #ifndef pgm_read_byte
 #define pgm_read_byte(addr) (*(const unsigned char *)(addr))
+#endif
+#ifndef memcpy_P
+#define memcpy_P memcpy
 #endif
 #endif
 
@@ -47,25 +51,34 @@ static const uint8_t kat_hmac_expected[] PROGMEM = {
 
 bool run_cryptographic_self_tests() {
   SHA256 sha256;
-  uint8_t actual[kSha256DigestSize];
-  uint8_t buffer[kKatBufferSize]; // Temporary buffer for data loading
+  etl::array<uint8_t, kSha256DigestSize> actual;
+  etl::array<uint8_t, kKatBufferSize> buffer; // Temporary buffer for data loading
 
   // 1. SHA256 KAT ("abc")
   size_t msg_len = sizeof(kat_sha256_msg);
-  etl::copy_n(kat_sha256_msg, msg_len, buffer);
-  sha256.update(buffer, msg_len);
-  sha256.finalize(actual, kSha256DigestSize);
+  memcpy_P(buffer.data(), kat_sha256_msg, msg_len);
+  sha256.update(buffer.data(), msg_len);
+  sha256.finalize(actual.data(), kSha256DigestSize);
 
-  if (!etl::equal(actual, actual + kSha256DigestSize, kat_sha256_expected)) return false;
+  // Compare actual vs expected (expected is in PROGMEM)
+  // etl::equal might work if we provide a custom iterator or just use memcmp_P
+  if (memcmp_P(actual.data(), kat_sha256_expected, kSha256DigestSize) != 0) return false;
 
   // 2. HMAC-SHA256 KAT
-  sha256.resetHMAC(kat_hmac_key, sizeof(kat_hmac_key)); // Note: resetHMAC copies key internally
+  // Key is small, can load to stack or use update with PROGMEM if lib supports it. 
+  // SHA256 lib usually supports RAM only.
+  uint8_t key_buf[32]; // Max key size for test
+  size_t key_len = sizeof(kat_hmac_key);
+  memcpy_P(key_buf, kat_hmac_key, key_len);
+  
+  sha256.resetHMAC(key_buf, key_len); 
+  
   size_t data_len = sizeof(kat_hmac_data);
-  etl::copy_n(kat_hmac_data, data_len, buffer);
-  sha256.update(buffer, data_len);
-  sha256.finalizeHMAC(kat_hmac_key, sizeof(kat_hmac_key), actual, kSha256DigestSize);
+  memcpy_P(buffer.data(), kat_hmac_data, data_len);
+  sha256.update(buffer.data(), data_len);
+  sha256.finalizeHMAC(key_buf, key_len, actual.data(), kSha256DigestSize);
 
-  if (!etl::equal(actual, actual + kSha256DigestSize, kat_hmac_expected)) return false;
+  if (memcmp_P(actual.data(), kat_hmac_expected, kSha256DigestSize) != 0) return false;
 
   return true;
 }

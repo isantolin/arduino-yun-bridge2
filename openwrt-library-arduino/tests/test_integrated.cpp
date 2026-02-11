@@ -104,13 +104,13 @@ public:
 void integrated_test_rle() {
     uint8_t in[] = "AAAAABBBCCCC";
     uint8_t enc[32], dec[32];
-    size_t el = rle::encode(in, 12, enc, 32);
-    size_t dl = rle::decode(enc, el, dec, 32);
+    size_t el = rle::encode(etl::span<const uint8_t>(in, 12), etl::span<uint8_t>(enc, 32));
+    size_t dl = rle::decode(etl::span<const uint8_t>(enc, el), etl::span<uint8_t>(dec, 32));
     TEST_ASSERT(dl == 12 && memcmp(in, dec, 12) == 0);
     
     uint8_t in2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    el = rle::encode(in2, 5, enc, 32);
-    dl = rle::decode(enc, el, dec, 32);
+    el = rle::encode(etl::span<const uint8_t>(in2, 5), etl::span<uint8_t>(enc, 32));
+    dl = rle::decode(etl::span<const uint8_t>(enc, el), etl::span<uint8_t>(dec, 32));
     TEST_ASSERT(dl == 5 && memcmp(in2, dec, 5) == 0);
 }
 

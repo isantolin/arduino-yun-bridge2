@@ -39,7 +39,7 @@ async def test_mqtt_internal_tls_setup_branches():
     fake_ctx = MagicMock()
     fake_ctx.check_hostname = True
 
-    with patch("mcubridge.transport.mqtt.ssl.create_default_context") as mk_ctx:
+    with patch("ssl.create_default_context") as mk_ctx:
         mk_ctx.return_value = fake_ctx
         ctx = configure_tls_context(mock_cfg)
         assert ctx is fake_ctx
@@ -48,7 +48,7 @@ async def test_mqtt_internal_tls_setup_branches():
     # Caso 3: cafile explícito pero inexistente (debe fallar)
     mock_cfg.mqtt_cafile = "/non/existent/ca.crt"
 
-    with patch("mcubridge.transport.mqtt.Path") as MockPath:
+    with patch("pathlib.Path") as MockPath:
         MockPath.return_value.exists.return_value = False
         with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
             configure_tls_context(mock_cfg)
@@ -60,7 +60,7 @@ async def test_mqtt_internal_tls_setup_branches():
     fake_ctx2 = MagicMock()
     fake_ctx2.check_hostname = True
 
-    with patch("mcubridge.transport.mqtt.ssl.create_default_context") as mk_ctx2:
+    with patch("ssl.create_default_context") as mk_ctx2:
         mk_ctx2.return_value = fake_ctx2
         ctx2 = configure_tls_context(mock_cfg)
         assert ctx2 is fake_ctx2

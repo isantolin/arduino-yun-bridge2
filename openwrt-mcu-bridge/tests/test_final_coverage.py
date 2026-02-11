@@ -265,7 +265,7 @@ async def test_transport_mqtt_gaps(runtime_state: RuntimeState, tmp_path: Path):
     mock_conf.mqtt_cafile = str(cafile)
     mock_conf.mqtt_keyfile = "key"
     # Mock Path instance specifically for the string value
-    with patch("mcubridge.transport.mqtt.Path") as mock_path_cls:
+    with patch("pathlib.Path") as mock_path_cls:
         mock_path_cls.return_value.exists.return_value = True
         with patch("ssl.SSLContext.load_verify_locations", side_effect=ssl.SSLError()):
             with pytest.raises(RuntimeError):

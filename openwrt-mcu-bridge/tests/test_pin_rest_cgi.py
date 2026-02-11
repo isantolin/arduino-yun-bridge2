@@ -237,13 +237,13 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Ca
     }
     monkeypatch.setattr(os, "environ", environ)
     monkeypatch.setattr(
-        module.sys,
+        sys,
         "stdin",
         io.StringIO(msgspec.json.encode({"state": "ON"}).decode("utf-8")),
     )
     # No monkeypatching stdout, rely on capsys
 
-    module.main()
+    module.application(os.environ, lambda s, h: None)
 
     captured_out = capsys.readouterr()
     body = captured_out.out.split("\n\n", 1)[1]
@@ -280,13 +280,13 @@ def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch, capsys: pyt
         },
     )
     monkeypatch.setattr(
-        module.sys,
+        sys,
         "stdin",
         io.StringIO(msgspec.json.encode({"state": "MAYBE"}).decode("utf-8")),
     )
     # No monkeypatching stdout, rely on capsys
 
-    module.main()
+    module.application(os.environ, lambda s, h: None)
 
     captured_out = capsys.readouterr()
     body = captured_out.out.split("\n\n", 1)[1]

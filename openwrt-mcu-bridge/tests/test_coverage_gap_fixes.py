@@ -893,7 +893,7 @@ def test_mqtt_configure_tls_gaps():
     config.mqtt_cafile = "/tmp/fake_ca"
 
     # Case: CA file missing
-    with patch("mcubridge.transport.mqtt.Path.exists", return_value=False):
+    with patch("pathlib.Path.exists", return_value=False):
         with pytest.raises(RuntimeError, match="CA file missing"):
             mqtt_helper.configure_tls_context(config)
 
@@ -901,7 +901,7 @@ def test_mqtt_configure_tls_gaps():
     # Make sure CA file check passes
     config.mqtt_cafile = ""  # Avoid missing CA check
     with (
-        patch("mcubridge.transport.mqtt.Path.exists", return_value=True),
+        patch("pathlib.Path.exists", return_value=True),
         patch("ssl.create_default_context", side_effect=ValueError("Boom")),
         pytest.raises(RuntimeError, match="TLS setup failed"),
     ):

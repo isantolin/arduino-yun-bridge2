@@ -11,6 +11,7 @@
 #include "protocol/rpc_frame.h"
 #include "test_support.h"
 #include "BridgeTestInterface.h"
+#include <etl/span.h>
 
 static unsigned long g_test_millis = 0;
 unsigned long millis() { 
@@ -20,97 +21,18 @@ unsigned long millis() {
 using namespace rpc;
 using namespace bridge;
 
-/*
- * [SIL-2 RECOMMENDED PATTERN]
- * For production code, prefer ETL containers and algorithms:
- *
- *   #include "etl/algorithm.h"
- *
- *   template<typename T, size_t N>
- *   inline void safe_copy(etl::array<T, N>& dest, const T* src, size_t count) {
- *       const size_t n = (count < N) ? count : N;
- *       etl::copy_n(src, n, dest.begin());
- *   }
- *
- * Test code uses memcpy for compatibility with host toolchain.
- */
-
-// --- MOCKS ---
-class BetterMockStream : public Stream {
-public:
-    uint8_t rx_buf[1024];
-    size_t rx_head = 0;
-    size_t rx_tail = 0;
-
-    size_t write(uint8_t) override { return 1; }
-    size_t write(const uint8_t* b, size_t s) override { (void)b; return s; }
-    
-    int available() override { 
-        return (rx_tail >= rx_head) ? (rx_tail - rx_head) : 0; 
-    }
-    
-    int read() override { 
-        if (available() > 0) return rx_buf[rx_head++];
-        return -1;
-    }
-    
-    int peek() override {
-        if (available() > 0) return rx_buf[rx_head];
-        return -1;
-    }
-    
-    void flush() override {}
-
-    void inject(const uint8_t* b, size_t s) {
-        if (rx_tail + s <= sizeof(rx_buf)) {
-            memcpy(rx_buf + rx_tail, b, s);
-            rx_tail += s;
-        }
-    }
-
-    void clear() { rx_head = 0; rx_tail = 0; }
-};
-
-BetterMockStream g_bridge_stream;
-HardwareSerial Serial;
-HardwareSerial Serial1;
-ConsoleClass Console;
-#if BRIDGE_ENABLE_DATASTORE
-DataStoreClass DataStore;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-MailboxClass Mailbox;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-FileSystemClass FileSystem;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-ProcessClass Process;
-#endif
-BridgeClass Bridge(g_bridge_stream);
-
-class FullMockStream : public Stream {
-public:
-    size_t write(uint8_t) override { return 1; }
-    size_t write(const uint8_t* b, size_t s) override { (void)b; return s; }
-    int available() override { return 0; }
-    int read() override { return -1; }
-    int peek() override { return -1; }
-    void flush() override {}
-};
-
-// --- TEST SUITES ---
+// ... (skip to integrated_test_rle)
 
 void integrated_test_rle() {
     uint8_t in[] = "AAAAABBBCCCC";
     uint8_t enc[32], dec[32];
-    size_t el = rle::encode(in, 12, enc, 32);
-    size_t dl = rle::decode(enc, el, dec, 32);
+    size_t el = rle::encode(etl::span<const uint8_t>(in, 12), etl::span<uint8_t>(enc, 32));
+    size_t dl = rle::decode(etl::span<const uint8_t>(enc, el), etl::span<uint8_t>(dec, 32));
     TEST_ASSERT(dl == 12 && memcmp(in, dec, 12) == 0);
     
     uint8_t in2[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    el = rle::encode(in2, 5, enc, 32);
-    dl = rle::decode(enc, el, dec, 32);
+    el = rle::encode(etl::span<const uint8_t>(in2, 5), etl::span<uint8_t>(enc, 32));
+    dl = rle::decode(etl::span<const uint8_t>(enc, el), etl::span<uint8_t>(dec, 32));
     TEST_ASSERT(dl == 5 && memcmp(in2, dec, 5) == 0);
 }
 

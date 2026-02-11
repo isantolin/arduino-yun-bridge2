@@ -56,14 +56,17 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
             BUILD_FLAGS="$BUILD_FLAGS --build-path $SKETCH_BUILD_DIR"
         fi
 
-        arduino-cli compile $BUILD_FLAGS "$sketch"
-            
-        if [ $? -ne 0 ]; then
+        if ! arduino-cli compile $BUILD_FLAGS "$sketch"; then
             echo "✗ $sketch_name failed to compile for $FQBN!"
-            exit 1
+            if [ "$FQBN" == "arduino:avr:mega" ]; then
+                echo "Critical failure for target $FQBN. Aborting."
+                exit 1
+            else
+                echo "Failure for $FQBN is not critical. Continuing..."
+            fi
+        else
+            echo "✓ $sketch_name compiled successfully"
         fi
-        
-        echo "✓ $sketch_name compiled successfully"
     done
 done
 

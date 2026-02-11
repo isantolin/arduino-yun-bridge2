@@ -883,7 +883,7 @@ async def test_status_writer_gaps():
 
 
 def test_mqtt_configure_tls_gaps():
-    """Cover gaps in mqtt._configure_tls."""
+    """Cover gaps in mqtt_helper.configure_tls_context."""
     config = create_fake_config()
     config.tls_enabled = True
     config.mqtt_cafile = "/tmp/fake_ca"
@@ -891,7 +891,7 @@ def test_mqtt_configure_tls_gaps():
     # Case: CA file missing
     with patch("mcubridge.transport.mqtt.Path.exists", return_value=False):
         with pytest.raises(RuntimeError, match="CA file missing"):
-            mqtt._configure_tls(config)
+            mqtt_helper.configure_tls_context(config)
 
     # Case: SSLError/ValueError during setup
     # Make sure CA file check passes
@@ -901,7 +901,7 @@ def test_mqtt_configure_tls_gaps():
         patch("ssl.create_default_context", side_effect=ValueError("Boom")),
         pytest.raises(RuntimeError, match="TLS setup failed"),
     ):
-        mqtt._configure_tls(config)
+        mqtt_helper.configure_tls_context(config)
 
 
 @pytest.mark.asyncio

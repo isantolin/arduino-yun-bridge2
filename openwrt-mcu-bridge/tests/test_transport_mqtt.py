@@ -1,3 +1,5 @@
+import ssl
+from pathlib import Path
 """Unit tests for mcubridge.transport.mqtt."""
 
 from __future__ import annotations
@@ -55,13 +57,13 @@ def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
 
 def test_configure_tls_disabled_returns_none(tmp_path: Path) -> None:
     config = _make_config(tls=False, cafile=str(tmp_path / "ca.pem"))
-    assert mqtt._configure_tls(config) is None
+    assert mqtt_helper.configure_tls_context(config) is None
 
 
 def test_configure_tls_missing_cafile_raises(tmp_path: Path) -> None:
     config = _make_config(tls=True, cafile=str(tmp_path / "missing.pem"))
     with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
-        mqtt._configure_tls(config)
+        mqtt_helper.configure_tls_context(config)
 
 
 def test_configure_tls_loads_cert_chain_when_provided(
@@ -85,7 +87,7 @@ def test_configure_tls_loads_cert_chain_when_provided(
         return fake_context
 
     monkeypatch.setattr(
-        mqtt.ssl,
+        ssl,
         "create_default_context",
         _fake_create_default_context,
     )
@@ -94,7 +96,7 @@ def test_configure_tls_loads_cert_chain_when_provided(
     config.mqtt_certfile = str(tmp_path / "client.pem")
     config.mqtt_keyfile = str(tmp_path / "client.key")
 
-    ctx = mqtt._configure_tls(config)
+    ctx = mqtt_helper.configure_tls_context(config)
     assert ctx is fake_context
     assert calls == [(config.mqtt_certfile, config.mqtt_keyfile)]
 
@@ -109,11 +111,11 @@ def test_configure_tls_wraps_ssl_errors(
     def _boom(*_args, **_kwargs):
         raise ValueError("bad")
 
-    monkeypatch.setattr(mqtt.ssl, "create_default_context", _boom)
+    monkeypatch.setattr(ssl, "create_default_context", _boom)
 
     config = _make_config(tls=True, cafile=str(cafile))
     with pytest.raises(RuntimeError, match=r"TLS setup failed"):
-        mqtt._configure_tls(config)
+        mqtt_helper.configure_tls_context(config)
 
 
 @pytest.mark.asyncio

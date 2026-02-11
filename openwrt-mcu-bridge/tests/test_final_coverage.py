@@ -258,7 +258,7 @@ async def test_transport_mqtt_gaps(runtime_state: RuntimeState, tmp_path: Path):
     mock_conf.mqtt_certfile = "cert"
     mock_conf.mqtt_keyfile = None
     with pytest.raises(RuntimeError, match="Both mqtt_certfile and mqtt_keyfile"):
-        mqtt._configure_tls(mock_conf)
+        mqtt_helper.configure_tls_context(mock_conf)
 
     cafile = tmp_path / "ca.crt"
     cafile.write_text("ca")
@@ -269,7 +269,7 @@ async def test_transport_mqtt_gaps(runtime_state: RuntimeState, tmp_path: Path):
         mock_path_cls.return_value.exists.return_value = True
         with patch("ssl.SSLContext.load_verify_locations", side_effect=ssl.SSLError()):
             with pytest.raises(RuntimeError):
-                mqtt._configure_tls(mock_conf)
+                mqtt_helper.configure_tls_context(mock_conf)
 
 
 @pytest.mark.asyncio

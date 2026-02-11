@@ -4,17 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import ssl
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import aiomqtt
 import tenacity
 
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
+from mcubridge.util.mqtt_helper import configure_tls_context
 from mcubridge.util import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.config.const import MQTT_TLS_MIN_VERSION
 from mcubridge.protocol import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS
 from mcubridge.state.context import RuntimeState
@@ -25,33 +23,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcubridge")
 
 
-def _configure_tls(config: RuntimeConfig) -> ssl.SSLContext | None:
-    if not config.tls_enabled:
-        return None
 
-    try:
-        if config.mqtt_cafile:
-            if not Path(config.mqtt_cafile).exists():
-                raise RuntimeError(f"MQTT TLS CA file missing: {config.mqtt_cafile}")
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=config.mqtt_cafile)
-        else:
-            # Use system trust store.
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
-        context.minimum_version = MQTT_TLS_MIN_VERSION
-
-        # Equivalent to mosquitto_{pub,sub} --insecure: disable hostname verification
-        if getattr(config, "mqtt_tls_insecure", False):
-            context.check_hostname = False
-
-        if config.mqtt_certfile or config.mqtt_keyfile:
-            if not (config.mqtt_certfile and config.mqtt_keyfile):
-                raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
-            context.load_cert_chain(config.mqtt_certfile, config.mqtt_keyfile)
-
-        return context
-    except (OSError, ssl.SSLError, ValueError) as exc:
-        raise RuntimeError(f"TLS setup failed: {exc}") from exc
 
 
 async def _mqtt_publisher_loop(
@@ -134,7 +106,7 @@ async def mqtt_task(
     state: RuntimeState,
     service: BridgeService,
 ) -> None:
-    tls_context = _configure_tls(config)
+    tls_context = configure_tls_context(config)
     reconnect_delay = max(1, config.reconnect_delay)
 
     retryer = tenacity.AsyncRetrying(

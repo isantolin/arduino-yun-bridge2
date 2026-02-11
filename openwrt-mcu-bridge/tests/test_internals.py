@@ -25,7 +25,7 @@ async def test_mqtt_internal_tls_setup_branches():
     mock_cfg.tls_enabled = False
 
     # Accedemos a la función privada via import directo
-    from mcubridge.transport.mqtt import _configure_tls
+    from mcubridge.util.mqtt_helper import configure_tls_context
 
     assert _configure_tls(mock_cfg) is None
 

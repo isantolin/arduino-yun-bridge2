@@ -54,12 +54,12 @@ async def test_mqtt_transport_extreme_gaps(runtime_config, runtime_state):
     # Gap: _configure_tls with missing file
     with patch.object(local_config, "mqtt_cafile", "/non/existent/ca.pem"):
         with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
-            mqtt._configure_tls(local_config)
+            mqtt_helper.configure_tls_context(local_config)
 
     # Gap: _configure_tls with insecure mode
     with patch("ssl.create_default_context"):
         local_config = msgspec.structs.replace(runtime_config, mqtt_tls=True, mqtt_cafile=None)
-        mqtt._configure_tls(local_config)
+        mqtt_helper.configure_tls_context(local_config)
 
 
 @pytest.mark.asyncio

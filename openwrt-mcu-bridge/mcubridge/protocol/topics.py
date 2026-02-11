@@ -1,16 +1,15 @@
-"""MQTT topic helpers shared across McuBridge components."""
+"""MQTT topic helpers shared across McuBridge components.
+
+This module is the SINGLE SOURCE OF TRUTH for MQTT topic structures.
+Avoid hardcoding topic strings elsewhere.
+"""
 
 from __future__ import annotations
-
 import msgspec
-
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Topic
-
+from .protocol import Topic
 
 class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""
-
     raw: str
     prefix: str
     topic: Topic
@@ -24,20 +23,13 @@ class TopicRoute(msgspec.Struct, frozen=True):
     def remainder(self) -> tuple[str, ...]:
         return self.segments[1:] if len(self.segments) > 1 else ()
 
-
 def _split_segments(path: str) -> tuple[str, ...]:
     if not path:
         return ()
     return tuple(segment for segment in path.split("/") if segment)
 
-
-def topic_path(
-    prefix: str,
-    topic: Topic | str,
-    *segments: str,
-) -> str:
-    """Join *prefix*, *topic* and optional sub-segments into a topic path."""
-
+def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:
+    """Join prefix, topic and optional sub-segments into a topic path."""
     parts = list(_split_segments(prefix))
     topic_segment = topic.value if isinstance(topic, Topic) else str(topic)
     topic_segment = topic_segment.strip("/")
@@ -50,10 +42,41 @@ def topic_path(
             parts.append(cleaned)
     return "/".join(parts)
 
+# --- Service Specific Topics ---
+
+def pin_topic(prefix: str, pin: int | str, action: str = "read") -> str:
+    """e.g. br/d/13/read"""
+    return topic_path(prefix, Topic.DIGITAL, str(pin), action)
+
+def analog_pin_topic(prefix: str, pin: int | str, action: str = "read") -> str:
+    """e.g. br/a/0/read"""
+    return topic_path(prefix, Topic.ANALOG, str(pin), action)
+
+def datastore_topic(prefix: str, key: str, action: str = "get") -> str:
+    """e.g. br/datastore/get/mykey"""
+    return topic_path(prefix, Topic.DATASTORE, action, key)
+
+def file_topic(prefix: str, action: str, filename: str) -> str:
+    """e.g. br/file/read/etc/config/network"""
+    return topic_path(prefix, Topic.FILE, action, filename)
+
+def shell_topic(prefix: str, action: str, command_id: str | None = None) -> str:
+    """e.g. br/sh/run or br/sh/poll/cmd123"""
+    if command_id:
+        return topic_path(prefix, Topic.SHELL, action, command_id)
+    return topic_path(prefix, Topic.SHELL, action)
+
+def handshake_topic(prefix: str) -> str:
+    return topic_path(prefix, Topic.SYSTEM, "handshake")
+
+def mailbox_incoming_available_topic(prefix: str) -> str:
+    return topic_path(prefix, Topic.MAILBOX, "incoming_available")
+
+def mailbox_outgoing_available_topic(prefix: str) -> str:
+    return topic_path(prefix, Topic.MAILBOX, "outgoing_available")
 
 def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
-    """Parse an incoming MQTT topic into a :class:`TopicRoute`."""
-
+    """Parse an incoming MQTT topic into a TopicRoute."""
     prefix_segments = _split_segments(prefix)
     topic_segments = _split_segments(topic_name)
     if len(topic_segments) < len(prefix_segments) + 1:
@@ -74,43 +97,3 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
         topic=topic_enum,
         segments=remainder,
     )
-
-
-_HANDSHAKE_SEGMENT = "handshake"
-
-
-def handshake_topic(prefix: str) -> str:
-    """Return the MQTT topic used for publishing handshake telemetry."""
-
-    return topic_path(prefix, Topic.SYSTEM, _HANDSHAKE_SEGMENT)
-
-
-def mailbox_incoming_available_topic(prefix: str) -> str:
-    """Topic path that reports queued MCU->Linux mailbox messages."""
-
-    return topic_path(
-        prefix,
-        Topic.MAILBOX,
-        protocol.MQTT_SUFFIX_INCOMING_AVAILABLE,
-    )
-
-
-def mailbox_outgoing_available_topic(prefix: str) -> str:
-    """Topic path that reports queued Linux->MCU mailbox messages."""
-
-    return topic_path(
-        prefix,
-        Topic.MAILBOX,
-        protocol.MQTT_SUFFIX_OUTGOING_AVAILABLE,
-    )
-
-
-__all__ = [
-    "Topic",
-    "TopicRoute",
-    "handshake_topic",
-    "mailbox_incoming_available_topic",
-    "mailbox_outgoing_available_topic",
-    "parse_topic",
-    "topic_path",
-]

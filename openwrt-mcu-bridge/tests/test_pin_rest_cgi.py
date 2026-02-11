@@ -100,7 +100,7 @@ class CapturingFakeClient:
         return MockInfo()
 
 
-def test_publish_with_retries_configures_tls(
+def test_publish_safe_configures_tls(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
@@ -127,12 +127,12 @@ def test_publish_with_retries_configures_tls(
     cafile.write_text("dummy-ca")
     runtime_config.mqtt_cafile = str(cafile)
 
-    pin_rest_module.publish_with_retries(
+    pin_rest_module.publish_safe(
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload="1",
         config=runtime_config,
-        retries=1,
-        publish_timeout=0.1,
+        
+        
     )
 
     assert len(captured_clients) == 1
@@ -149,7 +149,7 @@ def test_publish_with_retries_configures_tls(
     )
 
 
-def test_publish_with_retries_times_out(
+def test_publish_safe_times_out(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
     monkeypatch: pytest.MonkeyPatch,
@@ -189,13 +189,13 @@ def test_publish_with_retries_times_out(
     runtime_config.mqtt_tls = False
 
     with pytest.raises(RuntimeError, match="Failed to publish"):
-        pin_rest_module.publish_with_retries(
+        pin_rest_module.publish_safe(
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/2",
             payload="0",
             config=runtime_config,
-            retries=1,
-            publish_timeout=0.01,
-            poll_interval=0.001,
+            
+            
+            
         )
 
 
@@ -222,7 +222,7 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Ca
         captured["config"] = config
 
     monkeypatch.setattr(module, "load_runtime_config", lambda: fake_config)
-    monkeypatch.setattr(module, "publish_with_retries", _fake_publish)
+    monkeypatch.setattr(module, "publish_safe", _fake_publish)
     monkeypatch.setattr(module, "configure_logging", lambda config: None)
 
     environ: dict[str, str] = {
@@ -230,7 +230,7 @@ def test_main_invokes_publish(monkeypatch: pytest.MonkeyPatch, capsys: pytest.Ca
         "PATH_INFO": "/pin/7",
         "CONTENT_LENGTH": "17",
     }
-    monkeypatch.setattr(module.os, "environ", environ)
+    monkeypatch.setattr(os, "environ", environ)
     monkeypatch.setattr(
         module.sys,
         "stdin",
@@ -266,7 +266,7 @@ def test_main_rejects_invalid_state(monkeypatch: pytest.MonkeyPatch, capsys: pyt
     monkeypatch.setattr(module, "load_runtime_config", lambda: fake_config)
     monkeypatch.setattr(module, "configure_logging", lambda config: None)
     monkeypatch.setattr(
-        module.os,
+        os,
         "environ",
         {
             "REQUEST_METHOD": "POST",

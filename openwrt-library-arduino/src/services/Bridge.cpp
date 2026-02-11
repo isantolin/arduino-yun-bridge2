@@ -31,6 +31,7 @@
 
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/PacketBuilder.h"
 #include "security/security.h"
 #include "etl/error_handler.h"
 #include "etl/algorithm.h"
@@ -787,19 +788,18 @@ bool BridgeClass::sendStringCommand(rpc::CommandId command_id, etl::string_view 
   if (str.empty() || str.length() > max_len || str.length() >= rpc::MAX_PAYLOAD_SIZE) return false;
   
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  append_length_prefixed(payload, str);
+  rpc::PacketBuilder(payload).add_pascal_string(str);
   return sendFrame(command_id, payload.data(), payload.size());
 }
 
 bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id, etl::string_view key, size_t max_key, etl::string_view val, size_t max_val) {
   if (key.empty() || key.length() > max_key || val.length() > max_val) return false;
-
-  // Ensure total payload (including 2 length bytes) fits in MAX_PAYLOAD_SIZE
   if (key.length() + val.length() + 2 > rpc::MAX_PAYLOAD_SIZE) return false;
 
   etl::vector<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  append_length_prefixed(payload, key);
-  append_length_prefixed(payload, val);
+  rpc::PacketBuilder(payload)
+    .add_pascal_string(key)
+    .add_pascal_string(val);
   return sendFrame(command_id, payload.data(), payload.size());
 }
 

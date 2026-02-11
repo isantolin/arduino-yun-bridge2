@@ -399,7 +399,7 @@ class ConsoleClass : public Stream {
   size_t write(uint8_t c) override;
   size_t write(const uint8_t *buffer, size_t size) override;
   
-  void _push(const uint8_t* data, size_t length);
+  void _push(etl::span<const uint8_t> data);
   
   int available() override;
   int read() override;

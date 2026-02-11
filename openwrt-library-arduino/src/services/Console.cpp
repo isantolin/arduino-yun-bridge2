@@ -122,8 +122,8 @@ void ConsoleClass::flush() {
   Bridge.flushStream();
 }
 
-void ConsoleClass::_push(const uint8_t* data, size_t length) {
-  if (length == 0) return;
+void ConsoleClass::_push(etl::span<const uint8_t> data) {
+  if (data.empty()) return;
 
   bool xoff_needed = false;
 
@@ -133,11 +133,11 @@ void ConsoleClass::_push(const uint8_t* data, size_t length) {
     // [SIL-2] Calculate available space first, then copy deterministically
     // Drop new data if buffer is full.
     const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
-    const size_t to_copy = etl::min(length, available);
+    const size_t to_copy = etl::min(data.size(), available);
     
-    const uint8_t* const end = data + to_copy;
-    while (data != end) {
-      _rx_buffer.push(*data++);
+    // Copy using iterator or range-based loop
+    for (size_t i = 0; i < to_copy; ++i) {
+        _rx_buffer.push(data[i]);
     }
 
     const size_t capacity = _rx_buffer.capacity();

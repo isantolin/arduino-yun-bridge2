@@ -555,7 +555,7 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
 
 void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
   if (static_cast<rpc::CommandId>(frame.header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
-    Console._push(frame.payload.data(), frame.header.payload_length);
+    Console._push(etl::span<const uint8_t>(frame.payload.data(), frame.header.payload_length));
   }
 }
 

@@ -2,7 +2,7 @@
 aiomqtt==2.5.0
 cobs==1.2.2
 construct==2.10.70
-cryptography==46.0.5
+cryptography==46.0.4
 msgspec==0.20.0
 paho-mqtt==2.1.0
 prometheus-client==0.24.1

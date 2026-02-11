@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-cryptography
-PKG_VERSION:=46.0.4
+PKG_VERSION:=46.0.5
 PKG_RELEASE:=1
 
 PYPI_NAME:=cryptography
-PKG_HASH:=bfd019f60f8abc2ed1b9be4ddc21cfef059c841d86d710bb69909a688cbb8f59
+PKG_HASH:=abace499247268e3757271b2f1e244b36b06f8515cf27c4d49468fc9eb16e93d
 
 PKG_BUILD_DEPENDS:=libffi/host python-maturin/host python-cffi/host
 

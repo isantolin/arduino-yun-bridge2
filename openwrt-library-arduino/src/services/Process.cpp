@@ -18,16 +18,16 @@ ProcessClass::ProcessClass()
     _process_run_async_handler() {
 }
 
-void ProcessClass::run(const char* command) {
-  if (!command || *command == '\0') return;
+void ProcessClass::run(etl::string_view command) {
+  if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, 
                                command, rpc::MAX_PAYLOAD_SIZE - 1)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Command too long"));
   }
 }
 
-void ProcessClass::runAsync(const char* command) {
-  if (!command || *command == '\0') return;
+void ProcessClass::runAsync(etl::string_view command) {
+  if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 
                                command, rpc::MAX_PAYLOAD_SIZE - 1)) {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Command too long"));
@@ -91,17 +91,17 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
   ProcessResponse res{};
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (_process_run_handler && ProcessResponse::parse(payload_data, payload_length, kRunRespHeaderSize, res)) {
+      if (_process_run_handler.is_valid() && ProcessResponse::parse(payload_data, payload_length, kRunRespHeaderSize, res)) {
         _process_run_handler(res.status, res.stdout_ptr, res.stdout_len, res.stderr_ptr, res.stderr_len);
       }
       break;
     case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-      if (_process_run_async_handler && payload_length >= 2) {
+      if (_process_run_async_handler.is_valid() && payload_length >= 2) {
         _process_run_async_handler(static_cast<int>(rpc::read_u16_be(payload_data)));
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (_process_poll_handler && ProcessResponse::parse(payload_data, payload_length, kPollRespHeaderSize, res)) {
+      if (_process_poll_handler.is_valid() && ProcessResponse::parse(payload_data, payload_length, kPollRespHeaderSize, res)) {
         _process_poll_handler(res.status, res.running, res.stdout_ptr, res.stdout_len, res.stderr_ptr, res.stderr_len);
         _popPendingProcessPid(); 
       }

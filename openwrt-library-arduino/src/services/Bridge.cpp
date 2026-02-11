@@ -131,7 +131,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
 }
 
 void BridgeClass::begin(
-    unsigned long arg_baudrate, const char* arg_secret, size_t arg_secret_len) {
+    unsigned long arg_baudrate, etl::string_view arg_secret, size_t arg_secret_len) {
   
   // [SIL-2] Start the ETL FSM before any other initialization
   _fsm.begin();
@@ -190,13 +190,12 @@ void BridgeClass::begin(
   _timer_service.start(bridge::scheduler::TIMER_STARTUP_STABILIZATION, false);
 
   _shared_secret.clear();
-  if (arg_secret) {
-    size_t actual_len = (arg_secret_len > 0) ? arg_secret_len : strlen(arg_secret);
+  if (!arg_secret.empty()) {
+    size_t actual_len = (arg_secret_len > 0) ? arg_secret_len : arg_secret.length();
     if (actual_len > _shared_secret.capacity()) {
       actual_len = _shared_secret.capacity();
     }
-    _shared_secret.assign(reinterpret_cast<const uint8_t*>(arg_secret), 
-                         reinterpret_cast<const uint8_t*>(arg_secret) + actual_len);
+    _shared_secret.assign(arg_secret.begin(), arg_secret.begin() + actual_len);
   }
 
   // [SIL-2] FSM reset to Unsynchronized state
@@ -616,7 +615,7 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
     default:
       break;
   }
-  if (_status_handler) _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
+  if (_status_handler.is_valid()) _status_handler(status, payload_data, static_cast<uint16_t>(payload_length));
 }
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
@@ -728,7 +727,7 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
-  if (_command_handler) {
+  if (_command_handler.is_valid()) {
     _command_handler(*ctx.frame);
   } else {
     (void)sendFrame(rpc::StatusCode::STATUS_CMD_UNKNOWN);
@@ -744,16 +743,15 @@ void BridgeClass::_sendAck(uint16_t command_id) {
 
 void BridgeClass::_doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   (void)sendFrame(status_code, payload, length);
-  if (_status_handler) _status_handler(status_code, payload, length);
+  if (_status_handler.is_valid()) _status_handler(status_code, payload, length);
 }
 
-void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) {
+void BridgeClass::_emitStatus(rpc::StatusCode status_code, etl::string_view message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
-  if (message && *message) {
-    etl::string_view sv(message);
-    length = static_cast<uint16_t>(etl::min(sv.length(), rpc::MAX_PAYLOAD_SIZE));
-    payload = reinterpret_cast<const uint8_t*>(sv.data());
+  if (!message.empty()) {
+    length = static_cast<uint16_t>(etl::min(message.length(), rpc::MAX_PAYLOAD_SIZE));
+    payload = reinterpret_cast<const uint8_t*>(message.data());
   }
   _doEmitStatus(status_code, payload, length);
 }
@@ -986,7 +984,7 @@ void BridgeClass::_onAckTimeout() {
     if (!_fsm.isAwaitingAck()) return;
 
     if (_retry_count >= _ack_retry_limit) {
-      if (_status_handler) _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
+      if (_status_handler.is_valid()) _status_handler(rpc::StatusCode::STATUS_TIMEOUT, nullptr, 0);
       _fsm.timeout();  // Transition to Unsynchronized via FSM
       enterSafeState(); 
       return;

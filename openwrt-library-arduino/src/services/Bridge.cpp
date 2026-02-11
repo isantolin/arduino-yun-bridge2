@@ -240,7 +240,11 @@ void BridgeClass::process() {
   // During startup, drain the serial buffer to discard garbage
   // Timer will call _onStartupStabilized() when complete
   if (_startup_stabilizing) {
-    while (_stream.available() > 0) { _stream.read(); }
+    // [SIL-2] Bounded drain to ensure deterministic WCET
+    uint8_t drain_limit = 64; 
+    while (_stream.available() > 0 && drain_limit-- > 0) { 
+      _stream.read(); 
+    }
     // Continue to timer tick at the bottom of process()
   }
 

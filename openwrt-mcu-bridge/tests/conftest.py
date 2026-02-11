@@ -176,3 +176,16 @@ def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
 def socket_enabled() -> Iterator[None]:
     """Compat fixture so network tests work without HA plugins."""
     yield
+
+@pytest.fixture
+def real_config():
+    from mcubridge.config import settings
+    import msgspec
+    raw = settings.get_default_config()
+    raw["serial_shared_secret"] = b"abcd1234"
+    raw["serial_retry_timeout"] = 1.0
+    raw["serial_response_timeout"] = 2.0
+    raw["serial_handshake_fatal_failures"] = 15
+    raw["process_max_concurrent"] = 4
+    config = msgspec.convert(raw, settings.RuntimeConfig, strict=False)
+    return config

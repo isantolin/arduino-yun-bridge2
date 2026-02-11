@@ -5,12 +5,11 @@ from __future__ import annotations
 import io
 import os
 import sys
-import time
 import importlib.util
 from importlib.abc import Loader
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any, List
+from typing import Any
 
 import msgspec
 import pytest

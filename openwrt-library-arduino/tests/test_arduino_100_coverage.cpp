@@ -35,6 +35,8 @@ ProcessClass Process;
 
 namespace {
 
+static void process_run_async_trampoline(int16_t pid) { (void)pid; }
+
 class CaptureStream : public Stream {
 public:
     ByteBuffer<4096> tx;
@@ -61,43 +63,43 @@ void test_rpc_frame_gaps() {
     
     // [SIL-2] etl::expected API - Gap: parse with size too small for CRC
     uint8_t short_data[] = {0x01, 0x02};
-    auto result1 = parser.parse(short_data, sizeof(short_data));
+    auto result1 = parser.parse(etl::span<const uint8_t>(short_data, sizeof(short_data)));
     assert(!result1.has_value());
     assert(result1.error() == rpc::FrameError::MALFORMED);
 
     // Gap: parse with crc_start < sizeof(FrameHeader)
     uint8_t header_short[] = {0x02, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00}; // 8 bytes, header is 5, crc 4. 8-4 = 4 < 5.
-    auto result2 = parser.parse(header_short, sizeof(header_short));
+    auto result2 = parser.parse(etl::span<const uint8_t>(header_short, sizeof(header_short)));
     assert(!result2.has_value());
 
     // Gap: parse with invalid version
     uint8_t bad_version[] = {0xFF, 0x00, 0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
     uint32_t c = crc32_ieee(bad_version, 6);
     rpc::write_u32_be(&bad_version[6], c);
-    auto result3 = parser.parse(bad_version, 10);
+    auto result3 = parser.parse(etl::span<const uint8_t>(bad_version, 10));
     assert(!result3.has_value());
 
     // Gap: parse with payload_length > max_size
     uint8_t bad_len[] = {0x02, 0xFF, 0xFF, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00};
     c = crc32_ieee(bad_len, 5);
     rpc::write_u32_be(&bad_len[5], c);
-    auto result4 = parser.parse(bad_len, 9);
+    auto result4 = parser.parse(etl::span<const uint8_t>(bad_len, 9));
     assert(!result4.has_value());
 
     // Gap: parse with (sizeof(FrameHeader) + payload_length) != crc_start
     uint8_t len_mismatch[] = {0x02, 0x00, 0x05, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}; 
     c = crc32_ieee(len_mismatch, 6);
     rpc::write_u32_be(&len_mismatch[6], c);
-    auto result5 = parser.parse(len_mismatch, 10);
+    auto result5 = parser.parse(etl::span<const uint8_t>(len_mismatch, 10));
     assert(!result5.has_value());
 
     // Gap: build with payload_len > MAX_PAYLOAD_SIZE
     rpc::FrameBuilder builder;
     uint8_t out[rpc::MAX_RAW_FRAME_SIZE];
-    assert(builder.build(out, sizeof(out), 0x40, nullptr, rpc::MAX_PAYLOAD_SIZE + 1) == 0);
+    assert(builder.build(etl::span<uint8_t>(out), 0x40, etl::span<const uint8_t>((const uint8_t*)nullptr, rpc::MAX_PAYLOAD_SIZE + 1)) == 0);
 
     // Gap: build with buffer too small
-    assert(builder.build(out, 5, 0x40, nullptr, 0) == 0);
+    assert(builder.build(etl::span<uint8_t>(out, 5), 0x40, etl::span<const uint8_t>()) == 0);
 }
 
 // --- TARGET: Bridge.cpp Gaps ---
@@ -244,12 +246,12 @@ void test_console_extra_gaps() {
     ca.setBegun(true);
 
     // Gap: _push empty or 0 capacity
-    Console._push(nullptr, 0);
+    Console._push(etl::span<const uint8_t>());
     
     // Gap: _push when full
     while(!ca.isRxBufferFull()) ca.pushRxByte('Z');
     uint8_t data = 'X';
-    Console._push(&data, 1);
+    Console._push(etl::span<const uint8_t>(&data, 1));
 }
 
 // --- TARGET: DataStore.cpp Gaps ---
@@ -280,7 +282,7 @@ void test_datastore_extra_gaps() {
     DataStore.handleResponse(f);
 
     // Gap: handleResponse CMD_DATASTORE_GET_RESP without handler
-    DataStore.onDataStoreGetResponse(nullptr);
+    DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler());
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
     f.header.payload_length = 5;
     f.payload[0] = 2; // key len
@@ -318,13 +320,13 @@ void test_mailbox_extra_gaps() {
     Mailbox.send(large_msg);
 
     // Gap: handleResponse CMD_MAILBOX_READ_RESP without handler
-    Mailbox.onMailboxMessage(nullptr);
+    Mailbox.onMailboxMessage(MailboxClass::MailboxHandler());
     rpc::Frame f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
     Mailbox.handleResponse(f);
 
     // Gap: handleResponse CMD_MAILBOX_AVAILABLE_RESP without handler
-    Mailbox.onMailboxAvailableResponse(nullptr);
+    Mailbox.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler());
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
     Mailbox.handleResponse(f);
 }
@@ -356,7 +358,7 @@ void test_process_extra_gaps() {
     Process.poll(99);
 
     // Gap: handleResponse CMD_PROCESS_RUN_RESP without handler
-    Process.onProcessRunResponse(nullptr);
+    Process.onProcessRunResponse(ProcessClass::ProcessRunHandler());
     rpc::Frame f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
     f.header.payload_length = 5;
@@ -366,14 +368,14 @@ void test_process_extra_gaps() {
     Process.handleResponse(f);
 
     // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
-    Process.onProcessRunAsyncResponse([](int16_t pid){ (void)pid; });
+    Process.onProcessRunAsyncResponse(ProcessClass::ProcessRunAsyncHandler::create<process_run_async_trampoline>());
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
     f.header.payload_length = 2;
     rpc::write_u16_be(f.payload.data(), 123);
     Process.handleResponse(f);
 
     // Gap: handleResponse CMD_PROCESS_POLL_RESP without handler
-    Process.onProcessPollResponse(nullptr);
+    Process.onProcessPollResponse(ProcessClass::ProcessPollHandler());
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
     f.header.payload_length = 6;
     f.payload[0] = 0x30;
@@ -399,22 +401,22 @@ void test_rle_gaps() {
     uint8_t dst[64];
     
     // Gap: encode/decode null or 0
-    assert(rle::encode(nullptr, 1, dst, 10) == 0);
-    assert(rle::decode(nullptr, 1, dst, 10) == 0);
+    assert(rle::encode(etl::span<const uint8_t>(), etl::span<uint8_t>(dst, 10)) == 0);
+    assert(rle::decode(etl::span<const uint8_t>(), etl::span<uint8_t>(dst, 10)) == 0);
 
     // Gap: encode ESCAPE_BYTE cases
     uint8_t src_esc[3] = {rle::ESCAPE_BYTE, rle::ESCAPE_BYTE, rle::ESCAPE_BYTE};
-    assert(rle::encode(src_esc, 1, dst, 10) > 0); // Single escape
-    assert(rle::encode(src_esc, 2, dst, 10) > 0); // Double escape
-    assert(rle::encode(src_esc, 3, dst, 10) > 0); // Triple escape
+    assert(rle::encode(etl::span<const uint8_t>(src_esc, 1), etl::span<uint8_t>(dst, 10)) > 0); // Single escape
+    assert(rle::encode(etl::span<const uint8_t>(src_esc, 2), etl::span<uint8_t>(dst, 10)) > 0); // Double escape
+    assert(rle::encode(etl::span<const uint8_t>(src_esc, 3), etl::span<uint8_t>(dst, 10)) > 0); // Triple escape
 
     // Gap: encode/decode overflow
-    assert(rle::encode(src, 16, dst, 1) == 0);
+    assert(rle::encode(etl::span<const uint8_t>(src, 16), etl::span<uint8_t>(dst, 1)) == 0);
     uint8_t enc[10] = {rle::ESCAPE_BYTE, 0, 0x01};
-    assert(rle::decode(enc, 3, dst, 1) == 0);
+    assert(rle::decode(etl::span<const uint8_t>(enc, 3), etl::span<uint8_t>(dst, 1)) == 0);
 
     // Gap: should_compress with beneficial run
-    assert(rle::should_compress(src, 16));
+    assert(rle::should_compress(etl::span<const uint8_t>(src, 16)));
 }
 
 // --- TARGET: security.h Gaps ---

@@ -335,7 +335,7 @@ static bool parse_first_frame(const ByteBuffer<8192>& buffer, rpc::Frame& out_fr
             if (packet_idx > 0) {
                 size_t decoded_len = TestCOBS::decode(packet_buf, packet_idx, decoded_buf);
                 if (decoded_len > 0) {
-                    auto result = parser.parse(decoded_buf, decoded_len);
+                    auto result = parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));
                     if (result) {
                         out_frame = result.value();
                         return true;
@@ -538,7 +538,7 @@ void test_bridge_dedup_console_write_retry() {
 
         rpc::FrameBuilder builder;
 
-        size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), payload, sizeof(payload));
+        size_t raw_len = builder.build(etl::span<uint8_t>(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), etl::span<const uint8_t>(payload));
 
         
 
@@ -601,7 +601,7 @@ void test_bridge_dedup_window_edges() {
     uint8_t raw_frame[rpc::MAX_RAW_FRAME_SIZE];
     rpc::FrameBuilder builder;
     const uint8_t payload[] = {'x', 'y', 'z'};
-    size_t raw_len = builder.build(raw_frame, sizeof(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), payload, sizeof(payload));
+    size_t raw_len = builder.build(etl::span<uint8_t>(raw_frame), rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), etl::span<const uint8_t>(payload));
     
     // Extract calculated CRC from raw_frame
     frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
@@ -728,7 +728,7 @@ void test_bridge_ack_malformed_timeout_paths() {
     // Timeout path when retry limit is exceeded calls status handler.
     StatusCapture status;
     StatusCapture::instance = &status;
-    bridge.onStatus(status_handler_trampoline);
+    bridge.onStatus(BridgeClass::StatusHandler::create<status_handler_trampoline>());
 
     // Re-arm ACK state.
     stream.clear_tx();
@@ -1147,7 +1147,7 @@ void test_bridge_chunking() {
     TEST_ASSERT(end1 < stream.tx_buffer.len); // Must find delimiter
     
     size_t len1 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end1 - cursor, decoded);
-    auto result1 = parser.parse(decoded, len1);
+    auto result1 = parser.parse(etl::span<const uint8_t>(decoded, len1));
     TEST_ASSERT(result1.has_value());
     rpc::Frame f1 = result1.value();
     TEST_ASSERT_EQ_UINT(f1.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PROCESSED));
@@ -1165,7 +1165,7 @@ void test_bridge_chunking() {
     TEST_ASSERT(end2 < stream.tx_buffer.len);
     
     size_t len2 = TestCOBS::decode(&stream.tx_buffer.data[cursor], end2 - cursor, decoded);
-    auto result2 = parser.parse(decoded, len2);
+    auto result2 = parser.parse(etl::span<const uint8_t>(decoded, len2));
     TEST_ASSERT(result2.has_value());
     rpc::Frame f2 = result2.value();
     TEST_ASSERT_EQ_UINT(f2.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PROCESSED));

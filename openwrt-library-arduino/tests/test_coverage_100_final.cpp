@@ -398,29 +398,29 @@ void test_rle_decode_malformed() {
     
     // Test: RLE escape byte at end of stream (truncated)
     uint8_t malformed1[] = {0xFF};  // ESCAPE_BYTE with no following bytes
-    auto result1 = rle::decode(malformed1, sizeof(malformed1), dst, sizeof(dst));
+    auto result1 = rle::decode(etl::span<const uint8_t>(malformed1, sizeof(malformed1)), etl::span<uint8_t>(dst, sizeof(dst)));
     // Should return 0 due to truncated input
     
     // Test: RLE escape byte with count but no data byte
     uint8_t malformed2[] = {0xFF, 0x05};  // escape + count, missing data byte
-    auto result2 = rle::decode(malformed2, sizeof(malformed2), dst, sizeof(dst));
+    auto result2 = rle::decode(etl::span<const uint8_t>(malformed2, sizeof(malformed2)), etl::span<uint8_t>(dst, sizeof(dst)));
     (void)result1; (void)result2;
     
     // Test: Output buffer too small for decoded data
     uint8_t encoded[64];
     uint8_t src_run[] = {0x41, 0x41, 0x41, 0x41, 0x41};  // Run of 5 'A's
-    size_t enc_len = rle::encode(src_run, sizeof(src_run), encoded, sizeof(encoded));
+    size_t enc_len = rle::encode(etl::span<const uint8_t>(src_run, sizeof(src_run)), etl::span<uint8_t>(encoded, sizeof(encoded)));
     if (enc_len > 0) {
         // Decode to buffer too small
-        auto result3 = rle::decode(encoded, enc_len, dst, 2);
+        auto result3 = rle::decode(etl::span<const uint8_t>(encoded, enc_len), etl::span<uint8_t>(dst, 2));
         (void)result3;
     }
     
     // Test: Valid RLE encode/decode round-trip for coverage
     uint8_t src[] = {0x41, 0x41, 0x41, 0x41, 0x41, 0x42, 0x43};
-    size_t enc_result = rle::encode(src, sizeof(src), encoded, sizeof(encoded));
+    size_t enc_result = rle::encode(etl::span<const uint8_t>(src, sizeof(src)), etl::span<uint8_t>(encoded, sizeof(encoded)));
     if (enc_result > 0) {
-        auto dec_result = rle::decode(encoded, enc_result, dst, sizeof(dst));
+        auto dec_result = rle::decode(etl::span<const uint8_t>(encoded, enc_result), etl::span<uint8_t>(dst, sizeof(dst)));
         (void)dec_result;
     }
 }

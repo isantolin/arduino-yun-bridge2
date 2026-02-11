@@ -46,7 +46,7 @@ static void test_builder_roundtrip() {
   const uint8_t payload[] = {rpc::RPC_FRAME_DELIMITER, TEST_BYTE_01, rpc::RPC_UINT8_MASK, TEST_BYTE_02, rpc::RPC_FRAME_DELIMITER};
 
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, sizeof(raw), command_id, payload, sizeof(payload));
+  size_t raw_len = builder.build(etl::span<uint8_t>(raw), command_id, etl::span<const uint8_t>(payload));
   
   // Verificación de tamaño RAW (Header + Payload + CRC)
   TEST_ASSERT(raw_len == sizeof(FrameHeader) + sizeof(payload) + CRC_TRAILER_SIZE);
@@ -55,7 +55,7 @@ static void test_builder_roundtrip() {
   TEST_ASSERT(crc == crc32_ieee(raw, raw_len - CRC_TRAILER_SIZE));
 
   // [SIL-2] New etl::expected API
-  auto result = parser.parse(raw, raw_len);
+  auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   
   TEST_ASSERT(result.has_value());
   Frame frame = result.value();
@@ -71,7 +71,7 @@ static void test_builder_payload_limit() {
   uint8_t payload[MAX_PAYLOAD_SIZE + 1];
   test_memfill(payload, sizeof(payload), TEST_BYTE_01);
   uint8_t buffer[rpc::MAX_RAW_FRAME_SIZE] = {0};
-  size_t len = builder.build(buffer, sizeof(buffer), TEST_CMD_ID, payload, sizeof(payload));
+  size_t len = builder.build(etl::span<uint8_t>(buffer), TEST_CMD_ID, etl::span<const uint8_t>(payload));
   TEST_ASSERT(len == 0);
 }
 
@@ -83,10 +83,10 @@ static void test_parser_incomplete_packets() {
   etl::fill_n(raw, sizeof(raw), uint8_t{0});
 
   // [SIL-2] etl::expected API - parse returns error for incomplete packets
-  auto result1 = parser.parse(raw, 4); // Menor que header
+  auto result1 = parser.parse(etl::span<const uint8_t>(raw, 4)); // Menor que header
   TEST_ASSERT(!result1.has_value());
   
-  auto result2 = parser.parse(raw, sizeof(FrameHeader)); // Header sin CRC
+  auto result2 = parser.parse(etl::span<const uint8_t>(raw, sizeof(FrameHeader))); // Header sin CRC
   TEST_ASSERT(!result2.has_value());
 }
 
@@ -97,13 +97,13 @@ static void test_parser_crc_failure() {
 
   const uint8_t payload[] = {TEST_BYTE_10, TEST_BYTE_20, TEST_BYTE_30};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_CRC_FAILURE, payload, sizeof(payload));
+  size_t raw_len = builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID_CRC_FAILURE, etl::span<const uint8_t>(payload));
   TEST_ASSERT(raw_len > 0);
 
   raw[sizeof(FrameHeader)] ^= rpc::RPC_UINT8_MASK;  // Corromper payload
 
   // [SIL-2] etl::expected API
-  auto result = parser.parse(raw, raw_len);
+  auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::CRC_MISMATCH);
 }
@@ -115,7 +115,7 @@ static void test_parser_header_validation() {
 
   const uint8_t payload[] = {TEST_PAYLOAD_BYTE};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE] = {0};
-  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID_HEADER_VALIDATION, payload, sizeof(payload));
+  size_t raw_len = builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID_HEADER_VALIDATION, etl::span<const uint8_t>(payload));
   TEST_ASSERT(raw_len > 0);
 
   // Romper versión del protocolo
@@ -126,7 +126,7 @@ static void test_parser_header_validation() {
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
 
   // [SIL-2] etl::expected API
-  auto result = parser.parse(raw, raw_len);
+  auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::MALFORMED);
 }
@@ -139,7 +139,7 @@ static void test_parser_overflow_guard() {
   etl::fill_n(huge_buffer, sizeof(huge_buffer), uint8_t{0});
 
   // [SIL-2] etl::expected API - Intentar parsear un buffer que excede el máximo
-  auto result = parser.parse(huge_buffer, sizeof(huge_buffer));
+  auto result = parser.parse(etl::span<const uint8_t>(huge_buffer, sizeof(huge_buffer)));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::MALFORMED);
 }
@@ -151,7 +151,7 @@ static void test_parser_header_logical_validation_mismatch() {
   
   uint8_t payload[] = {0x11, 0x22};
   uint8_t raw[rpc::MAX_RAW_FRAME_SIZE];
-  size_t raw_len = builder.build(raw, sizeof(raw), TEST_CMD_ID, payload, sizeof(payload));
+  size_t raw_len = builder.build(etl::span<uint8_t>(raw), TEST_CMD_ID, etl::span<const uint8_t>(payload));
   
   // raw structure: [Ver][LenH][LenL][CmdH][CmdL][P1][P2][CRC]...
   // Payload real es 2 bytes. Cambiamos el header para decir que son 3.
@@ -162,7 +162,7 @@ static void test_parser_header_logical_validation_mismatch() {
   write_u32_be(raw + raw_len - CRC_TRAILER_SIZE, new_crc);
   
   // [SIL-2] etl::expected API - debe fallar porque header dice length=3 pero buffer tiene 2
-  auto result = parser.parse(raw, raw_len);
+  auto result = parser.parse(etl::span<const uint8_t>(raw, raw_len));
   TEST_ASSERT(!result.has_value());
   TEST_ASSERT(result.error() == FrameError::MALFORMED);
 }
@@ -173,7 +173,7 @@ static void test_builder_buffer_too_small() {
   uint8_t payload[] = {0x11, 0x22};
   uint8_t small_buf[5]; // Muy pequeño para Header (5) + Payload (2) + CRC (4)
   
-  size_t len = builder.build(small_buf, sizeof(small_buf), TEST_CMD_ID, payload, sizeof(payload));
+  size_t len = builder.build(etl::span<uint8_t>(small_buf), TEST_CMD_ID, etl::span<const uint8_t>(payload));
   TEST_ASSERT(len == 0);
 }
 

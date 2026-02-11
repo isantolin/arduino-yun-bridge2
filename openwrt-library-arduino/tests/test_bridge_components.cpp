@@ -275,7 +275,7 @@ static FrameList parse_frames(const uint8_t* bytes, size_t len) {
         if (decoded_len > 0) {
             // Parse Frame using etl::expected API
             if (out.count < (sizeof(out.frames) / sizeof(out.frames[0]))) {
-                auto result = parser.parse(decoded_buf, decoded_len);
+                auto result = parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));
                 if (result.has_value()) {
                     out.frames[out.count++] = result.value();
                 } else {
@@ -546,7 +546,7 @@ static void test_datastore_get_response_handler() {
 
   DatastoreGetState state;
   DatastoreGetState::instance = &state;
-  DataStore.onDataStoreGetResponse(datastore_get_trampoline);
+  DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<datastore_get_trampoline>());
   auto dsa = bridge::test::DataStoreTestAccessor::create(DataStore);
   TEST_ASSERT(dsa.trackPendingKey("k"));
 
@@ -571,7 +571,7 @@ static void test_datastore_get_response_handler() {
 static void test_mailbox_read_response_handler() {
   MailboxState state;
   MailboxState::instance = &state;
-  Mailbox.onMailboxMessage(mailbox_trampoline);
+  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<mailbox_trampoline>());
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
@@ -592,7 +592,7 @@ static void test_mailbox_read_response_handler() {
 static void test_process_poll_response_handler() {
   ProcessPollState state;
   ProcessPollState::instance = &state;
-  Process.onProcessPollResponse(process_poll_trampoline);
+  Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<process_poll_trampoline>());
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
@@ -660,7 +660,7 @@ static void test_console_read_sends_xon_success_and_failure() {
   auto ca = bridge::test::ConsoleTestAccessor::create(Console);
   ca.setXoffSent(true);
   const uint8_t b = 'z';
-  Console._push(&b, 1);
+  Console._push(etl::span<const uint8_t>(&b, 1));
   TEST_ASSERT(Console.read() == 'z');
   TEST_ASSERT(!ca.getXoffSent());
   TEST_ASSERT(stream.tx_buffer.len > 0);
@@ -758,7 +758,7 @@ static void test_process_poll_queue_full_and_pop_empty() {
 static void test_process_run_response_length_guards() {
   ProcessRunState state;
   ProcessRunState::instance = &state;
-  Process.onProcessRunResponse(process_run_trampoline);
+  Process.onProcessRunResponse(ProcessClass::ProcessRunHandler::create<process_run_trampoline>());
 
   // Too short: should not call.
   rpc::Frame f_short{};
@@ -816,7 +816,7 @@ static void test_mailbox_request_frames_and_available_handler() {
   // Available response invokes handler.
   MailboxAvailableState st;
   MailboxAvailableState::instance = &st;
-  Mailbox.onMailboxAvailableResponse(mailbox_available_trampoline);
+  Mailbox.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler::create<mailbox_available_trampoline>());
 
       rpc::Frame f{};
       f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);

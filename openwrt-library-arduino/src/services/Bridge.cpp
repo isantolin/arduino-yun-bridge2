@@ -453,9 +453,9 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         if (payload_data) {
           etl::copy_n(payload_data, nonce_length, buffer.begin());
           if (has_secret) {
-            uint8_t tag[kHandshakeTagSize];
-            _computeHandshakeTag(payload_data, nonce_length, tag);
-            etl::copy_n(tag, kHandshakeTagSize, buffer.begin() + nonce_length);
+            etl::array<uint8_t, kHandshakeTagSize> tag;
+            _computeHandshakeTag(payload_data, nonce_length, tag.data());
+            etl::copy_n(tag.begin(), kHandshakeTagSize, buffer.begin() + nonce_length);
           }
           (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, buffer.data(), response_length);
           // [SIL-2] Handshake complete -> Transition to Idle via FSM
@@ -1100,9 +1100,9 @@ void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, u
 
   // [MIL-SPEC] Use HKDF derived key for handshake authentication.
   // [RAM OPT] Allocate scratch buffer on stack (key + digest)
-  uint8_t key_and_digest[BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE];
-  uint8_t* handshake_key = key_and_digest;                        // BRIDGE_HKDF_KEY_LENGTH bytes
-  uint8_t* digest = key_and_digest + BRIDGE_HKDF_KEY_LENGTH;      // BRIDGE_HKDF_KEY_LENGTH bytes
+  etl::array<uint8_t, BRIDGE_KEY_AND_DIGEST_BUFFER_SIZE> key_and_digest;
+  uint8_t* handshake_key = key_and_digest.data();                        // BRIDGE_HKDF_KEY_LENGTH bytes
+  uint8_t* digest = key_and_digest.data() + BRIDGE_HKDF_KEY_LENGTH;      // BRIDGE_HKDF_KEY_LENGTH bytes
 
   rpc::security::hkdf_sha256(
       _shared_secret.data(), _shared_secret.size(),

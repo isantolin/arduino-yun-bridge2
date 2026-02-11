@@ -533,12 +533,12 @@ class FileSystemClass {
       return;
     }
 
-    uint8_t header[rpc::RPC_MAX_FILEPATH_LENGTH + 1];
+    etl::array<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 1> header;
     header[0] = static_cast<uint8_t>(path.length());
-    etl::copy_n(path.data(), path.length(), header + 1);
+    etl::copy_n(path.data(), path.length(), header.begin() + 1);
 
     Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 
-                           header, path.length() + 1, 
+                           header.data(), path.length() + 1, 
                            data, length);
   }
   

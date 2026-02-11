@@ -450,7 +450,7 @@ class MailboxClass {
   using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
 
-  MailboxClass() : _mailbox_handler(nullptr), _mailbox_available_handler(nullptr) {}
+  MailboxClass() : _mailbox_handler(), _mailbox_available_handler() {}
   
   // [SIL-2] Inlined for optimization (-Os)
   inline void send(etl::string_view message) {
@@ -520,7 +520,7 @@ class FileSystemClass {
  public:
   using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
 
-  FileSystemClass() : _file_system_read_handler(nullptr) {}
+  FileSystemClass() : _file_system_read_handler() {}
 
   inline void write(etl::string_view filePath, const uint8_t* data, size_t length) {
     if (filePath.empty() || !data) return;

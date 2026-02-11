@@ -14,7 +14,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import sys
 import time
 import msgspec
 from wsgiref.handlers import CGIHandler

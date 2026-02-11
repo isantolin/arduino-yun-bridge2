@@ -1,6 +1,7 @@
 "Final coverage tests to reach 100%."
 
 from __future__ import annotations
+from mcubridge.util import mqtt_helper
 
 import asyncio
 import logging
@@ -249,7 +250,6 @@ async def test_spool_gaps(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_transport_mqtt_gaps(runtime_state: RuntimeState, tmp_path: Path):
-    from mcubridge.transport import mqtt
     # Ensure config has real attributes, not just MagicMock
     mock_conf = MagicMock(spec=settings.RuntimeConfig)
     mock_conf.tls_enabled = True

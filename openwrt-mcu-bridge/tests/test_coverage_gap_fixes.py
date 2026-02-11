@@ -1,33 +1,37 @@
-"Tests to close coverage gaps in the mcubridge ecosystem."
-
-import logging
-import asyncio
-import time
-import sys
-import errno
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
 from types import SimpleNamespace
-import pytest
 from unittest import mock
+from unittest.mock import MagicMock, patch, AsyncMock
+import asyncio
+import errno
+import logging
+import sys
+import time
+
+from construct import ConstructError
 import aiomqtt
+import pytest
 import tenacity
-from mcubridge.security import security
-from mcubridge.config import common
+
 from mcubridge import metrics, daemon
-from mcubridge.protocol import topics
-from mcubridge.transport import mqtt
-from mcubridge.state import status
-from mcubridge.services import dispatcher
-from mcubridge.state import context
+from mcubridge.config import common
 from mcubridge.mqtt import spool
-from mcubridge.services import handshake
+from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol import protocol
+from mcubridge.protocol import topics
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.security import security
+from mcubridge.services import dispatcher
+from mcubridge.services import handshake
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
-from mcubridge.mqtt.messages import QueuedPublish
-from construct import ConstructError
+from mcubridge.state import context
+from mcubridge.state import status
+from mcubridge.transport import mqtt
+from mcubridge.util import mqtt_helper
+
+"Tests to close coverage gaps in the mcubridge ecosystem."
+
 
 
 # --- Helpers ---

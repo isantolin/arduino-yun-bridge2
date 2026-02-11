@@ -133,7 +133,11 @@ def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:
         return json_response(start_response, "400 Bad Request", {"status": "error", "message": "Invalid JSON body."})
 
     if state not in ("ON", "OFF"):
-        return json_response(start_response, "400 Bad Request", {"status": "error", "message": 'State must be "ON" or "OFF".'})
+        return json_response(
+            start_response, 
+            "400 Bad Request", 
+            {"status": "error", "message": "Invalid state"}
+        )
 
     topic = pin_topic(config.mqtt_topic, pin, "")
     payload = "1" if state == "ON" else "0"

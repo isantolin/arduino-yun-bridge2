@@ -1,21 +1,26 @@
-"""Regression tests for the pin_rest_cgi MQTT helper."""
-
 from __future__ import annotations
 
-import asyncio
-import importlib.util
-import io
-import msgspec
-import sys
 from importlib.abc import Loader
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
+import asyncio
+import importlib.util
+import io
+import os
+import sys
 
+import msgspec
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
+
+"""Regression tests for the pin_rest_cgi MQTT helper."""
+
+
+
+
 
 
 def _load_pin_rest_cgi() -> ModuleType:
@@ -131,8 +136,8 @@ def test_publish_safe_configures_tls(
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload="1",
         config=runtime_config,
-        
-        
+
+
     )
 
     assert len(captured_clients) == 1
@@ -193,9 +198,9 @@ def test_publish_safe_times_out(
             topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/2",
             payload="0",
             config=runtime_config,
-            
-            
-            
+
+
+
         )
 
 

@@ -27,7 +27,7 @@ async def test_mqtt_internal_tls_setup_branches():
     # Accedemos a la función privada via import directo
     from mcubridge.util.mqtt_helper import configure_tls_context
 
-    assert _configure_tls(mock_cfg) is None
+    assert configure_tls_context(mock_cfg) is None
 
     # Caso 2: TLS habilitado sin cafile (usa trust store)
     mock_cfg.tls_enabled = True
@@ -41,7 +41,7 @@ async def test_mqtt_internal_tls_setup_branches():
 
     with patch("mcubridge.transport.mqtt.ssl.create_default_context") as mk_ctx:
         mk_ctx.return_value = fake_ctx
-        ctx = _configure_tls(mock_cfg)
+        ctx = configure_tls_context(mock_cfg)
         assert ctx is fake_ctx
         assert fake_ctx.check_hostname is True
 
@@ -51,7 +51,7 @@ async def test_mqtt_internal_tls_setup_branches():
     with patch("mcubridge.transport.mqtt.Path") as MockPath:
         MockPath.return_value.exists.return_value = False
         with pytest.raises(RuntimeError, match="MQTT TLS CA file missing"):
-            _configure_tls(mock_cfg)
+            configure_tls_context(mock_cfg)
 
     # Caso 4: mqtt_tls_insecure desactiva check_hostname
     mock_cfg.mqtt_cafile = None
@@ -62,7 +62,7 @@ async def test_mqtt_internal_tls_setup_branches():
 
     with patch("mcubridge.transport.mqtt.ssl.create_default_context") as mk_ctx2:
         mk_ctx2.return_value = fake_ctx2
-        ctx2 = _configure_tls(mock_cfg)
+        ctx2 = configure_tls_context(mock_cfg)
         assert ctx2 is fake_ctx2
         assert fake_ctx2.check_hostname is False
 

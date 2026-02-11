@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 from collections.abc import Iterable
+import logging
+
 """General-purpose utilities for McuBridge."""
 
-
-import logging
 
 __all__ = [
     "parse_bool",

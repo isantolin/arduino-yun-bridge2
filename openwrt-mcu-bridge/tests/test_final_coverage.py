@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 import pytest
 import msgspec
-from aiomqtt.message import Message
 
 from mcubridge.config import logging as logging_config
 from mcubridge.config import settings
@@ -18,10 +16,8 @@ from mcubridge.services.datastore import DatastoreComponent, DatastoreAction
 from mcubridge.services.file import FileComponent, FileAction
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.services.pin import PinComponent
-from mcubridge.services.process import ProcessComponent
-from mcubridge.protocol.protocol import Command, Status
-from mcubridge.state.context import RuntimeState, McuCapabilities
-from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol.protocol import Command
+from mcubridge.state.context import RuntimeState
 from mcubridge.protocol.topics import Topic
 from mcubridge.util import chunk_bytes
 
@@ -106,14 +102,14 @@ async def test_datastore_component_gaps(runtime_state: RuntimeState, real_config
     ctx.publish = AsyncMock(return_value=True)
     ctx.enqueue_mqtt = AsyncMock(return_value=True)
     comp = DatastoreComponent(real_config, runtime_state, ctx)
-    
+
     # Truly invalid payload for Put
-    payload = b"\x01" 
+    payload = b"\x01"
     await comp.handle_put(payload) # Validate call
-    
+
     await comp.handle_get_request(b"")
     await comp.handle_get_request(b"\x05k")
-    
+
     runtime_state.datastore["big"] = "a" * 300
     await comp.handle_get_request(bytes([3]) + b"big")
     await comp.handle_mqtt(DatastoreAction.GET, [], b"", "")
@@ -129,17 +125,17 @@ async def test_file_component_gaps(runtime_state: RuntimeState, real_config):
     ctx.publish = AsyncMock(return_value=True)
     ctx.enqueue_mqtt = AsyncMock(return_value=True)
     comp = FileComponent(real_config, runtime_state, ctx)
-    
+
     await comp.handle_remove(b"")
     await comp.handle_remove(b"\x05f")
-    
+
     with patch.object(comp, "_perform_file_operation", return_value=(False, None, "error")):
         await comp.handle_mqtt(FileAction.READ, ["file.txt"], b"")
-    
+
     assert comp._normalise_filename("..") is None
     with patch("pathlib.Path.mkdir", side_effect=OSError("perm")):
         assert comp._get_base_dir() is None
-    
+
     runtime_state.file_write_max_bytes = 10
     res = await comp._write_with_quota(Path("/tmp/f"), b"a" * 20)
     assert res[0] is False
@@ -164,14 +160,14 @@ async def test_pin_component_gaps(runtime_state: RuntimeState, real_config):
     ctx.publish = AsyncMock(return_value=True)
     ctx.enqueue_mqtt = AsyncMock(return_value=True)
     comp = PinComponent(real_config, runtime_state, ctx)
-    
+
     await comp.handle_unexpected_mcu_request(Command.CMD_ANALOG_READ, b"")
     await comp.handle_analog_read_resp(b"a")
     await comp.handle_analog_read_resp(b"ab")
-    
+
     await comp.handle_mqtt("d", ["br", "d"], "1")
     ctx.send_frame = AsyncMock(return_value=False)
     await comp._handle_read_command(Topic.DIGITAL, 3)
-    
+
     assert comp._parse_pin_identifier("invalid") == -1
     assert comp._parse_pin_value(Topic.DIGITAL, "abc") is None

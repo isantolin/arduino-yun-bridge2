@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""CGI helper that toggles digital pins via MQTT using paho-mqtt.
+"""
+Ayudante CGI que conmuta pines digitales vía MQTT usando paho-mqtt.
 
-Refactored for OpenWrt 25.12 / Python 3.13:
-- Replaced deprecated 'cgi' module with standard 'os.environ' parsing.
-- Replaced manual retry loops with 'tenacity' library.
-- Strict typing and logging.
+Refactorizado para OpenWrt 25.12 / Python 3.13:
+- Reemplaza el módulo obsoleto 'cgi' por parsing estándar de 'os.environ'.
+- Reemplaza bucles de reintento manuales con la librería 'tenacity'.
+- Adopta el estándar WSGI vía 'wsgiref' para eliminar la gestión manual de HTTP.
+- Tipado estricto y logging centralizado.
 """
 
 from __future__ import annotations
@@ -15,7 +17,8 @@ import re
 import sys
 import time
 import msgspec
-from typing import Any
+from wsgiref.handlers import CGIHandler
+from typing import Any, List
 
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
@@ -31,6 +34,7 @@ logger = logging.getLogger("mcubridge.pin_rest")
 
 
 def _configure_fallback_logging() -> None:
+    """Configura un logging básico si falla la carga de configuración."""
     if logging.getLogger().handlers:
         return
     logging.basicConfig(
@@ -53,7 +57,7 @@ def _safe_float(value: object, default: float) -> float:
         return default
 
 
-# Load defaults from UCI once at module level
+# Cargar valores por defecto desde UCI una vez a nivel de módulo
 _UCI = get_uci_config()
 DEFAULT_RETRIES = max(1, _safe_int(_UCI.get("pin_mqtt_retries"), 3))
 DEFAULT_PUBLISH_TIMEOUT = max(0.0, _safe_float(_UCI.get("pin_mqtt_timeout"), 4.0))
@@ -61,6 +65,7 @@ DEFAULT_BACKOFF_BASE = max(0.0, _safe_float(_UCI.get("pin_mqtt_backoff"), 0.5))
 
 
 def _configure_tls(client: Any, config: RuntimeConfig) -> None:
+    """Aplica configuración TLS al cliente MQTT si está habilitada."""
     if not getattr(config, "mqtt_tls", False):
         return
 
@@ -96,10 +101,10 @@ def _configure_tls(client: Any, config: RuntimeConfig) -> None:
     reraise=True,
 )
 def publish_safe(topic: str, payload: str, config: RuntimeConfig) -> None:
-    """Publish an MQTT message with retry semantics managed by Tenacity.
+    """Publica un mensaje MQTT con semántica de reintento gestionada por Tenacity.
     
-    Creates a fresh connection per attempt to ensure recovery from broken
-    socket states.
+    Crea una conexión nueva por intento para asegurar recuperación de estados
+    de socket rotos.
     """
     client = Client(
         client_id=f"mcubridge_cgi_{time.time()}",
@@ -124,7 +129,7 @@ def publish_safe(topic: str, payload: str, config: RuntimeConfig) -> None:
             
     except Exception as exc:
         logger.warning("Publish attempt failed: %s", exc)
-        raise  # Trigger Tenacity retry
+        raise
     finally:
         try:
             client.loop_stop()
@@ -133,120 +138,100 @@ def publish_safe(topic: str, payload: str, config: RuntimeConfig) -> None:
             pass
 
 
-def get_pin_from_path() -> str | None:
-    path = os.environ.get("PATH_INFO", "")
+def get_pin_from_path(environ: dict[str, Any]) -> str | None:
+    """Extrae el número de pin del PATH_INFO (ej. /pin/13)."""
+    path = environ.get("PATH_INFO", "")
     match = re.match(r"/pin/(\d+)", path)
     return match.group(1) if match else None
 
 
-def send_response(status_code: int, data: dict[str, Any]) -> None:
-    sys.stdout.write(f"Status: {status_code}\n")
-    sys.stdout.write("Content-Type: application/json\n\n")
-    sys.stdout.write(msgspec.json.encode(data).decode("utf-8"))
-    sys.stdout.write("\n")
-    sys.stdout.flush()
+def json_response(start_response: Any, status: str, data: dict[str, Any]) -> List[bytes]:
+    """Helper para enviar una respuesta JSON vía WSGI."""
+    response_body = msgspec.json.encode(data)
+    headers = [
+        ("Content-Type", "application/json"),
+        ("Content-Length", str(len(response_body))),
+    ]
+    start_response(status, headers)
+    return [response_body]
 
 
-def main() -> None:
+def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:
+    """Punto de Entrada de la Aplicación WSGI Estándar."""
     try:
         config = load_runtime_config()
         configure_logging(config)
     except Exception as exc:
         _configure_fallback_logging()
         logger.exception("Failed to load runtime configuration")
-        send_response(
-            500,
-            {
-                "status": "error",
-                "message": f"Configuration error: {exc}",
-            },
-        )
-        return
+        return json_response(start_response, "500 Internal Server Error", {
+            "status": "error",
+            "message": f"Configuration error: {exc}",
+        })
 
-    method = os.environ.get("REQUEST_METHOD", "GET").upper()
-    pin = get_pin_from_path()
+    method = environ.get("REQUEST_METHOD", "GET").upper()
+    pin = get_pin_from_path(environ)
     logger.info("REST call: method=%s pin=%s", method, pin)
 
     if not pin or not pin.isdigit():
-        send_response(
-            400,
-            {
-                "status": "error",
-                "message": "Pin must be specified in the URL as /pin/<N>.",
-            },
-        )
-        return
+        return json_response(start_response, "400 Bad Request", {
+            "status": "error",
+            "message": "Pin must be specified in the URL as /pin/<N>.",
+        })
 
     if method != "POST":
-        send_response(
-            405,
-            {
-                "status": "error",
-                "message": ("Only POST is supported. Subscribe via MQTT for state."),
-            },
-        )
-        return
+        return json_response(start_response, "405 Method Not Allowed", {
+            "status": "error",
+            "message": "Only POST is supported. Subscribe via MQTT for state.",
+        })
 
     try:
-        content_length_raw = os.environ.get("CONTENT_LENGTH", "0")
+        content_length_raw = environ.get("CONTENT_LENGTH", "0")
         try:
             content_length = int(content_length_raw)
         except (TypeError, ValueError):
             content_length = 0
 
+        body = b""
         if content_length > 0:
-            body = sys.stdin.read(content_length)
-            # Handle potential buffering issues in some CGI environments
-            if len(body) < content_length:
-                body += sys.stdin.read()
-        else:
-            body = sys.stdin.read()
+            stream = environ.get("wsgi.input")
+            if stream:
+                body = stream.read(content_length)
 
         data: dict[str, Any] = msgspec.json.decode(body) if body else {}
         state = str(data.get("state", "")).upper()
     except (ValueError, msgspec.DecodeError):
         logger.exception("POST body parse error")
-        send_response(
-            400,
-            {"status": "error", "message": "Invalid JSON body."},
-        )
-        return
+        return json_response(start_response, "400 Bad Request", {
+            "status": "error", "message": "Invalid JSON body."
+        })
 
     if state not in ("ON", "OFF"):
-        send_response(
-            400,
-            {
-                "status": "error",
-                "message": 'State must be "ON" or "OFF".',
-            },
-        )
-        return
+        return json_response(start_response, "400 Bad Request", {
+            "status": "error",
+            "message": 'State must be "ON" or "OFF".',
+        })
 
     topic = f"{config.mqtt_topic or protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/{pin}"
     payload = "1" if state == "ON" else "0"
 
     try:
         publish_safe(topic, payload, config)
-        send_response(
-            200,
-            {
-                "status": "ok",
-                "pin": int(pin),
-                "state": state,
-                "message": f"Command to turn pin {pin} {state} sent via MQTT.",
-            },
-        )
+        return json_response(start_response, "200 OK", {
+            "status": "ok",
+            "pin": int(pin),
+            "state": state,
+            "message": f"Command to turn pin {pin} {state} sent via MQTT.",
+        })
     except Exception as exc:
-        # Catch-all for final failure after retries
         logger.error("MQTT publish operation failed for pin %s after retries: %s", pin, exc)
-        send_response(
-            500,
-            {
-                "status": "error",
-                "message": f"Failed to send command for pin {pin}: {exc}",
-            },
-        )
+        return json_response(start_response, "500 Internal Server Error", {
+            "status": "error",
+            "message": f"Failed to send command for pin {pin}: {exc}",
+        })
 
 
 if __name__ == "__main__":
-    main()
+    # WSGI Ref CGI Handler hace este script compatible con servidores CGI estándar
+    # como uhttpd en OpenWrt, manteniendo la lógica limpia como una app WSGI.
+    CGIHandler().run(application)

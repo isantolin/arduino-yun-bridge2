@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "etl/algorithm.h"
+#include "etl/span.h"
 
 /**
  * RLE (Run-Length Encoding) implementation for MCU Bridge protocol.
@@ -54,29 +55,28 @@ constexpr size_t max_encoded_size(size_t src_len) {
 /**
  * Encode data using RLE.
  * 
- * @param src_buf  Source buffer with raw data
- * @param src_len  Length of source data
- * @param dst_buf  Destination buffer (must be at least src_len bytes, 
- *                 ideally max_encoded_size(src_len) for safety)
- * @param dst_max  Maximum size of destination buffer
- * @return         Length of encoded data, or 0 on error (buffer overflow)
+ * @param src  Source buffer with raw data
+ * @param dst  Destination buffer (must be at least src.size() bytes, 
+ *             ideally max_encoded_size(src.size()) for safety)
+ * @return     Length of encoded data, or 0 on error (buffer overflow)
  */
-inline size_t encode(const uint8_t* src_buf, size_t src_len, 
-                     uint8_t* dst_buf, size_t dst_max) {
-  if (!src_buf || !dst_buf || src_len == 0 || dst_max == 0) {
+inline size_t encode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
+  if (src.empty() || dst.empty()) {
     return 0;
   }
 
   size_t src_pos = 0;
   size_t dst_pos = 0;
+  const size_t src_len = src.size();
+  const size_t dst_max = dst.size();
 
   while (src_pos < src_len) {
-    uint8_t current = src_buf[src_pos];
+    uint8_t current = src[src_pos];
     
     // Count consecutive identical bytes
     size_t run_len = 1;
     while (src_pos + run_len < src_len && 
-           src_buf[src_pos + run_len] == current &&
+           src[src_pos + run_len] == current &&
            run_len < MAX_RUN_LENGTH) {
       run_len++;
     }
@@ -84,9 +84,9 @@ inline size_t encode(const uint8_t* src_buf, size_t src_len,
     if (run_len >= MIN_RUN_LENGTH) {
       // Encode as run: ESCAPE, count-2, byte
       if (dst_pos + 3 > dst_max) return 0;  // Buffer overflow
-      dst_buf[dst_pos++] = ESCAPE_BYTE;
-      dst_buf[dst_pos++] = static_cast<uint8_t>(run_len - 2);
-      dst_buf[dst_pos++] = current;
+      dst[dst_pos++] = ESCAPE_BYTE;
+      dst[dst_pos++] = static_cast<uint8_t>(run_len - 2);
+      dst[dst_pos++] = current;
       src_pos += run_len;
     } else if (current == ESCAPE_BYTE) {
       // Escape byte(s) but not enough for MIN_RUN_LENGTH
@@ -95,18 +95,18 @@ inline size_t encode(const uint8_t* src_buf, size_t src_len,
       // - 2 0xFF: ESCAPE, 0, 0xFF
       // - 3 0xFF: ESCAPE, 1, 0xFF
       if (dst_pos + 3 > dst_max) return 0;
-      dst_buf[dst_pos++] = ESCAPE_BYTE;
+      dst[dst_pos++] = ESCAPE_BYTE;
       if (run_len == 1) {
-        dst_buf[dst_pos++] = 255;  // Special: exactly 1 byte
+        dst[dst_pos++] = 255;  // Special: exactly 1 byte
       } else {
-        dst_buf[dst_pos++] = static_cast<uint8_t>(run_len - 2);
+        dst[dst_pos++] = static_cast<uint8_t>(run_len - 2);
       }
-      dst_buf[dst_pos++] = ESCAPE_BYTE;
+      dst[dst_pos++] = ESCAPE_BYTE;
       src_pos += run_len;
     } else {
       // Literal byte
       if (dst_pos + 1 > dst_max) return 0;
-      dst_buf[dst_pos++] = current;
+      dst[dst_pos++] = current;
       src_pos++;
     }
   }
@@ -117,30 +117,29 @@ inline size_t encode(const uint8_t* src_buf, size_t src_len,
 /**
  * Decode RLE-encoded data.
  * 
- * @param src_buf  Source buffer with RLE-encoded data
- * @param src_len  Length of encoded data
- * @param dst_buf  Destination buffer for decoded data
- * @param dst_max  Maximum size of destination buffer
- * @return         Length of decoded data, or 0 on error (malformed or overflow)
+ * @param src  Source buffer with RLE-encoded data
+ * @param dst  Destination buffer for decoded data
+ * @return     Length of decoded data, or 0 on error (malformed or overflow)
  */
-inline size_t decode(const uint8_t* src_buf, size_t src_len,
-                     uint8_t* dst_buf, size_t dst_max) {
-  if (!src_buf || !dst_buf || src_len == 0 || dst_max == 0) {
+inline size_t decode(etl::span<const uint8_t> src, etl::span<uint8_t> dst) {
+  if (src.empty() || dst.empty()) {
     return 0;
   }
 
   size_t src_pos = 0;
   size_t dst_pos = 0;
+  const size_t src_len = src.size();
+  const size_t dst_max = dst.size();
 
   while (src_pos < src_len) {
-    uint8_t current = src_buf[src_pos++];
+    uint8_t current = src[src_pos++];
 
     if (current == ESCAPE_BYTE) {
       // Encoded run: need at least 2 more bytes
       if (src_pos + 2 > src_len) return 0;  // Malformed
       
-      uint8_t count_minus_2 = src_buf[src_pos++];
-      uint8_t byte_val = src_buf[src_pos++];
+      uint8_t count_minus_2 = src[src_pos++];
+      uint8_t byte_val = src[src_pos++];
       
       // Special case: 255 means exactly 1 byte (for single 0xFF)
       size_t run_len;
@@ -152,12 +151,12 @@ inline size_t decode(const uint8_t* src_buf, size_t src_len,
       
       if (dst_pos + run_len > dst_max) return 0;  // Overflow
       
-      etl::fill_n(dst_buf + dst_pos, run_len, byte_val);
+      etl::fill_n(dst.begin() + dst_pos, run_len, byte_val);
       dst_pos += run_len;
     } else {
       // Literal byte
       if (dst_pos + 1 > dst_max) return 0;
-      dst_buf[dst_pos++] = current;
+      dst[dst_pos++] = current;
     }
   }
 
@@ -176,19 +175,19 @@ constexpr size_t MIN_COMPRESS_SAVINGS = 4;
  * Quick heuristic: count potential runs without full encoding.
  * Returns true if encoding is likely to save space.
  * 
- * @param src_buf  Source buffer to analyze
- * @param src_len  Length of source data
- * @return         True if compression is recommended
+ * @param src  Source buffer to analyze
+ * @return     True if compression is recommended
  */
-inline bool should_compress(const uint8_t* src_buf, size_t src_len) {
-  if (!src_buf || src_len < MIN_COMPRESS_INPUT_SIZE) return false;  // Too small to benefit
+inline bool should_compress(etl::span<const uint8_t> src) {
+  if (src.size() < MIN_COMPRESS_INPUT_SIZE) return false;  // Too small to benefit
   
   size_t potential_savings = 0;
   size_t escape_count = 0;
   size_t i = 0;
+  const size_t src_len = src.size();
   
   while (i < src_len) {
-    uint8_t current = src_buf[i];
+    uint8_t current = src[i];
     
     if (current == ESCAPE_BYTE) {
       escape_count++;
@@ -198,7 +197,7 @@ inline bool should_compress(const uint8_t* src_buf, size_t src_len) {
     
     // Count run
     size_t run_len = 1;
-    while (i + run_len < src_len && src_buf[i + run_len] == current) {
+    while (i + run_len < src_len && src[i + run_len] == current) {
       run_len++;
     }
     

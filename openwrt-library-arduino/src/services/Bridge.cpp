@@ -570,7 +570,9 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
 
   if (is_compressed && frame.header.payload_length > 0) {
     uint8_t scratch_payload[rpc::MAX_PAYLOAD_SIZE];
-    size_t decoded_len = rle::decode(frame.payload.data(), frame.header.payload_length, scratch_payload, rpc::MAX_PAYLOAD_SIZE);
+    size_t decoded_len = rle::decode(
+        etl::span<const uint8_t>(frame.payload.data(), frame.header.payload_length), 
+        etl::span<uint8_t>(scratch_payload, rpc::MAX_PAYLOAD_SIZE));
     if (decoded_len == 0) {
       _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
       return;
@@ -869,8 +871,10 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   // [RAM OPT] Stack allocation for compression buffer
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch_payload;
 
-  if (arg_length > 0 && rle::should_compress(arg_payload, arg_length)) {
-    size_t compressed_len = rle::encode(arg_payload, arg_length, scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE);
+  if (arg_length > 0 && rle::should_compress(etl::span<const uint8_t>(arg_payload, arg_length))) {
+    size_t compressed_len = rle::encode(
+        etl::span<const uint8_t>(arg_payload, arg_length), 
+        scratch_payload);
     if (compressed_len > 0 && compressed_len < arg_length) {
       final_cmd |= rpc::RPC_CMD_FLAG_COMPRESSED;
       final_payload = scratch_payload.data();

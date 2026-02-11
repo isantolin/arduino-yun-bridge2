@@ -9,6 +9,7 @@
 #undef max
 #include "etl/array.h"
 #include "etl/expected.h"
+#include "etl/span.h"
 
 namespace rpc {
 
@@ -84,10 +85,9 @@ class FrameParser {
    * bool + out_param pattern that can lead to use-after-failure bugs.
    * 
    * @param buffer Decoded frame data (post-COBS)
-   * @param size Size of buffer in bytes
    * @return etl::expected<Frame, FrameError> - Frame on success, error on failure
    */
-  etl::expected<Frame, FrameError> parse(const uint8_t* buffer, size_t size);
+  etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer);
   
   // Legacy compatibility aliases (deprecated, will be removed)
   using Error = FrameError;
@@ -101,11 +101,9 @@ class FrameBuilder {
  public:
   FrameBuilder();
   // Builds a raw frame into a buffer. Returns the length of the raw frame.
-  size_t build(uint8_t* buffer,
-               size_t buffer_size,
+  size_t build(etl::span<uint8_t> buffer,
                uint16_t command_id,
-               const uint8_t* payload,
-               size_t payload_len);
+               etl::span<const uint8_t> payload);
 };
 
 }  // namespace rpc

@@ -6,6 +6,7 @@
 // [SIL-2] Explicitly include Arduino.h to satisfy IntelliSense and ensure
 // noInterrupts()/interrupts() are available in all compilation contexts.
 #include <Arduino.h>
+#include <etl/span.h>
 
 // --- [SAFETY GUARD START] ---
 // CRITICAL: Prevent accidental standard STL usage on ALL architectures (memory fragmentation risk)
@@ -209,7 +210,7 @@ void BridgeClass::begin(
 
 void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
     if (g_bridge_instance && g_bridge_instance->_target_frame) {
-        auto result = g_bridge_instance->_parser.parse(buffer, size);
+        auto result = g_bridge_instance->_parser.parse(etl::span<const uint8_t>(buffer, size));
         if (result.has_value()) {
             *g_bridge_instance->_target_frame = result.value();
             g_bridge_instance->_frame_received = true;
@@ -447,17 +448,16 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
           break;
         }
 
-        uint8_t buffer[rpc::MAX_PAYLOAD_SIZE]; // [RAM OPT] Stack allocation
-        uint8_t* response = buffer;
+        etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer; // [RAM OPT] Stack allocation
         
         if (payload_data) {
-          etl::copy_n(payload_data, nonce_length, response);
+          etl::copy_n(payload_data, nonce_length, buffer.begin());
           if (has_secret) {
             uint8_t tag[kHandshakeTagSize];
             _computeHandshakeTag(payload_data, nonce_length, tag);
-            etl::copy_n(tag, kHandshakeTagSize, response + nonce_length);
+            etl::copy_n(tag, kHandshakeTagSize, buffer.begin() + nonce_length);
           }
-          (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, response, response_length);
+          (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, buffer.data(), response_length);
           // [SIL-2] Handshake complete -> Transition to Idle via FSM
           _fsm.handshakeComplete();
         }
@@ -759,13 +759,13 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const char* message) 
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message) {
   const uint8_t* payload = nullptr;
   uint16_t length = 0;
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE]; // [RAM OPT] Stack allocation
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer; // [RAM OPT] Stack allocation
   
   if (message) {
     const char* p = reinterpret_cast<const char*>(message);
     length = strnlen_P(p, rpc::MAX_PAYLOAD_SIZE);
-    memcpy_P(buffer, p, length);
-    payload = buffer;
+    memcpy_P(buffer.data(), p, length);
+    payload = buffer.data();
   }
   _doEmitStatus(status_code, payload, length);
 }
@@ -804,15 +804,15 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
   if (header_len >= rpc::MAX_PAYLOAD_SIZE) return; // Header too big to fit any data
   
   // [RAM OPT] Migrate scratch buffer to stack
-  uint8_t buffer[rpc::MAX_PAYLOAD_SIZE] = {0};
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer = {0};
   
   const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
   size_t offset = 0;
 
   // Handle empty data case (send at least one frame with just header)
   if (data_len == 0) {
-     if (header_len > 0) etl::copy_n(header, header_len, buffer);
-     while (!_sendFrame(rpc::to_underlying(command_id), buffer, header_len)) {
+     if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
+     while (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), header_len)) {
        process();
      }
      return;
@@ -823,17 +823,17 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
     size_t chunk_size = (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
 
     // 1. Copy Header
-    if (header_len > 0) etl::copy_n(header, header_len, buffer);
+    if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
     
     // 2. Copy Data Chunk
-    if (data) etl::copy_n(data + offset, chunk_size, buffer + header_len);
+    if (data) etl::copy_n(data + offset, chunk_size, buffer.begin() + header_len);
 
     size_t payload_size = header_len + chunk_size;
 
     // 3. Send with Back-pressure
     // If the TX queue is full, we must pump the FSM (process()) to clear it
     // before we can send the next chunk. This guarantees sequential delivery.
-    while (!_sendFrame(rpc::to_underlying(command_id), buffer, payload_size)) {
+    while (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), payload_size)) {
       if (!_fsm.isSynchronized()) return; // [SAFETY] Don't loop if we lost synchronization
       process();
     }
@@ -867,13 +867,13 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   size_t final_len = arg_length;
 
   // [RAM OPT] Stack allocation for compression buffer
-  uint8_t scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch_payload;
 
   if (arg_length > 0 && rle::should_compress(arg_payload, arg_length)) {
-    size_t compressed_len = rle::encode(arg_payload, arg_length, scratch_payload, rpc::MAX_PAYLOAD_SIZE);
+    size_t compressed_len = rle::encode(arg_payload, arg_length, scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE);
     if (compressed_len > 0 && compressed_len < arg_length) {
       final_cmd |= rpc::RPC_CMD_FLAG_COMPRESSED;
-      final_payload = scratch_payload;
+      final_payload = scratch_payload.data();
       final_len = compressed_len;
     }
   }
@@ -911,12 +911,15 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   }
 
   // Non-critical frame: Send immediately using stack buffer
-  uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
+  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
   rpc::FrameBuilder builder;
-  size_t raw_len = builder.build(raw_buffer, sizeof(raw_buffer), final_cmd, final_payload, final_len);
+  size_t raw_len = builder.build(
+      raw_buffer, 
+      final_cmd, 
+      etl::span<const uint8_t>(final_payload, final_len));
   
   if (raw_len > 0) {
-    _packetSerial.send(raw_buffer, raw_len);
+    _packetSerial.send(raw_buffer.data(), raw_len);
     flushStream();
   }
 
@@ -960,12 +963,15 @@ void BridgeClass::_retransmitLastFrame() {
   if (_fsm.isAwaitingAck() && !_pending_tx_queue.empty()) {
     const PendingTxFrame& frame = _pending_tx_queue.front();
     
-    uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
+    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
     rpc::FrameBuilder builder;
-    size_t raw_len = builder.build(raw_buffer, sizeof(raw_buffer), frame.command_id, frame.payload.data(), frame.payload_length);
+    size_t raw_len = builder.build(
+        raw_buffer, 
+        frame.command_id, 
+        etl::span<const uint8_t>(frame.payload.data(), frame.payload_length));
     
     if (raw_len > 0) {
-      _packetSerial.send(raw_buffer, raw_len);
+      _packetSerial.send(raw_buffer.data(), raw_len);
       _retry_count++;
       flushStream();
     }
@@ -1048,12 +1054,15 @@ void BridgeClass::_flushPendingTxQueue() {
     frame = _pending_tx_queue.front();
   }
 
-  uint8_t raw_buffer[rpc::MAX_RAW_FRAME_SIZE];
+  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
   rpc::FrameBuilder builder;
-  size_t raw_len = builder.build(raw_buffer, sizeof(raw_buffer), frame.command_id, frame.payload.data(), frame.payload_length);
+  size_t raw_len = builder.build(
+      raw_buffer, 
+      frame.command_id, 
+      etl::span<const uint8_t>(frame.payload.data(), frame.payload_length));
   
   if (raw_len > 0) {
-    _packetSerial.send(raw_buffer, raw_len);
+    _packetSerial.send(raw_buffer.data(), raw_len);
     flushStream();
 
     _fsm.sendCritical();  // Transition to AwaitingAck via FSM

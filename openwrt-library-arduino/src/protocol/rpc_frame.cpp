@@ -32,22 +32,22 @@ namespace rpc {
 
 // --- FrameParser ---
 
-etl::expected<Frame, FrameError> FrameParser::parse(const uint8_t* buffer, size_t size) {
+etl::expected<Frame, FrameError> FrameParser::parse(etl::span<const uint8_t> buffer) {
     // [SIL-2] Early validation with explicit error returns
-    if (size == 0 || size > MAX_RAW_FRAME_SIZE) {
+    if (buffer.empty() || buffer.size() > MAX_RAW_FRAME_SIZE) {
         return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
 
-    if (size < CRC_TRAILER_SIZE) {
+    if (buffer.size() < CRC_TRAILER_SIZE) {
         return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
     
     // --- Validate CRC ---
-    const size_t crc_start = size - CRC_TRAILER_SIZE;
+    const size_t crc_start = buffer.size() - CRC_TRAILER_SIZE;
     const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
     
     etl::crc32 crc_calculator;
-    crc_calculator.add(buffer, buffer + crc_start);
+    crc_calculator.add(buffer.begin(), buffer.begin() + crc_start);
     const uint32_t calculated_crc = crc_calculator.value();
 
     if (received_crc != calculated_crc) {
@@ -72,8 +72,11 @@ etl::expected<Frame, FrameError> FrameParser::parse(const uint8_t* buffer, size_
     }
 
     // --- Extract Payload ---
-    result.payload.assign(&buffer[sizeof(FrameHeader)], 
-                          &buffer[sizeof(FrameHeader) + result.header.payload_length]);
+    if (result.header.payload_length > 0) {
+      result.payload.assign(
+          buffer.begin() + sizeof(FrameHeader),
+          buffer.begin() + sizeof(FrameHeader) + result.header.payload_length);
+    }
     result.crc = calculated_crc;
 
     return result;
@@ -83,20 +86,18 @@ etl::expected<Frame, FrameError> FrameParser::parse(const uint8_t* buffer, size_
 
 FrameBuilder::FrameBuilder() {}
 
-size_t FrameBuilder::build(uint8_t* buffer,
-                           size_t buffer_size,
+size_t FrameBuilder::build(etl::span<uint8_t> buffer,
                            uint16_t command_id,
-                           const uint8_t* payload,
-                           size_t payload_len) {
-  if (payload_len > MAX_PAYLOAD_SIZE || payload_len > UINT16_MAX) {
+                           etl::span<const uint8_t> payload) {
+  if (payload.size() > MAX_PAYLOAD_SIZE || payload.size() > UINT16_MAX) {
     return 0;
   }
 
-  const uint16_t payload_len_u16 = static_cast<uint16_t>(payload_len);
-  const size_t data_len = sizeof(FrameHeader) + payload_len;
+  const uint16_t payload_len_u16 = static_cast<uint16_t>(payload.size());
+  const size_t data_len = sizeof(FrameHeader) + payload.size();
   const size_t total_len = data_len + CRC_TRAILER_SIZE;
 
-  if (total_len > buffer_size) {
+  if (total_len > buffer.size()) {
     return 0; // Buffer overflow protection
   }
 
@@ -106,13 +107,15 @@ size_t FrameBuilder::build(uint8_t* buffer,
   write_u16_be(&buffer[3], command_id);
 
   // --- Payload ---
-  if (payload && payload_len > 0) {
-    etl::copy_n(payload, payload_len, &buffer[sizeof(FrameHeader)]);
+  if (!payload.empty()) {
+    // [SIL-2] Anti-aliasing / overlap safety is guaranteed by caller or span usage
+    // restrict is not strictly standard C++11 but usually unnecessary with span copy
+    etl::copy(payload.begin(), payload.end(), buffer.begin() + sizeof(FrameHeader));
   }
 
   // --- CRC ---
   etl::crc32 crc_calculator;
-  crc_calculator.add(buffer, buffer + data_len);
+  crc_calculator.add(buffer.begin(), buffer.begin() + data_len);
   uint32_t crc = crc_calculator.value();
   
   write_u32_be(&buffer[data_len], crc);

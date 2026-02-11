@@ -70,11 +70,11 @@ bool run_cryptographic_self_tests() {
   // 2. HMAC-SHA256 KAT
   // Key is small, can load to stack or use update with PROGMEM if lib supports it. 
   // SHA256 lib usually supports RAM only.
-  uint8_t key_buf[32]; // Max key size for test
+  etl::array<uint8_t, 32> key_buf; // Max key size for test
   size_t key_len = sizeof(kat_hmac_key);
-  memcpy_P(key_buf, kat_hmac_key, key_len);
+  memcpy_P(key_buf.data(), kat_hmac_key, key_len);
   
-  sha256.resetHMAC(key_buf, key_len); 
+  sha256.resetHMAC(key_buf.data(), key_len); 
   
   size_t data_len = sizeof(kat_hmac_data);
   memcpy_P(buffer.data(), kat_hmac_data, data_len);

@@ -569,15 +569,15 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   effective_frame.header.command_id = raw_command;
 
   if (is_compressed && frame.header.payload_length > 0) {
-    uint8_t scratch_payload[rpc::MAX_PAYLOAD_SIZE];
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch_payload;
     size_t decoded_len = rle::decode(
         etl::span<const uint8_t>(frame.payload.data(), frame.header.payload_length), 
-        etl::span<uint8_t>(scratch_payload, rpc::MAX_PAYLOAD_SIZE));
+        etl::span<uint8_t>(scratch_payload.data(), rpc::MAX_PAYLOAD_SIZE));
     if (decoded_len == 0) {
       _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
       return;
     }
-    etl::copy_n(scratch_payload, decoded_len, effective_frame.payload.data());
+    etl::copy_n(scratch_payload.data(), decoded_len, effective_frame.payload.data());
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   }
 

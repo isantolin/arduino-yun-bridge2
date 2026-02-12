@@ -104,13 +104,16 @@ class BridgeSerialProtocol(asyncio.Protocol):
 
     def data_received(self, data: bytes) -> None:
         """Handle incoming data with zero-copy splicing where possible."""
+        # Optimize with memoryview to avoid slicing copies
+        mv_data = memoryview(data)
+
         # Fast path: if no buffer and data contains full packets
-        if not self._buffer and not self._discarding and protocol.FRAME_DELIMITER in data:
-            self._process_chunk_fast(data)
+        if not self._buffer and not self._discarding and protocol.FRAME_DELIMITER in mv_data:
+            self._process_chunk_fast(mv_data)
             return
 
         # Slow path: accumulation
-        for byte_val in data:
+        for byte_val in mv_data:
             if byte_val == 0x00:  # protocol.FRAME_DELIMITER
                 if self._discarding:
                     self._discarding = False
@@ -132,14 +135,32 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 self._buffer.clear()
                 self._discarding = True
 
-    def _process_chunk_fast(self, data: bytes) -> None:
+    def _process_chunk_fast(self, data: memoryview) -> None:
         start = 0
         while True:
             try:
-                end = data.index(protocol.FRAME_DELIMITER, start)
+                # memoryview.obj gives back the original bytes object if available, which might be faster for index()
+                # but direct index() on memoryview is supported in Python 3.
+                # data.obj.index(...) would require checking if obj is bytes.
+                # Simply using bytes(data) would defeat the purpose.
+                # We use .tolist().index(...) ?? No, extremely slow.
+                # data.tobytes().index(...) ?? Copy.
+                # Assuming data is memoryview of bytes, we can use the fact that it supports index?
+                # memoryview.index is not available in Python 3.13? It IS available since 3.10? No, 3.8?
+                # Actually memoryview does NOT have .index() method in standard Python.
+                # Wait, I need to check. bytes(data[start:]).index(...) would copy.
+                # So finding the delimiter efficiently in a memoryview:
+                # We can fallback to `data.obj.index(..., start)` if data.obj is the underlying bytes and contiguous.
+                # But data is a slice if passed from recursive calls? No, here it is the full buffer.
+                
+                # Correction: "data" passed to _process_chunk_fast is "mv_data" which is memoryview(data).
+                # The underlying object is 'data' (bytes).
+                # So data.obj.index(...) works!
+                
+                end = data.obj.index(protocol.FRAME_DELIMITER, start)
                 packet = data[start:end]
                 if packet:
-                    self._process_packet(packet)
+                    self._process_packet(packet.tobytes())
                 start = end + 1
             except ValueError:
                 # No more delimiters, buffer remainder

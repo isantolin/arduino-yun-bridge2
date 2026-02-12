@@ -21,6 +21,7 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 from __future__ import annotations
 
 from typing import Final
+from itertools import repeat
 
 # Escape byte used to signal a run
 ESCAPE_BYTE: Final[int] = 0xFF
@@ -33,7 +34,7 @@ MIN_RUN_LENGTH: Final[int] = 4
 MAX_RUN_LENGTH: Final[int] = 256
 
 
-def encode(data: bytes) -> bytes:
+def encode(data: bytes | bytearray | memoryview) -> bytes:
     """
     Encode data using RLE.
 
@@ -46,16 +47,18 @@ def encode(data: bytes) -> bytes:
     if not data:
         return b""
 
-    result = bytearray()
-    src_len = len(data)
+    # Ensure efficient indexing
+    src = memoryview(data) if not isinstance(data, (bytes, bytearray)) else data
+    src_len = len(src)
     src_pos = 0
+    result = bytearray()
 
     while src_pos < src_len:
-        current = data[src_pos]
+        current = src[src_pos]
 
         # Count consecutive identical bytes
         run_len = 1
-        while src_pos + run_len < src_len and data[src_pos + run_len] == current and run_len < MAX_RUN_LENGTH:
+        while src_pos + run_len < src_len and src[src_pos + run_len] == current and run_len < MAX_RUN_LENGTH:
             run_len += 1
 
         if run_len >= MIN_RUN_LENGTH:
@@ -88,7 +91,7 @@ def encode(data: bytes) -> bytes:
     return bytes(result)
 
 
-def decode(data: bytes) -> bytes:
+def decode(data: bytes | bytearray | memoryview) -> bytes:
     """
     Decode RLE-encoded data.
 
@@ -104,12 +107,13 @@ def decode(data: bytes) -> bytes:
     if not data:
         return b""
 
-    result = bytearray()
-    src_len = len(data)
+    src = memoryview(data) if not isinstance(data, (bytes, bytearray)) else data
+    src_len = len(src)
     src_pos = 0
+    result = bytearray()
 
     while src_pos < src_len:
-        current = data[src_pos]
+        current = src[src_pos]
         src_pos += 1
 
         if current == ESCAPE_BYTE:
@@ -119,8 +123,8 @@ def decode(data: bytes) -> bytes:
                     f"Malformed RLE: escape at position {src_pos - 1} " f"but only {src_len - src_pos} bytes remaining"
                 )
 
-            count_minus_2 = data[src_pos]
-            byte_val = data[src_pos + 1]
+            count_minus_2 = src[src_pos]
+            byte_val = src[src_pos + 1]
             src_pos += 2
 
             # Special case: 255 means exactly 1 byte (for single 0xFF)
@@ -128,7 +132,9 @@ def decode(data: bytes) -> bytes:
                 run_len = 1
             else:
                 run_len = count_minus_2 + 2
-            result.extend([byte_val] * run_len)
+            
+            # Efficient extension avoiding list allocation
+            result.extend(repeat(byte_val, run_len))
         else:
             # Literal byte
             result.append(current)
@@ -136,7 +142,7 @@ def decode(data: bytes) -> bytes:
     return bytes(result)
 
 
-def should_compress(data: bytes) -> bool:
+def should_compress(data: bytes | bytearray | memoryview) -> bool:
     """
     Check if compression would be beneficial.
 
@@ -152,12 +158,14 @@ def should_compress(data: bytes) -> bool:
     if len(data) < 8:
         return False  # Too small to benefit
 
+    src = memoryview(data) if not isinstance(data, (bytes, bytearray)) else data
+    src_len = len(src)
     potential_savings = 0
     escape_count = 0
     i = 0
 
-    while i < len(data):
-        current = data[i]
+    while i < src_len:
+        current = src[i]
 
         if current == ESCAPE_BYTE:
             escape_count += 1
@@ -166,7 +174,7 @@ def should_compress(data: bytes) -> bool:
 
         # Count run
         run_len = 1
-        while i + run_len < len(data) and data[i + run_len] == current:
+        while i + run_len < src_len and src[i + run_len] == current:
             run_len += 1
 
         if run_len >= MIN_RUN_LENGTH:

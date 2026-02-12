@@ -570,8 +570,12 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool is_compressed = (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   raw_command &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
 
-  rpc::Frame effective_frame = frame;
+  // [OPTIMIZATION] Construct effective_frame piecewise to avoid copying unused payload bytes.
+  // rpc::Frame contains etl::array (fixed size), so assignment copies MAX_PAYLOAD_SIZE bytes.
+  rpc::Frame effective_frame;
+  effective_frame.header = frame.header;
   effective_frame.header.command_id = raw_command;
+  // CRC is not propagated as it is validated before dispatch and not used downstream.
 
   if (is_compressed && frame.header.payload_length > 0) {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch_payload;
@@ -584,6 +588,13 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     }
     etl::copy_n(scratch_payload.data(), decoded_len, effective_frame.payload.data());
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
+  } else {
+    // Zero-copy optimization: If not compressed, we still need 'effective_frame' 
+    // because command_id might have changed (flag stripping).
+    // Copy ONLY valid payload bytes, not the full MAX_PAYLOAD_SIZE array.
+    if (frame.header.payload_length > 0) {
+        etl::copy_n(frame.payload.data(), frame.header.payload_length, effective_frame.payload.data());
+    }
   }
 
   // [SIL-2] Phase 2: Build context and route via ETL message_router
@@ -808,8 +819,8 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
                                   const uint8_t* data, size_t data_len) {
   if (header_len >= rpc::MAX_PAYLOAD_SIZE) return; // Header too big to fit any data
   
-  // [RAM OPT] Migrate scratch buffer to stack
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer = {0};
+  // [RAM OPT] Migrate scratch buffer to stack. No init needed as we overwrite.
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
   
   const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
   size_t offset = 0;

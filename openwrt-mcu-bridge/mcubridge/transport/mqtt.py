@@ -23,9 +23,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcubridge")
 
 
-
-
-
 async def _mqtt_publisher_loop(
     state: RuntimeState,
     client: aiomqtt.Client,

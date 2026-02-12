@@ -25,11 +25,14 @@ class BaseStruct(msgspec.Struct, frozen=True):
     def _decode(cls: Type[T], data: bytes) -> T:
         raise NotImplementedError
 
+
 # --- Binary Protocol Packets ---
+
 
 class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
+
     @classmethod
     def _decode(cls, data: bytes) -> FileWritePacket:
         if len(data) < 3:
@@ -37,74 +40,94 @@ class FileWritePacket(BaseStruct, frozen=True):
         path_len = data[0]
         if len(data) < 3 + path_len:
             raise ValueError("Truncated path/header")
-        path = data[1:1+path_len].decode("utf-8")
-        data_len = struct.unpack(">H", data[1+path_len:3+path_len])[0]
-        file_data = data[3+path_len:3+path_len+data_len]
+        path = data[1 : 1 + path_len].decode("utf-8")
+        data_len = struct.unpack(">H", data[1 + path_len : 3 + path_len])[0]
+        file_data = data[3 + path_len : 3 + path_len + data_len]
         if len(file_data) < data_len:
             raise ValueError("Truncated data")
         return FileWritePacket(path=path, data=file_data)
 
+
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
+
     @classmethod
     def _decode(cls, data: bytes) -> FileReadPacket:
-        return FileReadPacket(path=data[1:1+data[0]].decode("utf-8"))
+        return FileReadPacket(path=data[1 : 1 + data[0]].decode("utf-8"))
+
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
+
     @classmethod
     def _decode(cls, data: bytes) -> FileRemovePacket:
-        return FileRemovePacket(path=data[1:1+data[0]].decode("utf-8"))
+        return FileRemovePacket(path=data[1 : 1 + data[0]].decode("utf-8"))
+
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: int
     minor: int
+
     @classmethod
     def _decode(cls, data: bytes) -> VersionResponsePacket:
         return VersionResponsePacket(major=data[0], minor=data[1])
 
+
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: int
+
     @classmethod
     def _decode(cls, data: bytes) -> FreeMemoryResponsePacket:
         return FreeMemoryResponsePacket(value=struct.unpack(">H", data[:2])[0])
 
+
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: int
+
     @classmethod
     def _decode(cls, data: bytes) -> DigitalReadResponsePacket:
         return DigitalReadResponsePacket(value=data[0])
 
+
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: int
+
     @classmethod
     def _decode(cls, data: bytes) -> AnalogReadResponsePacket:
         return AnalogReadResponsePacket(value=struct.unpack(">H", data[:2])[0])
 
+
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
+
     @classmethod
     def _decode(cls, data: bytes) -> DatastoreGetPacket:
-        return DatastoreGetPacket(key=data[1:1+data[0]].decode("utf-8"))
+        return DatastoreGetPacket(key=data[1 : 1 + data[0]].decode("utf-8"))
+
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
+
     @classmethod
     def _decode(cls, data: bytes) -> DatastorePutPacket:
         key_len = data[0]
-        key = data[1:1+key_len].decode("utf-8")
-        val_len = data[1+key_len]
-        return DatastorePutPacket(key=key, value=data[2+key_len:2+key_len+val_len])
+        key = data[1 : 1 + key_len].decode("utf-8")
+        val_len = data[1 + key_len]
+        return DatastorePutPacket(key=key, value=data[2 + key_len : 2 + key_len + val_len])
+
 
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
+
     @classmethod
     def _decode(cls, data: bytes) -> MailboxPushPacket:
         msg_len = struct.unpack(">H", data[:2])[0]
-        return MailboxPushPacket(data=data[2:2+msg_len])
+        return MailboxPushPacket(data=data[2 : 2 + msg_len])
+
 
 # --- High-Level Structure ---
+
 
 class MqttPayload(msgspec.Struct, frozen=True):
     topic: str

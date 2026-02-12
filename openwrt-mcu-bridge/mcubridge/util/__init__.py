@@ -35,7 +35,9 @@ def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: b
     hex_str = data.hex(" ").upper()
     logger_instance.log(level, "[HEXDUMP] %s: %s", label, hex_str)
 
+
 _TRUE_STRINGS = frozenset({"1", "yes", "on", "true", "enable", "enabled"})
+
 
 def parse_bool(value: object) -> bool:
     """Parse a boolean value safely from various types."""
@@ -65,14 +67,16 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
         normalised.append(lowered)
     return tuple(normalised)
 
+
 def safe_int(value: object, default: int) -> int:
     try:
-        return int(float(value)) # type: ignore
+        return int(float(value))  # type: ignore
     except (ValueError, TypeError):
         return default
 
+
 def safe_float(value: object, default: float) -> float:
     try:
-        return float(value) # type: ignore
+        return float(value)  # type: ignore
     except (ValueError, TypeError):
         return default

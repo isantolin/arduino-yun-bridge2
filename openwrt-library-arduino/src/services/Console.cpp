@@ -130,7 +130,7 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
   BRIDGE_ATOMIC_BLOCK {
     if (_rx_buffer.capacity() == 0) return;
 
-    // [SIL-2] Calculate available space first, then copy deterministically
+    // Calculate available space first, then copy deterministically
     // Drop new data if buffer is full.
     const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
     const size_t to_copy = etl::min(data.size(), available);

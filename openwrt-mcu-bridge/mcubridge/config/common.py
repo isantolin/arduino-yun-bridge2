@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"
 
+
 def get_uci_config() -> dict[str, Any]:
     """Read MCU Bridge configuration directly from OpenWrt uci system."""
     is_openwrt = Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
@@ -52,6 +53,7 @@ def get_uci_config() -> dict[str, Any]:
             raise RuntimeError(f"Critical UCI failure: {e}") from e
         return get_default_config()
 
+
 def get_default_config() -> dict[str, Any]:
     import msgspec.structs as _structs
     from mcubridge.config.settings import RuntimeConfig
@@ -63,6 +65,7 @@ def get_default_config() -> dict[str, Any]:
         defaults[fi.name] = fi.default
     defaults["debug"] = False
     return defaults
+
 
 __all__: Final[tuple[str, ...]] = (
     "normalise_allowed_commands",

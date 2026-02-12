@@ -44,6 +44,7 @@ DEFAULT_RETRIES = max(1, safe_int(_UCI.get("pin_mqtt_retries"), 3))
 DEFAULT_PUBLISH_TIMEOUT = max(0.0, safe_float(_UCI.get("pin_mqtt_timeout"), 4.0))
 DEFAULT_BACKOFF_BASE = max(0.0, safe_float(_UCI.get("pin_mqtt_backoff"), 0.5))
 
+
 @retry(
     stop=stop_after_attempt(DEFAULT_RETRIES),
     wait=wait_exponential(multiplier=DEFAULT_BACKOFF_BASE, min=DEFAULT_BACKOFF_BASE, max=4.0),
@@ -82,10 +83,12 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         except Exception:
             pass
 
+
 def get_pin_from_path(environ: dict[str, Any]) -> str | None:
     path = environ.get("PATH_INFO", "")
     match = re.match(r"/pin/(\d+)", path)
     return match.group(1) if match else None
+
 
 def json_response(start_response: Any, status: str, data: dict[str, Any]) -> List[bytes]:
     response_body = msgspec.json.encode(data)
@@ -95,6 +98,7 @@ def json_response(start_response: Any, status: str, data: dict[str, Any]) -> Lis
     ]
     start_response(status, headers)
     return [response_body]
+
 
 def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:
     try:

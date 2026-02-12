@@ -132,7 +132,7 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
                 run_len = 1
             else:
                 run_len = count_minus_2 + 2
-            
+
             # Efficient extension avoiding list allocation
             result.extend(repeat(byte_val, run_len))
         else:

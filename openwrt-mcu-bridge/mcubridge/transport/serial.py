@@ -152,12 +152,12 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 # So finding the delimiter efficiently in a memoryview:
                 # We can fallback to `data.obj.index(..., start)` if data.obj is the underlying bytes and contiguous.
                 # But data is a slice if passed from recursive calls? No, here it is the full buffer.
-                
+
                 # Correction: "data" passed to _process_chunk_fast is "mv_data" which is memoryview(data).
                 # The underlying object is 'data' (bytes).
                 # So data.obj.index(...) works!
-                
-                end = data.obj.index(protocol.FRAME_DELIMITER, start)
+
+                end = cast(bytes, data.obj).index(protocol.FRAME_DELIMITER, start)
                 packet = data[start:end]
                 if packet:
                     self._process_packet(packet.tobytes())

@@ -39,12 +39,10 @@ define Package/$(PKG_NAME)
 	CATEGORY:=Utilities
 	TITLE:=MCU Bridge Python Daemon
 	PKG_ARCH:=all
-	DEPENDS:=+python3-light +python3-asyncio +python3-paho-mqtt +python3-aiomqtt +python3-msgspec +python3-cobs +python3-psutil +python3-tenacity +python3-uci +python3-uvloop
 	# [OPENWRT 25.12] Modern apk-based dependencies.
-	# These packages MUST be available in the OpenWrt feeds.
-	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
-	DEPENDS+= \
-		+python3 \
+	# We strictly depend on python3 (full) or specific subpackages if optimizing size.
+	# paho-mqtt must be v2.x.
+	DEPENDS:=+python3 \
 		+python3-uci \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
@@ -57,7 +55,6 @@ define Package/$(PKG_NAME)
 		+python3-uvloop \
 		+python3-cryptography \
 		+python3-construct
-	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

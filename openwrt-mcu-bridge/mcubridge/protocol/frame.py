@@ -121,7 +121,10 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         # 5. Validate Payload Length against buffer size
         # We expected: Header (5) + Payload (N) = Body Length
         if len(body) != header_size + payload_len:
-            raise ValueError(f"Frame size mismatch: header says {payload_len} payload bytes, " f"but buffer has {len(body) - header_size}")
+            raise ValueError(
+                f"Frame size mismatch: header says {payload_len} payload bytes, "
+                f"but buffer has {len(body) - header_size}"
+            )
 
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
              raise ValueError(f"Payload length {payload_len} exceeds max {protocol.MAX_PAYLOAD_SIZE}")

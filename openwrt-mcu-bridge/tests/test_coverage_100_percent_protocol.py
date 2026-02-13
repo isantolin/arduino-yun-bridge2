@@ -53,7 +53,7 @@ def test_frame_parse_coverage_all_errors():
         command_id=0x40
     ))
     raw = _build_raw_with_crc(bad_len)
-    with pytest.raises(ValueError, match="Frame structure error"):
+    with pytest.raises(ValueError, match="Frame size mismatch"):
         Frame.parse(raw)
 
 

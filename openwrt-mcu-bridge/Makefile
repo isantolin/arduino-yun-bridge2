@@ -42,7 +42,10 @@ define Package/$(PKG_NAME)
 	# [OPENWRT 25.12] Modern apk-based dependencies.
 	# We strictly depend on python3 (full) or specific subpackages if optimizing size.
 	# paho-mqtt must be v2.x.
-	DEPENDS:=+python3 \
+	DEPENDS:=+python3
+	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
+	DEPENDS+= \
+		+python3 \
 		+python3-uci \
 		+python3-aiomqtt \
 		+python3-paho-mqtt \
@@ -55,6 +58,7 @@ define Package/$(PKG_NAME)
 		+python3-uvloop \
 		+python3-cryptography \
 		+python3-construct
+	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

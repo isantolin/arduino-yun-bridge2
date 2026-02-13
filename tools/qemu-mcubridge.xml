@@ -1,6 +1,5 @@
-<domain type="qemu">
-  <name>OpenWrt-MIPS-AR9331-Sim</name>
-  <uuid>002d781d-2684-4707-a57d-fdf64bde36a9</uuid>
+<domain type="kvm">
+  <name>openwrt-mcubridge</name>
   <metadata>
     <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
       <libosinfo:os id="http://libosinfo.org/linux/2024"/>
@@ -11,10 +10,16 @@
   <vcpu placement="static">1</vcpu>
   <os>
     <type arch="mips" machine="malta">hvm</type>
-    <kernel>/home/ignaciosantolin/Downloads/openwrt-malta-be-vmlinux.elf</kernel>
-    <cmdline>root=/dev/sda rootwait console=ttyS0 rootfstype=ext4 rw</cmdline>
-    <boot dev="hd"/>
+    <kernel>bin/targets/malta/be/openwrt-malta-be-vmlinux.elf</kernel>
+    <cmdline>root=/dev/vda console=ttyS0</cmdline>
   </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode="custom" match="exact" check="none">
+    <model fallback="forbid">qpci</model>
+  </cpu>
   <clock offset="utc"/>
   <on_poweroff>destroy</on_poweroff>
   <on_reboot>restart</on_reboot>
@@ -23,46 +28,31 @@
     <emulator>/usr/bin/qemu-system-mips</emulator>
     <disk type="file" device="disk">
       <driver name="qemu" type="raw"/>
-      <source file="/home/ignaciosantolin/Downloads/openwrt-malta-be-rootfs-ext4.img"/>
-      <target dev="hda" bus="ide"/>
-      <address type="drive" controller="0" bus="0" target="0" unit="0"/>
+      <source file="bin/targets/malta/be/openwrt-malta-be-root.ext4"/>
+      <target dev="vda" bus="virtio"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x01" function="0x0"/>
     </disk>
-    <disk type="file" device="disk">
-      <driver name="qemu" type="raw"/>
-      <source file="/home/ignaciosantolin/Downloads/sd_card.img"/>
-      <target dev="hdb" bus="ide"/>
-      <address type="drive" controller="0" bus="0" target="0" unit="1"/>
-    </disk>
-    <controller type="usb" index="0" model="piix3-uhci">
-      <address type="pci" domain="0x0000" bus="0x00" slot="0x12" function="0x0"/>
-    </controller>
-    <controller type="pci" index="0" model="pci-root"/>
-    <controller type="ide" index="0"/>
-    <interface type="direct">
-      <mac address="52:54:00:3c:ac:4a"/>
-      <source dev="enp1s0" mode="bridge"/>
-      <model type="pcnet"/>
-      <address type="pci" domain="0x0000" bus="0x00" slot="0x0b" function="0x0"/>
-    </interface>
     <interface type="network">
-      <mac address="52:54:00:3c:ac:4b"/>
+      <mac address="52:54:00:12:34:56"/>
       <source network="default"/>
-      <model type="pcnet"/>
-      <address type="pci" domain="0x0000" bus="0x00" slot="0x0c" function="0x0"/>
+      <model type="virtio"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x0"/>
     </interface>
     <serial type="pty">
-      <target port="0"/>
-    </serial>
-    <serial type="tcp">
-      <source mode="bind" host="127.0.0.1" service="4000"/>
-      <protocol type="raw"/>
-      <target port="1"/>
+      <target type="isa-serial" port="0">
+        <model name="isa-serial"/>
+      </target>
     </serial>
     <console type="pty">
       <target type="serial" port="0"/>
     </console>
     <audio id="1" type="none"/>
-
+    <hostdev mode="subsystem" type="usb" managed="yes">
+      <source>
+        <vendor id="0x2341"/>
+        <product id="0x0043"/>
+      </source>
+    </hostdev>
     <memballoon model="virtio">
       <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x0"/>
     </memballoon>

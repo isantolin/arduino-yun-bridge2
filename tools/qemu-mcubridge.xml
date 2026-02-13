@@ -6,8 +6,8 @@
       <libosinfo:os id="http://libosinfo.org/linux/2024"/>
     </libosinfo:libosinfo>
   </metadata>
-  <memory unit="KiB">262144</memory>
-  <currentMemory unit="KiB">262144</currentMemory>
+  <memory unit="KiB">524288</memory>
+  <currentMemory unit="KiB">524288</currentMemory>
   <vcpu placement="static">1</vcpu>
   <os>
     <type arch="mips" machine="malta">hvm</type>
@@ -62,12 +62,7 @@
       <target type="serial" port="0"/>
     </console>
     <audio id="1" type="none"/>
-    <hostdev mode="subsystem" type="usb" managed="yes">
-      <source>
-        <vendor id="0x2341"/>
-        <product id="0x0043"/>
-      </source>
-    </hostdev>
+
     <memballoon model="virtio">
       <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x0"/>
     </memballoon>

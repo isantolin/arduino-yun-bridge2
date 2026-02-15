@@ -45,8 +45,14 @@
   // Fallback for non-AVR architectures: use interrupts() / noInterrupts()
   // This is a simplified version of ATOMIC_BLOCK for portability.
   struct BridgeAtomicGuard {
-    BridgeAtomicGuard() { noInterrupts(); }
-    ~BridgeAtomicGuard() { interrupts(); }
+    BridgeAtomicGuard() { 
+      noInterrupts(); 
+      asm volatile("" ::: "memory");
+    }
+    ~BridgeAtomicGuard() { 
+      asm volatile("" ::: "memory");
+      interrupts(); 
+    }
   };
   #define BRIDGE_ATOMIC_BLOCK for (int _guard_active = 1; _guard_active; _guard_active = 0) \
                                for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)

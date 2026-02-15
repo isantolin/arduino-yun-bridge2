@@ -135,10 +135,7 @@ void ConsoleClass::_push(etl::span<const uint8_t> data) {
     const size_t available = _rx_buffer.capacity() - _rx_buffer.size();
     const size_t to_copy = etl::min(data.size(), available);
     
-    // Copy using iterator or range-based loop
-    for (size_t i = 0; i < to_copy; ++i) {
-        _rx_buffer.push(data[i]);
-    }
+    _rx_buffer.push(data.begin(), data.begin() + to_copy);
 
     const size_t capacity = _rx_buffer.capacity();
     const size_t high_water = (capacity * kHighWaterNumerator) / kWatermarkDenominator;

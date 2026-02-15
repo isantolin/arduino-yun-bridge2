@@ -88,7 +88,7 @@ def reset_logging_handlers():
     for handler in root.handlers[:]:
         try:
             handler.close()
-        except Exception:
+        except (OSError, RuntimeError):
             pass
         root.removeHandler(handler)
 

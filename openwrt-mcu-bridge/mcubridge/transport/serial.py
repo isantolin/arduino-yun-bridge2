@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
+import time
+import sys
 import msgspec
 from typing import Any, Final, Sized, TypeGuard, cast
 
@@ -306,11 +308,38 @@ class SerialTransport:
             return self.protocol.write_frame(cmd, pl)
         return False
 
+    async def _toggle_dtr(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Pulse DTR to force MCU hardware reset."""
+        logger.warning("Performing Hardware Reset (DTR Toggle)...")
+        sys.stdout.flush()
+        try:
+            await loop.run_in_executor(None, self._blocking_reset)
+            await asyncio.sleep(2.0)  # Wait for MCU bootloader (increased for Yun/Leonardo)
+        except Exception as e:
+            logger.error("Async DTR Toggle failed: %s", e)
+
+    def _blocking_reset(self) -> None:
+        try:
+            import serial
+            import time
+            with serial.Serial(self.config.serial_port) as s:
+                s.dtr = False
+                time.sleep(0.1)
+                s.dtr = True
+                time.sleep(0.1)
+                s.dtr = False  # Leave DTR low
+        except Exception as e:
+            logger.error("DTR Toggle failed: %s", e)
+
     async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:
         target_baud = self.config.serial_baud
         initial_baud = self.config.serial_safe_baud
         negotiation_needed = initial_baud > 0 and initial_baud != target_baud
         start_baud = initial_baud if negotiation_needed else target_baud
+
+        # [SIL-2] Hardware Recovery: Force DTR toggle before connecting
+        # This recovers the MCU if it's stuck in a loop or unresponsive.
+        await self._toggle_dtr(loop)
 
         # 1. Connect
         logger.info("Connecting to %s at %d baud (Fast Protocol)...", self.config.serial_port, start_baud)

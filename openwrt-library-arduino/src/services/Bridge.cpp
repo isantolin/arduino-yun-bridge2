@@ -36,21 +36,20 @@
 #include "etl/error_handler.h"
 #include "etl/algorithm.h"
 
+// [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
+
 namespace {
-/**
- * @brief Append a length-prefixed string (Pascal-style) to an ETL vector payload.
- */
-inline void append_length_prefixed(
-    etl::ivector<uint8_t>& payload,
-    etl::string_view str) {
-  const size_t len = etl::min<size_t>(str.length(), 255);
-  payload.push_back(static_cast<uint8_t>(len));
-  if (len > 0) {
-      // [SIL-2] Use ETL-compatible insert
-      payload.insert(payload.end(), str.begin(), str.begin() + len);
-  }
-}
-}
+constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+static_assert(
+  kHandshakeTagSize > 0,
+  "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
+);
+constexpr size_t kSha256DigestSize = 32;
+
+// Global instance pointer for PacketSerial static callback
+BridgeClass* g_bridge_instance = nullptr;
+
+} // namespace
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
 // [SIL-2] Robust Hardware Serial Detection
@@ -77,21 +76,6 @@ FileSystemClass FileSystem;
 ProcessClass Process;
 #endif
 #endif
-
-// [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
-
-namespace {
-constexpr size_t kHandshakeTagSize = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-static_assert(
-  kHandshakeTagSize > 0,
-  "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
-);
-constexpr size_t kSha256DigestSize = 32;
-
-// Global instance pointer for PacketSerial static callback
-BridgeClass* g_bridge_instance = nullptr;
-
-} // namespace
 
 BridgeClass::BridgeClass(HardwareSerial& arg_serial)
     : BridgeClass(static_cast<Stream&>(arg_serial)) {

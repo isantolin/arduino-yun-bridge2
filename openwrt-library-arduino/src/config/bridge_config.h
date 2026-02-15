@@ -92,5 +92,5 @@
 // on compatible boards (Yun, Leonardo, etc.).
 // Essential for direct PC-to-MCU connection debugging.
 #ifndef BRIDGE_USE_USB_SERIAL
-#define BRIDGE_USE_USB_SERIAL 0
+#define BRIDGE_USE_USB_SERIAL 1
 #endif

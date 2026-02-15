@@ -332,8 +332,7 @@ def load_runtime_config() -> RuntimeConfig:
         # Validation Logic (moved from __post_init__ or explicit check)
         # Note: We rely on __post_init__ for most checks, but we can verify critical ones here or call post_init explicitly.
         # The fix_settings.py suggested explicit checks here, but the class has __post_init__.
-        # We will call __post_init__ as it encapsulates the validation logic well.
-        config.__post_init__()
+        # msgspec calls __post_init__ automatically.
         
         return config
     except (msgspec.ValidationError, TypeError, ValueError) as e:

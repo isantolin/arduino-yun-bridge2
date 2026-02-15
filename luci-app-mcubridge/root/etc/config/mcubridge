@@ -2,21 +2,22 @@ config general 'general'
     option enabled '1'
     
     # [PRODUCCION] Debug desactivado
-    option debug '0'
+    option debug '1'
 
     # [SERIAL] Velocidad estándar (Legacy Compatibility)
-    option serial_port '/dev/ttyATH0'
+    option serial_port '/dev/ttyACM0'
     option serial_baud '115200'
     # [SERIAL] Fallback baudrate for recovery mode
     option serial_safe_baud '115200'
     
     # [SEGURIDAD] Secreto compartido (se genera automáticamente en primer boot)
+    option serial_shared_secret '755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3'
 
     # [MQTT] Configuración del broker local
     option mqtt_host '127.0.0.1'
     option mqtt_port '8883'
     option mqtt_tls '1'
-    option mqtt_tls_insecure '0'
+    option mqtt_tls_insecure '1'
     option mqtt_cafile '/etc/ssl/certs/ca-certificates.crt'
     option mqtt_topic 'br'
 

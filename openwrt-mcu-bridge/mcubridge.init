@@ -64,13 +64,6 @@ start_service() {
     # We set PYTHONPATH explicitly to include the package directory.
     procd_set_param command /usr/bin/python3 -O -m mcubridge.daemon
     
-    # Ensure our package is in the path. 
-    # OpenWrt packages install to /usr/libexec/mcubridge (source) 
-    # but we should ensure the module resolution works correctly.
-    # The standard site-packages might be used if installed via pip/apk correctly,
-    # but based on the Makefile, we install to /usr/libexec/mcubridge.
-    procd_set_param env PYTHONPATH=/usr/libexec/mcubridge
-
     # [RESILIENCIA]
     # Reinicio infinito con backoff de 5s si falla
     # Si falla repetidamente antes de 3600s, se considera inestable

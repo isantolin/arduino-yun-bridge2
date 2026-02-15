@@ -72,7 +72,7 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
       // Console.println(msg_buf);
     }
   }
-  Mailbox.requestRead();
+  // [ANTI-FLOOD] Removed recursion here. Polling is handled in loop().
 }
 
 void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
@@ -116,9 +116,15 @@ void setup() {
   
   // DISABLED: Console.print causes serial collisions
   // Console.println("Bridge iniciado con secreto definido en Sketch.");
-  Mailbox.requestRead();
 }
 
 void loop() {
   Bridge.process();
+  
+  // [ANTI-FLOOD] Poll mailbox every 500ms instead of continuous loop
+  static unsigned long lastMailboxCheck = 0;
+  if (millis() - lastMailboxCheck > 500) {
+    lastMailboxCheck = millis();
+    Mailbox.requestRead();
+  }
 }

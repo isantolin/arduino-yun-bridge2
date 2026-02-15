@@ -24,6 +24,14 @@ async def main() -> None:
     parser.add_argument("--tls-insecure", action="store_true", help="Disable TLS certificate verification")
     args = parser.parse_args()
 
+    # Validate essential arguments if not running on OpenWrt with UCI
+    if not args.host or not args.user or not args.password:
+        from mcubridge_client.env import read_uci_general
+        if not read_uci_general():
+            print("Error: Missing required connection parameters.")
+            parser.print_help()
+            return
+
     dump_client_env(logging.getLogger(__name__))
 
     # Build arguments dict

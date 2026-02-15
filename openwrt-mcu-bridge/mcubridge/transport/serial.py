@@ -10,7 +10,6 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-import time
 import sys
 import msgspec
 from typing import Any, Final, Sized, TypeGuard, cast

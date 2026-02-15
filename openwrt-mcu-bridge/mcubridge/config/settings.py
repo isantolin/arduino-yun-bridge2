@@ -8,16 +8,15 @@ not used as overrides.
 """
 
 from __future__ import annotations
-import os
-import sys
-import sys
 
 import logging
+import os
+import sys
 from pathlib import Path
-# [SIL-2] Deterministic Import: msgspec is MANDATORY.
-import msgspec
 from typing import Any
 
+# [SIL-2] Deterministic Import: msgspec is MANDATORY.
+import msgspec
 
 from ..config.common import (
     get_default_config,
@@ -26,7 +25,6 @@ from ..config.common import (
     parse_bool,
 )
 from ..config.const import (
-    VOLATILE_STORAGE_PATHS,
     DEFAULT_ALLOW_NON_TMP_PATHS,
     DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
     DEFAULT_BRIDGE_SUMMARY_INTERVAL,
@@ -51,26 +49,29 @@ from ..config.const import (
     DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
-    DEFAULT_SERIAL_SHARED_SECRET,
     DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
     DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
     DEFAULT_SERIAL_PORT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
+    DEFAULT_SERIAL_SHARED_SECRET,
     DEFAULT_STATUS_INTERVAL,
     DEFAULT_WATCHDOG_INTERVAL,
     MIN_SERIAL_SHARED_SECRET_LEN,
+    VOLATILE_STORAGE_PATHS,
 )
 from ..policy import AllowedCommandPolicy, TopicAuthorization
-from ..protocol.protocol import DEFAULT_RETRY_LIMIT, DEFAULT_BAUDRATE, DEFAULT_SAFE_BAUDRATE, MQTT_DEFAULT_TOPIC_PREFIX
-
+from ..protocol.protocol import (
+    DEFAULT_BAUDRATE,
+    DEFAULT_RETRY_LIMIT,
+    DEFAULT_SAFE_BAUDRATE,
+    MQTT_DEFAULT_TOPIC_PREFIX,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class RuntimeConfig(msgspec.Struct, kw_only=True):
-
-
     """Strongly typed configuration for the daemon."""
 
     serial_port: str = DEFAULT_SERIAL_PORT
@@ -147,7 +148,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             int(self.serial_handshake_fatal_failures),
         )
         if not self.mqtt_tls:
-            logger.warning("MQTT TLS is disabled; MQTT credentials and payloads " "will be sent in plaintext.")
+            logger.warning("MQTT TLS is disabled; MQTT credentials and payloads will be sent in plaintext.")
         else:
             if self.mqtt_tls_insecure:
                 logger.warning(
@@ -165,9 +166,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
-            raise ValueError("serial_shared_secret must contain at least " "four distinct bytes")
+            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
         self._normalize_topic_prefix()
-        
+
         self.file_system_root = os.path.abspath(self.file_system_root)
         self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
         self._validate_operational_limits()
@@ -176,7 +177,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 path_val = getattr(self, path_attr)
                 if not any(path_val.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                     raise ValueError(f"FLASH PROTECTION: {path_attr} must be in a volatile location")
-
 
     @staticmethod
     def _normalize_optional_string(value: str | None) -> str | None:
@@ -212,7 +212,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             setattr(self, field_name, validated)
 
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
-            raise ValueError("file_storage_quota_bytes must be greater than or equal to " "file_write_max_bytes")
+            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
 
         if self.watchdog_enabled:
             interval = self._require_positive_float(
@@ -322,22 +322,22 @@ def load_runtime_config() -> RuntimeConfig:
     if "mqtt_spool_dir" in raw_config:
         raw_config["mqtt_spool_dir"] = os.path.abspath(os.path.expanduser(raw_config["mqtt_spool_dir"]))
     if "mqtt_topic" in raw_config:
-         # Handle case where mqtt_topic might be a string that needs splitting or just sanitization
-         if isinstance(raw_config["mqtt_topic"], str):
+        # Handle case where mqtt_topic might be a string that needs splitting or just sanitization
+        if isinstance(raw_config["mqtt_topic"], str):
             raw_config["mqtt_topic"] = "/".join(s.strip() for s in raw_config["mqtt_topic"].split("/") if s.strip())
 
     try:
         config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
-        
+
         # Validation Logic (moved from __post_init__ or explicit check)
-        # Note: We rely on __post_init__ for most checks, but we can verify critical ones here or call post_init explicitly.
-        # The fix_settings.py suggested explicit checks here, but the class has __post_init__.
+        # Note: We rely on __post_init__ for most checks, but we can verify critical ones
+        # here or call post_init explicitly.
         # msgspec calls __post_init__ automatically.
-        
+
         return config
     except (msgspec.ValidationError, TypeError, ValueError) as e:
         if "pytest" in sys.modules and source == "test":
-             raise
+            raise
         logger.critical("Configuration validation failed: %s", e)
         logger.warning("Falling back to safe defaults due to validation error.")
         return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)

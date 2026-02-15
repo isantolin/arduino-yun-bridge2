@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import time
 from enum import IntEnum
-from typing import Final, TypedDict, Any
+from typing import Final, TypedDict
 import msgspec
+
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 # Constants
 PROTOCOL_MAX_PAYLOAD_SIZE: Final[int] = 64  # Matches protocol.MAX_PAYLOAD_SIZE
@@ -67,33 +70,33 @@ class QueuedPublish(msgspec.Struct, frozen=True):
         }
 
 
-def build_mqtt_properties(message: QueuedPublish) -> dict[str, Any]:
-    """Construct MQTT 5.0 properties dictionary for aiomqtt."""
-    props: dict[str, Any] = {}
+def build_mqtt_properties(message: QueuedPublish) -> Properties:
+    """Construct MQTT 5.0 properties object for aiomqtt/paho."""
+    props = Properties(PacketTypes.PUBLISH)
 
     if message.content_type is not None:
-        props["ContentType"] = message.content_type
+        props.ContentType = message.content_type
 
     if message.message_expiry_interval is not None:
-        props["MessageExpiryInterval"] = message.message_expiry_interval
+        props.MessageExpiryInterval = int(message.message_expiry_interval)
 
     if message.topic_alias is not None:
-        props["TopicAlias"] = message.topic_alias
+        props.TopicAlias = message.topic_alias
 
     if message.response_topic is not None:
-        props["ResponseTopic"] = message.response_topic
+        props.ResponseTopic = message.response_topic
 
     if message.correlation_data is not None:
-        props["CorrelationData"] = message.correlation_data
+        props.CorrelationData = message.correlation_data
 
     if message.user_properties:
-        props["UserProperty"] = list(message.user_properties)
+        props.UserProperty = list(message.user_properties)
 
     if message.subscription_identifier is not None:
-        props["SubscriptionIdentifier"] = list(message.subscription_identifier)
+        props.SubscriptionIdentifier = list(message.subscription_identifier)
 
     if message.payload_format_indicator is not None:
-        props["PayloadFormatIndicator"] = message.payload_format_indicator
+        props.PayloadFormatIndicator = message.payload_format_indicator
 
     return props
 

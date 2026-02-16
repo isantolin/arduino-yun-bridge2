@@ -5,7 +5,6 @@ import asyncio
 import logging
 import argparse
 import ssl
-import sys
 from typing import Any
 
 from mcubridge_client import Bridge, dump_client_env

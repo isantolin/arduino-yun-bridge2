@@ -188,7 +188,7 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
         "serial_shared_secret": " s_e_c_r_e_t_mock ",
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "uci"))
 
     # Strictly enforcing flash protection now returns default config on validation error.
     config = settings.load_runtime_config()

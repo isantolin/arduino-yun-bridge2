@@ -258,7 +258,8 @@ class BridgeClass : public bridge::router::ICommandHandler {
 
   void flushStream();
   void enterSafeState(); // [SIL-2] Force system into fail-safe state
-  void _emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
+  void _emitStatus(rpc::StatusCode status_code);
+  void _emitStatus(rpc::StatusCode status_code, etl::string_view message);
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
   
   // [SIL-2] Large Payload Support (Application-Level Chunking)
@@ -403,6 +404,11 @@ class ConsoleClass : public Stream, public util::StreamSender<ConsoleClass> {
   friend class bridge::test::ConsoleTestAccessor;
   #endif
  public:
+  // [SIL-2] Ambiguity Resolution: Favor ETL-based print/println from StreamSender
+  // over Arduino's Print class to avoid heap usage (String) and non-deterministic behavior.
+  using util::StreamSender<ConsoleClass>::print;
+  using util::StreamSender<ConsoleClass>::println;
+
   ConsoleClass();
   void begin();
   

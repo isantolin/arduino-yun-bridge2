@@ -321,13 +321,23 @@ class SerialTransport:
         try:
             import serial
             import time
-            with serial.Serial(self.config.serial_port) as s:
-                s.dtr = False
-                time.sleep(0.1)
-                s.dtr = True
-                time.sleep(0.1)
-                s.dtr = False  # Leave DTR low
+            import errno
+            try:
+                # [SIL-2] Non-blocking reset attempt.
+                # Opening the port might trigger implicit IOCTLs.
+                with serial.Serial(self.config.serial_port) as s:
+                    s.dtr = False
+                    time.sleep(0.1)
+                    s.dtr = True
+                    time.sleep(0.1)
+                    s.dtr = False  # Leave DTR low
+            except OSError as e:
+                if e.errno == errno.ENOTTY:
+                    logger.debug("DTR Toggle skipped: port %s is not a TTY (ENOTTY)", self.config.serial_port)
+                else:
+                    raise
         except Exception as e:
+            # We don't want to abort connection if DTR toggle fails (e.g. permission or not a real serial port)
             logger.error("DTR Toggle failed: %s", e)
 
     async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:

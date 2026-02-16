@@ -3,7 +3,7 @@ import sys
 
 path = "../../openwrt-mcu-bridge/mcubridge/config/settings.py"
 if not os.path.exists(path):
-    print(f"File not found: {path}")
+    sys.stderr.write(f"File not found: {path}\n")
     sys.exit(1)
 
 lines = open(path).readlines()
@@ -16,8 +16,7 @@ for i, line in enumerate(lines):
 if start != -1:
     new_code = [
         'def load_runtime_config() -> RuntimeConfig:\n',
-        '    "Load configuration from UCI/defaults using msgspec for efficient validation."
-',
+        '    "Load configuration from UCI/defaults using msgspec for efficient validation."\n',
         '\n',
         '    raw_config, source = _load_raw_config()\n',
         '    _CONFIG_STATE.source = source\n',
@@ -85,7 +84,7 @@ if start != -1:
     lines[start:] = new_code
     with open(path, "w") as f:
         f.writelines(lines)
-    print("Successfully patched load_runtime_config")
+    sys.stdout.write("Successfully patched load_runtime_config\n")
 else:
-    print("Could not find load_runtime_config")
+    sys.stderr.write("Could not find load_runtime_config\n")
     sys.exit(1)

@@ -25,8 +25,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=openwrt-mcu-bridge
-PKG_VERSION:=2.5.1
-PKG_RELEASE:=2
+PKG_VERSION:=2.5.2
+PKG_RELEASE:=1
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)
 HOST_PYTHON3 := $(STAGING_DIR_HOSTPKG)/bin/python3
@@ -54,6 +54,7 @@ define Package/$(PKG_NAME)
 		+python3-psutil \
 		+python3-prometheus-client \
 		+python3-pyserial-asyncio-fast \
+		+python3-pyserial \
 		+python3-tenacity \
 		+python3-uvloop \
 		+python3-cryptography \
@@ -81,7 +82,7 @@ define Build/Prepare
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
 	# Never ship tests/ or tools/ in production packages (apk/ipk).
 	# tools/ contains developer-only stubs (frame_debug) not needed at runtime.
-	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" \) -prune -exec rm -rf {} + || true
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
 endef
 

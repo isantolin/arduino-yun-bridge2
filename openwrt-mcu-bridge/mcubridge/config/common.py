@@ -55,14 +55,13 @@ def get_uci_config() -> dict[str, Any]:
 
 
 def get_default_config() -> dict[str, Any]:
-    import msgspec.structs as _structs
+    import msgspec
     from mcubridge.config.settings import RuntimeConfig
-    _SKIP_FIELDS = frozenset({"allowed_policy", "topic_authorization"})
-    defaults: dict[str, Any] = {}
-    for fi in _structs.fields(RuntimeConfig):
-        if fi.name in _SKIP_FIELDS:
-            continue
-        defaults[fi.name] = fi.default
+
+    # [SIL-2] Use msgspec to generate defaults directly from the struct definition.
+    # This ensures defaults are always in sync with the schema without manual iteration.
+    defaults = msgspec.to_builtins(RuntimeConfig())
+    # Ensure debug is set for consistency with legacy behavior
     defaults["debug"] = False
     return defaults
 

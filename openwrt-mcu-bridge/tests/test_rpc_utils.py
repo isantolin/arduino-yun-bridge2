@@ -20,7 +20,10 @@ def test_get_default_config_matches_constants():
     assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE
     assert config["serial_retry_attempts"] == protocol.DEFAULT_RETRY_LIMIT
     assert config["serial_retry_timeout"] == const.DEFAULT_SERIAL_RETRY_TIMEOUT
-    assert config["serial_response_timeout"] == const.DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    assert config["serial_response_timeout"] == max(
+        const.DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+        const.DEFAULT_SERIAL_RETRY_TIMEOUT * 2,
+    )
 
 
 def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):

@@ -71,7 +71,6 @@
 #include "etl/delegate.h"
 #include "etl/optional.h"
 #include "etl/string_view.h"
-#include "util/StreamSender.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
@@ -398,7 +397,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
 
 extern BridgeClass Bridge;
 
-class ConsoleClass : public Stream, public util::StreamSender<ConsoleClass> {
+class ConsoleClass : public Stream {
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::ConsoleTestAccessor;
   #endif

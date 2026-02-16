@@ -5,6 +5,7 @@ import asyncio
 import logging
 import argparse
 import ssl
+import sys
 from typing import Any
 
 from mcubridge_client import Bridge, dump_client_env
@@ -84,7 +85,7 @@ async def main() -> None:
     if not args.host or not args.user or not args.password:
         from mcubridge_client.env import read_uci_general
         if not read_uci_general():
-            print("Error: Missing required connection parameters.")
+            sys.stderr.write("Error: Missing required connection parameters.\n")
             parser.print_help()
             return
 

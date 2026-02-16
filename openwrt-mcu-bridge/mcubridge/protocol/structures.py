@@ -12,9 +12,9 @@ from construct import (  # type: ignore
     Int8ub,
     Int16ub,
     PascalString,
-    PrefixedBytes,
     Construct,
 )
+from construct import Prefixed, GreedyBytes  # type: ignore
 
 T = TypeVar("T", bound="BaseStruct")
 
@@ -23,17 +23,19 @@ class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Construct structures."""
 
     # Subclasses must define this schema
-    _SCHEMA: ClassVar[Construct]
+    _SCHEMA: ClassVar[Construct[Any]]
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
         """Decode binary data into a typed Msgspec struct."""
         if not data:
             raise ValueError("Empty payload")
-        
+
         # 1. Construct parses the binary data (validating lengths/structure)
-        container = cls._SCHEMA.parse(data)
-        
+        # Type checker complains about memoryview/bytearray, so explicit cast or strict bytes required
+        # construct.parse usually accepts bytes-like objects, but pyright is strict.
+        container: Any = cls._SCHEMA.parse(bytes(data))
+
         # 2. Msgspec creates the typed object (efficiently)
         # We filter the container to only include defined fields to avoid
         # passing internal construct metadata.
@@ -54,7 +56,7 @@ class FileWritePacket(BaseStruct, frozen=True):
 
     _SCHEMA = Struct(
         "path" / PascalString(Int8ub, "utf-8"),
-        "data" / PrefixedBytes(Int16ub)
+        "data" / Prefixed(Int16ub, GreedyBytes)
     )
 
 
@@ -122,7 +124,7 @@ class DatastorePutPacket(BaseStruct, frozen=True):
 
     _SCHEMA = Struct(
         "key" / PascalString(Int8ub, "utf-8"),
-        "value" / PrefixedBytes(Int8ub)
+        "value" / Prefixed(Int8ub, GreedyBytes)
     )
 
 
@@ -130,7 +132,7 @@ class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
     _SCHEMA = Struct(
-        "data" / PrefixedBytes(Int16ub)
+        "data" / Prefixed(Int16ub, GreedyBytes)
     )
 
 

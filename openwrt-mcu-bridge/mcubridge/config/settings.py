@@ -172,11 +172,17 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.file_system_root = os.path.abspath(self.file_system_root)
         self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
         self._validate_operational_limits()
+        
+        # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
+        if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            raise ValueError("FLASH PROTECTION: mqtt_spool_dir must be in a volatile location")
+
         if not self.allow_non_tmp_paths:
-            for path_attr in ("file_system_root", "mqtt_spool_dir"):
-                path_val = getattr(self, path_attr)
-                if not any(path_val.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                    raise ValueError(f"FLASH PROTECTION: {path_attr} must be in a volatile location")
+            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                 raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
+
+        if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
+             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
     @staticmethod
     def _normalize_optional_string(value: str | None) -> str | None:

@@ -96,7 +96,7 @@ DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 4194304
 # Warning threshold for files growing large in RAM (1MB)
 FILE_LARGE_WARNING_BYTES: int = 1048576
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear
-VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/mnt", "/var/run", "/run"})
+VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run"})
 SYSTEMD_PRIVATE_PREFIX: str = "systemd-private-"
 
 # -- Component Limits --

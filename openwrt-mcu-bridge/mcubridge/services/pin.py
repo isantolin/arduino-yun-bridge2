@@ -122,11 +122,11 @@ class PinComponent:
 
     @staticmethod
     def _parse_digital_read_value(p: bytes) -> int:
-        return DigitalReadResponsePacket.parse(p).value
+        return DigitalReadResponsePacket.decode(p).value
 
     @staticmethod
     def _parse_analog_read_value(p: bytes) -> int:
-        return AnalogReadResponsePacket.parse(p).value
+        return AnalogReadResponsePacket.decode(p).value
 
     async def handle_mqtt(
         self,

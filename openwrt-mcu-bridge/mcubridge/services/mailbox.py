@@ -64,7 +64,7 @@ class MailboxComponent:
 
     async def handle_push(self, payload: bytes) -> bool:
         try:
-            packet = MailboxPushPacket.parse(payload)
+            packet = MailboxPushPacket.decode(payload)
         except (ConstructError, ValueError):
             logger.warning(
                 "Malformed MAILBOX_PUSH payload: %s",

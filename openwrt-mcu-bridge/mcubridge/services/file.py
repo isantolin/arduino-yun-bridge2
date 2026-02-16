@@ -61,7 +61,7 @@ class FileComponent:
 
     async def handle_write(self, payload: bytes) -> bool:
         try:
-            packet = FileWritePacket.parse(payload)
+            packet = FileWritePacket.decode(payload)
         except (ConstructError, ValueError):
             logger.warning(
                 "Invalid file write payload: parse failed, hex=%s",
@@ -108,7 +108,7 @@ class FileComponent:
 
     async def handle_read(self, payload: bytes) -> None:
         try:
-            packet = FileReadPacket.parse(payload)
+            packet = FileReadPacket.decode(payload)
         except (ConstructError, ValueError):
             logger.warning(
                 "Invalid file read payload: parse failed, hex=%s",
@@ -144,7 +144,7 @@ class FileComponent:
 
     async def handle_remove(self, payload: bytes) -> bool:
         try:
-            packet = FileRemovePacket.parse(payload)
+            packet = FileRemovePacket.decode(payload)
         except (ConstructError, ValueError):
             logger.warning(
                 "Invalid file remove payload: parse failed, hex=%s",

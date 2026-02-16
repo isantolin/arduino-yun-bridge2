@@ -1,31 +1,48 @@
 """MCU Bridge Data Structures and Schemas.
 
 SINGLE SOURCE OF TRUTH for all data structures.
-Improved robustness for binary parsing (SIL-2).
+Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
 """
 
 from __future__ import annotations
-from typing import TypeVar, Type, Any
+from typing import TypeVar, Type, Any, ClassVar
 import msgspec
+from construct import (  # type: ignore
+    Struct,
+    Int8ub,
+    Int16ub,
+    PascalString,
+    PrefixedBytes,
+    Construct,
+)
 
 T = TypeVar("T", bound="BaseStruct")
 
 
 class BaseStruct(msgspec.Struct, frozen=True):
-    @classmethod
-    def parse(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
-        if not data:
-            raise ValueError("Empty payload")
-        # Ensure we work with a memoryview to avoid slicing copies during parsing
-        mv = memoryview(data)
-        try:
-            return cls._decode(mv)
-        except (IndexError, ValueError) as e:
-            raise ValueError(f"Malformed payload: {e}") from e
+    """Base class for hybrid Msgspec/Construct structures."""
+
+    # Subclasses must define this schema
+    _SCHEMA: ClassVar[Construct]
 
     @classmethod
-    def _decode(cls: Type[T], data: memoryview) -> T:
-        raise NotImplementedError
+    def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
+        """Decode binary data into a typed Msgspec struct."""
+        if not data:
+            raise ValueError("Empty payload")
+        
+        # 1. Construct parses the binary data (validating lengths/structure)
+        container = cls._SCHEMA.parse(data)
+        
+        # 2. Msgspec creates the typed object (efficiently)
+        # We filter the container to only include defined fields to avoid
+        # passing internal construct metadata.
+        return cls(**{k: v for k, v in container.items() if not k.startswith("_")})
+
+    def encode(self) -> bytes:
+        """Encode the typed Msgspec struct into binary data."""
+        # msgspec.structs.asdict is highly optimized
+        return self._SCHEMA.build(msgspec.structs.asdict(self))
 
 
 # --- Binary Protocol Packets ---
@@ -35,135 +52,89 @@ class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> FileWritePacket:
-        if len(data) < 3:
-            raise ValueError("Too short")
-        path_len = data[0]
-        if len(data) < 3 + path_len:
-            raise ValueError("Truncated path/header")
-        path = bytes(data[1 : 1 + path_len]).decode("utf-8")
-        # data_len was >H (2 bytes big endian)
-        data_len = int.from_bytes(data[1 + path_len : 3 + path_len], "big")
-        file_data = data[3 + path_len : 3 + path_len + data_len]
-        if len(file_data) < data_len:
-            raise ValueError("Truncated data")
-        return FileWritePacket(path=path, data=file_data.tobytes())
+    _SCHEMA = Struct(
+        "path" / PascalString(Int8ub, "utf-8"),
+        "data" / PrefixedBytes(Int16ub)
+    )
 
 
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> FileReadPacket:
-        if len(data) < 1:
-            raise ValueError("Too short")
-        path_len = data[0]
-        if len(data) < 1 + path_len:
-            raise ValueError("Truncated path")
-        return FileReadPacket(path=bytes(data[1 : 1 + path_len]).decode("utf-8"))
+    _SCHEMA = Struct(
+        "path" / PascalString(Int8ub, "utf-8")
+    )
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> FileRemovePacket:
-        if len(data) < 1:
-            raise ValueError("Too short")
-        path_len = data[0]
-        if len(data) < 1 + path_len:
-            raise ValueError("Truncated path")
-        return FileRemovePacket(path=bytes(data[1 : 1 + path_len]).decode("utf-8"))
+    _SCHEMA = Struct(
+        "path" / PascalString(Int8ub, "utf-8")
+    )
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: int
     minor: int
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> VersionResponsePacket:
-        if len(data) < 2:
-            raise ValueError("Too short")
-        return VersionResponsePacket(major=data[0], minor=data[1])
+    _SCHEMA = Struct(
+        "major" / Int8ub,
+        "minor" / Int8ub
+    )
 
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> FreeMemoryResponsePacket:
-        if len(data) < 2:
-            raise ValueError("Too short")
-        return FreeMemoryResponsePacket(value=int.from_bytes(data[:2], "big"))
+    _SCHEMA = Struct(
+        "value" / Int16ub
+    )
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> DigitalReadResponsePacket:
-        if len(data) < 1:
-            raise ValueError("Too short")
-        return DigitalReadResponsePacket(value=data[0])
+    _SCHEMA = Struct(
+        "value" / Int8ub
+    )
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> AnalogReadResponsePacket:
-        if len(data) < 2:
-            raise ValueError("Too short")
-        return AnalogReadResponsePacket(value=int.from_bytes(data[:2], "big"))
+    _SCHEMA = Struct(
+        "value" / Int16ub
+    )
 
 
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> DatastoreGetPacket:
-        if len(data) < 1:
-            raise ValueError("Too short")
-        key_len = data[0]
-        if len(data) < 1 + key_len:
-            raise ValueError("Truncated key")
-        return DatastoreGetPacket(key=bytes(data[1 : 1 + key_len]).decode("utf-8"))
+    _SCHEMA = Struct(
+        "key" / PascalString(Int8ub, "utf-8")
+    )
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> DatastorePutPacket:
-        if len(data) < 1:
-            raise ValueError("Too short")
-        key_len = data[0]
-        if len(data) < 1 + key_len + 1:
-            raise ValueError("Truncated key/value header")
-        key = bytes(data[1 : 1 + key_len]).decode("utf-8")
-        val_len = data[1 + key_len]
-        if len(data) < 1 + key_len + 1 + val_len:
-            raise ValueError("Truncated value")
-        val_bytes = data[2 + key_len : 2 + key_len + val_len].tobytes()
-        return DatastorePutPacket(key=key, value=val_bytes)
+    _SCHEMA = Struct(
+        "key" / PascalString(Int8ub, "utf-8"),
+        "value" / PrefixedBytes(Int8ub)
+    )
 
 
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    @classmethod
-    def _decode(cls, data: memoryview) -> MailboxPushPacket:
-        if len(data) < 2:
-            raise ValueError("Too short")
-        msg_len = int.from_bytes(data[:2], "big")
-        if len(data) < 2 + msg_len:
-            raise ValueError("Truncated message")
-        return MailboxPushPacket(data=data[2 : 2 + msg_len].tobytes())
+    _SCHEMA = Struct(
+        "data" / PrefixedBytes(Int16ub)
+    )
 
 
-# --- High-Level Structure ---
+# --- High-Level Structure (Msgspec Only) ---
 
 
 class MqttPayload(msgspec.Struct, frozen=True):

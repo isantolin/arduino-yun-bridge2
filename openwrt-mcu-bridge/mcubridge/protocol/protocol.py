@@ -1,6 +1,6 @@
 """Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct  # type: ignore
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct, PascalString, PrefixedBytes  # type: ignore
 from enum import IntEnum, StrEnum
 from typing import Any, Final, cast
 
@@ -70,9 +70,9 @@ HANDSHAKE_NONCE_FORMAT_DESCRIPTION: Final[str] = (
 HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
 HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
 HANDSHAKE_CONFIG_STRUCT: Final = Struct(
-    cast(Any, 'ack_timeout_ms') / Int16ub,
-    cast(Any, 'ack_retry_limit') / Int8ub,
-    cast(Any, 'response_timeout_ms') / Int32ub,
+    "ack_timeout_ms" / Int16ub,
+    "ack_retry_limit" / Int8ub,
+    "response_timeout_ms" / Int32ub,
 )
 HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
 
@@ -99,9 +99,9 @@ DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
 CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
 CRC_COVERED_HEADER_STRUCT: Final = Struct(
-    cast(Any, "version") / Int8ub,
-    cast(Any, "payload_len") / Int16ub,
-    cast(Any, "command_id") / Int16ub,
+    "version" / Int8ub,
+    "payload_len" / Int16ub,
+    "command_id" / Int16ub,
 )
 CRC_FORMAT: Final[str] = ">I"
 CRC_STRUCT: Final = Int32ub
@@ -115,16 +115,16 @@ PIN_READ_FORMAT: Final[str] = ">B"
 PIN_READ_STRUCT: Final = Int8ub
 PIN_WRITE_FORMAT: Final[str] = ">BB"
 PIN_WRITE_STRUCT: Final = Struct(
-    cast(Any, "pin") / Int8ub,
-    cast(Any, "value") / Int8ub,
+    "pin" / Int8ub,
+    "value" / Int8ub,
 )
 CAPABILITIES_FORMAT: Final[str] = ">BBBBI"
 CAPABILITIES_STRUCT: Final = Struct(
-    cast(Any, "ver") / Int8ub,
-    cast(Any, "arch") / Int8ub,
-    cast(Any, "dig") / Int8ub,
-    cast(Any, "ana") / Int8ub,
-    cast(Any, "feat") / Int32ub,
+    "ver" / Int8ub,
+    "arch" / Int8ub,
+    "dig" / Int8ub,
+    "ana" / Int8ub,
+    "feat" / Int32ub,
 )
 NONCE_COUNTER_FORMAT: Final[str] = ">Q"
 NONCE_COUNTER_STRUCT: Final = Int64ub

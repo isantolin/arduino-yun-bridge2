@@ -54,7 +54,7 @@ class SystemComponent:
             logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
             return
 
-        packet = FreeMemoryResponsePacket.parse(payload)
+        packet = FreeMemoryResponsePacket.decode(payload)
         free_memory = packet.value
         topic = topic_path(
             self.state.mqtt_topic_prefix,
@@ -89,7 +89,7 @@ class SystemComponent:
             return
 
         try:
-            packet = VersionResponsePacket.parse(payload)
+            packet = VersionResponsePacket.decode(payload)
             major, minor = packet.major, packet.minor
         except (ConstructError, ValueError):
             logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())

@@ -31,7 +31,7 @@ CPP_HEADER = """/*
 
 PY_HEADER = '''"""Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct  # type: ignore
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct, PascalString, PrefixedBytes  # type: ignore
 from enum import IntEnum, StrEnum
 from typing import Any, Final, cast
 '''
@@ -154,9 +154,9 @@ CONSTRUCT_MAPPING: dict[str, str] = {
     "datastore_value_len_format": "Int8ub",
     "crc_covered_header_format": (
         "Struct(\n"
-        '    cast(Any, "version") / Int8ub,\n'
-        '    cast(Any, "payload_len") / Int16ub,\n'
-        '    cast(Any, "command_id") / Int16ub,\n'
+        '    "version" / Int8ub,\n'
+        '    "payload_len" / Int16ub,\n'
+        '    "command_id" / Int16ub,\n'
         ")"
     ),
     "crc_format": "Int32ub",
@@ -165,15 +165,15 @@ CONSTRUCT_MAPPING: dict[str, str] = {
     "uint32_format": "Int32ub",
     "pin_read_format": "Int8ub",
     "pin_write_format": (
-        "Struct(\n" '    cast(Any, "pin") / Int8ub,\n' '    cast(Any, "value") / Int8ub,\n' ")"
+        "Struct(\n" '    "pin" / Int8ub,\n' '    "value" / Int8ub,\n' ")"
     ),
     "capabilities_format": (
         "Struct(\n"
-        '    cast(Any, "ver") / Int8ub,\n'
-        '    cast(Any, "arch") / Int8ub,\n'
-        '    cast(Any, "dig") / Int8ub,\n'
-        '    cast(Any, "ana") / Int8ub,\n'
-        '    cast(Any, "feat") / Int32ub,\n'
+        '    "ver" / Int8ub,\n'
+        '    "arch" / Int8ub,\n'
+        '    "dig" / Int8ub,\n'
+        '    "ana" / Int8ub,\n'
+        '    "feat" / Int32ub,\n'
         ")"
     ),
     "nonce_counter_format": "Int64ub",
@@ -414,9 +414,9 @@ def _write_python_handshake(out: TextIO, handshake: dict[str, Any]) -> None:
     # Config struct (hardcoded structure)
     out.write(
         "HANDSHAKE_CONFIG_STRUCT: Final = Struct(\n"
-        "    cast(Any, 'ack_timeout_ms') / Int16ub,\n"
-        "    cast(Any, 'ack_retry_limit') / Int8ub,\n"
-        "    cast(Any, 'response_timeout_ms') / Int32ub,\n"
+        "    \"ack_timeout_ms\" / Int16ub,\n"
+        "    \"ack_retry_limit\" / Int8ub,\n"
+        "    \"response_timeout_ms\" / Int32ub,\n"
         ")\n"
     )
     out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore\n")

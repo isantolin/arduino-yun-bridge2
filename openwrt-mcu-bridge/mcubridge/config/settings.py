@@ -172,7 +172,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.file_system_root = os.path.abspath(self.file_system_root)
         self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
         self._validate_operational_limits()
-        
+
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
             raise ValueError("FLASH PROTECTION: mqtt_spool_dir must be in a volatile location")

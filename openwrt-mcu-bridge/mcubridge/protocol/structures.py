@@ -5,15 +5,14 @@ Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
 """
 
 from __future__ import annotations
-from typing import TypeVar, Type, Any, ClassVar, cast
+from typing import TypeVar, Type, Any, ClassVar
 import msgspec
 from construct import (  # type: ignore
     Struct,
     Int8ub,
     Int16ub,
     PascalString,
-    Prefixed,  # type: ignore
-    GreedyBytes,
+    PrefixedBytes,
     Construct,
 )
 
@@ -24,27 +23,26 @@ class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Construct structures."""
 
     # Subclasses must define this schema
-    _SCHEMA: ClassVar[Construct[Any]]
+    _SCHEMA: ClassVar[Construct]
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
         """Decode binary data into a typed Msgspec struct."""
         if not data:
             raise ValueError("Empty payload")
-
+        
         # 1. Construct parses the binary data (validating lengths/structure)
-        # We cast to bytes to satisfy pyright and handle memoryview/bytearray
-        container = cast(dict[str, Any], cls._SCHEMA.parse(bytes(data)))
-
+        container = cls._SCHEMA.parse(data)
+        
         # 2. Msgspec creates the typed object (efficiently)
         # We filter the container to only include defined fields to avoid
         # passing internal construct metadata.
-        return cls(**{str(k): v for k, v in container.items() if not str(k).startswith("_")})
+        return cls(**{k: v for k, v in container.items() if not k.startswith("_")})
 
     def encode(self) -> bytes:
         """Encode the typed Msgspec struct into binary data."""
         # msgspec.structs.asdict is highly optimized
-        return self._SCHEMA.build(msgspec.structs.asdict(self))  # type: ignore
+        return self._SCHEMA.build(msgspec.structs.asdict(self))
 
 
 # --- Binary Protocol Packets ---
@@ -56,7 +54,7 @@ class FileWritePacket(BaseStruct, frozen=True):
 
     _SCHEMA = Struct(
         "path" / PascalString(Int8ub, "utf-8"),
-        "data" / Prefixed(Int16ub, GreedyBytes)  # type: ignore
+        "data" / PrefixedBytes(Int16ub)
     )
 
 
@@ -124,7 +122,7 @@ class DatastorePutPacket(BaseStruct, frozen=True):
 
     _SCHEMA = Struct(
         "key" / PascalString(Int8ub, "utf-8"),
-        "value" / Prefixed(Int8ub, GreedyBytes)  # type: ignore
+        "value" / PrefixedBytes(Int8ub)
     )
 
 
@@ -132,7 +130,7 @@ class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
     _SCHEMA = Struct(
-        "data" / Prefixed(Int16ub, GreedyBytes)  # type: ignore
+        "data" / PrefixedBytes(Int16ub)
     )
 
 

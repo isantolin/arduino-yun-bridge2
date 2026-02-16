@@ -84,7 +84,7 @@ async def main() -> None:
     if not args.host or not args.user or not args.password:
         from mcubridge_client.env import read_uci_general
         if not read_uci_general():
-            logging.info("Error: Missing required connection parameters.")
+            print("Error: Missing required connection parameters.")
             parser.print_help()
             return
 

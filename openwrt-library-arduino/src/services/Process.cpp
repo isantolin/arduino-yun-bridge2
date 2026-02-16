@@ -62,21 +62,21 @@ void ProcessClass::kill(int16_t pid) {
 struct ProcessResponse {
   rpc::StatusCode status;
   uint8_t running;
-  etl::span<const uint8_t> stdout_data;
-  etl::span<const uint8_t> stderr_data;
+  const uint8_t* stdout_ptr;
+  uint16_t stdout_len;
+  const uint8_t* stderr_ptr;
+  uint16_t stderr_len;
 
-  static bool parse(etl::span<const uint8_t> payload, size_t header_size, ProcessResponse& out) {
-    if (payload.size() < header_size + kLenFieldSize) return false;
-    out.status = static_cast<rpc::StatusCode>(payload[0]);
-    out.running = (header_size > kRunRespHeaderSize) ? payload[1] : uint8_t{0};
-    
-    const uint16_t stdout_len = rpc::read_u16_be(&payload[header_size - kLenFieldSize]);
-    if (payload.size() < header_size + stdout_len + kLenFieldSize) return false;
-    out.stdout_data = payload.subspan(header_size, stdout_len);
-    
-    const uint16_t stderr_len = rpc::read_u16_be(&payload[header_size + stdout_len]);
-    if (payload.size() < header_size + stdout_len + kLenFieldSize + stderr_len) return false;
-    out.stderr_data = payload.subspan(header_size + stdout_len + kLenFieldSize, stderr_len);
+  static bool parse(const uint8_t* data, size_t len, size_t header_size, ProcessResponse& out) {
+    if (len < header_size + kLenFieldSize) return false;
+    out.status = static_cast<rpc::StatusCode>(data[0]);
+    out.running = (header_size > kRunRespHeaderSize) ? data[1] : 0;
+    out.stdout_len = rpc::read_u16_be(data + header_size - kLenFieldSize);
+    if (len < header_size + out.stdout_len + kLenFieldSize) return false;
+    out.stdout_ptr = data + header_size;
+    out.stderr_len = rpc::read_u16_be(data + header_size + out.stdout_len);
+    if (len < header_size + out.stdout_len + kLenFieldSize + out.stderr_len) return false;
+    out.stderr_ptr = data + header_size + out.stdout_len + kLenFieldSize;
     return true;
   }
 };
@@ -89,24 +89,20 @@ void ProcessClass::handleResponse(const rpc::Frame& frame) {
   if (payload_length == 0) return;
 
   ProcessResponse res{};
-  etl::span<const uint8_t> payload(payload_data, payload_length);
-
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (_process_run_handler.is_valid() && ProcessResponse::parse(payload, kRunRespHeaderSize, res)) {
-        _process_run_handler(res.status, res.stdout_data.data(), static_cast<uint16_t>(res.stdout_data.size()), 
-                             res.stderr_data.data(), static_cast<uint16_t>(res.stderr_data.size()));
+      if (_process_run_handler.is_valid() && ProcessResponse::parse(payload_data, payload_length, kRunRespHeaderSize, res)) {
+        _process_run_handler(res.status, res.stdout_ptr, res.stdout_len, res.stderr_ptr, res.stderr_len);
       }
       break;
     case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
       if (_process_run_async_handler.is_valid() && payload_length >= 2) {
-        _process_run_async_handler(static_cast<int16_t>(rpc::read_u16_be(payload_data)));
+        _process_run_async_handler(static_cast<int>(rpc::read_u16_be(payload_data)));
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (_process_poll_handler.is_valid() && ProcessResponse::parse(payload, kPollRespHeaderSize, res)) {
-        _process_poll_handler(res.status, res.running, res.stdout_data.data(), static_cast<uint16_t>(res.stdout_data.size()), 
-                              res.stderr_data.data(), static_cast<uint16_t>(res.stderr_data.size()));
+      if (_process_poll_handler.is_valid() && ProcessResponse::parse(payload_data, payload_length, kPollRespHeaderSize, res)) {
+        _process_poll_handler(res.status, res.running, res.stdout_ptr, res.stdout_len, res.stderr_ptr, res.stderr_len);
         _popPendingProcessPid(); 
       }
       break;

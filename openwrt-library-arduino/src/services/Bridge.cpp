@@ -269,13 +269,13 @@ void BridgeClass::process() {
       if (!_fsm.isUnsynchronized()) {
         switch (error) {
           case rpc::FrameError::CRC_MISMATCH:
-            _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH);
+            _emitStatus(rpc::StatusCode::STATUS_CRC_MISMATCH, (const char*)nullptr);
             break;
           case rpc::FrameError::MALFORMED:
-            _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
             break;
           case rpc::FrameError::OVERFLOW:
-            _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+            _emitStatus(rpc::StatusCode::STATUS_MALFORMED, (const char*)nullptr);
             break;
         }
       }

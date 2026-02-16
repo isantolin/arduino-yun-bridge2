@@ -52,8 +52,7 @@ async def test_serial_reader_task_processes_frame(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
-    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()):
+    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create):
         task = asyncio.create_task(transport.run())
 
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
@@ -106,8 +105,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
-    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()):
+    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create):
         task = asyncio.create_task(transport.run())
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -149,8 +147,7 @@ async def test_serial_reader_task_limits_packet_size(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
-    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()):
+    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create):
         task = asyncio.create_task(transport.run())
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -186,8 +183,7 @@ async def test_serial_reader_task_propagates_handshake_fatal(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
-    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()):
+    with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create):
         task = asyncio.create_task(transport.run())
 
         try:

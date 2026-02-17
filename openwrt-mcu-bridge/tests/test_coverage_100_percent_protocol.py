@@ -10,12 +10,13 @@ def _build_raw_with_crc(data_no_crc: bytes) -> bytes:
 
 
 def test_frame_parse_coverage_all_errors():
-    # Line 120: Incomplete header
+    # Line 120: Incomplete header / Construct StreamError
     # To hit this, we need MIN_FRAME_SIZE to be smaller than Header + CRC
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(protocol, "MIN_FRAME_SIZE", 5)
         # raw_frame_buffer must be >= 5 but < 9
-        with pytest.raises(ValueError, match="Incomplete header"):
+        # Construct will fail to read payload/crc
+        with pytest.raises(ValueError, match="(Incomplete header|Frame parsing failed)"):
             Frame.parse(b"1234567")
 
     # Line 125: CRC Mismatch

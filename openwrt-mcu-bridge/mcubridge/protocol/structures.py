@@ -253,7 +253,7 @@ class QueuedPublish(msgspec.Struct):
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
         data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
-        
+
         payload = base64.b64decode(data.get("payload", ""))
         corr_raw = data.get("correlation_data")
         correlation_data = base64.b64decode(corr_raw) if corr_raw else None

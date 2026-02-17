@@ -20,10 +20,8 @@ from construct import (  # type: ignore
     Int8ub,
     Int16ub,
     PascalString,
-    Prefixed,
+    Prefixed,  # type: ignore
     this,
-)
-from construct import (  # type: ignore
     Struct as BinStruct,
 )
 

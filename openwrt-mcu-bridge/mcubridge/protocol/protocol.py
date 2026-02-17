@@ -4,8 +4,7 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import Final
 
-from construct import Int8ub, Int16ub, Int32ub, Int64ub  # type: ignore
-from construct import Struct as BinStruct
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
 
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
@@ -78,7 +77,6 @@ HANDSHAKE_CONFIG_STRUCT: Final = BinStruct(
     "response_timeout_ms" / Int32ub,
 )
 HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
-
 
 class CompressionType(IntEnum):
     NONE = 0

@@ -30,9 +30,11 @@ CPP_HEADER = """/*
 
 PY_HEADER = '''"""Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
+
 from enum import IntEnum, StrEnum
 from typing import Final
+
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
 '''
 
 # =============================================================================

@@ -3,6 +3,8 @@
 
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
+#if BRIDGE_ENABLE_PROCESS
+
 // Response field sizes (bytes) for CMD_PROCESS_RUN_RESP / CMD_PROCESS_POLL_RESP
 static constexpr size_t kStatusFieldSize = 1;
 static constexpr size_t kLenFieldSize = 2;
@@ -128,3 +130,5 @@ uint16_t ProcessClass::_popPendingProcessPid() {
   _pending_process_pids.pop();
   return pid;
 }
+
+#endif

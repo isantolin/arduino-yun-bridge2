@@ -4,6 +4,8 @@
 
 // [OPTIMIZATION] Numerical status codes used instead of PROGMEM strings.
 
+#if BRIDGE_ENABLE_DATASTORE
+
 DataStoreClass::DataStoreClass() 
   : _datastore_get_handler() {
   _last_datastore_key.clear();
@@ -75,3 +77,5 @@ bool DataStoreClass::_trackPendingDatastoreKey(etl::string_view key) {
   _pending_datastore_keys.push(etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>(key.data(), key.length()));
   return true;
 }
+
+#endif

@@ -222,24 +222,32 @@ void integrated_test_extreme_coverage() {
     accessor.dispatch(f);
 
     // 4. DataStore Nulls
+    #if BRIDGE_ENABLE_DATASTORE
     DataStore.put(etl::string_view{}, "v");
     DataStore.put("k", etl::string_view{});
+    #endif
 
     // 5. FileSystem Nulls/Long
+    #if BRIDGE_ENABLE_FILESYSTEM
     FileSystem.write(etl::string_view{}, (const uint8_t*)"d", 1);
     char long_path[200]; etl::fill_n(long_path, 199, 'a'); long_path[199] = '\0';
     FileSystem.write(long_path, (const uint8_t*)"d", 1);
+    #endif
 
     // 6. Responses
     rpc::Frame resp;
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
     resp.header.payload_length = 1;
+    #if BRIDGE_ENABLE_PROCESS
     Process.handleResponse(resp);
+    #endif
     
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
     resp.header.payload_length = 1;
     resp.payload[0] = 50; // Lie about len
+    #if BRIDGE_ENABLE_DATASTORE
     DataStore.handleResponse(resp);
+    #endif
 
     // 7. Dup
     rpc::Frame f_dup;
@@ -286,6 +294,7 @@ void integrated_test_extreme_coverage() {
     Console.peek(); Console.read();
 
     // 12. FileSystem
+    #if BRIDGE_ENABLE_FILESYSTEM
     char huge_path[rpc::RPC_MAX_FILEPATH_LENGTH + 10];
     etl::fill_n(huge_path, sizeof(huge_path), 'P'); huge_path[sizeof(huge_path)-1] = '\0';
     FileSystem.write(huge_path, (const uint8_t*)"X", 1);
@@ -300,8 +309,10 @@ void integrated_test_extreme_coverage() {
     f_fs.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     f_fs.header.payload_length = 0;
     FileSystem.handleResponse(f_fs);
+    #endif
 
     // 13. Mailbox
+    #if BRIDGE_ENABLE_MAILBOX
     char huge_msg[rpc::MAX_PAYLOAD_SIZE + 10];
     etl::fill_n(huge_msg, sizeof(huge_msg), 'M'); huge_msg[sizeof(huge_msg)-1] = '\0';
     Mailbox.send(huge_msg);
@@ -314,8 +325,10 @@ void integrated_test_extreme_coverage() {
     f_mb.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     f_mb.header.payload_length = 1;
     Mailbox.handleResponse(f_mb);
+    #endif
 
     // 14. Process
+    #if BRIDGE_ENABLE_PROCESS
     char huge_cmd[rpc::MAX_PAYLOAD_SIZE + 10];
     etl::fill_n(huge_cmd, sizeof(huge_cmd), 'S'); huge_cmd[sizeof(huge_cmd)-1] = '\0';
     Process.run(huge_cmd);
@@ -340,14 +353,17 @@ void integrated_test_extreme_coverage() {
 
     f_proc.header.payload_length = 5;
     Process.handleResponse(f_proc);
+    #endif
 
     // 14b. DataStore
+    #if BRIDGE_ENABLE_DATASTORE
     char huge_key[rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 10];
     etl::fill_n(huge_key, sizeof(huge_key), 'K'); huge_key[sizeof(huge_key)-1] = '\0';
     DataStore.put(huge_key, "V");
     DataStore.requestGet(huge_key);
     for (int i = 0; i < 10; i++) DataStore.requestGet("key");
     DataStore.handleResponse(rpc::Frame()); 
+    #endif 
 
     // 15. Status / Retransmission
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "test error");
@@ -410,13 +426,21 @@ void integrated_test_extreme_coverage() {
     { BridgeClass bridge_hs(Serial1); bridge_hs.begin(115200); }
 
     // 20. Callbacks
+    #if BRIDGE_ENABLE_DATASTORE
     DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<test_ds_cb>());
+    #endif
+    #if BRIDGE_ENABLE_FILESYSTEM
     FileSystem.onFileSystemReadResponse(FileSystemClass::FileSystemReadHandler::create<test_fs_cb>());
+    #endif
+    #if BRIDGE_ENABLE_PROCESS
     Process.onProcessRunResponse(ProcessClass::ProcessRunHandler::create<test_pr_run_cb>());
     Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<test_pr_poll_cb>());
     Process.onProcessRunAsyncResponse(ProcessClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
+    #endif
+    #if BRIDGE_ENABLE_MAILBOX
     Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<test_mb_cb>());
     Mailbox.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
+    #endif
 }
 
 int main() {

@@ -1,6 +1,6 @@
 import asyncio
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import msgspec
 import pytest
@@ -16,8 +16,8 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         status_path = tmp_path / "status.json"
         writes: list[dict[str, object]] = []
 
-        def fake_write(payload: dict[str, object]) -> None:
-            writes.append(payload)
+        def fake_write(payload: Any) -> None:
+            writes.append(msgspec.structs.asdict(payload))
             status_path.write_bytes(msgspec.json.encode(payload))
 
         monkeypatch.setattr(status, "STATUS_FILE", status_path)

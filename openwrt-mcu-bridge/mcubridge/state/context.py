@@ -47,6 +47,13 @@ from ..protocol.protocol import (
     Command,
     Status,
 )
+from ..protocol.structures import (
+    BridgeSnapshot,
+    HandshakeSnapshot,
+    McuVersion,
+    SerialLinkSnapshot,
+    SerialPipelineSnapshot,
+)
 from .queues import BoundedByteDeque
 
 logger = logging.getLogger("mcubridge.state")
@@ -83,7 +90,7 @@ __all__: Final[tuple[str, ...]] = (
     "_ExponentialBackoff",
     "HandshakeSnapshot",
     "SerialLinkSnapshot",
-    "McuVersionSnapshot",
+    "McuVersion",
     "SerialPipelineSnapshot",
     "BridgeSnapshot",
 )
@@ -492,68 +499,6 @@ class SupervisorStats(msgspec.Struct):
 
     def as_dict(self) -> dict[str, Any]:
         return msgspec.structs.asdict(self)
-
-
-# ---------------------------------------------------------------------------
-# Typed snapshot structs for build_*() methods (Item 2).
-# These replace manual dict[str, Any] assembly with msgspec.Struct objects
-# that are directly serializable via msgspec.json.encode() and catch key
-# typos at static-analysis time.
-# ---------------------------------------------------------------------------
-
-
-class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    """Typed snapshot of handshake state for MQTT/status publication."""
-
-    synchronised: bool = False
-    attempts: int = 0
-    successes: int = 0
-    failures: int = 0
-    failure_streak: int = 0
-    last_error: str | None = None
-    last_unix: float = 0.0
-    last_duration: float = 0.0
-    backoff_until: float = 0.0
-    rate_limit_until: float = 0.0
-    fatal_count: int = 0
-    fatal_reason: str | None = None
-    fatal_detail: str | None = None
-    fatal_unix: float = 0.0
-    pending_nonce: bool = False
-    nonce_length: int = 0
-
-
-class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    """Typed snapshot of serial link connection state."""
-
-    connected: bool = False
-    writer_attached: bool = False
-    synchronised: bool = False
-
-
-class McuVersionSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    """Typed snapshot of MCU firmware version."""
-
-    major: int = 0
-    minor: int = 0
-
-
-class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    """Typed snapshot of serial command pipeline state."""
-
-    inflight: dict[str, Any] | None = None
-    last_completion: dict[str, Any] | None = None
-
-
-class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    """Typed snapshot of bridge state for MQTT/status publication."""
-
-    serial_link: SerialLinkSnapshot
-    handshake: HandshakeSnapshot
-    serial_pipeline: SerialPipelineSnapshot
-    serial_flow: dict[str, Any]
-    mcu_version: McuVersionSnapshot | None = None
-    capabilities: dict[str, int | bool] | None = None
 
 
 def _collect_system_metrics() -> dict[str, Any]:
@@ -1422,7 +1367,7 @@ class RuntimeState(msgspec.Struct):
     def build_bridge_snapshot(self) -> BridgeSnapshot:
         mcu_version = None
         if self.mcu_version is not None:
-            mcu_version = McuVersionSnapshot(
+            mcu_version = McuVersion(
                 major=self.mcu_version[0],
                 minor=self.mcu_version[1],
             )

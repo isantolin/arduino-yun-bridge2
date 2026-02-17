@@ -167,27 +167,6 @@ class SystemStatus(msgspec.Struct, frozen=True):
     uptime_seconds: float
 
 
-class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    synchronised: bool = False
-    attempts: int = 0
-    successes: int = 0
-    failures: int = 0
-    last_error: str | None = None
-    last_unix: float = 0.0
-
-
-class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    connected: bool = False
-    synchronised: bool = False
-
-
-class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    serial_link: SerialLinkSnapshot
-    handshake: HandshakeSnapshot
-    mcu_version: dict[str, int] | None = None
-    capabilities: dict[str, Any] | None = None
-
-
 # --- MQTT Spool Structures ---
 
 
@@ -343,3 +322,142 @@ class PendingCommand(msgspec.Struct):
         self.failure_status = status
         if not self.completion.is_set():
             self.completion.set()
+
+
+# --- Status Structures ---
+
+
+class SupervisorSnapshot(msgspec.Struct):
+    restarts: int
+    last_failure_unix: float
+    last_exception: str | None
+    backoff_seconds: float
+    fatal: bool
+
+
+class McuVersion(msgspec.Struct):
+    major: int
+    minor: int
+
+
+class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    inflight: dict[str, Any] | None = None
+    last_completion: dict[str, Any] | None = None
+
+
+class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    connected: bool = False
+    writer_attached: bool = False
+    synchronised: bool = False
+
+
+class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    synchronised: bool = False
+    attempts: int = 0
+    successes: int = 0
+    failures: int = 0
+    failure_streak: int = 0
+    last_error: str | None = None
+    last_unix: float = 0.0
+    last_duration: float = 0.0
+    backoff_until: float = 0.0
+    rate_limit_until: float = 0.0
+    fatal_count: int = 0
+    fatal_reason: str | None = None
+    fatal_detail: str | None = None
+    fatal_unix: float = 0.0
+    pending_nonce: bool = False
+    nonce_length: int = 0
+
+
+class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
+    serial_link: SerialLinkSnapshot
+    handshake: HandshakeSnapshot
+    serial_pipeline: SerialPipelineSnapshot
+    serial_flow: dict[str, Any]
+    mcu_version: McuVersion | None = None
+    capabilities: dict[str, Any] | None = None
+
+
+class SerialFlowSnapshot(msgspec.Struct):
+    commands_sent: int
+    commands_acked: int
+    retries: int
+    failures: int
+    last_event_unix: float
+
+
+class BridgeStatus(msgspec.Struct):
+    """Root structure for the daemon status file."""
+
+    # Serial Link
+    serial_connected: bool
+    serial_flow: SerialFlowSnapshot
+    link_synchronised: bool
+    handshake_attempts: int
+    handshake_successes: int
+    handshake_failures: int
+    handshake_last_error: str | None
+    handshake_last_unix: float
+
+    # MQTT
+    mqtt_queue_size: int
+    mqtt_queue_limit: int
+    mqtt_messages_dropped: int
+    mqtt_drop_counts: dict[str, int]
+
+    # Spool
+    mqtt_spooled_messages: int
+    mqtt_spooled_replayed: int
+    mqtt_spool_errors: int
+    mqtt_spool_degraded: bool
+    mqtt_spool_failure_reason: str | None
+    mqtt_spool_retry_attempts: int
+    mqtt_spool_backoff_until: float
+    mqtt_spool_last_error: str | None
+    mqtt_spool_recoveries: int
+    mqtt_spool_pending: int
+
+    # Storage
+    file_storage_root: str
+    file_storage_bytes_used: int
+    file_storage_quota_bytes: int
+    file_write_max_bytes: int
+    file_write_limit_rejections: int
+    file_storage_limit_rejections: int
+
+    # Queues
+    datastore_keys: list[str]
+    mailbox_size: int
+    mailbox_bytes: int
+    mailbox_dropped_messages: int
+    mailbox_dropped_bytes: int
+    mailbox_truncated_messages: int
+    mailbox_truncated_bytes: int
+    mailbox_incoming_dropped_messages: int
+    mailbox_incoming_dropped_bytes: int
+    mailbox_incoming_truncated_messages: int
+    mailbox_incoming_truncated_bytes: int
+    console_queue_size: int
+    console_queue_bytes: int
+    console_dropped_chunks: int
+    console_dropped_bytes: int
+    console_truncated_chunks: int
+    console_truncated_bytes: int
+
+    # System
+    mcu_paused: bool
+    mcu_version: McuVersion | None
+    watchdog_enabled: bool
+    watchdog_interval: float
+    watchdog_beats: int
+    watchdog_last_beat: float
+    running_processes: list[str]
+    allowed_commands: list[str]
+    config_source: str
+
+    # Snapshots
+    bridge: BridgeSnapshot
+    supervisors: dict[str, SupervisorSnapshot]
+    heartbeat_unix: float
+

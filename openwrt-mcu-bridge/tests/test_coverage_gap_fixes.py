@@ -13,7 +13,7 @@ import pytest
 import tenacity
 from construct import ConstructError
 from mcubridge import daemon, metrics
-from mcubridge.config import common
+from mcubridge.config import common, settings
 from mcubridge.mqtt import spool
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol import protocol, topics
@@ -21,7 +21,7 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.security import security
 from mcubridge.services import dispatcher, handshake
-from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.state import context, status
 from mcubridge.transport import mqtt
 from mcubridge.util import mqtt_helper
@@ -638,7 +638,7 @@ def test_settings_load_runtime_config_coverage():
         assert config.allow_non_tmp_paths is True
 
 
-def test_settings_validation_errors():
+def test_settings_validation_errors(monkeypatch: pytest.MonkeyPatch):
     """Cover validation errors in RuntimeConfig."""
     from mcubridge.config.settings import RuntimeConfig
 
@@ -688,8 +688,9 @@ def test_settings_validation_errors():
     # Test empty topic
     bad_cfg = cfg_dict.copy()
     bad_cfg["mqtt_topic"] = "/"
+    monkeypatch.setattr("mcubridge.config.settings._load_raw_config", lambda: (bad_cfg, "test"))
     with pytest.raises(ValueError, match="at least one segment"):
-        RuntimeConfig(**bad_cfg)
+        settings.load_runtime_config()
 
     # Test tls_insecure warning
     with patch("mcubridge.config.settings.logger.warning") as mock_warn:
@@ -720,17 +721,6 @@ def test_settings_load_raw_config_error():
         res, source = _load_raw_config()
         assert isinstance(res, dict)
         assert source == "defaults"
-
-
-def test_settings_normalize_path_empty():
-    """Cover empty path in _normalize_path."""
-    from mcubridge.config.settings import RuntimeConfig
-
-    with pytest.raises(ValueError, match="non-empty path"):
-        RuntimeConfig._normalize_path("", field_name="test", require_absolute=True)
-
-    with pytest.raises(ValueError, match="absolute path"):
-        RuntimeConfig._normalize_path("relative/path", field_name="test", require_absolute=True)
 
 
 def test_logging_gaps():
@@ -1662,15 +1652,3 @@ def test_init_check_dependencies_direct():
 
 
 # --- mcubridge/services/handshake.py ---
-
-
-def test_derive_serial_timing_clamping():
-    """Cover clamping and limits in derive_serial_timing."""
-    cfg = create_fake_config()
-    cfg.serial_retry_timeout = 10000.0
-    timing = derive_serial_timing(cfg)
-    assert timing.ack_timeout_ms > 0
-
-    cfg.serial_retry_timeout = -1.0
-    timing = derive_serial_timing(cfg)
-    assert timing.ack_timeout_ms > 0

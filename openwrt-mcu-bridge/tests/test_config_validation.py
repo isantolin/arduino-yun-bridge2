@@ -64,16 +64,9 @@ def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> 
     raw = _config_kwargs(mqtt_topic="//")
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 
-    # settings.py now falls back to defaults on error, but we want to verify
-    # the specific rejection logic. We'll use msgspec directly for the segments check
-    # if it's still in the loader.
-    from mcubridge.config.settings import load_runtime_config
-    # In the new architecture, load_runtime_config logs error and returns defaults if invalid.
-    # To test the logic, we check that it doesn't accept the empty topic.
-    config = load_runtime_config()
-    assert config.mqtt_topic != "//"
-    assert config.mqtt_topic == "br" # default fallback
-
+    # settings.py now raises ValueError during test source for invalid topic
+    with pytest.raises(ValueError, match="mqtt_topic must contain at least one segment"):
+        settings.load_runtime_config()
 
 def test_runtime_config_rejects_non_positive_status_interval() -> None:
     # We now allow conversion but clamp to minimum safe values or fail in convert

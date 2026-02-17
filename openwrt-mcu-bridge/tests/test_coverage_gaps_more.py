@@ -55,29 +55,6 @@ def _make_config() -> RuntimeConfig:
 # ============================================================================
 
 
-def test_queues_normalize_limit_with_string() -> None:
-    """Cover _normalize_limit with string input."""
-    from mcubridge.state.queues import _normalize_limit
-
-    assert _normalize_limit("100") == 100
-    assert _normalize_limit("-5") == 0
-    assert _normalize_limit("invalid") is None
-
-
-def test_queues_normalize_limit_with_none() -> None:
-    """Cover _normalize_limit with None."""
-    from mcubridge.state.queues import _normalize_limit
-
-    assert _normalize_limit(None) is None
-
-
-def test_queues_normalize_limit_with_negative_int() -> None:
-    """Cover _normalize_limit with negative int."""
-    from mcubridge.state.queues import _normalize_limit
-
-    assert _normalize_limit(-10) == 0
-
-
 def test_bounded_deque_iterator() -> None:
     """Cover __iter__ method."""
     from mcubridge.state.queues import BoundedByteDeque

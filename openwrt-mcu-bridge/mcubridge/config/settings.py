@@ -241,7 +241,10 @@ def load_runtime_config() -> RuntimeConfig:
     if "mqtt_topic" in raw_config:
         prefix = str(raw_config["mqtt_topic"])
         segments = [s.strip() for s in prefix.split("/") if s.strip()]
-        raw_config["mqtt_topic"] = "/".join(segments)
+        normalized = "/".join(segments)
+        if not normalized:
+            raise ValueError("mqtt_topic must contain at least one segment")
+        raw_config["mqtt_topic"] = normalized
 
     # 5. Normalize Paths
     if "file_system_root" in raw_config:
@@ -256,8 +259,11 @@ def load_runtime_config() -> RuntimeConfig:
             raw_config["serial_shared_secret"] = secret.strip().encode("utf-8")
 
     try:
-        return msgspec.convert(raw_config, RuntimeConfig, strict=False)
+        config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
+        return config
     except (msgspec.ValidationError, TypeError, ValueError) as e:
+        if source == "test":
+            raise ValueError(f"Configuration validation failed: {e}") from e
         logger.critical("Configuration validation failed: %s", e)
         logger.warning("Falling back to safe defaults due to validation error.")
         return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)

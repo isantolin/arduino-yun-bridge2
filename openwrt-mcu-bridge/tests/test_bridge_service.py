@@ -579,16 +579,18 @@ async def test_transient_handshake_failures_eventually_backoff(
     assert runtime_state.handshake_fatal_detail == ("failure_streak_exceeded_3")
 
 
-def test_derive_serial_timing_clamps_to_spec(
+def test_derive_serial_timing_limits(
     runtime_config: RuntimeConfig,
 ) -> None:
+    # Test min legal bound violation
     runtime_config.serial_retry_timeout = 0.0001
-    runtime_config.serial_response_timeout = 999.0
-    runtime_config.serial_retry_attempts = 99
-    timing = derive_serial_timing(runtime_config)
-    assert timing.ack_timeout_ms == protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
-    assert timing.response_timeout_ms == protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS
-    assert timing.retry_limit == protocol.HANDSHAKE_RETRY_LIMIT_MAX
+    with pytest.raises(msgspec.ValidationError):
+        derive_serial_timing(runtime_config)
+
+    # Test max legal bound violation
+    runtime_config.serial_retry_timeout = 100.0
+    with pytest.raises(msgspec.ValidationError):
+        derive_serial_timing(runtime_config)
 
 
 def test_on_serial_connected_raises_on_secret_mismatch(

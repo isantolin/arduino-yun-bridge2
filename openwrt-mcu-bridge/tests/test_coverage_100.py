@@ -423,19 +423,6 @@ def test_queues_make_room_for_complex() -> None:
 
 
 # ============================================================================
-# HANDSHAKE - EDGE CASES
-# ============================================================================
-
-
-def test_handshake_clamp_function() -> None:
-    """Cover _clamp helper function."""
-    from mcubridge.services.handshake import _clamp
-
-    assert _clamp(5, 0, 10) == 5
-    assert _clamp(-5, 0, 10) == 0
-    assert _clamp(15, 0, 10) == 10
-
-
 # ============================================================================
 # DISPATCHER - EDGE CASES
 # ============================================================================

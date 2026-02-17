@@ -41,6 +41,8 @@ def _configure_fallback_logging() -> None:
 _UCI = get_uci_config()
 
 # [SIL-2] Explicit boundary validation for UCI values
+DEFAULT_PUBLISH_TIMEOUT = 4.0
+
 try:
     retries = max(1, int(_UCI.get("pin_mqtt_retries", 3)))
     publish_timeout = max(0.0, float(_UCI.get("pin_mqtt_timeout", 4.0)))

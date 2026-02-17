@@ -3,7 +3,6 @@
 
 #include "rpc_frame.h"
 #include "rpc_protocol.h"
-#include <etl/endianness.h>
 #include <etl/vector.h>
 #include <etl/string_view.h>
 #include <etl/algorithm.h>

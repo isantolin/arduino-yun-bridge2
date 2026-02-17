@@ -3,7 +3,8 @@
 
 #include <Arduino.h>
 #include "rpc_protocol.h"
-
+#include <string.h>
+#include "etl/endianness.h"
 
 // ETL requires min/max from <algorithm>, but Arduino.h defines them as macros.
 #undef min
@@ -11,8 +12,6 @@
 #include "etl/array.h"
 #include "etl/expected.h"
 #include "etl/span.h"
-#include "etl/endianness.h"
-
 
 namespace rpc {
 
@@ -20,22 +19,28 @@ namespace rpc {
 
 // Reads a uint16_t from a Big Endian buffer.
 inline uint16_t read_u16_be(const uint8_t* buffer) {
-  return etl::endian::read_u16_be(buffer);
+  uint16_t value;
+  memcpy(&value, buffer, sizeof(uint16_t));
+  return etl::ntoh(value);
 }
 
 // Writes a uint16_t to a Big Endian buffer.
 inline void write_u16_be(uint8_t* buffer, uint16_t value) {
-  etl::endian::write_u16_be(buffer, value);
+  uint16_t net_value = etl::hton(value);
+  memcpy(buffer, &net_value, sizeof(uint16_t));
 }
 
 // Reads a uint32_t from a Big Endian buffer.
 inline uint32_t read_u32_be(const uint8_t* buffer) {
-  return etl::endian::read_u32_be(buffer);
+  uint32_t value;
+  memcpy(&value, buffer, sizeof(uint32_t));
+  return etl::ntoh(value);
 }
 
 // Writes a uint32_t to a Big Endian buffer.
 inline void write_u32_be(uint8_t* buffer, uint32_t value) {
-  etl::endian::write_u32_be(buffer, value);
+  uint32_t net_value = etl::hton(value);
+  memcpy(buffer, &net_value, sizeof(uint32_t));
 }
 
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);

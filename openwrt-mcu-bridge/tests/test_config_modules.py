@@ -94,7 +94,7 @@ def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
     assert config.bridge_handshake_interval == 20.0
 
 
-def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
+def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ):
     raw_config = {
@@ -104,10 +104,9 @@ def test_load_runtime_config_overrides_non_tmp_paths_when_disabled(
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
-    config = settings.load_runtime_config()
-    # Spool must be under /tmp if not allowed
-    assert config.mqtt_spool_dir.startswith("/tmp")
-    assert config.file_system_root.startswith("/tmp")
+    # Strict validation should now raise ValueError during load_runtime_config in test mode
+    with pytest.raises(ValueError, match="FLASH PROTECTION"):
+        settings.load_runtime_config()
 
 
 def test_load_runtime_config_allows_empty_mqtt_user_value(

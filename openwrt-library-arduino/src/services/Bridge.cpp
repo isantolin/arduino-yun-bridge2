@@ -1017,7 +1017,9 @@ void BridgeClass::_onBaudrateChange() {
 void BridgeClass::_onStartupStabilized() {
   // [SIL-2] Non-blocking startup stabilization complete
   // Final drain of any remaining garbage in the buffer
-  while (_stream.available() > 0) { _stream.read(); }
+  // [SIL-2] Bounded drain to ensure determinism (max 256 bytes)
+  uint16_t drain_limit = 256;
+  while (_stream.available() > 0 && drain_limit-- > 0) { _stream.read(); }
   _startup_stabilizing = false;
 }
 

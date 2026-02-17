@@ -47,11 +47,22 @@ class FileSpoolDeque:
         self._dir = Path(directory)
         self._dir.mkdir(parents=True, exist_ok=True)
 
-        # Scan directory to find existing head/tail
-        files = sorted([f.name for f in self._dir.glob("*.msg")])
-        if files:
-            self._head = int(files[0].split(".")[0])
-            self._tail = int(files[-1].split(".")[0])
+        # [SIL-2] OPTIMIZATION: Scan directory with O(1) memory usage.
+        # Avoid sorted([...]) which loads all filenames into RAM (dangerous on low-mem targets).
+        # We find min (head) and max (tail) in a single pass.
+        min_name: str | None = None
+        max_name: str | None = None
+
+        for f in self._dir.glob("*.msg"):
+            name = f.name
+            if min_name is None or name < min_name:
+                min_name = name
+            if max_name is None or name > max_name:
+                max_name = name
+
+        if min_name is not None and max_name is not None:
+            self._head = int(min_name.split(".")[0])
+            self._tail = int(max_name.split(".")[0])
         else:
             self._head = self._INITIAL_INDEX
             self._tail = self._INITIAL_INDEX - 1

@@ -17,8 +17,9 @@ def test_status_writer_publishes_metrics(monkeypatch, tmp_path):
         writes: list[dict[str, object]] = []
 
         def fake_write(payload: Any) -> None:
-            writes.append(msgspec.structs.asdict(payload))
-            status_path.write_bytes(msgspec.json.encode(payload))
+            data = msgspec.json.encode(payload)
+            writes.append(msgspec.json.decode(data))
+            status_path.write_bytes(data)
 
         monkeypatch.setattr(status, "STATUS_FILE", status_path)
         monkeypatch.setattr(

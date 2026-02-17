@@ -1406,8 +1406,8 @@ def test_handshake_timing_branches():
     assert window.response_timeout_seconds == 0.5
 
     cfg = create_fake_config()
-    cfg.serial_retry_timeout = 0.001  # Clamp to min
-    cfg.serial_response_timeout = 100.0  # Clamp to max
+    cfg.serial_retry_timeout = 0.03  # Min legal > 25ms
+    cfg.serial_response_timeout = 60.0  # Max legal
     window2 = handshake.derive_serial_timing(cfg)
     assert window2.ack_timeout_ms >= handshake.protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
 

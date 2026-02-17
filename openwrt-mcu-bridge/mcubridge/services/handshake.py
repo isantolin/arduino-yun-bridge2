@@ -48,9 +48,9 @@ logger = logging.getLogger("mcubridge.service.handshake")
 class SerialTimingWindow(msgspec.Struct, frozen=True):
     """Derived serial retry/response windows used by both MCU and MPU."""
 
-    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0, le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS)]
-    response_timeout_ms: Annotated[int, msgspec.Meta(ge=0, le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)]
-    retry_limit: Annotated[int, msgspec.Meta(ge=0, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX)]
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS)]
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)]
+    retry_limit: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX)]
 
     @property
     def ack_timeout_seconds(self) -> float:
@@ -61,31 +61,15 @@ class SerialTimingWindow(msgspec.Struct, frozen=True):
         return self.response_timeout_ms / 1000.0
 
 
-def _clamp(value: int, lower: int, upper: int) -> int:
-    """Clamp value between lower and upper bounds."""
-    return max(lower, min(upper, value))
-
-
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
-    """Derive timing windows from config with declarative validation."""
-    # [SIL-2] Manual clamping required to satisfy legacy test expectations 
-    # where values are capped instead of rejected.
-    ack_ms = _clamp(
-        int(round(config.serial_retry_timeout * 1000.0)),
-        protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
-        protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
-    )
-    response_ms = _clamp(
-        int(round(config.serial_response_timeout * 1000.0)),
-        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
-        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
-    )
+    """Derive timing windows from config with strict declarative validation."""
+    # Convert configuration seconds to milliseconds for the wire protocol
+    ack_ms = int(round(config.serial_retry_timeout * 1000.0))
+    response_ms = int(round(config.serial_response_timeout * 1000.0))
+    retry_limit = int(config.serial_retry_attempts)
+
+    # Cross-field semantic validation: response must always be >= retry/ack
     response_ms = max(response_ms, ack_ms)
-    retry_limit = _clamp(
-        int(config.serial_retry_attempts),
-        protocol.HANDSHAKE_RETRY_LIMIT_MIN,
-        protocol.HANDSHAKE_RETRY_LIMIT_MAX,
-    )
 
     raw = {
         "ack_timeout_ms": ack_ms,
@@ -93,7 +77,8 @@ def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
         "retry_limit": retry_limit,
     }
     
-    return msgspec.convert(raw, SerialTimingWindow, strict=False)
+    # [SIL-2] msgspec will raise ValidationError if values are outside protocol bounds.
+    return msgspec.convert(raw, SerialTimingWindow, strict=True)
 
 class SerialHandshakeFatal(RuntimeError):
     """Raised when MCU rejects the serial shared secret permanently."""

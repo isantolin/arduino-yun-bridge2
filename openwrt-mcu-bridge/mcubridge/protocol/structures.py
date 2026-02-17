@@ -7,7 +7,6 @@ Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
 from __future__ import annotations
 
 import asyncio
-import asyncio
 import base64
 from collections.abc import Iterable
 from enum import IntEnum
@@ -21,7 +20,7 @@ from construct import (  # type: ignore
     Int8ub,
     Int16ub,
     PascalString,
-    Prefixed,  # type: ignore
+    Prefixed,
     Switch,
     this,
     Struct as BinStruct,
@@ -262,22 +261,20 @@ class QueuedPublish(msgspec.Struct):
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-        # [SIL-2] Compatibility: Support both msgspec.Struct and legacy dicts from tests.
         data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
         
-        payload_raw = data.get("payload", "")
-        payload = base64.b64decode(payload_raw.encode("ascii")) if isinstance(payload_raw, str) else b""
-        
+        # [SIL-2] Modernization: Standard conversion using msgspec
+        payload = base64.b64decode(data.get("payload", ""))
         corr_raw = data.get("correlation_data")
-        correlation_data = base64.b64decode(corr_raw.encode("ascii")) if isinstance(corr_raw, str) else None
+        correlation_data = base64.b64decode(corr_raw) if corr_raw else None
 
-        # [SIL-2] Normalization: Ensure user_properties is a tuple of tuples.
+        # [SIL-2] Normalization: Safely transform sequence into tuple of pairs.
         raw_props = data.get("user_properties", ())
         user_properties: list[tuple[str, str]] = []
         if isinstance(raw_props, Iterable):
-            for p in cast("Iterable[Any]", raw_props):
-                if isinstance(p, (list, tuple)) and len(p) >= 2:
-                    user_properties.append((str(p[0]), str(p[1])))
+            for item in cast("Iterable[Any]", raw_props):
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    user_properties.append((str(item[0]), str(item[1])))
 
         return cls(
             topic_name=str(data.get("topic_name", "")),

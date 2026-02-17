@@ -132,13 +132,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         return self.mqtt_tls
 
     def __post_init__(self) -> None:
-        # Normalize optional strings to None if empty
-        self.mqtt_user = self._normalize_optional_string(self.mqtt_user)
-        self.mqtt_pass = self._normalize_optional_string(self.mqtt_pass)
-        self.mqtt_cafile = self._normalize_optional_string(self.mqtt_cafile)
-        self.mqtt_certfile = self._normalize_optional_string(self.mqtt_certfile)
-        self.mqtt_keyfile = self._normalize_optional_string(self.mqtt_keyfile)
-
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         
         # [SIL-2] Strict Semantic Validations
@@ -170,8 +163,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         if len(unique_symbols) < 4:
             raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 
-        self._normalize_topic_prefix()
-
         self.file_system_root = os.path.abspath(self.file_system_root)
         self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
 
@@ -189,41 +180,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
-
-    @staticmethod
-    def _normalize_optional_string(value: str | None) -> str | None:
-        if not value:
-            return None
-        s = value.strip()
-        return s if s else None
-
-    def _normalize_topic_prefix(self) -> None:
-        normalized = self._build_topic_prefix(self.mqtt_topic)
-        self.mqtt_topic = normalized
-
-    @staticmethod
-    def _build_topic_prefix(prefix: str) -> str:
-        segments = [segment.strip() for segment in prefix.split("/") if segment.strip()]
-        normalized = "/".join(segments)
-        if not normalized:
-            raise ValueError("mqtt_topic must contain at least one segment")
-        return normalized
-
-    @staticmethod
-    def _normalize_path(
-        value: str,
-        *,
-        field_name: str,
-        require_absolute: bool,
-    ) -> str:
-        candidate = (value or "").strip()
-        if not candidate:
-            raise ValueError(f"{field_name} must be a non-empty path")
-        expanded = Path(candidate).expanduser()
-        normalized = str(expanded.resolve())
-        if require_absolute and not expanded.is_absolute():
-            raise ValueError(f"{field_name} must be an absolute path")
-        return normalized
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
@@ -264,36 +220,44 @@ def load_runtime_config() -> RuntimeConfig:
     raw_config, source = _load_raw_config()
     _CONFIG_STATE.source = source
 
-    # Pre-process 'allowed_commands' since msgspec handles standard types
+    # [SIL-2] Boundary Normalization: Clean inputs before strict validation
+    
+    # 1. Normalize strings (strip and convert empty to None where applicable)
+    for key in ("mqtt_user", "mqtt_pass", "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile"):
+        if key in raw_config:
+            val = str(raw_config[key]).strip()
+            raw_config[key] = val if val else None
+
+    # 2. Pre-process 'allowed_commands'
     if "allowed_commands" in raw_config:
         allowed_raw = raw_config["allowed_commands"]
         if isinstance(allowed_raw, str):
-            commands = normalise_allowed_commands(allowed_raw.split())
-            raw_config["allowed_commands"] = commands
+            raw_config["allowed_commands"] = normalise_allowed_commands(allowed_raw.split())
 
-    # Map 'debug' (from UCI) to 'debug_logging' (internal).
+    # 3. Map 'debug' (from UCI) to 'debug_logging'
     if "debug" in raw_config:
         raw_config["debug_logging"] = parse_bool(raw_config.pop("debug"))
 
-    # Pre-process 'serial_shared_secret'
+    # 4. Normalize MQTT topic prefix
+    if "mqtt_topic" in raw_config:
+        prefix = str(raw_config["mqtt_topic"])
+        segments = [s.strip() for s in prefix.split("/") if s.strip()]
+        raw_config["mqtt_topic"] = "/".join(segments)
+
+    # 5. Normalize Paths
+    if "file_system_root" in raw_config:
+        raw_config["file_system_root"] = os.path.abspath(os.path.expanduser(str(raw_config["file_system_root"])))
+    if "mqtt_spool_dir" in raw_config:
+        raw_config["mqtt_spool_dir"] = os.path.abspath(os.path.expanduser(str(raw_config["mqtt_spool_dir"])))
+
+    # 6. Pre-process 'serial_shared_secret'
     if "serial_shared_secret" in raw_config:
         secret = raw_config["serial_shared_secret"]
         if isinstance(secret, str):
             raw_config["serial_shared_secret"] = secret.strip().encode("utf-8")
 
-    # Normalization (Explicit path expansion)
-    if "file_system_root" in raw_config:
-        raw_config["file_system_root"] = os.path.abspath(os.path.expanduser(raw_config["file_system_root"]))
-    if "mqtt_spool_dir" in raw_config:
-        raw_config["mqtt_spool_dir"] = os.path.abspath(os.path.expanduser(raw_config["mqtt_spool_dir"]))
-    if "mqtt_topic" in raw_config:
-        # Handle case where mqtt_topic might be a string that needs splitting or just sanitization
-        if isinstance(raw_config["mqtt_topic"], str):
-            raw_config["mqtt_topic"] = "/".join(s.strip() for s in raw_config["mqtt_topic"].split("/") if s.strip())
-
     try:
-        config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
-        return config
+        return msgspec.convert(raw_config, RuntimeConfig, strict=False)
     except (msgspec.ValidationError, TypeError, ValueError) as e:
         logger.critical("Configuration validation failed: %s", e)
         logger.warning("Falling back to safe defaults due to validation error.")

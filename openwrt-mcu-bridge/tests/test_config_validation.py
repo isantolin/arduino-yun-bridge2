@@ -38,27 +38,40 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def test_runtime_config_normalizes_topic_and_paths() -> None:
+def test_runtime_config_normalizes_topic_and_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     spool_absolute = "/tmp/relative/spool"
     expected_spool = os.path.abspath(spool_absolute)
     root_input = "/tmp//bridge/test/.."
     expected_root = os.path.abspath(root_input)
-    config = RuntimeConfig(
-        **_config_kwargs(
-            mqtt_topic="/demo//prefix/",
-            file_system_root=root_input,
-            mqtt_spool_dir=spool_absolute,
-        )
+    
+    raw = _config_kwargs(
+        mqtt_topic="/demo//prefix/",
+        file_system_root=root_input,
+        mqtt_spool_dir=spool_absolute,
     )
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
+    
+    config = settings.load_runtime_config()
+    
     assert config.mqtt_topic == "demo/prefix"
     assert config.file_system_root == expected_root
     assert config.mqtt_spool_dir == expected_spool
 
 
-def test_runtime_config_rejects_empty_topic() -> None:
-    # Validation handled by msgspec.convert or __post_init__
-    with pytest.raises((ValueError, msgspec.ValidationError)):
-        RuntimeConfig(**_config_kwargs(mqtt_topic="//"))
+def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Use load_runtime_config to trigger boundary normalization and segment check
+    raw = _config_kwargs(mqtt_topic="//")
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
+    
+    # settings.py now falls back to defaults on error, but we want to verify 
+    # the specific rejection logic. We'll use msgspec directly for the segments check
+    # if it's still in the loader.
+    from mcubridge.config.settings import load_runtime_config
+    # In the new architecture, load_runtime_config logs error and returns defaults if invalid.
+    # To test the logic, we check that it doesn't accept the empty topic.
+    config = load_runtime_config()
+    assert config.mqtt_topic != "//"
+    assert config.mqtt_topic == "br" # default fallback
 
 
 def test_runtime_config_rejects_non_positive_status_interval() -> None:

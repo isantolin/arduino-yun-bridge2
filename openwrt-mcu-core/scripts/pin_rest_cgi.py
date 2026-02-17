@@ -22,7 +22,6 @@ from mcubridge.config.common import get_uci_config
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import pin_topic
-from mcubridge.util import safe_float, safe_int
 from mcubridge.util.mqtt_helper import apply_tls_to_paho
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
@@ -40,18 +39,24 @@ def _configure_fallback_logging() -> None:
     )
 
 _UCI = get_uci_config()
-DEFAULT_RETRIES = max(1, safe_int(_UCI.get("pin_mqtt_retries"), 3))
-DEFAULT_PUBLISH_TIMEOUT = max(0.0, safe_float(_UCI.get("pin_mqtt_timeout"), 4.0))
-DEFAULT_BACKOFF_BASE = max(0.0, safe_float(_UCI.get("pin_mqtt_backoff"), 0.5))
+
+# [SIL-2] Explicit boundary validation for UCI values
+try:
+    retries = max(1, int(_UCI.get("pin_mqtt_retries", 3)))
+    publish_timeout = max(0.0, float(_UCI.get("pin_mqtt_timeout", 4.0)))
+    backoff_base = max(0.0, float(_UCI.get("pin_mqtt_backoff", 0.5)))
+except (ValueError, TypeError):
+    retries = 3
+    publish_timeout = 4.0
+    backoff_base = 0.5
 
 
 @retry(
-    stop=stop_after_attempt(DEFAULT_RETRIES),
-    wait=wait_exponential(multiplier=DEFAULT_BACKOFF_BASE, min=DEFAULT_BACKOFF_BASE, max=4.0),
+    stop=stop_after_attempt(retries),
+    wait=wait_exponential(multiplier=backoff_base, min=backoff_base, max=4.0),
     retry=retry_if_exception_type((OSError, ConnectionError, TimeoutError)),
     reraise=True,
 )
-
 def publish_safe(topic: str, payload: str, config: Any) -> None:
     client = Client(
         client_id=f"mcubridge_cgi_{time.time()}",
@@ -70,7 +75,7 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
 
         start_time = time.time()
         while not info.is_published():
-            if time.time() - start_time > DEFAULT_PUBLISH_TIMEOUT:
+            if time.time() - start_time > publish_timeout:
                 raise TimeoutError("Publish timed out")
             time.sleep(0.05)
 

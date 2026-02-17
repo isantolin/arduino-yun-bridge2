@@ -9,8 +9,6 @@ from collections.abc import Iterable
 __all__ = [
     "parse_bool",
     "normalise_allowed_commands",
-    "safe_int",
-    "safe_float",
     "chunk_bytes",
     "log_hexdump",
 ]
@@ -66,19 +64,3 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
             return ("*",)
         seen.add(lowered)
     return tuple(sorted(seen))
-
-
-
-def safe_int(value: object, default: int) -> int:
-    try:
-        return int(float(value))  # type: ignore
-    except (ValueError, TypeError):
-        return default
-
-
-
-def safe_float(value: object, default: float) -> float:
-    try:
-        return float(value)  # type: ignore
-    except (ValueError, TypeError):
-        return default

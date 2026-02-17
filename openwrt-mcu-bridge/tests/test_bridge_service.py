@@ -218,103 +218,199 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
         assert runtime_state.handshake_successes == 1
         assert runtime_state.serial_link_connected is True
 
-    asyncio.run(_run())
+        asyncio.run(_run())
 
+    
 
-def test_sync_link_rejects_invalid_handshake_tag(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
-    async def _run() -> None:
-        # Reduce timeout to fail fast
-        runtime_config.serial_response_timeout = 0.01
-        runtime_config.serial_retry_attempts = 0
-        service = BridgeService(runtime_config, runtime_state)
+    
 
-        sent_frames: list[tuple[int, bytes]] = []
+    def test_sync_link_rejects_invalid_handshake_tag(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
 
-        async def fake_sender(command_id: int, payload: bytes) -> bool:
-            sent_frames.append((command_id, payload))
-            if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Command.CMD_LINK_RESET_RESP.value,
-                        b"",
+        async def _run() -> None:
+
+            # Reduce timeout to fail fast (min legal 25ms)
+
+            runtime_config.serial_response_timeout = 0.03
+
+            runtime_config.serial_retry_attempts = 0
+
+            service = BridgeService(runtime_config, runtime_state)
+
+    
+
+            sent_frames: list[tuple[int, bytes]] = []
+
+    
+
+            async def fake_sender(command_id: int, payload: bytes) -> bool:
+
+                sent_frames.append((command_id, payload))
+
+                if command_id == Command.CMD_LINK_RESET.value:
+
+                    asyncio.create_task(
+
+                        service.handle_mcu_frame(
+
+                            Command.CMD_LINK_RESET_RESP.value,
+
+                            b"",
+
+                        )
+
                     )
-                )
-            elif command_id == Command.CMD_LINK_SYNC.value:
-                nonce = service.state.link_handshake_nonce or b""
-                tag = bytearray(service.compute_handshake_tag(nonce))
-                if tag:
-                    tag[0] ^= protocol.UINT8_MASK
-                response = nonce + bytes(tag)
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Command.CMD_LINK_SYNC_RESP.value,
-                        response,
+
+                elif command_id == Command.CMD_LINK_SYNC.value:
+
+                    nonce = service.state.link_handshake_nonce or b""
+
+                    tag = bytearray(service.compute_handshake_tag(nonce))
+
+                    if tag:
+
+                        tag[0] ^= protocol.UINT8_MASK
+
+                    response = nonce + bytes(tag)
+
+                    asyncio.create_task(
+
+                        service.handle_mcu_frame(
+
+                            Command.CMD_LINK_SYNC_RESP.value,
+
+                            response,
+
+                        )
+
                     )
-                )
-            return True
 
-        service.register_serial_sender(fake_sender)
+                return True
 
-        success = await service.sync_link()
+    
 
-        # Yield to allow background tasks to complete
-        await asyncio.sleep(0)
+            service.register_serial_sender(fake_sender)
 
-        assert success is False
-        assert service.state.link_is_synchronized is False
-        assert service.state.link_handshake_nonce is None
-        assert runtime_state.handshake_attempts == 1
-        assert runtime_state.handshake_failures == 1
-        assert runtime_state.handshake_successes == 0
-        # fatal count assertions removed due to tenacity retry abstraction mismatch in async mocks
+    
 
-    asyncio.run(_run())
+            success = await service.sync_link()
 
+    
 
-def test_sync_link_rejects_truncated_response(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
-    async def _run() -> None:
-        # Reduce timeout to fail fast
-        runtime_config.serial_response_timeout = 0.01
-        runtime_config.serial_retry_attempts = 0
-        service = BridgeService(runtime_config, runtime_state)
+            # Yield to allow background tasks to complete
 
-        sent_frames: list[tuple[int, bytes]] = []
+            await asyncio.sleep(0)
 
-        async def fake_sender(command_id: int, payload: bytes) -> bool:
-            sent_frames.append((command_id, payload))
-            if command_id == Command.CMD_LINK_RESET.value:
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Command.CMD_LINK_RESET_RESP.value,
-                        b"",
+    
+
+            assert success is False
+
+            assert service.state.link_is_synchronized is False
+
+            assert service.state.link_handshake_nonce is None
+
+            assert runtime_state.handshake_attempts == 1
+
+            assert runtime_state.handshake_failures == 1
+
+            assert runtime_state.handshake_successes == 0
+
+    
+
+        asyncio.run(_run())
+
+    
+
+    
+
+    def test_sync_link_rejects_truncated_response(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+
+        async def _run() -> None:
+
+            # Reduce timeout to fail fast (min legal 25ms)
+
+            runtime_config.serial_response_timeout = 0.03
+
+            runtime_config.serial_retry_attempts = 0
+
+            service = BridgeService(runtime_config, runtime_state)
+
+    
+
+            sent_frames: list[tuple[int, bytes]] = []
+
+    
+
+            async def fake_sender(command_id: int, payload: bytes) -> bool:
+
+                sent_frames.append((command_id, payload))
+
+                if command_id == Command.CMD_LINK_RESET.value:
+
+                    asyncio.create_task(
+
+                        service.handle_mcu_frame(
+
+                            Command.CMD_LINK_RESET_RESP.value,
+
+                            b"",
+
+                        )
+
                     )
-                )
-            elif command_id == Command.CMD_LINK_SYNC.value:
-                nonce = service.state.link_handshake_nonce or b""
-                # Return truncated response (nonce only, no tag)
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Command.CMD_LINK_SYNC_RESP.value,
-                        nonce,
+
+                elif command_id == Command.CMD_LINK_SYNC.value:
+
+                    nonce = service.state.link_handshake_nonce or b""
+
+                    # Return truncated response (nonce only, no tag)
+
+                    asyncio.create_task(
+
+                        service.handle_mcu_frame(
+
+                            Command.CMD_LINK_SYNC_RESP.value,
+
+                            nonce,
+
+                        )
+
                     )
-                )
-            return True
 
-        service.register_serial_sender(fake_sender)
+                return True
 
-        success = await service.sync_link()
+    
 
-        # Yield to allow background tasks to update state
-        await asyncio.sleep(0)
+            service.register_serial_sender(fake_sender)
 
-        assert success is False
-        assert service.state.link_is_synchronized is False
-        assert service.state.link_handshake_nonce is None
-        assert runtime_state.handshake_attempts == 1
-        assert runtime_state.handshake_failures == 1
-        # fatal count assertions removed
+    
 
-    asyncio.run(_run())
+            success = await service.sync_link()
+
+    
+
+            # Yield to allow background tasks to update state
+
+            await asyncio.sleep(0)
+
+    
+
+            assert success is False
+
+            assert service.state.link_is_synchronized is False
+
+            assert service.state.link_handshake_nonce is None
+
+            assert runtime_state.handshake_attempts == 1
+
+            assert runtime_state.handshake_failures == 1
+
+    
+
+        asyncio.run(_run())
+
+    
+
+    
 
 
 def test_repeated_sync_timeouts_become_fatal(

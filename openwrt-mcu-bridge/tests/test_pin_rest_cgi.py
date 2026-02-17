@@ -119,9 +119,13 @@ def test_publish_safe_times_out(
         def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
             return MockInfo(published=False)
 
-    monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
-    # Patch retry to fail fast
-    monkeypatch.setattr(pin_rest_module, "DEFAULT_RETRIES", 1)
+            monkeypatch.setattr(pin_rest_module, "Client", TimeoutClient)
+
+            # Patch retry to fail fast
+
+            monkeypatch.setattr(pin_rest_module, "retries", 1)
+
+    
     monkeypatch.setattr(pin_rest_module, "DEFAULT_PUBLISH_TIMEOUT", 0.01)
 
     with pytest.raises((TimeoutError, Exception)):

@@ -4,7 +4,11 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import Final
 
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
+from construct import Enum, Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
+
+MQTT_WILDCARD_SINGLE: Final[str] = "+"
+MQTT_WILDCARD_MULTI: Final[str] = "#"
+
 
 PROTOCOL_VERSION: Final[int] = 2
 DEFAULT_BAUDRATE: Final[int] = 115200
@@ -102,56 +106,6 @@ ARCH_SAMD: Final[int] = 4
 ARCH_SAM: Final[int] = 5
 ARCH_RP2040: Final[int] = 6
 
-DATASTORE_KEY_LEN_FORMAT: Final[str] = ">B"
-DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
-DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"
-DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
-CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
-CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
-    "version" / Int8ub,
-    "payload_len" / Int16ub,
-    "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),
-)
-CRC_FORMAT: Final[str] = ">I"
-CRC_STRUCT: Final = Int32ub
-UINT8_FORMAT: Final[str] = ">B"
-UINT8_STRUCT: Final = Int8ub
-UINT16_FORMAT: Final[str] = ">H"
-UINT16_STRUCT: Final = Int16ub
-UINT32_FORMAT: Final[str] = ">I"
-UINT32_STRUCT: Final = Int32ub
-PIN_READ_FORMAT: Final[str] = ">B"
-PIN_READ_STRUCT: Final = Int8ub
-PIN_WRITE_FORMAT: Final[str] = ">BB"
-PIN_WRITE_STRUCT: Final = BinStruct(
-    "pin" / Int8ub,
-    "value" / Int8ub,
-)
-CAPABILITIES_FORMAT: Final[str] = ">BBBBI"
-CAPABILITIES_STRUCT: Final = BinStruct(
-    "ver" / Int8ub,
-    "arch" / Int8ub,
-    "dig" / Int8ub,
-    "ana" / Int8ub,
-    "feat" / Int32ub,
-)
-NONCE_COUNTER_FORMAT: Final[str] = ">Q"
-NONCE_COUNTER_STRUCT: Final = Int64ub
-DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()  # type: ignore
-DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()  # type: ignore
-CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()  # type: ignore
-CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()  # type: ignore
-MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
-
-
-MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
-MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
-MQTT_SUFFIX_RESPONSE: Final[str] = "response"
-MQTT_SUFFIX_ERROR: Final[str] = "error"
-
-
-MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"
-
 STATUS_REASON_COMMAND_VALIDATION_FAILED: Final[str] = "command_validation_failed"
 STATUS_REASON_INVALID_PATH: Final[str] = "invalid_path"
 STATUS_REASON_MAILBOX_INCOMING_OVERFLOW: Final[str] = "mailbox_incoming_overflow"
@@ -166,8 +120,82 @@ STATUS_REASON_READ_FAILED: Final[str] = "read_failed"
 STATUS_REASON_REMOVE_FAILED: Final[str] = "remove_failed"
 STATUS_REASON_WRITE_FAILED: Final[str] = "write_failed"
 
-MQTT_WILDCARD_SINGLE: Final[str] = "+"
-MQTT_WILDCARD_MULTI: Final[str] = "#"
+class Status(IntEnum):
+    OK = 48  # Operation completed successfully.
+    ERROR = 49  # Generic failure.
+    CMD_UNKNOWN = 50  # Command not recognized.
+    MALFORMED = 51  # Payload had invalid structure.
+    OVERFLOW = 52  # Frame exceeded buffer size.
+    CRC_MISMATCH = 53  # CRC check failed.
+    TIMEOUT = 54  # Operation timed out.
+    NOT_IMPLEMENTED = 55  # Command defined but not supported.
+    ACK = 56  # Generic acknowledgement for fire-and-forget commands.
+
+
+class Command(IntEnum):
+    CMD_GET_VERSION = 64
+    CMD_GET_VERSION_RESP = 65
+    CMD_GET_FREE_MEMORY = 66
+    CMD_GET_FREE_MEMORY_RESP = 67
+    CMD_LINK_SYNC = 68
+    CMD_LINK_SYNC_RESP = 69
+    CMD_LINK_RESET = 70
+    CMD_LINK_RESET_RESP = 71
+    CMD_GET_CAPABILITIES = 72
+    CMD_GET_CAPABILITIES_RESP = 73
+    CMD_SET_BAUDRATE = 74
+    CMD_SET_BAUDRATE_RESP = 75
+    CMD_XOFF = 78
+    CMD_XON = 79
+    CMD_SET_PIN_MODE = 80
+    CMD_DIGITAL_WRITE = 81
+    CMD_ANALOG_WRITE = 82
+    CMD_DIGITAL_READ = 83
+    CMD_ANALOG_READ = 84
+    CMD_DIGITAL_READ_RESP = 85
+    CMD_ANALOG_READ_RESP = 86
+    CMD_CONSOLE_WRITE = 96
+    CMD_DATASTORE_PUT = 112
+    CMD_DATASTORE_GET = 113
+    CMD_DATASTORE_GET_RESP = 114
+    CMD_MAILBOX_READ = 128
+    CMD_MAILBOX_PROCESSED = 129
+    CMD_MAILBOX_AVAILABLE = 130
+    CMD_MAILBOX_PUSH = 131
+    CMD_MAILBOX_READ_RESP = 132
+    CMD_MAILBOX_AVAILABLE_RESP = 133
+    CMD_FILE_WRITE = 144
+    CMD_FILE_READ = 145
+    CMD_FILE_REMOVE = 146
+    CMD_FILE_READ_RESP = 147
+    CMD_PROCESS_RUN = 160
+    CMD_PROCESS_RUN_ASYNC = 161
+    CMD_PROCESS_POLL = 162
+    CMD_PROCESS_KILL = 163
+    CMD_PROCESS_RUN_RESP = 164
+    CMD_PROCESS_RUN_ASYNC_RESP = 165
+    CMD_PROCESS_POLL_RESP = 166
+
+
+ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
+    Command.CMD_SET_PIN_MODE.value,
+    Command.CMD_DIGITAL_WRITE.value,
+    Command.CMD_ANALOG_WRITE.value,
+    Command.CMD_CONSOLE_WRITE.value,
+    Command.CMD_DATASTORE_PUT.value,
+    Command.CMD_MAILBOX_PUSH.value,
+    Command.CMD_FILE_WRITE.value,
+})
+
+# Commands that expect a direct response without a prior ACK.
+# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
+RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
+    Command.CMD_GET_VERSION.value,
+    Command.CMD_GET_FREE_MEMORY.value,
+    Command.CMD_GET_CAPABILITIES.value,
+    Command.CMD_DIGITAL_READ.value,
+    Command.CMD_ANALOG_READ.value,
+})
 
 
 class Topic(StrEnum):
@@ -268,79 +296,53 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
 )
 
 
-class Status(IntEnum):
-    OK = 48  # Operation completed successfully.
-    ERROR = 49  # Generic failure.
-    CMD_UNKNOWN = 50  # Command not recognized.
-    MALFORMED = 51  # Payload had invalid structure.
-    OVERFLOW = 52  # Frame exceeded buffer size.
-    CRC_MISMATCH = 53  # CRC check failed.
-    TIMEOUT = 54  # Operation timed out.
-    NOT_IMPLEMENTED = 55  # Command defined but not supported.
-    ACK = 56  # Generic acknowledgement for fire-and-forget commands.
+DATASTORE_KEY_LEN_FORMAT: Final[str] = ">B"
+DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
+DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"
+DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
+CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
+CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
+    "version" / Int8ub,
+    "payload_len" / Int16ub,
+    "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),
+)
+CRC_FORMAT: Final[str] = ">I"
+CRC_STRUCT: Final = Int32ub
+UINT8_FORMAT: Final[str] = ">B"
+UINT8_STRUCT: Final = Int8ub
+UINT16_FORMAT: Final[str] = ">H"
+UINT16_STRUCT: Final = Int16ub
+UINT32_FORMAT: Final[str] = ">I"
+UINT32_STRUCT: Final = Int32ub
+PIN_READ_FORMAT: Final[str] = ">B"
+PIN_READ_STRUCT: Final = Int8ub
+PIN_WRITE_FORMAT: Final[str] = ">BB"
+PIN_WRITE_STRUCT: Final = BinStruct(
+    "pin" / Int8ub,
+    "value" / Int8ub,
+)
+CAPABILITIES_FORMAT: Final[str] = ">BBBBI"
+CAPABILITIES_STRUCT: Final = BinStruct(
+    "ver" / Int8ub,
+    "arch" / Int8ub,
+    "dig" / Int8ub,
+    "ana" / Int8ub,
+    "feat" / Int32ub,
+)
+NONCE_COUNTER_FORMAT: Final[str] = ">Q"
+NONCE_COUNTER_STRUCT: Final = Int64ub
+DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()  # type: ignore
+DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()  # type: ignore
+CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()  # type: ignore
+CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()  # type: ignore
+MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
 
 
-class Command(IntEnum):
-    CMD_GET_VERSION = 64
-    CMD_GET_VERSION_RESP = 65
-    CMD_GET_FREE_MEMORY = 66
-    CMD_GET_FREE_MEMORY_RESP = 67
-    CMD_LINK_SYNC = 68
-    CMD_LINK_SYNC_RESP = 69
-    CMD_LINK_RESET = 70
-    CMD_LINK_RESET_RESP = 71
-    CMD_GET_CAPABILITIES = 72
-    CMD_GET_CAPABILITIES_RESP = 73
-    CMD_SET_BAUDRATE = 74
-    CMD_SET_BAUDRATE_RESP = 75
-    CMD_XOFF = 78
-    CMD_XON = 79
-    CMD_SET_PIN_MODE = 80
-    CMD_DIGITAL_WRITE = 81
-    CMD_ANALOG_WRITE = 82
-    CMD_DIGITAL_READ = 83
-    CMD_ANALOG_READ = 84
-    CMD_DIGITAL_READ_RESP = 85
-    CMD_ANALOG_READ_RESP = 86
-    CMD_CONSOLE_WRITE = 96
-    CMD_DATASTORE_PUT = 112
-    CMD_DATASTORE_GET = 113
-    CMD_DATASTORE_GET_RESP = 114
-    CMD_MAILBOX_READ = 128
-    CMD_MAILBOX_PROCESSED = 129
-    CMD_MAILBOX_AVAILABLE = 130
-    CMD_MAILBOX_PUSH = 131
-    CMD_MAILBOX_READ_RESP = 132
-    CMD_MAILBOX_AVAILABLE_RESP = 133
-    CMD_FILE_WRITE = 144
-    CMD_FILE_READ = 145
-    CMD_FILE_REMOVE = 146
-    CMD_FILE_READ_RESP = 147
-    CMD_PROCESS_RUN = 160
-    CMD_PROCESS_RUN_ASYNC = 161
-    CMD_PROCESS_POLL = 162
-    CMD_PROCESS_KILL = 163
-    CMD_PROCESS_RUN_RESP = 164
-    CMD_PROCESS_RUN_ASYNC_RESP = 165
-    CMD_PROCESS_POLL_RESP = 166
+MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"
+MQTT_SUFFIX_OUTGOING_AVAILABLE: Final[str] = "outgoing_available"
+MQTT_SUFFIX_RESPONSE: Final[str] = "response"
+MQTT_SUFFIX_ERROR: Final[str] = "error"
 
 
-ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
-    Command.CMD_SET_PIN_MODE.value,
-    Command.CMD_DIGITAL_WRITE.value,
-    Command.CMD_ANALOG_WRITE.value,
-    Command.CMD_CONSOLE_WRITE.value,
-    Command.CMD_DATASTORE_PUT.value,
-    Command.CMD_MAILBOX_PUSH.value,
-    Command.CMD_FILE_WRITE.value,
-})
+MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"
 
-# Commands that expect a direct response without a prior ACK.
-# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
-RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({
-    Command.CMD_GET_VERSION.value,
-    Command.CMD_GET_FREE_MEMORY.value,
-    Command.CMD_GET_CAPABILITIES.value,
-    Command.CMD_DIGITAL_READ.value,
-    Command.CMD_ANALOG_READ.value,
-})

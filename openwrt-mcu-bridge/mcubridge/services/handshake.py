@@ -15,7 +15,7 @@ import hmac
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import msgspec
 import tenacity
@@ -69,10 +69,10 @@ def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
         "response_timeout_ms": int(round(config.serial_response_timeout * 1000.0)),
         "retry_limit": int(config.serial_retry_attempts),
     }
-    
+
     # We ensure response is at least ACK to avoid logical starvation
     raw["response_timeout_ms"] = max(raw["response_timeout_ms"], raw["ack_timeout_ms"])
-    
+
     return msgspec.convert(raw, SerialTimingWindow, strict=False)
 
 

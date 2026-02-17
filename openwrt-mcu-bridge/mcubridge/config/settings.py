@@ -154,18 +154,18 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 )
             if not self.mqtt_cafile:
                 logger.info("MQTT TLS is enabled with no mqtt_cafile configured; using system trust store.")
-        
+
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
             raise ValueError("serial_shared_secret must be at least %d bytes" % MIN_SERIAL_SHARED_SECRET_LEN)
         if self.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
-        
+
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
             raise ValueError("serial_shared_secret must contain at least four distinct bytes")
-        
+
         self._normalize_topic_prefix()
 
         self.file_system_root = os.path.abspath(self.file_system_root)

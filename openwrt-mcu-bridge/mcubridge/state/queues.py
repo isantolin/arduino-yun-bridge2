@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Iterable, Iterator
+from typing import Annotated
 
 import msgspec
 from mcubridge.protocol.structures import QueueEvent

@@ -34,7 +34,7 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import Final
 
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
+from construct import Enum, Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
 '''
 
 # =============================================================================
@@ -157,7 +157,7 @@ CONSTRUCT_MAPPING: dict[str, str] = {
         "BinStruct(\n"
         '    "version" / Int8ub,\n'
         '    "payload_len" / Int16ub,\n'
-        '    "command_id" / Int16ub,\n'
+        '    "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),\n'
         ")"
     ),
     "crc_format": "Int32ub",
@@ -530,6 +530,10 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     """Generate Python protocol module."""
     out.write(PY_HEADER + "\n")
 
+    # MQTT wildcards (Must be first as they are used in subscriptions)
+    out.write('MQTT_WILDCARD_SINGLE: Final[str] = "+"\n')
+    out.write('MQTT_WILDCARD_MULTI: Final[str] = "#"\n\n\n')
+
     consts = spec["constants"]
 
     # Constants
@@ -564,7 +568,37 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
             out.write(f"ARCH_{key.upper()}: Final[int] = {value}\n")
         out.write("\n")
 
-    # Data formats
+    # Status reasons
+    status_reasons = spec.get("status_reasons", {})
+    if status_reasons:
+        for key in sorted(status_reasons.keys()):
+            _write_python_str_constant(out, f"STATUS_REASON_{str(key).upper()}", str(status_reasons[key]))
+        out.write("\n")
+
+    # Status enum
+    out.write("class Status(IntEnum):\n")
+    for status in spec["statuses"]:
+        out.write(f"    {status['name']} = {status['value']}  # {status['description']}\n")
+    out.write("\n\n")
+
+    # Commands
+    _write_python_commands(out, spec)
+    out.write("\n\n")
+
+    # Topics enum
+    if "topics" in spec:
+        out.write("class Topic(StrEnum):\n")
+        for topic in spec["topics"]:
+            out.write(f"    {topic['name']} = \"{topic['value']}\"  # {topic['description']}\n")
+        out.write("\n\n")
+
+    # Action enums
+    _write_python_actions(out, spec)
+
+    # MQTT subscriptions (after action enums and wildcards)
+    _write_python_mqtt_subscriptions(out, spec)
+
+    # Data formats (Moved to end to ensure Enums and constants are defined for Construct)
     formats = spec.get("data_formats", {})
     if formats:
         _write_python_data_formats(out, formats)
@@ -581,39 +615,6 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if mqtt_defaults and "default_topic_prefix" in mqtt_defaults:
         _write_python_str_constant(out, "MQTT_DEFAULT_TOPIC_PREFIX", str(mqtt_defaults["default_topic_prefix"]))
         out.write("\n")
-
-    # Status reasons
-    status_reasons = spec.get("status_reasons", {})
-    if status_reasons:
-        for key in sorted(status_reasons.keys()):
-            _write_python_str_constant(out, f"STATUS_REASON_{str(key).upper()}", str(status_reasons[key]))
-        out.write("\n")
-
-    # MQTT wildcards
-    out.write('MQTT_WILDCARD_SINGLE: Final[str] = "+"\n')
-    out.write('MQTT_WILDCARD_MULTI: Final[str] = "#"\n\n\n')
-
-    # Topics enum
-    if "topics" in spec:
-        out.write("class Topic(StrEnum):\n")
-        for topic in spec["topics"]:
-            out.write(f"    {topic['name']} = \"{topic['value']}\"  # {topic['description']}\n")
-        out.write("\n\n")
-
-    # Action enums
-    _write_python_actions(out, spec)
-
-    # MQTT subscriptions (after action enums)
-    _write_python_mqtt_subscriptions(out, spec)
-
-    # Status enum
-    out.write("class Status(IntEnum):\n")
-    for status in spec["statuses"]:
-        out.write(f"    {status['name']} = {status['value']}  # {status['description']}\n")
-    out.write("\n\n")
-
-    # Commands
-    _write_python_commands(out, spec)
 
 
 # =============================================================================

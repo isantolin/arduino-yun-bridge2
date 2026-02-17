@@ -261,8 +261,8 @@ class BridgeService:
         """Entry point invoked by the serial transport for each MCU frame."""
         # [SIL-2] Automate latency tracking using native decorators
         stats = self.state.serial_latency_stats
-        
-        # We use a manual context manager as we want to record the latency 
+
+        # We use a manual context manager as we want to record the latency
         # specifically for successful dispatches in the state.
         start = time.perf_counter()
         try:

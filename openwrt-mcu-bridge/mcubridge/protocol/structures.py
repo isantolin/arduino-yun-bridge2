@@ -10,7 +10,7 @@ import asyncio
 import base64
 from collections.abc import Iterable
 from enum import IntEnum
-from typing import Any, ClassVar, Self, Type, TypedDict, TypeVar, cast
+from typing import Annotated, Any, ClassVar, Self, Type, TypeVar, cast
 
 from binascii import crc32
 import msgspec
@@ -141,9 +141,9 @@ FRAME_STRUCT = BinStruct(
     "crc" / Checksum(
         protocol.CRC_STRUCT,
         lambda data: (crc32(data) & 0xFFFFFFFF),
-        this.header.version.build(protocol.PROTOCOL_VERSION) + 
-        this.header.payload_len.build(this.header.payload_len) + 
-        this.header.command_id.build(this.header.command_id) + 
+        this.header.version.build(protocol.PROTOCOL_VERSION) +
+        this.header.payload_len.build(this.header.payload_len) +
+        this.header.command_id.build(this.header.command_id) +
         this.payload
     ),
 )
@@ -170,9 +170,9 @@ DYNAMIC_FRAME_STRUCT = BinStruct(
     "crc" / Checksum(
         protocol.CRC_STRUCT,
         lambda data: (crc32(data) & 0xFFFFFFFF),
-        this.header.version.build(protocol.PROTOCOL_VERSION) + 
-        this.header.payload_len.build(this.header.payload_len) + 
-        this.header.command_id.build(this.header.command_id) + 
+        this.header.version.build(protocol.PROTOCOL_VERSION) +
+        this.header.payload_len.build(this.header.payload_len) +
+        this.header.command_id.build(this.header.command_id) +
         this.payload
     ),
 )

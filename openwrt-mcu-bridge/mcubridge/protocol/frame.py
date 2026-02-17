@@ -26,23 +26,15 @@ from __future__ import annotations
 
 from binascii import crc32
 import msgspec
-from construct import Struct, Bytes, this, ConstructError  # type: ignore
+from construct import ConstructError
 
 from . import protocol
+from mcubridge.protocol.structures import FRAME_STRUCT
 
 
 def _crc32_hash(data: bytes | bytearray | memoryview) -> int:
     """Compute CRC32 (IEEE 802.3) masked to 32-bit unsigned."""
     return crc32(data) & protocol.CRC32_MASK
-
-
-# [SIL-2] Construct Schema for Full Frame
-# Reuses the header definition from protocol.py to ensure consistency.
-FRAME_STRUCT = Struct(
-    "header" / protocol.CRC_COVERED_HEADER_STRUCT,
-    "payload" / Bytes(this.header.payload_len),
-    "crc" / protocol.CRC_STRUCT,
-)
 
 
 class Frame(msgspec.Struct, frozen=True, kw_only=True):
@@ -141,13 +133,11 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if total_len != expected_size:
             raise ValueError(
                 f"Frame size mismatch: header says {container.header.payload_len} payload bytes, "
-                f"but buffer has {total_len - protocol.CRC_COVERED_HEADER_SIZE - protocol.CRC_SIZE}"
+                f"but buffer has {len(body) - protocol.CRC_COVERED_HEADER_SIZE}"
             )
 
         if container.header.payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(
-                f"Payload length {container.header.payload_len} exceeds max {protocol.MAX_PAYLOAD_SIZE}"
-            )
+            raise ValueError(f"Payload length {container.header.payload_len} exceeds max {protocol.MAX_PAYLOAD_SIZE}")
 
         # [SIL-2] Semantic Validation: Reject invalid/reserved command IDs
         command_id = container.header.command_id
@@ -165,3 +155,4 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         command_id, payload = cls.parse(raw_frame_buffer)
         return cls(command_id=command_id, payload=payload)
+

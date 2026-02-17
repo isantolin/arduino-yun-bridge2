@@ -6,16 +6,9 @@ import msgspec
 from collections import deque
 from collections.abc import Iterable, Iterator
 
+from mcubridge.protocol.structures import QueueEvent
+
 _UNSET = object()
-
-
-class QueueEvent(msgspec.Struct):
-    """Outcome of a bounded queue mutation."""
-
-    truncated_bytes: int = 0
-    dropped_chunks: int = 0
-    dropped_bytes: int = 0
-    accepted: bool = False
 
 
 def _normalize_limit(value: object) -> int | None:

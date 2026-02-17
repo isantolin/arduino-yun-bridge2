@@ -22,6 +22,7 @@ from ..config.settings import RuntimeConfig
 from ..policy import CommandValidationError, tokenize_shell_command
 from .base import BridgeContext
 from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import ProcessOutputBatch
 from mcubridge.protocol.protocol import (
     INVALID_ID_SENTINEL,
     PROCESS_DEFAULT_EXIT_CODE,
@@ -36,18 +37,6 @@ from mcubridge.protocol.protocol import (
 logger = logging.getLogger("mcubridge.process")
 
 _PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
-
-
-class ProcessOutputBatch(msgspec.Struct):
-    """Structured payload describing PROCESS_POLL results."""
-
-    status_byte: int
-    exit_code: int
-    stdout_chunk: bytes
-    stderr_chunk: bytes
-    finished: bool
-    stdout_truncated: bool
-    stderr_truncated: bool
 
 
 class ProcessComponent(msgspec.Struct):

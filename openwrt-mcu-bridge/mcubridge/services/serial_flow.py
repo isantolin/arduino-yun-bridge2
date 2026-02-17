@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-import msgspec
 from typing import Any, cast
 from collections.abc import Awaitable, Callable
 
@@ -23,39 +22,9 @@ from mcubridge.protocol.contracts import (
 )
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol import rle, protocol
+from mcubridge.protocol.structures import PendingCommand
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
-
-
-def _set_factory() -> set[int]:
-    return set()
-
-
-def _event_factory() -> asyncio.Event:
-    return asyncio.Event()
-
-
-class PendingCommand(msgspec.Struct):
-    """Book-keeping for a tracked command in flight."""
-
-    command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=_set_factory)
-    completion: asyncio.Event = msgspec.field(default_factory=_event_factory)
-    attempts: int = 0
-    success: bool | None = None
-    failure_status: int | None = None
-    ack_received: bool = False
-
-    def mark_success(self) -> None:
-        self.success = True
-        if not self.completion.is_set():
-            self.completion.set()
-
-    def mark_failure(self, status: int | None) -> None:
-        self.success = False
-        self.failure_status = status
-        if not self.completion.is_set():
-            self.completion.set()
 
 
 class SerialFlowController:

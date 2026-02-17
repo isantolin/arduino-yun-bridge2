@@ -8,14 +8,14 @@ from typing import Any
 
 import pytest
 from aiomqtt.message import Message
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.system import SystemComponent
 from mcubridge.state.context import RuntimeState
+
 from .mqtt_helpers import make_inbound_message
 
 

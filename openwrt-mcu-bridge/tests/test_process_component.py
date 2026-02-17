@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 from typing import cast
+from unittest.mock import AsyncMock, patch
 
+import msgspec
 import pytest
 import pytest_asyncio
-
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.policy import CommandValidationError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (

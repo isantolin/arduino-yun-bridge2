@@ -2,15 +2,15 @@
 
 import asyncio
 import logging
-import pytest
 from unittest import mock
 
-from mcubridge.services import serial_flow
-from mcubridge.state.context import RuntimeState
+import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.config.settings import RuntimeConfig
+from mcubridge.services import serial_flow
 from mcubridge.services.process import ProcessComponent
+from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import BridgeSerialProtocol
 
 

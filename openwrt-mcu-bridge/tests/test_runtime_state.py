@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import errno
-from collections.abc import Iterator
 import logging
+from collections.abc import Iterator
 from typing import cast
 
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool

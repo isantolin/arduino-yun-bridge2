@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Minimal connectivity smoke test for the bridge client."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 
 from mcubridge_client import Bridge, dump_client_env
 

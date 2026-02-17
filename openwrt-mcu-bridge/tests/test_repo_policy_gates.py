@@ -6,7 +6,6 @@ import re
 from os import walk
 from pathlib import Path
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 

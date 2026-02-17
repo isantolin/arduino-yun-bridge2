@@ -5,7 +5,6 @@ from __future__ import annotations
 import string
 
 import pytest
-
 from mcubridge.policy import CommandValidationError, tokenize_shell_command
 
 SAFE_TOKEN_CHARS = string.ascii_letters + string.digits + "._-/:"

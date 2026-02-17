@@ -1,4 +1,5 @@
 import random
+
 import pytest
 from cobs import cobs
 from mcubridge.protocol.frame import Frame

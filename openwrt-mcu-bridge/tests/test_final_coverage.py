@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
-import pytest
-import msgspec
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import msgspec
+import pytest
 from mcubridge.config import logging as logging_config
 from mcubridge.config import settings
 from mcubridge.protocol import rle
+from mcubridge.protocol.protocol import Command
+from mcubridge.protocol.topics import Topic
 from mcubridge.services.console import ConsoleComponent
-from mcubridge.services.datastore import DatastoreComponent, DatastoreAction
-from mcubridge.services.file import FileComponent, FileAction
+from mcubridge.services.datastore import DatastoreAction, DatastoreComponent
+from mcubridge.services.file import FileAction, FileComponent
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.services.pin import PinComponent
-from mcubridge.protocol.protocol import Command
 from mcubridge.state.context import RuntimeState
-from mcubridge.protocol.topics import Topic
 from mcubridge.util import chunk_bytes
 
 
@@ -105,7 +105,7 @@ async def test_datastore_component_gaps(runtime_state: RuntimeState, real_config
 
     # Truly invalid payload for Put
     payload = b"\x01"
-    await comp.handle_put(payload) # Validate call
+    await comp.handle_put(payload)  # Validate call
 
     await comp.handle_get_request(b"")
     await comp.handle_get_request(b"\x05k")

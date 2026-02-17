@@ -17,15 +17,15 @@ if str(_PKG_ROOT) not in sys.path:
 from unittest.mock import MagicMock, patch  # noqa: E402
 
 import pytest  # noqa: E402
-
 from mcubridge.protocol.protocol import (  # noqa: E402
-    Command,
     FRAME_DELIMITER,
-    Status,
     UINT8_MASK,
+    Command,
+    Status,
 )
-from tools import frame_debug  # noqa: E402
 from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
+
+from tools import frame_debug  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import msgspec
 from collections import deque
 from collections.abc import Iterable, Iterator
 
+import msgspec
 from mcubridge.protocol.structures import QueueEvent
 
 _UNSET = object()

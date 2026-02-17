@@ -5,12 +5,14 @@ from __future__ import annotations
 import collections
 import errno
 import logging
-import msgspec
 import threading
 import time
 from pathlib import Path
-from typing import Protocol, Callable, cast
-from .messages import SpoolRecord, QueuedPublish
+from typing import Callable, Protocol, cast
+
+import msgspec
+
+from .messages import QueuedPublish, SpoolRecord
 
 logger = logging.getLogger("mcubridge.mqtt.spool")
 

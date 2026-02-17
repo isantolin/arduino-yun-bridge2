@@ -5,9 +5,9 @@ Objetivo: Ejecución quirúrgica de bucles internos y manejo de errores.
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 from mcubridge.daemon import main
-
 
 # --- SERIAL TRANSPORT INTERNALS ---
 

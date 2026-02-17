@@ -13,8 +13,8 @@ from mcubridge.config.common import (
     normalise_allowed_commands,
     parse_bool,
 )
-from mcubridge.protocol import protocol
 from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol import protocol
 
 
 def test_parse_bool():

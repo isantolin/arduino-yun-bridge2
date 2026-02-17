@@ -10,12 +10,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, cast
 
 import pytest
-
-from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.protocol.contracts import expected_responses
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Command, Status, Topic
-from mcubridge.services.dispatcher import BridgeDispatcher
+from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.services.dispatcher import BridgeDispatcher
 
 
 @dataclass(slots=True)

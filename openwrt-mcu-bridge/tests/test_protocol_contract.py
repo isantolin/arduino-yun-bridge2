@@ -5,10 +5,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-
-import tomllib
 
 from mcubridge.protocol import protocol
 from mcubridge.services.handshake import SerialHandshakeManager

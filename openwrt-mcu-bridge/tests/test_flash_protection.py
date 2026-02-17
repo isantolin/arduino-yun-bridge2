@@ -2,6 +2,7 @@
 
 import unittest
 from unittest.mock import patch
+
 from mcubridge.config.settings import load_runtime_config
 
 

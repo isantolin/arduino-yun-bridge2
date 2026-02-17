@@ -12,31 +12,31 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
-import msgspec
 import logging
 import time
-from typing import Any, cast
 from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
+import msgspec
 import tenacity
 from construct import ConstructError
 
-from ..config.settings import RuntimeConfig
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
+from ..config.settings import RuntimeConfig
 from ..mqtt.messages import QueuedPublish
-from ..protocol.topics import handshake_topic
 from ..protocol import protocol
-from ..protocol.protocol import Command, MAX_PAYLOAD_SIZE, Status
+from ..protocol.protocol import MAX_PAYLOAD_SIZE, Command, Status
+from ..protocol.topics import handshake_topic
 from ..security.security import (
     derive_handshake_key,
     generate_nonce_with_counter,
     secure_zero,
     validate_nonce_counter,
 )
-from ..state.context import RuntimeState, McuCapabilities
+from ..state.context import McuCapabilities, RuntimeState
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]

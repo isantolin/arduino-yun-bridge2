@@ -5,22 +5,27 @@ Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
 """
 
 from __future__ import annotations
+
 import asyncio
 import base64
-from enum import IntEnum
-from typing import TypeVar, Type, Any, ClassVar, cast, Self, TypedDict
 from collections.abc import Iterable
+from enum import IntEnum
+from typing import Any, ClassVar, Self, Type, TypedDict, TypeVar, cast
+
 import msgspec
 from construct import (  # type: ignore
-    Struct as BinStruct,
+    Bytes,
+    Construct,
+    GreedyBytes,
     Int8ub,
     Int16ub,
     PascalString,
-    Construct,
-    Bytes,
+    Prefixed,
     this,
 )
-from construct import Prefixed, GreedyBytes  # type: ignore
+from construct import (  # type: ignore
+    Struct as BinStruct,
+)
 
 from . import protocol
 

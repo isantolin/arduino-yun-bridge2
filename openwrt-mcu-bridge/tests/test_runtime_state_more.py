@@ -7,7 +7,6 @@ import time
 from typing import cast
 
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool, MQTTSpoolError

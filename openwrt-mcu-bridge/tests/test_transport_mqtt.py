@@ -7,11 +7,10 @@ import ssl
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiomqtt
 import pytest
-
 from mcubridge.config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
@@ -21,13 +20,14 @@ from mcubridge.config.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import mqtt
 from mcubridge.util import mqtt_helper
-from mcubridge.config.settings import RuntimeConfig
+
 
 def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
     return RuntimeConfig(
@@ -168,7 +168,7 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
     try:
         await task
     except asyncio.CancelledError:
-                pass
+        pass
     assert state.mqtt_publish_queue.qsize() == 1
 
 

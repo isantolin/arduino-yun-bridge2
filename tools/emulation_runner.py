@@ -7,13 +7,13 @@ and connect it via a virtual serial port (socat) to the Python McuBridge daemon.
 It serves as the End-to-End test entrypoint.
 """
 
-import sys
-import subprocess
 import logging
-import time
 import os
+import subprocess
+import sys
 import tempfile
 import textwrap
+import time
 from pathlib import Path
 
 # Configure logging

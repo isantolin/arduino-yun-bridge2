@@ -7,15 +7,13 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-
 from aiomqtt.message import Message
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.policy import CommandValidationError
-from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import ShellAction, Status
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.shell import ShellComponent
 from mcubridge.state.context import RuntimeState
 

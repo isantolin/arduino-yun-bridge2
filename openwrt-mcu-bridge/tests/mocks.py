@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable, Coroutine
+from typing import Any, Awaitable, Callable, Coroutine
+
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.state.context import RuntimeState
 from mcubridge.services.runtime import SerialHandshakeFatal
+from mcubridge.state.context import RuntimeState
 
 
 @dataclass

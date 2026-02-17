@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 from unittest.mock import patch
 
+import msgspec
 import pytest
-
 from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,

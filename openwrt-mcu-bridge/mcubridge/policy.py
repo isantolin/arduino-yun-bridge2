@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import shlex
-import msgspec
 import fnmatch
+import shlex
 from collections.abc import Iterable
 from typing import Final
 
+import msgspec
+
 from .config.common import normalise_allowed_commands
 from .config.const import ALLOWED_COMMAND_WILDCARD
-from .protocol.topics import Topic
 from .protocol.protocol import (
     AnalogAction,
     ConsoleAction,
@@ -20,6 +20,7 @@ from .protocol.protocol import (
     MailboxAction,
     ShellAction,
 )
+from .protocol.topics import Topic
 
 
 class CommandValidationError(Exception):

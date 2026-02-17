@@ -1,32 +1,28 @@
-from pathlib import Path
-from types import SimpleNamespace
-from unittest import mock
-from unittest.mock import MagicMock, patch, AsyncMock
 import asyncio
 import errno
 import logging
 import sys
 import time
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from construct import ConstructError
 import aiomqtt
 import pytest
 import tenacity
-
-from mcubridge import metrics, daemon
+from construct import ConstructError
+from mcubridge import daemon, metrics
 from mcubridge.config import common
 from mcubridge.mqtt import spool
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol
-from mcubridge.protocol import topics
+from mcubridge.protocol import protocol, topics
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.security import security
-from mcubridge.services import dispatcher
-from mcubridge.services import handshake
+from mcubridge.services import dispatcher, handshake
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
-from mcubridge.state import context
-from mcubridge.state import status
+from mcubridge.state import context, status
 from mcubridge.transport import mqtt
 from mcubridge.util import mqtt_helper
 
@@ -739,7 +735,7 @@ def test_settings_normalize_path_empty():
 
 def test_logging_gaps():
     """Cover gaps in mcubridge.config.logging."""
-    from mcubridge.config.logging import StructuredLogFormatter, _serialise_value, _build_handler
+    from mcubridge.config.logging import StructuredLogFormatter, _build_handler, _serialise_value
 
     # Test _serialise_value with unknown type
     assert _serialise_value(set()) == "set()"
@@ -843,7 +839,7 @@ def test_topics_gaps():
     assert topics.parse_topic("br", "br/invalid/topic") is None
 
     # TopicRoute identification/remainder
-    from mcubridge.protocol.topics import TopicRoute, Topic
+    from mcubridge.protocol.topics import Topic, TopicRoute
 
     tr_empty = TopicRoute("raw", "prefix", Topic.SYSTEM, ())
     assert tr_empty.identifier == ""

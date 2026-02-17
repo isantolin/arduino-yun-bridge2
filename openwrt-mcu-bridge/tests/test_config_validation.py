@@ -6,12 +6,11 @@ import os
 from typing import Any
 
 import pytest
-
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 
 

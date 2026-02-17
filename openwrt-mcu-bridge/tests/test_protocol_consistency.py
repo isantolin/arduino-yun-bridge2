@@ -6,7 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from tools.protocol.generate import generate_python, generate_cpp  # noqa: E402
+from tools.protocol.generate import generate_cpp, generate_python  # noqa: E402
 
 
 def test_protocol_python_is_up_to_date():

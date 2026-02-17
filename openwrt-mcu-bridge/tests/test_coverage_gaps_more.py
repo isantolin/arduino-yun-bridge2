@@ -9,17 +9,18 @@ import tempfile
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
+)
+from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
 )
 
@@ -198,8 +199,8 @@ def test_spool_disk_queue_initialization_failure() -> None:
 
 def test_spool_append_disk_error_falls_back_to_memory() -> None:
     """Cover disk error during append."""
-    from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spool_dir = os.path.join(tmpdir, "tmp", "spool")
@@ -225,8 +226,8 @@ def test_spool_append_disk_error_falls_back_to_memory() -> None:
 
 def test_spool_pop_disk_error_retries_with_memory() -> None:
     """Cover disk error during pop."""
-    from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spool_dir = os.path.join(tmpdir, "tmp", "spool")
@@ -253,8 +254,8 @@ def test_spool_pop_disk_error_retries_with_memory() -> None:
 
 def test_spool_requeue_disk_error() -> None:
     """Cover disk error during requeue."""
-    from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spool_dir = os.path.join(tmpdir, "tmp", "spool")
@@ -304,8 +305,8 @@ def test_spool_fallback_hook_called() -> None:
 
 def test_spool_disk_full_errno() -> None:
     """Cover ENOSPC errno handling."""
-    from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with tempfile.TemporaryDirectory() as tmpdir:
         spool_dir = os.path.join(tmpdir, "tmp", "spool")

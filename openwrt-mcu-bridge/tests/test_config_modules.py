@@ -1,14 +1,12 @@
 import importlib
+import logging
 import sys
 import types
-import logging
-import msgspec
 from typing import Any, Self
 
+import msgspec
 import pytest
-
-from mcubridge.config import common, const
-from mcubridge.config import settings
+from mcubridge.config import common, const, settings
 from mcubridge.protocol import protocol
 
 

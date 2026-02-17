@@ -17,15 +17,15 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.protocol.structures import MailboxPushPacket
 
-from ..protocol.encoding import encode_status_reason
 from ..config.settings import RuntimeConfig
-from ..state.context import RuntimeState
+from ..protocol.encoding import encode_status_reason
 from ..protocol.topics import (
     Topic,
     mailbox_incoming_available_topic,
     mailbox_outgoing_available_topic,
     topic_path,
 )
+from ..state.context import RuntimeState
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.mailbox")

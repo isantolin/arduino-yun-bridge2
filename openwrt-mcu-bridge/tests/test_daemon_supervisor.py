@@ -6,7 +6,6 @@ import logging
 from unittest.mock import MagicMock
 
 import tenacity
-
 from mcubridge.daemon import BridgeDaemon
 
 
@@ -127,4 +126,3 @@ def test_supervisor_callbacks_before_sleep_no_next_action() -> None:
     callbacks.before_sleep(retry_state)
 
     log.error.assert_called_once()
-

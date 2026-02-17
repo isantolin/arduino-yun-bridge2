@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Annotated
 
 import msgspec
-
 from mcubridge.protocol.protocol import UINT16_MAX
 
 # Constraints for msgspec validation

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 import logging
+from collections.abc import Iterable
 
 """General-purpose utilities for McuBridge."""
 
@@ -15,6 +15,7 @@ __all__ = [
     "log_hexdump",
 ]
 
+
 def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
     """Split payload into fixed-size chunks."""
     if not payload:
@@ -22,6 +23,7 @@ def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
     return [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
+
 
 
 def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:
@@ -39,6 +41,7 @@ def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: b
 _TRUE_STRINGS = frozenset({"1", "yes", "on", "true", "enable", "enabled"})
 
 
+
 def parse_bool(value: object) -> bool:
     """Parse a boolean value safely from various types."""
     if isinstance(value, bool):
@@ -49,6 +52,7 @@ def parse_bool(value: object) -> bool:
         return False
     s = str(value).lower().strip()
     return s in _TRUE_STRINGS
+
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
     """Return a deduplicated, lower-cased allow-list preserving wildcards."""
@@ -68,11 +72,13 @@ def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
     return tuple(normalised)
 
 
+
 def safe_int(value: object, default: int) -> int:
     try:
         return int(float(value))  # type: ignore
     except (ValueError, TypeError):
         return default
+
 
 
 def safe_float(value: object, default: float) -> float:

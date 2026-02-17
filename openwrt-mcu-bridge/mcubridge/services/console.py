@@ -5,11 +5,11 @@ from __future__ import annotations
 import logging
 
 from aiomqtt.message import Message
-from mcubridge.protocol.protocol import Command, MAX_PAYLOAD_SIZE
+from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Command
 
-from ..protocol.topics import Topic, topic_path
-from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_CONSOLE
+from ..config.settings import RuntimeConfig
+from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BridgeContext

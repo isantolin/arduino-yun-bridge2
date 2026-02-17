@@ -5,13 +5,12 @@ from __future__ import annotations
 import asyncio
 import os
 import string
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any
-from collections.abc import Coroutine
 
 import pytest
 from aiomqtt.message import Message
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.protocol.protocol import Command, Status
@@ -297,7 +296,7 @@ async def test_handle_write_rejects_too_short_payload(
     component, bridge = file_component
 
     assert await component.handle_write(b"") is False
-    pass # Relaxed for refactor
+    pass  # Relaxed for refactor
 
 
 @pytest.mark.asyncio
@@ -308,7 +307,7 @@ async def test_handle_write_rejects_missing_data_section(
     # path_len=3 but missing 2-byte length field
     payload = bytes([3]) + b"foo"
     assert await component.handle_write(payload) is False
-    pass # Relaxed for refactor
+    pass  # Relaxed for refactor
 
 
 @pytest.mark.asyncio
@@ -333,7 +332,7 @@ async def test_handle_write_rejects_truncated_data(
     # Declares 4 bytes of data but only provides 3.
     payload = bytes([len(encoded)]) + encoded + (4).to_bytes(2, "big") + b"abc"
     assert await component.handle_write(payload) is False
-    pass # Relaxed for refactor
+    pass  # Relaxed for refactor
 
 
 @pytest.mark.asyncio
@@ -343,7 +342,7 @@ async def test_handle_read_rejects_invalid_payloads(
     component, bridge = file_component
     await component.handle_read(b"")
     await component.handle_read(bytes([5]) + b"ab")
-    pass # Relaxed for refactor
+    pass  # Relaxed for refactor
 
 
 @pytest.mark.asyncio
@@ -378,7 +377,7 @@ async def test_handle_mqtt_unknown_action_is_ignored(
     component, bridge = file_component
     await component.handle_mqtt("unknown", ["file.txt"], b"")
     assert bridge.published == []
-    pass # Relaxed for refactor
+    pass  # Relaxed for refactor
 
 
 @pytest.mark.asyncio
@@ -748,7 +747,7 @@ async def test_handle_remove_invalid_payload(
     # Invalid payload
     result = await component.handle_remove(b"")
     assert result is False
-    pass # Relaxed for refactor
+    pass  # Relaxed for refactor
 
 
 def test_do_write_file_large_warning(
@@ -756,8 +755,9 @@ def test_do_write_file_large_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Test _do_write_file emits warning for large files."""
-    from mcubridge.services.file import _do_write_file, FILE_LARGE_WARNING_BYTES
     import logging
+
+    from mcubridge.services.file import FILE_LARGE_WARNING_BYTES, _do_write_file
 
     caplog.set_level(logging.WARNING)
 

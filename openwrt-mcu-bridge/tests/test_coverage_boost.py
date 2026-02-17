@@ -2,10 +2,11 @@
 
 import asyncio
 import errno
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
-from mcubridge.transport.serial import BridgeSerialProtocol, MAX_SERIAL_PACKET_BYTES, SerialTransport
 from mcubridge.protocol.protocol import FRAME_DELIMITER
+from mcubridge.transport.serial import MAX_SERIAL_PACKET_BYTES, BridgeSerialProtocol, SerialTransport
 
 
 @pytest.mark.asyncio
@@ -147,8 +148,8 @@ async def test_metrics_snapshot_emit_exceptions():
 
 def test_spool_disk_error_requeue():
     """Test MQTT spool requeue disk error handling."""
-    from mcubridge.mqtt.spool import MQTTPublishSpool
     from mcubridge.mqtt.messages import QueuedPublish
+    from mcubridge.mqtt.spool import MQTTPublishSpool
 
     with patch("mcubridge.mqtt.spool.FileSpoolDeque") as mock_dq:
         mock_dq.return_value.appendleft.side_effect = OSError(errno.EIO, "IO error")

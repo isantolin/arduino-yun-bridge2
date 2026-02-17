@@ -6,23 +6,23 @@ import asyncio
 import logging
 import math
 import re
-import msgspec
+from collections.abc import Awaitable, Callable, Iterator, Sequence
 from typing import (
     Any,
     cast,
 )
-from collections.abc import Awaitable, Callable, Iterator, Sequence
 
-from .protocol.topics import Topic, topic_path
-from .mqtt.messages import QueuedPublish
-from .state.context import RuntimeState
-
-from prometheus_client import CollectorRegistry, generate_latest, CONTENT_TYPE_LATEST
-from prometheus_client.registry import Collector
+import msgspec
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 from prometheus_client.core import (
     GaugeMetricFamily,
     InfoMetricFamily,
 )
+from prometheus_client.registry import Collector
+
+from .mqtt.messages import QueuedPublish
+from .protocol.topics import Topic, topic_path
+from .state.context import RuntimeState
 
 logger = logging.getLogger("mcubridge.metrics")
 

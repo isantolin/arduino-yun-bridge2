@@ -3,24 +3,23 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 import logging
-from typing import Any, Protocol
 from collections.abc import Awaitable, Coroutine
+from typing import Any, Protocol
 
+import msgspec
 import pytest
 from aiomqtt.message import Message
-
-from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.mqtt.messages import QueuedPublish
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.protocol.topics import (
     Topic,
     mailbox_incoming_available_topic,
     mailbox_outgoing_available_topic,
     topic_path,
 )
-from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.mailbox import MailboxComponent
 from mcubridge.state.context import RuntimeState

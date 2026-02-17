@@ -5,19 +5,18 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
 import shlex
+import sys
 import textwrap
 import time
-
-import msgspec
+import tomllib
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterable, Sequence
 
-import tomllib
+import msgspec
 import typer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

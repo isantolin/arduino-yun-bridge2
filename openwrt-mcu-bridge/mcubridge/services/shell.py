@@ -7,22 +7,21 @@ from contextlib import AsyncExitStack
 from typing import Any, cast
 
 from aiomqtt.message import Message
-
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import ShellAction, Status
 
-from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_SHELL
-from ..state.context import RuntimeState
-from ..protocol.topics import Topic, topic_path
+from ..config.settings import RuntimeConfig
 from ..policy import CommandValidationError, tokenize_shell_command
+from ..protocol.topics import Topic, topic_path
+from ..state.context import RuntimeState
 from .base import BridgeContext
-from .process import ProcessComponent
 from .payloads import (
     PayloadValidationError,
     ShellCommandPayload,
     ShellPidPayload,
 )
+from .process import ProcessComponent
 
 logger = logging.getLogger("mcubridge.shell")
 

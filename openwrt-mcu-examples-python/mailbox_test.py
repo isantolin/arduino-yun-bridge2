@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Example: Test mailbox feature using the async McuBridge client."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
 import sys
 

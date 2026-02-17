@@ -20,8 +20,8 @@ Only encodes runs of 4+ identical bytes (break-even at 3).
 
 from __future__ import annotations
 
-from typing import Final
 from itertools import repeat
+from typing import Final
 
 # Escape byte used to signal a run
 ESCAPE_BYTE: Final[int] = 0xFF

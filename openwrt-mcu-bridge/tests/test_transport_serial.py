@@ -1,5 +1,5 @@
 import sys
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 # Mock serial_asyncio_fast before importing SerialTransport
 mock_serial_fast = MagicMock()
@@ -9,8 +9,6 @@ sys.modules["serial_asyncio_fast"] = mock_serial_fast
 import asyncio  # noqa: E402
 
 import pytest  # noqa: E402
-
-
 from mcubridge.config.settings import RuntimeConfig  # noqa: E402
 from mcubridge.protocol import protocol  # noqa: E402
 from mcubridge.protocol.frame import Frame  # noqa: E402

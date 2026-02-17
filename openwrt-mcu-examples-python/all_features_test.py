@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
+
 import uvloop
 
 # Add parent directory to Python path

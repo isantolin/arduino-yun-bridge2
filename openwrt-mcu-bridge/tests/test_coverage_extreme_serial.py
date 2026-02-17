@@ -1,17 +1,18 @@
-import sys
 import asyncio
+import sys
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 # Mock serial_asyncio_fast at the very beginning
 mock_saf = MagicMock()
 mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
 sys.modules["serial_asyncio_fast"] = mock_saf
 
-from mcubridge.transport import serial as serial_fast  # noqa: E402
-from mcubridge.protocol.protocol import Command, FRAME_DELIMITER  # noqa: E402
-from mcubridge.protocol.frame import Frame  # noqa: E402
 from cobs import cobs  # noqa: E402
+from mcubridge.protocol.frame import Frame  # noqa: E402
+from mcubridge.protocol.protocol import FRAME_DELIMITER, Command  # noqa: E402
+from mcubridge.transport import serial as serial_fast  # noqa: E402
 
 
 def _make_config():

@@ -5,8 +5,11 @@ Avoid hardcoding topic strings elsewhere.
 """
 
 from __future__ import annotations
+
 import msgspec
+
 from .protocol import Topic
+
 
 class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""

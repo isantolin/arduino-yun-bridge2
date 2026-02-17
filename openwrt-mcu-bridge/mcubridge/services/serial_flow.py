@@ -5,23 +5,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, cast
 from collections.abc import Awaitable, Callable
+from typing import Any, cast
 
 import tenacity
-
 from mcubridge.config.const import (
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
     SERIAL_SUCCESS_STATUS_CODES,
 )
-from mcubridge.protocol.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS
+from mcubridge.protocol import protocol, rle
 from mcubridge.protocol.contracts import (
     expected_responses,
     response_to_request,
 )
-from mcubridge.protocol.protocol import Status
-from mcubridge.protocol import rle, protocol
+from mcubridge.protocol.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS, Status
 from mcubridge.protocol.structures import PendingCommand
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]

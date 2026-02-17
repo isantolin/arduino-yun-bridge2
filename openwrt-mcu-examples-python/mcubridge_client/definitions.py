@@ -3,8 +3,8 @@ from __future__ import annotations
 import time
 from enum import IntEnum
 from typing import Final, TypedDict
-import msgspec
 
+import msgspec
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 

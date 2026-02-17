@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.protocol import protocol

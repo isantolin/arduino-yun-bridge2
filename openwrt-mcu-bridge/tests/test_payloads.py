@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from mcubridge.services.shell import (
     PayloadValidationError,
     ShellCommandPayload,

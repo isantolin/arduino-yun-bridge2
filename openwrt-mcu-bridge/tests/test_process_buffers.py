@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from asyncio.subprocess import Process
+from collections.abc import Awaitable, Callable
 from types import MethodType
 from typing import Any, cast
-from collections.abc import Awaitable, Callable
 
 import pytest
-from asyncio.subprocess import Process
-
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
@@ -20,15 +18,16 @@ from mcubridge.config.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
-from mcubridge.services.runtime import BridgeService
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.policy import AllowedCommandPolicy
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Status
 from mcubridge.services.process import (
     ProcessComponent,
     ProcessOutputBatch,
 )
+from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ManagedProcess, create_runtime_state
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Status
-from mcubridge.policy import AllowedCommandPolicy
 
 
 @pytest.fixture()

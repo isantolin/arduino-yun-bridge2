@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import msgspec
 import logging
 import subprocess
 from asyncio import StreamReader
@@ -12,27 +11,28 @@ from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
 from typing import Any, cast
 
+import msgspec
 import psutil
-
-from ..protocol.encoding import encode_status_reason
-from ..config.const import MQTT_EXPIRY_SHELL, PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
-from ..protocol.topics import Topic, topic_path
-from ..state.context import ManagedProcess, RuntimeState
-from ..config.settings import RuntimeConfig
-from ..policy import CommandValidationError, tokenize_shell_command
-from .base import BridgeContext
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import ProcessOutputBatch
 from mcubridge.protocol.protocol import (
     INVALID_ID_SENTINEL,
+    MAX_PAYLOAD_SIZE,
     PROCESS_DEFAULT_EXIT_CODE,
     UINT8_MASK,
     UINT16_MAX,
     Command,
-    MAX_PAYLOAD_SIZE,
     ShellAction,
     Status,
 )
+from mcubridge.protocol.structures import ProcessOutputBatch
+
+from ..config.const import MQTT_EXPIRY_SHELL, PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
+from ..config.settings import RuntimeConfig
+from ..policy import CommandValidationError, tokenize_shell_command
+from ..protocol.encoding import encode_status_reason
+from ..protocol.topics import Topic, topic_path
+from ..state.context import ManagedProcess, RuntimeState
+from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.process")
 

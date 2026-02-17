@@ -10,9 +10,8 @@ import tomllib
 from pathlib import Path
 
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.dispatcher import BridgeDispatcher, _PRE_SYNC_ALLOWED_COMMANDS
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
-
+from mcubridge.services.dispatcher import _PRE_SYNC_ALLOWED_COMMANDS, BridgeDispatcher
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEC_PATH = REPO_ROOT / "tools" / "protocol" / "spec.toml"

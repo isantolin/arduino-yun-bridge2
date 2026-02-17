@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Example: Test generic pin control using the async McuBridge client."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
 
 from mcubridge_client import Bridge, dump_client_env

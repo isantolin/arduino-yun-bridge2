@@ -1,13 +1,10 @@
+import importlib
 import sys
 import types
-import importlib
-
 from typing import Self
 
 import pytest
-
-from mcubridge.config import common
-from mcubridge.config import const
+from mcubridge.config import common, const
 from mcubridge.protocol import protocol
 
 

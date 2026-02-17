@@ -6,14 +6,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.base import BridgeContext

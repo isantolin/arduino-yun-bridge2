@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import patch
 
+import pytest
 from aiomqtt.message import Message
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, Status
-
 from mcubridge.config.common import encode_status_reason
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import (
     PendingPinRequest,
     RuntimeState,
 )
+
 from .mqtt_helpers import make_inbound_message
 
 

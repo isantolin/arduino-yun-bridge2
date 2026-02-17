@@ -14,22 +14,22 @@ from __future__ import annotations
 import logging
 import re
 import time
-import msgspec
-from wsgiref.handlers import CGIHandler
 from typing import Any, List
+from wsgiref.handlers import CGIHandler
 
-from paho.mqtt.client import Client, MQTTv5
-from paho.mqtt.enums import CallbackAPIVersion
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
+import msgspec
+from mcubridge.config.common import get_uci_config
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.config.common import get_uci_config
-from mcubridge.util import safe_int, safe_float
-from mcubridge.util.mqtt_helper import apply_tls_to_paho
 from mcubridge.protocol.topics import pin_topic
+from mcubridge.util import safe_float, safe_int
+from mcubridge.util.mqtt_helper import apply_tls_to_paho
+from paho.mqtt.client import Client, MQTTv5
+from paho.mqtt.enums import CallbackAPIVersion
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 logger = logging.getLogger("mcubridge.pin_rest")
+
 
 def _configure_fallback_logging() -> None:
     if logging.getLogger().handlers:
@@ -51,6 +51,7 @@ DEFAULT_BACKOFF_BASE = max(0.0, safe_float(_UCI.get("pin_mqtt_backoff"), 0.5))
     retry=retry_if_exception_type((OSError, ConnectionError, TimeoutError)),
     reraise=True,
 )
+
 def publish_safe(topic: str, payload: str, config: Any) -> None:
     client = Client(
         client_id=f"mcubridge_cgi_{time.time()}",
@@ -84,10 +85,12 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
             pass
 
 
+
 def get_pin_from_path(environ: dict[str, Any]) -> str | None:
     path = environ.get("PATH_INFO", "")
     match = re.match(r"/pin/(\d+)", path)
     return match.group(1) if match else None
+
 
 
 def json_response(start_response: Any, status: str, data: dict[str, Any]) -> List[bytes]:
@@ -98,6 +101,7 @@ def json_response(start_response: Any, status: str, data: dict[str, Any]) -> Lis
     ]
     start_response(status, headers)
     return [response_body]
+
 
 
 def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:

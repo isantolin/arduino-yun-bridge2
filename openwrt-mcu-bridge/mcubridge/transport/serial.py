@@ -11,27 +11,25 @@ import asyncio
 import functools
 import logging
 import sys
-import msgspec
 from typing import Any, Final, Sized, TypeGuard, cast
 
-import tenacity
-from cobs import cobs
-from mcubridge.protocol import rle
+import msgspec
 
 # [SIL-2] Deterministic Import: pyserial-asyncio-fast is MANDATORY.
 # Do not catch ImportError. Fail immediately if dependency is missing.
 import serial_asyncio_fast  # type: ignore
-
-from mcubridge.util import log_hexdump
-from mcubridge.config.settings import RuntimeConfig
+import tenacity
+from cobs import cobs
 from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
-from mcubridge.protocol import protocol
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol, rle
 from mcubridge.protocol.frame import Frame
-from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState
 
 # Import directly from handshake to avoid circular dependency
 from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState
+from mcubridge.util import log_hexdump
 
 logger = logging.getLogger("mcubridge")
 
@@ -319,8 +317,9 @@ class SerialTransport:
 
     def _blocking_reset(self) -> None:
         try:
-            import serial
             import time
+
+            import serial
             with serial.Serial(self.config.serial_port) as s:
                 s.dtr = False
                 time.sleep(0.1)

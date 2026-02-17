@@ -5,7 +5,7 @@ Objetivo: 100% Cobertura Real en Daemon y Transportes (Py3.13 Compatible).
 """
 
 import sys
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 # Mock serial_asyncio_fast
 mock_saf = MagicMock()
@@ -14,18 +14,18 @@ sys.modules["serial_asyncio_fast"] = mock_saf
 
 import asyncio  # noqa: E402
 from unittest.mock import patch  # noqa: E402
+
+import aiomqtt  # noqa: E402
 import pytest  # noqa: E402
-from mcubridge.transport.mqtt import mqtt_task  # noqa: E402
+from cobs import cobs  # noqa: E402
 from mcubridge.daemon import BridgeDaemon  # noqa: E402
+from mcubridge.protocol.frame import Frame  # noqa: E402
 from mcubridge.protocol.protocol import (  # noqa: E402
     FRAME_DELIMITER,  # noqa: E402
-    Command,  # noqa: E402
     UINT8_MASK,  # noqa: E402
+    Command,  # noqa: E402
 )  # noqa: E402
-from mcubridge.protocol.frame import Frame  # noqa: E402
-from cobs import cobs  # noqa: E402
-import aiomqtt  # noqa: E402
-
+from mcubridge.transport.mqtt import mqtt_task  # noqa: E402
 
 # --- DAEMON TESTS (Refactored) ---
 

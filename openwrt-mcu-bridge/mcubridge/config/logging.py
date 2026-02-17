@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import msgspec
 import logging
 import os
 from datetime import datetime, timezone
@@ -11,6 +10,8 @@ from logging.config import dictConfig
 from logging.handlers import SysLogHandler
 from pathlib import Path
 from typing import Any
+
+import msgspec
 
 from .settings import RuntimeConfig
 

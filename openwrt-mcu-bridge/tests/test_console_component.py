@@ -1,13 +1,13 @@
-import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
 from collections import deque
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from mcubridge.protocol.protocol import Command, MAX_PAYLOAD_SIZE
-from mcubridge.services.console import ConsoleComponent
-from mcubridge.services.base import BridgeContext
-from mcubridge.state.context import RuntimeState
+import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Command
+from mcubridge.services.base import BridgeContext
+from mcubridge.services.console import ConsoleComponent
+from mcubridge.state.context import RuntimeState
 
 
 @pytest.fixture

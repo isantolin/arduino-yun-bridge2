@@ -8,14 +8,13 @@ from typing import TYPE_CHECKING
 
 import aiomqtt
 import tenacity
-
-from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
-from mcubridge.util.mqtt_helper import configure_tls_context
-from mcubridge.util import log_hexdump
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 from mcubridge.protocol import topic_path
 from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS
 from mcubridge.state.context import RuntimeState
+from mcubridge.util import log_hexdump
+from mcubridge.util.mqtt_helper import configure_tls_context
 
 if TYPE_CHECKING:
     from mcubridge.services.runtime import BridgeService

@@ -4,5 +4,4 @@ from __future__ import annotations
 
 from mcubridge.protocol.structures import QOSLevel, QueuedPublish, SpoolRecord
 
-
 __all__ = ["QOSLevel", "QueuedPublish", "SpoolRecord"]

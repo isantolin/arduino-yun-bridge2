@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Example: Run an async shell command and stream its output via MQTT polls."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
 import sys
 from typing import Any

@@ -4,12 +4,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import pytest
-
-from mcubridge.protocol.topics import TopicRoute, parse_topic
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status, Topic
-from mcubridge.services.dispatcher import BridgeDispatcher
+from mcubridge.protocol.topics import TopicRoute, parse_topic
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
+from mcubridge.services.dispatcher import BridgeDispatcher
 
 from .mqtt_helpers import make_inbound_message
 

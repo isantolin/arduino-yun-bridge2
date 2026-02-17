@@ -179,10 +179,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
         if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                 raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
+                raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
 
         if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
-             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
+            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
     @staticmethod
     def _normalize_optional_string(value: str | None) -> str | None:

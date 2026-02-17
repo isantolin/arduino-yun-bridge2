@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 
 import pytest
-
+from mcubridge.protocol.protocol import Status
+from mcubridge.services.serial_flow import PendingCommand, SerialFlowController
 from mcubridge.services.shell import (
     PayloadValidationError,
     ShellCommandPayload,
     ShellPidPayload,
 )
-from mcubridge.services.serial_flow import SerialFlowController, PendingCommand
-from mcubridge.protocol.protocol import Status
-
 
 # ============================================================================
 # Payload Tests

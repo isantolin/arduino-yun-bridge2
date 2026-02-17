@@ -7,15 +7,15 @@ import logging
 from typing import Any, Callable, cast
 
 from aiomqtt.message import Message
-from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import AnalogReadResponsePacket, DigitalReadResponsePacket
 
-from ..protocol.topics import Topic, topic_path
-from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_PIN
-from ..state.context import PendingPinRequest, RuntimeState
+from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
+from ..protocol.topics import Topic, topic_path
+from ..state.context import PendingPinRequest, RuntimeState
 from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.pin")

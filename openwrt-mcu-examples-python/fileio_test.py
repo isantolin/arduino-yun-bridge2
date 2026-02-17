@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Example: Test file I/O using the async McuBridge client."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
 import sys
 

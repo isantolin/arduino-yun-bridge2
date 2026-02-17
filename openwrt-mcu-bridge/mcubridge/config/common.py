@@ -5,15 +5,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Final, Any, cast
+from typing import Any, Final, cast
 
 # [SIL-2] STRICT DEPENDENCY: On OpenWrt, uci is a mandatory system package.
 import uci
-
-from mcubridge.util import parse_bool, normalise_allowed_commands
 from mcubridge.mqtt import build_mqtt_connect_properties, build_mqtt_properties
 from mcubridge.protocol.encoding import encode_status_reason
-from mcubridge.util import log_hexdump
+from mcubridge.util import log_hexdump, normalise_allowed_commands, parse_bool
 
 logger = logging.getLogger(__name__)
 

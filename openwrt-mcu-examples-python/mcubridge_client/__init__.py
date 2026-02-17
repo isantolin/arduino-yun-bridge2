@@ -3,27 +3,28 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 import logging
 import secrets
 import shlex
 import ssl
 import uuid
+from collections.abc import Iterable, Sequence
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, TypedDict, cast
-from collections.abc import Iterable, Sequence
 
+import msgspec
 from aiomqtt import Client, MqttError, ProtocolVersion
 from aiomqtt.message import Message
 from aiomqtt.types import PayloadType
+
 from .definitions import (
-    QOSLevel,
-    QueuedPublish,
-    build_mqtt_properties,
     DEFAULT_MQTT_HOST,
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
+    QOSLevel,
+    QueuedPublish,
+    build_mqtt_properties,
 )
 from .env import dump_client_env, read_uci_general
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 from enum import IntEnum
 
 import pytest
-
 from mcubridge.protocol import contracts
 from mcubridge.protocol.protocol import Command
 

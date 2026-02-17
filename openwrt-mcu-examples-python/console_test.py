@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Interactive console helper for the Arduino bridge."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
 import sys
 

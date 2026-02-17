@@ -6,7 +6,6 @@ import asyncio
 import logging
 
 import pytest
-
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.serial_flow import SerialFlowController

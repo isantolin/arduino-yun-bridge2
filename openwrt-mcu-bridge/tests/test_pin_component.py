@@ -7,14 +7,12 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-
 from aiomqtt.message import Message
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, PinAction, Status
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.pin import PinComponent
 from mcubridge.state.context import PendingPinRequest, RuntimeState
 

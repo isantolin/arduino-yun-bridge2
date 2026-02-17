@@ -1,16 +1,18 @@
 """Comprehensive coverage completion tests."""
 
-import pytest
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch, AsyncMock
-from mcubridge.util import mqtt_helper
-from mcubridge.protocol import topics, protocol
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from mcubridge import metrics
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.daemon import BridgeDaemon
+from mcubridge.protocol import protocol, topics
 from mcubridge.services.file import FileComponent
 from mcubridge.services.runtime import BridgeService
-from mcubridge.daemon import BridgeDaemon
-from mcubridge import metrics
+from mcubridge.util import mqtt_helper
+
 
 def test_mqtt_helper_tls_edge_cases(tmp_path):
     config = MagicMock(spec=RuntimeConfig)
@@ -31,6 +33,7 @@ def test_mqtt_helper_tls_edge_cases(tmp_path):
     with pytest.raises(RuntimeError, match="Both mqtt_certfile and mqtt_keyfile"):
         mqtt_helper.configure_tls_context(config)
 
+
 def test_topics_edge_cases():
     prefix = "br"
     with pytest.raises(ValueError, match="topic segment cannot be empty"):
@@ -39,9 +42,11 @@ def test_topics_edge_cases():
     assert topics.parse_topic("br", "br") is None
     assert topics.parse_topic("br", "br/unknown/action") is None
 
+
 def test_protocol_constants():
     assert protocol.PROTOCOL_VERSION == 2
     assert protocol.MIN_FRAME_SIZE > 0
+
 
 @pytest.mark.asyncio
 async def test_file_component_edge_cases(runtime_state, real_config):
@@ -64,6 +69,7 @@ async def test_file_component_edge_cases(runtime_state, real_config):
     assert res[0] is False
     assert res[2] == "write_limit_exceeded"
 
+
 @pytest.mark.asyncio
 async def test_runtime_service_edge_cases(real_config, runtime_state):
     service = BridgeService(real_config, runtime_state)
@@ -72,6 +78,7 @@ async def test_runtime_service_edge_cases(real_config, runtime_state):
     msg.payload = b"invalid"
     with patch.object(service._dispatcher, "dispatch_mqtt_message", side_effect=ValueError("Boom")):
         await service.handle_mqtt_message(msg)
+
 
 @pytest.mark.asyncio
 async def test_daemon_supervision_logic(real_config):
@@ -89,6 +96,7 @@ async def test_daemon_supervision_logic(real_config):
     with pytest.raises(RuntimeError):
         await daemon._supervise_task(spec)
 
+
 @pytest.mark.asyncio
 async def test_metrics_emit_errors(runtime_state):
     enqueue = AsyncMock()
@@ -101,6 +109,7 @@ async def test_metrics_emit_errors(runtime_state):
         with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
+
 
 @pytest.mark.asyncio
 async def test_prometheus_exporter_edge_cases(runtime_state):
@@ -119,12 +128,14 @@ async def test_prometheus_exporter_edge_cases(runtime_state):
     await exporter._handle_client(reader, writer)
     await exporter.stop()
 
+
 def test_metrics_collector_flatten(runtime_state):
     collector = metrics._RuntimeStateCollector(runtime_state)
     data = {"a": 1, "b": {"c": 2, "d": None}, "e": "str"}
     results = list(collector._flatten("test", data))
     assert ("gauge", "test_a", 1.0) in results
     assert ("gauge", "test_b_c", 2.0) in results
+
 
 @pytest.mark.asyncio
 async def test_daemon_supervision_base_exception(real_config):
@@ -140,13 +151,14 @@ async def test_daemon_supervision_base_exception(real_config):
     with pytest.raises(BaseException):
         await daemon._supervise_task(spec)
 
+
 @pytest.mark.asyncio
 async def test_file_component_additional_gaps(runtime_state, real_config):
     ctx = MagicMock()
     comp = FileComponent(real_config, runtime_state, ctx)
     with patch("pathlib.PurePosixPath.is_absolute", return_value=True):
-         with patch("pathlib.PurePosixPath.relative_to", side_effect=ValueError()):
-             assert comp._normalise_filename("/absolute") is None
+        with patch("pathlib.PurePosixPath.relative_to", side_effect=ValueError()):
+            assert comp._normalise_filename("/absolute") is None
     with patch("mcubridge.services.file.scandir", side_effect=OSError("Scan fail")):
         assert comp._scan_directory_size(Path("/tmp")) == 0
     from mcubridge.services.file import _do_write_file
@@ -154,12 +166,14 @@ async def test_file_component_additional_gaps(runtime_state, real_config):
         with pytest.raises(OSError):
             _do_write_file(Path("/tmp/fail"), b"data")
 
+
 def test_metrics_more_gaps(runtime_state):
     from mcubridge.metrics import _normalize_interval
     assert _normalize_interval(-1, 10.0) is None
     assert _normalize_interval(5, 10.0) == 10
     from mcubridge.metrics import _sanitize_metric_name
     assert _sanitize_metric_name("test-metric.name") == "test_metric_name"
+
 
 def test_mqtt_helper_apply_tls_settings():
     config = MagicMock(spec=RuntimeConfig)
@@ -172,6 +186,7 @@ def test_mqtt_helper_apply_tls_settings():
     mqtt_helper.apply_tls_to_paho(client, config)
     client.tls_set.assert_called_once()
     client.tls_insecure_set.assert_called_once_with(True)
+
 
 @pytest.mark.asyncio
 async def test_daemon_supervisor_cancelled(real_config):
@@ -186,6 +201,7 @@ async def test_daemon_supervisor_cancelled(real_config):
     spec.factory = AsyncMock(side_effect=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
         await daemon._supervise_task(spec)
+
 
 def test_daemon_main_exception_group(real_config):
     from mcubridge.daemon import main

@@ -5,13 +5,14 @@ between the daemon and external scripts (like CGI).
 """
 
 from __future__ import annotations
-import ssl
+
 import logging
+import ssl
 from pathlib import Path
 from typing import Any
 
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import MQTT_TLS_MIN_VERSION
+from mcubridge.config.settings import RuntimeConfig
 
 logger = logging.getLogger("mcubridge.util.mqtt")
 

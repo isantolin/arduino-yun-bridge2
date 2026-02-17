@@ -31,16 +31,14 @@ if "serial_asyncio_fast" not in sys.modules:
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 import pytest
-
-from mcubridge.config import common
-from mcubridge.config import settings
-from mcubridge.config.settings import RuntimeConfig
+from mcubridge.config import common, settings
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
@@ -49,10 +47,12 @@ from mcubridge.protocol.protocol import (
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
+
 @pytest.fixture(scope="session")
 def event_loop_policy():
     """Provide uvloop event loop policy for pytest-asyncio."""
     import warnings
+
     import uvloop
     # Suppress deprecation warnings from uvloop internals (Python 3.16 preparation)
     with warnings.catch_warnings():
@@ -66,18 +66,20 @@ def event_loop_policy():
     return policy
 
 
+
 @pytest.fixture(autouse=True)
 def coro_leak_fix():
     """Close all leaked coroutines after each test to prevent RuntimeWarnings."""
     yield
-    import gc
     import asyncio
+    import gc
     for obj in gc.get_objects():
         try:
             if asyncio.iscoroutine(obj):
                 obj.close()
         except (AttributeError, RuntimeError):
             pass
+
 
 
 @pytest.fixture(autouse=True)
@@ -91,6 +93,7 @@ def reset_logging_handlers():
         except (OSError, RuntimeError):
             pass
         root.removeHandler(handler)
+
 
 
 @pytest.fixture(autouse=True)
@@ -114,6 +117,7 @@ def logging_mock_level_fix():
         handler.level = level
 
 
+
 @pytest.fixture(autouse=True)
 def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure load_runtime_config() sees a secure serial secret by default.
@@ -132,6 +136,7 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
+
 
 
 @pytest.fixture()
@@ -166,6 +171,7 @@ def runtime_config() -> RuntimeConfig:
     )
 
 
+
 @pytest.fixture()
 def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
     state = create_runtime_state(runtime_config)
@@ -173,15 +179,17 @@ def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
     return state
 
 
+
 @pytest.fixture()
 def socket_enabled() -> Iterator[None]:
     """Compat fixture so network tests work without HA plugins."""
     yield
 
+
 @pytest.fixture
 def real_config():
-    from mcubridge.config import settings
     import msgspec
+    from mcubridge.config import settings
     raw = settings.get_default_config()
     raw["serial_shared_secret"] = b"abcd1234"
     raw["serial_retry_timeout"] = 1.0

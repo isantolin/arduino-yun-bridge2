@@ -7,25 +7,22 @@ from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from cobs import cobs
-
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.protocol import FRAME_DELIMITER
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
-from mcubridge.transport.mqtt import mqtt_task
+from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
+from mcubridge.services.runtime import SerialHandshakeFatal
+from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import (
     MAX_SERIAL_PACKET_BYTES,
     SerialTransport,
 )
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command
-from mcubridge.state.context import create_runtime_state
-from mcubridge.services.runtime import SerialHandshakeFatal
+from mcubridge.transport.mqtt import mqtt_task
 from mcubridge.transport.serial import BridgeSerialProtocol
 
 # [REDUCTION] Use shared mocks to avoid duplication
-from tests.mocks import MockSerialService, MockFatalSerialService, MockMQTTService
+from tests.mocks import MockFatalSerialService, MockMQTTService, MockSerialService
 
 
 @pytest.mark.asyncio

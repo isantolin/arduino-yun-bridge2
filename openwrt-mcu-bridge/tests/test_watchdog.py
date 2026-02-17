@@ -6,7 +6,6 @@ import asyncio
 import logging
 
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.watchdog import WatchdogKeepalive

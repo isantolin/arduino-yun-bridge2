@@ -12,11 +12,10 @@ import argparse
 import json
 import sys
 import textwrap
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
-
-import tomllib
 
 # =============================================================================
 # Headers

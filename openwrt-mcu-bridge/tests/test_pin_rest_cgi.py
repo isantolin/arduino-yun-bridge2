@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
 import sys
-import importlib.util
 from importlib.abc import Loader
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -13,9 +13,9 @@ from typing import Any
 
 import msgspec
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
+
 
 def _load_pin_rest_cgi() -> ModuleType:
     script_path = Path(__file__).resolve().parents[2] / "openwrt-mcu-core" / "scripts" / "pin_rest_cgi.py"
@@ -34,11 +34,13 @@ def _load_pin_rest_cgi() -> ModuleType:
 def pin_rest_module() -> ModuleType:
     return _load_pin_rest_cgi()
 
+
 class MockInfo:
     def __init__(self, published: bool = True):
         self._published = published
     def is_published(self) -> bool:
         return self._published
+
 
 class CapturingFakeClient:
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -69,6 +71,7 @@ class CapturingFakeClient:
     def publish(self, topic: str, payload: str | bytes, qos: int = 0) -> Any:
         self.published.append((topic, payload, qos))
         return MockInfo()
+
 
 def test_publish_safe_configures_tls(
     pin_rest_module: ModuleType,
@@ -106,6 +109,7 @@ def test_publish_safe_configures_tls(
     assert fake_client.auth_args == ("user", "secret")
     assert fake_client.tls_kwargs["ca_certs"] == str(cafile)
 
+
 def test_publish_safe_times_out(
     pin_rest_module: ModuleType,
     runtime_config: RuntimeConfig,
@@ -126,6 +130,7 @@ def test_publish_safe_times_out(
             payload="0",
             config=runtime_config
         )
+
 
 def test_main_invokes_publish(
     pin_rest_module: ModuleType,
@@ -170,6 +175,7 @@ def test_main_invokes_publish(
     assert captured["payload"] == "1"
     assert body["status"] == "ok"
     assert captured["status"] == "200 OK"
+
 
 def test_main_rejects_invalid_state(
     pin_rest_module: ModuleType,

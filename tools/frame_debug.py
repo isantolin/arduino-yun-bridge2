@@ -14,18 +14,19 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from dataclasses import dataclass
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import serial  # type: ignore
 from cobs import cobs
+from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
     FRAME_DELIMITER,
+    Command,
+    Status,
 )
-from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame
-from mcubridge.protocol.protocol import Command, Status
 
 
 @dataclass(slots=True)

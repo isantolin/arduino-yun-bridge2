@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 import time
 from types import SimpleNamespace
 
+import msgspec
 import pytest
-
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
@@ -19,10 +17,11 @@ from mcubridge.config.const import (
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Status
+from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 

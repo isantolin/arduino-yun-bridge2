@@ -1,14 +1,14 @@
 """Tests for serial transport resiliency."""
 
 import asyncio
-from unittest.mock import MagicMock, AsyncMock, patch
-import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
 from mcubridge.transport import (
     SerialTransport,
 )
-from mcubridge.protocol import protocol
 from mcubridge.transport.serial import BridgeSerialProtocol
 
 

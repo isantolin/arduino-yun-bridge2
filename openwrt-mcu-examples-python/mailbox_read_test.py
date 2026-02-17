@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Example that listens for mailbox messages pushed from the MCU daemon."""
 
+import argparse
 import asyncio
 import logging
-import argparse
 import ssl
 
 from mcubridge_client import Bridge, dump_client_env

@@ -1,10 +1,10 @@
 "Tests for the logging configuration."
 
-import msgspec
 import logging
 from unittest.mock import patch
 
 import mcubridge.config.logging
+import msgspec
 from mcubridge.config.settings import RuntimeConfig
 
 

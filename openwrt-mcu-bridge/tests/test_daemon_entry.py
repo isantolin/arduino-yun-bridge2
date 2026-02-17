@@ -1,6 +1,5 @@
-from unittest.mock import MagicMock
-
 import importlib
+from unittest.mock import MagicMock
 
 
 def test_daemon_main_invokes_entrypoint(monkeypatch):

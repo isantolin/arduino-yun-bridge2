@@ -4,20 +4,22 @@ from __future__ import annotations
 
 import logging
 from functools import partial
-from typing import TYPE_CHECKING, Any, Callable, Awaitable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
+from mcubridge.protocol.contracts import response_to_request
 from mcubridge.protocol.protocol import (
-    Command,
     MAX_PAYLOAD_SIZE,
+    Command,
     Status,
 )
-from mcubridge.state.context import resolve_command_id
-from mcubridge.protocol.contracts import response_to_request
 from mcubridge.protocol.topics import Topic, TopicRoute
+from mcubridge.state.context import resolve_command_id
+
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 
 if TYPE_CHECKING:
     from aiomqtt import Message
+
     from . import (
         ConsoleComponent,
         DatastoreComponent,

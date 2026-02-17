@@ -3,34 +3,34 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 import logging
 from unittest.mock import patch
 
+import msgspec
 import pytest
 from aiomqtt.message import Message
-
+from mcubridge.config.const import (
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+)
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
+from mcubridge.protocol import protocol
+from mcubridge.protocol.encoding import encode_status_reason
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import (
     Topic,
     mailbox_incoming_available_topic,
     topic_path,
 )
+from mcubridge.services.handshake import derive_serial_timing
+from mcubridge.services.process import ProcessComponent
 from mcubridge.services.runtime import BridgeService, SerialHandshakeFatal
 from mcubridge.state.context import (
     PendingPinRequest,
     RuntimeState,
 )
-from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.config.const import (
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-)
-from mcubridge.protocol import protocol
-from mcubridge.protocol.encoding import encode_status_reason
-from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.process import ProcessComponent
-from mcubridge.services.handshake import derive_serial_timing
+
 from .mqtt_helpers import make_inbound_message
 
 
@@ -1427,10 +1427,10 @@ def test_run_command_respects_allow_list(
         # We should invoke the validation logic.
 
         if not service.is_command_allowed("/bin/true"):
-             status = Status.ERROR.value
-             stderr = b"not allowed"
+            status = Status.ERROR.value
+            stderr = b"not allowed"
         else:
-             status, _, stderr, _ = await service._process.run_sync("/bin/true", ["/bin/true"])
+            status, _, stderr, _ = await service._process.run_sync("/bin/true", ["/bin/true"])
 
         assert status == Status.ERROR.value
         assert b"not allowed" in stderr

@@ -25,11 +25,12 @@ before transmission.
 from __future__ import annotations
 
 from binascii import crc32
+
 import msgspec
 from construct import ConstructError
+from mcubridge.protocol.structures import FRAME_STRUCT
 
 from . import protocol
-from mcubridge.protocol.structures import FRAME_STRUCT
 
 
 def _crc32_hash(data: bytes | bytearray | memoryview) -> int:
@@ -155,4 +156,3 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """Parse *raw_frame_buffer* and create a :class:`Frame`."""
         command_id, payload = cls.parse(raw_frame_buffer)
         return cls(command_id=command_id, payload=payload)
-

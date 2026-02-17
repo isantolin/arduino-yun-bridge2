@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import asyncio
-import msgspec
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
 from typing import Any, cast
 
+import msgspec
 from aiomqtt.message import Message
 
-from ..config.settings import RuntimeConfig
 from ..config.const import MQTT_EXPIRY_SHELL, TOPIC_FORBIDDEN_REASON
+from ..config.settings import RuntimeConfig
 from ..mqtt.messages import QueuedPublish
-from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
 from ..protocol import protocol
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
-
+from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
+from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from ..state.context import RuntimeState
 from . import (
     ConsoleComponent,
@@ -29,13 +29,12 @@ from . import (
 )
 from .dispatcher import BridgeDispatcher
 from .handshake import (
+    SendFrameCallable,
     SerialHandshakeFatal,
     SerialHandshakeManager,
     SerialTimingWindow,
-    SendFrameCallable,
     derive_serial_timing,
 )
-from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from .serial_flow import SerialFlowController
 
 logger = logging.getLogger("mcubridge.service")

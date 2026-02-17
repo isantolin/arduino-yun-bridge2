@@ -34,15 +34,11 @@ from collections.abc import Awaitable, Callable
 from typing import NoReturn
 
 import msgspec
-
 import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 # This must fail immediately if python3-uvloop is not installed.
 import uvloop
-
-from mcubridge.config.logging import configure_logging
-from mcubridge.config.settings import RuntimeConfig, load_runtime_config, get_config_source
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
@@ -52,6 +48,8 @@ from mcubridge.config.const import (
     SUPERVISOR_STATUS_MAX_BACKOFF,
     SUPERVISOR_STATUS_RESTART_INTERVAL,
 )
+from mcubridge.config.logging import configure_logging
+from mcubridge.config.settings import RuntimeConfig, get_config_source, load_runtime_config
 from mcubridge.metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,

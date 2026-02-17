@@ -4,12 +4,15 @@
 #include <Arduino.h>
 #include "rpc_protocol.h"
 
+
 // ETL requires min/max from <algorithm>, but Arduino.h defines them as macros.
 #undef min
 #undef max
 #include "etl/array.h"
 #include "etl/expected.h"
 #include "etl/span.h"
+#include "etl/endianness.h"
+
 
 namespace rpc {
 
@@ -17,29 +20,22 @@ namespace rpc {
 
 // Reads a uint16_t from a Big Endian buffer.
 inline uint16_t read_u16_be(const uint8_t* buffer) {
-  return ((uint16_t)buffer[0] << 8) | (uint16_t)buffer[1];
+  return etl::endian::read_u16_be(buffer);
 }
 
 // Writes a uint16_t to a Big Endian buffer.
 inline void write_u16_be(uint8_t* buffer, uint16_t value) {
-  buffer[0] = (value >> 8) & RPC_UINT8_MASK;
-  buffer[1] = value & RPC_UINT8_MASK;
+  etl::endian::write_u16_be(buffer, value);
 }
 
 // Reads a uint32_t from a Big Endian buffer.
 inline uint32_t read_u32_be(const uint8_t* buffer) {
-  return (static_cast<uint32_t>(buffer[0]) << 24) |
-         (static_cast<uint32_t>(buffer[1]) << 16) |
-         (static_cast<uint32_t>(buffer[2]) << 8) |
-         static_cast<uint32_t>(buffer[3]);
+  return etl::endian::read_u32_be(buffer);
 }
 
 // Writes a uint32_t to a Big Endian buffer.
 inline void write_u32_be(uint8_t* buffer, uint32_t value) {
-  buffer[0] = static_cast<uint8_t>((value >> 24) & RPC_UINT8_MASK);
-  buffer[1] = static_cast<uint8_t>((value >> 16) & RPC_UINT8_MASK);
-  buffer[2] = static_cast<uint8_t>((value >> 8) & RPC_UINT8_MASK);
-  buffer[3] = static_cast<uint8_t>(value & RPC_UINT8_MASK);
+  etl::endian::write_u32_be(buffer, value);
 }
 
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);

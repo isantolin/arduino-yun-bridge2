@@ -13,20 +13,12 @@ from enum import IntEnum
 from typing import Annotated, Any, ClassVar, Self, Type, TypeVar, cast
 
 import msgspec
-from construct import (  # type: ignore
-    Bytes,
-    Construct,
-    GreedyBytes,
-    Int8ub,
-    Int16ub,
-    PascalString,
-    Prefixed,
-    Switch,
-    this,
-    Struct as BinStruct,
-)
-
+import construct as construct_raw
 from . import protocol
+
+# [SIL-2] Explicit Any cast for construct to satisfy pyright dynamic lookup
+construct: Any = construct_raw
+BinStruct = construct.Struct
 
 T = TypeVar("T", bound="BaseStruct")
 
@@ -35,7 +27,7 @@ class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Construct structures."""
 
     # Subclasses must define this schema
-    _SCHEMA: ClassVar[Construct[Any]]
+    _SCHEMA: ClassVar[construct_raw.Construct[Any]]
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
@@ -44,18 +36,13 @@ class BaseStruct(msgspec.Struct, frozen=True):
             raise ValueError("Empty payload")
 
         # 1. Construct parses the binary data (validating lengths/structure)
-        # Type checker complains about memoryview/bytearray, so explicit cast or strict bytes required
-        # construct.parse usually accepts bytes-like objects, but pyright is strict.
         container: Any = cls._SCHEMA.parse(bytes(data))
 
         # 2. Msgspec creates the typed object (efficiently)
-        # We filter the container to only include defined fields to avoid
-        # passing internal construct metadata.
         return cls(**{k: v for k, v in container.items() if not k.startswith("_")})
 
     def encode(self) -> bytes:
         """Encode the typed Msgspec struct into binary data."""
-        # msgspec.structs.asdict is highly optimized
         return self._SCHEMA.build(msgspec.structs.asdict(self))
 
 
@@ -66,98 +53,103 @@ class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
-    _SCHEMA = BinStruct("path" / PascalString(Int8ub, "utf-8"), "data" / Prefixed(Int16ub, GreedyBytes))
+    _SCHEMA = BinStruct(
+        "path" / construct.PascalString(construct.Int8ub, "utf-8"),
+        "data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+    )
 
 
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
 
-    _SCHEMA = BinStruct("path" / PascalString(Int8ub, "utf-8"))
+    _SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
-    _SCHEMA = BinStruct("path" / PascalString(Int8ub, "utf-8"))
+    _SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: int
     minor: int
 
-    _SCHEMA = BinStruct("major" / Int8ub, "minor" / Int8ub)
+    _SCHEMA = BinStruct("major" / construct.Int8ub, "minor" / construct.Int8ub)
 
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    _SCHEMA = BinStruct("value" / Int16ub)
+    _SCHEMA = BinStruct("value" / construct.Int16ub)
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    _SCHEMA = BinStruct("value" / Int8ub)
+    _SCHEMA = BinStruct("value" / construct.Int8ub)
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    _SCHEMA = BinStruct("value" / Int16ub)
+    _SCHEMA = BinStruct("value" / construct.Int16ub)
 
 
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
 
-    _SCHEMA = BinStruct("key" / PascalString(Int8ub, "utf-8"))
+    _SCHEMA = BinStruct("key" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
-    _SCHEMA = BinStruct("key" / PascalString(Int8ub, "utf-8"), "value" / Prefixed(Int8ub, GreedyBytes))
+    _SCHEMA = BinStruct(
+        "key" / construct.PascalString(construct.Int8ub, "utf-8"),
+        "value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes),
+    )
 
 
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    _SCHEMA = BinStruct("data" / Prefixed(Int16ub, GreedyBytes))
+    _SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 # --- Framing Schema ---
 
 # [SIL-2] Construct Schema for Full Frame
-# We use lambda context lookups to avoid FormatField vs int comparison errors.
 FRAME_STRUCT = BinStruct(
     "header" / BinStruct(
-        "version" / Int8ub,
-        "payload_len" / Int16ub,
-        "command_id" / protocol.CRC_COVERED_HEADER_STRUCT.command_id,
+        "version" / construct.Int8ub,
+        "payload_len" / construct.Int16ub,
+        "command_id" / cast(Any, protocol.CRC_COVERED_HEADER_STRUCT).command_id,
     ),
-    "payload" / Bytes(this.header.payload_len),
+    "payload" / construct.Bytes(construct.this.header.payload_len),
     "crc" / protocol.CRC_STRUCT,
 )
 
 # [SIL-2] Dynamic Framing Schema using Switch for automatic payload resolution
 DYNAMIC_FRAME_STRUCT = BinStruct(
     "header" / BinStruct(
-        "version" / Int8ub,
-        "payload_len" / Int16ub,
-        "command_id" / protocol.CRC_COVERED_HEADER_STRUCT.command_id,
+        "version" / construct.Int8ub,
+        "payload_len" / construct.Int16ub,
+        "command_id" / cast(Any, protocol.CRC_COVERED_HEADER_STRUCT).command_id,
     ),
-    "payload" / Switch(this.header.command_id, {
-        protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,
-        protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,
-        protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,
-        protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,
-        protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,
-        protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,
-        protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,
-        protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,
-        protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,
-        protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,
-    }, default=Bytes(this.header.payload_len)),
+    "payload" / construct.Switch(construct.this.header.command_id, {
+        protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+    }, default=construct.Bytes(construct.this.header.payload_len)),
     "crc" / protocol.CRC_STRUCT,
 )
 
@@ -213,10 +205,11 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     retain: bool = False
     content_type: str | None = None
     payload_format_indicator: int | None = None
+    message_expiry_indicator: int | None = None
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: str | None = None
-    user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list)
+    user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
 
 
 UserProperty = tuple[str, str]
@@ -238,8 +231,6 @@ class QueuedPublish(msgspec.Struct):
 
     def to_record(self) -> SpoolRecord:
         """Convert to a SpoolRecord struct for disk serialization."""
-        # [SIL-2] Modernization: We transform binary fields to Base64 (JSON safe)
-        # while keeping the rest declarative.
         payload_b64 = base64.b64encode(self.payload).decode("ascii")
         correlation_b64 = (
             base64.b64encode(self.correlation_data).decode("ascii") if self.correlation_data is not None else None
@@ -263,18 +254,18 @@ class QueuedPublish(msgspec.Struct):
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
         data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
         
-        # [SIL-2] Modernization: Standard conversion using msgspec
         payload = base64.b64decode(data.get("payload", ""))
         corr_raw = data.get("correlation_data")
         correlation_data = base64.b64decode(corr_raw) if corr_raw else None
 
-        # [SIL-2] Normalization: Safely transform sequence into tuple of pairs.
         raw_props = data.get("user_properties", ())
-        user_properties: list[tuple[str, str]] = []
+        user_properties: list[tuple[str, str]] = []  # pyright: ignore[reportUnknownVariableType]
         if isinstance(raw_props, Iterable):
             for item in cast("Iterable[Any]", raw_props):
-                if isinstance(item, (list, tuple)) and len(item) >= 2:
-                    user_properties.append((str(item[0]), str(item[1])))
+                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
+                    k = str(item[0])  # pyright: ignore[reportUnknownArgumentType]
+                    v = str(item[1])  # pyright: ignore[reportUnknownArgumentType]
+                    user_properties.append((k, v))
 
         return cls(
             topic_name=str(data.get("topic_name", "")),
@@ -286,7 +277,7 @@ class QueuedPublish(msgspec.Struct):
             message_expiry_interval=data.get("message_expiry_interval"),
             response_topic=data.get("response_topic"),
             correlation_data=correlation_data,
-            user_properties=tuple(user_properties),
+            user_properties=tuple(user_properties),  # pyright: ignore[reportUnknownArgumentType]
         )
 
 
@@ -489,4 +480,3 @@ class BridgeStatus(msgspec.Struct):
     bridge: BridgeSnapshot
     supervisors: dict[str, SupervisorSnapshot]
     heartbeat_unix: float
-

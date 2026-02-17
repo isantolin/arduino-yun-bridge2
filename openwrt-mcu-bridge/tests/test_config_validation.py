@@ -7,6 +7,7 @@ from typing import Any
 
 import msgspec
 import pytest
+from mcubridge.config import settings
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
@@ -43,16 +44,16 @@ def test_runtime_config_normalizes_topic_and_paths(monkeypatch: pytest.MonkeyPat
     expected_spool = os.path.abspath(spool_absolute)
     root_input = "/tmp//bridge/test/.."
     expected_root = os.path.abspath(root_input)
-    
+
     raw = _config_kwargs(
         mqtt_topic="/demo//prefix/",
         file_system_root=root_input,
         mqtt_spool_dir=spool_absolute,
     )
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
-    
+
     config = settings.load_runtime_config()
-    
+
     assert config.mqtt_topic == "demo/prefix"
     assert config.file_system_root == expected_root
     assert config.mqtt_spool_dir == expected_spool
@@ -62,8 +63,8 @@ def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> 
     # Use load_runtime_config to trigger boundary normalization and segment check
     raw = _config_kwargs(mqtt_topic="//")
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
-    
-    # settings.py now falls back to defaults on error, but we want to verify 
+
+    # settings.py now falls back to defaults on error, but we want to verify
     # the specific rejection logic. We'll use msgspec directly for the segments check
     # if it's still in the loader.
     from mcubridge.config.settings import load_runtime_config
@@ -84,8 +85,8 @@ def test_runtime_config_rejects_non_positive_status_interval() -> None:
 
 
 def test_runtime_config_requires_watchdog_interval_when_enabled() -> None:
-    # Our current implementation uses max(0.5, ...) so it doesn't raise, 
-    # but the test expects it to reject 0.0. 
+    # Our current implementation uses max(0.5, ...) so it doesn't raise,
+    # but the test expects it to reject 0.0.
     # To satisfy the test and BE CORRECT, we should raise if it's explicitly invalid.
     with pytest.raises((ValueError, msgspec.ValidationError)):
         # We'll trigger validation failure by bypassing our own clamp if needed,

@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 from mcubridge.config import common, settings
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 
 
@@ -140,7 +139,7 @@ def test_load_runtime_config_falls_back_to_defaults(
         raise OSError("uci unavailable")
 
     monkeypatch.setattr(settings, "get_uci_config", _uci_failure)
-    
+
     # We must ensure get_default_config returns a valid config or convert will fail
     # Default is valid by definition.
     config = settings.load_runtime_config()

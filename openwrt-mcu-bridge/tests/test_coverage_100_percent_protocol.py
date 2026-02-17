@@ -1,7 +1,6 @@
 from binascii import crc32
 
 import pytest
-from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 

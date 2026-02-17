@@ -220,11 +220,13 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
         asyncio.run(_run())
 
-    
 
-    
 
-    def test_sync_link_rejects_invalid_handshake_tag(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+
+
+    def test_sync_link_rejects_invalid_handshake_tag(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
 
         async def _run() -> None:
 
@@ -236,11 +238,11 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
             service = BridgeService(runtime_config, runtime_state)
 
-    
+
 
             sent_frames: list[tuple[int, bytes]] = []
 
-    
+
 
             async def fake_sender(command_id: int, payload: bytes) -> bool:
 
@@ -286,21 +288,21 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
                 return True
 
-    
+
 
             service.register_serial_sender(fake_sender)
 
-    
+
 
             success = await service.sync_link()
 
-    
+
 
             # Yield to allow background tasks to complete
 
             await asyncio.sleep(0)
 
-    
+
 
             assert success is False
 
@@ -314,13 +316,13 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
             assert runtime_state.handshake_successes == 0
 
-    
+
 
         asyncio.run(_run())
 
-    
 
-    
+
+
 
     def test_sync_link_rejects_truncated_response(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
 
@@ -334,11 +336,11 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
             service = BridgeService(runtime_config, runtime_state)
 
-    
+
 
             sent_frames: list[tuple[int, bytes]] = []
 
-    
+
 
             async def fake_sender(command_id: int, payload: bytes) -> bool:
 
@@ -378,21 +380,21 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
                 return True
 
-    
+
 
             service.register_serial_sender(fake_sender)
 
-    
+
 
             success = await service.sync_link()
 
-    
+
 
             # Yield to allow background tasks to update state
 
             await asyncio.sleep(0)
 
-    
+
 
             assert success is False
 
@@ -404,13 +406,13 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
             assert runtime_state.handshake_failures == 1
 
-    
+
 
         asyncio.run(_run())
 
-    
 
-    
+
+
 
 
 def test_repeated_sync_timeouts_become_fatal(

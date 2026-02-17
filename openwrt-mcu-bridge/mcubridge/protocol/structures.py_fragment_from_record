@@ -1,0 +1,30 @@
+    @classmethod
+    def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
+        """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
+        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
+        
+        # [SIL-2] Modernization: Standard conversion using msgspec
+        payload = base64.b64decode(data.get("payload", ""))
+        corr_raw = data.get("correlation_data")
+        correlation_data = base64.b64decode(corr_raw) if corr_raw else None
+
+        # [SIL-2] Normalization: Safely transform sequence into tuple of pairs.
+        raw_props = data.get("user_properties", ())
+        user_properties: list[tuple[str, str]] = []
+        if isinstance(raw_props, Iterable):
+            for item in cast("Iterable[Any]", raw_props):
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    user_properties.append((str(item[0]), str(item[1])))
+
+        return cls(
+            topic_name=str(data.get("topic_name", "")),
+            payload=payload,
+            qos=int(data.get("qos", 0)),
+            retain=bool(data.get("retain", False)),
+            content_type=data.get("content_type"),
+            payload_format_indicator=data.get("payload_format_indicator"),
+            message_expiry_interval=data.get("message_expiry_interval"),
+            response_topic=data.get("response_topic"),
+            correlation_data=correlation_data,
+            user_properties=tuple(user_properties),
+        )

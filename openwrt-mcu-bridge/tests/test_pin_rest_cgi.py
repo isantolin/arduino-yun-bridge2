@@ -125,7 +125,7 @@ def test_publish_safe_times_out(
 
             monkeypatch.setattr(pin_rest_module, "retries", 1)
 
-    
+
     monkeypatch.setattr(pin_rest_module, "DEFAULT_PUBLISH_TIMEOUT", 0.01)
 
     with pytest.raises((TimeoutError, Exception)):

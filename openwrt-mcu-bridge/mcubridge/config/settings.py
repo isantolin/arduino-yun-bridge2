@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Annotated, Any
 
 # [SIL-2] Deterministic Import: msgspec is MANDATORY.
@@ -133,11 +132,11 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
     def __post_init__(self) -> None:
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
-        
+
         # [SIL-2] Strict Semantic Validations
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
              raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
-        
+
         if self.watchdog_enabled and self.watchdog_interval < 0.5:
              raise ValueError("watchdog_interval must be >= 0.5s when enabled")
 
@@ -221,7 +220,7 @@ def load_runtime_config() -> RuntimeConfig:
     _CONFIG_STATE.source = source
 
     # [SIL-2] Boundary Normalization: Clean inputs before strict validation
-    
+
     # 1. Normalize strings (strip and convert empty to None where applicable)
     for key in ("mqtt_user", "mqtt_pass", "mqtt_cafile", "mqtt_certfile", "mqtt_keyfile"):
         if key in raw_config:

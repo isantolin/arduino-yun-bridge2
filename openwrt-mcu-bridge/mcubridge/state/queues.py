@@ -14,7 +14,7 @@ class BoundedByteDeque(msgspec.Struct):
 
     max_items: Annotated[int | None, msgspec.Meta(ge=0)] = None
     max_bytes: Annotated[int | None, msgspec.Meta(ge=0)] = None
-    _queue: deque[bytes] = msgspec.field(default_factory=deque)
+    _queue: deque[bytes] = msgspec.field(default_factory=lambda: deque())
     _bytes: int = 0
 
     def __len__(self) -> int:
@@ -107,7 +107,7 @@ class BoundedByteDeque(msgspec.Struct):
     def _make_room_for(self, incoming_bytes: int, incoming_count: int) -> tuple[int, int]:
         dropped_chunks = 0
         dropped_bytes = 0
-        
+
         while self._queue and not self._can_fit(incoming_bytes, incoming_count):
             removed = self._queue.popleft()
             self._bytes -= len(removed)

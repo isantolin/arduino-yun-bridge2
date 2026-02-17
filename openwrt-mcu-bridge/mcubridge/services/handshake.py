@@ -48,9 +48,15 @@ logger = logging.getLogger("mcubridge.service.handshake")
 class SerialTimingWindow(msgspec.Struct, frozen=True):
     """Derived serial retry/response windows used by both MCU and MPU."""
 
-    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS)]
-    response_timeout_ms: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)]
-    retry_limit: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX)]
+    ack_timeout_ms: Annotated[
+        int, msgspec.Meta(ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS)
+    ]
+    response_timeout_ms: Annotated[
+        int, msgspec.Meta(ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)
+    ]
+    retry_limit: Annotated[
+        int, msgspec.Meta(ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX)
+    ]
 
     @property
     def ack_timeout_seconds(self) -> float:
@@ -76,7 +82,7 @@ def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
         "response_timeout_ms": response_ms,
         "retry_limit": retry_limit,
     }
-    
+
     # [SIL-2] msgspec will raise ValidationError if values are outside protocol bounds.
     return msgspec.convert(raw, SerialTimingWindow, strict=True)
 

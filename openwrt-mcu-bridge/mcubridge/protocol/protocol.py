@@ -95,6 +95,13 @@ CAPABILITY_LOGIC_3V3: Final[int] = 256
 CAPABILITY_BIG_BUFFER: Final[int] = 512
 CAPABILITY_I2C: Final[int] = 1024
 
+ARCH_AVR: Final[int] = 1
+ARCH_ESP32: Final[int] = 2
+ARCH_ESP8266: Final[int] = 3
+ARCH_SAMD: Final[int] = 4
+ARCH_SAM: Final[int] = 5
+ARCH_RP2040: Final[int] = 6
+
 DATASTORE_KEY_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
 DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"

@@ -353,6 +353,13 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
             _write_cpp_const(out, "uint32_t", f"RPC_CAPABILITY_{key.upper()}", value)
         out.write("\n")
 
+    # Architectures
+    architectures = spec.get("architectures", {})
+    if architectures:
+        for key, value in architectures.items():
+            _write_cpp_const(out, "uint8_t", f"RPC_ARCH_{key.upper()}", value)
+        out.write("\n")
+
     # Status enum
     out.write("enum class StatusCode : uint8_t {\n")
     for status in spec["statuses"]:
@@ -548,6 +555,13 @@ def generate_python(spec: dict[str, Any], out: TextIO) -> None:
     if capabilities:
         for key, value in capabilities.items():
             out.write(f"CAPABILITY_{key.upper()}: Final[int] = {value}\n")
+        out.write("\n")
+
+    # Architectures
+    architectures = spec.get("architectures", {})
+    if architectures:
+        for key, value in architectures.items():
+            out.write(f"ARCH_{key.upper()}: Final[int] = {value}\n")
         out.write("\n")
 
     # Data formats

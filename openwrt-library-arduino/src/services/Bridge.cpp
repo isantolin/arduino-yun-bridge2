@@ -340,15 +340,17 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
         
         uint8_t arch = 0;
         #if defined(ARDUINO_ARCH_AVR)
-        arch = 1;
+        arch = rpc::RPC_ARCH_AVR;
         #elif defined(ARDUINO_ARCH_ESP32)
-        arch = 2;
+        arch = rpc::RPC_ARCH_ESP32;
         #elif defined(ARDUINO_ARCH_ESP8266)
-        arch = 3;
+        arch = rpc::RPC_ARCH_ESP8266;
         #elif defined(ARDUINO_ARCH_SAMD)
-        arch = 4;
+        arch = rpc::RPC_ARCH_SAMD;
         #elif defined(ARDUINO_ARCH_SAM)
-        arch = 5;
+        arch = rpc::RPC_ARCH_SAM;
+        #elif defined(ARDUINO_ARCH_RP2040)
+        arch = rpc::RPC_ARCH_RP2040;
         #endif
         caps[1] = arch;
 

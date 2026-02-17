@@ -62,6 +62,14 @@ logic_3v3 = 0x00000100
 big_buffer = 0x00000200
 i2c = 0x00000400
 
+[architectures]
+avr = 1
+esp32 = 2
+esp8266 = 3
+samd = 4
+sam = 5
+rp2040 = 6
+
 [handshake]
 nonce_length = 16
 tag_length = 16

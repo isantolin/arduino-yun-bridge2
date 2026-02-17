@@ -1,6 +1,6 @@
 """Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct  # type: ignore
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
 from enum import IntEnum, StrEnum
 from typing import Final
 
@@ -69,7 +69,7 @@ HANDSHAKE_NONCE_FORMAT_DESCRIPTION: Final[str] = (
 )
 HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
 HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
-HANDSHAKE_CONFIG_STRUCT: Final = Struct(
+HANDSHAKE_CONFIG_STRUCT: Final = BinStruct(
     "ack_timeout_ms" / Int16ub,
     "ack_retry_limit" / Int8ub,
     "response_timeout_ms" / Int32ub,
@@ -98,7 +98,7 @@ DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
 DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
 CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
-CRC_COVERED_HEADER_STRUCT: Final = Struct(
+CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
     "command_id" / Int16ub,
@@ -114,12 +114,12 @@ UINT32_STRUCT: Final = Int32ub
 PIN_READ_FORMAT: Final[str] = ">B"
 PIN_READ_STRUCT: Final = Int8ub
 PIN_WRITE_FORMAT: Final[str] = ">BB"
-PIN_WRITE_STRUCT: Final = Struct(
+PIN_WRITE_STRUCT: Final = BinStruct(
     "pin" / Int8ub,
     "value" / Int8ub,
 )
 CAPABILITIES_FORMAT: Final[str] = ">BBBBI"
-CAPABILITIES_STRUCT: Final = Struct(
+CAPABILITIES_STRUCT: Final = BinStruct(
     "ver" / Int8ub,
     "arch" / Int8ub,
     "dig" / Int8ub,

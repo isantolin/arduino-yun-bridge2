@@ -31,7 +31,7 @@ CPP_HEADER = """/*
 
 PY_HEADER = '''"""Auto-generated protocol bindings. Do not edit manually."""
 from __future__ import annotations
-from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct  # type: ignore
+from construct import Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
 from enum import IntEnum, StrEnum
 from typing import Final
 '''
@@ -153,7 +153,7 @@ CONSTRUCT_MAPPING: dict[str, str] = {
     "datastore_key_len_format": "Int8ub",
     "datastore_value_len_format": "Int8ub",
     "crc_covered_header_format": (
-        "Struct(\n"
+        "BinStruct(\n"
         '    "version" / Int8ub,\n'
         '    "payload_len" / Int16ub,\n'
         '    "command_id" / Int16ub,\n'
@@ -165,10 +165,10 @@ CONSTRUCT_MAPPING: dict[str, str] = {
     "uint32_format": "Int32ub",
     "pin_read_format": "Int8ub",
     "pin_write_format": (
-        "Struct(\n" '    "pin" / Int8ub,\n' '    "value" / Int8ub,\n' ")"
+        "BinStruct(\n" '    "pin" / Int8ub,\n' '    "value" / Int8ub,\n' ")"
     ),
     "capabilities_format": (
-        "Struct(\n"
+        "BinStruct(\n"
         '    "ver" / Int8ub,\n'
         '    "arch" / Int8ub,\n'
         '    "dig" / Int8ub,\n'
@@ -413,7 +413,7 @@ def _write_python_handshake(out: TextIO, handshake: dict[str, Any]) -> None:
 
     # Config struct (hardcoded structure)
     out.write(
-        "HANDSHAKE_CONFIG_STRUCT: Final = Struct(\n"
+        "HANDSHAKE_CONFIG_STRUCT: Final = BinStruct(\n"
         "    \"ack_timeout_ms\" / Int16ub,\n"
         "    \"ack_retry_limit\" / Int8ub,\n"
         "    \"response_timeout_ms\" / Int32ub,\n"

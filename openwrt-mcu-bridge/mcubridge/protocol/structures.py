@@ -12,7 +12,7 @@ from typing import TypeVar, Type, Any, ClassVar, cast, Self, TypedDict
 from collections.abc import Iterable
 import msgspec
 from construct import (  # type: ignore
-    Struct,
+    Struct as BinStruct,
     Int8ub,
     Int16ub,
     PascalString,
@@ -62,70 +62,70 @@ class FileWritePacket(BaseStruct, frozen=True):
     path: str
     data: bytes
 
-    _SCHEMA = Struct("path" / PascalString(Int8ub, "utf-8"), "data" / Prefixed(Int16ub, GreedyBytes))
+    _SCHEMA = BinStruct("path" / PascalString(Int8ub, "utf-8"), "data" / Prefixed(Int16ub, GreedyBytes))
 
 
 class FileReadPacket(BaseStruct, frozen=True):
     path: str
 
-    _SCHEMA = Struct("path" / PascalString(Int8ub, "utf-8"))
+    _SCHEMA = BinStruct("path" / PascalString(Int8ub, "utf-8"))
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
-    _SCHEMA = Struct("path" / PascalString(Int8ub, "utf-8"))
+    _SCHEMA = BinStruct("path" / PascalString(Int8ub, "utf-8"))
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
     major: int
     minor: int
 
-    _SCHEMA = Struct("major" / Int8ub, "minor" / Int8ub)
+    _SCHEMA = BinStruct("major" / Int8ub, "minor" / Int8ub)
 
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    _SCHEMA = Struct("value" / Int16ub)
+    _SCHEMA = BinStruct("value" / Int16ub)
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    _SCHEMA = Struct("value" / Int8ub)
+    _SCHEMA = BinStruct("value" / Int8ub)
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
     value: int
 
-    _SCHEMA = Struct("value" / Int16ub)
+    _SCHEMA = BinStruct("value" / Int16ub)
 
 
 class DatastoreGetPacket(BaseStruct, frozen=True):
     key: str
 
-    _SCHEMA = Struct("key" / PascalString(Int8ub, "utf-8"))
+    _SCHEMA = BinStruct("key" / PascalString(Int8ub, "utf-8"))
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
 
-    _SCHEMA = Struct("key" / PascalString(Int8ub, "utf-8"), "value" / Prefixed(Int8ub, GreedyBytes))
+    _SCHEMA = BinStruct("key" / PascalString(Int8ub, "utf-8"), "value" / Prefixed(Int8ub, GreedyBytes))
 
 
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    _SCHEMA = Struct("data" / Prefixed(Int16ub, GreedyBytes))
+    _SCHEMA = BinStruct("data" / Prefixed(Int16ub, GreedyBytes))
 
 
 # --- Framing Schema ---
 
 # [SIL-2] Construct Schema for Full Frame
 # Reuses the header definition from protocol.py to ensure consistency.
-FRAME_STRUCT = Struct(
+FRAME_STRUCT = BinStruct(
     "header" / protocol.CRC_COVERED_HEADER_STRUCT,
     "payload" / Bytes(this.header.payload_len),
     "crc" / protocol.CRC_STRUCT,

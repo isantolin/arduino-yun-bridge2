@@ -9,10 +9,8 @@ from typing import Annotated
 import msgspec
 from mcubridge.protocol.structures import QueueEvent
 
-_UNSET = object()
-
-
 def _normalize_limit(value: object) -> int | None:
+    """Helper for tests and dynamic updates."""
     if value is None:
         return None
     if isinstance(value, int):
@@ -22,7 +20,7 @@ def _normalize_limit(value: object) -> int | None:
             return max(0, int(value))
         except ValueError:
             pass
-    return None  # Default fallback logic handled by caller if needed, or None
+    return None
 
 
 def _deque_factory() -> deque[bytes]:
@@ -69,9 +67,9 @@ class BoundedByteDeque(msgspec.Struct):
     ) -> None:
         """Update limits using declarative validation."""
         if max_items is not None:
-            self.max_items = msgspec.convert(max_items, Annotated[int, msgspec.Meta(ge=0)])
+            self.max_items = _normalize_limit(max_items)
         if max_bytes is not None:
-            self.max_bytes = msgspec.convert(max_bytes, Annotated[int, msgspec.Meta(ge=0)])
+            self.max_bytes = _normalize_limit(max_bytes)
         self._make_room_for(0, 0)
 
     def append(self, chunk: bytes) -> QueueEvent:

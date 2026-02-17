@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 # [SIL-2] Deterministic Import: msgspec is MANDATORY.
 import msgspec
@@ -75,10 +74,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     """Strongly typed configuration for the daemon."""
 
     serial_port: str = DEFAULT_SERIAL_PORT
-    serial_baud: int = msgspec.field(default=DEFAULT_BAUDRATE, ge=300)
-    serial_safe_baud: int = msgspec.field(default=DEFAULT_SAFE_BAUDRATE, ge=300)
+    serial_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_BAUDRATE
+    serial_safe_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_SAFE_BAUDRATE
     mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: int = msgspec.field(default=DEFAULT_MQTT_PORT, ge=1, le=65535)
+    mqtt_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_MQTT_PORT
     mqtt_user: str | None = None
     mqtt_pass: str | None = None
     mqtt_tls: bool = True
@@ -88,29 +87,29 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
     allowed_commands: tuple[str, ...] = ()
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: int = msgspec.field(default=DEFAULT_PROCESS_TIMEOUT, ge=1)
+    process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
-    file_write_max_bytes: int = msgspec.field(default=DEFAULT_FILE_WRITE_MAX_BYTES, ge=1)
-    file_storage_quota_bytes: int = msgspec.field(default=DEFAULT_FILE_STORAGE_QUOTA_BYTES, ge=1)
+    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
+    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
 
     allowed_policy: AllowedCommandPolicy | None = None
 
-    mqtt_queue_limit: int = msgspec.field(default=DEFAULT_MQTT_QUEUE_LIMIT, ge=0)
-    reconnect_delay: int = msgspec.field(default=DEFAULT_RECONNECT_DELAY, ge=1)
-    status_interval: int = msgspec.field(default=DEFAULT_STATUS_INTERVAL, ge=1)
+    mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
+    reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
+    status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
     debug_logging: bool = DEFAULT_DEBUG_LOGGING
-    console_queue_limit_bytes: int = msgspec.field(default=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES, ge=1)
-    mailbox_queue_limit: int = msgspec.field(default=DEFAULT_MAILBOX_QUEUE_LIMIT, ge=1)
-    mailbox_queue_bytes_limit: int = msgspec.field(default=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT, ge=1)
-    pending_pin_request_limit: int = msgspec.field(default=DEFAULT_PENDING_PIN_REQUESTS, ge=1)
-    serial_retry_timeout: float = msgspec.field(default=DEFAULT_SERIAL_RETRY_TIMEOUT, ge=0.01)
-    serial_response_timeout: float = msgspec.field(default=DEFAULT_SERIAL_RESPONSE_TIMEOUT, ge=0.02)
-    serial_retry_attempts: int = msgspec.field(default=DEFAULT_RETRY_LIMIT, ge=0)
-    serial_handshake_min_interval: float = msgspec.field(default=DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL, ge=0.0)
-    serial_handshake_fatal_failures: int = msgspec.field(default=DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES, ge=1)
+    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
+    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
+    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
+    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01)] = DEFAULT_SERIAL_RETRY_TIMEOUT
+    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
+    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
+    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
     watchdog_enabled: bool = True
-    watchdog_interval: float = msgspec.field(default=DEFAULT_WATCHDOG_INTERVAL, ge=0.5)
+    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1)] = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization = TopicAuthorization()
 
     # msgspec handle bytes naturally.
@@ -119,13 +118,13 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_shared_secret: bytes = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: int = msgspec.field(default=DEFAULT_PROCESS_MAX_OUTPUT_BYTES, ge=1)
-    process_max_concurrent: int = msgspec.field(default=DEFAULT_PROCESS_MAX_CONCURRENT, ge=1)
+    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
     metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: int = msgspec.field(default=DEFAULT_METRICS_PORT, ge=1, le=65535)
-    bridge_summary_interval: float = msgspec.field(default=DEFAULT_BRIDGE_SUMMARY_INTERVAL, ge=0.0)
-    bridge_handshake_interval: float = msgspec.field(default=DEFAULT_BRIDGE_HANDSHAKE_INTERVAL, ge=0.0)
+    metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_METRICS_PORT
+    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
+    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
     @property
@@ -141,8 +140,13 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_keyfile = self._normalize_optional_string(self.mqtt_keyfile)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
-        # Runtime derived validations
-        self.serial_response_timeout = max(self.serial_response_timeout, self.serial_retry_timeout * 2)
+        
+        # [SIL-2] Strict Semantic Validations
+        if self.serial_response_timeout < self.serial_retry_timeout * 2:
+             raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
+        
+        if self.watchdog_enabled and self.watchdog_interval < 0.5:
+             raise ValueError("watchdog_interval must be >= 0.5s when enabled")
 
         if not self.mqtt_tls:
             logger.warning("MQTT TLS is disabled; MQTT credentials and payloads will be sent in plaintext.")
@@ -289,16 +293,8 @@ def load_runtime_config() -> RuntimeConfig:
 
     try:
         config = msgspec.convert(raw_config, RuntimeConfig, strict=False)
-
-        # Validation Logic (moved from __post_init__ or explicit check)
-        # Note: We rely on __post_init__ for most checks, but we can verify critical ones
-        # here or call post_init explicitly.
-        # msgspec calls __post_init__ automatically.
-
         return config
     except (msgspec.ValidationError, TypeError, ValueError) as e:
-        if "pytest" in sys.modules and source == "test":
-            raise
         logger.critical("Configuration validation failed: %s", e)
         logger.warning("Falling back to safe defaults due to validation error.")
         return msgspec.convert(get_default_config(), RuntimeConfig, strict=False)

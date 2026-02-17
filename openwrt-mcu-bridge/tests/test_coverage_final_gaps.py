@@ -39,13 +39,13 @@ def test_shell_command_too_long() -> None:
 
 def test_shell_pid_not_integer() -> None:
     """Cover non-integer PID parsing."""
-    with pytest.raises(PayloadValidationError, match="integer"):
+    with pytest.raises(PayloadValidationError, match="Invalid PID segment"):
         ShellPidPayload.from_topic_segment("abc")
 
 
 def test_shell_pid_zero() -> None:
     """Cover PID zero validation."""
-    with pytest.raises(PayloadValidationError, match="positive"):
+    with pytest.raises(PayloadValidationError, match="Expected `int` >= 1"):
         ShellPidPayload.from_topic_segment("0")
 
 

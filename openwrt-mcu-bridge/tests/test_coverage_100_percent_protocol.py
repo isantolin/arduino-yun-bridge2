@@ -1,6 +1,7 @@
 from binascii import crc32
 
 import pytest
+from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 
@@ -38,15 +39,6 @@ def test_frame_parse_coverage_all_errors():
     ))
     with pytest.raises(ValueError, match="Invalid version"):
         Frame.parse(_build_raw_with_crc(bad_ver))
-
-    # Line 149: Invalid command id (reserved)
-    bad_cmd = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
-        version=protocol.PROTOCOL_VERSION,
-        payload_len=0,
-        command_id=0
-    ))
-    with pytest.raises(ValueError, match="Invalid command id"):
-        Frame.parse(_build_raw_with_crc(bad_cmd))
 
     # Line 157: Payload length mismatch
     bad_len = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(

@@ -69,6 +69,8 @@ async def _mqtt_subscriber_loop(
     try:
         # [SIL-2] Use native aiomqtt filters for cleaner dispatching
         async for message in client.messages:
+            if not str(message.topic):
+                continue
             if logger.isEnabledFor(logging.DEBUG):
                 payload_bytes = bytes(message.payload) if message.payload else b""
                 log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {message.topic}", payload_bytes)

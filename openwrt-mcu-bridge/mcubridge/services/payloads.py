@@ -65,7 +65,6 @@ class ShellPidPayload(msgspec.Struct, frozen=True):
         """Parse a topic segment into a validated ShellPidPayload."""
         try:
             value = int(segment, 10)
-            # [SIL-2] Leverage msgspec's C-implemented validation at runtime.
             return msgspec.convert({"pid": value}, cls, strict=True)
         except (ValueError, msgspec.ValidationError) as exc:
             raise PayloadValidationError(f"Invalid PID segment: {exc}") from exc

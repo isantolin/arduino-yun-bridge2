@@ -253,8 +253,15 @@ class BridgeDaemon:
                     raise
                 except BaseException as exc:
                     # [SIL-2] Report failure using tenacity statistics
-                    stats = retryer.statistics
-                    delay = retryer.wait(retry_state=tenacity.RetryCallState(retryer, None, (), {}))
+                    # Derive wait time for next retry if applicable
+                    delay = 0.0
+                    try:
+                        # Extract next wait from retryer if it exists
+                        # Tenacity statistics provide attempt count, but wait is in the retryer
+                        delay = float(retryer.statistics.get("idle_for", 0.0))
+                    except (TypeError, ValueError):
+                        pass
+
                     self.state.record_supervisor_failure(spec.name, backoff=delay, exc=exc, fatal=False)
 
                     if last_start_time > 0 and (time.monotonic() - last_start_time) > max(10.0, spec.restart_interval):

@@ -67,20 +67,17 @@ async def _mqtt_subscriber_loop(
     client: aiomqtt.Client,
 ) -> None:
     try:
+        # [SIL-2] Use native aiomqtt filters for cleaner dispatching
         async for message in client.messages:
-            topic = str(message.topic)
-            if not topic:
-                continue
-
             if logger.isEnabledFor(logging.DEBUG):
-                # aiomqtt 2.x: payload is always bytes | bytearray
                 payload_bytes = bytes(message.payload) if message.payload else b""
-                log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {topic}", payload_bytes)
+                log_hexdump(logger, logging.DEBUG, f"MQTT SUB < {message.topic}", payload_bytes)
 
             try:
+                # Dispatch using native topic matching capability
                 await service.handle_mqtt_message(message)
             except (ValueError, TypeError, AttributeError, RuntimeError, KeyError) as e:
-                logger.exception("CRITICAL: Error processing MQTT topic %s: %s", topic, e)
+                logger.exception("CRITICAL: Error processing MQTT topic %s: %s", message.topic, e)
     except asyncio.CancelledError:
         pass  # Clean exit
     except aiomqtt.MqttError as exc:

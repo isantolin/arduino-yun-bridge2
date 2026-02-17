@@ -110,7 +110,7 @@ CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
 CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
-    "command_id" / Int16ub,
+    "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),
 )
 CRC_FORMAT: Final[str] = ">I"
 CRC_STRUCT: Final = Int32ub

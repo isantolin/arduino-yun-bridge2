@@ -75,10 +75,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     """Strongly typed configuration for the daemon."""
 
     serial_port: str = DEFAULT_SERIAL_PORT
-    serial_baud: int = DEFAULT_BAUDRATE
-    serial_safe_baud: int = DEFAULT_SAFE_BAUDRATE
+    serial_baud: int = msgspec.field(default=DEFAULT_BAUDRATE, ge=300)
+    serial_safe_baud: int = msgspec.field(default=DEFAULT_SAFE_BAUDRATE, ge=300)
     mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: int = DEFAULT_MQTT_PORT
+    mqtt_port: int = msgspec.field(default=DEFAULT_MQTT_PORT, ge=1, le=65535)
     mqtt_user: str | None = None
     mqtt_pass: str | None = None
     mqtt_tls: bool = True
@@ -88,29 +88,29 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
     allowed_commands: tuple[str, ...] = ()
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: int = DEFAULT_PROCESS_TIMEOUT
+    process_timeout: int = msgspec.field(default=DEFAULT_PROCESS_TIMEOUT, ge=1)
 
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
-    file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
-    file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+    file_write_max_bytes: int = msgspec.field(default=DEFAULT_FILE_WRITE_MAX_BYTES, ge=1)
+    file_storage_quota_bytes: int = msgspec.field(default=DEFAULT_FILE_STORAGE_QUOTA_BYTES, ge=1)
 
     allowed_policy: AllowedCommandPolicy | None = None
 
-    mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    reconnect_delay: int = DEFAULT_RECONNECT_DELAY
-    status_interval: int = DEFAULT_STATUS_INTERVAL
+    mqtt_queue_limit: int = msgspec.field(default=DEFAULT_MQTT_QUEUE_LIMIT, ge=0)
+    reconnect_delay: int = msgspec.field(default=DEFAULT_RECONNECT_DELAY, ge=1)
+    status_interval: int = msgspec.field(default=DEFAULT_STATUS_INTERVAL, ge=1)
     debug_logging: bool = DEFAULT_DEBUG_LOGGING
-    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-    mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
-    mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-    pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
-    serial_retry_timeout: float = DEFAULT_SERIAL_RETRY_TIMEOUT
-    serial_response_timeout: float = DEFAULT_SERIAL_RESPONSE_TIMEOUT
-    serial_retry_attempts: int = DEFAULT_RETRY_LIMIT
-    serial_handshake_min_interval: float = DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    serial_handshake_fatal_failures: int = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    console_queue_limit_bytes: int = msgspec.field(default=DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES, ge=1)
+    mailbox_queue_limit: int = msgspec.field(default=DEFAULT_MAILBOX_QUEUE_LIMIT, ge=1)
+    mailbox_queue_bytes_limit: int = msgspec.field(default=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT, ge=1)
+    pending_pin_request_limit: int = msgspec.field(default=DEFAULT_PENDING_PIN_REQUESTS, ge=1)
+    serial_retry_timeout: float = msgspec.field(default=DEFAULT_SERIAL_RETRY_TIMEOUT, ge=0.01)
+    serial_response_timeout: float = msgspec.field(default=DEFAULT_SERIAL_RESPONSE_TIMEOUT, ge=0.02)
+    serial_retry_attempts: int = msgspec.field(default=DEFAULT_RETRY_LIMIT, ge=0)
+    serial_handshake_min_interval: float = msgspec.field(default=DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL, ge=0.0)
+    serial_handshake_fatal_failures: int = msgspec.field(default=DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES, ge=1)
     watchdog_enabled: bool = True
-    watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
+    watchdog_interval: float = msgspec.field(default=DEFAULT_WATCHDOG_INTERVAL, ge=0.5)
     topic_authorization: TopicAuthorization = TopicAuthorization()
 
     # msgspec handle bytes naturally.
@@ -119,13 +119,13 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     serial_shared_secret: bytes = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
+    process_max_output_bytes: int = msgspec.field(default=DEFAULT_PROCESS_MAX_OUTPUT_BYTES, ge=1)
+    process_max_concurrent: int = msgspec.field(default=DEFAULT_PROCESS_MAX_CONCURRENT, ge=1)
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
     metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: int = DEFAULT_METRICS_PORT
-    bridge_summary_interval: float = DEFAULT_BRIDGE_SUMMARY_INTERVAL
-    bridge_handshake_interval: float = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
+    metrics_port: int = msgspec.field(default=DEFAULT_METRICS_PORT, ge=1, le=65535)
+    bridge_summary_interval: float = msgspec.field(default=DEFAULT_BRIDGE_SUMMARY_INTERVAL, ge=0.0)
+    bridge_handshake_interval: float = msgspec.field(default=DEFAULT_BRIDGE_HANDSHAKE_INTERVAL, ge=0.0)
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
     @property
@@ -141,12 +141,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.mqtt_keyfile = self._normalize_optional_string(self.mqtt_keyfile)
 
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
+        # Runtime derived validations
         self.serial_response_timeout = max(self.serial_response_timeout, self.serial_retry_timeout * 2)
-        self.serial_handshake_min_interval = max(0.0, self.serial_handshake_min_interval)
-        self.serial_handshake_fatal_failures = self._require_positive(
-            "serial_handshake_fatal_failures",
-            int(self.serial_handshake_fatal_failures),
-        )
+
         if not self.mqtt_tls:
             logger.warning("MQTT TLS is disabled; MQTT credentials and payloads will be sent in plaintext.")
         else:
@@ -157,21 +154,29 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 )
             if not self.mqtt_cafile:
                 logger.info("MQTT TLS is enabled with no mqtt_cafile configured; using system trust store.")
+        
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
         if len(self.serial_shared_secret) < MIN_SERIAL_SHARED_SECRET_LEN:
             raise ValueError("serial_shared_secret must be at least %d bytes" % MIN_SERIAL_SHARED_SECRET_LEN)
         if self.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
-        self.pending_pin_request_limit = max(1, self.pending_pin_request_limit)
+        
         unique_symbols = {byte for byte in self.serial_shared_secret}
         if len(unique_symbols) < 4:
             raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+        
         self._normalize_topic_prefix()
 
         self.file_system_root = os.path.abspath(self.file_system_root)
         self.mqtt_spool_dir = os.path.abspath(self.mqtt_spool_dir)
-        self._validate_operational_limits()
+
+        # Logic-based cross-field validations
+        if self.file_storage_quota_bytes < self.file_write_max_bytes:
+            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
+
+        if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
+            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
         # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
@@ -181,9 +186,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 raise ValueError("FLASH PROTECTION: file_system_root must be in a volatile location")
 
-        if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
-            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
-
     @staticmethod
     def _normalize_optional_string(value: str | None) -> str | None:
         if not value:
@@ -191,50 +193,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         s = value.strip()
         return s if s else None
 
-    @staticmethod
-    def _require_positive(name: str, value: int) -> int:
-        if value <= 0:
-            raise ValueError(f"{name} must be a positive integer")
-        return value
-
     def _normalize_topic_prefix(self) -> None:
         normalized = self._build_topic_prefix(self.mqtt_topic)
         self.mqtt_topic = normalized
-
-    def _validate_operational_limits(self) -> None:
-        positive_int_fields = (
-            "reconnect_delay",
-            "status_interval",
-            "process_timeout",
-            "process_max_output_bytes",
-            "process_max_concurrent",
-            "serial_handshake_fatal_failures",
-            "file_write_max_bytes",
-            "file_storage_quota_bytes",
-        )
-        for field_name in positive_int_fields:
-            value = getattr(self, field_name)
-            validated = self._require_positive(field_name, int(value))
-            setattr(self, field_name, validated)
-
-        if self.file_storage_quota_bytes < self.file_write_max_bytes:
-            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
-
-        if self.watchdog_enabled:
-            interval = self._require_positive_float(
-                "watchdog_interval",
-                float(self.watchdog_interval),
-            )
-            self.watchdog_interval = max(0.5, interval)
-
-        self.bridge_summary_interval = max(
-            0.0,
-            float(self.bridge_summary_interval),
-        )
-        self.bridge_handshake_interval = max(
-            0.0,
-            float(self.bridge_handshake_interval),
-        )
 
     @staticmethod
     def _build_topic_prefix(prefix: str) -> str:
@@ -259,12 +220,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         if require_absolute and not expanded.is_absolute():
             raise ValueError(f"{field_name} must be an absolute path")
         return normalized
-
-    @staticmethod
-    def _require_positive_float(name: str, value: float) -> float:
-        if value <= 0.0:
-            raise ValueError(f"{name} must be a positive number")
-        return value
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:

@@ -65,13 +65,7 @@ class ShellPidPayload(msgspec.Struct, frozen=True):
         """Parse a topic segment into a validated ShellPidPayload."""
         try:
             value = int(segment, 10)
-        except ValueError as exc:
-            raise PayloadValidationError("PID segment must be an integer") from exc
-
-        # Validate constraints manually since msgspec.Struct only validates during decode
-        if value <= 0:
-            raise PayloadValidationError("PID must be a positive integer")
-        if value > UINT16_MAX:
-            raise PayloadValidationError("PID cannot exceed 65535")
-
-        return cls(pid=value)
+            # [SIL-2] Leverage msgspec's C-implemented validation at runtime.
+            return msgspec.convert({"pid": value}, cls, strict=True)
+        except (ValueError, msgspec.ValidationError) as exc:
+            raise PayloadValidationError(f"Invalid PID segment: {exc}") from exc

@@ -56,96 +56,34 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
     def build(command_id: int, payload: bytes = b"") -> bytes:
         """Build a raw frame (header + payload + CRC) for COBS encoding.
 
-        Implementation using 'construct' library for declarative serialization.
+        Delegates construction and CRC calculation to hardened FRAME_STRUCT.
         """
-        payload_len = len(payload)
-        if payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload too large ({payload_len} bytes); " f"max is {protocol.MAX_PAYLOAD_SIZE}")
-        if not 0 <= command_id <= protocol.UINT16_MAX:
-            raise ValueError(f"Command id {command_id} outside 16-bit range")
-
-        # 1. Build the body (Header + Payload) using Construct
-        # We need to construct the header+payload first to calculate CRC.
-        # However, FRAME_STRUCT includes CRC at the end.
-        # We can build the partial structure or build manually using sub-structs.
-        # Using protocol.CRC_COVERED_HEADER_STRUCT directly is cleanest.
-
-        header_data = protocol.CRC_COVERED_HEADER_STRUCT.build({
-            "version": protocol.PROTOCOL_VERSION,
-            "payload_len": payload_len,
-            "command_id": command_id,
-        })
-
-        body = header_data + payload
-        crc = _crc32_hash(body)
-
-        # We could use FRAME_STRUCT.build(...) but that would require re-assembling
-        # the dict. Since we already have the bytes, appending the CRC is efficient.
-        # But to be strictly "construct prioritized", we use CRC_STRUCT for the CRC too.
-        crc_bytes = protocol.CRC_STRUCT.build(crc)
-
-        return body + crc_bytes
+        try:
+            return FRAME_STRUCT.build({
+                "header": {
+                    "version": protocol.PROTOCOL_VERSION,
+                    "payload_len": len(payload),
+                    "command_id": command_id,
+                },
+                "payload": payload,
+                "crc": 0, # Checksum field will calculate this
+            })
+        except ConstructError as e:
+            raise ValueError(f"Frame construction failed: {e}") from e
 
     @staticmethod
     def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
         """Parse a decoded frame and validate header, payload, and CRC.
 
-        Implementation using 'construct' library for declarative parsing.
+        Validation is performed declaratively by FRAME_STRUCT.
         """
-        # Ensure bytes for construct
-        data_bytes = bytes(raw_frame_buffer)
-        total_len = len(data_bytes)
-
-        # 1. Verify minimum size (Header 5 + CRC 4 = 9 bytes)
-        if total_len < protocol.MIN_FRAME_SIZE:
-            raise ValueError(
-                "Incomplete frame: size " f"{total_len} is less than minimum " f"{protocol.MIN_FRAME_SIZE}"
-            )
-
-        # 2. Parse using Construct (Handling structure and lengths)
         try:
-            container = FRAME_STRUCT.parse(data_bytes)
+            container = FRAME_STRUCT.parse(bytes(raw_frame_buffer))
+            # command_id is now automatically an IntEnum (Command or Status)
+            return int(container.header.command_id), container.payload
         except ConstructError as e:
-            raise ValueError(f"Frame parsing failed: {e}") from e
-
-        # 3. Validate CRC
-        # The body is everything EXCEPT the last 4 bytes (CRC)
-        body = data_bytes[:-4]
-        received_crc = container.crc
-        calculated_crc = _crc32_hash(body)
-
-        if received_crc != calculated_crc:
-            raise ValueError(f"CRC mismatch: expected 0x{calculated_crc:08X}, got 0x{received_crc:08X}")
-
-        # 4. Parse Header (already done by Construct, just validate semantics)
-        version = container.header.version
-        if version != protocol.PROTOCOL_VERSION:
-            raise ValueError("Invalid version. Expected " f"{protocol.PROTOCOL_VERSION}, got {version}")
-
-        # Payload Length Validation
-        # Construct already ensured the payload matches payload_len in Bytes(this.header.payload_len).
-        # We just need to check if the overall buffer had extra data, but Construct
-        # usually consumes what it needs.
-        # FRAME_STRUCT.parse consumes exactly header + payload + CRC.
-        # If there are extra bytes at the end, 'parse' might ignore them unless we use GreedyBytes or similar check.
-        # However, for our protocol, 'raw_frame_buffer' is a single decoded COBS frame, so it should match exactly.
-        # Let's check strict sizing.
-        expected_size = protocol.CRC_COVERED_HEADER_SIZE + container.header.payload_len + protocol.CRC_SIZE
-        if total_len != expected_size:
-            raise ValueError(
-                f"Frame size mismatch: header says {container.header.payload_len} payload bytes, "
-                f"but buffer has {len(body) - protocol.CRC_COVERED_HEADER_SIZE}"
-            )
-
-        if container.header.payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload length {container.header.payload_len} exceeds max {protocol.MAX_PAYLOAD_SIZE}")
-
-        # [SIL-2] Semantic Validation: Reject invalid/reserved command IDs
-        command_id = container.header.command_id
-        if command_id < protocol.STATUS_CODE_MIN:
-            raise ValueError(f"Invalid command id {command_id} (reserved/below minimum " f"{protocol.STATUS_CODE_MIN})")
-
-        return command_id, container.payload
+            # Checksum failure or validation failure (Check) will land here
+            raise ValueError(f"Frame validation failed: {e}") from e
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""

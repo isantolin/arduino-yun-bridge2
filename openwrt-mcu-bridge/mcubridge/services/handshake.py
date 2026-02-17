@@ -48,9 +48,9 @@ logger = logging.getLogger("mcubridge.service.handshake")
 class SerialTimingWindow(msgspec.Struct, frozen=True):
     """Derived serial retry/response windows used by both MCU and MPU."""
 
-    ack_timeout_ms: int
-    response_timeout_ms: int
-    retry_limit: int
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS)]
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)]
+    retry_limit: Annotated[int, msgspec.Meta(ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX)]
 
     @property
     def ack_timeout_seconds(self) -> float:
@@ -61,32 +61,19 @@ class SerialTimingWindow(msgspec.Struct, frozen=True):
         return self.response_timeout_ms / 1000.0
 
 
-def _clamp(value: int, lower: int, upper: int) -> int:
-    return max(lower, min(upper, value))
-
-
 def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
-    ack_ms = _clamp(
-        int(round(max(0.0, config.serial_retry_timeout) * 1000.0)),
-        protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
-        protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
-    )
-    response_ms = _clamp(
-        int(round(max(0.0, config.serial_response_timeout) * 1000.0)),
-        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
-        protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
-    )
-    response_ms = max(response_ms, ack_ms)
-    retry_limit = _clamp(
-        int(config.serial_retry_attempts),
-        protocol.HANDSHAKE_RETRY_LIMIT_MIN,
-        protocol.HANDSHAKE_RETRY_LIMIT_MAX,
-    )
-    return SerialTimingWindow(
-        ack_timeout_ms=ack_ms,
-        response_timeout_ms=response_ms,
-        retry_limit=retry_limit,
-    )
+    """Derive timing windows from config with declarative validation."""
+    # [SIL-2] msgspec.convert will handle the clamping/validation at the edge.
+    raw = {
+        "ack_timeout_ms": int(round(config.serial_retry_timeout * 1000.0)),
+        "response_timeout_ms": int(round(config.serial_response_timeout * 1000.0)),
+        "retry_limit": int(config.serial_retry_attempts),
+    }
+    
+    # We ensure response is at least ACK to avoid logical starvation
+    raw["response_timeout_ms"] = max(raw["response_timeout_ms"], raw["ack_timeout_ms"])
+    
+    return msgspec.convert(raw, SerialTimingWindow, strict=False)
 
 
 class SerialHandshakeFatal(RuntimeError):

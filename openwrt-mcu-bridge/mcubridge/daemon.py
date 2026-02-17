@@ -216,8 +216,8 @@ class BridgeDaemon:
     async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
         """Run *coro_factory* restarting it on failures using tenacity."""
         log = logging.getLogger("mcubridge.supervisor")
-        callbacks = self._SupervisorCallbacks(spec.name, log, self.state)
-
+        
+        # [SIL-2] Use native tenacity statistics for telemetry.
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=spec.min_backoff, max=spec.max_backoff),
             retry=tenacity.retry_if_not_exception_type(
@@ -226,8 +226,6 @@ class BridgeDaemon:
             stop=tenacity.stop_after_attempt(
                 spec.max_restarts + 1
             ) if spec.max_restarts is not None else tenacity.stop_never,
-            before_sleep=callbacks.before_sleep,
-            after=callbacks.after_retry,
             reraise=True,
         )
 
@@ -246,20 +244,23 @@ class BridgeDaemon:
                             self.state.mark_supervisor_healthy(spec.name)
                             return
                 except tenacity.RetryError:
-                    log.error("%s exceeded max restarts (%s); giving up", spec.name, spec.max_restarts)
+                    stats = retryer.statistics
+                    log.error("%s failed after %d attempts; giving up", spec.name, stats.get('attempt_number', 0))
                     raise
                 except spec.fatal_exceptions as exc:
                     log.critical("%s failed with fatal exception: %s", spec.name, exc)
                     self.state.record_supervisor_failure(spec.name, backoff=0.0, exc=exc, fatal=True)
                     raise
-                except BaseException:
-                    # Check for healthy runtime to reset backoff
+                except BaseException as exc:
+                    # [SIL-2] Report failure using tenacity statistics
+                    stats = retryer.statistics
+                    delay = retryer.wait(retry_state=tenacity.RetryCallState(retryer, None, (), {}))
+                    self.state.record_supervisor_failure(spec.name, backoff=delay, exc=exc, fatal=False)
+                    
                     if last_start_time > 0 and (time.monotonic() - last_start_time) > max(10.0, spec.restart_interval):
                         log.info("%s was healthy long enough; resetting backoff", spec.name)
                         self.state.mark_supervisor_healthy(spec.name)
                         continue
-
-                    # Reraise to let tenacity handle retry or stop
                     raise
 
         except asyncio.CancelledError:

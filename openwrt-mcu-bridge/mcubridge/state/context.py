@@ -186,14 +186,11 @@ class McuCapabilities(msgspec.Struct):
     def has_i2c(self) -> bool:
         return bool(self.features & protocol.CAPABILITY_I2C)
 
-    def as_dict(self) -> dict[str, int | bool]:
-        return {
-            "protocol_ver": self.protocol_version,
-            "arch": self.board_arch,
-            "digital": self.num_digital_pins,
-            "analog": self.num_analog_inputs,
-            "features_raw": self.features,
-            # Expanded capabilities
+    def as_dict(self) -> dict[str, Any]:
+        """Convert to dictionary including expanded boolean flags."""
+        # [SIL-2] Combined static and dynamic data for telemetry.
+        res = msgspec.structs.asdict(self)
+        res.update({
             "has_watchdog": self.has_watchdog,
             "has_rle": self.has_rle,
             "has_eeprom": self.has_eeprom,
@@ -203,7 +200,8 @@ class McuCapabilities(msgspec.Struct):
             "is_3v3_logic": self.is_3v3_logic,
             "has_large_buffer": self.has_large_buffer,
             "has_i2c": self.has_i2c,
-        }
+        })
+        return res
 
 
 class PendingPinRequest(msgspec.Struct):

@@ -26,55 +26,56 @@
 // Defaults to 48 bytes to keep SRAM usage predictable on AVR.
 #if defined(ARDUINO_ARCH_AVR)
   // [SIL-2] Reduce console buffers for AVR to save ~32 bytes
+  // Increased from 16 to 32 to allow small batches of messages without frequent XOFF.
   #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 16
+  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 32U
   #endif
 
   #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 16
+  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 32U
   #endif
 #else
   #ifndef BRIDGE_CONSOLE_RX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 48
+  #define BRIDGE_CONSOLE_RX_BUFFER_SIZE 64U
   #endif
 
   #ifndef BRIDGE_CONSOLE_TX_BUFFER_SIZE
-  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 48
+  #define BRIDGE_CONSOLE_TX_BUFFER_SIZE 64U
   #endif
 #endif
 
 // Pending request queue sizes (MCU-side only; not part of the protocol).
 #ifndef BRIDGE_MAX_PENDING_DATASTORE
-#define BRIDGE_MAX_PENDING_DATASTORE 1
+#define BRIDGE_MAX_PENDING_DATASTORE 1U
 #endif
 
 #ifndef BRIDGE_MAX_PENDING_PROCESS_POLLS
-#define BRIDGE_MAX_PENDING_PROCESS_POLLS 1
+#define BRIDGE_MAX_PENDING_PROCESS_POLLS 1U
 #endif
 
 // File size warning threshold (bytes) - used by daemon for RAM monitoring.
 // Matches Python: mcubridge.const.FILE_LARGE_WARNING_BYTES = 1048576
 #ifndef BRIDGE_FILE_LARGE_WARNING_BYTES
-#define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576
+#define BRIDGE_FILE_LARGE_WARNING_BYTES 1048576UL
 #endif
 
 // [SIL-2] Magic Numbers extracted to constants for clarity and safety tuning
 #ifndef BRIDGE_STARTUP_STABILIZATION_MS
-#define BRIDGE_STARTUP_STABILIZATION_MS 100
+#define BRIDGE_STARTUP_STABILIZATION_MS 100UL
 #endif
 
 #ifndef BRIDGE_BAUDRATE_SETTLE_MS
-#define BRIDGE_BAUDRATE_SETTLE_MS 50
+#define BRIDGE_BAUDRATE_SETTLE_MS 50UL
 #endif
 
 #ifndef BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS
-#define BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS 5
+#define BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS 5U
 #endif
 
 // [SIL-2] RX Deduplication reset interval (ms)
 // After this period, the same CRC will be accepted again (retry recovery)
 #ifndef BRIDGE_RX_DEDUPE_INTERVAL_MS
-#define BRIDGE_RX_DEDUPE_INTERVAL_MS 1000
+#define BRIDGE_RX_DEDUPE_INTERVAL_MS 1000UL
 #endif
 
 // [SIL-2] HMAC key derivation buffer sizes (SHA256 specific)

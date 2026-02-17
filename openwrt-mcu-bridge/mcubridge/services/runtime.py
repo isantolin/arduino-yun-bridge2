@@ -259,7 +259,12 @@ class BridgeService:
 
     async def handle_mcu_frame(self, command_id: int, payload: bytes) -> None:
         """Entry point invoked by the serial transport for each MCU frame."""
-        # Dispatcher handles flow control notification internally
+        # [SIL-2] Automate latency tracking using native decorators
+        stats = self.state.serial_latency_stats
+        
+        # We use a manual context manager as we want to record the latency 
+        # specifically for successful dispatches in the state.
+        start = time.perf_counter()
         try:
             await self._dispatcher.dispatch_mcu_frame(command_id, payload)
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
@@ -270,9 +275,14 @@ class BridgeService:
                 e,
                 exc_info=True,
             )
+        finally:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            stats.record(latency_ms)
 
     async def handle_mqtt_message(self, inbound: Message) -> None:
         inbound_topic = str(inbound.topic)
+        # [SIL-2] Performance monitoring for MQTT message processing
+        start = time.perf_counter()
         try:
             await self._dispatcher.dispatch_mqtt_message(
                 inbound,
@@ -285,6 +295,10 @@ class BridgeService:
                 e,
                 exc_info=True,
             )
+        finally:
+            latency_ms = (time.perf_counter() - start) * 1000.0
+            # Note: We share latency stats or can create a specific one for MQTT
+            self.state.record_rpc_latency_ms(latency_ms)
 
     async def enqueue_mqtt(
         self,

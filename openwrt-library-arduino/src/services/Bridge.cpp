@@ -285,18 +285,18 @@ void BridgeClass::process() {
 
   // [SIL-2] Centralized Scheduler Tick
   // Replaces manual timeout checks with ETL Timer Service
-  unsigned long now = millis();
-  unsigned long delta = now - _last_tick_millis;
+  const uint32_t now = static_cast<uint32_t>(millis());
+  uint32_t delta = now - _last_tick_millis;
   // Handle millis() rollover (overflow) by implicit unsigned arithmetic
   // [SIL-2] Cap delta to prevent timer starvation in test environments
   // where millis() may jump large amounts. In production, process() is
   // called frequently enough that delta is always small.
-  constexpr uint32_t kMaxTickDeltaMs = 1000;
+  constexpr uint32_t kMaxTickDeltaMs = 1000UL;
   if (delta > kMaxTickDeltaMs) {
       delta = kMaxTickDeltaMs;
   }
-  if (delta > 0) {
-      _timer_service.tick(static_cast<uint32_t>(delta));
+  if (delta > 0U) {
+      _timer_service.tick(delta);
       _last_tick_millis = now;
   }
 

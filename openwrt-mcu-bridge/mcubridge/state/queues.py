@@ -31,14 +31,10 @@ def _deque_factory() -> deque[bytes]:
 class BoundedByteDeque(msgspec.Struct):
     """Deque that enforces both item-count and byte-length limits."""
 
-    max_items: int | None = None
-    max_bytes: int | None = None
+    max_items: Annotated[int | None, msgspec.Meta(ge=0)] = None
+    max_bytes: Annotated[int | None, msgspec.Meta(ge=0)] = None
     _queue: deque[bytes] = msgspec.field(default_factory=_deque_factory)
     _bytes: int = 0
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "max_items", _normalize_limit(self.max_items))
-        object.__setattr__(self, "max_bytes", _normalize_limit(self.max_bytes))
 
     def __len__(self) -> int:
         return len(self._queue)
@@ -67,13 +63,14 @@ class BoundedByteDeque(msgspec.Struct):
     def update_limits(
         self,
         *,
-        max_items: object = _UNSET,
-        max_bytes: object = _UNSET,
+        max_items: int | None = None,
+        max_bytes: int | None = None,
     ) -> None:
-        if max_items is not _UNSET:
-            self.max_items = _normalize_limit(max_items)
-        if max_bytes is not _UNSET:
-            self.max_bytes = _normalize_limit(max_bytes)
+        """Update limits using declarative validation."""
+        if max_items is not None:
+            self.max_items = msgspec.convert(max_items, Annotated[int, msgspec.Meta(ge=0)])
+        if max_bytes is not None:
+            self.max_bytes = msgspec.convert(max_bytes, Annotated[int, msgspec.Meta(ge=0)])
         self._make_room_for(0, 0)
 
     def append(self, chunk: bytes) -> QueueEvent:

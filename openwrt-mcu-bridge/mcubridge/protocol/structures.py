@@ -12,15 +12,19 @@ from collections.abc import Iterable
 from enum import IntEnum
 from typing import Any, ClassVar, Self, Type, TypedDict, TypeVar, cast
 
+from binascii import crc32
 import msgspec
 from construct import (  # type: ignore
     Bytes,
+    Check,
+    Checksum,
     Construct,
     GreedyBytes,
     Int8ub,
     Int16ub,
     PascalString,
     Prefixed,  # type: ignore
+    Switch,
     this,
     Struct as BinStruct,
 )
@@ -126,12 +130,51 @@ class MailboxPushPacket(BaseStruct, frozen=True):
 
 # --- Framing Schema ---
 
-# [SIL-2] Construct Schema for Full Frame
-# Reuses the header definition from protocol.py to ensure consistency.
+# [SIL-2] Construct Schema for Full Frame with Integrated CRC and Logic Checks
 FRAME_STRUCT = BinStruct(
-    "header" / protocol.CRC_COVERED_HEADER_STRUCT,
+    "header" / BinStruct(
+        "version" / Check(Int8ub == protocol.PROTOCOL_VERSION),
+        "payload_len" / Check(Int16ub <= protocol.MAX_PAYLOAD_SIZE),
+        "command_id" / protocol.CRC_COVERED_HEADER_STRUCT.command_id,
+    ),
     "payload" / Bytes(this.header.payload_len),
-    "crc" / protocol.CRC_STRUCT,
+    "crc" / Checksum(
+        protocol.CRC_STRUCT,
+        lambda data: (crc32(data) & 0xFFFFFFFF),
+        this.header.version.build(protocol.PROTOCOL_VERSION) + 
+        this.header.payload_len.build(this.header.payload_len) + 
+        this.header.command_id.build(this.header.command_id) + 
+        this.payload
+    ),
+)
+
+# [SIL-2] Dynamic Framing Schema using Switch for automatic payload resolution
+DYNAMIC_FRAME_STRUCT = BinStruct(
+    "header" / BinStruct(
+        "version" / Check(Int8ub == protocol.PROTOCOL_VERSION),
+        "payload_len" / Check(Int16ub <= protocol.MAX_PAYLOAD_SIZE),
+        "command_id" / protocol.CRC_COVERED_HEADER_STRUCT.command_id,
+    ),
+    "payload" / Switch(this.header.command_id, {
+        protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,
+        protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,
+        protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,
+        protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,
+        protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,
+        protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,
+        protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,
+        protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,
+        protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,
+        protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,
+    }, default=Bytes(this.header.payload_len)),
+    "crc" / Checksum(
+        protocol.CRC_STRUCT,
+        lambda data: (crc32(data) & 0xFFFFFFFF),
+        this.header.version.build(protocol.PROTOCOL_VERSION) + 
+        this.header.payload_len.build(this.header.payload_len) + 
+        this.header.command_id.build(this.header.command_id) + 
+        this.payload
+    ),
 )
 
 
@@ -178,17 +221,19 @@ class QOSLevel(IntEnum):
     QOS_2 = 2
 
 
-class SpoolRecord(TypedDict, total=False):
+class SpoolRecord(msgspec.Struct, omit_defaults=True):
+    """JSON-serializable record stored in the durable spool (RAM/Disk)."""
+
     topic_name: str
     payload: str
-    qos: int
-    retain: bool
-    content_type: str | None
-    payload_format_indicator: int | None
-    message_expiry_interval: int | None
-    response_topic: str | None
-    correlation_data: str | None
-    user_properties: list[Any]
+    qos: int = 0
+    retain: bool = False
+    content_type: str | None = None
+    payload_format_indicator: int | None = None
+    message_expiry_interval: int | None = None
+    response_topic: str | None = None
+    correlation_data: str | None = None
+    user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list)
 
 
 UserProperty = tuple[str, str]
@@ -223,43 +268,47 @@ class QueuedPublish(msgspec.Struct):
     user_properties: tuple[UserProperty, ...] = ()
 
     def to_record(self) -> SpoolRecord:
-        return {
-            "topic_name": self.topic_name,
-            "payload": base64.b64encode(self.payload).decode("ascii"),
-            "qos": int(self.qos),
-            "retain": self.retain,
-            "content_type": self.content_type,
-            "payload_format_indicator": self.payload_format_indicator,
-            "message_expiry_interval": self.message_expiry_interval,
-            "response_topic": self.response_topic,
-            "correlation_data": (
-                base64.b64encode(self.correlation_data).decode("ascii") if self.correlation_data is not None else None
-            ),
-            "user_properties": list(self.user_properties),
-        }
+        """Convert to a SpoolRecord struct for disk serialization."""
+        # [SIL-2] Modernization: We transform binary fields to Base64 (JSON safe)
+        # while keeping the rest declarative.
+        payload_b64 = base64.b64encode(self.payload).decode("ascii")
+        correlation_b64 = (
+            base64.b64encode(self.correlation_data).decode("ascii") if self.correlation_data is not None else None
+        )
+
+        return SpoolRecord(
+            topic_name=self.topic_name,
+            payload=payload_b64,
+            qos=int(self.qos),
+            retain=self.retain,
+            content_type=self.content_type,
+            payload_format_indicator=self.payload_format_indicator,
+            message_expiry_interval=self.message_expiry_interval,
+            response_topic=self.response_topic,
+            correlation_data=correlation_b64,
+            user_properties=list(self.user_properties),
+        )
 
     @classmethod
     def from_record(cls, record: SpoolRecord) -> Self:
-        payload_b64 = str(record.get("payload", ""))
-        payload = base64.b64decode(payload_b64.encode("ascii"))
-        correlation_raw = record.get("correlation_data")
-        correlation_data: bytes | None = None
-        if correlation_raw is not None:
-            encoded = str(correlation_raw).encode("ascii")
-            correlation_data = base64.b64decode(encoded)
-        raw_properties = record.get("user_properties")
-        user_properties: tuple[UserProperty, ...] = _normalize_user_properties(raw_properties)
+        """Create a QueuedPublish instance from a SpoolRecord struct."""
+        # [SIL-2] Coercion: Handle Base64 decoding manually, let msgspec handle the rest.
+        payload = base64.b64decode(record.payload.encode("ascii"))
+        correlation_data = (
+            base64.b64decode(record.correlation_data.encode("ascii")) if record.correlation_data is not None else None
+        )
+
         return cls(
-            topic_name=str(record.get("topic_name", "")),
+            topic_name=record.topic_name,
             payload=payload,
-            qos=int(record.get("qos", 0)),
-            retain=bool(record.get("retain", False)),
-            content_type=record.get("content_type"),
-            payload_format_indicator=record.get("payload_format_indicator"),
-            message_expiry_interval=record.get("message_expiry_interval"),
-            response_topic=record.get("response_topic"),
+            qos=record.qos,
+            retain=record.retain,
+            content_type=record.content_type,
+            payload_format_indicator=record.payload_format_indicator,
+            message_expiry_interval=record.message_expiry_interval,
+            response_topic=record.response_topic,
             correlation_data=correlation_data,
-            user_properties=user_properties,
+            user_properties=tuple(record.user_properties),
         )
 
 
@@ -328,16 +377,16 @@ class PendingCommand(msgspec.Struct):
 
 
 class SupervisorSnapshot(msgspec.Struct):
-    restarts: int
+    restarts: Annotated[int, msgspec.Meta(ge=0)]
     last_failure_unix: float
     last_exception: str | None
-    backoff_seconds: float
+    backoff_seconds: Annotated[float, msgspec.Meta(ge=0.0)]
     fatal: bool
 
 
 class McuVersion(msgspec.Struct):
-    major: int
-    minor: int
+    major: Annotated[int, msgspec.Meta(ge=0)]
+    minor: Annotated[int, msgspec.Meta(ge=0)]
 
 
 class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
@@ -353,21 +402,21 @@ class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
 
 class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     synchronised: bool = False
-    attempts: int = 0
-    successes: int = 0
-    failures: int = 0
-    failure_streak: int = 0
+    attempts: Annotated[int, msgspec.Meta(ge=0)] = 0
+    successes: Annotated[int, msgspec.Meta(ge=0)] = 0
+    failures: Annotated[int, msgspec.Meta(ge=0)] = 0
+    failure_streak: Annotated[int, msgspec.Meta(ge=0)] = 0
     last_error: str | None = None
     last_unix: float = 0.0
     last_duration: float = 0.0
     backoff_until: float = 0.0
     rate_limit_until: float = 0.0
-    fatal_count: int = 0
+    fatal_count: Annotated[int, msgspec.Meta(ge=0)] = 0
     fatal_reason: str | None = None
     fatal_detail: str | None = None
     fatal_unix: float = 0.0
     pending_nonce: bool = False
-    nonce_length: int = 0
+    nonce_length: Annotated[int, msgspec.Meta(ge=0)] = 0
 
 
 class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
@@ -380,10 +429,12 @@ class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
 
 
 class SerialFlowSnapshot(msgspec.Struct):
-    commands_sent: int
-    commands_acked: int
-    retries: int
-    failures: int
+    """Serial flow control statistics snapshot."""
+
+    commands_sent: Annotated[int, msgspec.Meta(ge=0)]
+    commands_acked: Annotated[int, msgspec.Meta(ge=0)]
+    retries: Annotated[int, msgspec.Meta(ge=0)]
+    failures: Annotated[int, msgspec.Meta(ge=0)]
     last_event_unix: float
 
 
@@ -394,63 +445,63 @@ class BridgeStatus(msgspec.Struct):
     serial_connected: bool
     serial_flow: SerialFlowSnapshot
     link_synchronised: bool
-    handshake_attempts: int
-    handshake_successes: int
-    handshake_failures: int
+    handshake_attempts: Annotated[int, msgspec.Meta(ge=0)]
+    handshake_successes: Annotated[int, msgspec.Meta(ge=0)]
+    handshake_failures: Annotated[int, msgspec.Meta(ge=0)]
     handshake_last_error: str | None
     handshake_last_unix: float
 
     # MQTT
-    mqtt_queue_size: int
-    mqtt_queue_limit: int
-    mqtt_messages_dropped: int
+    mqtt_queue_size: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_messages_dropped: Annotated[int, msgspec.Meta(ge=0)]
     mqtt_drop_counts: dict[str, int]
 
     # Spool
-    mqtt_spooled_messages: int
-    mqtt_spooled_replayed: int
-    mqtt_spool_errors: int
+    mqtt_spooled_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spooled_replayed: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spool_errors: Annotated[int, msgspec.Meta(ge=0)]
     mqtt_spool_degraded: bool
     mqtt_spool_failure_reason: str | None
-    mqtt_spool_retry_attempts: int
+    mqtt_spool_retry_attempts: Annotated[int, msgspec.Meta(ge=0)]
     mqtt_spool_backoff_until: float
     mqtt_spool_last_error: str | None
-    mqtt_spool_recoveries: int
-    mqtt_spool_pending: int
+    mqtt_spool_recoveries: Annotated[int, msgspec.Meta(ge=0)]
+    mqtt_spool_pending: Annotated[int, msgspec.Meta(ge=0)]
 
     # Storage
     file_storage_root: str
-    file_storage_bytes_used: int
-    file_storage_quota_bytes: int
-    file_write_max_bytes: int
-    file_write_limit_rejections: int
-    file_storage_limit_rejections: int
+    file_storage_bytes_used: Annotated[int, msgspec.Meta(ge=0)]
+    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    file_write_limit_rejections: Annotated[int, msgspec.Meta(ge=0)]
+    file_storage_limit_rejections: Annotated[int, msgspec.Meta(ge=0)]
 
     # Queues
     datastore_keys: list[str]
-    mailbox_size: int
-    mailbox_bytes: int
-    mailbox_dropped_messages: int
-    mailbox_dropped_bytes: int
-    mailbox_truncated_messages: int
-    mailbox_truncated_bytes: int
-    mailbox_incoming_dropped_messages: int
-    mailbox_incoming_dropped_bytes: int
-    mailbox_incoming_truncated_messages: int
-    mailbox_incoming_truncated_bytes: int
-    console_queue_size: int
-    console_queue_bytes: int
-    console_dropped_chunks: int
-    console_dropped_bytes: int
-    console_truncated_chunks: int
-    console_truncated_bytes: int
+    mailbox_size: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_dropped_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_truncated_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_dropped_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_truncated_messages: Annotated[int, msgspec.Meta(ge=0)]
+    mailbox_incoming_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    console_queue_size: Annotated[int, msgspec.Meta(ge=0)]
+    console_queue_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    console_dropped_chunks: Annotated[int, msgspec.Meta(ge=0)]
+    console_dropped_bytes: Annotated[int, msgspec.Meta(ge=0)]
+    console_truncated_chunks: Annotated[int, msgspec.Meta(ge=0)]
+    console_truncated_bytes: Annotated[int, msgspec.Meta(ge=0)]
 
     # System
     mcu_paused: bool
     mcu_version: McuVersion | None
     watchdog_enabled: bool
     watchdog_interval: float
-    watchdog_beats: int
+    watchdog_beats: Annotated[int, msgspec.Meta(ge=0)]
     watchdog_last_beat: float
     running_processes: list[str]
     allowed_commands: list[str]

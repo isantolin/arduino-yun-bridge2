@@ -118,6 +118,97 @@ class MailboxPushPacket(BaseStruct, frozen=True):
     _SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
+class PinModePacket(BaseStruct, frozen=True):
+    pin: int
+    mode: int
+
+    _SCHEMA = BinStruct("pin" / construct.Int8ub, "mode" / construct.Int8ub)
+
+
+class DigitalWritePacket(BaseStruct, frozen=True):
+    pin: int
+    value: int
+
+    _SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+
+
+class AnalogWritePacket(BaseStruct, frozen=True):
+    pin: int
+    value: int
+
+    _SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
+
+
+class PinReadPacket(BaseStruct, frozen=True):
+    pin: int
+
+    _SCHEMA = BinStruct("pin" / construct.Int8ub)
+
+
+class ConsoleWritePacket(BaseStruct, frozen=True):
+    data: bytes
+
+    _SCHEMA = BinStruct("data" / construct.GreedyBytes)
+
+
+class ProcessRunPacket(BaseStruct, frozen=True):
+    command: str
+
+    _SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
+
+
+class ProcessRunAsyncPacket(BaseStruct, frozen=True):
+    command: str
+
+    _SCHEMA = BinStruct("command" / construct.GreedyString("utf-8"))
+
+
+class ProcessKillPacket(BaseStruct, frozen=True):
+    pid: int
+
+    _SCHEMA = BinStruct("pid" / construct.Int16ub)
+
+
+class ProcessPollPacket(BaseStruct, frozen=True):
+    pid: int
+
+    _SCHEMA = BinStruct("pid" / construct.Int16ub)
+
+
+class ProcessRunResponsePacket(BaseStruct, frozen=True):
+    status: int
+    stdout: bytes
+    stderr: bytes
+    exit_code: int
+
+    _SCHEMA = BinStruct(
+        "status" / construct.Int8ub,
+        "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+        "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+        "exit_code" / construct.Int8ub,
+    )
+
+
+class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
+    pid: int
+
+    _SCHEMA = BinStruct("pid" / construct.Int16ub)
+
+
+class ProcessPollResponsePacket(BaseStruct, frozen=True):
+    status: int
+    exit_code: int
+    stdout: bytes
+    stderr: bytes
+
+    _SCHEMA = BinStruct(
+        "status" / construct.Int8ub,
+        "exit_code" / construct.Int8ub,
+        "stdout" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+        "stderr" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes),
+    )
+
+
 # --- Framing Schema ---
 
 # [SIL-2] Construct Schema for Full Frame
@@ -149,6 +240,19 @@ DYNAMIC_FRAME_STRUCT = BinStruct(
         protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
         protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
         protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_SET_PIN_MODE: PinModePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_DIGITAL_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_ANALOG_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
     }, default=construct.Bytes(construct.this.header.payload_len)),
     "crc" / protocol.CRC_STRUCT,
 )

@@ -13,6 +13,7 @@ from typing import Any, cast
 
 import msgspec
 import psutil
+from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     INVALID_ID_SENTINEL,
@@ -24,7 +25,16 @@ from mcubridge.protocol.protocol import (
     ShellAction,
     Status,
 )
-from mcubridge.protocol.structures import ProcessOutputBatch
+from mcubridge.protocol.structures import (
+    ProcessKillPacket,
+    ProcessOutputBatch,
+    ProcessPollPacket,
+    ProcessPollResponsePacket,
+    ProcessRunAsyncPacket,
+    ProcessRunAsyncResponsePacket,
+    ProcessRunPacket,
+    ProcessRunResponsePacket,
+)
 
 from ..config.const import MQTT_EXPIRY_SHELL, PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
 from ..config.settings import RuntimeConfig
@@ -36,7 +46,7 @@ from .base import BridgeContext
 
 logger = logging.getLogger("mcubridge.process")
 
-_PROCESS_POLL_BUDGET = MAX_PAYLOAD_SIZE - 6
+_PROCESS_POLL_BUDGET = protocol.MAX_PAYLOAD_SIZE - 6
 
 
 class ProcessComponent(msgspec.Struct):
@@ -54,17 +64,25 @@ class ProcessComponent(msgspec.Struct):
         else:
             object.__setattr__(self, "_process_slots", None)
 
-    def _prepare_command(self, payload: bytes) -> tuple[str, list[str]]:
-        """Decode payload, tokenize command, and check allowed policy."""
-        command = payload.decode("utf-8", errors="ignore")
-        tokens = list(tokenize_shell_command(command))
+    def _prepare_command(self, command_str: str) -> tuple[str, list[str]]:
+        """Tokenize command and check allowed policy."""
+        tokens = list(tokenize_shell_command(command_str))
         if not tokens or not self.state.allowed_policy.is_allowed(tokens[0]):
             raise CommandValidationError(f"Command '{tokens[0] if tokens else ''}' not allowed")
-        return command, tokens
+        return command_str, tokens
 
     async def handle_run(self, payload: bytes) -> None:
         try:
-            command, tokens = self._prepare_command(payload)
+            packet = ProcessRunPacket.decode(payload)
+            command_str = packet.command
+            command, tokens = self._prepare_command(command_str)
+        except (ConstructError, ValueError) as e:
+            logger.warning("Malformed PROCESS_RUN payload: %s", e)
+            await self.ctx.send_frame(
+                Status.MALFORMED.value,
+                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
+            )
+            return
         except CommandValidationError as exc:
             logger.warning("Rejected sync command: %s", exc)
             await self.ctx.send_frame(
@@ -96,11 +114,15 @@ class ProcessComponent(msgspec.Struct):
                     stderr_bytes,
                     exit_code,
                 ) = await self.run_sync(command, tokens)
-                response = self._build_sync_response(
-                    status,
-                    stdout_bytes,
-                    stderr_bytes,
-                )
+
+                # [SIL-2] Use structured packet
+                response = ProcessRunResponsePacket(
+                    status=status,
+                    stdout=stdout_bytes,
+                    stderr=stderr_bytes,
+                    exit_code=exit_code if exit_code is not None else PROCESS_DEFAULT_EXIT_CODE,
+                ).encode()
+
                 await self.ctx.send_frame(Command.CMD_PROCESS_RUN_RESP.value, response)
                 logger.debug(
                     "Sent PROCESS_RUN_RESP status=%d exit=%s",
@@ -120,8 +142,16 @@ class ProcessComponent(msgspec.Struct):
 
     async def handle_run_async(self, payload: bytes) -> None:
         try:
-            command, tokens = self._prepare_command(payload)
+            packet = ProcessRunAsyncPacket.decode(payload)
+            command, tokens = self._prepare_command(packet.command)
             pid = await self.start_async(command, tokens)
+        except (ConstructError, ValueError):
+            logger.warning("Malformed PROCESS_RUN_ASYNC payload")
+            await self.ctx.send_frame(
+                Status.MALFORMED.value,
+                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
+            )
+            return
         except CommandValidationError as exc:
             logger.warning("Rejected async command: %s", exc)
             await self.ctx.send_frame(
@@ -130,6 +160,7 @@ class ProcessComponent(msgspec.Struct):
             )
             await self._publish_run_async_error(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED)
             return
+
         match pid:
             case protocol.INVALID_ID_SENTINEL:
                 await self.ctx.send_frame(
@@ -139,9 +170,11 @@ class ProcessComponent(msgspec.Struct):
                 await self._publish_run_async_error(protocol.STATUS_REASON_PROCESS_RUN_ASYNC_FAILED)
                 return
             case _:
+                # [SIL-2] Use structured packet
+                response = ProcessRunAsyncResponsePacket(pid=pid).encode()
                 await self.ctx.send_frame(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    cast(Any, protocol.UINT16_STRUCT).build(pid),
+                    response,
                 )
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
@@ -170,32 +203,34 @@ class ProcessComponent(msgspec.Struct):
         await self.ctx.publish(topic=topic, payload=error_payload)
 
     async def handle_poll(self, payload: bytes) -> bool:
-        if len(payload) != 2:
+        try:
+            packet = ProcessPollPacket.decode(payload)
+            pid = packet.pid
+        except (ConstructError, ValueError):
             logger.warning("Invalid PROCESS_POLL payload: %s", payload.hex())
+            # Send empty/error response using structured packet
+            error_resp = ProcessPollResponsePacket(
+                status=Status.MALFORMED.value,
+                exit_code=PROCESS_DEFAULT_EXIT_CODE,
+                stdout=b"",
+                stderr=b"",
+            ).encode()
             await self.ctx.send_frame(
                 Command.CMD_PROCESS_POLL_RESP.value,
-                b"".join(
-                    [
-                        bytes([Status.MALFORMED.value, PROCESS_DEFAULT_EXIT_CODE]),
-                        cast(Any, protocol.UINT16_STRUCT).build(0),
-                        cast(Any, protocol.UINT16_STRUCT).build(0),
-                    ]
-                ),
+                error_resp,
             )
             return False
 
-        pid = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
         batch = await self.collect_output(pid)
 
-        response_payload = b"".join(
-            [
-                bytes([batch.status_byte, batch.exit_code]),
-                cast(Any, protocol.UINT16_STRUCT).build(len(batch.stdout_chunk)),
-                cast(Any, protocol.UINT16_STRUCT).build(len(batch.stderr_chunk)),
-                batch.stdout_chunk,
-                batch.stderr_chunk,
-            ]
-        )
+        # [SIL-2] Use structured packet
+        response_payload = ProcessPollResponsePacket(
+            status=batch.status_byte,
+            exit_code=batch.exit_code,
+            stdout=batch.stdout_chunk,
+            stderr=batch.stderr_chunk,
+        ).encode()
+
         await self.ctx.send_frame(Command.CMD_PROCESS_POLL_RESP.value, response_payload)
 
         await self.publish_poll_result(pid, batch)
@@ -204,7 +239,10 @@ class ProcessComponent(msgspec.Struct):
         return True
 
     async def handle_kill(self, payload: bytes, *, send_ack: bool = True) -> bool:
-        if len(payload) != 2:
+        try:
+            packet = ProcessKillPacket.decode(payload)
+            pid = packet.pid
+        except (ConstructError, ValueError):
             logger.warning(
                 "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
                 len(payload),
@@ -215,8 +253,6 @@ class ProcessComponent(msgspec.Struct):
                 encode_status_reason(protocol.STATUS_REASON_PROCESS_KILL_MALFORMED),
             )
             return False
-
-        pid = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
 
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)

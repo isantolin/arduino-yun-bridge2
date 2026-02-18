@@ -1,11 +1,14 @@
-"""Console component handling console bridging logic."""
+"""Console component for MCU/Linux interactions."""
 
 from __future__ import annotations
 
 import logging
 
 from aiomqtt.message import Message
-from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Command
+from construct import ConstructError
+from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import Command, ConsoleAction
+from mcubridge.protocol.structures import ConsoleWritePacket
 
 from ..config.const import MQTT_EXPIRY_CONSOLE
 from ..config.settings import RuntimeConfig
@@ -18,7 +21,7 @@ logger = logging.getLogger("mcubridge.console")
 
 
 class ConsoleComponent:
-    """Encapsulate console handling for BridgeService."""
+    """Encapsulate remote console behaviour."""
 
     def __init__(
         self,
@@ -31,14 +34,25 @@ class ConsoleComponent:
         self.ctx = ctx
 
     async def handle_write(self, payload: bytes) -> None:
+        """Handle CMD_CONSOLE_WRITE from MCU (remote console output)."""
+        try:
+            packet = ConsoleWritePacket.decode(payload)
+            data = packet.data
+        except (ConstructError, ValueError):
+            logger.warning("Malformed CONSOLE_WRITE payload")
+            return
+
+        if not data:
+            return
+
         topic = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.CONSOLE,
-            "out",
+            ConsoleAction.OUT,
         )
         await self.ctx.publish(
             topic=topic,
-            payload=payload,
+            payload=data,
             expiry=MQTT_EXPIRY_CONSOLE,
         )
 
@@ -58,7 +72,8 @@ class ConsoleComponent:
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        chunks = chunk_bytes(payload, MAX_PAYLOAD_SIZE)
+        # [SIL-2] Ensure we chunk data to fit into frames
+        chunks = chunk_bytes(payload, protocol.MAX_PAYLOAD_SIZE)
         if self.state.mcu_is_paused:
             logger.warning(
                 "MCU paused, queueing %d console chunk(s) (%d bytes), hex=%s",
@@ -74,29 +89,40 @@ class ConsoleComponent:
         for index, chunk in enumerate(chunks):
             if not chunk:
                 continue
+
+            # [SIL-2] Use structured packet encoding
+            frame_payload = ConsoleWritePacket(data=chunk).encode()
+
             send_ok = await self.ctx.send_frame(
                 Command.CMD_CONSOLE_WRITE.value,
-                chunk,
+                frame_payload,
             )
             if not send_ok:
                 remaining = b"".join(chunks[index:])
                 if remaining:
                     self.state.enqueue_console_chunk(remaining, logger)
                 logger.warning(
-                    "Serial send failed for console input; payload queued for " "retry",
+                    "Serial send failed for console input; payload queued for retry",
                 )
                 break
 
     async def flush_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buffered = self.state.pop_console_chunk()
-            chunks = chunk_bytes(buffered or b"", MAX_PAYLOAD_SIZE)
+            if not buffered:
+                break
+
+            chunks = chunk_bytes(buffered, protocol.MAX_PAYLOAD_SIZE)
             for index, chunk in enumerate(chunks):
                 if not chunk:
                     continue
+
+                # [SIL-2] Use structured packet encoding
+                frame_payload = ConsoleWritePacket(data=chunk).encode()
+
                 send_ok = await self.ctx.send_frame(
                     Command.CMD_CONSOLE_WRITE.value,
-                    chunk,
+                    frame_payload,
                 )
                 if send_ok:
                     continue
@@ -104,7 +130,7 @@ class ConsoleComponent:
                 if unsent:
                     self.state.requeue_console_chunk_front(unsent)
                 logger.warning(
-                    "Serial send failed while flushing console; chunk " "requeued",
+                    "Serial send failed while flushing console; chunk requeued",
                 )
                 return
 

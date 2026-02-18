@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import collections
 import logging
-from typing import Any, Callable, cast
+from typing import Callable
 
 from aiomqtt.message import Message
-from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, PinAction, Status
-from mcubridge.protocol.structures import AnalogReadResponsePacket, DigitalReadResponsePacket
+from mcubridge.protocol.structures import (
+    AnalogReadResponsePacket,
+    AnalogWritePacket,
+    DigitalReadResponsePacket,
+    DigitalWritePacket,
+    PinModePacket,
+    PinReadPacket,
+)
 
 from ..config.const import MQTT_EXPIRY_PIN
 from ..config.settings import RuntimeConfig
@@ -188,10 +194,9 @@ class PinComponent:
             logger.warning("Invalid digital mode %s", mode)
             return
 
-        await self.ctx.send_frame(
-            Command.CMD_SET_PIN_MODE.value,
-            cast(Any, protocol.PIN_WRITE_STRUCT).build(dict(pin=pin, value=mode)),
-        )
+        # [SIL-2] Use structured packet encoding
+        payload = PinModePacket(pin=pin, mode=mode).encode()
+        await self.ctx.send_frame(Command.CMD_SET_PIN_MODE.value, payload)
 
     async def _handle_read_command(
         self,
@@ -229,10 +234,12 @@ class PinComponent:
         else:
             self.state.pending_analog_reads.append(pending_request)
 
-        send_ok = await self.ctx.send_frame(
-            command.value,
-            cast(Any, protocol.PIN_READ_STRUCT).build(pin),
-        )
+        # [SIL-2] Use structured packet encoding
+        # PinReadPacket works for both Digital and Analog reads (1-byte pin payload)
+        payload = PinReadPacket(pin=pin).encode()
+
+        send_ok = await self.ctx.send_frame(command.value, payload)
+
         if not send_ok:
             # Remove pending request if send failed
             if command == Command.CMD_DIGITAL_READ:
@@ -256,11 +263,14 @@ class PinComponent:
             )
             return
 
-        command = Command.CMD_DIGITAL_WRITE if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
-        await self.ctx.send_frame(
-            command.value,
-            cast(Any, protocol.PIN_WRITE_STRUCT).build(dict(pin=pin, value=value)),
-        )
+        if topic_type == Topic.DIGITAL:
+            command = Command.CMD_DIGITAL_WRITE
+            payload = DigitalWritePacket(pin=pin, value=value).encode()
+        else:
+            command = Command.CMD_ANALOG_WRITE
+            payload = AnalogWritePacket(pin=pin, value=value).encode()
+
+        await self.ctx.send_frame(command.value, payload)
 
     def _parse_pin_identifier(self, pin_str: str) -> int:
         if pin_str.upper().startswith("A") and pin_str[1:].isdigit():

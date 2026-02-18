@@ -25,6 +25,7 @@ from mcubridge.protocol.protocol import (
     Command,
     Status,
 )
+from mcubridge.protocol.structures import ProcessRunResponsePacket
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.process import ProcessComponent, ProcessOutputBatch
 from mcubridge.state.context import create_runtime_state
@@ -80,16 +81,21 @@ async def test_handle_run_success(process_component: ProcessComponent, mock_cont
         with patch.object(ProcessComponent, "_try_acquire_process_slot", new_callable=AsyncMock) as mock_acquire:
             mock_acquire.return_value = True
 
-            # Mock _build_sync_response
-            with patch.object(ProcessComponent, "_build_sync_response") as mock_build:
-                mock_build.return_value = b"response_payload"
+            await process_component.handle_run(b"echo hello")
 
-                await process_component.handle_run(b"echo hello")
+            mock_run.assert_awaited_once_with("echo hello", ["echo", "hello"])
 
-                mock_run.assert_awaited_once_with("echo hello", ["echo", "hello"])
-                mock_context.send_frame.assert_awaited_once_with(
-                    Command.CMD_PROCESS_RUN_RESP.value, b"response_payload"
-                )
+            # Expect structured response packet
+            expected_payload = ProcessRunResponsePacket(
+                status=0,
+                stdout=b"stdout",
+                stderr=b"stderr",
+                exit_code=0
+            ).encode()
+
+            mock_context.send_frame.assert_awaited_once_with(
+                Command.CMD_PROCESS_RUN_RESP.value, expected_payload
+            )
 
 
 @pytest.mark.asyncio

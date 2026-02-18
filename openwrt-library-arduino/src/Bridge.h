@@ -61,6 +61,7 @@
 #include "config/bridge_config.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rpc_structs.h"
 
 #undef min
 #undef max

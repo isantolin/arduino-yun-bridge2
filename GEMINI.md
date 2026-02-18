@@ -75,5 +75,6 @@ The project follows modern, best-practice development conventions:
 *   **Linting:** The code is linted with `ruff` and `flake8`.
 *   **Static Type Checking:** Python code is type-checked with `pyright`.
 *   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` and the corresponding code is generated using `tools/protocol/generate.py`. This ensures that the protocol is always in sync between the C++ and Python codebases.
-*   **Architecture:** Data structures are centralized in `mcubridge/protocol/structures.py` to serve as a single source of truth, utilizing `construct` for binary schemas and `msgspec` for typed structs.
+*   **Architecture:** Data structures are centralized in `mcubridge/protocol/structures.py` to serve as a single source of truth, utilizing `construct` for binary schemas and `msgspec` for typed structs. This implementation is synchronized with `tools/protocol/spec.toml`.
+*   **Refactoring Status:** The Python codebase has completed Phase 3 "Mechanical Refactoring", fully migrating all services (Process, Console, Pin, Handshake, File, Datastore, Mailbox) to use typed `BaseStruct` packets for robust binary handling.
 *   **Automated CI/CD:** The project uses GitHub Actions to automate the build and test process.

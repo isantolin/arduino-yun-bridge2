@@ -247,7 +247,7 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
     _SCHEMA = BinStruct(
         "ack_timeout_ms" / construct.Int16ub,
         "ack_retry_limit" / construct.Int8ub,
-        "response_timeout_ms" / construct.Int16ub,
+        "response_timeout_ms" / construct.Int32ub,
     )
 
 

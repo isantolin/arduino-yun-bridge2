@@ -69,7 +69,7 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
             # Re-use the shared TLS context builder
             from mcubridge.util.mqtt_helper import configure_tls_context
             ctx = configure_tls_context(config)
-            client.tls_set_context(ctx)
+            client.tls_set_context(ctx)  # type: ignore[reportUnknownMemberType]
             if config.mqtt_tls_insecure:
                 client.tls_insecure_set(True)
 

@@ -105,7 +105,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         #            -> header (Struct) -> command_id
         #            -> payload (RawCopy) -> data (bytes)
         header = container.content.value.header
-        
+
         # Verify version (redundant if Const used in schema, but good for explicit error message)
         if header.version != protocol.PROTOCOL_VERSION:
              raise ValueError(f"Invalid version. Expected {protocol.PROTOCOL_VERSION}, got {header.version}")

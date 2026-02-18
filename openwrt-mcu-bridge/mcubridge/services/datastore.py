@@ -72,8 +72,11 @@ class DatastoreComponent:
             return False
 
         key = packet.key
-        value = self.state.datastore.get(key, "")
-        value_bytes = value.encode("utf-8")
+        cached_value = self.state.datastore.get(key, "")
+        
+        # [SIL-2] Handle potential type drift during testing/injection
+        value_bytes = cached_value.encode("utf-8") if isinstance(cached_value, str) else cached_value
+
         if len(value_bytes) > 255:
             logger.warning(
                 "Datastore value truncated for key %s (%d bytes)",
@@ -174,9 +177,12 @@ class DatastoreComponent:
                 logger.debug("Datastore GET for '%s' has no cached value", key)
             return
 
+        # [SIL-2] Handle potential type drift during testing/injection
+        val_bytes = cached_value.encode("utf-8") if isinstance(cached_value, str) else cached_value
+
         await self._publish_value(
             key,
-            cached_value.encode("utf-8"),
+            val_bytes,
             reply_context=inbound,
         )
 

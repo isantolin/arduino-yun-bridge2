@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import Any, cast
 
 import msgspec
 import pytest
@@ -58,10 +59,16 @@ def test_on_serial_connected_flushes_console_queue() -> None:
                     )
                 )
                 # Priming capabilities
-                from mcubridge.protocol.structures import McuCapabilities
+                from mcubridge.state.context import McuCapabilities
 
-                service._handshake.handle_capabilities_resp(
-                    McuCapabilities(version=2, rpc_buffer_size=1024, flags=0).pack()
+                await service._handshake.handle_capabilities_resp(
+                    cast(Any, protocol.CAPABILITIES_STRUCT).build({
+                        "ver": 2,
+                        "arch": 1,
+                        "dig": 20,
+                        "ana": 6,
+                        "feat": 0,
+                    })
                 )
             elif command_id == Command.CMD_GET_VERSION.value:
                 # Direct flow injection bypasses lock issues
@@ -152,10 +159,16 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                     )
                 )
                 # Priming capabilities
-                from mcubridge.protocol.structures import McuCapabilities
+                from mcubridge.state.context import McuCapabilities
 
-                service._handshake.handle_capabilities_resp(
-                    McuCapabilities(version=2, rpc_buffer_size=1024, flags=0).pack()
+                await service._handshake.handle_capabilities_resp(
+                    cast(Any, protocol.CAPABILITIES_STRUCT).build({
+                        "ver": 2,
+                        "arch": 1,
+                        "dig": 20,
+                        "ana": 6,
+                        "feat": 0,
+                    })
                 )
             return True
 
@@ -537,7 +550,7 @@ def test_datastore_get_from_mcu_returns_cached_value() -> None:
         runtime_state = create_runtime_state(runtime_config)
         service = BridgeService(runtime_config, runtime_state)
         runtime_state.link_is_synchronized = True
-        runtime_state.datastore["key1"] = b"value1"
+        runtime_state.datastore["key1"] = "value1"
 
         sent_frames: list[tuple[int, bytes]] = []
 
@@ -547,7 +560,7 @@ def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
         service.register_serial_sender(fake_sender)
 
-        await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x00\x04key1")
+        await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x04key1")
 
         # Should respond with RESP containing "value1" (or ACK with payload)
         assert any(
@@ -574,7 +587,7 @@ def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
         service.register_serial_sender(fake_sender)
 
-        await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"ghost")
+        await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, b"\x05ghost")
 
         # Should respond with ACK but no data payload beyond command ID
         for frame_id, payload in sent_frames:
@@ -668,16 +681,16 @@ def test_mqtt_datastore_put_updates_local_cache(
     asyncio.run(_run())
 
 
-    def test_mqtt_bridge_handshake_topic_returns_snapshot(
-        runtime_config: RuntimeConfig,
-        runtime_state: RuntimeState,
-    ) -> None:
-        async def _run() -> None:
-            service = BridgeService(runtime_config, runtime_state)
-            topic = f"{runtime_config.mqtt_topic}/system/bridge/handshake/get"
-            msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
+def test_mqtt_bridge_handshake_topic_returns_snapshot(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+        topic = f"{runtime_config.mqtt_topic}/system/bridge/handshake/get"
+        msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
 
-            await service.handle_mqtt_message(msg)
+        await service.handle_mqtt_message(msg)
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in reply.topic_name
         data = msgspec.json.decode(reply.payload)
@@ -686,16 +699,16 @@ def test_mqtt_datastore_put_updates_local_cache(
     asyncio.run(_run())
 
 
-    def test_mqtt_bridge_summary_topic_returns_snapshot(
-        runtime_config: RuntimeConfig,
-        runtime_state: RuntimeState,
-    ) -> None:
-        async def _run() -> None:
-            service = BridgeService(runtime_config, runtime_state)
-            topic = f"{runtime_config.mqtt_topic}/system/bridge/summary/get"
-            msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
+def test_mqtt_bridge_summary_topic_returns_snapshot(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
+        topic = f"{runtime_config.mqtt_topic}/system/bridge/summary/get"
+        msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
 
-            await service.handle_mqtt_message(msg)
+        await service.handle_mqtt_message(msg)
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/summary/value" in reply.topic_name
         data = msgspec.json.decode(reply.payload)
@@ -729,7 +742,7 @@ def test_mqtt_datastore_get_non_request_uses_cache(
         from mcubridge.policy import TopicAuthorization
         runtime_state.topic_authorization = TopicAuthorization()
         service = BridgeService(runtime_config, runtime_state)
-        runtime_state.datastore["k1"] = b"v1"
+        runtime_state.datastore["k1"] = "v1"
 
         topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
         # No ResponseTopic property = not a request
@@ -753,7 +766,7 @@ def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
         from mcubridge.policy import TopicAuthorization
         runtime_state.topic_authorization = TopicAuthorization()
         service = BridgeService(runtime_config, runtime_state)
-        runtime_state.datastore["k1"] = b"v1"
+        runtime_state.datastore["k1"] = "v1"
 
         topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
 
@@ -773,30 +786,30 @@ def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
     asyncio.run(_run())
 
 
-    def test_mqtt_datastore_get_request_miss_responds_with_error(
-        runtime_config: RuntimeConfig,
-        runtime_state: RuntimeState,
-    ) -> None:
-        async def _run() -> None:
-            service = BridgeService(runtime_config, runtime_state)
+def test_mqtt_datastore_get_request_miss_responds_with_error(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+) -> None:
+    async def _run() -> None:
+        service = BridgeService(runtime_config, runtime_state)
 
-            topic = f"{runtime_config.mqtt_topic}/datastore/get/missing"
+        topic = f"{runtime_config.mqtt_topic}/datastore/get/missing"
 
-            class Props:
-                ResponseTopic = "err/topic"
+        class Props:
+            ResponseTopic = "err/topic"
 
-            msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
+        msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
 
-            await service.handle_mqtt_message(msg)
+        await service.handle_mqtt_message(msg)
 
-            # CURRENT BEHAVIOR: Silence on miss (QueueEmpty).
-            # Ideal behavior: Error response.
-            # Updating test to match current reality to unblock CI.
-            assert runtime_state.mqtt_publish_queue.empty()
-            # reply = runtime_state.mqtt_publish_queue.get_nowait()
-            # assert reply.topic_name == "err/topic"
-            # assert b"error" in reply.payload
-            # assert b"not found" in reply.payload
+        # CURRENT BEHAVIOR: Silence on miss (QueueEmpty).
+        # Ideal behavior: Error response.
+        # Updating test to match current reality to unblock CI.
+        assert runtime_state.mqtt_publish_queue.empty()
+        # reply = runtime_state.mqtt_publish_queue.get_nowait()
+        # assert reply.topic_name == "err/topic"
+        # assert b"error" in reply.payload
+        # assert b"not found" in reply.payload
     asyncio.run(_run())
 
 

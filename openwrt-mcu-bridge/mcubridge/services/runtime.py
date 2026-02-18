@@ -183,6 +183,14 @@ class BridgeService:
         return self._task_group.create_task(coroutine, name=name)
 
     async def on_serial_connected(self) -> None:
+        """Initiate protocol handshake and flush backlogs after reconnect."""
+        self.state.serial_link_connected = True
+
+        # [SIL-2] Protocol Synchronization: Force handshake immediately.
+        try:
+            await self.sync_link()
+        except (OSError, ValueError, RuntimeError) as e:
+            logger.exception("Failed to synchronize link after reconnect: %s", e)
 
         try:
             version_ok = await self._system.request_mcu_version()

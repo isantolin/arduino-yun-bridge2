@@ -111,8 +111,8 @@ class MailboxComponent:
             return False
 
         # Return the count of messages in queue
-        queue_len = len(self.state.mailbox_queue) & UINT8_MASK
-        count_payload = bytes((queue_len & UINT8_MASK,))
+        queue_len = len(self.state.mailbox_queue)
+        count_payload = cast(Any, protocol.UINT16_STRUCT).build(queue_len)
         await self.ctx.send_frame(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             count_payload,

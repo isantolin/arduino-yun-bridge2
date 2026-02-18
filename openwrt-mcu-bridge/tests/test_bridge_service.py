@@ -59,8 +59,6 @@ def test_on_serial_connected_flushes_console_queue() -> None:
                     )
                 )
                 # Priming capabilities
-                from mcubridge.state.context import McuCapabilities
-
                 await service._handshake.handle_capabilities_resp(
                     cast(Any, protocol.CAPABILITIES_STRUCT).build({
                         "ver": 2,
@@ -100,7 +98,8 @@ def test_on_serial_connected_flushes_console_queue() -> None:
         ]
         assert reset_payloads
         reset_payload = reset_payloads[0]
-        assert len(reset_payload) == 0
+        # [SIL-2] Payload can be 0 (legacy) or 7 (with config)
+        assert len(reset_payload) in {0, 7}
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         handshake_ids = [
             frame_id
@@ -141,13 +140,22 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             if command_id == Command.CMD_LINK_RESET.value:
-                # Reject link reset to force legacy path
-                asyncio.create_task(
-                    service.handle_mcu_frame(
-                        Status.NOT_IMPLEMENTED.value,
-                        protocol.UINT16_STRUCT.build(Command.CMD_LINK_RESET.value),
+                if len(payload) > 0:
+                    # Reject link reset with timing to force legacy path
+                    asyncio.create_task(
+                        service.handle_mcu_frame(
+                            Status.NOT_IMPLEMENTED.value,
+                            protocol.UINT16_STRUCT.build(Command.CMD_LINK_RESET.value),
+                        )
                     )
-                )
+                else:
+                    # Accept legacy link reset
+                    asyncio.create_task(
+                        service.handle_mcu_frame(
+                            Command.CMD_LINK_RESET_RESP.value,
+                            b"",
+                        )
+                    )
             elif command_id == Command.CMD_LINK_SYNC.value:
                 nonce = service.state.link_handshake_nonce or b""
                 tag = service._handshake.compute_handshake_tag(nonce)
@@ -159,8 +167,6 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                     )
                 )
                 # Priming capabilities
-                from mcubridge.state.context import McuCapabilities
-
                 await service._handshake.handle_capabilities_resp(
                     cast(Any, protocol.CAPABILITIES_STRUCT).build({
                         "ver": 2,
@@ -177,7 +183,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
         await service.on_serial_connected()
 
         frame_ids = [frame_id for frame_id, _ in sent_frames]
-        assert any(fid in {Command.CMD_LINK_RESET.value, 64} for fid in frame_ids)
+        assert any(fid == Command.CMD_LINK_RESET.value for fid in frame_ids)
         # Legacy fallback might imply we are synced or we skipped sync.
         # If we are synced, good.
         assert runtime_state.link_is_synchronized is True
@@ -694,7 +700,8 @@ def test_mqtt_bridge_handshake_topic_returns_snapshot(
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in reply.topic_name
         data = msgspec.json.decode(reply.payload)
-        assert "synchronized" in data
+        # [SIL-2] Snapshots use 'synchronised' (UK spelling) per structure definition
+        assert "synchronised" in data
 
     asyncio.run(_run())
 
@@ -712,8 +719,9 @@ def test_mqtt_bridge_summary_topic_returns_snapshot(
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/summary/value" in reply.topic_name
         data = msgspec.json.decode(reply.payload)
-        assert "serial" in data
-        assert "mqtt" in data
+        # [SIL-2] Snapshot structure has 'serial_link' and 'handshake'
+        assert "serial_link" in data
+        assert "handshake" in data
 
     asyncio.run(_run())
 

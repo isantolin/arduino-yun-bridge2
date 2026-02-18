@@ -10,7 +10,6 @@ from aiomqtt.message import Message
 from construct import ConstructError
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
-    UINT8_MASK,
     Command,
     MailboxAction,
     Status,

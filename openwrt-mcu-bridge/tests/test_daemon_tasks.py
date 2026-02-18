@@ -59,7 +59,7 @@ async def test_serial_reader_task_processes_frame(
         mock_protocol.data_received(encoded)
 
         # Allow async processing
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
 
         assert service.received_frames
         command_id, received_payload = service.received_frames[0]
@@ -110,7 +110,7 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
         # Inject data
         mock_protocol.data_received(encoded)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
 
         assert not service.received_frames
         # Should record error
@@ -152,7 +152,7 @@ async def test_serial_reader_task_limits_packet_size(
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
         mock_protocol.data_received(oversized + FRAME_DELIMITER)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.1)
 
         assert not service.received_frames
         assert state.serial_decode_errors >= 1

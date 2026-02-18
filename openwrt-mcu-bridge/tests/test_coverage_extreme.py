@@ -126,7 +126,7 @@ async def test_serial_read_loop_corruption_and_recovery(caplog):
     proto.data_received(noise)
 
     # Wait a bit for async tasks to run
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
 
     mock_service.handle_mcu_frame.assert_awaited()
     # At least bad_cobs and huge_chunk should trigger errors

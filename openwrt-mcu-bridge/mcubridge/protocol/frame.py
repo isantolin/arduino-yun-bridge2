@@ -24,18 +24,11 @@ before transmission.
 
 from __future__ import annotations
 
-from binascii import crc32
-
 import msgspec
 from construct import ConstructError
 from mcubridge.protocol.structures import FRAME_STRUCT
 
 from . import protocol
-
-
-def _crc32_hash(data: bytes | bytearray | memoryview) -> int:
-    """Compute CRC32 (IEEE 802.3) masked to 32-bit unsigned."""
-    return crc32(data) & protocol.CRC32_MASK
 
 
 class Frame(msgspec.Struct, frozen=True, kw_only=True):
@@ -64,17 +57,24 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
-        header_data = protocol.CRC_COVERED_HEADER_STRUCT.build({
-            "version": protocol.PROTOCOL_VERSION,
-            "payload_len": payload_len,
-            "command_id": command_id,
+        return FRAME_STRUCT.build({
+            "content": {
+                "value": {
+                    "header": {
+                        "version": protocol.PROTOCOL_VERSION,
+                        "payload_len": payload_len,
+                        "command_id": command_id,
+                    },
+                    # [SIL-2] Payload Injection
+                    # We inject raw bytes into the 'payload' RawCopy field.
+                    # This bypasses the 'Switch' builder, allowing us to send
+                    # pre-serialized bytes from the Packet layer while still
+                    # maintaining a schema that *could* build from objects.
+                    "payload": {"data": payload},
+                }
+            },
+            # CRC is computed automatically by Checksum field
         })
-
-        body = header_data + payload
-        crc = _crc32_hash(body)
-        crc_bytes = protocol.CRC_STRUCT.build(crc)
-
-        return body + crc_bytes
 
     @staticmethod
     def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
@@ -91,25 +91,34 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             )
 
         try:
+            # [SIL-2] Integrated Parsing
+            # - Checksum field automatically validates CRC32.
+            # - Switch field automatically selects payload schema (validating structure).
+            # - RawCopy fields capture the raw bytes we need for legacy compatibility.
             container = FRAME_STRUCT.parse(data_bytes)
         except ConstructError as e:
+            # Construct error messages are detailed; wrap them for clarity
             raise ValueError(f"Frame parsing failed: {e}") from e
 
-        body = data_bytes[:-4]
-        received_crc = container.crc
-        calculated_crc = _crc32_hash(body)
+        # Extract parsed fields
+        # Structure: container -> content (RawCopy) -> value (Struct)
+        #            -> header (Struct) -> command_id
+        #            -> payload (RawCopy) -> data (bytes)
+        header = container.content.value.header
+        
+        # Verify version (redundant if Const used in schema, but good for explicit error message)
+        if header.version != protocol.PROTOCOL_VERSION:
+             raise ValueError(f"Invalid version. Expected {protocol.PROTOCOL_VERSION}, got {header.version}")
 
-        if received_crc != calculated_crc:
-            raise ValueError(f"CRC mismatch: expected 0x{calculated_crc:08X}, got 0x{received_crc:08X}")
+        # Extract payload bytes directly from RawCopy
+        # This gives us the exact bytes received on wire, even if Switch parsed them into an object.
+        payload_bytes = container.content.value.payload.data
 
-        version = container.header.version
-        if version != protocol.PROTOCOL_VERSION:
-            raise ValueError("Invalid version. Expected " f"{protocol.PROTOCOL_VERSION}, got {version}")
+        # Explicit check for length consistency (Construct usually enforces this via Bytes(payload_len))
+        if len(payload_bytes) != header.payload_len:
+             raise ValueError(f"Payload length mismatch: header says {header.payload_len}, got {len(payload_bytes)}")
 
-        if container.header.payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload length {container.header.payload_len} exceeds max {protocol.MAX_PAYLOAD_SIZE}")
-
-        return int(container.header.command_id), container.payload
+        return int(header.command_id), payload_bytes
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""

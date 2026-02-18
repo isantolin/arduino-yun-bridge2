@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from binascii import crc32
 from collections.abc import Iterable
 from enum import IntEnum
 from typing import Annotated, Any, ClassVar, Self, Type, TypeVar, cast
@@ -269,52 +270,49 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
 
 # --- Framing Schema ---
 
-# [SIL-2] Construct Schema for Full Frame
-FRAME_STRUCT = BinStruct(
-    "header" / BinStruct(
-        "version" / construct.Int8ub,
-        "payload_len" / construct.Int16ub,
-        "command_id" / cast(Any, protocol.CRC_COVERED_HEADER_STRUCT).command_id,
-    ),
-    "payload" / construct.Bytes(construct.this.header.payload_len),
-    "crc" / protocol.CRC_STRUCT,
-)
+def _compute_crc32(data: bytes) -> int:
+    return crc32(data)
 
-# [SIL-2] Dynamic Framing Schema using Switch for automatic payload resolution
-DYNAMIC_FRAME_STRUCT = BinStruct(
-    "header" / BinStruct(
-        "version" / construct.Int8ub,
-        "payload_len" / construct.Int16ub,
-        "command_id" / cast(Any, protocol.CRC_COVERED_HEADER_STRUCT).command_id,
+
+# [SIL-2] Integrated Framing Schema
+# Uses Checksum for automatic CRC32 validation/generation.
+# Uses Switch for automatic payload schema selection.
+# Uses RawCopy to allow access to raw bytes for Checksum and legacy byte-based handlers.
+FRAME_STRUCT = BinStruct(
+    "content" / construct.RawCopy(BinStruct(
+        "header" / cast(Any, protocol.CRC_COVERED_HEADER_STRUCT),
+        "payload" / construct.RawCopy(construct.Switch(construct.this.header.command_id, {
+            protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_SET_PIN_MODE: PinModePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_DIGITAL_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_ANALOG_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        }, default=construct.Bytes(construct.this.header.payload_len))),
+    )),
+    "crc" / construct.Checksum(
+        protocol.CRC_STRUCT,
+        _compute_crc32,
+        construct.this.content.data
     ),
-    "payload" / construct.Switch(construct.this.header.command_id, {
-        protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_SET_PIN_MODE: PinModePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_DIGITAL_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_ANALOG_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        # Capabilities response is separate because standard command ID might reuse
-    }, default=construct.Bytes(construct.this.header.payload_len)),
-    "crc" / protocol.CRC_STRUCT,
 )
 
 # --- High-Level Structure (Msgspec Only) ---

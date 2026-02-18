@@ -27,7 +27,7 @@ def test_frame_parse_coverage_all_errors():
         command_id=0x40
     ))
     bad_crc_frame += b"\x00\x00\x00\x00"
-    with pytest.raises(ValueError, match="CRC mismatch"):
+    with pytest.raises(ValueError, match="(CRC mismatch|wrong checksum)"):
         Frame.parse(bad_crc_frame)
 
     # Line 140: Invalid version

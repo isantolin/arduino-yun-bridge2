@@ -54,6 +54,32 @@ class ConstDef:
     py_format: str | None = None  # Custom format string for Python output
 
 
+@dataclass(frozen=True)
+class StructField:
+    name: str
+    cpp_type: str
+    size: int
+    read_func: str | None  # Name of read function (e.g., read_u16_be) or None for direct byte access
+
+
+@dataclass(frozen=True)
+class StructDef:
+    name: str
+    fields: list[StructField]
+
+    @property
+    def total_size(self) -> int:
+        return sum(f.size for f in self.fields)
+
+
+TYPE_MAPPING: dict[str, tuple[str, int, str | None]] = {
+    "B": ("uint8_t", 1, None),
+    "H": ("uint16_t", 2, "rpc::read_u16_be"),
+    "I": ("uint32_t", 4, "rpc::read_u32_be"),
+    "Q": ("uint64_t", 8, "rpc::read_u64_be"),
+}
+
+
 # Constants that MUST exist (no conditional check)
 REQUIRED_CONSTANTS: tuple[ConstDef, ...] = (
     ConstDef("protocol_version", "uint8_t", "PROTOCOL_VERSION", "PROTOCOL_VERSION"),
@@ -400,6 +426,71 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write("} // namespace rpc\n#endif\n")
 
 
+def _parse_format_string(fmt: str, field_names: list[str]) -> StructDef:
+    """Parse a Python struct format string (e.g. '>HBI') into a StructDef."""
+    if not fmt.startswith(">"):
+        raise ValueError(f"Format string must be Big Endian (start with '>'): {fmt}")
+
+    fmt = fmt[1:]
+    if len(fmt) != len(field_names):
+        raise ValueError(f"Format length {len(fmt)} does not match field names count {len(field_names)}")
+
+    fields = []
+    for char, name in zip(fmt, field_names):
+        if char not in TYPE_MAPPING:
+            raise ValueError(f"Unsupported format char: {char}")
+
+        ctype, size, read_func = TYPE_MAPPING[char]
+        fields.append(StructField(name, ctype, size, read_func))
+
+    return StructDef("HandshakeConfig", fields)  # Name is hardcoded for now
+
+
+def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
+    """Generate C++ payload structures."""
+    out.write(f"{CPP_HEADER}\n")
+    out.write("#ifndef RPC_STRUCTS_H\n#define RPC_STRUCTS_H\n\n")
+    out.write("#include <stdint.h>\n")
+    out.write('#include "rpc_protocol.h"\n')
+    out.write('#include "rpc_frame.h"\n\n')
+    out.write("namespace rpc {\n")
+    out.write("namespace payload {\n\n")
+
+    # 1. Handshake Config Struct
+    handshake = spec.get("handshake", {})
+    if handshake and "config_format" in handshake:
+        fields = ["ack_timeout_ms", "ack_retry_limit", "response_timeout_ms"]
+        struct_def = _parse_format_string(handshake["config_format"], fields)
+
+        out.write(f"struct {struct_def.name} {{\n")
+
+        # Fields
+        for f in struct_def.fields:
+            out.write(f"    {f.cpp_type} {f.name};\n")
+
+        out.write(f"\n    static constexpr size_t SIZE = {struct_def.total_size};\n\n")
+
+        # Parse method
+        out.write(f"    static {struct_def.name} parse(const uint8_t* data) {{\n")
+        out.write(f"        {struct_def.name} msg;\n")
+
+        offset = 0
+        for f in struct_def.fields:
+            if f.read_func:
+                out.write(f"        msg.{f.name} = {f.read_func}(data + {offset});\n")
+            else:
+                out.write(f"        msg.{f.name} = data[{offset}];\n")
+            offset += f.size
+
+        out.write("        return msg;\n")
+        out.write("    }\n")
+        out.write("};\n\n")
+
+    out.write("} // namespace payload\n")
+    out.write("} // namespace rpc\n")
+    out.write("#endif\n")
+
+
 # =============================================================================
 # Python Generator
 # =============================================================================
@@ -627,16 +718,19 @@ def main() -> None:
     default_spec = Path(__file__).resolve().parent / "spec.toml"
     repo_root = Path(__file__).resolve().parents[2]
     default_cpp = repo_root / "openwrt-library-arduino" / "src" / "protocol" / "rpc_protocol.h"
+    default_cpp_structs = repo_root / "openwrt-library-arduino" / "src" / "protocol" / "rpc_structs.h"
     default_py = repo_root / "openwrt-mcu-bridge" / "mcubridge" / "protocol" / "protocol.py"
 
     parser = argparse.ArgumentParser(description="Generate protocol bindings")
     parser.add_argument("--spec", type=Path, default=default_spec, help=f"Path to spec.toml (default: {default_spec})")
     parser.add_argument("--cpp", type=Path, help=f"Output C++ header (default: {default_cpp})")
+    parser.add_argument("--cpp-structs", type=Path, help=f"Output C++ structs header (default: {default_cpp_structs})")
     parser.add_argument("--py", type=Path, help=f"Output Python module (default: {default_py})")
     args = parser.parse_args()
 
-    if args.cpp is None and args.py is None:
+    if args.cpp is None and args.py is None and args.cpp_structs is None:
         args.cpp = default_cpp
+        args.cpp_structs = default_cpp_structs
         args.py = default_py
 
     with args.spec.open("rb") as f:
@@ -647,6 +741,12 @@ def main() -> None:
         with args.cpp.open("w", encoding="utf-8") as f:
             generate_cpp(spec, f)
         sys.stdout.write(f"Generated {args.cpp}\n")
+
+    if args.cpp_structs is not None:
+        args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
+        with args.cpp_structs.open("w", encoding="utf-8") as f:
+            generate_cpp_structs(spec, f)
+        sys.stdout.write(f"Generated {args.cpp_structs}\n")
 
     if args.py is not None:
         args.py.parent.mkdir(parents=True, exist_ok=True)

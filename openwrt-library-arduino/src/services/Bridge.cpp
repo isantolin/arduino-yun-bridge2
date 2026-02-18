@@ -31,6 +31,7 @@
 
 #include "protocol/rle.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rpc_structs.h"
 #include "protocol/PacketBuilder.h"
 #include "security/security.h"
 #include "etl/error_handler.h"
@@ -1126,12 +1127,11 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
   uint16_t ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
   uint8_t retry_limit = rpc::RPC_DEFAULT_RETRY_LIMIT;
   uint32_t response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS;
-  if (payload != nullptr && length >= rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
-    const uint8_t* cursor = payload;
-    ack_timeout_ms = rpc::read_u16_be(cursor);
-    cursor += 2;
-    retry_limit = *cursor++;
-    response_timeout_ms = rpc::read_u32_be(cursor);
+  if (payload != nullptr && length >= rpc::payload::HandshakeConfig::SIZE) {
+    auto config = rpc::payload::HandshakeConfig::parse(payload);
+    ack_timeout_ms = config.ack_timeout_ms;
+    retry_limit = config.ack_retry_limit;
+    response_timeout_ms = config.response_timeout_ms;
   }
   _ack_timeout_ms = (ack_timeout_ms >= rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS && ack_timeout_ms <= rpc::RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS) ? ack_timeout_ms : rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
   _ack_retry_limit = (retry_limit >= rpc::RPC_HANDSHAKE_RETRY_LIMIT_MIN && retry_limit <= rpc::RPC_HANDSHAKE_RETRY_LIMIT_MAX) ? retry_limit : rpc::RPC_DEFAULT_RETRY_LIMIT;

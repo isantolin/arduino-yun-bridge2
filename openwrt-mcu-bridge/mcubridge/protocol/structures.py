@@ -78,26 +78,26 @@ class FileRemovePacket(BaseStruct, frozen=True):
 
 
 class VersionResponsePacket(BaseStruct, frozen=True):
-    major: int
-    minor: int
+    major: Annotated[int, msgspec.Meta(ge=0)]
+    minor: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("major" / construct.Int8ub, "minor" / construct.Int8ub)
 
 
 class FreeMemoryResponsePacket(BaseStruct, frozen=True):
-    value: int
+    value: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("value" / construct.Int16ub)
 
 
 class DigitalReadResponsePacket(BaseStruct, frozen=True):
-    value: int
+    value: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("value" / construct.Int8ub)
 
 
 class AnalogReadResponsePacket(BaseStruct, frozen=True):
-    value: int
+    value: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("value" / construct.Int16ub)
 
@@ -131,13 +131,13 @@ class MailboxPushPacket(BaseStruct, frozen=True):
 
 
 class MailboxProcessedPacket(BaseStruct, frozen=True):
-    message_id: int
+    message_id: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("message_id" / construct.Int16ub)
 
 
 class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
-    count: int
+    count: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("count" / construct.Int16ub)
 
@@ -149,28 +149,28 @@ class MailboxReadResponsePacket(BaseStruct, frozen=True):
 
 
 class PinModePacket(BaseStruct, frozen=True):
-    pin: int
-    mode: int
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    mode: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pin" / construct.Int8ub, "mode" / construct.Int8ub)
 
 
 class DigitalWritePacket(BaseStruct, frozen=True):
-    pin: int
-    value: int
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    value: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
 
 
 class AnalogWritePacket(BaseStruct, frozen=True):
-    pin: int
-    value: int
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    value: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pin" / construct.Int8ub, "value" / construct.Int8ub)
 
 
 class PinReadPacket(BaseStruct, frozen=True):
-    pin: int
+    pin: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pin" / construct.Int8ub)
 
@@ -194,22 +194,22 @@ class ProcessRunAsyncPacket(BaseStruct, frozen=True):
 
 
 class ProcessKillPacket(BaseStruct, frozen=True):
-    pid: int
+    pid: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pid" / construct.Int16ub)
 
 
 class ProcessPollPacket(BaseStruct, frozen=True):
-    pid: int
+    pid: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pid" / construct.Int16ub)
 
 
 class ProcessRunResponsePacket(BaseStruct, frozen=True):
-    status: int
+    status: Annotated[int, msgspec.Meta(ge=0)]
     stdout: bytes
     stderr: bytes
-    exit_code: int
+    exit_code: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct(
         "status" / construct.Int8ub,
@@ -220,14 +220,14 @@ class ProcessRunResponsePacket(BaseStruct, frozen=True):
 
 
 class ProcessRunAsyncResponsePacket(BaseStruct, frozen=True):
-    pid: int
+    pid: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct("pid" / construct.Int16ub)
 
 
 class ProcessPollResponsePacket(BaseStruct, frozen=True):
-    status: int
-    exit_code: int
+    status: Annotated[int, msgspec.Meta(ge=0)]
+    exit_code: Annotated[int, msgspec.Meta(ge=0)]
     stdout: bytes
     stderr: bytes
 
@@ -240,9 +240,9 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
 
 
 class HandshakeConfigPacket(BaseStruct, frozen=True):
-    ack_timeout_ms: int
-    ack_retry_limit: int
-    response_timeout_ms: int
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct(
         "ack_timeout_ms" / construct.Int16ub,
@@ -252,11 +252,11 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
 
 
 class CapabilitiesPacket(BaseStruct, frozen=True):
-    ver: int
-    arch: int
-    dig: int
-    ana: int
-    feat: int
+    ver: Annotated[int, msgspec.Meta(ge=0)]
+    arch: Annotated[int, msgspec.Meta(ge=0)]
+    dig: Annotated[int, msgspec.Meta(ge=0)]
+    ana: Annotated[int, msgspec.Meta(ge=0)]
+    feat: Annotated[int, msgspec.Meta(ge=0)]
 
     _SCHEMA = BinStruct(
         "ver" / construct.Int8ub,

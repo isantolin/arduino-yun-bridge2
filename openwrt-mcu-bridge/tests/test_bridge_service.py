@@ -98,8 +98,8 @@ def test_on_serial_connected_flushes_console_queue() -> None:
         ]
         assert reset_payloads
         reset_payload = reset_payloads[0]
-        # [SIL-2] Payload can be 0 (legacy) or 7 (with config)
-        assert len(reset_payload) in {0, 7}
+        # [SIL-2] Payload can be 0 (legacy) or 5 (new struct: 2+1+2 bytes)
+        assert len(reset_payload) in {0, 5, 7}
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         handshake_ids = [
             frame_id

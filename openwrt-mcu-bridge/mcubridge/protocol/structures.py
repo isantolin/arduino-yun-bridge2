@@ -65,6 +65,12 @@ class FileReadPacket(BaseStruct, frozen=True):
     _SCHEMA = BinStruct("path" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
+class FileReadResponsePacket(BaseStruct, frozen=True):
+    content: bytes
+
+    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+
+
 class FileRemovePacket(BaseStruct, frozen=True):
     path: str
 
@@ -102,6 +108,12 @@ class DatastoreGetPacket(BaseStruct, frozen=True):
     _SCHEMA = BinStruct("key" / construct.PascalString(construct.Int8ub, "utf-8"))
 
 
+class DatastoreGetResponsePacket(BaseStruct, frozen=True):
+    value: bytes
+
+    _SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
+
+
 class DatastorePutPacket(BaseStruct, frozen=True):
     key: str
     value: bytes
@@ -116,6 +128,24 @@ class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
     _SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+
+
+class MailboxProcessedPacket(BaseStruct, frozen=True):
+    message_id: int
+
+    _SCHEMA = BinStruct("message_id" / construct.Int16ub)
+
+
+class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
+    count: int
+
+    _SCHEMA = BinStruct("count" / construct.Int16ub)
+
+
+class MailboxReadResponsePacket(BaseStruct, frozen=True):
+    content: bytes
+
+    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
 
 
 class PinModePacket(BaseStruct, frozen=True):
@@ -209,6 +239,34 @@ class ProcessPollResponsePacket(BaseStruct, frozen=True):
     )
 
 
+class HandshakeConfigPacket(BaseStruct, frozen=True):
+    ack_timeout_ms: int
+    ack_retry_limit: int
+    response_timeout_ms: int
+
+    _SCHEMA = BinStruct(
+        "ack_timeout_ms" / construct.Int16ub,
+        "ack_retry_limit" / construct.Int8ub,
+        "response_timeout_ms" / construct.Int16ub,
+    )
+
+
+class CapabilitiesPacket(BaseStruct, frozen=True):
+    ver: int
+    arch: int
+    dig: int
+    ana: int
+    feat: int
+
+    _SCHEMA = BinStruct(
+        "ver" / construct.Int8ub,
+        "arch" / construct.Int8ub,
+        "dig" / construct.Int8ub,
+        "ana" / construct.Int8ub,
+        "feat" / construct.Int32ub,
+    )
+
+
 # --- Framing Schema ---
 
 # [SIL-2] Construct Schema for Full Frame
@@ -253,6 +311,8 @@ DYNAMIC_FRAME_STRUCT = BinStruct(
         protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
         protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
         protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+        # Capabilities response is separate because standard command ID might reuse
     }, default=construct.Bytes(construct.this.header.payload_len)),
     "crc" / protocol.CRC_STRUCT,
 )

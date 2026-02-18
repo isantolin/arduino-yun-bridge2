@@ -7,7 +7,6 @@ import logging
 from contextlib import AsyncExitStack
 from os import scandir
 from pathlib import Path, PurePosixPath
-from typing import Any, cast
 
 from aiomqtt.message import Message
 from construct import ConstructError
@@ -23,7 +22,12 @@ from ..config.const import (
 )
 from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
-from ..protocol.structures import FileReadPacket, FileRemovePacket, FileWritePacket
+from ..protocol.structures import (
+    FileReadPacket,
+    FileReadResponsePacket,
+    FileRemovePacket,
+    FileWritePacket,
+)
 from ..protocol.topics import Topic, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
@@ -134,12 +138,14 @@ class FileComponent:
         # reassembly or streaming via repeated callbacks.
         chunks = chunk_bytes(data, max_payload)
         if not chunks:
-            response = cast(Any, protocol.UINT16_STRUCT).build(0)
+            # [SIL-2] Use structured response
+            response = FileReadResponsePacket(content=b"").encode()
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
             return
 
         for chunk in chunks:
-            response = cast(Any, protocol.UINT16_STRUCT).build(len(chunk)) + chunk
+            # [SIL-2] Use structured response
+            response = FileReadResponsePacket(content=chunk).encode()
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
 
     async def handle_remove(self, payload: bytes) -> bool:

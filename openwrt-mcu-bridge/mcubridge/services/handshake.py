@@ -15,7 +15,7 @@ import hmac
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 import msgspec
 import tenacity
@@ -29,6 +29,7 @@ from ..config.settings import RuntimeConfig
 from ..mqtt.messages import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import MAX_PAYLOAD_SIZE, Command, Status
+from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket
 from ..protocol.topics import handshake_topic
 from ..security.security import (
     derive_handshake_key,
@@ -337,11 +338,8 @@ class SerialHandshakeManager:
         return True
 
     def _parse_capabilities(self, payload: bytes) -> None:
-        if len(payload) < 8:
-            self._logger.warning("Short capabilities payload: %s", payload.hex())
-            return
         try:
-            cap = cast(Any, protocol.CAPABILITIES_STRUCT).parse(payload[:8])
+            cap = CapabilitiesPacket.decode(payload)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
@@ -520,11 +518,12 @@ class SerialHandshakeManager:
         return self.calculate_handshake_tag(secret, nonce)
 
     def _build_reset_payload(self) -> bytes:
-        return cast(Any, protocol.HANDSHAKE_CONFIG_STRUCT).build({
-            "ack_timeout_ms": self._timing.ack_timeout_ms,
-            "ack_retry_limit": self._timing.retry_limit,
-            "response_timeout_ms": self._timing.response_timeout_ms,
-        })
+        # [SIL-2] Use structured packet encoding
+        return HandshakeConfigPacket(
+            ack_timeout_ms=self._timing.ack_timeout_ms,
+            ack_retry_limit=self._timing.retry_limit,
+            response_timeout_ms=self._timing.response_timeout_ms,
+        ).encode()
 
     def _should_mark_failure_fatal(self, reason: str) -> bool:
         if self._is_immediate_fatal(reason):

@@ -14,7 +14,12 @@ from mcubridge.protocol.protocol import (
     MailboxAction,
     Status,
 )
-from mcubridge.protocol.structures import MailboxPushPacket
+from mcubridge.protocol.structures import (
+    MailboxAvailableResponsePacket,
+    MailboxProcessedPacket,
+    MailboxPushPacket,
+    MailboxReadResponsePacket,
+)
 
 from ..config.settings import RuntimeConfig
 from ..protocol.encoding import encode_status_reason
@@ -51,7 +56,11 @@ class MailboxComponent:
         )
         message_id: int | None = None
         if len(payload) >= 2:
-            message_id = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
+            try:
+                packet = MailboxProcessedPacket.decode(payload)
+                message_id = packet.message_id
+            except (ConstructError, ValueError):
+                pass  # Fallback to raw payload if not a valid packet structure
 
         if message_id is not None:
             body = msgspec.json.encode({"message_id": message_id})
@@ -111,10 +120,12 @@ class MailboxComponent:
 
         # Return the count of messages in queue
         queue_len = len(self.state.mailbox_queue)
-        count_payload = cast(Any, protocol.UINT16_STRUCT).build(queue_len)
+        # [SIL-2] Use structured packet
+        response = MailboxAvailableResponsePacket(count=queue_len).encode()
+
         await self.ctx.send_frame(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
-            count_payload,
+            response,
         )
         return True
 
@@ -131,7 +142,9 @@ class MailboxComponent:
             message_payload = message_payload[: protocol.MAX_PAYLOAD_SIZE - 2]
             msg_len = len(message_payload)
 
-        response_payload = cast(Any, protocol.UINT16_STRUCT).build(msg_len) + message_payload
+        # [SIL-2] Use structured packet
+        response_payload = MailboxReadResponsePacket(content=message_payload).encode()
+
         send_ok = await self.ctx.send_frame(
             Command.CMD_MAILBOX_READ_RESP.value,
             response_payload,

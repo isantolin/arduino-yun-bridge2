@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
+from typing import Any
 
 from aiomqtt.message import Message
 from construct import ConstructError
 from mcubridge.protocol.protocol import (
-    DATASTORE_VALUE_LEN_STRUCT,
     Command,
     DatastoreAction,
     Status,
 )
-from mcubridge.protocol.structures import DatastoreGetPacket, DatastorePutPacket
+from mcubridge.protocol.structures import (
+    DatastoreGetPacket,
+    DatastoreGetResponsePacket,
+    DatastorePutPacket,
+)
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
 from ..config.settings import RuntimeConfig
@@ -88,7 +91,8 @@ class DatastoreComponent:
             )
             value_bytes = value_bytes[:255]
 
-        response_payload = cast(Any, DATASTORE_VALUE_LEN_STRUCT).build(len(value_bytes)) + value_bytes
+        # [SIL-2] Use structured response packet
+        response_payload = DatastoreGetResponsePacket(value=value_bytes).encode()
 
         send_ok = await self.ctx.send_frame(
             Command.CMD_DATASTORE_GET_RESP.value,

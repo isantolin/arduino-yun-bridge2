@@ -497,16 +497,13 @@ class MailboxClass {
 
     if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
         if (_mailbox_handler.is_valid() && payload_length >= 2) {
-          uint16_t msg_len = rpc::read_u16_be(payload_data);
-          const uint8_t* msg_ptr = payload_data + 2;
-          if (payload_length >= static_cast<size_t>(2 + msg_len)) {
-            _mailbox_handler(msg_ptr, msg_len);
-          }
+          auto msg = rpc::payload::MailboxReadResponse::parse(payload_data);
+          _mailbox_handler(msg.content, msg.length);
         }
     } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
-        if (_mailbox_available_handler.is_valid() && payload_length >= 2) {
-          uint16_t count = rpc::read_u16_be(payload_data);
-          _mailbox_available_handler(count);
+        if (_mailbox_available_handler.is_valid() && payload_length >= rpc::payload::MailboxAvailableResponse::SIZE) {
+          auto msg = rpc::payload::MailboxAvailableResponse::parse(payload_data);
+          _mailbox_available_handler(msg.count);
         }
     }
   }
@@ -569,8 +566,9 @@ class FileSystemClass {
   inline void handleResponse(const rpc::Frame& frame) {
     const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
     if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
-        if (_file_system_read_handler.is_valid()) {
-          _file_system_read_handler(frame.payload.data(), frame.header.payload_length);
+        if (_file_system_read_handler.is_valid() && frame.header.payload_length >= 2) {
+          auto msg = rpc::payload::FileReadResponse::parse(frame.payload.data());
+          _file_system_read_handler(msg.content, msg.length);
         }
     }
   }

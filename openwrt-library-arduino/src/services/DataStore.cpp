@@ -41,14 +41,10 @@ void DataStoreClass::handleResponse(const rpc::Frame& frame) {
       const uint8_t* payload_data = frame.payload.data();
       
       if (payload_length >= 1) {
-        uint8_t value_len = payload_data[0];
-        const size_t expected = static_cast<size_t>(1 + value_len);
-        if (payload_length >= expected) {
-          const uint8_t* value_ptr = payload_data + 1;
-          const char* key = _popPendingDatastoreKey();
-          if (_datastore_get_handler.is_valid()) {
-            _datastore_get_handler(key, value_ptr, value_len);
-          }
+        auto msg = rpc::payload::DatastoreGetResponse::parse(payload_data);
+        const char* key = _popPendingDatastoreKey();
+        if (_datastore_get_handler.is_valid()) {
+          _datastore_get_handler(key, msg.value, msg.value_len);
         }
       }
   }

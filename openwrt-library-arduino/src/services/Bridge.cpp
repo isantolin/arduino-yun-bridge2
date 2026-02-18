@@ -320,23 +320,22 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
   switch (command) {
     case rpc::CommandId::CMD_GET_VERSION:
       if (payload_length == 0) {
-        etl::array<uint8_t, 2> version_payload;
-        version_payload[0] = static_cast<uint8_t>(kDefaultFirmwareVersionMajor);
-        version_payload[1] = static_cast<uint8_t>(kDefaultFirmwareVersionMinor);
-        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, version_payload.data(), version_payload.size());
+        rpc::payload::VersionResponse msg{kDefaultFirmwareVersionMajor, kDefaultFirmwareVersionMinor};
+        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, reinterpret_cast<const uint8_t*>(&msg), rpc::payload::VersionResponse::SIZE);
       }
       break;
     case rpc::CommandId::CMD_GET_FREE_MEMORY:
       if (payload_length == 0) {
         uint16_t free_mem = getFreeMemory();
-        etl::array<uint8_t, 2> resp_payload;
+        etl::array<uint8_t, rpc::payload::FreeMemoryResponse::SIZE> resp_payload;
         rpc::write_u16_be(resp_payload.data(), free_mem);
         (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload.data(), resp_payload.size());
       }
       break;
     case rpc::CommandId::CMD_GET_CAPABILITIES:
       if (payload_length == 0) {
-        etl::array<uint8_t, 8> caps;
+        // [SIL-2] Construct Capabilities response
+        etl::array<uint8_t, rpc::payload::Capabilities::SIZE> caps;
         caps[0] = rpc::PROTOCOL_VERSION;
         
         uint8_t arch = 0;
@@ -458,7 +457,9 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
     case rpc::CommandId::CMD_LINK_RESET:
       if (payload_length == 0 || payload_length == rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
         enterSafeState();
-        _applyTimingConfig(payload_data, payload_length);
+        if (payload_length == rpc::payload::HandshakeConfig::SIZE) {
+            _applyTimingConfig(payload_data, payload_length);
+        }
         Console.begin();
         (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
       }
@@ -482,60 +483,58 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
   const size_t payload_length = frame.header.payload_length;
   const uint8_t* payload_data = frame.payload.data();
 
-  if (!payload_data) return;
+  if (!payload_data && payload_length > 0) return;
 
   switch (command) {
     case rpc::CommandId::CMD_SET_PIN_MODE:
-      if (payload_length == 2) {
-        uint8_t pin = payload_data[0];
-        uint8_t mode = payload_data[1];
-        if (!_isValidPin(pin)) return;
-        ::pinMode(pin, mode);
+      if (payload_length == rpc::payload::PinMode::SIZE) {
+        auto msg = rpc::payload::PinMode::parse(payload_data);
+        if (!_isValidPin(msg.pin)) return;
+        ::pinMode(msg.pin, msg.mode);
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_WRITE:
-      if (payload_length == 2) {
-        uint8_t pin = payload_data[0];
-        uint8_t value = payload_data[1] ? HIGH : LOW;
-        if (!_isValidPin(pin)) return;
-        ::digitalWrite(pin, value);
+      if (payload_length == rpc::payload::DigitalWrite::SIZE) {
+        auto msg = rpc::payload::DigitalWrite::parse(payload_data);
+        if (!_isValidPin(msg.pin)) return;
+        ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
       }
       break;
     case rpc::CommandId::CMD_ANALOG_WRITE:
-      if (payload_length == 2) {
-        uint8_t pin = payload_data[0];
-        if (!_isValidPin(pin)) return;
-        ::analogWrite(pin, static_cast<int>(payload_data[1]));
+      if (payload_length == rpc::payload::AnalogWrite::SIZE) {
+        auto msg = rpc::payload::AnalogWrite::parse(payload_data);
+        if (!_isValidPin(msg.pin)) return;
+        ::analogWrite(msg.pin, msg.value);
       }
       break;
     case rpc::CommandId::CMD_DIGITAL_READ:
-      if (payload_length == 1) {
-        uint8_t pin = payload_data[0];
-        if (!_isValidPin(pin)) {
+      if (payload_length == rpc::payload::PinRead::SIZE) {
+        auto msg = rpc::payload::PinRead::parse(payload_data);
+        if (!_isValidPin(msg.pin)) {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
           return;
         }
-        int16_t value = ::digitalRead(pin);
-        uint8_t resp_payload = static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK);
-        (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, &resp_payload, 1);
+        int16_t value = ::digitalRead(msg.pin);
+        rpc::payload::DigitalReadResponse resp{static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
+        (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, reinterpret_cast<const uint8_t*>(&resp), rpc::payload::DigitalReadResponse::SIZE);
       }
       break;
     case rpc::CommandId::CMD_ANALOG_READ:
-      if (payload_length == 1) {
-        uint8_t pin = payload_data[0];
+      if (payload_length == rpc::payload::PinRead::SIZE) {
+        auto msg = rpc::payload::PinRead::parse(payload_data);
 #ifdef NUM_ANALOG_INPUTS
-        if (pin >= NUM_ANALOG_INPUTS) {
+        if (msg.pin >= NUM_ANALOG_INPUTS) {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
           return;
         }
 #else
-        if (!_isValidPin(pin)) {
+        if (!_isValidPin(msg.pin)) {
              (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
              return;
         }
 #endif
-        int16_t value = ::analogRead(pin);
-        etl::array<uint8_t, 2> resp_payload;
+        int16_t value = ::analogRead(msg.pin);
+        etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> resp_payload;
         rpc::write_u16_be(resp_payload.data(), static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
         (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload.data(), resp_payload.size());
       }

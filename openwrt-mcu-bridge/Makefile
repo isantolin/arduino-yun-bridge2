@@ -41,23 +41,22 @@ define Package/$(PKG_NAME)
 	PKG_ARCH:=all
 	# [OPENWRT 25.12] Modern apk-based dependencies.
 	# We strictly depend on python3 (full) or specific subpackages if optimizing size.
-	# paho-mqtt must be v2.x.
+	# High-performance async/struct deps: uvloop, msgspec.
 	DEPENDS:=+python3
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
-		+python3 \
-		+python3-uci \
 		+python3-aiomqtt \
-		+python3-paho-mqtt \
 		+python3-cobs \
+		+python3-construct \
+		+python3-cryptography \
 		+python3-msgspec \
-		+python3-psutil \
+		+python3-paho-mqtt \
 		+python3-prometheus-client \
+		+python3-psutil \
 		+python3-pyserial-asyncio-fast \
 		+python3-tenacity \
-		+python3-uvloop \
-		+python3-cryptography \
-		+python3-construct
+		+python3-uci \
+		+python3-uvloop
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

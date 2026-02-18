@@ -143,8 +143,11 @@ class BridgeSerialProtocol(asyncio.Protocol):
             self.state.record_serial_decode_error()
             return
 
+        # [SIL-2] Ensure packet data is immutable for processing and logging
+        packet_bytes = bytes(encoded_packet)
+
         try:
-            raw_frame = cobs.decode(encoded_packet)
+            raw_frame = cobs.decode(packet_bytes)
             frame = Frame.from_bytes(raw_frame)
 
             if frame.command_id & protocol.CMD_FLAG_COMPRESSED:
@@ -160,7 +163,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         except (cobs.DecodeError, ValueError, msgspec.ValidationError) as exc:
             self.state.record_serial_decode_error()
             logger.debug("Frame parse error: %s", exc)
-            log_hexdump(logger, logging.DEBUG, "Corrupt Packet", encoded_packet)
+            log_hexdump(logger, logging.DEBUG, "Corrupt Packet", packet_bytes)
             exc_str = str(exc).lower()
             if "crc mismatch" in exc_str or "wrong checksum" in exc_str:
                 self.state.record_serial_crc_error()

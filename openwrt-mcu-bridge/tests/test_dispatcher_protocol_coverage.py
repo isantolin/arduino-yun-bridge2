@@ -160,12 +160,16 @@ def test_all_mcu_to_linux_commands_have_registered_handlers() -> None:
     router = MQTTRouter()
 
     runtime = _DummyRuntime()
+    from mcubridge.config.settings import get_default_config
+    from mcubridge.state.context import create_runtime_state
+    state = create_runtime_state(get_default_config())
+
     dispatcher = BridgeDispatcher(
         mcu_registry=registry,
         mqtt_router=router,
+        state=state,
         send_frame=runtime.send_frame,
         acknowledge_frame=runtime.acknowledge_frame,
-        is_link_synchronized=runtime.is_link_synchronized,
         is_topic_action_allowed=runtime.is_topic_action_allowed,
         reject_topic_action=runtime.reject_topic_action,
         publish_bridge_snapshot=runtime.publish_bridge_snapshot,
@@ -211,12 +215,16 @@ def test_ack_required_mcu_to_linux_commands_are_registered() -> None:
     router = MQTTRouter()
 
     runtime = _DummyRuntime()
+    from mcubridge.config.settings import get_default_config
+    from mcubridge.state.context import create_runtime_state
+    state = create_runtime_state(get_default_config())
+
     dispatcher = BridgeDispatcher(
         mcu_registry=registry,
         mqtt_router=router,
+        state=state,
         send_frame=runtime.send_frame,
         acknowledge_frame=runtime.acknowledge_frame,
-        is_link_synchronized=runtime.is_link_synchronized,
         is_topic_action_allowed=runtime.is_topic_action_allowed,
         reject_topic_action=runtime.reject_topic_action,
         publish_bridge_snapshot=runtime.publish_bridge_snapshot,

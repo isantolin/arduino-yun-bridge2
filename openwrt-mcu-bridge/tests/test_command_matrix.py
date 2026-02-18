@@ -235,12 +235,16 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
     mcu_registry = MCUHandlerRegistry()
     mqtt_router = MQTTRouter()
 
+    from mcubridge.config.settings import get_default_config
+    from mcubridge.state.context import create_runtime_state
+    state = create_runtime_state(get_default_config())
+
     dispatcher = BridgeDispatcher(
         mcu_registry=mcu_registry,
         mqtt_router=mqtt_router,
+        state=state,
         send_frame=_noop_send_frame,
         acknowledge_frame=_noop_acknowledge_frame,
-        is_link_synchronized=_link_synchronized,
         is_topic_action_allowed=_always_allowed,
         reject_topic_action=_noop_reject_topic_action,
         publish_bridge_snapshot=_noop_publish_bridge_snapshot,
@@ -280,12 +284,16 @@ async def test_mcu_inbound_commands_are_registered() -> None:
     mcu_registry = MCUHandlerRegistry()
     mqtt_router = MQTTRouter()
 
+    from mcubridge.config.settings import get_default_config
+    from mcubridge.state.context import create_runtime_state
+    state = create_runtime_state(get_default_config())
+
     dispatcher = BridgeDispatcher(
         mcu_registry=mcu_registry,
         mqtt_router=mqtt_router,
+        state=state,
         send_frame=_noop_send_frame,
         acknowledge_frame=_noop_acknowledge_frame,
-        is_link_synchronized=_link_synchronized,
         is_topic_action_allowed=_always_allowed,
         reject_topic_action=_noop_reject_topic_action,
         publish_bridge_snapshot=_noop_publish_bridge_snapshot,

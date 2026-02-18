@@ -1391,7 +1391,11 @@ class RuntimeState(msgspec.Struct):
         return max(0.0, time.monotonic() - self._handshake_last_started)
 
 
-def create_runtime_state(config: RuntimeConfig) -> RuntimeState:
+def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
+    from ..config.settings import RuntimeConfig as RC
+    if isinstance(config, dict):
+        config = msgspec.convert(config, RC)
+
     state = RuntimeState()
     state.mqtt_publish_queue = asyncio.Queue(config.mqtt_queue_limit)
     state.mqtt_queue_limit = config.mqtt_queue_limit

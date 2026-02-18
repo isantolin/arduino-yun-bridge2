@@ -13,6 +13,7 @@ from typing import Any
 
 import msgspec
 import pytest
+from unittest.mock import MagicMock
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 
@@ -53,6 +54,9 @@ class CapturingFakeClient:
     def tls_set(self, **kwargs: Any) -> None:
         self.tls_kwargs = kwargs
 
+    def tls_set_context(self, context: Any) -> None:
+        self.tls_context = context
+
     def username_pw_set(self, *args: Any) -> None:
         self.auth_args = args
 
@@ -89,7 +93,7 @@ def test_publish_safe_configures_tls(
     monkeypatch.setattr(pin_rest_module, "Client", TestClient)
 
     import ssl
-    monkeypatch.setattr(ssl, "create_default_context", lambda **kwargs: "FAKE_TLS_CONTEXT")
+    monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: MagicMock())
 
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"
@@ -107,7 +111,7 @@ def test_publish_safe_configures_tls(
     assert len(captured_clients) == 1
     fake_client = captured_clients[0]
     assert fake_client.auth_args == ("user", "secret")
-    assert fake_client.tls_kwargs["ca_certs"] == str(cafile)
+    assert fake_client.tls_context is not None
 
 
 def test_publish_safe_times_out(

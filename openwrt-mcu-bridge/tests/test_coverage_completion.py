@@ -175,19 +175,6 @@ def test_metrics_more_gaps(runtime_state):
     assert _sanitize_metric_name("test-metric.name") == "test_metric_name"
 
 
-def test_mqtt_helper_apply_tls_settings():
-    config = MagicMock(spec=RuntimeConfig)
-    config.tls_enabled = True
-    config.mqtt_cafile = "ca.pem"
-    config.mqtt_certfile = "cert.pem"
-    config.mqtt_keyfile = "key.pem"
-    config.mqtt_tls_insecure = True
-    client = MagicMock()
-    mqtt_helper.apply_tls_to_paho(client, config)
-    client.tls_set.assert_called_once()
-    client.tls_insecure_set.assert_called_once_with(True)
-
-
 @pytest.mark.asyncio
 async def test_daemon_supervisor_cancelled(real_config):
     daemon = BridgeDaemon(real_config)

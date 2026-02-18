@@ -974,12 +974,15 @@ async def test_dispatcher_gaps():
     mqtt_reg = MagicMock()
     send = AsyncMock()
     ack = AsyncMock()
-    is_sync = MagicMock(return_value=True)
     is_allowed = MagicMock(return_value=True)
     reject = AsyncMock()
     snapshot = AsyncMock()
 
-    disp = dispatcher.BridgeDispatcher(mcu_reg, mqtt_reg, send, ack, is_sync, is_allowed, reject, snapshot)
+    from mcubridge.config.settings import get_default_config
+    from mcubridge.state.context import create_runtime_state
+    state_obj = create_runtime_state(get_default_config())
+
+    disp = dispatcher.BridgeDispatcher(mcu_reg, mqtt_reg, state_obj, send, ack, is_allowed, reject, snapshot)
 
     # _handle_unexpected digital/analog read (pin is None)
     assert await disp._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
@@ -992,13 +995,13 @@ async def test_dispatcher_gaps():
     assert await disp._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is True
 
     # dispatch_mcu_frame pre-sync rejection
-    is_sync.return_value = False
+    state_obj.link_is_synchronized = False
     with patch("mcubridge.services.dispatcher.logger.warning") as mock_warn:
         await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
         assert mock_warn.called
 
     # dispatch_mcu_frame handler exception
-    is_sync.return_value = True
+    state_obj.link_is_synchronized = True
     mcu_reg.get.return_value = AsyncMock(side_effect=ValueError("Boom"))
     await disp.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"test")
     # Should send Error status back

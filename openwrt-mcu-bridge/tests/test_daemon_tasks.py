@@ -12,7 +12,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import FRAME_DELIMITER, Command
-from mcubridge.services.runtime import SerialHandshakeFatal
+from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import (
     MAX_SERIAL_PACKET_BYTES,

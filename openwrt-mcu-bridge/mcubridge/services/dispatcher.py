@@ -13,7 +13,7 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.protocol.topics import Topic, TopicRoute
-from mcubridge.state.context import resolve_command_id
+from mcubridge.state.context import resolve_command_id, RuntimeState
 
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 
@@ -58,24 +58,22 @@ class BridgeDispatcher:
         self,
         mcu_registry: MCUHandlerRegistry,
         mqtt_router: MQTTRouter,
+        state: RuntimeState,
         send_frame: Callable[[int, bytes], Awaitable[bool]],
         acknowledge_frame: Callable[..., Awaitable[None]],
-        is_link_synchronized: Callable[[], bool],
         is_topic_action_allowed: Callable[[Topic | str, str], bool],
         reject_topic_action: Callable[[Message, Topic | str, str], Awaitable[None]],
         publish_bridge_snapshot: Callable[[str, Message | None], Awaitable[None]],
-        record_unknown_command: Callable[[int], None] | None = None,
         on_frame_received: Callable[[int, bytes], None] | None = None,
     ) -> None:
         self.mcu_registry = mcu_registry
         self.mqtt_router = mqtt_router
+        self.state = state
         self.send_frame = send_frame
         self.acknowledge_frame = acknowledge_frame
-        self.is_link_synchronized = is_link_synchronized
         self.is_topic_action_allowed = is_topic_action_allowed
         self.reject_topic_action = reject_topic_action
         self.publish_bridge_snapshot = publish_bridge_snapshot
-        self.record_unknown_command = record_unknown_command
         self.on_frame_received_callback = on_frame_received
 
         # Components (populated via register_components)
@@ -255,8 +253,7 @@ class BridgeDispatcher:
 
         elif response_to_request(command_id) is None:
             logger.warning("Protocol: Unhandled MCU command %s (No handler registered)", command_name)
-            if self.record_unknown_command is not None:
-                self.record_unknown_command(command_id)
+            self.state.record_unknown_command_id(command_id)
             await self.send_frame(Status.NOT_IMPLEMENTED.value, b"")
         else:
             # It's a response ID but no one was waiting for it (or it arrived late)
@@ -308,7 +305,7 @@ class BridgeDispatcher:
         return command_id not in STATUS_VALUES
 
     def _is_frame_allowed_pre_sync(self, command_id: int) -> bool:
-        if self.is_link_synchronized():
+        if self.state.link_is_synchronized:
             return True
         if command_id in STATUS_VALUES:
             return True

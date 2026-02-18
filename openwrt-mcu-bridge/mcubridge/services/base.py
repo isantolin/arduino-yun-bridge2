@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Coroutine
 from typing import Any, Protocol
 
 from aiomqtt.message import Message
@@ -43,8 +42,6 @@ class BridgeContext(Protocol):
         reply_to: Message | None = None,
     ) -> None: ...
 
-    def is_command_allowed(self, command: str) -> bool: ...
-
     async def schedule_background(
         self,
         coroutine: Coroutine[Any, Any, None],
@@ -52,19 +49,4 @@ class BridgeContext(Protocol):
         name: str | None = None,
     ) -> asyncio.Task[Any]: ...
 
-async def dispatch_mqtt_action(
-    action: str,
-    handlers: Mapping[str, Callable[[], Awaitable[None]]],
-    *,
-    logger: logging.Logger,
-    component: str,
-) -> bool:
-    handler = handlers.get(action)
-    if handler is None:
-        logger.debug("Ignoring %s action '%s'", component, action)
-        return False
-    await handler()
-    return True
-
-
-__all__ = ["BridgeContext", "dispatch_mqtt_action"]
+__all__ = ["BridgeContext"]

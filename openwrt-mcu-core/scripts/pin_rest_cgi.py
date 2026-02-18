@@ -22,7 +22,6 @@ from mcubridge.config.common import get_uci_config
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import pin_topic
-from mcubridge.util.mqtt_helper import apply_tls_to_paho
 from paho.mqtt.client import Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -66,7 +65,14 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         callback_api_version=CallbackAPIVersion.VERSION2,
     )
     try:
-        apply_tls_to_paho(client, config)
+        if config.tls_enabled:
+            # Re-use the shared TLS context builder
+            from mcubridge.util.mqtt_helper import configure_tls_context
+            ctx = configure_tls_context(config)
+            client.tls_set_context(ctx)
+            if config.mqtt_tls_insecure:
+                client.tls_insecure_set(True)
+
         if config.mqtt_user:
             client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 

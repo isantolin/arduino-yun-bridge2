@@ -176,7 +176,7 @@ class DatastoreComponent:
 
         await self._publish_value(
             key,
-            cached_value.encode("utf-8"),
+            cached_value,
             reply_context=inbound,
         )
 

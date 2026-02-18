@@ -61,7 +61,6 @@ def mock_context() -> AsyncMock:
         await coro
 
     ctx.schedule_background.side_effect = _schedule
-    ctx.is_command_allowed.return_value = True
     return ctx
 
 
@@ -415,7 +414,8 @@ async def test_handle_run_async_validation_error_sends_error_frame(
     mock_context: AsyncMock,
 ) -> None:
     """Test handle_run_async sends ERROR frame for validation failures."""
-    mock_context.is_command_allowed.return_value = False
+    from mcubridge.policy import AllowedCommandPolicy
+    process_component.state.allowed_policy = AllowedCommandPolicy.from_iterable([])
 
     await process_component.handle_run_async(b"blocked_cmd")
 
@@ -431,7 +431,8 @@ async def test_start_async_os_error_returns_sentinel(
     mock_context: AsyncMock,
 ) -> None:
     """Test start_async returns INVALID_ID_SENTINEL on OSError during exec."""
-    mock_context.is_command_allowed.return_value = True
+    from mcubridge.policy import AllowedCommandPolicy
+    process_component.state.allowed_policy = AllowedCommandPolicy.from_iterable(["sleep"])
 
     with patch.object(ProcessComponent, "_try_acquire_process_slot", new_callable=AsyncMock) as mock_acquire:
         mock_acquire.return_value = True
@@ -524,7 +525,8 @@ async def test_handle_run_async_returns_success_pid(
     mock_context: AsyncMock,
 ) -> None:
     """Test handle_run_async sends success response with PID."""
-    mock_context.is_command_allowed.return_value = True
+    from mcubridge.policy import AllowedCommandPolicy
+    process_component.state.allowed_policy = AllowedCommandPolicy.from_iterable(["echo"])
 
     with patch.object(ProcessComponent, "start_async", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = 42
@@ -536,14 +538,14 @@ async def test_handle_run_async_returns_success_pid(
     call_args = mock_context.send_frame.call_args_list
     assert any(call[0][0] == protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP.value for call in call_args)
 
-
 @pytest.mark.asyncio
 async def test_handle_run_async_invalid_sentinel_sends_error(
     process_component: ProcessComponent,
     mock_context: AsyncMock,
 ) -> None:
     """Test handle_run_async sends ERROR when start_async returns INVALID_ID_SENTINEL."""
-    mock_context.is_command_allowed.return_value = True
+    from mcubridge.policy import AllowedCommandPolicy
+    process_component.state.allowed_policy = AllowedCommandPolicy.from_iterable(["sleep"])
 
     with patch.object(ProcessComponent, "start_async", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = protocol.INVALID_ID_SENTINEL

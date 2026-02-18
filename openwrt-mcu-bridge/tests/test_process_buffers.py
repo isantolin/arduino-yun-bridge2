@@ -66,17 +66,12 @@ def testtrim_process_buffers_mutates_in_place(
     stdout = bytearray(b"a" * MAX_PAYLOAD_SIZE)
     stderr = bytearray(b"b" * 10)
 
-    trim = cast(
-        Callable[[bytearray, bytearray], tuple[bytes, bytes, bool, bool]],
-        getattr(runtime_service, "trim_process_buffers"),
-    )
-
     (
         trimmed_stdout,
         trimmed_stderr,
         stdout_truncated,
         stderr_truncated,
-    ) = trim(
+    ) = runtime_service._process.trim_buffers(
         stdout,
         stderr,
     )

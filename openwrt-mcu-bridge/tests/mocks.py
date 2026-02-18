@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Callable, Coroutine
 
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.runtime import SerialHandshakeFatal
+from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.state.context import RuntimeState
 
 

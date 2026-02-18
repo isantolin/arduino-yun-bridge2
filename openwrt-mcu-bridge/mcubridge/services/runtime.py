@@ -30,7 +30,6 @@ from . import (
 from .dispatcher import BridgeDispatcher
 from .handshake import (
     SendFrameCallable,
-    SerialHandshakeFatal,
     SerialHandshakeManager,
     SerialTimingWindow,
     derive_serial_timing,
@@ -115,13 +114,12 @@ class BridgeService:
         self._dispatcher = BridgeDispatcher(
             mcu_registry=MCUHandlerRegistry(),
             mqtt_router=MQTTRouter(),
+            state=state,
             send_frame=self.send_frame,
             acknowledge_frame=self._acknowledge_mcu_frame,
-            is_link_synchronized=self.is_link_synchronized,
             is_topic_action_allowed=self._is_topic_action_allowed,
             reject_topic_action=self._reject_topic_action,
             publish_bridge_snapshot=self._publish_bridge_snapshot,
-            record_unknown_command=state.record_unknown_command_id,
             on_frame_received=self._serial_flow.on_frame_received,
         )
         self._dispatcher.register_components(
@@ -184,41 +182,7 @@ class BridgeService:
 
         return self._task_group.create_task(coroutine, name=name)
 
-    def is_link_synchronized(self) -> bool:
-        return self.state.link_is_synchronized
-
-    def parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
-        return parse_topic(self.state.mqtt_topic_prefix, topic_name)
-
-    def compute_handshake_tag(self, nonce: bytes) -> bytes:
-        return self._handshake.compute_handshake_tag(nonce)
-
-    def trim_process_buffers(
-        self, stdout_buffer: bytearray, stderr_buffer: bytearray
-    ) -> tuple[bytes, bytes, bool, bool]:
-        return self._process.trim_buffers(stdout_buffer, stderr_buffer)
-
     async def on_serial_connected(self) -> None:
-        """Run post-connection initialisation for the MCU link."""
-
-        self.state.serial_link_connected = True
-        handshake_ok = False
-        fatal_error: SerialHandshakeFatal | None = None
-        try:
-            handshake_ok = await self.sync_link()
-        except SerialHandshakeFatal as exc:
-            fatal_error = exc
-            handshake_ok = False
-        except (OSError, ValueError, RuntimeError) as e:
-            logger.exception("Failed to synchronise MCU link after reconnect: %s", e)
-
-        if fatal_error is not None:
-            raise fatal_error
-
-        if not handshake_ok:
-            self._handshake.raise_if_handshake_fatal()
-            logger.error("Skipping post-connect initialisation because MCU link " "sync failed")
-            return
 
         try:
             version_ok = await self._system.request_mcu_version()
@@ -281,12 +245,13 @@ class BridgeService:
 
     async def handle_mqtt_message(self, inbound: Message) -> None:
         inbound_topic = str(inbound.topic)
+
         # [SIL-2] Performance monitoring for MQTT message processing
         start = time.perf_counter()
         try:
             await self._dispatcher.dispatch_mqtt_message(
                 inbound,
-                self.parse_inbound_topic,
+                self._parse_inbound_topic,
             )
         except (OSError, ValueError, TypeError, AttributeError, RuntimeError) as e:
             logger.critical(
@@ -299,6 +264,9 @@ class BridgeService:
             latency_ms = (time.perf_counter() - start) * 1000.0
             # Note: We share latency stats or can create a specific one for MQTT
             self.state.record_rpc_latency_ms(latency_ms)
+
+    def _parse_inbound_topic(self, topic_name: str) -> TopicRoute | None:
+        return parse_topic(self.state.mqtt_topic_prefix, topic_name)
 
     async def enqueue_mqtt(
         self,
@@ -495,9 +463,6 @@ class BridgeService:
     # ------------------------------------------------------------------
     # Process management
     # ------------------------------------------------------------------
-
-    def is_command_allowed(self, command: str) -> bool:
-        return self.state.allowed_policy.is_allowed(command)
 
     async def _publish_bridge_snapshot(
         self,

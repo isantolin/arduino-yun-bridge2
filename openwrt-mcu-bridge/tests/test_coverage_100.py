@@ -68,9 +68,13 @@ def mock_context() -> AsyncMock:
         except asyncio.CancelledError:
             pass
 
-    ctx.schedule_background.side_effect = _schedule
-    ctx.is_command_allowed.return_value = True
-    return ctx
+            ctx.schedule_background.side_effect = _schedule
+
+
+
+            return ctx
+
+
 
 
 @pytest.fixture
@@ -122,11 +126,13 @@ async def test_collect_output_slot_disappears_mid_operation(
 
 
 @pytest.mark.asyncio
-async def test_handle_kill_with_process_lookup_error(
-    process_component: ProcessComponent,
-    mock_context: AsyncMock,
-) -> None:
+async def test_handle_kill_with_process_lookup_error() -> None:
     """Cover ProcessLookupError branch in handle_kill."""
+    config = _make_config(process_max_concurrent=4)
+    state = create_runtime_state(config)
+    mock_ctx = AsyncMock(spec=BridgeContext)
+    process_component = ProcessComponent(config, state, mock_ctx)
+    
     pid = 99
 
     class AlreadyGoneProc:
@@ -154,44 +160,45 @@ async def test_handle_kill_with_process_lookup_error(
             send_ack=True,
         )
         assert result is True
+        mock_ctx.send_frame.assert_awaited_with(Status.OK.value, b"")
 
 
-@pytest.mark.asyncio
-async def test_handle_kill_with_general_exception(
-    process_component: ProcessComponent,
-    mock_context: AsyncMock,
-) -> None:
-    """Cover general Exception branch in handle_kill."""
-    pid = 88
-
-    class BadProc:
-        def __init__(self):
-            self.pid = 999
-            self.returncode = None
-
-        async def wait(self):
-            await asyncio.sleep(0)
-
-        def kill(self):
-            pass
-
-    proc = BadProc()
-    slot = ManagedProcess(pid=pid, command="test", handle=proc)  # type: ignore
-
-    async with process_component.state.process_lock:
-        process_component.state.running_processes[pid] = slot
-
-    with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
-        mock_term.side_effect = RuntimeError("unexpected")
-
-        with pytest.raises(RuntimeError, match="unexpected"):
-            await process_component.handle_kill(
-                protocol.UINT16_STRUCT.build(pid),
-                send_ack=True,
-            )
-        mock_context.send_frame.assert_not_awaited()
-
-
+    @pytest.mark.asyncio
+    async def test_handle_kill_with_general_exception() -> None:
+        """Cover general Exception branch in handle_kill."""
+        config = _make_config(process_max_concurrent=4)
+        state = create_runtime_state(config)
+        mock_ctx = AsyncMock(spec=BridgeContext)
+        process_component = ProcessComponent(config, state, mock_ctx)
+    
+        pid = 88
+    
+        class BadProc:
+            def __init__(self):
+                self.pid = 999
+                self.returncode = None
+    
+            async def wait(self):
+                await asyncio.sleep(0)
+    
+            def kill(self):
+                pass
+    
+        proc = BadProc()
+        slot = ManagedProcess(pid=pid, command="test", handle=proc)  # type: ignore
+    
+        async with process_component.state.process_lock:
+            process_component.state.running_processes[pid] = slot
+    
+        with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
+            mock_term.side_effect = RuntimeError("unexpected")
+    
+            with pytest.raises(RuntimeError, match="unexpected"):
+                await process_component.handle_kill(
+                    protocol.UINT16_STRUCT.build(pid),
+                    send_ack=True,
+                )
+            mock_ctx.send_frame.assert_not_awaited()
 @pytest.mark.asyncio
 async def test_finalize_async_process_slot_gone(
     process_component: ProcessComponent,
@@ -346,9 +353,6 @@ async def test_process_timeout_zero_no_timeout() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     state.process_timeout = 0  # Disable timeout
-    ctx = AsyncMock(spec=BridgeContext)
-    ctx.is_command_allowed.return_value = True
-
     # Just verify timeout is 0
     assert state.process_timeout == 0
 

@@ -197,9 +197,14 @@ class _SystemComponent:
 def _make_dispatcher(
     calls: _Calls,
     *,
-    is_link_synchronized: Callable[[], bool] | None = None,
+    is_link_synchronized: bool = True,
     is_topic_action_allowed: Callable[[Topic | str, str], bool] | None = None,
 ) -> BridgeDispatcher:
+    from mcubridge.config.settings import get_default_config
+    from mcubridge.state.context import create_runtime_state
+    state = create_runtime_state(get_default_config())
+    state.link_is_synchronized = is_link_synchronized
+
     registry = MCUHandlerRegistry()
     router = MQTTRouter()
 
@@ -209,9 +214,6 @@ def _make_dispatcher(
 
     async def _acknowledge_frame(*args: Any, **kwargs: Any) -> None:
         calls.add("acknowledge_frame", args, kwargs)
-
-    def _is_link_synchronized() -> bool:
-        return True if is_link_synchronized is None else is_link_synchronized()
 
     def _is_topic_action_allowed(topic: Topic | str, action: str) -> bool:
         if is_topic_action_allowed is not None:
@@ -227,9 +229,9 @@ def _make_dispatcher(
     dispatcher = BridgeDispatcher(
         registry,
         router,
+        state,
         _send_frame,
         _acknowledge_frame,
-        _is_link_synchronized,
         _is_topic_action_allowed,
         _reject_topic_action,
         _publish_bridge_snapshot,
@@ -284,7 +286,7 @@ def _make_dispatcher(
 @pytest.mark.asyncio
 async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames() -> None:
     calls = _Calls([])
-    dispatcher = _make_dispatcher(calls, is_link_synchronized=lambda: False)
+    dispatcher = _make_dispatcher(calls, is_link_synchronized=False)
 
     await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"xyz")
 
@@ -295,7 +297,7 @@ async def test_dispatch_mcu_frame_rejects_pre_sync_without_reply_frames() -> Non
 @pytest.mark.asyncio
 async def test_dispatch_mcu_frame_allows_status_frames_pre_sync() -> None:
     calls = _Calls([])
-    dispatcher = _make_dispatcher(calls, is_link_synchronized=lambda: False)
+    dispatcher = _make_dispatcher(calls, is_link_synchronized=False)
 
     await dispatcher.dispatch_mcu_frame(Status.ACK.value, b"")
 

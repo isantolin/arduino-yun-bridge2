@@ -8,19 +8,300 @@
 #define RPC_STRUCTS_H
 
 #include <stdint.h>
+#include <stddef.h>
 #include "rpc_protocol.h"
 #include "rpc_frame.h"
 
 namespace rpc {
 namespace payload {
 
+// --- System ---
+
+struct VersionResponse {
+    uint8_t major;
+    uint8_t minor;
+    static constexpr size_t SIZE = 2;
+    static VersionResponse parse(const uint8_t* data) {
+        return {data[0], data[1]};
+    }
+};
+
+struct FreeMemoryResponse {
+    uint16_t value;
+    static constexpr size_t SIZE = 2;
+    static FreeMemoryResponse parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct Capabilities {
+    uint8_t ver;
+    uint8_t arch;
+    uint8_t dig;
+    uint8_t ana;
+    uint32_t feat;
+    static constexpr size_t SIZE = 8;
+    static Capabilities parse(const uint8_t* data) {
+        Capabilities msg;
+        msg.ver = data[0];
+        msg.arch = data[1];
+        msg.dig = data[2];
+        msg.ana = data[3];
+        msg.feat = rpc::read_u32_be(data + 4);
+        return msg;
+    }
+};
+
+// --- GPIO ---
+
+struct PinMode {
+    uint8_t pin;
+    uint8_t mode;
+    static constexpr size_t SIZE = 2;
+    static PinMode parse(const uint8_t* data) {
+        return {data[0], data[1]};
+    }
+};
+
+struct DigitalWrite {
+    uint8_t pin;
+    uint8_t value;
+    static constexpr size_t SIZE = 2;
+    static DigitalWrite parse(const uint8_t* data) {
+        return {data[0], data[1]};
+    }
+};
+
+struct AnalogWrite {
+    uint8_t pin;
+    uint8_t value;
+    static constexpr size_t SIZE = 2;
+    static AnalogWrite parse(const uint8_t* data) {
+        return {data[0], data[1]};
+    }
+};
+
+struct PinRead {
+    uint8_t pin;
+    static constexpr size_t SIZE = 1;
+    static PinRead parse(const uint8_t* data) {
+        return {data[0]};
+    }
+};
+
+struct DigitalReadResponse {
+    uint8_t value;
+    static constexpr size_t SIZE = 1;
+    static DigitalReadResponse parse(const uint8_t* data) {
+        return {data[0]};
+    }
+};
+
+struct AnalogReadResponse {
+    uint16_t value;
+    static constexpr size_t SIZE = 2;
+    static AnalogReadResponse parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+// --- Console ---
+
+struct ConsoleWrite {
+    const uint8_t* data;
+    size_t length;
+    static ConsoleWrite parse(const uint8_t* data, size_t len) {
+        return {data, len};
+    }
+};
+
+// --- Datastore ---
+
+struct DatastoreGet {
+    const char* key;
+    uint8_t key_len;
+    static DatastoreGet parse(const uint8_t* data) {
+        return {reinterpret_cast<const char*>(data + 1), data[0]};
+    }
+};
+
+struct DatastoreGetResponse {
+    const uint8_t* value;
+    uint8_t value_len;
+    static DatastoreGetResponse parse(const uint8_t* data) {
+        return {data + 1, data[0]};
+    }
+};
+
+struct DatastorePut {
+    const char* key;
+    uint8_t key_len;
+    const uint8_t* value;
+    uint8_t value_len;
+    static DatastorePut parse(const uint8_t* data) {
+        uint8_t k_len = data[0];
+        return {reinterpret_cast<const char*>(data + 1), k_len, data + 1 + k_len + 1, data[1 + k_len]};
+    }
+};
+
+// --- Mailbox ---
+
+struct MailboxPush {
+    const uint8_t* data;
+    uint16_t length;
+    static MailboxPush parse(const uint8_t* data) {
+        return {data + 2, rpc::read_u16_be(data)};
+    }
+};
+
+struct MailboxProcessed {
+    uint16_t message_id;
+    static constexpr size_t SIZE = 2;
+    static MailboxProcessed parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct MailboxAvailableResponse {
+    uint16_t count;
+    static constexpr size_t SIZE = 2;
+    static MailboxAvailableResponse parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct MailboxReadResponse {
+    const uint8_t* content;
+    uint16_t length;
+    static MailboxReadResponse parse(const uint8_t* data) {
+        return {data + 2, rpc::read_u16_be(data)};
+    }
+};
+
+// --- File System ---
+
+struct FileWrite {
+    const char* path;
+    uint8_t path_len;
+    const uint8_t* data;
+    uint16_t data_len;
+    static FileWrite parse(const uint8_t* data) {
+        uint8_t p_len = data[0];
+        return {reinterpret_cast<const char*>(data + 1), p_len, data + 1 + p_len + 2, rpc::read_u16_be(data + 1 + p_len)};
+    }
+};
+
+struct FileRead {
+    const char* path;
+    uint8_t path_len;
+    static FileRead parse(const uint8_t* data) {
+        return {reinterpret_cast<const char*>(data + 1), data[0]};
+    }
+};
+
+struct FileReadResponse {
+    const uint8_t* content;
+    uint16_t length;
+    static FileReadResponse parse(const uint8_t* data) {
+        return {data + 2, rpc::read_u16_be(data)};
+    }
+};
+
+struct FileRemove {
+    const char* path;
+    uint8_t path_len;
+    static FileRemove parse(const uint8_t* data) {
+        return {reinterpret_cast<const char*>(data + 1), data[0]};
+    }
+};
+
+// --- Process ---
+
+struct ProcessRun {
+    const char* command;
+    size_t length;
+    static ProcessRun parse(const uint8_t* data, size_t len) {
+        return {reinterpret_cast<const char*>(data), len};
+    }
+};
+
+struct ProcessRunAsync {
+    const char* command;
+    size_t length;
+    static ProcessRunAsync parse(const uint8_t* data, size_t len) {
+        return {reinterpret_cast<const char*>(data), len};
+    }
+};
+
+struct ProcessKill {
+    uint16_t pid;
+    static constexpr size_t SIZE = 2;
+    static ProcessKill parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct ProcessPoll {
+    uint16_t pid;
+    static constexpr size_t SIZE = 2;
+    static ProcessPoll parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct ProcessRunResponse {
+    uint8_t status;
+    const uint8_t* stdout_data;
+    uint16_t stdout_len;
+    const uint8_t* stderr_data;
+    uint16_t stderr_len;
+    uint8_t exit_code;
+    static ProcessRunResponse parse(const uint8_t* data) {
+        ProcessRunResponse msg;
+        msg.status = data[0];
+        msg.stdout_len = rpc::read_u16_be(data + 1);
+        msg.stdout_data = data + 3;
+        msg.stderr_len = rpc::read_u16_be(data + 3 + msg.stdout_len);
+        msg.stderr_data = data + 3 + msg.stdout_len + 2;
+        msg.exit_code = data[3 + msg.stdout_len + 2 + msg.stderr_len];
+        return msg;
+    }
+};
+
+struct ProcessRunAsyncResponse {
+    uint16_t pid;
+    static constexpr size_t SIZE = 2;
+    static ProcessRunAsyncResponse parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct ProcessPollResponse {
+    uint8_t status;
+    uint8_t exit_code;
+    const uint8_t* stdout_data;
+    uint16_t stdout_len;
+    const uint8_t* stderr_data;
+    uint16_t stderr_len;
+    static ProcessPollResponse parse(const uint8_t* data) {
+        ProcessPollResponse msg;
+        msg.status = data[0];
+        msg.exit_code = data[1];
+        msg.stdout_len = rpc::read_u16_be(data + 2);
+        msg.stdout_data = data + 4;
+        msg.stderr_len = rpc::read_u16_be(data + 4 + msg.stdout_len);
+        msg.stderr_data = data + 4 + msg.stdout_len + 2;
+        return msg;
+    }
+};
+
+// --- Handshake ---
+
 struct HandshakeConfig {
     uint16_t ack_timeout_ms;
     uint8_t ack_retry_limit;
     uint32_t response_timeout_ms;
-
     static constexpr size_t SIZE = 7;
-
     static HandshakeConfig parse(const uint8_t* data) {
         HandshakeConfig msg;
         msg.ack_timeout_ms = rpc::read_u16_be(data + 0);

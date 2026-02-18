@@ -11,7 +11,7 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
+from mcubridge.services.handshake import derive_serial_timing
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
@@ -165,7 +165,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
 
         frame_ids = [frame_id for frame_id, _ in sent_frames]
         assert any(fid in {Command.CMD_LINK_RESET.value, 64} for fid in frame_ids)
-        # Legacy fallback might imply we are synced or we skipped sync. 
+        # Legacy fallback might imply we are synced or we skipped sync.
         # If we are synced, good.
         assert runtime_state.link_is_synchronized is True
 
@@ -676,7 +676,7 @@ def test_mqtt_datastore_put_updates_local_cache(
             service = BridgeService(runtime_config, runtime_state)
             topic = f"{runtime_config.mqtt_topic}/system/bridge/handshake/get"
             msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
-    
+
             await service.handle_mqtt_message(msg)
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/handshake/value" in reply.topic_name
@@ -694,7 +694,7 @@ def test_mqtt_datastore_put_updates_local_cache(
             service = BridgeService(runtime_config, runtime_state)
             topic = f"{runtime_config.mqtt_topic}/system/bridge/summary/get"
             msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
-    
+
             await service.handle_mqtt_message(msg)
         reply = runtime_state.mqtt_publish_queue.get_nowait()
         assert "bridge/summary/value" in reply.topic_name
@@ -779,16 +779,16 @@ def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
     ) -> None:
         async def _run() -> None:
             service = BridgeService(runtime_config, runtime_state)
-    
+
             topic = f"{runtime_config.mqtt_topic}/datastore/get/missing"
-    
+
             class Props:
                 ResponseTopic = "err/topic"
-    
+
             msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
-    
+
             await service.handle_mqtt_message(msg)
-    
+
             # CURRENT BEHAVIOR: Silence on miss (QueueEmpty).
             # Ideal behavior: Error response.
             # Updating test to match current reality to unblock CI.

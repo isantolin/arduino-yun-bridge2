@@ -135,9 +135,9 @@ async def test_handle_run_validation_error(process_component: ProcessComponent, 
 
         with patch.object(ProcessComponent, "start_async", new_callable=AsyncMock) as mock_start:
             mock_start.return_value = 123
-    
+
             await process_component.handle_run_async(b"sleep 10")
-    
+
             mock_start.assert_awaited_once_with("sleep 10", ["sleep", "10"])
             mock_context.send_frame.assert_awaited_once_with(
                 Command.CMD_PROCESS_RUN_ASYNC_RESP.value, protocol.UINT16_STRUCT.build(123)

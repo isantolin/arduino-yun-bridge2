@@ -132,7 +132,7 @@ async def test_handle_kill_with_process_lookup_error() -> None:
     state = create_runtime_state(config)
     mock_ctx = AsyncMock(spec=BridgeContext)
     process_component = ProcessComponent(config, state, mock_ctx)
-    
+
     pid = 99
 
     class AlreadyGoneProc:
@@ -170,29 +170,29 @@ async def test_handle_kill_with_process_lookup_error() -> None:
         state = create_runtime_state(config)
         mock_ctx = AsyncMock(spec=BridgeContext)
         process_component = ProcessComponent(config, state, mock_ctx)
-    
+
         pid = 88
-    
+
         class BadProc:
             def __init__(self):
                 self.pid = 999
                 self.returncode = None
-    
+
             async def wait(self):
                 await asyncio.sleep(0)
-    
+
             def kill(self):
                 pass
-    
+
         proc = BadProc()
         slot = ManagedProcess(pid=pid, command="test", handle=proc)  # type: ignore
-    
+
         async with process_component.state.process_lock:
             process_component.state.running_processes[pid] = slot
-    
+
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             mock_term.side_effect = RuntimeError("unexpected")
-    
+
             with pytest.raises(RuntimeError, match="unexpected"):
                 await process_component.handle_kill(
                     protocol.UINT16_STRUCT.build(pid),

@@ -9,7 +9,6 @@ import subprocess
 from asyncio import StreamReader
 from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
-from typing import Any, cast
 
 import msgspec
 import psutil
@@ -34,6 +33,7 @@ from mcubridge.protocol.structures import (
     ProcessRunAsyncResponsePacket,
     ProcessRunPacket,
     ProcessRunResponsePacket,
+    UINT16_STRUCT,
 )
 
 from ..config.const import MQTT_EXPIRY_SHELL, PROCESS_KILL_WAIT_TIMEOUT, PROCESS_SYNC_KILL_WAIT_TIMEOUT
@@ -797,9 +797,9 @@ class ProcessComponent(msgspec.Struct):
         return b"".join(
             [
                 bytes([status & UINT8_MASK]),
-                cast(Any, protocol.UINT16_STRUCT).build(len(stdout_trim)),
+                UINT16_STRUCT.build(len(stdout_trim)),
                 stdout_trim,
-                cast(Any, protocol.UINT16_STRUCT).build(len(stderr_trim)),
+                UINT16_STRUCT.build(len(stderr_trim)),
                 stderr_trim,
             ]
         )

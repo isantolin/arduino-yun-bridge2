@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-from typing import Any, Final, Sized, TypeGuard, cast
+from typing import Final, Sized, TypeGuard, cast
 
 import msgspec
 import serial_asyncio_fast  # type: ignore
@@ -25,6 +25,7 @@ from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, rle
 from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.structures import UINT32_STRUCT
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
@@ -348,7 +349,7 @@ class SerialTransport:
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
-        payload = cast(Any, protocol.UINT32_STRUCT).build(target_baud)
+        payload = UINT32_STRUCT.build(target_baud)
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(3),

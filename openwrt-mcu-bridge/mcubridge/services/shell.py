@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import logging
 from contextlib import AsyncExitStack
-from typing import Any, cast
 
 from aiomqtt.message import Message
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import ShellAction, Status
+from mcubridge.protocol.structures import UINT16_STRUCT
 
 from ..config.const import MQTT_EXPIRY_SHELL
 from ..config.settings import RuntimeConfig
@@ -193,7 +193,7 @@ class ShellComponent:
 
     async def _handle_kill(self, pid_model: ShellPidPayload) -> None:
         await self.process.handle_kill(
-            cast(Any, protocol.UINT16_STRUCT).build(pid_model.pid),
+            UINT16_STRUCT.build(pid_model.pid),
             send_ack=False,
         )
 

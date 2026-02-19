@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, cast
 
 import msgspec
 from aiomqtt.message import Message
@@ -19,6 +18,7 @@ from mcubridge.protocol.structures import (
     MailboxProcessedPacket,
     MailboxPushPacket,
     MailboxReadResponsePacket,
+    UINT16_STRUCT,
 )
 
 from ..config.settings import RuntimeConfig
@@ -114,7 +114,7 @@ class MailboxComponent:
         if payload:
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
-                cast(Any, protocol.UINT16_STRUCT).build(Command.CMD_MAILBOX_AVAILABLE.value),
+                UINT16_STRUCT.build(Command.CMD_MAILBOX_AVAILABLE.value),
             )
             return False
 

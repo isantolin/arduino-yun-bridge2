@@ -4,7 +4,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
-from typing import Any, cast
+from typing import Any
 
 import msgspec
 from aiomqtt.message import Message
@@ -17,7 +17,7 @@ from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
 from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from ..state.context import RuntimeState
-from ..protocol.structures import AckPacket
+from ..protocol.structures import AckPacket, UINT16_STRUCT
 from . import (
     ConsoleComponent,
     DatastoreComponent,
@@ -450,7 +450,7 @@ class BridgeService:
                 logger.debug("MCU > ACK received for 0x%02X", command_id)
             except (msgspec.ValidationError, ValueError):
                 # Fallback for older firmware or malformed payload
-                command_id = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
+                command_id = UINT16_STRUCT.parse(payload[:2])
                 logger.debug("MCU > ACK received for 0x%02X (fallback parse)", command_id)
         else:
             logger.debug("MCU > ACK received")

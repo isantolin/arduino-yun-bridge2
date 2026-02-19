@@ -11,7 +11,7 @@ import base64
 from binascii import crc32
 from collections.abc import Iterable
 from enum import IntEnum
-from typing import Annotated, Any, ClassVar, Self, Type, TypeVar, cast
+from typing import Annotated, Any, ClassVar, Final, Self, Type, TypeVar, cast
 
 import msgspec
 import construct as construct_raw
@@ -20,6 +20,19 @@ from . import protocol
 # [SIL-2] Explicit Any cast for construct to satisfy pyright dynamic lookup
 construct: Any = construct_raw
 BinStruct = construct.Struct
+
+# --- Basic Binary Types (Restored from protocol.py) ---
+UINT8_STRUCT: Final = construct.Int8ub
+UINT16_STRUCT: Final = construct.Int16ub
+UINT32_STRUCT: Final = construct.Int32ub
+NONCE_COUNTER_STRUCT: Final = construct.Int64ub
+CRC_STRUCT: Final = construct.Int32ub
+
+CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
+    "version" / construct.Int8ub,
+    "payload_len" / construct.Int16ub,
+    "command_id" / construct.Enum(construct.Int16ub, protocol.Command, protocol.Status, _default=protocol.INVALID_ID_SENTINEL),
+)
 
 T = TypeVar("T", bound="BaseStruct")
 
@@ -292,7 +305,7 @@ def _compute_crc32(data: bytes) -> int:
 # Uses RawCopy to allow access to raw bytes for Checksum and legacy byte-based handlers.
 FRAME_STRUCT = BinStruct(
     "content" / construct.RawCopy(BinStruct(
-        "header" / cast(Any, protocol.CRC_COVERED_HEADER_STRUCT),
+        "header" / CRC_COVERED_HEADER_STRUCT,
         "payload" / construct.RawCopy(construct.Switch(construct.this.header.command_id, {
             protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
             protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
@@ -321,7 +334,7 @@ FRAME_STRUCT = BinStruct(
         }, default=construct.Bytes(construct.this.header.payload_len))),
     )),
     "crc" / construct.Checksum(
-        protocol.CRC_STRUCT,
+        CRC_STRUCT,
         _compute_crc32,
         construct.this.content.data
     ),

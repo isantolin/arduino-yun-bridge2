@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from typing import Any
 
 import tenacity
 from mcubridge.config.const import (
@@ -20,7 +20,7 @@ from mcubridge.protocol.contracts import (
     response_to_request,
 )
 from mcubridge.protocol.protocol import ACK_ONLY_COMMANDS, RESPONSE_ONLY_COMMANDS, Status
-from mcubridge.protocol.structures import PendingCommand
+from mcubridge.protocol.structures import PendingCommand, UINT16_STRUCT
 
 SendFrameCallable = Callable[[int, bytes], Awaitable[bool]]
 
@@ -162,7 +162,7 @@ class SerialFlowController:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if len(payload) >= 2:
-                ack_target = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
+                ack_target = UINT16_STRUCT.parse(payload[:2])
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
@@ -197,7 +197,7 @@ class SerialFlowController:
                 return
 
             if len(payload) >= 2:
-                target = cast(Any, protocol.UINT16_STRUCT).parse(payload[:2])
+                target = UINT16_STRUCT.parse(payload[:2])
                 if target == pending.command_id:
                     pending.mark_failure(command_id)
                     return

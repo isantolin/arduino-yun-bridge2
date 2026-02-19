@@ -2,9 +2,6 @@
  * BridgeControl - Sketch Funcional con Password en Runtime
  * * Ahora el secreto se define AQUÍ en el sketch y se pasa a la librería.
  */
-#define BRIDGE_ENABLE_DATASTORE 0
-#define BRIDGE_ENABLE_FILESYSTEM 0
-#define BRIDGE_ENABLE_PROCESS 0
 
 // CONFIGURACIÓN DEL SECRETO
 // Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)

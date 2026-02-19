@@ -28,6 +28,9 @@
 // [SIL-2] ETL Configuration MUST be first to ensure consistent profile (e.g. no CRC tables)
 #include "etl_profile.h"
 
+// [SIL-2] Centralized configuration for class layout consistency (ODR)
+#include "config/bridge_config.h"
+
 #include <Arduino.h>
 #include <Stream.h>
 #include <PacketSerial.h>

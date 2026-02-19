@@ -58,7 +58,7 @@ from mcubridge.metrics import (
 from mcubridge.security.security import verify_crypto_integrity
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import cleanup_status_file, status_writer
 from mcubridge.transport import (
     SerialTransport,

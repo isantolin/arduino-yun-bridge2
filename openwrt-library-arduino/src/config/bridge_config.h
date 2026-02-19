@@ -25,6 +25,20 @@
 #define BRIDGE_ENABLE_PROCESS 1
 #endif
 
+// [SIL-2] Resource Allocation Tuning
+// On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).
+// Previously this was 1, but we merged the active frame buffer into the queue.
+#if defined(ARDUINO_ARCH_AVR)
+  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+    #define BRIDGE_MAX_PENDING_TX_FRAMES 2
+  #endif
+#else
+  #include "../protocol/rpc_protocol.h"
+  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
+    #define BRIDGE_MAX_PENDING_TX_FRAMES (rpc::RPC_MAX_PENDING_TX_FRAMES + 1)
+  #endif
+#endif
+
 // Assumed RX buffer size for the underlying serial implementation.
 // AVR HardwareSerial uses 64 bytes by default in many cores.
 #ifndef BRIDGE_HW_RX_BUFFER_SIZE

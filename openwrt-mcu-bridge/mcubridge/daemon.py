@@ -275,28 +275,6 @@ class BridgeDaemon:
             log.debug("%s supervisor cancelled", spec.name)
             raise
 
-    class _SupervisorCallbacks:
-        """Helper to avoid nested functions in supervisor."""
-
-        __slots__ = ("name", "log", "state")
-
-        def __init__(self, name: str, log: logging.Logger, state: RuntimeState | None):
-            self.name = name
-            self.log = log
-            self.state = state
-
-        def before_sleep(self, retry_state: tenacity.RetryCallState) -> None:
-            exc = retry_state.outcome.exception() if retry_state.outcome else None
-            delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
-            self.log.error("%s failed (%s); restarting in %.1fs", self.name, exc, delay)
-
-        def after_retry(self, retry_state: tenacity.RetryCallState) -> None:
-            exc = retry_state.outcome.exception() if retry_state.outcome else None
-            if self.state is not None and exc:
-                is_last = retry_state.next_action is None
-                delay = retry_state.next_action.sleep if retry_state.next_action else 0.0
-                self.state.record_supervisor_failure(self.name, backoff=delay, exc=exc, fatal=is_last)
-
     async def run(self) -> None:
         """Main async entry point."""
         supervised_tasks = self._setup_supervision()

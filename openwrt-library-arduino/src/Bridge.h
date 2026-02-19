@@ -150,17 +150,7 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 // Note: Macros are now centralized in config/bridge_config.h
 
 // [SIL-2] Resource Allocation Tuning
-// On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).
-// Previously this was 1, but we merged the active frame buffer into the queue.
-#if defined(ARDUINO_ARCH_AVR)
-  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-    #define BRIDGE_MAX_PENDING_TX_FRAMES 2
-  #endif
-#else
-  #ifndef BRIDGE_MAX_PENDING_TX_FRAMES
-    #define BRIDGE_MAX_PENDING_TX_FRAMES (rpc::RPC_MAX_PENDING_TX_FRAMES + 1)
-  #endif
-#endif
+// Note: BRIDGE_MAX_PENDING_TX_FRAMES moved to bridge_config.h
 
 using BridgePacketSerial = PacketSerial;
 
@@ -199,27 +189,6 @@ class BridgeClass : public bridge::router::ICommandHandler {
   using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
   using StatusHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
   
-  #if BRIDGE_ENABLE_DATASTORE
-  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
-  #endif
-  
-  #if BRIDGE_ENABLE_MAILBOX
-  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
-  #endif
-
-  #if BRIDGE_ENABLE_FILESYSTEM
-  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-  #endif
-
-  #if BRIDGE_ENABLE_PROCESS
-  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t,
-                                     const uint8_t*, uint16_t)>;
-  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*,
-                                      uint16_t, const uint8_t*, uint16_t)>;
-  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;  // PID from daemon (signed for error sentinel)
-  #endif
-
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
 
@@ -255,22 +224,22 @@ class BridgeClass : public bridge::router::ICommandHandler {
   inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
   #if BRIDGE_ENABLE_DATASTORE
-  inline void onDataStoreGetResponse(DataStoreGetHandler handler) { _datastore_get_handler = handler; }
+  inline void onDataStoreGetResponse(etl::delegate<void(const char*, const uint8_t*, uint16_t)> handler);
   #endif
 
   #if BRIDGE_ENABLE_MAILBOX
-  inline void onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
-  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) { _mailbox_available_handler = handler; }
+  inline void onMailboxMessage(etl::delegate<void(const uint8_t*, uint16_t)> handler) { _mailbox_handler = handler; }
+  inline void onMailboxAvailableResponse(etl::delegate<void(uint16_t)> handler) { _mailbox_available_handler = handler; }
   #endif
 
   #if BRIDGE_ENABLE_FILESYSTEM
-  inline void onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
+  inline void onFileSystemReadResponse(etl::delegate<void(const uint8_t*, uint16_t)> handler) { _file_system_read_handler = handler; }
   #endif
 
   #if BRIDGE_ENABLE_PROCESS
-  inline void onProcessRunResponse(ProcessRunHandler handler) { _process_run_handler = handler; }
-  inline void onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
-  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
+  inline void onProcessRunResponse(etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> handler) { _process_run_handler = handler; }
+  inline void onProcessPollResponse(etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> handler) { _process_poll_handler = handler; }
+  inline void onProcessRunAsyncResponse(etl::delegate<void(int16_t)> handler) { _process_run_async_handler = handler; }
   #endif
 
   // Internal / Lower Level
@@ -333,22 +302,22 @@ class BridgeClass : public bridge::router::ICommandHandler {
   StatusHandler _status_handler;
 
   #if BRIDGE_ENABLE_DATASTORE
-  DataStoreGetHandler _datastore_get_handler;
+  etl::delegate<void(const char*, const uint8_t*, uint16_t)> _datastore_get_handler;
   #endif
 
   #if BRIDGE_ENABLE_MAILBOX
-  MailboxHandler _mailbox_handler;
-  MailboxAvailableHandler _mailbox_available_handler;
+  etl::delegate<void(const uint8_t*, uint16_t)> _mailbox_handler;
+  etl::delegate<void(uint16_t)> _mailbox_available_handler;
   #endif
 
   #if BRIDGE_ENABLE_FILESYSTEM
-  FileSystemReadHandler _file_system_read_handler;
+  etl::delegate<void(const uint8_t*, uint16_t)> _file_system_read_handler;
   #endif
 
   #if BRIDGE_ENABLE_PROCESS
-  ProcessRunHandler _process_run_handler;
-  ProcessPollHandler _process_poll_handler;
-  ProcessRunAsyncHandler _process_run_async_handler;
+  etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> _process_run_handler;
+  etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> _process_poll_handler;
+  etl::delegate<void(int16_t)> _process_run_async_handler;
   #endif
   // Pending Queues
   struct PendingTxFrame {
@@ -477,10 +446,12 @@ class DataStoreClass {
   friend class bridge::test::DataStoreTestAccessor;
   #endif
  public:
+  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
+
   DataStoreClass();
   void put(etl::string_view key, etl::string_view value);
   void requestGet(etl::string_view key);
-  inline void onDataStoreGetResponse(BridgeClass::DataStoreGetHandler handler) {
+  inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
     Bridge.onDataStoreGetResponse(handler);
   }
 
@@ -493,11 +464,18 @@ class DataStoreClass {
   etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
 };
 extern DataStoreClass DataStore;
+
+inline void BridgeClass::onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler handler) { 
+  _datastore_get_handler = handler; 
+}
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
 class MailboxClass {
  public:
+  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
+
   MailboxClass() {}
   
   // [SIL-2] Inlined for optimization (-Os)
@@ -528,10 +506,10 @@ class MailboxClass {
     (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
   }
 
-  inline void onMailboxMessage(BridgeClass::MailboxHandler handler) {
+  inline void onMailboxMessage(MailboxHandler handler) {
     Bridge.onMailboxMessage(handler);
   }
-  inline void onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler handler) {
+  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) {
     Bridge.onMailboxAvailableResponse(handler);
   }
 };
@@ -541,6 +519,8 @@ extern MailboxClass Mailbox;
 #if BRIDGE_ENABLE_FILESYSTEM
 class FileSystemClass {
  public:
+  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+
   FileSystemClass() {}
 
   inline void write(etl::string_view filePath, const uint8_t* data, size_t length) {
@@ -577,7 +557,7 @@ class FileSystemClass {
     }
   }
 
-  inline void onFileSystemReadResponse(BridgeClass::FileSystemReadHandler handler) {
+  inline void onFileSystemReadResponse(FileSystemReadHandler handler) {
     Bridge.onFileSystemReadResponse(handler);
   }
 };
@@ -590,19 +570,23 @@ class ProcessClass {
   friend class bridge::test::ProcessTestAccessor;
   #endif
  public:
+  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
+
   ProcessClass();
   void run(etl::string_view command);
   void runAsync(etl::string_view command);
   void poll(int16_t pid);
   void kill(int16_t pid);
 
-  inline void onProcessRunResponse(BridgeClass::ProcessRunHandler handler) {
+  inline void onProcessRunResponse(ProcessRunHandler handler) {
     Bridge.onProcessRunResponse(handler);
   }
-  inline void onProcessPollResponse(BridgeClass::ProcessPollHandler handler) {
+  inline void onProcessPollResponse(ProcessPollHandler handler) {
     Bridge.onProcessPollResponse(handler);
   }
-  inline void onProcessRunAsyncResponse(BridgeClass::ProcessRunAsyncHandler handler) {
+  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
     Bridge.onProcessRunAsyncResponse(handler);
   }
 

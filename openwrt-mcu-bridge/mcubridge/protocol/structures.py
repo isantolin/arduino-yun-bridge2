@@ -274,6 +274,12 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
     )
 
 
+class SetBaudratePacket(BaseStruct, frozen=True):
+    baudrate: Annotated[int, msgspec.Meta(ge=0)]
+
+    _SCHEMA = BinStruct("baudrate" / construct.Int32ub)
+
+
 # --- Framing Schema ---
 
 def _compute_crc32(data: bytes) -> int:

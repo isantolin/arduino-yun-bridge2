@@ -31,7 +31,9 @@ CRC_STRUCT: Final = construct.Int32ub
 CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
     "version" / construct.Int8ub,
     "payload_len" / construct.Int16ub,
-    "command_id" / construct.Enum(construct.Int16ub, protocol.Command, protocol.Status, _default=protocol.INVALID_ID_SENTINEL),
+    "command_id" / construct.Enum(
+        construct.Int16ub, protocol.Command, protocol.Status, _default=protocol.INVALID_ID_SENTINEL
+    ),
 )
 
 T = TypeVar("T", bound="BaseStruct")

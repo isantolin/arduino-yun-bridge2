@@ -33,8 +33,6 @@ from __future__ import annotations
 
 from enum import IntEnum, StrEnum
 from typing import Final
-
-from construct import Enum, Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
 '''
 
 # =============================================================================
@@ -163,8 +161,6 @@ HANDSHAKE_CONSTANTS: tuple[ConstDef, ...] = (
 HANDSHAKE_STRING_CONSTANTS: tuple[tuple[str, str], ...] = (
     ("tag_algorithm", "HANDSHAKE_TAG_ALGORITHM"),
     ("tag_description", "HANDSHAKE_TAG_DESCRIPTION"),
-    ("config_format", "HANDSHAKE_CONFIG_FORMAT"),
-    ("config_description", "HANDSHAKE_CONFIG_DESCRIPTION"),
     ("hkdf_algorithm", "HANDSHAKE_HKDF_ALGORITHM"),
     ("nonce_format_description", "HANDSHAKE_NONCE_FORMAT_DESCRIPTION"),
 )
@@ -174,37 +170,6 @@ HANDSHAKE_BYTES_CONSTANTS: tuple[tuple[str, str], ...] = (
     ("hkdf_salt", "HANDSHAKE_HKDF_SALT"),
     ("hkdf_info_auth", "HANDSHAKE_HKDF_INFO_AUTH"),
 )
-
-# Construct format mapping
-CONSTRUCT_MAPPING: dict[str, str] = {
-    "datastore_key_len_format": "Int8ub",
-    "datastore_value_len_format": "Int8ub",
-    "crc_covered_header_format": (
-        "BinStruct(\n"
-        '    "version" / Int8ub,\n'
-        '    "payload_len" / Int16ub,\n'
-        '    "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),\n'
-        ")"
-    ),
-    "crc_format": "Int32ub",
-    "uint8_format": "Int8ub",
-    "uint16_format": "Int16ub",
-    "uint32_format": "Int32ub",
-    "pin_read_format": "Int8ub",
-    "pin_write_format": (
-        "BinStruct(\n" '    "pin" / Int8ub,\n' '    "value" / Int8ub,\n' ")"
-    ),
-    "capabilities_format": (
-        "BinStruct(\n"
-        '    "ver" / Int8ub,\n'
-        '    "arch" / Int8ub,\n'
-        '    "dig" / Int8ub,\n'
-        '    "ana" / Int8ub,\n'
-        '    "feat" / Int32ub,\n'
-        ")"
-    ),
-    "nonce_counter_format": "Int64ub",
-}
 
 # Topic -> Action enum class mapping
 TOPIC_ACTION_ENUM_MAP: dict[str, str] = {
@@ -426,28 +391,8 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
     out.write("} // namespace rpc\n#endif\n")
 
 
-def _parse_format_string(fmt: str, field_names: list[str]) -> StructDef:
-    """Parse a Python struct format string (e.g. '>HBI') into a StructDef."""
-    if not fmt.startswith(">"):
-        raise ValueError(f"Format string must be Big Endian (start with '>'): {fmt}")
-
-    fmt = fmt[1:]
-    if len(fmt) != len(field_names):
-        raise ValueError(f"Format length {len(fmt)} does not match field names count {len(field_names)}")
-
-    fields = []
-    for char, name in zip(fmt, field_names):
-        if char not in TYPE_MAPPING:
-            raise ValueError(f"Unsupported format char: {char}")
-
-        ctype, size, read_func = TYPE_MAPPING[char]
-        fields.append(StructField(name, ctype, size, read_func))
-
-    return StructDef("HandshakeConfig", fields)  # Name is hardcoded for now
-
-
 def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
-    """Generate C++ payload structures."""
+    """Generate C++ payload structures boilerplate (Centralized in BridgeClass)."""
     out.write(f"{CPP_HEADER}\n")
     out.write("#ifndef RPC_STRUCTS_H\n#define RPC_STRUCTS_H\n\n")
     out.write("#include <stdint.h>\n")
@@ -456,35 +401,9 @@ def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
     out.write("namespace rpc {\n")
     out.write("namespace payload {\n\n")
 
-    # 1. Handshake Config Struct
-    handshake = spec.get("handshake", {})
-    if handshake and "config_format" in handshake:
-        fields = ["ack_timeout_ms", "ack_retry_limit", "response_timeout_ms"]
-        struct_def = _parse_format_string(handshake["config_format"], fields)
-
-        out.write(f"struct {struct_def.name} {{\n")
-
-        # Fields
-        for f in struct_def.fields:
-            out.write(f"    {f.cpp_type} {f.name};\n")
-
-        out.write(f"\n    static constexpr size_t SIZE = {struct_def.total_size};\n\n")
-
-        # Parse method
-        out.write(f"    static {struct_def.name} parse(const uint8_t* data) {{\n")
-        out.write(f"        {struct_def.name} msg;\n")
-
-        offset = 0
-        for f in struct_def.fields:
-            if f.read_func:
-                out.write(f"        msg.{f.name} = {f.read_func}(data + {offset});\n")
-            else:
-                out.write(f"        msg.{f.name} = data[{offset}];\n")
-            offset += f.size
-
-        out.write("        return msg;\n")
-        out.write("    }\n")
-        out.write("};\n\n")
+    # [SIL-2] Legacy hardcoded struct generation removed.
+    # Parsing is now centralized in BridgeClass to ensure
+    # deterministic stack usage and ODR compliance.
 
     out.write("} // namespace payload\n")
     out.write("} // namespace rpc\n")
@@ -510,32 +429,19 @@ def _write_python_handshake(out: TextIO, handshake: dict[str, Any]) -> None:
         if spec_key in handshake:
             out.write(f'{py_name}: Final[bytes] = b"{handshake[spec_key]}"\n')
 
-    # Config struct (hardcoded structure)
-    out.write(
-        "HANDSHAKE_CONFIG_STRUCT: Final = BinStruct(\n"
-        "    \"ack_timeout_ms\" / Int16ub,\n"
-        "    \"ack_retry_limit\" / Int8ub,\n"
-        "    \"response_timeout_ms\" / Int32ub,\n"
-        ")\n"
-    )
-    out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore\n")
+    out.write("HANDSHAKE_CONFIG_SIZE: Final[int] = 7\n")
     out.write("\n")
 
 
 def _write_python_data_formats(out: TextIO, formats: dict[str, Any]) -> None:
-    """Write Python data format constants with Construct structs."""
+    """Write Python data format constants."""
     for key, val in formats.items():
         name = key.upper()
         out.write(f'{name}: Final[str] = "{val}"\n')
-        if key in CONSTRUCT_MAPPING:
-            struct_name = name.replace("_FORMAT", "_STRUCT")
-            out.write(f"{struct_name}: Final = {CONSTRUCT_MAPPING[key]}\n")
 
-    out.write("DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()  # type: ignore\n")
-    out.write("DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()  # type: ignore\n")
-    out.write("CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()  # type: ignore\n")
-    out.write("CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()  # type: ignore\n")
-    out.write("MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE\n\n\n")
+    out.write("CRC_COVERED_HEADER_SIZE: Final[int] = 5\n")
+    out.write("CRC_SIZE: Final[int] = 4\n")
+    out.write("MIN_FRAME_SIZE: Final[int] = 9\n\n\n")
 
 
 def _write_python_mqtt_subscriptions(out: TextIO, spec: dict[str, Any]) -> None:

@@ -4,8 +4,6 @@ from __future__ import annotations
 from enum import IntEnum, StrEnum
 from typing import Final
 
-from construct import Enum, Int8ub, Int16ub, Int32ub, Int64ub, Struct as BinStruct  # type: ignore
-
 MQTT_WILDCARD_SINGLE: Final[str] = "+"
 MQTT_WILDCARD_MULTI: Final[str] = "#"
 
@@ -286,18 +284,12 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
 )
 
 
-DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
-DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
-CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
-    "version" / Int8ub,
-    "payload_len" / Int16ub,
-    "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),
-)
-CRC_STRUCT: Final = Int32ub
-UINT8_STRUCT: Final = Int8ub
-UINT16_STRUCT: Final = Int16ub
-UINT32_STRUCT: Final = Int32ub
-NONCE_COUNTER_STRUCT: Final = Int64ub
+CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
+CRC_FORMAT: Final[str] = ">I"
+UINT8_FORMAT: Final[str] = ">B"
+UINT16_FORMAT: Final[str] = ">H"
+UINT32_FORMAT: Final[str] = ">I"
+NONCE_COUNTER_FORMAT: Final[str] = ">Q"
 CRC_COVERED_HEADER_SIZE: Final[int] = 5
 CRC_SIZE: Final[int] = 4
 MIN_FRAME_SIZE: Final[int] = 9

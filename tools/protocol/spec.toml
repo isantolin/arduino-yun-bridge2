@@ -75,8 +75,6 @@ nonce_length = 16
 tag_length = 16
 tag_algorithm = "HMAC-SHA256"
 tag_description = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
-config_format = ">HBI"
-config_description = "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), response_timeout_ms (uint32)"
 ack_timeout_min_ms = 25
 ack_timeout_max_ms = 60000
 response_timeout_min_ms = 100
@@ -96,16 +94,11 @@ nonce_counter_bytes = 8
 nonce_format_description = "random[8] || counter[8] - counter is big-endian uint64 for anti-replay"
 
 [data_formats]
-datastore_key_len_format = ">B"
-datastore_value_len_format = ">B"
 crc_covered_header_format = ">BHH"
 crc_format = ">I"
 uint8_format = ">B"
 uint16_format = ">H"
 uint32_format = ">I"
-pin_read_format = ">B"
-pin_write_format = ">BB"
-capabilities_format = ">BBBBI"
 nonce_counter_format = ">Q"
 
 [mqtt_suffixes]

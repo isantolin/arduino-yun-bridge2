@@ -89,7 +89,7 @@ class BridgeService:
         self.state = state
         self._serial_sender: SendFrameCallable | None = None
         self._serial_timing: SerialTimingWindow = derive_serial_timing(config)
-        self._task_group: asyncio.Group | None = None
+        self._task_group: asyncio.TaskGroup | None = None
 
         self._console = ConsoleComponent(config, state, self)
         self._datastore = DatastoreComponent(config, state, self)
@@ -460,11 +460,11 @@ class BridgeService:
 
     async def handle_status(self, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)
-        
+
         # [SIL-2] Improved status reporting with descriptive names
         desc = _STATUS_DESCRIPTIONS.get(status, "Unknown status code")
         text = payload.decode("utf-8", errors="ignore") if payload else ""
-        
+
         log_method = logger.warning if status != Status.ACK else logger.debug
         if text:
             log_method("MCU > %s: %s (%s)", status.name, desc, text)
@@ -496,79 +496,6 @@ class BridgeService:
             content_type="application/json",
             expiry=MQTT_EXPIRY_SHELL,
             properties=tuple(properties),
-        )
-
-    # ------------------------------------------------------------------
-    # Process management
-    # ------------------------------------------------------------------
-
-    async def _publish_bridge_snapshot(
-        self,
-        flavor: str,
-        inbound: Message | None,
-    ) -> None:
-        if flavor == "handshake":
-            snapshot = self.state.build_handshake_snapshot()
-            topic_segments = ("bridge", "handshake", "value")
-        else:
-            snapshot = self.state.build_bridge_snapshot()
-            topic_segments = ("bridge", "summary", "value")
-        topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            *topic_segments,
-        )
-        await self.publish(
-            topic=topic,
-            payload=msgspec.json.encode(snapshot),
-            content_type="application/json",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=(("bridge-snapshot", flavor),),
-            reply_to=inbound,
-        )
-
-    def _is_topic_action_allowed(
-        self,
-        topic_type: Topic | str,
-        action: str,
-    ) -> bool:
-        if not action:
-            return True
-        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
-        return self.state.topic_authorization.allows(topic_value, action)
-
-    async def _reject_topic_action(
-        self,
-        inbound: Message,
-        topic_type: Topic | str,
-        action: str,
-    ) -> None:
-        topic_value = topic_type.value if isinstance(topic_type, Topic) else topic_type
-        logger.warning(
-            "Blocked MQTT action topic=%s action=%s (message topic=%s)",
-            topic_value,
-            action or "<missing>",
-            str(inbound.topic),
-        )
-        payload = msgspec.json.encode(
-            {
-                "status": "forbidden",
-                "topic": topic_value,
-                "action": action,
-            }
-        )
-        status_topic = topic_path(
-            self.state.mqtt_topic_prefix,
-            Topic.SYSTEM,
-            Topic.STATUS,
-        )
-        await self.publish(
-            topic=status_topic,
-            payload=payload,
-            content_type="application/json",
-            expiry=MQTT_EXPIRY_SHELL,
-            properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
-            reply_to=inbound,
         )
 
     # ------------------------------------------------------------------

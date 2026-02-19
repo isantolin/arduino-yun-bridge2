@@ -29,7 +29,7 @@ from ..config.settings import RuntimeConfig
 from ..mqtt.messages import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import MAX_PAYLOAD_SIZE, Command, Status
-from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket
+from ..protocol.structures import CapabilitiesPacket, HandshakeConfigPacket, AckPacket
 from ..protocol.topics import handshake_topic
 from ..security.security import (
     derive_handshake_key,

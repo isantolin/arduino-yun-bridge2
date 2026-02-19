@@ -14,6 +14,7 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.state.context import resolve_command_id, RuntimeState
+from mcubridge.protocol.structures import AckPacket
 
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 

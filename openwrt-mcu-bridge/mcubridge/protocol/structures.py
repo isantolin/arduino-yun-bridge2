@@ -176,6 +176,12 @@ class PinReadPacket(BaseStruct, frozen=True):
     _SCHEMA = BinStruct("pin" / construct.Int8ub)
 
 
+class AckPacket(BaseStruct, frozen=True):
+    command_id: Annotated[int, msgspec.Meta(ge=0)]
+
+    _SCHEMA = BinStruct("command_id" / construct.Int16ub)
+
+
 class ConsoleWritePacket(BaseStruct, frozen=True):
     data: bytes
 

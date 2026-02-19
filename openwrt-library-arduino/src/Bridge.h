@@ -191,6 +191,25 @@ class BridgeClass : public bridge::router::ICommandHandler {
   using AnalogReadHandler = etl::delegate<void(uint16_t)>;
   using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
   using StatusHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
+
+  #if BRIDGE_ENABLE_DATASTORE
+  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
+  #endif
+
+  #if BRIDGE_ENABLE_MAILBOX
+  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
+  #endif
+
+  #if BRIDGE_ENABLE_FILESYSTEM
+  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  #endif
+
+  #if BRIDGE_ENABLE_PROCESS
+  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
+  #endif
   
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
@@ -227,22 +246,22 @@ class BridgeClass : public bridge::router::ICommandHandler {
   inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
   #if BRIDGE_ENABLE_DATASTORE
-  inline void onDataStoreGetResponse(etl::delegate<void(const char*, const uint8_t*, uint16_t)> handler);
+  inline void onDataStoreGetResponse(DataStoreGetHandler handler) { _datastore_get_handler = handler; }
   #endif
 
   #if BRIDGE_ENABLE_MAILBOX
-  inline void onMailboxMessage(etl::delegate<void(const uint8_t*, uint16_t)> handler) { _mailbox_handler = handler; }
-  inline void onMailboxAvailableResponse(etl::delegate<void(uint16_t)> handler) { _mailbox_available_handler = handler; }
+  inline void onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
+  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) { _mailbox_available_handler = handler; }
   #endif
 
   #if BRIDGE_ENABLE_FILESYSTEM
-  inline void onFileSystemReadResponse(etl::delegate<void(const uint8_t*, uint16_t)> handler) { _file_system_read_handler = handler; }
+  inline void onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
   #endif
 
   #if BRIDGE_ENABLE_PROCESS
-  inline void onProcessRunResponse(etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> handler) { _process_run_handler = handler; }
-  inline void onProcessPollResponse(etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> handler) { _process_poll_handler = handler; }
-  inline void onProcessRunAsyncResponse(etl::delegate<void(int16_t)> handler) { _process_run_async_handler = handler; }
+  inline void onProcessRunResponse(ProcessRunHandler handler) { _process_run_handler = handler; }
+  inline void onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
+  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
   #endif
 
   // Internal / Lower Level
@@ -467,10 +486,6 @@ class DataStoreClass {
   etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
 };
 extern DataStoreClass DataStore;
-
-inline void BridgeClass::onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler handler) { 
-  _datastore_get_handler = handler; 
-}
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX

@@ -431,19 +431,19 @@ void integrated_test_extreme_coverage() {
 
     // 20. Callbacks
     #if BRIDGE_ENABLE_DATASTORE
-    Bridge.onDataStoreGetResponse(BridgeClass::DataStoreGetHandler::create<test_ds_cb>());
+    Bridge.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<test_ds_cb>());
     #endif
     #if BRIDGE_ENABLE_FILESYSTEM
-    Bridge.onFileSystemReadResponse(BridgeClass::FileSystemReadHandler::create<test_fs_cb>());
+    Bridge.onFileSystemReadResponse(FileSystemClass::FileSystemReadHandler::create<test_fs_cb>());
     #endif
     #if BRIDGE_ENABLE_PROCESS
-    Bridge.onProcessRunResponse(BridgeClass::ProcessRunHandler::create<test_pr_run_cb>());
-    Bridge.onProcessPollResponse(BridgeClass::ProcessPollHandler::create<test_pr_poll_cb>());
-    Bridge.onProcessRunAsyncResponse(BridgeClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
+    Bridge.onProcessRunResponse(ProcessClass::ProcessRunHandler::create<test_pr_run_cb>());
+    Bridge.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<test_pr_poll_cb>());
+    Bridge.onProcessRunAsyncResponse(ProcessClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
     #endif
     #if BRIDGE_ENABLE_MAILBOX
-    Bridge.onMailboxMessage(BridgeClass::MailboxHandler::create<test_mb_cb>());
-    Bridge.onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
+    Bridge.onMailboxMessage(MailboxClass::MailboxHandler::create<test_mb_cb>());
+    Bridge.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
     #endif
 }
 

@@ -11,6 +11,7 @@ import asyncio  # noqa: E402
 import pytest  # noqa: E402
 from mcubridge.config.settings import RuntimeConfig  # noqa: E402
 from mcubridge.protocol import protocol  # noqa: E402
+from mcubridge.protocol import structures  # noqa: E402
 from mcubridge.protocol.frame import Frame  # noqa: E402
 from mcubridge.protocol.protocol import Command  # noqa: E402
 from mcubridge.services.runtime import BridgeService  # noqa: E402
@@ -63,7 +64,7 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
     # for speed, unless we re-added it. The code I wrote:
     # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
 
-    raw = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+    raw = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=1,
         payload_len=0,
         command_id=Command.CMD_LINK_SYNC.value

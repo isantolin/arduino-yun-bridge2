@@ -64,23 +64,13 @@ HANDSHAKE_NONCE_RANDOM_BYTES: Final[int] = 8
 HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = 8
 HANDSHAKE_TAG_ALGORITHM: Final[str] = "HMAC-SHA256"
 HANDSHAKE_TAG_DESCRIPTION: Final[str] = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
-HANDSHAKE_CONFIG_FORMAT: Final[str] = ">HBI"
-HANDSHAKE_CONFIG_DESCRIPTION: Final[str] = (
-    "Serialized timing config: ack_timeout_ms (uint16), ack_retry_limit (uint8), "
-    "response_timeout_ms (uint32)"
-)
 HANDSHAKE_HKDF_ALGORITHM: Final[str] = "HKDF-SHA256"
 HANDSHAKE_NONCE_FORMAT_DESCRIPTION: Final[str] = (
     "random[8] || counter[8] - counter is big-endian uint64 for anti-replay"
 )
 HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
 HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
-HANDSHAKE_CONFIG_STRUCT: Final = BinStruct(
-    "ack_timeout_ms" / Int16ub,
-    "ack_retry_limit" / Int8ub,
-    "response_timeout_ms" / Int32ub,
-)
-HANDSHAKE_CONFIG_SIZE: Final[int] = HANDSHAKE_CONFIG_STRUCT.sizeof()  # type: ignore
+HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 
 class CompressionType(IntEnum):
     NONE = 0
@@ -296,46 +286,21 @@ MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]
 )
 
 
-DATASTORE_KEY_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_KEY_LEN_STRUCT: Final = Int8ub
-DATASTORE_VALUE_LEN_FORMAT: Final[str] = ">B"
 DATASTORE_VALUE_LEN_STRUCT: Final = Int8ub
-CRC_COVERED_HEADER_FORMAT: Final[str] = ">BHH"
 CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
     "version" / Int8ub,
     "payload_len" / Int16ub,
     "command_id" / Enum(Int16ub, Command, Status, _default=INVALID_ID_SENTINEL),
 )
-CRC_FORMAT: Final[str] = ">I"
 CRC_STRUCT: Final = Int32ub
-UINT8_FORMAT: Final[str] = ">B"
 UINT8_STRUCT: Final = Int8ub
-UINT16_FORMAT: Final[str] = ">H"
 UINT16_STRUCT: Final = Int16ub
-UINT32_FORMAT: Final[str] = ">I"
 UINT32_STRUCT: Final = Int32ub
-PIN_READ_FORMAT: Final[str] = ">B"
-PIN_READ_STRUCT: Final = Int8ub
-PIN_WRITE_FORMAT: Final[str] = ">BB"
-PIN_WRITE_STRUCT: Final = BinStruct(
-    "pin" / Int8ub,
-    "value" / Int8ub,
-)
-CAPABILITIES_FORMAT: Final[str] = ">BBBBI"
-CAPABILITIES_STRUCT: Final = BinStruct(
-    "ver" / Int8ub,
-    "arch" / Int8ub,
-    "dig" / Int8ub,
-    "ana" / Int8ub,
-    "feat" / Int32ub,
-)
-NONCE_COUNTER_FORMAT: Final[str] = ">Q"
 NONCE_COUNTER_STRUCT: Final = Int64ub
-DATASTORE_KEY_LEN_SIZE: Final[int] = DATASTORE_KEY_LEN_STRUCT.sizeof()  # type: ignore
-DATASTORE_VALUE_LEN_SIZE: Final[int] = DATASTORE_VALUE_LEN_STRUCT.sizeof()  # type: ignore
-CRC_COVERED_HEADER_SIZE: Final[int] = CRC_COVERED_HEADER_STRUCT.sizeof()  # type: ignore
-CRC_SIZE: Final[int] = CRC_STRUCT.sizeof()  # type: ignore
-MIN_FRAME_SIZE: Final[int] = CRC_COVERED_HEADER_SIZE + CRC_SIZE
+CRC_COVERED_HEADER_SIZE: Final[int] = 5
+CRC_SIZE: Final[int] = 4
+MIN_FRAME_SIZE: Final[int] = 9
 
 
 MQTT_SUFFIX_INCOMING_AVAILABLE: Final[str] = "incoming_available"

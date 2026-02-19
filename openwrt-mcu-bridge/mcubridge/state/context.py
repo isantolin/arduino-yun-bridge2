@@ -87,29 +87,12 @@ __all__: Final[tuple[str, ...]] = (
     "PendingPinRequest",
     "ManagedProcess",
     "create_runtime_state",
-    "_ExponentialBackoff",
     "HandshakeSnapshot",
     "SerialLinkSnapshot",
     "McuVersion",
     "SerialPipelineSnapshot",
     "BridgeSnapshot",
 )
-
-
-class _ExponentialBackoff:
-    """Compatibility wrapper for tenacity wait strategy."""
-
-    def __init__(self, min_val: float, max_val: float, multiplier: float) -> None:
-        self._strategy = tenacity.wait_exponential(
-            multiplier=multiplier,
-            min=min_val,
-            max=max_val,
-        )
-
-    def __call__(self, retry_state: Any) -> float:
-        if not hasattr(retry_state, "attempt_number"):
-            retry_state.attempt_number = 1
-        return self._strategy(retry_state)
 
 
 def resolve_command_id(command_id: int) -> str:

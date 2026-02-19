@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 static unsigned long g_test_millis = 10000; // Start at non-zero
@@ -111,15 +112,11 @@ void test_bridge_gaps() {
     Bridge.process(); 
 
     // Gap: Retransmission logic and failure streak
-    // Note: _onAckTimeout() checks _retry_count >= _ack_retry_limit to enter safe state.
-    // _retransmitLastFrame() increments _retry_count but only if _pending_tx_queue is non-empty.
-    // For coverage, we directly set _retry_count to exceed limit and call _onAckTimeout.
     ba.setUnsynchronized(); ba.fsmHandshakeComplete(); ba.fsmSendCritical();
     ba.setAckTimeoutMs(1000);
     ba.setAckRetryLimit(1);
-    ba.setRetryCount(ba.getAckRetryLimit()); // Set at limit
+    ba.setRetryCount(ba.getAckRetryLimit()); 
     
-    // Directly call timeout handler - exceeds limit -> enterSafeState
     Bridge._onAckTimeout();
     assert(!Bridge.isSynchronized());
 }
@@ -158,13 +155,13 @@ void test_console_gaps() {
     Console.flush();
 }
 
-// Trampoline for FileSystem callback
 static void file_system_read_trampoline(const uint8_t* d, uint16_t s) { (void)d; (void)s; }
 
 // --- COBERTURA FILESYSTEM.CPP ---
 void test_filesystem_gaps() {
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
 
     // Gap: write with data too large
     uint8_t super_large[rpc::MAX_PAYLOAD_SIZE + 10];
@@ -182,18 +179,19 @@ void test_filesystem_gaps() {
     FileSystem.remove(long_path);
 
     // Gap: handleResponse with valid read handler
-    FileSystem.onFileSystemReadResponse(FileSystemClass::FileSystemReadHandler::create<file_system_read_trampoline>());
+    Bridge.onFileSystemReadResponse(BridgeClass::FileSystemReadHandler::create<file_system_read_trampoline>());
     rpc::Frame f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
     f.header.payload_length = 4;
-    memcpy(f.payload.data(), "DATA", 4);
-    FileSystem.handleResponse(f);
+    memcpy(f.payload.data(), "\0\x02OK", 4);
+    ba.dispatch(f);
 }
 
 // --- COBERTURA MAILBOX.CPP ---
 void test_mailbox_gaps() {
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
 
     // Gap: requestRead, requestAvailable
     Mailbox.requestRead();
@@ -204,17 +202,18 @@ void test_mailbox_gaps() {
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
     f.header.payload_length = 2;
     rpc::write_u16_be(f.payload.data(), 5);
-    Mailbox.handleResponse(f);
+    ba.dispatch(f);
 
     // Gap: handleResponse with other command
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-    Mailbox.handleResponse(f);
+    ba.dispatch(f);
 }
 
 // --- COBERTURA PROCESS.CPP ---
 void test_process_gaps() {
     CaptureStream stream;
     setup_env(stream);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
 
     // Gap: poll with PID tracking
     Process.runAsync("test");
@@ -223,21 +222,21 @@ void test_process_gaps() {
     f_pid.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
     f_pid.header.payload_length = 2;
     rpc::write_u16_be(f_pid.payload.data(), 42);
-    Process.handleResponse(f_pid);
+    ba.dispatch(f_pid);
     Process.poll(42);
     Process.kill(42);
 
     // Gap: handleResponse CMD_PROCESS_POLL_RESP (not running)
     rpc::Frame f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
-    f.header.payload_length = 7;
+    f.header.payload_length = 8;
     f.payload[0] = 0x30; // OK
-    f.payload[1] = 0; // Not Running
+    f.payload[1] = 0; // exit_code
     rpc::write_u16_be(&f.payload[2], 1); 
     f.payload[4] = 'o';
     rpc::write_u16_be(&f.payload[5], 1); 
     f.payload[7] = 'e';
-    Process.handleResponse(f);
+    ba.dispatch(f);
 }
 
 } // namespace

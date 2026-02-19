@@ -7,17 +7,15 @@
 #if BRIDGE_ENABLE_PROCESS
 
 ProcessClass::ProcessClass() 
-  : _pending_process_pids(), // Auto-initialized by ETL
-    _process_run_handler(),
-    _process_poll_handler(),
-    _process_run_async_handler() {
+  : _pending_process_pids() // Auto-initialized by ETL
+{
 }
 
 void ProcessClass::run(etl::string_view command) {
   if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN, 
                                command, rpc::MAX_PAYLOAD_SIZE - 1)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Command too long"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
@@ -25,7 +23,7 @@ void ProcessClass::runAsync(etl::string_view command) {
   if (command.empty()) return;
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 
                                command, rpc::MAX_PAYLOAD_SIZE - 1)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Command too long"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
@@ -43,7 +41,7 @@ void ProcessClass::poll(int16_t pid) {
 
   const uint16_t pid_u16 = static_cast<uint16_t>(pid);
   if (!_pushPendingProcessPid(pid_u16)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     return;
   }
 
@@ -52,38 +50,6 @@ void ProcessClass::poll(int16_t pid) {
 
 void ProcessClass::kill(int16_t pid) {
   sendPidCommand(rpc::CommandId::CMD_PROCESS_KILL, static_cast<uint16_t>(pid));
-}
-
-void ProcessClass::handleResponse(const rpc::Frame& frame) {
-  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
-  const size_t payload_length = frame.header.payload_length;
-  const uint8_t* payload_data = frame.payload.data();
-
-  if (payload_length == 0 || !payload_data) return;
-
-  switch (command) {
-    case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (_process_run_handler.is_valid()) {
-        auto msg = rpc::payload::ProcessRunResponse::parse(payload_data);
-        _process_run_handler(static_cast<rpc::StatusCode>(msg.status), msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
-      }
-      break;
-    case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-      if (_process_run_async_handler.is_valid() && payload_length >= rpc::payload::ProcessRunAsyncResponse::SIZE) {
-        auto msg = rpc::payload::ProcessRunAsyncResponse::parse(payload_data);
-        _process_run_async_handler(static_cast<int>(msg.pid));
-      }
-      break;
-    case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (_process_poll_handler.is_valid()) {
-        auto msg = rpc::payload::ProcessPollResponse::parse(payload_data);
-        _process_poll_handler(static_cast<rpc::StatusCode>(msg.status), msg.exit_code, msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
-        _popPendingProcessPid(); 
-      }
-      break;
-    default:
-      break;
-  }
 }
 
 bool ProcessClass::_pushPendingProcessPid(uint16_t pid) {

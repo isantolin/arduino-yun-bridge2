@@ -95,7 +95,8 @@ void test_extreme_datastore() {
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
     resp.header.payload_length = 5;
     resp.payload[0] = 10; // Dice que vienen 10 bytes, pero solo hay 4 restantes
-    DataStore.handleResponse(resp);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.dispatch(resp);
 }
 
 // --- TEST: FILESYSTEM ERRORES (FILESYSTEM.CPP) ---
@@ -117,7 +118,8 @@ void test_extreme_filesystem() {
     rpc::Frame resp;
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
     resp.header.payload_length = 0;
-    FileSystem.handleResponse(resp);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.dispatch(resp);
 }
 
 // --- TEST: PROCESS Y MAILBOX (PROCESS.CPP / MAILBOX.CPP) ---
@@ -138,7 +140,8 @@ void test_extreme_process_mailbox() {
     rpc::Frame resp;
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
     resp.header.payload_length = 1; // Debería tener al menos Status + stdout_len + stderr_len
-    Process.handleResponse(resp);
+    auto ba = bridge::test::TestAccessor::create(Bridge);
+    ba.dispatch(resp);
 }
 
 } // namespace

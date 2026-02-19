@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdio.h> // Added for debug printf
+#include <stdio.h>
 
 #include "Bridge.h"
 
@@ -29,7 +29,6 @@ ProcessClass Process;
 namespace {
 
 // Local COBS implementation for test frame generation and parsing
-// (Since src/protocol/cobs.h was removed in favor of PacketSerial)
 struct TestCOBS {
     static size_t encode(const uint8_t* source, size_t length, uint8_t* destination) {
         size_t read_index = 0;
@@ -250,18 +249,16 @@ class TestFrameBuilder {
 struct FrameList {
   rpc::Frame frames[16];
   size_t count;
-  etl::optional<rpc::FrameError> last_error;  // [SIL-2] Optional error using etl::expected pattern
+  etl::optional<rpc::FrameError> last_error;
 };
 
-// Updated parse_frames to simulate PacketSerial's packet extraction + FrameParser
 static FrameList parse_frames(const uint8_t* bytes, size_t len) {
   FrameList out;
   out.count = 0;
-  out.last_error.reset();  // No error initially
+  out.last_error.reset();
 
   rpc::FrameParser parser;
   
-  // Simple delimiter splitting + COBS decode simulation
   uint8_t packet_buf[kMaxEncodedSize];
   size_t packet_idx = 0;
   uint8_t decoded_buf[rpc::MAX_RAW_FRAME_SIZE];
@@ -270,10 +267,8 @@ static FrameList parse_frames(const uint8_t* bytes, size_t len) {
     uint8_t b = bytes[i];
     if (b == rpc::RPC_FRAME_DELIMITER) {
       if (packet_idx > 0) {
-        // Decode COBS
         size_t decoded_len = TestCOBS::decode(packet_buf, packet_idx, decoded_buf);
         if (decoded_len > 0) {
-            // Parse Frame using etl::expected API
             if (out.count < (sizeof(out.frames) / sizeof(out.frames[0]))) {
                 auto result = parser.parse(etl::span<const uint8_t>(decoded_buf, decoded_len));
                 if (result.has_value()) {
@@ -284,7 +279,7 @@ static FrameList parse_frames(const uint8_t* bytes, size_t len) {
             }
         }
       }
-      packet_idx = 0; // Reset for next packet
+      packet_idx = 0;
     } else {
         if (packet_idx < kMaxEncodedSize) {
             packet_buf[packet_idx++] = b;
@@ -299,6 +294,19 @@ static void reset_bridge_with_stream(RecordingStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(stream);
   Bridge.begin();
+  
+  DataStore.~DataStoreClass();
+  new (&DataStore) DataStoreClass();
+  
+  Mailbox.~MailboxClass();
+  new (&Mailbox) MailboxClass();
+  
+  FileSystem.~FileSystemClass();
+  new (&FileSystem) FileSystemClass();
+  
+  Process.~ProcessClass();
+  new (&Process) ProcessClass();
+
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setIdle();
   Console.begin();
@@ -307,6 +315,18 @@ static void reset_bridge_with_stream(RecordingStream& stream) {
 static void restore_bridge_to_serial() {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass(Serial1);
+  
+  DataStore.~DataStoreClass();
+  new (&DataStore) DataStoreClass();
+  
+  Mailbox.~MailboxClass();
+  new (&Mailbox) MailboxClass();
+  
+  FileSystem.~FileSystemClass();
+  new (&FileSystem) FileSystemClass();
+  
+  Process.~ProcessClass();
+  new (&Process) ProcessClass();
 }
 
 static void inject_ack(RecordingStream& stream, uint16_t command_id) {
@@ -434,16 +454,7 @@ static void test_console_write_outbound_frame() {
   const size_t sent = Console.write(reinterpret_cast<const uint8_t*>(msg), sizeof(msg) - 1);
   TEST_ASSERT_EQ_UINT(sent, sizeof(msg) - 1);
 
-  // DEBUG: Print buffer content
-  printf("DEBUG: Stream TX buffer len: %zu\n", stream.tx_buffer.len);
-  for (size_t i = 0; i < stream.tx_buffer.len; i++) {
-      printf("%02X ", stream.tx_buffer.data[i]);
-  }
-  printf("\n");
-
   const FrameList frames = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
-  printf("DEBUG: Frames parsed: %zu\n", frames.count);
-  
   TEST_ASSERT(frames.count >= 1);
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE));
@@ -487,7 +498,6 @@ static void test_mailbox_send_outbound_frame() {
   const rpc::Frame& f = frames.frames[0];
   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
   TEST_ASSERT(f.header.payload_length >= 2);
-  // Payload is just the message "hi" (no length prefix)
   TEST_ASSERT(test_memeq(f.payload.data(), "hi", 2));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
@@ -512,8 +522,6 @@ static void test_filesystem_write_outbound_frame() {
   const uint8_t path_len = f.payload[0];
   TEST_ASSERT_EQ_UINT(path_len, sizeof(path) - 1);
   TEST_ASSERT(test_memeq(f.payload.data() + 1, path, path_len));
-  
-  // Data follows immediately after path (no length prefix for data in this protocol version)
   TEST_ASSERT(test_memeq(f.payload.data() + 1 + path_len, data, sizeof(data)));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE));
@@ -546,7 +554,7 @@ static void test_datastore_get_response_handler() {
 
   DatastoreGetState state;
   DatastoreGetState::instance = &state;
-  DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<datastore_get_trampoline>());
+  Bridge.onDataStoreGetResponse(BridgeClass::DataStoreGetHandler::create<datastore_get_trampoline>());
   auto dsa = bridge::test::DataStoreTestAccessor::create(DataStore);
   TEST_ASSERT(dsa.trackPendingKey("k"));
 
@@ -557,7 +565,8 @@ static void test_datastore_get_response_handler() {
   f.payload[0] = static_cast<uint8_t>(sizeof(value));
   memcpy(f.payload.data() + 1, value, sizeof(value));
 
-  DataStore.handleResponse(f);
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.dispatch(f);
 
   TEST_ASSERT(state.called);
   TEST_ASSERT(state.key.equals_cstr("k"));
@@ -569,9 +578,12 @@ static void test_datastore_get_response_handler() {
 }
 
 static void test_mailbox_read_response_handler() {
+  RecordingStream stream;
+  reset_bridge_with_stream(stream);
+
   MailboxState state;
   MailboxState::instance = &state;
-  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<mailbox_trampoline>());
+  Bridge.onMailboxMessage(BridgeClass::MailboxHandler::create<mailbox_trampoline>());
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
@@ -580,24 +592,28 @@ static void test_mailbox_read_response_handler() {
   rpc::write_u16_be(f.payload.data(), static_cast<uint16_t>(sizeof(msg)));
   memcpy(f.payload.data() + 2, msg, sizeof(msg));
 
-  Mailbox.handleResponse(f);
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.dispatch(f);
 
   TEST_ASSERT(state.called);
   TEST_ASSERT_EQ_UINT(state.message.len, sizeof(msg));
   TEST_ASSERT(test_memeq(state.message.data, msg, sizeof(msg)));
 
   MailboxState::instance = nullptr;
+  restore_bridge_to_serial();
 }
 
 static void test_process_poll_response_handler() {
+  RecordingStream stream;
+  reset_bridge_with_stream(stream);
+
   ProcessPollState state;
   ProcessPollState::instance = &state;
-  Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<process_poll_trampoline>());
+  Bridge.onProcessPollResponse(BridgeClass::ProcessPollHandler::create<process_poll_trampoline>());
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
 
-  // Payload: [status(1)][exit_code(1)][stdout_len(2)][stdout][stderr_len(2)][stderr]
   const uint8_t stdout_msg[] = {'o'};
   const uint8_t stderr_msg[] = {'e'};
 
@@ -612,7 +628,8 @@ static void test_process_poll_response_handler() {
   f.header.payload_length = static_cast<uint16_t>(
       2 + 2 + sizeof(stdout_msg) + 2 + sizeof(stderr_msg));
 
-  Process.handleResponse(f);
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.dispatch(f);
 
   TEST_ASSERT(state.called);
   TEST_ASSERT(state.status == rpc::StatusCode::STATUS_OK);
@@ -623,10 +640,10 @@ static void test_process_poll_response_handler() {
   TEST_ASSERT(test_memeq(state.stderr_data.data, stderr_msg, sizeof(stderr_msg)));
 
   ProcessPollState::instance = nullptr;
+  restore_bridge_to_serial();
 }
 
 static void test_console_write_when_not_begun() {
-  // Directly exercise the guard branch.
   auto ca = bridge::test::ConsoleTestAccessor::create(Console);
   ca.setBegun(false);
   TEST_ASSERT_EQ_UINT(Console.write('a'), 0);
@@ -639,7 +656,6 @@ static void test_console_write_char_flush_on_newline() {
   reset_bridge_with_stream(stream);
   stream.tx_buffer.clear();
 
-  // Writing a newline flushes.
   TEST_ASSERT_EQ_UINT(Console.write('h'), 1);
   TEST_ASSERT_EQ_UINT(Console.write('\n'), 1);
   TEST_ASSERT(stream.tx_buffer.len > 0);
@@ -652,7 +668,6 @@ static void test_console_write_char_flush_on_newline() {
 }
 
 static void test_console_read_sends_xon_success_and_failure() {
-  // Success case: XON sent and _xoff_sent cleared.
   RecordingStream stream;
   reset_bridge_with_stream(stream);
   stream.tx_buffer.clear();
@@ -665,8 +680,6 @@ static void test_console_read_sends_xon_success_and_failure() {
   TEST_ASSERT(!ca.getXoffSent());
   TEST_ASSERT(stream.tx_buffer.len > 0);
   restore_bridge_to_serial();
-
-  // Failure case removed: PacketSerial does not report write failures, so sendFrame always returns true.
 }
 
 struct ProcessRunState {
@@ -701,12 +714,10 @@ static void test_process_run_outbound_and_error_branches() {
   reset_bridge_with_stream(stream);
   stream.tx_buffer.clear();
 
-  // Null / empty command: no frame.
   Process.run(nullptr);
   Process.run("");
   TEST_ASSERT_EQ_UINT(stream.tx_buffer.len, 0);
 
-  // Too-large command: emits STATUS_ERROR with flash message.
   char huge[rpc::MAX_PAYLOAD_SIZE + 2];
   etl::fill_n(huge, sizeof(huge), 'a');
   huge[sizeof(huge) - 1] = '\0';
@@ -715,9 +726,8 @@ static void test_process_run_outbound_and_error_branches() {
   const FrameList frames_err = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
   TEST_ASSERT(frames_err.count >= 1);
   TEST_ASSERT_EQ_UINT(frames_err.frames[0].header.command_id,
-                      rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
+                      rpc::to_underlying(rpc::StatusCode::STATUS_OVERFLOW));
 
-  // Normal command: emits CMD_PROCESS_RUN.
   stream.tx_buffer.clear();
   Process.run("echo hi");
   const FrameList frames_ok = parse_frames(stream.tx_buffer.data, stream.tx_buffer.len);
@@ -733,15 +743,12 @@ static void test_process_poll_queue_full_and_pop_empty() {
   reset_bridge_with_stream(stream);
   stream.tx_buffer.clear();
 
-  // Negative pid: no frame.
   Process.poll(-1);
   TEST_ASSERT_EQ_UINT(stream.tx_buffer.len, 0);
 
-  // Pop on empty returns sentinel.
   auto pa = bridge::test::ProcessTestAccessor::create(Process);
   TEST_ASSERT_EQ_UINT(pa.popPendingPid(), rpc::RPC_INVALID_ID_SENTINEL);
 
-  // Fill queue (BRIDGE_MAX_PENDING_PROCESS_POLLS == 1), second poll emits STATUS_ERROR.
   Process.poll(10);
   Process.poll(11);
 
@@ -750,25 +757,28 @@ static void test_process_poll_queue_full_and_pop_empty() {
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL));
   TEST_ASSERT_EQ_UINT(frames.frames[1].header.command_id,
-                      rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
+                      rpc::to_underlying(rpc::StatusCode::STATUS_OVERFLOW));
 
   restore_bridge_to_serial();
 }
 
 static void test_process_run_response_length_guards() {
+  RecordingStream stream;
+  reset_bridge_with_stream(stream);
+
   ProcessRunState state;
   ProcessRunState::instance = &state;
-  Process.onProcessRunResponse(ProcessClass::ProcessRunHandler::create<process_run_trampoline>());
+  Bridge.onProcessRunResponse(BridgeClass::ProcessRunHandler::create<process_run_trampoline>());
 
-  // Too short: should not call.
   rpc::Frame f_short{};
   f_short.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
   f_short.header.payload_length = 1;
   f_short.payload[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
-  Process.handleResponse(f_short);
+  
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.dispatch(f_short);
   TEST_ASSERT(!state.called);
 
-  // Declared stdout length but missing stderr length: should not call.
   rpc::Frame f_bad{};
   f_bad.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
   uint8_t* p = f_bad.payload.data();
@@ -776,11 +786,10 @@ static void test_process_run_response_length_guards() {
   rpc::write_u16_be(p + 1, 2);
   p[3] = 'o';
   p[4] = 'k';
-  f_bad.header.payload_length = 5; // no stderr_len field
-  Process.handleResponse(f_bad);
+  f_bad.header.payload_length = 5;
+  ba.dispatch(f_bad);
   TEST_ASSERT(!state.called);
 
-  // Full payload: should call.
   rpc::Frame f_ok{};
   f_ok.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
   uint8_t* q = f_ok.payload.data();
@@ -788,14 +797,16 @@ static void test_process_run_response_length_guards() {
   rpc::write_u16_be(q + 1, 1);
   q[3] = 'o';
   rpc::write_u16_be(q + 4, 0);
-  f_ok.header.payload_length = 6;
-  Process.handleResponse(f_ok);
+  q[6] = 0;
+  f_ok.header.payload_length = 7;
+  ba.dispatch(f_ok);
   TEST_ASSERT(state.called);
   TEST_ASSERT(state.status == rpc::StatusCode::STATUS_OK);
   TEST_ASSERT_EQ_UINT(state.stdout_len, 1);
   TEST_ASSERT_EQ_UINT(state.stderr_len, 0);
 
   ProcessRunState::instance = nullptr;
+  restore_bridge_to_serial();
 }
 
 static void test_mailbox_request_frames_and_available_handler() {
@@ -813,16 +824,18 @@ static void test_mailbox_request_frames_and_available_handler() {
   TEST_ASSERT_EQ_UINT(frames.frames[1].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE));
 
-  // Available response invokes handler.
   MailboxAvailableState st;
   MailboxAvailableState::instance = &st;
-  Mailbox.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler::create<mailbox_available_trampoline>());
+  Bridge.onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler::create<mailbox_available_trampoline>());
 
-      rpc::Frame f{};
-      f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
-      f.header.payload_length = 2;
-      rpc::write_u16_be(f.payload.data(), 7);
-      Mailbox.handleResponse(f);  TEST_ASSERT(st.called);
+  rpc::Frame f{};
+  f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+  f.header.payload_length = 2;
+  rpc::write_u16_be(f.payload.data(), 7);
+  
+  auto ba = bridge::test::TestAccessor::create(Bridge);
+  ba.dispatch(f);
+  TEST_ASSERT(st.called);
   TEST_ASSERT_EQ_UINT(st.count, 7);
 
   MailboxAvailableState::instance = nullptr;
@@ -841,9 +854,8 @@ static void test_datastore_request_get_queue_full() {
   TEST_ASSERT(frames.count >= 2);
   TEST_ASSERT_EQ_UINT(frames.frames[0].header.command_id,
                       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET));
-  // Second should emit STATUS_ERROR.
   TEST_ASSERT_EQ_UINT(frames.frames[1].header.command_id,
-                      rpc::to_underlying(rpc::StatusCode::STATUS_ERROR));
+                      rpc::to_underlying(rpc::StatusCode::STATUS_OVERFLOW));
 
   restore_bridge_to_serial();
 }

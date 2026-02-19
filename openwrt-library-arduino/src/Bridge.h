@@ -213,6 +213,27 @@ class BridgeClass : public bridge::router::ICommandHandler {
   using AnalogReadHandler = etl::delegate<void(uint16_t)>;
   using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
   using StatusHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
+  
+  #if BRIDGE_ENABLE_DATASTORE
+  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
+  #endif
+  
+  #if BRIDGE_ENABLE_MAILBOX
+  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
+  #endif
+
+  #if BRIDGE_ENABLE_FILESYSTEM
+  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
+  #endif
+
+  #if BRIDGE_ENABLE_PROCESS
+  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t,
+                                     const uint8_t*, uint16_t)>;
+  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*,
+                                      uint16_t, const uint8_t*, uint16_t)>;
+  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;  // PID from daemon (signed for error sentinel)
+  #endif
 
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
@@ -248,6 +269,25 @@ class BridgeClass : public bridge::router::ICommandHandler {
   inline void onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
   inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
+  #if BRIDGE_ENABLE_DATASTORE
+  inline void onDataStoreGetResponse(DataStoreGetHandler handler) { _datastore_get_handler = handler; }
+  #endif
+
+  #if BRIDGE_ENABLE_MAILBOX
+  inline void onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
+  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) { _mailbox_available_handler = handler; }
+  #endif
+
+  #if BRIDGE_ENABLE_FILESYSTEM
+  inline void onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
+  #endif
+
+  #if BRIDGE_ENABLE_PROCESS
+  inline void onProcessRunResponse(ProcessRunHandler handler) { _process_run_handler = handler; }
+  inline void onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
+  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
+  #endif
+
   // Internal / Lower Level
   bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
@@ -264,7 +304,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
   // [SIL-2] Large Payload Support (Application-Level Chunking)
   // Sends data larger than MAX_PAYLOAD_SIZE by fragmenting it into multiple frames.
   // Handles flow control (back-pressure) to ensure delivery on constrained queues.
-  void sendChunkyFrame(rpc::CommandId command_id, 
+  bool sendChunkyFrame(rpc::CommandId command_id, 
                        const uint8_t* header, size_t header_len, 
                        const uint8_t* data, size_t data_len);
 
@@ -307,6 +347,24 @@ class BridgeClass : public bridge::router::ICommandHandler {
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
+  #if BRIDGE_ENABLE_DATASTORE
+  DataStoreGetHandler _datastore_get_handler;
+  #endif
+
+  #if BRIDGE_ENABLE_MAILBOX
+  MailboxHandler _mailbox_handler;
+  MailboxAvailableHandler _mailbox_available_handler;
+  #endif
+
+  #if BRIDGE_ENABLE_FILESYSTEM
+  FileSystemReadHandler _file_system_read_handler;
+  #endif
+
+  #if BRIDGE_ENABLE_PROCESS
+  ProcessRunHandler _process_run_handler;
+  ProcessPollHandler _process_poll_handler;
+  ProcessRunAsyncHandler _process_run_async_handler;
+  #endif
   // Pending Queues
   struct PendingTxFrame {
     uint16_t command_id;
@@ -429,18 +487,16 @@ extern ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 #include "etl/string.h"
 class DataStoreClass {
+  friend class BridgeClass;
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::DataStoreTestAccessor;
   #endif
  public:
-  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
-
   DataStoreClass();
   void put(etl::string_view key, etl::string_view value);
   void requestGet(etl::string_view key);
-  void handleResponse(const rpc::Frame& frame);
-  inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
-    _datastore_get_handler = handler;
+  inline void onDataStoreGetResponse(BridgeClass::DataStoreGetHandler handler) {
+    Bridge.onDataStoreGetResponse(handler);
   }
 
  private:
@@ -450,7 +506,6 @@ class DataStoreClass {
   // [SIL-2] Use queue adapter for strict FIFO semantics
   etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
   etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
-  DataStoreGetHandler _datastore_get_handler;
 };
 extern DataStoreClass DataStore;
 #endif
@@ -458,10 +513,7 @@ extern DataStoreClass DataStore;
 #if BRIDGE_ENABLE_MAILBOX
 class MailboxClass {
  public:
-  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
-
-  MailboxClass() : _mailbox_handler(), _mailbox_available_handler() {}
+  MailboxClass() {}
   
   // [SIL-2] Inlined for optimization (-Os)
   inline void send(etl::string_view message) {
@@ -491,34 +543,12 @@ class MailboxClass {
     (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
   }
 
-  inline void handleResponse(const rpc::Frame& frame) {
-    const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
-    const uint8_t* payload_data = frame.payload.data();
-    const size_t payload_length = frame.header.payload_length;
-
-    if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
-        if (_mailbox_handler.is_valid() && payload_length >= 2) {
-          auto msg = rpc::payload::MailboxReadResponse::parse(payload_data);
-          _mailbox_handler(msg.content, msg.length);
-        }
-    } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
-        if (_mailbox_available_handler.is_valid() && payload_length >= rpc::payload::MailboxAvailableResponse::SIZE) {
-          auto msg = rpc::payload::MailboxAvailableResponse::parse(payload_data);
-          _mailbox_available_handler(msg.count);
-        }
-    }
+  inline void onMailboxMessage(BridgeClass::MailboxHandler handler) {
+    Bridge.onMailboxMessage(handler);
   }
-
-  inline void onMailboxMessage(MailboxHandler handler) {
-    _mailbox_handler = handler;
+  inline void onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler handler) {
+    Bridge.onMailboxAvailableResponse(handler);
   }
-  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) {
-    _mailbox_available_handler = handler;
-  }
-
- private:
-  MailboxHandler _mailbox_handler;
-  MailboxAvailableHandler _mailbox_available_handler;
 };
 extern MailboxClass Mailbox;
 #endif
@@ -526,15 +556,13 @@ extern MailboxClass Mailbox;
 #if BRIDGE_ENABLE_FILESYSTEM
 class FileSystemClass {
  public:
-  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-
-  FileSystemClass() : _file_system_read_handler() {}
+  FileSystemClass() {}
 
   inline void write(etl::string_view filePath, const uint8_t* data, size_t length) {
     if (filePath.empty() || !data) return;
     
     if (filePath.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
-      Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
+      Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
       return;
     }
 
@@ -552,7 +580,7 @@ class FileSystemClass {
     if (filePath.empty()) return;
     if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
                                   filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
-      Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
+      Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     }
   }
 
@@ -560,26 +588,13 @@ class FileSystemClass {
     if (filePath.empty()) return;
     if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
                                   filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
-      Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Path too long"));
+      Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     }
   }
 
-  inline void handleResponse(const rpc::Frame& frame) {
-    const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
-    if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
-        if (_file_system_read_handler.is_valid() && frame.header.payload_length >= 2) {
-          auto msg = rpc::payload::FileReadResponse::parse(frame.payload.data());
-          _file_system_read_handler(msg.content, msg.length);
-        }
-    }
+  inline void onFileSystemReadResponse(BridgeClass::FileSystemReadHandler handler) {
+    Bridge.onFileSystemReadResponse(handler);
   }
-
-  inline void onFileSystemReadResponse(FileSystemReadHandler handler) {
-    _file_system_read_handler = handler;
-  }
-
- private:
-  FileSystemReadHandler _file_system_read_handler;
 };
 extern FileSystemClass FileSystem;
 #endif
@@ -590,39 +605,29 @@ class ProcessClass {
   friend class bridge::test::ProcessTestAccessor;
   #endif
  public:
-  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t,
-                                     const uint8_t*, uint16_t)>;
-  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*,
-                                      uint16_t, const uint8_t*, uint16_t)>;
-  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;  // PID from daemon (signed for error sentinel)
-
   ProcessClass();
   void run(etl::string_view command);
   void runAsync(etl::string_view command);
   void poll(int16_t pid);
   void kill(int16_t pid);
-  void handleResponse(const rpc::Frame& frame);
-  
-  inline void onProcessRunResponse(ProcessRunHandler handler) {
-    _process_run_handler = handler;
+
+  inline void onProcessRunResponse(BridgeClass::ProcessRunHandler handler) {
+    Bridge.onProcessRunResponse(handler);
   }
-  inline void onProcessPollResponse(ProcessPollHandler handler) {
-    _process_poll_handler = handler;
+  inline void onProcessPollResponse(BridgeClass::ProcessPollHandler handler) {
+    Bridge.onProcessPollResponse(handler);
   }
-  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
-    _process_run_async_handler = handler;
+  inline void onProcessRunAsyncResponse(BridgeClass::ProcessRunAsyncHandler handler) {
+    Bridge.onProcessRunAsyncResponse(handler);
   }
 
  private:
+  friend class BridgeClass;
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
 
   // [SIL-2] Use circular buffer for safe PID tracking
   etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;
-  
-  ProcessRunHandler _process_run_handler;
-  ProcessPollHandler _process_poll_handler;
-  ProcessRunAsyncHandler _process_run_async_handler;
 };
 extern ProcessClass Process;
 #endif

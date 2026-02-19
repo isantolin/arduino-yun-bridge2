@@ -6,8 +6,7 @@
 
 #if BRIDGE_ENABLE_DATASTORE
 
-DataStoreClass::DataStoreClass() 
-  : _datastore_get_handler() {
+DataStoreClass::DataStoreClass() {
   _last_datastore_key.clear();
 }
 
@@ -16,37 +15,21 @@ void DataStoreClass::put(etl::string_view key, etl::string_view value) {
   if (!Bridge.sendKeyValCommand(rpc::CommandId::CMD_DATASTORE_PUT, 
                                 key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH,
                                 value, rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("DataStore too large"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 
 void DataStoreClass::requestGet(etl::string_view key) {
   if (key.empty()) return;
   if (!_trackPendingDatastoreKey(key)) {
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Key too long"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     return;
   }
 
   if (!Bridge.sendStringCommand(rpc::CommandId::CMD_DATASTORE_GET, 
                                 key, rpc::RPC_MAX_DATASTORE_KEY_LENGTH)) {
     _popPendingDatastoreKey(); // Clean up if send failed
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("Key too long"));
-  }
-}
-
-void DataStoreClass::handleResponse(const rpc::Frame& frame) {
-  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
-  if (command == rpc::CommandId::CMD_DATASTORE_GET_RESP) {
-      const size_t payload_length = frame.header.payload_length;
-      const uint8_t* payload_data = frame.payload.data();
-      
-      if (payload_length >= 1) {
-        auto msg = rpc::payload::DatastoreGetResponse::parse(payload_data);
-        const char* key = _popPendingDatastoreKey();
-        if (_datastore_get_handler.is_valid()) {
-          _datastore_get_handler(key, msg.value, msg.value_len);
-        }
-      }
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
   }
 }
 

@@ -561,7 +561,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   rpc::Frame effective_frame;
   effective_frame.header = frame.header;
   effective_frame.header.command_id = raw_command;
-  // CRC is not propagated as it is validated before dispatch and not used downstream.
+  effective_frame.crc = frame.crc;
 
   if (is_compressed && frame.header.payload_length > 0) {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> scratch_payload;
@@ -672,61 +672,123 @@ void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
-  #if BRIDGE_ENABLE_DATASTORE
-  DataStore.handleResponse(*ctx.frame);
-  #else
+#if BRIDGE_ENABLE_DATASTORE
+  const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
+  if (command == rpc::CommandId::CMD_DATASTORE_GET_RESP) {
+      const size_t payload_length = ctx.frame->header.payload_length;
+      const uint8_t* payload_data = ctx.frame->payload.data();
+      
+      if (payload_length >= 1 && _datastore_get_handler.is_valid()) {
+        auto msg = rpc::payload::DatastoreGetResponse::parse(payload_data);
+        const char* key = DataStore._popPendingDatastoreKey();
+        _datastore_get_handler(key, msg.value, msg.value_len);
+      }
+  }
+#else
   (void)ctx;
-  #endif
+#endif
 }
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
-  
+  const size_t payload_length = ctx.frame->header.payload_length;
+  const uint8_t* payload_data = ctx.frame->payload.data();
+
   if (command == rpc::CommandId::CMD_MAILBOX_PUSH) {
     _handleDedupAck(
         ctx,
         [this, &ctx]() {
 #if BRIDGE_ENABLE_MAILBOX
-          Mailbox.handleResponse(*ctx.frame);
+          const size_t payload_length = ctx.frame->header.payload_length;
+          const uint8_t* payload_data = ctx.frame->payload.data();
+          if (payload_length >= 2 && _mailbox_handler.is_valid()) {
+            auto msg = rpc::payload::MailboxPush::parse(payload_data);
+            _mailbox_handler(msg.data, msg.length);
+          }
 #else
           (void)ctx;
 #endif
         },
         true);
-  } else {
-    #if BRIDGE_ENABLE_MAILBOX
-    Mailbox.handleResponse(*ctx.frame);
-    #endif
+  } else if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
+#if BRIDGE_ENABLE_MAILBOX
+      if (_mailbox_handler.is_valid() && payload_length >= 2) {
+        auto msg = rpc::payload::MailboxReadResponse::parse(payload_data);
+        _mailbox_handler(msg.content, msg.length);
+      }
+#endif
+  } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
+#if BRIDGE_ENABLE_MAILBOX
+      if (_mailbox_available_handler.is_valid() && payload_length >= rpc::payload::MailboxAvailableResponse::SIZE) {
+        auto msg = rpc::payload::MailboxAvailableResponse::parse(payload_data);
+        _mailbox_available_handler(msg.count);
+      }
+#endif
   }
 }
 
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
-  
+  const size_t payload_length = ctx.frame->header.payload_length;
+  const uint8_t* payload_data = ctx.frame->payload.data();
+
   if (command == rpc::CommandId::CMD_FILE_WRITE) {
     _handleDedupAck(
         ctx,
         [this, &ctx]() {
-#if BRIDGE_ENABLE_FILESYSTEM
-          FileSystem.handleResponse(*ctx.frame);
-#else
+          // FILE_WRITE is a unidirectional command from Linux, usually we don't expect 
+          // a response with payload other than ACK, but here we just handle the ACK logic.
           (void)ctx;
-#endif
         },
         true);
-  } else {
-    #if BRIDGE_ENABLE_FILESYSTEM
-    FileSystem.handleResponse(*ctx.frame);
-    #endif
+  } else if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
+#if BRIDGE_ENABLE_FILESYSTEM
+      if (_file_system_read_handler.is_valid() && payload_length >= 2) {
+        auto msg = rpc::payload::FileReadResponse::parse(payload_data);
+        _file_system_read_handler(msg.content, msg.length);
+      }
+#endif
   }
 }
 
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
-  #if BRIDGE_ENABLE_PROCESS
-  Process.handleResponse(*ctx.frame);
-  #else
+#if BRIDGE_ENABLE_PROCESS
+  const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
+  const size_t payload_length = ctx.frame->header.payload_length;
+  const uint8_t* payload_data = ctx.frame->payload.data();
+
+  if (payload_length == 0 || !payload_data) return;
+
+  switch (command) {
+    case rpc::CommandId::CMD_PROCESS_RUN_RESP:
+      if (_process_run_handler.is_valid() && payload_length >= 6) {
+        auto msg = rpc::payload::ProcessRunResponse::parse(payload_data);
+        if (payload_length >= static_cast<size_t>(6 + msg.stdout_len + msg.stderr_len)) {
+            _process_run_handler(static_cast<rpc::StatusCode>(msg.status), msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+        }
+      }
+      break;
+    case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
+      if (_process_run_async_handler.is_valid() && payload_length >= rpc::payload::ProcessRunAsyncResponse::SIZE) {
+        auto msg = rpc::payload::ProcessRunAsyncResponse::parse(payload_data);
+        _process_run_async_handler(static_cast<int16_t>(msg.pid));
+      }
+      break;
+    case rpc::CommandId::CMD_PROCESS_POLL_RESP:
+      if (_process_poll_handler.is_valid() && payload_length >= 6) {
+        auto msg = rpc::payload::ProcessPollResponse::parse(payload_data);
+        if (payload_length >= static_cast<size_t>(6 + msg.stdout_len + msg.stderr_len)) {
+            _process_poll_handler(static_cast<rpc::StatusCode>(msg.status), msg.exit_code, msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+            Process._popPendingProcessPid(); 
+        }
+      }
+      break;
+    default:
+      break;
+  }
+#else
   (void)ctx;
-  #endif
+#endif
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
@@ -800,10 +862,10 @@ bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id, etl::string_view 
   return sendFrame(command_id, payload.data(), payload.size());
 }
 
-void BridgeClass::sendChunkyFrame(rpc::CommandId command_id, 
+bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
                                   const uint8_t* header, size_t header_len, 
                                   const uint8_t* data, size_t data_len) {
-  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return; // Header too big to fit any data
+  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return false; // Header too big to fit any data
   
   // [RAM OPT] Migrate scratch buffer to stack. No init needed as we overwrite.
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
@@ -815,9 +877,10 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
   if (data_len == 0) {
      if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
      while (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), header_len)) {
+       if (!_fsm.isSynchronized()) return false;
        process();
      }
-     return;
+     return true;
   }
 
   while (offset < data_len) {
@@ -836,14 +899,14 @@ void BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
     // If the TX queue is full, we must pump the FSM (process()) to clear it
     // before we can send the next chunk. This guarantees sequential delivery.
     while (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), payload_size)) {
-      if (!_fsm.isSynchronized()) return; // [SAFETY] Don't loop if we lost synchronization
+      if (!_fsm.isSynchronized()) return false; // [SAFETY] Don't loop if we lost synchronization
       process();
     }
 
     offset += chunk_size;
   }
+  return true;
 }
-
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
   return (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
          (command_id == rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||

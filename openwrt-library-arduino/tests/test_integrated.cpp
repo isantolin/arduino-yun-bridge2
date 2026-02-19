@@ -156,7 +156,7 @@ void integrated_test_components() {
 
 void integrated_test_error_branches() {
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "err");
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("flash"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     Bridge.enterSafeState();
     TEST_ASSERT(rpc::security::run_cryptographic_self_tests());
 }
@@ -173,6 +173,10 @@ static void test_pr_poll_cb(rpc::StatusCode s, uint8_t ec, const uint8_t* out, u
 static void test_pr_async_cb(int16_t p) { (void)p; }
 static void test_mb_cb(const uint8_t* m, uint16_t l) { (void)m; (void)l; }
 static void test_mb_avail_cb(uint16_t c) { (void)c; }
+static void test_dig_cb(uint8_t v) { (void)v; }
+static void test_ana_cb(uint16_t v) { (void)v; }
+static void test_mem_cb(uint16_t v) { (void)v; }
+static void test_status_cb(rpc::StatusCode s, const uint8_t* p, uint16_t l) { (void)s; (void)p; (void)l; }
 
 void integrated_test_extreme_coverage() {
     auto accessor = bridge::test::TestAccessor::create(Bridge);
@@ -237,17 +241,17 @@ void integrated_test_extreme_coverage() {
     // 6. Responses
     rpc::Frame resp;
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
-    resp.header.payload_length = 1;
-    #if BRIDGE_ENABLE_PROCESS
-    Process.handleResponse(resp);
-    #endif
+    resp.header.payload_length = 6;
+    resp.payload[0] = static_cast<uint8_t>(rpc::StatusCode::STATUS_OK);
+    rpc::write_u16_be(resp.payload.data() + 1, 0);
+    rpc::write_u16_be(resp.payload.data() + 3, 0);
+    resp.payload[5] = 0;
+    accessor.dispatch(resp);
     
     resp.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP);
     resp.header.payload_length = 1;
     resp.payload[0] = 50; // Lie about len
-    #if BRIDGE_ENABLE_DATASTORE
-    DataStore.handleResponse(resp);
-    #endif
+    accessor.dispatch(resp);
 
     // 7. Dup
     rpc::Frame f_dup;
@@ -304,11 +308,11 @@ void integrated_test_extreme_coverage() {
     rpc::Frame f_fs;
     f_fs.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
     f_fs.header.payload_length = 1;
-    FileSystem.handleResponse(f_fs);
+    accessor.dispatch(f_fs);
 
     f_fs.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     f_fs.header.payload_length = 0;
-    FileSystem.handleResponse(f_fs);
+    accessor.dispatch(f_fs);
     #endif
 
     // 13. Mailbox
@@ -320,11 +324,11 @@ void integrated_test_extreme_coverage() {
     rpc::Frame f_mb;
     f_mb.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
     f_mb.header.payload_length = 1;
-    Mailbox.handleResponse(f_mb);
+    accessor.dispatch(f_mb);
 
     f_mb.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     f_mb.header.payload_length = 1;
-    Mailbox.handleResponse(f_mb);
+    accessor.dispatch(f_mb);
     #endif
 
     // 14. Process
@@ -340,19 +344,19 @@ void integrated_test_extreme_coverage() {
     uint8_t proc_run_data[] = {0x30, 0, 2, 'O', 'K', 0, 1, 'E'};
     f_proc.header.payload_length = 8;
     memcpy(f_proc.payload.data(), proc_run_data, 8);
-    Process.handleResponse(f_proc);
+    accessor.dispatch(f_proc);
 
     f_proc.header.payload_length = 4;
-    Process.handleResponse(f_proc);
+    accessor.dispatch(f_proc);
 
     f_proc.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
     uint8_t proc_poll_data[] = {0x30, 0, 0, 1, 'X', 0, 1, 'Y'};
     f_proc.header.payload_length = 8;
     memcpy(f_proc.payload.data(), proc_poll_data, 8);
-    Process.handleResponse(f_proc);
+    accessor.dispatch(f_proc);
 
     f_proc.header.payload_length = 5;
-    Process.handleResponse(f_proc);
+    accessor.dispatch(f_proc);
     #endif
 
     // 14b. DataStore
@@ -362,12 +366,12 @@ void integrated_test_extreme_coverage() {
     DataStore.put(huge_key, "V");
     DataStore.requestGet(huge_key);
     for (int i = 0; i < 10; i++) DataStore.requestGet("key");
-    DataStore.handleResponse(rpc::Frame()); 
+    accessor.dispatch(rpc::Frame()); 
     #endif 
 
     // 15. Status / Retransmission
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, "test error");
-    Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, F("flash error"));
+    Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view{});
     Bridge._emitStatus(rpc::StatusCode::STATUS_ERROR, (const __FlashStringHelper*)nullptr);
 
@@ -427,19 +431,19 @@ void integrated_test_extreme_coverage() {
 
     // 20. Callbacks
     #if BRIDGE_ENABLE_DATASTORE
-    DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<test_ds_cb>());
+    Bridge.onDataStoreGetResponse(BridgeClass::DataStoreGetHandler::create<test_ds_cb>());
     #endif
     #if BRIDGE_ENABLE_FILESYSTEM
-    FileSystem.onFileSystemReadResponse(FileSystemClass::FileSystemReadHandler::create<test_fs_cb>());
+    Bridge.onFileSystemReadResponse(BridgeClass::FileSystemReadHandler::create<test_fs_cb>());
     #endif
     #if BRIDGE_ENABLE_PROCESS
-    Process.onProcessRunResponse(ProcessClass::ProcessRunHandler::create<test_pr_run_cb>());
-    Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<test_pr_poll_cb>());
-    Process.onProcessRunAsyncResponse(ProcessClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
+    Bridge.onProcessRunResponse(BridgeClass::ProcessRunHandler::create<test_pr_run_cb>());
+    Bridge.onProcessPollResponse(BridgeClass::ProcessPollHandler::create<test_pr_poll_cb>());
+    Bridge.onProcessRunAsyncResponse(BridgeClass::ProcessRunAsyncHandler::create<test_pr_async_cb>());
     #endif
     #if BRIDGE_ENABLE_MAILBOX
-    Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<test_mb_cb>());
-    Mailbox.onMailboxAvailableResponse(MailboxClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
+    Bridge.onMailboxMessage(BridgeClass::MailboxHandler::create<test_mb_cb>());
+    Bridge.onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler::create<test_mb_avail_cb>());
     #endif
 }
 

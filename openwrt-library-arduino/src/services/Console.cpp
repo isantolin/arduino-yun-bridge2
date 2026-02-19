@@ -115,8 +115,9 @@ void ConsoleClass::flush() {
   }
   
   if (!_tx_buffer.empty()) {
-    Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, _tx_buffer.data(), _tx_buffer.size());
-    _tx_buffer.clear();
+    if (Bridge.sendChunkyFrame(rpc::CommandId::CMD_CONSOLE_WRITE, nullptr, 0, _tx_buffer.data(), _tx_buffer.size())) {
+      _tx_buffer.clear();
+    }
   }
 
   Bridge.flushStream();

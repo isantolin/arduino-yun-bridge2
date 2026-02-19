@@ -147,22 +147,7 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #endif
 
 // --- Subsystem Enablement (RAM Optimization) ---
-
-#ifndef BRIDGE_ENABLE_DATASTORE
-#define BRIDGE_ENABLE_DATASTORE 1
-#endif
-
-#ifndef BRIDGE_ENABLE_FILESYSTEM
-#define BRIDGE_ENABLE_FILESYSTEM 1
-#endif
-
-#ifndef BRIDGE_ENABLE_MAILBOX
-#define BRIDGE_ENABLE_MAILBOX 1
-#endif
-
-#ifndef BRIDGE_ENABLE_PROCESS
-#define BRIDGE_ENABLE_PROCESS 1
-#endif
+// Note: Macros are now centralized in config/bridge_config.h
 
 // [SIL-2] Resource Allocation Tuning
 // On memory constrained AVR (Mega/Yun), we limit the pending queue to 2 frames (1 Active + 1 Pending).

@@ -6,6 +6,25 @@
 // They control local flow-control tuning and other MCU-side implementation
 // details.
 
+// --- Subsystem Enablement (RAM Optimization) ---
+// [SIL-2] Centralized here to ensure consistent class layout (ODR compliance)
+
+#ifndef BRIDGE_ENABLE_DATASTORE
+#define BRIDGE_ENABLE_DATASTORE 1
+#endif
+
+#ifndef BRIDGE_ENABLE_FILESYSTEM
+#define BRIDGE_ENABLE_FILESYSTEM 1
+#endif
+
+#ifndef BRIDGE_ENABLE_MAILBOX
+#define BRIDGE_ENABLE_MAILBOX 1
+#endif
+
+#ifndef BRIDGE_ENABLE_PROCESS
+#define BRIDGE_ENABLE_PROCESS 1
+#endif
+
 // Assumed RX buffer size for the underlying serial implementation.
 // AVR HardwareSerial uses 64 bytes by default in many cores.
 #ifndef BRIDGE_HW_RX_BUFFER_SIZE

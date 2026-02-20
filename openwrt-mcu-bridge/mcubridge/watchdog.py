@@ -64,8 +64,10 @@ class WatchdogKeepalive:
         )
 
         # FSM Transitions
-        self.state_machine.add_transition(trigger='start', source=[self.STATE_INIT, self.STATE_STOPPED], dest=self.STATE_RUNNING)
-        self.state_machine.add_transition(trigger='stop', source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
+        self.state_machine.add_transition(
+            trigger="start", source=[self.STATE_INIT, self.STATE_STOPPED], dest=self.STATE_RUNNING
+        )
+        self.state_machine.add_transition(trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
 
     @property
     def interval(self) -> float:

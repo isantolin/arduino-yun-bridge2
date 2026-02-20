@@ -265,13 +265,21 @@ class SerialTransport:
         )
 
         # FSM Transitions
-        self.state_machine.add_transition(trigger='begin_reset', source='*', dest=self.STATE_RESETTING)
-        self.state_machine.add_transition(trigger='begin_connect', source=self.STATE_RESETTING, dest=self.STATE_CONNECTING)
-        self.state_machine.add_transition(trigger='begin_negotiate', source=self.STATE_CONNECTING, dest=self.STATE_NEGOTIATING)
-        self.state_machine.add_transition(trigger='mark_connected', source=[self.STATE_CONNECTING, self.STATE_NEGOTIATING], dest=self.STATE_CONNECTED)
-        self.state_machine.add_transition(trigger='handshake', source=self.STATE_CONNECTED, dest=self.STATE_HANDSHAKING)
-        self.state_machine.add_transition(trigger='enter_loop', source=self.STATE_HANDSHAKING, dest=self.STATE_RUNNING)
-        self.state_machine.add_transition(trigger='mark_disconnected', source='*', dest=self.STATE_DISCONNECTED)
+        self.state_machine.add_transition(trigger="begin_reset", source="*", dest=self.STATE_RESETTING)
+        self.state_machine.add_transition(
+            trigger="begin_connect", source=self.STATE_RESETTING, dest=self.STATE_CONNECTING
+        )
+        self.state_machine.add_transition(
+            trigger="begin_negotiate", source=self.STATE_CONNECTING, dest=self.STATE_NEGOTIATING
+        )
+        self.state_machine.add_transition(
+            trigger="mark_connected",
+            source=[self.STATE_CONNECTING, self.STATE_NEGOTIATING],
+            dest=self.STATE_CONNECTED,
+        )
+        self.state_machine.add_transition(trigger="handshake", source=self.STATE_CONNECTED, dest=self.STATE_HANDSHAKING)
+        self.state_machine.add_transition(trigger="enter_loop", source=self.STATE_HANDSHAKING, dest=self.STATE_RUNNING)
+        self.state_machine.add_transition(trigger="mark_disconnected", source="*", dest=self.STATE_DISCONNECTED)
 
     def _before_sleep_log(self, retry_state: tenacity.RetryCallState) -> None:
         reconnect_delay = max(1, self.config.reconnect_delay)

@@ -166,7 +166,11 @@ class SerialHandshakeManager:
                 self.STATE_RESETTING,
                 self.STATE_SYNCING,
                 self.STATE_CONFIRMING,
-                {"name": self.STATE_SYNCHRONIZED, "on_enter": "_on_fsm_synchronized", "on_exit": "_on_fsm_unsynchronized"},
+                {
+                    "name": self.STATE_SYNCHRONIZED,
+                    "on_enter": "_on_fsm_synchronized",
+                    "on_exit": "_on_fsm_unsynchronized",
+                },
                 self.STATE_FAULT
             ],
             initial=self.STATE_UNSYNCHRONIZED,

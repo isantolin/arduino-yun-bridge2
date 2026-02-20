@@ -181,8 +181,7 @@ struct BridgeObserver {
   virtual void onBridgeError(rpc::StatusCode code) { (void)code; }
 };
 
-class BridgeClass : public bridge::router::ICommandHandler, 
-                    public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
+class BridgeClass : public bridge::router::ICommandHandler {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
   #endif
@@ -227,6 +226,21 @@ class BridgeClass : public bridge::router::ICommandHandler,
   
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
+
+  // [SIL-2] Manual Observer Management (etl::observable is too strict for lambdas)
+  void add_observer(BridgeObserver& obs) {
+    if (!_observers.full()) _observers.push_back(&obs);
+  }
+  
+  void remove_observer(BridgeObserver& obs) {
+    // Manual search because ETL might not have erase-by-value easily accessible
+    for (auto it = _observers.begin(); it != _observers.end(); ++it) {
+      if (*it == &obs) {
+        _observers.erase(it);
+        break;
+      }
+    }
+  }
 
   void begin(unsigned long baudrate = 
 #ifdef BRIDGE_BAUDRATE
@@ -301,12 +315,24 @@ class BridgeClass : public bridge::router::ICommandHandler,
   // Internal Callback Trampoline for PacketSerial
   static void onPacketReceived(const uint8_t* buffer, size_t size);
 
+ protected:
+  // [SIL-2] Internal notification helper
+  template<typename F>
+  void notify_observers(F f) {
+    for (auto* obs : _observers) {
+      if (obs) f(*obs);
+    }
+  }
+
  private:
   Stream& _stream;
   HardwareSerial* _hardware_serial;
   BridgePacketSerial _packetSerial;
   
   etl::vector<uint8_t, 32> _shared_secret;
+
+  // [SIL-2] Observers container
+  etl::vector<BridgeObserver*, BRIDGE_MAX_OBSERVERS> _observers;
 
   // Protocol Engine
   rpc::Frame* _target_frame;

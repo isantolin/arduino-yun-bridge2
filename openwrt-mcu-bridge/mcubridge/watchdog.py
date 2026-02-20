@@ -55,8 +55,8 @@ class WatchdogKeepalive:
             model=self,
             states=[
                 self.STATE_INIT,
-                self.STATE_RUNNING,
-                self.STATE_STOPPED
+                {"name": self.STATE_RUNNING, "on_enter": "_on_fsm_start"},
+                {"name": self.STATE_STOPPED, "on_enter": "_on_fsm_stop"}
             ],
             initial=self.STATE_INIT,
             ignore_invalid_triggers=True,
@@ -68,6 +68,14 @@ class WatchdogKeepalive:
             trigger="start", source=[self.STATE_INIT, self.STATE_STOPPED], dest=self.STATE_RUNNING
         )
         self.state_machine.add_transition(trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
+
+    def _on_fsm_start(self) -> None:
+        """Callback when watchdog starts."""
+        self._logger.info("Watchdog keepalive started (interval=%.2fs)", self._interval)
+
+    def _on_fsm_stop(self) -> None:
+        """Callback when watchdog stops."""
+        self._logger.info("Watchdog keepalive stopped")
 
     @property
     def interval(self) -> float:

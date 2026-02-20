@@ -511,6 +511,7 @@ class DataStoreClass {
   using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
 
   DataStoreClass();
+  void reset();
   void put(etl::string_view key, etl::string_view value);
   void requestGet(etl::string_view key);
   inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
@@ -633,6 +634,7 @@ class ProcessClass {
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
 
   ProcessClass();
+  void reset();
   void run(etl::string_view command);
   void runAsync(etl::string_view command);
   void poll(int16_t pid);

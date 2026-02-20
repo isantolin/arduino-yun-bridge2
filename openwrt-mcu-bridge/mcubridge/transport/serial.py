@@ -252,12 +252,12 @@ class SerialTransport:
             model=self,
             states=[
                 self.STATE_DISCONNECTED,
-                self.STATE_RESETTING,
-                self.STATE_CONNECTING,
-                self.STATE_NEGOTIATING,
-                self.STATE_CONNECTED,
-                self.STATE_HANDSHAKING,
-                self.STATE_RUNNING
+                {"name": self.STATE_RESETTING, "on_exit": "_on_fsm_disconnect"},
+                {"name": self.STATE_CONNECTING, "on_exit": "_on_fsm_disconnect"},
+                {"name": self.STATE_NEGOTIATING, "on_exit": "_on_fsm_disconnect"},
+                {"name": self.STATE_CONNECTED, "on_exit": "_on_fsm_disconnect"},
+                {"name": self.STATE_HANDSHAKING, "on_exit": "_on_fsm_disconnect"},
+                {"name": self.STATE_RUNNING, "on_exit": "_on_fsm_disconnect"}
             ],
             initial=self.STATE_DISCONNECTED,
             ignore_invalid_triggers=True,
@@ -280,6 +280,10 @@ class SerialTransport:
         self.state_machine.add_transition(trigger="handshake", source=self.STATE_CONNECTED, dest=self.STATE_HANDSHAKING)
         self.state_machine.add_transition(trigger="enter_loop", source=self.STATE_HANDSHAKING, dest=self.STATE_RUNNING)
         self.state_machine.add_transition(trigger="mark_disconnected", source="*", dest=self.STATE_DISCONNECTED)
+
+    def _on_fsm_disconnect(self) -> None:
+        """Callback when leaving any active state."""
+        self.state.serial_writer = None
 
     def _before_sleep_log(self, retry_state: tenacity.RetryCallState) -> None:
         reconnect_delay = max(1, self.config.reconnect_delay)

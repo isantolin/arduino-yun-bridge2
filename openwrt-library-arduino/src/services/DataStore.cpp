@@ -7,7 +7,14 @@
 #if BRIDGE_ENABLE_DATASTORE
 
 DataStoreClass::DataStoreClass() {
+  reset();
+}
+
+void DataStoreClass::reset() {
   _last_datastore_key.clear();
+  while (!_pending_datastore_keys.empty()) {
+    _pending_datastore_keys.pop();
+  }
 }
 
 void DataStoreClass::put(etl::string_view key, etl::string_view value) {

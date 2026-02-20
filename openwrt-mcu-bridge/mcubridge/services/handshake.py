@@ -166,7 +166,7 @@ class SerialHandshakeManager:
                 self.STATE_RESETTING,
                 self.STATE_SYNCING,
                 self.STATE_CONFIRMING,
-                self.STATE_SYNCHRONIZED,
+                {"name": self.STATE_SYNCHRONIZED, "on_enter": "_on_fsm_synchronized", "on_exit": "_on_fsm_unsynchronized"},
                 self.STATE_FAULT
             ],
             initial=self.STATE_UNSYNCHRONIZED,
@@ -185,6 +185,14 @@ class SerialHandshakeManager:
         )
         self.state_machine.add_transition(trigger='fail_handshake', source='*', dest=self.STATE_FAULT)
         self.state_machine.add_transition(trigger='reset_fsm', source='*', dest=self.STATE_UNSYNCHRONIZED)
+
+    def _on_fsm_synchronized(self) -> None:
+        """Callback when entering synchronized state."""
+        self._state.link_is_synchronized = True
+
+    def _on_fsm_unsynchronized(self) -> None:
+        """Callback when leaving synchronized state."""
+        self._state.link_is_synchronized = False
 
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
@@ -226,7 +234,6 @@ class SerialHandshakeManager:
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = nonce_length
         self._state.link_expected_tag = self.compute_handshake_tag(nonce)
-        self._state.link_is_synchronized = False
 
         reset_ok = await self._send_frame(
             Command.CMD_LINK_RESET.value,
@@ -353,7 +360,6 @@ class SerialHandshakeManager:
             return False
 
         payload = nonce
-        self._state.link_is_synchronized = True
 
         # FSM Transition to SYNCHRONIZED
         self.complete_handshake()
@@ -424,7 +430,6 @@ class SerialHandshakeManager:
 
     async def handle_link_reset_resp(self, payload: bytes) -> bool:
         self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
-        self._state.link_is_synchronized = False
         return True
 
     async def handle_handshake_failure(

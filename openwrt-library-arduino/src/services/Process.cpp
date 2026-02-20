@@ -7,8 +7,12 @@
 #if BRIDGE_ENABLE_PROCESS
 
 ProcessClass::ProcessClass() 
-  : _pending_process_pids() // Auto-initialized by ETL
 {
+  reset();
+}
+
+void ProcessClass::reset() {
+  _pending_process_pids.clear();
 }
 
 void ProcessClass::run(etl::string_view command) {

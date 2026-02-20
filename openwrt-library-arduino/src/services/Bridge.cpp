@@ -593,6 +593,14 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   ctx.is_duplicate = _isRecentDuplicateRx(effective_frame);
   ctx.requires_ack = false;
 
+  // [SIL-2] Security/Safety Gate: Only allow handshake commands if not synchronized.
+  if (!_fsm.isSynchronized() && !_isHandshakeCommand(raw_command)) {
+    // We don't use _emitStatus here to avoid potential flood if Linux is out of sync
+    // but we must send a specific error to let Linux know it needs to re-sync.
+    sendFrame(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
+
   _command_router.route(ctx);
 }
 
@@ -1098,7 +1106,9 @@ void BridgeClass::enterSafeState() {
   _fsm.resetFsm();  // Transition to Unsynchronized via ETL FSM
   _timer_service.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
   _timer_service.stop(bridge::scheduler::TIMER_STARTUP_STABILIZATION);
+  _timer_service.stop(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
   _startup_stabilizing = false;
+  _pending_baudrate = 0;
   
   // Note: _clearAckState() checks FSM state, so we skip to avoid redundant transition
   _retry_count = 0;
@@ -1109,6 +1119,13 @@ void BridgeClass::enterSafeState() {
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
   _consecutive_crc_errors = 0;
+
+  #if BRIDGE_ENABLE_DATASTORE
+  DataStore.reset();
+  #endif
+  #if BRIDGE_ENABLE_PROCESS
+  Process.reset();
+  #endif
   
   // [SIL-2] Notify Observers of lost connection
   notify_observers([](BridgeObserver& obs) { obs.onBridgeLost(); });

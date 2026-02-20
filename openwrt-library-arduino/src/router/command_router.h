@@ -107,6 +107,7 @@ struct MsgUnknown : public etl::message<MSG_UNKNOWN> {
 
 // ============================================================================
 // Command Categorizer - Maps command ID to message category
+// [SIL-2] Deterministic branching: O(1) complexity with fixed ranges.
 // ============================================================================
 inline MessageId categorize_command(uint16_t raw_command) {
   if (raw_command >= rpc::RPC_STATUS_CODE_MIN && raw_command <= rpc::RPC_STATUS_CODE_MAX) {
@@ -155,7 +156,13 @@ public:
 
 // ============================================================================
 // Command Router - ETL message_router for command dispatch
-// [SIL-2] Flattened call stack via message-based routing
+// [SIL-2] Flattened call stack via message-based routing.
+// 
+// Strategy:
+// 1. Decoupling: The Router separates protocol parsing from business logic.
+// 2. Safety: Uses etl::message_router to enforce type-safe dispatch.
+// 3. Efficiency: Static switch-case dispatch avoids dynamic_cast overhead.
+// 4. Predictability: Bounded stack usage (no recursion).
 // ============================================================================
 class CommandRouter : public etl::message_router<CommandRouter,
                                                   MsgStatus,

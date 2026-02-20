@@ -10,7 +10,7 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.system import SystemComponent
@@ -128,7 +128,7 @@ def test_handle_get_free_memory_resp_publishes_with_pending_reply(
         # pyright: ignore[reportPrivateUsage]
         component._pending_free_memory.append(inbound)
 
-        await component.handle_get_free_memory_resp(protocol.UINT16_STRUCT.build(100))
+        await component.handle_get_free_memory_resp(structures.UINT16_STRUCT.build(100))
 
         assert len(ctx.published) == 2
         message, reply_context = ctx.published[0]
@@ -160,7 +160,7 @@ def test_handle_get_free_memory_resp_ignores_malformed(
 
         caplog.set_level("WARNING", logger="mcubridge.system")
 
-        await component.handle_get_free_memory_resp(protocol.UINT8_STRUCT.build(protocol.DIGITAL_HIGH))
+        await component.handle_get_free_memory_resp(structures.UINT8_STRUCT.build(protocol.DIGITAL_HIGH))
 
         assert not ctx.published
         # pyright: ignore[reportPrivateUsage]

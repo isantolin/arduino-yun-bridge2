@@ -18,7 +18,7 @@ from mcubridge.config.const import (
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.policy import AllowedCommandPolicy, CommandValidationError
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
     DEFAULT_SAFE_BAUDRATE,
@@ -146,7 +146,7 @@ async def test_handle_run_validation_error(process_component: ProcessComponent, 
 
             mock_start.assert_awaited_once_with("sleep 10", ["sleep", "10"])
             mock_context.send_frame.assert_awaited_once_with(
-                Command.CMD_PROCESS_RUN_ASYNC_RESP.value, protocol.UINT16_STRUCT.build(123)
+                Command.CMD_PROCESS_RUN_ASYNC_RESP.value, structures.UINT16_STRUCT.build(123)
             )
         # Should also enqueue MQTT message
         mock_context.publish.assert_awaited_once()
@@ -166,7 +166,7 @@ async def test_handle_run_async_failure(process_component: ProcessComponent, moc
 @pytest.mark.asyncio
 async def test_handle_poll_success(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
     pid = 123
-    payload = protocol.UINT16_STRUCT.build(pid)
+    payload = structures.UINT16_STRUCT.build(pid)
 
     batch = ProcessOutputBatch(
         status_byte=1,  # Running
@@ -292,7 +292,7 @@ async def test_handle_kill_unknown_pid_returns_ack(
     mock_context: AsyncMock,
 ) -> None:
     pid = 123
-    payload = protocol.UINT16_STRUCT.build(pid)
+    payload = structures.UINT16_STRUCT.build(pid)
     assert await process_component.handle_kill(payload, send_ack=True) is True
     mock_context.send_frame.assert_awaited_once_with(
         Status.ERROR.value,
@@ -328,7 +328,7 @@ async def test_handle_kill_terminates_and_cleans_slot(
 
     with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
         ok = await process_component.handle_kill(
-            protocol.UINT16_STRUCT.build(pid),
+            structures.UINT16_STRUCT.build(pid),
             send_ack=True,
         )
         assert ok is True

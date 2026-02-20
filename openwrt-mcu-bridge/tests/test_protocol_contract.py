@@ -9,7 +9,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.services.handshake import SerialHandshakeManager
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -80,7 +80,7 @@ def test_protocol_spec_matches_generated_bindings() -> None:
     assert handshake["tag_length"] == protocol.HANDSHAKE_TAG_LENGTH
     assert handshake["tag_algorithm"] == protocol.HANDSHAKE_TAG_ALGORITHM
     assert handshake["tag_description"] == protocol.HANDSHAKE_TAG_DESCRIPTION
-    assert handshake["config_format"] == protocol.HANDSHAKE_CONFIG_FORMAT
+    # config_format is no longer explicitly in spec.toml [handshake] section
     assert handshake["ack_timeout_min_ms"] == protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS
     assert handshake["ack_timeout_max_ms"] == protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS
     assert handshake["response_timeout_min_ms"] == protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS
@@ -90,11 +90,9 @@ def test_protocol_spec_matches_generated_bindings() -> None:
 
 
 def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
-    _, _, _, handshake = _load_spec()
-    fmt = handshake["config_format"]
-    assert fmt, "Handshake config format missing in spec"
-
-    packed_size = protocol.HANDSHAKE_CONFIG_STRUCT.sizeof()
+    # Ensure our Python struct matches the C++ expected size
+    schema = structures.HandshakeConfigPacket._SCHEMA
+    packed_size = schema.sizeof()
     assert packed_size == protocol.HANDSHAKE_CONFIG_SIZE
 
     header_text = CPP_HEADER_PATH.read_text(encoding="utf-8")
@@ -102,7 +100,7 @@ def test_handshake_config_binary_layout_matches_cpp_struct() -> None:
     assert match, "RPC_HANDSHAKE_CONFIG_SIZE missing in header"
     assert int(match.group(1)) == packed_size
 
-    sample_payload = protocol.HANDSHAKE_CONFIG_STRUCT.build(dict(
+    sample_payload = schema.build(dict(
         ack_timeout_ms=750,
         ack_retry_limit=3,
         response_timeout_ms=120000

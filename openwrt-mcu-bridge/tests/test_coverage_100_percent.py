@@ -6,7 +6,7 @@ from unittest import mock
 
 import pytest
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services import serial_flow
 from mcubridge.services.process import ProcessComponent
@@ -51,7 +51,7 @@ async def test_serial_flow_ack_mismatch_and_status_coverage():
     pending = pipeline._current
     assert pending is not None
 
-    mismatched_ack_payload = protocol.UINT16_STRUCT.build(0x1234)
+    mismatched_ack_payload = structures.UINT16_STRUCT.build(0x1234)
     pipeline.on_frame_received(Status.ACK.value, mismatched_ack_payload)
     assert not pending.ack_received
 

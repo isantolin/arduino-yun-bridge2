@@ -12,7 +12,7 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.protocol.topics import (
     Topic,
@@ -121,7 +121,7 @@ def test_handle_processed_publishes_json(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    payload = protocol.UINT16_STRUCT.build(TEST_MSG_ID)
+    payload = structures.UINT16_STRUCT.build(TEST_MSG_ID)
     asyncio.run(component.handle_processed(payload))
 
     assert bridge.published
@@ -139,7 +139,7 @@ def test_handle_push_stores_incoming_queue(
     runtime_state: RuntimeState,
 ) -> None:
     component, bridge = mailbox_component
-    payload = protocol.UINT16_STRUCT.build(5) + b"hello"
+    payload = structures.UINT16_STRUCT.build(5) + b"hello"
     result = asyncio.run(component.handle_push(payload))
     assert result is True
     assert list(runtime_state.mailbox_incoming_queue) == [b"hello"]
@@ -158,7 +158,7 @@ def test_handle_push_overflow_sends_error(
 ) -> None:
     component, bridge = mailbox_component
     runtime_state.mailbox_queue_limit = 0
-    payload = protocol.UINT16_STRUCT.build(1) + b"A"
+    payload = structures.UINT16_STRUCT.build(1) + b"A"
     result = asyncio.run(component.handle_push(payload))
     assert result is False
     assert bridge.sent_frames[-1][0] == Status.ERROR.value
@@ -178,7 +178,7 @@ def test_handle_read_success_publishes_available(
 
     command_id, payload = bridge.sent_frames[-1]
     assert command_id == Command.CMD_MAILBOX_READ_RESP.value
-    assert payload == protocol.UINT16_STRUCT.build(7) + b"payload"
+    assert payload == structures.UINT16_STRUCT.build(7) + b"payload"
 
     assert bridge.published[-1].topic_name == (mailbox_outgoing_available_topic(runtime_state.mqtt_topic_prefix))
     assert bridge.published[-1].payload == b"0"

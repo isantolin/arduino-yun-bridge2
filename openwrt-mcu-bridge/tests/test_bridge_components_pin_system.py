@@ -8,7 +8,7 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.common import encode_status_reason
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
@@ -71,7 +71,7 @@ async def test_mcu_digital_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == protocol.UINT16_STRUCT.build(Command.CMD_DIGITAL_READ_RESP.value)
+    assert ack_payload == structures.UINT16_STRUCT.build(Command.CMD_DIGITAL_READ_RESP.value)
 
 
 @pytest.mark.asyncio
@@ -111,7 +111,7 @@ async def test_mcu_analog_read_response_publishes_to_mqtt(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == protocol.UINT16_STRUCT.build(Command.CMD_ANALOG_READ_RESP.value)
+    assert ack_payload == structures.UINT16_STRUCT.build(Command.CMD_ANALOG_READ_RESP.value)
 
 
 @pytest.mark.asyncio
@@ -128,7 +128,7 @@ async def test_mqtt_digital_write_sends_frame(
         sent_frames.append((command_id, payload))
         flow.on_frame_received(
             Status.ACK.value,
-            protocol.UINT16_STRUCT.build(command_id),
+            structures.UINT16_STRUCT.build(command_id),
         )
         return True
 
@@ -148,7 +148,7 @@ async def test_mqtt_digital_write_sends_frame(
     assert sent_frames
     command_id, payload = sent_frames[0]
     assert command_id == Command.CMD_DIGITAL_WRITE.value
-    assert payload == protocol.PIN_WRITE_STRUCT.build(dict(pin=5, value=protocol.DIGITAL_HIGH))
+    assert payload == structures.DigitalWritePacket._SCHEMA.build(dict(pin=5, value=protocol.DIGITAL_HIGH))
 
 
 @pytest.mark.asyncio
@@ -186,7 +186,7 @@ async def test_mqtt_analog_read_tracks_pending_queue(
     assert sent_frames
     command_id, payload = sent_frames[0]
     assert command_id == Command.CMD_ANALOG_READ.value
-    assert payload == protocol.PIN_READ_STRUCT.build(2)
+    assert payload == structures.PinReadPacket._SCHEMA.build({"pin": 2})
     pending = runtime_state.pending_analog_reads[-1]
     assert pending.pin == 2
 
@@ -253,7 +253,7 @@ async def test_mcu_free_memory_response_enqueues_value(
     assert sent_frames
     ack_id, ack_payload = sent_frames[-1]
     assert ack_id == Status.ACK.value
-    assert ack_payload == protocol.UINT16_STRUCT.build(Command.CMD_GET_FREE_MEMORY_RESP.value)
+    assert ack_payload == structures.UINT16_STRUCT.build(Command.CMD_GET_FREE_MEMORY_RESP.value)
 
 
 @pytest.mark.asyncio
@@ -434,7 +434,7 @@ async def test_mqtt_shell_kill_invokes_process_component(
         assert calls == [
             (
                 service._process,  # pyright: ignore[reportPrivateUsage]
-                protocol.UINT16_STRUCT.build(pid),
+                structures.UINT16_STRUCT.build(pid),
                 False,
             )
         ]

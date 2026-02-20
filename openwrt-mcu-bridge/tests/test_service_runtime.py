@@ -19,7 +19,7 @@ from mcubridge.config.const import (
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.runtime import BridgeService
@@ -113,7 +113,7 @@ async def test_acknowledge_mcu_frame_truncates_extra_payload() -> None:
     assert sent
     status_cmd, payload = sent[0]
     assert status_cmd == Status.MALFORMED.value
-    assert payload.startswith(protocol.UINT16_STRUCT.build(protocol.Command.CMD_GET_FREE_MEMORY.value))
+    assert payload.startswith(structures.UINT16_STRUCT.build(protocol.Command.CMD_GET_FREE_MEMORY.value))
     assert len(payload) <= protocol.MAX_PAYLOAD_SIZE
 
 

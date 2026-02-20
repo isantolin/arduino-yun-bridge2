@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import pytest
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status, Topic
 from mcubridge.protocol.topics import TopicRoute, parse_topic
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter

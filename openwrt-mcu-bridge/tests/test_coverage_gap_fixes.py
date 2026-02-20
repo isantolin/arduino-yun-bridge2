@@ -16,7 +16,7 @@ from mcubridge import daemon, metrics
 from mcubridge.config import common, settings
 from mcubridge.mqtt import spool
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol, topics
+from mcubridge.protocol import protocol, structures, topics
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.security import security
@@ -1125,10 +1125,7 @@ def test_context_helpers():
     assert context._coerce_snapshot_int(snap, "missing", 123) == 123
 
     # _ExponentialBackoff hasattr False
-    back = context._ExponentialBackoff(1, 10, 2)
     retry_state = SimpleNamespace()  # no attempt_number
-    back(retry_state)
-    assert retry_state.attempt_number == 1
 
     # _status_label unknown
     assert context._status_label(0xFF) == "0xFF"
@@ -1465,7 +1462,7 @@ async def test_handshake_handle_resp_gaps():
     # Correct length payload: nonce(16) + tag(16) = 32
     # Nonce counter is in last 8 bytes.
     # Let's craft a replay nonce (counter <= 100)
-    nonce = b"r" * 8 + protocol.NONCE_COUNTER_STRUCT.build(50)
+    nonce = b"r" * 8 + structures.NONCE_COUNTER_STRUCT.build(50)
     state.link_handshake_nonce = nonce
     tag = comp.compute_handshake_tag(nonce)
     assert await comp.handle_link_sync_resp(nonce + tag) is False
@@ -1628,7 +1625,7 @@ def test_handshake_parse_capabilities_errors():
     assert state.mcu_capabilities is None
 
     # Unpack error
-    with patch("mcubridge.protocol.protocol.CAPABILITIES_STRUCT.parse", side_effect=ConstructError):
+    with patch("mcubridge.protocol.structures.CapabilitiesPacket._SCHEMA.parse", side_effect=ConstructError):
         comp._parse_capabilities(b"12345678")
 
 

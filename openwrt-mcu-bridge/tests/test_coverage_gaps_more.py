@@ -16,7 +16,7 @@ from mcubridge.config.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
 )

@@ -10,7 +10,7 @@ import asyncio  # noqa: E402
 
 import pytest  # noqa: E402
 from mcubridge.config.settings import RuntimeConfig  # noqa: E402
-from mcubridge.protocol import protocol  # noqa: E402
+from mcubridge.protocol import protocol, structures  # noqa: E402
 from mcubridge.protocol import structures  # noqa: E402
 from mcubridge.protocol.frame import Frame  # noqa: E402
 from mcubridge.protocol.protocol import Command  # noqa: E402

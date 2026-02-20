@@ -18,7 +18,7 @@ from mcubridge.config.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
 )
@@ -156,7 +156,7 @@ async def test_handle_kill_with_process_lookup_error() -> None:
         mock_term.side_effect = ProcessLookupError("already gone")
 
         result = await process_component.handle_kill(
-            protocol.UINT16_STRUCT.build(pid),
+            structures.UINT16_STRUCT.build(pid),
             send_ack=True,
         )
         assert result is True
@@ -195,7 +195,7 @@ async def test_handle_kill_with_process_lookup_error() -> None:
 
             with pytest.raises(RuntimeError, match="unexpected"):
                 await process_component.handle_kill(
-                    protocol.UINT16_STRUCT.build(pid),
+                    structures.UINT16_STRUCT.build(pid),
                     send_ack=True,
                 )
             mock_ctx.send_frame.assert_not_awaited()

@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.mqtt.spool import MQTTPublishSpool
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 
 
 def _make_message(

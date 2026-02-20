@@ -13,7 +13,7 @@ from mcubridge.config.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
 )
@@ -86,7 +86,7 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     process_component: ProcessComponent, mock_context: AsyncMock
 ) -> None:
     pid = 1
-    payload = protocol.UINT16_STRUCT.build(pid)
+    payload = structures.UINT16_STRUCT.build(pid)
 
     batch = SimpleNamespace(
         status_byte=Status.OK.value,
@@ -320,7 +320,7 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
     with patch.object(mcubridge.services.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
         with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
             with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-                ok = await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))
+                ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -352,7 +352,7 @@ async def test_handle_kill_process_lookup_error_is_handled(process_component: Pr
         side_effect=ProcessLookupError,
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))
+            ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -385,7 +385,7 @@ async def test_handle_kill_unexpected_exception_is_handled(process_component: Pr
     ):
         with patch.object(ProcessComponent, "_release_process_slot"):
             with pytest.raises(RuntimeError, match="boom"):
-                await process_component.handle_kill(protocol.UINT16_STRUCT.build(pid))
+                await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
 
 
 @pytest.mark.asyncio

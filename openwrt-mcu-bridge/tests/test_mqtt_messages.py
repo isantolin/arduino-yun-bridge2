@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from mcubridge.mqtt.messages import QueuedPublish, SpoolRecord
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 
 
 def test_queued_publish_roundtrip_with_correlation_and_user_properties() -> None:

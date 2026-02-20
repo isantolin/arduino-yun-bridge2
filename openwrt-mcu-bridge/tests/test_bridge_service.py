@@ -10,7 +10,7 @@ import msgspec
 import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import derive_serial_timing
 from mcubridge.services.runtime import BridgeService
@@ -60,7 +60,7 @@ def test_on_serial_connected_flushes_console_queue() -> None:
                 )
                 # Priming capabilities
                 await service._handshake.handle_capabilities_resp(
-                    cast(Any, protocol.CAPABILITIES_STRUCT).build({
+                    cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
                         "ver": 2,
                         "arch": 1,
                         "dig": 20,
@@ -77,7 +77,7 @@ def test_on_serial_connected_flushes_console_queue() -> None:
             elif command_id == Command.CMD_CONSOLE_WRITE.value:
                 flow.on_frame_received(
                     Status.ACK.value,
-                    protocol.UINT16_STRUCT.build(Command.CMD_CONSOLE_WRITE.value),
+                    structures.UINT16_STRUCT.build(Command.CMD_CONSOLE_WRITE.value),
                 )
             return True
 
@@ -145,7 +145,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                     asyncio.create_task(
                         service.handle_mcu_frame(
                             Status.NOT_IMPLEMENTED.value,
-                            protocol.UINT16_STRUCT.build(Command.CMD_LINK_RESET.value),
+                            structures.UINT16_STRUCT.build(Command.CMD_LINK_RESET.value),
                         )
                     )
                 else:
@@ -168,7 +168,7 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                 )
                 # Priming capabilities
                 await service._handshake.handle_capabilities_resp(
-                    cast(Any, protocol.CAPABILITIES_STRUCT).build({
+                    cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
                         "ver": 2,
                         "arch": 1,
                         "dig": 20,
@@ -225,7 +225,7 @@ def test_link_sync_resp_respects_rate_limit(
         async def fake_sender(command_id: int, payload: bytes) -> bool:
             sent_frames.append((command_id, payload))
             # Auto-ACK to prevent serial_flow from blocking
-            ack_payload = protocol.UINT16_STRUCT.build(command_id)
+            ack_payload = structures.UINT16_STRUCT.build(command_id)
             service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
             if command_id == Command.CMD_GET_CAPABILITIES.value:
                 service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
@@ -462,7 +462,7 @@ def test_mailbox_available_flow() -> None:
             if len(payload) < 2:
                 return False
             # payload is just the count (uint16)
-            count = protocol.UINT16_STRUCT.parse(payload[:2])
+            count = structures.UINT16_STRUCT.parse(payload[:2])
             return count == 1
 
         assert any(_check_mailbox_ack(f, p) for f, p in sent_frames)

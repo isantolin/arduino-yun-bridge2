@@ -1,5 +1,5 @@
 import pytest
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.frame import Frame
 from tests.test_constants import TEST_CMD_ID
 

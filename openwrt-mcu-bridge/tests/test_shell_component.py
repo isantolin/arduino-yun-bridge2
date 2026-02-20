@@ -11,7 +11,7 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
 from mcubridge.policy import CommandValidationError
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import ShellAction, Status
 from mcubridge.protocol.topics import Topic, topic_path
 from mcubridge.services.shell import ShellComponent
@@ -303,7 +303,7 @@ async def test_shell_kill_packs_pid_and_suppresses_ack(
     )
 
     process.handle_kill.assert_awaited_once_with(
-        protocol.UINT16_STRUCT.build(42),
+        structures.UINT16_STRUCT.build(42),
         send_ack=False,
     )
 

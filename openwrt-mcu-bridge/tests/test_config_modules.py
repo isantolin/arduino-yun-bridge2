@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from mcubridge.config import common, settings
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 
 
 def test_load_runtime_config_applies_env_and_defaults(

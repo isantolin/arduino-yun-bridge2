@@ -20,7 +20,7 @@ from mcubridge.config.const import (
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.policy import AllowedCommandPolicy
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Status
 from mcubridge.services.process import (
     ProcessComponent,

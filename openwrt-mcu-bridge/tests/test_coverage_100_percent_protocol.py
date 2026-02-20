@@ -1,13 +1,13 @@
 from binascii import crc32
 
 import pytest
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.frame import Frame
 
 
 def _build_raw_with_crc(data_no_crc: bytes) -> bytes:
     c = crc32(data_no_crc) & protocol.CRC32_MASK
-    return data_no_crc + protocol.CRC_STRUCT.build(c)
+    return data_no_crc + structures.CRC_STRUCT.build(c)
 
 
 def test_frame_parse_coverage_all_errors():
@@ -21,7 +21,7 @@ def test_frame_parse_coverage_all_errors():
             Frame.parse(b"1234567")
 
     # Line 125: CRC Mismatch
-    bad_crc_frame = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+    bad_crc_frame = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=protocol.PROTOCOL_VERSION,
         payload_len=0,
         command_id=0x40
@@ -31,7 +31,7 @@ def test_frame_parse_coverage_all_errors():
         Frame.parse(bad_crc_frame)
 
     # Line 140: Invalid version
-    bad_ver = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+    bad_ver = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=255,
         payload_len=0,
         command_id=0x40
@@ -40,7 +40,7 @@ def test_frame_parse_coverage_all_errors():
         Frame.parse(_build_raw_with_crc(bad_ver))
 
     # Line 157: Payload length mismatch
-    bad_len = protocol.CRC_COVERED_HEADER_STRUCT.build(dict(
+    bad_len = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=protocol.PROTOCOL_VERSION,
         payload_len=10,
         command_id=0x40

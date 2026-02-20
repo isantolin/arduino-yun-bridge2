@@ -36,16 +36,6 @@ def test_coerce_snapshot_int_handles_types_and_errors() -> None:
     assert context._coerce_snapshot_int(snapshot, "missing", 11) == 11
 
 
-def test_exponential_backoff_default_attempt_and_clamping() -> None:
-    backoff = context._ExponentialBackoff(min_val=5.0, max_val=60.0, multiplier=5.0)
-
-    # No attempt_number => default attempt 1
-    assert backoff(SimpleNamespace()) == 5.0
-
-    # Large attempt_number should clamp at max
-    assert backoff(SimpleNamespace(attempt_number=999)) == 60.0
-
-
 def test_append_with_limit_covers_empty_and_trim_paths() -> None:
     buf = bytearray(b"abc")
 

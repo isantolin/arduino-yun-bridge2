@@ -15,7 +15,7 @@ import msgspec
 import pytest
 from unittest.mock import MagicMock
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 
 
 def _load_pin_rest_cgi() -> ModuleType:

@@ -13,7 +13,7 @@ from mcubridge.config.const import (
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.base import BridgeContext
 from mcubridge.services.datastore import DatastoreComponent
@@ -61,7 +61,7 @@ async def test_handle_put_success(datastore_component: DatastoreComponent) -> No
     value = b"value1"
     # Payload: key_len (1 byte) + key + value_len (1 byte) + value
     payload = (
-        protocol.UINT8_STRUCT.build(len(key)) + key + protocol.UINT8_STRUCT.build(len(value)) + value
+        structures.UINT8_STRUCT.build(len(key)) + key + structures.UINT8_STRUCT.build(len(value)) + value
     )
 
     # Mock _publish_value
@@ -80,7 +80,7 @@ async def test_handle_put_malformed(datastore_component: DatastoreComponent) -> 
 
     # Missing value length
     key = b"k"
-    payload = protocol.UINT8_STRUCT.build(len(key)) + key
+    payload = structures.UINT8_STRUCT.build(len(key)) + key
     assert await datastore_component.handle_put(payload) is False
 
 
@@ -92,7 +92,7 @@ async def test_handle_get_request_success(
     datastore_component.state.datastore["key1"] = "value1"
 
     key = b"key1"
-    payload = protocol.UINT8_STRUCT.build(len(key)) + key
+    payload = structures.UINT8_STRUCT.build(len(key)) + key
 
     await datastore_component.handle_get_request(payload)
 
@@ -111,7 +111,7 @@ async def test_handle_get_request_missing(
     datastore_component: DatastoreComponent,
 ) -> None:
     key = b"missing"
-    payload = protocol.UINT8_STRUCT.build(len(key)) + key
+    payload = structures.UINT8_STRUCT.build(len(key)) + key
 
     await datastore_component.handle_get_request(payload)
 

@@ -12,7 +12,7 @@ from mcubridge.metrics import (
     publish_metrics,
 )
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.state.context import RuntimeState
 
 

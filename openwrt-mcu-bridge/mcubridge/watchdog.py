@@ -7,6 +7,9 @@ import logging
 import os
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+from transitions import Machine
 
 from .config.const import DEFAULT_WATCHDOG_INTERVAL, WATCHDOG_MIN_INTERVAL, WATCHDOG_TRIGGER_TOKEN
 from .state.context import RuntimeState
@@ -20,6 +23,17 @@ def _default_write(payload: bytes) -> None:
 
 class WatchdogKeepalive:
     """Emit keepalive pulses for the OpenWrt procd watchdog."""
+
+    if TYPE_CHECKING:
+        # FSM generated methods and attributes for static analysis
+        fsm_state: str
+        start: Callable[[], None]
+        stop: Callable[[], None]
+
+    # FSM States
+    STATE_INIT = "init"
+    STATE_RUNNING = "running"
+    STATE_STOPPED = "stopped"
 
     def __init__(
         self,
@@ -35,6 +49,23 @@ class WatchdogKeepalive:
         self._token = token
         self._write = write or _default_write
         self._logger = logger or logging.getLogger("mcubridge.watchdog")
+
+        # FSM Initialization
+        self.state_machine = Machine(
+            model=self,
+            states=[
+                self.STATE_INIT,
+                self.STATE_RUNNING,
+                self.STATE_STOPPED
+            ],
+            initial=self.STATE_INIT,
+            ignore_invalid_triggers=True,
+            model_attribute='fsm_state'
+        )
+
+        # FSM Transitions
+        self.state_machine.add_transition(trigger='start', source=[self.STATE_INIT, self.STATE_STOPPED], dest=self.STATE_RUNNING)
+        self.state_machine.add_transition(trigger='stop', source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
 
     @property
     def interval(self) -> float:
@@ -64,11 +95,13 @@ class WatchdogKeepalive:
 
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""
+        self.start()
         try:
             while True:
                 self.kick()
                 await asyncio.sleep(self._interval)
         except asyncio.CancelledError:
+            self.stop()
             self._logger.debug("Watchdog keepalive cancelled")
             raise
 

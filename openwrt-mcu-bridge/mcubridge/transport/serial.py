@@ -15,12 +15,14 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-from typing import Final, Sized, TypeGuard, cast
+from typing import TYPE_CHECKING, Callable, Final, Sized, TypeGuard, cast
 
 import msgspec
 import serial_asyncio_fast  # type: ignore
 import tenacity
 from cobs import cobs
+from transitions import Machine
+
 from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, rle
@@ -213,6 +215,26 @@ class BridgeSerialProtocol(asyncio.Protocol):
 class SerialTransport:
     """Manages the serial connection using the high-performance Protocol."""
 
+    if TYPE_CHECKING:
+        # FSM generated methods and attributes for static analysis
+        fsm_state: str
+        begin_reset: Callable[[], None]
+        begin_connect: Callable[[], None]
+        begin_negotiate: Callable[[], None]
+        mark_connected: Callable[[], None]
+        handshake: Callable[[], None]
+        enter_loop: Callable[[], None]
+        mark_disconnected: Callable[[], None]
+
+    # FSM States
+    STATE_DISCONNECTED = "disconnected"
+    STATE_RESETTING = "resetting"
+    STATE_CONNECTING = "connecting"
+    STATE_NEGOTIATING = "negotiating"
+    STATE_CONNECTED = "connected"
+    STATE_HANDSHAKING = "handshaking"
+    STATE_RUNNING = "running"
+
     def __init__(
         self,
         config: RuntimeConfig,
@@ -224,6 +246,32 @@ class SerialTransport:
         self.service = service
         self.protocol: BridgeSerialProtocol | None = None
         self._stop_event = asyncio.Event()
+
+        # FSM Initialization
+        self.state_machine = Machine(
+            model=self,
+            states=[
+                self.STATE_DISCONNECTED,
+                self.STATE_RESETTING,
+                self.STATE_CONNECTING,
+                self.STATE_NEGOTIATING,
+                self.STATE_CONNECTED,
+                self.STATE_HANDSHAKING,
+                self.STATE_RUNNING
+            ],
+            initial=self.STATE_DISCONNECTED,
+            ignore_invalid_triggers=True,
+            model_attribute='fsm_state'
+        )
+
+        # FSM Transitions
+        self.state_machine.add_transition(trigger='begin_reset', source='*', dest=self.STATE_RESETTING)
+        self.state_machine.add_transition(trigger='begin_connect', source=self.STATE_RESETTING, dest=self.STATE_CONNECTING)
+        self.state_machine.add_transition(trigger='begin_negotiate', source=self.STATE_CONNECTING, dest=self.STATE_NEGOTIATING)
+        self.state_machine.add_transition(trigger='mark_connected', source=[self.STATE_CONNECTING, self.STATE_NEGOTIATING], dest=self.STATE_CONNECTED)
+        self.state_machine.add_transition(trigger='handshake', source=self.STATE_CONNECTED, dest=self.STATE_HANDSHAKING)
+        self.state_machine.add_transition(trigger='enter_loop', source=self.STATE_HANDSHAKING, dest=self.STATE_RUNNING)
+        self.state_machine.add_transition(trigger='mark_disconnected', source='*', dest=self.STATE_DISCONNECTED)
 
     def _before_sleep_log(self, retry_state: tenacity.RetryCallState) -> None:
         reconnect_delay = max(1, self.config.reconnect_delay)
@@ -270,6 +318,7 @@ class SerialTransport:
 
     async def _toggle_dtr(self, loop: asyncio.AbstractEventLoop) -> None:
         """Pulse DTR to force MCU hardware reset."""
+        self.begin_reset()
         logger.warning("Performing Hardware Reset (DTR Toggle)...")
         try:
             await loop.run_in_executor(None, self._blocking_reset)
@@ -299,6 +348,7 @@ class SerialTransport:
 
         await self._toggle_dtr(loop)
 
+        self.begin_connect()
         logger.info("Connecting to %s at %d baud (Protocol Optimized)...", self.config.serial_port, start_baud)
 
         protocol_factory = functools.partial(BridgeSerialProtocol, self.service, self.state, loop)
@@ -310,6 +360,7 @@ class SerialTransport:
 
         try:
             if negotiation_needed:
+                self.begin_negotiate()
                 success = await self._negotiate_baudrate(self.protocol, target_baud)
                 if success:
                     logger.info("Baudrate negotiated. Reconnecting at %d...", target_baud)
@@ -324,20 +375,24 @@ class SerialTransport:
                 else:
                     logger.warning("Negotiation failed, staying at %d", start_baud)
 
+            self.mark_connected()
             # Register sender
             self.service.register_serial_sender(self._serial_sender)
             self.state.serial_writer = transport
 
             # Handshake
+            self.handshake()
             await self.service.on_serial_connected()
 
             # Loop until lost
+            self.enter_loop()
             while not transport.is_closing():
                 await asyncio.sleep(1)
 
             raise ConnectionError("Serial connection lost")
 
         finally:
+            self.mark_disconnected()
             if transport and not transport.is_closing():
                 transport.close()
             self.service.register_serial_sender(serial_sender_not_ready)

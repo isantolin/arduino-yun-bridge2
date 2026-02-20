@@ -15,7 +15,7 @@ import hmac
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 import msgspec
 import tenacity
@@ -118,6 +118,16 @@ def _retry_if_false(res: Any) -> bool:
 class SerialHandshakeManager:
     """Encapsulates MCU serial handshake orchestration and telemetry."""
 
+    if TYPE_CHECKING:
+        # FSM generated methods and attributes for static analysis
+        fsm_state: str
+        reset_fsm: Callable[[], None]
+        fail_handshake: Callable[[], None]
+        start_reset: Callable[[], None]
+        start_sync: Callable[[], None]
+        start_confirm: Callable[[], None]
+        complete_handshake: Callable[[], None]
+
     # FSM States
     STATE_UNSYNCHRONIZED = "unsynchronized"
     STATE_RESETTING = "resetting"
@@ -160,7 +170,8 @@ class SerialHandshakeManager:
                 self.STATE_FAULT
             ],
             initial=self.STATE_UNSYNCHRONIZED,
-            ignore_invalid_triggers=True
+            ignore_invalid_triggers=True,
+            model_attribute='fsm_state'
         )
 
         # FSM Transitions
@@ -257,7 +268,7 @@ class SerialHandshakeManager:
         # Actually, handle_link_sync_resp calls _handle_handshake_success which we can hook.
         # But _wait_for_link_sync_confirmation returns True only if link_is_synchronized is True.
         # So we can safely transition here if we are not already.
-        if self.state != self.STATE_SYNCHRONIZED:
+        if self.fsm_state != self.STATE_SYNCHRONIZED:
              self.complete_handshake()
 
         return True
@@ -520,7 +531,7 @@ class SerialHandshakeManager:
             "fatal_reason": self._state.handshake_fatal_reason,
             "fatal_detail": self._state.handshake_fatal_detail,
             "fatal_unix": self._state.handshake_fatal_unix,
-            "fsm_state": self.state  # Include FSM state in telemetry
+            "fsm_state": self.fsm_state  # Include FSM state in telemetry
         }
         if extra:
             payload.update(extra)

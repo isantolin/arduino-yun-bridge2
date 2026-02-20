@@ -14,7 +14,7 @@ from mcubridge.config.common import (
     parse_bool,
 )
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 
 
 def test_parse_bool():

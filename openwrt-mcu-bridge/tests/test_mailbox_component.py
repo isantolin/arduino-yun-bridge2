@@ -12,7 +12,7 @@ import pytest
 from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import structures
 from mcubridge.protocol.protocol import Command, MailboxAction, Status
 from mcubridge.protocol.topics import (
     Topic,

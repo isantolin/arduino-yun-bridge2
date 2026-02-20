@@ -8,7 +8,7 @@ import pytest
 from mcubridge import metrics
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.daemon import BridgeDaemon
-from mcubridge.protocol import protocol, structures, topics
+from mcubridge.protocol import protocol, topics
 from mcubridge.services.file import FileComponent
 from mcubridge.services.runtime import BridgeService
 from mcubridge.util import mqtt_helper

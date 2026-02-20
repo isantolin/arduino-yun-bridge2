@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 
 from mcubridge.protocol.protocol import UINT8_MASK, Status
 from mcubridge.state import context

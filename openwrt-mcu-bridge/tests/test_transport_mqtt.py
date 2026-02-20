@@ -22,7 +22,7 @@ from mcubridge.config.const import (
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport import mqtt

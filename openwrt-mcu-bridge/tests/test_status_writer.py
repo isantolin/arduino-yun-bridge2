@@ -6,7 +6,7 @@ import msgspec
 import pytest
 from mcubridge.mqtt.spool import MQTTPublishSpool
 from mcubridge.policy import AllowedCommandPolicy
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 from mcubridge.state import status
 from mcubridge.state.context import RuntimeState, SupervisorStats
 

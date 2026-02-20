@@ -16,7 +16,7 @@ from mcubridge import daemon, metrics
 from mcubridge.config import common, settings
 from mcubridge.mqtt import spool
 from mcubridge.mqtt.messages import QueuedPublish
-from mcubridge.protocol import protocol, structures, topics
+from mcubridge.protocol import structures, topics
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.security import security
@@ -1123,9 +1123,6 @@ def test_context_helpers():
     assert context._coerce_snapshot_int(snap, "b", 42) == 42
     assert context._coerce_snapshot_int(snap, "c", 0) == 5
     assert context._coerce_snapshot_int(snap, "missing", 123) == 123
-
-    # _ExponentialBackoff hasattr False
-    retry_state = SimpleNamespace()  # no attempt_number
 
     # _status_label unknown
     assert context._status_label(0xFF) == "0xFF"

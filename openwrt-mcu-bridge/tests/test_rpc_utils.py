@@ -5,7 +5,7 @@ from typing import Self
 
 import pytest
 from mcubridge.config import common, const
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 
 
 def test_get_default_config_matches_constants():

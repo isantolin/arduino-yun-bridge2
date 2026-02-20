@@ -13,7 +13,7 @@ from mcubridge.config.const import (
     DEFAULT_PROCESS_TIMEOUT,
 )
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 
 
 def _config_kwargs(**overrides: Any) -> dict[str, Any]:

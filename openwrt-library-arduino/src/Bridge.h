@@ -75,6 +75,7 @@
 #include "etl/delegate.h"
 #include "etl/optional.h"
 #include "etl/string_view.h"
+#include "etl/observer.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
@@ -149,6 +150,10 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
 constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #endif
 
+#ifndef BRIDGE_MAX_OBSERVERS
+#define BRIDGE_MAX_OBSERVERS 4
+#endif
+
 // --- Subsystem Enablement (RAM Optimization) ---
 // Note: Macros are now centralized in config/bridge_config.h
 
@@ -168,7 +173,16 @@ namespace test {
 }
 #endif
 
-class BridgeClass : public bridge::router::ICommandHandler {
+// [SIL-2] Observer Interface for System Events
+struct BridgeObserver {
+  virtual ~BridgeObserver() = default;
+  virtual void onBridgeSynchronized() {}
+  virtual void onBridgeLost() {}
+  virtual void onBridgeError(rpc::StatusCode code) { (void)code; }
+};
+
+class BridgeClass : public bridge::router::ICommandHandler, 
+                    public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
   #endif

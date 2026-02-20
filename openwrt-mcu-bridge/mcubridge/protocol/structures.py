@@ -43,7 +43,7 @@ class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Construct structures."""
 
     # Subclasses must define this schema
-    _SCHEMA: ClassVar[construct_raw.Construct[Any]]
+    _SCHEMA: ClassVar[construct_raw.Construct]
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
@@ -55,7 +55,7 @@ class BaseStruct(msgspec.Struct, frozen=True):
         container: Any = cls._SCHEMA.parse(bytes(data))
 
         # 2. Msgspec creates the typed object (efficiently)
-        return cls(**{k: v for k, v in container.items() if not k.startswith("_")})
+        return msgspec.convert(container, cls)
 
     def encode(self) -> bytes:
         """Encode the typed Msgspec struct into binary data."""
@@ -273,19 +273,47 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
     )
 
 
+class CapabilitiesFeatures(msgspec.Struct, frozen=True):
+    """Features bitmask parsed via BitStruct."""
+    watchdog: bool
+    rle: bool
+    debug_frames: bool
+    debug_io: bool
+    eeprom: bool
+    dac: bool
+    hw_serial1: bool
+    fpu: bool
+    logic_3v3: bool
+    large_buffer: bool
+    i2c: bool
+
+
 class CapabilitiesPacket(BaseStruct, frozen=True):
     ver: Annotated[int, msgspec.Meta(ge=0)]
     arch: Annotated[int, msgspec.Meta(ge=0)]
     dig: Annotated[int, msgspec.Meta(ge=0)]
     ana: Annotated[int, msgspec.Meta(ge=0)]
-    feat: Annotated[int, msgspec.Meta(ge=0)]
+    feat: CapabilitiesFeatures
 
     _SCHEMA = BinStruct(
         "ver" / construct.Int8ub,
         "arch" / construct.Int8ub,
         "dig" / construct.Int8ub,
         "ana" / construct.Int8ub,
-        "feat" / construct.Int32ub,
+        "feat" / construct.BitStruct(
+            construct.Padding(32 - 11),
+            "i2c" / construct.Flag,
+            "large_buffer" / construct.Flag,
+            "logic_3v3" / construct.Flag,
+            "fpu" / construct.Flag,
+            "hw_serial1" / construct.Flag,
+            "dac" / construct.Flag,
+            "eeprom" / construct.Flag,
+            "debug_io" / construct.Flag,
+            "debug_frames" / construct.Flag,
+            "rle" / construct.Flag,
+            "watchdog" / construct.Flag,
+        )
     )
 
 

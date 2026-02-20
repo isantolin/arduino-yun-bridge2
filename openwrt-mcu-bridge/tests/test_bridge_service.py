@@ -60,14 +60,25 @@ def test_on_serial_connected_flushes_console_queue() -> None:
                 )
                 # Priming capabilities
                 await service._handshake.handle_capabilities_resp(
-                    cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
-                        "ver": 2,
-                        "arch": 1,
-                        "dig": 20,
-                        "ana": 6,
-                        "feat": 0,
-                    })
-                )
+                                            cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
+                                                "ver": 2,
+                                                "arch": 1,
+                                                "dig": 20,
+                                                "ana": 6,
+                                                "feat": {
+                                                    "i2c": False,
+                                                    "large_buffer": False,
+                                                    "logic_3v3": False,
+                                                    "fpu": False,
+                                                    "hw_serial1": False,
+                                                    "dac": False,
+                                                    "eeprom": False,
+                                                    "debug_io": False,
+                                                    "debug_frames": False,
+                                                    "rle": False,
+                                                    "watchdog": False,
+                                                },
+                                            })                )
             elif command_id == Command.CMD_GET_VERSION.value:
                 # Direct flow injection bypasses lock issues
                 flow.on_frame_received(
@@ -168,14 +179,25 @@ def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
                 )
                 # Priming capabilities
                 await service._handshake.handle_capabilities_resp(
-                    cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
-                        "ver": 2,
-                        "arch": 1,
-                        "dig": 20,
-                        "ana": 6,
-                        "feat": 0,
-                    })
-                )
+                                            cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
+                                                "ver": 2,
+                                                "arch": 1,
+                                                "dig": 20,
+                                                "ana": 6,
+                                                "feat": {
+                                                    "i2c": False,
+                                                    "large_buffer": False,
+                                                    "logic_3v3": False,
+                                                    "fpu": False,
+                                                    "hw_serial1": False,
+                                                    "dac": False,
+                                                    "eeprom": False,
+                                                    "debug_io": False,
+                                                    "debug_frames": False,
+                                                    "rle": False,
+                                                    "watchdog": False,
+                                                },
+                                            })                )
             return True
 
         service.register_serial_sender(fake_sender)

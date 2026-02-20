@@ -80,7 +80,7 @@ class FileSpoolDeque:
         if isinstance(item, (bytes, bytearray)):
             path.write_bytes(item)
         else:
-            path.write_bytes(msgspec.json.encode(item))
+            path.write_bytes(msgspec.msgpack.encode(item))
 
     def appendleft(self, item: SpoolRecord | bytes) -> None:
         self._head -= 1
@@ -88,7 +88,7 @@ class FileSpoolDeque:
         if isinstance(item, (bytes, bytearray)):
             path.write_bytes(item)
         else:
-            path.write_bytes(msgspec.json.encode(item))
+            path.write_bytes(msgspec.msgpack.encode(item))
 
     def popleft(self) -> SpoolRecord:
         if len(self) == 0:
@@ -98,8 +98,8 @@ class FileSpoolDeque:
         try:
             data = path.read_bytes()
             # Decode to dict. If it fails, let the caller handle the exception.
-            record = msgspec.json.decode(data)
-            return cast(SpoolRecord, record)
+            record = msgspec.msgpack.decode(data, type=SpoolRecord)
+            return record
         finally:
             path.unlink(missing_ok=True)
             self._head += 1

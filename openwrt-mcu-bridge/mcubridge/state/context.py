@@ -49,6 +49,7 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     BridgeSnapshot,
+    CapabilitiesFeatures,
     HandshakeSnapshot,
     McuVersion,
     SerialLinkSnapshot,
@@ -123,51 +124,51 @@ class McuCapabilities(msgspec.Struct):
     board_arch: int = 0
     num_digital_pins: int = 0
     num_analog_inputs: int = 0
-    features: int = 0
+    features: CapabilitiesFeatures | None = None
 
     @property
     def has_watchdog(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_WATCHDOG)
+        return bool(self.features and self.features.watchdog)
 
     @property
     def has_rle(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_RLE)
+        return bool(self.features and self.features.rle)
 
     @property
     def debug_frames(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_DEBUG_FRAMES)
+        return bool(self.features and self.features.debug_frames)
 
     @property
     def debug_io(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_DEBUG_IO)
+        return bool(self.features and self.features.debug_io)
 
     @property
     def has_eeprom(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_EEPROM)
+        return bool(self.features and self.features.eeprom)
 
     @property
     def has_dac(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_DAC)
+        return bool(self.features and self.features.dac)
 
     @property
     def has_hw_serial1(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_HW_SERIAL1)
+        return bool(self.features and self.features.hw_serial1)
 
     @property
     def has_fpu(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_FPU)
+        return bool(self.features and self.features.fpu)
 
     @property
     def is_3v3_logic(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_LOGIC_3V3)
+        return bool(self.features and self.features.logic_3v3)
 
     @property
     def has_large_buffer(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_BIG_BUFFER)
+        return bool(self.features and self.features.large_buffer)
 
     @property
     def has_i2c(self) -> bool:
-        return bool(self.features & protocol.CAPABILITY_I2C)
+        return bool(self.features and self.features.i2c)
 
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""

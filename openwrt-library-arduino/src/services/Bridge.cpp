@@ -451,6 +451,9 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
           (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, buffer.data(), response_length);
           // [SIL-2] Handshake complete -> Transition to Idle via FSM
           _fsm.handshakeComplete();
+          
+          // [SIL-2] Notify Observers
+          notify_observers([](BridgeObserver& obs) { obs.onBridgeSynchronized(); });
         }
       }
       break;
@@ -809,6 +812,9 @@ void BridgeClass::_sendAck(uint16_t command_id) {
 void BridgeClass::_doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   (void)sendFrame(status_code, payload, length);
   if (_status_handler.is_valid()) _status_handler(status_code, payload, length);
+  
+  // [SIL-2] Notify Observers
+  notify_observers([status_code](BridgeObserver& obs) { obs.onBridgeError(status_code); });
 }
 
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, etl::string_view message) {
@@ -1103,6 +1109,9 @@ void BridgeClass::enterSafeState() {
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
   _consecutive_crc_errors = 0;
+  
+  // [SIL-2] Notify Observers of lost connection
+  notify_observers([](BridgeObserver& obs) { obs.onBridgeLost(); });
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {

@@ -1132,7 +1132,20 @@ def test_context_helpers():
 def test_mcu_capabilities_branches():
     """Cover all capability property branches."""
     # Test with everything enabled
-    caps = context.McuCapabilities(features=0xFFFF)
+    feat = structures.CapabilitiesFeatures(
+        watchdog=True,
+        rle=True,
+        debug_frames=True,
+        debug_io=True,
+        eeprom=True,
+        dac=True,
+        hw_serial1=True,
+        fpu=True,
+        logic_3v3=True,
+        large_buffer=True,
+        i2c=True,
+    )
+    caps = context.McuCapabilities(features=feat)
     assert caps.has_watchdog is True
     assert caps.has_rle is True
     assert caps.debug_frames is True
@@ -1306,7 +1319,7 @@ def test_mqtt_spool_gaps():
         dq.popleft()
 
     # FileSpoolDeque popleft coverage
-    msg = {"topic_name": "t", "payload": "cA=="}  # Base64 for b'p'
+    msg = {"topic_name": "t", "payload": b"p"}  # Raw bytes for msgpack
     dq.append(msg)
     assert len(dq) == 1
     dq.popleft()

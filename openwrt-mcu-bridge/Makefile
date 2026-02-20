@@ -45,18 +45,20 @@ define Package/$(PKG_NAME)
 	DEPENDS:=+python3
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
+		+python3 \
+		+python3-uci \
 		+python3-aiomqtt \
-		+python3-cobs \
-		+python3-construct \
-		+python3-cryptography \
-		+python3-msgspec \
 		+python3-paho-mqtt \
-		+python3-prometheus-client \
+		+python3-cobs \
+		+python3-msgspec \
 		+python3-psutil \
+		+python3-prometheus-client \
 		+python3-pyserial-asyncio-fast \
 		+python3-tenacity \
-		+python3-uci \
-		+python3-uvloop
+		+python3-uvloop \
+		+python3-cryptography \
+		+python3-construct \
+		+python3-transitions
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

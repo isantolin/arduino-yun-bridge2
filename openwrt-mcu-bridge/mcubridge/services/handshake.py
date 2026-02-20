@@ -20,6 +20,7 @@ from typing import Annotated, Any
 import msgspec
 import tenacity
 from construct import ConstructError
+from transitions import Machine
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -117,6 +118,14 @@ def _retry_if_false(res: Any) -> bool:
 class SerialHandshakeManager:
     """Encapsulates MCU serial handshake orchestration and telemetry."""
 
+    # FSM States
+    STATE_UNSYNCHRONIZED = "unsynchronized"
+    STATE_RESETTING = "resetting"
+    STATE_SYNCING = "syncing"
+    STATE_CONFIRMING = "confirming"
+    STATE_SYNCHRONIZED = "synchronized"
+    STATE_FAULT = "fault"
+
     def __init__(
         self,
         *,
@@ -139,6 +148,33 @@ class SerialHandshakeManager:
         self._reset_payload = self._build_reset_payload()
         self._capabilities_future: asyncio.Future[bytes] | None = None
 
+        # FSM Initialization
+        self.state_machine = Machine(
+            model=self,
+            states=[
+                self.STATE_UNSYNCHRONIZED,
+                self.STATE_RESETTING,
+                self.STATE_SYNCING,
+                self.STATE_CONFIRMING,
+                self.STATE_SYNCHRONIZED,
+                self.STATE_FAULT
+            ],
+            initial=self.STATE_UNSYNCHRONIZED,
+            ignore_invalid_triggers=True
+        )
+
+        # FSM Transitions
+        self.state_machine.add_transition(trigger='start_reset', source='*', dest=self.STATE_RESETTING)
+        self.state_machine.add_transition(trigger='start_sync', source=self.STATE_RESETTING, dest=self.STATE_SYNCING)
+        self.state_machine.add_transition(
+            trigger='start_confirm', source=self.STATE_SYNCING, dest=self.STATE_CONFIRMING
+        )
+        self.state_machine.add_transition(
+            trigger='complete_handshake', source=self.STATE_CONFIRMING, dest=self.STATE_SYNCHRONIZED
+        )
+        self.state_machine.add_transition(trigger='fail_handshake', source='*', dest=self.STATE_FAULT)
+        self.state_machine.add_transition(trigger='reset_fsm', source='*', dest=self.STATE_UNSYNCHRONIZED)
+
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
         retryer = tenacity.AsyncRetrying(
@@ -155,16 +191,22 @@ class SerialHandshakeManager:
         try:
             async for attempt in retryer:
                 with attempt:
+                    self.reset_fsm()  # Ensure clean slate
                     ok = await self._synchronize_attempt()
                     if not ok:
+                        self.fail_handshake()
                         return False
             return True
         except tenacity.RetryError:
+            self.fail_handshake()
             return False
 
     async def _synchronize_attempt(self) -> bool:
         nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
         self._state.record_handshake_attempt()
+
+        # Transition to RESETTING
+        self.start_reset()
 
         # [MIL-SPEC] Generate nonce with anti-replay counter
         nonce, new_counter = generate_nonce_with_counter(self._state.link_nonce_counter)
@@ -190,12 +232,18 @@ class SerialHandshakeManager:
             await self.handle_handshake_failure("link_reset_send_failed")
             return False
 
+        # Transition to SYNCING
+        self.start_sync()
         await asyncio.sleep(0.05)
+
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce)
         if not sync_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_sync_send_failed")
             return False
+
+        # Transition to CONFIRMING
+        self.start_confirm()
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
@@ -204,6 +252,14 @@ class SerialHandshakeManager:
             if pending_nonce == nonce:
                 await self.handle_handshake_failure("link_sync_timeout")
             return False
+
+        # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
+        # Actually, handle_link_sync_resp calls _handle_handshake_success which we can hook.
+        # But _wait_for_link_sync_confirmation returns True only if link_is_synchronized is True.
+        # So we can safely transition here if we are not already.
+        if self.state != self.STATE_SYNCHRONIZED:
+             self.complete_handshake()
+
         return True
 
     async def handle_link_sync_resp(self, payload: bytes) -> bool:
@@ -287,6 +343,10 @@ class SerialHandshakeManager:
 
         payload = nonce
         self._state.link_is_synchronized = True
+
+        # FSM Transition to SYNCHRONIZED
+        self.complete_handshake()
+
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
@@ -362,6 +422,9 @@ class SerialHandshakeManager:
         *,
         detail: str | None = None,
     ) -> None:
+        # FSM Transition to FAULT
+        self.fail_handshake()
+
         self._state.record_handshake_failure(reason)
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
@@ -457,6 +520,7 @@ class SerialHandshakeManager:
             "fatal_reason": self._state.handshake_fatal_reason,
             "fatal_detail": self._state.handshake_fatal_detail,
             "fatal_unix": self._state.handshake_fatal_unix,
+            "fsm_state": self.state  # Include FSM state in telemetry
         }
         if extra:
             payload.update(extra)

@@ -80,3 +80,9 @@ name = "construct"
 openwrt = "python3-construct"
 pip = "construct==2.10.70"
 rationale = "Declarative binary protocol parsing"
+
+[[dependency]]
+name = "transitions"
+openwrt = "python3-transitions"
+pip = "transitions==0.9.2"
+rationale = "FSM implementation for handshake lifecycle"

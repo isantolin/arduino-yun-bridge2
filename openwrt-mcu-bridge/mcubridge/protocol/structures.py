@@ -7,19 +7,23 @@ Improved robustness for binary parsing (SIL-2) using Construct + Msgspec.
 from __future__ import annotations
 
 import asyncio
-import base64
 from binascii import crc32
 from collections.abc import Iterable
 from enum import IntEnum
-from typing import Annotated, Any, ClassVar, Final, Self, Type, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, Self, Type, TypeVar, cast
 
 import msgspec
 import construct as construct_raw
 from . import protocol
 
-# [SIL-2] Explicit Any cast for construct to satisfy pyright dynamic lookup
-construct: Any = construct_raw
-BinStruct = construct.Struct
+if TYPE_CHECKING:
+    construct: Any = construct_raw
+    BinStruct = construct.Struct
+    Construct = construct_raw.Construct[Any]
+else:
+    construct = construct_raw
+    BinStruct = construct.Struct
+    Construct = construct_raw.Construct
 
 # --- Basic Binary Types (Restored from protocol.py) ---
 UINT8_STRUCT: Final = construct.Int8ub
@@ -28,12 +32,22 @@ UINT32_STRUCT: Final = construct.Int32ub
 NONCE_COUNTER_STRUCT: Final = construct.Int64ub
 CRC_STRUCT: Final = construct.Int32ub
 
+# [SIL-2] Explicit Command ID Structure
+# Separates compression flag from the command identifier for explicit handling.
+CommandIdStruct: Final = construct.BitStruct(
+    "compressed" / construct.Flag,
+    "id" / construct.Enum(
+        construct.BitsInteger(15),
+        protocol.Command,
+        protocol.Status,
+        _default=construct.Pass
+    ),
+)
+
 CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
     "version" / construct.Int8ub,
     "payload_len" / construct.Int16ub,
-    "command_id" / construct.Enum(
-        construct.Int16ub, protocol.Command, protocol.Status, _default=protocol.INVALID_ID_SENTINEL
-    ),
+    "command_id" / CommandIdStruct,
 )
 
 T = TypeVar("T", bound="BaseStruct")
@@ -43,7 +57,7 @@ class BaseStruct(msgspec.Struct, frozen=True):
     """Base class for hybrid Msgspec/Construct structures."""
 
     # Subclasses must define this schema
-    _SCHEMA: ClassVar[construct_raw.Construct]
+    _SCHEMA: ClassVar[Construct]
 
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
@@ -336,32 +350,38 @@ def _compute_crc32(data: bytes) -> int:
 FRAME_STRUCT = BinStruct(
     "content" / construct.RawCopy(BinStruct(
         "header" / CRC_COVERED_HEADER_STRUCT,
-        "payload" / construct.RawCopy(construct.Switch(construct.this.header.command_id, {
-            protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_SET_PIN_MODE: PinModePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_DIGITAL_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_ANALOG_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-        }, default=construct.Bytes(construct.this.header.payload_len))),
+        "payload" / construct.RawCopy(construct.IfThenElse(
+            construct.this.header.command_id.compressed,
+            # If compressed, do not parse payload schema (it's raw compressed bytes)
+            construct.Bytes(construct.this.header.payload_len),
+            # If not compressed, select schema based on ID
+            construct.Switch(construct.this.header.command_id.id, {
+                protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_SET_PIN_MODE: PinModePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_DIGITAL_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_ANALOG_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            }, default=construct.Bytes(construct.this.header.payload_len))
+        )),
     )),
     "crc" / construct.Checksum(
         CRC_STRUCT,
@@ -417,7 +437,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     """JSON-serializable record stored in the durable spool (RAM/Disk)."""
 
     topic_name: str
-    payload: str
+    payload: bytes
     qos: int = 0
     retain: bool = False
     content_type: str | None = None
@@ -425,7 +445,7 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_indicator: int | None = None
     message_expiry_interval: int | None = None
     response_topic: str | None = None
-    correlation_data: str | None = None
+    correlation_data: bytes | None = None
     user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
 
 
@@ -448,21 +468,16 @@ class QueuedPublish(msgspec.Struct):
 
     def to_record(self) -> SpoolRecord:
         """Convert to a SpoolRecord struct for disk serialization."""
-        payload_b64 = base64.b64encode(self.payload).decode("ascii")
-        correlation_b64 = (
-            base64.b64encode(self.correlation_data).decode("ascii") if self.correlation_data is not None else None
-        )
-
         return SpoolRecord(
             topic_name=self.topic_name,
-            payload=payload_b64,
+            payload=self.payload,
             qos=int(self.qos),
             retain=self.retain,
             content_type=self.content_type,
             payload_format_indicator=self.payload_format_indicator,
             message_expiry_interval=self.message_expiry_interval,
             response_topic=self.response_topic,
-            correlation_data=correlation_b64,
+            correlation_data=self.correlation_data,
             user_properties=list(self.user_properties),
         )
 
@@ -471,9 +486,13 @@ class QueuedPublish(msgspec.Struct):
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
         data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
 
-        payload = base64.b64decode(data.get("payload", ""))
-        corr_raw = data.get("correlation_data")
-        correlation_data = base64.b64decode(corr_raw) if corr_raw else None
+        payload = data.get("payload", b"")
+        if isinstance(payload, str):
+             payload = payload.encode("utf-8") # Fallback
+
+        correlation_data = data.get("correlation_data")
+        if isinstance(correlation_data, str):
+             correlation_data = correlation_data.encode("utf-8") # Fallback
 
         raw_props = data.get("user_properties", ())
         user_properties: list[tuple[str, str]] = []  # pyright: ignore[reportUnknownVariableType]

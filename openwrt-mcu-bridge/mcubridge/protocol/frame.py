@@ -57,13 +57,20 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
+        # [SIL-2] Decompose command ID for BitStruct
+        is_compressed = bool(command_id & protocol.CMD_FLAG_COMPRESSED)
+        raw_id = command_id & ~protocol.CMD_FLAG_COMPRESSED
+
         return FRAME_STRUCT.build({
             "content": {
                 "value": {
                     "header": {
                         "version": protocol.PROTOCOL_VERSION,
                         "payload_len": payload_len,
-                        "command_id": command_id,
+                        "command_id": {
+                            "compressed": is_compressed,
+                            "id": raw_id,
+                        },
                     },
                     # [SIL-2] Payload Injection
                     # We inject raw bytes into the 'payload' RawCopy field.
@@ -102,7 +109,7 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
         # Extract parsed fields
         # Structure: container -> content (RawCopy) -> value (Struct)
-        #            -> header (Struct) -> command_id
+        #            -> header (Struct) -> command_id (Struct)
         #            -> payload (RawCopy) -> data (bytes)
         header = container.content.value.header
 
@@ -118,7 +125,12 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         if len(payload_bytes) != header.payload_len:
              raise ValueError(f"Payload length mismatch: header says {header.payload_len}, got {len(payload_bytes)}")
 
-        return int(header.command_id), payload_bytes
+        # Reconstruct integer command ID from BitStruct
+        cmd_val = int(header.command_id.id) # Enum to int if needed
+        if header.command_id.compressed:
+            cmd_val |= protocol.CMD_FLAG_COMPRESSED
+
+        return cmd_val, payload_bytes
 
     def to_bytes(self) -> bytes:
         """Serialize the instance using :meth:`build`."""

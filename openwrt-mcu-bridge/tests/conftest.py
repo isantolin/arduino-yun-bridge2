@@ -105,22 +105,6 @@ def event_loop_policy():
     return policy
 
 
-
-@pytest.fixture(autouse=True)
-def coro_leak_fix():
-    """Close all leaked coroutines after each test to prevent RuntimeWarnings."""
-    yield
-    import asyncio
-    import gc
-    for obj in gc.get_objects():
-        try:
-            if asyncio.iscoroutine(obj):
-                obj.close()
-        except (AttributeError, RuntimeError):
-            pass
-
-
-
 @pytest.fixture(autouse=True)
 def reset_logging_handlers():
     """Close and remove all logging handlers after each test to prevent ResourceWarnings."""

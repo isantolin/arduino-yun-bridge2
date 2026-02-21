@@ -95,6 +95,15 @@ __all__: Final[tuple[str, ...]] = (
     "BridgeSnapshot",
 )
 
+from transitions import Machine
+
+# FSM States for ManagedProcess
+PROCESS_STATE_STARTING = "STARTING"
+PROCESS_STATE_RUNNING = "RUNNING"
+PROCESS_STATE_DRAINING = "DRAINING"
+PROCESS_STATE_FINISHED = "FINISHED"
+PROCESS_STATE_ZOMBIE = "ZOMBIE"
+
 
 def resolve_command_id(command_id: int) -> str:
     """Resolve command/status ID to human-readable name."""
@@ -213,6 +222,29 @@ class ManagedProcess(msgspec.Struct):
     stderr_buffer: bytearray = msgspec.field(default_factory=_bytearray_factory)
     exit_code: int | None = None
     io_lock: asyncio.Lock = msgspec.field(default_factory=_asyncio_lock_factory)
+    fsm_state: str = PROCESS_STATE_STARTING
+    _machine: Any = None
+
+    def __post_init__(self) -> None:
+        self._machine = Machine(
+            model=self,
+            states=[
+                PROCESS_STATE_STARTING,
+                PROCESS_STATE_RUNNING,
+                PROCESS_STATE_DRAINING,
+                PROCESS_STATE_FINISHED,
+                PROCESS_STATE_ZOMBIE,
+            ],
+            initial=PROCESS_STATE_STARTING,
+            model_attribute="fsm_state",
+            auto_transitions=False,
+        )
+        self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
+        self._machine.add_transition("sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING)
+        self._machine.add_transition("io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED)
+        self._machine.add_transition("finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
+        # Allow force cleanup from any state
+        self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
 
     def append_output(
         self,
@@ -244,7 +276,8 @@ class ManagedProcess(msgspec.Struct):
         )
 
     def is_drained(self) -> bool:
-        return not self.stdout_buffer and not self.stderr_buffer
+        # Legacy helper, now reflected in state
+        return self.fsm_state in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
 
 
 def _append_with_limit(

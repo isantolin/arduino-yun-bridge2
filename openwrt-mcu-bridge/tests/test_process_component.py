@@ -320,9 +320,19 @@ async def test_handle_kill_terminates_and_cleans_slot(
             return None
 
     proc = FakeProc()
-    # Minimal ManagedProcess-like slot; runtime state stores a richer object, but we only need
-    # the attributes used by handle_kill.
-    slot = SimpleNamespace(handle=proc, exit_code=None, is_drained=lambda: True)
+    
+    # [FSM] Mock trigger side effects for state transitions
+    def _trigger(evt: str) -> None:
+        if evt == "force_kill":
+            slot.fsm_state = "ZOMBIE"
+
+    slot = SimpleNamespace(
+        handle=proc,
+        exit_code=None,
+        is_drained=lambda: True,
+        fsm_state="RUNNING",
+        trigger=_trigger
+    )
 
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot  # type: ignore[assignment]

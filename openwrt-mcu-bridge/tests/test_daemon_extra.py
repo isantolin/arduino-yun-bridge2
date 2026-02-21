@@ -1,6 +1,7 @@
 """Extra coverage for mcubridge.daemon."""
 
 import asyncio
+import itertools
 from unittest.mock import patch
 
 import pytest
@@ -40,8 +41,9 @@ async def test_daemon_supervise_healthy_reset() -> None:
     async def healthy_reset_task():
         nonlocal call_count
         call_count += 1
-        # Always fail to force supervisor exception handling
-        raise ValueError("fail")
+        if call_count <= 2:
+            raise ValueError("fail")
+        return # Clean exit
 
     spec = SupervisedTaskSpec(
         name="test-healthy",
@@ -50,35 +52,25 @@ async def test_daemon_supervise_healthy_reset() -> None:
         max_restarts=1  # Allow one retry (2 attempts total) then raise
     )
 
-        # Mock time:
-        # Use a sequence that increments by a large amount (100s) on every call.
-        # This ensures that any duration check `now - prev` where `now` is a subsequent call
-        # will yield a large positive value (> 10s), satisfying the "healthy" check.
-        # This is robust against the exact number of calls Tenacity makes.
-        import itertools
-        
-        async def task_logic():
-            nonlocal call_count
-            call_count += 1
-            if call_count <= 2:
-                raise ValueError("fail")
-            return # Clean exit
+    # Mock time:
+    # Use a sequence that increments by a large amount (100s) on every call.
+    # This ensures that any duration check `now - prev` where `now` is a subsequent call
+    # will yield a large positive value (> 10s), satisfying the "healthy" check.
+    # This is robust against the exact number of calls Tenacity makes.
     
-        spec.factory = task_logic
-    
-        with (
-            patch("asyncio.sleep", return_value=None),
-            patch("time.monotonic", side_effect=itertools.count(0, 100.0)),
-        ):
-            # The task eventually succeeds on the 3rd attempt (after reset).
-            # So _supervise_task should return cleanly, NOT raise.
-            await daemon._supervise_task(spec)
-    
-        # It should have a record because it failed previously
-        assert "test-healthy" in daemon.state.supervisor_stats
-        # It failed twice.
-        # mark_supervisor_healthy was called after 2nd failure, resetting backoff.
-        assert daemon.state.supervisor_stats["test-healthy"].backoff_seconds == 0.0
+    with (
+        patch("asyncio.sleep", return_value=None),
+        patch("time.monotonic", side_effect=itertools.count(0, 100.0)),
+    ):
+        # The task eventually succeeds on the 3rd attempt (after reset).
+        # So _supervise_task should return cleanly, NOT raise.
+        await daemon._supervise_task(spec)
+
+    # It should have a record because it failed previously
+    assert "test-healthy" in daemon.state.supervisor_stats
+    # It failed twice.
+    # mark_supervisor_healthy was called after 2nd failure, resetting backoff.
+    assert daemon.state.supervisor_stats["test-healthy"].backoff_seconds == 0.0
 
 @pytest.mark.asyncio
 async def test_daemon_supervise_cancelled() -> None:

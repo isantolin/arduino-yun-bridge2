@@ -132,10 +132,10 @@ async def test_process_read_stream_chunk_timeout() -> None:
     pc = ProcessComponent(config, state, MagicMock())
 
     reader = MagicMock()
-    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
+    reader.read = AsyncMock()
+    with patch("asyncio.timeout", side_effect=asyncio.TimeoutError):
         res = await pc._read_stream_chunk(1, reader, timeout=0.1)
         assert res == b""
-
 
 @pytest.mark.asyncio
 async def test_process_terminate_tree_already_finished() -> None:

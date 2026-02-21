@@ -33,8 +33,8 @@ void ProcessClass::runAsync(etl::string_view command) {
 
 // Helper: build a 2-byte PID payload and send a single frame.
 static void sendPidCommand(rpc::CommandId command, uint16_t pid_u16) {
-  etl::array<uint8_t, 2> pid_payload;
-  rpc::write_u16_be(pid_payload.data(), pid_u16);
+  etl::vector<uint8_t, 2> pid_payload;
+  rpc::PacketBuilder(pid_payload).add_u16(pid_u16);
   (void)Bridge.sendFrame(command, pid_payload.data(), pid_payload.size());
 }
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-from typing import TYPE_CHECKING, Callable, Final, Sized, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
 
 import msgspec
 import serial_asyncio_fast  # type: ignore
@@ -93,7 +93,13 @@ class BridgeSerialProtocol(asyncio.Protocol):
     def connection_lost(self, exc: Exception | None) -> None:
         logger.warning("Serial connection lost: %s", exc)
         self.transport = None
-        if not self.connected_future.done():
+        # Replace the current future with a completed one if it was already resolved
+        if self.connected_future.done():
+             # We create a new future to signal the transport run loop that we are done
+             # Actually, if it was done, it means connection_made was successful.
+             # Now we need to signal disconnection.
+             pass
+        else:
             self.connected_future.set_exception(exc or ConnectionError("Closed"))
 
     def data_received(self, data: bytes) -> None:
@@ -212,6 +218,25 @@ class BridgeSerialProtocol(asyncio.Protocol):
             return False
 
 
+class SignalLostProtocol(BridgeSerialProtocol):
+    """Protocol wrapper that signals connection loss via a Future."""
+
+    def __init__(
+        self,
+        service: BridgeService,
+        state: RuntimeState,
+        loop: asyncio.AbstractEventLoop,
+        lost_future: asyncio.Future[Any],
+    ) -> None:
+        super().__init__(service, state, loop)
+        self.lost_future = lost_future
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        super().connection_lost(exc)
+        if not self.lost_future.done():
+            self.lost_future.set_result(exc)
+
+
 class SerialTransport:
     """Manages the serial connection using the high-performance Protocol."""
 
@@ -246,6 +271,7 @@ class SerialTransport:
         self.service = service
         self.protocol: BridgeSerialProtocol | None = None
         self._stop_event = asyncio.Event()
+        self.loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
 
         # FSM Initialization
         self.state_machine = Machine(
@@ -353,6 +379,7 @@ class SerialTransport:
             logger.error("DTR Toggle failed: %s", e)
 
     async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:
+        self.loop = loop
         target_baud = self.config.serial_baud
         initial_baud = self.config.serial_safe_baud
         negotiation_needed = initial_baud > 0 and initial_baud != target_baud
@@ -363,12 +390,19 @@ class SerialTransport:
         self.begin_connect()
         logger.info("Connecting to %s at %d baud (Protocol Optimized)...", self.config.serial_port, start_baud)
 
-        protocol_factory = functools.partial(BridgeSerialProtocol, self.service, self.state, loop)
+        # Create a Future that will represent the lifetime of the connection
+        lost_future: asyncio.Future[Any] = loop.create_future()
+
+        protocol_factory = functools.partial(SignalLostProtocol, self.service, self.state, loop, lost_future)
         transport, proto = await serial_asyncio_fast.create_serial_connection(
             loop, protocol_factory, self.config.serial_port, baudrate=start_baud
         )
         self.protocol = cast(BridgeSerialProtocol, proto)
         await self.protocol.connected_future
+
+        if transport.is_closing():
+             if not lost_future.done():
+                 lost_future.set_result(ConnectionError("Transport closing immediately after connection"))
 
         try:
             if negotiation_needed:
@@ -377,8 +411,11 @@ class SerialTransport:
                 if success:
                     logger.info("Baudrate negotiated. Reconnecting at %d...", target_baud)
                     transport.close()
-                    await asyncio.sleep(0.2)
-
+                    # Re-create lost_future for new connection
+                    lost_future = loop.create_future()
+                    protocol_factory = functools.partial(
+                        SignalLostProtocol, self.service, self.state, loop, lost_future
+                    )
                     transport, proto = await serial_asyncio_fast.create_serial_connection(
                         loop, protocol_factory, self.config.serial_port, baudrate=target_baud
                     )
@@ -396,12 +433,27 @@ class SerialTransport:
             self.handshake()
             await self.service.on_serial_connected()
 
-            # Loop until lost
+            # Wait efficiently for connection loss or stop request
             self.enter_loop()
-            while not transport.is_closing():
-                await asyncio.sleep(1)
 
-            raise ConnectionError("Serial connection lost")
+            if not self._stop_event.is_set() and transport.is_closing():
+                raise ConnectionError("Serial connection lost")
+
+            while not self._stop_event.is_set():
+                if lost_future.done():
+                    break
+                if transport.is_closing():
+                    break
+                await asyncio.sleep(1.0)
+
+            if lost_future.done():
+                exc = await lost_future
+                if exc:
+                    raise ConnectionError(f"Serial connection lost: {exc}")
+                raise ConnectionError("Serial connection lost")
+
+            if not self._stop_event.is_set() and transport.is_closing():
+                raise ConnectionError("Serial connection lost")
 
         finally:
             self.mark_disconnected()

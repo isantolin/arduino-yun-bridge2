@@ -9,12 +9,10 @@ import time
 from asyncio.subprocess import Process
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Final
 
 import msgspec
 import psutil
-import tenacity
 from aiomqtt.message import Message
 from prometheus_client import CollectorRegistry, Summary
 from transitions import Machine
@@ -37,7 +35,6 @@ from ..config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
     SPOOL_BACKOFF_MAX_SECONDS,
     SPOOL_BACKOFF_MIN_SECONDS,
-    SPOOL_BACKOFF_MULTIPLIER,
 )
 from ..config.settings import RuntimeConfig
 from ..mqtt.messages import QueuedPublish
@@ -212,6 +209,10 @@ def _asyncio_lock_factory() -> asyncio.Lock:
     return asyncio.Lock()
 
 
+def _asyncio_event_factory() -> asyncio.Event:
+    return asyncio.Event()
+
+
 @dataclass
 class ManagedProcess:
     """Managed subprocess with output buffers."""
@@ -282,8 +283,8 @@ class ManagedProcess:
         )
 
     def is_drained(self) -> bool:
-        # Legacy helper, now reflected in state
-        return self.fsm_state in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
+        """Return True if both stdout and stderr buffers are empty."""
+        return not self.stdout_buffer and not self.stderr_buffer
 
 
 def _append_with_limit(
@@ -322,14 +323,6 @@ def _trim_process_buffers(
 
 def _latency_bucket_counts_factory() -> list[int]:
     return [0] * len(LATENCY_BUCKETS_MS)
-
-
-def _spool_wait_strategy_factory() -> Any:
-    return tenacity.wait_exponential(
-        multiplier=SPOOL_BACKOFF_MULTIPLIER,
-        min=SPOOL_BACKOFF_MIN_SECONDS,
-        max=SPOOL_BACKOFF_MAX_SECONDS,
-    )
 
 
 def _mqtt_publish_queue_factory() -> asyncio.Queue[QueuedPublish]:
@@ -589,7 +582,6 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
     _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=_last_spool_snapshot_factory)
-    _spool_wait_strategy: Any = msgspec.field(default_factory=_spool_wait_strategy_factory)
     datastore: dict[str, str] = msgspec.field(default_factory=_datastore_factory)
     mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=_bounded_byte_deque_factory)
     mcu_is_paused: bool = False
@@ -645,6 +637,7 @@ class RuntimeState(msgspec.Struct):
     mcu_capabilities: McuCapabilities | None = None
     link_handshake_nonce: bytes | None = None
     link_is_synchronized: bool = False
+    link_sync_event: asyncio.Event = msgspec.field(default_factory=_asyncio_event_factory)
     link_expected_tag: bytes | None = None
     link_nonce_length: int = 0
     # [MIL-SPEC] Anti-replay nonce counters
@@ -1132,8 +1125,8 @@ class RuntimeState(msgspec.Struct):
             self.mqtt_spool_retry_attempts + 1,
             6,
         )
-        retry_state = SimpleNamespace(attempt_number=max(1, self.mqtt_spool_retry_attempts))
-        delay = self._spool_wait_strategy(retry_state)
+        # Exponential backoff calculation: min * (2 ** (attempt - 1))
+        delay = min(SPOOL_BACKOFF_MIN_SECONDS * (2 ** (self.mqtt_spool_retry_attempts - 1)), SPOOL_BACKOFF_MAX_SECONDS)
         self.mqtt_spool_backoff_until = time.monotonic() + delay
 
     def _disable_mqtt_spool(

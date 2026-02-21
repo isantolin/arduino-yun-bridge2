@@ -65,6 +65,7 @@
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
+#include "protocol/PacketBuilder.h"
 
 #undef min
 #undef max
@@ -587,12 +588,11 @@ class FileSystemClass {
       return;
     }
 
-    etl::array<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 1> header;
-    header[0] = static_cast<uint8_t>(filePath.length());
-    etl::copy_n(filePath.data(), filePath.length(), header.begin() + 1);
+    etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 1> header;
+    rpc::PacketBuilder(header).add_pascal_string(filePath);
 
     Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 
-                           header.data(), filePath.length() + 1, 
+                           header.data(), header.size(), 
                            data, length);
   }
   

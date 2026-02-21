@@ -92,12 +92,81 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
 - **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (tmpfs/RAM).
 
-## Máquina de Estados (ETL FSM) — IEC 61508 / SIL 2
+## Máquinas de Estados (FSM)
 
-El sistema de comunicación MCU↔Linux implementa una **máquina de estados finita (FSM)** basada en la biblioteca [ETL (Embedded Template Library)](https://www.etlcpp.com/fsm.html) `etl::fsm`. Esta arquitectura garantiza transiciones deterministas y trazables, cumpliendo con IEC 61508 (SIL-2).
+El ecosistema implementa múltiples máquinas de estados deterministas para gestionar flujos críticos, garantizando previsibilidad y facilitando la recuperación ante errores.
 
-### Estados
+### 1. Link Handshake FSM (Python Daemon)
 
+Gestiona el ciclo de vida del enlace serie seguro entre el daemon y el MCU.
+
+#### Estados
+| Estado | Descripción |
+|--------|-------------|
+| `unsynchronized` | Estado inicial. Sin enlace establecido. |
+| `resetting` | Enviando `CMD_LINK_RESET` para inicializar parámetros de tiempo. |
+| `syncing` | Enviando `CMD_LINK_SYNC` con nonce de desafío. |
+| `confirming` | Esperando `CMD_LINK_SYNC_RESP` validado. |
+| `synchronized` | Enlace establecido y autenticado. Listo para RPC. |
+| `fault` | Error crítico o de autenticación detectado. |
+
+#### Transiciones
+- `start_reset`: `*` → `resetting` (Inicia secuencia de sincronización)
+- `start_sync`: `resetting` → `syncing` (Parámetros de tiempo aceptados)
+- `start_confirm`: `syncing` → `confirming` (Nonce de desafío enviado)
+- `complete_handshake`: `confirming` → `synchronized` (Respuesta HMAC validada)
+- `fail_handshake`: `*` → `fault` (Error de integridad o timeout fatal)
+- `reset_fsm`: `*` → `unsynchronized` (Reinicio manual o desconexión)
+
+---
+
+### 2. MQTT Transport FSM (Python Daemon)
+
+Controla la conectividad con el broker MQTT v5 y la gestión de suscripciones.
+
+#### Estados
+| Estado | Descripción |
+|--------|-------------|
+| `disconnected` | Sin conexión al broker. |
+| `connecting` | Intentando establecer sesión TCP/TLS. |
+| `subscribing` | Sesión establecida, registrando topics de comando. |
+| `ready` | Suscripciones activas. Procesando mensajes bidireccionalmente. |
+
+#### Transiciones
+- `connect`: `*` → `connecting` (Inicia intento de conexión)
+- `connected`: `connecting` → `subscribing` (Sesión TCP/TLS exitosa)
+- `subscribed`: `subscribing` → `ready` (Todos los topics registrados)
+- `disconnect`: `*` → `disconnected` (Error de red o parada controlada)
+
+---
+
+### 3. Managed Process FSM (Python Daemon)
+
+Rastrea el ciclo de vida de cada subproceso asíncrono ejecutado en Linux a petición del MCU.
+
+#### Estados
+| Estado | Descripción |
+|--------|-------------|
+| `STARTING` | Proceso en creación (fork/exec). |
+| `RUNNING` | Proceso en ejecución activa. |
+| `DRAINING` | Proceso finalizado, vaciando buffers de salida (stdout/stderr). |
+| `FINISHED` | Buffers vacíos. Esperando recolección de estado final. |
+| `ZOMBIE` | Ciclo de vida completado. Slot liberado. |
+
+#### Transiciones
+- `start`: `STARTING` → `RUNNING` (Handle de proceso obtenido)
+- `sigchld`: `RUNNING` → `DRAINING` (Proceso terminó su ejecución)
+- `io_complete`: `DRAINING` → `FINISHED` (Lectura de pipes completada)
+- `finalize`: `FINISHED` → `ZOMBIE` (Resultado enviado al MCU y slot liberado)
+- `force_kill`: `*` → `ZOMBIE` (Terminación forzada por timeout o `CMD_PROCESS_KILL`)
+
+---
+
+### 4. ETL FSM (MCU Firmware) — IEC 61508 / SIL 2
+
+Máquina de estados estática en el MCU (C++) para la gestión del enlace RPC.
+
+#### Estados
 | Estado | ID | Descripción |
 |--------|----|-------------|
 | `StateUnsynchronized` | 0 | Enlace no establecido. Esperando handshake. |
@@ -105,18 +174,7 @@ El sistema de comunicación MCU↔Linux implementa una **máquina de estados fin
 | `StateAwaitingAck` | 2 | Frame crítico enviado, esperando confirmación. |
 | `StateFault` | 3 | Fallo criptográfico detectado. Estado terminal. |
 
-### Eventos
-
-| Evento | Descripción |
-|--------|-------------|
-| `EvHandshakeComplete` | Handshake HMAC validado exitosamente. |
-| `EvSendCritical` | Frame que requiere ACK enviado. |
-| `EvAckReceived` | ACK recibido para frame pendiente. |
-| `EvTimeout` | Timeout de ACK (retries agotados). |
-| `EvReset` | Solicitud de reset del enlace. |
-| `EvCryptoFault` | Fallo de integridad criptográfica (KAT fallido). |
-
-### Diagrama de Transiciones
+#### Diagrama de Transiciones (MCU)
 
 ```
                     ┌─────────────────────┐
@@ -137,43 +195,7 @@ El sistema de comunicación MCU↔Linux implementa una **máquina de estados fin
               │     └──────────┬──────────┘
               │                │ EvTimeout
               └────────────────┘
-
-                    ┌─────────────────────┐
-      EvCryptoFault │       Fault         │ (estado terminal)
-         ──────────►│        (3)          │
-                    └─────────────────────┘
 ```
-
-### Implementación
-
-El FSM está implementado en `src/fsm/bridge_fsm.h` usando el framework `etl::fsm`:
-
-```cpp
-#include "fsm/bridge_fsm.h"
-
-// Consulta de estado
-bool synced = _fsm.isIdle() || _fsm.isAwaitingAck();
-bool waiting = _fsm.isAwaitingAck();
-bool failed = _fsm.isFault();
-
-// Transiciones via eventos
-_fsm.handshakeComplete();  // Unsynchronized → Idle
-_fsm.sendCritical();       // Idle → AwaitingAck
-_fsm.ackReceived();        // AwaitingAck → Idle
-_fsm.timeout();            // AwaitingAck → Idle
-_fsm.reset();              // Any → Unsynchronized
-_fsm.cryptoFault();        // Any → Fault
-```
-
-### Ventajas sobre enum + switch
-
-| Aspecto | Enum | ETL FSM |
-|---------|------|---------|
-| Validación de transiciones | Manual | Automática |
-| Trazabilidad | Difícil | `etl::fsm_state_id_t` |
-| Extensibilidad | Cambios dispersos | On-enter/on-exit hooks |
-| Testabilidad | Estado global | Estado encapsulado |
-| Conformidad SIL-2 | Requiere evidencia manual | Determinístico por diseño |
 
 ---
 

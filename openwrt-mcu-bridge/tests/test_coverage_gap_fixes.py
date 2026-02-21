@@ -91,6 +91,7 @@ def create_fake_state():
     state = MagicMock(spec=context.RuntimeState)
     state.link_handshake_nonce = None
     state.link_is_synchronized = False
+    state.link_sync_event = asyncio.Event()
     state.handshake_rate_limit_until = 0.0
     state.handshake_failure_streak = 0
     state.handshake_attempts = 0

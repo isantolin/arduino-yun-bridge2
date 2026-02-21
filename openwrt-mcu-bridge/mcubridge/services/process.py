@@ -583,87 +583,13 @@ class ProcessComponent:
                 break
             buffer.extend(chunk)
 
-    async def _read_process_pipes(self, pid: int, proc: Process) -> tuple[bytes, bytes]:
-        async with asyncio.TaskGroup() as tg:
-            stdout_task = tg.create_task(self._read_stream_chunk(pid, proc.stdout))
-            stderr_task = tg.create_task(self._read_stream_chunk(pid, proc.stderr))
-        return stdout_task.result(), stderr_task.result()
-
     async def _drain_process_pipes(self, pid: int, proc: Process) -> tuple[bytes, bytes]:
+        stdout_buf = bytearray()
+        stderr_buf = bytearray()
         async with asyncio.TaskGroup() as tg:
-            stdout_task = tg.create_task(self._drain_stream(pid, proc.stdout))
-            stderr_task = tg.create_task(self._drain_stream(pid, proc.stderr))
-        return stdout_task.result(), stderr_task.result()
-
-    async def _read_stream_chunk(
-        self,
-        pid: int,
-        reader: StreamReader | None,
-        *,
-        size: int = 1024,
-        timeout: float = 0.05,
-    ) -> bytes:
-        if reader is None:
-            return b""
-        chunk: bytes = b""
-        try:
-            if timeout > 0:
-                chunk = await asyncio.wait_for(reader.read(size), timeout)
-            else:
-                chunk = await reader.read(size)
-        except TimeoutError:
-            return b""
-        except (
-            asyncio.IncompleteReadError,
-            OSError,
-            ValueError,
-            BrokenPipeError,
-            RuntimeError,
-        ):
-            logger.debug(
-                "Error reading process pipe for PID %d",
-                pid,
-                exc_info=True,
-            )
-            return b""
-        return chunk or b""
-
-    async def _drain_stream(
-        self,
-        pid: int,
-        reader: StreamReader | None,
-        *,
-        chunk_size: int = 1024,
-    ) -> bytes:
-        if reader is None:
-            return b""
-        buffer = bytearray()
-        await self._consume_stream(
-            pid,
-            reader,
-            buffer,
-            chunk_size=chunk_size,
-        )
-        return bytes(buffer)
-
-    def trim_buffers(
-        self,
-        stdout_buffer: bytearray,
-        stderr_buffer: bytearray,
-    ) -> tuple[bytes, bytes, bool, bool]:
-        max_payload = _PROCESS_POLL_BUDGET
-        stdout_len = min(len(stdout_buffer), max_payload)
-        stdout_chunk = bytes(stdout_buffer[:stdout_len])
-        del stdout_buffer[:stdout_len]
-
-        remaining = max_payload - len(stdout_chunk)
-        stderr_len = min(len(stderr_buffer), remaining)
-        stderr_chunk = bytes(stderr_buffer[:stderr_len])
-        del stderr_buffer[:stderr_len]
-
-        truncated_out = len(stdout_buffer) > 0
-        truncated_err = len(stderr_buffer) > 0
-        return stdout_chunk, stderr_chunk, truncated_out, truncated_err
+            tg.create_task(self._consume_stream(pid, proc.stdout, stdout_buf))
+            tg.create_task(self._consume_stream(pid, proc.stderr, stderr_buf))
+        return bytes(stdout_buf), bytes(stderr_buf)
 
     async def publish_poll_result(
         self,
@@ -766,6 +692,10 @@ class ProcessComponent:
         release_slot = False
         exit_value = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
 
+        # Always release the execution permit when the OS process finishes.
+        # The semaphore controls CONCURRENT EXECUTION, not memory storage.
+        self._release_process_slot()
+
         async with self.state.process_lock:
             current_slot = self.state.running_processes.get(pid)
             if current_slot is None or current_slot is not slot:
@@ -798,7 +728,6 @@ class ProcessComponent:
                  release_slot = True
 
         if release_slot:
-            self._release_process_slot()
             logger.info(
                 "Async process %d finished with exit code %d",
                 pid,
@@ -881,6 +810,57 @@ class ProcessComponent:
             return True
         except (TimeoutError, asyncio.TimeoutError):
             return False
+
+    async def _read_stream_chunk(self, pid: int, reader: StreamReader, *, timeout: float = 0.0) -> bytes:
+        """Read a single chunk from a stream reader with optional timeout.
+
+        This method is primarily used by tests to simulate granular IO.
+        """
+        try:
+            if timeout > 0:
+                try:
+                    async with asyncio.timeout(timeout):
+                        return await reader.read(4096)
+                except (asyncio.TimeoutError, TimeoutError):
+                    return b""
+            return await reader.read(4096)
+        except (OSError, ValueError, RuntimeError, asyncio.IncompleteReadError):
+            logger.debug("Error reading stream chunk for PID %d", pid)
+            return b""
+
+    def trim_buffers(self, stdout: bytearray, stderr: bytearray) -> tuple[bytes, bytes, bool, bool]:
+        """Trim buffers to respect the protocol budget and mutate them in place.
+
+        Returns (stdout_chunk, stderr_chunk, stdout_truncated, stderr_truncated).
+        """
+        limit = _PROCESS_POLL_BUDGET
+        stdout_len = len(stdout)
+        stderr_len = len(stderr)
+
+        if (stdout_len + stderr_len) <= limit:
+            out_chunk = bytes(stdout)
+            err_chunk = bytes(stderr)
+            stdout.clear()
+            stderr.clear()
+            return out_chunk, err_chunk, False, False
+
+        # Allocation strategy: 50/50 if both large, otherwise give remaining to the smaller one
+        half = limit // 2
+        if stdout_len > half and stderr_len > half:
+            out_len, err_len = half, half
+        elif stdout_len <= half:
+            out_len = stdout_len
+            err_len = limit - out_len
+        else:
+            err_len = stderr_len
+            out_len = limit - err_len
+
+        out_chunk = bytes(stdout[:out_len])
+        err_chunk = bytes(stderr[:err_len])
+        del stdout[:out_len]
+        del stderr[:err_len]
+
+        return out_chunk, err_chunk, len(stdout) > 0, len(stderr) > 0
 
     def _release_process_slot(self) -> None:
         guard = self._process_slots

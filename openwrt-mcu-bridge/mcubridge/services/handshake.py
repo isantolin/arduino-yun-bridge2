@@ -185,7 +185,9 @@ class SerialHandshakeManager:
             trigger='start_confirm', source=self.STATE_SYNCING, dest=self.STATE_CONFIRMING
         )
         self.state_machine.add_transition(
-            trigger='complete_handshake', source=self.STATE_CONFIRMING, dest=self.STATE_SYNCHRONIZED
+            trigger='complete_handshake',
+            source=[self.STATE_SYNCING, self.STATE_CONFIRMING],
+            dest=self.STATE_SYNCHRONIZED
         )
         self.state_machine.add_transition(trigger='fail_handshake', source='*', dest=self.STATE_FAULT)
         self.state_machine.add_transition(trigger='reset_fsm', source='*', dest=self.STATE_UNSYNCHRONIZED)
@@ -193,10 +195,12 @@ class SerialHandshakeManager:
     def _on_fsm_synchronized(self) -> None:
         """Callback when entering synchronized state."""
         self._state.link_is_synchronized = True
+        self._state.link_sync_event.set()
 
     def _on_fsm_unsynchronized(self) -> None:
         """Callback when leaving synchronized state."""
         self._state.link_is_synchronized = False
+        self._state.link_sync_event.clear()
 
     async def synchronize(self) -> bool:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
@@ -276,9 +280,6 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        # Actually, handle_link_sync_resp calls _handle_handshake_success which we can hook.
-        # But _wait_for_link_sync_confirmation returns True only if link_is_synchronized is True.
-        # So we can safely transition here if we are not already.
         if self.fsm_state != self.STATE_SYNCHRONIZED:
              self.complete_handshake()
 
@@ -479,7 +480,7 @@ class SerialHandshakeManager:
         )
 
     def raise_if_handshake_fatal(self) -> None:
-        reason = self._fatal_handshake_reason()
+        reason = self._state.handshake_fatal_reason
         if not reason:
             return
 
@@ -490,16 +491,17 @@ class SerialHandshakeManager:
         raise SerialHandshakeFatal("MCU rejected the serial shared secret " f"(reason={reason}). {hint}")
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        loop = asyncio.get_running_loop()
         timeout = max(0.5, self._timing.response_timeout_seconds)
-        deadline = loop.time() + timeout
-        while loop.time() < deadline:
-            if self._state.link_is_synchronized and self._state.link_handshake_nonce is None:
+        try:
+            async with asyncio.timeout(timeout):
+                while not self._state.link_is_synchronized:
+                    await self._state.link_sync_event.wait()
+                    # Re-check nonce if event fired but state changed?
+                    # link_is_synchronized is set in _on_fsm_synchronized.
+                    # If we got here, it's synchronized.
                 return True
-            if self._state.link_handshake_nonce != nonce and not self._state.link_is_synchronized:
-                break
-            await asyncio.sleep(0.01)
-        return self._state.link_is_synchronized and self._state.link_handshake_nonce is None
+        except TimeoutError:
+            return False
 
     def clear_handshake_expectations(self) -> None:
         if self._state.link_handshake_nonce is not None:
@@ -582,11 +584,6 @@ class SerialHandshakeManager:
 
         self._state.handshake_backoff_until = time.monotonic() + delay
         return delay
-
-    def _fatal_handshake_reason(self) -> str | None:
-        if self._state.handshake_fatal_reason:
-            return self._state.handshake_fatal_reason
-        return None
 
     @staticmethod
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:

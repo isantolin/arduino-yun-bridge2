@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
@@ -38,15 +39,6 @@ from .handshake import (
 from .serial_flow import SerialFlowController
 
 logger = logging.getLogger("mcubridge.service")
-
-
-class _StatusHandler:
-    def __init__(self, service: "BridgeService", status: Status) -> None:
-        self._service = service
-        self._status = status
-
-    async def __call__(self, payload: bytes) -> None:
-        await self._service.handle_status(self._status, payload)
 
 
 STATUS_VALUES = {status.value for status in Status}
@@ -149,7 +141,7 @@ class BridgeService:
             handle_link_reset_resp=self._handshake.handle_link_reset_resp,
             handle_get_capabilities_resp=self._handshake.handle_capabilities_resp,
             handle_ack=self._handle_ack,
-            status_handler_factory=self._status_handler,
+            status_handler_factory=self._status_handler_factory,
             handle_process_kill=self._process.handle_kill,
         )
 
@@ -455,8 +447,8 @@ class BridgeService:
         else:
             logger.debug("MCU > ACK received")
 
-    def _status_handler(self, status: Status) -> Callable[[bytes], Awaitable[None]]:
-        return _StatusHandler(self, status)
+    def _status_handler_factory(self, status: Status) -> Callable[[bytes], Awaitable[None]]:
+        return functools.partial(self.handle_status, status)
 
     async def handle_status(self, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)

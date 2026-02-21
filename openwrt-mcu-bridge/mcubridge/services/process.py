@@ -54,20 +54,23 @@ logger = logging.getLogger("mcubridge.process")
 _PROCESS_POLL_BUDGET = protocol.MAX_PAYLOAD_SIZE - 6
 
 
-class ProcessComponent(msgspec.Struct):
+class ProcessComponent:
     """Encapsulates shell/process interactions for BridgeService."""
 
-    config: RuntimeConfig
-    state: RuntimeState
-    ctx: BridgeContext
-    _process_slots: asyncio.BoundedSemaphore | None = None
-
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        ctx: BridgeContext,
+    ) -> None:
+        self.config = config
+        self.state = state
+        self.ctx = ctx
         limit = max(0, self.config.process_max_concurrent)
         if limit > 0:
-            object.__setattr__(self, "_process_slots", asyncio.BoundedSemaphore(limit))
+            self._process_slots = asyncio.BoundedSemaphore(limit)
         else:
-            object.__setattr__(self, "_process_slots", None)
+            self._process_slots = None
 
     def _prepare_command(self, command_str: str) -> tuple[str, list[str]]:
         """Tokenize command and check allowed policy."""
@@ -291,11 +294,10 @@ class ProcessComponent(msgspec.Struct):
                 slot = self.state.running_processes.get(pid)
                 if slot is not None:
                     # [FSM] Trigger cleanup via FSM transition
-                    if hasattr(slot, "trigger"):
-                        try:
-                            slot.trigger("force_kill")
-                        except Exception as e:
-                            logger.error("FSM transition failed in handle_kill: %s", e)
+                    try:
+                        slot.trigger("force_kill")
+                    except Exception as e:
+                        logger.error("FSM transition failed in handle_kill: %s", e)
 
                     slot.handle = None
                     slot.exit_code = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
@@ -457,11 +459,10 @@ class ProcessComponent(msgspec.Struct):
 
         slot = ManagedProcess(pid=pid, command=command, handle=proc)
         # [FSM] Initialize state
-        if hasattr(slot, "trigger"):
-            try:
-                slot.trigger("start")
-            except Exception as e:
-                logger.error("FSM transition failed in start_async: %s", e)
+        try:
+            slot.trigger("start")
+        except Exception as e:
+            logger.error("FSM transition failed in start_async: %s", e)
 
         async with self.state.process_lock:
             self.state.running_processes[pid] = slot
@@ -500,7 +501,7 @@ class ProcessComponent(msgspec.Struct):
                 payload_trunc_out,
                 payload_trunc_err,
             ) = slot.pop_payload(_PROCESS_POLL_BUDGET)
-        
+
         stdout_truncated_limit |= payload_trunc_out
         stderr_truncated_limit |= payload_trunc_err
 
@@ -527,16 +528,15 @@ class ProcessComponent(msgspec.Struct):
 
             if is_done and slot.is_drained():
                 if slot.fsm_state == PROCESS_STATE_FINISHED:
-                    if hasattr(slot, "trigger"):
-                        try:
-                            slot.trigger("finalize")
-                        except Exception as e:
-                            logger.error("FSM transition failed in collect_output: %s", e)
+                    try:
+                        slot.trigger("finalize")
+                    except Exception as e:
+                        logger.error("FSM transition failed in collect_output: %s", e)
 
                 self.state.running_processes.pop(pid, None)
                 released_slot = True
                 log_finished = True
-            
+
             exit_value = slot.exit_code if slot.exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
 
         if released_slot:
@@ -554,7 +554,7 @@ class ProcessComponent(msgspec.Struct):
             exit_code=exit_value & UINT8_MASK,
             stdout_chunk=stdout_payload,
             stderr_chunk=stderr_payload,
-            finished=released_slot, 
+            finished=released_slot,
             stdout_truncated=stdout_truncated_limit,
             stderr_truncated=stderr_truncated_limit,
         )
@@ -752,11 +752,10 @@ class ProcessComponent(msgspec.Struct):
             return
 
         # [FSM] Trigger SIGCHLD
-        if hasattr(slot, "trigger"):
-            try:
-                slot.trigger("sigchld")
-            except Exception as e:
-                logger.error("FSM transition failed in finalize (sigchld): %s", e)
+        try:
+            slot.trigger("sigchld")
+        except Exception as e:
+            logger.error("FSM transition failed in finalize (sigchld): %s", e)
 
         async with slot.io_lock:
             stdout_tail, stderr_tail = await self._drain_process_pipes(
@@ -774,11 +773,10 @@ class ProcessComponent(msgspec.Struct):
                 return
 
             # [FSM] Complete IO
-            if hasattr(current_slot, "trigger"):
-                try:
-                    current_slot.trigger("io_complete")
-                except Exception as e:
-                    logger.error("FSM transition failed in finalize (io_complete): %s", e)
+            try:
+                current_slot.trigger("io_complete")
+            except Exception as e:
+                logger.error("FSM transition failed in finalize (io_complete): %s", e)
 
             if stdout_tail or stderr_tail:
                 current_slot.append_output(
@@ -792,8 +790,10 @@ class ProcessComponent(msgspec.Struct):
 
             # Check if we can cleanup immediately
             if current_slot.is_drained() and current_slot.fsm_state == PROCESS_STATE_FINISHED:
-                 if hasattr(current_slot, "trigger"):
+                 try:
                      current_slot.trigger("finalize")
+                 except Exception:
+                     pass
                  self.state.running_processes.pop(pid, None)
                  release_slot = True
 
@@ -879,7 +879,7 @@ class ProcessComponent(msgspec.Struct):
         try:
             await asyncio.wait_for(guard.acquire(), timeout=0)
             return True
-        except TimeoutError:
+        except (TimeoutError, asyncio.TimeoutError):
             return False
 
     def _release_process_slot(self) -> None:

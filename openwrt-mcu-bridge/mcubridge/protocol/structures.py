@@ -565,6 +565,8 @@ class PendingCommand(msgspec.Struct):
     success: bool | None = None
     failure_status: int | None = None
     ack_received: bool = False
+    reply_topic: str | None = None
+    correlation_data: bytes | None = None
 
     def mark_success(self) -> None:
         self.success = True

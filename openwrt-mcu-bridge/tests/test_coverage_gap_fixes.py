@@ -87,7 +87,8 @@ def create_fake_config():
 
 def create_fake_state():
     """Create a fake state object with real attributes to avoid MagicMock issues."""
-    state = MagicMock()
+    # Use a real RuntimeState if possible, or a properly configured Mock
+    state = MagicMock(spec=context.RuntimeState)
     state.link_handshake_nonce = None
     state.link_is_synchronized = False
     state.handshake_rate_limit_until = 0.0
@@ -108,7 +109,8 @@ def create_fake_state():
     state.link_nonce_length = 8
     state.link_last_nonce_counter = 0
     state.serial_writer = None
-    state.mqtt_publish_queue = asyncio.Queue()
+    # Avoid creating a real Queue in helper if called outside loop
+    state.mqtt_publish_queue = MagicMock()
     state.mqtt_queue_limit = 100
     state.mqtt_dropped_messages = 0
     state.mqtt_drop_counts = {}
@@ -158,7 +160,7 @@ def create_fake_state():
     state.supervisor_stats = {}
     state.mcu_version = (1, 0)
     state.flush_mqtt_spool = AsyncMock()
-    state.build_bridge_snapshot.return_value = {}
+    state.build_bridge_snapshot = MagicMock(return_value={})
     return state
 
 
@@ -906,6 +908,8 @@ async def test_mqtt_publisher_loop_gaps():
     from mcubridge.mqtt.messages import QueuedPublish
 
     msg = QueuedPublish("t", b"p")
+    # Setup mock queue
+    state.mqtt_publish_queue = asyncio.Queue()
     await state.mqtt_publish_queue.put(msg)
 
     # Case: CancelledError (Line 80-85)
@@ -1186,7 +1190,7 @@ def test_managed_process_gaps():
     # is_drained
     assert proc.is_drained() is False
     proc.stdout_buffer.clear()
-    
+
     # [FSM] Must be in FINISHED/ZOMBIE state to be drained
     proc.fsm_state = context.PROCESS_STATE_FINISHED
     assert proc.is_drained() is True
@@ -1544,6 +1548,9 @@ async def test_handshake_send_failures():
     res = await comp.synchronize()
     assert res is False
 
+    # Cleanup to avoid ResourceWarning
+    state.mqtt_publish_queue = None
+
 
 @pytest.mark.asyncio
 async def test_handshake_sync_timeout():
@@ -1629,7 +1636,8 @@ async def test_handshake_fetch_capabilities_retry_error():
 def test_handshake_parse_capabilities_errors():
     """Cover error paths in _parse_capabilities."""
     config = create_fake_config()
-    state = create_fake_state()
+    state = MagicMock() # Needs to be real Mock to allow attribute check
+    state.mcu_capabilities = None
     comp = SerialHandshakeManager(
         config=config,
         state=state,
@@ -1641,6 +1649,8 @@ def test_handshake_parse_capabilities_errors():
 
     # Short payload
     comp._parse_capabilities(b"short")
+    # In Mock, setting an attribute doesn't change it if it's already set to something else?
+    # Actually, we want to check that it IS None or wasn't set to a packet.
     assert state.mcu_capabilities is None
 
     # Unpack error

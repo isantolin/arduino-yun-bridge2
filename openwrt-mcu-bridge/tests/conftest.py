@@ -49,6 +49,11 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
+# [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
+# and interference with Python 3.13 representation during cleanup.
+from mcubridge.config import logging as mcubridge_logging
+mcubridge_logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
+
 _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 
@@ -85,6 +90,14 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
         asyncio.set_event_loop(None)
     return True
 
+
+
+@pytest.fixture(scope="session", autouse=True)
+def force_gc_cleanup():
+    """Force garbage collection at the end of the session to help clean up resources."""
+    yield
+    import gc
+    gc.collect()
 
 
 @pytest.fixture(scope="session")
@@ -197,10 +210,15 @@ def runtime_config() -> RuntimeConfig:
 
 
 @pytest.fixture()
-def runtime_state(runtime_config: RuntimeConfig) -> RuntimeState:
+def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
     state = create_runtime_state(runtime_config)
     state.link_is_synchronized = True
-    return state
+    yield state
+    # [TEST FIX] Break loop references to avoid ResourceWarning
+    try:
+        state.mqtt_publish_queue = None
+    except AttributeError:
+        pass
 
 
 

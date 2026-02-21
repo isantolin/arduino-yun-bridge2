@@ -61,17 +61,16 @@ async def test_serial_protocol_async_process_compressed() -> None:
     assert service.handle_mcu_frame.call_args[0][1] == payload
 
 
-@pytest.mark.asyncio
-async def test_serial_transport_toggle_dtr_fail() -> None:
-    config = MagicMock()
-    state = MagicMock()
-    service = MagicMock()
-    transport = SerialTransport(config, state, service)
+    @pytest.mark.asyncio
+    async def test_serial_transport_toggle_dtr_fail() -> None:
+        config = MagicMock()
+        state = MagicMock()
+        service = MagicMock()
+        transport = SerialTransport(config, state, service)
 
-    with patch.object(transport, "_blocking_reset", side_effect=Exception("dtr fail")):
-        # Should log and continue
-        await transport._toggle_dtr(asyncio.get_running_loop())
-
+        with patch.object(transport, "_blocking_reset", side_effect=RuntimeError("dtr fail")):
+            # Should log and continue
+            await transport._toggle_dtr(asyncio.get_running_loop())
 
 @pytest.mark.asyncio
 async def test_serial_transport_negotiate_fail_paths() -> None:

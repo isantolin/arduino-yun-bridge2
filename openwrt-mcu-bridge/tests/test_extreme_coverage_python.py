@@ -70,12 +70,10 @@ async def test_process_component_deep_gaps(runtime_config, runtime_state):
     ctx.schedule_background = AsyncMock()
 
     comp = ProcessComponent(runtime_config, runtime_state, ctx)
-    comp.__post_init__()
 
     # Gap: Process slot exhaustion
     runtime_config = msgspec.structs.replace(runtime_config, process_max_concurrent=1)
-    comp.config = runtime_config
-    comp.__post_init__()
+    comp = ProcessComponent(runtime_config, runtime_state, ctx)
     await comp._try_acquire_process_slot()
     assert await comp._try_acquire_process_slot() is False
 

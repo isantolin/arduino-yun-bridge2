@@ -10,7 +10,7 @@ from asyncio.subprocess import Process
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Final
+from typing import TYPE_CHECKING, Any, Final
 
 import msgspec
 import psutil
@@ -247,9 +247,10 @@ class ManagedProcess:
         # Allow force cleanup from any state
         self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
 
-    def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
-        """FSM trigger placeholder."""
-        return False
+    if TYPE_CHECKING:
+        def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
+            """FSM trigger placeholder."""
+            ...
 
     def append_output(
         self,
@@ -347,7 +348,7 @@ def _datastore_factory() -> dict[str, str]:
     return {}
 
 
-def _running_processes_factory() -> dict[int, Any]:
+def _running_processes_factory() -> dict[int, ManagedProcess]:
     return {}
 
 
@@ -600,7 +601,7 @@ class RuntimeState(msgspec.Struct):
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, Any] = msgspec.field(default_factory=_running_processes_factory)
+    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=_running_processes_factory)
     process_lock: asyncio.Lock = msgspec.field(default_factory=_asyncio_lock_factory)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=_policy_factory)

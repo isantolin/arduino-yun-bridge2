@@ -192,8 +192,13 @@ class MQTTPublishSpool:
     def close(self) -> None:
         with self._lock:
             if self._disk_queue is not None:
+                close_queue = getattr(self._disk_queue, "close", None)
+                clear_queue = getattr(self._disk_queue, "clear", None)
                 try:
-                    self._disk_queue.close()
+                    if callable(close_queue):
+                        close_queue()
+                    elif callable(clear_queue):
+                        clear_queue()
                 except OSError:
                     logger.warning("Error closing disk queue", exc_info=True)
             self._disk_queue = None

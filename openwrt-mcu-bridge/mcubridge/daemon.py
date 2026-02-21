@@ -37,8 +37,12 @@ import msgspec
 import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
-# This must fail immediately if python3-uvloop is not installed.
-import uvloop
+# Import is deferred-tolerant so test environments can import this module even if
+# python3-uvloop is unavailable; startup still fails fast in main().
+try:
+    import uvloop
+except ModuleNotFoundError:  # pragma: no cover - depends on host environment
+    uvloop = None
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
@@ -334,6 +338,8 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         )
 
     try:
+        if uvloop is None:
+            raise RuntimeError("python3-uvloop is required but not installed")
         daemon = BridgeDaemon(config)
         # [SIL-2] Enforce uvloop for deterministic async performance
         asyncio.run(daemon.run(), loop_factory=uvloop.new_event_loop)
@@ -350,6 +356,9 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         sys.exit(1)
     except OSError as exc:
         logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
+        sys.exit(1)
+    except BaseException as exc:
+        logger.critical("Fatal base exception during daemon execution: %s", exc, exc_info=True)
         sys.exit(1)
 
 

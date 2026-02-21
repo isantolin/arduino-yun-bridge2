@@ -1,12 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-tenacity
-PKG_VERSION:=9.1.2
+PKG_VERSION:=9.1.4
 PKG_RELEASE:=1
 
 PYPI_NAME:=tenacity
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
-PKG_HASH:=1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb
+PKG_HASH:=adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0
@@ -35,4 +35,3 @@ endef
 
 $(eval $(call Py3Package,python3-tenacity))
 $(eval $(call BuildPackage,python3-tenacity))
-

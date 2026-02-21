@@ -20,7 +20,7 @@ from mcubridge.protocol.structures import (
 
 from ..config.const import MQTT_EXPIRY_DATASTORE
 from ..config.settings import RuntimeConfig
-from ..protocol.topics import Topic, topic_path
+from ..protocol.topics import Topic, split_topic_segments, topic_path
 from ..state.context import RuntimeState
 from .base import BridgeContext
 
@@ -202,7 +202,7 @@ class DatastoreComponent:
         reply_context: Message | None = None,
         error_reason: str | None = None,
     ) -> None:
-        key_segments = tuple(segment for segment in key.split("/") if segment)
+        key_segments = split_topic_segments(key)
         topic_name = topic_path(
             self.state.mqtt_topic_prefix,
             Topic.DATASTORE,

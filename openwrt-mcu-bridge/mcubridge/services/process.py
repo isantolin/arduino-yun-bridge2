@@ -334,6 +334,23 @@ class ProcessComponent(msgspec.Struct):
                     )
                 )
                 wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
+        except BaseExceptionGroup as exc_group:
+            matched, remainder = exc_group.split((OSError, RuntimeError, ValueError))
+            if matched is None:
+                raise
+            logger.error(
+                "IO Error interacting with process '%s': %s",
+                command,
+                matched,
+            )
+            await self._terminate_process_tree(proc)
+            try:
+                await proc.wait()
+            except (OSError, ValueError):
+                pass
+            if remainder is not None:
+                raise remainder
+            return Status.ERROR.value, b"", b"System IO error", None
         except (OSError, RuntimeError, ValueError) as e:
             logger.error(
                 "IO Error interacting with process '%s': %s",
@@ -785,15 +802,41 @@ class ProcessComponent(msgspec.Struct):
             children = process.children(recursive=True)
         except psutil.Error:
             children = []
-        for child in children:
+        targets = children + [process]
+
+        for proc in targets:
             try:
-                child.kill()
-            except psutil.Error:
+                terminate = getattr(proc, "terminate", None)
+                if callable(terminate):
+                    terminate()
+                else:
+                    proc.kill()
+            except (AttributeError, psutil.Error):
                 continue
+
         try:
-            process.kill()
-        except psutil.Error:
-            pass
+            _, alive = psutil.wait_procs(
+                targets,
+                timeout=max(0.1, PROCESS_KILL_WAIT_TIMEOUT),
+            )
+        except (AttributeError, TypeError, ValueError, psutil.Error):
+            alive = targets
+        if not alive:
+            return
+
+        for proc in alive:
+            try:
+                proc.kill()
+            except (AttributeError, psutil.Error):
+                continue
+
+        try:
+            psutil.wait_procs(
+                alive,
+                timeout=max(0.1, PROCESS_SYNC_KILL_WAIT_TIMEOUT),
+            )
+        except (AttributeError, TypeError, ValueError, psutil.Error):
+            return
 
     def _build_sync_response(self, status: int, stdout_bytes: bytes, stderr_bytes: bytes) -> bytes:
         max_payload = MAX_PAYLOAD_SIZE - 5

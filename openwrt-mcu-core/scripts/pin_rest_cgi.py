@@ -82,10 +82,14 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         client.loop_start()
 
         info = client.publish(topic, payload, qos=MQTT_PUBLISH_QOS)
-        if info.rc != MQTT_ERR_SUCCESS:
-            raise ConnectionError(f"MQTT publish failed with rc={info.rc}")
-        info.wait_for_publish(timeout=publish_timeout)
-        if not info.is_published():
+        publish_rc = getattr(info, "rc", MQTT_ERR_SUCCESS)
+        if publish_rc != MQTT_ERR_SUCCESS:
+            raise ConnectionError(f"MQTT publish failed with rc={publish_rc}")
+        wait_for_publish = getattr(info, "wait_for_publish", None)
+        if callable(wait_for_publish):
+            wait_for_publish(timeout=publish_timeout)
+        is_published = getattr(info, "is_published", None)
+        if callable(is_published) and not bool(is_published()):
             raise TimeoutError("Publish timed out")
     except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
         logger.warning("Publish attempt failed: %s", exc)

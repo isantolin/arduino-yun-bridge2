@@ -27,15 +27,20 @@ class TopicRoute(msgspec.Struct, frozen=True):
         return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-def _split_segments(path: str) -> tuple[str, ...]:
+def split_topic_segments(path: str) -> tuple[str, ...]:
     if not path:
         return ()
     return tuple(segment for segment in path.split("/") if segment)
 
 
+def _split_segments(path: str) -> tuple[str, ...]:
+    """Backward-compatible alias kept for existing tests."""
+    return split_topic_segments(path)
+
+
 def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:
     """Join prefix, topic and optional sub-segments into a topic path."""
-    parts = list(_split_segments(prefix))
+    parts = list(split_topic_segments(prefix))
     topic_segment = topic.value if isinstance(topic, Topic) else str(topic)
     topic_segment = topic_segment.strip("/")
     if not topic_segment:
@@ -92,8 +97,8 @@ def mailbox_outgoing_available_topic(prefix: str) -> str:
 
 def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     """Parse an incoming MQTT topic into a TopicRoute."""
-    prefix_segments = _split_segments(prefix)
-    topic_segments = _split_segments(topic_name)
+    prefix_segments = split_topic_segments(prefix)
+    topic_segments = split_topic_segments(topic_name)
     if len(topic_segments) < len(prefix_segments) + 1:
         return None
     if topic_segments[: len(prefix_segments)] != prefix_segments:

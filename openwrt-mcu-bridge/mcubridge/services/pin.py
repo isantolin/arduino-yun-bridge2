@@ -7,6 +7,7 @@ import logging
 from typing import Callable
 
 from aiomqtt.message import Message
+from construct import ConstructError
 from mcubridge.protocol.protocol import Command, PinAction, Status
 from mcubridge.protocol.structures import (
     AnalogReadResponsePacket,
@@ -71,23 +72,22 @@ class PinComponent:
         self,
         *,
         payload: bytes,
-        expected_size: int,
         resp_name: str,
         topic_type: Topic,
         parse_value: Callable[[bytes], int],
         pending_queue: collections.deque[PendingPinRequest],
     ) -> None:
         """Shared implementation for digital/analog read response handling."""
-        if len(payload) != expected_size:
+        try:
+            value = parse_value(payload)
+        except (ConstructError, ValueError):
             logger.warning(
-                "Malformed %s payload: expected %d byte(s), got %d",
+                "Malformed %s payload: len=%d",
                 resp_name,
-                expected_size,
                 len(payload),
             )
             return
 
-        value = parse_value(payload)
         request: PendingPinRequest | None = None
         if pending_queue:
             request = pending_queue.popleft()
@@ -109,7 +109,6 @@ class PinComponent:
     async def handle_digital_read_resp(self, payload: bytes) -> None:
         await self._handle_pin_read_resp(
             payload=payload,
-            expected_size=1,
             resp_name="DIGITAL_READ_RESP",
             topic_type=Topic.DIGITAL,
             parse_value=self._parse_digital_read_value,
@@ -119,7 +118,6 @@ class PinComponent:
     async def handle_analog_read_resp(self, payload: bytes) -> None:
         await self._handle_pin_read_resp(
             payload=payload,
-            expected_size=2,
             resp_name="ANALOG_READ_RESP",
             topic_type=Topic.ANALOG,
             parse_value=self._parse_analog_read_value,
@@ -137,11 +135,11 @@ class PinComponent:
     async def handle_mqtt(
         self,
         topic_type: str | Topic,
-        parts: list[str],
+        segments: list[str],
         payload_str: str,
         inbound: Message | None = None,
     ) -> None:
-        if len(parts) < 3:
+        if not segments:
             return
 
         if isinstance(topic_type, Topic):
@@ -151,13 +149,16 @@ class PinComponent:
                 topic_enum = Topic(topic_type)
             except ValueError:
                 return
+        segments = self._normalise_segments(topic_enum, segments)
+        if not segments:
+            return
 
-        pin_str = parts[2]
+        pin_str = segments[0]
         pin = self._parse_pin_identifier(pin_str)
         if pin < 0:
             return
 
-        is_analog_read = len(parts) == 4 and parts[3] == PinAction.READ and topic_enum == Topic.ANALOG
+        is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
         # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
         # but capabilities struct reports 'num_analog_inputs' specifically for ADC.
         # We'll use digital limit for writes and analog limit for analog reads.
@@ -165,8 +166,8 @@ class PinComponent:
         if not self._validate_pin_access(pin, is_analog_read):
             return
 
-        if len(parts) == 4:
-            subtopic = parts[3]
+        if len(segments) == 2:
+            subtopic = segments[1]
             if subtopic == PinAction.MODE and topic_enum == Topic.DIGITAL:
                 await self._handle_mode_command(pin, pin_str, payload_str)
             elif subtopic == PinAction.READ:
@@ -175,11 +176,10 @@ class PinComponent:
                 logger.debug("Unknown pin subtopic for %s: %s", pin_str, subtopic)
             return
 
-        if len(parts) == 3:
+        if len(segments) == 1:
             await self._handle_write_command(
                 topic_enum,
                 pin,
-                parts,
                 payload_str,
             )
 
@@ -253,12 +253,12 @@ class PinComponent:
                 except ValueError:
                     pass  # Already consumed by response handler
 
-    async def _handle_write_command(self, topic_type: Topic, pin: int, parts: list[str], payload_str: str) -> None:
+    async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
         value = self._parse_pin_value(topic_type, payload_str)
         if value is None:
             logger.warning(
                 "Invalid pin value topic=%s payload=%s",
-                "/".join(parts),
+                topic_type.value,
                 payload_str,
             )
             return
@@ -292,6 +292,17 @@ class PinComponent:
         if topic_type == Topic.ANALOG and 0 <= value <= 255:
             return value
         return None
+
+    @staticmethod
+    def _normalise_segments(topic_type: Topic, segments: list[str]) -> list[str]:
+        """Accept both route segments and legacy full-topic segments."""
+        if not segments:
+            return []
+        try:
+            topic_index = segments.index(topic_type.value)
+        except ValueError:
+            return segments
+        return segments[topic_index + 1 :]
 
     def _build_pin_topic(self, topic_type: Topic, pin: int | None) -> str:
         segments: list[str] = []

@@ -233,12 +233,9 @@ class BridgeClass : public bridge::router::ICommandHandler {
   }
   
   void remove_observer(BridgeObserver& obs) {
-    // Manual search because ETL might not have erase-by-value easily accessible
-    for (auto it = _observers.begin(); it != _observers.end(); ++it) {
-      if (*it == &obs) {
-        _observers.erase(it);
-        break;
-      }
+    const auto it = etl::find(_observers.begin(), _observers.end(), &obs);
+    if (it != _observers.end()) {
+      _observers.erase(it);
     }
   }
 

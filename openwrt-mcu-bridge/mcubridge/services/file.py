@@ -28,7 +28,7 @@ from ..protocol.structures import (
     FileRemovePacket,
     FileWritePacket,
 )
-from ..protocol.topics import Topic, topic_path
+from ..protocol.topics import Topic, split_topic_segments, topic_path
 from ..state.context import RuntimeState
 from ..util import chunk_bytes
 from .base import BridgeContext
@@ -245,7 +245,7 @@ class FileComponent:
             Topic.FILE,
             FileAction.READ,
             protocol.MQTT_SUFFIX_RESPONSE,
-            *tuple(segment for segment in filename.split("/") if segment),
+            *split_topic_segments(filename),
         )
         await self.ctx.publish(
             topic=response_topic,

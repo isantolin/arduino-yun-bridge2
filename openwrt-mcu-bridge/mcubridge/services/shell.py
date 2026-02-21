@@ -43,11 +43,12 @@ class ShellComponent:
 
     async def handle_mqtt(
         self,
-        parts: list[str],
+        segments: list[str],
         payload: bytes,
         inbound: Message | None = None,
     ) -> None:
-        action = parts[2] if len(parts) >= 3 else ""
+        segments = self._normalise_segments(segments)
+        action = segments[0] if segments else ""
 
         match action:
             case ShellAction.RUN:
@@ -62,14 +63,14 @@ class ShellComponent:
                     return
                 await self._handle_run_async(payload_model, inbound)
 
-            case ShellAction.POLL if len(parts) == 4:
-                pid_model = self._parse_shell_pid(parts[3], action)
+            case ShellAction.POLL if len(segments) == 2:
+                pid_model = self._parse_shell_pid(segments[1], action)
                 if pid_model is None:
                     return
                 await self._handle_poll(pid_model)
 
-            case ShellAction.KILL if len(parts) == 4:
-                pid_model = self._parse_shell_pid(parts[3], action)
+            case ShellAction.KILL if len(segments) == 2:
+                pid_model = self._parse_shell_pid(segments[1], action)
                 if pid_model is None:
                     return
                 await self._handle_kill(pid_model)
@@ -77,8 +78,19 @@ class ShellComponent:
             case _:
                 logger.debug(
                     "Ignoring shell topic action: %s",
-                    "/".join(parts),
+                    "/".join(segments),
                 )
+
+    @staticmethod
+    def _normalise_segments(segments: list[str]) -> list[str]:
+        """Accept both route segments and legacy full-topic segments."""
+        if not segments:
+            return []
+        try:
+            shell_index = segments.index(Topic.SHELL.value)
+        except ValueError:
+            return segments
+        return segments[shell_index + 1 :]
 
     async def _handle_shell_run(
         self,

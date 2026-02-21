@@ -15,11 +15,11 @@ dependencies = [
     "psutil==7.2.2",
     "prometheus-client==0.24.1",
     "pyserial-asyncio-fast==0.16",
-    "tenacity==9.1.2",
+    "tenacity==9.1.4",
     "msgspec==0.20.0",
-    "cryptography==46.0.4",
+    "cryptography==46.0.5",
     "construct==2.10.70",
-    "transitions==0.9.2",
+    "transitions==0.9.3",
     "uvloop==0.22.1"
 ]
 

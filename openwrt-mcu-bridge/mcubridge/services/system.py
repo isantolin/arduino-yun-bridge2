@@ -50,11 +50,11 @@ class SystemComponent:
             await cast(Callable[[], Awaitable[None]], ack)()
 
     async def handle_get_free_memory_resp(self, payload: bytes) -> None:
-        if len(payload) != 2:
+        try:
+            packet = FreeMemoryResponsePacket.decode(payload)
+        except (ConstructError, ValueError):
             logger.warning("Malformed GET_FREE_MEMORY_RESP payload: %s", payload.hex())
             return
-
-        packet = FreeMemoryResponsePacket.decode(payload)
         free_memory = packet.value
         topic = topic_path(
             self.state.mqtt_topic_prefix,
@@ -84,10 +84,6 @@ class SystemComponent:
         )
 
     async def handle_get_version_resp(self, payload: bytes) -> None:
-        if len(payload) != 2:
-            logger.warning("Malformed GET_VERSION_RESP payload: %s", payload.hex())
-            return
-
         try:
             packet = VersionResponsePacket.decode(payload)
             major, minor = packet.major, packet.minor

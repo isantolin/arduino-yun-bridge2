@@ -291,7 +291,7 @@ class BridgeDispatcher:
             case Topic.SYSTEM:
                 return None  # System topics are not subject to TopicAuthorization
             case Topic.DIGITAL | Topic.ANALOG:
-                action = self._pin_action_from_parts(route.raw.split("/"))
+                action = self._pin_action_from_segments(route.segments)
             case Topic.CONSOLE:
                 action = "in" if route.identifier == "in" else None
             case _:
@@ -368,17 +368,16 @@ class BridgeDispatcher:
         if payload is None:
             return True
         if self.shell:
-            await self.shell.handle_mqtt(route.raw.split("/"), payload, inbound)
+            await self.shell.handle_mqtt(list(route.segments), payload, inbound)
         return True
 
     async def _handle_pin_topic(self, route: TopicRoute, inbound: Message) -> bool:
         payload = await self._guard_dispatch(route, inbound)
         if payload is None:
             return True
-        parts = route.raw.split("/")
         if self.pin:
             payload_str = payload.decode("utf-8", errors="ignore")
-            await self.pin.handle_mqtt(route.topic, parts, payload_str, inbound)
+            await self.pin.handle_mqtt(route.topic, list(route.segments), payload_str, inbound)
         return True
 
     async def _handle_system_topic(self, route: TopicRoute, inbound: Message) -> bool:
@@ -405,7 +404,17 @@ class BridgeDispatcher:
                 return False
 
     @staticmethod
+    def _pin_action_from_segments(segments: tuple[str, ...]) -> str | None:
+        if not segments:
+            return None
+        if len(segments) == 1:
+            return "write"
+        subtopic = segments[1].strip().lower()
+        return subtopic or None
+
+    @staticmethod
     def _pin_action_from_parts(parts: list[str]) -> str | None:
+        """Compatibility helper for tests using legacy full-topic parsing."""
         if len(parts) < 3:
             return None
         if len(parts) == 3:

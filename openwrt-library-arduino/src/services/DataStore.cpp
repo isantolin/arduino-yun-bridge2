@@ -12,9 +12,7 @@ DataStoreClass::DataStoreClass() {
 
 void DataStoreClass::reset() {
   _last_datastore_key.clear();
-  while (!_pending_datastore_keys.empty()) {
-    _pending_datastore_keys.pop();
-  }
+  _pending_datastore_keys.clear();
 }
 
 void DataStoreClass::put(etl::string_view key, etl::string_view value) {

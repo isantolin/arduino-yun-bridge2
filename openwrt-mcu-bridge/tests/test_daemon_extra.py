@@ -57,7 +57,7 @@ async def test_daemon_supervise_healthy_reset() -> None:
     # This ensures that any duration check `now - prev` where `now` is a subsequent call
     # will yield a large positive value (> 10s), satisfying the "healthy" check.
     # This is robust against the exact number of calls Tenacity makes.
-    
+
     with (
         patch("asyncio.sleep", return_value=None),
         patch("time.monotonic", side_effect=itertools.count(0, 100.0)),

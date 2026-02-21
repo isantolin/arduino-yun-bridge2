@@ -392,8 +392,10 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
             self._killed = False
 
         async def wait(self) -> None:
-            # Keep running until killed.
-            while not self._killed:
+            # Keep running until killed, with a safety timeout for tests
+            for _ in range(50):  # Max 2.5s
+                if self._killed:
+                    break
                 await asyncio.sleep(0.05)
             self.returncode = 9
 
@@ -412,7 +414,8 @@ async def test_run_sync_timeout_kills_process(process_component: ProcessComponen
 
 @pytest.mark.asyncio
 async def test_start_async_allocate_pid_failure_returns_sentinel(process_component: ProcessComponent) -> None:
-    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock):
+    with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+        mock_alloc.return_value = protocol.INVALID_ID_SENTINEL
         pid = await process_component.start_async("/bin/true", ["/bin/true"])
         assert pid == protocol.INVALID_ID_SENTINEL
 

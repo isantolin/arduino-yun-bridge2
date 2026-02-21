@@ -7,45 +7,17 @@
 // Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)
 #define BRIDGE_SECRET "12345678901234567890123456789012"
 
-// Includes manuales para dependencias
-// #include <PacketSerial.h> // Removed: Internal dependency
-// #include <CRC32.h>        // Removed: Internal dependency
-// #include <Crypto.h>       // Removed: Internal dependency
-
 #include <Bridge.h>
 #include <string.h>
 
-void printHexValue(Print& target, uint16_t value, uint8_t width) {
-  if (width == 0) {
-    return;
-  }
-  if (width > 4) {
-    width = 4;
-  }
-  char buffer[4];
-  for (int i = width - 1; i >= 0; --i) {
-    buffer[i] = ("0123456789ABCDEF")[value & 0x0Fu];
-    value >>= 4;
-  }
-  for (uint8_t i = 0; i < width; ++i) {
-    target.print(buffer[i]);
-  }
-}
-
 void handleDigitalReadResponse(uint8_t value) {
-  // DISABLED: Console.print causes serial collisions
-  // Console.print("Respuesta asíncrona de lectura digital: ");
-  // Console.println(value);
-  (void)value;
+  Console.print(F("Respuesta asíncrona de lectura digital: "));
+  Console.println(value);
 }
 
 void handleCommand(const rpc::Frame& frame) {
-  // DISABLED: Console.print causes serial collisions
-  // Console.print("Comando RPC no manejado: ID=0x");
-  // printHexValue(Console, frame.header.command_id, 4);
-  // Console.print(", Payload Len=");
-  // Console.println(frame.header.payload_length);
-  (void)frame;
+  Console.print(F("Comando RPC no manejado: ID=0x"));
+  Console.println(frame.header.command_id, HEX);
 }
 
 void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
@@ -54,35 +26,30 @@ void handleMailboxMessage(const uint8_t* buffer, uint16_t size) {
     memcpy(msg_buf, buffer, size);
     msg_buf[size] = '\0';
 
-    // DISABLED: Console.print causes serial collisions
-    // Console.print("Mensaje de Mailbox recibido: ");
-    // Console.println(msg_buf);
+    Console.print(F("Mensaje de Mailbox recibido: "));
+    Console.println(msg_buf);
 
     if (strcmp(msg_buf, "ON") == 0) {
       digitalWrite(13, HIGH);
-      // Console.println("LED 13 encendido por Mailbox");
+      Console.println(F("LED 13 encendido por Mailbox"));
     } else if (strcmp(msg_buf, "OFF") == 0) {
       digitalWrite(13, LOW);
-      // Console.println("LED 13 apagado por Mailbox");
+      Console.println(F("LED 13 apagado por Mailbox"));
     } else {
-      // Console.print("Comando desconocido: ");
-      // Console.println(msg_buf);
+      Console.print(F("Comando desconocido: "));
+      Console.println(msg_buf);
     }
   }
-  // [ANTI-FLOOD] Removed recursion here. Polling is handled in loop().
 }
 
 void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length) {
   (void)payload;
   (void)length;
-  // Silenced: printing on every status frame causes serial collisions
-  // Only uncomment for debugging specific issues
-  (void)status_code;
-  /*
-  Console.print("Estado: 0x");
-  printHexValue(Console, rpc::to_underlying(status_code), 2);
-  Console.println();
-  */
+  // Solo imprimir errores graves para evitar saturación
+  if (status_code != rpc::StatusCode::STATUS_OK) {
+    Console.print(F("Error de Estado: 0x"));
+    Console.println(static_cast<uint8_t>(status_code), HEX);
+  }
 }
 
 void setup() {
@@ -97,22 +64,25 @@ void setup() {
   Bridge.onStatus(BridgeClass::StatusHandler::create<handleStatusFrame>());
   
   pinMode(13, OUTPUT);
-  // delay(2000); // Removed blocking delay
 
-  // Wait for handshake with non-blocking LED blink
-  long lastBlink = 0;
+  // Espera no bloqueante para sincronización
+  unsigned long lastBlink = 0;
   bool ledState = false;
+  
+  // Nota: En sistemas reales, loop() se encargará de process(),
+  // pero aquí bloqueamos el setup() intencionalmente hasta sincronizar
+  // para asegurar estado conocido, pero SIN delay().
   while (!Bridge.isSynchronized()) {
     Bridge.process();
-    if (millis() - lastBlink > 50) {
+    if (millis() - lastBlink > 100) {
       lastBlink = millis();
       ledState = !ledState;
       digitalWrite(13, ledState ? HIGH : LOW);
     }
   }
   
-  // DISABLED: Console.print causes serial collisions
-  // Console.println("Bridge iniciado con secreto definido en Sketch.");
+  Console.begin();
+  Console.println(F("Bridge iniciado con secreto definido en Sketch."));
 }
 
 void loop() {

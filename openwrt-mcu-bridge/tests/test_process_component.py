@@ -320,7 +320,7 @@ async def test_handle_kill_terminates_and_cleans_slot(
             return None
 
     proc = FakeProc()
-    
+
     # [FSM] Mock trigger side effects for state transitions
     def _trigger(evt: str) -> None:
         if evt == "force_kill":

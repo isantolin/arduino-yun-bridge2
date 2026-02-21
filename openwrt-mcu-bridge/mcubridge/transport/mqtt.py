@@ -71,6 +71,10 @@ class MqttTransport:
         self.machine.add_transition("subscribed", self.STATE_SUBSCRIBING, self.STATE_READY)
         self.machine.add_transition("disconnect", "*", self.STATE_DISCONNECTED)
 
+    def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
+        """FSM trigger placeholder."""
+        return False
+
     async def run(self) -> None:
         """Main run loop with reconnection logic."""
         tls_context = configure_tls_context(self.config)

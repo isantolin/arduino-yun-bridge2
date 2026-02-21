@@ -8,6 +8,7 @@ import logging
 import time
 from asyncio.subprocess import Process
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Final
 
@@ -16,6 +17,7 @@ import psutil
 import tenacity
 from aiomqtt.message import Message
 from prometheus_client import CollectorRegistry, Summary
+from transitions import Machine
 
 from ..config.const import (
     DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
@@ -94,8 +96,6 @@ __all__: Final[tuple[str, ...]] = (
     "SerialPipelineSnapshot",
     "BridgeSnapshot",
 )
-
-from transitions import Machine
 
 # FSM States for ManagedProcess
 PROCESS_STATE_STARTING = "STARTING"
@@ -212,16 +212,17 @@ def _asyncio_lock_factory() -> asyncio.Lock:
     return asyncio.Lock()
 
 
-class ManagedProcess(msgspec.Struct):
+@dataclass
+class ManagedProcess:
     """Managed subprocess with output buffers."""
 
     pid: int
     command: str = ""
     handle: Process | None = None
-    stdout_buffer: bytearray = msgspec.field(default_factory=_bytearray_factory)
-    stderr_buffer: bytearray = msgspec.field(default_factory=_bytearray_factory)
+    stdout_buffer: bytearray = field(default_factory=_bytearray_factory)
+    stderr_buffer: bytearray = field(default_factory=_bytearray_factory)
     exit_code: int | None = None
-    io_lock: asyncio.Lock = msgspec.field(default_factory=_asyncio_lock_factory)
+    io_lock: asyncio.Lock = field(default_factory=_asyncio_lock_factory)
     fsm_state: str = PROCESS_STATE_STARTING
     _machine: Any = None
 
@@ -245,6 +246,10 @@ class ManagedProcess(msgspec.Struct):
         self._machine.add_transition("finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
         # Allow force cleanup from any state
         self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
+
+    def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
+        """FSM trigger placeholder."""
+        return False
 
     def append_output(
         self,
@@ -342,7 +347,7 @@ def _datastore_factory() -> dict[str, str]:
     return {}
 
 
-def _running_processes_factory() -> dict[int, ManagedProcess]:
+def _running_processes_factory() -> dict[int, Any]:
     return {}
 
 
@@ -595,7 +600,7 @@ class RuntimeState(msgspec.Struct):
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=_running_processes_factory)
+    running_processes: dict[int, Any] = msgspec.field(default_factory=_running_processes_factory)
     process_lock: asyncio.Lock = msgspec.field(default_factory=_asyncio_lock_factory)
     next_pid: int = 1
     allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=_policy_factory)

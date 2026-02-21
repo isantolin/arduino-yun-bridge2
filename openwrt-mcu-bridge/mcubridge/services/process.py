@@ -44,9 +44,6 @@ from ..protocol.topics import Topic, topic_path
 from ..state.context import (
     ManagedProcess,
     RuntimeState,
-    PROCESS_STATE_STARTING,
-    PROCESS_STATE_RUNNING,
-    PROCESS_STATE_DRAINING,
     PROCESS_STATE_FINISHED,
     PROCESS_STATE_ZOMBIE,
 )
@@ -299,10 +296,10 @@ class ProcessComponent(msgspec.Struct):
                             slot.trigger("force_kill")
                         except Exception as e:
                             logger.error("FSM transition failed in handle_kill: %s", e)
-                    
+
                     slot.handle = None
                     slot.exit_code = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
-                    
+
                     # If buffers are drained and FSM is zombie, remove it
                     if slot.is_drained() and slot.fsm_state == PROCESS_STATE_ZOMBIE:
                         self.state.running_processes.pop(pid, None)
@@ -482,7 +479,7 @@ class ProcessComponent(msgspec.Struct):
             # Access handle directly for reading (managed by FSM logic)
             # Actually, `handle` is still used for IO reading in _monitor_async_process
             # but here we just pop from buffers.
-        
+
         if slot is None:
             logger.debug("PROCESS_POLL received for unknown PID %d", pid)
             return ProcessOutputBatch(
@@ -497,14 +494,14 @@ class ProcessComponent(msgspec.Struct):
 
         stdout_truncated_limit = False
         stderr_truncated_limit = False
-        
+
         # [FSM] Check if finished based on state
         # Only FINISHED or ZOMBIE means processing is done and buffers are full (or draining)
         # But we need to drain buffers to client.
-        
-        # NOTE: Logic inversion. `collect_output` consumes from `slot`. 
+
+        # NOTE: Logic inversion. `collect_output` consumes from `slot`.
         # The background task fills `slot`.
-        
+
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
             if slot is None:
@@ -519,7 +516,7 @@ class ProcessComponent(msgspec.Struct):
                 )
 
             # Note: Background task appends. We just pop.
-            
+
             (
                 stdout_payload,
                 stderr_payload,
@@ -530,12 +527,12 @@ class ProcessComponent(msgspec.Struct):
             stderr_truncated_limit |= payload_trunc_err
 
             released_slot = False
-            
+
             # [FSM] Determine finished status
             # If we are in FINISHED state and buffers are empty, we can transition to ZOMBIE and release
-            
+
             is_done = slot.fsm_state in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
-            
+
             if is_done and slot.is_drained():
                 if slot.fsm_state == PROCESS_STATE_FINISHED:
                     if hasattr(slot, "trigger"):
@@ -543,12 +540,11 @@ class ProcessComponent(msgspec.Struct):
                             slot.trigger("finalize")
                         except Exception as e:
                             logger.error("FSM transition failed in collect_output: %s", e)
-                
+
                 self.state.running_processes.pop(pid, None)
                 released_slot = True
                 log_finished = True
             else:
-                finished_flag = False
                 log_finished = False
 
             exit_value = slot.exit_code if slot.exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
@@ -780,13 +776,13 @@ class ProcessComponent(msgspec.Struct):
 
         release_slot = False
         exit_value = proc.returncode if proc.returncode is not None else PROCESS_DEFAULT_EXIT_CODE
-        
+
         async with self.state.process_lock:
             current_slot = self.state.running_processes.get(pid)
             if current_slot is None or current_slot is not slot:
                 # Slot was replaced or removed? Should be rare/impossible if pid unique
                 return
-            
+
             # [FSM] Complete IO
             if hasattr(current_slot, "trigger"):
                 try:
@@ -800,13 +796,14 @@ class ProcessComponent(msgspec.Struct):
                     stderr_tail,
                     limit=self.state.process_output_limit,
                 )
-            
+
             current_slot.exit_code = exit_value
             current_slot.handle = None
-            
+
             # Check if we can cleanup immediately
             if current_slot.is_drained() and current_slot.fsm_state == PROCESS_STATE_FINISHED:
-                 current_slot.trigger("finalize")
+                 if hasattr(current_slot, "trigger"):
+                     current_slot.trigger("finalize")
                  self.state.running_processes.pop(pid, None)
                  release_slot = True
 

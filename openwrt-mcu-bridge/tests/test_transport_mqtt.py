@@ -144,11 +144,11 @@ async def test_mqtt_task_requeues_on_publish_failure(
     async def _cancel_sleep(*args, **kwargs):
         raise asyncio.CancelledError
     monkeypatch.setattr(asyncio, "sleep", _cancel_sleep)
-    
+
     # [FIX] MqttTransport.run catches CancelledError and logs it, then re-raises
     with pytest.raises(asyncio.CancelledError):
         await mqtt.mqtt_task(config, state, service)
-    
+
     # Check if message was requeued
     assert state.mqtt_publish_queue.qsize() == 1
 
@@ -169,7 +169,7 @@ async def test_mqtt_publisher_loop_queue_full_on_cancel() -> None:
     )
     client = MagicMock(spec=aiomqtt.Client)
     client.publish = AsyncMock(side_effect=asyncio.CancelledError)
-    
+
     task = asyncio.create_task(transport._publisher_loop(client))
     await asyncio.sleep(0.01)
     task.cancel()
@@ -198,7 +198,7 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
             return _iter()
 
     client = FakeClient()
-    
+
     with pytest.raises(aiomqtt.MqttError, match="boom"):
         await transport._subscriber_loop(client) # type: ignore[arg-type]
 

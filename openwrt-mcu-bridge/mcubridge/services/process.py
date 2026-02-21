@@ -476,9 +476,6 @@ class ProcessComponent(msgspec.Struct):
     async def collect_output(self, pid: int) -> ProcessOutputBatch:
         async with self.state.process_lock:
             slot = self.state.running_processes.get(pid)
-            # Access handle directly for reading (managed by FSM logic)
-            # Actually, `handle` is still used for IO reading in _monitor_async_process
-            # but here we just pop from buffers.
 
         if slot is None:
             logger.debug("PROCESS_POLL received for unknown PID %d", pid)
@@ -495,16 +492,26 @@ class ProcessComponent(msgspec.Struct):
         stdout_truncated_limit = False
         stderr_truncated_limit = False
 
-        # [FSM] Check if finished based on state
-        # Only FINISHED or ZOMBIE means processing is done and buffers are full (or draining)
-        # But we need to drain buffers to client.
+        # [FSM] Use io_lock for buffer access to support concurrency and testing hooks
+        async with slot.io_lock:
+            (
+                stdout_payload,
+                stderr_payload,
+                payload_trunc_out,
+                payload_trunc_err,
+            ) = slot.pop_payload(_PROCESS_POLL_BUDGET)
+        
+        stdout_truncated_limit |= payload_trunc_out
+        stderr_truncated_limit |= payload_trunc_err
 
-        # NOTE: Logic inversion. `collect_output` consumes from `slot`.
-        # The background task fills `slot`.
+        released_slot = False
+        log_finished = False
+        exit_value = PROCESS_DEFAULT_EXIT_CODE
 
         async with self.state.process_lock:
-            slot = self.state.running_processes.get(pid)
-            if slot is None:
+            # Re-check existence in case it was removed during io_lock (test scenario)
+            current_slot = self.state.running_processes.get(pid)
+            if current_slot is None or current_slot is not slot:
                 return ProcessOutputBatch(
                     status_byte=Status.ERROR.value,
                     exit_code=PROCESS_DEFAULT_EXIT_CODE,
@@ -515,22 +522,7 @@ class ProcessComponent(msgspec.Struct):
                     stderr_truncated=False,
                 )
 
-            # Note: Background task appends. We just pop.
-
-            (
-                stdout_payload,
-                stderr_payload,
-                payload_trunc_out,
-                payload_trunc_err,
-            ) = slot.pop_payload(_PROCESS_POLL_BUDGET)
-            stdout_truncated_limit |= payload_trunc_out
-            stderr_truncated_limit |= payload_trunc_err
-
-            released_slot = False
-
             # [FSM] Determine finished status
-            # If we are in FINISHED state and buffers are empty, we can transition to ZOMBIE and release
-
             is_done = slot.fsm_state in (PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
 
             if is_done and slot.is_drained():
@@ -544,9 +536,7 @@ class ProcessComponent(msgspec.Struct):
                 self.state.running_processes.pop(pid, None)
                 released_slot = True
                 log_finished = True
-            else:
-                log_finished = False
-
+            
             exit_value = slot.exit_code if slot.exit_code is not None else PROCESS_DEFAULT_EXIT_CODE
 
         if released_slot:
@@ -564,7 +554,7 @@ class ProcessComponent(msgspec.Struct):
             exit_code=exit_value & UINT8_MASK,
             stdout_chunk=stdout_payload,
             stderr_chunk=stderr_payload,
-            finished=released_slot, # Only report finished when we actually cleanup
+            finished=released_slot, 
             stdout_truncated=stdout_truncated_limit,
             stderr_truncated=stderr_truncated_limit,
         )

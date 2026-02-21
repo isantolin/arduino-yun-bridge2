@@ -898,7 +898,10 @@ def test_mqtt_configure_tls_gaps():
 async def test_mqtt_publisher_loop_gaps():
     """Cover gaps in _mqtt_publisher_loop."""
     state = create_fake_state()
+    config = create_fake_config()
     mock_client = AsyncMock()
+    service = MagicMock()
+    transport = mqtt.MqttTransport(config, state, service)
 
     from mcubridge.mqtt.messages import QueuedPublish
 
@@ -908,7 +911,7 @@ async def test_mqtt_publisher_loop_gaps():
     # Case: CancelledError (Line 80-85)
     mock_client.publish.side_effect = asyncio.CancelledError
     with pytest.raises(asyncio.CancelledError):
-        await mqtt._mqtt_publisher_loop(state, mock_client)
+        await transport._publisher_loop(mock_client)
     # Verify message was requeued
     assert state.mqtt_publish_queue.qsize() == 1
 
@@ -917,7 +920,7 @@ async def test_mqtt_publisher_loop_gaps():
     await state.mqtt_publish_queue.put(msg)
     mock_client.publish.side_effect = aiomqtt.MqttError("Boom")
     with pytest.raises(aiomqtt.MqttError):
-        await mqtt._mqtt_publisher_loop(state, mock_client)
+        await transport._publisher_loop(mock_client)
     assert state.mqtt_publish_queue.qsize() == 1
 
 
@@ -926,6 +929,9 @@ async def test_mqtt_subscriber_loop_gaps():
     """Cover gaps in _mqtt_subscriber_loop."""
     service = MagicMock()
     mock_client = MagicMock()
+    config = create_fake_config()
+    state = create_fake_state()
+    transport = mqtt.MqttTransport(config, state, service)
 
     class FakeMessage:
         def __init__(self, topic, payload):
@@ -945,7 +951,7 @@ async def test_mqtt_subscriber_loop_gaps():
     mock_client.messages = fake_messages()
 
     with pytest.raises(aiomqtt.MqttError):
-        await mqtt._mqtt_subscriber_loop(service, mock_client)
+        await transport._subscriber_loop(mock_client)
 
 
 @pytest.mark.asyncio
@@ -1180,6 +1186,9 @@ def test_managed_process_gaps():
     # is_drained
     assert proc.is_drained() is False
     proc.stdout_buffer.clear()
+    
+    # [FSM] Must be in FINISHED/ZOMBIE state to be drained
+    proc.fsm_state = context.PROCESS_STATE_FINISHED
     assert proc.is_drained() is True
 
 

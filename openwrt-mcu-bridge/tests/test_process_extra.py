@@ -179,9 +179,11 @@ async def test_process_allocate_pid_exhaustion() -> None:
         def __contains__(self, item):
             return True
 
-    with patch.object(state, "running_processes", FullDict()):
-        pid = await pc._allocate_pid()
-        assert pid == INVALID_ID_SENTINEL
+    # Patch UINT16_MAX to avoid 65k iterations
+    with patch("mcubridge.services.process.UINT16_MAX", 10):
+        with patch.object(state, "running_processes", FullDict()):
+            pid = await pc._allocate_pid()
+            assert pid == INVALID_ID_SENTINEL
 
 
 def test_process_kill_tree_sync_psutil_error() -> None:

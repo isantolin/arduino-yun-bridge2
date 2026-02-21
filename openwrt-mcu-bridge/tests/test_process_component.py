@@ -376,7 +376,7 @@ async def test_run_sync_subprocess_oserror_returns_error(process_component: Proc
 
 @pytest.mark.asyncio
 async def test_run_sync_timeout_kills_process(process_component: ProcessComponent) -> None:
-    process_component.state.process_timeout = 1
+    process_component.state.process_timeout = 0.1
 
     class _FakeStream:
         async def read(self, _n: int) -> bytes:

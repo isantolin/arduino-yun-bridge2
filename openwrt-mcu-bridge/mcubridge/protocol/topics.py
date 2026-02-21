@@ -27,15 +27,15 @@ class TopicRoute(msgspec.Struct, frozen=True):
         return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-def split_topic_segments(path: str) -> tuple[str, ...]:
+def _split_segments(path: str) -> tuple[str, ...]:
     if not path:
         return ()
     return tuple(segment for segment in path.split("/") if segment)
 
 
-def _split_segments(path: str) -> tuple[str, ...]:
-    """Backward-compatible alias kept for existing tests."""
-    return split_topic_segments(path)
+def split_topic_segments(path: str) -> tuple[str, ...]:
+    """Public helper for service-level topic segment normalization."""
+    return _split_segments(path)
 
 
 def topic_path(prefix: str, topic: Topic | str, *segments: str) -> str:

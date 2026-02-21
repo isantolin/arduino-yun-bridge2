@@ -68,6 +68,14 @@ from mcubridge.transport import (
 from mcubridge.watchdog import WatchdogKeepalive
 
 logger = logging.getLogger("mcubridge")
+SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    ConnectionError,
+    OSError,
+    RuntimeError,
+    TimeoutError,
+    ValueError,
+    msgspec.MsgspecError,
+)
 
 
 class SupervisedTaskSpec(msgspec.Struct):
@@ -252,7 +260,7 @@ class BridgeDaemon:
                     log.critical("%s failed with fatal exception: %s", spec.name, exc)
                     self.state.record_supervisor_failure(spec.name, backoff=0.0, exc=exc, fatal=True)
                     raise
-                except BaseException as exc:
+                except SUPERVISOR_RECOVERABLE_EXCEPTIONS as exc:
                     # [SIL-2] Report failure using tenacity statistics
                     # Derive wait time for next retry if applicable
                     delay = 0.0
@@ -342,13 +350,6 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         sys.exit(1)
     except OSError as exc:
         logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
-        sys.exit(1)
-    except BaseException as exc:
-        logger.critical(
-            "CRITICAL: Unhandled non-standard exception. Terminating: %s",
-            exc,
-            exc_info=True,
-        )
         sys.exit(1)
 
 

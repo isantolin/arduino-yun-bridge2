@@ -109,8 +109,8 @@ class FileSpoolDeque:
                 self._tail = self._INITIAL_INDEX - 1
 
     def close(self) -> None:
-        """No-op for file-based spool."""
-        pass
+        """File-backed spool does not hold open file descriptors."""
+        return None
 
     def clear(self) -> None:
         for f in self._dir.glob("*.msg"):
@@ -193,19 +193,11 @@ class MQTTPublishSpool:
         with self._lock:
             if self._disk_queue is not None:
                 try:
-                    close_fn = getattr(self._disk_queue, "close", None)
-                    if callable(close_fn):
-                        close_fn()
+                    self._disk_queue.close()
                 except OSError:
                     logger.warning("Error closing disk queue", exc_info=True)
             self._disk_queue = None
             self._memory_queue.clear()
-
-    def __del__(self) -> None:  # pragma: no cover
-        try:
-            self.close()
-        except OSError:
-            pass
 
     def append(self, message: QueuedPublish) -> None:
         record: SpoolRecord = message.to_record()
@@ -307,7 +299,7 @@ class MQTTPublishSpool:
         if self._fallback_hook is not None:
             self._fallback_hook(reason)
 
-    def _handle_disk_error(self, exc: Exception, op: str) -> None:
+    def _handle_disk_error(self, exc: OSError | msgspec.MsgspecError, op: str) -> None:
         reason = "disk_full" if getattr(exc, "errno", 0) == errno.ENOSPC else "io_error"
         message = "MQTT Spool disk error during %s: %s. " "Switching to memory-only mode (reason=%s)."
         logger.error(message, op, exc, reason)

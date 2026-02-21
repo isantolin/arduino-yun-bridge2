@@ -334,7 +334,7 @@ class ProcessComponent(msgspec.Struct):
                     )
                 )
                 wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
-        except (OSError, ValueError, Exception) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error(
                 "IO Error interacting with process '%s': %s",
                 command,
@@ -833,7 +833,7 @@ class ProcessComponent(msgspec.Struct):
         try:
             guard.release()
         except ValueError:
-            pass
+            logger.debug("Process slot release requested with no available permits", exc_info=True)
 
 
 __all__ = ["ProcessComponent", "ProcessOutputBatch"]

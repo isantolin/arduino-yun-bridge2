@@ -16,7 +16,7 @@ define Package/$(PKG_NAME)
 	TITLE:=MCU Core Scripts and Configs (system Python only)
 	PKG_ARCH:=all
 	# Updated dependencies for OpenWrt 25.12 (apk based)
-	DEPENDS:=+python3 +python3-uci +mosquitto-client +python3-aiomqtt +python3-cobs +python3-psutil +python3-prometheus-client +xxd
+	DEPENDS:=+python3 +python3-uci +mosquitto-client +python3-aiomqtt +python3-cobs +python3-msgspec +python3-paho-mqtt +python3-tenacity +python3-psutil +python3-prometheus-client +xxd
 endef
 
 define Package/$(PKG_NAME)/description

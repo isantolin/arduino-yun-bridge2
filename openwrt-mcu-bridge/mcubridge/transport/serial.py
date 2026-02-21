@@ -173,8 +173,8 @@ class BridgeSerialProtocol(asyncio.Protocol):
         except OSError as exc:
             logger.error("OS error during packet processing: %s", exc)
             self.state.record_serial_decode_error()
-        except Exception as exc:
-            logger.error("Error during packet processing: %s", exc)
+        except (RuntimeError, TypeError) as exc:
+            logger.error("Runtime error during packet processing: %s", exc)
             self.state.record_serial_decode_error()
 
     def _log_frame(self, frame: Frame, direction: str) -> None:
@@ -319,7 +319,7 @@ class SerialTransport:
         except asyncio.CancelledError:
             self._stop_event.set()
             raise
-        except Exception as exc:
+        except (ConnectionError, OSError, RuntimeError, ValueError) as exc:
             logger.error("Serial transport stopped unexpectedly: %s", exc)
             raise
 
@@ -335,7 +335,7 @@ class SerialTransport:
         try:
             await loop.run_in_executor(None, self._blocking_reset)
             await asyncio.sleep(2.0)
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error("Async DTR Toggle failed: %s", e)
 
     def _blocking_reset(self) -> None:
@@ -349,7 +349,7 @@ class SerialTransport:
                 s.dtr = True
                 time.sleep(0.1)
                 s.dtr = False
-        except Exception as e:
+        except (ImportError, OSError, RuntimeError, ValueError) as e:
             logger.error("DTR Toggle failed: %s", e)
 
     async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -411,7 +411,7 @@ class SerialTransport:
             self.protocol = None
             try:
                 await self.service.on_serial_disconnected()
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError) as exc:
                 logger.warning("Error in on_serial_disconnected hook: %s", exc)
 
     async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:

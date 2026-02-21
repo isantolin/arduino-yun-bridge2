@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any, List
+from typing import Any
 from wsgiref.handlers import CGIHandler
 
 import msgspec
@@ -22,7 +22,7 @@ from mcubridge.config.common import get_uci_config
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import pin_topic
-from paho.mqtt.client import Client, MQTTv5
+from paho.mqtt.client import Client, MQTT_ERR_SUCCESS, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
@@ -41,6 +41,8 @@ _UCI = get_uci_config()
 
 # [SIL-2] Explicit boundary validation for UCI values
 DEFAULT_PUBLISH_TIMEOUT = 4.0
+MQTT_KEEPALIVE_SECONDS = 10
+MQTT_PUBLISH_QOS = 1
 
 try:
     retries = max(1, int(_UCI.get("pin_mqtt_retries", 3)))
@@ -60,7 +62,7 @@ except (ValueError, TypeError):
 )
 def publish_safe(topic: str, payload: str, config: Any) -> None:
     client = Client(
-        client_id=f"mcubridge_cgi_{time.time()}",
+        client_id=f"mcubridge_cgi_{time.time_ns()}",
         protocol=MQTTv5,
         callback_api_version=CallbackAPIVersion.VERSION2,
     )
@@ -76,26 +78,24 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         if config.mqtt_user:
             client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 
-        client.connect(config.mqtt_host, config.mqtt_port, keepalive=10)
+        client.connect(config.mqtt_host, config.mqtt_port, keepalive=MQTT_KEEPALIVE_SECONDS)
         client.loop_start()
 
-        info = client.publish(topic, payload, qos=1)
-
-        start_time = time.time()
-        while not info.is_published():
-            if time.time() - start_time > publish_timeout:
-                raise TimeoutError("Publish timed out")
-            time.sleep(0.05)
-
-    except Exception as exc:
+        info = client.publish(topic, payload, qos=MQTT_PUBLISH_QOS)
+        if info.rc != MQTT_ERR_SUCCESS:
+            raise ConnectionError(f"MQTT publish failed with rc={info.rc}")
+        info.wait_for_publish(timeout=publish_timeout)
+        if not info.is_published():
+            raise TimeoutError("Publish timed out")
+    except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
         logger.warning("Publish attempt failed: %s", exc)
         raise
     finally:
         try:
             client.loop_stop()
             client.disconnect()
-        except Exception:
-            pass
+        except (OSError, RuntimeError, ValueError) as exc:
+            logger.debug("MQTT client cleanup failed: %s", exc, exc_info=True)
 
 
 
@@ -106,7 +106,7 @@ def get_pin_from_path(environ: dict[str, Any]) -> str | None:
 
 
 
-def json_response(start_response: Any, status: str, data: dict[str, Any]) -> List[bytes]:
+def json_response(start_response: Any, status: str, data: dict[str, Any]) -> list[bytes]:
     response_body = msgspec.json.encode(data)
     headers = [
         ("Content-Type", "application/json"),
@@ -117,11 +117,11 @@ def json_response(start_response: Any, status: str, data: dict[str, Any]) -> Lis
 
 
 
-def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:
+def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
     try:
         config = load_runtime_config()
         configure_logging(config)
-    except Exception as exc:
+    except (OSError, RuntimeError, ValueError, msgspec.DecodeError, msgspec.ValidationError) as exc:
         _configure_fallback_logging()
         logger.exception("Failed to load runtime configuration")
         return json_response(start_response, "500 Internal Server Error", {
@@ -169,7 +169,7 @@ def application(environ: dict[str, Any], start_response: Any) -> List[bytes]:
             "status": "ok", "pin": int(pin), "state": state,
             "message": f"Command to turn pin {pin} {state} sent via MQTT.",
         })
-    except Exception as exc:
+    except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
         return json_response(start_response, "500 Internal Server Error", {
             "status": "error", "message": f"Failed to send command: {exc}",
         })

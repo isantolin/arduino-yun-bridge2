@@ -46,6 +46,9 @@ static_assert(
   "RPC_HANDSHAKE_TAG_LENGTH must be greater than zero"
 );
 constexpr size_t kSha256DigestSize = 32;
+#if defined(ARDUINO_ARCH_AVR)
+constexpr uint8_t kCrcFailResetWatchdogTimeout = WDTO_15MS;
+#endif
 
 // Global instance pointer for PacketSerial static callback
 BridgeClass* g_bridge_instance = nullptr;
@@ -258,8 +261,10 @@ void BridgeClass::process() {
         if (_consecutive_crc_errors >= BRIDGE_MAX_CONSECUTIVE_CRC_ERRORS) {
           // [SIL-2] Force Hardware Reset after persistent corruption
           #if defined(ARDUINO_ARCH_AVR)
-            wdt_enable(WDTO_15MS);
-            while(1); 
+            wdt_enable(kCrcFailResetWatchdogTimeout);
+            for (;;) {
+              // Wait for watchdog-triggered reset.
+            }
           #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
             ESP.restart();
           #else
@@ -1173,14 +1178,15 @@ void BridgeClass::_flushPendingTxQueue() {
 }
 
 void BridgeClass::_clearPendingTxQueue() { 
-  while (true) {
-    bool empty = false;
+  bool queue_empty = false;
+  do {
     BRIDGE_ATOMIC_BLOCK {
-      empty = _pending_tx_queue.empty();
-      if (!empty) _pending_tx_queue.pop();
+      queue_empty = _pending_tx_queue.empty();
+      if (!queue_empty) {
+        _pending_tx_queue.pop();
+      }
     }
-    if (empty) break;
-  }
+  } while (!queue_empty);
 }
 
 void BridgeClass::_computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag) {

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import importlib.util
+import inspect
 import logging
 import sys
 from collections.abc import Iterator
@@ -45,6 +48,42 @@ from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE,
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
+
+_HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
+    """Fallback asyncio runner when pytest-asyncio is unavailable."""
+    if _HAS_PYTEST_ASYNCIO:
+        return None
+    if "asyncio" not in pyfuncitem.keywords:
+        return None
+    test_function = pyfuncitem.obj
+    if not inspect.iscoroutinefunction(test_function):
+        return None
+
+    policy = pyfuncitem.funcargs.get("event_loop_policy")
+    if policy is not None:
+        asyncio.set_event_loop_policy(policy)
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
+        loop.run_until_complete(test_function(**kwargs))
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        except (RuntimeError, ValueError):
+            pass
+        loop.close()
+        asyncio.set_event_loop(None)
+    return True
 
 
 

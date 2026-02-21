@@ -133,23 +133,24 @@ async def test_handle_run_validation_error(process_component: ProcessComponent, 
             # "not allowed" is logged, but the frame contains the status code string
             assert b"command_validation_failed" in args[1]
 
-    @pytest.mark.asyncio
-    async def test_handle_run_async_success(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
-        from mcubridge.policy import AllowedCommandPolicy
 
-        process_component.state.allowed_policy = AllowedCommandPolicy.from_iterable(["sleep"])
+@pytest.mark.asyncio
+async def test_handle_run_async_success(process_component: ProcessComponent, mock_context: AsyncMock) -> None:
+    from mcubridge.policy import AllowedCommandPolicy
 
-        with patch.object(ProcessComponent, "start_async", new_callable=AsyncMock) as mock_start:
-            mock_start.return_value = 123
+    process_component.state.allowed_policy = AllowedCommandPolicy.from_iterable(["sleep"])
 
-            await process_component.handle_run_async(b"sleep 10")
+    with patch.object(ProcessComponent, "start_async", new_callable=AsyncMock) as mock_start:
+        mock_start.return_value = 123
 
-            mock_start.assert_awaited_once_with("sleep 10", ["sleep", "10"])
-            mock_context.send_frame.assert_awaited_once_with(
-                Command.CMD_PROCESS_RUN_ASYNC_RESP.value, structures.UINT16_STRUCT.build(123)
-            )
-        # Should also enqueue MQTT message
-        mock_context.publish.assert_awaited_once()
+        await process_component.handle_run_async(b"sleep 10")
+
+        mock_start.assert_awaited_once_with("sleep 10", ["sleep", "10"])
+        mock_context.send_frame.assert_awaited_once_with(
+            Command.CMD_PROCESS_RUN_ASYNC_RESP.value, structures.UINT16_STRUCT.build(123)
+        )
+    # Should also enqueue MQTT message
+    mock_context.publish.assert_awaited_once()
 
 @pytest.mark.asyncio
 async def test_handle_run_async_failure(process_component: ProcessComponent, mock_context: AsyncMock) -> None:

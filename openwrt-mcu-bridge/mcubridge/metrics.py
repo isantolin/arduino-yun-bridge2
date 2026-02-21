@@ -349,7 +349,7 @@ class PrometheusExporter:
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
         self._state = state
         # Defensive normalization for tests/injected configs.
-        self._host = host if isinstance(host, str) and host else "127.0.0.1"
+        self._host = host if host else "127.0.0.1"
         self._port = port
         self._server: asyncio.AbstractServer | None = None
         self._resolved_port: int | None = None

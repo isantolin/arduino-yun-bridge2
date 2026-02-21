@@ -867,6 +867,8 @@ void test_bridge_dispatch_gpio_ack_and_no_ack() {
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     auto ba = bridge::test::TestAccessor::create(bridge);
+
+    ba.setIdle(); // [FIX] Ensure bridge is synchronized to allow app commands
     stream.tx_buffer.clear();
 
     // Commands that require an ACK.

@@ -334,7 +334,7 @@ class ProcessComponent(msgspec.Struct):
                     )
                 )
                 wait_task = tg.create_task(self._wait_for_sync_completion(proc, pid_hint))
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, Exception) as e:
             logger.error(
                 "IO Error interacting with process '%s': %s",
                 command,
@@ -707,11 +707,17 @@ class ProcessComponent(msgspec.Struct):
             return
         pid_value = getattr(proc, "pid", None)
         if pid_value is None:
-            proc.kill()
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
             return
         pid = int(pid_value)
         await asyncio.to_thread(self._kill_process_tree_sync, pid)
-        proc.kill()
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
 
     async def _monitor_async_process(
         self,

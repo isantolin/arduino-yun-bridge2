@@ -144,8 +144,8 @@ async def test_run_sync_taskgroup_exception_returns_error(process_component: Pro
     mock_tg.create_task.side_effect = RuntimeError("boom")
 
     with patch("asyncio.TaskGroup", return_value=mock_tg):
-        with pytest.raises(RuntimeError, match="boom"):
-            await process_component.run_sync("echo hi", ["echo", "hi"])
+        status, _, _, _ = await process_component.run_sync("echo hi", ["echo", "hi"])
+        assert status == Status.ERROR.value
 
 
 @pytest.mark.asyncio

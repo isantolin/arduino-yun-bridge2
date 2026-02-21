@@ -72,7 +72,7 @@ use_parentheses = true
 ensure_newline_before_comments = true
 
 [tool.pyright]
-typeCheckingMode = "standard"
+typeCheckingMode = "strict"
 pythonVersion = "3.13"
 stubPath = "stubs"
 extraPaths = ["openwrt-mcu-bridge"]

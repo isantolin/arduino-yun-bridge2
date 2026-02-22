@@ -42,6 +42,7 @@ define Package/$(PKG_NAME)
 	# [OPENWRT 25.12] Modern apk-based dependencies.
 	# We strictly depend on python3 (full) or specific subpackages if optimizing size.
 	# High-performance async/struct deps: uvloop, msgspec.
+	PROVIDES:=mcubridge
 	DEPENDS:=+python3
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
@@ -68,29 +69,29 @@ define Package/$(PKG_NAME)/description
 endef
 
 define Build/Compile
+	# [SIL-2] Deterministic Bytecode Compilation:
 	# Compile Python source to bytecode to optimize startup time and save RAM
-	# on the target.
-	# We use -b to generate legacy .pyc files (no __pycache__ dir)
-	# which is often preferred for simple packaging, or standard compileall.
-	# OpenWrt python3 package usually handles this via hooks, but explicit is safer.
-	$(PYTHON3) -m compileall -b -f $(PKG_BUILD_DIR)/mcubridge
+	# on the target. We use -b to generate legacy .pyc files for simpler packaging.
+	# Optimization level 1 (-O) removes asserts.
+	$(PYTHON3) -O -m compileall -b -f -q $(PKG_BUILD_DIR)/mcubridge
 endef
 
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
-	# Never ship tests/ or tools/ in production packages (apk/ipk).
-	# tools/ contains developer-only stubs (frame_debug) not needed at runtime.
-	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" \) -prune -exec rm -rf {} + || true
+	# [CLEANUP] Never ship tests/ or tools/ in production packages (apk/ipk).
+	# This ensures the smallest possible footprint on target Flash.
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
 endef
 
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/libexec/mcubridge
 	$(INSTALL_DIR) $(1)/etc/init.d
-	# Copy both source (.py) and bytecode (.pyc)
-	$(CP) $(PKG_BUILD_DIR)/mcubridge $(1)/usr/libexec/mcubridge/
+	
+	# [SIL-2] Install both .py and .pyc to allow fallback and fast-start.
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/* $(1)/usr/libexec/mcubridge/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.init $(1)/etc/init.d/mcubridge
 	
 	# Cleanup any __pycache__ directories if they were created by accident

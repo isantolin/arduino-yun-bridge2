@@ -511,13 +511,12 @@ class MailboxClass {
     if (!data || length == 0) return;
 
     // [SIL-2] Large Message Support
-    // We remove the explicit 2-byte length prefix that was present in the old implementation
-    // because the Frame Header already contains the payload length.
-    // This allows us to use standard chunking for messages > 64 bytes.
-    // Note: The receiving side (Python) will receive these as separate messages.
-    // Reassembly is up to the application layer if needed.
+    // We send data with a 2-byte length prefix as expected by rpc::payload::MailboxPush::parse
+    etl::array<uint8_t, 2> header;
+    rpc::write_u16_be(header.data(), static_cast<uint16_t>(length));
+
     Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, 
-                           nullptr, 0, 
+                           header.data(), header.size(), 
                            data, length);
   }
 
@@ -559,8 +558,12 @@ class FileSystemClass {
       return;
     }
 
-    etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 1> header;
-    rpc::PacketBuilder(header).add_pascal_string(filePath);
+    // [SIL-2] FileWrite expects: [u8 path_len] [path...] [u16 data_len] [data...]
+    // Chunking header: [u8 path_len] [path...] [u16 data_len]
+    etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 3> header;
+    rpc::PacketBuilder builder(header);
+    builder.add_pascal_string(filePath);
+    builder.add_u16(static_cast<uint16_t>(length));
 
     Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 
                            header.data(), header.size(), 

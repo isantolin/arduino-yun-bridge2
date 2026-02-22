@@ -925,7 +925,9 @@ bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
   return true;
 }
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {
-  return (command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
+  // [SIL-2] Protocol Security: Only allow specific commands during pre-sync phase.
+  // CMD_LINK_SYNC, CMD_LINK_RESET and CMD_GET_CAPABILITIES are essential for synchronization.
+  return (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN && command_id <= rpc::RPC_SYSTEM_COMMAND_MAX) ||
          (command_id == rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION_RESP)) ||
          (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC_RESP)) ||
          (command_id == rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET_RESP));

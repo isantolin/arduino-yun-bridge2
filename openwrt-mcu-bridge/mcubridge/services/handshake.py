@@ -598,7 +598,9 @@ class SerialHandshakeManager:
 
     @staticmethod
     def calculate_handshake_tag(secret: bytes | None, nonce: bytes) -> bytes:
-        if not secret or secret == b"DEBUG_INSECURE":
+        if not secret:
+            return b""
+        if secret == b"DEBUG_INSECURE":
             # Return dummy 16-byte tag to satisfy required_length
             return b"DEBUG_TAG_UNUSED"
         # [MIL-SPEC] Use HKDF derived key for handshake authentication

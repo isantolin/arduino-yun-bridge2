@@ -23,7 +23,9 @@ arduino-cli core install arduino:avr
 
 # Install dependencies
 echo "Installing libraries..."
-arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
+# Use our robust installer to ensure src/etl is populated correctly
+# for relative includes in Bridge.h
+./openwrt-library-arduino/tools/install.sh
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/openwrt-library-arduino"

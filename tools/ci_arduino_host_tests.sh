@@ -15,46 +15,47 @@ echo "[host-cpp] Installing library dependencies..."
 DUMMY_ARDUINO_LIBS=$(mktemp -d)
 "${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
 
-echo "[host-cpp] Building integrated test suite..."
-echo "DEBUG: Current directory: $(pwd)"
-echo "DEBUG: SRC_DIR: ${SRC_DIR}"
-ls -F "${SRC_DIR}"
-ls -F "${SRC_DIR}/etl" | head -n 5 || true
-g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
-    -I"${SRC_DIR}" \
-    -I"${TEST_DIR}/mocks" \
-    -I"${STUB_DIR}" \
-    -I"${DUMMY_ARDUINO_LIBS}/Crypto" \
-    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
-    "${SRC_DIR}/protocol/rpc_frame.cpp" \
-    "${SRC_DIR}/security/security.cpp" \
-    "${SRC_DIR}/services/Bridge.cpp" \
-    "${SRC_DIR}/services/Console.cpp" \
-    "${SRC_DIR}/services/DataStore.cpp" \
-    "${SRC_DIR}/services/Process.cpp" \
-    "${TEST_DIR}/test_integrated.cpp" \
-    -o "${BUILD_DIR}/test_integrated"
+SOURCES=(
+    "${SRC_DIR}/protocol/rpc_frame.cpp"
+    "${SRC_DIR}/security/security.cpp"
+    "${SRC_DIR}/services/Bridge.cpp"
+    "${SRC_DIR}/services/Console.cpp"
+    "${SRC_DIR}/services/DataStore.cpp"
+    "${SRC_DIR}/services/Process.cpp"
+)
 
-echo "[host-cpp] Running integrated tests..."
-"${BUILD_DIR}/test_integrated"
+# [SIL-2] Automatically discover all test suites
+TEST_FILES=(
+    "${TEST_DIR}/test_integrated.cpp"
+    "${TEST_DIR}/test_bridge_core.cpp"
+    "${TEST_DIR}/test_bridge_components.cpp"
+    "${TEST_DIR}/test_protocol.cpp"
+    "${TEST_DIR}/test_fsm_mutual_auth.cpp"
+    "${TEST_DIR}/test_extreme_coverage.cpp"
+    "${TEST_DIR}/test_extreme_coverage_v2.cpp"
+    "${TEST_DIR}/test_arduino_100_coverage.cpp"
+    "${TEST_DIR}/test_coverage_100_final.cpp"
+)
 
-echo "[host-cpp] Building FSM & Mutual Auth test suite..."
-g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
-    -I"${SRC_DIR}" \
-    -I"${TEST_DIR}/mocks" \
-    -I"${STUB_DIR}" \
-    -I"${DUMMY_ARDUINO_LIBS}/Crypto" \
-    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
-    "${SRC_DIR}/protocol/rpc_frame.cpp" \
-    "${SRC_DIR}/security/security.cpp" \
-    "${SRC_DIR}/services/Bridge.cpp" \
-    "${SRC_DIR}/services/Console.cpp" \
-    "${SRC_DIR}/services/DataStore.cpp" \
-    "${SRC_DIR}/services/Process.cpp" \
-    "${TEST_DIR}/test_fsm_mutual_auth.cpp" \
-    -o "${BUILD_DIR}/test_fsm_mutual_auth"
+COMPILE_FLAGS=(
+    -std=c++11
+    -O0
+    -g
+    -DBRIDGE_HOST_TEST=1
+    -DBRIDGE_TEST_NO_GLOBALS=1
+    -I"${SRC_DIR}"
+    -I"${TEST_DIR}/mocks"
+    -I"${STUB_DIR}"
+    -I"${DUMMY_ARDUINO_LIBS}/Crypto"
+    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial"
+)
 
-echo "[host-cpp] Running FSM & Mutual Auth tests..."
-"${BUILD_DIR}/test_fsm_mutual_auth"
+echo "[host-cpp] Compiling and running all test suites..."
+for test_file in "${TEST_FILES[@]}"; do
+    test_name=$(basename "${test_file}" .cpp)
+    echo "  -> Processing ${test_name}..."
+    g++ "${COMPILE_FLAGS[@]}" "${SOURCES[@]}" "${test_file}" -o "${BUILD_DIR}/${test_name}"
+    "${BUILD_DIR}/${test_name}"
+done
 
 echo "[host-cpp] ALL HOST TESTS PASSED"

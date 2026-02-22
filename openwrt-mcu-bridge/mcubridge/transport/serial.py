@@ -13,6 +13,7 @@ It is optimized for performance on OpenWrt by using C-level delimiter searching
 from __future__ import annotations
 
 import asyncio
+import errno
 import functools
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
@@ -362,7 +363,10 @@ class SerialTransport:
             await loop.run_in_executor(None, self._blocking_reset)
             await asyncio.sleep(2.0)
         except (OSError, RuntimeError, ValueError) as e:
-            logger.error("Async DTR Toggle failed: %s", e)
+            if isinstance(e, OSError) and e.errno == errno.ENOTTY:
+                logger.debug("DTR Toggle skipped (Emulated PTY detected): %s", e)
+            else:
+                logger.error("Async DTR Toggle failed: %s", e)
 
     def _blocking_reset(self) -> None:
         try:
@@ -376,6 +380,9 @@ class SerialTransport:
                 time.sleep(0.1)
                 s.dtr = False
         except (ImportError, OSError, RuntimeError, ValueError) as e:
+            if isinstance(e, OSError) and e.errno == errno.ENOTTY:
+                # PTYs (socat) do not support DTR signaling. This is expected in emulation.
+                return
             logger.error("DTR Toggle failed: %s", e)
 
     async def _connect_and_run(self, loop: asyncio.AbstractEventLoop) -> None:

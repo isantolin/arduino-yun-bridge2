@@ -135,6 +135,17 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, typecheck]
     timeout-minutes: 20
+    services:
+      mosquitto:
+        image: eclipse-mosquitto:2
+        ports:
+          - 1883:1883
+        options: >-
+          --name mosquitto
+          --health-cmd "mosquitto_sub -t '$SYS/#' -C 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox

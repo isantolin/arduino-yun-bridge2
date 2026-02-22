@@ -203,36 +203,103 @@ def main():
         logger.error("CRITICAL: No valid firmware ELF found.")
         sys.exit(1)
 
-    # 3. Setup Virtual Serial Port with direct SimAVR execution
-    # This creates a PTY at SOCAT_PORT0 and connects it directly to simavr's stdio.
-    # We use 'pty,raw,echo=0' for both ends to ensure transparent binary transfer.
-    logger.info("Starting socat with embedded simavr...")
-    simavr_cmd_str = f"simavr -m atmega2560 -f 16000000 {firmware_path}"
+    # 3. Setup Virtual Serial Port Link
+    logger.info("Starting socat (PTY link)...")
+    # We use socat to create two linked PTYs.
+    # PORT0 will be used by the Daemon.
+    # PORT1 will be used by our Python bridge to SimAVR.
     socat_cmd = [
         "socat", "-d", "-d",
         f"pty,raw,echo=0,link={SOCAT_PORT0}",
-        f"EXEC:\"{simavr_cmd_str}\",pty,raw,echo=0"
+        f"pty,raw,echo=0,link={SOCAT_PORT1}"
     ]
     socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
     socat_monitor = LogMonitor(socat_proc, "socat")
 
-    timeout = 5
+    timeout = 10
     start_time = time.time()
-    while not Path(SOCAT_PORT0).exists():
+    while not (Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists()):
         if time.time() - start_time > timeout:
-            logger.error(f"Timeout waiting for socat PTY {SOCAT_PORT0}")
+            logger.error("Timeout waiting for socat PTYs")
             cleanup_process(socat_proc, "socat")
             sys.exit(1)
         time.sleep(0.1)
 
-    logger.info(f"Virtual serial port created and bridged to simavr: {SOCAT_PORT0}")
+    logger.info(f"Virtual serial ports created: {SOCAT_PORT0} <-> {SOCAT_PORT1}")
 
+    simavr_proc = None
     daemon_proc = None
     log_monitor = None
     mqtt_monitor = None
+    bridge_thread = None
+    stop_bridge = threading.Event()
 
     try:
-        # 4. Start Python Daemon (Test Mode)
+        # 4. Start SimAVR
+        logger.info(f"Starting simavr with {firmware_path}...")
+        simavr_cmd = ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)]
+        # We use pipes for SimAVR stdio to bridge them manually
+        simavr_proc = subprocess.Popen(
+            simavr_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0 # Unbuffered for binary data
+        )
+
+        # 5. Start Bidirectional Bridge Thread
+        def _bridge_worker():
+            import select
+            logger.info("Bridge thread started.")
+            try:
+                # Open PORT1 for bridging
+                with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
+                    while not stop_bridge.is_set():
+                        # Check if SimAVR is still alive
+                        if simavr_proc.poll() is not None:
+                            logger.error("SimAVR died in bridge thread")
+                            break
+
+                        # Wait for data on either side
+                        r, _, _ = select.select([pty, simavr_proc.stdout], [], [], 0.1)
+                        
+                        if pty in r:
+                            data = pty.read(1024)
+                            if data:
+                                # logger.debug(f"BRIDGE: Daemon -> MCU [{len(data)} bytes]")
+                                simavr_proc.stdin.write(data)
+                                simavr_proc.stdin.flush()
+                        
+                        if simavr_proc.stdout in r:
+                            data = simavr_proc.stdout.read(1024)
+                            if data:
+                                # logger.debug(f"BRIDGE: MCU -> Daemon [{len(data)} bytes]")
+                                pty.write(data)
+                                pty.flush()
+                                # Also log as text if it looks like it (but avoid spamming)
+                                try:
+                                    text = data.decode("utf-8", errors="ignore").strip()
+                                    if text and any(c.isalpha() for c in text):
+                                        logger.info(f"[simavr-out] {text}")
+                                except Exception:
+                                    pass
+            except Exception as e:
+                logger.error(f"Bridge thread error: {e}")
+            logger.info("Bridge thread stopping.")
+
+        bridge_thread = threading.Thread(target=_bridge_worker, daemon=True)
+        bridge_thread.start()
+
+        # Capture SimAVR stderr separately
+        def _simavr_stderr_worker():
+            for line in iter(simavr_proc.stderr.readline, b""):
+                if not line: break
+                logger.info(f"[simavr-err] {line.decode('utf-8', errors='ignore').strip()}")
+        
+        simavr_err_thread = threading.Thread(target=_simavr_stderr_worker, daemon=True)
+        simavr_err_thread.start()
+
+        # 6. Start Python Daemon (Test Mode)
         logger.info("Starting Bridge Daemon (Test Mode)...")
         daemon_env = os.environ.copy()
         os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
@@ -291,18 +358,21 @@ def main():
         mqtt_monitor = MqttVerifier()
         mqtt_monitor.start()
 
-        # 6. Strict Verification Loop
-        # We wait up to 20 seconds for the system to reach 'Synchronized' state
-        max_wait = 20
+        # 7. Strict Verification Loop
+        # We wait up to 30 seconds for the system to reach 'Synchronized' state
+        max_wait = 30
         start_wait = time.time()
         success = False
 
-        logger.info("Waiting for synchronization (Timeout: 20s)...")
+        logger.info("Waiting for synchronization (Timeout: 30s)...")
 
         while time.time() - start_wait < max_wait:
             # Check for process death
             if daemon_proc.poll() is not None:
                 logger.error(f"Daemon died unexpectedly with code {daemon_proc.returncode}")
+                break
+            if simavr_proc.poll() is not None:
+                logger.error(f"SimAVR died unexpectedly with code {simavr_proc.returncode}")
                 break
 
             # Check for critical log errors
@@ -327,8 +397,8 @@ def main():
             logger.info("Emulation test run completed successfully (Strict Mode).")
         else:
             logger.error("Emulation FAILED: Timeout waiting for synchronization or process failure.")
-            logger.info(f"Log Sync Detected: {log_monitor.check_success('handshake_complete')}")
-            logger.info(f"MQTT Sync Detected: {mqtt_monitor.sync_event.is_set()}")
+            logger.info(f"Log Sync Detected: {log_sync}")
+            logger.info(f"MQTT Sync Detected: {mqtt_sync}")
             logger.info(f"MQTT Connected: {mqtt_monitor.connected}")
             sys.exit(1)
 
@@ -340,14 +410,16 @@ def main():
         traceback.print_exc()
         sys.exit(1)
     finally:
+        stop_bridge.set()
         if mqtt_monitor:
             mqtt_monitor.stop()
         if log_monitor:
             log_monitor.stop()
-        if 'socat_monitor' in locals() and socat_monitor:
+        if socat_monitor:
             socat_monitor.stop()
 
         cleanup_process(daemon_proc, "daemon")
+        cleanup_process(simavr_proc, "simavr")
         cleanup_process(socat_proc, "socat")
 
         try:

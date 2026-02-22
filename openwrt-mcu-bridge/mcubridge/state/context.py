@@ -50,9 +50,15 @@ from ..protocol.structures import (
     BridgeSnapshot,
     CapabilitiesFeatures,
     HandshakeSnapshot,
+    LATENCY_BUCKETS_MS,
+    McuCapabilities,
     McuVersion,
+    SerialFlowStats,
+    SerialLatencyStats,
     SerialLinkSnapshot,
     SerialPipelineSnapshot,
+    SerialThroughputStats,
+    SupervisorStats,
 )
 from .queues import BoundedByteDeque
 
@@ -121,77 +127,6 @@ def _status_label(code: int | None) -> str:
         return Status(code).name
     except ValueError:
         return f"0x{code:02X}"
-
-
-class McuCapabilities(msgspec.Struct):
-    """Hardware capabilities reported by the MCU."""
-
-    protocol_version: int = 0
-    board_arch: int = 0
-    num_digital_pins: int = 0
-    num_analog_inputs: int = 0
-    features: CapabilitiesFeatures | None = None
-
-    @property
-    def has_watchdog(self) -> bool:
-        return bool(self.features and self.features.watchdog)
-
-    @property
-    def has_rle(self) -> bool:
-        return bool(self.features and self.features.rle)
-
-    @property
-    def debug_frames(self) -> bool:
-        return bool(self.features and self.features.debug_frames)
-
-    @property
-    def debug_io(self) -> bool:
-        return bool(self.features and self.features.debug_io)
-
-    @property
-    def has_eeprom(self) -> bool:
-        return bool(self.features and self.features.eeprom)
-
-    @property
-    def has_dac(self) -> bool:
-        return bool(self.features and self.features.dac)
-
-    @property
-    def has_hw_serial1(self) -> bool:
-        return bool(self.features and self.features.hw_serial1)
-
-    @property
-    def has_fpu(self) -> bool:
-        return bool(self.features and self.features.fpu)
-
-    @property
-    def is_3v3_logic(self) -> bool:
-        return bool(self.features and self.features.logic_3v3)
-
-    @property
-    def has_large_buffer(self) -> bool:
-        return bool(self.features and self.features.large_buffer)
-
-    @property
-    def has_i2c(self) -> bool:
-        return bool(self.features and self.features.i2c)
-
-    def as_dict(self) -> dict[str, Any]:
-        """Convert to dictionary including expanded boolean flags."""
-        # [SIL-2] Combined static and dynamic data for telemetry.
-        res = msgspec.structs.asdict(self)
-        res.update({
-            "has_watchdog": self.has_watchdog,
-            "has_rle": self.has_rle,
-            "has_eeprom": self.has_eeprom,
-            "has_dac": self.has_dac,
-            "has_hw_serial1": self.has_hw_serial1,
-            "has_fpu": self.has_fpu,
-            "is_3v3_logic": self.is_3v3_logic,
-            "has_large_buffer": self.has_large_buffer,
-            "has_i2c": self.has_i2c,
-        })
-        return res
 
 
 class PendingPinRequest(msgspec.Struct):
@@ -386,134 +321,6 @@ def _serial_throughput_stats_factory() -> SerialThroughputStats:
 
 def _serial_latency_stats_factory() -> SerialLatencyStats:
     return SerialLatencyStats()
-
-
-# [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
-LATENCY_BUCKETS_MS: tuple[float, ...] = (5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0)
-
-
-class SerialThroughputStats(msgspec.Struct):
-    """Serial link throughput counters for observability.
-
-    [SIL-2] Simple counters with monotonic increments only.
-    """
-
-    bytes_sent: int = 0
-    bytes_received: int = 0
-    frames_sent: int = 0
-    frames_received: int = 0
-    last_tx_unix: float = 0.0
-    last_rx_unix: float = 0.0
-
-    def record_tx(self, nbytes: int) -> None:
-        self.bytes_sent += nbytes
-        self.frames_sent += 1
-        self.last_tx_unix = time.time()
-
-    def record_rx(self, nbytes: int) -> None:
-        self.bytes_received += nbytes
-        self.frames_received += 1
-        self.last_rx_unix = time.time()
-
-    def as_dict(self) -> dict[str, Any]:
-        return msgspec.structs.asdict(self)
-
-
-class SerialLatencyStats(msgspec.Struct):
-    """RPC command latency histogram for performance monitoring.
-
-    [SIL-2] Fixed bucket boundaries, no dynamic allocation.
-    Buckets represent cumulative counts (Prometheus histogram style).
-
-    [OPTIMIZATION] Now also tracks prometheus Summary for native percentiles.
-    The Summary provides p50/p90/p99 without manual bucket management.
-    """
-
-    # Histogram bucket counts (cumulative, le=bucket_ms) - kept for JSON snapshot compatibility
-    bucket_counts: list[int] = msgspec.field(default_factory=_latency_bucket_counts_factory)
-    # Total observations above largest bucket
-    overflow_count: int = 0
-    # Running totals for average calculation
-    total_observations: int = 0
-    total_latency_ms: float = 0.0
-    # Min/max tracking
-    min_latency_ms: float = float("inf")
-    max_latency_ms: float = 0.0
-    # [NEW] Prometheus Summary for native percentiles
-    _summary: Summary | None = None
-    _registry: CollectorRegistry | None = None
-
-    def initialize_prometheus(self, registry: CollectorRegistry | None = None) -> None:
-        """Initialize prometheus Summary metrics.
-
-        Args:
-            registry: Optional custom registry. If None, uses default.
-        """
-        self._registry = registry
-        # Summary provides p50 (0.5), p90 (0.9), p99 (0.99) quantiles automatically
-        self._summary = Summary(
-            "mcubridge_rpc_latency_seconds",
-            "RPC command round-trip latency",
-            registry=registry,
-        )
-
-    def record(self, latency_ms: float) -> None:
-        """Record a latency observation into histogram buckets and Summary."""
-        self.total_observations += 1
-        self.total_latency_ms += latency_ms
-        if latency_ms < self.min_latency_ms:
-            self.min_latency_ms = latency_ms
-        if latency_ms > self.max_latency_ms:
-            self.max_latency_ms = latency_ms
-
-        # Cumulative bucket counts (le style) for JSON compatibility
-        for i, bucket in enumerate(LATENCY_BUCKETS_MS):
-            if latency_ms <= bucket:
-                self.bucket_counts[i] += 1
-        if latency_ms > LATENCY_BUCKETS_MS[-1]:
-            self.overflow_count += 1
-
-        # Record to prometheus Summary (in seconds)
-        if self._summary is not None:
-            self._summary.observe(latency_ms / 1000.0)
-
-    def as_dict(self) -> dict[str, Any]:
-        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
-        return {
-            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
-            "overflow": self.overflow_count,
-            "count": self.total_observations,
-            "sum_ms": self.total_latency_ms,
-            "avg_ms": avg,
-            "min_ms": self.min_latency_ms if self.total_observations > 0 else 0.0,
-            "max_ms": self.max_latency_ms,
-        }
-
-
-class SerialFlowStats(msgspec.Struct):
-    """Serial flow control statistics."""
-
-    commands_sent: int = 0
-    commands_acked: int = 0
-    retries: int = 0
-    failures: int = 0
-    last_event_unix: float = 0.0
-
-    def as_dict(self) -> dict[str, Any]:
-        return msgspec.structs.asdict(self)
-
-
-class SupervisorStats(msgspec.Struct):
-    """Task supervisor statistics."""
-
-    restarts: int = 0
-    last_failure_unix: float = 0.0
-    last_exception: str | None = None
-    backoff_seconds: float = 0.0
-    fatal: bool = False
-
-    def as_dict(self) -> dict[str, Any]:
-        return msgspec.structs.asdict(self)
 
 
 def _collect_system_metrics() -> dict[str, Any]:

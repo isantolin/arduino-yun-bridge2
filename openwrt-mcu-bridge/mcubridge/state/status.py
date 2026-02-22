@@ -14,8 +14,6 @@ from ..config.const import STATUS_FILE_PATH
 from ..protocol.structures import (
     BridgeStatus,
     McuVersion,
-    SerialFlowSnapshot,
-    SupervisorSnapshot,
 )
 from .context import RuntimeState
 
@@ -33,25 +31,12 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
 
             # Helper to convert SupervisorStats -> SupervisorSnapshot
             supervisors = {
-                name: SupervisorSnapshot(
-                    restarts=stats.restarts,
-                    last_failure_unix=stats.last_failure_unix,
-                    last_exception=stats.last_exception,
-                    backoff_seconds=stats.backoff_seconds,
-                    fatal=stats.fatal,
-                )
+                name: stats.as_snapshot()
                 for name, stats in state.supervisor_stats.items()
             }
 
             # Helper to convert SerialFlowStats -> SerialFlowSnapshot
-            flow_stats = state.serial_flow_stats
-            serial_flow = SerialFlowSnapshot(
-                commands_sent=flow_stats.commands_sent,
-                commands_acked=flow_stats.commands_acked,
-                retries=flow_stats.retries,
-                failures=flow_stats.failures,
-                last_event_unix=flow_stats.last_event_unix,
-            )
+            serial_flow = state.serial_flow_stats.as_snapshot()
 
             mcu_version = None
             if state.mcu_version is not None:

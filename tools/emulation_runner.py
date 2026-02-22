@@ -327,8 +327,8 @@ def main():
         logger.info(f"Starting simavr with {firmware_path}...")
         simavr_proc = subprocess.Popen(
             ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)],
-            stdin=subprocess.PIPE, 
-            stdout=subprocess.PIPE, 
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, # MERGE STREAMS FOR BRIDGE
             bufsize=0
         )

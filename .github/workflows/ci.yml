@@ -159,8 +159,8 @@ jobs:
       - name: Compile & Run Emulation
         run: |
           mkdir -p openwrt-library-arduino/build
-          # Inject BRIDGE_FORCE_SERIAL0 to use UART0 on Mega during emulation
-          ./tools/ci_arduino.sh openwrt-library-arduino/build "compiler.cpp.extra_flags=-DBRIDGE_FORCE_SERIAL0"
+          # Inject BRIDGE_EMULATION to force UART0 on all boards during emulation
+          ./tools/ci_arduino.sh openwrt-library-arduino/build "build.extra_flags=-DBRIDGE_EMULATION"
           pip install -r requirements/runtime.txt
           python3 -u tools/emulation_runner.py
 

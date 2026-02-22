@@ -53,6 +53,10 @@ void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint
 }
 
 void setup() {
+  // Inicializamos Serial (UART0) para logs de depuración, especialmente útil en emulación.
+  Serial.begin(115200);
+  Serial.println(F("[BridgeControl] Firmware Starting..."));
+
   // AHORA PASAMOS EL SECRETO AQUÍ
   // Argumento 1: Baudrate (por defecto 115200)
   // Argumento 2: El secreto compartido
@@ -69,6 +73,8 @@ void setup() {
   unsigned long lastBlink = 0;
   bool ledState = false;
   
+  Serial.println(F("[BridgeControl] Waiting for Link Synchronization..."));
+
   // Nota: En sistemas reales, loop() se encargará de process(),
   // pero aquí bloqueamos el setup() intencionalmente hasta sincronizar
   // para asegurar estado conocido, pero SIN delay().
@@ -78,10 +84,13 @@ void setup() {
       lastBlink = millis();
       ledState = !ledState;
       digitalWrite(13, ledState ? HIGH : LOW);
+      // Heartbeat a Serial para confirmar que el firmware está vivo
+      if (ledState) Serial.println(F("[BridgeControl] Still waiting sync..."));
     }
   }
   
   Console.begin();
+  Serial.println(F("[BridgeControl] Synchronized! Switching to Console logs."));
   Console.println(F("Bridge iniciado con secreto definido en Sketch."));
 }
 

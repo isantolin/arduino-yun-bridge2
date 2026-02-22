@@ -226,6 +226,7 @@ def run_bridge(simavr_proc, stop_event):
                 if pty in r:
                     data = pty.read(1024)
                     if data:
+                        # logger.info(f"[bridge] Daemon -> MCU: {data.hex().upper()}")
                         simavr_proc.stdin.write(data)
                         simavr_proc.stdin.flush()
 

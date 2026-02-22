@@ -23,7 +23,7 @@ def test_file_do_write_large_warning(tmp_path: Path) -> None:
 async def test_file_handle_write_malformed() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
-    fc = FileComponent(config, state, MagicMock())
+    fc = FileComponent(config, state, AsyncMock())
     assert await fc.handle_write(b"") is False
 
 
@@ -31,8 +31,7 @@ async def test_file_handle_write_malformed() -> None:
 async def test_file_handle_write_traversal() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
-    ctx = MagicMock()
-    ctx.send_frame = AsyncMock()
+    ctx = AsyncMock()
     fc = FileComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import FileWritePacket
@@ -46,8 +45,7 @@ async def test_file_handle_write_traversal() -> None:
 async def test_file_handle_write_absolute() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
-    ctx = MagicMock()
-    ctx.send_frame = AsyncMock()
+    ctx = AsyncMock()
     fc = FileComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import FileWritePacket
@@ -59,7 +57,7 @@ async def test_file_handle_write_absolute() -> None:
 async def test_file_handle_read_malformed() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
-    fc = FileComponent(config, state, MagicMock())
+    fc = FileComponent(config, state, AsyncMock())
     await fc.handle_read(b"")
 
 
@@ -67,7 +65,7 @@ async def test_file_handle_read_malformed() -> None:
 async def test_file_handle_remove_malformed() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
-    fc = FileComponent(config, state, MagicMock())
+    fc = FileComponent(config, state, AsyncMock())
     assert await fc.handle_remove(b"") is False
 
 

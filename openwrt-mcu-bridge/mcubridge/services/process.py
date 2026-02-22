@@ -82,14 +82,10 @@ class ProcessComponent:
     async def handle_run(self, payload: bytes) -> None:
         try:
             packet = ProcessRunPacket.decode(payload)
-            command_str = packet.command
-            command, tokens = self._prepare_command(command_str)
+            command, tokens = self._prepare_command(packet.command)
         except (ConstructError, ValueError) as e:
-            logger.warning("Malformed PROCESS_RUN payload: %s", e)
-            await self.ctx.send_frame(
-                Status.MALFORMED.value,
-                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
-            )
+            logger.warning("Invalid ProcessRun payload: %s", e)
+            await self.ctx.send_frame(Status.MALFORMED.value, b"")
             return
         except CommandValidationError as exc:
             logger.warning("Rejected sync command: %s", exc)
@@ -128,21 +124,13 @@ class ProcessComponent:
                     status=status,
                     stdout=stdout_bytes,
                     stderr=stderr_bytes,
-                    exit_code=exit_code if exit_code is not None else PROCESS_DEFAULT_EXIT_CODE,
+                    exit_code=exit_code if exit_code is not None else protocol.PROCESS_DEFAULT_EXIT_CODE,
                 ).encode()
 
                 await self.ctx.send_frame(Command.CMD_PROCESS_RUN_RESP.value, response)
-                logger.debug(
-                    "Sent PROCESS_RUN_RESP status=%d exit=%s",
-                    status,
-                    exit_code,
-                )
+                logger.debug("Sent PROCESS_RUN_RESP status=%d exit=%s", status, exit_code)
             except (OSError, ValueError) as e:
-                logger.error(
-                    "System error executing process command '%s': %s",
-                    command,
-                    e,
-                )
+                logger.error("System error executing process command '%s': %s", command, e)
                 await self.ctx.send_frame(
                     Status.ERROR.value,
                     encode_status_reason(protocol.STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR),
@@ -153,12 +141,9 @@ class ProcessComponent:
             packet = ProcessRunAsyncPacket.decode(payload)
             command, tokens = self._prepare_command(packet.command)
             pid = await self.start_async(command, tokens)
-        except (ConstructError, ValueError):
-            logger.warning("Malformed PROCESS_RUN_ASYNC payload")
-            await self.ctx.send_frame(
-                Status.MALFORMED.value,
-                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
-            )
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid ProcessRunAsync payload: %s", e)
+            await self.ctx.send_frame(Status.MALFORMED.value, b"")
             return
         except CommandValidationError as exc:
             logger.warning("Rejected async command: %s", exc)
@@ -180,20 +165,15 @@ class ProcessComponent:
             case _:
                 # [SIL-2] Use structured packet
                 response = ProcessRunAsyncResponsePacket(pid=pid).encode()
-                await self.ctx.send_frame(
-                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    response,
-                )
+                await self.ctx.send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, response)
+                
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
                     Topic.SHELL,
                     ShellAction.RUN_ASYNC,
                     protocol.MQTT_SUFFIX_RESPONSE,
                 )
-                await self.ctx.publish(
-                    topic=topic,
-                    payload=str(pid).encode(),
-                )
+                await self.ctx.publish(topic=topic, payload=str(pid).encode())
 
     async def _publish_run_async_error(self, reason: str) -> None:
         topic = topic_path(
@@ -214,19 +194,15 @@ class ProcessComponent:
         try:
             packet = ProcessPollPacket.decode(payload)
             pid = packet.pid
-        except (ConstructError, ValueError):
-            logger.warning("Invalid PROCESS_POLL payload: %s", payload.hex())
-            # Send empty/error response using structured packet
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid ProcessPoll payload: %s", e)
             error_resp = ProcessPollResponsePacket(
                 status=Status.MALFORMED.value,
-                exit_code=PROCESS_DEFAULT_EXIT_CODE,
+                exit_code=protocol.PROCESS_DEFAULT_EXIT_CODE,
                 stdout=b"",
                 stderr=b"",
             ).encode()
-            await self.ctx.send_frame(
-                Command.CMD_PROCESS_POLL_RESP.value,
-                error_resp,
-            )
+            await self.ctx.send_frame(Command.CMD_PROCESS_POLL_RESP.value, error_resp)
             return False
 
         batch = await self.collect_output(pid)
@@ -250,12 +226,8 @@ class ProcessComponent:
         try:
             packet = ProcessKillPacket.decode(payload)
             pid = packet.pid
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Invalid PROCESS_KILL payload. Expected 2 bytes, got %d: %s",
-                len(payload),
-                payload.hex(),
-            )
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid ProcessKill payload: %s", e)
             await self.ctx.send_frame(
                 Status.MALFORMED.value,
                 encode_status_reason(protocol.STATUS_REASON_PROCESS_KILL_MALFORMED),

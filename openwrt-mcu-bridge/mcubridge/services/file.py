@@ -66,40 +66,27 @@ class FileComponent:
     async def handle_write(self, payload: bytes) -> bool:
         try:
             packet = FileWritePacket.decode(payload)
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Invalid file write payload: parse failed, hex=%s",
-                payload.hex() if payload else "(empty)",
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid FileWrite payload: %s", e)
+            await self.ctx.send_frame(
+                Status.MALFORMED.value,
+                encode_status_reason(protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED),
             )
             return False
 
         path = packet.path
 
         # [SECURITY 10/10] Path Traversal Protection (Hardening)
-        # Bloqueamos explícitamente rutas absolutas o relativas peligrosas antes de procesar datos.
-        # Esto actúa como primera línea de defensa (Fail Fast).
         posix_path = PurePosixPath(path)
-        path_parts = posix_path.parts
-
-        if ".." in path_parts:
-            logger.warning("Security Alert: Path traversal attempt blocked: %s", path)
+        if ".." in posix_path.parts or posix_path.is_absolute():
+            logger.warning("Security Alert: Dangerous path blocked: %s", path)
             await self.ctx.send_frame(
                 Status.ERROR.value,
                 encode_status_reason(protocol.STATUS_REASON_INVALID_PATH),
             )
             return False
 
-        if posix_path.is_absolute():
-            logger.warning("Security Alert: Absolute paths not allowed: %s", path)
-            await self.ctx.send_frame(
-                Status.ERROR.value,
-                encode_status_reason(protocol.STATUS_REASON_INVALID_PATH),
-            )
-            return False
-
-        file_data = packet.data
-
-        success, _, reason = await self._perform_file_operation(FileAction.WRITE, path, file_data)
+        success, _, reason = await self._perform_file_operation(FileAction.WRITE, path, packet.data)
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
             return True
@@ -113,15 +100,12 @@ class FileComponent:
     async def handle_read(self, payload: bytes) -> None:
         try:
             packet = FileReadPacket.decode(payload)
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Invalid file read payload: parse failed, hex=%s",
-                payload.hex() if payload else "(empty)",
-            )
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid FileRead payload: %s", e)
+            await self.ctx.send_frame(Status.MALFORMED.value, b"")
             return
 
-        filename = packet.path
-        success, content, reason = await self._perform_file_operation(FileAction.READ, filename)
+        success, content, reason = await self._perform_file_operation(FileAction.READ, packet.path)
 
         if not success:
             await self.ctx.send_frame(
@@ -131,35 +115,28 @@ class FileComponent:
             return
 
         data = content or b""
-        max_payload = MAX_PAYLOAD_SIZE - 2
+        # Overhead: 2 bytes for Prefixed length in FileReadResponsePacket schema
+        max_chunk = protocol.MAX_PAYLOAD_SIZE - 2
 
-        # [SIL-2] Large Payload Support: Chunking
-        # Instead of truncating, we send multiple frames. The MCU side handles
-        # reassembly or streaming via repeated callbacks.
-        chunks = chunk_bytes(data, max_payload)
+        chunks = chunk_bytes(data, max_chunk)
         if not chunks:
-            # [SIL-2] Use structured response
             response = FileReadResponsePacket(content=b"").encode()
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
             return
 
         for chunk in chunks:
-            # [SIL-2] Use structured response
             response = FileReadResponsePacket(content=chunk).encode()
             await self.ctx.send_frame(Command.CMD_FILE_READ_RESP.value, response)
 
     async def handle_remove(self, payload: bytes) -> bool:
         try:
             packet = FileRemovePacket.decode(payload)
-        except (ConstructError, ValueError):
-            logger.warning(
-                "Invalid file remove payload: parse failed, hex=%s",
-                payload.hex() if payload else "(empty)",
-            )
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid FileRemove payload: %s", e)
+            await self.ctx.send_frame(Status.MALFORMED.value, b"")
             return False
 
-        filename = packet.path
-        success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
+        success, _, reason = await self._perform_file_operation(FileAction.REMOVE, packet.path)
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
             return True

@@ -197,7 +197,7 @@ def start_socat():
     socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
     socat_monitor = LogMonitor(socat_proc, "socat")
 
-    timeout = 10
+    timeout = 15
     start_time = time.time()
     while not (Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists()):
         if time.time() - start_time > timeout:
@@ -211,7 +211,7 @@ def start_socat():
 
 
 def run_bridge(simavr_proc, stop_event):
-    """Bidirectional bridge worker thread."""
+    """Bidirectional bridge worker thread with merged SimAVR streams."""
     import select
     logger.info("Bridge thread started.")
     try:
@@ -221,6 +221,7 @@ def run_bridge(simavr_proc, stop_event):
                     logger.error("SimAVR died in bridge thread")
                     break
 
+                # simavr_proc.stdout is MERGED (includes stderr)
                 r, _, _ = select.select([pty, simavr_proc.stdout], [], [], 0.1)
 
                 if pty in r:
@@ -326,19 +327,14 @@ def main():
         logger.info(f"Starting simavr with {firmware_path}...")
         simavr_proc = subprocess.Popen(
             ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0
+            stdin=subprocess.PIPE, 
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT, # MERGE STREAMS FOR BRIDGE
+            bufsize=0
         )
 
         bridge_thread = threading.Thread(target=run_bridge, args=(simavr_proc, stop_bridge), daemon=True)
         bridge_thread.start()
-
-        def _stderr_worker():
-            for line in iter(simavr_proc.stderr.readline, b""):
-                if not line:
-                    break
-                logger.info(f"[simavr-err] {line.decode('utf-8', errors='ignore').strip()}")
-
-        threading.Thread(target=_stderr_worker, daemon=True).start()
 
         daemon_proc, uci_stub_dir = start_daemon(package_root, protocol)
         log_monitor = LogMonitor(daemon_proc, "daemon")
@@ -360,7 +356,10 @@ def main():
                 logger.error(f"Error in logs: {log_monitor.errors_detected[0]}")
                 break
 
-            if log_monitor.check_success("handshake_complete") and mqtt_monitor.sync_event.is_set():
+            log_sync = log_monitor.check_success("handshake_complete")
+            mqtt_sync = mqtt_monitor.sync_event.is_set()
+
+            if log_sync and mqtt_sync:
                 logger.info("SUCCESS: Log and MQTT both confirm synchronization.")
                 success = True
                 break

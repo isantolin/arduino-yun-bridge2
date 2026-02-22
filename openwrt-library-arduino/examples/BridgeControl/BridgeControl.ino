@@ -55,7 +55,7 @@ void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint
 void setup() {
   // Inicializamos Serial (UART0) para logs de depuración, especialmente útil en emulación.
   Serial.begin(115200);
-  Serial.println(F("[BridgeControl] Firmware Starting..."));
+  Serial.println(F("[BridgeControl] Firmware Starting......."));
 
   // AHORA PASAMOS EL SECRETO AQUÍ
   // Argumento 1: Baudrate (por defecto 115200)
@@ -73,7 +73,7 @@ void setup() {
   unsigned long lastBlink = 0;
   bool ledState = false;
   
-  Serial.println(F("[BridgeControl] Waiting for Link Synchronization..."));
+  Serial.println(F("[BridgeControl] Waiting for Link Synchronization......."));
 
   // Nota: En sistemas reales, loop() se encargará de process(),
   // pero aquí bloqueamos el setup() intencionalmente hasta sincronizar
@@ -85,7 +85,7 @@ void setup() {
       ledState = !ledState;
       digitalWrite(13, ledState ? HIGH : LOW);
       // Heartbeat a Serial para confirmar que el firmware está vivo
-      if (ledState) Serial.println(F("[BridgeControl] Still waiting sync..."));
+      if (ledState) Serial.println(F("[BridgeControl] Still waiting sync......."));
     }
   }
   

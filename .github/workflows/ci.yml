@@ -112,6 +112,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
+      - name: Install arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$HOME/bin" >> $GITHUB_PATH
       - name: Run Tests with Coverage
         run: tox -e coverage
       - name: Upload Python Coverage
@@ -134,6 +138,10 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y g++ make
           pip install gcovr
+      - name: Install arduino-cli
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$HOME/bin" >> $GITHUB_PATH
       - name: Run Host Tests
         run: ./tools/ci_arduino_host_tests.sh
       - name: Run Coverage

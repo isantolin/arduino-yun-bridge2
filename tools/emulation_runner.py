@@ -167,7 +167,7 @@ def main():
     for tool in required_tools:
         if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
             logger.error(f"Required tool '{tool}' not found.")
-            sys.exit(0)
+            sys.exit(1)
 
     # 2. Paths
     script_dir = Path(__file__).resolve().parent

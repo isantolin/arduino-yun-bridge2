@@ -161,7 +161,7 @@ jobs:
           mkdir -p openwrt-library-arduino/build
           ./tools/ci_arduino.sh openwrt-library-arduino/build
           pip install -r requirements/runtime.txt
-          python3 tools/emulation_runner.py
+          python3 -u tools/emulation_runner.py
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min

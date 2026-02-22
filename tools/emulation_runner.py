@@ -187,9 +187,15 @@ def main():
             found_elfs = list(base_build_path.glob("**/*.elf"))
             for elf in found_elfs:
                 logger.info(f" - {elf}")
-                if "BridgeControl" in str(elf) and not firmware_path.exists():
-                    firmware_path = elf
-                    logger.info(f"Auto-selected firmware: {firmware_path}")
+            
+            # Prefer Mega variant for SimAVR atmega2560
+            mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
+            if mega_elfs:
+                firmware_path = mega_elfs[0]
+                logger.info(f"Selected Mega firmware: {firmware_path}")
+            elif found_elfs:
+                firmware_path = found_elfs[0]
+                logger.info(f"Fallback to first ELF found: {firmware_path}")
 
     if not firmware_path.exists():
         logger.error("CRITICAL: No valid firmware ELF found.")
@@ -220,7 +226,15 @@ def main():
         # 4. Start SimAVR
         logger.info(f"Starting simavr with {firmware_path}...")
         simavr_cmd = ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)]
-        simavr_proc = subprocess.Popen(simavr_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # Reduce noise
+        # Capture output to see what's happening
+        simavr_proc = subprocess.Popen(
+            simavr_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
+        )
+        simavr_log_monitor = LogMonitor(simavr_proc, "simavr")
 
         # 5. Start Python Daemon (Test Mode)
         logger.info("Starting Bridge Daemon (Test Mode)...")
@@ -328,20 +342,29 @@ def main():
         logger.info("Interrupted by user")
     except Exception as e:
         logger.error(f"Error during emulation: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
     finally:
         if mqtt_monitor:
             mqtt_monitor.stop()
         if log_monitor:
             log_monitor.stop()
+        if 'simavr_log_monitor' in locals() and simavr_log_monitor:
+            simavr_log_monitor.stop()
 
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(simavr_proc, "simavr")
         cleanup_process(socat_proc, "socat")
 
         try:
-            uci_stub_dir.cleanup()  # type: ignore[name-defined]
+            if 'uci_stub_dir' in locals():
+                uci_stub_dir.cleanup()
         except Exception:
             pass
 
     return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

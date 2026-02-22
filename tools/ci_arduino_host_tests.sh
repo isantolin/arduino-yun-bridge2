@@ -38,4 +38,23 @@ g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
 echo "[host-cpp] Running integrated tests..."
 "${BUILD_DIR}/test_integrated"
 
+echo "[host-cpp] Building FSM & Mutual Auth test suite..."
+g++ -std=c++11 -O0 -g -DBRIDGE_HOST_TEST=1 -DBRIDGE_TEST_NO_GLOBALS=1 \
+    -I"${SRC_DIR}" \
+    -I"${TEST_DIR}/mocks" \
+    -I"${STUB_DIR}" \
+    -I"${DUMMY_ARDUINO_LIBS}/Crypto" \
+    -I"${DUMMY_ARDUINO_LIBS}/PacketSerial" \
+    "${SRC_DIR}/protocol/rpc_frame.cpp" \
+    "${SRC_DIR}/security/security.cpp" \
+    "${SRC_DIR}/services/Bridge.cpp" \
+    "${SRC_DIR}/services/Console.cpp" \
+    "${SRC_DIR}/services/DataStore.cpp" \
+    "${SRC_DIR}/services/Process.cpp" \
+    "${TEST_DIR}/test_fsm_mutual_auth.cpp" \
+    -o "${BUILD_DIR}/test_fsm_mutual_auth"
+
+echo "[host-cpp] Running FSM & Mutual Auth tests..."
+"${BUILD_DIR}/test_fsm_mutual_auth"
+
 echo "[host-cpp] ALL HOST TESTS PASSED"

@@ -148,6 +148,7 @@ class MqttVerifier:
 
 
 def cleanup_process(proc, name):
+    """Gracefully terminate a process."""
     if proc:
         if proc.poll() is None:
             logger.info(f"Terminating {name}...")
@@ -159,55 +160,35 @@ def cleanup_process(proc, name):
                 proc.kill()
 
 
-def main():
-    logger.info("Starting Emulation Runner (Strict Mode)...")
-
-    # 1. Check for required tools
-    required_tools = ["simavr", "socat"]
-    for tool in required_tools:
-        if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
-            logger.error(f"Required tool '{tool}' not found.")
-            sys.exit(1)
-
-    # 2. Paths
-    script_dir = Path(__file__).resolve().parent
-    repo_root = script_dir.parent
-    package_root = repo_root / "openwrt-mcu-bridge"
-    sys.path.insert(0, str(package_root))
-    from mcubridge.protocol import protocol
-
-    # Path to Firmware
+def find_firmware(repo_root):
+    """Locate the best firmware ELF for emulation."""
     base_build_path = repo_root / "openwrt-library-arduino/build"
     firmware_path = base_build_path / "BridgeControl/BridgeControl.ino.elf"
 
     if not firmware_path.exists():
         logger.warning(f"Firmware ELF not found at {firmware_path}")
         if base_build_path.exists():
-            logger.info("Available ELFs in build dir:")
             found_elfs = list(base_build_path.glob("**/*.elf"))
-            for elf in found_elfs:
-                logger.info(f" - {elf}")
-
             # Prefer Mega variant for SimAVR atmega2560
             mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
             if mega_elfs:
                 # Prefer BridgeControl for e2e
                 preferred = [e for e in mega_elfs if "BridgeControl" in str(e)]
                 firmware_path = preferred[0] if preferred else mega_elfs[0]
-                logger.info(f"Selected Mega firmware: {firmware_path}")
             elif found_elfs:
                 firmware_path = found_elfs[0]
-                logger.info(f"Fallback to first ELF found: {firmware_path}")
 
     if not firmware_path.exists():
         logger.error("CRITICAL: No valid firmware ELF found.")
         sys.exit(1)
 
-    # 3. Setup Virtual Serial Port Link
+    logger.info(f"Using firmware: {firmware_path}")
+    return firmware_path
+
+
+def start_socat():
+    """Start socat to link daemon and MCU bridge."""
     logger.info("Starting socat (PTY link)...")
-    # We use socat to create two linked PTYs.
-    # PORT0 will be used by the Daemon.
-    # PORT1 will be used by our Python bridge to SimAVR.
     socat_cmd = [
         "socat", "-d", "-d",
         f"pty,raw,echo=0,link={SOCAT_PORT0}",
@@ -226,207 +207,185 @@ def main():
         time.sleep(0.1)
 
     logger.info(f"Virtual serial ports created: {SOCAT_PORT0} <-> {SOCAT_PORT1}")
+    return socat_proc, socat_monitor
+
+
+def run_bridge(simavr_proc, stop_event):
+    """Bidirectional bridge worker thread."""
+    import select
+    logger.info("Bridge thread started.")
+    try:
+        with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
+            while not stop_event.is_set():
+                if simavr_proc.poll() is not None:
+                    logger.error("SimAVR died in bridge thread")
+                    break
+
+                r, _, _ = select.select([pty, simavr_proc.stdout], [], [], 0.1)
+
+                if pty in r:
+                    data = pty.read(1024)
+                    if data:
+                        simavr_proc.stdin.write(data)
+                        simavr_proc.stdin.flush()
+
+                if simavr_proc.stdout in r:
+                    data = simavr_proc.stdout.read(1024)
+                    if data:
+                        pty.write(data)
+                        pty.flush()
+                        try:
+                            text = data.decode("utf-8", errors="ignore").strip()
+                            if text and any(c.isalpha() for c in text):
+                                logger.info(f"[simavr-out] {text}")
+                        except Exception:
+                            pass
+    except Exception as e:
+        logger.error(f"Bridge thread error: {e}")
+    logger.info("Bridge thread stopping.")
+
+
+def start_daemon(package_root, protocol):
+    """Start the Python McuBridge daemon."""
+    logger.info("Starting Bridge Daemon (Test Mode)...")
+    daemon_env = os.environ.copy()
+    os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
+    os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
+
+    shared_secret = "12345678901234567890123456789012"
+    uci_config = {
+        "serial_port": SOCAT_PORT0,
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_shared_secret": shared_secret,
+        "mqtt_host": MQTT_HOST,
+        "mqtt_port": str(MQTT_PORT),
+        "mqtt_tls": "0",
+        "mqtt_spool_dir": "/tmp/mcubridge/spool",
+        "file_system_root": "/tmp/mcubridge/fs",
+        "watchdog_enabled": "0",
+        "debug": "1",
+    }
+    uci_stub_dir = tempfile.TemporaryDirectory(prefix="mcubridge-uci-")
+    uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
+    uci_stub_path.write_text(
+        textwrap.dedent(
+            """\
+            from __future__ import annotations
+            _CONFIG = {config!r}
+            class Uci:
+                def __enter__(self): return self
+                def __exit__(self, exc_type, exc, tb): return False
+                def get_all(self, package: str, section: str):
+                    if package == "mcubridge" and section == "general":
+                        return dict(_CONFIG)
+                    return None
+            """
+        ).format(config=uci_config),
+        encoding="utf-8",
+    )
+
+    current_path = daemon_env.get("PYTHONPATH", "")
+    daemon_env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_path}"
+    daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
+
+    daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"]
+    daemon_proc = subprocess.Popen(
+        daemon_cmd,
+        env=daemon_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1
+    )
+    return daemon_proc, uci_stub_dir
+
+
+def main():
+    """Main entrypoint for emulation test."""
+    logger.info("Starting Emulation Runner (Strict Mode)...")
+
+    for tool in ["simavr", "socat"]:
+        if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
+            logger.error(f"Required tool '{tool}' not found.")
+            sys.exit(1)
+
+    repo_root = Path(__file__).resolve().parent.parent
+    package_root = repo_root / "openwrt-mcu-bridge"
+    sys.path.insert(0, str(package_root))
+    from mcubridge.protocol import protocol
+
+    firmware_path = find_firmware(repo_root)
+    socat_proc, socat_monitor = start_socat()
 
     simavr_proc = None
     daemon_proc = None
-    log_monitor = None
-    mqtt_monitor = None
-    bridge_thread = None
     stop_bridge = threading.Event()
 
     try:
-        # 4. Start SimAVR
         logger.info(f"Starting simavr with {firmware_path}...")
-        simavr_cmd = ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)]
-        # We use pipes for SimAVR stdio to bridge them manually
         simavr_proc = subprocess.Popen(
-            simavr_cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0 # Unbuffered for binary data
+            ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0
         )
 
-        # 5. Start Bidirectional Bridge Thread
-        def _bridge_worker():
-            import select
-            logger.info("Bridge thread started.")
-            try:
-                # Open PORT1 for bridging
-                with open(SOCAT_PORT1, "r+b", buffering=0) as pty:
-                    while not stop_bridge.is_set():
-                        # Check if SimAVR is still alive
-                        if simavr_proc.poll() is not None:
-                            logger.error("SimAVR died in bridge thread")
-                            break
-
-                        # Wait for data on either side
-                        r, _, _ = select.select([pty, simavr_proc.stdout], [], [], 0.1)
-                        
-                        if pty in r:
-                            data = pty.read(1024)
-                            if data:
-                                # logger.debug(f"BRIDGE: Daemon -> MCU [{len(data)} bytes]")
-                                simavr_proc.stdin.write(data)
-                                simavr_proc.stdin.flush()
-                        
-                        if simavr_proc.stdout in r:
-                            data = simavr_proc.stdout.read(1024)
-                            if data:
-                                # logger.debug(f"BRIDGE: MCU -> Daemon [{len(data)} bytes]")
-                                pty.write(data)
-                                pty.flush()
-                                # Also log as text if it looks like it (but avoid spamming)
-                                try:
-                                    text = data.decode("utf-8", errors="ignore").strip()
-                                    if text and any(c.isalpha() for c in text):
-                                        logger.info(f"[simavr-out] {text}")
-                                except Exception:
-                                    pass
-            except Exception as e:
-                logger.error(f"Bridge thread error: {e}")
-            logger.info("Bridge thread stopping.")
-
-        bridge_thread = threading.Thread(target=_bridge_worker, daemon=True)
+        bridge_thread = threading.Thread(target=run_bridge, args=(simavr_proc, stop_bridge), daemon=True)
         bridge_thread.start()
 
-        # Capture SimAVR stderr separately
-        def _simavr_stderr_worker():
+        def _stderr_worker():
             for line in iter(simavr_proc.stderr.readline, b""):
-                if not line: break
+                if not line:
+                    break
                 logger.info(f"[simavr-err] {line.decode('utf-8', errors='ignore').strip()}")
-        
-        simavr_err_thread = threading.Thread(target=_simavr_stderr_worker, daemon=True)
-        simavr_err_thread.start()
 
-        # 6. Start Python Daemon (Test Mode)
-        logger.info("Starting Bridge Daemon (Test Mode)...")
-        daemon_env = os.environ.copy()
-        os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
-        os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
+        threading.Thread(target=_stderr_worker, daemon=True).start()
 
-        # Matches BridgeControl default
-        shared_secret = "12345678901234567890123456789012"
-        uci_config = {
-            "serial_port": SOCAT_PORT0,
-            "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-            "serial_shared_secret": shared_secret,
-            "mqtt_host": MQTT_HOST,
-            "mqtt_port": str(MQTT_PORT),
-            "mqtt_tls": "0",
-            "mqtt_spool_dir": "/tmp/mcubridge/spool",
-            "file_system_root": "/tmp/mcubridge/fs",
-            "watchdog_enabled": "0",
-            "debug": "1",
-        }
-        uci_stub_dir = tempfile.TemporaryDirectory(prefix="mcubridge-uci-")
-        uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
-        uci_stub_path.write_text(
-            textwrap.dedent(
-                """\
-                from __future__ import annotations
-                _CONFIG = {config!r}
-                class Uci:
-                    def __enter__(self): return self
-                    def __exit__(self, exc_type, exc, tb): return False
-                    def get_all(self, package: str, section: str):
-                        if package == "mcubridge" and section == "general":
-                            return dict(_CONFIG)
-                        return None
-                """
-            ).format(config=uci_config),
-            encoding="utf-8",
-        )
-
-        current_pythonpath = daemon_env.get("PYTHONPATH", "")
-        daemon_env["PYTHONPATH"] = f"{uci_stub_dir.name}{os.pathsep}{str(package_root)}{os.pathsep}{current_pythonpath}"
-        daemon_env["MCUBRIDGE_LOG_STREAM"] = "1" # Force stdout logs
-
-        # Capture both stdout and stderr for analysis
-        daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"]
-        daemon_proc = subprocess.Popen(
-            daemon_cmd,
-            env=daemon_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # Merge stderr to stdout
-            text=True,
-            bufsize=1 # Line buffered
-        )
-
-        # Start Monitors
+        daemon_proc, uci_stub_dir = start_daemon(package_root, protocol)
         log_monitor = LogMonitor(daemon_proc, "daemon")
         mqtt_monitor = MqttVerifier()
         mqtt_monitor.start()
 
-        # 7. Strict Verification Loop
-        # We wait up to 30 seconds for the system to reach 'Synchronized' state
         max_wait = 30
         start_wait = time.time()
         success = False
 
-        logger.info("Waiting for synchronization (Timeout: 30s)...")
-
         while time.time() - start_wait < max_wait:
-            # Check for process death
             if daemon_proc.poll() is not None:
-                logger.error(f"Daemon died unexpectedly with code {daemon_proc.returncode}")
+                logger.error(f"Daemon died with code {daemon_proc.returncode}")
                 break
             if simavr_proc.poll() is not None:
-                logger.error(f"SimAVR died unexpectedly with code {simavr_proc.returncode}")
+                logger.error("SimAVR died unexpectedly")
                 break
-
-            # Check for critical log errors
             if log_monitor.has_error():
-                logger.error(f"Critical error detected in logs: {log_monitor.errors_detected[0]}")
+                logger.error(f"Error in logs: {log_monitor.errors_detected[0]}")
                 break
 
-            # Check Success Conditions
-            # 1. Log Confirmation
-            log_sync = log_monitor.check_success("handshake_complete")
-            # 2. MQTT Confirmation (Truth)
-            mqtt_sync = mqtt_monitor.sync_event.is_set()
-
-            if log_sync and mqtt_sync:
+            if log_monitor.check_success("handshake_complete") and mqtt_monitor.sync_event.is_set():
                 logger.info("SUCCESS: Log and MQTT both confirm synchronization.")
                 success = True
                 break
-
             time.sleep(0.5)
 
-        if success:
-            logger.info("Emulation test run completed successfully (Strict Mode).")
-        else:
-            logger.error("Emulation FAILED: Timeout waiting for synchronization or process failure.")
-            logger.info(f"Log Sync Detected: {log_sync}")
-            logger.info(f"MQTT Sync Detected: {mqtt_sync}")
-            logger.info(f"MQTT Connected: {mqtt_monitor.connected}")
+        if not success:
+            logger.error("Emulation FAILED: Timeout waiting for synchronization.")
             sys.exit(1)
 
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user")
     except Exception as e:
-        logger.error(f"Error during emulation: {e}")
+        logger.error(f"Error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
     finally:
         stop_bridge.set()
-        if mqtt_monitor:
+        if 'mqtt_monitor' in locals():
             mqtt_monitor.stop()
-        if log_monitor:
+        if 'log_monitor' in locals():
             log_monitor.stop()
-        if socat_monitor:
-            socat_monitor.stop()
-
+        socat_monitor.stop()
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(simavr_proc, "simavr")
         cleanup_process(socat_proc, "socat")
-
-        try:
-            if 'uci_stub_dir' in locals():
-                uci_stub_dir.cleanup()
-        except Exception:
-            pass
+        if 'uci_stub_dir' in locals():
+            uci_stub_dir.cleanup()
 
     return 0
 

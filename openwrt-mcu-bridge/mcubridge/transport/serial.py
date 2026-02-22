@@ -446,21 +446,28 @@ class SerialTransport:
             if not self._stop_event.is_set() and transport.is_closing():
                 raise ConnectionError("Serial connection lost")
 
-            while not self._stop_event.is_set():
-                if lost_future.done():
-                    break
-                if transport.is_closing():
-                    break
-                await asyncio.sleep(1.0)
+            stop_task = loop.create_task(self._stop_event.wait())
+            try:
+                done, _ = await asyncio.wait(
+                    [lost_future, stop_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
 
-            if lost_future.done():
-                exc = await lost_future
-                if exc:
-                    raise ConnectionError(f"Serial connection lost: {exc}")
-                raise ConnectionError("Serial connection lost")
+                if lost_future in done:
+                    exc = await lost_future
+                    if exc:
+                        raise ConnectionError(f"Serial connection lost: {exc}")
+                    raise ConnectionError("Serial connection lost")
 
-            if not self._stop_event.is_set() and transport.is_closing():
-                raise ConnectionError("Serial connection lost")
+                if not self._stop_event.is_set() and transport.is_closing():
+                    raise ConnectionError("Serial connection lost")
+            finally:
+                if not stop_task.done():
+                    stop_task.cancel()
+                    try:
+                        await stop_task
+                    except asyncio.CancelledError:
+                        pass
 
         finally:
             self.mark_disconnected()

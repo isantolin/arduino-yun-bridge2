@@ -557,12 +557,12 @@ async def test_system_topic_bridge_get_handlers_and_fallback_to_component() -> N
     assert await dispatcher._handle_system_topic(route3, inbound3) is False
 
 
-def test_pin_action_from_parts_variants() -> None:
-    assert BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital"]) is None
-    assert BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13"]) == "write"
-    assert BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13", ""]) is None
+def test_pin_action_from_segments_variants() -> None:
+    assert BridgeDispatcher._pin_action_from_segments(()) is None
+    assert BridgeDispatcher._pin_action_from_segments(("13",)) == "write"
+    assert BridgeDispatcher._pin_action_from_segments(("13", "")) is None
     assert (
-        BridgeDispatcher._pin_action_from_parts([protocol.MQTT_DEFAULT_TOPIC_PREFIX, "digital", "13", "READ"]) == "read"
+        BridgeDispatcher._pin_action_from_segments(("13", "READ")) == "read"
     )
 
 

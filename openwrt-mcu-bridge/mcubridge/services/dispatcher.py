@@ -413,16 +413,6 @@ class BridgeDispatcher:
         return subtopic or None
 
     @staticmethod
-    def _pin_action_from_parts(parts: list[str]) -> str | None:
-        """Compatibility helper for tests using legacy full-topic parsing."""
-        if len(parts) < 3:
-            return None
-        if len(parts) == 3:
-            return "write"
-        subtopic = parts[3].strip().lower()
-        return subtopic or None
-
-    @staticmethod
     def _payload_bytes(payload: Any) -> bytes:
         if isinstance(payload, (bytes, bytearray)):
             return bytes(payload)

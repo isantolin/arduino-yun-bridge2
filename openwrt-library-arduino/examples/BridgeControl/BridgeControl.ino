@@ -53,10 +53,10 @@ void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint
 }
 
 void setup() {
-  // Inicializamos Serial (UART0) para logs de depuración iniciales.
-  Serial.begin(115200);
-  Serial.println(F("[BridgeControl] Booting..."));
-
+  // [SIL-2] PROHIBIDO usar Serial.print() si comparte puerto con el Bridge.
+  // En emulación, Serial (UART0) es el canal del protocolo. Cualquier texto
+  // enviado aquí corromperá el stream COBS y bloqueará la sincronización.
+  
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
 
   Bridge.onDigitalReadResponse(BridgeClass::DigitalReadHandler::create<handleDigitalReadResponse>());
@@ -66,21 +66,15 @@ void setup() {
   
   pinMode(13, OUTPUT);
 
-  unsigned long lastLog = 0;
-  
-  // Bloqueo controlado hasta sincronizar.
-  // [10/10] Reducimos el spam de logs para no saturar el buffer COBS del daemon.
+  // Bloqueo controlado hasta sincronizar SIN LOGS a Serial.
   while (!Bridge.isSynchronized()) {
     Bridge.process();
-    // Heartbeat lento (cada 2 segundos) para no interferir con el handshake
-    if (millis() - lastLog > 2000) {
-      lastLog = millis();
-      Serial.println(F("[BridgeControl] Awaiting Sync..."));
-    }
+    // Podemos usar el LED para feedback visual si fuera hardware real
   }
   
+  // Una vez sincronizado, Console es seguro porque viaja dentro de marcos RPC.
   Console.begin();
-  Console.println(F("Bridge iniciado exitosamente."));
+  Console.println(F("Bridge sincronizado y operando."));
 }
 
 void loop() {

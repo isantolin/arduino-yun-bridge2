@@ -227,7 +227,6 @@ def run_bridge(simavr_proc, stop_event):
                 if pty in r:
                     data = pty.read(1024)
                     if data:
-                        # logger.info(f"[bridge] Daemon -> MCU: {data.hex().upper()}")
                         simavr_proc.stdin.write(data)
                         simavr_proc.stdin.flush()
 
@@ -325,16 +324,26 @@ def main():
 
     try:
         logger.info(f"Starting simavr with {firmware_path}...")
+        # Separate stdout (data) from stderr (simavr internal logs)
         simavr_proc = subprocess.Popen(
             ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # MERGE STREAMS FOR BRIDGE
+            stderr=subprocess.PIPE,
             bufsize=0
         )
 
         bridge_thread = threading.Thread(target=run_bridge, args=(simavr_proc, stop_bridge), daemon=True)
         bridge_thread.start()
+
+        # Capture simavr stderr separately to avoid mixing with bridge data
+        def _stderr_worker():
+            for line in iter(simavr_proc.stderr.readline, b""):
+                if not line:
+                    break
+                logger.info(f"[simavr-err] {line.decode('utf-8', errors='ignore').strip()}")
+
+        threading.Thread(target=_stderr_worker, daemon=True).start()
 
         daemon_proc, uci_stub_dir = start_daemon(package_root, protocol)
         log_monitor = LogMonitor(daemon_proc, "daemon")

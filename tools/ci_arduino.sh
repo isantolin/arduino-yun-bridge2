@@ -35,35 +35,42 @@ LIB_PATH="$PWD/openwrt-library-arduino"
 TARGET_BOARDS=("arduino:avr:yun" "arduino:avr:uno" "arduino:avr:mega")
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
-EXTRA_PROPERTIES="${2:-}"
+shift # Remove first arg (output dir)
+
+# All remaining arguments are treated as extra build properties
+EXTRA_PROPS=()
+while [ "$#" -gt 0 ]; do
+    EXTRA_PROPS+=("--build-property" "$1")
+    shift
+done
 
 for FQBN in "${TARGET_BOARDS[@]}"; do
     echo "=================================================="
     echo "Targeting Board: $FQBN"
     echo "=================================================="
 
-    find "$EXAMPLES_DIR" -name "*.ino" | while read sketch; do
+    find "$EXAMPLES_DIR" -name "*.ino" | while read -r sketch; do
         sketch_dir=$(dirname "$sketch")
         sketch_name=$(basename "$sketch_dir")
         
         echo "Building $sketch_name for $FQBN..."
         
-        BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings default"
+        BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--warnings" "default")
         
-        if [ -n "$EXTRA_PROPERTIES" ]; then
-            BUILD_FLAGS="$BUILD_FLAGS --build-property $EXTRA_PROPERTIES"
-        fi
+        # Add extra properties
+        BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
 
         if [ -n "$BUILD_OUTPUT_DIR" ]; then
             # Create specific output dir for this sketch/board combo
             SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${FQBN//:/-}/$sketch_name"
             mkdir -p "$SKETCH_BUILD_DIR"
-            BUILD_FLAGS="$BUILD_FLAGS --build-path $SKETCH_BUILD_DIR"
+            BUILD_FLAGS+=("--build-path" "$SKETCH_BUILD_DIR")
         fi
 
         # Force clean build to ensure hardware characteristics (macros, MCU type) are strictly respected
         # and not polluted by cached artifacts from previous targets in the loop.
-        if ! arduino-cli compile --clean $BUILD_FLAGS "$sketch"; then
+        # We use clean to avoid property pollution.
+        if ! arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$sketch"; then
             echo "✗ $sketch_name failed to compile for $FQBN!"
             if [ "$FQBN" == "arduino:avr:mega" ]; then
                 echo "Critical failure for target $FQBN. Aborting."

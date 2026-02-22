@@ -58,19 +58,14 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
         # [SIL-2] Decompose command ID for BitStruct
-        is_compressed = bool(command_id & protocol.CMD_FLAG_COMPRESSED)
-        raw_id = command_id & ~protocol.CMD_FLAG_COMPRESSED
-
+        # Now handled transparently by CommandIdAdapter in structures.py
         return FRAME_STRUCT.build({
             "content": {
                 "value": {
                     "header": {
                         "version": protocol.PROTOCOL_VERSION,
                         "payload_len": payload_len,
-                        "command_id": {
-                            "compressed": is_compressed,
-                            "id": raw_id,
-                        },
+                        "command_id": command_id,
                     },
                     # [SIL-2] Payload Injection
                     # We inject raw bytes into the 'payload' RawCopy field.
@@ -126,9 +121,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
              raise ValueError(f"Payload length mismatch: header says {header.payload_len}, got {len(payload_bytes)}")
 
         # Reconstruct integer command ID from BitStruct
-        cmd_val = int(header.command_id.id) # Enum to int if needed
-        if header.command_id.compressed:
-            cmd_val |= protocol.CMD_FLAG_COMPRESSED
+        # Now handled transparently by CommandIdAdapter in structures.py
+        cmd_val = int(header.command_id)
 
         return cmd_val, payload_bytes
 

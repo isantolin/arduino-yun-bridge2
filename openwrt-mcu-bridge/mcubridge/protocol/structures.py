@@ -34,7 +34,7 @@ CRC_STRUCT: Final = construct.Int32ub
 
 # [SIL-2] Explicit Command ID Structure
 # Separates compression flag from the command identifier for explicit handling.
-CommandIdStruct: Final = construct.BitStruct(
+_RawCommandIdStruct: Final = construct.BitStruct(
     "compressed" / construct.Flag,
     "id" / construct.Enum(
         construct.BitsInteger(15),
@@ -43,6 +43,27 @@ CommandIdStruct: Final = construct.BitStruct(
         _default=construct.Pass
     ),
 )
+
+
+class CommandIdAdapter(construct.Adapter):
+    """Transparently converts between integer command ID (with flag) and BitStruct."""
+
+    def _decode(self, obj: Any, context: Any, path: Any) -> int:
+        # Convert Enum/int from BitStruct back to combined integer
+        cmd_val = int(obj.id)
+        if obj.compressed:
+            cmd_val |= protocol.CMD_FLAG_COMPRESSED
+        return cmd_val
+
+    def _encode(self, obj: int, context: Any, path: Any) -> dict[str, Any]:
+        # Split combined integer into Flag + ID for BitStruct
+        return {
+            "compressed": bool(obj & protocol.CMD_FLAG_COMPRESSED),
+            "id": obj & ~protocol.CMD_FLAG_COMPRESSED,
+        }
+
+
+CommandIdStruct: Final = CommandIdAdapter(_RawCommandIdStruct)
 
 CRC_COVERED_HEADER_STRUCT: Final = BinStruct(
     "version" / construct.Int8ub,
@@ -351,11 +372,11 @@ FRAME_STRUCT = BinStruct(
     "content" / construct.RawCopy(BinStruct(
         "header" / CRC_COVERED_HEADER_STRUCT,
         "payload" / construct.RawCopy(construct.IfThenElse(
-            construct.this.header.command_id.compressed,
+            (construct.this.header.command_id & protocol.CMD_FLAG_COMPRESSED),
             # If compressed, do not parse payload schema (it's raw compressed bytes)
             construct.Bytes(construct.this.header.payload_len),
-            # If not compressed, select schema based on ID
-            construct.Switch(construct.this.header.command_id.id, {
+            # If not compressed, select schema based on ID, strictly bounded by payload_len
+            construct.FixedSized(construct.this.header.payload_len, construct.Switch((construct.this.header.command_id & ~protocol.CMD_FLAG_COMPRESSED), {
                 protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
@@ -380,7 +401,7 @@ FRAME_STRUCT = BinStruct(
                 protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            }, default=construct.Bytes(construct.this.header.payload_len))
+            }, default=construct.GreedyBytes))
         )),
     )),
     "crc" / construct.Checksum(

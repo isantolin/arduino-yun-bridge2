@@ -66,7 +66,7 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
     raw = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=1,
         payload_len=0,
-        command_id={"compressed": False, "id": Command.CMD_LINK_SYNC.value}
+        command_id=Command.CMD_LINK_SYNC.value
     )) + b"x" * 10
     monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: raw)
 

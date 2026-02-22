@@ -488,7 +488,12 @@ void test_bridge_file_write_incoming() {
     MockStream stream;
     BridgeClass bridge(stream);
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+
+    // [SIL-2 Fix] Must synchronize before sending non-handshake commands
+    sync_bridge(bridge, stream);
+
     auto ba = bridge::test::TestAccessor::create(bridge);
+    ba.setIdle(); // Force IDLE state for non-handshake commands
     stream.tx_buffer.clear();
 
     // Construct a fake CMD_FILE_WRITE frame
@@ -506,9 +511,11 @@ void test_bridge_file_write_incoming() {
     frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     frame.header.payload_length = sizeof(payload);
     memcpy(frame.payload.data(), payload, sizeof(payload));
+    frame.crc = 0xBEEF; // Initialize CRC
 
     // Dispatch directly
     ba.dispatch(frame);
+    bridge.process(); // Flush pending ACKs
 
     // Expect an ACK response
     // ACK frame: [CMD_ACK][LEN=2][CMD_ID_ACKED]
@@ -972,6 +979,10 @@ void test_file_write_malformed_path() {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
     sync_bridge(bridge, stream); // Sync the bridge before testing error handling
     
+    auto ba = bridge::test::TestAccessor::create(bridge);
+    ba.setIdle(); // Ensure IDLE state
+    stream.tx_buffer.clear();
+
     // Case 2: Malformed path length (claim 100 bytes, provide 5)
     const uint8_t payload[] = {100, '/', 'e'};
 

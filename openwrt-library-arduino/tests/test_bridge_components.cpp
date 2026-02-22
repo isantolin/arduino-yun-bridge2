@@ -496,8 +496,11 @@ static void test_mailbox_send_outbound_frame() {
   TEST_ASSERT(frames.count >= 1);
   const rpc::Frame& f = frames.frames[0];
   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
-  TEST_ASSERT(f.header.payload_length >= 2);
-  TEST_ASSERT(test_memeq(f.payload.data(), "hi", 2));
+  TEST_ASSERT(f.header.payload_length >= 4); // [u16 len] + "hi"
+  
+  const uint16_t msg_len = rpc::read_u16_be(f.payload.data());
+  TEST_ASSERT_EQ_UINT(msg_len, 2);
+  TEST_ASSERT(test_memeq(f.payload.data() + 2, "hi", 2));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH));
   restore_bridge_to_serial();
@@ -516,12 +519,15 @@ static void test_filesystem_write_outbound_frame() {
   TEST_ASSERT(frames.count >= 1);
   const rpc::Frame& f = frames.frames[0];
   TEST_ASSERT_EQ_UINT(f.header.command_id, rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE));
-  TEST_ASSERT(f.header.payload_length >= 1);
+  TEST_ASSERT(f.header.payload_length >= 1 + (sizeof(path) - 1) + 2 + sizeof(data));
 
   const uint8_t path_len = f.payload[0];
   TEST_ASSERT_EQ_UINT(path_len, sizeof(path) - 1);
   TEST_ASSERT(test_memeq(f.payload.data() + 1, path, path_len));
-  TEST_ASSERT(test_memeq(f.payload.data() + 1 + path_len, data, sizeof(data)));
+  
+  const uint16_t data_len = rpc::read_u16_be(f.payload.data() + 1 + path_len);
+  TEST_ASSERT_EQ_UINT(data_len, sizeof(data));
+  TEST_ASSERT(test_memeq(f.payload.data() + 1 + path_len + 2, data, sizeof(data)));
 
   inject_ack(stream, rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE));
   restore_bridge_to_serial();

@@ -492,12 +492,13 @@ void test_bridge_file_write_incoming() {
     stream.tx_buffer.clear();
 
     // Construct a fake CMD_FILE_WRITE frame
-    // Payload: [path_len(1)][path...][data...]
+    // Payload: [path_len(1)][path...][data_len(u16)][data...]
     // Path: "/tmp/test" (9 bytes)
     // Data: "hello" (5 bytes)
     uint8_t payload[] = {
         9, 
         '/', 't', 'm', 'p', '/', 't', 'e', 's', 't',
+        0, 5, // [SSoT Fix] 2-byte data length (u16)
         'h', 'e', 'l', 'l', 'o'
     };
     
@@ -941,11 +942,13 @@ void test_file_write_eeprom_parsing() {
     // Data: "AB"
     const char path[] = "/eeprom/10";
     const uint8_t path_len = static_cast<uint8_t>(sizeof(path) - 1);
-    uint8_t payload[1 + sizeof(path) - 1 + 2];
+    const uint16_t data_len = 2;
+    uint8_t payload[1 + 10 + 2 + 2]; // [p_len][path...][d_len_u16][data...]
     payload[0] = path_len;
     memcpy(payload + 1, path, path_len);
-    payload[1 + path_len] = 'A';
-    payload[1 + path_len + 1] = 'B';
+    rpc::write_u16_be(payload + 1 + path_len, data_len);
+    payload[1 + path_len + 2] = 'A';
+    payload[1 + path_len + 3] = 'B';
 
     enum { kEncodedCap = kMaxEncodedSize + 1 };
     uint8_t frame[kEncodedCap];

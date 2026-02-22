@@ -7,6 +7,7 @@ and connect it via a virtual serial port (socat) to the Python McuBridge daemon.
 It serves as the End-to-End test entrypoint.
 """
 
+import json
 import logging
 import os
 import queue
@@ -14,9 +15,8 @@ import subprocess
 import sys
 import tempfile
 import textwrap
-import time
-import json
 import threading
+import time
 from pathlib import Path
 
 try:
@@ -187,7 +187,7 @@ def main():
             found_elfs = list(base_build_path.glob("**/*.elf"))
             for elf in found_elfs:
                 logger.info(f" - {elf}")
-            
+
             # Prefer Mega variant for SimAVR atmega2560
             mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
             if mega_elfs:
@@ -237,10 +237,12 @@ def main():
         os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
         os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
 
+        # Matches FrameDebug default
+        shared_secret = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
         uci_config = {
             "serial_port": SOCAT_PORT0,
             "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-            "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe", # Matches FrameDebug default
+            "serial_shared_secret": shared_secret,
             "mqtt_host": MQTT_HOST,
             "mqtt_port": str(MQTT_PORT),
             "mqtt_tls": "0",
@@ -301,9 +303,6 @@ def main():
             if daemon_proc.poll() is not None:
                 logger.error(f"Daemon died unexpectedly with code {daemon_proc.returncode}")
                 break
-            if simavr_proc.poll() is not None:
-                logger.error(f"SimAVR died unexpectedly with code {simavr_proc.returncode}")
-                break
 
             # Check for critical log errors
             if log_monitor.has_error():
@@ -344,11 +343,8 @@ def main():
             mqtt_monitor.stop()
         if log_monitor:
             log_monitor.stop()
-        if 'simavr_log_monitor' in locals() and simavr_log_monitor:
-            simavr_log_monitor.stop()
 
         cleanup_process(daemon_proc, "daemon")
-        cleanup_process(simavr_proc, "simavr")
         cleanup_process(socat_proc, "socat")
 
         try:

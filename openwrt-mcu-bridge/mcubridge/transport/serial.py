@@ -277,13 +277,13 @@ class SerialTransport:
         self.state_machine = Machine(
             model=self,
             states=[
-                self.STATE_DISCONNECTED,
-                {"name": self.STATE_RESETTING, "on_exit": "_on_fsm_disconnect"},
-                {"name": self.STATE_CONNECTING, "on_exit": "_on_fsm_disconnect"},
-                {"name": self.STATE_NEGOTIATING, "on_exit": "_on_fsm_disconnect"},
-                {"name": self.STATE_CONNECTED, "on_exit": "_on_fsm_disconnect"},
-                {"name": self.STATE_HANDSHAKING, "on_exit": "_on_fsm_disconnect"},
-                {"name": self.STATE_RUNNING, "on_exit": "_on_fsm_disconnect"}
+                {"name": self.STATE_DISCONNECTED, "on_enter": "_on_fsm_disconnect"},
+                {"name": self.STATE_RESETTING, "on_enter": "_on_fsm_disconnect"},
+                self.STATE_CONNECTING,
+                self.STATE_NEGOTIATING,
+                self.STATE_CONNECTED,
+                self.STATE_HANDSHAKING,
+                self.STATE_RUNNING,
             ],
             initial=self.STATE_DISCONNECTED,
             ignore_invalid_triggers=True,

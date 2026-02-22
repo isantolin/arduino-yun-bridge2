@@ -240,6 +240,7 @@ class ManagedProcess:
             initial=PROCESS_STATE_STARTING,
             model_attribute="fsm_state",
             auto_transitions=False,
+            ignore_invalid_triggers=True,
         )
         self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
         self._machine.add_transition("sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING)

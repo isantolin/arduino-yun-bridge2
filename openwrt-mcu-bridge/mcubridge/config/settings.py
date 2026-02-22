@@ -114,7 +114,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     # msgspec handle bytes naturally.
     # [SIL-2] SECURITY: This default enables initial setup only.
     # It MUST be rotated using 'mcubridge-rotate-credentials'.
-    serial_shared_secret: Annotated[bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)] = DEFAULT_SERIAL_SHARED_SECRET
+    serial_shared_secret: Annotated[
+        bytes, msgspec.Meta(min_length=MIN_SERIAL_SHARED_SECRET_LEN)
+    ] = DEFAULT_SERIAL_SHARED_SECRET
 
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES

@@ -14,7 +14,6 @@ from typing import TYPE_CHECKING, Any, Final
 import msgspec
 import psutil
 from aiomqtt.message import Message
-from prometheus_client import CollectorRegistry, Summary
 from transitions import Machine
 
 from ..config.const import (
@@ -48,9 +47,7 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     BridgeSnapshot,
-    CapabilitiesFeatures,
     HandshakeSnapshot,
-    LATENCY_BUCKETS_MS,
     McuCapabilities,
     McuVersion,
     SerialFlowStats,
@@ -255,10 +252,6 @@ def _trim_process_buffers(
     truncated_out = len(stdout_buffer) > 0
     truncated_err = len(stderr_buffer) > 0
     return stdout_chunk, stderr_chunk, truncated_out, truncated_err
-
-
-def _latency_bucket_counts_factory() -> list[int]:
-    return [0] * len(LATENCY_BUCKETS_MS)
 
 
 def _mqtt_publish_queue_factory() -> asyncio.Queue[QueuedPublish]:

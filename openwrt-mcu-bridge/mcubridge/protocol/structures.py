@@ -377,9 +377,13 @@ FRAME_STRUCT = BinStruct(
             # If compressed, do not parse payload schema (it's raw compressed bytes)
             construct.Bytes(construct.this.header.payload_len),
             # If not compressed, select schema based on ID, strictly bounded by payload_len
-            construct.FixedSized(construct.this.header.payload_len, construct.Switch((construct.this.header.command_id & ~protocol.CMD_FLAG_COMPRESSED), {
-                protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+            construct.FixedSized(
+                construct.this.header.payload_len,
+                construct.Switch(
+                    (construct.this.header.command_id & ~protocol.CMD_FLAG_COMPRESSED),
+                    {
+                        protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
+                        protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
                 protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
@@ -630,6 +634,9 @@ class SupervisorStats(msgspec.Struct):
             backoff_seconds=self.backoff_seconds,
             fatal=self.fatal,
         )
+
+    def as_dict(self) -> dict[str, Any]:
+        return msgspec.structs.asdict(self)
 
 
 class McuCapabilities(msgspec.Struct):

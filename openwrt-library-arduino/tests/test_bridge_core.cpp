@@ -268,8 +268,11 @@ void sync_bridge(BridgeClass& bridge, MockStream& stream) {
     // Skip startup stabilization phase for testing (normally handled by timer)
     ba.setStartupStabilizing(false);
     
-    // Construct a CMD_LINK_SYNC frame
+    // Construct a CMD_LINK_SYNC frame with mutual authentication
     const uint8_t nonce[rpc::RPC_HANDSHAKE_NONCE_LENGTH] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    uint8_t payload[32]; // 16 nonce + 16 tag
+    memcpy(payload, nonce, 16);
+    ba.computeHandshakeTag(nonce, 16, payload + 16);
     
     enum { kEncodedCap = kMaxEncodedSize + 1 };
     uint8_t encoded_frame[kEncodedCap];
@@ -278,8 +281,8 @@ void sync_bridge(BridgeClass& bridge, MockStream& stream) {
         encoded_frame,
         sizeof(encoded_frame),
         rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
-        nonce,
-        sizeof(nonce)
+        payload,
+        sizeof(payload)
     );
 
     stream.inject_rx(encoded_frame, frame_len);
@@ -564,6 +567,7 @@ void test_bridge_dedup_console_write_retry() {
     TEST_ASSERT_EQ_UINT(before, 0);
 
     auto ba = bridge::test::TestAccessor::create(bridge);
+    ba.setIdle(); // Ensure synchronized state before processing commands
 
     // --- First Delivery ---
     g_test_millis = 0;

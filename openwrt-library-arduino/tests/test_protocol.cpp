@@ -193,3 +193,5 @@ int main() {
   
   return 0;
 }
+
+Stream* g_arduino_stream_delegate = nullptr;

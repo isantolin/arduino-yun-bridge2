@@ -22,7 +22,6 @@ using namespace rpc;
 using namespace bridge;
 
 // --- MOCKS ---
-Stream* g_arduino_stream_delegate = nullptr;
 
 class BetterMockStream : public Stream {
 public:
@@ -218,3 +217,5 @@ int main() {
     printf("INTEGRATED ARDUINO TEST END\n"); fflush(stdout);
     return 0;
 }
+
+Stream* g_arduino_stream_delegate = nullptr;

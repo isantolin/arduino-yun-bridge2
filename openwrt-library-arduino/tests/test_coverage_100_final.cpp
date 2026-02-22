@@ -493,3 +493,5 @@ int main() {
     printf("FINAL COVERAGE TEST END\n");
     return 0;
 }
+
+Stream* g_arduino_stream_delegate = nullptr;

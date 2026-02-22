@@ -910,3 +910,4 @@ int main() {
   test_process_run_response_length_guards();
   return 0;
 }
+Stream* g_arduino_stream_delegate = nullptr;

@@ -252,3 +252,4 @@ int main() {
     printf("EXTREME ARDUINO COVERAGE V2 END\n");
     return 0;
 }
+Stream* g_arduino_stream_delegate = nullptr;

@@ -42,6 +42,9 @@ async def main() -> None:
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
         bridge_args["tls_context"] = ctx
+    else:
+        # [Local E2E Fix] Explicitly disable SSL for local development
+        bridge_args["tls_context"] = None
 
     bridge = Bridge(**bridge_args)  # type: ignore[arg-type]
     await bridge.connect()  # Explicitly connect

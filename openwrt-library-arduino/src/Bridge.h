@@ -421,7 +421,6 @@ class BridgeClass : public bridge::router::ICommandHandler {
   // Methods
   void _handleSystemCommand(const rpc::Frame& frame);
   void _handleGpioCommand(const rpc::Frame& frame);
-  void _handleConsoleCommand(const rpc::Frame& frame);
 
   // [SIL-2] ICommandHandler interface implementation
   void onStatusCommand(const bridge::router::CommandContext& ctx) override;
@@ -507,7 +506,7 @@ class DataStoreClass {
   friend class bridge::test::DataStoreTestAccessor;
   #endif
  public:
-  using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
+  using DataStoreGetHandler = BridgeClass::DataStoreGetHandler;
 
   DataStoreClass();
   void reset();

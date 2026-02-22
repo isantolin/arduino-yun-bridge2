@@ -552,12 +552,6 @@ void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
   }
 }
 
-void BridgeClass::_handleConsoleCommand(const rpc::Frame& frame) {
-  if (static_cast<rpc::CommandId>(frame.header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
-    Console._push(etl::span<const uint8_t>(frame.payload.data(), frame.header.payload_length));
-  }
-}
-
 void BridgeClass::dispatch(const rpc::Frame& frame) {
   // [SIL-2] Phase 1: Decompress if needed
   uint16_t raw_command = frame.header.command_id;
@@ -683,7 +677,11 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
   _handleDedupAck(
       ctx,
-      [this, &ctx]() { _handleConsoleCommand(*ctx.frame); },
+      [this, &ctx]() {
+        if (static_cast<rpc::CommandId>(ctx.frame->header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
+          Console._push(etl::span<const uint8_t>(ctx.frame->payload.data(), ctx.frame->header.payload_length));
+        }
+      },
       true);
 }
 

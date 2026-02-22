@@ -53,13 +53,10 @@ void handleStatusFrame(rpc::StatusCode status_code, const uint8_t* payload, uint
 }
 
 void setup() {
-  // Inicializamos Serial (UART0) para logs de depuración, especialmente útil en emulación.
+  // Inicializamos Serial (UART0) para logs de depuración iniciales.
   Serial.begin(115200);
-  Serial.println(F("[BridgeControl] Firmware Starting......."));
+  Serial.println(F("[BridgeControl] Booting..."));
 
-  // AHORA PASAMOS EL SECRETO AQUÍ
-  // Argumento 1: Baudrate (por defecto 115200)
-  // Argumento 2: El secreto compartido
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SECRET);
 
   Bridge.onDigitalReadResponse(BridgeClass::DigitalReadHandler::create<handleDigitalReadResponse>());
@@ -69,35 +66,26 @@ void setup() {
   
   pinMode(13, OUTPUT);
 
-  // Espera no bloqueante para sincronización
-  unsigned long lastBlink = 0;
-  bool ledState = false;
+  unsigned long lastLog = 0;
   
-  Serial.println(F("[BridgeControl] Waiting for Link Synchronization......."));
-
-  // Nota: En sistemas reales, loop() se encargará de process(),
-  // pero aquí bloqueamos el setup() intencionalmente hasta sincronizar
-  // para asegurar estado conocido, pero SIN delay().
+  // Bloqueo controlado hasta sincronizar.
+  // [10/10] Reducimos el spam de logs para no saturar el buffer COBS del daemon.
   while (!Bridge.isSynchronized()) {
     Bridge.process();
-    if (millis() - lastBlink > 100) {
-      lastBlink = millis();
-      ledState = !ledState;
-      digitalWrite(13, ledState ? HIGH : LOW);
-      // Heartbeat a Serial para confirmar que el firmware está vivo
-      if (ledState) Serial.println(F("[BridgeControl] Still waiting sync......."));
+    // Heartbeat lento (cada 2 segundos) para no interferir con el handshake
+    if (millis() - lastLog > 2000) {
+      lastLog = millis();
+      Serial.println(F("[BridgeControl] Awaiting Sync..."));
     }
   }
   
   Console.begin();
-  Serial.println(F("[BridgeControl] Synchronized! Switching to Console logs."));
-  Console.println(F("Bridge iniciado con secreto definido en Sketch."));
+  Console.println(F("Bridge iniciado exitosamente."));
 }
 
 void loop() {
   Bridge.process();
   
-  // [ANTI-FLOOD] Poll mailbox every 500ms instead of continuous loop
   static unsigned long lastMailboxCheck = 0;
   if (millis() - lastMailboxCheck > 500) {
     lastMailboxCheck = millis();

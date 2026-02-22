@@ -246,14 +246,13 @@ def run_bridge(simavr_proc, stop_event):
     logger.info("Bridge thread stopping.")
 
 
-def start_daemon(package_root, protocol):
+def start_daemon(package_root, protocol, shared_secret):
     """Start the Python McuBridge daemon."""
-    logger.info("Starting Bridge Daemon (Test Mode)...")
+    logger.info(f"Starting Bridge Daemon (Secret: {shared_secret})...")
     daemon_env = os.environ.copy()
     os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
     os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
 
-    shared_secret = "DEBUG_INSECURE"
     uci_config = {
         "serial_port": SOCAT_PORT0,
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
@@ -303,7 +302,12 @@ def start_daemon(package_root, protocol):
 
 def main():
     """Main entrypoint for emulation test."""
-    logger.info("Starting Emulation Runner (Strict Mode)...")
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--firmware", default="bridge_emulator", help="Name of the emulator binary to run")
+    args = parser.parse_args()
+
+    logger.info(f"Starting Emulation Runner ({args.firmware})...")
 
     for tool in ["socat"]:
         if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
@@ -315,7 +319,7 @@ def main():
     sys.path.insert(0, str(package_root))
     from mcubridge.protocol import protocol
 
-    firmware_path = repo_root / "openwrt-library-arduino/tests/bridge_emulator"
+    firmware_path = repo_root / f"openwrt-library-arduino/tests/{args.firmware}"
     if not firmware_path.exists():
         logger.error(f"Emulator binary not found at {firmware_path}. Please compile it first.")
         sys.exit(1)
@@ -328,6 +332,12 @@ def main():
 
     try:
         logger.info(f"Starting native bridge emulator: {firmware_path}...")
+        
+        # Use bypass secret for all host emulations
+        shared_secret = "DEBUG_INSECURE"
+            
+        logger.info(f"Using shared secret: {shared_secret}")
+
         # Start the native emulator. It uses stdin/stdout for serial comms.
         mcu_proc = subprocess.Popen(
             [str(firmware_path)],
@@ -349,7 +359,7 @@ def main():
 
         threading.Thread(target=_stderr_worker, daemon=True).start()
 
-        daemon_proc, uci_stub_dir = start_daemon(package_root, protocol)
+        daemon_proc, uci_stub_dir = start_daemon(package_root, protocol, shared_secret)
         log_monitor = LogMonitor(daemon_proc, "daemon")
         mqtt_monitor = MqttVerifier()
         mqtt_monitor.start()

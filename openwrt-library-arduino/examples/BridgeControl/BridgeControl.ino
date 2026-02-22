@@ -5,7 +5,7 @@
 
 // CONFIGURACIÓN DEL SECRETO
 // Este password debe coincidir con el configurado en el lado de Linux (/etc/mcu-bridge.conf o similar)
-#define BRIDGE_SECRET "12345678901234567890123456789012"
+#define BRIDGE_SECRET "DEBUG_INSECURE"
 
 #include <Bridge.h>
 #include <string.h>

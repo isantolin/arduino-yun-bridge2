@@ -26,6 +26,12 @@ inline void operator delete(void*, void*) noexcept {}
 #define INPUT_PULLUP 2
 #define LED_BUILTIN 13
 
+// Print bases
+#define BIN 2
+#define OCT 8
+#define DEC 10
+#define HEX 16
+
 // Math macros
 #define abs(x) ((x) > 0 ? (x) : -(x))
 #undef min

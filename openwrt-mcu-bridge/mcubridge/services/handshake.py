@@ -262,7 +262,9 @@ class SerialHandshakeManager:
         self.start_sync()
         await asyncio.sleep(0.05)
 
-        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce)
+        # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
+        our_tag = self.compute_handshake_tag(nonce)
+        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, nonce + our_tag)
         if not sync_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_sync_send_failed")

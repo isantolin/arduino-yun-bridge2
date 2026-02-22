@@ -482,6 +482,7 @@ name = "CMD_LINK_SYNC"
 value = 0x44
 category = "system"
 directions = ["linux_to_mcu"]
+description = "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]."
 [[commands]]
 name = "CMD_LINK_SYNC_RESP"
 value = 0x45

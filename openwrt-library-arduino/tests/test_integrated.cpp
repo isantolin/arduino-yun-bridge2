@@ -121,8 +121,15 @@ void integrated_test_bridge_core() {
     
     rpc::Frame sync;
     sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-    sync.header.payload_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-    etl::fill_n(sync.payload.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH, uint8_t{0xAA});
+    sync.header.payload_length = 32; // 16 nonce + 16 tag
+    uint8_t nonce[16];
+    etl::fill_n(nonce, 16, uint8_t{0xAA});
+    memcpy(sync.payload.data(), nonce, 16);
+    
+    uint8_t tag[16];
+    accessor.computeHandshakeTag(nonce, 16, tag);
+    memcpy(sync.payload.data() + 16, tag, 16);
+
     accessor.dispatch(sync);
     TEST_ASSERT(localBridge.isSynchronized());
     

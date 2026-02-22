@@ -116,6 +116,10 @@ class TestAccessor {
   // ---- Private method forwarders ----
   void dispatch(const rpc::Frame& frame)               { _bridge.dispatch(frame); }
   void retransmitLastFrame()                            { _bridge._retransmitLastFrame(); }
+  void onAckTimeout()                                   { _bridge._onAckTimeout(); }
+  void onBaudrateChange()                               { _bridge._onBaudrateChange(); }
+  void onRxDedupe()                                     { _bridge._onRxDedupe(); }
+  void onStartupStabilized()                            { _bridge._onStartupStabilized(); }
   bool isRecentDuplicateRx(const rpc::Frame& f) const  { return _bridge._isRecentDuplicateRx(f); }
   void markRxProcessed(const rpc::Frame& f)             { _bridge._markRxProcessed(f); }
   void applyTimingConfig(const uint8_t* p, size_t len)  { _bridge._applyTimingConfig(p, len); }

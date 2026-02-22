@@ -424,19 +424,32 @@ void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
       break;
     case rpc::CommandId::CMD_LINK_SYNC:
       {
-        const size_t nonce_length = payload_length;
-        if (nonce_length != rpc::RPC_HANDSHAKE_NONCE_LENGTH) break;
-        
-        enterSafeState();
-        Console.begin();
+        const size_t nonce_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
         const bool has_secret = !_shared_secret.empty();
-        const size_t response_length = static_cast<size_t>(nonce_length) + (has_secret ? kHandshakeTagSize : 0);
-        
-        if (response_length > rpc::MAX_PAYLOAD_SIZE) {
-          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+        const size_t expected_payload = nonce_length + (has_secret ? kHandshakeTagSize : 0);
+
+        if (payload_length != expected_payload) {
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
           break;
         }
+        
+        // [MIL-SPEC] Mutual Authentication: Verify MPU identity if secret is set
+        if (has_secret) {
+          etl::array<uint8_t, kHandshakeTagSize> expected_tag;
+          _computeHandshakeTag(payload_data, nonce_length, expected_tag.data());
+          
+          if (!rpc::security::timing_safe_equal(payload_data + nonce_length, expected_tag.data(), kHandshakeTagSize)) {
+            _emitStatus(rpc::StatusCode::STATUS_ERROR, F("Mutual Auth Failed"));
+            enterSafeState();
+            _fsm.handshakeFailed(); // Force into FAULT state via FSM
+            break;
+          }
+        }
 
+        enterSafeState();
+        Console.begin();
+        
+        const size_t response_length = nonce_length + (has_secret ? kHandshakeTagSize : 0);
         etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer; // [RAM OPT] Stack allocation
         
         if (payload_data) {

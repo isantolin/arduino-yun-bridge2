@@ -51,17 +51,19 @@ enum StateId : etl::fsm_state_id_t {
 // ============================================================================
 enum EventId : etl::message_id_t {
   EVENT_HANDSHAKE_COMPLETE = 0,
-  EVENT_SEND_CRITICAL = 1,
-  EVENT_ACK_RECEIVED = 2,
-  EVENT_TIMEOUT = 3,
-  EVENT_RESET = 4,
-  EVENT_CRYPTO_FAULT = 5
+  EVENT_HANDSHAKE_FAILED = 1,
+  EVENT_SEND_CRITICAL = 2,
+  EVENT_ACK_RECEIVED = 3,
+  EVENT_TIMEOUT = 4,
+  EVENT_RESET = 5,
+  EVENT_CRYPTO_FAULT = 6
 };
 
 // ============================================================================
 // Event Messages
 // ============================================================================
 struct EvHandshakeComplete : public etl::message<EVENT_HANDSHAKE_COMPLETE> {};
+struct EvHandshakeFailed : public etl::message<EVENT_HANDSHAKE_FAILED> {};
 struct EvSendCritical : public etl::message<EVENT_SEND_CRITICAL> {};
 struct EvAckReceived : public etl::message<EVENT_ACK_RECEIVED> {};
 struct EvTimeout : public etl::message<EVENT_TIMEOUT> {};
@@ -72,7 +74,7 @@ struct EvCryptoFault : public etl::message<EVENT_CRYPTO_FAULT> {};
 // State: Unsynchronized (Initial State)
 // ============================================================================
 class StateUnsynchronized : public etl::fsm_state<BridgeFsm, StateUnsynchronized, STATE_UNSYNCHRONIZED,
-                                                   EvHandshakeComplete, EvReset, EvCryptoFault>
+                                                   EvHandshakeComplete, EvHandshakeFailed, EvReset, EvCryptoFault>
 {
 public:
   etl::fsm_state_id_t on_enter_state() {
@@ -81,6 +83,10 @@ public:
 
   etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
     return STATE_IDLE;  // Handshake success → Idle (enters Synchronized first)
+  }
+
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
+    return STATE_FAULT; // Handshake failure → Fault
   }
 
   etl::fsm_state_id_t on_event(const EvReset&) {
@@ -261,6 +267,7 @@ public:
 
   // Event Triggers
   void handshakeComplete() { receive(EvHandshakeComplete()); }
+  void handshakeFailed() { receive(EvHandshakeFailed()); }
   void sendCritical() { receive(EvSendCritical()); }
   void ackReceived() { receive(EvAckReceived()); }
   void timeout() { receive(EvTimeout()); }

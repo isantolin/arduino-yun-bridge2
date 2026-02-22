@@ -96,8 +96,8 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
       - name: Install arduino-cli
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
-          echo "$HOME/bin" >> $GITHUB_PATH
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sudo sh -s -- -b /usr/local/bin
+          arduino-cli version
       - name: Compile Examples
         run: tox -e arduino-examples
 
@@ -114,8 +114,8 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
       - name: Install arduino-cli
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
-          echo "$HOME/bin" >> $GITHUB_PATH
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sudo sh -s -- -b /usr/local/bin
+          arduino-cli version
       - name: Run Tests with Coverage
         run: tox -e coverage
       - name: Upload Python Coverage
@@ -140,8 +140,8 @@ jobs:
           pip install gcovr
       - name: Install arduino-cli
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
-          echo "$HOME/bin" >> $GITHUB_PATH
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sudo sh -s -- -b /usr/local/bin
+          arduino-cli version
       - name: Run Host Tests
         run: ./tools/ci_arduino_host_tests.sh
       - name: Run Coverage

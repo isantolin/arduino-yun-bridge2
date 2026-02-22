@@ -179,7 +179,7 @@ void test_filesystem_gaps() {
     FileSystem.remove(long_path);
 
     // Gap: handleResponse with valid read handler
-    Bridge.onFileSystemReadResponse(BridgeClass::FileSystemReadHandler::create<file_system_read_trampoline>());
+    FileSystem.onFileSystemReadResponse(FileSystemClass::FileSystemReadHandler::create<file_system_read_trampoline>());
     rpc::Frame f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP);
     f.header.payload_length = 4;

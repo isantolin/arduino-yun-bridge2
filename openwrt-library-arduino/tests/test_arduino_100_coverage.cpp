@@ -139,7 +139,7 @@ void test_process_extra_gaps() {
     ba.dispatch(f);
 
     // Gap: handleResponse CMD_PROCESS_RUN_ASYNC_RESP with handler
-    Bridge.onProcessRunAsyncResponse(BridgeClass::ProcessRunAsyncHandler::create([](int16_t p){(void)p;}));
+    Process.onProcessRunAsyncResponse(BridgeClass::ProcessRunAsyncHandler::create([](int16_t p){(void)p;}));
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
     f.header.payload_length = 2;
     rpc::write_u16_be(f.payload.data(), 456);

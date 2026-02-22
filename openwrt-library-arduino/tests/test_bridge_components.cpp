@@ -356,15 +356,14 @@ struct DatastoreGetState {
 
 DatastoreGetState* DatastoreGetState::instance = nullptr;
 
-static void datastore_get_trampoline(const char* key, const uint8_t* value,
-                                    uint16_t length) {
+static void datastore_get_trampoline(etl::string_view key, etl::span<const uint8_t> value) {
   DatastoreGetState* state = DatastoreGetState::instance;
   if (!state) return;
   state->called = true;
-  state->key.set_from_cstr(key);
+  state->key.set_from_bytes(key.data(), key.length());
   state->value.clear();
-  if (value && length) {
-    TEST_ASSERT(state->value.append(value, length));
+  if (!value.empty()) {
+    TEST_ASSERT(state->value.append(value.data(), value.size()));
   }
 }
 
@@ -554,7 +553,7 @@ static void test_datastore_get_response_handler() {
 
   DatastoreGetState state;
   DatastoreGetState::instance = &state;
-  Bridge.onDataStoreGetResponse(BridgeClass::DataStoreGetHandler::create<datastore_get_trampoline>());
+  DataStore.onDataStoreGetResponse(DataStoreClass::DataStoreGetHandler::create<datastore_get_trampoline>());
   auto dsa = bridge::test::DataStoreTestAccessor::create(DataStore);
   TEST_ASSERT(dsa.trackPendingKey("k"));
 
@@ -583,7 +582,7 @@ static void test_mailbox_read_response_handler() {
 
   MailboxState state;
   MailboxState::instance = &state;
-  Bridge.onMailboxMessage(BridgeClass::MailboxHandler::create<mailbox_trampoline>());
+  Mailbox.onMailboxMessage(MailboxClass::MailboxHandler::create<mailbox_trampoline>());
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
@@ -609,7 +608,7 @@ static void test_process_poll_response_handler() {
 
   ProcessPollState state;
   ProcessPollState::instance = &state;
-  Bridge.onProcessPollResponse(BridgeClass::ProcessPollHandler::create<process_poll_trampoline>());
+  Process.onProcessPollResponse(ProcessClass::ProcessPollHandler::create<process_poll_trampoline>());
 
   rpc::Frame f;
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP);
@@ -768,7 +767,7 @@ static void test_process_run_response_length_guards() {
 
   ProcessRunState state;
   ProcessRunState::instance = &state;
-  Bridge.onProcessRunResponse(BridgeClass::ProcessRunHandler::create<process_run_trampoline>());
+  Process.onProcessRunResponse(BridgeClass::ProcessRunHandler::create<process_run_trampoline>());
 
   rpc::Frame f_short{};
   f_short.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP);
@@ -826,7 +825,7 @@ static void test_mailbox_request_frames_and_available_handler() {
 
   MailboxAvailableState st;
   MailboxAvailableState::instance = &st;
-  Bridge.onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler::create<mailbox_available_trampoline>());
+  Mailbox.onMailboxAvailableResponse(BridgeClass::MailboxAvailableHandler::create<mailbox_available_trampoline>());
 
   rpc::Frame f{};
   f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);

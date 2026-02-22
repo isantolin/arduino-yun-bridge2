@@ -332,10 +332,10 @@ def main():
 
     try:
         logger.info(f"Starting native bridge emulator: {firmware_path}...")
-        
+
         # Use bypass secret for all host emulations
         shared_secret = "DEBUG_INSECURE"
-            
+
         logger.info(f"Using shared secret: {shared_secret}")
 
         # Start the native emulator. It uses stdin/stdout for serial comms.

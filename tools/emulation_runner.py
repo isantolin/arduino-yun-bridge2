@@ -44,7 +44,7 @@ class LogMonitor:
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._reader_thread, daemon=True)
         self.thread.start()
-        
+
         self.found_patterns = set()
         self.errors_detected = []
 
@@ -53,20 +53,20 @@ class LogMonitor:
         stream = self.process.stdout or self.process.stderr
         if not stream:
             return
-            
+
         for line in iter(stream.readline, ""):
             if not line:
                 break
             line_str = line.strip()
             if not line_str:
                 continue
-                
+
             # Echo to our logger for visibility
             logger.info(f"[{self.name}] {line_str}")
-            
+
             # Analyze
             self._analyze_line(line_str)
-            
+
             if self.stop_event.is_set():
                 break
 
@@ -78,7 +78,7 @@ class LogMonitor:
             self.found_patterns.add("mqtt_connected")
         if "MCU link synchronised" in line:
             self.found_patterns.add("handshake_complete")
-            
+
         # Failure signals
         lower_line = line.lower()
         if "traceback" in lower_line or "critical" in lower_line or "fatal" in lower_line:
@@ -112,7 +112,7 @@ class MqttVerifier:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
-        
+
         try:
             self.client.connect(MQTT_HOST, MQTT_PORT, 60)
             self.client.loop_start()
@@ -267,11 +267,11 @@ def main():
         # Capture both stdout and stderr for analysis
         daemon_cmd = [sys.executable, "-u", "-m", "mcubridge.daemon", "--debug"]
         daemon_proc = subprocess.Popen(
-            daemon_cmd, 
-            env=daemon_env, 
-            stdout=subprocess.PIPE, 
+            daemon_cmd,
+            env=daemon_env,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, # Merge stderr to stdout
-            text=True, 
+            text=True,
             bufsize=1 # Line buffered
         )
 
@@ -285,9 +285,9 @@ def main():
         max_wait = 20
         start_wait = time.time()
         success = False
-        
+
         logger.info("Waiting for synchronization (Timeout: 20s)...")
-        
+
         while time.time() - start_wait < max_wait:
             # Check for process death
             if daemon_proc.poll() is not None:
@@ -296,7 +296,7 @@ def main():
             if simavr_proc.poll() is not None:
                 logger.error(f"SimAVR died unexpectedly with code {simavr_proc.returncode}")
                 break
-                
+
             # Check for critical log errors
             if log_monitor.has_error():
                 logger.error(f"Critical error detected in logs: {log_monitor.errors_detected[0]}")
@@ -307,12 +307,12 @@ def main():
             log_sync = log_monitor.check_success("handshake_complete")
             # 2. MQTT Confirmation (Truth)
             mqtt_sync = mqtt_monitor.sync_event.is_set()
-            
+
             if log_sync and mqtt_sync:
                 logger.info("SUCCESS: Log and MQTT both confirm synchronization.")
                 success = True
                 break
-            
+
             time.sleep(0.5)
 
         if success:
@@ -330,9 +330,11 @@ def main():
         logger.error(f"Error during emulation: {e}")
         sys.exit(1)
     finally:
-        if mqtt_monitor: mqtt_monitor.stop()
-        if log_monitor: log_monitor.stop()
-        
+        if mqtt_monitor:
+            mqtt_monitor.stop()
+        if log_monitor:
+            log_monitor.stop()
+
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(simavr_proc, "simavr")
         cleanup_process(socat_proc, "socat")

@@ -196,6 +196,12 @@ class BridgeService:
         except (OSError, ValueError, RuntimeError) as e:
             logger.exception("Failed to synchronize link after reconnect: %s", e)
 
+        # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
+        if not self.state.link_is_synchronized:
+            logger.warning("Link synchronization failed; aborting post-connection initialization")
+            self._handshake.raise_if_handshake_fatal()
+            return
+
         try:
             version_ok = await self._system.request_mcu_version()
             if not version_ok:

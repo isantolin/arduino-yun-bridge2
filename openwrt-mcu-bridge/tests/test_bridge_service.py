@@ -12,7 +12,7 @@ from aiomqtt.message import Message
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.handshake import derive_serial_timing
+from mcubridge.services.handshake import SerialHandshakeFatal, derive_serial_timing
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
@@ -380,6 +380,10 @@ async def test_on_serial_connected_raises_on_secret_mismatch(runtime_config: Run
 ) -> None:
     runtime_config.serial_shared_secret = b"test_secret_1234"
     runtime_config.serial_handshake_fatal_failures = 1
+    # Force unsynchronized state as the fixture sets it to True by default.
+    runtime_state.link_is_synchronized = False
+    runtime_state.link_sync_event.clear()
+    
     service = BridgeService(runtime_config, runtime_state)
 
     async def fake_sender(command_id: int, payload: bytes) -> bool:
@@ -406,8 +410,9 @@ async def test_on_serial_connected_raises_on_secret_mismatch(runtime_config: Run
 
     service.register_serial_sender(fake_sender)
 
-    # Service suppresses the fatal exception but records it in state
-    await service.on_serial_connected()
+    # Service raises SerialHandshakeFatal on auth mismatch if fatal failure threshold reached.
+    with pytest.raises(SerialHandshakeFatal):
+        await service.on_serial_connected()
 
     assert runtime_state.handshake_fatal_count > 0
     assert runtime_state.handshake_fatal_reason == "sync_auth_mismatch"

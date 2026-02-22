@@ -268,11 +268,19 @@ class SerialHandshakeManager:
             await self.handle_handshake_failure("link_sync_send_failed")
             return False
 
+        # [SIL-2] Race Condition Guard: check if async response already put us in fault.
+        if self.fsm_state == self.STATE_FAULT:
+            return False
+
         # Transition to CONFIRMING
         self.start_confirm()
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:
+            # [SIL-2] Double check if we didn't just transition to fault via async path.
+            if self.fsm_state == self.STATE_FAULT:
+                return False
+
             pending_nonce = self._state.link_handshake_nonce
             self.clear_handshake_expectations()
             if pending_nonce == nonce:
@@ -280,10 +288,10 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if self.fsm_state != self.STATE_SYNCHRONIZED:
+        if self.fsm_state != self.STATE_SYNCHRONIZED and self.fsm_state != self.STATE_FAULT:
              self.complete_handshake()
 
-        return True
+        return self.fsm_state == self.STATE_SYNCHRONIZED
 
     async def handle_link_sync_resp(self, payload: bytes) -> bool:
         expected = self._state.link_handshake_nonce

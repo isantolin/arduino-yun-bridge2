@@ -272,25 +272,6 @@ class BridgeClass : public bridge::router::ICommandHandler {
   inline void onGetFreeMemoryResponse(GetFreeMemoryHandler handler) { _get_free_memory_handler = handler; }
   inline void onStatus(StatusHandler handler) { _status_handler = handler; }
 
-  #if BRIDGE_ENABLE_DATASTORE
-  inline void onDataStoreGetResponse(DataStoreGetHandler handler) { _datastore_get_handler = handler; }
-  #endif
-
-  #if BRIDGE_ENABLE_MAILBOX
-  inline void onMailboxMessage(MailboxHandler handler) { _mailbox_handler = handler; }
-  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) { _mailbox_available_handler = handler; }
-  #endif
-
-  #if BRIDGE_ENABLE_FILESYSTEM
-  inline void onFileSystemReadResponse(FileSystemReadHandler handler) { _file_system_read_handler = handler; }
-  #endif
-
-  #if BRIDGE_ENABLE_PROCESS
-  inline void onProcessRunResponse(ProcessRunHandler handler) { _process_run_handler = handler; }
-  inline void onProcessPollResponse(ProcessPollHandler handler) { _process_poll_handler = handler; }
-  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) { _process_run_async_handler = handler; }
-  #endif
-
   // Internal / Lower Level
   bool sendFrame(rpc::CommandId command_id, const uint8_t* payload = nullptr, size_t length = 0);
   bool sendFrame(rpc::StatusCode status_code, const uint8_t* payload = nullptr, size_t length = 0);
@@ -362,24 +343,6 @@ class BridgeClass : public bridge::router::ICommandHandler {
   GetFreeMemoryHandler _get_free_memory_handler;
   StatusHandler _status_handler;
 
-  #if BRIDGE_ENABLE_DATASTORE
-  DataStoreGetHandler _datastore_get_handler;
-  #endif
-
-  #if BRIDGE_ENABLE_MAILBOX
-  etl::delegate<void(const uint8_t*, uint16_t)> _mailbox_handler;
-  etl::delegate<void(uint16_t)> _mailbox_available_handler;
-  #endif
-
-  #if BRIDGE_ENABLE_FILESYSTEM
-  etl::delegate<void(const uint8_t*, uint16_t)> _file_system_read_handler;
-  #endif
-
-  #if BRIDGE_ENABLE_PROCESS
-  etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> _process_run_handler;
-  etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)> _process_poll_handler;
-  etl::delegate<void(int16_t)> _process_run_async_handler;
-  #endif
   // Pending Queues
   struct PendingTxFrame {
     uint16_t command_id;
@@ -513,12 +476,14 @@ class DataStoreClass {
   void put(etl::string_view key, etl::string_view value);
   void requestGet(etl::string_view key);
   inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
-    Bridge.onDataStoreGetResponse(handler);
+    _datastore_get_handler = handler;
   }
 
  private:
   bool _trackPendingDatastoreKey(etl::string_view key);
   const char* _popPendingDatastoreKey();
+
+  DataStoreGetHandler _datastore_get_handler;
 
   // [SIL-2] Use queue adapter for strict FIFO semantics
   etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
@@ -529,6 +494,7 @@ extern DataStoreClass DataStore;
 
 #if BRIDGE_ENABLE_MAILBOX
 class MailboxClass {
+  friend class BridgeClass;
  public:
   using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
@@ -564,17 +530,22 @@ class MailboxClass {
   }
 
   inline void onMailboxMessage(MailboxHandler handler) {
-    Bridge.onMailboxMessage(handler);
+    _mailbox_handler = handler;
   }
   inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) {
-    Bridge.onMailboxAvailableResponse(handler);
+    _mailbox_available_handler = handler;
   }
+
+ private:
+  MailboxHandler _mailbox_handler;
+  MailboxAvailableHandler _mailbox_available_handler;
 };
 extern MailboxClass Mailbox;
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
 class FileSystemClass {
+  friend class BridgeClass;
  public:
   using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
 
@@ -614,8 +585,11 @@ class FileSystemClass {
   }
 
   inline void onFileSystemReadResponse(FileSystemReadHandler handler) {
-    Bridge.onFileSystemReadResponse(handler);
+    _file_system_read_handler = handler;
   }
+
+ private:
+  FileSystemReadHandler _file_system_read_handler;
 };
 extern FileSystemClass FileSystem;
 #endif
@@ -638,19 +612,23 @@ class ProcessClass {
   void kill(int16_t pid);
 
   inline void onProcessRunResponse(ProcessRunHandler handler) {
-    Bridge.onProcessRunResponse(handler);
+    _process_run_handler = handler;
   }
   inline void onProcessPollResponse(ProcessPollHandler handler) {
-    Bridge.onProcessPollResponse(handler);
+    _process_poll_handler = handler;
   }
   inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
-    Bridge.onProcessRunAsyncResponse(handler);
+    _process_run_async_handler = handler;
   }
 
  private:
   friend class BridgeClass;
   bool _pushPendingProcessPid(uint16_t pid);
   uint16_t _popPendingProcessPid();
+
+  ProcessRunHandler _process_run_handler;
+  ProcessPollHandler _process_poll_handler;
+  ProcessRunAsyncHandler _process_run_async_handler;
 
   // [SIL-2] Use circular buffer for safe PID tracking
   etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;

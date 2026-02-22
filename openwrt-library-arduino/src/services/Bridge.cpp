@@ -692,10 +692,10 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
       const size_t payload_length = ctx.frame->header.payload_length;
       const uint8_t* payload_data = ctx.frame->payload.data();
       
-      if (payload_length >= 1 && _datastore_get_handler.is_valid()) {
+      if (payload_length >= 1 && DataStore._datastore_get_handler.is_valid()) {
         auto msg = rpc::payload::DatastoreGetResponse::parse(payload_data);
         const char* key = DataStore._popPendingDatastoreKey();
-        _datastore_get_handler(etl::string_view(key), etl::span<const uint8_t>(msg.value, msg.value_len));
+        DataStore._datastore_get_handler(etl::string_view(key), etl::span<const uint8_t>(msg.value, msg.value_len));
       }
   }
 #else
@@ -715,9 +715,9 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_MAILBOX
           const size_t payload_length = ctx.frame->header.payload_length;
           const uint8_t* payload_data = ctx.frame->payload.data();
-          if (payload_length >= 2 && _mailbox_handler.is_valid()) {
+          if (payload_length >= 2 && Mailbox._mailbox_handler.is_valid()) {
             auto msg = rpc::payload::MailboxPush::parse(payload_data);
-            _mailbox_handler(msg.data, msg.length);
+            Mailbox._mailbox_handler(msg.data, msg.length);
           }
 #else
           (void)ctx;
@@ -726,16 +726,16 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
         true);
   } else if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
 #if BRIDGE_ENABLE_MAILBOX
-      if (_mailbox_handler.is_valid() && payload_length >= 2) {
+      if (Mailbox._mailbox_handler.is_valid() && payload_length >= 2) {
         auto msg = rpc::payload::MailboxReadResponse::parse(payload_data);
-        _mailbox_handler(msg.content, msg.length);
+        Mailbox._mailbox_handler(msg.content, msg.length);
       }
 #endif
   } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
 #if BRIDGE_ENABLE_MAILBOX
-      if (_mailbox_available_handler.is_valid() && payload_length >= rpc::payload::MailboxAvailableResponse::SIZE) {
+      if (Mailbox._mailbox_available_handler.is_valid() && payload_length >= rpc::payload::MailboxAvailableResponse::SIZE) {
         auto msg = rpc::payload::MailboxAvailableResponse::parse(payload_data);
-        _mailbox_available_handler(msg.count);
+        Mailbox._mailbox_available_handler(msg.count);
       }
 #endif
   }
@@ -757,9 +757,9 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
         true);
   } else if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
 #if BRIDGE_ENABLE_FILESYSTEM
-      if (_file_system_read_handler.is_valid() && payload_length >= 2) {
+      if (FileSystem._file_system_read_handler.is_valid() && payload_length >= 2) {
         auto msg = rpc::payload::FileReadResponse::parse(payload_data);
-        _file_system_read_handler(msg.content, msg.length);
+        FileSystem._file_system_read_handler(msg.content, msg.length);
       }
 #endif
   }
@@ -775,24 +775,24 @@ void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (_process_run_handler.is_valid() && payload_length >= 6) {
+      if (Process._process_run_handler.is_valid() && payload_length >= 6) {
         auto msg = rpc::payload::ProcessRunResponse::parse(payload_data);
         if (payload_length >= static_cast<size_t>(6 + msg.stdout_len + msg.stderr_len)) {
-            _process_run_handler(static_cast<rpc::StatusCode>(msg.status), msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+            Process._process_run_handler(static_cast<rpc::StatusCode>(msg.status), msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
         }
       }
       break;
     case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-      if (_process_run_async_handler.is_valid() && payload_length >= rpc::payload::ProcessRunAsyncResponse::SIZE) {
+      if (Process._process_run_async_handler.is_valid() && payload_length >= rpc::payload::ProcessRunAsyncResponse::SIZE) {
         auto msg = rpc::payload::ProcessRunAsyncResponse::parse(payload_data);
-        _process_run_async_handler(static_cast<int16_t>(msg.pid));
+        Process._process_run_async_handler(static_cast<int16_t>(msg.pid));
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (_process_poll_handler.is_valid() && payload_length >= 6) {
+      if (Process._process_poll_handler.is_valid() && payload_length >= 6) {
         auto msg = rpc::payload::ProcessPollResponse::parse(payload_data);
         if (payload_length >= static_cast<size_t>(6 + msg.stdout_len + msg.stderr_len)) {
-            _process_poll_handler(static_cast<rpc::StatusCode>(msg.status), msg.exit_code, msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+            Process._process_poll_handler(static_cast<rpc::StatusCode>(msg.status), msg.exit_code, msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
             Process._popPendingProcessPid(); 
         }
       }

@@ -187,7 +187,7 @@ def main():
             found_elfs = list(base_build_path.glob("**/*.elf"))
             for elf in found_elfs:
                 logger.info(f" - {elf}")
-            
+
             # Prefer Mega variant for SimAVR atmega2560
             mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
             if mega_elfs:

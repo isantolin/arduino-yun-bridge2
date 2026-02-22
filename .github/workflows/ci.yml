@@ -159,9 +159,13 @@ jobs:
       - name: Compile & Run Emulation
         run: |
           mkdir -p openwrt-library-arduino/build
-          # Inject BRIDGE_EMULATION to force UART0 on all boards during emulation.
-          # We use both properties to ensure coverage across different core versions.
-          ./tools/ci_arduino.sh openwrt-library-arduino/build "compiler.cpp.extra_flags=-DBRIDGE_EMULATION" "build.extra_flags=-DBRIDGE_EMULATION"
+          # Inject BRIDGE_EMULATION globally to ensure it affects both Sketch and Library.
+          # We use compiler.cpp.extra_flags AND compiler.c.extra_flags to be 100% sure.
+          # We NEVER touch build.extra_flags to avoid breaking Yun USB VID/PID.
+          ./tools/ci_arduino.sh openwrt-library-arduino/build \
+            "compiler.cpp.extra_flags=-DBRIDGE_EMULATION" \
+            "compiler.c.extra_flags=-DBRIDGE_EMULATION" \
+            "compiler.S.extra_flags=-DBRIDGE_EMULATION"
           pip install -r requirements/runtime.txt
           python3 -u tools/emulation_runner.py
 

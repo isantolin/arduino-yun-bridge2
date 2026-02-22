@@ -28,24 +28,24 @@ if [ ! -d "${CRYPTO_PATH}" ]; then
 fi
 
 echo "[emulator] Compiling native bridge emulator..."
-g++ -std=c++11 -O2 -g -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 
-    -I"${SRC_DIR}" 
-    -I"${TEST_DIR}/mocks" 
-    -I"${STUB_DIR}" 
-    -I"${ETL_PATH}" 
-    -I"${PACKETSERIAL_PATH}" 
-    -I"${CRYPTO_PATH}" 
-    "${SRC_DIR}/protocol/rpc_frame.cpp" 
-    "${SRC_DIR}/security/security.cpp" 
-    "${SRC_DIR}/services/Bridge.cpp" 
-    "${SRC_DIR}/services/Console.cpp" 
-    "${SRC_DIR}/services/DataStore.cpp" 
-    "${SRC_DIR}/services/Process.cpp" 
-    "${TEST_DIR}/bridge_emulator.cpp" 
-    "${CRYPTO_PATH}/SHA256.cpp" 
-    "${CRYPTO_PATH}/HKDF.cpp" 
-    "${CRYPTO_PATH}/Crypto.cpp" 
-    "${CRYPTO_PATH}/Hash.cpp" 
+g++ -std=c++11 -O2 -g -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
+    -I"${SRC_DIR}" \
+    -I"${TEST_DIR}/mocks" \
+    -I"${STUB_DIR}" \
+    -I"${ETL_PATH}" \
+    -I"${PACKETSERIAL_PATH}" \
+    -I"${CRYPTO_PATH}" \
+    "${SRC_DIR}/protocol/rpc_frame.cpp" \
+    "${SRC_DIR}/security/security.cpp" \
+    "${SRC_DIR}/services/Bridge.cpp" \
+    "${SRC_DIR}/services/Console.cpp" \
+    "${SRC_DIR}/services/DataStore.cpp" \
+    "${SRC_DIR}/services/Process.cpp" \
+    "${TEST_DIR}/bridge_emulator.cpp" \
+    "${CRYPTO_PATH}/SHA256.cpp" \
+    "${CRYPTO_PATH}/HKDF.cpp" \
+    "${CRYPTO_PATH}/Crypto.cpp" \
+    "${CRYPTO_PATH}/Hash.cpp" \
     -o "${TEST_DIR}/bridge_emulator"
 
 if [ -f "${TEST_DIR}/bridge_emulator" ]; then

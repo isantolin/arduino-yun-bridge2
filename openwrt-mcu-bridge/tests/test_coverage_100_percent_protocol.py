@@ -24,7 +24,7 @@ def test_frame_parse_coverage_all_errors():
     bad_crc_frame = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=protocol.PROTOCOL_VERSION,
         payload_len=0,
-        command_id={"compressed": False, "id": 0x40}
+        command_id=0x40
     ))
     bad_crc_frame += b"\x00\x00\x00\x00"
     with pytest.raises(ValueError, match="(CRC mismatch|wrong checksum)"):
@@ -34,7 +34,7 @@ def test_frame_parse_coverage_all_errors():
     bad_ver = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=255,
         payload_len=0,
-        command_id={"compressed": False, "id": 0x40}
+        command_id=0x40
     ))
     with pytest.raises(ValueError, match="Invalid version"):
         Frame.parse(_build_raw_with_crc(bad_ver))
@@ -43,7 +43,7 @@ def test_frame_parse_coverage_all_errors():
     bad_len = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
         version=protocol.PROTOCOL_VERSION,
         payload_len=10,
-        command_id={"compressed": False, "id": 0x40}
+        command_id=0x40
     ))
     raw = _build_raw_with_crc(bad_len)
     with pytest.raises(ValueError, match="(Frame size mismatch|Frame parsing failed)"):

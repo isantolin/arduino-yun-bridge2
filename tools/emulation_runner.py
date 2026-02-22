@@ -191,8 +191,8 @@ def main():
             # Prefer Mega variant for SimAVR atmega2560
             mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
             if mega_elfs:
-                # Prefer BridgeControl or FrameDebug for e2e
-                preferred = [e for e in mega_elfs if "BridgeControl" in str(e) or "FrameDebug" in str(e)]
+                # Prefer BridgeControl for e2e
+                preferred = [e for e in mega_elfs if "BridgeControl" in str(e)]
                 firmware_path = preferred[0] if preferred else mega_elfs[0]
                 logger.info(f"Selected Mega firmware: {firmware_path}")
             elif found_elfs:
@@ -205,15 +205,16 @@ def main():
 
     # 3. Setup Virtual Serial Port with direct SimAVR execution
     # This creates a PTY at SOCAT_PORT0 and connects it directly to simavr's stdio.
-    # We use 'pty,raw,echo=0' for both ends to ensure transparent binary transfer.
+    # We use 'raw' instead of 'pty' in EXEC to avoid TTY line discipline on binary data.
     logger.info("Starting socat with embedded simavr...")
     simavr_cmd_str = f"simavr -m atmega2560 -f 16000000 {firmware_path}"
     socat_cmd = [
         "socat", "-d", "-d",
         f"pty,raw,echo=0,link={SOCAT_PORT0}",
-        f"EXEC:\"{simavr_cmd_str}\",pty,raw,echo=0"
+        f"EXEC:\"{simavr_cmd_str}\",raw"
     ]
     socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
+    socat_monitor = LogMonitor(socat_proc, "socat")
 
     timeout = 5
     start_time = time.time()
@@ -237,8 +238,8 @@ def main():
         os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
         os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
 
-        # Matches FrameDebug default
-        shared_secret = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+        # Matches BridgeControl default
+        shared_secret = "12345678901234567890123456789012"
         uci_config = {
             "serial_port": SOCAT_PORT0,
             "serial_baud": str(protocol.DEFAULT_BAUDRATE),
@@ -343,6 +344,8 @@ def main():
             mqtt_monitor.stop()
         if log_monitor:
             log_monitor.stop()
+        if 'socat_monitor' in locals() and socat_monitor:
+            socat_monitor.stop()
 
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(socat_proc, "socat")

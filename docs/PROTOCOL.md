@@ -423,29 +423,37 @@ Notas:
   - Respuesta (`0x43 CMD_GET_FREE_MEMORY_RESP`): `[free_memory: u16]`.
 
 - **`0x44` CMD_LINK_SYNC (Linux → MCU)**
-  - Petición: `nonce: byte[16]`.
+  - Petición: `nonce: byte[16] || tag: byte[16]`.
   - Respuesta (`0x45 CMD_LINK_SYNC_RESP`, MCU → Linux): `nonce || tag`.
 
-#### Handshake Sequence Diagram
+#### Handshake Sequence Diagram (Mutual Authentication)
 
 ```mermaid
 sequenceDiagram
     participant D as Daemon (Linux)
     participant M as MCU (Arduino)
 
-    Note over D,M: Phase 1: Challenge
+    Note over D,M: Phase 1: Mutual Challenge
     D->>D: Generate nonce (16 bytes)
-    D->>D: derived_key = HKDF(secret, "serial-auth")
-    D->>D: expected_tag = HMAC-SHA256(derived_key, nonce)[:16]
-    D->>M: CMD_LINK_SYNC (0x44) [nonce]
+    D->>D: derived_key = HKDF(secret, "handshake-auth")
+    D->>D: our_tag = HMAC-SHA256(derived_key, nonce)[:16]
+    D->>M: CMD_LINK_SYNC (0x44) [nonce || our_tag]
 
-    Note over D,M: Phase 2: Response
-    M->>M: derived_key = HKDF(secret, "serial-auth")
-    M->>M: tag = HMAC-SHA256(derived_key, nonce)[:16]
-    M->>D: CMD_LINK_SYNC_RESP (0x45) [nonce || tag]
+    Note over D,M: Phase 2: Verification & Response
+    M->>M: derived_key = HKDF(secret, "handshake-auth")
+    M->>M: Verify our_tag == expected_tag
+    
+    alt Tag Valid
+        M->>M: tag_mcu = HMAC-SHA256(derived_key, nonce)[:16]
+        M->>D: CMD_LINK_SYNC_RESP (0x45) [nonce || tag_mcu]
+    else Tag Invalid
+        M->>M: enterSafeState()
+        M->>M: FSM -> Fault
+        Note over D,M: ✗ MCU rejects MPU
+    end
 
-    Note over D,M: Phase 3: Verification
-    D->>D: Verify tag == expected_tag
+    Note over D,M: Phase 3: Final Verification
+    D->>D: Verify tag_mcu == expected_tag
     alt Tag Valid
         D->>D: link_is_synchronized = true
         D->>D: FSM → Idle state
@@ -462,23 +470,23 @@ sequenceDiagram
     end
 ```
 
+**Security Bypass:** Durante el desarrollo o emulación en host, el uso del secreto `DEBUG_INSECURE` permite que el MCU acepte cualquier tag de 16 bytes, manteniendo la compatibilidad de longitud del protocolo pero relajando la validación matemática (necesaria debido a diferencias en librerías criptográficas entre arquitecturas).
+
 #### Handshake Frame Example (Hex Dump)
 
 ```
 # CMD_LINK_SYNC request (Linux → MCU)
-# Header: version=0x02, payload_len=16, cmd_id=0x0044
-# Payload: 16-byte nonce
+# Header: version=0x02, payload_len=32, cmd_id=0x0044
+# Payload: 16-byte nonce + 16-byte tag
 # CRC32: IEEE 802.3
 
 Raw (before COBS):
-  02 00 10 00 44                  # Header (5 bytes)
+  02 00 20 00 44                  # Header (5 bytes)
   A1 B2 C3 D4 E5 F6 07 18         # Nonce bytes 0-7
   29 3A 4B 5C 6D 7E 8F 90         # Nonce bytes 8-15
+  T1 T2 T3 T4 T5 T6 T7 T8         # Tag bytes 0-7
+  T9 TA TB TC TD TE TF T0         # Tag bytes 8-15
   XX XX XX XX                     # CRC32 (4 bytes)
-
-COBS-encoded (wire format):
-  03 02 00 10 00 44 09 A1 B2 C3 D4 E5 F6 07 18 ...
-  00                              # Frame delimiter
 ```
 
 - **`0x46` CMD_LINK_RESET (Linux → MCU)**

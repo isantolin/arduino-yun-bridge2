@@ -131,9 +131,13 @@ jobs:
           if-no-files-found: ignore
 
   arduino-emulation:
-    name: Arduino Emulation
+    name: Arduino Emulation (${{ matrix.firmware }})
     runs-on: ubuntu-latest
     needs: [lint, typecheck]
+    strategy:
+      fail-fast: false
+      matrix:
+        firmware: [bridge_emulator, bridge_control_emulator]
     timeout-minutes: 20
     services:
       mosquitto:
@@ -162,7 +166,7 @@ jobs:
         run: |
           ./tools/compile_emulator.sh
           pip install -r requirements/runtime.txt
-          python3 -u tools/emulation_runner.py
+          python3 -u tools/emulation_runner.py --firmware ${{ matrix.firmware }}
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min

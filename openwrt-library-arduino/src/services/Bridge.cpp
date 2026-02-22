@@ -56,16 +56,9 @@ BridgeClass* g_bridge_instance = nullptr;
 } // namespace
 
 #ifndef BRIDGE_TEST_NO_GLOBALS
-// [SIL-2] Robust Hardware Serial Detection
-#if BRIDGE_USE_USB_SERIAL
-  BridgeClass Bridge(Serial);
-#elif defined(__AVR_ATmega32U4__) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(_VARIANT_ARDUINO_ZERO_)
-  BridgeClass Bridge(Serial1);
-#elif defined(HAVE_HWSERIAL1) && !defined(__AVR_ATmega328P__)
-  BridgeClass Bridge(Serial1);
-#else
-  BridgeClass Bridge(Serial);
-#endif
+// [SIL-2] Robust Hardware Serial Detection via macro override or architecture defaults
+BridgeClass Bridge(BRIDGE_DEFAULT_SERIAL_PORT);
+
 ConsoleClass Console;
 #if BRIDGE_ENABLE_DATASTORE
 DataStoreClass DataStore;

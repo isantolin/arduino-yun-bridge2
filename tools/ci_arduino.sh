@@ -35,6 +35,7 @@ LIB_PATH="$PWD/openwrt-library-arduino"
 TARGET_BOARDS=("arduino:avr:yun" "arduino:avr:uno" "arduino:avr:mega")
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
+EXTRA_PROPERTIES="${2:-}"
 
 for FQBN in "${TARGET_BOARDS[@]}"; do
     echo "=================================================="
@@ -49,6 +50,10 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
         
         BUILD_FLAGS="--fqbn $FQBN --library $LIB_PATH --warnings default"
         
+        if [ -n "$EXTRA_PROPERTIES" ]; then
+            BUILD_FLAGS="$BUILD_FLAGS --build-property $EXTRA_PROPERTIES"
+        fi
+
         if [ -n "$BUILD_OUTPUT_DIR" ]; then
             # Create specific output dir for this sketch/board combo
             SKETCH_BUILD_DIR="$BUILD_OUTPUT_DIR/${FQBN//:/-}/$sketch_name"

@@ -187,11 +187,13 @@ def main():
             found_elfs = list(base_build_path.glob("**/*.elf"))
             for elf in found_elfs:
                 logger.info(f" - {elf}")
-
+            
             # Prefer Mega variant for SimAVR atmega2560
             mega_elfs = [e for e in found_elfs if "mega" in str(e) or "2560" in str(e)]
             if mega_elfs:
-                firmware_path = mega_elfs[0]
+                # Prefer BridgeControl or FrameDebug for e2e
+                preferred = [e for e in mega_elfs if "BridgeControl" in str(e) or "FrameDebug" in str(e)]
+                firmware_path = preferred[0] if preferred else mega_elfs[0]
                 logger.info(f"Selected Mega firmware: {firmware_path}")
             elif found_elfs:
                 firmware_path = found_elfs[0]
@@ -201,42 +203,35 @@ def main():
         logger.error("CRITICAL: No valid firmware ELF found.")
         sys.exit(1)
 
-    # 3. Setup Virtual Serial Port
-    logger.info("Starting socat...")
-    socat_cmd = ["socat", "-d", "-d", f"pty,raw,echo=0,link={SOCAT_PORT0}", f"pty,raw,echo=0,link={SOCAT_PORT1}"]
+    # 3. Setup Virtual Serial Port with direct SimAVR execution
+    # This creates a PTY at SOCAT_PORT0 and connects it directly to simavr's stdio.
+    # We use 'pty,raw,echo=0' for both ends to ensure transparent binary transfer.
+    logger.info("Starting socat with embedded simavr...")
+    simavr_cmd_str = f"simavr -m atmega2560 -f 16000000 {firmware_path}"
+    socat_cmd = [
+        "socat", "-d", "-d",
+        f"pty,raw,echo=0,link={SOCAT_PORT0}",
+        f"EXEC:\"{simavr_cmd_str}\",pty,raw,echo=0"
+    ]
     socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
 
     timeout = 5
     start_time = time.time()
-    while not (Path(SOCAT_PORT0).exists() and Path(SOCAT_PORT1).exists()):
+    while not Path(SOCAT_PORT0).exists():
         if time.time() - start_time > timeout:
-            logger.error("Timeout waiting for socat PTYs")
+            logger.error(f"Timeout waiting for socat PTY {SOCAT_PORT0}")
             cleanup_process(socat_proc, "socat")
             sys.exit(1)
         time.sleep(0.1)
 
-    logger.info(f"Virtual serial ports created: {SOCAT_PORT0} <-> {SOCAT_PORT1}")
+    logger.info(f"Virtual serial port created and bridged to simavr: {SOCAT_PORT0}")
 
-    simavr_proc = None
     daemon_proc = None
     log_monitor = None
     mqtt_monitor = None
 
     try:
-        # 4. Start SimAVR
-        logger.info(f"Starting simavr with {firmware_path}...")
-        simavr_cmd = ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)]
-        # Capture output to see what's happening
-        simavr_proc = subprocess.Popen(
-            simavr_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1
-        )
-        simavr_log_monitor = LogMonitor(simavr_proc, "simavr")
-
-        # 5. Start Python Daemon (Test Mode)
+        # 4. Start Python Daemon (Test Mode)
         logger.info("Starting Bridge Daemon (Test Mode)...")
         daemon_env = os.environ.copy()
         os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
@@ -245,7 +240,7 @@ def main():
         uci_config = {
             "serial_port": SOCAT_PORT0,
             "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-            "serial_shared_secret": "emulation_test_secret_xyz",
+            "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe", # Matches FrameDebug default
             "mqtt_host": MQTT_HOST,
             "mqtt_port": str(MQTT_PORT),
             "mqtt_tls": "0",
@@ -254,7 +249,6 @@ def main():
             "watchdog_enabled": "0",
             "debug": "1",
         }
-
         uci_stub_dir = tempfile.TemporaryDirectory(prefix="mcubridge-uci-")
         uci_stub_path = Path(uci_stub_dir.name) / "uci.py"
         uci_stub_path.write_text(

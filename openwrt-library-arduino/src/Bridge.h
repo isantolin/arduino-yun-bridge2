@@ -162,6 +162,19 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 // [SIL-2] Resource Allocation Tuning
 // Note: BRIDGE_MAX_PENDING_TX_FRAMES moved to bridge_config.h
 
+// [SIL-2] Serial Port Selection logic
+// Standard behavior: Yun/Mega use Serial1, Uno uses Serial.
+// Override: Define BRIDGE_FORCE_SERIAL0 to use Serial on all platforms (useful for emulation).
+#if defined(BRIDGE_FORCE_SERIAL0)
+  #define BRIDGE_DEFAULT_SERIAL_PORT Serial
+#elif defined(ARDUINO_ARCH_AVR) && (defined(__AVR_ATmega32U4__) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(_VARIANT_ARDUINO_ZERO_) || defined(HAVE_HWSERIAL1))
+  // Boards with multiple UARTs or native USB (Yun, Mega, Zero, Leonardo)
+  #define BRIDGE_DEFAULT_SERIAL_PORT Serial1
+#else
+  // Standard boards (Uno, Pro Mini)
+  #define BRIDGE_DEFAULT_SERIAL_PORT Serial
+#endif
+
 using BridgePacketSerial = PacketSerial;
 
 #if defined(BRIDGE_HOST_TEST)

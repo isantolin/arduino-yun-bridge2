@@ -100,7 +100,7 @@ class FrameParser {
 
 class FrameBuilder {
  public:
-  FrameBuilder();
+  FrameBuilder() = default;
   // Builds a raw frame into a buffer. Returns the length of the raw frame.
   size_t build(etl::span<uint8_t> buffer,
                uint16_t command_id,

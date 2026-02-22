@@ -84,8 +84,6 @@ etl::expected<Frame, FrameError> FrameParser::parse(etl::span<const uint8_t> buf
 
 // --- FrameBuilder ---
 
-FrameBuilder::FrameBuilder() {}
-
 size_t FrameBuilder::build(etl::span<uint8_t> buffer,
                            uint16_t command_id,
                            etl::span<const uint8_t> payload) {

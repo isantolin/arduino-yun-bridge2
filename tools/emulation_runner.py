@@ -305,7 +305,7 @@ def main():
     """Main entrypoint for emulation test."""
     logger.info("Starting Emulation Runner (Strict Mode)...")
 
-    for tool in ["simavr", "socat"]:
+    for tool in ["socat"]:
         if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
             logger.error(f"Required tool '{tool}' not found.")
             sys.exit(1)

@@ -392,18 +392,191 @@ def generate_cpp(spec: dict[str, Any], out: TextIO) -> None:
 
 
 def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
-    """Generate C++ payload structures boilerplate (Centralized in BridgeClass)."""
+    """Generate C++ payload structures from specification."""
     out.write(f"{CPP_HEADER}\n")
     out.write("#ifndef RPC_STRUCTS_H\n#define RPC_STRUCTS_H\n\n")
     out.write("#include <stdint.h>\n")
+    out.write("#include <stddef.h>\n")
+    out.write("#include <etl/string_view.h>\n")
     out.write('#include "rpc_protocol.h"\n')
     out.write('#include "rpc_frame.h"\n\n')
     out.write("namespace rpc {\n")
     out.write("namespace payload {\n\n")
 
-    # [SIL-2] Legacy hardcoded struct generation removed.
-    # Parsing is now centralized in BridgeClass to ensure
-    # deterministic stack usage and ODR compliance.
+    # 1. Automatic generation for fixed-size structs from 'payloads' table
+    payloads = spec.get("payloads", {})
+    for name, fields in payloads.items():
+        struct_fields = []
+        offset = 0
+        for f_name, f_type in fields.items():
+            cpp_type, size, read_func = TYPE_MAPPING[f_type]
+            struct_fields.append({
+                "name": f_name,
+                "type": cpp_type,
+                "size": size,
+                "read_func": read_func,
+                "offset": offset
+            })
+            offset += size
+        
+        out.write(f"struct {name} {{\n")
+        for f in struct_fields:
+            out.write(f"    {f['type']} {f['name']};\n")
+        out.write(f"    static constexpr size_t SIZE = {offset};\n")
+        out.write(f"    static {name} parse(const uint8_t* data) {{\n")
+        if len(struct_fields) == 1 and struct_fields[0]["read_func"]:
+             out.write(f"        return {{{struct_fields[0]['read_func']}(data)}};\n")
+        elif all(not f["read_func"] for f in struct_fields):
+             # Simple constructor for all-byte fields
+             args = ", ".join([f"data[{f['offset']}]" for f in struct_fields])
+             out.write(f"        return {{{args}}};\n")
+        else:
+             out.write(f"        {name} msg;\n")
+             for f in struct_fields:
+                 if f["read_func"]:
+                     out.write(f"        msg.{f['name']} = {f['read_func']}(data + {f['offset']});\n")
+                 else:
+                     out.write(f"        msg.{f['name']} = data[{f['offset']}];\n")
+             out.write("        return msg;\n")
+        out.write("    }\n")
+        out.write("};\n\n")
+
+    # 2. Manual generation for complex/variable-length structs
+    out.write("""// --- Complex/Variable Payloads ---
+
+struct ConsoleWrite {
+    const uint8_t* data;
+    size_t length;
+    static ConsoleWrite parse(const uint8_t* data, size_t len) {
+        return {data, len};
+    }
+};
+
+struct DatastoreGet {
+    etl::string_view key;
+    static DatastoreGet parse(const uint8_t* data) {
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), data[0])};
+    }
+};
+
+struct DatastoreGetResponse {
+    const uint8_t* value;
+    uint8_t value_len;
+    static DatastoreGetResponse parse(const uint8_t* data) {
+        return {data + 1, data[0]};
+    }
+};
+
+struct DatastorePut {
+    etl::string_view key;
+    const uint8_t* value;
+    uint8_t value_len;
+    static DatastorePut parse(const uint8_t* data) {
+        uint8_t k_len = data[0];
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), k_len), data + 1 + k_len + 1, data[1 + k_len]};
+    }
+};
+
+struct MailboxPush {
+    const uint8_t* data;
+    uint16_t length;
+    static MailboxPush parse(const uint8_t* data) {
+        return {data + 2, rpc::read_u16_be(data)};
+    }
+};
+
+struct MailboxReadResponse {
+    const uint8_t* content;
+    uint16_t length;
+    static MailboxReadResponse parse(const uint8_t* data) {
+        return {data + 2, rpc::read_u16_be(data)};
+    }
+};
+
+struct FileWrite {
+    etl::string_view path;
+    const uint8_t* data;
+    uint16_t data_len;
+    static FileWrite parse(const uint8_t* data) {
+        uint8_t p_len = data[0];
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), p_len), data + 1 + p_len + 2, rpc::read_u16_be(data + 1 + p_len)};
+    }
+};
+
+struct FileRead {
+    etl::string_view path;
+    static FileRead parse(const uint8_t* data) {
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), data[0])};
+    }
+};
+
+struct FileReadResponse {
+    const uint8_t* content;
+    uint16_t length;
+    static FileReadResponse parse(const uint8_t* data) {
+        return {data + 2, rpc::read_u16_be(data)};
+    }
+};
+
+struct FileRemove {
+    etl::string_view path;
+    static FileRemove parse(const uint8_t* data) {
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), data[0])};
+    }
+};
+
+struct ProcessRun {
+    etl::string_view command;
+    static ProcessRun parse(const uint8_t* data, size_t len) {
+        return {etl::string_view(reinterpret_cast<const char*>(data), len)};
+    }
+};
+
+struct ProcessRunAsync {
+    etl::string_view command;
+    static ProcessRunAsync parse(const uint8_t* data, size_t len) {
+        return {etl::string_view(reinterpret_cast<const char*>(data), len)};
+    }
+};
+
+struct ProcessRunResponse {
+    uint8_t status;
+    const uint8_t* stdout_data;
+    uint16_t stdout_len;
+    const uint8_t* stderr_data;
+    uint16_t stderr_len;
+    uint8_t exit_code;
+    static ProcessRunResponse parse(const uint8_t* data) {
+        ProcessRunResponse msg;
+        msg.status = data[0];
+        msg.stdout_len = rpc::read_u16_be(data + 1);
+        msg.stdout_data = data + 3;
+        msg.stderr_len = rpc::read_u16_be(data + 3 + msg.stdout_len);
+        msg.stderr_data = data + 3 + msg.stdout_len + 2;
+        msg.exit_code = data[3 + msg.stdout_len + 2 + msg.stderr_len];
+        return msg;
+    }
+};
+
+struct ProcessPollResponse {
+    uint8_t status;
+    uint8_t exit_code;
+    const uint8_t* stdout_data;
+    uint16_t stdout_len;
+    const uint8_t* stderr_data;
+    uint16_t stderr_len;
+    static ProcessPollResponse parse(const uint8_t* data) {
+        ProcessPollResponse msg;
+        msg.status = data[0];
+        msg.exit_code = data[1];
+        msg.stdout_len = rpc::read_u16_be(data + 2);
+        msg.stdout_data = data + 4;
+        msg.stderr_len = rpc::read_u16_be(data + 4 + msg.stdout_len);
+        msg.stderr_data = data + 4 + msg.stdout_len + 2;
+        return msg;
+    }
+};
+""")
 
     out.write("} // namespace payload\n")
     out.write("} // namespace rpc\n")

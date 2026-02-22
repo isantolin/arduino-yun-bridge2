@@ -698,3 +698,63 @@ name = "CMD_PROCESS_POLL_RESP"
 value = 0xA6
 category = "process"
 directions = ["linux_to_mcu"]
+
+# =============================================================================
+# Payload Schemas (Internal Metadata for Generator)
+# =============================================================================
+# Format: field_name = "TYPE" (B=uint8, H=uint16_t BE, I=uint32_t BE, Q=uint64_t BE)
+
+[payloads.VersionResponse]
+major = "B"
+minor = "B"
+
+[payloads.FreeMemoryResponse]
+value = "H"
+
+[payloads.Capabilities]
+ver = "B"
+arch = "B"
+dig = "B"
+ana = "B"
+feat = "I"
+
+[payloads.PinMode]
+pin = "B"
+mode = "B"
+
+[payloads.DigitalWrite]
+pin = "B"
+value = "B"
+
+[payloads.AnalogWrite]
+pin = "B"
+value = "B"
+
+[payloads.PinRead]
+pin = "B"
+
+[payloads.DigitalReadResponse]
+value = "B"
+
+[payloads.AnalogReadResponse]
+value = "H"
+
+[payloads.MailboxProcessed]
+message_id = "H"
+
+[payloads.MailboxAvailableResponse]
+count = "H"
+
+[payloads.ProcessKill]
+pid = "H"
+
+[payloads.ProcessPoll]
+pid = "H"
+
+[payloads.ProcessRunAsyncResponse]
+pid = "H"
+
+[payloads.HandshakeConfig]
+ack_timeout_ms = "H"
+ack_retry_limit = "B"
+response_timeout_ms = "I"

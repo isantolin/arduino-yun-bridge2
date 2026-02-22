@@ -16,8 +16,6 @@
 namespace rpc {
 namespace payload {
 
-// --- System ---
-
 struct VersionResponse {
     uint8_t major;
     uint8_t minor;
@@ -52,8 +50,6 @@ struct Capabilities {
         return msg;
     }
 };
-
-// --- GPIO ---
 
 struct PinMode {
     uint8_t pin;
@@ -106,7 +102,61 @@ struct AnalogReadResponse {
     }
 };
 
-// --- Console ---
+struct MailboxProcessed {
+    uint16_t message_id;
+    static constexpr size_t SIZE = 2;
+    static MailboxProcessed parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct MailboxAvailableResponse {
+    uint16_t count;
+    static constexpr size_t SIZE = 2;
+    static MailboxAvailableResponse parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct ProcessKill {
+    uint16_t pid;
+    static constexpr size_t SIZE = 2;
+    static ProcessKill parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct ProcessPoll {
+    uint16_t pid;
+    static constexpr size_t SIZE = 2;
+    static ProcessPoll parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct ProcessRunAsyncResponse {
+    uint16_t pid;
+    static constexpr size_t SIZE = 2;
+    static ProcessRunAsyncResponse parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
+struct HandshakeConfig {
+    uint16_t ack_timeout_ms;
+    uint8_t ack_retry_limit;
+    uint32_t response_timeout_ms;
+    static constexpr size_t SIZE = 7;
+    static HandshakeConfig parse(const uint8_t* data) {
+        HandshakeConfig msg;
+        msg.ack_timeout_ms = rpc::read_u16_be(data + 0);
+        msg.ack_retry_limit = data[2];
+        msg.response_timeout_ms = rpc::read_u32_be(data + 3);
+        return msg;
+    }
+};
+
+// --- Complex/Variable Payloads ---
 
 struct ConsoleWrite {
     const uint8_t* data;
@@ -115,8 +165,6 @@ struct ConsoleWrite {
         return {data, len};
     }
 };
-
-// --- Datastore ---
 
 struct DatastoreGet {
     etl::string_view key;
@@ -143,29 +191,11 @@ struct DatastorePut {
     }
 };
 
-// --- Mailbox ---
-
 struct MailboxPush {
     const uint8_t* data;
     uint16_t length;
     static MailboxPush parse(const uint8_t* data) {
         return {data + 2, rpc::read_u16_be(data)};
-    }
-};
-
-struct MailboxProcessed {
-    uint16_t message_id;
-    static constexpr size_t SIZE = 2;
-    static MailboxProcessed parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-};
-
-struct MailboxAvailableResponse {
-    uint16_t count;
-    static constexpr size_t SIZE = 2;
-    static MailboxAvailableResponse parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
     }
 };
 
@@ -176,8 +206,6 @@ struct MailboxReadResponse {
         return {data + 2, rpc::read_u16_be(data)};
     }
 };
-
-// --- File System ---
 
 struct FileWrite {
     etl::string_view path;
@@ -211,8 +239,6 @@ struct FileRemove {
     }
 };
 
-// --- Process ---
-
 struct ProcessRun {
     etl::string_view command;
     static ProcessRun parse(const uint8_t* data, size_t len) {
@@ -224,22 +250,6 @@ struct ProcessRunAsync {
     etl::string_view command;
     static ProcessRunAsync parse(const uint8_t* data, size_t len) {
         return {etl::string_view(reinterpret_cast<const char*>(data), len)};
-    }
-};
-
-struct ProcessKill {
-    uint16_t pid;
-    static constexpr size_t SIZE = 2;
-    static ProcessKill parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-};
-
-struct ProcessPoll {
-    uint16_t pid;
-    static constexpr size_t SIZE = 2;
-    static ProcessPoll parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
     }
 };
 
@@ -262,14 +272,6 @@ struct ProcessRunResponse {
     }
 };
 
-struct ProcessRunAsyncResponse {
-    uint16_t pid;
-    static constexpr size_t SIZE = 2;
-    static ProcessRunAsyncResponse parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-};
-
 struct ProcessPollResponse {
     uint8_t status;
     uint8_t exit_code;
@@ -288,23 +290,6 @@ struct ProcessPollResponse {
         return msg;
     }
 };
-
-// --- Handshake ---
-
-struct HandshakeConfig {
-    uint16_t ack_timeout_ms;
-    uint8_t ack_retry_limit;
-    uint32_t response_timeout_ms;
-    static constexpr size_t SIZE = 7;
-    static HandshakeConfig parse(const uint8_t* data) {
-        HandshakeConfig msg;
-        msg.ack_timeout_ms = rpc::read_u16_be(data + 0);
-        msg.ack_retry_limit = data[2];
-        msg.response_timeout_ms = rpc::read_u32_be(data + 3);
-        return msg;
-    }
-};
-
 } // namespace payload
 } // namespace rpc
 #endif

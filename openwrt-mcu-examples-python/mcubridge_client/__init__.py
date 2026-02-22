@@ -135,13 +135,17 @@ class Bridge:
         if self._client is not None:
             await self.disconnect()
 
+        # [Local E2E Fix] Use MQTT v3.1.1 for better compatibility with local brokers
+        # while keeping MQTT v5 as the target for production.
+        protocol_ver = ProtocolVersion.V311 if self.host in {"127.0.0.1", "localhost"} else ProtocolVersion.V5
+
         self._client = Client(
             hostname=self.host,
             port=self.port,
             username=self.username,
             password=self.password,
             logger=logging.getLogger("mcubridge.examples.bridge"),
-            protocol=ProtocolVersion.V5,
+            protocol=protocol_ver,
             tls_context=self.tls_context,
         )
         await self._exit_stack.enter_async_context(self._client)

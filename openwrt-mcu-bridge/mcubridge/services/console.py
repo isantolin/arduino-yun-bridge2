@@ -38,8 +38,8 @@ class ConsoleComponent:
         try:
             packet = ConsoleWritePacket.decode(payload)
             data = packet.data
-        except (ConstructError, ValueError):
-            logger.warning("Malformed CONSOLE_WRITE payload")
+        except (ConstructError, ValueError) as e:
+            logger.warning("Invalid ConsoleWrite payload: %s", e)
             return
 
         if not data:

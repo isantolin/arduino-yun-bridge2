@@ -383,7 +383,7 @@ async def test_on_serial_connected_raises_on_secret_mismatch(runtime_config: Run
     # Force unsynchronized state as the fixture sets it to True by default.
     runtime_state.link_is_synchronized = False
     runtime_state.link_sync_event.clear()
-    
+
     service = BridgeService(runtime_config, runtime_state)
 
     async def fake_sender(command_id: int, payload: bytes) -> bool:

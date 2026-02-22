@@ -94,10 +94,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
-      - name: Install arduino-cli
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install Arduino Dependencies
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sudo sh -s -- -b /usr/local/bin
-          arduino-cli version
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
       - name: Compile Examples
         run: tox -e arduino-examples
 
@@ -112,10 +115,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-python-tox
-      - name: Install arduino-cli
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install Arduino Dependencies
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sudo sh -s -- -b /usr/local/bin
-          arduino-cli version
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
       - name: Run Tests with Coverage
         run: tox -e coverage
       - name: Upload Python Coverage
@@ -138,10 +144,13 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y g++ make
           pip install gcovr
-      - name: Install arduino-cli
+      - name: Setup Arduino CLI
+        uses: arduino/setup-arduino-cli@v2
+      - name: Install Arduino Dependencies
         run: |
-          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sudo sh -s -- -b /usr/local/bin
-          arduino-cli version
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+          arduino-cli lib install PacketSerial Crypto "Embedded Template Library ETL"
       - name: Run Host Tests
         run: ./tools/ci_arduino_host_tests.sh
       - name: Run Coverage

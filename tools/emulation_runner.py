@@ -322,14 +322,14 @@ def main():
 
     socat_proc, socat_monitor = start_socat()
 
-    simavr_proc = None
+    mcu_proc = None
     daemon_proc = None
     stop_bridge = threading.Event()
 
     try:
         logger.info(f"Starting native bridge emulator: {firmware_path}...")
         # Start the native emulator. It uses stdin/stdout for serial comms.
-        simavr_proc = subprocess.Popen(
+        mcu_proc = subprocess.Popen(
             [str(firmware_path)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -337,15 +337,15 @@ def main():
             bufsize=0
         )
 
-        bridge_thread = threading.Thread(target=run_bridge, args=(simavr_proc, stop_bridge), daemon=True)
+        bridge_thread = threading.Thread(target=run_bridge, args=(mcu_proc, stop_bridge), daemon=True)
         bridge_thread.start()
 
-        # Capture simavr stderr separately to avoid mixing with bridge data
+        # Capture mcu stderr separately to avoid mixing with bridge data
         def _stderr_worker():
-            for line in iter(simavr_proc.stderr.readline, b""):
+            for line in iter(mcu_proc.stderr.readline, b""):
                 if not line:
                     break
-                logger.info(f"[simavr-err] {line.decode('utf-8', errors='ignore').strip()}")
+                logger.info(f"[mcu-err] {line.decode('utf-8', errors='ignore').strip()}")
 
         threading.Thread(target=_stderr_worker, daemon=True).start()
 
@@ -362,8 +362,8 @@ def main():
             if daemon_proc.poll() is not None:
                 logger.error(f"Daemon died with code {daemon_proc.returncode}")
                 break
-            if simavr_proc.poll() is not None:
-                logger.error("SimAVR died unexpectedly")
+            if mcu_proc.poll() is not None:
+                logger.error("MCU Emulator died unexpectedly")
                 break
             if log_monitor.has_error():
                 logger.error(f"Error in logs: {log_monitor.errors_detected[0]}")
@@ -395,7 +395,7 @@ def main():
             log_monitor.stop()
         socat_monitor.stop()
         cleanup_process(daemon_proc, "daemon")
-        cleanup_process(simavr_proc, "simavr")
+        cleanup_process(mcu_proc, "mcu")
         cleanup_process(socat_proc, "socat")
         if 'uci_stub_dir' in locals():
             uci_stub_dir.cleanup()

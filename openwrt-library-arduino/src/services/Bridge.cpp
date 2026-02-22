@@ -697,7 +697,7 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
       if (payload_length >= 1 && _datastore_get_handler.is_valid()) {
         auto msg = rpc::payload::DatastoreGetResponse::parse(payload_data);
         const char* key = DataStore._popPendingDatastoreKey();
-        _datastore_get_handler(key, msg.value, msg.value_len);
+        _datastore_get_handler(etl::string_view(key), etl::span<const uint8_t>(msg.value, msg.value_len));
       }
   }
 #else

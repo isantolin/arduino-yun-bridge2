@@ -207,7 +207,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
   using StatusHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
 
   #if BRIDGE_ENABLE_DATASTORE
-  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
+  using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
   #endif
 
   #if BRIDGE_ENABLE_MAILBOX
@@ -362,7 +362,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
   StatusHandler _status_handler;
 
   #if BRIDGE_ENABLE_DATASTORE
-  etl::delegate<void(const char*, const uint8_t*, uint16_t)> _datastore_get_handler;
+  DataStoreGetHandler _datastore_get_handler;
   #endif
 
   #if BRIDGE_ENABLE_MAILBOX
@@ -506,7 +506,7 @@ class DataStoreClass {
   friend class bridge::test::DataStoreTestAccessor;
   #endif
  public:
-  using DataStoreGetHandler = etl::delegate<void(const char*, const uint8_t*, uint16_t)>;
+  using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
 
   DataStoreClass();
   void reset();

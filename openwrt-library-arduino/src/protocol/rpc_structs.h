@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <etl/string_view.h>
 #include "rpc_protocol.h"
 #include "rpc_frame.h"
 
@@ -118,10 +119,9 @@ struct ConsoleWrite {
 // --- Datastore ---
 
 struct DatastoreGet {
-    const char* key;
-    uint8_t key_len;
+    etl::string_view key;
     static DatastoreGet parse(const uint8_t* data) {
-        return {reinterpret_cast<const char*>(data + 1), data[0]};
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), data[0])};
     }
 };
 
@@ -134,13 +134,12 @@ struct DatastoreGetResponse {
 };
 
 struct DatastorePut {
-    const char* key;
-    uint8_t key_len;
+    etl::string_view key;
     const uint8_t* value;
     uint8_t value_len;
     static DatastorePut parse(const uint8_t* data) {
         uint8_t k_len = data[0];
-        return {reinterpret_cast<const char*>(data + 1), k_len, data + 1 + k_len + 1, data[1 + k_len]};
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), k_len), data + 1 + k_len + 1, data[1 + k_len]};
     }
 };
 
@@ -181,21 +180,19 @@ struct MailboxReadResponse {
 // --- File System ---
 
 struct FileWrite {
-    const char* path;
-    uint8_t path_len;
+    etl::string_view path;
     const uint8_t* data;
     uint16_t data_len;
     static FileWrite parse(const uint8_t* data) {
         uint8_t p_len = data[0];
-        return {reinterpret_cast<const char*>(data + 1), p_len, data + 1 + p_len + 2, rpc::read_u16_be(data + 1 + p_len)};
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), p_len), data + 1 + p_len + 2, rpc::read_u16_be(data + 1 + p_len)};
     }
 };
 
 struct FileRead {
-    const char* path;
-    uint8_t path_len;
+    etl::string_view path;
     static FileRead parse(const uint8_t* data) {
-        return {reinterpret_cast<const char*>(data + 1), data[0]};
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), data[0])};
     }
 };
 
@@ -208,28 +205,25 @@ struct FileReadResponse {
 };
 
 struct FileRemove {
-    const char* path;
-    uint8_t path_len;
+    etl::string_view path;
     static FileRemove parse(const uint8_t* data) {
-        return {reinterpret_cast<const char*>(data + 1), data[0]};
+        return {etl::string_view(reinterpret_cast<const char*>(data + 1), data[0])};
     }
 };
 
 // --- Process ---
 
 struct ProcessRun {
-    const char* command;
-    size_t length;
+    etl::string_view command;
     static ProcessRun parse(const uint8_t* data, size_t len) {
-        return {reinterpret_cast<const char*>(data), len};
+        return {etl::string_view(reinterpret_cast<const char*>(data), len)};
     }
 };
 
 struct ProcessRunAsync {
-    const char* command;
-    size_t length;
+    etl::string_view command;
     static ProcessRunAsync parse(const uint8_t* data, size_t len) {
-        return {reinterpret_cast<const char*>(data), len};
+        return {etl::string_view(reinterpret_cast<const char*>(data), len)};
     }
 };
 

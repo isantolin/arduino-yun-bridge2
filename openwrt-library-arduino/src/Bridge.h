@@ -76,6 +76,7 @@
 #include "etl/delegate.h"
 #include "etl/optional.h"
 #include "etl/string_view.h"
+#include "etl/span.h"
 #include "etl/observer.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions

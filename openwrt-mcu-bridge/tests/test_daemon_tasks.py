@@ -49,8 +49,11 @@ async def test_serial_reader_task_processes_frame(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
+    async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
+        transport.begin_reset()
+
     with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", new_callable=AsyncMock):
+         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr):
         task = asyncio.create_task(transport.run())
 
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
@@ -67,14 +70,11 @@ async def test_serial_reader_task_processes_frame(
         assert received_payload == payload
 
         mock_transport.is_closing.return_value = True
-        # Break the run loop
-        with patch("asyncio.sleep", side_effect=RuntimeError("Stop")):
-            try:
-                await task
-            except RuntimeError:
-                pass
-            except asyncio.CancelledError:
-                pass
+        transport._stop_event.set()
+        try:
+            await asyncio.wait_for(task, timeout=0.5)
+        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+            pass
 
 
 @pytest.mark.asyncio
@@ -103,8 +103,11 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
+    async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
+        transport.begin_reset()
+
     with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", new_callable=AsyncMock):
+         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr):
         task = asyncio.create_task(transport.run())
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -118,11 +121,11 @@ async def test_serial_reader_task_emits_crc_mismatch(
 
         # Stop
         mock_transport.is_closing.return_value = True
-        with patch("asyncio.sleep", side_effect=RuntimeError("Stop")):
-            try:
-                await task
-            except RuntimeError:
-                pass
+        transport._stop_event.set()
+        try:
+            await asyncio.wait_for(task, timeout=0.5)
+        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+            pass
 
 
 @pytest.mark.asyncio
@@ -146,8 +149,11 @@ async def test_serial_reader_task_limits_packet_size(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
+    async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
+        transport.begin_reset()
+
     with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", new_callable=AsyncMock):
+         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr):
         task = asyncio.create_task(transport.run())
         await asyncio.wait_for(service.serial_connected.wait(), timeout=1)
 
@@ -158,11 +164,11 @@ async def test_serial_reader_task_limits_packet_size(
         assert state.serial_decode_errors >= 1
 
         mock_transport.is_closing.return_value = True
-        with patch("asyncio.sleep", side_effect=RuntimeError("Stop")):
-            try:
-                await task
-            except RuntimeError:
-                pass
+        transport._stop_event.set()
+        try:
+            await asyncio.wait_for(task, timeout=0.5)
+        except (asyncio.TimeoutError, asyncio.CancelledError, RuntimeError):
+            pass
 
 
 @pytest.mark.asyncio
@@ -183,8 +189,11 @@ async def test_serial_reader_task_propagates_handshake_fatal(
 
     transport = SerialTransport(runtime_config, state, cast(Any, service))
 
+    async def _mock_toggle_dtr(_self: Any, _loop: Any) -> None:
+        transport.begin_reset()
+
     with patch("mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection", _fake_create), \
-         patch.object(SerialTransport, "_toggle_dtr", new_callable=AsyncMock):
+         patch.object(SerialTransport, "_toggle_dtr", _mock_toggle_dtr):
         task = asyncio.create_task(transport.run())
 
         try:

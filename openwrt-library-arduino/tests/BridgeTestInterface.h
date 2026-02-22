@@ -124,7 +124,6 @@ class TestAccessor {
   void handleMalformed(uint16_t cmd)                    { _bridge._handleMalformed(cmd); }
   void handleSystemCommand(const rpc::Frame& f)          { _bridge._handleSystemCommand(f); }
   void handleGpioCommand(const rpc::Frame& f)            { _bridge._handleGpioCommand(f); }
-  void handleConsoleCommand(const rpc::Frame& f)         { _bridge._handleConsoleCommand(f); }
   void computeHandshakeTag(const uint8_t* n, size_t nl,
                            uint8_t* out)                { _bridge._computeHandshakeTag(n, nl, out); }
   void flushPendingTxQueue()                            { _bridge._flushPendingTxQueue(); }

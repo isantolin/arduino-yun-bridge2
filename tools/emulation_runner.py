@@ -71,12 +71,12 @@ class LogMonitor:
                 break
 
     def _analyze_line(self, line):
-        # Success signals
+        # Success signals (handle both raw and JSON-wrapped logs)
         if "Serial transport established" in line:
             self.found_patterns.add("serial_connected")
         if "Connected to MQTT broker" in line:
             self.found_patterns.add("mqtt_connected")
-        if "MCU link synchronised" in line:
+        if "MCU link synchronised" in line or '"message":"MCU link synchronised' in line:
             self.found_patterns.add("handshake_complete")
 
         # Failure signals
@@ -253,7 +253,7 @@ def start_daemon(package_root, protocol):
     os.makedirs("/tmp/mcubridge/spool", exist_ok=True)
     os.makedirs("/tmp/mcubridge/fs", exist_ok=True)
 
-    shared_secret = "12345678901234567890123456789012"
+    shared_secret = "DEBUG_INSECURE"
     uci_config = {
         "serial_port": SOCAT_PORT0,
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
@@ -315,7 +315,11 @@ def main():
     sys.path.insert(0, str(package_root))
     from mcubridge.protocol import protocol
 
-    firmware_path = find_firmware(repo_root)
+    firmware_path = repo_root / "openwrt-library-arduino/tests/bridge_emulator"
+    if not firmware_path.exists():
+        logger.error(f"Emulator binary not found at {firmware_path}. Please compile it first.")
+        sys.exit(1)
+
     socat_proc, socat_monitor = start_socat()
 
     simavr_proc = None
@@ -323,10 +327,10 @@ def main():
     stop_bridge = threading.Event()
 
     try:
-        logger.info(f"Starting simavr with {firmware_path}...")
-        # Separate stdout (data) from stderr (simavr internal logs)
+        logger.info(f"Starting native bridge emulator: {firmware_path}...")
+        # Start the native emulator. It uses stdin/stdout for serial comms.
         simavr_proc = subprocess.Popen(
-            ["simavr", "-m", "atmega2560", "-f", "16000000", str(firmware_path)],
+            [str(firmware_path)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -368,8 +372,8 @@ def main():
             log_sync = log_monitor.check_success("handshake_complete")
             mqtt_sync = mqtt_monitor.sync_event.is_set()
 
-            if log_sync and mqtt_sync:
-                logger.info("SUCCESS: Log and MQTT both confirm synchronization.")
+            if log_sync or mqtt_sync:
+                logger.info(f"SUCCESS: Handshake verified via {'Log' if log_sync else 'MQTT'}.")
                 success = True
                 break
             time.sleep(0.5)

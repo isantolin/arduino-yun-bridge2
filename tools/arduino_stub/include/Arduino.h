@@ -42,7 +42,10 @@ inline long round(T x) {
 // Stub functions
 // Allow host tests to override timing behavior (e.g., time travel) by defining
 // ARDUINO_STUB_CUSTOM_MILLIS before including Arduino headers.
-#ifndef ARDUINO_STUB_CUSTOM_MILLIS
+#ifdef ARDUINO_STUB_CUSTOM_MILLIS
+unsigned long millis();
+void delay(unsigned long);
+#else
 inline unsigned long millis() { return 0; }
 inline void delay(unsigned long) {}
 #endif
@@ -150,6 +153,8 @@ public:
     virtual void flush() = 0;
 };
 
+extern Stream* g_arduino_stream_delegate;
+
 // HardwareSerial stub
 class HardwareSerial : public Stream {
 public:
@@ -159,11 +164,21 @@ public:
     // Fix: Unhide base class write(const uint8_t*, size_t)
     using Print::write;
     
-    size_t write(uint8_t) override { return 1; }
-    int available() override { return 0; }
-    int read() override { return -1; }
-    int peek() override { return -1; }
-    void flush() override {}
+    size_t write(uint8_t c) override { 
+        return g_arduino_stream_delegate ? g_arduino_stream_delegate->write(c) : 1; 
+    }
+    int available() override { 
+        return g_arduino_stream_delegate ? g_arduino_stream_delegate->available() : 0; 
+    }
+    int read() override { 
+        return g_arduino_stream_delegate ? g_arduino_stream_delegate->read() : -1; 
+    }
+    int peek() override { 
+        return g_arduino_stream_delegate ? g_arduino_stream_delegate->peek() : -1; 
+    }
+    void flush() override {
+        if (g_arduino_stream_delegate) g_arduino_stream_delegate->flush();
+    }
 };
 
 extern HardwareSerial Serial;

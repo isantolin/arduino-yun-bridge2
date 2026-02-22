@@ -205,13 +205,13 @@ def main():
 
     # 3. Setup Virtual Serial Port with direct SimAVR execution
     # This creates a PTY at SOCAT_PORT0 and connects it directly to simavr's stdio.
-    # We use 'raw' instead of 'pty' in EXEC to avoid TTY line discipline on binary data.
+    # We use 'pty,raw,echo=0' for both ends to ensure transparent binary transfer.
     logger.info("Starting socat with embedded simavr...")
     simavr_cmd_str = f"simavr -m atmega2560 -f 16000000 {firmware_path}"
     socat_cmd = [
         "socat", "-d", "-d",
         f"pty,raw,echo=0,link={SOCAT_PORT0}",
-        f"EXEC:\"{simavr_cmd_str}\",raw"
+        f"EXEC:\"{simavr_cmd_str}\",pty,raw,echo=0"
     ]
     socat_proc = subprocess.Popen(socat_cmd, stderr=subprocess.PIPE, text=True)
     socat_monitor = LogMonitor(socat_proc, "socat")

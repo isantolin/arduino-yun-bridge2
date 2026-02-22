@@ -166,7 +166,7 @@ class ProcessComponent:
                 # [SIL-2] Use structured packet
                 response = ProcessRunAsyncResponsePacket(pid=pid).encode()
                 await self.ctx.send_frame(Command.CMD_PROCESS_RUN_ASYNC_RESP.value, response)
-                
+
                 topic = topic_path(
                     self.state.mqtt_topic_prefix,
                     Topic.SHELL,

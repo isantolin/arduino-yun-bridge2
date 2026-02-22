@@ -418,7 +418,7 @@ def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
                 "offset": offset
             })
             offset += size
-        
+
         out.write(f"struct {name} {{\n")
         for f in struct_fields:
             out.write(f"    {f['type']} {f['name']};\n")
@@ -473,7 +473,11 @@ struct DatastorePut {
     uint8_t value_len;
     static DatastorePut parse(const uint8_t* data) {
         uint8_t k_len = data[0];
-        return {etl::string_view(reinterpret_cast<const char*>(data + 1), k_len), data + 1 + k_len + 1, data[1 + k_len]};
+        return {
+            etl::string_view(reinterpret_cast<const char*>(data + 1), k_len),
+            data + 1 + k_len + 1,
+            data[1 + k_len]
+        };
     }
 };
 
@@ -499,7 +503,11 @@ struct FileWrite {
     uint16_t data_len;
     static FileWrite parse(const uint8_t* data) {
         uint8_t p_len = data[0];
-        return {etl::string_view(reinterpret_cast<const char*>(data + 1), p_len), data + 1 + p_len + 2, rpc::read_u16_be(data + 1 + p_len)};
+        return {
+            etl::string_view(reinterpret_cast<const char*>(data + 1), p_len),
+            data + 1 + p_len + 2,
+            rpc::read_u16_be(data + 1 + p_len)
+        };
     }
 };
 

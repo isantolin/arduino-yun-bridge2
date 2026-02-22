@@ -11,7 +11,7 @@ from pathlib import Path, PurePosixPath
 from aiomqtt.message import Message
 from construct import ConstructError
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import MAX_PAYLOAD_SIZE, Command, FileAction, Status
+from mcubridge.protocol.protocol import Command, FileAction, Status
 
 from ..config.const import (
     FILE_LARGE_WARNING_BYTES,

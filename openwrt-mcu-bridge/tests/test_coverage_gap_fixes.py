@@ -9,6 +9,7 @@ from unittest import mock
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiomqtt
+import msgspec
 import pytest
 import tenacity
 from construct import ConstructError
@@ -679,8 +680,8 @@ def test_settings_validation_errors(monkeypatch: pytest.MonkeyPatch):
     # Test short secret
     bad_cfg = cfg_dict.copy()
     bad_cfg["serial_shared_secret"] = b"short"
-    with pytest.raises(ValueError, match="at least 8 bytes"):
-        RuntimeConfig(**bad_cfg)
+    with pytest.raises(msgspec.ValidationError):
+        msgspec.convert(bad_cfg, RuntimeConfig)
 
     # Test non-tmp fs root
     bad_cfg = cfg_dict.copy()

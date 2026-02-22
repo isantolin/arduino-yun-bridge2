@@ -35,7 +35,11 @@ LIB_PATH="$PWD/openwrt-library-arduino"
 TARGET_BOARDS=("arduino:avr:yun" "arduino:avr:uno" "arduino:avr:mega")
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
-shift # Remove first arg (output dir)
+
+# Only shift if an argument was provided to avoid 'shift: count must be <= $#' error
+if [ "$#" -gt 0 ]; then
+    shift
+fi
 
 # All remaining arguments are treated as extra build properties
 EXTRA_PROPS=()

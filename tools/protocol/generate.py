@@ -441,7 +441,7 @@ def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
         out.write("    }\n")
 
         # Encode method
-        out.write(f"    void encode(uint8_t* data) const {{\n")
+        out.write("    void encode(uint8_t* data) const {{\n")
         for f in struct_fields:
             if f["read_func"]:
                 # Assume write func name matches read func (read_u16_be -> write_u16_be)

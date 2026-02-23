@@ -6,7 +6,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from tools.protocol.generate import generate_cpp, generate_python  # noqa: E402
+from tools.protocol.generate import CppGenerator, ProtocolSpec, PythonGenerator  # noqa: E402
 
 
 def test_protocol_python_is_up_to_date():
@@ -14,11 +14,10 @@ def test_protocol_python_is_up_to_date():
     spec_path = PROJECT_ROOT / "tools/protocol/spec.toml"
     py_path = PROJECT_ROOT / "openwrt-mcu-bridge/mcubridge/protocol/protocol.py"
 
-    with open(spec_path, "rb") as f:
-        spec = tomllib.load(f)
+    spec = ProtocolSpec.load(spec_path)
 
     output = io.StringIO()
-    generate_python(spec, output)
+    PythonGenerator().generate(spec, output)
     generated_content = output.getvalue()
 
     with open(py_path, "r") as f:
@@ -34,11 +33,10 @@ def test_protocol_cpp_is_up_to_date():
     spec_path = PROJECT_ROOT / "tools/protocol/spec.toml"
     cpp_path = PROJECT_ROOT / "openwrt-library-arduino/src/protocol/rpc_protocol.h"
 
-    with open(spec_path, "rb") as f:
-        spec = tomllib.load(f)
+    spec = ProtocolSpec.load(spec_path)
 
     output = io.StringIO()
-    generate_cpp(spec, output)
+    CppGenerator().generate_header(spec, output)
     generated_content = output.getvalue()
 
     with open(cpp_path, "r") as f:

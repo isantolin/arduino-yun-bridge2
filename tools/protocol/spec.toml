@@ -758,3 +758,6 @@ pid = "H"
 ack_timeout_ms = "H"
 ack_retry_limit = "B"
 response_timeout_ms = "I"
+
+[payloads.SetBaudratePacket]
+baudrate = "I"

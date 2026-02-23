@@ -112,6 +112,44 @@ BridgeClass::BridgeClass(Stream& arg_stream)
     g_bridge_instance = this;
 }
 
+// [SIL-2] BridgeWriter Implementation
+// Centralizes chunky transmissions with back-pressure support.
+bool BridgeWriter::send(rpc::CommandId command_id,
+                        const uint8_t* header, size_t header_len, 
+                        const uint8_t* data, size_t data_len) {
+  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return false;
+  
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
+  const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
+  size_t offset = 0;
+
+  if (data_len == 0) {
+     if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
+     while (!Bridge.sendFrame(command_id, buffer.data(), header_len)) {
+       if (!Bridge.isSynchronized()) return false;
+       Bridge.process();
+     }
+     return true;
+  }
+
+  while (offset < data_len) {
+    size_t bytes_remaining = data_len - offset;
+    size_t chunk_size = (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
+
+    if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
+    if (data) etl::copy_n(data + offset, chunk_size, buffer.begin() + header_len);
+
+    size_t payload_size = header_len + chunk_size;
+
+    while (!Bridge.sendFrame(command_id, buffer.data(), payload_size)) {
+      if (!Bridge.isSynchronized()) return false;
+      Bridge.process();
+    }
+    offset += chunk_size;
+  }
+  return true;
+}
+
 void BridgeClass::begin(
     unsigned long arg_baudrate, etl::string_view arg_secret, size_t arg_secret_len) {
   
@@ -153,7 +191,7 @@ void BridgeClass::begin(
 
   // [SIL-2] USB Serial Initialization Fix
   // On ATmega32U4 (Yun/Leonardo), Serial is USB CDC and acts as a Stream,
-  // bypassing the _hardware_serial check below. We must explicitly initialize it.
+  // bypassing the HardwareSerial check. We must explicitly initialize it.
   #if BRIDGE_USE_USB_SERIAL
     Serial.begin(arg_baudrate);
   #endif
@@ -303,188 +341,7 @@ void BridgeClass::process() {
 }
 
 void BridgeClass::flushStream() {
-  if (_hardware_serial != nullptr) {
-      _hardware_serial->flush();
-  } else {
-      _stream.flush();
-  }
-}
-
-void BridgeClass::_handleSystemCommand(const rpc::Frame& frame) {
-  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
-  const size_t payload_length = frame.header.payload_length;
-  const uint8_t* payload_data = frame.payload.data();
-
-  switch (command) {
-    case rpc::CommandId::CMD_GET_VERSION:
-      if (payload_length == 0) {
-        rpc::payload::VersionResponse msg{kDefaultFirmwareVersionMajor, kDefaultFirmwareVersionMinor};
-        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, reinterpret_cast<const uint8_t*>(&msg), rpc::payload::VersionResponse::SIZE);
-      }
-      break;
-    case rpc::CommandId::CMD_GET_FREE_MEMORY:
-      if (payload_length == 0) {
-        uint16_t free_mem = getFreeMemory();
-        etl::array<uint8_t, rpc::payload::FreeMemoryResponse::SIZE> resp_payload;
-        rpc::write_u16_be(resp_payload.data(), free_mem);
-        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload.data(), resp_payload.size());
-      }
-      break;
-    case rpc::CommandId::CMD_GET_CAPABILITIES:
-      if (payload_length == 0) {
-        // [SIL-2] Construct Capabilities response
-        etl::array<uint8_t, rpc::payload::Capabilities::SIZE> caps;
-        caps[0] = rpc::PROTOCOL_VERSION;
-        
-        uint8_t arch = 0;
-        #if defined(ARDUINO_ARCH_AVR)
-        arch = rpc::RPC_ARCH_AVR;
-        #elif defined(ARDUINO_ARCH_ESP32)
-        arch = rpc::RPC_ARCH_ESP32;
-        #elif defined(ARDUINO_ARCH_ESP8266)
-        arch = rpc::RPC_ARCH_ESP8266;
-        #elif defined(ARDUINO_ARCH_SAMD)
-        arch = rpc::RPC_ARCH_SAMD;
-        #elif defined(ARDUINO_ARCH_SAM)
-        arch = rpc::RPC_ARCH_SAM;
-        #elif defined(ARDUINO_ARCH_RP2040)
-        arch = rpc::RPC_ARCH_RP2040;
-        #endif
-        caps[1] = arch;
-
-        #ifdef NUM_DIGITAL_PINS
-        caps[2] = static_cast<uint8_t>(NUM_DIGITAL_PINS);
-        #else
-        caps[2] = 0;
-        #endif
-
-        #ifdef NUM_ANALOG_INPUTS
-        caps[3] = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
-        #else
-        caps[3] = 0;
-        #endif
-
-        uint32_t features = 0;
-        if (kBridgeEnableWatchdog) features |= rpc::RPC_CAPABILITY_WATCHDOG;
-        features |= rpc::RPC_CAPABILITY_RLE; 
-        #if BRIDGE_DEBUG_FRAMES
-        features |= rpc::RPC_CAPABILITY_DEBUG_FRAMES;
-        #endif
-        #if BRIDGE_DEBUG_IO
-        features |= rpc::RPC_CAPABILITY_DEBUG_IO;
-        #endif
-
-        #if defined(E2END) && (E2END > 0)
-        features |= rpc::RPC_CAPABILITY_EEPROM;
-        #endif
-
-        #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
-            defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)
-        features |= rpc::RPC_CAPABILITY_DAC;
-        #endif
-
-        #if defined(HAVE_HWSERIAL1)
-        features |= rpc::RPC_CAPABILITY_HW_SERIAL1;
-        #endif
-
-        #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-        features |= rpc::RPC_CAPABILITY_FPU;
-        #endif
-
-        #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || \
-            defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
-            defined(ARDUINO_ARCH_RP2040)
-        features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
-        #endif
-
-        #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-        features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
-        #endif
-
-        #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
-            defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-        features |= rpc::RPC_CAPABILITY_I2C;
-        #endif
-
-        rpc::write_u32_be(&caps[4], features);
-        
-        (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
-      }
-      break;
-    case rpc::CommandId::CMD_SET_BAUDRATE:
-      if (payload_length == 4) {
-        uint32_t new_baud = rpc::read_u32_be(payload_data);
-        (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
-        flushStream();
-        
-        _pending_baudrate = new_baud;
-        _timer_service.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, BRIDGE_BAUDRATE_SETTLE_MS);
-        _timer_service.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE, false);
-      }
-      break;
-    case rpc::CommandId::CMD_LINK_SYNC:
-      {
-        const size_t nonce_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
-        const bool has_secret = !_shared_secret.empty();
-        const size_t expected_payload = nonce_length + (has_secret ? kHandshakeTagSize : 0);
-
-        if (payload_length != expected_payload) {
-          _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-          break;
-        }
-        
-        // [MIL-SPEC] Mutual Authentication: Verify MPU identity if secret is set
-        if (has_secret) {
-          bool bypass = (_shared_secret.size() == 14 && memcmp(_shared_secret.data(), "DEBUG_INSECURE", 14) == 0);
-          
-          if (!bypass) {
-            etl::array<uint8_t, kHandshakeTagSize> expected_tag;
-            _computeHandshakeTag(payload_data, nonce_length, expected_tag.data());
-            
-            if (!rpc::security::timing_safe_equal(payload_data + nonce_length, expected_tag.data(), kHandshakeTagSize)) {
-              _emitStatus(rpc::StatusCode::STATUS_ERROR, F("Mutual Auth Failed"));
-              enterSafeState();
-              _fsm.handshakeFailed(); // Force into FAULT state via FSM
-              break;
-            }
-          }
-        }
-
-        enterSafeState();
-        Console.begin();
-        
-        const size_t response_length = nonce_length + (has_secret ? kHandshakeTagSize : 0);
-        etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer; // [RAM OPT] Stack allocation
-        
-        if (payload_data) {
-          etl::copy_n(payload_data, nonce_length, buffer.begin());
-          if (has_secret) {
-            etl::array<uint8_t, kHandshakeTagSize> tag;
-            _computeHandshakeTag(payload_data, nonce_length, tag.data());
-            etl::copy_n(tag.begin(), kHandshakeTagSize, buffer.begin() + nonce_length);
-          }
-          (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, buffer.data(), response_length);
-          // [SIL-2] Handshake complete -> Transition to Idle via FSM
-          _fsm.handshakeComplete();
-          
-          // [SIL-2] Notify Observers
-          notify_observers([](BridgeObserver& obs) { obs.onBridgeSynchronized(); });
-        }
-      }
-      break;
-    case rpc::CommandId::CMD_LINK_RESET:
-      if (payload_length == 0 || payload_length == rpc::RPC_HANDSHAKE_CONFIG_SIZE) {
-        enterSafeState();
-        if (payload_length == rpc::payload::HandshakeConfig::SIZE) {
-            _applyTimingConfig(payload_data, payload_length);
-        }
-        Console.begin();
-        (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
-      }
-      break;
-    default:
-      break;
-  }
+    _stream.flush();
 }
 
 // [SIL-2] Pin Validation Helper
@@ -494,72 +351,6 @@ static inline bool _isValidPin(uint8_t pin) {
 #else
   return true;
 #endif
-}
-
-void BridgeClass::_handleGpioCommand(const rpc::Frame& frame) {
-  const rpc::CommandId command = static_cast<rpc::CommandId>(frame.header.command_id);
-  const size_t payload_length = frame.header.payload_length;
-  const uint8_t* payload_data = frame.payload.data();
-
-  if (!payload_data && payload_length > 0) return;
-
-  switch (command) {
-    case rpc::CommandId::CMD_SET_PIN_MODE:
-      if (payload_length == rpc::payload::PinMode::SIZE) {
-        auto msg = rpc::payload::PinMode::parse(payload_data);
-        if (!_isValidPin(msg.pin)) return;
-        ::pinMode(msg.pin, msg.mode);
-      }
-      break;
-    case rpc::CommandId::CMD_DIGITAL_WRITE:
-      if (payload_length == rpc::payload::DigitalWrite::SIZE) {
-        auto msg = rpc::payload::DigitalWrite::parse(payload_data);
-        if (!_isValidPin(msg.pin)) return;
-        ::digitalWrite(msg.pin, msg.value ? HIGH : LOW);
-      }
-      break;
-    case rpc::CommandId::CMD_ANALOG_WRITE:
-      if (payload_length == rpc::payload::AnalogWrite::SIZE) {
-        auto msg = rpc::payload::AnalogWrite::parse(payload_data);
-        if (!_isValidPin(msg.pin)) return;
-        ::analogWrite(msg.pin, msg.value);
-      }
-      break;
-    case rpc::CommandId::CMD_DIGITAL_READ:
-      if (payload_length == rpc::payload::PinRead::SIZE) {
-        auto msg = rpc::payload::PinRead::parse(payload_data);
-        if (!_isValidPin(msg.pin)) {
-          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-          return;
-        }
-        int16_t value = ::digitalRead(msg.pin);
-        rpc::payload::DigitalReadResponse resp{static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
-        (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, reinterpret_cast<const uint8_t*>(&resp), rpc::payload::DigitalReadResponse::SIZE);
-      }
-      break;
-    case rpc::CommandId::CMD_ANALOG_READ:
-      if (payload_length == rpc::payload::PinRead::SIZE) {
-        auto msg = rpc::payload::PinRead::parse(payload_data);
-#ifdef NUM_ANALOG_INPUTS
-        if (msg.pin >= NUM_ANALOG_INPUTS) {
-          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-          return;
-        }
-#else
-        if (!_isValidPin(msg.pin)) {
-             (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
-             return;
-        }
-#endif
-        int16_t value = ::analogRead(msg.pin);
-        etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> resp_payload;
-        rpc::write_u16_be(resp_payload.data(), static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
-        (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload.data(), resp_payload.size());
-      }
-      break;
-    default:
-      break;
-  }
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
@@ -643,19 +434,165 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
-  
-  if (command == rpc::CommandId::CMD_LINK_RESET) {
-    if (ctx.is_duplicate) {
-      _sendAckAndFlush(ctx.raw_command);
-      return;
-    }
-    _sendAckAndFlush(ctx.raw_command);
-  }
-  
-  _handleSystemCommand(*ctx.frame);
-  
-  if (command == rpc::CommandId::CMD_LINK_SYNC) {
-    // Note: LINK_SYNC sends its own response, no ACK needed
+  const rpc::Frame& frame = *ctx.frame;
+
+  switch (command) {
+    case rpc::CommandId::CMD_GET_VERSION:
+      if (frame.header.payload_length == 0) {
+        rpc::payload::VersionResponse msg{kDefaultFirmwareVersionMajor, kDefaultFirmwareVersionMinor};
+        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, reinterpret_cast<const uint8_t*>(&msg), rpc::payload::VersionResponse::SIZE);
+      }
+      break;
+    case rpc::CommandId::CMD_GET_FREE_MEMORY:
+      if (frame.header.payload_length == 0) {
+        uint16_t free_mem = getFreeMemory();
+        etl::array<uint8_t, rpc::payload::FreeMemoryResponse::SIZE> resp_payload;
+        rpc::write_u16_be(resp_payload.data(), free_mem);
+        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload.data(), resp_payload.size());
+      }
+      break;
+    case rpc::CommandId::CMD_GET_CAPABILITIES:
+      if (frame.header.payload_length == 0) {
+        etl::array<uint8_t, rpc::payload::Capabilities::SIZE> caps;
+        caps[0] = rpc::PROTOCOL_VERSION;
+        
+        uint8_t arch = 0;
+        #if defined(ARDUINO_ARCH_AVR)
+        arch = rpc::RPC_ARCH_AVR;
+        #elif defined(ARDUINO_ARCH_ESP32)
+        arch = rpc::RPC_ARCH_ESP32;
+        #elif defined(ARDUINO_ARCH_ESP8266)
+        arch = rpc::RPC_ARCH_ESP8266;
+        #elif defined(ARDUINO_ARCH_SAMD)
+        arch = rpc::RPC_ARCH_SAMD;
+        #elif defined(ARDUINO_ARCH_SAM)
+        arch = rpc::RPC_ARCH_SAM;
+        #elif defined(ARDUINO_ARCH_RP2040)
+        arch = rpc::RPC_ARCH_RP2040;
+        #endif
+        caps[1] = arch;
+
+        #ifdef NUM_DIGITAL_PINS
+        caps[2] = static_cast<uint8_t>(NUM_DIGITAL_PINS);
+        #else
+        caps[2] = 0;
+        #endif
+
+        #ifdef NUM_ANALOG_INPUTS
+        caps[3] = static_cast<uint8_t>(NUM_ANALOG_INPUTS);
+        #else
+        caps[3] = 0;
+        #endif
+
+        uint32_t features = 0;
+        if (kBridgeEnableWatchdog) features |= rpc::RPC_CAPABILITY_WATCHDOG;
+        features |= rpc::RPC_CAPABILITY_RLE; 
+        #if BRIDGE_DEBUG_FRAMES
+        features |= rpc::RPC_CAPABILITY_DEBUG_FRAMES;
+        #endif
+        #if BRIDGE_DEBUG_IO
+        features |= rpc::RPC_CAPABILITY_DEBUG_IO;
+        #endif
+        #if defined(E2END) && (E2END > 0)
+        features |= rpc::RPC_CAPABILITY_EEPROM;
+        #endif
+        #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
+            defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)
+        features |= rpc::RPC_CAPABILITY_DAC;
+        #endif
+        #if defined(HAVE_HWSERIAL1)
+        features |= rpc::RPC_CAPABILITY_HW_SERIAL1;
+        #endif
+        #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
+        features |= rpc::RPC_CAPABILITY_FPU;
+        #endif
+        #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || \
+            defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
+            defined(ARDUINO_ARCH_RP2040)
+        features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
+        #endif
+        #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
+        features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
+        #endif
+        #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
+            defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+        features |= rpc::RPC_CAPABILITY_I2C;
+        #endif
+
+        rpc::write_u32_be(&caps[4], features);
+        (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
+      }
+      break;
+    case rpc::CommandId::CMD_SET_BAUDRATE:
+      {
+        auto msg = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(frame);
+        if (msg) {
+          (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, nullptr, 0);
+          flushStream();
+          _pending_baudrate = msg->baudrate;
+          _timer_service.set_period(bridge::scheduler::TIMER_BAUDRATE_CHANGE, BRIDGE_BAUDRATE_SETTLE_MS);
+          _timer_service.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE, false);
+        }
+      }
+      break;
+    case rpc::CommandId::CMD_LINK_SYNC:
+      {
+        const size_t nonce_length = rpc::RPC_HANDSHAKE_NONCE_LENGTH;
+        const bool has_secret = !_shared_secret.empty();
+        const size_t expected_payload = nonce_length + (has_secret ? kHandshakeTagSize : 0);
+
+        if (frame.header.payload_length != expected_payload) {
+          _emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+          break;
+        }
+        
+        const uint8_t* payload_data = frame.payload.data();
+        if (has_secret) {
+          bool bypass = (_shared_secret.size() == 14 && memcmp(_shared_secret.data(), "DEBUG_INSECURE", 14) == 0);
+          if (!bypass) {
+            etl::array<uint8_t, kHandshakeTagSize> expected_tag;
+            _computeHandshakeTag(payload_data, nonce_length, expected_tag.data());
+            if (!rpc::security::timing_safe_equal(payload_data + nonce_length, expected_tag.data(), kHandshakeTagSize)) {
+              _emitStatus(rpc::StatusCode::STATUS_ERROR, F("Mutual Auth Failed"));
+              enterSafeState();
+              _fsm.handshakeFailed();
+              break;
+            }
+          }
+        }
+
+        enterSafeState();
+        Console.begin();
+        
+        const size_t response_length = nonce_length + (has_secret ? kHandshakeTagSize : 0);
+        etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
+        
+        if (payload_data) {
+          etl::copy_n(payload_data, nonce_length, buffer.begin());
+          if (has_secret) {
+            etl::array<uint8_t, kHandshakeTagSize> tag;
+            _computeHandshakeTag(payload_data, nonce_length, tag.data());
+            etl::copy_n(tag.begin(), kHandshakeTagSize, buffer.begin() + nonce_length);
+          }
+          (void)sendFrame(rpc::CommandId::CMD_LINK_SYNC_RESP, buffer.data(), response_length);
+                    _fsm.handshakeComplete();
+                    notify_system(MsgBridgeSynchronized());
+                  }
+          
+      }
+      break;
+    case rpc::CommandId::CMD_LINK_RESET:
+      _handleDedupAck(ctx, [this, &ctx]() {
+        enterSafeState();
+        if (ctx.frame->header.payload_length == rpc::payload::HandshakeConfig::SIZE) {
+            _applyTimingConfig(ctx.frame->payload.data(), ctx.frame->header.payload_length);
+        }
+        Console.begin();
+        (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
+      }, true);
+      break;
+    default:
+      break;
   }
 }
 
@@ -664,19 +601,61 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   
   switch(command) {
     case rpc::CommandId::CMD_SET_PIN_MODE:
+      _handleDedupAck(ctx, [this, &ctx]() {
+        auto msg = rpc::Payload::parse<rpc::payload::PinMode>(*ctx.frame);
+        if (msg && _isValidPin(msg->pin)) ::pinMode(msg->pin, msg->mode);
+      }, true);
+      break;
+      
     case rpc::CommandId::CMD_DIGITAL_WRITE:
+      _handleDedupAck(ctx, [this, &ctx]() {
+        auto msg = rpc::Payload::parse<rpc::payload::DigitalWrite>(*ctx.frame);
+        if (msg && _isValidPin(msg->pin)) ::digitalWrite(msg->pin, msg->value ? HIGH : LOW);
+      }, true);
+      break;
+      
     case rpc::CommandId::CMD_ANALOG_WRITE:
-      _handleDedupAck(
-          ctx,
-          [this, &ctx]() { _handleGpioCommand(*ctx.frame); },
-          true);
+      _handleDedupAck(ctx, [this, &ctx]() {
+        auto msg = rpc::Payload::parse<rpc::payload::AnalogWrite>(*ctx.frame);
+        if (msg && _isValidPin(msg->pin)) ::analogWrite(msg->pin, msg->value);
+      }, true);
       break;
       
     case rpc::CommandId::CMD_DIGITAL_READ:
+      if (ctx.is_duplicate) return;
+      {
+        auto msg = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
+        if (msg && _isValidPin(msg->pin)) {
+          int16_t value = ::digitalRead(msg->pin);
+          rpc::payload::DigitalReadResponse resp{static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
+          (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, reinterpret_cast<const uint8_t*>(&resp), rpc::payload::DigitalReadResponse::SIZE);
+          _markRxProcessed(*ctx.frame);
+        } else {
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+        }
+      }
+      break;
+      
     case rpc::CommandId::CMD_ANALOG_READ:
       if (ctx.is_duplicate) return;
-      _handleGpioCommand(*ctx.frame);
-      _markRxProcessed(*ctx.frame);
+      {
+        auto msg = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
+        bool valid = msg.has_value();
+#ifdef NUM_ANALOG_INPUTS
+        if (valid && msg->pin >= NUM_ANALOG_INPUTS) valid = false;
+#else
+        if (valid && !_isValidPin(msg->pin)) valid = false;
+#endif
+        if (valid) {
+          int16_t value = ::analogRead(msg->pin);
+          etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> resp_payload;
+          rpc::write_u16_be(resp_payload.data(), static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
+          (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload.data(), resp_payload.size());
+          _markRxProcessed(*ctx.frame);
+        } else {
+          (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
+        }
+      }
       break;
       
     default:
@@ -684,13 +663,13 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   }
 }
 
+
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
   _handleDedupAck(
       ctx,
       [this, &ctx]() {
-        if (static_cast<rpc::CommandId>(ctx.frame->header.command_id) == rpc::CommandId::CMD_CONSOLE_WRITE) {
-          Console._push(etl::span<const uint8_t>(ctx.frame->payload.data(), ctx.frame->header.payload_length));
-        }
+        auto msg = rpc::Payload::parse<rpc::payload::ConsoleWrite>(*ctx.frame);
+        if (msg) Console._push(etl::span<const uint8_t>(msg->data, msg->length));
       },
       true);
 }
@@ -699,13 +678,10 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
 #if BRIDGE_ENABLE_DATASTORE
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
   if (command == rpc::CommandId::CMD_DATASTORE_GET_RESP) {
-      const size_t payload_length = ctx.frame->header.payload_length;
-      const uint8_t* payload_data = ctx.frame->payload.data();
-      
-      if (payload_length >= 1 && DataStore._datastore_get_handler.is_valid()) {
-        auto msg = rpc::payload::DatastoreGetResponse::parse(payload_data);
+      auto msg = rpc::Payload::parse<rpc::payload::DatastoreGetResponse>(*ctx.frame);
+      if (msg && DataStore._datastore_get_handler.is_valid()) {
         const char* key = DataStore._popPendingDatastoreKey();
-        DataStore._datastore_get_handler(etl::string_view(key), etl::span<const uint8_t>(msg.value, msg.value_len));
+        DataStore._datastore_get_handler(etl::string_view(key), etl::span<const uint8_t>(msg->value, msg->value_len));
       }
   }
 #else
@@ -715,19 +691,15 @@ void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) 
 
 void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
-  const size_t payload_length = ctx.frame->header.payload_length;
-  const uint8_t* payload_data = ctx.frame->payload.data();
 
   if (command == rpc::CommandId::CMD_MAILBOX_PUSH) {
     _handleDedupAck(
         ctx,
         [this, &ctx]() {
 #if BRIDGE_ENABLE_MAILBOX
-          const size_t payload_length = ctx.frame->header.payload_length;
-          const uint8_t* payload_data = ctx.frame->payload.data();
-          if (payload_length >= 2 && Mailbox._mailbox_handler.is_valid()) {
-            auto msg = rpc::payload::MailboxPush::parse(payload_data);
-            Mailbox._mailbox_handler(msg.data, msg.length);
+          auto msg = rpc::Payload::parse<rpc::payload::MailboxPush>(*ctx.frame);
+          if (msg && Mailbox._mailbox_handler.is_valid()) {
+            Mailbox._mailbox_handler(msg->data, msg->length);
           }
 #else
           (void)ctx;
@@ -736,16 +708,16 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
         true);
   } else if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
 #if BRIDGE_ENABLE_MAILBOX
-      if (Mailbox._mailbox_handler.is_valid() && payload_length >= 2) {
-        auto msg = rpc::payload::MailboxReadResponse::parse(payload_data);
-        Mailbox._mailbox_handler(msg.content, msg.length);
+      auto msg = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(*ctx.frame);
+      if (msg && Mailbox._mailbox_handler.is_valid()) {
+        Mailbox._mailbox_handler(msg->content, msg->length);
       }
 #endif
   } else if (command == rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP) {
 #if BRIDGE_ENABLE_MAILBOX
-      if (Mailbox._mailbox_available_handler.is_valid() && payload_length >= rpc::payload::MailboxAvailableResponse::SIZE) {
-        auto msg = rpc::payload::MailboxAvailableResponse::parse(payload_data);
-        Mailbox._mailbox_available_handler(msg.count);
+      auto msg = rpc::Payload::parse<rpc::payload::MailboxAvailableResponse>(*ctx.frame);
+      if (msg && Mailbox._mailbox_available_handler.is_valid()) {
+        Mailbox._mailbox_available_handler(msg->count);
       }
 #endif
   }
@@ -753,23 +725,13 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
-  const size_t payload_length = ctx.frame->header.payload_length;
-  const uint8_t* payload_data = ctx.frame->payload.data();
-
   if (command == rpc::CommandId::CMD_FILE_WRITE) {
-    _handleDedupAck(
-        ctx,
-        [this, &ctx]() {
-          // FILE_WRITE is a unidirectional command from Linux, usually we don't expect 
-          // a response with payload other than ACK, but here we just handle the ACK logic.
-          (void)ctx;
-        },
-        true);
+    _handleDedupAck(ctx, [this, &ctx]() { (void)ctx; }, true);
   } else if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
 #if BRIDGE_ENABLE_FILESYSTEM
-      if (FileSystem._file_system_read_handler.is_valid() && payload_length >= 2) {
-        auto msg = rpc::payload::FileReadResponse::parse(payload_data);
-        FileSystem._file_system_read_handler(msg.content, msg.length);
+      auto msg = rpc::Payload::parse<rpc::payload::FileReadResponse>(*ctx.frame);
+      if (msg && FileSystem._file_system_read_handler.is_valid()) {
+        FileSystem._file_system_read_handler(msg->content, msg->length);
       }
 #endif
   }
@@ -778,31 +740,29 @@ void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx)
 void BridgeClass::onProcessCommand(const bridge::router::CommandContext& ctx) {
 #if BRIDGE_ENABLE_PROCESS
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
-  const size_t payload_length = ctx.frame->header.payload_length;
-  const uint8_t* payload_data = ctx.frame->payload.data();
-
-  if (payload_length == 0 || !payload_data) return;
 
   switch (command) {
     case rpc::CommandId::CMD_PROCESS_RUN_RESP:
-      if (Process._process_run_handler.is_valid() && payload_length >= 6) {
-        auto msg = rpc::payload::ProcessRunResponse::parse(payload_data);
-        if (payload_length >= static_cast<size_t>(6 + msg.stdout_len + msg.stderr_len)) {
-            Process._process_run_handler(static_cast<rpc::StatusCode>(msg.status), msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+      {
+        auto msg = rpc::Payload::parse<rpc::payload::ProcessRunResponse>(*ctx.frame);
+        if (msg && Process._process_run_handler.is_valid()) {
+            Process._process_run_handler(static_cast<rpc::StatusCode>(msg->status), msg->stdout_data, msg->stdout_len, msg->stderr_data, msg->stderr_len);
         }
       }
       break;
     case rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP:
-      if (Process._process_run_async_handler.is_valid() && payload_length >= rpc::payload::ProcessRunAsyncResponse::SIZE) {
-        auto msg = rpc::payload::ProcessRunAsyncResponse::parse(payload_data);
-        Process._process_run_async_handler(static_cast<int16_t>(msg.pid));
+      {
+        auto msg = rpc::Payload::parse<rpc::payload::ProcessRunAsyncResponse>(*ctx.frame);
+        if (msg && Process._process_run_async_handler.is_valid()) {
+            Process._process_run_async_handler(static_cast<int16_t>(msg->pid));
+        }
       }
       break;
     case rpc::CommandId::CMD_PROCESS_POLL_RESP:
-      if (Process._process_poll_handler.is_valid() && payload_length >= 6) {
-        auto msg = rpc::payload::ProcessPollResponse::parse(payload_data);
-        if (payload_length >= static_cast<size_t>(6 + msg.stdout_len + msg.stderr_len)) {
-            Process._process_poll_handler(static_cast<rpc::StatusCode>(msg.status), msg.exit_code, msg.stdout_data, msg.stdout_len, msg.stderr_data, msg.stderr_len);
+      {
+        auto msg = rpc::Payload::parse<rpc::payload::ProcessPollResponse>(*ctx.frame);
+        if (msg && Process._process_poll_handler.is_valid()) {
+            Process._process_poll_handler(static_cast<rpc::StatusCode>(msg->status), msg->exit_code, msg->stdout_data, msg->stdout_len, msg->stderr_data, msg->stderr_len);
             Process._popPendingProcessPid(); 
         }
       }
@@ -835,7 +795,7 @@ void BridgeClass::_doEmitStatus(rpc::StatusCode status_code, const uint8_t* payl
   if (_status_handler.is_valid()) _status_handler(status_code, payload, length);
   
   // [SIL-2] Notify Observers
-  notify_observers([status_code](BridgeObserver& obs) { obs.onBridgeError(status_code); });
+  notify_system(MsgBridgeError{status_code});
 }
 
 void BridgeClass::_emitStatus(rpc::StatusCode status_code, etl::string_view message) {
@@ -1144,7 +1104,7 @@ void BridgeClass::enterSafeState() {
   #endif
   
   // [SIL-2] Notify Observers of lost connection
-  notify_observers([](BridgeObserver& obs) { obs.onBridgeLost(); });
+  notify_system(MsgBridgeLost());
 }
 
 void BridgeClass::_sendAckAndFlush(uint16_t command_id) {

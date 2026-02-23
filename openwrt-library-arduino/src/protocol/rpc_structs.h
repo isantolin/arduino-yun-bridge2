@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <etl/string_view.h>
+#include <etl/optional.h>
 #include "rpc_protocol.h"
 #include "rpc_frame.h"
 
@@ -156,6 +157,14 @@ struct HandshakeConfig {
     }
 };
 
+struct SetBaudratePacket {
+    uint32_t baudrate;
+    static constexpr size_t SIZE = 4;
+    static SetBaudratePacket parse(const uint8_t* data) {
+        return {rpc::read_u32_be(data)};
+    }
+};
+
 // --- Complex/Variable Payloads ---
 
 struct ConsoleWrite {
@@ -187,7 +196,11 @@ struct DatastorePut {
     uint8_t value_len;
     static DatastorePut parse(const uint8_t* data) {
         uint8_t k_len = data[0];
-        return {etl::string_view(reinterpret_cast<const char*>(data + 1), k_len), data + 1 + k_len + 1, data[1 + k_len]};
+        return {
+            etl::string_view(reinterpret_cast<const char*>(data + 1), k_len),
+            data + 1 + k_len + 1,
+            data[1 + k_len]
+        };
     }
 };
 
@@ -213,7 +226,11 @@ struct FileWrite {
     uint16_t data_len;
     static FileWrite parse(const uint8_t* data) {
         uint8_t p_len = data[0];
-        return {etl::string_view(reinterpret_cast<const char*>(data + 1), p_len), data + 1 + p_len + 2, rpc::read_u16_be(data + 1 + p_len)};
+        return {
+            etl::string_view(reinterpret_cast<const char*>(data + 1), p_len),
+            data + 1 + p_len + 2,
+            rpc::read_u16_be(data + 1 + p_len)
+        };
     }
 };
 
@@ -291,5 +308,128 @@ struct ProcessPollResponse {
     }
 };
 } // namespace payload
+
+/**
+ * @namespace Payload
+ * @brief Static validation wrappers for RPC payloads.
+ * [SIL-2] Type-safe template-based parsing with length validation.
+ */
+namespace Payload {
+
+template <typename T>
+inline etl::optional<T> parse(const rpc::Frame& frame) {
+    if (frame.header.payload_length < T::SIZE) {
+        return etl::nullopt;
+    }
+    return T::parse(frame.payload.data());
+}
+
+// Specialization for variable length payloads (ConsoleWrite, ProcessRun, etc.)
+// These bypass the SIZE check or use custom logic.
+template <>
+inline etl::optional<payload::ConsoleWrite> parse<payload::ConsoleWrite>(const rpc::Frame& frame) {
+    return payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length);
+}
+
+template <>
+inline etl::optional<payload::ProcessRun> parse<payload::ProcessRun>(const rpc::Frame& frame) {
+    return payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length);
+}
+
+template <>
+inline etl::optional<payload::ProcessRunAsync> parse<payload::ProcessRunAsync>(const rpc::Frame& frame) {
+    return payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length);
+}
+
+template <>
+inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    return payload::DatastoreGet::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    return payload::DatastoreGetResponse::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::DatastorePut> parse<payload::DatastorePut>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 2) return etl::nullopt;
+    uint8_t k_len = frame.payload[0];
+    if (frame.header.payload_length < (size_t)(k_len + 2)) return etl::nullopt;
+    uint8_t v_len = frame.payload[k_len + 1];
+    if (frame.header.payload_length < (size_t)(k_len + v_len + 2)) return etl::nullopt;
+    return payload::DatastorePut::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::MailboxPush> parse<payload::MailboxPush>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 2) return etl::nullopt;
+    uint16_t len = rpc::read_u16_be(frame.payload.data());
+    if (frame.header.payload_length < (size_t)(len + 2)) return etl::nullopt;
+    return payload::MailboxPush::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::MailboxReadResponse> parse<payload::MailboxReadResponse>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 2) return etl::nullopt;
+    uint16_t len = rpc::read_u16_be(frame.payload.data());
+    if (frame.header.payload_length < (size_t)(len + 2)) return etl::nullopt;
+    return payload::MailboxReadResponse::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::FileWrite> parse<payload::FileWrite>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 3) return etl::nullopt;
+    uint8_t p_len = frame.payload[0];
+    if (frame.header.payload_length < (size_t)(p_len + 3)) return etl::nullopt;
+    uint16_t d_len = rpc::read_u16_be(frame.payload.data() + 1 + p_len);
+    if (frame.header.payload_length < (size_t)(p_len + d_len + 3)) return etl::nullopt;
+    return payload::FileWrite::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::FileRead> parse<payload::FileRead>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    return payload::FileRead::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::FileReadResponse> parse<payload::FileReadResponse>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 2) return etl::nullopt;
+    uint16_t len = rpc::read_u16_be(frame.payload.data());
+    if (frame.header.payload_length < (size_t)(len + 2)) return etl::nullopt;
+    return payload::FileReadResponse::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::FileRemove> parse<payload::FileRemove>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    return payload::FileRemove::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunResponse>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 6) return etl::nullopt;
+    uint16_t out_len = rpc::read_u16_be(frame.payload.data() + 1);
+    if (frame.header.payload_length < (size_t)(out_len + 5)) return etl::nullopt;
+    uint16_t err_len = rpc::read_u16_be(frame.payload.data() + 3 + out_len);
+    if (frame.header.payload_length < (size_t)(out_len + err_len + 6)) return etl::nullopt;
+    return payload::ProcessRunResponse::parse(frame.payload.data());
+}
+
+template <>
+inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollResponse>(const rpc::Frame& frame) {
+    if (frame.header.payload_length < 6) return etl::nullopt;
+    uint16_t out_len = rpc::read_u16_be(frame.payload.data() + 2);
+    if (frame.header.payload_length < (size_t)(out_len + 6)) return etl::nullopt;
+    uint16_t err_len = rpc::read_u16_be(frame.payload.data() + 4 + out_len);
+    if (frame.header.payload_length < (size_t)(out_len + err_len + 6)) return etl::nullopt;
+    return payload::ProcessPollResponse::parse(frame.payload.data());
+}
+
+} // namespace Payload
+
 } // namespace rpc
 #endif

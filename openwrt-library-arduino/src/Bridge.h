@@ -35,6 +35,7 @@
 #include <Stream.h>
 #include <PacketSerial.h>
 #include "etl/algorithm.h"
+#include "etl/observer.h"
 
 // [SIL-2] ISR Safety: Atomic Blocks
 #if defined(ARDUINO_ARCH_AVR)
@@ -77,7 +78,6 @@
 #include "etl/optional.h"
 #include "etl/string_view.h"
 #include "etl/span.h"
-#include "etl/observer.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
@@ -189,15 +189,32 @@ namespace test {
 }
 #endif
 
+// [SIL-2] Observer Event Types
+struct MsgBridgeSynchronized {};
+struct MsgBridgeLost {};
+struct MsgBridgeError { rpc::StatusCode code; };
+
 // [SIL-2] Observer Interface for System Events
-struct BridgeObserver {
+struct BridgeObserver : public etl::observer<MsgBridgeSynchronized, MsgBridgeLost, MsgBridgeError> {
   virtual ~BridgeObserver() = default;
-  virtual void onBridgeSynchronized() {}
-  virtual void onBridgeLost() {}
-  virtual void onBridgeError(rpc::StatusCode code) { (void)code; }
+  virtual void notification(MsgBridgeSynchronized) {}
+  virtual void notification(MsgBridgeLost) {}
+  virtual void notification(MsgBridgeError) {}
 };
 
-class BridgeClass : public bridge::router::ICommandHandler {
+/**
+ * @brief Helper for fragmented transmissions.
+ * Encapsulates chunking, flow control, and safety checks.
+ */
+class BridgeWriter {
+public:
+    static bool send(rpc::CommandId command_id, 
+                    const uint8_t* header, size_t header_len, 
+                    const uint8_t* data, size_t data_len);
+};
+
+class BridgeClass : public bridge::router::ICommandHandler, 
+                    public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
   #endif
@@ -242,17 +259,13 @@ class BridgeClass : public bridge::router::ICommandHandler {
   
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
-
-  // [SIL-2] Manual Observer Management (etl::observable is too strict for lambdas)
-  void add_observer(BridgeObserver& obs) {
-    if (!_observers.full()) _observers.push_back(&obs);
-  }
   
-  void remove_observer(BridgeObserver& obs) {
-    const auto it = etl::find(_observers.begin(), _observers.end(), &obs);
-    if (it != _observers.end()) {
-      _observers.erase(it);
-    }
+  // [SIL-2] Observable Management
+  void add_observer(BridgeObserver& obs) { 
+    etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS>::add_observer(obs); 
+  }
+  void remove_observer(BridgeObserver& obs) { 
+    etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS>::remove_observer(obs); 
   }
 
   void begin(unsigned long baudrate = 
@@ -299,9 +312,7 @@ class BridgeClass : public bridge::router::ICommandHandler {
   void _emitStatus(rpc::StatusCode status_code, etl::string_view message = {});
   void _emitStatus(rpc::StatusCode status_code, const __FlashStringHelper* message);
   
-  // [SIL-2] Large Payload Support (Application-Level Chunking)
-  // Sends data larger than MAX_PAYLOAD_SIZE by fragmenting it into multiple frames.
-  // Handles flow control (back-pressure) to ensure delivery on constrained queues.
+  // [SIL-2] Large Payload Support
   bool sendChunkyFrame(rpc::CommandId command_id, 
                        const uint8_t* header, size_t header_len, 
                        const uint8_t* data, size_t data_len);
@@ -311,11 +322,9 @@ class BridgeClass : public bridge::router::ICommandHandler {
 
  protected:
   // [SIL-2] Internal notification helper
-  template<typename F>
-  void notify_observers(F f) {
-    for (auto* obs : _observers) {
-      if (obs) f(*obs);
-    }
+  template<typename T>
+  void notify_system(const T& msg) {
+    notify_observers(msg);
   }
 
  private:
@@ -324,9 +333,6 @@ class BridgeClass : public bridge::router::ICommandHandler {
   BridgePacketSerial _packetSerial;
   
   etl::vector<uint8_t, 32> _shared_secret;
-
-  // [SIL-2] Observers container
-  etl::vector<BridgeObserver*, BRIDGE_MAX_OBSERVERS> _observers;
 
   // Protocol Engine
   rpc::Frame* _target_frame;
@@ -374,22 +380,11 @@ class BridgeClass : public bridge::router::ICommandHandler {
   unsigned long _last_tick_millis;
   
   // [SIL-2] Timer callback delegates - must persist for object lifetime
-  // ETL callback_timer stores pointer to delegate, so they cannot be stack locals
   etl::delegate<void()> _cb_ack_timeout;
   etl::delegate<void()> _cb_rx_dedupe;
   etl::delegate<void()> _cb_baudrate_change;
   etl::delegate<void()> _cb_startup_stabilized;
 
-  // [SIL-2] Non-blocking startup stabilization flag.
-  // Rationale: marked `volatile` because it is written from a timer/callback
-  // context (startup-stabilization timer expiry) and read from the main
-  // loop context (BridgeClass::update / FSM transitions).  Without the
-  // volatile qualifier the compiler may cache the value in a register and
-  // the main loop would never observe the flag change, violating the
-  // single-writer / single-reader safety contract required at SIL-2.
-  // No additional synchronisation primitive is needed: the variable is a
-  // single bool (atomic on all supported AVR / ARM-M targets) with exactly
-  // one writer (timer callback) and one reader (main loop).
   volatile bool _startup_stabilizing;
 
   // [SIL-2] ETL Message Router for flattened command dispatch

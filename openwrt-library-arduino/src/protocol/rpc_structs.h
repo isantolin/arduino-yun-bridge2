@@ -143,6 +143,14 @@ struct ProcessRunAsyncResponse {
     }
 };
 
+struct AckPacket {
+    uint16_t command_id;
+    static constexpr size_t SIZE = 2;
+    static AckPacket parse(const uint8_t* data) {
+        return {rpc::read_u16_be(data)};
+    }
+};
+
 struct HandshakeConfig {
     uint16_t ack_timeout_ms;
     uint8_t ack_retry_limit;
@@ -343,13 +351,17 @@ inline etl::optional<payload::ProcessRunAsync> parse<payload::ProcessRunAsync>(c
 
 template <>
 inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::DatastoreGet::parse(frame.payload.data());
 }
 
 template <>
 inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::DatastoreGetResponse::parse(frame.payload.data());
 }
 
@@ -391,7 +403,9 @@ inline etl::optional<payload::FileWrite> parse<payload::FileWrite>(const rpc::Fr
 
 template <>
 inline etl::optional<payload::FileRead> parse<payload::FileRead>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::FileRead::parse(frame.payload.data());
 }
 
@@ -405,7 +419,9 @@ inline etl::optional<payload::FileReadResponse> parse<payload::FileReadResponse>
 
 template <>
 inline etl::optional<payload::FileRemove> parse<payload::FileRemove>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::FileRemove::parse(frame.payload.data());
 }
 

@@ -24,6 +24,10 @@ struct VersionResponse {
     static VersionResponse parse(const uint8_t* data) {
         return {data[0], data[1]};
     }
+    void encode(uint8_t* data) const {
+        data[0] = major;
+        data[1] = minor;
+    }
 };
 
 struct FreeMemoryResponse {
@@ -31,6 +35,9 @@ struct FreeMemoryResponse {
     static constexpr size_t SIZE = 2;
     static FreeMemoryResponse parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
+    }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, value);
     }
 };
 
@@ -50,6 +57,13 @@ struct Capabilities {
         msg.feat = rpc::read_u32_be(data + 4);
         return msg;
     }
+    void encode(uint8_t* data) const {
+        data[0] = ver;
+        data[1] = arch;
+        data[2] = dig;
+        data[3] = ana;
+        rpc::write_u32_be(data + 4, feat);
+    }
 };
 
 struct PinMode {
@@ -58,6 +72,10 @@ struct PinMode {
     static constexpr size_t SIZE = 2;
     static PinMode parse(const uint8_t* data) {
         return {data[0], data[1]};
+    }
+    void encode(uint8_t* data) const {
+        data[0] = pin;
+        data[1] = mode;
     }
 };
 
@@ -68,6 +86,10 @@ struct DigitalWrite {
     static DigitalWrite parse(const uint8_t* data) {
         return {data[0], data[1]};
     }
+    void encode(uint8_t* data) const {
+        data[0] = pin;
+        data[1] = value;
+    }
 };
 
 struct AnalogWrite {
@@ -77,6 +99,10 @@ struct AnalogWrite {
     static AnalogWrite parse(const uint8_t* data) {
         return {data[0], data[1]};
     }
+    void encode(uint8_t* data) const {
+        data[0] = pin;
+        data[1] = value;
+    }
 };
 
 struct PinRead {
@@ -84,6 +110,9 @@ struct PinRead {
     static constexpr size_t SIZE = 1;
     static PinRead parse(const uint8_t* data) {
         return {data[0]};
+    }
+    void encode(uint8_t* data) const {
+        data[0] = pin;
     }
 };
 
@@ -93,6 +122,9 @@ struct DigitalReadResponse {
     static DigitalReadResponse parse(const uint8_t* data) {
         return {data[0]};
     }
+    void encode(uint8_t* data) const {
+        data[0] = value;
+    }
 };
 
 struct AnalogReadResponse {
@@ -100,6 +132,9 @@ struct AnalogReadResponse {
     static constexpr size_t SIZE = 2;
     static AnalogReadResponse parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
+    }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, value);
     }
 };
 
@@ -109,6 +144,9 @@ struct MailboxProcessed {
     static MailboxProcessed parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
     }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, message_id);
+    }
 };
 
 struct MailboxAvailableResponse {
@@ -116,6 +154,9 @@ struct MailboxAvailableResponse {
     static constexpr size_t SIZE = 2;
     static MailboxAvailableResponse parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
+    }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, count);
     }
 };
 
@@ -125,6 +166,9 @@ struct ProcessKill {
     static ProcessKill parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
     }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, pid);
+    }
 };
 
 struct ProcessPoll {
@@ -132,6 +176,9 @@ struct ProcessPoll {
     static constexpr size_t SIZE = 2;
     static ProcessPoll parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
+    }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, pid);
     }
 };
 
@@ -141,6 +188,9 @@ struct ProcessRunAsyncResponse {
     static ProcessRunAsyncResponse parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
     }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, pid);
+    }
 };
 
 struct AckPacket {
@@ -148,6 +198,9 @@ struct AckPacket {
     static constexpr size_t SIZE = 2;
     static AckPacket parse(const uint8_t* data) {
         return {rpc::read_u16_be(data)};
+    }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, command_id);
     }
 };
 
@@ -163,6 +216,11 @@ struct HandshakeConfig {
         msg.response_timeout_ms = rpc::read_u32_be(data + 3);
         return msg;
     }
+    void encode(uint8_t* data) const {
+        rpc::write_u16_be(data + 0, ack_timeout_ms);
+        data[2] = ack_retry_limit;
+        rpc::write_u32_be(data + 3, response_timeout_ms);
+    }
 };
 
 struct SetBaudratePacket {
@@ -170,6 +228,9 @@ struct SetBaudratePacket {
     static constexpr size_t SIZE = 4;
     static SetBaudratePacket parse(const uint8_t* data) {
         return {rpc::read_u32_be(data)};
+    }
+    void encode(uint8_t* data) const {
+        rpc::write_u32_be(data + 0, baudrate);
     }
 };
 

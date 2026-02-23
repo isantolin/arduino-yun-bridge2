@@ -439,6 +439,17 @@ def generate_cpp_structs(spec: dict[str, Any], out: TextIO) -> None:
                      out.write(f"        msg.{f['name']} = data[{f['offset']}];\n")
              out.write("        return msg;\n")
         out.write("    }\n")
+
+        # Encode method
+        out.write(f"    void encode(uint8_t* data) const {{\n")
+        for f in struct_fields:
+            if f["read_func"]:
+                # Assume write func name matches read func (read_u16_be -> write_u16_be)
+                write_func = f["read_func"].replace("read_", "write_")
+                out.write(f"        {write_func}(data + {f['offset']}, {f['name']});\n")
+            else:
+                out.write(f"        data[{f['offset']}] = {f['name']};\n")
+        out.write("    }\n")
         out.write("};\n\n")
 
     # 2. Manual generation for complex/variable-length structs

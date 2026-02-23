@@ -438,15 +438,17 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
     case rpc::CommandId::CMD_GET_VERSION:
       if (frame.header.payload_length == 0) {
         rpc::payload::VersionResponse msg{kDefaultFirmwareVersionMajor, kDefaultFirmwareVersionMinor};
-        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, reinterpret_cast<const uint8_t*>(&msg), rpc::payload::VersionResponse::SIZE);
+        etl::array<uint8_t, rpc::payload::VersionResponse::SIZE> buffer;
+        msg.encode(buffer.data());
+        (void)sendFrame(rpc::CommandId::CMD_GET_VERSION_RESP, buffer.data(), buffer.size());
       }
       break;
     case rpc::CommandId::CMD_GET_FREE_MEMORY:
       if (frame.header.payload_length == 0) {
-        uint16_t free_mem = getFreeMemory();
-        etl::array<uint8_t, rpc::payload::FreeMemoryResponse::SIZE> resp_payload;
-        rpc::write_u16_be(resp_payload.data(), free_mem);
-        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, resp_payload.data(), resp_payload.size());
+        rpc::payload::FreeMemoryResponse resp{getFreeMemory()};
+        etl::array<uint8_t, rpc::payload::FreeMemoryResponse::SIZE> buffer;
+        resp.encode(buffer.data());
+        (void)sendFrame(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, buffer.data(), buffer.size());
       }
       break;
     case rpc::CommandId::CMD_GET_CAPABILITIES:
@@ -626,7 +628,9 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
         if (msg && _isValidPin(msg->pin)) {
           int16_t value = ::digitalRead(msg->pin);
           rpc::payload::DigitalReadResponse resp{static_cast<uint8_t>(value & rpc::RPC_UINT8_MASK)};
-          (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, reinterpret_cast<const uint8_t*>(&resp), rpc::payload::DigitalReadResponse::SIZE);
+          etl::array<uint8_t, rpc::payload::DigitalReadResponse::SIZE> buffer;
+          resp.encode(buffer.data());
+          (void)sendFrame(rpc::CommandId::CMD_DIGITAL_READ_RESP, buffer.data(), buffer.size());
           _markRxProcessed(*ctx.frame);
         } else {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);
@@ -646,9 +650,10 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 #endif
         if (valid) {
           int16_t value = ::analogRead(msg->pin);
-          etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> resp_payload;
-          rpc::write_u16_be(resp_payload.data(), static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX));
-          (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, resp_payload.data(), resp_payload.size());
+          rpc::payload::AnalogReadResponse resp{static_cast<uint16_t>(value & rpc::RPC_UINT16_MAX)};
+          etl::array<uint8_t, rpc::payload::AnalogReadResponse::SIZE> buffer;
+          resp.encode(buffer.data());
+          (void)sendFrame(rpc::CommandId::CMD_ANALOG_READ_RESP, buffer.data(), buffer.size());
           _markRxProcessed(*ctx.frame);
         } else {
           (void)sendFrame(rpc::StatusCode::STATUS_MALFORMED);

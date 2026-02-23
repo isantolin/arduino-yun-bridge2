@@ -754,6 +754,9 @@ pid = "H"
 [payloads.ProcessRunAsyncResponse]
 pid = "H"
 
+[payloads.AckPacket]
+command_id = "H"
+
 [payloads.HandshakeConfig]
 ack_timeout_ms = "H"
 ack_retry_limit = "B"

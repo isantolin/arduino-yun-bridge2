@@ -623,13 +623,17 @@ inline etl::optional<payload::ProcessRunAsync> parse<payload::ProcessRunAsync>(c
 
 template <>
 inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::DatastoreGet::parse(frame.payload.data());
 }
 
 template <>
 inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::DatastoreGetResponse::parse(frame.payload.data());
 }
 
@@ -671,7 +675,9 @@ inline etl::optional<payload::FileWrite> parse<payload::FileWrite>(const rpc::Fr
 
 template <>
 inline etl::optional<payload::FileRead> parse<payload::FileRead>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::FileRead::parse(frame.payload.data());
 }
 
@@ -685,7 +691,9 @@ inline etl::optional<payload::FileReadResponse> parse<payload::FileReadResponse>
 
 template <>
 inline etl::optional<payload::FileRemove> parse<payload::FileRemove>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt;
+    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+        return etl::nullopt;
+    }
     return payload::FileRemove::parse(frame.payload.data());
 }
 

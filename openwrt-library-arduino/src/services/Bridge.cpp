@@ -415,15 +415,13 @@ void BridgeClass::onStatusCommand(const bridge::router::CommandContext& ctx) {
   
   switch (status) {
     case rpc::StatusCode::STATUS_ACK: {
-      uint16_t ack_id = rpc::RPC_INVALID_ID_SENTINEL;
-      if (payload_length >= 2 && payload_data) ack_id = rpc::read_u16_be(payload_data);
-      _handleAck(ack_id);
+      auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
+      _handleAck(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
       break;
     }
     case rpc::StatusCode::STATUS_MALFORMED: {
-      uint16_t malformed_id = rpc::RPC_INVALID_ID_SENTINEL;
-      if (payload_length >= 2 && payload_data) malformed_id = rpc::read_u16_be(payload_data);
-      _handleMalformed(malformed_id);
+      auto msg = rpc::Payload::parse<rpc::payload::AckPacket>(*ctx.frame);
+      _handleMalformed(msg ? msg->command_id : rpc::RPC_INVALID_ID_SENTINEL);
       break;
     }
     default:

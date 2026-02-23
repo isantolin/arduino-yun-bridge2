@@ -35,9 +35,13 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/spec.toml`.
+La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/spec.toml`. El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
-Centralizar en el spec significa **solo** lo que debe ser idéntico entre implementaciones (MCU y Linux) o lo que constituye el contrato externo (MQTT) que otros clientes consumen.
+### Validación Estática (C++)
+La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado. El generador produce automáticamente wrappers `Payload::parse<T>(const rpc::Frame&)` que realizan validación de longitud antes de instanciar la estructura, garantizando robustez SIL-2.
+
+### Despacho de Comandos (Router)
+El MCU utiliza un despacho basado en `etl::message_router` sobre un mapa de rutas estático. Esto elimina la necesidad de `switch/case` manuales gigantes y reduce la profundidad de la pila de llamadas.
 
 Qué **sí** se centraliza en `spec.toml` (y se genera a Python/C++):
 
@@ -53,7 +57,7 @@ Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime)
 
 Al ejecutar:
 
-- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py openwrt-mcu-bridge/mcubridge/rpc/protocol.py --cpp openwrt-library-arduino/src/protocol/rpc_protocol.h`
+- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py openwrt-mcu-bridge/mcubridge/protocol/protocol.py --cpp openwrt-library-arduino/src/protocol/rpc_protocol.h`
 
 …se regeneran los bindings de Python y C++ y deben commitearse en el mismo cambio.
 

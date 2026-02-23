@@ -34,6 +34,12 @@
 - Auto-generated Python (`protocol.py`) and C++ (`rpc_protocol.h`) bindings.
 - 100% concordance verified between implementations.
 
+### Robustness & QA ✅ (Feb 2026)
+- **E2E Testing Suite**: Automated emulator + client script verification (`tox -e e2e`).
+- **Process Supervision**: `psutil`-based zombie process cleanup and resource monitoring.
+- **Resilience**: Jitter-enhanced backoff strategies (`tenacity`) for handshake stability.
+- **Observability**: CPU thermal monitoring and extended system metrics.
+
 ## Pending (Q2-Q3 2026)
 
 - **Hardware Validation Matrix**: Comprehensive testing across AVR, ESP32, ESP8266, SAMD, and RP2040.

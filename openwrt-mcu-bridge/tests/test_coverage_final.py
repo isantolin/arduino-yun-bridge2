@@ -1,4 +1,3 @@
-import pytest_asyncio
 import asyncio
 import errno
 import logging
@@ -44,7 +43,7 @@ def create_real_config():
 @pytest.fixture
 def state():
     from mcubridge.state.context import create_runtime_state
-    
+
     config = create_real_config()
     loop_to_close = None
     try:

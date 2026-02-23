@@ -170,7 +170,7 @@ def cleanup_process(proc, name):
                 logger.warning(f"{name} did not terminate, killing...")
                 proc.kill()
                 proc.wait()
-        
+
         # Close all pipes to avoid ResourceWarning
         if proc.stdin:
             try:
@@ -543,18 +543,18 @@ def main():
         stop_bridge.set()
         if "bridge_thread" in locals() and bridge_thread:
             bridge_thread.join(timeout=2)
-            
+
         if "mqtt_monitor" in locals() and mqtt_monitor:
             mqtt_monitor.stop()
         if "log_monitor" in locals() and log_monitor:
             log_monitor.stop()
         if "socat_monitor" in locals() and socat_monitor:
             socat_monitor.stop()
-        
+
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(mcu_proc, "mcu")
         cleanup_process(socat_proc, "socat")
-        
+
         if "uci_stub_dir" in locals() and uci_stub_dir:
             uci_stub_dir.cleanup()
 

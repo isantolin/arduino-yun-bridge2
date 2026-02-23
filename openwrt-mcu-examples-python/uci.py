@@ -1,5 +1,4 @@
 import os
-import sys
 
 class Uci:
     def __enter__(self):

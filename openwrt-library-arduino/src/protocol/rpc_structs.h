@@ -413,7 +413,8 @@ inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const r
 }
 
 template <>
-inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
+inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(
+    const rpc::Frame& frame) {
     if (frame.header.payload_length < 1 ||
         frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
         return etl::nullopt;
@@ -440,7 +441,8 @@ inline etl::optional<payload::MailboxPush> parse<payload::MailboxPush>(const rpc
 }
 
 template <>
-inline etl::optional<payload::MailboxReadResponse> parse<payload::MailboxReadResponse>(const rpc::Frame& frame) {
+inline etl::optional<payload::MailboxReadResponse> parse<payload::MailboxReadResponse>(
+    const rpc::Frame& frame) {
     if (frame.header.payload_length < 2) return etl::nullopt;
     uint16_t len = rpc::read_u16_be(frame.payload.data());
     if (frame.header.payload_length < (size_t)(len + 2)) return etl::nullopt;
@@ -484,7 +486,8 @@ inline etl::optional<payload::FileRemove> parse<payload::FileRemove>(const rpc::
 }
 
 template <>
-inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunResponse>(const rpc::Frame& frame) {
+inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunResponse>(
+    const rpc::Frame& frame) {
     if (frame.header.payload_length < 6) return etl::nullopt;
     uint16_t out_len = rpc::read_u16_be(frame.payload.data() + 1);
     if (frame.header.payload_length < (size_t)(out_len + 5)) return etl::nullopt;
@@ -494,7 +497,8 @@ inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunRespo
 }
 
 template <>
-inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollResponse>(const rpc::Frame& frame) {
+inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollResponse>(
+    const rpc::Frame& frame) {
     if (frame.header.payload_length < 6) return etl::nullopt;
     uint16_t out_len = rpc::read_u16_be(frame.payload.data() + 2);
     if (frame.header.payload_length < (size_t)(out_len + 6)) return etl::nullopt;

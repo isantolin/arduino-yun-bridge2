@@ -304,7 +304,7 @@ async def test_process_allocate_pid_exhaustion():
     # Fix unclosed event loop by isolating state creation from any implicit loop
     from mcubridge.state.context import RuntimeState
     config = create_real_config()
-    
+
     # Manually instantiate RuntimeState avoiding create_runtime_state logic
     state = RuntimeState(config)
     try:

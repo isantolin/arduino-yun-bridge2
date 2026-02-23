@@ -390,10 +390,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
   // [SIL-2] ETL Message Router for flattened command dispatch
   bridge::router::CommandRouter _command_router;
 
-  // Methods
-  void _handleSystemCommand(const rpc::Frame& frame);
-  void _handleGpioCommand(const rpc::Frame& frame);
-
   // [SIL-2] ICommandHandler interface implementation
   void onStatusCommand(const bridge::router::CommandContext& ctx) override;
   void onSystemCommand(const bridge::router::CommandContext& ctx) override;

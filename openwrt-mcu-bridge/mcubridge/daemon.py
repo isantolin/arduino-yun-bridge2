@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import NoReturn
 
 import msgspec
+import psutil
 import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
@@ -92,6 +94,32 @@ class SupervisedTaskSpec(msgspec.Struct):
     restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
     min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
     max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
+
+
+def _cleanup_child_processes() -> None:
+    """Terminates all child processes spawned by this daemon."""
+    try:
+        current_process = psutil.Process()
+        children = current_process.children(recursive=True)
+        if not children:
+            return
+
+        logger.info("Cleaning up %d child processes...", len(children))
+        for child in children:
+            try:
+                child.terminate()
+            except psutil.NoSuchProcess:
+                pass
+
+        _, alive = psutil.wait_procs(children, timeout=3.0)
+        for child in alive:
+            try:
+                logger.warning("Force killing zombie process %d", child.pid)
+                child.kill()
+            except psutil.NoSuchProcess:
+                pass
+    except Exception as e:
+        logger.error("Error during process cleanup: %s", e)
 
 
 class BridgeDaemon:
@@ -307,6 +335,7 @@ class BridgeDaemon:
                 )
             raise
         finally:
+            _cleanup_child_processes()
             cleanup_status_file()
             logger.info("MCU Bridge daemon stopped.")
 

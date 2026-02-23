@@ -206,9 +206,11 @@ class SerialHandshakeManager:
         # [SIL-2] Unified Retry Strategy for Link Synchronisation
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(self._fatal_threshold),
-            wait=tenacity.wait_exponential(
-                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+            # [OPTIMIZATION] Use jitter to prevent resonance in retry loops
+            wait=tenacity.wait_exponential_jitter(
+                initial=SERIAL_HANDSHAKE_BACKOFF_BASE,
                 max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+                jitter=1.0,
             ),
             retry=tenacity.retry_if_result(_retry_if_false),
             before_sleep=_log_handshake_retry,

@@ -353,6 +353,26 @@ def _collect_system_metrics() -> dict[str, Any]:
         result["load_avg_5m"] = None
         result["load_avg_15m"] = None
 
+    try:
+        # Temperature metrics
+        # [SIL-2] Monitor thermal health to predict hardware failure
+        temps = psutil.sensors_temperatures()
+        # Prefer 'cpu_thermal', 'coretemp', or just the first available
+        cpu_temp = None
+        if temps:
+            for name in ["cpu_thermal", "coretemp", "soc_thermal"]:
+                if name in temps and temps[name]:
+                    cpu_temp = temps[name][0].current
+                    break
+            if cpu_temp is None:
+                # Fallback to first available
+                first_key = next(iter(temps))
+                if temps[first_key]:
+                    cpu_temp = temps[first_key][0].current
+        result["temperature_celsius"] = cpu_temp
+    except (OSError, AttributeError):
+        result["temperature_celsius"] = None
+
     return result
 
 

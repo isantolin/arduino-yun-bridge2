@@ -72,12 +72,13 @@ def test_collect_system_metrics_fail_paths() -> None:
         mock_psutil.cpu_percent.side_effect = OSError("fail")
         mock_psutil.virtual_memory.side_effect = AttributeError("fail")
         mock_psutil.getloadavg.side_effect = OSError("fail")
+        mock_psutil.sensors_temperatures.side_effect = OSError("fail")
 
         m = _collect_system_metrics()
         assert m["cpu_percent"] is None
         assert m["memory_total_bytes"] is None
         assert m["load_avg_1m"] is None
-
+        assert m["temperature_celsius"] is None
 
 def test_runtime_state_supervisor_and_spool() -> None:
     state = RuntimeState()

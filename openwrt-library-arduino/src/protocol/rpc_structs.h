@@ -16,223 +16,223 @@
 
 namespace rpc {
 namespace payload {
+    struct VersionResponse {
+        uint8_t major;
+        uint8_t minor;
+        static constexpr size_t SIZE = 2;
+        static VersionResponse parse(const uint8_t* data) {
+            return {data[0], data[1]};
+        }
+        void encode(uint8_t* data) const {
+            data[0] = major;
+            data[1] = minor;
+        }
+    };
 
-struct VersionResponse {
-    uint8_t major;
-    uint8_t minor;
-    static constexpr size_t SIZE = 2;
-    static VersionResponse parse(const uint8_t* data) {
-        return {data[0], data[1]};
-    }
-    void encode(uint8_t* data) const {
-        data[0] = major;
-        data[1] = minor;
-    }
-};
+    struct FreeMemoryResponse {
+        uint16_t value;
+        static constexpr size_t SIZE = 2;
+        static FreeMemoryResponse parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, value);
+        }
+    };
 
-struct FreeMemoryResponse {
-    uint16_t value;
-    static constexpr size_t SIZE = 2;
-    static FreeMemoryResponse parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, value);
-    }
-};
+    struct Capabilities {
+        uint8_t ver;
+        uint8_t arch;
+        uint8_t dig;
+        uint8_t ana;
+        uint32_t feat;
+        static constexpr size_t SIZE = 8;
+        static Capabilities parse(const uint8_t* data) {
+            Capabilities msg;
+            msg.ver = data[0];
+            msg.arch = data[1];
+            msg.dig = data[2];
+            msg.ana = data[3];
+            msg.feat = rpc::read_u32_be(data + 4);
+            return msg;
+        }
+        void encode(uint8_t* data) const {
+            data[0] = ver;
+            data[1] = arch;
+            data[2] = dig;
+            data[3] = ana;
+            rpc::write_u32_be(data + 4, feat);
+        }
+    };
 
-struct Capabilities {
-    uint8_t ver;
-    uint8_t arch;
-    uint8_t dig;
-    uint8_t ana;
-    uint32_t feat;
-    static constexpr size_t SIZE = 8;
-    static Capabilities parse(const uint8_t* data) {
-        Capabilities msg;
-        msg.ver = data[0];
-        msg.arch = data[1];
-        msg.dig = data[2];
-        msg.ana = data[3];
-        msg.feat = rpc::read_u32_be(data + 4);
-        return msg;
-    }
-    void encode(uint8_t* data) const {
-        data[0] = ver;
-        data[1] = arch;
-        data[2] = dig;
-        data[3] = ana;
-        rpc::write_u32_be(data + 4, feat);
-    }
-};
+    struct PinMode {
+        uint8_t pin;
+        uint8_t mode;
+        static constexpr size_t SIZE = 2;
+        static PinMode parse(const uint8_t* data) {
+            return {data[0], data[1]};
+        }
+        void encode(uint8_t* data) const {
+            data[0] = pin;
+            data[1] = mode;
+        }
+    };
 
-struct PinMode {
-    uint8_t pin;
-    uint8_t mode;
-    static constexpr size_t SIZE = 2;
-    static PinMode parse(const uint8_t* data) {
-        return {data[0], data[1]};
-    }
-    void encode(uint8_t* data) const {
-        data[0] = pin;
-        data[1] = mode;
-    }
-};
+    struct DigitalWrite {
+        uint8_t pin;
+        uint8_t value;
+        static constexpr size_t SIZE = 2;
+        static DigitalWrite parse(const uint8_t* data) {
+            return {data[0], data[1]};
+        }
+        void encode(uint8_t* data) const {
+            data[0] = pin;
+            data[1] = value;
+        }
+    };
 
-struct DigitalWrite {
-    uint8_t pin;
-    uint8_t value;
-    static constexpr size_t SIZE = 2;
-    static DigitalWrite parse(const uint8_t* data) {
-        return {data[0], data[1]};
-    }
-    void encode(uint8_t* data) const {
-        data[0] = pin;
-        data[1] = value;
-    }
-};
+    struct AnalogWrite {
+        uint8_t pin;
+        uint8_t value;
+        static constexpr size_t SIZE = 2;
+        static AnalogWrite parse(const uint8_t* data) {
+            return {data[0], data[1]};
+        }
+        void encode(uint8_t* data) const {
+            data[0] = pin;
+            data[1] = value;
+        }
+    };
 
-struct AnalogWrite {
-    uint8_t pin;
-    uint8_t value;
-    static constexpr size_t SIZE = 2;
-    static AnalogWrite parse(const uint8_t* data) {
-        return {data[0], data[1]};
-    }
-    void encode(uint8_t* data) const {
-        data[0] = pin;
-        data[1] = value;
-    }
-};
+    struct PinRead {
+        uint8_t pin;
+        static constexpr size_t SIZE = 1;
+        static PinRead parse(const uint8_t* data) {
+            return {data[0]};
+        }
+        void encode(uint8_t* data) const {
+            data[0] = pin;
+        }
+    };
 
-struct PinRead {
-    uint8_t pin;
-    static constexpr size_t SIZE = 1;
-    static PinRead parse(const uint8_t* data) {
-        return {data[0]};
-    }
-    void encode(uint8_t* data) const {
-        data[0] = pin;
-    }
-};
+    struct DigitalReadResponse {
+        uint8_t value;
+        static constexpr size_t SIZE = 1;
+        static DigitalReadResponse parse(const uint8_t* data) {
+            return {data[0]};
+        }
+        void encode(uint8_t* data) const {
+            data[0] = value;
+        }
+    };
 
-struct DigitalReadResponse {
-    uint8_t value;
-    static constexpr size_t SIZE = 1;
-    static DigitalReadResponse parse(const uint8_t* data) {
-        return {data[0]};
-    }
-    void encode(uint8_t* data) const {
-        data[0] = value;
-    }
-};
+    struct AnalogReadResponse {
+        uint16_t value;
+        static constexpr size_t SIZE = 2;
+        static AnalogReadResponse parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, value);
+        }
+    };
 
-struct AnalogReadResponse {
-    uint16_t value;
-    static constexpr size_t SIZE = 2;
-    static AnalogReadResponse parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, value);
-    }
-};
+    struct MailboxProcessed {
+        uint16_t message_id;
+        static constexpr size_t SIZE = 2;
+        static MailboxProcessed parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, message_id);
+        }
+    };
 
-struct MailboxProcessed {
-    uint16_t message_id;
-    static constexpr size_t SIZE = 2;
-    static MailboxProcessed parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, message_id);
-    }
-};
+    struct MailboxAvailableResponse {
+        uint16_t count;
+        static constexpr size_t SIZE = 2;
+        static MailboxAvailableResponse parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, count);
+        }
+    };
 
-struct MailboxAvailableResponse {
-    uint16_t count;
-    static constexpr size_t SIZE = 2;
-    static MailboxAvailableResponse parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, count);
-    }
-};
+    struct ProcessKill {
+        uint16_t pid;
+        static constexpr size_t SIZE = 2;
+        static ProcessKill parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, pid);
+        }
+    };
 
-struct ProcessKill {
-    uint16_t pid;
-    static constexpr size_t SIZE = 2;
-    static ProcessKill parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, pid);
-    }
-};
+    struct ProcessPoll {
+        uint16_t pid;
+        static constexpr size_t SIZE = 2;
+        static ProcessPoll parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, pid);
+        }
+    };
 
-struct ProcessPoll {
-    uint16_t pid;
-    static constexpr size_t SIZE = 2;
-    static ProcessPoll parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, pid);
-    }
-};
+    struct ProcessRunAsyncResponse {
+        uint16_t pid;
+        static constexpr size_t SIZE = 2;
+        static ProcessRunAsyncResponse parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, pid);
+        }
+    };
 
-struct ProcessRunAsyncResponse {
-    uint16_t pid;
-    static constexpr size_t SIZE = 2;
-    static ProcessRunAsyncResponse parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, pid);
-    }
-};
+    struct AckPacket {
+        uint16_t command_id;
+        static constexpr size_t SIZE = 2;
+        static AckPacket parse(const uint8_t* data) {
+            return {rpc::read_u16_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, command_id);
+        }
+    };
 
-struct AckPacket {
-    uint16_t command_id;
-    static constexpr size_t SIZE = 2;
-    static AckPacket parse(const uint8_t* data) {
-        return {rpc::read_u16_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, command_id);
-    }
-};
+    struct HandshakeConfig {
+        uint16_t ack_timeout_ms;
+        uint8_t ack_retry_limit;
+        uint32_t response_timeout_ms;
+        static constexpr size_t SIZE = 7;
+        static HandshakeConfig parse(const uint8_t* data) {
+            HandshakeConfig msg;
+            msg.ack_timeout_ms = rpc::read_u16_be(data + 0);
+            msg.ack_retry_limit = data[2];
+            msg.response_timeout_ms = rpc::read_u32_be(data + 3);
+            return msg;
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u16_be(data + 0, ack_timeout_ms);
+            data[2] = ack_retry_limit;
+            rpc::write_u32_be(data + 3, response_timeout_ms);
+        }
+    };
 
-struct HandshakeConfig {
-    uint16_t ack_timeout_ms;
-    uint8_t ack_retry_limit;
-    uint32_t response_timeout_ms;
-    static constexpr size_t SIZE = 7;
-    static HandshakeConfig parse(const uint8_t* data) {
-        HandshakeConfig msg;
-        msg.ack_timeout_ms = rpc::read_u16_be(data + 0);
-        msg.ack_retry_limit = data[2];
-        msg.response_timeout_ms = rpc::read_u32_be(data + 3);
-        return msg;
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u16_be(data + 0, ack_timeout_ms);
-        data[2] = ack_retry_limit;
-        rpc::write_u32_be(data + 3, response_timeout_ms);
-    }
-};
+    struct SetBaudratePacket {
+        uint32_t baudrate;
+        static constexpr size_t SIZE = 4;
+        static SetBaudratePacket parse(const uint8_t* data) {
+            return {rpc::read_u32_be(data)};
+        }
+        void encode(uint8_t* data) const {
+            rpc::write_u32_be(data + 0, baudrate);
+        }
+    };
 
-struct SetBaudratePacket {
-    uint32_t baudrate;
-    static constexpr size_t SIZE = 4;
-    static SetBaudratePacket parse(const uint8_t* data) {
-        return {rpc::read_u32_be(data)};
-    }
-    void encode(uint8_t* data) const {
-        rpc::write_u32_be(data + 0, baudrate);
-    }
-};
 
 // --- Complex/Variable Payloads ---
 
@@ -377,14 +377,8 @@ struct ProcessPollResponse {
     }
 };
 } // namespace payload
-
-/**
- * @namespace Payload
- * @brief Static validation wrappers for RPC payloads.
- * [SIL-2] Type-safe template-based parsing with length validation.
- */
 namespace Payload {
-
+    
 template <typename T>
 inline etl::optional<T> parse(const rpc::Frame& frame) {
     if (frame.header.payload_length < T::SIZE) {
@@ -392,9 +386,8 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
     }
     return T::parse(frame.payload.data());
 }
+            
 
-// Specialization for variable length payloads (ConsoleWrite, ProcessRun, etc.)
-// These bypass the SIZE check or use custom logic.
 template <>
 inline etl::optional<payload::ConsoleWrite> parse<payload::ConsoleWrite>(const rpc::Frame& frame) {
     return payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length);
@@ -412,7 +405,8 @@ inline etl::optional<payload::ProcessRunAsync> parse<payload::ProcessRunAsync>(c
 
 template <>
 inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+    if (frame.header.payload_length < 1 ||
+        frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
         return etl::nullopt;
     }
     return payload::DatastoreGet::parse(frame.payload.data());
@@ -420,7 +414,8 @@ inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const r
 
 template <>
 inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+    if (frame.header.payload_length < 1 ||
+        frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
         return etl::nullopt;
     }
     return payload::DatastoreGetResponse::parse(frame.payload.data());
@@ -464,7 +459,8 @@ inline etl::optional<payload::FileWrite> parse<payload::FileWrite>(const rpc::Fr
 
 template <>
 inline etl::optional<payload::FileRead> parse<payload::FileRead>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+    if (frame.header.payload_length < 1 ||
+        frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
         return etl::nullopt;
     }
     return payload::FileRead::parse(frame.payload.data());
@@ -480,7 +476,8 @@ inline etl::optional<payload::FileReadResponse> parse<payload::FileReadResponse>
 
 template <>
 inline etl::optional<payload::FileRemove> parse<payload::FileRemove>(const rpc::Frame& frame) {
-    if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+    if (frame.header.payload_length < 1 ||
+        frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
         return etl::nullopt;
     }
     return payload::FileRemove::parse(frame.payload.data());
@@ -505,8 +502,6 @@ inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollRes
     if (frame.header.payload_length < (size_t)(out_len + err_len + 6)) return etl::nullopt;
     return payload::ProcessPollResponse::parse(frame.payload.data());
 }
-
-} // namespace Payload
-
+}
 } // namespace rpc
 #endif

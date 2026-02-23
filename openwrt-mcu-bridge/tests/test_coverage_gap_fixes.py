@@ -1578,6 +1578,9 @@ async def test_handshake_sync_timeout():
         res = await comp.synchronize()
         assert res is False
 
+    # Cleanup to avoid ResourceWarning
+    state.mqtt_publish_queue = None
+
 
 @pytest.mark.asyncio
 async def test_handshake_unexpected_resp():

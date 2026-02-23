@@ -85,7 +85,7 @@ python -m pytest \
   --cov-branch \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \
   $( [[ "$ENABLE_HTML" -eq 1 ]] && echo "--cov-report=html:$COVERAGE_ROOT/html" ) \
-  --cov-report=term \
+  --cov-report=term-missing \
   "${PYTEST_ARGS[@]}"
 
 if [[ "$ENABLE_JSON" -eq 1 ]]; then

@@ -17,9 +17,7 @@ from mcubridge.config.const import (
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
-)
+from mcubridge.protocol.protocol import DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD
 from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
 )
@@ -165,7 +163,9 @@ def test_spool_disk_queue_initialization_failure() -> None:
     """Cover disk queue initialization failure fallback."""
     from mcubridge.mqtt.spool import MQTTPublishSpool
 
-    with patch("mcubridge.mqtt.spool.FileSpoolDeque", side_effect=OSError("Permission denied")):
+    with patch(
+        "mcubridge.mqtt.spool.FileSpoolDeque", side_effect=OSError("Permission denied")
+    ):
         spool = MQTTPublishSpool(
             directory="/tmp/test_spool_fail",
             limit=100,

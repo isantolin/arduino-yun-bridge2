@@ -44,7 +44,9 @@ class _FileComponent:
         payload: bytes,
         inbound: Any,
     ) -> None:
-        self._calls.add("file.handle_mqtt", identifier, tuple(remainder), payload, inbound)
+        self._calls.add(
+            "file.handle_mqtt", identifier, tuple(remainder), payload, inbound
+        )
 
 
 class _ConsoleComponent:
@@ -134,7 +136,9 @@ class _PinComponent:
         self._calls.add("pin.handle_analog_read_resp", payload)
         return True
 
-    async def handle_unexpected_mcu_request(self, command: Command, payload: bytes) -> bool:
+    async def handle_unexpected_mcu_request(
+        self, command: Command, payload: bytes
+    ) -> bool:
         self._calls.add("pin.handle_unexpected_mcu_request", command, payload)
         return True
 
@@ -189,7 +193,9 @@ class _SystemComponent:
         self._calls.add("system.handle_set_baudrate_resp", payload)
         return True
 
-    async def handle_mqtt(self, identifier: str, remainder: list[str], inbound: Any) -> bool:
+    async def handle_mqtt(
+        self, identifier: str, remainder: list[str], inbound: Any
+    ) -> bool:
         self._calls.add("system.handle_mqtt", identifier, tuple(remainder), inbound)
         return identifier != "nope"
 
@@ -202,6 +208,7 @@ def _make_dispatcher(
 ) -> BridgeDispatcher:
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
+
     state = create_runtime_state(get_default_config())
     state.link_is_synchronized = is_link_synchronized
 
@@ -220,7 +227,9 @@ def _make_dispatcher(
             return is_topic_action_allowed(topic, action)
         return True
 
-    async def _reject_topic_action(inbound: Any, topic: Topic | str, action: str) -> None:
+    async def _reject_topic_action(
+        inbound: Any, topic: Topic | str, action: str
+    ) -> None:
         calls.add("reject_topic_action", inbound, topic, action)
 
     async def _publish_bridge_snapshot(kind: str, inbound: Any) -> None:
@@ -346,7 +355,10 @@ async def test_dispatch_mcu_frame_handler_exception_sends_error_for_request() ->
     dispatcher.mcu_registry.register(Command.CMD_CONSOLE_WRITE.value, handler)
     await dispatcher.dispatch_mcu_frame(Command.CMD_CONSOLE_WRITE.value, b"hello")
 
-    assert any(name == "send_frame" and args[0] == Status.ERROR.value for name, args in calls.items)
+    assert any(
+        name == "send_frame" and args[0] == Status.ERROR.value
+        for name, args in calls.items
+    )
 
 
 @pytest.mark.asyncio
@@ -356,7 +368,10 @@ async def test_dispatch_mcu_frame_unhandled_request_sends_not_implemented() -> N
 
     await dispatcher.dispatch_mcu_frame(Command.CMD_LINK_SYNC.value, b"")
 
-    assert any(name == "send_frame" and args[0] == Status.NOT_IMPLEMENTED.value for name, args in calls.items)
+    assert any(
+        name == "send_frame" and args[0] == Status.NOT_IMPLEMENTED.value
+        for name, args in calls.items
+    )
 
 
 @pytest.mark.asyncio
@@ -380,13 +395,17 @@ def test_resolve_command_id_handles_command_status_unknown() -> None:
 
 
 @pytest.mark.asyncio
-async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments() -> None:
+async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments() -> (
+    None
+):
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
     inbound = make_inbound_message("other/prefix/console/in", payload=b"hi")
     await dispatcher.dispatch_mqtt_message(
         inbound,
-        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+        parse_topic_func=lambda name: parse_topic(
+            protocol.MQTT_DEFAULT_TOPIC_PREFIX, name
+        ),
     )
     assert calls.items == []
 
@@ -396,7 +415,9 @@ async def test_dispatch_mqtt_message_ignored_for_bad_prefix_or_missing_segments(
     )
     await dispatcher.dispatch_mqtt_message(
         inbound2,
-        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+        parse_topic_func=lambda name: parse_topic(
+            protocol.MQTT_DEFAULT_TOPIC_PREFIX, name
+        ),
     )
     assert calls.items == []
 
@@ -417,7 +438,9 @@ async def test_dispatch_mqtt_message_router_error_is_caught() -> None:
     )
     await dispatcher.dispatch_mqtt_message(
         inbound,
-        parse_topic_func=lambda name: parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, name),
+        parse_topic_func=lambda name: parse_topic(
+            protocol.MQTT_DEFAULT_TOPIC_PREFIX, name
+        ),
     )
     assert calls.items == []
 
@@ -539,13 +562,17 @@ async def test_system_topic_bridge_get_handlers_and_fallback_to_component() -> N
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
 
-    inbound1 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get")
+    inbound1 = make_inbound_message(
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/get"
+    )
     route1 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound1.topic))
     assert route1 is not None
     assert await dispatcher._handle_system_topic(route1, inbound1) is True
     assert ("publish_bridge_snapshot", ("handshake", inbound1)) in calls.items
 
-    inbound2 = make_inbound_message(f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/get")
+    inbound2 = make_inbound_message(
+        f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/get"
+    )
     route2 = parse_topic(protocol.MQTT_DEFAULT_TOPIC_PREFIX, str(inbound2.topic))
     assert route2 is not None
     assert await dispatcher._handle_system_topic(route2, inbound2) is True
@@ -561,9 +588,7 @@ def test_pin_action_from_segments_variants() -> None:
     assert BridgeDispatcher._pin_action_from_segments(()) is None
     assert BridgeDispatcher._pin_action_from_segments(("13",)) == "write"
     assert BridgeDispatcher._pin_action_from_segments(("13", "")) is None
-    assert (
-        BridgeDispatcher._pin_action_from_segments(("13", "READ")) == "read"
-    )
+    assert BridgeDispatcher._pin_action_from_segments(("13", "READ")) == "read"
 
 
 def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
@@ -583,5 +608,11 @@ async def test_unexpected_mcu_gpio_requests_drop_if_pin_missing() -> None:
     calls = _Calls([])
     dispatcher = _make_dispatcher(calls)
     dispatcher.pin = None
-    assert await dispatcher._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"") is False
-    assert await dispatcher._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"") is False
+    assert (
+        await dispatcher._handle_unexpected_pin_read(Command.CMD_DIGITAL_READ, b"")
+        is False
+    )
+    assert (
+        await dispatcher._handle_unexpected_pin_read(Command.CMD_ANALOG_READ, b"")
+        is False
+    )

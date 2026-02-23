@@ -35,10 +35,11 @@ async def test_file_handle_write_traversal() -> None:
     fc = FileComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import FileWritePacket
+
     # Path traversal
     payload = FileWritePacket(path="../etc/passwd", data=b"data").encode()
     assert await fc.handle_write(payload) is False
-    ctx.send_frame.assert_called_with(Status.ERROR.value, ANY) # INVALID_PATH
+    ctx.send_frame.assert_called_with(Status.ERROR.value, ANY)  # INVALID_PATH
 
 
 @pytest.mark.asyncio
@@ -49,6 +50,7 @@ async def test_file_handle_write_absolute() -> None:
     fc = FileComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import FileWritePacket
+
     payload = FileWritePacket(path="/tmp/foo", data=b"data").encode()
     assert await fc.handle_write(payload) is False
 

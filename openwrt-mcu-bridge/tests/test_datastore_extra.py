@@ -46,13 +46,14 @@ async def test_datastore_handle_get_truncation() -> None:
     state.datastore[key] = "A" * 300
 
     from mcubridge.protocol.structures import DatastoreGetPacket
+
     payload = DatastoreGetPacket(key=key).encode()
 
     await ds.handle_get_request(payload)
     # Verify the sent frame payload size (should be capped around 255 + prefix)
     args = ctx.send_frame.call_args[0]
     assert args[0] == Command.CMD_DATASTORE_GET_RESP.value
-    assert len(args[1]) <= 257 # 1 byte prefix + 255 data + potentially something else
+    assert len(args[1]) <= 257  # 1 byte prefix + 255 data + potentially something else
 
 
 @pytest.mark.asyncio
@@ -77,7 +78,10 @@ async def test_datastore_handle_mqtt_edge_cases() -> None:
     # Check for datastore-miss error
     found_miss = False
     for call in ctx.publish.call_args_list:
-        if call.kwargs.get("properties") and ("bridge-error", "datastore-miss") in call.kwargs["properties"]:
+        if (
+            call.kwargs.get("properties")
+            and ("bridge-error", "datastore-miss") in call.kwargs["properties"]
+        ):
             found_miss = True
     assert found_miss
 

@@ -94,7 +94,9 @@ class StructField:
 
     @property
     def cpp_type(self) -> str:
-        return {"B": "uint8_t", "H": "uint16_t", "I": "uint32_t", "Q": "uint64_t"}[self.type_code]
+        return {"B": "uint8_t", "H": "uint16_t", "I": "uint32_t", "Q": "uint64_t"}[
+            self.type_code
+        ]
 
     @property
     def size(self) -> int:
@@ -290,13 +292,25 @@ class CppGenerator:
             ("tag_length", "unsigned int", "RPC_HANDSHAKE_TAG_LENGTH"),
             ("ack_timeout_min_ms", "uint32_t", "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS"),
             ("ack_timeout_max_ms", "uint32_t", "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS"),
-            ("response_timeout_min_ms", "uint32_t", "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS"),
-            ("response_timeout_max_ms", "uint32_t", "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS"),
+            (
+                "response_timeout_min_ms",
+                "uint32_t",
+                "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
+            ),
+            (
+                "response_timeout_max_ms",
+                "uint32_t",
+                "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
+            ),
             ("retry_limit_min", "unsigned int", "RPC_HANDSHAKE_RETRY_LIMIT_MIN"),
             ("retry_limit_max", "unsigned int", "RPC_HANDSHAKE_RETRY_LIMIT_MAX"),
             ("hkdf_output_length", "unsigned int", "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH"),
             ("nonce_random_bytes", "unsigned int", "RPC_HANDSHAKE_NONCE_RANDOM_BYTES"),
-            ("nonce_counter_bytes", "unsigned int", "RPC_HANDSHAKE_NONCE_COUNTER_BYTES"),
+            (
+                "nonce_counter_bytes",
+                "unsigned int",
+                "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
+            ),
         ]
         for key, ctype, cname in hs_mapping:
             if key in hs:
@@ -308,12 +322,18 @@ class CppGenerator:
         if "hkdf_salt" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"])
             w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{bytes_str}}};")
-            w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};")
+            w.write(
+                f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};"
+            )
 
         if "hkdf_info_auth" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"])
-            w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};")
-            w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(hs['hkdf_info_auth'])};")
+            w.write(
+                f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};"
+            )
+            w.write(
+                f"constexpr size_t RPC_HANDSHAKE_HKDF_INFO_AUTH_LEN = {len(hs['hkdf_info_auth'])};"
+            )
         w.write()
 
         # Capabilities & Architectures
@@ -351,7 +371,11 @@ class CppGenerator:
         w.write("}")
         w.write()
 
-        ack_cmds = [f"(command_id == CommandId::{c.name})" for c in spec.commands if c.requires_ack]
+        ack_cmds = [
+            f"(command_id == CommandId::{c.name})"
+            for c in spec.commands
+            if c.requires_ack
+        ]
         w.write("constexpr bool requires_ack(CommandId command_id) {")
         if ack_cmds:
             w.write(f"    return {' || '.join(ack_cmds)};")
@@ -388,7 +412,9 @@ class CppGenerator:
                         offset = 0
                         for f in payload.fields:
                             if f.read_func:
-                                w.write(f"msg.{f.name} = {f.read_func}(data + {offset});")
+                                w.write(
+                                    f"msg.{f.name} = {f.read_func}(data + {offset});"
+                                )
                             else:
                                 w.write(f"msg.{f.name} = data[{offset}];")
                             offset += f.size
@@ -501,8 +527,7 @@ class CppGenerator:
 
     def _write_static_validator(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         with w.block("namespace Payload {"):
-            w.write(
-                """
+            w.write("""
 template <typename T>
 inline etl::optional<T> parse(const rpc::Frame& frame) {
     if (frame.header.payload_length < T::SIZE) {
@@ -510,8 +535,7 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
     }
     return T::parse(frame.payload.data());
 }
-            """
-            )
+            """)
 
             # Manual specializations for variable length payloads
             manual_impls = [
@@ -609,7 +633,8 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
             ]
             for type_name, body in manual_impls:
                 with w.block(
-                    f"template <>\ninline etl::optional<{type_name}> " f"parse<{type_name}>(const rpc::Frame& frame) {{"
+                    f"template <>\ninline etl::optional<{type_name}> "
+                    f"parse<{type_name}>(const rpc::Frame& frame) {{"
                 ):
                     w.write(body)
 
@@ -723,6 +748,7 @@ class PythonGenerator:
 
         w.write("HANDSHAKE_CONFIG_SIZE: Final[int] = 7")
         w.write()
+        w.write()
 
         # Enums and Classes
         with w.block("class CompressionType(IntEnum):", end=None):
@@ -735,16 +761,23 @@ class PythonGenerator:
         for name, val in spec.capabilities.items():
             w.write(f"CAPABILITY_{name.upper()}: Final[int] = {val}")
         w.write()
+        w.write()
 
         # Arch
         for name, val in spec.architectures.items():
             w.write(f"ARCH_{name.upper()}: Final[int] = {val}")
         w.write()
+        w.write()
 
         # Status Reasons
         if spec.status_reasons:
             for key in sorted(spec.status_reasons.keys()):
-                self._write_str_const(w, f"STATUS_REASON_{str(key).upper()}", str(spec.status_reasons[key]))
+                self._write_str_const(
+                    w,
+                    f"STATUS_REASON_{str(key).upper()}",
+                    str(spec.status_reasons[key]),
+                )
+            w.write()
             w.write()
 
         # Status Enum
@@ -778,7 +811,9 @@ class PythonGenerator:
 
         if resp_only:
             w.write("# Commands that expect a direct response without a prior ACK.")
-            w.write("# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.")
+            w.write(
+                "# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first."
+            )
             w.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({")
             with w.indent():
                 for c in resp_only:
@@ -824,7 +859,6 @@ class PythonGenerator:
         w.write()
         w.write()
         w.write('MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"')
-        w.write()
 
     def _write_str_const(self, w: CodeWriter, name: str, value: str) -> None:
         # Check total line length estimation
@@ -833,7 +867,7 @@ class PythonGenerator:
             w.write(f"{name}: Final[str] = (")
             with w.indent():
                 for line in textwrap.wrap(value, 70):  # Wrap earlier
-                    w.write(f'{json.dumps(line)}')
+                    w.write(f"{json.dumps(line)}")
             w.write(")")
         else:
             w.write(f"{name}: Final[str] = {json.dumps(value)}")
@@ -845,19 +879,27 @@ class PythonGenerator:
             if "_" not in raw:
                 continue
             prefix, suffix = raw.split("_", 1)
-            grouped.setdefault(prefix, []).append((suffix, act["value"], act["description"]))
+            grouped.setdefault(prefix, []).append(
+                (suffix, act["value"], act["description"])
+            )
 
         for prefix, items in grouped.items():
             # Special case mapping matching original generator
-            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
+            cls_name = (
+                "DatastoreAction"
+                if prefix == "DATASTORE"
+                else f"{prefix.lower().title()}Action"
+            )
             with w.block(f"class {cls_name}(StrEnum):", end=None):
                 for suffix, val, desc in items:
                     w.write(f'{suffix} = "{val}"  # {desc}')
-            w.write()
-            w.write()
+        w.write()
+        w.write()
 
     def _write_subscriptions(self, w: CodeWriter, spec: ProtocolSpec) -> None:
-        w.write("MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (")
+        w.write(
+            "MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = ("
+        )
         with w.indent():
             for sub in spec.mqtt_subscriptions:
                 topic = sub["topic"]
@@ -886,11 +928,16 @@ class PythonGenerator:
                         ]:
                             # Simple heuristic to match original output
                             cls_name = (
-                                "DatastoreAction" if topic == "DATASTORE" else f"{topic.lower().title()}Action"
+                                "DatastoreAction"
+                                if topic == "DATASTORE"
+                                else f"{topic.lower().title()}Action"
                             )
                             # Check if s matches an action value
                             for act in spec.actions:
-                                if act["name"].startswith(f"{topic}_") and act["value"] == s:
+                                if (
+                                    act["name"].startswith(f"{topic}_")
+                                    and act["value"] == s
+                                ):
                                     suffix = act["name"].split("_", 1)[1]
                                     seg_strs.append(f"{cls_name}.{suffix}.value")
                                     mapped = True

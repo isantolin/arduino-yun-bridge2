@@ -11,7 +11,11 @@ from typing import TYPE_CHECKING
 
 from transitions import Machine
 
-from .config.const import DEFAULT_WATCHDOG_INTERVAL, WATCHDOG_MIN_INTERVAL, WATCHDOG_TRIGGER_TOKEN
+from .config.const import (
+    DEFAULT_WATCHDOG_INTERVAL,
+    WATCHDOG_MIN_INTERVAL,
+    WATCHDOG_TRIGGER_TOKEN,
+)
 from .state.context import RuntimeState
 
 WatchdogWrite = Callable[[bytes], None]
@@ -56,18 +60,22 @@ class WatchdogKeepalive:
             states=[
                 self.STATE_INIT,
                 {"name": self.STATE_RUNNING, "on_enter": "_on_fsm_start"},
-                {"name": self.STATE_STOPPED, "on_enter": "_on_fsm_stop"}
+                {"name": self.STATE_STOPPED, "on_enter": "_on_fsm_stop"},
             ],
             initial=self.STATE_INIT,
             ignore_invalid_triggers=True,
-            model_attribute='fsm_state'
+            model_attribute="fsm_state",
         )
 
         # FSM Transitions
         self.state_machine.add_transition(
-            trigger="start", source=[self.STATE_INIT, self.STATE_STOPPED], dest=self.STATE_RUNNING
+            trigger="start",
+            source=[self.STATE_INIT, self.STATE_STOPPED],
+            dest=self.STATE_RUNNING,
         )
-        self.state_machine.add_transition(trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED)
+        self.state_machine.add_transition(
+            trigger="stop", source=self.STATE_RUNNING, dest=self.STATE_STOPPED
+        )
 
     def _on_fsm_start(self) -> None:
         """Callback when watchdog starts."""

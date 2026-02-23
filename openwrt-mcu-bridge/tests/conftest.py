@@ -30,11 +30,18 @@ if "serial_asyncio_fast" not in sys.modules:
 
     mock_saf = MagicMock()
     # Default return value is a tuple of mocks to satisfy 'transport, proto = await ...'
-    mock_saf.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
+    mock_saf.create_serial_connection = AsyncMock(
+        return_value=(MagicMock(), MagicMock())
+    )
     sys.modules["serial_asyncio_fast"] = mock_saf
 
 import pytest
-from mcubridge.config import common, settings
+
+# [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
+# and interference with Python 3.13 representation during cleanup.
+from mcubridge.config import common
+from mcubridge.config import logging as mcubridge_logging
+from mcubridge.config import settings
 from mcubridge.config.const import (
     DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
@@ -49,9 +56,6 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
-# [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
-# and interference with Python 3.13 representation during cleanup.
-from mcubridge.config import logging as mcubridge_logging
 mcubridge_logging.SYSLOG_SOCKET = Path("/dev/null/no-syslog-in-tests")
 
 _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
@@ -79,7 +83,9 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
+        kwargs = {
+            name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames
+        }
         loop.run_until_complete(test_function(**kwargs))
     finally:
         try:
@@ -91,12 +97,12 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     return True
 
 
-
 @pytest.fixture(scope="session", autouse=True)
 def force_gc_cleanup():
     """Force garbage collection at the end of the session to help clean up resources."""
     yield
     import gc
+
     gc.collect()
 
 
@@ -106,6 +112,7 @@ def event_loop_policy():
     import warnings
 
     import uvloop
+
     # Suppress deprecation warnings from uvloop internals (Python 3.16 preparation)
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -131,7 +138,6 @@ def reset_logging_handlers():
         root.removeHandler(handler)
 
 
-
 @pytest.fixture(autouse=True)
 def logging_mock_level_fix():
     """Ensure all handlers have a numeric level to avoid comparisons with MagicMock."""
@@ -153,7 +159,6 @@ def logging_mock_level_fix():
         handler.level = level
 
 
-
 @pytest.fixture(autouse=True)
 def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure load_runtime_config() sees a secure serial secret by default.
@@ -172,7 +177,6 @@ def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 if str(PACKAGE_ROOT) not in sys.path:
     sys.path.insert(0, str(PACKAGE_ROOT))
-
 
 
 @pytest.fixture()
@@ -208,7 +212,6 @@ def runtime_config() -> RuntimeConfig:
     )
 
 
-
 @pytest.fixture()
 def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
     state = create_runtime_state(runtime_config)
@@ -221,7 +224,6 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
         pass
 
 
-
 @pytest.fixture()
 def socket_enabled() -> Iterator[None]:
     """Compat fixture so network tests work without HA plugins."""
@@ -232,6 +234,7 @@ def socket_enabled() -> Iterator[None]:
 def real_config():
     import msgspec
     from mcubridge.config import settings
+
     raw = settings.get_default_config()
     raw["serial_shared_secret"] = b"abcd1234"
     raw["serial_retry_timeout"] = 1.0

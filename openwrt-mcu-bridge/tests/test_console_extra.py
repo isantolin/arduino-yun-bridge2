@@ -22,6 +22,7 @@ async def test_console_handle_write_edge_cases() -> None:
 
     # Empty data (decoded from valid but empty packet)
     from mcubridge.protocol.structures import ConsoleWritePacket
+
     payload = ConsoleWritePacket(data=b"").encode()
     await cc.handle_write(payload)
     assert ctx.publish.call_count == 0

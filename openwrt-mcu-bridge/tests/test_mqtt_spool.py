@@ -17,7 +17,7 @@ def _make_message(
     topic: str,
     payload: str = "hello",
     *,
-    user_properties: tuple[tuple[str, str], ...] = (),
+    user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list),
 ) -> QueuedPublish:
     return QueuedPublish(
         topic_name=topic,
@@ -32,7 +32,7 @@ def test_spool_roundtrip(tmp_path: Path) -> None:
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     message = _make_message(
         f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/test",
-        user_properties=(("k", "v"),),
+        user_properties=[("k", "v")],
     )
 
     spool.append(message)
@@ -69,7 +69,9 @@ def test_spool_snapshot_reports_pending(tmp_path: Path) -> None:
     assert snapshot["corrupt_dropped"] == 0
 
 
-def test_spool_skips_corrupt_rows(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+def test_spool_skips_corrupt_rows(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     spool = MQTTPublishSpool(tmp_path.as_posix(), limit=4)
     spool.append(_make_message("topic/first"))
 
@@ -162,7 +164,9 @@ def test_spool_fallback_invokes_hook(
     assert spool.is_degraded
 
 
-def test_spool_fallback_on_init_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_spool_fallback_on_init_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Spool degrades if directory creation fails."""
 
     # Force Path.mkdir to fail

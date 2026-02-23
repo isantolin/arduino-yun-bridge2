@@ -22,14 +22,26 @@ async def main() -> None:
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")
     parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument("--pin", default="d13", help="Pin to read (e.g., 'd13' or 'a0'). Default: d13")
-    parser.add_argument("--interval", type=float, default=2.0, help="Read interval in seconds. Default: 2.0")
-    parser.add_argument("--tls-insecure", action="store_true", help="Disable TLS certificate verification")
+    parser.add_argument(
+        "--pin", default="d13", help="Pin to read (e.g., 'd13' or 'a0'). Default: d13"
+    )
+    parser.add_argument(
+        "--interval",
+        type=float,
+        default=2.0,
+        help="Read interval in seconds. Default: 2.0",
+    )
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        help="Disable TLS certificate verification",
+    )
     args = parser.parse_args()
 
     # Validate essential arguments if not running on OpenWrt with UCI
     if not args.host or not args.user or not args.password:
         from mcubridge_client.env import read_uci_general
+
         if not read_uci_general():
             sys.stderr.write("Error: Missing required connection parameters.\n")
             parser.print_help()

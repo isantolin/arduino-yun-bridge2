@@ -42,11 +42,19 @@ class FileGaps:
 
     @property
     def line_percent(self) -> float:
-        return 100.0 if self.line_total == 0 else (100.0 * self.line_covered / self.line_total)
+        return (
+            100.0
+            if self.line_total == 0
+            else (100.0 * self.line_covered / self.line_total)
+        )
 
     @property
     def branch_percent(self) -> float:
-        return 100.0 if self.branch_total == 0 else (100.0 * self.branch_covered / self.branch_total)
+        return (
+            100.0
+            if self.branch_total == 0
+            else (100.0 * self.branch_covered / self.branch_total)
+        )
 
 
 _COND_RE = re.compile(r"\((\d+)/(\d+)\)")
@@ -165,7 +173,9 @@ def load_arduino_gaps(json_path: Path) -> list[FileGaps]:
 
 def _print_table(title: str, rows: list[FileGaps], top: int) -> None:
     sys.stdout.write(f"\n== {title} (top {top} by missing branches, then lines) ==\n")
-    rows_sorted = sorted(rows, key=lambda r: (r.branch_missing, r.line_missing), reverse=True)
+    rows_sorted = sorted(
+        rows, key=lambda r: (r.branch_missing, r.line_missing), reverse=True
+    )
     for row in rows_sorted[:top]:
         sys.stdout.write(
             f"{row.branch_missing:4d} br miss ({row.branch_percent:6.2f}%) | "
@@ -190,14 +200,18 @@ def main(argv: list[str]) -> int:
 
     if args.python_xml.exists():
         python_gaps = load_python_gaps(args.python_xml)
-        python_only = [g for g in python_gaps if g.branch_missing > 0 or g.line_missing > 0]
+        python_only = [
+            g for g in python_gaps if g.branch_missing > 0 or g.line_missing > 0
+        ]
         _print_table("Python", python_only, args.top)
     else:
         sys.stderr.write(f"Python coverage XML not found: {args.python_xml}\n")
 
     if args.arduino_json.exists():
         arduino_gaps = load_arduino_gaps(args.arduino_json)
-        arduino_only = [g for g in arduino_gaps if g.branch_missing > 0 or g.line_missing > 0]
+        arduino_only = [
+            g for g in arduino_gaps if g.branch_missing > 0 or g.line_missing > 0
+        ]
         _print_table("Arduino", arduino_only, args.top)
     else:
         sys.stderr.write(f"Arduino coverage JSON not found: {args.arduino_json}\n")

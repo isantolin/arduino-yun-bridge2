@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 # Mock serial_asyncio_fast before importing SerialTransport
 mock_serial_fast = MagicMock()
-mock_serial_fast.create_serial_connection = AsyncMock(return_value=(MagicMock(), MagicMock()))
+mock_serial_fast.create_serial_connection = AsyncMock(
+    return_value=(MagicMock(), MagicMock())
+)
 sys.modules["serial_asyncio_fast"] = mock_serial_fast
 
 import asyncio  # noqa: E402
@@ -43,11 +45,16 @@ def test_is_binary_packet_valid_size() -> None:
     assert serial_fast._is_binary_packet(b"abc") is True
     assert serial_fast._is_binary_packet(bytearray(b"abc")) is True
     assert serial_fast._is_binary_packet(b"") is False
-    assert serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_PACKET_BYTES + 1)) is False
+    assert (
+        serial_fast._is_binary_packet(b"a" * (serial_fast.MAX_SERIAL_PACKET_BYTES + 1))
+        is False
+    )
 
 
 @pytest.mark.asyncio
-async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_packet_crc_mismatch_reports_crc(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Logic in serial_fast currently logs CRC error but doesn't auto-reply status
     # to avoid protocol overhead in interrupt context unless critical.
     # The original test checked for status reply.
@@ -63,11 +70,12 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
     # for speed, unless we re-added it. The code I wrote:
     # if "crc mismatch" in str(exc).lower(): self.state.record_serial_crc_error()
 
-    raw = structures.CRC_COVERED_HEADER_STRUCT.build(dict(
-        version=1,
-        payload_len=0,
-        command_id=Command.CMD_LINK_SYNC.value
-    )) + b"x" * 10
+    raw = (
+        structures.CRC_COVERED_HEADER_STRUCT.build(
+            dict(version=1, payload_len=0, command_id=Command.CMD_LINK_SYNC.value)
+        )
+        + b"x" * 10
+    )
     monkeypatch.setattr(serial_fast.cobs, "decode", lambda _data: raw)
 
     proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
@@ -79,7 +87,9 @@ async def test_process_packet_crc_mismatch_reports_crc(monkeypatch: pytest.Monke
 
 
 @pytest.mark.asyncio
-async def test_process_packet_success_dispatches(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_process_packet_success_dispatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -92,11 +102,15 @@ async def test_process_packet_success_dispatches(monkeypatch: pytest.MonkeyPatch
     proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
     await proto._async_process_packet(b"encoded")
 
-    service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, b"hi")
+    service.handle_mcu_frame.assert_awaited_once_with(
+        Command.CMD_CONSOLE_WRITE.value, b"hi"
+    )
 
 
 @pytest.mark.asyncio
-async def test_write_frame_debug_logs_unknown_command(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_write_frame_debug_logs_unknown_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     service = BridgeService(config, state)
@@ -118,8 +132,16 @@ async def test_write_frame_debug_logs_unknown_command(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(serial_fast.logger, "isEnabledFor", lambda _lvl: True)
     seen: dict[str, str] = {}
-    monkeypatch.setattr(serial_fast.logger, "debug", lambda msg, *args: seen.setdefault("msg", msg % args))
-    monkeypatch.setattr(serial_fast.logger, "log", lambda _lvl, msg, *args: seen.setdefault("msg", msg % args))
+    monkeypatch.setattr(
+        serial_fast.logger,
+        "debug",
+        lambda msg, *args: seen.setdefault("msg", msg % args),
+    )
+    monkeypatch.setattr(
+        serial_fast.logger,
+        "log",
+        lambda _lvl, msg, *args: seen.setdefault("msg", msg % args),
+    )
 
     ok = proto.write_frame(protocol.UINT8_MASK - 1, b"payload")
     assert ok is True

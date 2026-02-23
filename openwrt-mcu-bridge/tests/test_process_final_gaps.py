@@ -15,7 +15,7 @@ async def test_process_collect_output_unknown_pid() -> None:
     state = create_runtime_state(config)
     pc = ProcessComponent(config, state, AsyncMock())
 
-    batch = await pc.collect_output(9999) # Unknown PID
+    batch = await pc.collect_output(9999)  # Unknown PID
     assert batch.status_byte == protocol.Status.ERROR.value
     assert batch.finished is False
 
@@ -53,6 +53,7 @@ async def test_process_terminate_tree_no_pid() -> None:
     class NoPidProc:
         def __init__(self):
             self.returncode = None
+
         def kill(self):
             pass
 
@@ -80,6 +81,7 @@ async def test_process_kill_lookup_error() -> None:
     # Simulate ProcessLookupError during termination
     with patch.object(pc, "_terminate_process_tree", side_effect=ProcessLookupError):
         from mcubridge.protocol.structures import ProcessKillPacket
+
         payload = ProcessKillPacket(pid=pid).encode()
         await pc.handle_kill(payload)
         # Should catch error and log it, not crash

@@ -81,7 +81,11 @@ async def test_client_datastore_put(mock_client) -> None:
 
     assert client_instance.publish.called
     # Check if any call was for the datastore put
-    put_call = next(c for c in client_instance.publish.call_args_list if "br/datastore/put/test_key" in c.args[0])
+    put_call = next(
+        c
+        for c in client_instance.publish.call_args_list
+        if "br/datastore/put/test_key" in c.args[0]
+    )
     assert put_call.args[1] == b"test_value"
 
 

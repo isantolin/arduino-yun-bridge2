@@ -158,7 +158,11 @@ class PinComponent:
         if pin < 0:
             return
 
-        is_analog_read = len(segments) == 2 and segments[1] == PinAction.READ and topic_enum == Topic.ANALOG
+        is_analog_read = (
+            len(segments) == 2
+            and segments[1] == PinAction.READ
+            and topic_enum == Topic.ANALOG
+        )
         # Note: Analog write usually targets PWM pins which are subset of digital pins in Arduino numbering,
         # but capabilities struct reports 'num_analog_inputs' specifically for ADC.
         # We'll use digital limit for writes and analog limit for analog reads.
@@ -183,7 +187,9 @@ class PinComponent:
                 payload_str,
             )
 
-    async def _handle_mode_command(self, pin: int, pin_str: str, payload_str: str) -> None:
+    async def _handle_mode_command(
+        self, pin: int, pin_str: str, payload_str: str
+    ) -> None:
         try:
             mode = int(payload_str)
         except ValueError:
@@ -204,7 +210,11 @@ class PinComponent:
         pin: int,
         inbound: Message | None = None,
     ) -> None:
-        command = Command.CMD_DIGITAL_READ if topic_type == Topic.DIGITAL else Command.CMD_ANALOG_READ
+        command = (
+            Command.CMD_DIGITAL_READ
+            if topic_type == Topic.DIGITAL
+            else Command.CMD_ANALOG_READ
+        )
         queue_limit = self.state.pending_pin_request_limit
 
         queue_len = (
@@ -253,7 +263,9 @@ class PinComponent:
                 except ValueError:
                     pass  # Already consumed by response handler
 
-    async def _handle_write_command(self, topic_type: Topic, pin: int, payload_str: str) -> None:
+    async def _handle_write_command(
+        self, topic_type: Topic, pin: int, payload_str: str
+    ) -> None:
         value = self._parse_pin_value(topic_type, payload_str)
         if value is None:
             logger.warning(
@@ -342,7 +354,9 @@ class PinComponent:
         # Basic bounds check.
         # Note: Arduino pins are 0-indexed, so count=20 means 0..19.
         if pin >= limit:
-            logger.warning("Security Block: Pin %d exceeds hardware limit (%d).", pin, limit)
+            logger.warning(
+                "Security Block: Pin %d exceeds hardware limit (%d).", pin, limit
+            )
             return False
         return True
 

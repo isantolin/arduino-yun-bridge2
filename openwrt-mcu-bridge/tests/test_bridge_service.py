@@ -60,25 +60,28 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
             )
             # Priming capabilities
             await service._handshake.handle_capabilities_resp(
-                                        cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
-                                            "ver": 2,
-                                            "arch": 1,
-                                            "dig": 20,
-                                            "ana": 6,
-                                            "feat": {
-                                                "i2c": False,
-                                                "large_buffer": False,
-                                                "logic_3v3": False,
-                                                "fpu": False,
-                                                "hw_serial1": False,
-                                                "dac": False,
-                                                "eeprom": False,
-                                                "debug_io": False,
-                                                "debug_frames": False,
-                                                "rle": False,
-                                                "watchdog": False,
-                                            },
-                                        })                )
+                cast(Any, structures.CapabilitiesPacket._SCHEMA).build(
+                    {
+                        "ver": 2,
+                        "arch": 1,
+                        "dig": 20,
+                        "ana": 6,
+                        "feat": {
+                            "i2c": False,
+                            "large_buffer": False,
+                            "logic_3v3": False,
+                            "fpu": False,
+                            "hw_serial1": False,
+                            "dac": False,
+                            "eeprom": False,
+                            "debug_io": False,
+                            "debug_frames": False,
+                            "rle": False,
+                            "watchdog": False,
+                        },
+                    }
+                )
+            )
         elif command_id == Command.CMD_GET_VERSION.value:
             # Direct flow injection bypasses lock issues
             flow.on_frame_received(
@@ -126,7 +129,9 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
         Command.CMD_LINK_SYNC.value,
     ]
     assert Command.CMD_GET_VERSION.value in frame_ids
-    assert any(frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames)
+    assert any(
+        frame_id == Command.CMD_CONSOLE_WRITE.value for frame_id, _ in sent_frames
+    )
     assert runtime_state.console_queue_bytes == 0
     assert runtime_state.mcu_version is None
     assert runtime_state.handshake_attempts == 1
@@ -138,7 +143,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(runtime_config: RuntimeConfig,
+async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -176,25 +182,28 @@ async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected
             )
             # Priming capabilities
             await service._handshake.handle_capabilities_resp(
-                                        cast(Any, structures.CapabilitiesPacket._SCHEMA).build({
-                                            "ver": 2,
-                                            "arch": 1,
-                                            "dig": 20,
-                                            "ana": 6,
-                                            "feat": {
-                                                "i2c": False,
-                                                "large_buffer": False,
-                                                "logic_3v3": False,
-                                                "fpu": False,
-                                                "hw_serial1": False,
-                                                "dac": False,
-                                                "eeprom": False,
-                                                "debug_io": False,
-                                                "debug_frames": False,
-                                                "rle": False,
-                                                "watchdog": False,
-                                            },
-                                        })                )
+                cast(Any, structures.CapabilitiesPacket._SCHEMA).build(
+                    {
+                        "ver": 2,
+                        "arch": 1,
+                        "dig": 20,
+                        "ana": 6,
+                        "feat": {
+                            "i2c": False,
+                            "large_buffer": False,
+                            "logic_3v3": False,
+                            "fpu": False,
+                            "hw_serial1": False,
+                            "dac": False,
+                            "eeprom": False,
+                            "debug_io": False,
+                            "debug_frames": False,
+                            "rle": False,
+                            "watchdog": False,
+                        },
+                    }
+                )
+            )
         return True
 
     service.register_serial_sender(fake_sender)
@@ -209,7 +218,8 @@ async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected
 
 
 @pytest.mark.asyncio
-async def test_repeated_sync_timeouts_become_fatal(runtime_config: RuntimeConfig,
+async def test_repeated_sync_timeouts_become_fatal(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.serial_handshake_fatal_failures = 2
@@ -242,7 +252,9 @@ def test_link_sync_resp_respects_rate_limit(
             ack_payload = structures.UINT16_STRUCT.build(command_id)
             service._serial_flow.on_frame_received(Status.ACK.value, ack_payload)
             if command_id == Command.CMD_GET_CAPABILITIES.value:
-                service._handshake.handle_capabilities_resp(b"\x02\x00\x14\x06\x00\x00\x00\x00")
+                service._handshake.handle_capabilities_resp(
+                    b"\x02\x00\x14\x06\x00\x00\x00\x00"
+                )
             return True
 
         service.register_serial_sender(fake_sender)
@@ -287,7 +299,8 @@ def test_link_sync_resp_respects_rate_limit(
 
 
 @pytest.mark.asyncio
-async def test_sync_auth_failure_schedules_backoff(runtime_config: RuntimeConfig,
+async def test_sync_auth_failure_schedules_backoff(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -375,7 +388,8 @@ def test_derive_serial_timing_limits(
 
 
 @pytest.mark.asyncio
-async def test_on_serial_connected_raises_on_secret_mismatch(runtime_config: RuntimeConfig,
+async def test_on_serial_connected_raises_on_secret_mismatch(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.serial_shared_secret = b"test_secret_1234"
@@ -419,7 +433,8 @@ async def test_on_serial_connected_raises_on_secret_mismatch(runtime_config: Run
 
 
 @pytest.mark.asyncio
-async def test_mcu_status_frames_increment_counters(runtime_config: RuntimeConfig,
+async def test_mcu_status_frames_increment_counters(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -429,7 +444,8 @@ async def test_mcu_status_frames_increment_counters(runtime_config: RuntimeConfi
 
 
 @pytest.mark.asyncio
-async def test_mcu_frame_before_sync_is_rejected(runtime_config: RuntimeConfig,
+async def test_mcu_frame_before_sync_is_rejected(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -476,7 +492,8 @@ async def test_mailbox_available_flow() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mailbox_available_rejects_payload(runtime_config: RuntimeConfig,
+async def test_mailbox_available_rejects_payload(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -498,7 +515,8 @@ async def test_mailbox_available_rejects_payload(runtime_config: RuntimeConfig,
 
 
 @pytest.mark.asyncio
-async def test_mailbox_push_overflow_returns_error(runtime_config: RuntimeConfig,
+async def test_mailbox_push_overflow_returns_error(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.mailbox_queue_limit = 1
@@ -526,7 +544,8 @@ async def test_mailbox_push_overflow_returns_error(runtime_config: RuntimeConfig
 
 
 @pytest.mark.asyncio
-async def test_mailbox_read_requeues_on_send_failure(runtime_config: RuntimeConfig,
+async def test_mailbox_read_requeues_on_send_failure(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -566,13 +585,15 @@ async def test_datastore_get_from_mcu_returns_cached_value() -> None:
 
     # Should respond with RESP containing "value1" (or ACK with payload)
     assert any(
-        frame_id in {Command.CMD_DATASTORE_GET_RESP.value, Status.ACK.value} and b"value1" in payload
+        frame_id in {Command.CMD_DATASTORE_GET_RESP.value, Status.ACK.value}
+        and b"value1" in payload
         for frame_id, payload in sent_frames
     )
 
 
 @pytest.mark.asyncio
-async def test_datastore_get_from_mcu_unknown_key_returns_empty(runtime_config: RuntimeConfig,
+async def test_datastore_get_from_mcu_unknown_key_returns_empty(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -596,7 +617,8 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(runtime_config: 
 
 
 @pytest.mark.asyncio
-async def test_datastore_put_from_mcu_updates_cache_and_mqtt(runtime_config: RuntimeConfig,
+async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -616,7 +638,8 @@ async def test_datastore_put_from_mcu_updates_cache_and_mqtt(runtime_config: Run
 
 
 @pytest.mark.asyncio
-async def test_on_serial_disconnected_clears_pending(runtime_config: RuntimeConfig,
+async def test_on_serial_disconnected_clears_pending(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -632,7 +655,8 @@ async def test_on_serial_disconnected_clears_pending(runtime_config: RuntimeConf
 
 
 @pytest.mark.asyncio
-async def test_mqtt_mailbox_read_preserves_empty_payload(runtime_config: RuntimeConfig,
+async def test_mqtt_mailbox_read_preserves_empty_payload(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -652,22 +676,27 @@ async def test_mqtt_mailbox_read_preserves_empty_payload(runtime_config: Runtime
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_put_updates_local_cache(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_put_updates_local_cache(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     from mcubridge.policy import TopicAuthorization
+
     runtime_state.topic_authorization = TopicAuthorization()
     service = BridgeService(runtime_config, runtime_state)
 
     topic = f"{runtime_config.mqtt_topic}/datastore/put/mykey"
-    msg = Message(topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1)
+    msg = Message(
+        topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1
+    )
 
     await service.handle_mqtt_message(msg)
     assert runtime_state.datastore["mykey"] == "val123"
 
 
 @pytest.mark.asyncio
-async def test_mqtt_bridge_handshake_topic_returns_snapshot(runtime_config: RuntimeConfig,
+async def test_mqtt_bridge_handshake_topic_returns_snapshot(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -683,7 +712,8 @@ async def test_mqtt_bridge_handshake_topic_returns_snapshot(runtime_config: Runt
 
 
 @pytest.mark.asyncio
-async def test_mqtt_bridge_summary_topic_returns_snapshot(runtime_config: RuntimeConfig,
+async def test_mqtt_bridge_summary_topic_returns_snapshot(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -700,23 +730,28 @@ async def test_mqtt_bridge_summary_topic_returns_snapshot(runtime_config: Runtim
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_put_without_key_is_ignored(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_put_without_key_is_ignored(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
     # Topic with only /datastore/set
     topic = f"{runtime_config.mqtt_topic}/datastore/set"
-    msg = Message(topic=topic, payload=b"val", qos=0, retain=False, properties=None, mid=1)
+    msg = Message(
+        topic=topic, payload=b"val", qos=0, retain=False, properties=None, mid=1
+    )
 
     await service.handle_mqtt_message(msg)
     assert not runtime_state.datastore
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_get_non_request_uses_cache(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_get_non_request_uses_cache(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     from mcubridge.policy import TopicAuthorization
+
     runtime_state.topic_authorization = TopicAuthorization()
     service = BridgeService(runtime_config, runtime_state)
     runtime_state.datastore["k1"] = "v1"
@@ -734,10 +769,12 @@ async def test_mqtt_datastore_get_non_request_uses_cache(runtime_config: Runtime
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     from mcubridge.policy import TopicAuthorization
+
     runtime_state.topic_authorization = TopicAuthorization()
     service = BridgeService(runtime_config, runtime_state)
     runtime_state.datastore["k1"] = "v1"
@@ -748,7 +785,9 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(runtime_conf
         ResponseTopic = "reply/here"
         CorrelationData = b"corr123"
 
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
+    msg = Message(
+        topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1
+    )
 
     await service.handle_mqtt_message(msg)
 
@@ -759,7 +798,8 @@ async def test_mqtt_datastore_get_request_cache_hit_publishes_reply(runtime_conf
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_get_request_miss_responds_with_error(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_get_request_miss_responds_with_error(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -769,7 +809,9 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(runtime_confi
     class Props:
         ResponseTopic = "err/topic"
 
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1)
+    msg = Message(
+        topic=topic, payload=b"", qos=0, retain=False, properties=Props(), mid=1
+    )
 
     await service.handle_mqtt_message(msg)
 
@@ -784,7 +826,8 @@ async def test_mqtt_datastore_get_request_miss_responds_with_error(runtime_confi
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_get_non_request_miss_is_silent(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_get_non_request_miss_is_silent(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -796,7 +839,8 @@ async def test_mqtt_datastore_get_non_request_miss_is_silent(runtime_config: Run
 
 
 @pytest.mark.asyncio
-async def test_mqtt_datastore_get_key_too_large_logs_warning(runtime_config: RuntimeConfig,
+async def test_mqtt_datastore_get_key_too_large_logs_warning(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -811,13 +855,15 @@ async def test_mqtt_datastore_get_key_too_large_logs_warning(runtime_config: Run
 
 
 @pytest.mark.asyncio
-async def test_enqueue_mqtt_drops_oldest_when_full(runtime_config: RuntimeConfig,
+async def test_enqueue_mqtt_drops_oldest_when_full(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     runtime_config.mqtt_queue_limit = 2
     service = BridgeService(runtime_config, runtime_state)
     # Re-create queue with the test limit
     from asyncio import Queue
+
     runtime_state.mqtt_publish_queue = Queue(maxsize=2)
 
     # Fill queue
@@ -839,10 +885,12 @@ async def test_enqueue_mqtt_drops_oldest_when_full(runtime_config: RuntimeConfig
 
 
 @pytest.mark.asyncio
-async def test_run_command_respects_allow_list(runtime_config: RuntimeConfig,
+async def test_run_command_respects_allow_list(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     from mcubridge.policy import AllowedCommandPolicy
+
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["/usr/bin/id"])
     service = BridgeService(runtime_config, runtime_state)
 
@@ -850,57 +898,72 @@ async def test_run_command_respects_allow_list(runtime_config: RuntimeConfig,
         status = Status.ERROR.value
         stderr = b"not allowed"
     else:
-        status, _, stderr, _ = await service._process.run_sync("/bin/true", ["/bin/true"])
+        status, _, stderr, _ = await service._process.run_sync(
+            "/bin/true", ["/bin/true"]
+        )
 
     assert status == Status.ERROR.value
     assert b"not allowed" in stderr
 
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
-    status_ok, _, stderr_ok, _ = await service._process.run_sync("/bin/true", ["/bin/true"])
+    status_ok, _, stderr_ok, _ = await service._process.run_sync(
+        "/bin/true", ["/bin/true"]
+    )
 
     assert status_ok == Status.OK.value
     assert stderr_ok == b""
 
 
 @pytest.mark.asyncio
-async def test_run_command_accepts_shell_metacharacters_as_literals(runtime_config: RuntimeConfig,
+async def test_run_command_accepts_shell_metacharacters_as_literals(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     from mcubridge.policy import AllowedCommandPolicy
+
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
     service = BridgeService(runtime_config, runtime_state)
 
     from unittest.mock import patch
+
     # Mock process component to avoid actual execution
     with patch("mcubridge.services.process.ProcessComponent.run_sync") as mock_run:
         mock_run.return_value = (Status.OK.value, b"hello; ls\n", b"", 0)
 
-        status, stdout, _, _ = await service._process.run_sync("echo hello; ls", ["echo", "hello;", "ls"])
+        status, stdout, _, _ = await service._process.run_sync(
+            "echo hello; ls", ["echo", "hello;", "ls"]
+        )
         assert status == Status.OK.value
         assert stdout == b"hello; ls\n"
 
 
 @pytest.mark.asyncio
-async def test_process_run_async_accepts_complex_arguments(runtime_config: RuntimeConfig,
+async def test_process_run_async_accepts_complex_arguments(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     from mcubridge.policy import AllowedCommandPolicy
+
     runtime_state.allowed_policy = AllowedCommandPolicy.from_iterable(["*"])
     service = BridgeService(runtime_config, runtime_state)
 
     from unittest.mock import patch
+
     with patch("mcubridge.services.process.ProcessComponent.start_async") as mock_start:
         mock_start.return_value = 12345
 
         # Payload: Command + tokens
-        await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, b"ls -l /tmp")
+        await service.handle_mcu_frame(
+            Command.CMD_PROCESS_RUN_ASYNC.value, b"ls -l /tmp"
+        )
 
         # Should have called start_async with parsed command
         mock_start.assert_called_with("ls -l /tmp", ["ls", "-l", "/tmp"])
 
 
 @pytest.mark.asyncio
-async def test_legacy_mcu_pin_read_request_emits_not_implemented(runtime_config: RuntimeConfig,
+async def test_legacy_mcu_pin_read_request_emits_not_implemented(
+    runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
     service = BridgeService(runtime_config, runtime_state)
@@ -915,6 +978,6 @@ async def test_legacy_mcu_pin_read_request_emits_not_implemented(runtime_config:
     service.register_serial_sender(fake_sender)
 
     # MCU requesting pin read (unsupported flow)
-    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ.value, b"\x0D")
+    await service.handle_mcu_frame(Command.CMD_DIGITAL_READ.value, b"\x0d")
 
     assert any(frame_id == Status.NOT_IMPLEMENTED.value for frame_id, _ in sent_frames)

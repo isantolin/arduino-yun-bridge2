@@ -151,7 +151,8 @@ def test_handle_get_version_resp_malformed(
         assert runtime_state.mcu_version is None
         assert not ctx.published
         assert any(
-            "Malformed GET_VERSION_RESP" in message for message in (record.getMessage() for record in caplog.records)
+            "Malformed GET_VERSION_RESP" in message
+            for message in (record.getMessage() for record in caplog.records)
         )
 
     _run(_coro())
@@ -219,7 +220,7 @@ def test_handle_set_baudrate_resp_calls_callback(runtime_config, runtime_state):
         component = SystemComponent(runtime_config, runtime_state, ctx)
 
         cb = AsyncMock()
-        ctx.on_baudrate_change_ack = cb # type: ignore
+        ctx.on_baudrate_change_ack = cb  # type: ignore
 
         await component.handle_set_baudrate_resp(b"")
 

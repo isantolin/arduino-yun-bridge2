@@ -1,9 +1,11 @@
 """Extra coverage for mcubridge.router.routers."""
 
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from mcubridge.protocol.topics import Topic, TopicRoute
 from mcubridge.router.routers import MQTTRouter
+
 
 @pytest.mark.asyncio
 async def test_mqtt_router_dispatch_multi_handlers() -> None:
@@ -17,6 +19,7 @@ async def test_mqtt_router_dispatch_multi_handlers() -> None:
     assert await router.dispatch(route, MagicMock()) is True
     assert h1.call_count == 1
     assert h2.call_count == 1
+
 
 @pytest.mark.asyncio
 async def test_mqtt_router_dispatch_no_match() -> None:

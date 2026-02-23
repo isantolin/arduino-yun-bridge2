@@ -54,7 +54,11 @@ from mcubridge.config.const import (
     SUPERVISOR_STATUS_RESTART_INTERVAL,
 )
 from mcubridge.config.logging import configure_logging
-from mcubridge.config.settings import RuntimeConfig, get_config_source, load_runtime_config
+from mcubridge.config.settings import (
+    RuntimeConfig,
+    get_config_source,
+    load_runtime_config,
+)
 from mcubridge.metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,
@@ -210,7 +214,10 @@ class BridgeDaemon:
         ]
 
         # 3. Optional Features
-        if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
+        if (
+            self.config.bridge_summary_interval > 0.0
+            or self.config.bridge_handshake_interval > 0.0
+        ):
             specs.append(
                 SupervisedTaskSpec(
                     name="bridge-snapshots",
@@ -226,7 +233,9 @@ class BridgeDaemon:
                 interval=self.config.watchdog_interval,
                 state=self.state,
             )
-            logger.info("Watchdog enabled (interval=%.2fs)", self.config.watchdog_interval)
+            logger.info(
+                "Watchdog enabled (interval=%.2fs)", self.config.watchdog_interval
+            )
             specs.append(
                 SupervisedTaskSpec(
                     name="watchdog",
@@ -260,13 +269,18 @@ class BridgeDaemon:
 
         # [SIL-2] Use native tenacity statistics for telemetry.
         retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(multiplier=spec.min_backoff, max=spec.max_backoff),
-            retry=tenacity.retry_if_not_exception_type(
-                (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit) + spec.fatal_exceptions
+            wait=tenacity.wait_exponential(
+                multiplier=spec.min_backoff, max=spec.max_backoff
             ),
-            stop=tenacity.stop_after_attempt(
-                spec.max_restarts + 1
-            ) if spec.max_restarts is not None else tenacity.stop_never,
+            retry=tenacity.retry_if_not_exception_type(
+                (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit)
+                + spec.fatal_exceptions
+            ),
+            stop=(
+                tenacity.stop_after_attempt(spec.max_restarts + 1)
+                if spec.max_restarts is not None
+                else tenacity.stop_never
+            ),
             reraise=True,
         )
 
@@ -281,16 +295,24 @@ class BridgeDaemon:
                             await spec.factory()
 
                             # If we get here, the task exited cleanly.
-                            log.warning("%s task exited cleanly; supervisor exiting", spec.name)
+                            log.warning(
+                                "%s task exited cleanly; supervisor exiting", spec.name
+                            )
                             self.state.mark_supervisor_healthy(spec.name)
                             return
                 except tenacity.RetryError:
                     stats = retryer.statistics
-                    log.error("%s failed after %d attempts; giving up", spec.name, stats.get('attempt_number', 0))
+                    log.error(
+                        "%s failed after %d attempts; giving up",
+                        spec.name,
+                        stats.get("attempt_number", 0),
+                    )
                     raise
                 except spec.fatal_exceptions as exc:
                     log.critical("%s failed with fatal exception: %s", spec.name, exc)
-                    self.state.record_supervisor_failure(spec.name, backoff=0.0, exc=exc, fatal=True)
+                    self.state.record_supervisor_failure(
+                        spec.name, backoff=0.0, exc=exc, fatal=True
+                    )
                     raise
                 except SUPERVISOR_RECOVERABLE_EXCEPTIONS as exc:
                     # [SIL-2] Report failure using tenacity statistics
@@ -303,10 +325,16 @@ class BridgeDaemon:
                     except (TypeError, ValueError):
                         pass
 
-                    self.state.record_supervisor_failure(spec.name, backoff=delay, exc=exc, fatal=False)
+                    self.state.record_supervisor_failure(
+                        spec.name, backoff=delay, exc=exc, fatal=False
+                    )
 
-                    if last_start_time > 0 and (time.monotonic() - last_start_time) > max(10.0, spec.restart_interval):
-                        log.info("%s was healthy long enough; resetting backoff", spec.name)
+                    if last_start_time > 0 and (
+                        time.monotonic() - last_start_time
+                    ) > max(10.0, spec.restart_interval):
+                        log.info(
+                            "%s was healthy long enough; resetting backoff", spec.name
+                        )
                         self.state.mark_supervisor_healthy(spec.name)
                         continue
                     raise
@@ -381,13 +409,19 @@ def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
         sys.exit(1)
     except ExceptionGroup as exc_group:
         for group_exc in exc_group.exceptions:
-            logger.critical("Fatal error in task group: %s", group_exc, exc_info=group_exc)
+            logger.critical(
+                "Fatal error in task group: %s", group_exc, exc_info=group_exc
+            )
         sys.exit(1)
     except OSError as exc:
-        logger.critical("System/OS error during daemon execution: %s", exc, exc_info=True)
+        logger.critical(
+            "System/OS error during daemon execution: %s", exc, exc_info=True
+        )
         sys.exit(1)
     except BaseException as exc:
-        logger.critical("Fatal base exception during daemon execution: %s", exc, exc_info=True)
+        logger.critical(
+            "Fatal base exception during daemon execution: %s", exc, exc_info=True
+        )
         sys.exit(1)
 
 

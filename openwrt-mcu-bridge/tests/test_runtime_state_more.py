@@ -159,7 +159,10 @@ def test_flush_mqtt_spool_queue_full_requeue_failure_disables_spool(
 
         assert state.mqtt_spool is None
         assert state.mqtt_spool_degraded is True
-        assert state.mqtt_spool_failure_reason in {"requeue_failed", "requeue_failed:requeue_failed"}
+        assert state.mqtt_spool_failure_reason in {
+            "requeue_failed",
+            "requeue_failed:requeue_failed",
+        }
         assert state.mqtt_spool_errors >= 1
 
     asyncio.run(_run())

@@ -11,10 +11,21 @@ import time
 from binascii import crc32
 from collections.abc import Iterable
 from enum import IntEnum
-from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Final, Self, Type, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    ClassVar,
+    Final,
+    Self,
+    Type,
+    TypeVar,
+    cast,
+)
 
-import msgspec
 import construct as construct_raw
+import msgspec
+
 from . import protocol
 
 if TYPE_CHECKING:
@@ -37,11 +48,12 @@ CRC_STRUCT: Final = construct.Int32ub
 # Separates compression flag from the command identifier for explicit handling.
 _RawCommandIdStruct: Final = construct.BitStruct(
     "compressed" / construct.Flag,
-    "id" / construct.Enum(
+    "id"
+    / construct.Enum(
         construct.BitsInteger(15),
         protocol.Command,
         protocol.Status,
-        _default=construct.Pass
+        _default=construct.Pass,
     ),
 )
 
@@ -120,7 +132,9 @@ class FileReadPacket(BaseStruct, frozen=True):
 class FileReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    _SCHEMA = BinStruct(
+        "content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes)
+    )
 
 
 class FileRemovePacket(BaseStruct, frozen=True):
@@ -163,7 +177,9 @@ class DatastoreGetPacket(BaseStruct, frozen=True):
 class DatastoreGetResponsePacket(BaseStruct, frozen=True):
     value: bytes
 
-    _SCHEMA = BinStruct("value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes))
+    _SCHEMA = BinStruct(
+        "value" / construct.Prefixed(construct.Int8ub, construct.GreedyBytes)
+    )
 
 
 class DatastorePutPacket(BaseStruct, frozen=True):
@@ -179,7 +195,9 @@ class DatastorePutPacket(BaseStruct, frozen=True):
 class MailboxPushPacket(BaseStruct, frozen=True):
     data: bytes
 
-    _SCHEMA = BinStruct("data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    _SCHEMA = BinStruct(
+        "data" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes)
+    )
 
 
 class MailboxProcessedPacket(BaseStruct, frozen=True):
@@ -197,7 +215,9 @@ class MailboxAvailableResponsePacket(BaseStruct, frozen=True):
 class MailboxReadResponsePacket(BaseStruct, frozen=True):
     content: bytes
 
-    _SCHEMA = BinStruct("content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes))
+    _SCHEMA = BinStruct(
+        "content" / construct.Prefixed(construct.Int16ub, construct.GreedyBytes)
+    )
 
 
 class PinModePacket(BaseStruct, frozen=True):
@@ -311,6 +331,7 @@ class HandshakeConfigPacket(BaseStruct, frozen=True):
 
 class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     """Features bitmask parsed via BitStruct."""
+
     watchdog: bool
     rle: bool
     debug_frames: bool
@@ -336,7 +357,8 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
         "arch" / construct.Int8ub,
         "dig" / construct.Int8ub,
         "ana" / construct.Int8ub,
-        "feat" / construct.BitStruct(
+        "feat"
+        / construct.BitStruct(
             construct.Padding(32 - 11),
             "i2c" / construct.Flag,
             "large_buffer" / construct.Flag,
@@ -349,7 +371,7 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
             "debug_frames" / construct.Flag,
             "rle" / construct.Flag,
             "watchdog" / construct.Flag,
-        )
+        ),
     )
 
 
@@ -361,6 +383,7 @@ class SetBaudratePacket(BaseStruct, frozen=True):
 
 # --- Framing Schema ---
 
+
 def _compute_crc32(data: bytes) -> int:
     return crc32(data)
 
@@ -370,50 +393,106 @@ def _compute_crc32(data: bytes) -> int:
 # Uses Switch for automatic payload schema selection.
 # Uses RawCopy to allow access to raw bytes for Checksum and legacy byte-based handlers.
 FRAME_STRUCT = BinStruct(
-    "content" / construct.RawCopy(BinStruct(
-        "header" / CRC_COVERED_HEADER_STRUCT,
-        "payload" / construct.RawCopy(construct.IfThenElse(
-            (construct.this.header.command_id & protocol.CMD_FLAG_COMPRESSED),
-            # If compressed, do not parse payload schema (it's raw compressed bytes)
-            construct.Bytes(construct.this.header.payload_len),
-            # If not compressed, select schema based on ID, strictly bounded by payload_len
-            construct.FixedSized(
-                construct.this.header.payload_len,
-                construct.Switch(
-                    (construct.this.header.command_id & ~protocol.CMD_FLAG_COMPRESSED),
-                    {
-                        protocol.Command.CMD_FILE_WRITE: FileWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                        protocol.Command.CMD_FILE_READ: FileReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_FILE_REMOVE: FileRemovePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_GET_VERSION_RESP: VersionResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_GET_FREE_MEMORY_RESP: FreeMemoryResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_DIGITAL_READ_RESP: DigitalReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_ANALOG_READ_RESP: AnalogReadResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_DATASTORE_GET: DatastoreGetPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_DATASTORE_PUT: DatastorePutPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_MAILBOX_PUSH: MailboxPushPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_SET_PIN_MODE: PinModePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_DIGITAL_WRITE: DigitalWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_ANALOG_WRITE: AnalogWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_DIGITAL_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_ANALOG_READ: PinReadPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_CONSOLE_WRITE: ConsoleWritePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_RUN: ProcessRunPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_RUN_ASYNC: ProcessRunAsyncPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_POLL: ProcessPollPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_KILL: ProcessKillPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_RUN_RESP: ProcessRunResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: ProcessRunAsyncResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_PROCESS_POLL_RESP: ProcessPollResponsePacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-                protocol.Command.CMD_LINK_RESET: HandshakeConfigPacket._SCHEMA,  # pyright: ignore[reportPrivateUsage]
-            }, default=construct.GreedyBytes))
-        )),
-    )),
-    "crc" / construct.Checksum(
-        CRC_STRUCT,
-        _compute_crc32,
-        construct.this.content.data
+    "content"
+    / construct.RawCopy(
+        BinStruct(
+            "header" / CRC_COVERED_HEADER_STRUCT,
+            "payload"
+            / construct.RawCopy(
+                construct.IfThenElse(
+                    (construct.this.header.command_id & protocol.CMD_FLAG_COMPRESSED),
+                    # If compressed, do not parse payload schema (it's raw compressed bytes)
+                    construct.Bytes(construct.this.header.payload_len),
+                    # If not compressed, select schema based on ID, strictly bounded by payload_len
+                    construct.FixedSized(
+                        construct.this.header.payload_len,
+                        construct.Switch(
+                            (
+                                construct.this.header.command_id
+                                & ~protocol.CMD_FLAG_COMPRESSED
+                            ),
+                            {
+                                protocol.Command.CMD_FILE_WRITE: (
+                                    FileWritePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_FILE_READ: (
+                                    FileReadPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_FILE_REMOVE: (
+                                    FileRemovePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_GET_VERSION_RESP: (
+                                    VersionResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_GET_FREE_MEMORY_RESP: (
+                                    FreeMemoryResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_DIGITAL_READ_RESP: (
+                                    DigitalReadResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_ANALOG_READ_RESP: (
+                                    AnalogReadResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_DATASTORE_GET: (
+                                    DatastoreGetPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_DATASTORE_PUT: (
+                                    DatastorePutPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_MAILBOX_PUSH: (
+                                    MailboxPushPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_SET_PIN_MODE: (
+                                    PinModePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_DIGITAL_WRITE: (
+                                    DigitalWritePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_ANALOG_WRITE: (
+                                    AnalogWritePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_DIGITAL_READ: (
+                                    PinReadPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_ANALOG_READ: (
+                                    PinReadPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_CONSOLE_WRITE: (
+                                    ConsoleWritePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_RUN: (
+                                    ProcessRunPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_RUN_ASYNC: (
+                                    ProcessRunAsyncPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_POLL: (
+                                    ProcessPollPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_KILL: (
+                                    ProcessKillPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_RUN_RESP: (
+                                    ProcessRunResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_RUN_ASYNC_RESP: (
+                                    ProcessRunAsyncResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_PROCESS_POLL_RESP: (
+                                    ProcessPollResponsePacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                                protocol.Command.CMD_LINK_RESET: (
+                                    HandshakeConfigPacket._SCHEMA  # pyright: ignore[reportPrivateUsage]
+                                ),
+                            },
+                            default=construct.GreedyBytes,
+                        ),
+                    ),
+                )
+            ),
+        )
     ),
+    "crc" / construct.Checksum(CRC_STRUCT, _compute_crc32, construct.this.content.data),
 )
 
 # --- High-Level Structure (Msgspec Only) ---
@@ -472,7 +551,9 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list)  # pyright: ignore[reportUnknownVariableType]
+    user_properties: list[UserProperty] = msgspec.field(
+        default_factory=list[UserProperty]
+    )
 
 
 UserProperty = tuple[str, str]
@@ -490,10 +571,12 @@ class QueuedPublish(msgspec.Struct):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    user_properties: tuple[UserProperty, ...] = ()
+    user_properties: list[UserProperty] = msgspec.field(
+        default_factory=list[UserProperty]
+    )
 
     def to_record(self) -> SpoolRecord:
-        """Convert to a SpoolRecord struct for disk serialization."""
+        """Convert to a QueuedPublish to SpoolRecord for serialization."""
         return SpoolRecord(
             topic_name=self.topic_name,
             payload=self.payload,
@@ -504,27 +587,48 @@ class QueuedPublish(msgspec.Struct):
             message_expiry_interval=self.message_expiry_interval,
             response_topic=self.response_topic,
             correlation_data=self.correlation_data,
-            user_properties=list(self.user_properties),
+            user_properties=self.user_properties,
         )
 
     @classmethod
     def from_record(cls, record: SpoolRecord | dict[str, Any]) -> Self:
         """Create a QueuedPublish instance from a SpoolRecord struct or dict."""
-        data: dict[str, Any] = record if isinstance(record, dict) else msgspec.structs.asdict(record)
+        data: dict[str, Any] = (
+            record if isinstance(record, dict) else msgspec.structs.asdict(record)
+        )
 
         payload = data.get("payload", b"")
         if isinstance(payload, str):
-             payload = payload.encode("utf-8") # Fallback
+            payload = payload.encode("utf-8")
+
+        return cls(
+            topic_name=str(data.get("topic_name", "")),
+            payload=payload,
+            qos=int(data.get("qos", 0)),
+            retain=bool(data.get("retain", False)),
+            content_type=data.get("content_type"),
+            payload_format_indicator=data.get("payload_format_indicator"),
+            message_expiry_interval=data.get("message_expiry_interval"),
+            response_topic=data.get("response_topic"),
+            correlation_data=data.get("correlation_data"),
+            user_properties=cast(list[UserProperty], list(data.get("user_properties") or [])),
+        )
+        if isinstance(payload, str):
+            payload = payload.encode("utf-8")  # Fallback
 
         correlation_data = data.get("correlation_data")
         if isinstance(correlation_data, str):
-             correlation_data = correlation_data.encode("utf-8") # Fallback
+            correlation_data = correlation_data.encode("utf-8")  # Fallback
 
         raw_props = data.get("user_properties", ())
-        user_properties: list[tuple[str, str]] = []  # pyright: ignore[reportUnknownVariableType]
+        user_properties: list[tuple[str, str]] = (
+            []
+        )  # pyright: ignore[reportUnknownVariableType]
         if isinstance(raw_props, Iterable):
             for item in cast("Iterable[Any]", raw_props):
-                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
+                if (
+                    isinstance(item, (list, tuple)) and len(item) >= 2
+                ):  # pyright: ignore[reportUnknownArgumentType]
                     k = str(item[0])  # pyright: ignore[reportUnknownArgumentType]
                     v = str(item[1])  # pyright: ignore[reportUnknownArgumentType]
                     user_properties.append((k, v))
@@ -539,7 +643,9 @@ class QueuedPublish(msgspec.Struct):
             message_expiry_interval=data.get("message_expiry_interval"),
             response_topic=data.get("response_topic"),
             correlation_data=correlation_data,
-            user_properties=tuple(user_properties),  # pyright: ignore[reportUnknownArgumentType]
+            user_properties=tuple(
+                user_properties
+            ),  # pyright: ignore[reportUnknownArgumentType]
         )
 
 
@@ -695,17 +801,19 @@ class McuCapabilities(msgspec.Struct):
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
-        res.update({
-            "has_watchdog": self.has_watchdog,
-            "has_rle": self.has_rle,
-            "has_eeprom": self.has_eeprom,
-            "has_dac": self.has_dac,
-            "has_hw_serial1": self.has_hw_serial1,
-            "has_fpu": self.has_fpu,
-            "is_3v3_logic": self.is_3v3_logic,
-            "has_large_buffer": self.has_large_buffer,
-            "has_i2c": self.has_i2c,
-        })
+        res.update(
+            {
+                "has_watchdog": self.has_watchdog,
+                "has_rle": self.has_rle,
+                "has_eeprom": self.has_eeprom,
+                "has_dac": self.has_dac,
+                "has_hw_serial1": self.has_hw_serial1,
+                "has_fpu": self.has_fpu,
+                "is_3v3_logic": self.is_3v3_logic,
+                "has_large_buffer": self.has_large_buffer,
+                "has_i2c": self.has_i2c,
+            }
+        )
         return res
 
 
@@ -734,7 +842,17 @@ class SerialThroughputStats(msgspec.Struct):
 
 
 # [EXTENDED METRICS] Latency histogram bucket boundaries in milliseconds
-LATENCY_BUCKETS_MS: tuple[float, ...] = (5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0)
+LATENCY_BUCKETS_MS: tuple[float, ...] = (
+    5.0,
+    10.0,
+    25.0,
+    50.0,
+    100.0,
+    250.0,
+    500.0,
+    1000.0,
+    2500.0,
+)
 
 
 def _latency_bucket_counts_factory() -> list[int]:
@@ -744,7 +862,9 @@ def _latency_bucket_counts_factory() -> list[int]:
 class SerialLatencyStats(msgspec.Struct):
     """RPC command latency histogram."""
 
-    bucket_counts: list[int] = msgspec.field(default_factory=_latency_bucket_counts_factory)
+    bucket_counts: list[int] = msgspec.field(
+        default_factory=_latency_bucket_counts_factory
+    )
     overflow_count: int = 0
     total_observations: int = 0
     total_latency_ms: float = 0.0
@@ -754,6 +874,7 @@ class SerialLatencyStats(msgspec.Struct):
 
     def initialize_prometheus(self, registry: Any | None = None) -> None:
         from prometheus_client import Summary
+
         self._summary = Summary(
             "mcubridge_rpc_latency_seconds",
             "RPC command round-trip latency",
@@ -778,9 +899,16 @@ class SerialLatencyStats(msgspec.Struct):
             self._summary.observe(latency_ms / 1000.0)
 
     def as_dict(self) -> dict[str, Any]:
-        avg = self.total_latency_ms / self.total_observations if self.total_observations > 0 else 0.0
+        avg = (
+            self.total_latency_ms / self.total_observations
+            if self.total_observations > 0
+            else 0.0
+        )
         return {
-            "buckets": {f"le_{int(b)}ms": self.bucket_counts[i] for i, b in enumerate(LATENCY_BUCKETS_MS)},
+            "buckets": {
+                f"le_{int(b)}ms": self.bucket_counts[i]
+                for i, b in enumerate(LATENCY_BUCKETS_MS)
+            },
             "overflow": self.overflow_count,
             "count": self.total_observations,
             "sum_ms": self.total_latency_ms,

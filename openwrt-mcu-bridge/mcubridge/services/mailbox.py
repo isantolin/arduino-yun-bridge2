@@ -14,11 +14,11 @@ from mcubridge.protocol.protocol import (
     Status,
 )
 from mcubridge.protocol.structures import (
+    UINT16_STRUCT,
     MailboxAvailableResponsePacket,
     MailboxProcessedPacket,
     MailboxPushPacket,
     MailboxReadResponsePacket,
-    UINT16_STRUCT,
 )
 
 from ..config.settings import RuntimeConfig

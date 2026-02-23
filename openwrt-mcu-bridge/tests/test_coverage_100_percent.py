@@ -22,11 +22,11 @@ async def test_serial_flow_rle_compression_coverage():
         ack_timeout=0.1,
         response_timeout=0.1,
         max_attempts=1,
-        logger=logging.getLogger("test")
+        logger=logging.getLogger("test"),
     )
     pipeline.set_sender(mock_sender)
 
-    large_payload = b'A' * 20
+    large_payload = b"A" * 20
     await pipeline.send(Command.CMD_CONSOLE_WRITE.value, large_payload)
 
     sent_cmd = mock_sender.call_args[0][0]
@@ -40,12 +40,14 @@ async def test_serial_flow_ack_mismatch_and_status_coverage():
         ack_timeout=0.1,
         response_timeout=0.1,
         max_attempts=1,
-        logger=logging.getLogger("test")
+        logger=logging.getLogger("test"),
     )
     mock_sender = mock.AsyncMock(return_value=True)
     pipeline.set_sender(mock_sender)
 
-    task = asyncio.create_task(pipeline.send(Command.CMD_SET_PIN_MODE.value, b'\x01\x01'))
+    task = asyncio.create_task(
+        pipeline.send(Command.CMD_SET_PIN_MODE.value, b"\x01\x01")
+    )
     await asyncio.sleep(0.1)
 
     pending = pipeline._current
@@ -76,6 +78,7 @@ async def test_runtime_state_spool_failure_coverage(tmp_path):
         state.mqtt_spool = mock_spool
 
         from mcubridge.mqtt.messages import QueuedPublish
+
         msg = QueuedPublish("topic", b"payload")
         res = await state.stash_mqtt_message(msg)
         assert res is False
@@ -128,14 +131,23 @@ async def test_serial_fast_protocol_error_coverage():
 
     # 1. ValueError containing "crc mismatch"
     # We must patch Frame.from_bytes where it is CALLED, which is in mcubridge.transport.serial_fast
-    with mock.patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("crc mismatch")):
+    with mock.patch(
+        "mcubridge.transport.serial.Frame.from_bytes",
+        side_effect=ValueError("crc mismatch"),
+    ):
         # We need to provide something that COBS can decode, or mock cobs.decode
-        with mock.patch("mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"):
+        with mock.patch(
+            "mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"
+        ):
             await proto._async_process_packet(b"something")
             assert state.serial_crc_errors == 1
 
     # 2. Generic Decode Error
-    with mock.patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("other")):
-        with mock.patch("mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"):
+    with mock.patch(
+        "mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("other")
+    ):
+        with mock.patch(
+            "mcubridge.transport.serial.cobs.decode", return_value=b"some bytes"
+        ):
             await proto._async_process_packet(b"something")
             assert state.serial_decode_errors == 2

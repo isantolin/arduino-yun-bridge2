@@ -26,7 +26,7 @@ def test_shell_command_empty_json_command() -> None:
 
 def test_shell_command_malformed_json() -> None:
     """Cover malformed JSON fallback to plain text."""
-    result = ShellCommandPayload.from_mqtt(b'{malformed json here')
+    result = ShellCommandPayload.from_mqtt(b"{malformed json here")
     assert result.command == "{malformed json here"
 
 
@@ -135,8 +135,7 @@ async def test_serial_flow_failure_status_printable_ignored() -> None:
 
     # Failure status with printable text - should be ignored
     controller.on_frame_received(
-        Status.ERROR.value,  # Generic error
-        b"serial_rx_overflow"
+        Status.ERROR.value, b"serial_rx_overflow"  # Generic error
     )
 
     # Not marked as failure because payload is printable

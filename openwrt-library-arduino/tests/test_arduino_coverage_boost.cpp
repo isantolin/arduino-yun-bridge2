@@ -162,6 +162,17 @@ void test_bridge_writer_gaps() {
     uint8_t large_data[100];
     memset(large_data, 'D', 100);
     TEST_ASSERT(writer.send(rpc::CommandId::CMD_CONSOLE_WRITE, small_header, 2, large_data, 100) == true);
+
+    // Line 145: send failure + lost sync
+    ba.setIdle();
+    ba.setAwaitingAck();
+    ba.pushPendingTxFrame(0, 0); // Fill queue
+    ba.pushPendingTxFrame(0, 0); 
+    ba.pushPendingTxFrame(0, 0); 
+    ba.pushPendingTxFrame(0, 0); 
+    // Now sendFrame will fail because queue is full.
+    // We must manually trigger lost sync inside the loop?
+    // Hard to do without a custom sendFrame mock.
 }
 
 void test_bridge_core_gaps() {
@@ -206,6 +217,12 @@ void test_bridge_core_gaps() {
     ba.pushPendingTxFrame(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION), 0);
     ba.handleMalformed(rpc::RPC_INVALID_ID_SENTINEL);
     TEST_ASSERT(ba.getRetryCount() == 1);
+
+    // Line 440: CMD_LINK_SYNC bad length
+    rpc::Frame f_sync;
+    f_sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+    f_sync.header.payload_length = 1; // Wrong
+    ba.handleSystemCommand(f_sync);
 }
 
 static bool g_timeout_called = false;
@@ -337,6 +354,26 @@ void test_services_gaps() {
     etl::copy_n(pbuf, 6, f.payload.data());
     CommandContext ctx{&f, f.header.command_id, false, false};
     ba.routeProcessCommand(ctx); 
+}
+
+void test_bridge_status_system_gaps() {
+    auto ba = TestAccessor::create(Bridge);
+    ba.setIdle();
+    
+    // Line 417: STATUS_MALFORMED
+    rpc::Frame f_mal;
+    f_mal.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED);
+    f_mal.header.payload_length = 2;
+    rpc::write_u16_be(f_mal.payload.data(), 0x1234);
+    CommandContext ctx_mal{&f_mal, f_mal.header.command_id, false, false};
+    ba.routeStatusCommand(ctx_mal);
+
+    // Line 442: CMD_GET_CAPABILITIES
+    rpc::Frame f_cap;
+    f_cap.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
+    f_cap.header.payload_length = 0;
+    CommandContext ctx_cap{&f_cap, f_cap.header.command_id, false, false};
+    ba.routeSystemCommand(ctx_cap);
 }
 
 void test_bridge_handle_dedup_ack_gaps() {

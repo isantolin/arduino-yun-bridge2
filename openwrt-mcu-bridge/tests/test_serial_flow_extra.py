@@ -5,15 +5,17 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.structures import UINT16_STRUCT, PendingCommand
 from mcubridge.services.serial_flow import SerialFlowController
-from mcubridge.protocol.structures import PendingCommand, UINT16_STRUCT
 
 
 @pytest.mark.asyncio
 async def test_serial_flow_compression_failure() -> None:
     flow = SerialFlowController(
-        ack_timeout=0.1, response_timeout=0.2, max_attempts=1,
-        logger=logging.getLogger("test")
+        ack_timeout=0.1,
+        response_timeout=0.2,
+        max_attempts=1,
+        logger=logging.getLogger("test"),
     )
     # Mock rle.should_compress to True, but rle.encode to raise
     with (
@@ -29,8 +31,10 @@ async def test_serial_flow_compression_failure() -> None:
 @pytest.mark.asyncio
 async def test_serial_flow_on_frame_ack_mismatch() -> None:
     flow = SerialFlowController(
-        ack_timeout=0.1, response_timeout=0.2, max_attempts=1,
-        logger=logging.getLogger("test")
+        ack_timeout=0.1,
+        response_timeout=0.2,
+        max_attempts=1,
+        logger=logging.getLogger("test"),
     )
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
     flow._current = pending
@@ -44,8 +48,10 @@ async def test_serial_flow_on_frame_ack_mismatch() -> None:
 @pytest.mark.asyncio
 async def test_serial_flow_on_frame_failure_human_readable() -> None:
     flow = SerialFlowController(
-        ack_timeout=0.1, response_timeout=0.2, max_attempts=1,
-        logger=logging.getLogger("test")
+        ack_timeout=0.1,
+        response_timeout=0.2,
+        max_attempts=1,
+        logger=logging.getLogger("test"),
     )
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
     flow._current = pending
@@ -58,8 +64,10 @@ async def test_serial_flow_on_frame_failure_human_readable() -> None:
 @pytest.mark.asyncio
 async def test_serial_flow_send_and_wait_write_fail() -> None:
     flow = SerialFlowController(
-        ack_timeout=0.1, response_timeout=0.2, max_attempts=1,
-        logger=logging.getLogger("test")
+        ack_timeout=0.1,
+        response_timeout=0.2,
+        max_attempts=1,
+        logger=logging.getLogger("test"),
     )
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
     sender = AsyncMock(return_value=False)
@@ -71,8 +79,10 @@ async def test_serial_flow_send_and_wait_write_fail() -> None:
 @pytest.mark.asyncio
 async def test_serial_flow_send_and_wait_completion_set_during_timeout() -> None:
     flow = SerialFlowController(
-        ack_timeout=0.1, response_timeout=0.2, max_attempts=1,
-        logger=logging.getLogger("test")
+        ack_timeout=0.1,
+        response_timeout=0.2,
+        max_attempts=1,
+        logger=logging.getLogger("test"),
     )
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
     sender = AsyncMock(return_value=True)

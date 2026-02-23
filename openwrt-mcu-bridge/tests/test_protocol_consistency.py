@@ -5,7 +5,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parents[2]
 sys.path.append(str(PROJECT_ROOT))
 
-from tools.protocol.generate import CppGenerator, ProtocolSpec, PythonGenerator  # noqa: E402
+from tools.protocol.generate import (  # noqa: E402
+    CppGenerator,
+    ProtocolSpec,
+    PythonGenerator,
+)
 
 
 def test_protocol_python_is_up_to_date():
@@ -23,7 +27,8 @@ def test_protocol_python_is_up_to_date():
         current_content = f.read()
 
     assert generated_content == current_content, (
-        "Python protocol definition is out of sync with spec.toml. " "Run 'tools/protocol/generate.py' to update."
+        "Python protocol definition is out of sync with spec.toml. "
+        "Run 'tools/protocol/generate.py' to update."
     )
 
 
@@ -42,5 +47,6 @@ def test_protocol_cpp_is_up_to_date():
         current_content = f.read()
 
     assert generated_content == current_content, (
-        "C++ protocol definition is out of sync with spec.toml. " "Run 'tools/protocol/generate.py' to update."
+        "C++ protocol definition is out of sync with spec.toml. "
+        "Run 'tools/protocol/generate.py' to update."
     )

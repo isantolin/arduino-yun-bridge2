@@ -8,9 +8,9 @@ from mcubridge.protocol.protocol import Status
 from mcubridge.services.process import ProcessComponent, ProcessOutputBatch
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import (
-    ManagedProcess,
     PROCESS_STATE_FINISHED,
     PROCESS_STATE_RUNNING,
+    ManagedProcess,
 )
 
 

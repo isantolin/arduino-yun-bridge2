@@ -20,11 +20,9 @@ import pytest  # noqa: E402
 from cobs import cobs  # noqa: E402
 from mcubridge.daemon import BridgeDaemon  # noqa: E402
 from mcubridge.protocol.frame import Frame  # noqa: E402
-from mcubridge.protocol.protocol import (  # noqa: E402
-    FRAME_DELIMITER,  # noqa: E402
-    UINT8_MASK,  # noqa: E402
-    Command,  # noqa: E402
-)  # noqa: E402
+from mcubridge.protocol.protocol import FRAME_DELIMITER  # noqa: E402
+from mcubridge.protocol.protocol import UINT8_MASK  # noqa: E402
+from mcubridge.protocol.protocol import Command  # noqa: E402; noqa: E402
 from mcubridge.transport.mqtt import MqttTransport  # noqa: E402
 
 # --- DAEMON TESTS (Refactored) ---
@@ -45,7 +43,10 @@ def test_daemon_task_setup_logic():
     mock_config.metrics_host = "localhost"
     mock_config.metrics_port = 9090
 
-    with patch("mcubridge.daemon.create_runtime_state"), patch("mcubridge.daemon.BridgeService"):
+    with (
+        patch("mcubridge.daemon.create_runtime_state"),
+        patch("mcubridge.daemon.BridgeService"),
+    ):
         daemon = BridgeDaemon(mock_config)
         specs = daemon._setup_supervision()
 
@@ -74,7 +75,9 @@ async def test_daemon_run_lifecycle():
     with (
         patch("mcubridge.daemon.create_runtime_state"),
         patch("mcubridge.daemon.BridgeService") as MockService,
-        patch.object(BridgeDaemon, "_supervise_task", new_callable=AsyncMock) as mock_supervise,
+        patch.object(
+            BridgeDaemon, "_supervise_task", new_callable=AsyncMock
+        ) as mock_supervise,
     ):
         # Hacer que supervise_task retorne inmediatamente para no bloquear
         mock_supervise.return_value = None
@@ -99,6 +102,7 @@ async def test_daemon_run_lifecycle():
 async def test_serial_read_loop_corruption_and_recovery(caplog):
     """Simula flujo de bytes corruptos y recuperación usando Protocol."""
     import logging
+
     caplog.set_level(logging.DEBUG)
 
     # Verify constants
@@ -113,7 +117,9 @@ async def test_serial_read_loop_corruption_and_recovery(caplog):
     proto = BridgeSerialProtocol(mock_service, mock_state, asyncio.get_running_loop())
 
     # Data stream: [Valid] [Corrupt] [Huge] [Noise]
-    valid_frame = cobs.encode(Frame.build(Command.CMD_GET_VERSION, b"")) + FRAME_DELIMITER
+    valid_frame = (
+        cobs.encode(Frame.build(Command.CMD_GET_VERSION, b"")) + FRAME_DELIMITER
+    )
     bad_cobs = bytes([5, UINT8_MASK, UINT8_MASK]) + FRAME_DELIMITER
     huge_chunk = b"A" * 300 + FRAME_DELIMITER
     TEST_PAYLOAD_BYTE = 0xAA
@@ -200,7 +206,9 @@ async def test_mqtt_publisher_loop_error_handling():
     mock_state.flush_mqtt_spool = AsyncMock()
 
     mock_client = MagicMock()
-    mock_client.publish = AsyncMock(side_effect=[aiomqtt.MqttError("Pub failed"), asyncio.CancelledError("Stop")])
+    mock_client.publish = AsyncMock(
+        side_effect=[aiomqtt.MqttError("Pub failed"), asyncio.CancelledError("Stop")]
+    )
     mock_client.subscribe = AsyncMock()
 
     mock_ctx = MagicMock()
@@ -218,7 +226,9 @@ async def test_mqtt_publisher_loop_error_handling():
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_ctx):
         with patch("asyncio.TaskGroup", return_value=tg_mock):
-            task = asyncio.create_task(MqttTransport(mock_config, mock_state, AsyncMock()).run())
+            task = asyncio.create_task(
+                MqttTransport(mock_config, mock_state, AsyncMock()).run()
+            )
             await asyncio.sleep(0.01)
             task.cancel()
             try:

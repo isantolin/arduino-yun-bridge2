@@ -81,7 +81,11 @@ class DatastoreComponent:
         # Cast to Any to satisfy pyright's 'Unnecessary isinstance call' check
         # while maintaining runtime safety for non-compliant test injections.
         val_to_check: Any = cached_value
-        value_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else val_to_check
+        value_bytes = (
+            val_to_check.encode("utf-8")
+            if isinstance(val_to_check, str)
+            else val_to_check
+        )
 
         if len(value_bytes) > 255:
             logger.warning(
@@ -186,7 +190,11 @@ class DatastoreComponent:
 
         # [SIL-2] Handle potential type drift during testing/injection
         val_to_check: Any = cached_value
-        val_bytes = val_to_check.encode("utf-8") if isinstance(val_to_check, str) else val_to_check
+        val_bytes = (
+            val_to_check.encode("utf-8")
+            if isinstance(val_to_check, str)
+            else val_to_check
+        )
 
         await self._publish_value(
             key,

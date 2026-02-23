@@ -86,7 +86,9 @@ async def test_acknowledge_mcu_frame_no_sender_is_noop() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    await service._acknowledge_mcu_frame(protocol.Command.CMD_GET_VERSION.value, status=Status.ACK)
+    await service._acknowledge_mcu_frame(
+        protocol.Command.CMD_GET_VERSION.value, status=Status.ACK
+    )
 
 
 @pytest.mark.asyncio
@@ -113,7 +115,9 @@ async def test_acknowledge_mcu_frame_truncates_extra_payload() -> None:
     assert sent
     status_cmd, payload = sent[0]
     assert status_cmd == Status.MALFORMED.value
-    assert payload.startswith(structures.UINT16_STRUCT.build(protocol.Command.CMD_GET_FREE_MEMORY.value))
+    assert payload.startswith(
+        structures.UINT16_STRUCT.build(protocol.Command.CMD_GET_FREE_MEMORY.value)
+    )
     assert len(payload) <= protocol.MAX_PAYLOAD_SIZE
 
 
@@ -123,7 +127,9 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
     state = create_runtime_state(config)
     service = BridgeService(config, state)
 
-    msg = QueuedPublish(topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello")
+    msg = QueuedPublish(
+        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/x", payload=b"hello"
+    )
 
     props = SimpleNamespace(
         ResponseTopic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
@@ -146,7 +152,9 @@ async def test_enqueue_mqtt_applies_reply_context_properties() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_mqtt_queue_full_drops_and_spools(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_enqueue_mqtt_queue_full_drops_and_spools(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _make_config()
     state = create_runtime_state(config)
 
@@ -251,7 +259,9 @@ def test_is_topic_action_allowed_empty_action_true() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_mqtt_spool_unavailable_logs(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_enqueue_mqtt_spool_unavailable_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _make_config()
     state = create_runtime_state(config)
     state.mqtt_queue_limit = 1

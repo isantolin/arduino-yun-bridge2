@@ -50,7 +50,9 @@ def test_settings_validation_errors_coverage():
     raw["serial_shared_secret"] = b"abcd1234"
     raw["mailbox_queue_limit"] = 100
     raw["mailbox_queue_bytes_limit"] = 50
-    with pytest.raises(msgspec.ValidationError, match="mailbox_queue_bytes_limit must be greater"):
+    with pytest.raises(
+        msgspec.ValidationError, match="mailbox_queue_bytes_limit must be greater"
+    ):
         msgspec.convert(raw, settings.RuntimeConfig, strict=False)
 
 
@@ -129,7 +131,9 @@ async def test_file_component_gaps(runtime_state: RuntimeState, real_config):
     await comp.handle_remove(b"")
     await comp.handle_remove(b"\x05f")
 
-    with patch.object(comp, "_perform_file_operation", return_value=(False, None, "error")):
+    with patch.object(
+        comp, "_perform_file_operation", return_value=(False, None, "error")
+    ):
         await comp.handle_mqtt(FileAction.READ, ["file.txt"], b"")
 
     assert comp._normalise_filename("..") is None

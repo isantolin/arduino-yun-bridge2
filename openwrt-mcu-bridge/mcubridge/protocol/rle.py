@@ -58,7 +58,11 @@ def encode(data: bytes | bytearray | memoryview) -> bytes:
 
         # Count consecutive identical bytes
         run_len = 1
-        while src_pos + run_len < src_len and src[src_pos + run_len] == current and run_len < MAX_RUN_LENGTH:
+        while (
+            src_pos + run_len < src_len
+            and src[src_pos + run_len] == current
+            and run_len < MAX_RUN_LENGTH
+        ):
             run_len += 1
 
         if run_len >= MIN_RUN_LENGTH:
@@ -120,7 +124,8 @@ def decode(data: bytes | bytearray | memoryview) -> bytes:
             # Encoded run: need at least 2 more bytes
             if src_pos + 2 > src_len:
                 raise ValueError(
-                    f"Malformed RLE: escape at position {src_pos - 1} " f"but only {src_len - src_pos} bytes remaining"
+                    f"Malformed RLE: escape at position {src_pos - 1} "
+                    f"but only {src_len - src_pos} bytes remaining"
                 )
 
             count_minus_2 = src[src_pos]

@@ -19,9 +19,7 @@ from mcubridge.config.const import (
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, structures
-from mcubridge.protocol.protocol import (
-    DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD,
-)
+from mcubridge.protocol.protocol import DEFAULT_BAUDRATE as DEFAULT_SERIAL_BAUD
 from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE as DEFAULT_SERIAL_SAFE_BAUD,
 )
@@ -70,11 +68,7 @@ def mock_context() -> AsyncMock:
 
             ctx.schedule_background.side_effect = _schedule
 
-
-
             return ctx
-
-
 
 
 @pytest.fixture
@@ -152,7 +146,9 @@ async def test_handle_kill_with_process_lookup_error() -> None:
     async with process_component.state.process_lock:
         process_component.state.running_processes[pid] = slot
 
-    with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
+    with patch.object(
+        ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
+    ) as mock_term:
         mock_term.side_effect = ProcessLookupError("already gone")
 
         result = await process_component.handle_kill(
@@ -161,7 +157,6 @@ async def test_handle_kill_with_process_lookup_error() -> None:
         )
         assert result is True
         mock_ctx.send_frame.assert_awaited_with(Status.OK.value, b"")
-
 
     @pytest.mark.asyncio
     async def test_handle_kill_with_general_exception() -> None:
@@ -190,7 +185,9 @@ async def test_handle_kill_with_process_lookup_error() -> None:
         async with process_component.state.process_lock:
             process_component.state.running_processes[pid] = slot
 
-        with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
+        with patch.object(
+            ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
+        ) as mock_term:
             mock_term.side_effect = RuntimeError("unexpected")
 
             with pytest.raises(RuntimeError, match="unexpected"):
@@ -199,6 +196,8 @@ async def test_handle_kill_with_process_lookup_error() -> None:
                     send_ack=True,
                 )
             mock_ctx.send_frame.assert_not_awaited()
+
+
 @pytest.mark.asyncio
 async def test_finalize_async_process_slot_gone(
     process_component: ProcessComponent,
@@ -257,17 +256,21 @@ async def test_monitor_async_process_exception(
     with pytest.raises(RuntimeError, match="boom"):
         await process_component._monitor_async_process(pid, proc)  # type: ignore
 
-
     @pytest.mark.asyncio
     async def test_start_async_unexpected_exception(
         process_component: ProcessComponent,
     ) -> None:
         """Cover unexpected exception branch in start_async."""
-        with patch.object(ProcessComponent, "_allocate_pid", new_callable=AsyncMock) as mock_alloc:
+        with patch.object(
+            ProcessComponent, "_allocate_pid", new_callable=AsyncMock
+        ) as mock_alloc:
             mock_alloc.return_value = 123
-            with patch("asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")):
+            with patch(
+                "asyncio.create_subprocess_exec", side_effect=RuntimeError("boom")
+            ):
                 pid = await process_component.start_async("/bin/true", [])
                 assert pid == protocol.INVALID_ID_SENTINEL
+
 
 @pytest.mark.asyncio
 async def test_consume_stream_various_exceptions(
@@ -308,7 +311,13 @@ async def test_read_stream_chunk_various_exceptions(
         async def read(self, n):
             raise self.exc_type("test error")
 
-    for exc_type in [asyncio.IncompleteReadError, OSError, ValueError, BrokenPipeError, RuntimeError]:
+    for exc_type in [
+        asyncio.IncompleteReadError,
+        OSError,
+        ValueError,
+        BrokenPipeError,
+        RuntimeError,
+    ]:
         if exc_type == asyncio.IncompleteReadError:
             reader = MagicMock()
             reader.read = AsyncMock(side_effect=asyncio.IncompleteReadError(b"", 10))

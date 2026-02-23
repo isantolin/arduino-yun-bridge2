@@ -53,30 +53,35 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
         """
         payload_len = len(payload)
         if payload_len > protocol.MAX_PAYLOAD_SIZE:
-            raise ValueError(f"Payload too large ({payload_len} bytes); " f"max is {protocol.MAX_PAYLOAD_SIZE}")
+            raise ValueError(
+                f"Payload too large ({payload_len} bytes); "
+                f"max is {protocol.MAX_PAYLOAD_SIZE}"
+            )
         if not 0 <= command_id <= protocol.UINT16_MAX:
             raise ValueError(f"Command id {command_id} outside 16-bit range")
 
         # [SIL-2] Decompose command ID for BitStruct
         # Now handled transparently by CommandIdAdapter in structures.py
-        return FRAME_STRUCT.build({
-            "content": {
-                "value": {
-                    "header": {
-                        "version": protocol.PROTOCOL_VERSION,
-                        "payload_len": payload_len,
-                        "command_id": command_id,
-                    },
-                    # [SIL-2] Payload Injection
-                    # We inject raw bytes into the 'payload' RawCopy field.
-                    # This bypasses the 'Switch' builder, allowing us to send
-                    # pre-serialized bytes from the Packet layer while still
-                    # maintaining a schema that *could* build from objects.
-                    "payload": {"data": payload},
-                }
-            },
-            # CRC is computed automatically by Checksum field
-        })
+        return FRAME_STRUCT.build(
+            {
+                "content": {
+                    "value": {
+                        "header": {
+                            "version": protocol.PROTOCOL_VERSION,
+                            "payload_len": payload_len,
+                            "command_id": command_id,
+                        },
+                        # [SIL-2] Payload Injection
+                        # We inject raw bytes into the 'payload' RawCopy field.
+                        # This bypasses the 'Switch' builder, allowing us to send
+                        # pre-serialized bytes from the Packet layer while still
+                        # maintaining a schema that *could* build from objects.
+                        "payload": {"data": payload},
+                    }
+                },
+                # CRC is computed automatically by Checksum field
+            }
+        )
 
     @staticmethod
     def parse(raw_frame_buffer: bytes | bytearray | memoryview) -> tuple[int, bytes]:
@@ -89,7 +94,9 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
         if total_len < protocol.MIN_FRAME_SIZE:
             raise ValueError(
-                "Incomplete frame: size " f"{total_len} is less than minimum " f"{protocol.MIN_FRAME_SIZE}"
+                "Incomplete frame: size "
+                f"{total_len} is less than minimum "
+                f"{protocol.MIN_FRAME_SIZE}"
             )
 
         try:
@@ -110,7 +117,9 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
         # Verify version (redundant if Const used in schema, but good for explicit error message)
         if header.version != protocol.PROTOCOL_VERSION:
-             raise ValueError(f"Invalid version. Expected {protocol.PROTOCOL_VERSION}, got {header.version}")
+            raise ValueError(
+                f"Invalid version. Expected {protocol.PROTOCOL_VERSION}, got {header.version}"
+            )
 
         # Extract payload bytes directly from RawCopy
         # This gives us the exact bytes received on wire, even if Switch parsed them into an object.
@@ -118,7 +127,9 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
 
         # Explicit check for length consistency (Construct usually enforces this via Bytes(payload_len))
         if len(payload_bytes) != header.payload_len:
-             raise ValueError(f"Payload length mismatch: header says {header.payload_len}, got {len(payload_bytes)}")
+            raise ValueError(
+                f"Payload length mismatch: header says {header.payload_len}, got {len(payload_bytes)}"
+            )
 
         # Reconstruct integer command ID from BitStruct
         # Now handled transparently by CommandIdAdapter in structures.py

@@ -1,5 +1,6 @@
 import os
 
+
 class Uci:
     def __enter__(self):
         return self

@@ -86,7 +86,9 @@ class FileComponent:
             )
             return False
 
-        success, _, reason = await self._perform_file_operation(FileAction.WRITE, path, packet.data)
+        success, _, reason = await self._perform_file_operation(
+            FileAction.WRITE, path, packet.data
+        )
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
             return True
@@ -105,7 +107,9 @@ class FileComponent:
             await self.ctx.send_frame(Status.MALFORMED.value, b"")
             return
 
-        success, content, reason = await self._perform_file_operation(FileAction.READ, packet.path)
+        success, content, reason = await self._perform_file_operation(
+            FileAction.READ, packet.path
+        )
 
         if not success:
             await self.ctx.send_frame(
@@ -136,7 +140,9 @@ class FileComponent:
             await self.ctx.send_frame(Status.MALFORMED.value, b"")
             return False
 
-        success, _, reason = await self._perform_file_operation(FileAction.REMOVE, packet.path)
+        success, _, reason = await self._perform_file_operation(
+            FileAction.REMOVE, packet.path
+        )
         if success:
             await self.ctx.send_frame(Status.OK.value, b"")
             return True
@@ -186,7 +192,9 @@ class FileComponent:
         payload: bytes,
         outcome: dict[str, str],
     ) -> None:
-        success, _, reason = await self._perform_file_operation(FileAction.WRITE, filename, payload)
+        success, _, reason = await self._perform_file_operation(
+            FileAction.WRITE, filename, payload
+        )
         if not success:
             outcome["status"] = reason or "write_failed"
             logger.error(
@@ -237,7 +245,9 @@ class FileComponent:
         filename: str,
         outcome: dict[str, str],
     ) -> None:
-        success, _, reason = await self._perform_file_operation(FileAction.REMOVE, filename)
+        success, _, reason = await self._perform_file_operation(
+            FileAction.REMOVE, filename
+        )
         if not success:
             outcome["status"] = reason or "remove_failed"
             logger.error(
@@ -388,7 +398,10 @@ class FileComponent:
             if payload_size > limit:
                 self.state.file_write_limit_rejections += 1
                 logger.warning(
-                    ("Rejecting %d-byte file write to %s: exceeds " "per-write limit of %d byte(s)."),
+                    (
+                        "Rejecting %d-byte file write to %s: exceeds "
+                        "per-write limit of %d byte(s)."
+                    ),
                     payload_size,
                     path,
                     limit,
@@ -406,7 +419,10 @@ class FileComponent:
             if projected_usage > quota:
                 self.state.file_storage_limit_rejections += 1
                 logger.warning(
-                    ("Rejecting file write to %s: projected usage %d " "byte(s) exceeds quota of %d byte(s)."),
+                    (
+                        "Rejecting file write to %s: projected usage %d "
+                        "byte(s) exceeds quota of %d byte(s)."
+                    ),
                     path,
                     projected_usage,
                     quota,
@@ -469,7 +485,9 @@ class FileComponent:
                     for entry in iterator:
                         if entry.is_symlink():
                             continue
-                        if current == Path("/tmp") and entry.name.startswith(SYSTEMD_PRIVATE_PREFIX):
+                        if current == Path("/tmp") and entry.name.startswith(
+                            SYSTEMD_PRIVATE_PREFIX
+                        ):
                             continue
                         try:
                             if entry.is_dir(follow_symlinks=False):

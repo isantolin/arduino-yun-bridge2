@@ -20,11 +20,15 @@ def chunk_bytes(payload: bytes, chunk_size: int) -> list[bytes]:
         return []
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    return [payload[index : index + chunk_size] for index in range(0, len(payload), chunk_size)]
+    return [
+        payload[index : index + chunk_size]
+        for index in range(0, len(payload), chunk_size)
+    ]
 
 
-
-def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: bytes) -> None:
+def log_hexdump(
+    logger_instance: logging.Logger, level: int, label: str, data: bytes
+) -> None:
     """Log binary data in hexadecimal format using syslog-friendly output.
 
     Format: [HEXDUMP] %s: %s
@@ -37,7 +41,6 @@ def log_hexdump(logger_instance: logging.Logger, level: int, label: str, data: b
 
 
 _TRUE_STRINGS = frozenset({"1", "yes", "on", "true", "enable", "enabled"})
-
 
 
 def parse_bool(value: object) -> bool:

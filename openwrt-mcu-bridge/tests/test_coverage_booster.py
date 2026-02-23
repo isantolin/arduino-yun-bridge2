@@ -4,27 +4,33 @@ import logging
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import msgspec
+import pytest
 from mcubridge import metrics
 from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.process import ProcessComponent
-from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport
 from mcubridge.protocol.protocol import Status
-from mcubridge.state.context import ManagedProcess, PROCESS_STATE_FINISHED
+from mcubridge.services.process import ProcessComponent
+from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
+from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport
+
 
 def create_real_config():
     from mcubridge.config.common import get_default_config
+
     raw_cfg = get_default_config()
-    raw_cfg.update({
-        "serial_port": "/dev/ttyFake",
-        "serial_shared_secret": b"valid_secret_1234",
-        "mqtt_spool_dir": "/tmp/spool_booster"
-    })
+    raw_cfg.update(
+        {
+            "serial_port": "/dev/ttyFake",
+            "serial_shared_secret": b"valid_secret_1234",
+            "mqtt_spool_dir": "/tmp/spool_booster",
+        }
+    )
     return msgspec.convert(raw_cfg, RuntimeConfig)
 
+
 # --- ProcessComponent Booster ---
+
 
 @pytest.mark.asyncio
 async def test_process_run_sync_exception_group_no_match():
@@ -37,10 +43,14 @@ async def test_process_run_sync_exception_group_no_match():
 
     with (
         patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch("asyncio.TaskGroup.__aenter__", side_effect=BaseExceptionGroup("Group", [BaseException("Literal")]))
+        patch(
+            "asyncio.TaskGroup.__aenter__",
+            side_effect=BaseExceptionGroup("Group", [BaseException("Literal")]),
+        ),
     ):
         with pytest.raises(BaseExceptionGroup):
             await comp.run_sync("cmd", ["cmd"])
+
 
 @pytest.mark.asyncio
 async def test_process_collect_output_slot_changed():
@@ -60,6 +70,7 @@ async def test_process_collect_output_slot_changed():
         batch = await comp.collect_output(123)
         assert batch.status_byte == Status.ERROR.value
 
+
 @pytest.mark.asyncio
 async def test_process_collect_output_finished_finalize_fail():
     config = create_real_config()
@@ -74,6 +85,7 @@ async def test_process_collect_output_finished_finalize_fail():
     state.running_processes = {123: slot}
     await comp.collect_output(123)
 
+
 @pytest.mark.asyncio
 async def test_process_finalize_async_process_fsm_fail():
     config = create_real_config()
@@ -85,10 +97,14 @@ async def test_process_finalize_async_process_fsm_fail():
     slot.trigger = MagicMock(side_effect=Exception("FSM Fail"))
     state.running_processes = {123: slot}
 
-    with patch.object(comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")):
+    with patch.object(
+        comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")
+    ):
         await comp._finalize_async_process(123, MagicMock())
 
+
 # --- Logging Booster ---
+
 
 def test_logging_build_handler_socket_fallback_not_exists():
     with (
@@ -98,7 +114,9 @@ def test_logging_build_handler_socket_fallback_not_exists():
         handler = logging_config._build_handler()
         assert isinstance(handler, logging.StreamHandler)
 
+
 # --- Metrics Booster ---
+
 
 @pytest.mark.asyncio
 async def test_metrics_publish_metrics_error_path():
@@ -111,6 +129,7 @@ async def test_metrics_publish_metrics_error_path():
         with pytest.raises(asyncio.CancelledError):
             await metrics.publish_metrics(state, enqueue, interval=10)
 
+
 @pytest.mark.asyncio
 async def test_metrics_collector_flatten_edge_cases():
     state = MagicMock()
@@ -119,45 +138,51 @@ async def test_metrics_collector_flatten_edge_cases():
     assert list(coll._flatten("t", False)) == [("gauge", "t", 0.0)]
     assert list(coll._flatten("t", 1.5)) == [("gauge", "t", 1.5)]
 
+
 # --- Serial Protocol Booster ---
+
 
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_parse_error_crc():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
     with (
         patch("cobs.cobs.decode", return_value=b"raw"),
-        patch("mcubridge.protocol.frame.Frame.from_bytes", side_effect=ValueError("CRC mismatch")),
+        patch(
+            "mcubridge.protocol.frame.Frame.from_bytes",
+            side_effect=ValueError("CRC mismatch"),
+        ),
     ):
         await proto._async_process_packet(b"encoded")
         proto.state.record_serial_crc_error.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_os_error():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
-    with (
-        patch("cobs.cobs.decode", side_effect=OSError("Disk full")),
-    ):
+    with (patch("cobs.cobs.decode", side_effect=OSError("Disk full")),):
         await proto._async_process_packet(b"encoded")
         proto.state.record_serial_decode_error.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_runtime_error():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
-    with (
-        patch("cobs.cobs.decode", side_effect=RuntimeError("Bug")),
-    ):
+    with (patch("cobs.cobs.decode", side_effect=RuntimeError("Bug")),):
         await proto._async_process_packet(b"encoded")
         proto.state.record_serial_decode_error.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_serial_protocol_log_frame_unknown():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_event_loop())
     from mcubridge.protocol.frame import Frame
+
     frame = Frame(command_id=0xFFFF, payload=b"")
     with patch("mcubridge.transport.serial.logger.debug") as mock_debug:
         proto._log_frame(frame, "DIR")
         # logger.debug("%s %s (no payload)", direction, cmd_name)
         assert mock_debug.call_args[0][2] == "0xFFFF"
+
 
 @pytest.mark.asyncio
 async def test_serial_transport_toggle_dtr_oserror_other():

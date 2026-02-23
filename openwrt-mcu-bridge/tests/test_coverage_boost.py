@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.protocol.protocol import FRAME_DELIMITER
-from mcubridge.transport.serial import MAX_SERIAL_PACKET_BYTES, BridgeSerialProtocol, SerialTransport
+from mcubridge.transport.serial import (
+    MAX_SERIAL_PACKET_BYTES,
+    BridgeSerialProtocol,
+    SerialTransport,
+)
 
 
 @pytest.mark.asyncio
@@ -67,7 +71,10 @@ async def test_async_process_packet_crc_error():
     fake_encoded = cobs.encode(raw_frame)
 
     # Mock Frame.from_bytes to raise ValueError with CRC mismatch
-    with patch("mcubridge.transport.serial.Frame.from_bytes", side_effect=ValueError("CRC mismatch")):
+    with patch(
+        "mcubridge.transport.serial.Frame.from_bytes",
+        side_effect=ValueError("CRC mismatch"),
+    ):
         await proto._async_process_packet(fake_encoded)
 
         state.record_serial_decode_error.assert_called()
@@ -142,8 +149,6 @@ async def test_metrics_snapshot_emit_exceptions():
             await _emit_metrics_snapshot(state, enqueue, expiry_seconds=10)
         except TypeError:
             pass  # Expected when calling direct without publish_metrics wrapper
-
-
 
 
 def test_spool_disk_error_requeue():

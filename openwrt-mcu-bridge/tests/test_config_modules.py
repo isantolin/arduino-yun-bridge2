@@ -143,6 +143,7 @@ def test_load_runtime_config_falls_back_to_defaults(
     # Default is valid by definition.
     config = settings.load_runtime_config()
     from mcubridge.config import const
+
     assert config.serial_port == const.DEFAULT_SERIAL_PORT
 
 

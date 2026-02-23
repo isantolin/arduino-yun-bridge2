@@ -70,6 +70,7 @@ HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
 HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
 HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 
+
 class CompressionType(IntEnum):
     NONE = 0
     RLE = 1
@@ -87,12 +88,14 @@ CAPABILITY_LOGIC_3V3: Final[int] = 256
 CAPABILITY_BIG_BUFFER: Final[int] = 512
 CAPABILITY_I2C: Final[int] = 1024
 
+
 ARCH_AVR: Final[int] = 1
 ARCH_ESP32: Final[int] = 2
 ARCH_ESP8266: Final[int] = 3
 ARCH_SAMD: Final[int] = 4
 ARCH_SAM: Final[int] = 5
 ARCH_RP2040: Final[int] = 6
+
 
 STATUS_REASON_COMMAND_VALIDATION_FAILED: Final[str] = "command_validation_failed"
 STATUS_REASON_INVALID_PATH: Final[str] = "invalid_path"
@@ -107,6 +110,7 @@ STATUS_REASON_PROCESS_RUN_INTERNAL_ERROR: Final[str] = "process_run_internal_err
 STATUS_REASON_READ_FAILED: Final[str] = "read_failed"
 STATUS_REASON_REMOVE_FAILED: Final[str] = "remove_failed"
 STATUS_REASON_WRITE_FAILED: Final[str] = "write_failed"
+
 
 class Status(IntEnum):
     OK = 48  # Operation completed successfully.
@@ -301,4 +305,3 @@ MQTT_SUFFIX_ERROR: Final[str] = "error"
 
 
 MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = "br"
-

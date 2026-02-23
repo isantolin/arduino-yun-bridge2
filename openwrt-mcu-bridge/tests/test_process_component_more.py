@@ -3,15 +3,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import psutil
 import pytest
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, structures
 from mcubridge.protocol.protocol import Status
-from mcubridge.protocol import structures
 from mcubridge.protocol.structures import (
     ProcessOutputBatch,
     ProcessRunAsyncPacket,
 )
 from mcubridge.services.process import ProcessComponent
-from mcubridge.state.context import ManagedProcess, PROCESS_STATE_FINISHED
+from mcubridge.state.context import PROCESS_STATE_FINISHED, ManagedProcess
 
 
 @pytest.fixture
@@ -56,7 +55,9 @@ async def test_handle_poll_finished_path_executes_debug_branch(
     )
 
     with patch.object(process_component, "collect_output", return_value=batch):
-        with patch.object(process_component, "publish_poll_result", new_callable=AsyncMock):
+        with patch.object(
+            process_component, "publish_poll_result", new_callable=AsyncMock
+        ):
             with patch("mcubridge.services.process.logger.debug") as mock_debug:
                 from mcubridge.protocol.structures import ProcessPollPacket
 
@@ -64,7 +65,8 @@ async def test_handle_poll_finished_path_executes_debug_branch(
                 await process_component.handle_poll(payload)
                 # Check that debug log was called for finished process
                 assert any(
-                    "Sent final output" in str(call) for call in mock_debug.call_args_list
+                    "Sent final output" in str(call)
+                    for call in mock_debug.call_args_list
                 )
 
 
@@ -121,7 +123,9 @@ async def test_run_sync_truncates_and_reports_timeout_flags(
         buffer.extend(b"1234567890")
 
     with patch("asyncio.create_subprocess_exec", return_value=proc):
-        with patch.object(process_component, "_consume_stream", side_effect=_fill_buffers):
+        with patch.object(
+            process_component, "_consume_stream", side_effect=_fill_buffers
+        ):
             with patch("mcubridge.services.process.logger.warning") as mock_warn:
                 status_code, out, err, _ = await process_component.run_sync(
                     "cmd", ["cmd"]
@@ -226,15 +230,15 @@ async def test_finalize_async_process_slot_missing_releases(
     process_component: ProcessComponent,
 ) -> None:
     # Slot missing in state
-    with patch.object(
-        process_component, "_release_process_slot"
-    ) as mock_release:
+    with patch.object(process_component, "_release_process_slot") as mock_release:
         await process_component._finalize_async_process(999, AsyncMock())
         mock_release.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_handle_kill_timeout_releases_slot(process_component: ProcessComponent) -> None:
+async def test_handle_kill_timeout_releases_slot(
+    process_component: ProcessComponent,
+) -> None:
     import mcubridge.services.process
 
     pid = 11
@@ -259,10 +263,18 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
         async def __aexit__(self, _exc_type, _exc, _tb) -> bool:
             return False
 
-    with patch.object(mcubridge.services.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()):
-        with patch.object(ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock) as mock_term:
-            with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-                ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
+    with patch.object(
+        mcubridge.services.process.asyncio, "timeout", lambda _timeout: _TimeoutCtx()
+    ):
+        with patch.object(
+            ProcessComponent, "_terminate_process_tree", new_callable=AsyncMock
+        ) as mock_term:
+            with patch.object(
+                ProcessComponent, "_release_process_slot"
+            ) as mock_release:
+                ok = await process_component.handle_kill(
+                    structures.UINT16_STRUCT.build(pid)
+                )
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -270,7 +282,9 @@ async def test_handle_kill_timeout_releases_slot(process_component: ProcessCompo
 
 
 @pytest.mark.asyncio
-async def test_handle_kill_process_lookup_error_is_handled(process_component: ProcessComponent) -> None:
+async def test_handle_kill_process_lookup_error_is_handled(
+    process_component: ProcessComponent,
+) -> None:
     pid = 12
 
     class _Proc:
@@ -292,7 +306,9 @@ async def test_handle_kill_process_lookup_error_is_handled(process_component: Pr
         side_effect=ProcessLookupError,
     ) as mock_term:
         with patch.object(ProcessComponent, "_release_process_slot") as mock_release:
-            ok = await process_component.handle_kill(structures.UINT16_STRUCT.build(pid))
+            ok = await process_component.handle_kill(
+                structures.UINT16_STRUCT.build(pid)
+            )
 
     assert ok is True
     mock_term.assert_awaited_once()
@@ -397,7 +413,7 @@ async def test_collect_output_slot_removed_during_io(
             pass
 
     # Patch the slot's lock
-    slot.io_lock = TrickyLock() # type: ignore
+    slot.io_lock = TrickyLock()  # type: ignore
 
     batch = await process_component.collect_output(pid)
 
@@ -415,7 +431,9 @@ async def test_terminate_process_tree_already_finished(
 
 
 @pytest.mark.asyncio
-async def test_terminate_process_tree_no_pid(process_component: ProcessComponent) -> None:
+async def test_terminate_process_tree_no_pid(
+    process_component: ProcessComponent,
+) -> None:
     proc = MagicMock()
     proc.returncode = None
     proc.pid = None
@@ -428,7 +446,9 @@ async def test_handle_run_async_returns_success_pid(
     process_component: ProcessComponent,
 ) -> None:
     packet = ProcessRunAsyncPacket(command="cmd").encode()
-    with patch.object(process_component, "_prepare_command", return_value=("cmd", ["cmd"])):
+    with patch.object(
+        process_component, "_prepare_command", return_value=("cmd", ["cmd"])
+    ):
         with patch.object(process_component, "start_async", return_value=123):
             await process_component.handle_run_async(packet)
             process_component.ctx.send_frame.assert_awaited()
@@ -439,7 +459,9 @@ async def test_handle_run_async_invalid_sentinel_sends_error(
     process_component: ProcessComponent,
 ) -> None:
     packet = ProcessRunAsyncPacket(command="cmd").encode()
-    with patch.object(process_component, "_prepare_command", return_value=("cmd", ["cmd"])):
+    with patch.object(
+        process_component, "_prepare_command", return_value=("cmd", ["cmd"])
+    ):
         with patch.object(
             process_component,
             "start_async",
@@ -450,7 +472,9 @@ async def test_handle_run_async_invalid_sentinel_sends_error(
 
 
 @pytest.mark.asyncio
-async def test_release_process_slot_no_guard(process_component: ProcessComponent) -> None:
+async def test_release_process_slot_no_guard(
+    process_component: ProcessComponent,
+) -> None:
     process_component._process_slots = None
     process_component._release_process_slot()  # Should not raise
 
@@ -480,9 +504,7 @@ async def test_build_sync_response_truncates_output(
     # 5 bytes overhead in packet payload
     # MAX_PAYLOAD_SIZE e.g. 1024.
     # Output limit might be set?
-    resp = process_component._build_sync_response(
-        0, b"A" * 2000, b"B" * 2000
-    )
+    resp = process_component._build_sync_response(0, b"A" * 2000, b"B" * 2000)
     assert len(resp) <= protocol.MAX_PAYLOAD_SIZE
 
 
@@ -505,7 +527,9 @@ async def test_limit_sync_payload_within_limit(
 
 
 @pytest.mark.asyncio
-async def test_limit_sync_payload_over_limit(process_component: ProcessComponent) -> None:
+async def test_limit_sync_payload_over_limit(
+    process_component: ProcessComponent,
+) -> None:
     process_component.state.process_output_limit = 3
     res, trunc = process_component._limit_sync_payload(b"test")
     assert res == b"est"

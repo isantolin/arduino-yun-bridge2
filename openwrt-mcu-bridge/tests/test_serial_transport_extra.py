@@ -29,6 +29,7 @@ async def test_serial_protocol_process_packet_baud_resp() -> None:
 
     # Valid CMD_SET_BAUDRATE_RESP
     from cobs import cobs
+
     raw_frame = Frame.build(protocol.Command.CMD_SET_BAUDRATE_RESP.value, b"")
     encoded = cobs.encode(raw_frame)
 
@@ -47,11 +48,13 @@ async def test_serial_protocol_async_process_compressed() -> None:
 
     # Compressed frame
     from mcubridge.protocol import rle
+
     payload = b"AAAAABBB"
     compressed = rle.encode(payload)
     cmd = protocol.Command.CMD_CONSOLE_WRITE.value | protocol.CMD_FLAG_COMPRESSED
 
     from cobs import cobs
+
     raw_frame = Frame.build(cmd, compressed)
     encoded = cobs.encode(raw_frame)
 
@@ -60,7 +63,6 @@ async def test_serial_protocol_async_process_compressed() -> None:
     # Payload should be decompressed
     assert service.handle_mcu_frame.call_args[0][1] == payload
 
-
     @pytest.mark.asyncio
     async def test_serial_transport_toggle_dtr_fail() -> None:
         config = MagicMock()
@@ -68,9 +70,12 @@ async def test_serial_protocol_async_process_compressed() -> None:
         service = MagicMock()
         transport = SerialTransport(config, state, service)
 
-        with patch.object(transport, "_blocking_reset", side_effect=RuntimeError("dtr fail")):
+        with patch.object(
+            transport, "_blocking_reset", side_effect=RuntimeError("dtr fail")
+        ):
             # Should log and continue
             await transport._toggle_dtr(asyncio.get_running_loop())
+
 
 @pytest.mark.asyncio
 async def test_serial_transport_negotiate_fail_paths() -> None:
@@ -80,7 +85,7 @@ async def test_serial_transport_negotiate_fail_paths() -> None:
     transport = SerialTransport(config, state, service)
 
     proto = MagicMock()
-    proto.write_frame.return_value = False # Write fail
+    proto.write_frame.return_value = False  # Write fail
 
     res = await transport._negotiate_baudrate(proto, 115200)
     assert res is False

@@ -9,7 +9,10 @@ from typing import Awaitable, Callable, cast
 from aiomqtt.message import Message
 from construct import ConstructError
 from mcubridge.protocol.protocol import Command, SystemAction
-from mcubridge.protocol.structures import FreeMemoryResponsePacket, VersionResponsePacket
+from mcubridge.protocol.structures import (
+    FreeMemoryResponsePacket,
+    VersionResponsePacket,
+)
 
 from ..config.const import MQTT_EXPIRY_DATASTORE, MQTT_EXPIRY_DEFAULT
 from ..config.settings import RuntimeConfig
@@ -104,13 +107,21 @@ class SystemComponent:
         remainder: list[str],
         inbound: Message | None = None,
     ) -> bool:
-        if identifier == SystemAction.FREE_MEMORY and remainder and remainder[0] == SystemAction.GET:
+        if (
+            identifier == SystemAction.FREE_MEMORY
+            and remainder
+            and remainder[0] == SystemAction.GET
+        ):
             if inbound is not None:
                 self._pending_free_memory.append(inbound)
             await self.ctx.send_frame(Command.CMD_GET_FREE_MEMORY.value, b"")
             return True
 
-        if identifier == SystemAction.VERSION and remainder and remainder[0] == SystemAction.GET:
+        if (
+            identifier == SystemAction.VERSION
+            and remainder
+            and remainder[0] == SystemAction.GET
+        ):
             cached_version = self.state.mcu_version
             if cached_version is not None and inbound is not None:
                 await self._publish_version(cached_version, inbound)

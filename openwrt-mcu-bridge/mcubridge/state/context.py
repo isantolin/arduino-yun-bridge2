@@ -174,14 +174,23 @@ class ManagedProcess:
             auto_transitions=False,
             ignore_invalid_triggers=True,
         )
-        self._machine.add_transition("start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING)
-        self._machine.add_transition("sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING)
-        self._machine.add_transition("io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED)
-        self._machine.add_transition("finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE)
+        self._machine.add_transition(
+            "start", PROCESS_STATE_STARTING, PROCESS_STATE_RUNNING
+        )
+        self._machine.add_transition(
+            "sigchld", PROCESS_STATE_RUNNING, PROCESS_STATE_DRAINING
+        )
+        self._machine.add_transition(
+            "io_complete", PROCESS_STATE_DRAINING, PROCESS_STATE_FINISHED
+        )
+        self._machine.add_transition(
+            "finalize", PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE
+        )
         # Allow force cleanup from any state
         self._machine.add_transition("force_kill", "*", PROCESS_STATE_ZOMBIE)
 
     if TYPE_CHECKING:
+
         def trigger(self, event: str, *args: Any, **kwargs: Any) -> bool:
             """FSM trigger placeholder."""
             ...
@@ -381,10 +390,14 @@ class RuntimeState(msgspec.Struct):
 
     serial_writer: asyncio.BaseTransport | None = None
     serial_link_connected: bool = False
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=_mqtt_publish_queue_factory)
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
+        default_factory=_mqtt_publish_queue_factory
+    )
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_dropped_messages: int = 0
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=_mqtt_drop_counts_factory)
+    mqtt_drop_counts: dict[str, int] = msgspec.field(
+        default_factory=_mqtt_drop_counts_factory
+    )
     mqtt_spool: MQTTPublishSpool | None = None
     mqtt_spooled_messages: int = 0
     mqtt_spooled_replayed: int = 0
@@ -402,23 +415,37 @@ class RuntimeState(msgspec.Struct):
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_corrupt_dropped: int = 0
-    _last_spool_snapshot: SpoolSnapshot = msgspec.field(default_factory=_last_spool_snapshot_factory)
+    _last_spool_snapshot: SpoolSnapshot = msgspec.field(
+        default_factory=_last_spool_snapshot_factory
+    )
     datastore: dict[str, str] = msgspec.field(default_factory=_datastore_factory)
-    mailbox_queue: BoundedByteDeque = msgspec.field(default_factory=_bounded_byte_deque_factory)
+    mailbox_queue: BoundedByteDeque = msgspec.field(
+        default_factory=_bounded_byte_deque_factory
+    )
     mcu_is_paused: bool = False
-    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=_serial_tx_allowed_factory)
-    console_to_mcu_queue: BoundedByteDeque = msgspec.field(default_factory=_bounded_byte_deque_factory)
+    serial_tx_allowed: asyncio.Event = msgspec.field(
+        default_factory=_serial_tx_allowed_factory
+    )
+    console_to_mcu_queue: BoundedByteDeque = msgspec.field(
+        default_factory=_bounded_byte_deque_factory
+    )
     console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
     console_truncated_chunks: int = 0
     console_truncated_bytes: int = 0
     console_dropped_bytes: int = 0
-    running_processes: dict[int, ManagedProcess] = msgspec.field(default_factory=_running_processes_factory)
+    running_processes: dict[int, ManagedProcess] = msgspec.field(
+        default_factory=_running_processes_factory
+    )
     process_lock: asyncio.Lock = msgspec.field(default_factory=_asyncio_lock_factory)
     next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = msgspec.field(default_factory=_policy_factory)
-    topic_authorization: TopicAuthorization = msgspec.field(default_factory=_topic_authorization_factory)
+    allowed_policy: AllowedCommandPolicy = msgspec.field(
+        default_factory=_policy_factory
+    )
+    topic_authorization: TopicAuthorization = msgspec.field(
+        default_factory=_topic_authorization_factory
+    )
     process_timeout: int = DEFAULT_PROCESS_TIMEOUT
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
@@ -447,7 +474,9 @@ class RuntimeState(msgspec.Struct):
     mailbox_truncated_bytes: int = 0
     mailbox_dropped_bytes: int = 0
     mailbox_outgoing_overflow_events: int = 0
-    mailbox_incoming_queue: BoundedByteDeque = msgspec.field(default_factory=_bounded_byte_deque_factory)
+    mailbox_incoming_queue: BoundedByteDeque = msgspec.field(
+        default_factory=_bounded_byte_deque_factory
+    )
     mailbox_incoming_queue_bytes: int = 0
     mailbox_incoming_dropped_messages: int = 0
     mailbox_incoming_truncated_messages: int = 0
@@ -458,7 +487,9 @@ class RuntimeState(msgspec.Struct):
     mcu_capabilities: McuCapabilities | None = None
     link_handshake_nonce: bytes | None = None
     link_is_synchronized: bool = False
-    link_sync_event: asyncio.Event = msgspec.field(default_factory=_asyncio_event_factory)
+    link_sync_event: asyncio.Event = msgspec.field(
+        default_factory=_asyncio_event_factory
+    )
     link_expected_tag: bytes | None = None
     link_nonce_length: int = 0
     # [MIL-SPEC] Anti-replay nonce counters
@@ -478,9 +509,15 @@ class RuntimeState(msgspec.Struct):
     handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
     _handshake_last_started: float = 0.0
-    serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=_serial_flow_stats_factory)
-    serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=_serial_throughput_stats_factory)
-    serial_latency_stats: SerialLatencyStats = msgspec.field(default_factory=_serial_latency_stats_factory)
+    serial_flow_stats: SerialFlowStats = msgspec.field(
+        default_factory=_serial_flow_stats_factory
+    )
+    serial_throughput_stats: SerialThroughputStats = msgspec.field(
+        default_factory=_serial_throughput_stats_factory
+    )
+    serial_latency_stats: SerialLatencyStats = msgspec.field(
+        default_factory=_serial_latency_stats_factory
+    )
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
@@ -492,8 +529,12 @@ class RuntimeState(msgspec.Struct):
     serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counters: dict[str, int] = msgspec.field(default_factory=_mcu_status_counters_factory)
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(default_factory=_supervisor_stats_factory)
+    mcu_status_counters: dict[str, int] = msgspec.field(
+        default_factory=_mcu_status_counters_factory
+    )
+    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
+        default_factory=_supervisor_stats_factory
+    )
 
     def configure(self, config: RuntimeConfig) -> None:
         if config.allowed_policy is not None:
@@ -549,7 +590,10 @@ class RuntimeState(msgspec.Struct):
             self.console_truncated_bytes += evt.truncated_bytes
         if evt.dropped_chunks:
             logger.warning(
-                ("Dropping oldest console chunk(s): %d item(s), %d " "bytes to respect limit."),
+                (
+                    "Dropping oldest console chunk(s): %d item(s), %d "
+                    "bytes to respect limit."
+                ),
                 evt.dropped_chunks,
                 evt.dropped_bytes,
             )
@@ -596,7 +640,10 @@ class RuntimeState(msgspec.Struct):
 
     def enqueue_mailbox_message(self, payload: bytes, logger: logging.Logger) -> bool:
         return self._enqueue_mailbox(
-            payload, logger, self.mailbox_queue, "outgoing",
+            payload,
+            logger,
+            self.mailbox_queue,
+            "outgoing",
         )
 
     def pop_mailbox_message(self) -> bytes | None:
@@ -612,7 +659,10 @@ class RuntimeState(msgspec.Struct):
 
     def enqueue_mailbox_incoming(self, payload: bytes, logger: logging.Logger) -> bool:
         return self._enqueue_mailbox(
-            payload, logger, self.mailbox_incoming_queue, "incoming",
+            payload,
+            logger,
+            self.mailbox_incoming_queue,
+            "incoming",
         )
 
     def pop_mailbox_incoming(self) -> bytes | None:
@@ -650,7 +700,8 @@ class RuntimeState(msgspec.Struct):
         if evt.truncated_bytes:
             logger.warning(
                 "Mailbox %s message truncated by %d bytes to respect limit.",
-                direction, evt.truncated_bytes,
+                direction,
+                evt.truncated_bytes,
             )
             if is_incoming:
                 self.mailbox_incoming_truncated_messages += 1
@@ -661,7 +712,9 @@ class RuntimeState(msgspec.Struct):
         if evt.dropped_chunks:
             logger.warning(
                 "Dropping oldest mailbox %s message(s): %d item(s), %d bytes.",
-                direction, evt.dropped_chunks, evt.dropped_bytes,
+                direction,
+                evt.dropped_chunks,
+                evt.dropped_bytes,
             )
             if is_incoming:
                 self.mailbox_incoming_dropped_messages += evt.dropped_chunks
@@ -672,7 +725,8 @@ class RuntimeState(msgspec.Struct):
         if not evt.accepted:
             logger.error(
                 "Mailbox %s queue overflow; rejecting message (%d bytes).",
-                direction, len(payload),
+                direction,
+                len(payload),
             )
             if is_incoming:
                 self.mailbox_incoming_dropped_messages += 1
@@ -700,7 +754,9 @@ class RuntimeState(msgspec.Struct):
 
     def record_watchdog_beat(self, timestamp: float | None = None) -> None:
         self.watchdog_beats += 1
-        self.last_watchdog_beat = timestamp if timestamp is not None else time.monotonic()
+        self.last_watchdog_beat = (
+            timestamp if timestamp is not None else time.monotonic()
+        )
 
     def record_handshake_attempt(self) -> None:
         self.handshake_attempts += 1
@@ -947,7 +1003,10 @@ class RuntimeState(msgspec.Struct):
             6,
         )
         # Exponential backoff calculation: min * (2 ** (attempt - 1))
-        delay = min(SPOOL_BACKOFF_MIN_SECONDS * (2 ** (self.mqtt_spool_retry_attempts - 1)), SPOOL_BACKOFF_MAX_SECONDS)
+        delay = min(
+            SPOOL_BACKOFF_MIN_SECONDS * (2 ** (self.mqtt_spool_retry_attempts - 1)),
+            SPOOL_BACKOFF_MAX_SECONDS,
+        )
         self.mqtt_spool_backoff_until = time.monotonic() + delay
 
     def _disable_mqtt_spool(
@@ -1025,9 +1084,11 @@ class RuntimeState(msgspec.Struct):
                 break
             if message is None:
                 break
+            user_properties = list(message.user_properties)
+            user_properties.append(("bridge-spooled", "1"))
             enriched = msgspec.structs.replace(
                 message,
-                user_properties=message.user_properties + (("bridge-spooled", "1"),),
+                user_properties=user_properties,
             )
             try:
                 self.mqtt_publish_queue.put_nowait(enriched)
@@ -1137,7 +1198,9 @@ class RuntimeState(msgspec.Struct):
             "watchdog_interval": self.watchdog_interval,
             "watchdog_beats": self.watchdog_beats,
             "watchdog_last_unix": self.last_watchdog_beat,
-            "supervisors": {name: stats.as_dict() for name, stats in self.supervisor_stats.items()},
+            "supervisors": {
+                name: stats.as_dict() for name, stats in self.supervisor_stats.items()
+            },
             "bridge": self.build_bridge_snapshot(),
         }
         snapshot.update(
@@ -1152,7 +1215,9 @@ class RuntimeState(msgspec.Struct):
             mailbox_incoming_bytes=self.mailbox_incoming_queue_bytes,
             mailbox_incoming_dropped_messages=(self.mailbox_incoming_dropped_messages),
             mailbox_incoming_dropped_bytes=(self.mailbox_incoming_dropped_bytes),
-            mailbox_incoming_truncated_messages=(self.mailbox_incoming_truncated_messages),
+            mailbox_incoming_truncated_messages=(
+                self.mailbox_incoming_truncated_messages
+            ),
             mailbox_incoming_truncated_bytes=(self.mailbox_incoming_truncated_bytes),
             mailbox_incoming_overflow_events=(self.mailbox_incoming_overflow_events),
             mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
@@ -1192,7 +1257,11 @@ class RuntimeState(msgspec.Struct):
         )
 
     def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
-        inflight = self.serial_pipeline_inflight.copy() if self.serial_pipeline_inflight else None
+        inflight = (
+            self.serial_pipeline_inflight.copy()
+            if self.serial_pipeline_inflight
+            else None
+        )
         last = self.serial_pipeline_last.copy() if self.serial_pipeline_last else None
         return SerialPipelineSnapshot(
             inflight=inflight,
@@ -1230,6 +1299,7 @@ class RuntimeState(msgspec.Struct):
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
     from ..config.settings import RuntimeConfig as RC
+
     if isinstance(config, dict):
         config = msgspec.convert(config, RC)
 

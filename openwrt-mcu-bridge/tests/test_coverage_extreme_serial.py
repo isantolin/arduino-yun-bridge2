@@ -128,7 +128,9 @@ async def test_serial_transport_lifecycle_100_percent():
 
     # 1. run() exception & retry (Lines 281-289)
     # Force _connect_and_run to fail with OSError
-    with patch.object(transport_mgr, "_connect_and_run", side_effect=[OSError("tty busy"), None]):
+    with patch.object(
+        transport_mgr, "_connect_and_run", side_effect=[OSError("tty busy"), None]
+    ):
 
         async def stop_soon():
             await asyncio.sleep(0.05)

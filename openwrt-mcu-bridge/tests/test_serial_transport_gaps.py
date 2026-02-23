@@ -6,8 +6,8 @@ from unittest.mock import MagicMock
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport
 from mcubridge.state.context import create_runtime_state
+from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport
 
 
 @pytest.mark.asyncio

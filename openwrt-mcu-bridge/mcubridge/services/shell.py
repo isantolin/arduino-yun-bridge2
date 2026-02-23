@@ -135,7 +135,10 @@ class ShellComponent:
                     f"-- STDOUT --\n{stdout_text}\n-- STDERR --\n{stderr_text}"
                 )
             elif status == Status.TIMEOUT.value:
-                response = "Error: Command timed out after " f"{self.state.process_timeout} seconds."
+                response = (
+                    "Error: Command timed out after "
+                    f"{self.state.process_timeout} seconds."
+                )
             elif status == Status.MALFORMED.value:
                 response = "Error: Empty command"
             else:

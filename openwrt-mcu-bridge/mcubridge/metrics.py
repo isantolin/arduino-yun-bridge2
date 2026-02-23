@@ -93,9 +93,11 @@ def _with_user_property(
     key: str,
     value: str,
 ) -> QueuedPublish:
+    user_properties = list(message.user_properties)
+    user_properties.append((key, value))
     return msgspec.structs.replace(
         message,
-        user_properties=message.user_properties + ((key, value),),
+        user_properties=user_properties,
     )
 
 
@@ -133,7 +135,11 @@ async def _emit_bridge_snapshot(
     flavor: str,
 ) -> None:
     try:
-        snapshot = state.build_handshake_snapshot() if flavor == "handshake" else state.build_bridge_snapshot()
+        snapshot = (
+            state.build_handshake_snapshot()
+            if flavor == "handshake"
+            else state.build_bridge_snapshot()
+        )
         await enqueue(
             _build_bridge_snapshot_message(
                 state,
@@ -202,7 +208,9 @@ async def publish_metrics(
     except (TypeError, ValueError, OSError) as e:
         logger.error("Failed to publish initial metrics payload: %s", e)
     except (TypeError, ValueError, AttributeError, OSError) as e:
-        logger.critical("Unexpected error in initial metrics emit: %s", e, exc_info=True)
+        logger.critical(
+            "Unexpected error in initial metrics emit: %s", e, exc_info=True
+        )
 
     # Loop
     try:
@@ -215,7 +223,9 @@ async def publish_metrics(
             except (TypeError, ValueError, OSError) as e:
                 logger.error("Failed to publish metrics payload: %s", e)
             except (TypeError, ValueError, AttributeError, OSError) as e:
-                logger.critical("Unexpected error in metrics loop: %s", e, exc_info=True)
+                logger.critical(
+                    "Unexpected error in metrics loop: %s", e, exc_info=True
+                )
     except asyncio.CancelledError:
         logger.info("Metrics publisher cancelled.")
         raise
@@ -266,7 +276,9 @@ async def publish_bridge_snapshots(
     except* Exception as exc_group:
         # Individual loop errors are caught inside _emit/_loop, but if something
         # escapes or TaskGroup raises, we log it.
-        logger.critical("Fatal error in bridge snapshot publisher: %s", exc_group, exc_info=True)
+        logger.critical(
+            "Fatal error in bridge snapshot publisher: %s", exc_group, exc_info=True
+        )
         raise
 
 
@@ -436,7 +448,9 @@ class PrometheusExporter:
         except (OSError, ValueError, IndexError) as e:
             logger.warning("Prometheus client request error: %s", e)
         except (TypeError, ValueError, AttributeError, OSError, RuntimeError) as e:
-            logger.critical("Unexpected error in Prometheus handler: %s", e, exc_info=True)
+            logger.critical(
+                "Unexpected error in Prometheus handler: %s", e, exc_info=True
+            )
         finally:
             try:
                 writer.close()
@@ -460,7 +474,11 @@ class PrometheusExporter:
             404: "Not Found",
         }
         status_line = f"HTTP/1.1 {status} {phrases.get(status, 'Error')}\r\n"
-        headers = f"Content-Type: {content_type}\r\n" f"Content-Length: {len(body)}\r\n" "Connection: close\r\n\r\n"
+        headers = (
+            f"Content-Type: {content_type}\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            "Connection: close\r\n\r\n"
+        )
         writer.write(status_line.encode("ascii") + headers.encode("ascii") + body)
         await writer.drain()
 
@@ -496,7 +514,7 @@ def _build_bridge_snapshot_message(
         payload=msgspec.json.encode(snapshot),
         content_type="application/json",
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
-        user_properties=(("bridge-snapshot", flavor),),
+        user_properties=[("bridge-snapshot", flavor)],
     )
 
 

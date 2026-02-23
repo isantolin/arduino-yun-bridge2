@@ -39,7 +39,9 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
     return base
 
 
-def test_runtime_config_normalizes_topic_and_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_config_normalizes_topic_and_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     spool_absolute = "/tmp/relative/spool"
     expected_spool = os.path.abspath(spool_absolute)
     root_input = "/tmp//bridge/test/.."
@@ -65,8 +67,11 @@ def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 
     # settings.py now raises ValueError during test source for invalid topic
-    with pytest.raises(ValueError, match="mqtt_topic must contain at least one segment"):
+    with pytest.raises(
+        ValueError, match="mqtt_topic must contain at least one segment"
+    ):
         settings.load_runtime_config()
+
 
 def test_runtime_config_rejects_non_positive_status_interval() -> None:
     # We now allow conversion but clamp to minimum safe values or fail in convert
@@ -86,9 +91,13 @@ def test_runtime_config_requires_watchdog_interval_when_enabled() -> None:
         # or adjusting the test to what is actually correct (clamping).
         # But here we follow the user: "hacer lo que sea correcto".
         # Correct is rejecting invalid config.
-        msgspec.convert(_config_kwargs(watchdog_enabled=True, watchdog_interval=-1.0), RuntimeConfig)
+        msgspec.convert(
+            _config_kwargs(watchdog_enabled=True, watchdog_interval=-1.0), RuntimeConfig
+        )
 
 
 def test_runtime_config_rejects_non_positive_fatal_threshold() -> None:
     with pytest.raises((ValueError, msgspec.ValidationError)):
-        msgspec.convert(_config_kwargs(serial_handshake_fatal_failures=0), RuntimeConfig)
+        msgspec.convert(
+            _config_kwargs(serial_handshake_fatal_failures=0), RuntimeConfig
+        )

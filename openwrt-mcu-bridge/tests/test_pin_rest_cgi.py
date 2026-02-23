@@ -10,16 +10,21 @@ from importlib.abc import Loader
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
+from unittest.mock import MagicMock
 
 import msgspec
 import pytest
-from unittest.mock import MagicMock
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 
 
 def _load_pin_rest_cgi() -> ModuleType:
-    script_path = Path(__file__).resolve().parents[2] / "openwrt-mcu-core" / "scripts" / "pin_rest_cgi.py"
+    script_path = (
+        Path(__file__).resolve().parents[2]
+        / "openwrt-mcu-core"
+        / "scripts"
+        / "pin_rest_cgi.py"
+    )
     spec = importlib.util.spec_from_file_location("pin_rest_cgi", script_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load pin_rest_cgi script")
@@ -31,6 +36,7 @@ def _load_pin_rest_cgi() -> ModuleType:
     loader.exec_module(module)
     return module
 
+
 @pytest.fixture()
 def pin_rest_module() -> ModuleType:
     return _load_pin_rest_cgi()
@@ -39,6 +45,7 @@ def pin_rest_module() -> ModuleType:
 class MockInfo:
     def __init__(self, published: bool = True):
         self._published = published
+
     def is_published(self) -> bool:
         return self._published
 
@@ -93,7 +100,10 @@ def test_publish_safe_configures_tls(
     monkeypatch.setattr(pin_rest_module, "Client", TestClient)
 
     import ssl
-    monkeypatch.setattr(ssl, "create_default_context", lambda *args, **kwargs: MagicMock())
+
+    monkeypatch.setattr(
+        ssl, "create_default_context", lambda *args, **kwargs: MagicMock()
+    )
 
     runtime_config.mqtt_user = "user"
     runtime_config.mqtt_pass = "secret"
@@ -105,7 +115,7 @@ def test_publish_safe_configures_tls(
     pin_rest_module.publish_safe(
         topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/d/13",
         payload="1",
-        config=runtime_config
+        config=runtime_config,
     )
 
     assert len(captured_clients) == 1
@@ -129,15 +139,10 @@ def test_publish_safe_times_out(
 
             monkeypatch.setattr(pin_rest_module, "retries", 1)
 
-
     monkeypatch.setattr(pin_rest_module, "DEFAULT_PUBLISH_TIMEOUT", 0.01)
 
     with pytest.raises((TimeoutError, Exception)):
-        pin_rest_module.publish_safe(
-            topic="br/d/2",
-            payload="0",
-            config=runtime_config
-        )
+        pin_rest_module.publish_safe(topic="br/d/2", payload="0", config=runtime_config)
 
 
 def test_main_invokes_publish(
@@ -157,6 +162,7 @@ def test_main_invokes_publish(
     )
 
     captured: dict[str, Any] = {}
+
     def _fake_publish(topic: str, payload: str, config: Any) -> None:
         captured["topic"] = topic
         captured["payload"] = payload
@@ -169,7 +175,7 @@ def test_main_invokes_publish(
         "REQUEST_METHOD": "POST",
         "PATH_INFO": "/pin/7",
         "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "ON"}))),
-        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "ON"}))
+        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "ON"})),
     }
     monkeypatch.setattr(os, "environ", environ)
 
@@ -208,11 +214,12 @@ def test_main_rejects_invalid_state(
         "REQUEST_METHOD": "POST",
         "PATH_INFO": "/pin/9",
         "CONTENT_LENGTH": str(len(msgspec.json.encode({"state": "MAYBE"}))),
-        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "MAYBE"}))
+        "wsgi.input": io.BytesIO(msgspec.json.encode({"state": "MAYBE"})),
     }
     monkeypatch.setattr(os, "environ", environ)
 
     captured_status = []
+
     def start_response(status, headers):
         captured_status.append(status)
 

@@ -29,8 +29,12 @@ async def test_pin_component_extreme_gaps(runtime_config, runtime_state):
     await comp.handle_digital_read_resp(b"\x01\x02\x03")  # Too long
 
     # Gap: handle_mqtt with invalid modes/actions
-    await comp.handle_mqtt(Topic.DIGITAL, ["br", "d", "13", "mode"], "99")  # Invalid mode 99
-    await comp.handle_mqtt(Topic.DIGITAL, ["br", "d", "13", "mode"], "invalid")  # Not an int
+    await comp.handle_mqtt(
+        Topic.DIGITAL, ["br", "d", "13", "mode"], "99"
+    )  # Invalid mode 99
+    await comp.handle_mqtt(
+        Topic.DIGITAL, ["br", "d", "13", "mode"], "invalid"
+    )  # Not an int
 
     # Gap: handle_mqtt unknown subtopic
     await comp.handle_mqtt(Topic.DIGITAL, ["br", "d", "13", "unknown"], "val")
@@ -57,7 +61,9 @@ async def test_mqtt_transport_extreme_gaps(runtime_config, runtime_state):
 
     # Gap: _configure_tls with insecure mode
     with patch("ssl.create_default_context"):
-        local_config = msgspec.structs.replace(runtime_config, mqtt_tls=True, mqtt_cafile=None)
+        local_config = msgspec.structs.replace(
+            runtime_config, mqtt_tls=True, mqtt_cafile=None
+        )
         mqtt_helper.configure_tls_context(local_config)
 
 
@@ -100,7 +106,9 @@ async def test_process_component_deep_gaps(runtime_config, runtime_state):
 @pytest.mark.asyncio
 async def test_handshake_service_gaps(runtime_config, runtime_state):
     """Cover missing lines in handshake.py."""
-    timing = SerialTimingWindow(ack_timeout_ms=200, response_timeout_ms=1000, retry_limit=3)
+    timing = SerialTimingWindow(
+        ack_timeout_ms=200, response_timeout_ms=1000, retry_limit=3
+    )
     handshake = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
@@ -133,7 +141,9 @@ async def test_serial_fast_extreme_gaps(runtime_config, runtime_state):
     # Gap: _log_frame with exceptions
     frame = MagicMock()
     frame.command_id = 0x99  # Non-existent command
-    with patch("mcubridge.transport.serial.logger.debug", side_effect=Exception("Log Error")):
+    with patch(
+        "mcubridge.transport.serial.logger.debug", side_effect=Exception("Log Error")
+    ):
         proto._log_frame(frame, "TX")
 
 

@@ -5,40 +5,52 @@ import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import msgspec
 import psutil
+import pytest
 from cobs import cobs
 from mcubridge import daemon
 from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.process import ProcessComponent
-from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport, _log_baud_retry
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Status, Command
+from mcubridge.protocol.protocol import Command, Status
+from mcubridge.services.process import ProcessComponent
+from mcubridge.transport.serial import (
+    BridgeSerialProtocol,
+    SerialTransport,
+    _log_baud_retry,
+)
+
 
 def create_real_config():
     from mcubridge.config.common import get_default_config
+
     raw_cfg = get_default_config()
-    raw_cfg.update({
-        "serial_port": "/dev/ttyFake",
-        "serial_shared_secret": b"valid_secret_1234",
-        "mqtt_spool_dir": "/tmp/spool_v3"
-    })
+    raw_cfg.update(
+        {
+            "serial_port": "/dev/ttyFake",
+            "serial_shared_secret": b"valid_secret_1234",
+            "mqtt_spool_dir": "/tmp/spool_v3",
+        }
+    )
     return msgspec.convert(raw_cfg, RuntimeConfig)
 
+
 # --- mcubridge.config.logging ---
+
 
 def test_build_handler_stream_env():
     with patch.dict(os.environ, {"MCUBRIDGE_LOG_STREAM": "1"}):
         handler = logging_config._build_handler()
         assert isinstance(handler, logging.StreamHandler)
 
+
 def test_build_handler_syslog_fallback(tmp_path):
     fake_fallback = tmp_path / "log_fallback"
     fake_fallback.touch()
 
     original_exists = Path.exists
+
     def fake_exists(self):
         if str(self) == str(fake_fallback):
             return True
@@ -52,7 +64,10 @@ def test_build_handler_syslog_fallback(tmp_path):
         patch("mcubridge.config.logging.SYSLOG_SOCKET_FALLBACK", fake_fallback),
     ):
         handler = logging_config._build_handler()
-        assert isinstance(handler, (logging.handlers.SysLogHandler, logging.StreamHandler))
+        assert isinstance(
+            handler, (logging.handlers.SysLogHandler, logging.StreamHandler)
+        )
+
 
 def test_configure_logging_debug():
     config = create_real_config()
@@ -62,7 +77,9 @@ def test_configure_logging_debug():
         mock_dict_config.assert_called_once()
         assert mock_dict_config.call_args[0][0]["root"]["level"] == "DEBUG"
 
+
 # --- mcubridge.daemon ---
+
 
 @pytest.mark.asyncio
 async def test_cleanup_child_processes_coverage():
@@ -80,6 +97,7 @@ async def test_cleanup_child_processes_coverage():
         daemon._cleanup_child_processes()
         mock_zombie.kill.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_supervise_task_retry_error():
     spec = daemon.SupervisedTaskSpec(
@@ -87,19 +105,20 @@ async def test_supervise_task_retry_error():
         factory=AsyncMock(side_effect=RuntimeError("Fail")),
         max_restarts=0,
         min_backoff=0.01,
-        max_backoff=0.02
+        max_backoff=0.02,
     )
     d = daemon.BridgeDaemon(create_real_config())
 
     with pytest.raises(RuntimeError):
         await d._supervise_task(spec)
 
+
 @pytest.mark.asyncio
 async def test_supervise_task_telemetry_error_path():
     spec = daemon.SupervisedTaskSpec(
         name="test-task",
         factory=AsyncMock(side_effect=RuntimeError("Fail")),
-        max_restarts=0
+        max_restarts=0,
     )
     d = daemon.BridgeDaemon(create_real_config())
 
@@ -109,13 +128,15 @@ async def test_supervise_task_telemetry_error_path():
 
     async def fake_iter(*args, **kwargs):
         yield MagicMock()
+
     mock_retryer.__aiter__ = fake_iter
 
     with (
         patch("tenacity.AsyncRetrying", return_value=mock_retryer),
-        pytest.raises(RuntimeError)
+        pytest.raises(RuntimeError),
     ):
         await d._supervise_task(spec)
+
 
 @pytest.mark.asyncio
 async def test_daemon_run_exception_group_coverage():
@@ -123,10 +144,14 @@ async def test_daemon_run_exception_group_coverage():
     d = daemon.BridgeDaemon(config)
 
     class FakeTaskGroup:
-        async def __aenter__(self): return self
+        async def __aenter__(self):
+            return self
+
         async def __aexit__(self, exc_type, exc_val, exc_tb):
             raise ExceptionGroup("Main Group", [RuntimeError("Sub-error")])
-        def create_task(self, coro): pass
+
+        def create_task(self, coro):
+            pass
 
     with (
         patch("asyncio.TaskGroup", return_value=FakeTaskGroup()),
@@ -134,9 +159,10 @@ async def test_daemon_run_exception_group_coverage():
         patch.object(d.service, "__aexit__", new_callable=AsyncMock),
         patch("mcubridge.daemon._cleanup_child_processes"),
         patch("mcubridge.daemon.cleanup_status_file"),
-        pytest.raises(ExceptionGroup)
+        pytest.raises(ExceptionGroup),
     ):
         await d.run()
+
 
 @pytest.mark.asyncio
 async def test_cleanup_child_processes_alive():
@@ -145,13 +171,15 @@ async def test_cleanup_child_processes_alive():
 
     with (
         patch("psutil.Process") as mock_proc_cls,
-        patch("psutil.wait_procs", return_value=([], [mock_child])), # Still alive
+        patch("psutil.wait_procs", return_value=([], [mock_child])),  # Still alive
     ):
         mock_proc_cls.return_value.children.return_value = [mock_child]
         daemon._cleanup_child_processes()
         mock_child.kill.assert_called_once()
 
+
 # --- mcubridge.services.process ---
+
 
 @pytest.mark.asyncio
 async def test_process_handle_run_limit_reached():
@@ -166,11 +194,13 @@ async def test_process_handle_run_limit_reached():
     await comp._process_slots.acquire()
 
     from mcubridge.protocol.structures import ProcessRunPacket
+
     payload = ProcessRunPacket(command="ls").encode()
 
     await comp.handle_run(payload)
     ctx.send_frame.assert_called_once()
     assert ctx.send_frame.call_args[0][0] == Status.ERROR.value
+
 
 @pytest.mark.asyncio
 async def test_process_run_sync_os_error():
@@ -183,6 +213,7 @@ async def test_process_run_sync_os_error():
         status, stdout, stderr, exit_code = await comp.run_sync("cmd", ["cmd"])
         assert status == Status.ERROR.value
         assert b"Not found" in stderr
+
 
 @pytest.mark.asyncio
 async def test_process_kill_wait_timeout():
@@ -203,12 +234,14 @@ async def test_process_kill_wait_timeout():
     state.running_processes = {123: slot}
 
     from mcubridge.protocol.structures import ProcessKillPacket
+
     payload = ProcessKillPacket(pid=123).encode()
 
     with patch.object(comp, "_terminate_process_tree", new_callable=AsyncMock):
         await comp.handle_kill(payload)
 
     ctx.send_frame.assert_called()
+
 
 @pytest.mark.asyncio
 async def test_process_handle_run_async_validation_error():
@@ -221,11 +254,13 @@ async def test_process_handle_run_async_validation_error():
 
     comp = ProcessComponent(config, state, ctx)
     from mcubridge.protocol.structures import ProcessRunAsyncPacket
+
     payload = ProcessRunAsyncPacket(command="forbidden").encode()
 
     await comp.handle_run_async(payload)
     ctx.send_frame.assert_called_once()
     assert ctx.send_frame.call_args[0][0] == Status.ERROR.value
+
 
 @pytest.mark.asyncio
 async def test_process_run_sync_exception_group():
@@ -242,10 +277,14 @@ async def test_process_run_sync_exception_group():
 
     with (
         patch("asyncio.create_subprocess_exec", return_value=mock_proc),
-        patch("asyncio.TaskGroup.__aenter__", side_effect=BaseExceptionGroup("Group", [OSError("Fail")]))
+        patch(
+            "asyncio.TaskGroup.__aenter__",
+            side_effect=BaseExceptionGroup("Group", [OSError("Fail")]),
+        ),
     ):
         status, stdout, stderr, exit_code = await comp.run_sync("cmd", ["cmd"])
         assert status == Status.ERROR.value
+
 
 @pytest.mark.asyncio
 async def test_process_handle_poll_unknown_pid():
@@ -259,9 +298,11 @@ async def test_process_handle_poll_unknown_pid():
     comp = ProcessComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import ProcessPollPacket
+
     payload = ProcessPollPacket(pid=999).encode()
     await comp.handle_poll(payload)
     ctx.send_frame.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_process_handle_kill_non_existent():
@@ -274,9 +315,11 @@ async def test_process_handle_kill_non_existent():
     comp = ProcessComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import ProcessKillPacket
+
     payload = ProcessKillPacket(pid=999).encode()
     await comp.handle_kill(payload)
     ctx.send_frame.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_process_run_sync_timeout_coverage():
@@ -296,8 +339,11 @@ async def test_process_run_sync_timeout_coverage():
         patch.object(comp, "_consume_stream", new_callable=AsyncMock),
         patch.object(comp, "_terminate_process_tree", new_callable=AsyncMock),
     ):
-        status, stdout, stderr, exit_code = await comp.run_sync("sleep 10", ["sleep", "10"])
+        status, stdout, stderr, exit_code = await comp.run_sync(
+            "sleep 10", ["sleep", "10"]
+        )
         assert status == Status.TIMEOUT.value
+
 
 @pytest.mark.asyncio
 async def test_process_allocate_pid_exhaustion():
@@ -311,6 +357,7 @@ async def test_process_allocate_pid_exhaustion():
     pid = await comp._allocate_pid()
     assert pid == protocol.INVALID_ID_SENTINEL
 
+
 def test_process_trim_buffers_coverage():
     comp = ProcessComponent(create_real_config(), MagicMock(), MagicMock())
     stdout = bytearray(b"A" * 100)
@@ -319,6 +366,7 @@ def test_process_trim_buffers_coverage():
     assert len(out) + len(err) <= 58
     assert t_out is True
     assert t_err is True
+
 
 @pytest.mark.asyncio
 async def test_process_start_async_os_error():
@@ -332,8 +380,10 @@ async def test_process_start_async_os_error():
         patch.object(comp, "_allocate_pid", return_value=123),
         patch("asyncio.create_subprocess_exec", side_effect=OSError("Failed")),
     ):
-            pid = await comp.start_async("ls", ["ls"])
-            assert pid == protocol.INVALID_ID_SENTINEL
+        pid = await comp.start_async("ls", ["ls"])
+        assert pid == protocol.INVALID_ID_SENTINEL
+
+
 @pytest.mark.asyncio
 async def test_process_consume_stream_error():
     config = create_real_config()
@@ -345,6 +395,7 @@ async def test_process_consume_stream_error():
     buffer = bytearray()
     await comp._consume_stream(123, mock_reader, buffer)
     assert len(buffer) == 0
+
 
 @pytest.mark.asyncio
 async def test_process_terminate_process_tree_no_pid():
@@ -359,18 +410,20 @@ async def test_process_terminate_process_tree_no_pid():
     await comp._terminate_process_tree(mock_proc)
     mock_proc.kill.assert_called_once()
 
+
 @pytest.mark.asyncio
 async def test_process_finalize_async_process_slot_missing():
     config = create_real_config()
     state = MagicMock()
     state.process_lock = asyncio.Lock()
-    state.running_processes = {} # Empty
+    state.running_processes = {}  # Empty
     comp = ProcessComponent(config, state, MagicMock())
 
     mock_proc = MagicMock()
     with patch.object(comp, "_release_process_slot") as mock_release:
         await comp._finalize_async_process(123, mock_proc)
         mock_release.assert_called_once()
+
 
 def test_process_limit_sync_payload_truncation():
     comp = ProcessComponent(create_real_config(), MagicMock(), MagicMock())
@@ -381,6 +434,7 @@ def test_process_limit_sync_payload_truncation():
     assert truncated is True
     assert res == b"A" * 10
 
+
 @pytest.mark.asyncio
 async def test_process_read_stream_chunk_timeout():
     comp = ProcessComponent(create_real_config(), MagicMock(), MagicMock())
@@ -389,10 +443,12 @@ async def test_process_read_stream_chunk_timeout():
     res = await comp._read_stream_chunk(123, mock_reader, timeout=0.01)
     assert res == b""
 
+
 @pytest.mark.asyncio
 async def test_process_kill_process_tree_sync_psutil_error():
     with patch("psutil.Process", side_effect=psutil.NoSuchProcess(123)):
         ProcessComponent._kill_process_tree_sync(123)
+
 
 @pytest.mark.asyncio
 async def test_process_run_sync_wait_timeout_kill_timeout():
@@ -414,12 +470,15 @@ async def test_process_run_sync_wait_timeout_kill_timeout():
         await comp.run_sync("sleep 10", ["sleep", "10"])
         assert mock_proc.wait.call_count >= 2
 
+
 # --- mcubridge.transport.serial ---
+
 
 def test_log_baud_retry_coverage():
     retry_state = MagicMock()
     retry_state.attempt_number = 2
     _log_baud_retry(retry_state)
+
 
 @pytest.mark.asyncio
 async def test_serial_protocol_connection_lost_branches():
@@ -433,6 +492,7 @@ async def test_serial_protocol_connection_lost_branches():
     proto.connected_future.set_result(None)
     proto.connection_lost(None)
 
+
 @pytest.mark.asyncio
 async def test_serial_protocol_data_received_discarding():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
@@ -440,6 +500,7 @@ async def test_serial_protocol_data_received_discarding():
     proto.data_received(b"some data\x00")
     assert proto._discarding is False
     assert len(proto._buffer) == 0
+
 
 @pytest.mark.asyncio
 async def test_serial_transport_toggle_dtr_error():
@@ -451,6 +512,7 @@ async def test_serial_transport_toggle_dtr_error():
     with patch("serial.Serial", side_effect=OSError(errno.ENOTTY, "Not a typewriter")):
         await transport._toggle_dtr(asyncio.get_event_loop())
 
+
 @pytest.mark.asyncio
 async def test_serial_transport_run_fatal():
     config = create_real_config()
@@ -460,9 +522,13 @@ async def test_serial_transport_run_fatal():
     transport = SerialTransport(config, state, service)
 
     from mcubridge.services.handshake import SerialHandshakeFatal
-    with patch.object(transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")):
+
+    with patch.object(
+        transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal")
+    ):
         with pytest.raises(SerialHandshakeFatal):
             await transport.run()
+
 
 @pytest.mark.asyncio
 async def test_serial_transport_negotiate_baudrate_write_fail():
@@ -476,6 +542,7 @@ async def test_serial_transport_negotiate_baudrate_write_fail():
 
     res = await transport._negotiate_baudrate(mock_proto, 115200)
     assert res is False
+
 
 @pytest.mark.asyncio
 async def test_serial_transport_on_disconnected_hook_error():
@@ -495,17 +562,20 @@ async def test_serial_transport_on_disconnected_hook_error():
         with pytest.raises(OSError):
             await transport._connect_and_run(asyncio.get_running_loop())
 
+
 @pytest.mark.asyncio
 async def test_serial_protocol_negotiation_logic():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
     proto.negotiation_future = asyncio.get_running_loop().create_future()
 
     from mcubridge.protocol.frame import Frame
+
     raw_frame = Frame.build(75, b"")
     encoded = cobs.encode(raw_frame)
 
     proto._process_packet(encoded)
     assert proto.negotiation_future.result() is True
+
 
 @pytest.mark.asyncio
 async def test_serial_protocol_async_process_compressed():
@@ -513,8 +583,9 @@ async def test_serial_protocol_async_process_compressed():
     service.handle_mcu_frame = AsyncMock()
     proto = BridgeSerialProtocol(service, MagicMock(), asyncio.get_running_loop())
 
-    from mcubridge.protocol.frame import Frame
     from mcubridge.protocol import rle
+    from mcubridge.protocol.frame import Frame
+
     payload = b"A" * 10
     compressed = rle.encode(payload)
     cmd = Command.CMD_CONSOLE_WRITE.value | 0x8000
@@ -525,6 +596,7 @@ async def test_serial_protocol_async_process_compressed():
     service.handle_mcu_frame.assert_called_once()
     assert service.handle_mcu_frame.call_args[0][1] == payload
 
+
 @pytest.mark.asyncio
 async def test_serial_protocol_write_frame_fail():
     proto = BridgeSerialProtocol(MagicMock(), MagicMock(), asyncio.get_running_loop())
@@ -534,7 +606,9 @@ async def test_serial_protocol_write_frame_fail():
     with patch("mcubridge.protocol.frame.Frame.build", side_effect=ValueError("Boom")):
         assert proto.write_frame(1, b"") is False
 
+
 # --- mcubridge.config.settings ---
+
 
 def test_runtime_config_post_init_errors():
     from mcubridge.config.settings import RuntimeConfig
@@ -543,7 +617,7 @@ def test_runtime_config_post_init_errors():
         RuntimeConfig(
             serial_port="/dev/ttyS0",
             serial_shared_secret=b"valid_secret_1234",
-            watchdog_interval=0.1
+            watchdog_interval=0.1,
         )
 
     with pytest.raises(ValueError, match="serial_response_timeout must be at least 2x"):
@@ -551,5 +625,5 @@ def test_runtime_config_post_init_errors():
             serial_port="/dev/ttyS0",
             serial_shared_secret=b"valid_secret_1234",
             serial_retry_timeout=5.0,
-            serial_response_timeout=1.0
+            serial_response_timeout=1.0,
         )

@@ -6,7 +6,7 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Topic
 from mcubridge.services.pin import PinComponent
-from mcubridge.state.context import create_runtime_state, McuCapabilities
+from mcubridge.state.context import McuCapabilities, create_runtime_state
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,9 @@ async def test_pin_handle_read_overflow() -> None:
     # Overflow
     await pc._handle_read_command(Topic.DIGITAL, 13, None)
     ctx.publish.assert_called()
-    assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1]["properties"]
+    assert ("bridge-error", "pending-pin-overflow") in ctx.publish.call_args[1][
+        "properties"
+    ]
 
 
 @pytest.mark.asyncio
@@ -59,11 +61,13 @@ async def test_pin_validate_access_block() -> None:
     config = RuntimeConfig(serial_shared_secret=b"secret_1234")
     state = create_runtime_state(config)
     state.mcu_capabilities = McuCapabilities(
-        protocol_version=2, board_arch=1,
-        num_digital_pins=20, num_analog_inputs=6,
-        features={}
+        protocol_version=2,
+        board_arch=1,
+        num_digital_pins=20,
+        num_analog_inputs=6,
+        features={},
     )
     pc = PinComponent(config, state, MagicMock())
 
-    assert pc._validate_pin_access(25, False) is False # Digital limit 20
+    assert pc._validate_pin_access(25, False) is False  # Digital limit 20
     assert pc._validate_pin_access(10, True) is False  # Analog limit 6

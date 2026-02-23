@@ -13,7 +13,6 @@ from ..mqtt.messages import QueuedPublish
 from ..state.context import RuntimeState
 
 
-
 class BridgeContext(Protocol):
     """Protocol describing the surface required by service components."""
 
@@ -48,5 +47,6 @@ class BridgeContext(Protocol):
         *,
         name: str | None = None,
     ) -> asyncio.Task[Any]: ...
+
 
 __all__ = ["BridgeContext"]

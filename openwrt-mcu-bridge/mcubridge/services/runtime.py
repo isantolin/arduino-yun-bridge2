@@ -15,10 +15,10 @@ from ..config.settings import RuntimeConfig
 from ..mqtt.messages import QueuedPublish
 from ..protocol import protocol
 from ..protocol.protocol import Status  # Only Status from rpc.protocol needed
+from ..protocol.structures import UINT16_STRUCT, AckPacket
 from ..protocol.topics import Topic, TopicRoute, parse_topic, topic_path
 from ..router.routers import MCUHandlerRegistry, MQTTRouter
 from ..state.context import RuntimeState
-from ..protocol.structures import AckPacket, UINT16_STRUCT
 from . import (
     ConsoleComponent,
     DatastoreComponent,
@@ -198,7 +198,9 @@ class BridgeService:
 
         # [SIL-2] Boundary Guard: Do not proceed if synchronization failed.
         if not self.state.link_is_synchronized:
-            logger.warning("Link synchronization failed; aborting post-connection initialization")
+            logger.warning(
+                "Link synchronization failed; aborting post-connection initialization"
+            )
             self._handshake.raise_if_handshake_fatal()
             return
 
@@ -225,7 +227,8 @@ class BridgeService:
         total_pending = pending_digital + pending_analog
         if total_pending:
             logger.warning(
-                "Serial link lost; clearing %d pending request(s) " "(digital=%d analog=%d)",
+                "Serial link lost; clearing %d pending request(s) "
+                "(digital=%d analog=%d)",
                 total_pending,
                 pending_digital,
                 pending_analog,
@@ -315,14 +318,17 @@ class BridgeService:
                     message_to_queue,
                     topic_name=target_topic,
                 )
-            reply_correlation = getattr(props, "CorrelationData", None) if props else None
+            reply_correlation = (
+                getattr(props, "CorrelationData", None) if props else None
+            )
             if reply_correlation is not None:
                 message_to_queue = msgspec.structs.replace(
                     message_to_queue,
                     correlation_data=reply_correlation,
                 )
             origin_topic = str(reply_context.topic)
-            user_properties = message_to_queue.user_properties + (("bridge-request-topic", origin_topic),)
+            user_properties = list(message_to_queue.user_properties)
+            user_properties.append(("bridge-request-topic", origin_topic))
             message_to_queue = msgspec.structs.replace(
                 message_to_queue,
                 user_properties=user_properties,
@@ -345,7 +351,11 @@ class BridgeService:
                 stored = await self.state.stash_mqtt_message(dropped)
                 spool_note: str
                 if stored:
-                    pending = self.state.mqtt_spool.pending if self.state.mqtt_spool is not None else 0
+                    pending = (
+                        self.state.mqtt_spool.pending
+                        if self.state.mqtt_spool is not None
+                        else 0
+                    )
                     spool_note = f"; spooled_pending={pending}"
                 else:
                     reason = self.state.mqtt_spool_failure_reason or "unknown"
@@ -353,9 +363,13 @@ class BridgeService:
                         0.0,
                         self.state.mqtt_spool_backoff_until - time.monotonic(),
                     )
-                    spool_note = "; spool_unavailable reason=%s backoff_remaining=%.1fs" % (reason, backoff_remaining)
+                    spool_note = (
+                        "; spool_unavailable reason=%s backoff_remaining=%.1fs"
+                        % (reason, backoff_remaining)
+                    )
                 logger.warning(
-                    "MQTT publish queue saturated (%d/%d); dropping oldest " "topic=%s%s",
+                    "MQTT publish queue saturated (%d/%d); dropping oldest "
+                    "topic=%s%s",
                     self.state.mqtt_publish_queue.qsize(),
                     self.state.mqtt_queue_limit,
                     drop_topic,
@@ -387,7 +401,7 @@ class BridgeService:
             retain=retain,
             content_type=content_type,
             message_expiry_interval=expiry,
-            user_properties=properties,
+            user_properties=list(properties or []),
         )
         await self.enqueue_mqtt(message, reply_context=reply_to)
 
@@ -449,11 +463,15 @@ class BridgeService:
             except (msgspec.ValidationError, ValueError):
                 # Fallback for older firmware or malformed payload
                 command_id = UINT16_STRUCT.parse(payload[:2])
-                logger.debug("MCU > ACK received for 0x%02X (fallback parse)", command_id)
+                logger.debug(
+                    "MCU > ACK received for 0x%02X (fallback parse)", command_id
+                )
         else:
             logger.debug("MCU > ACK received")
 
-    def _status_handler_factory(self, status: Status) -> Callable[[bytes], Awaitable[None]]:
+    def _status_handler_factory(
+        self, status: Status
+    ) -> Callable[[bytes], Awaitable[None]]:
         return functools.partial(self.handle_status, status)
 
     async def handle_status(self, status: Status, payload: bytes) -> None:
@@ -484,7 +502,7 @@ class BridgeService:
         )
         properties: list[tuple[str, str]] = [
             ("bridge-status", status.name),
-            ("bridge-status-description", desc)
+            ("bridge-status-description", desc),
         ]
         if text:
             properties.append(("bridge-status-message", text))

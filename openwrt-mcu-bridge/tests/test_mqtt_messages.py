@@ -15,7 +15,7 @@ def test_queued_publish_roundtrip_with_correlation_and_user_properties() -> None
         message_expiry_interval=30,
         response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
         correlation_data=b"cid",
-        user_properties=(("k", "v"),),
+        user_properties=[("k", "v")],
     )
 
     record = message.to_record()
@@ -26,7 +26,7 @@ def test_queued_publish_roundtrip_with_correlation_and_user_properties() -> None
     assert restored.qos == message.qos
     assert restored.retain == message.retain
     assert restored.correlation_data == b"cid"
-    assert restored.user_properties == (("k", "v"),)
+    assert restored.user_properties == [("k", "v")]
 
 
 def test_queued_publish_from_record_normalizes_user_properties() -> None:
@@ -42,7 +42,7 @@ def test_queued_publish_from_record_normalizes_user_properties() -> None:
     }
 
     restored = QueuedPublish.from_record(record)
-    assert restored.user_properties == (("k", "v"), ("1", "2"))
+    assert restored.user_properties == [("k", "v"), ("1", "2")]
 
 
 def test_queued_publish_from_record_handles_missing_correlation_data() -> None:

@@ -13,6 +13,7 @@ from .protocol import Topic
 
 class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""
+
     raw: str
     prefix: str
     topic: Topic

@@ -29,16 +29,26 @@ from tools import frame_debug  # noqa: E402
 
 
 def test_resolve_command_hex() -> None:
-    assert frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value
+    assert (
+        frame_debug._resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}")
+        == Command.CMD_LINK_RESET.value
+    )
     assert frame_debug._resolve_command(f"0X{UINT8_MASK:02X}") == UINT8_MASK
     assert frame_debug._resolve_command("10") == 10  # Just an integer
 
 
 def test_resolve_command_name() -> None:
-    assert frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
-    assert frame_debug._resolve_command("CMD_GET_FREE_MEMORY") == Command.CMD_GET_FREE_MEMORY.value
+    assert (
+        frame_debug._resolve_command("CMD_GET_VERSION") == Command.CMD_GET_VERSION.value
+    )
+    assert (
+        frame_debug._resolve_command("CMD_GET_FREE_MEMORY")
+        == Command.CMD_GET_FREE_MEMORY.value
+    )
     # Case insensitive
-    assert frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
+    assert (
+        frame_debug._resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
+    )
 
 
 def test_resolve_command_invalid() -> None:
@@ -66,7 +76,10 @@ def test_parse_payload_invalid() -> None:
 
 
 def test_name_for_command() -> None:
-    assert frame_debug._name_for_command(Command.CMD_GET_VERSION.value) == "CMD_GET_VERSION"
+    assert (
+        frame_debug._name_for_command(Command.CMD_GET_VERSION.value)
+        == "CMD_GET_VERSION"
+    )
     # Keep testing Status resolution
     assert frame_debug._name_for_command(Status.ACK.value) == "ACK"
     assert frame_debug._name_for_command(UINT8_MASK) == f"UNKNOWN(0x{UINT8_MASK:02X})"
@@ -185,7 +198,9 @@ def test_main_with_serial_read_success(mock_serial_cls: MagicMock) -> None:
     mock_serial.read.side_effect = [bytes([1]), FRAME_DELIMITER, b""]
 
     with patch("tools.frame_debug._decode_frame") as mock_decode:
-        mock_decode.return_value = frame_debug.Frame(command_id=Status.OK.value, payload=b"response")
+        mock_decode.return_value = frame_debug.Frame(
+            command_id=Status.OK.value, payload=b"response"
+        )
 
         ret = frame_debug.main(
             [

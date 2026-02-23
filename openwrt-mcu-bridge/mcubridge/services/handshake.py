@@ -51,13 +51,24 @@ class SerialTimingWindow(msgspec.Struct, frozen=True):
     """Derived serial retry/response windows used by both MCU and MPU."""
 
     ack_timeout_ms: Annotated[
-        int, msgspec.Meta(ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS)
+        int,
+        msgspec.Meta(
+            ge=protocol.HANDSHAKE_ACK_TIMEOUT_MIN_MS,
+            le=protocol.HANDSHAKE_ACK_TIMEOUT_MAX_MS,
+        ),
     ]
     response_timeout_ms: Annotated[
-        int, msgspec.Meta(ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS, le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS)
+        int,
+        msgspec.Meta(
+            ge=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS,
+            le=protocol.HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS,
+        ),
     ]
     retry_limit: Annotated[
-        int, msgspec.Meta(ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX)
+        int,
+        msgspec.Meta(
+            ge=protocol.HANDSHAKE_RETRY_LIMIT_MIN, le=protocol.HANDSHAKE_RETRY_LIMIT_MAX
+        ),
     ]
 
     @property
@@ -87,6 +98,7 @@ def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
 
     # [SIL-2] msgspec will raise ValidationError if values are outside protocol bounds.
     return msgspec.convert(raw, SerialTimingWindow, strict=True)
+
 
 class SerialHandshakeFatal(RuntimeError):
     """Raised when MCU rejects the serial shared secret permanently."""
@@ -171,26 +183,36 @@ class SerialHandshakeManager:
                     "on_enter": "_on_fsm_synchronized",
                     "on_exit": "_on_fsm_unsynchronized",
                 },
-                self.STATE_FAULT
+                self.STATE_FAULT,
             ],
             initial=self.STATE_UNSYNCHRONIZED,
             ignore_invalid_triggers=True,
-            model_attribute='fsm_state'
+            model_attribute="fsm_state",
         )
 
         # FSM Transitions
-        self.state_machine.add_transition(trigger='start_reset', source='*', dest=self.STATE_RESETTING)
-        self.state_machine.add_transition(trigger='start_sync', source=self.STATE_RESETTING, dest=self.STATE_SYNCING)
         self.state_machine.add_transition(
-            trigger='start_confirm', source=self.STATE_SYNCING, dest=self.STATE_CONFIRMING
+            trigger="start_reset", source="*", dest=self.STATE_RESETTING
         )
         self.state_machine.add_transition(
-            trigger='complete_handshake',
+            trigger="start_sync", source=self.STATE_RESETTING, dest=self.STATE_SYNCING
+        )
+        self.state_machine.add_transition(
+            trigger="start_confirm",
+            source=self.STATE_SYNCING,
+            dest=self.STATE_CONFIRMING,
+        )
+        self.state_machine.add_transition(
+            trigger="complete_handshake",
             source=[self.STATE_SYNCING, self.STATE_CONFIRMING],
-            dest=self.STATE_SYNCHRONIZED
+            dest=self.STATE_SYNCHRONIZED,
         )
-        self.state_machine.add_transition(trigger='fail_handshake', source='*', dest=self.STATE_FAULT)
-        self.state_machine.add_transition(trigger='reset_fsm', source='*', dest=self.STATE_UNSYNCHRONIZED)
+        self.state_machine.add_transition(
+            trigger="fail_handshake", source="*", dest=self.STATE_FAULT
+        )
+        self.state_machine.add_transition(
+            trigger="reset_fsm", source="*", dest=self.STATE_UNSYNCHRONIZED
+        )
 
     def _on_fsm_synchronized(self) -> None:
         """Callback when entering synchronized state."""
@@ -292,8 +314,11 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if self.fsm_state != self.STATE_SYNCHRONIZED and self.fsm_state != self.STATE_FAULT:
-             self.complete_handshake()
+        if (
+            self.fsm_state != self.STATE_SYNCHRONIZED
+            and self.fsm_state != self.STATE_FAULT
+        ):
+            self.complete_handshake()
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
 
@@ -357,9 +382,13 @@ class SerialHandshakeManager:
         )
 
         if not nonce_mismatch and not missing_expected_tag:
-            is_valid, _ = validate_nonce_counter(nonce, self._state.link_last_nonce_counter)
+            is_valid, _ = validate_nonce_counter(
+                nonce, self._state.link_last_nonce_counter
+            )
             if not is_valid:
-                self._logger.warning("LINK_SYNC_RESP replay detected (nonce counter too low)")
+                self._logger.warning(
+                    "LINK_SYNC_RESP replay detected (nonce counter too low)"
+                )
                 nonce_mismatch = True
 
         if nonce_mismatch or missing_expected_tag or bad_tag_length or tag_mismatch:
@@ -397,7 +426,9 @@ class SerialHandshakeManager:
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
-        self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
+        self._logger.debug(
+            "Starting capabilities discovery using Command ID 0x%02X", cmd_id
+        )
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
@@ -417,7 +448,9 @@ class SerialHandshakeManager:
 
                     try:
                         timeout = max(5.0, self._timing.response_timeout_seconds)
-                        payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
+                        payload = await asyncio.wait_for(
+                            self._capabilities_future, timeout=timeout
+                        )
                         self._parse_capabilities(payload)
                         return True
                     except asyncio.TimeoutError:
@@ -442,7 +475,7 @@ class SerialHandshakeManager:
                 board_arch=cap.arch,
                 num_digital_pins=cap.dig,
                 num_analog_inputs=cap.ana,
-                features=cap.feat
+                features=cap.feat,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ConstructError, TypeError, ValueError, KeyError) as exc:
@@ -465,7 +498,9 @@ class SerialHandshakeManager:
         is_fatal = self._should_mark_failure_fatal(reason)
         fatal_detail = detail
         if is_fatal and reason not in _IMMEDIATE_FATAL_HANDSHAKE_REASONS:
-            fatal_detail = detail or (f"failure_streak_exceeded_{self._fatal_threshold}")
+            fatal_detail = detail or (
+                f"failure_streak_exceeded_{self._fatal_threshold}"
+            )
         if is_fatal:
             self._state.record_handshake_fatal(reason, fatal_detail)
             self._logger.error(
@@ -503,7 +538,9 @@ class SerialHandshakeManager:
             "Verify mcubridge.general.serial_shared_secret (configured via UCI/LuCI) "
             "matches the BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
         )
-        raise SerialHandshakeFatal("MCU rejected the serial shared secret " f"(reason={reason}). {hint}")
+        raise SerialHandshakeFatal(
+            "MCU rejected the serial shared secret " f"(reason={reason}). {hint}"
+        )
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = max(0.5, self._timing.response_timeout_seconds)
@@ -557,7 +594,7 @@ class SerialHandshakeManager:
             "fatal_reason": self._state.handshake_fatal_reason,
             "fatal_detail": self._state.handshake_fatal_detail,
             "fatal_unix": self._state.handshake_fatal_unix,
-            "fsm_state": self.fsm_state  # Include FSM state in telemetry
+            "fsm_state": self.fsm_state,  # Include FSM state in telemetry
         }
         if extra:
             payload.update(extra)
@@ -565,7 +602,7 @@ class SerialHandshakeManager:
             topic_name=handshake_topic(self._state.mqtt_topic_prefix),
             payload=msgspec.json.encode(payload),
             content_type="application/json",
-            user_properties=(("bridge-event", "handshake"),),
+            user_properties=[("bridge-event", "handshake")],
         )
         await self._enqueue_mqtt(message)
 

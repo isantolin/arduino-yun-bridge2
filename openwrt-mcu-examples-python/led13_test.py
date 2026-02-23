@@ -17,12 +17,18 @@ logging.basicConfig(
 async def main() -> None:
     """Run main test logic."""
     parser = argparse.ArgumentParser(description="Test generic pin control.")
-    parser.add_argument("pin", type=int, nargs="?", default=13, help="Pin number (default: 13)")
+    parser.add_argument(
+        "pin", type=int, nargs="?", default=13, help="Pin number (default: 13)"
+    )
     parser.add_argument("--host", default=None, help="MQTT Broker Host")
     parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
     parser.add_argument("--user", default=None, help="MQTT Username")
     parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument("--tls-insecure", action="store_true", help="Disable TLS certificate verification")
+    parser.add_argument(
+        "--tls-insecure",
+        action="store_true",
+        help="Disable TLS certificate verification",
+    )
     args = parser.parse_args()
 
     dump_client_env(logging.getLogger(__name__))

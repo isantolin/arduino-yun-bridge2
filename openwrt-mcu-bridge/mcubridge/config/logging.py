@@ -68,7 +68,9 @@ class StructuredLogFormatter(logging.Formatter):
             logger_name = logger_name[len(self.PREFIX) :]
 
         payload: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
+            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat()
+            .replace("+00:00", "Z"),
             "level": record.levelname,
             "logger": logger_name,
             "message": record.getMessage(),
@@ -86,8 +88,6 @@ class StructuredLogFormatter(logging.Formatter):
             payload["exception"] = self.formatException(record.exc_info)
 
         return msgspec.json.encode(payload).decode("utf-8")
-
-
 
 
 def _build_handler() -> Handler:

@@ -19,7 +19,9 @@ def test_response_to_request_lookup() -> None:
     assert request == Command.CMD_MAILBOX_AVAILABLE.value
 
 
-def test_request_response_map_skips_orphan_response(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_request_response_map_skips_orphan_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeCommand(IntEnum):
         CMD_OK = 1
         CMD_OK_RESP = 2

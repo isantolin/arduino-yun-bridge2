@@ -2,12 +2,12 @@ from unittest.mock import patch
 
 import pytest
 from mcubridge.state.context import (
+    PROCESS_STATE_FINISHED,
     ManagedProcess,
     McuCapabilities,
     RuntimeState,
     SerialLatencyStats,
     _collect_system_metrics,
-    PROCESS_STATE_FINISHED,
 )
 from mcubridge.state.status import cleanup_status_file
 
@@ -80,6 +80,7 @@ def test_collect_system_metrics_fail_paths() -> None:
         assert m["load_avg_1m"] is None
         assert m["temperature_celsius"] is None
 
+
 def test_runtime_state_supervisor_and_spool() -> None:
     state = RuntimeState()
     state.record_supervisor_failure("svc", backoff=1.0, exc=ValueError("fail"))
@@ -151,8 +152,12 @@ async def test_status_writer_with_version() -> None:
     with patch("mcubridge.state.status.NamedTemporaryFile") as mock_tf:
         with patch("mcubridge.state.status.Path"):
             from mcubridge.state.status import _write_status_file
+
             # Mock build_metrics_snapshot on the CLASS because msgspec.Struct instances are rigid
-            with patch("mcubridge.state.context.RuntimeState.build_metrics_snapshot", return_value={"test": 1}):
+            with patch(
+                "mcubridge.state.context.RuntimeState.build_metrics_snapshot",
+                return_value={"test": 1},
+            ):
                 state = RuntimeState()
                 state.mcu_version = (1, 2)
                 state.mcu_capabilities = McuCapabilities()

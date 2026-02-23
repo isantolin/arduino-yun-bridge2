@@ -11,7 +11,12 @@ from typing import Any, Callable, cast
 
 import pytest
 from mcubridge.protocol.contracts import expected_responses
-from mcubridge.protocol.protocol import MQTT_COMMAND_SUBSCRIPTIONS, Command, Status, Topic
+from mcubridge.protocol.protocol import (
+    MQTT_COMMAND_SUBSCRIPTIONS,
+    Command,
+    Status,
+    Topic,
+)
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 from mcubridge.services.dispatcher import BridgeDispatcher
@@ -163,7 +168,9 @@ class _Pin:
     async def handle_analog_read_resp(self, _payload: bytes) -> bool:
         return True
 
-    async def handle_unexpected_mcu_request(self, _command: Any, _payload: bytes) -> bool:
+    async def handle_unexpected_mcu_request(
+        self, _command: Any, _payload: bytes
+    ) -> bool:
         return True
 
     async def handle_mqtt(
@@ -237,6 +244,7 @@ async def test_mqtt_subscriptions_are_dispatched() -> None:
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
+
     state = create_runtime_state(get_default_config())
 
     dispatcher = BridgeDispatcher(
@@ -286,6 +294,7 @@ async def test_mcu_inbound_commands_are_registered() -> None:
 
     from mcubridge.config.settings import get_default_config
     from mcubridge.state.context import create_runtime_state
+
     state = create_runtime_state(get_default_config())
 
     dispatcher = BridgeDispatcher(

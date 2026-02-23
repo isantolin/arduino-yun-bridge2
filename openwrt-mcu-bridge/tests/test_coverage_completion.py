@@ -24,7 +24,7 @@ def test_mqtt_helper_tls_edge_cases(tmp_path):
     config.mqtt_tls_insecure = True
     config.mqtt_certfile = None
     config.mqtt_keyfile = None
-    with patch("ssl.create_default_context") :
+    with patch("ssl.create_default_context"):
         ctx = mqtt_helper.configure_tls_context(config)
         assert ctx.check_hostname is False
 
@@ -76,7 +76,9 @@ async def test_runtime_service_edge_cases(real_config, runtime_state):
     msg = MagicMock()
     msg.topic = "br/d/13/write"
     msg.payload = b"invalid"
-    with patch.object(service._dispatcher, "dispatch_mqtt_message", side_effect=ValueError("Boom")):
+    with patch.object(
+        service._dispatcher, "dispatch_mqtt_message", side_effect=ValueError("Boom")
+    ):
         await service.handle_mqtt_message(msg)
 
 
@@ -100,15 +102,23 @@ async def test_daemon_supervision_logic(real_config):
 @pytest.mark.asyncio
 async def test_metrics_emit_errors(runtime_state):
     enqueue = AsyncMock()
-    with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=TypeError("Fail")):
+    with patch(
+        "mcubridge.metrics._emit_bridge_snapshot", side_effect=TypeError("Fail")
+    ):
         with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
-                await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
+                await metrics._bridge_snapshot_loop(
+                    runtime_state, enqueue, flavor="summary", seconds=1
+                )
 
-    with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=AttributeError("Fatal")):
+    with patch(
+        "mcubridge.metrics._emit_bridge_snapshot", side_effect=AttributeError("Fatal")
+    ):
         with patch("asyncio.sleep", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
-                await metrics._bridge_snapshot_loop(runtime_state, enqueue, flavor="summary", seconds=1)
+                await metrics._bridge_snapshot_loop(
+                    runtime_state, enqueue, flavor="summary", seconds=1
+                )
 
 
 @pytest.mark.asyncio
@@ -165,6 +175,7 @@ async def test_file_component_additional_gaps(runtime_state, real_config):
     with patch("mcubridge.services.file.scandir", side_effect=OSError("Scan fail")):
         assert comp._scan_directory_size(Path("/tmp")) == 0
     from mcubridge.services.file import _do_write_file
+
     with patch("pathlib.Path.open", side_effect=OSError("Write fail")):
         with pytest.raises(OSError):
             _do_write_file(Path("/tmp/fail"), b"data")
@@ -172,9 +183,11 @@ async def test_file_component_additional_gaps(runtime_state, real_config):
 
 def test_metrics_more_gaps(runtime_state):
     from mcubridge.metrics import _normalize_interval
+
     assert _normalize_interval(-1, 10.0) is None
     assert _normalize_interval(5, 10.0) == 10
     from mcubridge.metrics import _sanitize_metric_name
+
     assert _sanitize_metric_name("test-metric.name") == "test_metric_name"
 
 
@@ -195,9 +208,13 @@ async def test_daemon_supervisor_cancelled(real_config):
 
 def test_daemon_main_exception_group(real_config):
     from mcubridge.daemon import main
+
     with patch("mcubridge.daemon.load_runtime_config", return_value=real_config):
         with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
-            with patch("mcubridge.daemon.BridgeDaemon.run", side_effect=ExceptionGroup("Group", [RuntimeError("Err")])):
+            with patch(
+                "mcubridge.daemon.BridgeDaemon.run",
+                side_effect=ExceptionGroup("Group", [RuntimeError("Err")]),
+            ):
                 with pytest.raises(SystemExit) as cm:
                     main()
                 assert cm.value.code == 1

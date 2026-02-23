@@ -22,8 +22,6 @@ import msgspec
 import serial_asyncio_fast  # type: ignore
 import tenacity
 from cobs import cobs
-from transitions import Machine
-
 from mcubridge.config.const import SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol, rle
@@ -33,6 +31,7 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.util import log_hexdump
+from transitions import Machine
 
 logger = logging.getLogger("mcubridge")
 
@@ -40,7 +39,10 @@ logger = logging.getLogger("mcubridge")
 FRAMING_OVERHEAD: Final[int] = 4
 
 MAX_SERIAL_PACKET_BYTES = (
-    protocol.CRC_COVERED_HEADER_SIZE + protocol.MAX_PAYLOAD_SIZE + protocol.CRC_SIZE + FRAMING_OVERHEAD
+    protocol.CRC_COVERED_HEADER_SIZE
+    + protocol.MAX_PAYLOAD_SIZE
+    + protocol.CRC_SIZE
+    + FRAMING_OVERHEAD
 )
 
 
@@ -64,7 +66,10 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
 
 def _log_baud_retry(retry_state: tenacity.RetryCallState) -> None:
     if retry_state.attempt_number > 1:
-        logger.warning("Baudrate negotiation timed out (attempt %d); retrying...", retry_state.attempt_number)
+        logger.warning(
+            "Baudrate negotiation timed out (attempt %d); retrying...",
+            retry_state.attempt_number,
+        )
 
 
 class BridgeSerialProtocol(asyncio.Protocol):
@@ -96,10 +101,10 @@ class BridgeSerialProtocol(asyncio.Protocol):
         self.transport = None
         # Replace the current future with a completed one if it was already resolved
         if self.connected_future.done():
-             # We create a new future to signal the transport run loop that we are done
-             # Actually, if it was done, it means connection_made was successful.
-             # Now we need to signal disconnection.
-             pass
+            # We create a new future to signal the transport run loop that we are done
+            # Actually, if it was done, it means connection_made was successful.
+            # Now we need to signal disconnection.
+            pass
         else:
             self.connected_future.set_exception(exc or ConnectionError("Closed"))
 
@@ -116,7 +121,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
             # Extract the packet (excluding the delimiter)
             packet = self._buffer[:sep_idx]
             # Remove the processed part from the buffer
-            del self._buffer[:sep_idx + 1]
+            del self._buffer[: sep_idx + 1]
 
             if self._discarding:
                 self._discarding = False
@@ -127,7 +132,9 @@ class BridgeSerialProtocol(asyncio.Protocol):
 
         # [SIL-2] Resource Protection: Prevent buffer runaway
         if len(self._buffer) > MAX_SERIAL_PACKET_BYTES:
-            logger.warning("Serial packet too large (>%d), flushing.", MAX_SERIAL_PACKET_BYTES)
+            logger.warning(
+                "Serial packet too large (>%d), flushing.", MAX_SERIAL_PACKET_BYTES
+            )
             self.state.record_serial_decode_error()
             self._buffer.clear()
             self._discarding = True
@@ -288,25 +295,39 @@ class SerialTransport:
             ],
             initial=self.STATE_DISCONNECTED,
             ignore_invalid_triggers=True,
-            model_attribute='fsm_state'
+            model_attribute="fsm_state",
         )
 
         # FSM Transitions
-        self.state_machine.add_transition(trigger="begin_reset", source="*", dest=self.STATE_RESETTING)
         self.state_machine.add_transition(
-            trigger="begin_connect", source=self.STATE_RESETTING, dest=self.STATE_CONNECTING
+            trigger="begin_reset", source="*", dest=self.STATE_RESETTING
         )
         self.state_machine.add_transition(
-            trigger="begin_negotiate", source=self.STATE_CONNECTING, dest=self.STATE_NEGOTIATING
+            trigger="begin_connect",
+            source=self.STATE_RESETTING,
+            dest=self.STATE_CONNECTING,
+        )
+        self.state_machine.add_transition(
+            trigger="begin_negotiate",
+            source=self.STATE_CONNECTING,
+            dest=self.STATE_NEGOTIATING,
         )
         self.state_machine.add_transition(
             trigger="mark_connected",
             source=[self.STATE_CONNECTING, self.STATE_NEGOTIATING],
             dest=self.STATE_CONNECTED,
         )
-        self.state_machine.add_transition(trigger="handshake", source=self.STATE_CONNECTED, dest=self.STATE_HANDSHAKING)
-        self.state_machine.add_transition(trigger="enter_loop", source=self.STATE_HANDSHAKING, dest=self.STATE_RUNNING)
-        self.state_machine.add_transition(trigger="mark_disconnected", source="*", dest=self.STATE_DISCONNECTED)
+        self.state_machine.add_transition(
+            trigger="handshake",
+            source=self.STATE_CONNECTED,
+            dest=self.STATE_HANDSHAKING,
+        )
+        self.state_machine.add_transition(
+            trigger="enter_loop", source=self.STATE_HANDSHAKING, dest=self.STATE_RUNNING
+        )
+        self.state_machine.add_transition(
+            trigger="mark_disconnected", source="*", dest=self.STATE_DISCONNECTED
+        )
 
     def _on_fsm_disconnect(self) -> None:
         """Callback when leaving any active state."""
@@ -373,6 +394,7 @@ class SerialTransport:
             import time
 
             import serial
+
             with serial.Serial(self.config.serial_port) as s:
                 s.dtr = False
                 time.sleep(0.1)
@@ -395,12 +417,18 @@ class SerialTransport:
         await self._toggle_dtr(loop)
 
         self.begin_connect()
-        logger.info("Connecting to %s at %d baud (Protocol Optimized)...", self.config.serial_port, start_baud)
+        logger.info(
+            "Connecting to %s at %d baud (Protocol Optimized)...",
+            self.config.serial_port,
+            start_baud,
+        )
 
         # Create a Future that will represent the lifetime of the connection
         lost_future: asyncio.Future[Any] = loop.create_future()
 
-        protocol_factory = functools.partial(SignalLostProtocol, self.service, self.state, loop, lost_future)
+        protocol_factory = functools.partial(
+            SignalLostProtocol, self.service, self.state, loop, lost_future
+        )
         transport, proto = await serial_asyncio_fast.create_serial_connection(
             loop, protocol_factory, self.config.serial_port, baudrate=start_baud
         )
@@ -408,23 +436,32 @@ class SerialTransport:
         await self.protocol.connected_future
 
         if transport.is_closing():
-             if not lost_future.done():
-                 lost_future.set_result(ConnectionError("Transport closing immediately after connection"))
+            if not lost_future.done():
+                lost_future.set_result(
+                    ConnectionError("Transport closing immediately after connection")
+                )
 
         try:
             if negotiation_needed:
                 self.begin_negotiate()
                 success = await self._negotiate_baudrate(self.protocol, target_baud)
                 if success:
-                    logger.info("Baudrate negotiated. Reconnecting at %d...", target_baud)
+                    logger.info(
+                        "Baudrate negotiated. Reconnecting at %d...", target_baud
+                    )
                     transport.close()
                     # Re-create lost_future for new connection
                     lost_future = loop.create_future()
                     protocol_factory = functools.partial(
                         SignalLostProtocol, self.service, self.state, loop, lost_future
                     )
-                    transport, proto = await serial_asyncio_fast.create_serial_connection(
-                        loop, protocol_factory, self.config.serial_port, baudrate=target_baud
+                    transport, proto = (
+                        await serial_asyncio_fast.create_serial_connection(
+                            loop,
+                            protocol_factory,
+                            self.config.serial_port,
+                            baudrate=target_baud,
+                        )
                     )
                     self.protocol = cast(BridgeSerialProtocol, proto)
                     await self.protocol.connected_future
@@ -480,7 +517,9 @@ class SerialTransport:
             except (OSError, RuntimeError, ValueError) as exc:
                 logger.warning("Error in on_serial_disconnected hook: %s", exc)
 
-    async def _negotiate_baudrate(self, proto: BridgeSerialProtocol, target_baud: int) -> bool:
+    async def _negotiate_baudrate(
+        self, proto: BridgeSerialProtocol, target_baud: int
+    ) -> bool:
         logger.info("Negotiating baudrate switch to %d...", target_baud)
         payload = UINT32_STRUCT.build(target_baud)
 
@@ -496,12 +535,17 @@ class SerialTransport:
             async for attempt in retryer:
                 with attempt:
                     proto.negotiation_future = proto.loop.create_future()
-                    if not proto.write_frame(protocol.Command.CMD_SET_BAUDRATE.value, payload):
+                    if not proto.write_frame(
+                        protocol.Command.CMD_SET_BAUDRATE.value, payload
+                    ):
                         proto.negotiation_future = None
                         raise asyncio.TimeoutError("Write failed")
 
                     try:
-                        await asyncio.wait_for(proto.negotiation_future, SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
+                        await asyncio.wait_for(
+                            proto.negotiation_future,
+                            SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+                        )
                         return True
                     finally:
                         proto.negotiation_future = None

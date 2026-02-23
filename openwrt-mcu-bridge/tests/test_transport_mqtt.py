@@ -55,6 +55,7 @@ def _make_config(*, tls: bool, cafile: str | None) -> RuntimeConfig:
         mailbox_queue_bytes_limit=DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     )
 
+
 def test_configure_tls_disabled_returns_none(tmp_path: Path) -> None:
     config = _make_config(tls=False, cafile=str(tmp_path / "ca.pem"))
     assert mqtt_helper.configure_tls_context(config) is None
@@ -78,9 +79,7 @@ def test_configure_tls_loads_cert_chain_when_provided(
         calls.append((certfile, keyfile))
 
     fake_context = SimpleNamespace(
-        minimum_version=None,
-        load_cert_chain=_load_cert_chain,
-        check_hostname=True
+        minimum_version=None, load_cert_chain=_load_cert_chain, check_hostname=True
     )
 
     def _fake_create_default_context(*_args, **_kwargs):
@@ -126,10 +125,18 @@ async def test_mqtt_task_requeues_on_publish_failure(
     )
 
     class FakeClient:
-        def __init__(self, **kwargs: Any) -> None: pass
-        async def __aenter__(self) -> FakeClient: return self
-        async def __aexit__(self, *args: Any) -> None: pass
-        async def subscribe(self, *args: Any, **kwargs: Any) -> None: pass
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> FakeClient:
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            pass
+
+        async def subscribe(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
         async def publish(self, *args: Any, **kwargs: Any) -> None:
             raise aiomqtt.MqttError("failed")
 
@@ -138,11 +145,14 @@ async def test_mqtt_task_requeues_on_publish_failure(
             async def _iter():
                 if False:
                     yield None
+
             return _iter()
 
     monkeypatch.setattr(aiomqtt, "Client", FakeClient)
+
     async def _cancel_sleep(*args, **kwargs):
         raise asyncio.CancelledError
+
     monkeypatch.setattr(asyncio, "sleep", _cancel_sleep)
 
     # [FIX] MqttTransport.run catches CancelledError and logs it, then re-raises
@@ -195,12 +205,13 @@ async def test_mqtt_subscriber_loop_handles_mqtt_error(
             async def _iter():
                 yield MagicMock(topic="t", payload=b"p")
                 raise aiomqtt.MqttError("boom")
+
             return _iter()
 
     client = FakeClient()
 
     with pytest.raises(aiomqtt.MqttError, match="boom"):
-        await transport._subscriber_loop(client) # type: ignore[arg-type]
+        await transport._subscriber_loop(client)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -228,7 +239,7 @@ async def test_mqtt_publisher_debug_logging() -> None:
 
         async def run_loop():
             try:
-                await transport._publisher_loop(client) # type: ignore[arg-type]
+                await transport._publisher_loop(client)  # type: ignore[arg-type]
             except asyncio.CancelledError:
                 pass
 
@@ -261,11 +272,12 @@ async def test_mqtt_subscriber_processes_message() -> None:
     class FakeClient:
         def __init__(self):
             self.messages = self
+
         async def __aiter__(self):
             yield FakeMsg()
 
     client = FakeClient()
-    task = asyncio.create_task(transport._subscriber_loop(client)) # type: ignore[arg-type]
+    task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[arg-type]
     await asyncio.sleep(0.05)
     task.cancel()
     assert msg_count == 1
@@ -293,11 +305,12 @@ async def test_mqtt_subscriber_empty_topic_skipped() -> None:
     class FakeClient:
         def __init__(self):
             self.messages = self
+
         async def __aiter__(self):
             yield FakeMsg()
 
     client = FakeClient()
-    task = asyncio.create_task(transport._subscriber_loop(client)) # type: ignore[arg-type]
+    task = asyncio.create_task(transport._subscriber_loop(client))  # type: ignore[arg-type]
     await asyncio.sleep(0.05)
     task.cancel()
     assert msg_count == 0

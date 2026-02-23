@@ -22,9 +22,14 @@ from mcubridge.config.common import get_uci_config
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol.topics import pin_topic
-from paho.mqtt.client import Client, MQTT_ERR_SUCCESS, MQTTv5
+from paho.mqtt.client import MQTT_ERR_SUCCESS, Client, MQTTv5
 from paho.mqtt.enums import CallbackAPIVersion
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger("mcubridge.pin_rest")
 
@@ -36,6 +41,7 @@ def _configure_fallback_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+
 
 _UCI = get_uci_config()
 
@@ -70,6 +76,7 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         if config.tls_enabled:
             # Re-use the shared TLS context builder
             from mcubridge.util.mqtt_helper import configure_tls_context
+
             ctx = configure_tls_context(config)
             client.tls_set_context(ctx)  # type: ignore[reportUnknownMemberType]
             if config.mqtt_tls_insecure:
@@ -78,7 +85,9 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
         if config.mqtt_user:
             client.username_pw_set(config.mqtt_user, config.mqtt_pass)
 
-        client.connect(config.mqtt_host, config.mqtt_port, keepalive=MQTT_KEEPALIVE_SECONDS)
+        client.connect(
+            config.mqtt_host, config.mqtt_port, keepalive=MQTT_KEEPALIVE_SECONDS
+        )
         client.loop_start()
 
         info = client.publish(topic, payload, qos=MQTT_PUBLISH_QOS)
@@ -102,15 +111,15 @@ def publish_safe(topic: str, payload: str, config: Any) -> None:
             logger.debug("MQTT client cleanup failed: %s", exc, exc_info=True)
 
 
-
 def get_pin_from_path(environ: dict[str, Any]) -> str | None:
     path = environ.get("PATH_INFO", "")
     match = re.match(r"/pin/(\d+)", path)
     return match.group(1) if match else None
 
 
-
-def json_response(start_response: Any, status: str, data: dict[str, Any]) -> list[bytes]:
+def json_response(
+    start_response: Any, status: str, data: dict[str, Any]
+) -> list[bytes]:
     response_body = msgspec.json.encode(data)
     headers = [
         ("Content-Type", "application/json"),
@@ -120,30 +129,49 @@ def json_response(start_response: Any, status: str, data: dict[str, Any]) -> lis
     return [response_body]
 
 
-
 def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
     try:
         config = load_runtime_config()
         configure_logging(config)
-    except (OSError, RuntimeError, ValueError, msgspec.DecodeError, msgspec.ValidationError) as exc:
+    except (
+        OSError,
+        RuntimeError,
+        ValueError,
+        msgspec.DecodeError,
+        msgspec.ValidationError,
+    ) as exc:
         _configure_fallback_logging()
         logger.exception("Failed to load runtime configuration")
-        return json_response(start_response, "500 Internal Server Error", {
-            "status": "error",
-            "message": f"Configuration error: {exc}",
-        })
+        return json_response(
+            start_response,
+            "500 Internal Server Error",
+            {
+                "status": "error",
+                "message": f"Configuration error: {exc}",
+            },
+        )
 
     method = environ.get("REQUEST_METHOD", "GET").upper()
     pin = get_pin_from_path(environ)
     if not pin or not pin.isdigit():
-        return json_response(start_response, "400 Bad Request", {
-            "status": "error", "message": "Pin must be specified in the URL as /pin/<N>.",
-        })
+        return json_response(
+            start_response,
+            "400 Bad Request",
+            {
+                "status": "error",
+                "message": "Pin must be specified in the URL as /pin/<N>.",
+            },
+        )
 
     if method != "POST":
-        return json_response(start_response, "405 Method Not Allowed", {
-            "status": "error", "message": "Only POST is supported.",
-        })
+        return json_response(
+            start_response,
+            "405 Method Not Allowed",
+            {
+                "status": "error",
+                "message": "Only POST is supported.",
+            },
+        )
 
     try:
         content_length = int(environ.get("CONTENT_LENGTH", "0"))
@@ -155,13 +183,17 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         data: dict[str, Any] = msgspec.json.decode(body) if body else {}
         state = str(data.get("state", "")).upper()
     except (ValueError, msgspec.DecodeError):
-        return json_response(start_response, "400 Bad Request", {"status": "error", "message": "Invalid JSON body."})
+        return json_response(
+            start_response,
+            "400 Bad Request",
+            {"status": "error", "message": "Invalid JSON body."},
+        )
 
     if state not in ("ON", "OFF"):
         return json_response(
             start_response,
             "400 Bad Request",
-            {"status": "error", "message": "Invalid state"}
+            {"status": "error", "message": "Invalid state"},
         )
 
     topic = pin_topic(config.mqtt_topic, pin, "")
@@ -169,14 +201,26 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
 
     try:
         publish_safe(topic, payload, config)
-        return json_response(start_response, "200 OK", {
-            "status": "ok", "pin": int(pin), "state": state,
-            "message": f"Command to turn pin {pin} {state} sent via MQTT.",
-        })
+        return json_response(
+            start_response,
+            "200 OK",
+            {
+                "status": "ok",
+                "pin": int(pin),
+                "state": state,
+                "message": f"Command to turn pin {pin} {state} sent via MQTT.",
+            },
+        )
     except (ConnectionError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
-        return json_response(start_response, "500 Internal Server Error", {
-            "status": "error", "message": f"Failed to send command: {exc}",
-        })
+        return json_response(
+            start_response,
+            "500 Internal Server Error",
+            {
+                "status": "error",
+                "message": f"Failed to send command: {exc}",
+            },
+        )
+
 
 if __name__ == "__main__":
     CGIHandler().run(application)

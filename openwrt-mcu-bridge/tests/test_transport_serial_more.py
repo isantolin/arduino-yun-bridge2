@@ -51,7 +51,9 @@ async def test_negotiate_baudrate_success() -> None:
     _mock_proto.connected_future = asyncio.get_running_loop().create_future()
     _mock_proto.connected_future.set_result(None)
 
-    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    patch_path = (
+        "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    )
     with patch(patch_path, new_callable=AsyncMock) as mock_create:
         mock_create.return_value = (MagicMock(), _mock_proto)
 
@@ -60,7 +62,9 @@ async def test_negotiate_baudrate_success() -> None:
         service = BridgeService(config, state)
 
         transport = serial_fast.SerialTransport(config, state, service)
-        proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+        proto = serial_fast.BridgeSerialProtocol(
+            service, state, asyncio.get_running_loop()
+        )
 
         # Mock write_frame to simulate sending request
         proto.write_frame = MagicMock(return_value=True)  # type: ignore
@@ -82,7 +86,9 @@ async def test_negotiate_baudrate_timeout(sleep_spy) -> None:
     _mock_proto.connected_future = asyncio.get_running_loop().create_future()
     _mock_proto.connected_future.set_result(None)
 
-    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    patch_path = (
+        "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    )
     with patch(patch_path, new_callable=AsyncMock) as mock_create:
         mock_create.return_value = (MagicMock(), _mock_proto)
 
@@ -91,7 +97,9 @@ async def test_negotiate_baudrate_timeout(sleep_spy) -> None:
         service = BridgeService(config, state)
 
         transport = serial_fast.SerialTransport(config, state, service)
-        proto = serial_fast.BridgeSerialProtocol(service, state, asyncio.get_running_loop())
+        proto = serial_fast.BridgeSerialProtocol(
+            service, state, asyncio.get_running_loop()
+        )
 
         # Mock write_frame
         proto.write_frame = MagicMock(return_value=True)  # type: ignore
@@ -109,7 +117,9 @@ async def test_transport_run_handshake_fatal() -> None:
     _mock_proto.connected_future.set_result(None)
 
     # Patch create_serial_connection where it is used in serial_fast
-    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    patch_path = (
+        "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    )
     with patch(patch_path, new_callable=AsyncMock) as mock_create:
         mock_create.return_value = (MagicMock(), _mock_proto)
 
@@ -118,7 +128,9 @@ async def test_transport_run_handshake_fatal() -> None:
         service = BridgeService(config, state)
 
         # Force handshake fatal error
-        with patch.object(service, "on_serial_connected", side_effect=SerialHandshakeFatal("test")):
+        with patch.object(
+            service, "on_serial_connected", side_effect=SerialHandshakeFatal("test")
+        ):
             transport = serial_fast.SerialTransport(config, state, service)
             with pytest.raises(SerialHandshakeFatal):
                 await transport.run()
@@ -152,7 +164,9 @@ async def test_serial_disconnected_hook_error(
     _mock_transport = MagicMock()
     _mock_transport.is_closing.return_value = True  # Close immediately
 
-    patch_path = "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    patch_path = (
+        "mcubridge.transport.serial.serial_asyncio_fast.create_serial_connection"
+    )
     with patch(patch_path, new_callable=AsyncMock) as mock_create:
         mock_create.return_value = (_mock_transport, _mock_proto)
 
@@ -164,8 +178,10 @@ async def test_serial_disconnected_hook_error(
         async def _raise_error() -> None:
             raise RuntimeError("disconnected hook error")
 
-        with patch.object(service, "on_serial_connected", new_callable=AsyncMock), \
-             patch.object(service, "on_serial_disconnected", side_effect=_raise_error):
+        with (
+            patch.object(service, "on_serial_connected", new_callable=AsyncMock),
+            patch.object(service, "on_serial_disconnected", side_effect=_raise_error),
+        ):
             transport = serial_fast.SerialTransport(config, state, service)
             caplog.set_level("WARNING")
 
@@ -328,6 +344,7 @@ def test_serial_sender_not_ready_logs_warning(
 ) -> None:
     """Test serial_sender_not_ready logs warning and returns False."""
     import asyncio
+
     caplog.set_level("WARNING")
 
     async def _run() -> bool:

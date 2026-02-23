@@ -20,9 +20,7 @@ async def test_daemon_supervise_fatal_exception() -> None:
         raise SerialHandshakeFatal("fatal")
 
     spec = SupervisedTaskSpec(
-        name="test-fatal",
-        factory=fatal_task,
-        fatal_exceptions=(SerialHandshakeFatal,)
+        name="test-fatal", factory=fatal_task, fatal_exceptions=(SerialHandshakeFatal,)
     )
 
     with pytest.raises(SerialHandshakeFatal):
@@ -38,18 +36,19 @@ async def test_daemon_supervise_healthy_reset() -> None:
     # Task that fails immediately, then fails after a long delay (simulating healthy run),
     # causing the supervisor to catch it and reset because it exceeded the healthy threshold (10s).
     call_count = 0
+
     async def healthy_reset_task():
         nonlocal call_count
         call_count += 1
         if call_count <= 2:
             raise ValueError("fail")
-        return # Clean exit
+        return  # Clean exit
 
     spec = SupervisedTaskSpec(
         name="test-healthy",
         factory=healthy_reset_task,
         restart_interval=0.1,
-        max_restarts=1  # Allow one retry (2 attempts total) then raise
+        max_restarts=1,  # Allow one retry (2 attempts total) then raise
     )
 
     # Mock time:
@@ -71,6 +70,7 @@ async def test_daemon_supervise_healthy_reset() -> None:
     # It failed twice.
     # mark_supervisor_healthy was called after 2nd failure, resetting backoff.
     assert daemon.state.supervisor_stats["test-healthy"].backoff_seconds == 0.0
+
 
 @pytest.mark.asyncio
 async def test_daemon_supervise_cancelled() -> None:

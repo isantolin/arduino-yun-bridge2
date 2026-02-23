@@ -65,7 +65,11 @@ class QueuedPublish(msgspec.Struct, frozen=True):
             "qos": self.qos,
             "retain": self.retain,
             "expiry": self.message_expiry_interval,
-            "user_properties": [list(p) for p in self.user_properties] if self.user_properties else None,
+            "user_properties": (
+                [list(p) for p in self.user_properties]
+                if self.user_properties
+                else None
+            ),
             "timestamp": time.time(),
         }
 

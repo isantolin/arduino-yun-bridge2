@@ -3,8 +3,8 @@
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 import psutil
+import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import INVALID_ID_SENTINEL, Status
 from mcubridge.services.process import ProcessComponent
@@ -44,10 +44,14 @@ async def test_process_handle_run_async_fail_sentinel() -> None:
     pc = ProcessComponent(config, state, ctx)
 
     from mcubridge.protocol.structures import ProcessRunAsyncPacket
+
     payload = ProcessRunAsyncPacket(command="ls").encode()
 
     # Patch the class method because msgspec Struct instances are read-only
-    with patch("mcubridge.services.process.ProcessComponent.start_async", return_value=INVALID_ID_SENTINEL):
+    with patch(
+        "mcubridge.services.process.ProcessComponent.start_async",
+        return_value=INVALID_ID_SENTINEL,
+    ):
         await pc.handle_run_async(payload)
         assert ctx.send_frame.call_args[0][0] == Status.ERROR.value
 
@@ -104,7 +108,10 @@ async def test_process_run_sync_taskgroup_oserror() -> None:
     state = create_runtime_state(config)
     pc = ProcessComponent(config, state, MagicMock())
 
-    with patch("mcubridge.services.process.ProcessComponent._consume_stream", side_effect=OSError("io error")):
+    with patch(
+        "mcubridge.services.process.ProcessComponent._consume_stream",
+        side_effect=OSError("io error"),
+    ):
         status, out, err, code = await pc.run_sync("ls", ["ls"])
         assert status == Status.ERROR.value
         assert b"IO error" in err
@@ -120,7 +127,10 @@ async def test_process_wait_sync_completion_timeout() -> None:
     proc = MagicMock()
     proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
 
-    with patch("mcubridge.services.process.ProcessComponent._terminate_process_tree", return_value=None):
+    with patch(
+        "mcubridge.services.process.ProcessComponent._terminate_process_tree",
+        return_value=None,
+    ):
         res = await pc._wait_for_sync_completion(proc, 123)
         assert res is True
 
@@ -136,6 +146,7 @@ async def test_process_read_stream_chunk_timeout() -> None:
     with patch("asyncio.timeout", side_effect=asyncio.TimeoutError):
         res = await pc._read_stream_chunk(1, reader, timeout=0.1)
         assert res == b""
+
 
 @pytest.mark.asyncio
 async def test_process_terminate_tree_already_finished() -> None:

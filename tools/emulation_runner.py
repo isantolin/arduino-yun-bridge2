@@ -159,16 +159,37 @@ class MqttVerifier:
 
 
 def cleanup_process(proc, name):
-    """Gracefully terminate a process."""
+    """Gracefully terminate a process and close its pipes."""
     if proc:
         if proc.poll() is None:
-            logger.info(f"Terminating {name}...")
+            logger.info(f"Terminating {name} (PID {proc.pid})...")
             proc.terminate()
             try:
-                proc.wait(timeout=2)
+                proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 logger.warning(f"{name} did not terminate, killing...")
                 proc.kill()
+                proc.wait()
+        
+        # Close all pipes to avoid ResourceWarning
+        if proc.stdin:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            proc.stdin = None
+        if proc.stdout:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+            proc.stdout = None
+        if proc.stderr:
+            try:
+                proc.stderr.close()
+            except Exception:
+                pass
+            proc.stderr = None
 
 
 def find_firmware(repo_root):
@@ -520,15 +541,21 @@ def main():
         sys.exit(1)
     finally:
         stop_bridge.set()
-        if "mqtt_monitor" in locals():
+        if "bridge_thread" in locals() and bridge_thread:
+            bridge_thread.join(timeout=2)
+            
+        if "mqtt_monitor" in locals() and mqtt_monitor:
             mqtt_monitor.stop()
-        if "log_monitor" in locals():
+        if "log_monitor" in locals() and log_monitor:
             log_monitor.stop()
-        socat_monitor.stop()
+        if "socat_monitor" in locals() and socat_monitor:
+            socat_monitor.stop()
+        
         cleanup_process(daemon_proc, "daemon")
         cleanup_process(mcu_proc, "mcu")
         cleanup_process(socat_proc, "socat")
-        if "uci_stub_dir" in locals():
+        
+        if "uci_stub_dir" in locals() and uci_stub_dir:
             uci_stub_dir.cleanup()
 
     return 0

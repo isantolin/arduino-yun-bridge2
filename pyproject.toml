@@ -37,8 +37,6 @@ log_cli_level = "INFO"
 testpaths = ["openwrt-mcu-bridge/tests"]
 pythonpath = ["stubs", ".", "openwrt-mcu-bridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
-timeout = 30
-timeout_method = "thread"
 filterwarnings = [
     "ignore:'asyncio.AbstractEventLoopPolicy':DeprecationWarning",
     "ignore:'asyncio.set_event_loop_policy':DeprecationWarning",

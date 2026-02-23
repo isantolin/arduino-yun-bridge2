@@ -214,14 +214,26 @@ def runtime_config() -> RuntimeConfig:
 
 @pytest.fixture()
 def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
+    """Provide a RuntimeState instance with proper loop cleanup."""
+    # [TEST FIX] Ensure asyncio resources are bound to a loop that we control
+    # or the one provided by the test runner.
+    loop_to_close: asyncio.AbstractEventLoop | None = None
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No loop running, create one for the state objects (common in sync tests)
+        loop_to_close = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop_to_close)
+
     state = create_runtime_state(runtime_config)
     state.link_is_synchronized = True
-    yield state
-    # [TEST FIX] Break loop references to avoid ResourceWarning
     try:
-        state.mqtt_publish_queue = None
-    except AttributeError:
-        pass
+        yield state
+    finally:
+        state.cleanup()
+        if loop_to_close:
+            loop_to_close.close()
+            asyncio.set_event_loop(None)
 
 
 @pytest.fixture()

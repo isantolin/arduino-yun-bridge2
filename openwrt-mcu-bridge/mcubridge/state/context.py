@@ -1296,6 +1296,25 @@ class RuntimeState(msgspec.Struct):
             return 0.0
         return max(0.0, time.monotonic() - self._handshake_last_started)
 
+    def cleanup(self) -> None:
+        """Explicitly break references to asyncio resources to help GC."""
+        # [SIL-2] Resource Cleanup: ensure no loop-bound objects are leaked.
+        try:
+            # We use type: ignore because msgspec.Struct doesn't usually allow None
+            # for these types, but during cleanup we want to break the bond.
+            self.mqtt_publish_queue = None  # type: ignore
+            self.serial_tx_allowed = None  # type: ignore
+            self.process_lock = None  # type: ignore
+            self.link_sync_event = None  # type: ignore
+            if hasattr(self, "pending_digital_reads"):
+                self.pending_digital_reads.clear()
+            if hasattr(self, "pending_analog_reads"):
+                self.pending_analog_reads.clear()
+            if hasattr(self, "running_processes"):
+                self.running_processes.clear()
+        except Exception:
+            pass
+
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
     from ..config.settings import RuntimeConfig as RC
@@ -1303,9 +1322,15 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     if isinstance(config, dict):
         config = msgspec.convert(config, RC)
 
-    state = RuntimeState()
-    state.mqtt_publish_queue = asyncio.Queue(config.mqtt_queue_limit)
+    # [SIL-2] Optimized Initialization: avoid redundant object creation via factories
+    state = RuntimeState(
+        mqtt_publish_queue=asyncio.Queue(config.mqtt_queue_limit),
+        serial_tx_allowed=asyncio.Event(),
+        process_lock=asyncio.Lock(),
+        link_sync_event=asyncio.Event(),
+    )
     state.mqtt_queue_limit = config.mqtt_queue_limit
+    state.serial_tx_allowed.set()
     state.configure(config)
     state.configure_spool(
         config.mqtt_spool_dir,

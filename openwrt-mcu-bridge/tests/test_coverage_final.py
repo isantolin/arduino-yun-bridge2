@@ -1,3 +1,4 @@
+import pytest_asyncio
 import asyncio
 import errno
 import logging
@@ -40,10 +41,26 @@ def create_real_config():
     return msgspec.convert(raw_cfg, RuntimeConfig)
 
 
-def create_real_state():
+@pytest.fixture
+def state():
     from mcubridge.state.context import create_runtime_state
+    
+    config = create_real_config()
+    loop_to_close = None
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        loop_to_close = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop_to_close)
 
-    return create_runtime_state(create_real_config())
+    s = create_runtime_state(config)
+    try:
+        yield s
+    finally:
+        s.cleanup()
+        if loop_to_close:
+            loop_to_close.close()
+            asyncio.set_event_loop(None)
 
 
 # --- FileComponent Booster ---
@@ -59,10 +76,10 @@ async def test_file_do_write_file_large_warning(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_file_handle_write_dangerous_path():
+async def test_file_handle_write_dangerous_path(state):
     ctx = MagicMock()
     ctx.send_frame = AsyncMock()
-    comp = FileComponent(create_real_config(), create_real_state(), ctx)
+    comp = FileComponent(create_real_config(), state, ctx)
     from mcubridge.protocol.structures import FileWritePacket
 
     payload = FileWritePacket(path="/etc/passwd", data=b"data").encode()
@@ -72,16 +89,16 @@ async def test_file_handle_write_dangerous_path():
 
 
 @pytest.mark.asyncio
-async def test_file_handle_mqtt_no_filename():
-    comp = FileComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_file_handle_mqtt_no_filename(state):
+    comp = FileComponent(create_real_config(), state, MagicMock())
     with patch("mcubridge.services.file.logger.warning") as mock_warn:
         await comp.handle_mqtt(FileAction.WRITE, [], b"")
         assert mock_warn.called
 
 
 @pytest.mark.asyncio
-async def test_file_perform_file_operation_unknown():
-    comp = FileComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_file_perform_file_operation_unknown(state):
+    comp = FileComponent(create_real_config(), state, MagicMock())
     with patch.object(comp, "_get_safe_path", return_value=Path("/tmp/safe")):
         success, _, reason = await comp._perform_file_operation("UNKNOWN", "file")
         assert success is False
@@ -89,8 +106,8 @@ async def test_file_perform_file_operation_unknown():
 
 
 @pytest.mark.asyncio
-async def test_file_get_safe_path_base_dir_none():
-    comp = FileComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_file_get_safe_path_base_dir_none(state):
+    comp = FileComponent(create_real_config(), state, MagicMock())
     with patch.object(comp, "_get_base_dir", return_value=None):
         assert comp._get_safe_path("file") is None
 
@@ -104,8 +121,7 @@ def test_file_normalise_filename_edge_cases():
 
 
 @pytest.mark.asyncio
-async def test_file_write_with_quota_flash_safety_fail():
-    state = create_real_state()
+async def test_file_write_with_quota_flash_safety_fail(state):
     state.file_write_max_bytes = 1024
     state.file_storage_quota_bytes = 2048
     state.file_storage_bytes_used = 0
@@ -132,8 +148,7 @@ async def test_file_scan_directory_size_errors(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_file_get_base_dir_create_fail():
-    state = create_real_state()
+async def test_file_get_base_dir_create_fail(state):
     state.file_system_root = "/tmp/fail_dir"
     state.allow_non_tmp_paths = True
     comp = FileComponent(create_real_config(), state, MagicMock())
@@ -142,8 +157,8 @@ async def test_file_get_base_dir_create_fail():
 
 
 @pytest.mark.asyncio
-async def test_file_handle_mqtt_read_fail():
-    comp = FileComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_file_handle_mqtt_read_fail(state):
+    comp = FileComponent(create_real_config(), state, MagicMock())
     with patch.object(
         comp, "_perform_file_operation", return_value=(False, None, "read_fail")
     ):
@@ -151,8 +166,8 @@ async def test_file_handle_mqtt_read_fail():
 
 
 @pytest.mark.asyncio
-async def test_file_handle_mqtt_remove_fail():
-    comp = FileComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_file_handle_mqtt_remove_fail(state):
+    comp = FileComponent(create_real_config(), state, MagicMock())
     with patch.object(
         comp, "_perform_file_operation", return_value=(False, None, "remove_fail")
     ):
@@ -174,9 +189,9 @@ def test_logging_formatter_no_prefix():
 
 @pytest.mark.asyncio
 async def test_metrics_emit_bridge_snapshot_attr_error():
-    state = MagicMock()
-    state.build_bridge_snapshot.side_effect = AttributeError("Missing")
-    await metrics._emit_bridge_snapshot(state, AsyncMock(), flavor="summary")
+    fake_state = MagicMock()
+    fake_state.build_bridge_snapshot.side_effect = AttributeError("Missing")
+    await metrics._emit_bridge_snapshot(fake_state, AsyncMock(), flavor="summary")
 
 
 # --- Serial Booster ---
@@ -231,9 +246,8 @@ async def test_serial_transport_run_loop_transport_closing():
 
 
 @pytest.mark.asyncio
-async def test_process_handle_run_limit_reached():
+async def test_process_handle_run_limit_reached(state):
     config = create_real_config()
-    state = create_real_state()
     ctx = MagicMock()
     ctx.send_frame = AsyncMock()
     comp = ProcessComponent(config, state, ctx)
@@ -248,8 +262,8 @@ async def test_process_handle_run_limit_reached():
 
 
 @pytest.mark.asyncio
-async def test_process_execute_sync_oserror():
-    comp = ProcessComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_process_execute_sync_oserror(state):
+    comp = ProcessComponent(create_real_config(), state, MagicMock())
     comp.run_sync = AsyncMock(side_effect=OSError("Sync Fail"))
     ctx = MagicMock()
     ctx.send_frame = AsyncMock()
@@ -259,10 +273,10 @@ async def test_process_execute_sync_oserror():
 
 
 @pytest.mark.asyncio
-async def test_process_handle_kill_not_found():
+async def test_process_handle_kill_not_found(state):
     ctx = MagicMock()
     ctx.send_frame = AsyncMock()
-    comp = ProcessComponent(create_real_config(), create_real_state(), ctx)
+    comp = ProcessComponent(create_real_config(), state, ctx)
     from mcubridge.protocol.structures import ProcessKillPacket
 
     payload = ProcessKillPacket(pid=999).encode()
@@ -271,8 +285,8 @@ async def test_process_handle_kill_not_found():
 
 
 @pytest.mark.asyncio
-async def test_process_run_sync_group_oserror():
-    comp = ProcessComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_process_run_sync_group_oserror(state):
+    comp = ProcessComponent(create_real_config(), state, MagicMock())
     mock_proc = MagicMock()
     mock_proc.stdout = MagicMock()
     mock_proc.stderr = MagicMock()
@@ -288,8 +302,8 @@ async def test_process_run_sync_group_oserror():
 
 
 @pytest.mark.asyncio
-async def test_process_wait_for_sync_completion_timeout_kill_fail():
-    comp = ProcessComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_process_wait_for_sync_completion_timeout_kill_fail(state):
+    comp = ProcessComponent(create_real_config(), state, MagicMock())
     comp.state.process_timeout = 0.001
     mock_proc = MagicMock()
     mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
@@ -300,26 +314,16 @@ async def test_process_wait_for_sync_completion_timeout_kill_fail():
 
 
 @pytest.mark.asyncio
-async def test_process_allocate_pid_exhaustion():
-    # Fix unclosed event loop by isolating state creation from any implicit loop
-    from mcubridge.state.context import RuntimeState
-    config = create_real_config()
-
-    # Manually instantiate RuntimeState avoiding create_runtime_state logic
-    state = RuntimeState(config)
-    try:
-        state.running_processes = {i: MagicMock() for i in range(1, 65536)}
-        comp = ProcessComponent(config, state, MagicMock())
-        pid = await comp._allocate_pid()
-        assert pid == INVALID_ID_SENTINEL
-    finally:
-        # Cleanup any resources that might hold onto a loop
-        state.running_processes.clear()
+async def test_process_allocate_pid_exhaustion(state):
+    state.running_processes = {i: MagicMock() for i in range(1, 65536)}
+    comp = ProcessComponent(create_real_config(), state, MagicMock())
+    pid = await comp._allocate_pid()
+    assert pid == INVALID_ID_SENTINEL
 
 
 @pytest.mark.asyncio
-async def test_process_terminate_tree_no_pid():
-    comp = ProcessComponent(create_real_config(), create_real_state(), MagicMock())
+async def test_process_terminate_tree_no_pid(state):
+    comp = ProcessComponent(create_real_config(), state, MagicMock())
     mock_proc = MagicMock()
     mock_proc.returncode = None
     mock_proc.pid = None
@@ -328,8 +332,7 @@ async def test_process_terminate_tree_no_pid():
 
 
 @pytest.mark.asyncio
-async def test_process_finalize_async_replaced_slot():
-    state = create_real_state()
+async def test_process_finalize_async_replaced_slot(state):
     pid = 123
     slot1 = MagicMock()
     slot1.io_lock = asyncio.Lock()
@@ -378,10 +381,9 @@ def test_handshake_retry_helpers():
 
 
 @pytest.mark.asyncio
-async def test_handshake_manager_synchronize_failure():
+async def test_handshake_manager_synchronize_failure(state):
     cfg = create_real_config()
     cfg.serial_handshake_fatal_failures = 1
-    state = create_real_state()
     timing = derive_serial_timing(cfg)
 
     # Mock send_frame to always fail
@@ -402,10 +404,9 @@ async def test_handshake_manager_synchronize_failure():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_throttled():
+async def test_handshake_handle_link_sync_resp_throttled(state):
     cfg = create_real_config()
     cfg.serial_handshake_min_interval = 10.0
-    state = create_real_state()
     state.handshake_rate_limit_until = time.monotonic() + 5.0
     state.link_handshake_nonce = b"12345678"
 
@@ -423,8 +424,7 @@ async def test_handshake_handle_link_sync_resp_throttled():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_malformed():
-    state = create_real_state()
+async def test_handshake_handle_link_sync_resp_malformed(state):
     state.link_handshake_nonce = b"12345678"  # 8 bytes
     h = SerialHandshakeManager(
         config=create_real_config(),
@@ -440,8 +440,7 @@ async def test_handshake_handle_link_sync_resp_malformed():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_auth_mismatch():
-    state = create_real_state()
+async def test_handshake_handle_link_sync_resp_auth_mismatch(state):
     nonce = b"12345678"
     state.link_handshake_nonce = nonce
     state.link_nonce_length = 8
@@ -463,8 +462,7 @@ async def test_handshake_handle_link_sync_resp_auth_mismatch():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_replay():
-    state = create_real_state()
+async def test_handshake_handle_link_sync_resp_replay(state):
     nonce = b"12345678"
     state.link_handshake_nonce = nonce
     state.link_nonce_length = 8
@@ -488,8 +486,7 @@ async def test_handshake_handle_link_sync_resp_replay():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_no_expected_tag():
-    state = create_real_state()
+async def test_handshake_handle_link_sync_resp_no_expected_tag(state):
     nonce = b"12345678"
     state.link_handshake_nonce = nonce
     state.link_nonce_length = 8
@@ -509,10 +506,10 @@ async def test_handshake_handle_link_sync_resp_no_expected_tag():
 
 
 @pytest.mark.asyncio
-async def test_handshake_synchronize_attempt_race_fault():
+async def test_handshake_synchronize_attempt_race_fault(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(return_value=True),
         enqueue_mqtt=AsyncMock(),
@@ -535,10 +532,10 @@ async def test_handshake_synchronize_attempt_race_fault():
 
 
 @pytest.mark.asyncio
-async def test_handshake_synchronize_attempt_timeout():
+async def test_handshake_synchronize_attempt_timeout(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(return_value=True),
         enqueue_mqtt=AsyncMock(),
@@ -552,10 +549,10 @@ async def test_handshake_synchronize_attempt_timeout():
 
 
 @pytest.mark.asyncio
-async def test_handshake_synchronize_attempt_nonce_changed():
+async def test_handshake_synchronize_attempt_nonce_changed(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(return_value=True),
         enqueue_mqtt=AsyncMock(),
@@ -573,10 +570,10 @@ async def test_handshake_synchronize_attempt_nonce_changed():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_no_nonce():
+async def test_handshake_handle_link_sync_resp_no_nonce(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -587,8 +584,7 @@ async def test_handshake_handle_link_sync_resp_no_nonce():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_length_mismatch():
-    state = create_real_state()
+async def test_handshake_handle_link_sync_resp_length_mismatch(state):
     state.link_handshake_nonce = b"12345678"
     state.link_nonce_length = 8
     h = SerialHandshakeManager(
@@ -605,10 +601,9 @@ async def test_handshake_handle_link_sync_resp_length_mismatch():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_rate_limited():
+async def test_handshake_handle_link_sync_resp_rate_limited(state):
     cfg = create_real_config()
     cfg.serial_handshake_min_interval = 100.0
-    state = create_real_state()
     state.link_handshake_nonce = b"12345678"
     state.handshake_rate_limit_until = time.monotonic() + 50.0
 
@@ -625,10 +620,10 @@ async def test_handshake_handle_link_sync_resp_rate_limited():
 
 
 @pytest.mark.asyncio
-async def test_handshake_fetch_capabilities_send_fail():
+async def test_handshake_fetch_capabilities_send_fail(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(return_value=False),
         enqueue_mqtt=AsyncMock(),
@@ -640,10 +635,10 @@ async def test_handshake_fetch_capabilities_send_fail():
 
 
 @pytest.mark.asyncio
-async def test_handshake_fetch_capabilities_timeout():
+async def test_handshake_fetch_capabilities_timeout(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(return_value=True),
         enqueue_mqtt=AsyncMock(),
@@ -657,10 +652,10 @@ async def test_handshake_fetch_capabilities_timeout():
         assert res is False
 
 
-def test_handshake_parse_capabilities_error():
+def test_handshake_parse_capabilities_error(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -674,10 +669,10 @@ def test_handshake_parse_capabilities_error():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_capabilities_resp_no_future():
+async def test_handshake_handle_capabilities_resp_no_future(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -698,10 +693,10 @@ def test_handshake_calculate_tag_debug_insecure():
     assert res == b"DEBUG_TAG_UNUSED"
 
 
-def test_handshake_maybe_schedule_backoff_fatal():
+def test_handshake_maybe_schedule_backoff_fatal(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -713,10 +708,10 @@ def test_handshake_maybe_schedule_backoff_fatal():
     assert h._state.handshake_backoff_until > time.monotonic()
 
 
-def test_handshake_maybe_schedule_backoff_streak():
+def test_handshake_maybe_schedule_backoff_streak(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -728,10 +723,10 @@ def test_handshake_maybe_schedule_backoff_streak():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_failure_immediate_fatal():
+async def test_handshake_handle_failure_immediate_fatal(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -743,12 +738,12 @@ async def test_handshake_handle_failure_immediate_fatal():
     assert h._state.handshake_fatal_reason == "sync_auth_mismatch"
 
 
-def test_handshake_raise_if_fatal():
+def test_handshake_raise_if_fatal(state):
     from mcubridge.services.handshake import SerialHandshakeFatal
 
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -759,10 +754,10 @@ def test_handshake_raise_if_fatal():
         h.raise_if_handshake_fatal()
 
 
-def test_handshake_raise_if_fatal_none():
+def test_handshake_raise_if_fatal_none(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -773,10 +768,10 @@ def test_handshake_raise_if_fatal_none():
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp_no_nonce_complete():
+async def test_handshake_handle_link_sync_resp_no_nonce_complete(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -787,10 +782,10 @@ async def test_handshake_handle_link_sync_resp_no_nonce_complete():
     assert res is False
 
 
-def test_handshake_backoff_remaining():
+def test_handshake_backoff_remaining(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -802,10 +797,10 @@ def test_handshake_backoff_remaining():
     assert h._handshake_backoff_remaining() == 0
 
 
-def test_handshake_clear_expectations_full():
+def test_handshake_clear_expectations_full(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
@@ -819,10 +814,10 @@ def test_handshake_clear_expectations_full():
 
 
 @pytest.mark.asyncio
-async def test_handshake_synchronize_retry_error():
+async def test_handshake_synchronize_retry_error(state):
     h = SerialHandshakeManager(
         config=create_real_config(),
-        state=create_real_state(),
+        state=state,
         serial_timing=derive_serial_timing(create_real_config()),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),

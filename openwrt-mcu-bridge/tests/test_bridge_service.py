@@ -617,24 +617,25 @@ async def test_datastore_get_from_mcu_unknown_key_returns_empty(
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_datastore_put_from_mcu_updates_cache_and_mqtt(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
-    runtime_state.link_is_synchronized = True
+    async with BridgeService(runtime_config, runtime_state) as service:
+        runtime_state.link_is_synchronized = True
 
-    # key=k1 (len 2) + value=v1 (len 2)
-    # Structure: PascalString(Int8ub) for key, Prefixed(Int8ub) for value
-    payload = b"\x02k1\x02v1"
-    await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, payload)
+        # key=k1 (len 2) + value=v1 (len 2)
+        # Structure: PascalString(Int8ub) for key, Prefixed(Int8ub) for value
+        payload = b"\x02k1\x02v1"
+        await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, payload)
 
-    assert runtime_state.datastore["k1"] == "v1"
-    # Check MQTT publish
-    msg = runtime_state.mqtt_publish_queue.get_nowait()
-    # Observed behavior: publishes to .../datastore/get/k1
-    assert "datastore/get/k1" in msg.topic_name
-    assert msg.payload == b"v1"
+        assert runtime_state.datastore["k1"] == "v1"
+        # Check MQTT publish
+        msg = runtime_state.mqtt_publish_queue.get_nowait()
+        # Observed behavior: publishes to .../datastore/get/k1
+        assert "datastore/get/k1" in msg.topic_name
+        assert msg.payload == b"v1"
 
 
 @pytest.mark.asyncio
@@ -677,6 +678,7 @@ async def test_mqtt_mailbox_read_preserves_empty_payload(
 
 @pytest.mark.asyncio
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_mqtt_datastore_put_updates_local_cache(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -684,50 +686,51 @@ async def test_mqtt_datastore_put_updates_local_cache(
     from mcubridge.policy import TopicAuthorization
 
     runtime_state.topic_authorization = TopicAuthorization()
-    service = BridgeService(runtime_config, runtime_state)
+    async with BridgeService(runtime_config, runtime_state) as service:
+        topic = f"{runtime_config.mqtt_topic}/datastore/put/mykey"
+        msg = Message(
+            topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1
+        )
 
-    topic = f"{runtime_config.mqtt_topic}/datastore/put/mykey"
-    msg = Message(
-        topic=topic, payload=b"val123", qos=0, retain=False, properties=None, mid=1
-    )
-
-    await service.handle_mqtt_message(msg)
-    assert runtime_state.datastore["mykey"] == "val123"
+        await service.handle_mqtt_message(msg)
+        assert runtime_state.datastore["mykey"] == "val123"
 
 
+@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_mqtt_bridge_handshake_topic_returns_snapshot(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
-    topic = f"{runtime_config.mqtt_topic}/system/bridge/handshake/get"
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
+    async with BridgeService(runtime_config, runtime_state) as service:
+        topic = f"{runtime_config.mqtt_topic}/system/bridge/handshake/get"
+        msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
 
-    await service.handle_mqtt_message(msg)
-    reply = runtime_state.mqtt_publish_queue.get_nowait()
-    assert "bridge/handshake/value" in reply.topic_name
-    data = msgspec.json.decode(reply.payload)
-    # [SIL-2] Snapshots use 'synchronised' (UK spelling) per structure definition
-    assert "synchronised" in data
+        await service.handle_mqtt_message(msg)
+        reply = runtime_state.mqtt_publish_queue.get_nowait()
+        assert "bridge/handshake/value" in reply.topic_name
+        data = msgspec.json.decode(reply.payload)
+        # [SIL-2] Snapshots use 'synchronised' (UK spelling) per structure definition
+        assert "synchronised" in data
 
 
+@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_mqtt_bridge_summary_topic_returns_snapshot(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
 ) -> None:
-    service = BridgeService(runtime_config, runtime_state)
-    topic = f"{runtime_config.mqtt_topic}/system/bridge/summary/get"
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
+    async with BridgeService(runtime_config, runtime_state) as service:
+        topic = f"{runtime_config.mqtt_topic}/system/bridge/summary/get"
+        msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
 
-    await service.handle_mqtt_message(msg)
-    reply = runtime_state.mqtt_publish_queue.get_nowait()
-    assert "bridge/summary/value" in reply.topic_name
-    data = msgspec.json.decode(reply.payload)
-    # [SIL-2] Snapshot structure has 'serial_link' and 'handshake'
-    assert "serial_link" in data
-    assert "handshake" in data
+        await service.handle_mqtt_message(msg)
+        reply = runtime_state.mqtt_publish_queue.get_nowait()
+        assert "bridge/summary/value" in reply.topic_name
+        data = msgspec.json.decode(reply.payload)
+        # [SIL-2] Snapshot structure has 'serial_link' and 'handshake'
+        assert "serial_link" in data
+        assert "handshake" in data
 
 
 @pytest.mark.asyncio
@@ -748,6 +751,7 @@ async def test_mqtt_datastore_put_without_key_is_ignored(
 
 @pytest.mark.asyncio
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_mqtt_datastore_get_non_request_uses_cache(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -755,19 +759,19 @@ async def test_mqtt_datastore_get_non_request_uses_cache(
     from mcubridge.policy import TopicAuthorization
 
     runtime_state.topic_authorization = TopicAuthorization()
-    service = BridgeService(runtime_config, runtime_state)
-    runtime_state.datastore["k1"] = "v1"
+    async with BridgeService(runtime_config, runtime_state) as service:
+        runtime_state.datastore["k1"] = "v1"
 
-    topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
-    # No ResponseTopic property = not a request
-    msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
+        topic = f"{runtime_config.mqtt_topic}/datastore/get/k1"
+        # No ResponseTopic property = not a request
+        msg = Message(topic=topic, payload=b"", qos=0, retain=False, properties=None, mid=1)
 
-    await service.handle_mqtt_message(msg)
+        await service.handle_mqtt_message(msg)
 
-    # Should just publish cached value back to datastore/get/k1 (or whatever the implementation does)
-    reply = runtime_state.mqtt_publish_queue.get_nowait()
-    assert reply.topic_name == f"{runtime_config.mqtt_topic}/datastore/get/k1"
-    assert reply.payload == b"v1"
+        # Should just publish cached value back to datastore/get/k1 (or whatever the implementation does)
+        reply = runtime_state.mqtt_publish_queue.get_nowait()
+        assert reply.topic_name == f"{runtime_config.mqtt_topic}/datastore/get/k1"
+        assert reply.payload == b"v1"
 
 
 @pytest.mark.asyncio

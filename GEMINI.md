@@ -78,6 +78,10 @@ The project follows modern, best-practice development conventions:
 *   **Architecture:** Data structures are centralized in `mcubridge/protocol/structures.py` to serve as a single source of truth, utilizing `construct` for binary schemas and `msgspec` for typed structs. This implementation is synchronized with `tools/protocol/spec.toml`.
     *   **Frame Layer:** Uses full `construct` integration with `Checksum` for automatic CRC32 validation and `Switch` for payload schema resolution.
     *   **Packet Layer:** Uses full `construct` + `msgspec` validation (including `ge=0` checks) to parse payloads into typed objects on demand.
+    *   **C++ Dispatch:** Uses `etl::message_router` with a static route map for O(1) command dispatch, eliminating manual `switch/case` logic and reducing stack depth.
+    *   **C++ Validation:** Implements static type-safe validation wrappers (`rpc::Payload::parse<T>`) generated automatically from `spec.toml`.
 *   **Observability:** Built-in Prometheus exporter exposes extensive runtime metrics, including task supervisor health (restarts, backoff derived from native `tenacity` statistics), queue depths, serial latency histograms, and I/O throughput.
-*   **Refactoring Status:** The Python codebase has completed Phase 3 "Mechanical Refactoring", fully migrating all services (Process, Console, Pin, Handshake, File, Datastore, Mailbox) to use typed `BaseStruct` packets with `msgspec` validation (e.g., `ge=0`) for robust binary handling. The C++ library (`openwrt-library-arduino`) has been verified to be compatible with the updated protocol (ETL-based, SIL-2 compliant, Handshake size aligned) and has started the migration to generated C++ structs for safer parsing.
+*   **Refactoring Status:**
+    *   **Python:** Completed Phase 3 "Mechanical Refactoring". All services use typed `BaseStruct` packets.
+    *   **C++ (Arduino):** Completed "Modernization Phase". Architecture migrated to `etl::message_router` and `etl::observable` (native types). Transport layer optimized for `HardwareSerial`. Fragmentation logic centralized in `BridgeWriter`. Protocol version 0x02 is strictly enforced.
 *   **Automated CI/CD:** The project uses GitHub Actions to automate the build and test process.

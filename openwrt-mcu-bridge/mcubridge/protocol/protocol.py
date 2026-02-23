@@ -63,7 +63,9 @@ HANDSHAKE_NONCE_COUNTER_BYTES: Final[int] = 8
 HANDSHAKE_TAG_ALGORITHM: Final[str] = "HMAC-SHA256"
 HANDSHAKE_TAG_DESCRIPTION: Final[str] = "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
 HANDSHAKE_HKDF_ALGORITHM: Final[str] = "HKDF-SHA256"
-HANDSHAKE_NONCE_FORMAT_DESCRIPTION: Final[str] = "random[8] || counter[8] - counter is big-endian uint64 for anti-replay"
+HANDSHAKE_NONCE_FORMAT_DESCRIPTION: Final[str] = (
+    "random[8] || counter[8] - counter is big-endian uint64 for anti-replay"
+)
 HANDSHAKE_HKDF_SALT: Final[bytes] = b"mcubridge-v2"
 HANDSHAKE_HKDF_INFO_AUTH: Final[bytes] = b"handshake-auth"
 HANDSHAKE_CONFIG_SIZE: Final[int] = 7
@@ -71,7 +73,6 @@ HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 class CompressionType(IntEnum):
     NONE = 0
     RLE = 1
-}
 
 
 CAPABILITY_WATCHDOG: Final[int] = 1
@@ -117,7 +118,6 @@ class Status(IntEnum):
     TIMEOUT = 54  # Operation timed out.
     NOT_IMPLEMENTED = 55  # Command defined but not supported.
     ACK = 56  # Generic acknowledgement for fire-and-forget commands.
-}
 
 
 class Command(IntEnum):
@@ -163,7 +163,6 @@ class Command(IntEnum):
     CMD_PROCESS_RUN_RESP = 164
     CMD_PROCESS_RUN_ASYNC_RESP = 165
     CMD_PROCESS_POLL_RESP = 166
-}
 
 
 ACK_ONLY_COMMANDS: frozenset[int] = frozenset({
@@ -196,14 +195,12 @@ class Topic(StrEnum):
     SHELL = "sh"  # Shell command execution
     STATUS = "status"  # System status reporting
     SYSTEM = "system"  # System control and info
-}
 
 
 class FileAction(StrEnum):
     READ = "read"  # Read file content
     WRITE = "write"  # Write file content
     REMOVE = "remove"  # Remove file
-}
 
 
 class ShellAction(StrEnum):
@@ -211,7 +208,6 @@ class ShellAction(StrEnum):
     RUN_ASYNC = "run_async"  # Run shell command asynchronously
     POLL = "poll"  # Poll shell command status
     KILL = "kill"  # Kill shell command
-}
 
 
 class MailboxAction(StrEnum):
@@ -220,26 +216,22 @@ class MailboxAction(StrEnum):
     INCOMING = "incoming"  # Mailbox incoming messages
     PROCESSED = "processed"  # Mailbox processed notifications
     ERRORS = "errors"  # Mailbox error topic
-}
 
 
 class DatastoreAction(StrEnum):
     GET = "get"  # Get datastore value
     PUT = "put"  # Put datastore value
-}
 
 
 class PinAction(StrEnum):
     MODE = "mode"  # Set pin mode
     READ = "read"  # Read pin value
-}
 
 
 class ConsoleAction(StrEnum):
     IN = "in"  # Console input
     OUT = "out"  # Console output
     INPUT = "input"  # Console input action
-}
 
 
 class SystemAction(StrEnum):
@@ -252,20 +244,17 @@ class SystemAction(StrEnum):
     HANDSHAKE = "handshake"  # Handshake snapshot
     SUMMARY = "summary"  # Bridge summary snapshot
     STATE = "state"  # Bridge state snapshot
-}
 
 
 class DigitalAction(StrEnum):
     WRITE = "write"  # Digital write
     READ = "read"  # Digital read
     MODE = "mode"  # Digital mode
-}
 
 
 class AnalogAction(StrEnum):
     WRITE = "write"  # Analog write
     READ = "read"  # Analog read
-}
 
 
 MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (

@@ -17,8 +17,7 @@ import sys
 import textwrap
 import tomllib
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from enum import StrEnum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator, TextIO
 
@@ -56,12 +55,13 @@ class CodeWriter:
             self._level -= 1
 
     @contextmanager
-    def block(self, start: str, end: str = "}") -> Iterator[None]:
-        """Write a C++ style block { ... }."""
+    def block(self, start: str, end: str | None = "}") -> Iterator[None]:
+        """Write a C++ style block { ... } or python block."""
         self.write(start)
         with self.indent():
             yield
-        self.write(end)
+        if end is not None:
+            self.write(end)
 
 
 # =============================================================================
@@ -91,7 +91,7 @@ class StatusDef:
 class StructField:
     name: str
     type_code: str  # B, H, I, Q
-    
+
     @property
     def cpp_type(self) -> str:
         return {"B": "uint8_t", "H": "uint16_t", "I": "uint32_t", "Q": "uint64_t"}[self.type_code]
@@ -103,12 +103,12 @@ class StructField:
     @property
     def read_func(self) -> str | None:
         return {
-            "B": None, 
-            "H": "rpc::read_u16_be", 
-            "I": "rpc::read_u32_be", 
-            "Q": "rpc::read_u64_be"
+            "B": None,
+            "H": "rpc::read_u16_be",
+            "I": "rpc::read_u32_be",
+            "Q": "rpc::read_u64_be",
         }[self.type_code]
-    
+
     @property
     def write_func(self) -> str | None:
         func = self.read_func
@@ -128,6 +128,7 @@ class PayloadDef:
 @dataclass
 class ProtocolSpec:
     """Root model of the parsed spec.toml."""
+
     constants: dict[str, Any]
     commands: list[CommandDef]
     statuses: list[StatusDef]
@@ -139,18 +140,18 @@ class ProtocolSpec:
     capabilities: dict[str, int]
     architectures: dict[str, int]
     status_reasons: dict[str, str]
-    
+
     @classmethod
     def load(cls, path: Path) -> ProtocolSpec:
         with path.open("rb") as f:
             data = tomllib.load(f)
-        
+
         # Parse Commands
         cmds = [CommandDef(**c) for c in data.get("commands", [])]
-        
+
         # Parse Statuses
         statuses = [StatusDef(**s) for s in data.get("statuses", [])]
-        
+
         # Parse Payloads
         payloads = {}
         for name, fields_dict in data.get("payloads", {}).items():
@@ -176,29 +177,30 @@ class ProtocolSpec:
 # 3. Generators: The Logic
 # =============================================================================
 
+
 class CppGenerator:
     def generate_header(self, spec: ProtocolSpec, out: TextIO) -> None:
         w = CodeWriter(out)
         self._write_file_header(w)
-        
+
         w.write("#ifndef RPC_PROTOCOL_H")
         w.write("#define RPC_PROTOCOL_H")
         w.write()
         w.write("#include <stddef.h>")
         w.write("#include <stdint.h>")
         w.write()
-        
+
         with w.block("namespace rpc {", "} // namespace rpc"):
             self._write_constants(w, spec)
             self._write_enums(w, spec)
             self._write_helpers(w, spec)
-        
+
         w.write("#endif")
 
     def generate_structs(self, spec: ProtocolSpec, out: TextIO) -> None:
         w = CodeWriter(out)
         self._write_file_header(w)
-        
+
         w.write("#ifndef RPC_STRUCTS_H")
         w.write("#define RPC_STRUCTS_H")
         w.write()
@@ -209,14 +211,14 @@ class CppGenerator:
         w.write('#include "rpc_protocol.h"')
         w.write('#include "rpc_frame.h"')
         w.write()
-        
+
         w.write("namespace rpc {")
         with w.block("namespace payload {", "} // namespace payload"):
             self._write_auto_payloads(w, spec)
             self._write_manual_payloads(w)
-        
+
         self._write_static_validator(w, spec)
-        
+
         w.write("} // namespace rpc")
         w.write("#endif")
 
@@ -298,15 +300,15 @@ class CppGenerator:
         for key, ctype, cname in hs_mapping:
             if key in hs:
                 w.write(f"constexpr {ctype} {cname} = {hs[key]};")
-        
+
         w.write("constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7;")
-        
+
         # Byte arrays
         if "hkdf_salt" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"])
             w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_SALT[] = {{{bytes_str}}};")
             w.write(f"constexpr size_t RPC_HANDSHAKE_HKDF_SALT_LEN = {len(hs['hkdf_salt'])};")
-        
+
         if "hkdf_info_auth" in hs:
             bytes_str = ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"])
             w.write(f"constexpr uint8_t RPC_HANDSHAKE_HKDF_INFO_AUTH[] = {{{bytes_str}}};")
@@ -347,7 +349,7 @@ class CppGenerator:
         w.write("    return static_cast<uint16_t>(value);")
         w.write("}")
         w.write()
-        
+
         ack_cmds = [f"(command_id == CommandId::{c.name})" for c in spec.commands if c.requires_ack]
         w.write("constexpr bool requires_ack(CommandId command_id) {")
         if ack_cmds:
@@ -356,7 +358,7 @@ class CppGenerator:
             w.write("    return false;")
         w.write("}")
         w.write()
-        
+
         w.write("constexpr bool requires_ack(uint16_t command_id) {")
         w.write("    return requires_ack(static_cast<CommandId>(command_id));")
         w.write("}")
@@ -367,9 +369,9 @@ class CppGenerator:
                 # Fields
                 for f in payload.fields:
                     w.write(f"{f.cpp_type} {f.name};")
-                
+
                 w.write(f"static constexpr size_t SIZE = {payload.total_size};")
-                
+
                 # Parse
                 with w.block(f"static {payload.name} parse(const uint8_t* data) {{"):
                     if not payload.fields:
@@ -390,7 +392,7 @@ class CppGenerator:
                                 w.write(f"msg.{f.name} = data[{offset}];")
                             offset += f.size
                         w.write("return msg;")
-                
+
                 # Encode
                 with w.block("void encode(uint8_t* data) const {"):
                     offset = 0
@@ -561,7 +563,7 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
     return T::parse(frame.payload.data());
 }
             """)
-            
+
             # Manual specializations for variable length payloads
             manual_impls = """
             template <>
@@ -589,7 +591,8 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
             }
 
             template <>
-            inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
+            inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(
+                const rpc::Frame& frame) {
                 if (frame.header.payload_length < 1 ||
                     frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
                     return etl::nullopt;
@@ -616,7 +619,8 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
             }
 
             template <>
-            inline etl::optional<payload::MailboxReadResponse> parse<payload::MailboxReadResponse>(const rpc::Frame& frame) {
+            inline etl::optional<payload::MailboxReadResponse> parse<payload::MailboxReadResponse>(
+                const rpc::Frame& frame) {
                 if (frame.header.payload_length < 2) return etl::nullopt;
                 uint16_t len = rpc::read_u16_be(frame.payload.data());
                 if (frame.header.payload_length < (size_t)(len + 2)) return etl::nullopt;
@@ -660,7 +664,8 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
             }
 
             template <>
-            inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunResponse>(const rpc::Frame& frame) {
+            inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunResponse>(
+                const rpc::Frame& frame) {
                 if (frame.header.payload_length < 6) return etl::nullopt;
                 uint16_t out_len = rpc::read_u16_be(frame.payload.data() + 1);
                 if (frame.header.payload_length < (size_t)(out_len + 5)) return etl::nullopt;
@@ -670,7 +675,8 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
             }
 
             template <>
-            inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollResponse>(const rpc::Frame& frame) {
+            inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollResponse>(
+                const rpc::Frame& frame) {
                 if (frame.header.payload_length < 6) return etl::nullopt;
                 uint16_t out_len = rpc::read_u16_be(frame.payload.data() + 2);
                 if (frame.header.payload_length < (size_t)(out_len + 6)) return etl::nullopt;
@@ -681,6 +687,7 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
             """
             w.raw(textwrap.dedent(manual_impls))
 
+
 class PythonGenerator:
     def generate(self, spec: ProtocolSpec, out: TextIO) -> None:
         w = CodeWriter(out)
@@ -690,7 +697,7 @@ class PythonGenerator:
         w.write("from enum import IntEnum, StrEnum")
         w.write("from typing import Final")
         w.write()
-        
+
         # MQTT Wildcards
         w.write('MQTT_WILDCARD_SINGLE: Final[str] = "+"')
         w.write('MQTT_WILDCARD_MULTI: Final[str] = "#"')
@@ -767,7 +774,7 @@ class PythonGenerator:
         for key, name, ptype in hs_mapping:
             if key in spec.handshake:
                 w.write(f"{name}: Final[{ptype}] = {spec.handshake[key]}")
-        
+
         # String constants
         hs_strs = [
             ("tag_algorithm", "HANDSHAKE_TAG_ALGORITHM"),
@@ -778,7 +785,7 @@ class PythonGenerator:
         for key, name in hs_strs:
             if key in spec.handshake:
                 self._write_str_const(w, name, str(spec.handshake[key]))
-        
+
         # Byte constants
         hs_bytes = [
             ("hkdf_salt", "HANDSHAKE_HKDF_SALT"),
@@ -787,12 +794,12 @@ class PythonGenerator:
         for key, name in hs_bytes:
             if key in spec.handshake:
                 w.write(f'{name}: Final[bytes] = b"{spec.handshake[key]}"')
-        
+
         w.write("HANDSHAKE_CONFIG_SIZE: Final[int] = 7")
         w.write()
 
         # Enums and Classes
-        with w.block("class CompressionType(IntEnum):"):
+        with w.block("class CompressionType(IntEnum):", end=None):
             w.write("NONE = 0")
             w.write("RLE = 1")
         w.write()
@@ -813,9 +820,9 @@ class PythonGenerator:
             for key in sorted(spec.status_reasons.keys()):
                 self._write_str_const(w, f"STATUS_REASON_{str(key).upper()}", str(spec.status_reasons[key]))
             w.write()
-        
+
         # Status Enum
-        with w.block("class Status(IntEnum):"):
+        with w.block("class Status(IntEnum):", end=None):
             for s in spec.statuses:
                 w.write(f"{s.name} = {s.value}  # {s.description}")
         w.write()
@@ -824,7 +831,7 @@ class PythonGenerator:
         # Command Enum
         ack_only = []
         resp_only = []
-        with w.block("class Command(IntEnum):"):
+        with w.block("class Command(IntEnum):", end=None):
             for c in spec.commands:
                 w.write(f"{c.name} = {c.value}")
                 if c.requires_ack:
@@ -838,21 +845,23 @@ class PythonGenerator:
         if ack_only:
             w.write("ACK_ONLY_COMMANDS: frozenset[int] = frozenset({")
             with w.indent():
-                for c in ack_only: w.write(f"{c},")
+                for c in ack_only:
+                    w.write(f"{c},")
             w.write("})")
             w.write()
-        
+
         if resp_only:
             w.write("# Commands that expect a direct response without a prior ACK.")
             w.write("# The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.")
             w.write("RESPONSE_ONLY_COMMANDS: frozenset[int] = frozenset({")
             with w.indent():
-                for c in resp_only: w.write(f"{c},")
+                for c in resp_only:
+                    w.write(f"{c},")
             w.write("})")
             w.write()
-        
+
         # Topics
-        with w.block("class Topic(StrEnum):"):
+        with w.block("class Topic(StrEnum):", end=None):
             for t in spec.topics:
                 w.write(f"{t['name']} = \"{t['value']}\"  # {t['description']}")
         w.write()
@@ -871,7 +880,7 @@ class PythonGenerator:
             "UINT8_FORMAT": ">B",
             "UINT16_FORMAT": ">H",
             "UINT32_FORMAT": ">I",
-            "NONCE_COUNTER_FORMAT": ">Q"
+            "NONCE_COUNTER_FORMAT": ">Q",
         }
         for name, val in formats.items():
             w.write(f'{name}: Final[str] = "{val}"')
@@ -892,29 +901,32 @@ class PythonGenerator:
         w.write()
 
     def _write_str_const(self, w: CodeWriter, name: str, value: str) -> None:
-        if len(value) > 80:
-            w.write(f'{name}: Final[str] = (')
+        # Check total line length estimation
+        prefix_len = len(f"{name}: Final[str] = ")
+        if len(value) + prefix_len > 100:
+            w.write(f"{name}: Final[str] = (")
             with w.indent():
-                for line in textwrap.wrap(value, 80):
+                for line in textwrap.wrap(value, 70):  # Wrap earlier
                     w.write(f'{json.dumps(line)}')
-            w.write(')')
+            w.write(")")
         else:
-            w.write(f'{name}: Final[str] = {json.dumps(value)}')
+            w.write(f"{name}: Final[str] = {json.dumps(value)}")
 
     def _write_actions(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         grouped: dict[str, list[tuple[str, str, str]]] = {}
         for act in spec.actions:
-            raw = act['name']
-            if "_" not in raw: continue
+            raw = act["name"]
+            if "_" not in raw:
+                continue
             prefix, suffix = raw.split("_", 1)
-            grouped.setdefault(prefix, []).append((suffix, act['value'], act['description']))
-        
+            grouped.setdefault(prefix, []).append((suffix, act["value"], act["description"]))
+
         for prefix, items in grouped.items():
             # Special case mapping matching original generator
             cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
-            with w.block(f"class {cls_name}(StrEnum):"):
+            with w.block(f"class {cls_name}(StrEnum):", end=None):
                 for suffix, val, desc in items:
-                    w.write(f"{suffix} = \"{val}\"  # {desc}")
+                    w.write(f'{suffix} = "{val}"  # {desc}')
             w.write()
             w.write()
 
@@ -922,31 +934,44 @@ class PythonGenerator:
         w.write("MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (")
         with w.indent():
             for sub in spec.mqtt_subscriptions:
-                topic = sub['topic']
-                qos = sub['qos']
-                segments = sub.get('segments', [])
-                
+                topic = sub["topic"]
+                qos = sub["qos"]
+                segments = sub.get("segments", [])
+
                 seg_strs = []
                 for s in segments:
-                    if s == "+": seg_strs.append("MQTT_WILDCARD_SINGLE")
-                    elif s == "#": seg_strs.append("MQTT_WILDCARD_MULTI")
+                    if s == "+":
+                        seg_strs.append("MQTT_WILDCARD_SINGLE")
+                    elif s == "#":
+                        seg_strs.append("MQTT_WILDCARD_MULTI")
                     else:
                         # Try to map to Enum
                         # Logic duplicated from original for compatibility
                         mapped = False
-                        if topic in ["DIGITAL", "ANALOG", "CONSOLE", "DATASTORE", "MAILBOX", "SHELL", "SYSTEM", "FILE"]:
-                             # Simple heuristic to match original output
-                             cls_name = "DatastoreAction" if topic == "DATASTORE" else f"{topic.lower().title()}Action"
-                             # Check if s matches an action value
-                             for act in spec.actions:
-                                 if act['name'].startswith(f"{topic}_") and act['value'] == s:
-                                     suffix = act['name'].split("_", 1)[1]
-                                     seg_strs.append(f"{cls_name}.{suffix}.value")
-                                     mapped = True
-                                     break
+                        if topic in [
+                            "DIGITAL",
+                            "ANALOG",
+                            "CONSOLE",
+                            "DATASTORE",
+                            "MAILBOX",
+                            "SHELL",
+                            "SYSTEM",
+                            "FILE",
+                        ]:
+                            # Simple heuristic to match original output
+                            cls_name = (
+                                "DatastoreAction" if topic == "DATASTORE" else f"{topic.lower().title()}Action"
+                            )
+                            # Check if s matches an action value
+                            for act in spec.actions:
+                                if act["name"].startswith(f"{topic}_") and act["value"] == s:
+                                    suffix = act["name"].split("_", 1)[1]
+                                    seg_strs.append(f"{cls_name}.{suffix}.value")
+                                    mapped = True
+                                    break
                         if not mapped:
                             seg_strs.append(json.dumps(s))
-                
+
                 seg_tuple = f"({', '.join(seg_strs)},)" if seg_strs else "()"
                 w.write(f"(Topic.{topic}, {seg_tuple}, {qos}),")
         w.write(")")
@@ -957,6 +982,7 @@ class PythonGenerator:
 # =============================================================================
 # 4. Main Entry Point
 # =============================================================================
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate protocol bindings")

@@ -214,11 +214,3 @@ class MqttTransport:
             raise
 
 
-async def mqtt_task(
-    config: RuntimeConfig,
-    state: RuntimeState,
-    service: BridgeService,
-) -> None:
-    """Wrapper to run the MqttTransport."""
-    transport = MqttTransport(config, state, service)
-    await transport.run()

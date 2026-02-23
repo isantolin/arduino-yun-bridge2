@@ -198,9 +198,9 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_structured_formatter_trims_prefix_and_serialises_extra():
-    from mcubridge.config.logging import StructuredFormatter
+    from mcubridge.config.logging import StructuredLogFormatter
 
-    formatter = StructuredFormatter()
+    formatter = StructuredLogFormatter()
     record = logging.LogRecord(
         name="mcubridge.service.test",
         level=logging.INFO,
@@ -218,9 +218,9 @@ def test_structured_formatter_trims_prefix_and_serialises_extra():
 
 
 def test_structured_formatter_handles_bytes():
-    from mcubridge.config.logging import StructuredFormatter
+    from mcubridge.config.logging import StructuredLogFormatter
 
-    formatter = StructuredFormatter()
+    formatter = StructuredLogFormatter()
     record = logging.LogRecord(
         name="test",
         level=logging.INFO,

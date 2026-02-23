@@ -18,7 +18,7 @@ from mcubridge.transport import (
     MAX_SERIAL_PACKET_BYTES,
     SerialTransport,
 )
-from mcubridge.transport.mqtt import mqtt_task
+from mcubridge.transport.mqtt import MqttTransport
 from mcubridge.transport.serial import BridgeSerialProtocol
 
 # [REDUCTION] Use shared mocks to avoid duplication
@@ -243,7 +243,7 @@ async def test_mqtt_task_handles_incoming_message(
 
     runtime_config.mqtt_tls = False
 
-    task = asyncio.create_task(mqtt_task(runtime_config, state, cast(Any, service)))
+    task = asyncio.create_task(MqttTransport(runtime_config, state, cast(Any, service)).run())
 
     await asyncio.wait_for(service.handled.wait(), timeout=1)
 

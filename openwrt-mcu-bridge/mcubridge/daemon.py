@@ -66,8 +66,8 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.status import cleanup_status_file, status_writer
 from mcubridge.transport import (
+    MqttTransport,
     SerialTransport,
-    mqtt_task,
     serial_sender_not_ready,
 )
 from mcubridge.watchdog import WatchdogKeepalive
@@ -159,7 +159,8 @@ class BridgeDaemon:
         await transport.run()
 
     async def _run_mqtt_link(self) -> None:
-        await mqtt_task(self.config, self.state, self.service)
+        transport = MqttTransport(self.config, self.state, self.service)
+        await transport.run()
 
     async def _run_status_writer(self) -> None:
         await status_writer(self.state, self.config.status_interval)

@@ -1,6 +1,6 @@
 """Transport abstractions (serial, MQTT) for the MCU Bridge daemon."""
 
-from .mqtt import mqtt_task
+from .mqtt import MqttTransport
 from .serial import (
     MAX_SERIAL_PACKET_BYTES,
     SerialTransport,
@@ -9,7 +9,7 @@ from .serial import (
 
 __all__ = [
     "MAX_SERIAL_PACKET_BYTES",
-    "mqtt_task",
+    "MqttTransport",
     "SerialTransport",
     "serial_sender_not_ready",
 ]

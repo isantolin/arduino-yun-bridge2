@@ -57,8 +57,6 @@ public:
         return *this;
     }
 
-    size_t size() const { return _payload.size(); }
-    const uint8_t* data() const { return _payload.data(); }
 
 private:
     etl::ivector<uint8_t>& _payload;

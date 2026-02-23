@@ -147,7 +147,7 @@ async def test_mqtt_task_requeues_on_publish_failure(
 
     # [FIX] MqttTransport.run catches CancelledError and logs it, then re-raises
     with pytest.raises(asyncio.CancelledError):
-        await mqtt.mqtt_task(config, state, service)
+        await mqtt.MqttTransport(config, state, service).run()
 
     # Check if message was requeued
     assert state.mqtt_publish_queue.qsize() == 1

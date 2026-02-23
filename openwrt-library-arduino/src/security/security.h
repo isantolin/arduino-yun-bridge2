@@ -60,30 +60,6 @@ inline void secure_zero_portable(void* buf, size_t len) {
 #endif
 }
 
-/**
- * @brief Derive a key using HKDF-SHA256 (RFC 5869).
- * 
- * [MIL-SPEC] Uses OperatorFoundation/Crypto library implementation.
- * The library provides automatic secure cleanup via HKDF destructor.
- * 
- * @param ikm Input Keying Material (shared secret)
- * @param ikm_len Length of IKM
- * @param salt Optional salt (can be NULL)
- * @param salt_len Length of salt (0 if NULL)
- * @param info Application-specific context info
- * @param info_len Length of info
- * @param out_okm Output buffer for derived key
- * @param okm_len Desired output length (supports > 32 bytes)
- */
-inline void hkdf_sha256(
-    const uint8_t* ikm, size_t ikm_len,
-    const uint8_t* salt, size_t salt_len,
-    const uint8_t* info, size_t info_len,
-    uint8_t* out_okm, size_t okm_len) {
-  // Use library's optimized HKDF implementation
-  // The template function handles Extract+Expand and cleanup
-  ::hkdf<SHA256>(out_okm, okm_len, ikm, ikm_len, salt, salt_len, info, info_len);
-}
 
 /**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.

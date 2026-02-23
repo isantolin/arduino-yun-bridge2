@@ -25,7 +25,7 @@ from mcubridge.protocol.protocol import (  # noqa: E402
     UINT8_MASK,  # noqa: E402
     Command,  # noqa: E402
 )  # noqa: E402
-from mcubridge.transport.mqtt import mqtt_task  # noqa: E402
+from mcubridge.transport.mqtt import MqttTransport  # noqa: E402
 
 # --- DAEMON TESTS (Refactored) ---
 
@@ -177,7 +177,7 @@ async def test_mqtt_connection_backoff_and_auth_fail():
         with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             # FIX: Capturar BaseExceptionGroup para Py3.13
             with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
-                await mqtt_task(mock_config, MagicMock(), AsyncMock())
+                await MqttTransport(mock_config, MagicMock(), AsyncMock()).run()
 
             assert mock_sleep.call_count >= 2
 
@@ -218,7 +218,7 @@ async def test_mqtt_publisher_loop_error_handling():
 
     with patch("mcubridge.transport.mqtt.aiomqtt.Client", return_value=mock_ctx):
         with patch("asyncio.TaskGroup", return_value=tg_mock):
-            task = asyncio.create_task(mqtt_task(mock_config, mock_state, AsyncMock()))
+            task = asyncio.create_task(MqttTransport(mock_config, mock_state, AsyncMock()).run())
             await asyncio.sleep(0.01)
             task.cancel()
             try:

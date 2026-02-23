@@ -88,8 +88,6 @@ class StructuredLogFormatter(logging.Formatter):
         return msgspec.json.encode(payload).decode("utf-8")
 
 
-# Alias for backward compatibility with tests
-StructuredFormatter = StructuredLogFormatter
 
 
 def _build_handler() -> Handler:

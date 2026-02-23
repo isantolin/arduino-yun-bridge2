@@ -589,16 +589,19 @@ async def test_daemon_factories():
 
     with (
         patch("mcubridge.daemon.SerialTransport.run", new_callable=AsyncMock) as mock_serial,
-        patch("mcubridge.daemon.mqtt_task", new_callable=AsyncMock) as mock_mqtt,
+        patch("mcubridge.daemon.MqttTransport") as mock_mqtt_cls,
         patch("mcubridge.daemon.status_writer", new_callable=AsyncMock) as mock_status,
         patch("mcubridge.daemon.publish_metrics", new_callable=AsyncMock) as mock_metrics,
         patch("mcubridge.daemon.publish_bridge_snapshots", new_callable=AsyncMock) as mock_snapshots,
     ):
+        mock_mqtt_run = AsyncMock()
+        mock_mqtt_cls.return_value.run = mock_mqtt_run
+
         await daemon_obj._run_serial_link()
         assert mock_serial.called
 
         await daemon_obj._run_mqtt_link()
-        assert mock_mqtt.called
+        assert mock_mqtt_run.called
 
         await daemon_obj._run_status_writer()
         assert mock_status.called
@@ -973,7 +976,7 @@ async def test_mqtt_task_gaps():
         patch("asyncio.sleep", side_effect=asyncio.CancelledError),
     ):
         with pytest.raises(asyncio.CancelledError):
-            await mqtt.mqtt_task(config, state, service)
+            await mqtt.MqttTransport(config, state, service).run()
 
 
 # --- mcubridge.services.dispatcher ---

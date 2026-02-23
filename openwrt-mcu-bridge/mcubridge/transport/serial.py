@@ -329,7 +329,7 @@ class SerialTransport:
             retry=tenacity.retry_if_not_exception_type(
                 (SerialHandshakeFatal, asyncio.CancelledError)
             ),
-            wait=tenacity.wait_fixed(reconnect_delay),
+            wait=tenacity.wait_fixed(reconnect_delay) + tenacity.wait_random(0, 1),
             before_sleep=self._before_sleep_log,
             reraise=True,
         )
@@ -486,7 +486,7 @@ class SerialTransport:
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(3),
-            wait=tenacity.wait_fixed(0.5),
+            wait=tenacity.wait_fixed(0.5) + tenacity.wait_random(0, 0.2),
             retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
             before_sleep=_log_baud_retry,
             reraise=False,

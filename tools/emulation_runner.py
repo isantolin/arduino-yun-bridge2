@@ -300,11 +300,86 @@ def start_daemon(package_root, protocol, shared_secret):
     return daemon_proc, uci_stub_dir
 
 
+def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
+    """Run a list of client example scripts."""
+    failures = []
+    env = os.environ.copy()
+    # Ensure the client library is in PYTHONPATH
+    repo_root = Path(__file__).resolve().parent.parent
+    client_lib = repo_root / "openwrt-mcu-examples-python"
+    
+    python_path = f"{client_lib}"
+    if uci_stub_dir:
+        python_path = f"{uci_stub_dir}:{python_path}"
+    
+    env["PYTHONPATH"] = f"{python_path}:{env.get('PYTHONPATH', '')}"
+
+    # Force unbuffered output for scripts
+    env["PYTHONUNBUFFERED"] = "1"
+    # Force UCI read for client library in E2E environment
+    env["MCUBRIDGE_FORCE_UCI"] = "1"
+    
+    # Set env vars for openwrt-mcu-examples-python/uci.py override
+    env["MQTT_HOST"] = mqtt_host
+    env["MQTT_PORT"] = str(mqtt_port)
+    env["MQTT_TLS"] = "0"
+    env["MQTT_USER"] = "admin"
+    env["MQTT_PASS"] = "admin"
+    
+    for script in scripts:
+        script_path = Path(script).resolve()
+        if not script_path.exists():
+            logger.error(f"Script not found: {script}")
+            failures.append(script)
+            continue
+
+        logger.info(f"Running client script: {script}...")
+        try:
+            # Pass dummy credentials to satisfy script validation logic
+            # and generic host/port. The UCI stub should handle TLS=0.
+            cmd = [
+                sys.executable, str(script_path), 
+                "--host", mqtt_host, 
+                "--port", str(mqtt_port),
+                "--user", "admin", 
+                "--password", "admin"
+            ]
+            
+            # Interactive scripts (console_test) might block if we don't handle stdin.
+            # We should pipe stdin to /dev/null or provide "exit\n" for them.
+            # But console_test.py reads from stdin.
+            
+            input_bytes = b"exit\n" if "console" in str(script) else None
+            
+            subprocess.run(
+                cmd, 
+                env=env, 
+                timeout=30, 
+                check=True,
+                input=input_bytes,
+                stdout=None, # Let it inherit or pipe? Let's inherit for visibility
+                stderr=None
+            )
+            logger.info(f"Script {script} PASSED")
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Script {script} FAILED with code {e.returncode}")
+            failures.append(script)
+        except subprocess.TimeoutExpired:
+            logger.error(f"Script {script} TIMED OUT")
+            failures.append(script)
+        except Exception as e:
+            logger.error(f"Script {script} failed with error: {e}")
+            failures.append(script)
+
+    return len(failures) == 0
+
+
 def main():
     """Main entrypoint for emulation test."""
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--firmware", default="bridge_emulator", help="Name of the emulator binary to run")
+    parser.add_argument("--run-scripts", nargs="+", help="List of python scripts to run after handshake")
     args = parser.parse_args()
 
     logger.info(f"Starting Emulation Runner ({args.firmware})...")
@@ -385,6 +460,15 @@ def main():
             if log_sync or mqtt_sync:
                 logger.info(f"SUCCESS: Handshake verified via {'Log' if log_sync else 'MQTT'}.")
                 success = True
+                
+                if args.run_scripts:
+                    logger.info("Executing client scripts...")
+                    if not run_client_scripts(args.run_scripts, MQTT_HOST, MQTT_PORT, uci_stub_dir.name):
+                        success = False
+                        logger.error("One or more client scripts failed.")
+                    else:
+                        logger.info("All client scripts PASSED.")
+                
                 break
             time.sleep(0.5)
 

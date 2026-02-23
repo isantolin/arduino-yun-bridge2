@@ -20,11 +20,12 @@ PACKETSERIAL_PATH="${DUMMY_ARDUINO_LIBS:-/tmp/arduino_libs}/PacketSerial/src"
 CRYPTO_PATH="${DUMMY_ARDUINO_LIBS:-/tmp/arduino_libs}/Crypto/src"
 
 # Fallback for paths if not provided via environment (local dev)
+CURRENT_USER="$(whoami)"
 if [ ! -d "${PACKETSERIAL_PATH}" ]; then
-    PACKETSERIAL_PATH="/home/${USER}/Arduino/libraries/PacketSerial/src"
+    PACKETSERIAL_PATH="/home/${CURRENT_USER}/Arduino/libraries/PacketSerial/src"
 fi
 if [ ! -d "${CRYPTO_PATH}" ]; then
-    CRYPTO_PATH="/home/${USER}/Arduino/libraries/Crypto/src"
+    CRYPTO_PATH="/home/${CURRENT_USER}/Arduino/libraries/Crypto/src"
 fi
 
 echo "[emulator] Compiling native bridge emulator (Base)..."

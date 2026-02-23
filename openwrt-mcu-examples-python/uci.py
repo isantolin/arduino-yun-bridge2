@@ -1,5 +1,5 @@
 import os
-
+import sys
 
 class Uci:
     def __enter__(self):
@@ -10,10 +10,11 @@ class Uci:
 
     def get_all(self, package, section):
         if package == "mcubridge" and section == "general":
+            # sys.stderr.write(f"DEBUG UCI: env={os.environ}\n")
             return {
                 "mqtt_host": os.environ.get("MQTT_HOST", "192.168.15.36"),
                 "mqtt_port": os.environ.get("MQTT_PORT", "8883"),
-                "mqtt_tls": "1",
+                "mqtt_tls": os.environ.get("MQTT_TLS", "1"),
                 "mqtt_tls_insecure": "1",
                 "mqtt_user": os.environ.get("MQTT_USER", "ignacio.santolin"),
                 "mqtt_pass": os.environ.get("MQTT_PASS", "placeholder_password"),

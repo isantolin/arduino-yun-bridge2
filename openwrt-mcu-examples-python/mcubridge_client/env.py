@@ -12,7 +12,11 @@ from collections.abc import Iterable
 from pathlib import Path
 
 
+import os
+
 def _is_openwrt() -> bool:
+    if os.environ.get("MCUBRIDGE_FORCE_UCI") == "1":
+        return True
     return Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
 
 

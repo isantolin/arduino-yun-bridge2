@@ -4,7 +4,7 @@ Configuration is loaded from OpenWrt UCI (package `mcubridge`, section
 `general`) with sane defaults for non-OpenWrt environments.
 
 Runtime configuration is intentionally **UCI-only**: environment variables are
-not used as overrides.
+not used.
 """
 
 from __future__ import annotations

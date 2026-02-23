@@ -1,25 +1,18 @@
 import asyncio
 import errno
 import logging
-import os
-import sys
-import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import tenacity
 import msgspec
-import psutil
-from cobs import cobs
-from mcubridge import daemon, metrics
+from mcubridge import metrics
 from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.process import ProcessComponent
-from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport, _log_baud_retry
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Status, Command
-from mcubridge.state.context import ManagedProcess, PROCESS_STATE_FINISHED, PROCESS_STATE_ZOMBIE
+from mcubridge.transport.serial import BridgeSerialProtocol, SerialTransport
+from mcubridge.protocol.protocol import Status
+from mcubridge.state.context import ManagedProcess, PROCESS_STATE_FINISHED
 
 def create_real_config():
     from mcubridge.config.common import get_default_config
@@ -38,10 +31,10 @@ async def test_process_run_sync_exception_group_no_match():
     config = create_real_config()
     state = MagicMock()
     comp = ProcessComponent(config, state, MagicMock())
-    
+
     mock_proc = MagicMock()
     mock_proc.wait = AsyncMock()
-    
+
     with (
         patch("asyncio.create_subprocess_exec", return_value=mock_proc),
         patch("asyncio.TaskGroup.__aenter__", side_effect=BaseExceptionGroup("Group", [BaseException("Literal")]))
@@ -56,14 +49,14 @@ async def test_process_collect_output_slot_changed():
     state.process_lock = asyncio.Lock()
     ctx = MagicMock()
     comp = ProcessComponent(config, state, ctx)
-    
+
     slot = ManagedProcess(pid=123)
     state.running_processes = {123: slot}
-    
+
     with patch.object(slot, "pop_payload", return_value=(b"", b"", False, False)):
         state.running_processes = MagicMock()
         state.running_processes.get.side_effect = [slot, None]
-        
+
         batch = await comp.collect_output(123)
         assert batch.status_byte == Status.ERROR.value
 
@@ -73,11 +66,11 @@ async def test_process_collect_output_finished_finalize_fail():
     state = MagicMock()
     state.process_lock = asyncio.Lock()
     comp = ProcessComponent(config, state, MagicMock())
-    
+
     slot = ManagedProcess(pid=123)
     slot.fsm_state = PROCESS_STATE_FINISHED
     slot.trigger = MagicMock(side_effect=Exception("FSM Fail"))
-    
+
     state.running_processes = {123: slot}
     await comp.collect_output(123)
 
@@ -87,11 +80,11 @@ async def test_process_finalize_async_process_fsm_fail():
     state = MagicMock()
     state.process_lock = asyncio.Lock()
     comp = ProcessComponent(config, state, MagicMock())
-    
+
     slot = ManagedProcess(pid=123)
     slot.trigger = MagicMock(side_effect=Exception("FSM Fail"))
     state.running_processes = {123: slot}
-    
+
     with patch.object(comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")):
         await comp._finalize_async_process(123, MagicMock())
 
@@ -112,7 +105,7 @@ async def test_metrics_publish_metrics_error_path():
     state = MagicMock()
     state.build_metrics_snapshot.side_effect = ValueError("Boom")
     enqueue = AsyncMock()
-    
+
     # Trigger line 217: logger.error("Failed to publish initial metrics payload: %s", e)
     with patch("asyncio.sleep", side_effect=asyncio.CancelledError):
         with pytest.raises(asyncio.CancelledError):

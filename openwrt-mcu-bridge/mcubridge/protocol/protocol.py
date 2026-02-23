@@ -205,39 +205,27 @@ class FileAction(StrEnum):
     READ = "read"  # Read file content
     WRITE = "write"  # Write file content
     REMOVE = "remove"  # Remove file
-
-
 class ShellAction(StrEnum):
     RUN = "run"  # Run shell command
     RUN_ASYNC = "run_async"  # Run shell command asynchronously
     POLL = "poll"  # Poll shell command status
     KILL = "kill"  # Kill shell command
-
-
 class MailboxAction(StrEnum):
     WRITE = "write"  # Write to mailbox
     READ = "read"  # Read from mailbox
     INCOMING = "incoming"  # Mailbox incoming messages
     PROCESSED = "processed"  # Mailbox processed notifications
     ERRORS = "errors"  # Mailbox error topic
-
-
 class DatastoreAction(StrEnum):
     GET = "get"  # Get datastore value
     PUT = "put"  # Put datastore value
-
-
 class PinAction(StrEnum):
     MODE = "mode"  # Set pin mode
     READ = "read"  # Read pin value
-
-
 class ConsoleAction(StrEnum):
     IN = "in"  # Console input
     OUT = "out"  # Console output
     INPUT = "input"  # Console input action
-
-
 class SystemAction(StrEnum):
     FREE_MEMORY = "free_memory"  # System free memory
     VERSION = "version"  # System version
@@ -248,14 +236,10 @@ class SystemAction(StrEnum):
     HANDSHAKE = "handshake"  # Handshake snapshot
     SUMMARY = "summary"  # Bridge summary snapshot
     STATE = "state"  # Bridge state snapshot
-
-
 class DigitalAction(StrEnum):
     WRITE = "write"  # Digital write
     READ = "read"  # Digital read
     MODE = "mode"  # Digital mode
-
-
 class AnalogAction(StrEnum):
     WRITE = "write"  # Analog write
     READ = "read"  # Analog read

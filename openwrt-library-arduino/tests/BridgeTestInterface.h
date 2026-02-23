@@ -54,6 +54,7 @@ class TestAccessor {
   // ---- FSM primitive operations (when compound helpers are too coarse) ----
   void fsmResetFsm()          { _bridge._fsm.resetFsm(); }
   void fsmHandshakeComplete() { _bridge._fsm.handshakeComplete(); }
+  void fsmHandshakeFailed()   { _bridge._fsm.handshakeFailed(); }
   void fsmSendCritical()      { _bridge._fsm.sendCritical(); }
   void fsmCryptoFault()       { _bridge._fsm.cryptoFault(); }
 
@@ -145,6 +146,11 @@ class TestAccessor {
   void computeHandshakeTag(const uint8_t* n, size_t nl,
                            uint8_t* out)                { _bridge._computeHandshakeTag(n, nl, out); }
   void flushPendingTxQueue()                            { _bridge._flushPendingTxQueue(); }
+
+  template <typename Handler>
+  void handleDedupAck(const bridge::router::CommandContext& ctx, Handler handler, bool flush_on_duplicate) {
+    _bridge._handleDedupAck(ctx, handler, flush_on_duplicate);
+  }
 
   // ---- ICommandHandler overrides (private in BridgeClass) ----
   void routeStatusCommand(const bridge::router::CommandContext& ctx)    { _bridge.onStatusCommand(ctx); }

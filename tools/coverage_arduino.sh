@@ -61,6 +61,7 @@ TEST_FILES=(
     "${TEST_ROOT}/test_extreme_coverage_v2.cpp"
     "${TEST_ROOT}/test_arduino_100_coverage.cpp"
     "${TEST_ROOT}/test_coverage_100_final.cpp"
+    "${TEST_ROOT}/test_arduino_coverage_boost.cpp"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites secuencialmente..."

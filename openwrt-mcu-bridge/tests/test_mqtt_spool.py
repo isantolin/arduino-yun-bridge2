@@ -17,14 +17,14 @@ def _make_message(
     topic: str,
     payload: str = "hello",
     *,
-    user_properties: list[tuple[str, str]] = msgspec.field(default_factory=list),
+    user_properties: list[tuple[str, str]] | None = None,
 ) -> QueuedPublish:
     return QueuedPublish(
         topic_name=topic,
         payload=payload.encode(),
         qos=0,
         retain=False,
-        user_properties=user_properties,
+        user_properties=user_properties or [],
     )
 
 

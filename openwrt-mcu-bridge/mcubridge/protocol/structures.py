@@ -538,6 +538,9 @@ class QOSLevel(IntEnum):
     QOS_2 = 2
 
 
+UserProperty = tuple[str, str]
+
+
 class SpoolRecord(msgspec.Struct, omit_defaults=True):
     """JSON-serializable record stored in the durable spool (RAM/Disk)."""
 
@@ -552,11 +555,8 @@ class SpoolRecord(msgspec.Struct, omit_defaults=True):
     response_topic: str | None = None
     correlation_data: bytes | None = None
     user_properties: list[UserProperty] = msgspec.field(
-        default_factory=list[UserProperty]
+        default_factory=list[tuple[str, str]]
     )
-
-
-UserProperty = tuple[str, str]
 
 
 class QueuedPublish(msgspec.Struct):
@@ -572,7 +572,7 @@ class QueuedPublish(msgspec.Struct):
     response_topic: str | None = None
     correlation_data: bytes | None = None
     user_properties: list[UserProperty] = msgspec.field(
-        default_factory=list[UserProperty]
+        default_factory=list[tuple[str, str]]
     )
 
     def to_record(self) -> SpoolRecord:

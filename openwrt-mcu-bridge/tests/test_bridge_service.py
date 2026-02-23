@@ -676,6 +676,7 @@ async def test_mqtt_mailbox_read_preserves_empty_payload(
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_mqtt_datastore_put_updates_local_cache(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
@@ -745,6 +746,7 @@ async def test_mqtt_datastore_put_without_key_is_ignored(
     assert not runtime_state.datastore
 
 
+@pytest.mark.asyncio
 @pytest.mark.asyncio
 async def test_mqtt_datastore_get_non_request_uses_cache(
     runtime_config: RuntimeConfig,

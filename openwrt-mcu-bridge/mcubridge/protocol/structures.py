@@ -599,39 +599,28 @@ class QueuedPublish(msgspec.Struct):
 
         payload = data.get("payload", b"")
         if isinstance(payload, str):
-            payload = payload.encode("utf-8")
+            try:
+                import base64
 
-        return cls(
-            topic_name=str(data.get("topic_name", "")),
-            payload=payload,
-            qos=int(data.get("qos", 0)),
-            retain=bool(data.get("retain", False)),
-            content_type=data.get("content_type"),
-            payload_format_indicator=data.get("payload_format_indicator"),
-            message_expiry_interval=data.get("message_expiry_interval"),
-            response_topic=data.get("response_topic"),
-            correlation_data=data.get("correlation_data"),
-            user_properties=cast(list[UserProperty], list(data.get("user_properties") or [])),
-        )
-        if isinstance(payload, str):
-            payload = payload.encode("utf-8")  # Fallback
+                payload = base64.b64decode(payload)
+            except Exception:
+                payload = payload.encode("utf-8")
 
         correlation_data = data.get("correlation_data")
         if isinstance(correlation_data, str):
-            correlation_data = correlation_data.encode("utf-8")  # Fallback
+            try:
+                import base64
+
+                correlation_data = base64.b64decode(correlation_data)
+            except Exception:
+                correlation_data = correlation_data.encode("utf-8")
 
         raw_props = data.get("user_properties", ())
-        user_properties: list[tuple[str, str]] = (
-            []
-        )  # pyright: ignore[reportUnknownVariableType]
+        user_properties: list[tuple[str, str]] = []
         if isinstance(raw_props, Iterable):
             for item in cast("Iterable[Any]", raw_props):
-                if (
-                    isinstance(item, (list, tuple)) and len(item) >= 2
-                ):  # pyright: ignore[reportUnknownArgumentType]
-                    k = str(item[0])  # pyright: ignore[reportUnknownArgumentType]
-                    v = str(item[1])  # pyright: ignore[reportUnknownArgumentType]
-                    user_properties.append((k, v))
+                if isinstance(item, (list, tuple)) and len(item) >= 2:  # pyright: ignore[reportUnknownArgumentType]
+                    user_properties.append((str(item[0]), str(item[1])))  # pyright: ignore[reportUnknownArgumentType]
 
         return cls(
             topic_name=str(data.get("topic_name", "")),
@@ -643,9 +632,7 @@ class QueuedPublish(msgspec.Struct):
             message_expiry_interval=data.get("message_expiry_interval"),
             response_topic=data.get("response_topic"),
             correlation_data=correlation_data,
-            user_properties=tuple(
-                user_properties
-            ),  # pyright: ignore[reportUnknownArgumentType]
+            user_properties=user_properties,
         )
 
 

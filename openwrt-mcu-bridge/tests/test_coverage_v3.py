@@ -151,7 +151,9 @@ async def test_daemon_run_exception_group_coverage():
             raise ExceptionGroup("Main Group", [RuntimeError("Sub-error")])
 
         def create_task(self, coro):
-            pass
+            # [FIX] Avoid RuntimeWarning by immediately closing the coroutine
+            coro.close()
+            return MagicMock(spec=asyncio.Task)
 
     with (
         patch("asyncio.TaskGroup", return_value=FakeTaskGroup()),

@@ -301,11 +301,20 @@ async def test_process_wait_for_sync_completion_timeout_kill_fail():
 
 @pytest.mark.asyncio
 async def test_process_allocate_pid_exhaustion():
-    state = create_real_state()
-    state.running_processes = {i: MagicMock() for i in range(1, 65536)}
-    comp = ProcessComponent(create_real_config(), state, MagicMock())
-    pid = await comp._allocate_pid()
-    assert pid == INVALID_ID_SENTINEL
+    # Fix unclosed event loop by isolating state creation from any implicit loop
+    from mcubridge.state.context import RuntimeState
+    config = create_real_config()
+    
+    # Manually instantiate RuntimeState avoiding create_runtime_state logic
+    state = RuntimeState(config)
+    try:
+        state.running_processes = {i: MagicMock() for i in range(1, 65536)}
+        comp = ProcessComponent(config, state, MagicMock())
+        pid = await comp._allocate_pid()
+        assert pid == INVALID_ID_SENTINEL
+    finally:
+        # Cleanup any resources that might hold onto a loop
+        state.running_processes.clear()
 
 
 @pytest.mark.asyncio

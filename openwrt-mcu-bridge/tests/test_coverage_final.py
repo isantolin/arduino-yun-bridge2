@@ -16,7 +16,6 @@ from mcubridge.services.file import FileComponent, _do_write_file
 from mcubridge.services.handshake import (
     SerialHandshakeManager,
     SerialTimingWindow,
-    _retry_if_false,
     derive_serial_timing,
 )
 from mcubridge.services.process import ProcessComponent

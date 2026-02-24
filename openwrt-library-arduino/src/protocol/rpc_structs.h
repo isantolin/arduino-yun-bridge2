@@ -275,47 +275,88 @@ inline etl::optional<payload::ProcessRunAsync> parse<payload::ProcessRunAsync>(c
     }
     template <>
 inline etl::optional<payload::DatastoreGet> parse<payload::DatastoreGet>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt; return payload::DatastoreGet::parse(frame.payload.data());
+        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+            return etl::nullopt;
+        }
+        return payload::DatastoreGet::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::DatastoreGetResponse> parse<payload::DatastoreGetResponse>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt; return payload::DatastoreGetResponse::parse(frame.payload.data());
+        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+            return etl::nullopt;
+        }
+        return payload::DatastoreGetResponse::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::DatastorePut> parse<payload::DatastorePut>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 2) return etl::nullopt; uint8_t k = frame.payload[0]; if (frame.header.payload_length < (size_t)(k + 2)) return etl::nullopt; uint8_t v = frame.payload[k + 1]; if (frame.header.payload_length < (size_t)(k + v + 2)) return etl::nullopt; return payload::DatastorePut::parse(frame.payload.data());
+        if (frame.header.payload_length < 2) return etl::nullopt;
+        uint8_t k = frame.payload[0];
+        if (frame.header.payload_length < (size_t)(k + 2)) return etl::nullopt;
+        uint8_t v = frame.payload[k + 1];
+        if (frame.header.payload_length < (size_t)(k + v + 2)) return etl::nullopt;
+        return payload::DatastorePut::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::MailboxPush> parse<payload::MailboxPush>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 2) return etl::nullopt; uint16_t l = rpc::read_u16_be(frame.payload.data()); if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt; return payload::MailboxPush::parse(frame.payload.data());
+        if (frame.header.payload_length < 2) return etl::nullopt;
+        uint16_t l = rpc::read_u16_be(frame.payload.data());
+        if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt;
+        return payload::MailboxPush::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::MailboxReadResponse> parse<payload::MailboxReadResponse>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 2) return etl::nullopt; uint16_t l = rpc::read_u16_be(frame.payload.data()); if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt; return payload::MailboxReadResponse::parse(frame.payload.data());
+        if (frame.header.payload_length < 2) return etl::nullopt;
+        uint16_t l = rpc::read_u16_be(frame.payload.data());
+        if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt;
+        return payload::MailboxReadResponse::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::FileWrite> parse<payload::FileWrite>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 3) return etl::nullopt; uint8_t p = frame.payload[0]; if (frame.header.payload_length < (size_t)(p + 3)) return etl::nullopt; uint16_t d = rpc::read_u16_be(frame.payload.data() + 1 + p); if (frame.header.payload_length < (size_t)(p + d + 3)) return etl::nullopt; return payload::FileWrite::parse(frame.payload.data());
+        if (frame.header.payload_length < 3) return etl::nullopt;
+        uint8_t p = frame.payload[0];
+        if (frame.header.payload_length < (size_t)(p + 3)) return etl::nullopt;
+        uint16_t d = rpc::read_u16_be(frame.payload.data() + 1 + p);
+        if (frame.header.payload_length < (size_t)(p + d + 3)) return etl::nullopt;
+        return payload::FileWrite::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::FileRead> parse<payload::FileRead>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt; return payload::FileRead::parse(frame.payload.data());
+        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+            return etl::nullopt;
+        }
+        return payload::FileRead::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::FileReadResponse> parse<payload::FileReadResponse>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 2) return etl::nullopt; uint16_t l = rpc::read_u16_be(frame.payload.data()); if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt; return payload::FileReadResponse::parse(frame.payload.data());
+        if (frame.header.payload_length < 2) return etl::nullopt;
+        uint16_t l = rpc::read_u16_be(frame.payload.data());
+        if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt;
+        return payload::FileReadResponse::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::FileRemove> parse<payload::FileRemove>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) return etl::nullopt; return payload::FileRemove::parse(frame.payload.data());
+        if (frame.header.payload_length < 1 || frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {
+            return etl::nullopt;
+        }
+        return payload::FileRemove::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::ProcessRunResponse> parse<payload::ProcessRunResponse>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 6) return etl::nullopt; uint16_t o = rpc::read_u16_be(frame.payload.data() + 1); if (frame.header.payload_length < (size_t)(o + 5)) return etl::nullopt; uint16_t e = rpc::read_u16_be(frame.payload.data() + 3 + o); if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::nullopt; return payload::ProcessRunResponse::parse(frame.payload.data());
+        if (frame.header.payload_length < 6) return etl::nullopt;
+        uint16_t o = rpc::read_u16_be(frame.payload.data() + 1);
+        if (frame.header.payload_length < (size_t)(o + 5)) return etl::nullopt;
+        uint16_t e = rpc::read_u16_be(frame.payload.data() + 3 + o);
+        if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::nullopt;
+        return payload::ProcessRunResponse::parse(frame.payload.data());
     }
     template <>
 inline etl::optional<payload::ProcessPollResponse> parse<payload::ProcessPollResponse>(const rpc::Frame& frame) {
-        if (frame.header.payload_length < 6) return etl::nullopt; uint16_t o = rpc::read_u16_be(frame.payload.data() + 2); if (frame.header.payload_length < (size_t)(o + 6)) return etl::nullopt; uint16_t e = rpc::read_u16_be(frame.payload.data() + 4 + o); if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::nullopt; return payload::ProcessPollResponse::parse(frame.payload.data());
+        if (frame.header.payload_length < 6) return etl::nullopt;
+        uint16_t o = rpc::read_u16_be(frame.payload.data() + 2);
+        if (frame.header.payload_length < (size_t)(o + 6)) return etl::nullopt;
+        uint16_t e = rpc::read_u16_be(frame.payload.data() + 4 + o);
+        if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::nullopt;
+        return payload::ProcessPollResponse::parse(frame.payload.data());
     }
 }
 } // namespace rpc

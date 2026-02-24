@@ -1,3 +1,5 @@
+from transitions.core import MachineError
+
 import asyncio
 import errno
 import logging
@@ -80,7 +82,7 @@ async def test_process_collect_output_finished_finalize_fail():
 
     slot = ManagedProcess(pid=123)
     slot.fsm_state = PROCESS_STATE_FINISHED
-    slot.trigger = MagicMock(side_effect=Exception("FSM Fail"))
+    slot.trigger = MagicMock(side_effect=MachineError("FSM Fail"))
 
     state.running_processes = {123: slot}
     await comp.collect_output(123)
@@ -94,7 +96,7 @@ async def test_process_finalize_async_process_fsm_fail():
     comp = ProcessComponent(config, state, MagicMock())
 
     slot = ManagedProcess(pid=123)
-    slot.trigger = MagicMock(side_effect=Exception("FSM Fail"))
+    slot.trigger = MagicMock(side_effect=MachineError("FSM Fail"))
     state.running_processes = {123: slot}
 
     with patch.object(

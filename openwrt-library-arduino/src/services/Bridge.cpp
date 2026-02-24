@@ -349,6 +349,7 @@ static inline bool _isValidPin(uint8_t pin) {
 #ifdef NUM_DIGITAL_PINS
   return pin < NUM_DIGITAL_PINS;
 #else
+  (void)pin;
   return true;
 #endif
 }

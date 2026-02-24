@@ -121,7 +121,7 @@ def _cleanup_child_processes() -> None:
                 child.kill()
             except psutil.NoSuchProcess:
                 pass
-    except Exception as e:
+    except psutil.Error as e:
         logger.error("Error during process cleanup: %s", e)
 
 

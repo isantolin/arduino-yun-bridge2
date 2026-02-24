@@ -29,7 +29,7 @@ package-dir = {"" = "openwrt-mcu-bridge"}
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -q"
+addopts = "-ra -q -W error"
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
 log_cli = true
@@ -37,10 +37,6 @@ log_cli_level = "INFO"
 testpaths = ["openwrt-mcu-bridge/tests"]
 pythonpath = ["stubs", ".", "openwrt-mcu-bridge"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*"]
-filterwarnings = [
-    "ignore:'asyncio.AbstractEventLoopPolicy':DeprecationWarning",
-    "ignore:'asyncio.set_event_loop_policy':DeprecationWarning",
-]
 markers = ["fuzz: mark a test as a fuzz test"]
 
 [tool.black]

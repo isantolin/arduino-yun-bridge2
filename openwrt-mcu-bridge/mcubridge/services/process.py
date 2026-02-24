@@ -10,6 +10,7 @@ from asyncio import StreamReader
 from asyncio.subprocess import Process
 from contextlib import AsyncExitStack
 
+from transitions.core import MachineError
 import msgspec
 import psutil
 from construct import ConstructError
@@ -292,7 +293,7 @@ class ProcessComponent:
                     # [FSM] Trigger cleanup via FSM transition
                     try:
                         slot.trigger("force_kill")
-                    except Exception as e:
+                    except MachineError as e:
                         logger.error("FSM transition failed in handle_kill: %s", e)
 
                     slot.handle = None
@@ -465,7 +466,7 @@ class ProcessComponent:
         # [FSM] Initialize state
         try:
             slot.trigger("start")
-        except Exception as e:
+        except MachineError as e:
             logger.error("FSM transition failed in start_async: %s", e)
 
         async with self.state.process_lock:
@@ -534,7 +535,7 @@ class ProcessComponent:
                 if slot.fsm_state == PROCESS_STATE_FINISHED:
                     try:
                         slot.trigger("finalize")
-                    except Exception as e:
+                    except MachineError as e:
                         logger.error("FSM transition failed in collect_output: %s", e)
 
                 self.state.running_processes.pop(pid, None)
@@ -690,7 +691,7 @@ class ProcessComponent:
         # [FSM] Trigger SIGCHLD
         try:
             slot.trigger("sigchld")
-        except Exception as e:
+        except MachineError as e:
             logger.error("FSM transition failed in finalize (sigchld): %s", e)
 
         async with slot.io_lock:
@@ -719,7 +720,7 @@ class ProcessComponent:
             # [FSM] Complete IO
             try:
                 current_slot.trigger("io_complete")
-            except Exception as e:
+            except MachineError as e:
                 logger.error("FSM transition failed in finalize (io_complete): %s", e)
 
             if stdout_tail or stderr_tail:
@@ -739,7 +740,7 @@ class ProcessComponent:
             ):
                 try:
                     current_slot.trigger("finalize")
-                except Exception:
+                except MachineError:
                     pass
                 self.state.running_processes.pop(pid, None)
                 release_slot = True

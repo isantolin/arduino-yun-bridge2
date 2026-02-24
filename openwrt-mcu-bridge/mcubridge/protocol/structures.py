@@ -603,7 +603,7 @@ class QueuedPublish(msgspec.Struct):
                 import base64
 
                 payload = base64.b64decode(payload)
-            except Exception:
+            except ValueError:
                 payload = payload.encode("utf-8")
 
         correlation_data = data.get("correlation_data")
@@ -612,7 +612,7 @@ class QueuedPublish(msgspec.Struct):
                 import base64
 
                 correlation_data = base64.b64decode(correlation_data)
-            except Exception:
+            except ValueError:
                 correlation_data = correlation_data.encode("utf-8")
 
         raw_props = data.get("user_properties", ())

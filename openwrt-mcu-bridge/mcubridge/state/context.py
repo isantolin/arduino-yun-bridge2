@@ -1312,7 +1312,7 @@ class RuntimeState(msgspec.Struct):
                 self.pending_analog_reads.clear()
             if hasattr(self, "running_processes"):
                 self.running_processes.clear()
-        except Exception:
+        except RuntimeError:
             pass
 
 

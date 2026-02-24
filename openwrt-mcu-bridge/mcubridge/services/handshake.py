@@ -114,13 +114,6 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
 _STATUS_PAYLOAD_WINDOW = max(0, int(MAX_PAYLOAD_SIZE) - 2)
 
 
-def _log_handshake_retry(retry_state: tenacity.RetryCallState) -> None:
-    h_logger = logging.getLogger("mcubridge.service.handshake")
-    h_logger.warning(
-        "Handshake attempt %d failed; retrying in %.2fs",
-        retry_state.attempt_number,
-        retry_state.next_action.sleep if retry_state.next_action else 0,
-    )
 
 
 def _retry_if_false(res: Any) -> bool:
@@ -235,7 +228,7 @@ class SerialHandshakeManager:
                 jitter=1.0,
             ),
             retry=tenacity.retry_if_result(_retry_if_false),
-            before_sleep=_log_handshake_retry,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=False,
         )
 

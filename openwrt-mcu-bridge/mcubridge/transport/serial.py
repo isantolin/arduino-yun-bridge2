@@ -64,13 +64,6 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
     return False
 
 
-def _log_baud_retry(retry_state: tenacity.RetryCallState) -> None:
-    if retry_state.attempt_number > 1:
-        logger.warning(
-            "Baudrate negotiation timed out (attempt %d); retrying...",
-            retry_state.attempt_number,
-        )
-
 
 class BridgeSerialProtocol(asyncio.Protocol):
     """Zero-Overhead AsyncIO Protocol optimized with C-level searching."""
@@ -333,15 +326,6 @@ class SerialTransport:
         """Callback when leaving any active state."""
         self.state.serial_writer = None
 
-    def _before_sleep_log(self, retry_state: tenacity.RetryCallState) -> None:
-        reconnect_delay = max(1, self.config.reconnect_delay)
-        if retry_state.attempt_number > 1:
-            logger.warning(
-                "Retrying serial connection in %ds... (Attempt %d)",
-                reconnect_delay,
-                retry_state.attempt_number,
-            )
-
     async def run(self) -> None:
         reconnect_delay = max(1, self.config.reconnect_delay)
         loop = asyncio.get_running_loop()
@@ -351,7 +335,7 @@ class SerialTransport:
                 (SerialHandshakeFatal, asyncio.CancelledError)
             ),
             wait=tenacity.wait_fixed(reconnect_delay) + tenacity.wait_random(0, 1),
-            before_sleep=self._before_sleep_log,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
 
@@ -527,7 +511,7 @@ class SerialTransport:
             stop=tenacity.stop_after_attempt(3),
             wait=tenacity.wait_fixed(0.5) + tenacity.wait_random(0, 0.2),
             retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
-            before_sleep=_log_baud_retry,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=False,
         )
 

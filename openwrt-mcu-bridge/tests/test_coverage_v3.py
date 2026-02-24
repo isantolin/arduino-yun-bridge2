@@ -18,7 +18,6 @@ from mcubridge.services.process import ProcessComponent
 from mcubridge.transport.serial import (
     BridgeSerialProtocol,
     SerialTransport,
-    _log_baud_retry,
 )
 
 
@@ -476,10 +475,8 @@ async def test_process_run_sync_wait_timeout_kill_timeout():
 # --- mcubridge.transport.serial ---
 
 
-def test_log_baud_retry_coverage():
     retry_state = MagicMock()
     retry_state.attempt_number = 2
-    _log_baud_retry(retry_state)
 
 
 @pytest.mark.asyncio

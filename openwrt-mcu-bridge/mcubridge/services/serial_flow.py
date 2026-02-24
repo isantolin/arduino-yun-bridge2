@@ -233,15 +233,6 @@ class SerialFlowController:
             reraise=True,
         )
 
-    def _on_retry_sleep(self, retry_state: tenacity.RetryCallState) -> None:
-        """Callback invoked before each retry sleep."""
-        self._emit_metric("retry")
-        self._logger.warning(
-            "Timeout waiting for MCU response (attempt %d/%d)",
-            retry_state.attempt_number,
-            self._max_attempts,
-        )
-
     async def _single_attempt(
         self,
         pending: PendingCommand,
@@ -281,6 +272,11 @@ class SerialFlowController:
 
         self._emit_metric("failure")
         return False
+
+    def _on_retry_sleep(self, retry_state: tenacity.RetryCallState) -> None:
+        self._emit_metric("retry")
+        tenacity.before_sleep_log(self._logger, logging.WARNING)(retry_state)
+
 
     def _reset_pending_state(self, pending: PendingCommand) -> None:
         pending.completion.clear()

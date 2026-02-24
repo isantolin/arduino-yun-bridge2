@@ -16,7 +16,6 @@ from mcubridge.services.file import FileComponent, _do_write_file
 from mcubridge.services.handshake import (
     SerialHandshakeManager,
     SerialTimingWindow,
-    _log_handshake_retry,
     _retry_if_false,
     derive_serial_timing,
 )
@@ -369,14 +368,6 @@ def test_handshake_timing_seconds():
     assert tw.response_timeout_seconds == 0.5
 
 
-def test_handshake_retry_helpers():
-    assert _retry_if_false(False) is True
-    assert _retry_if_false(True) is False
-
-    mock_rs = MagicMock()
-    mock_rs.attempt_number = 1
-    mock_rs.next_action.sleep = 0.5
-    _log_handshake_retry(mock_rs)
 
 
 @pytest.mark.asyncio

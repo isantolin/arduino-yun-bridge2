@@ -23,13 +23,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger("mcubridge")
 
 
-def _log_retry_attempt(retry_state: tenacity.RetryCallState) -> None:
-    if retry_state.attempt_number > 1:
-        logger.info(
-            "Reconnecting MQTT (attempt %d, next wait %.2fs)...",
-            retry_state.attempt_number,
-            retry_state.next_action.sleep if retry_state.next_action else 0,
-        )
 
 
 class MqttTransport:
@@ -91,7 +84,7 @@ class MqttTransport:
             retry=tenacity.retry_if_exception_type(
                 (aiomqtt.MqttError, OSError, asyncio.TimeoutError)
             ),
-            before_sleep=_log_retry_attempt,
+            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
 

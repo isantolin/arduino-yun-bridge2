@@ -25,16 +25,22 @@ from typing import (
 
 import construct as construct_raw
 import msgspec
+from construct import ConstructError
 
 from . import protocol
 
+def BinStruct(*args: Any, **kwargs: Any) -> construct_raw.Construct:
+    """Helper to create and compile a construct Struct."""
+    return (construct_raw.Struct(*args, **kwargs))
+
+
 if TYPE_CHECKING:
     construct: Any = construct_raw
-    BinStruct = construct.Struct
+
     Construct = construct_raw.Construct[Any]
 else:
     construct = construct_raw
-    BinStruct = construct.Struct
+
     Construct = construct_raw.Construct
 
 # --- Basic Binary Types (Restored from protocol.py) ---
@@ -93,16 +99,15 @@ class BaseStruct(msgspec.Struct, frozen=True):
     # Subclasses must define this schema
     _SCHEMA: ClassVar[Construct]
 
+
     @classmethod
     def decode(cls: Type[T], data: bytes | bytearray | memoryview) -> T:
-        """Decode binary data into a typed Msgspec struct."""
         if not data:
             raise ValueError("Empty payload")
-
-        # 1. Construct parses the binary data (validating lengths/structure)
-        container: Any = cls._SCHEMA.parse(bytes(data))
-
-        # 2. Msgspec creates the typed object (efficiently)
+        try:
+            container: Any = cls._SCHEMA.parse(bytes(data))
+        except Exception as e:
+            raise ConstructError(str(e)) from e
         return msgspec.convert(container, cls)
 
     def encode(self) -> bytes:

@@ -1,4 +1,5 @@
 #include "Bridge.h"
+#include "etl/flat_map.h"
 #include <string.h>
 #include "protocol/rpc_protocol.h"
 

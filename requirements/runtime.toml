@@ -92,3 +92,9 @@ name = "typer"
 openwrt = "python3-typer"
 pip = "typer[all]==0.15.1"
 rationale = "Modern CLI generation library for tools and examples"
+
+[[dependency]]
+name = "rich"
+openwrt = "python3-rich"
+pip = "rich==13.9.4"
+rationale = "Beautiful terminal formatting for tools and logs"

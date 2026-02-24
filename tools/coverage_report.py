@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Optional
 
 import msgspec
+from rich.console import Console as RichConsole
+from rich.table import Table
 import typer
 
 app = typer.Typer(help="Aggregate Python and Arduino coverage results into a single summary.")
@@ -172,6 +174,28 @@ def _build_combined_metrics(
     )
 
 
+def _render_rich_table(rows: list[CoverageMetrics]) -> None:
+    console = RichConsole()
+    table = Table(title="MCU Bridge Coverage Summary")
+
+    table.add_column("Suite", style="cyan")
+    table.add_column("Lines (hit/total)", justify="right")
+    table.add_column("Line %", justify="right")
+    table.add_column("Branches (hit/total)", justify="right")
+    table.add_column("Branch %", justify="right")
+
+    for row in rows:
+        line_color = "green" if (row.line_percent or 0) >= 90 else "yellow" if (row.line_percent or 0) >= 70 else "red"
+        table.add_row(
+            row.suite,
+            row.lines_display,
+            f"[{line_color}]{CoverageMetrics.format_percent(row.line_percent)}[/{line_color}]",
+            row.branches_display,
+            CoverageMetrics.format_percent(row.branch_percent)
+        )
+
+    console.print(table)
+
 def _render_markdown(rows: list[CoverageMetrics]) -> str:
     header = (
         "| Suite | Lines (hit/total) | Line % | " "Branches (hit/total) | Branch % |"
@@ -251,6 +275,7 @@ def main(
         raise typer.Exit(code=1)
 
     table = _render_markdown(rows)
+    _render_rich_table(rows)
     sys.stdout.write(table + "\n")
 
     if output_markdown:

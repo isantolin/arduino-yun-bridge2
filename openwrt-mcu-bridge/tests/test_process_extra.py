@@ -17,6 +17,7 @@ async def test_process_handle_run_malformed() -> None:
     state = create_runtime_state(config)
     ctx = MagicMock()
     ctx.send_frame = AsyncMock()
+    ctx.publish = AsyncMock()
     pc = ProcessComponent(config, state, ctx)
     await pc.handle_run(b"")
     ctx.send_frame.assert_called()
@@ -29,6 +30,7 @@ async def test_process_handle_run_async_malformed() -> None:
     state = create_runtime_state(config)
     ctx = MagicMock()
     ctx.send_frame = AsyncMock()
+    ctx.publish = AsyncMock()
     pc = ProcessComponent(config, state, ctx)
     await pc.handle_run_async(b"")
     assert ctx.send_frame.call_args[0][0] == Status.MALFORMED.value

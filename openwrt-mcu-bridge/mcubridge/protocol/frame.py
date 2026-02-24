@@ -25,7 +25,6 @@ before transmission.
 from __future__ import annotations
 
 import msgspec
-from construct import ConstructError
 from mcubridge.protocol.structures import FRAME_STRUCT
 
 from . import protocol
@@ -100,12 +99,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
             )
 
         try:
-            # [SIL-2] Integrated Parsing
-            # - Checksum field automatically validates CRC32.
-            # - Switch field automatically selects payload schema (validating structure).
-            # - RawCopy fields capture the raw bytes we need for legacy compatibility.
             container = FRAME_STRUCT.parse(data_bytes)
-        except ConstructError as e:
+        except Exception as e:
             # Construct error messages are detailed; wrap them for clarity
             raise ValueError(f"Frame parsing failed: {e}") from e
 

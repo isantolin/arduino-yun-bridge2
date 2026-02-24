@@ -368,7 +368,9 @@ class BridgeClass : public bridge::router::ICommandHandler,
     uint16_t command_id;
     uint16_t payload_length;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
-  };
+  
+  etl::bitset<64> _pin_states;
+};
   // [SIL-2] Use queue adapter over deque for strict FIFO semantics
   etl::queue<PendingTxFrame, BRIDGE_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
 
@@ -463,11 +465,15 @@ class ConsoleClass : public Stream {
   // [SIL-2] Use ETL containers for safe buffer management
   etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
   etl::vector<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
+
+  etl::bitset<64> _pin_states;
 };
 extern ConsoleClass Console;
 
 #if BRIDGE_ENABLE_DATASTORE
 #include "etl/string.h"
+#include "etl/bitset.h"
+#include "etl/flat_map.h"
 class DataStoreClass {
   friend class BridgeClass;
   #if defined(BRIDGE_HOST_TEST)
@@ -490,7 +496,8 @@ class DataStoreClass {
 
   DataStoreGetHandler _datastore_get_handler;
 
-  // [SIL-2] Use queue adapter for strict FIFO semantics
+  // [OPTIMIZATION] Use flat_map for O(log n) key lookup
+  etl::flat_map<etl::string<16>, etl::string<16>, 8> _local_cache;
   etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
   etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
 };
@@ -543,6 +550,8 @@ class MailboxClass {
  private:
   MailboxHandler _mailbox_handler;
   MailboxAvailableHandler _mailbox_available_handler;
+
+  etl::bitset<64> _pin_states;
 };
 extern MailboxClass Mailbox;
 #endif
@@ -598,6 +607,8 @@ class FileSystemClass {
 
  private:
   FileSystemReadHandler _file_system_read_handler;
+
+  etl::bitset<64> _pin_states;
 };
 extern FileSystemClass FileSystem;
 #endif
@@ -640,6 +651,8 @@ class ProcessClass {
 
   // [SIL-2] Use circular buffer for safe PID tracking
   etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;
+
+  etl::bitset<64> _pin_states;
 };
 extern ProcessClass Process;
 #endif

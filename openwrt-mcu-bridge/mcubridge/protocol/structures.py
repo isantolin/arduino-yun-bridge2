@@ -29,11 +29,6 @@ from construct import ConstructError
 
 from . import protocol
 
-def BinStruct(*args: Any, **kwargs: Any) -> construct_raw.Construct:
-    """Helper to create and compile a construct Struct."""
-    return (construct_raw.Struct(*args, **kwargs))
-
-
 if TYPE_CHECKING:
     construct: Any = construct_raw
 
@@ -42,6 +37,10 @@ else:
     construct = construct_raw
 
     Construct = construct_raw.Construct
+
+def BinStruct(*args: Any, **kwargs: Any) -> Construct:
+    """Helper to create and compile a construct Struct."""
+    return construct.Struct(*args, **kwargs).compile()
 
 # --- Basic Binary Types (Restored from protocol.py) ---
 UINT8_STRUCT: Final = construct.Int8ub

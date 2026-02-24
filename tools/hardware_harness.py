@@ -9,7 +9,6 @@ import shlex
 import sys
 import textwrap
 import time
-import tomllib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -90,7 +89,7 @@ def load_manifest(path: Path) -> list[Target]:
                 {hint} and edit it with your device list.
                 """).strip())
 
-    data = tomllib.loads(path.read_text())
+    data = msgspec.toml.decode(path.read_text())
     defaults = data.get("defaults", {}) if isinstance(data, dict) else {}
 
     targets_raw = data.get("targets") if isinstance(data, dict) else None

@@ -11,15 +11,18 @@ Copyright (C) 2025 Ignacio Santolin and contributors
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 import textwrap
-import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, TextIO
+from typing import Any, Iterator, TextIO, Optional
+
+import msgspec
+import typer
+
+app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
 
 # =============================================================================
 # 1. Utility: Code Writer (The "View" Helper)
@@ -146,7 +149,7 @@ class ProtocolSpec:
     @classmethod
     def load(cls, path: Path) -> ProtocolSpec:
         with path.open("rb") as f:
-            data = tomllib.load(f)
+            data = msgspec.toml.decode(f.read())
 
         # Parse Commands
         cmds = [CommandDef(**c) for c in data.get("commands", [])]
@@ -991,34 +994,33 @@ class PythonGenerator:
 # =============================================================================
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate protocol bindings")
-    parser.add_argument("--spec", type=Path, required=True)
-    parser.add_argument("--cpp", type=Path)
-    parser.add_argument("--cpp-structs", type=Path)
-    parser.add_argument("--py", type=Path)
-    args = parser.parse_args()
+@app.command()
+def main(
+    spec_path: Path = typer.Option(..., "--spec", help="Protocol specification file"),
+    cpp: Optional[Path] = typer.Option(None, "--cpp", help="C++ header output"),
+    cpp_structs: Optional[Path] = typer.Option(None, "--cpp-structs", help="C++ structs output"),
+    py: Optional[Path] = typer.Option(None, "--py", help="Python output"),
+) -> None:
+    spec = ProtocolSpec.load(spec_path)
 
-    spec = ProtocolSpec.load(args.spec)
-
-    if args.cpp:
-        args.cpp.parent.mkdir(parents=True, exist_ok=True)
-        with args.cpp.open("w", encoding="utf-8") as f:
+    if cpp:
+        cpp.parent.mkdir(parents=True, exist_ok=True)
+        with cpp.open("w", encoding="utf-8") as f:
             CppGenerator().generate_header(spec, f)
-        sys.stdout.write(f"Generated {args.cpp}\n")
+        sys.stdout.write(f"Generated {cpp}\n")
 
-    if args.cpp_structs:
-        args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        with args.cpp_structs.open("w", encoding="utf-8") as f:
+    if cpp_structs:
+        cpp_structs.parent.mkdir(parents=True, exist_ok=True)
+        with cpp_structs.open("w", encoding="utf-8") as f:
             CppGenerator().generate_structs(spec, f)
-        sys.stdout.write(f"Generated {args.cpp_structs}\n")
+        sys.stdout.write(f"Generated {cpp_structs}\n")
 
-    if args.py:
-        args.py.parent.mkdir(parents=True, exist_ok=True)
-        with args.py.open("w", encoding="utf-8") as f:
+    if py:
+        py.parent.mkdir(parents=True, exist_ok=True)
+        with py.open("w", encoding="utf-8") as f:
             PythonGenerator().generate(spec, f)
-        sys.stdout.write(f"Generated {args.py}\n")
+        sys.stdout.write(f"Generated {py}\n")
 
 
 if __name__ == "__main__":
-    main()
+    app()

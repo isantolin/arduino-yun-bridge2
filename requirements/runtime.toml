@@ -86,3 +86,9 @@ name = "transitions"
 openwrt = "python3-transitions"
 pip = "transitions==0.9.3"
 rationale = "FSM implementation for handshake lifecycle"
+
+[[dependency]]
+name = "typer"
+openwrt = "python3-typer"
+pip = "typer[all]==0.15.1"
+rationale = "Modern CLI generation library for tools and examples"

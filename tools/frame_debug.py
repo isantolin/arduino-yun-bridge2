@@ -11,13 +11,14 @@ shipped on the OpenWrt target images.
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Optional
 
 import serial  # type: ignore
+import typer
 from cobs import cobs
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
@@ -178,126 +179,97 @@ def _print_response(frame: Frame) -> None:
     sys.stdout.write(f"payload={payload_preview}\n")
 
 
-def _positive_float(value: str) -> float:
-    candidate = float(value)
-    if candidate <= 0:
-        raise argparse.ArgumentTypeError("value must be positive")
-    return candidate
+app = typer.Typer(
+    add_completion=False,
+    help=(
+        "Inspect and optionally send MCU Bridge RPC frames. "
+        "Stop the mcubridge daemon before using --port."
+    ),
+)
 
 
-def _non_negative_int(value: str) -> int:
-    candidate = int(value)
-    if candidate < 0:
-        raise argparse.ArgumentTypeError("value must be >= 0")
-    return candidate
-
-
-def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Inspect and optionally send MCU Bridge RPC frames. "
-            "Stop the mcubridge daemon before using --port."
-        )
-    )
-    parser.add_argument(
+@app.command()
+def main(
+    command: str = typer.Option(
+        "CMD_GET_FREE_MEMORY",
         "--command",
         "-c",
-        default="CMD_GET_FREE_MEMORY",
         help=(
             "Command to build. Accepts enum name (e.g. CMD_LINK_RESET) "
             "or hex literal such as 0x03."
         ),
-    )
-    parser.add_argument(
+    ),
+    payload_hex: Optional[str] = typer.Option(
+        None,
         "--payload",
         "-p",
         help="Optional payload as hex string (spaces allowed).",
-    )
-    parser.add_argument(
+    ),
+    port: Optional[str] = typer.Option(
+        None,
         "--port",
         help="Serial device to write frames to (omit to skip I/O).",
-    )
-    parser.add_argument(
+    ),
+    baud: int = typer.Option(
+        DEFAULT_BAUDRATE,
         "--baud",
-        type=int,
-        default=DEFAULT_BAUDRATE,
         help=f"Serial baud rate (default: {DEFAULT_BAUDRATE}).",
-    )
-    parser.add_argument(
+    ),
+    interval: float = typer.Option(
+        5.0,
         "--interval",
-        type=_positive_float,
-        default=5.0,
+        min=0.1,
         help="Seconds to wait between frames when count != 1 (default: 5).",
-    )
-    parser.add_argument(
+    ),
+    count: int = typer.Option(
+        1,
         "--count",
-        type=_non_negative_int,
-        default=1,
+        min=0,
         help=(
             "Number of frames to send. 0 means run indefinitely without "
             "delay between iterations."
         ),
-    )
-    parser.add_argument(
+    ),
+    read_response: bool = typer.Option(
+        False,
         "--read-response",
-        action="store_true",
         help="After sending a frame, wait for one MCU response and decode it.",
-    )
-    parser.add_argument(
+    ),
+    read_timeout: float = typer.Option(
+        2.0,
         "--read-timeout",
-        type=_positive_float,
-        default=2.0,
+        min=0.1,
         help=(
             "Seconds to wait for a response when --read-response is set "
             "(default: 2)."
         ),
-    )
-    return parser
-
-
-def _iter_counts(count: int) -> Iterable[int]:
-    if count == 0:
-        iteration = 0
-        while True:
-            yield iteration
-            iteration += 1
-    else:
-        yield from range(count)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = _build_arg_parser()
-    args = parser.parse_args(argv)
-
+    ),
+) -> None:
     try:
-        command_id = _resolve_command(args.command)
-        payload = _parse_payload(args.payload)
+        command_id = _resolve_command(command)
+        payload = _parse_payload(payload_hex)
     except ValueError as exc:
-        parser.error(str(exc))
-        return 2
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=2)
 
     serial_device: serial.Serial | None = None
-    if args.port:
+    if port:
         serial_device = _open_serial_device(
-            args.port,
-            args.baud,
-            args.read_timeout,
+            port,
+            baud,
+            read_timeout,
         )
-        sys.stdout.write(
-            f"[FrameDebug] Serial connected to {args.port} @ {args.baud} baud\n"
-        )
+        sys.stdout.write(f"[FrameDebug] Serial connected to {port} @ {baud} baud\n")
 
     try:
-        for iteration in _iter_counts(args.count):
+        for iteration in _iter_counts(count):
             snapshot = build_snapshot(command_id, payload)
             sys.stdout.write(snapshot.render() + "\n")
             if serial_device:
                 written = _write_frame(serial_device, snapshot.encoded_packet)
                 sys.stdout.write(f"[FrameDebug] wrote {written} bytes to serial port\n")
-                if args.read_response:
-                    encoded_response = _read_frame(
-                        serial_device, timeout=args.read_timeout
-                    )
+                if read_response:
+                    encoded_response = _read_frame(serial_device, timeout=read_timeout)
                     if not encoded_response:
                         sys.stdout.write("[FrameDebug] No response before timeout\n")
                     else:
@@ -305,18 +277,16 @@ def main(argv: list[str] | None = None) -> int:
                             response_frame = _decode_frame(encoded_response)
                         except Exception as exc:
                             sys.stderr.write(
-                                "[FrameDebug] Failed to decode MCU response: "
-                                f"{exc}\n"
+                                f"[FrameDebug] Failed to decode MCU response: {exc}\n"
                             )
                         else:
                             _print_response(response_frame)
-            if args.count == 0 or iteration + 1 < args.count:
-                time.sleep(args.interval)
+            if count == 0 or iteration + 1 < count:
+                time.sleep(interval)
     finally:
         if serial_device:
             serial_device.close()
-    return 0
 
 
-if __name__ == "__main__":  # pragma: no cover - CLI entry point
-    raise SystemExit(main())
+if __name__ == "__main__":
+    app()

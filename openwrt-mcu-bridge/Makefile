@@ -62,7 +62,8 @@ define Package/$(PKG_NAME)
 		+python3-uvloop \
 		+python3-cryptography \
 		+python3-construct \
-		+python3-transitions
+		+python3-transitions \
+		+python3-typer
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

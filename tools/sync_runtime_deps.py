@@ -3,11 +3,15 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
-import tomllib
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Optional
+
+import msgspec
+import typer
+
+app = typer.Typer(help="Generate derived dependency files from the runtime manifest.")
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -29,7 +33,7 @@ def load_manifest() -> list[dict]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
 
-    data = tomllib.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    data = msgspec.toml.decode(MANIFEST_PATH.read_text(encoding="utf-8"))
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
@@ -121,41 +125,32 @@ def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
     return True
 
 
-def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Exit with status 1 if running would change any files",
-    )
-    parser.add_argument(
-        "--print-openwrt",
-        action="store_true",
-        help="Print OpenWrt package names and exit",
-    )
-    parser.add_argument(
-        "--print-pip",
-        action="store_true",
-        help="Print pip requirement specifiers and exit",
-    )
-    return parser.parse_args(argv)
-
-
-def main(argv: Sequence[str]) -> int:
-    args = parse_args(argv)
+@app.command()
+def main(
+    check: bool = typer.Option(
+        False, "--check", help="Exit with status 1 if running would change any files"
+    ),
+    print_openwrt: bool = typer.Option(
+        False, "--print-openwrt", help="Print OpenWrt package names and exit"
+    ),
+    print_pip: bool = typer.Option(
+        False, "--print-pip", help="Print pip requirement specifiers and exit"
+    ),
+) -> None:
     deps = load_manifest()
-    if args.print_openwrt:
+    if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
-    if args.print_pip:
+        raise typer.Exit()
+    if print_pip:
         sys.stdout.write("\n".join(collect_pip_specs(deps)) + "\n")
-    if args.print_openwrt or args.print_pip:
-        return 0
-    updated_requirements = write_requirements(deps, dry_run=args.check)
-    updated_makefile = update_makefile(deps, dry_run=args.check)
-    if args.check and (updated_requirements or updated_makefile):
-        return 1
-    return 0
+        raise typer.Exit()
+
+    updated_requirements = write_requirements(deps, dry_run=check)
+    updated_makefile = update_makefile(deps, dry_run=check)
+
+    if check and (updated_requirements or updated_makefile):
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    app()

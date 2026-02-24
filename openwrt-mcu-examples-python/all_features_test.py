@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-import argparse
 import asyncio
 import logging
 import ssl
+from typing import Optional
 
+import typer
 import uvloop
 
 # Add parent directory to Python path
 from mcubridge_client import Bridge, dump_client_env
+
+app = typer.Typer(help="Test all bridge features.")
 
 # Configure basic logging
 logging.basicConfig(
@@ -17,31 +20,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description="Test all bridge features.")
-    parser.add_argument("--host", default=None, help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
-    parser.add_argument("--user", default=None, help="MQTT Username")
-    parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument(
-        "--tls-insecure",
-        action="store_true",
-        help="Disable TLS certificate verification",
-    )
-    args = parser.parse_args()
-
+async def run_test(
+    host: Optional[str],
+    port: Optional[int],
+    user: Optional[str],
+    password: Optional[str],
+    tls_insecure: bool,
+) -> None:
     dump_client_env(logger)
 
     bridge_args: dict[str, object] = {}
-    if args.host:
-        bridge_args["host"] = args.host
-    if args.port:
-        bridge_args["port"] = args.port
-    if args.user:
-        bridge_args["username"] = args.user
-    if args.password:
-        bridge_args["password"] = args.password
-    if args.tls_insecure:
+    if host:
+        bridge_args["host"] = host
+    if port:
+        bridge_args["port"] = port
+    if user:
+        bridge_args["username"] = user
+    if password:
+        bridge_args["password"] = password
+    if tls_insecure:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -106,12 +103,23 @@ async def main() -> None:
         await bridge.disconnect()  # Explicitly disconnect
 
 
-if __name__ == "__main__":
+@app.command()
+def main(
+    host: Optional[str] = typer.Option(None, help="MQTT Broker Host"),
+    port: Optional[int] = typer.Option(None, help="MQTT Broker Port"),
+    user: Optional[str] = typer.Option(None, help="MQTT Username"),
+    password: Optional[str] = typer.Option(None, help="MQTT Password"),
+    tls_insecure: bool = typer.Option(False, help="Disable TLS certificate verification"),
+) -> None:
     try:
-        # [10/10 Efficiency] Use uvloop for maximum performance
-        uvloop.install()
-        asyncio.run(main())
+        asyncio.run(run_test(host, port, user, password, tls_insecure))
     except KeyboardInterrupt:
         logger.info("Exiting due to KeyboardInterrupt.")
     except (OSError, RuntimeError, ValueError) as exc:
         logger.critical("Fatal error in main execution: %s", exc)
+
+
+if __name__ == "__main__":
+    # [10/10 Efficiency] Use uvloop for maximum performance
+    uvloop.install()
+    app()

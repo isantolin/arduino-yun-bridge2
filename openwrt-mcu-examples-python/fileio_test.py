@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Example: Test file I/O using the async McuBridge client."""
 
-import argparse
 import asyncio
 import logging
 import ssl
 import sys
+from typing import Optional
 
+import typer
 from mcubridge_client import Bridge, dump_client_env
+
+app = typer.Typer(help="Example: Test file I/O using the async McuBridge client.")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,41 +18,33 @@ logging.basicConfig(
 )
 
 
-async def main() -> None:
-    """Run main test logic."""
-    parser = argparse.ArgumentParser(description="File I/O feature test.")
-    parser.add_argument("--host", default=None, help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
-    parser.add_argument("--user", default=None, help="MQTT Username")
-    parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument(
-        "--tls-insecure",
-        action="store_true",
-        help="Disable TLS certificate verification",
-    )
-    args = parser.parse_args()
-
+async def run_test(
+    host: Optional[str],
+    port: Optional[int],
+    user: Optional[str],
+    password: Optional[str],
+    tls_insecure: bool,
+) -> None:
     # Validate essential arguments if not running on OpenWrt with UCI
-    if not args.host or not args.user or not args.password:
+    if not host or not user or not password:
         from mcubridge_client.env import read_uci_general
 
         if not read_uci_general():
             sys.stderr.write("Error: Missing required connection parameters.\n")
-            parser.print_help()
-            return
+            raise typer.Exit(code=1)
 
     dump_client_env(logging.getLogger(__name__))
 
     bridge_args: dict[str, object] = {}
-    if args.host:
-        bridge_args["host"] = args.host
-    if args.port:
-        bridge_args["port"] = args.port
-    if args.user:
-        bridge_args["username"] = args.user
-    if args.password:
-        bridge_args["password"] = args.password
-    if args.tls_insecure:
+    if host:
+        bridge_args["host"] = host
+    if port:
+        bridge_args["port"] = port
+    if user:
+        bridge_args["username"] = user
+    if password:
+        bridge_args["password"] = password
+    if tls_insecure:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -88,5 +83,16 @@ async def main() -> None:
     logging.info("Done.")
 
 
+@app.command()
+def main(
+    host: Optional[str] = typer.Option(None, help="MQTT Broker Host"),
+    port: Optional[int] = typer.Option(None, help="MQTT Broker Port"),
+    user: Optional[str] = typer.Option(None, help="MQTT Username"),
+    password: Optional[str] = typer.Option(None, help="MQTT Password"),
+    tls_insecure: bool = typer.Option(False, help="Disable TLS certificate verification"),
+) -> None:
+    asyncio.run(run_test(host, port, user, password, tls_insecure))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    app()

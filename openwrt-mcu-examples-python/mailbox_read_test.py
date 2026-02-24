@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Example that listens for mailbox messages pushed from the MCU daemon."""
 
-import argparse
 import asyncio
 import logging
 import ssl
+from typing import Optional
 
+import typer
 from mcubridge_client import Bridge, dump_client_env
+
+app = typer.Typer(help="Example that listens for mailbox messages pushed from the MCU daemon.")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,31 +18,25 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description="Mailbox read test.")
-    parser.add_argument("--host", default=None, help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
-    parser.add_argument("--user", default=None, help="MQTT Username")
-    parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument(
-        "--tls-insecure",
-        action="store_true",
-        help="Disable TLS certificate verification",
-    )
-    args = parser.parse_args()
-
+async def run_test(
+    host: Optional[str],
+    port: Optional[int],
+    user: Optional[str],
+    password: Optional[str],
+    tls_insecure: bool,
+) -> None:
     dump_client_env(logger)
 
     bridge_args: dict[str, object] = {}
-    if args.host:
-        bridge_args["host"] = args.host
-    if args.port:
-        bridge_args["port"] = args.port
-    if args.user:
-        bridge_args["username"] = args.user
-    if args.password:
-        bridge_args["password"] = args.password
-    if args.tls_insecure:
+    if host:
+        bridge_args["host"] = host
+    if port:
+        bridge_args["port"] = port
+    if user:
+        bridge_args["username"] = user
+    if password:
+        bridge_args["password"] = password
+    if tls_insecure:
         ctx = ssl.create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = ssl.CERT_NONE
@@ -67,8 +64,19 @@ async def main() -> None:
         logger.info("Disconnected from MQTT broker.")
 
 
-if __name__ == "__main__":
+@app.command()
+def main(
+    host: Optional[str] = typer.Option(None, help="MQTT Broker Host"),
+    port: Optional[int] = typer.Option(None, help="MQTT Broker Port"),
+    user: Optional[str] = typer.Option(None, help="MQTT Username"),
+    password: Optional[str] = typer.Option(None, help="MQTT Password"),
+    tls_insecure: bool = typer.Option(False, help="Disable TLS certificate verification"),
+) -> None:
     try:
-        asyncio.run(main())
+        asyncio.run(run_test(host, port, user, password, tls_insecure))
     except KeyboardInterrupt:
         logger.info("Exiting due to KeyboardInterrupt.")
+
+
+if __name__ == "__main__":
+    app()

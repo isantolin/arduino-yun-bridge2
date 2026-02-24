@@ -14,7 +14,6 @@ writing tests.
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 import xml.etree.ElementTree
@@ -22,6 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import msgspec
+import typer
+
+app = typer.Typer(help="Report coverage gaps from existing coverage artifacts.")
 
 
 @dataclass(frozen=True)
@@ -183,41 +185,36 @@ def _print_table(title: str, rows: list[FileGaps], top: int) -> None:
         )
 
 
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--top", type=int, default=20)
-    parser.add_argument(
-        "--python-xml",
-        type=Path,
-        default=Path("coverage/python/coverage.xml"),
-    )
-    parser.add_argument(
-        "--arduino-json",
-        type=Path,
-        default=Path("coverage/arduino/coverage.json"),
-    )
-    args = parser.parse_args(argv)
-
-    if args.python_xml.exists():
-        python_gaps = load_python_gaps(args.python_xml)
+@app.command()
+def main(
+    top: int = typer.Option(20, help="Show top N files with most missing branches/lines."),
+    python_xml: Path = typer.Option(
+        Path("coverage/python/coverage.xml"),
+        help="Path to Python Cobertura coverage XML.",
+    ),
+    arduino_json: Path = typer.Option(
+        Path("coverage/arduino/coverage.json"),
+        help="Path to Arduino gcovr coverage JSON.",
+    ),
+) -> None:
+    if python_xml.exists():
+        python_gaps = load_python_gaps(python_xml)
         python_only = [
             g for g in python_gaps if g.branch_missing > 0 or g.line_missing > 0
         ]
-        _print_table("Python", python_only, args.top)
+        _print_table("Python", python_only, top)
     else:
-        sys.stderr.write(f"Python coverage XML not found: {args.python_xml}\n")
+        typer.secho(f"Python coverage XML not found: {python_xml}", fg=typer.colors.YELLOW, err=True)
 
-    if args.arduino_json.exists():
-        arduino_gaps = load_arduino_gaps(args.arduino_json)
+    if arduino_json.exists():
+        arduino_gaps = load_arduino_gaps(arduino_json)
         arduino_only = [
             g for g in arduino_gaps if g.branch_missing > 0 or g.line_missing > 0
         ]
-        _print_table("Arduino", arduino_only, args.top)
+        _print_table("Arduino", arduino_only, top)
     else:
-        sys.stderr.write(f"Arduino coverage JSON not found: {args.arduino_json}\n")
-
-    return 0
+        typer.secho(f"Arduino coverage JSON not found: {arduino_json}", fg=typer.colors.YELLOW, err=True)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    app()

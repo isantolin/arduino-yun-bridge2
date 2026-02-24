@@ -6,9 +6,9 @@ has an installed handler (or is explicitly treated as a pre-sync exception).
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 
+import msgspec
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.router.routers import MCUHandlerRegistry, MQTTRouter
 from mcubridge.services.dispatcher import _PRE_SYNC_ALLOWED_COMMANDS, BridgeDispatcher
@@ -127,7 +127,7 @@ class _StatusHandlerFactory:
 
 
 def _load_mcu_to_linux_command_values() -> set[int]:
-    raw = tomllib.loads(SPEC_PATH.read_text(encoding="utf-8"))
+    raw = msgspec.toml.decode(SPEC_PATH.read_text(encoding="utf-8"))
     values: set[int] = set()
     for entry in raw.get("commands", []):
         directions = entry.get("directions", [])
@@ -137,7 +137,7 @@ def _load_mcu_to_linux_command_values() -> set[int]:
 
 
 def _load_mcu_to_linux_ack_required_command_values() -> set[int]:
-    raw = tomllib.loads(SPEC_PATH.read_text(encoding="utf-8"))
+    raw = msgspec.toml.decode(SPEC_PATH.read_text(encoding="utf-8"))
     values: set[int] = set()
     for entry in raw.get("commands", []):
         directions = entry.get("directions", [])

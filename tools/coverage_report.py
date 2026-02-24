@@ -3,13 +3,16 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 import msgspec
+import typer
+
+app = typer.Typer(help="Aggregate Python and Arduino coverage results into a single summary.")
 
 
 @dataclass
@@ -212,32 +215,31 @@ def _append_optional(path: str | None, content: str) -> None:
             handle.write("\n")
 
 
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--python-xml",
-        default="coverage/python/coverage.xml",
-    )
-    parser.add_argument(
-        "--arduino-summary",
-        default="coverage/arduino/summary.json",
-    )
-    parser.add_argument(
-        "--output-markdown",
+@app.command()
+def main(
+    python_xml: Path = typer.Option(
+        Path("coverage/python/coverage.xml"),
+        help="Path to Python Cobertura coverage XML.",
+    ),
+    arduino_summary: Path = typer.Option(
+        Path("coverage/arduino/summary.json"),
+        help="Path to Arduino gcovr summary JSON.",
+    ),
+    output_markdown: Optional[Path] = typer.Option(
+        None,
         help="Write the table to the given markdown file.",
-    )
-    parser.add_argument(
-        "--output-json",
+    ),
+    output_json: Optional[Path] = typer.Option(
+        None,
         help="Write machine-readable metrics to this path.",
-    )
-    parser.add_argument(
-        "--github-step-summary",
+    ),
+    github_step_summary: Optional[Path] = typer.Option(
+        None,
         help="Append the table to GitHub step summary output.",
-    )
-    args = parser.parse_args(argv)
-
-    python_metrics = _read_python_metrics(Path(args.python_xml))
-    arduino_metrics = _read_arduino_metrics(Path(args.arduino_summary))
+    ),
+) -> None:
+    python_metrics = _read_python_metrics(python_xml)
+    arduino_metrics = _read_arduino_metrics(arduino_summary)
 
     rows = [row for row in [python_metrics, arduino_metrics] if row is not None]
     combined = _build_combined_metrics(rows)
@@ -245,16 +247,18 @@ def main(argv: list[str]) -> int:
         rows.append(combined)
 
     if not rows:
-        sys.stderr.write("[coverage-report] No coverage artifacts were found.\n")
-        return 1
+        typer.secho("[coverage-report] No coverage artifacts were found.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
 
     table = _render_markdown(rows)
     sys.stdout.write(table + "\n")
 
-    _write_optional(args.output_markdown, table + "\n")
-    _append_optional(args.github_step_summary, table + "\n")
+    if output_markdown:
+        _write_optional(str(output_markdown), table + "\n")
+    if github_step_summary:
+        _append_optional(str(github_step_summary), table + "\n")
 
-    if args.output_json:
+    if output_json:
         payload = {
             row.suite.lower(): {
                 "lines_total": row.lines_total,
@@ -266,13 +270,11 @@ def main(argv: list[str]) -> int:
             }
             for row in rows
         }
-        Path(args.output_json).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.output_json).write_bytes(
+        output_json.parent.mkdir(parents=True, exist_ok=True)
+        output_json.write_bytes(
             msgspec.json.format(msgspec.json.encode(payload), indent=2),
         )
 
-    return 0
-
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    app()

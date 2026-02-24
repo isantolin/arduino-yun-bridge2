@@ -18,6 +18,9 @@ import textwrap
 import threading
 import time
 from pathlib import Path
+from typing import Optional, List
+
+import typer
 
 try:
     import paho.mqtt.client as mqtt
@@ -29,6 +32,8 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("emulation-runner")
+
+app = typer.Typer(help="Hardware Emulation Runner.")
 
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
 SOCAT_PORT1 = "/tmp/ttyBRIDGE1"
@@ -414,39 +419,33 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
     return len(failures) == 0
 
 
-def main():
-    """Main entrypoint for emulation test."""
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--firmware",
-        default="bridge_emulator",
-        help="Name of the emulator binary to run",
-    )
-    parser.add_argument(
-        "--run-scripts", nargs="+", help="List of python scripts to run after handshake"
-    )
-    args = parser.parse_args()
-
-    logger.info(f"Starting Emulation Runner ({args.firmware})...")
+@app.command()
+def main(
+    firmware: str = typer.Option(
+        "bridge_emulator", help="Name of the emulator binary to run"
+    ),
+    run_scripts: Optional[List[str]] = typer.Option(
+        None, "--run-scripts", help="List of python scripts to run after handshake"
+    ),
+) -> None:
+    logger.info(f"Starting Emulation Runner ({firmware})...")
 
     for tool in ["socat"]:
         if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
             logger.error(f"Required tool '{tool}' not found.")
-            sys.exit(1)
+            raise typer.Exit(code=1)
 
     repo_root = Path(__file__).resolve().parent.parent
     package_root = repo_root / "openwrt-mcu-bridge"
     sys.path.insert(0, str(package_root))
     from mcubridge.protocol import protocol
 
-    firmware_path = repo_root / f"openwrt-library-arduino/tests/{args.firmware}"
+    firmware_path = repo_root / f"openwrt-library-arduino/tests/{firmware}"
     if not firmware_path.exists():
         logger.error(
             f"Emulator binary not found at {firmware_path}. Please compile it first."
         )
-        sys.exit(1)
+        raise typer.Exit(code=1)
 
     socat_proc, socat_monitor = start_socat()
 
@@ -516,10 +515,10 @@ def main():
                 )
                 success = True
 
-                if args.run_scripts:
+                if run_scripts:
                     logger.info("Executing client scripts...")
                     if not run_client_scripts(
-                        args.run_scripts, MQTT_HOST, MQTT_PORT, uci_stub_dir.name
+                        run_scripts, MQTT_HOST, MQTT_PORT, uci_stub_dir.name
                     ):
                         success = False
                         logger.error("One or more client scripts failed.")
@@ -531,14 +530,14 @@ def main():
 
         if not success:
             logger.error("Emulation FAILED: Timeout waiting for synchronization.")
-            sys.exit(1)
+            raise typer.Exit(code=1)
 
     except Exception as e:
         logger.error(f"Error: {e}")
         import traceback
 
         traceback.print_exc()
-        sys.exit(1)
+        raise typer.Exit(code=1)
     finally:
         stop_bridge.set()
         if "bridge_thread" in locals() and bridge_thread:
@@ -558,8 +557,6 @@ def main():
         if "uci_stub_dir" in locals() and uci_stub_dir:
             uci_stub_dir.cleanup()
 
-    return 0
-
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()

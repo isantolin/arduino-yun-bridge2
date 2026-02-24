@@ -5,10 +5,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import re
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+import msgspec
 from mcubridge.protocol import protocol, structures
 from mcubridge.services.handshake import SerialHandshakeManager
 
@@ -32,7 +32,7 @@ class _CommandSpec:
 def _load_spec() -> (
     tuple[dict[str, int], list[_StatusSpec], list[_CommandSpec], dict[str, object]]
 ):
-    raw = tomllib.loads(SPEC_PATH.read_text(encoding="utf-8"))
+    raw = msgspec.toml.decode(SPEC_PATH.read_text(encoding="utf-8"))
     constants = {
         "PROTOCOL_VERSION": int(raw["constants"]["protocol_version"]),
         "MAX_PAYLOAD_SIZE": int(raw["constants"]["max_payload_size"]),

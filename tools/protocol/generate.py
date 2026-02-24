@@ -528,41 +528,41 @@ class CppGenerator:
             w.write(code)
         w.write()
 
+
     def _write_static_validator(self, w: CodeWriter, spec: ProtocolSpec) -> None:
         with w.block("namespace Payload {"):
             w.write("""
 template <typename T>
-inline etl::optional<T> parse(const rpc::Frame& frame) {
+inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
     if (frame.header.payload_length < T::SIZE) {
-        return etl::nullopt;
+        return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
     }
-    return T::parse(frame.payload.data());
+    return etl::expected<T, rpc::FrameError>(T::parse(frame.payload.data()));
 }
-            """)
+""")
 
             # Manual specializations for variable length payloads
-            # Each entry: (type_name, list of body lines)
             manual_impls: list[tuple[str, list[str]]] = [
                 (
                     "payload::ConsoleWrite",
-                    ["return payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length);"],
+                    ["return etl::expected<payload::ConsoleWrite, rpc::FrameError>(payload::ConsoleWrite::parse(frame.payload.data(), frame.header.payload_length));"],
                 ),
                 (
                     "payload::ProcessRun",
-                    ["return payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length);"],
+                    ["return etl::expected<payload::ProcessRun, rpc::FrameError>(payload::ProcessRun::parse(frame.payload.data(), frame.header.payload_length));"],
                 ),
                 (
                     "payload::ProcessRunAsync",
-                    ["return payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length);"],
+                    ["return etl::expected<payload::ProcessRunAsync, rpc::FrameError>(payload::ProcessRunAsync::parse(frame.payload.data(), frame.header.payload_length));"],
                 ),
                 (
                     "payload::DatastoreGet",
                     [
                         "if (frame.header.payload_length < 1 || "
                         "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::nullopt;",
+                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "}",
-                        "return payload::DatastoreGet::parse(frame.payload.data());",
+                        "return etl::expected<payload::DatastoreGet, rpc::FrameError>(payload::DatastoreGet::parse(frame.payload.data()));",
                     ],
                 ),
                 (
@@ -570,49 +570,49 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
                     [
                         "if (frame.header.payload_length < 1 || "
                         "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::nullopt;",
+                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "}",
-                        "return payload::DatastoreGetResponse::parse(frame.payload.data());",
+                        "return etl::expected<payload::DatastoreGetResponse, rpc::FrameError>(payload::DatastoreGetResponse::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::DatastorePut",
                     [
-                        "if (frame.header.payload_length < 2) return etl::nullopt;",
+                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint8_t k = frame.payload[0];",
-                        "if (frame.header.payload_length < (size_t)(k + 2)) return etl::nullopt;",
+                        "if (frame.header.payload_length < (size_t)(k + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint8_t v = frame.payload[k + 1];",
-                        "if (frame.header.payload_length < (size_t)(k + v + 2)) return etl::nullopt;",
-                        "return payload::DatastorePut::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(k + v + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::DatastorePut, rpc::FrameError>(payload::DatastorePut::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::MailboxPush",
                     [
-                        "if (frame.header.payload_length < 2) return etl::nullopt;",
+                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt;",
-                        "return payload::MailboxPush::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::MailboxPush, rpc::FrameError>(payload::MailboxPush::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::MailboxReadResponse",
                     [
-                        "if (frame.header.payload_length < 2) return etl::nullopt;",
+                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt;",
-                        "return payload::MailboxReadResponse::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::MailboxReadResponse, rpc::FrameError>(payload::MailboxReadResponse::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::FileWrite",
                     [
-                        "if (frame.header.payload_length < 3) return etl::nullopt;",
+                        "if (frame.header.payload_length < 3) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint8_t p = frame.payload[0];",
-                        "if (frame.header.payload_length < (size_t)(p + 3)) return etl::nullopt;",
+                        "if (frame.header.payload_length < (size_t)(p + 3)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t d = rpc::read_u16_be(frame.payload.data() + 1 + p);",
-                        "if (frame.header.payload_length < (size_t)(p + d + 3)) return etl::nullopt;",
-                        "return payload::FileWrite::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(p + d + 3)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::FileWrite, rpc::FrameError>(payload::FileWrite::parse(frame.payload.data()));",
                     ],
                 ),
                 (
@@ -620,18 +620,18 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
                     [
                         "if (frame.header.payload_length < 1 || "
                         "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::nullopt;",
+                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "}",
-                        "return payload::FileRead::parse(frame.payload.data());",
+                        "return etl::expected<payload::FileRead, rpc::FrameError>(payload::FileRead::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::FileReadResponse",
                     [
-                        "if (frame.header.payload_length < 2) return etl::nullopt;",
+                        "if (frame.header.payload_length < 2) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t l = rpc::read_u16_be(frame.payload.data());",
-                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::nullopt;",
-                        "return payload::FileReadResponse::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(l + 2)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::FileReadResponse, rpc::FrameError>(payload::FileReadResponse::parse(frame.payload.data()));",
                     ],
                 ),
                 (
@@ -639,41 +639,41 @@ inline etl::optional<T> parse(const rpc::Frame& frame) {
                     [
                         "if (frame.header.payload_length < 1 || "
                         "frame.header.payload_length < (size_t)(frame.payload[0] + 1)) {",
-                        "    return etl::nullopt;",
+                        "    return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "}",
-                        "return payload::FileRemove::parse(frame.payload.data());",
+                        "return etl::expected<payload::FileRemove, rpc::FrameError>(payload::FileRemove::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::ProcessRunResponse",
                     [
-                        "if (frame.header.payload_length < 6) return etl::nullopt;",
+                        "if (frame.header.payload_length < 6) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t o = rpc::read_u16_be(frame.payload.data() + 1);",
-                        "if (frame.header.payload_length < (size_t)(o + 5)) return etl::nullopt;",
+                        "if (frame.header.payload_length < (size_t)(o + 5)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t e = rpc::read_u16_be(frame.payload.data() + 3 + o);",
-                        "if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::nullopt;",
-                        "return payload::ProcessRunResponse::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::ProcessRunResponse, rpc::FrameError>(payload::ProcessRunResponse::parse(frame.payload.data()));",
                     ],
                 ),
                 (
                     "payload::ProcessPollResponse",
                     [
-                        "if (frame.header.payload_length < 6) return etl::nullopt;",
+                        "if (frame.header.payload_length < 6) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t o = rpc::read_u16_be(frame.payload.data() + 2);",
-                        "if (frame.header.payload_length < (size_t)(o + 6)) return etl::nullopt;",
+                        "if (frame.header.payload_length < (size_t)(o + 6)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
                         "uint16_t e = rpc::read_u16_be(frame.payload.data() + 4 + o);",
-                        "if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::nullopt;",
-                        "return payload::ProcessPollResponse::parse(frame.payload.data());",
+                        "if (frame.header.payload_length < (size_t)(o + e + 6)) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);",
+                        "return etl::expected<payload::ProcessPollResponse, rpc::FrameError>(payload::ProcessPollResponse::parse(frame.payload.data()));",
                     ],
                 ),
             ]
             for type_name, body_lines in manual_impls:
-                with w.block(
-                    f"template <>\ninline etl::optional<{type_name}> "
-                    f"parse<{type_name}>(const rpc::Frame& frame) {{"
-                ):
+                header = f"""template <>
+inline etl::expected<{type_name}, rpc::FrameError> parse<{type_name}>(const rpc::Frame& frame) {{"""
+                with w.block(header, end="}"):
                     for line in body_lines:
                         w.write(line)
+
 
 
 class PythonGenerator:

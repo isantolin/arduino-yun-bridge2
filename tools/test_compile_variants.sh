@@ -40,6 +40,8 @@ compile_variant() {
         "${SRC_DIR}/services/Bridge.cpp" \
         "${SRC_DIR}/services/Console.cpp" \
         "${SRC_DIR}/services/DataStore.cpp" \
+        "${SRC_DIR}/services/Mailbox.cpp" \
+        "${SRC_DIR}/services/FileSystem.cpp" \
         "${SRC_DIR}/services/Process.cpp" \
         "${TEST_DIR}/test_integrated.cpp" \
         -o "${out_bin}"

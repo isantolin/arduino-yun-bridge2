@@ -44,7 +44,13 @@
   // [Compatibility] Polyfill for boards missing SERIAL_PORT_USBVIRTUAL (e.g. Mega 2560)
   #ifndef SERIAL_PORT_USBVIRTUAL
     #define SERIAL_PORT_USBVIRTUAL Serial
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
 #else
   // Fallback for non-AVR architectures: use interrupts() / noInterrupts()
   // This is a simplified version of ATOMIC_BLOCK for portability.
@@ -60,6 +66,12 @@
   };
   #define BRIDGE_ATOMIC_BLOCK for (int _guard_active = 1; _guard_active; _guard_active = 0) \
                                for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 #include "config/bridge_config.h"
@@ -78,6 +90,7 @@
 #include "etl/optional.h"
 #include "etl/string_view.h"
 #include "etl/span.h"
+#include "etl/bitset.h"
 
 // [SIL-2] Lightweight FSM + Scheduler for deterministic state transitions
 #include "fsm/bridge_fsm.h"
@@ -91,6 +104,12 @@ static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;
 extern "C" char* __brkval;
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 /**
@@ -111,6 +130,12 @@ inline uint16_t getFreeMemory() {
   return static_cast<uint16_t>(free_bytes);
 #else
   return 0;
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 }
 
@@ -120,12 +145,30 @@ inline uint16_t getFreeMemory() {
 constexpr bool kBridgeEnableWatchdog = true;
 #else
 constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
 #ifndef BRIDGE_WATCHDOG_TIMEOUT
 #define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 // [SIL-2] Multi-platform watchdog support
@@ -133,27 +176,63 @@ constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
 #include <esp_task_wdt.h>
 #ifndef BRIDGE_WATCHDOG_TIMEOUT_MS
 #define BRIDGE_WATCHDOG_TIMEOUT_MS 2000
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 #if defined(ARDUINO_ARCH_ESP8266) && BRIDGE_ENABLE_WATCHDOG
 // ESP8266 uses yield() for watchdog - software WDT
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MAJOR
 constexpr uint8_t kDefaultFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
 #else
 constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 #ifdef BRIDGE_FIRMWARE_VERSION_MINOR
 constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
 #else
 constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 #ifndef BRIDGE_MAX_OBSERVERS
 #define BRIDGE_MAX_OBSERVERS 4
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 // --- Subsystem Enablement (RAM Optimization) ---
@@ -174,6 +253,12 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #else
   // Standard boards (Uno, Pro Mini)
   #define BRIDGE_DEFAULT_SERIAL_PORT Serial
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 using BridgePacketSerial = PacketSerial;
@@ -187,6 +272,12 @@ namespace test {
   class ProcessTestAccessor;
 }
 }
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
 
 // [SIL-2] Observer Event Types
@@ -217,19 +308,49 @@ class BridgeClass : public bridge::router::ICommandHandler,
                     public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
   #if BRIDGE_ENABLE_MAILBOX
   friend class MailboxClass;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
   #if BRIDGE_ENABLE_FILESYSTEM
   friend class FileSystemClass;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
   #if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::TestAccessor;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
  public:
   // Callbacks - [SIL-2] Using etl::delegate for safer, object-oriented callbacks
   using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
@@ -240,22 +361,46 @@ class BridgeClass : public bridge::router::ICommandHandler,
 
   #if BRIDGE_ENABLE_DATASTORE
   using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
 
   #if BRIDGE_ENABLE_MAILBOX
   using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
 
   #if BRIDGE_ENABLE_FILESYSTEM
   using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
 
   #if BRIDGE_ENABLE_PROCESS
   using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
   using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
-  #endif
+  #include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
+#endif
   
   explicit BridgeClass(HardwareSerial& serial);
   explicit BridgeClass(Stream& stream);
@@ -273,6 +418,12 @@ class BridgeClass : public bridge::router::ICommandHandler,
           BRIDGE_BAUDRATE
 #else
           rpc::RPC_DEFAULT_BAUDRATE
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+
 #endif
       ,
              etl::string_view secret = {}, size_t secret_len = 0);
@@ -369,7 +520,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
     uint16_t payload_length;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload;
   
-  etl::bitset<64> _pin_states;
 };
   // [SIL-2] Use queue adapter over deque for strict FIFO semantics
   etl::queue<PendingTxFrame, BRIDGE_MAX_PENDING_TX_FRAMES> _pending_tx_queue;
@@ -436,225 +586,26 @@ class BridgeClass : public bridge::router::ICommandHandler,
   void _flushPendingTxQueue();
   void _clearPendingTxQueue();
   void _clearAckState();
+
+  etl::bitset<64> _pin_states;
 };
 
 extern BridgeClass Bridge;
 
-class ConsoleClass : public Stream {
-  #if defined(BRIDGE_HOST_TEST)
-  friend class bridge::test::ConsoleTestAccessor;
-  #endif
- public:
-  ConsoleClass();
-  void begin();
-  
-  size_t write(uint8_t c) override;
-  size_t write(const uint8_t *buffer, size_t size) override;
-  
-  void _push(etl::span<const uint8_t> data);
-  
-  int available() override;
-  int read() override;
-  int peek() override;
-  void flush() override;
 
- private:
-  bool _begun;
-  bool _xoff_sent;
-  
-  // [SIL-2] Use ETL containers for safe buffer management
-  etl::circular_buffer<uint8_t, BRIDGE_CONSOLE_RX_BUFFER_SIZE> _rx_buffer;
-  etl::vector<uint8_t, BRIDGE_CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 
-  etl::bitset<64> _pin_states;
-};
-extern ConsoleClass Console;
 
-#if BRIDGE_ENABLE_DATASTORE
-#include "etl/string.h"
-#include "etl/bitset.h"
-#include "etl/flat_map.h"
-class DataStoreClass {
-  friend class BridgeClass;
-  #if defined(BRIDGE_HOST_TEST)
-  friend class bridge::test::DataStoreTestAccessor;
-  #endif
- public:
-  using DataStoreGetHandler = BridgeClass::DataStoreGetHandler;
 
-  DataStoreClass();
-  void reset();
-  void put(etl::string_view key, etl::string_view value);
-  void requestGet(etl::string_view key);
-  inline void onDataStoreGetResponse(DataStoreGetHandler handler) {
-    _datastore_get_handler = handler;
-  }
 
- private:
-  bool _trackPendingDatastoreKey(etl::string_view key);
-  const char* _popPendingDatastoreKey();
 
-  DataStoreGetHandler _datastore_get_handler;
 
-  // [OPTIMIZATION] Use flat_map for O(log n) key lookup
-  etl::flat_map<etl::string<16>, etl::string<16>, 8> _local_cache;
-  etl::queue<etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH>, BRIDGE_MAX_PENDING_DATASTORE> _pending_datastore_keys;
-  etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> _last_datastore_key;
-};
-extern DataStoreClass DataStore;
-#endif
 
-#if BRIDGE_ENABLE_MAILBOX
-class MailboxClass {
-  friend class BridgeClass;
- public:
-  using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-  using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
 
-  MailboxClass() {}
-  
-  // [SIL-2] Inlined for optimization (-Os)
-  inline void send(etl::string_view message) {
-    if (message.empty()) return;
-    send(reinterpret_cast<const uint8_t*>(message.data()), message.length());
-  }
 
-  inline void send(const uint8_t* data, size_t length) {
-    if (!data || length == 0) return;
-
-    // [SIL-2] Large Message Support
-    // We send data with a 2-byte length prefix as expected by rpc::payload::MailboxPush::parse
-    etl::array<uint8_t, 2> header;
-    rpc::write_u16_be(header.data(), static_cast<uint16_t>(length));
-
-    Bridge.sendChunkyFrame(rpc::CommandId::CMD_MAILBOX_PUSH, 
-                           header.data(), header.size(), 
-                           data, length);
-  }
-
-  inline void requestRead() {
-    (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
-  }
-
-  inline void requestAvailable() {
-    (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
-  }
-
-  inline void onMailboxMessage(MailboxHandler handler) {
-    _mailbox_handler = handler;
-  }
-  inline void onMailboxAvailableResponse(MailboxAvailableHandler handler) {
-    _mailbox_available_handler = handler;
-  }
-
- private:
-  MailboxHandler _mailbox_handler;
-  MailboxAvailableHandler _mailbox_available_handler;
-
-  etl::bitset<64> _pin_states;
-};
-extern MailboxClass Mailbox;
-#endif
-
-#if BRIDGE_ENABLE_FILESYSTEM
-class FileSystemClass {
-  friend class BridgeClass;
- public:
-  using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-
-  FileSystemClass() {}
-
-  inline void write(etl::string_view filePath, const uint8_t* data, size_t length) {
-    if (filePath.empty() || !data) return;
-    
-    if (filePath.length() > rpc::RPC_MAX_FILEPATH_LENGTH - 1) {
-      Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-      return;
-    }
-
-    // [SIL-2] FileWrite expects: [u8 path_len] [path...] [u16 data_len] [data...]
-    // Chunking header: [u8 path_len] [path...] [u16 data_len]
-    etl::vector<uint8_t, rpc::RPC_MAX_FILEPATH_LENGTH + 3> header;
-    rpc::PacketBuilder builder(header);
-    builder.add_pascal_string(filePath);
-    builder.add_u16(static_cast<uint16_t>(length));
-
-    Bridge.sendChunkyFrame(rpc::CommandId::CMD_FILE_WRITE, 
-                           header.data(), header.size(), 
-                           data, length);
-  }
-  
-  // [SIL-2] Inlined for optimization (-Os)
-  inline void remove(etl::string_view filePath) {
-    if (filePath.empty()) return;
-    if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_REMOVE, 
-                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
-      Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-    }
-  }
-
-  inline void read(etl::string_view filePath) {
-    if (filePath.empty()) return;
-    if (!Bridge.sendStringCommand(rpc::CommandId::CMD_FILE_READ, 
-                                  filePath, rpc::RPC_MAX_FILEPATH_LENGTH - 1)) {
-      Bridge._emitStatus(rpc::StatusCode::STATUS_OVERFLOW);
-    }
-  }
-
-  inline void onFileSystemReadResponse(FileSystemReadHandler handler) {
-    _file_system_read_handler = handler;
-  }
-
- private:
-  FileSystemReadHandler _file_system_read_handler;
-
-  etl::bitset<64> _pin_states;
-};
-extern FileSystemClass FileSystem;
-#endif
-
-#if BRIDGE_ENABLE_PROCESS
-class ProcessClass {
-  #if defined(BRIDGE_HOST_TEST)
-  friend class bridge::test::ProcessTestAccessor;
-  #endif
- public:
-  using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
-  using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
-  using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
-
-  ProcessClass();
-  void reset();
-  void run(etl::string_view command);
-  void runAsync(etl::string_view command);
-  void poll(int16_t pid);
-  void kill(int16_t pid);
-
-  inline void onProcessRunResponse(ProcessRunHandler handler) {
-    _process_run_handler = handler;
-  }
-  inline void onProcessPollResponse(ProcessPollHandler handler) {
-    _process_poll_handler = handler;
-  }
-  inline void onProcessRunAsyncResponse(ProcessRunAsyncHandler handler) {
-    _process_run_async_handler = handler;
-  }
-
- private:
-  friend class BridgeClass;
-  bool _pushPendingProcessPid(uint16_t pid);
-  uint16_t _popPendingProcessPid();
-
-  ProcessRunHandler _process_run_handler;
-  ProcessPollHandler _process_poll_handler;
-  ProcessRunAsyncHandler _process_run_async_handler;
-
-  // [SIL-2] Use circular buffer for safe PID tracking
-  etl::circular_buffer<uint16_t, BRIDGE_MAX_PENDING_PROCESS_POLLS> _pending_process_pids;
-
-  etl::bitset<64> _pin_states;
-};
-extern ProcessClass Process;
-#endif
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
 
 #endif

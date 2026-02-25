@@ -467,7 +467,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
 
 extern BridgeClass Bridge;
 
-
 #include "services/Console.h"
 #if BRIDGE_ENABLE_DATASTORE
 #include "services/DataStore.h"

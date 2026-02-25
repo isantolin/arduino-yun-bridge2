@@ -17,6 +17,29 @@ def test_build_and_parse_round_trip() -> None:
     assert parsed_payload == payload
 
 
+def test_empty_payload_round_trip() -> None:
+    raw = Frame.build(TEST_CMD_ID, b"")
+    parsed_command, parsed_payload = Frame.parse(raw)
+    assert parsed_command == TEST_CMD_ID
+    assert parsed_payload == b""
+
+
+def test_max_payload_round_trip() -> None:
+    payload = b"p" * protocol.MAX_PAYLOAD_SIZE
+    raw = Frame.build(TEST_CMD_ID, payload)
+    parsed_command, parsed_payload = Frame.parse(raw)
+    assert parsed_command == TEST_CMD_ID
+    assert parsed_payload == payload
+
+
+def test_frame_object_round_trip() -> None:
+    frame = Frame(command_id=TEST_CMD_ID, payload=b"hello")
+    raw = frame.to_bytes()
+    new_frame = Frame.from_bytes(raw)
+    assert new_frame.command_id == frame.command_id
+    assert new_frame.payload == frame.payload
+
+
 def test_build_rejects_large_payload() -> None:
     payload = b"a" * (protocol.MAX_PAYLOAD_SIZE + 1)
 

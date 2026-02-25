@@ -92,8 +92,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _last_command_id(0),
       _retry_count(0),
       _pending_baudrate(0),
-      _last_rx_crc(0),
-      _last_rx_crc_millis(0),
+      _rx_history(),
       _consecutive_crc_errors(0),
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _ack_retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
@@ -182,8 +181,7 @@ void BridgeClass::begin(
   _fsm.resetFsm();
   _last_command_id = 0;
   _retry_count = 0;
-  _last_rx_crc = 0;
-  _last_rx_crc_millis = 0;
+  _rx_history.clear();
 
   // [SIL-2] Register Observers
   add_observer(Console);
@@ -904,6 +902,28 @@ void BridgeClass::_emitStatus(rpc::StatusCode status_code, const __FlashStringHe
   _doEmitStatus(status_code, payload, length);
 }
 
+void BridgeClass::_sendRawFrame(uint16_t command_id, const uint8_t* arg_payload, size_t arg_length) {
+  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
+  rpc::FrameBuilder builder;
+  size_t raw_len = builder.build(
+      raw_buffer, 
+      command_id, 
+      etl::span<const uint8_t>(arg_payload, arg_length));
+  
+  if (raw_len > 0) {
+#if BRIDGE_DEBUG_IO
+    // [SIL-2] Safety Guard: Prefer logging to Console if primary stream is Serial
+    Print* log_stream = &Serial;
+#if BRIDGE_ENABLE_CONSOLE
+    if (_hardware_serial == &Serial) log_stream = &Console;
+#endif
+    bridge::logging::log_traffic(*log_stream, "[SERIAL -> MCU]", "RAW", raw_buffer.data(), raw_len);
+#endif
+    _packetSerial.send(raw_buffer.data(), raw_len);
+    flushStream();
+  }
+}
+
 bool BridgeClass::sendFrame(rpc::CommandId command_id, const uint8_t* arg_payload, size_t arg_length) {
   return _sendFrame(rpc::to_underlying(command_id), arg_payload, arg_length);
 }
@@ -1037,21 +1057,7 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
   }
 
   // Non-critical frame: Send immediately using stack buffer
-  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
-  rpc::FrameBuilder builder;
-  size_t raw_len = builder.build(
-      raw_buffer, 
-      final_cmd, 
-      etl::span<const uint8_t>(final_payload, final_len));
-  
-  if (raw_len > 0) {
-#if BRIDGE_DEBUG_IO
-    bridge::logging::log_traffic(Serial, "[SERIAL -> MCU]", "RAW", raw_buffer.data(), raw_len);
-#endif
-    _packetSerial.send(raw_buffer.data(), raw_len);
-    flushStream();
-  }
-
+  _sendRawFrame(final_cmd, final_payload, final_len);
   return true;
 }
 
@@ -1091,19 +1097,8 @@ void BridgeClass::_handleMalformed(uint16_t command_id) {
 void BridgeClass::_retransmitLastFrame() {
   if (_fsm.isAwaitingAck() && !_pending_tx_queue.empty()) {
     const PendingTxFrame& frame = _pending_tx_queue.front();
-    
-    etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
-    rpc::FrameBuilder builder;
-    size_t raw_len = builder.build(
-        raw_buffer, 
-        frame.command_id, 
-        etl::span<const uint8_t>(frame.payload.data(), frame.payload_length));
-    
-    if (raw_len > 0) {
-      _packetSerial.send(raw_buffer.data(), raw_len);
-      _retry_count++;
-      flushStream();
-    }
+    _sendRawFrame(frame.command_id, frame.payload.data(), frame.payload_length);
+    _retry_count++;
   }
 }
 
@@ -1126,17 +1121,18 @@ void BridgeClass::_onAckTimeout() {
 void BridgeClass::_onRxDedupe() {
   // [SIL-2] Reset RX deduplication state to allow accepting retried frames.
   // This timer fires periodically to prevent stale CRC from blocking legitimate retries.
-  _last_rx_crc = 0;
-  _last_rx_crc_millis = 0;
+  _rx_history.clear();
 }
 
 void BridgeClass::_onBaudrateChange() {
       if (_pending_baudrate > 0) {
+#ifndef BRIDGE_HOST_TEST
         if (_hardware_serial != nullptr) {
             _hardware_serial->flush();
             _hardware_serial->end();
             _hardware_serial->begin(_pending_baudrate);
         }
+#endif
         _pending_baudrate = 0;
       }
 }
@@ -1164,8 +1160,7 @@ void BridgeClass::enterSafeState() {
   _frame_received = false;
   _target_frame = nullptr;
   _last_command_id = 0;
-  _last_rx_crc = 0;
-  _last_rx_crc_millis = 0;
+  _rx_history.clear();
   _consecutive_crc_errors = 0;
 
   #if BRIDGE_ENABLE_PROCESS
@@ -1194,27 +1189,16 @@ void BridgeClass::_flushPendingTxQueue() {
     frame = _pending_tx_queue.front();
   }
 
-  etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE> raw_buffer;
-  rpc::FrameBuilder builder;
-  size_t raw_len = builder.build(
-      raw_buffer, 
-      frame.command_id, 
-      etl::span<const uint8_t>(frame.payload.data(), frame.payload_length));
+  _sendRawFrame(frame.command_id, frame.payload.data(), frame.payload_length);
+  _fsm.sendCritical();  // Transition to AwaitingAck via FSM
+  _retry_count = 0;
   
-  if (raw_len > 0) {
-    _packetSerial.send(raw_buffer.data(), raw_len);
-    flushStream();
-
-    _fsm.sendCritical();  // Transition to AwaitingAck via FSM
-    _retry_count = 0;
-    
-    // [SIL-2] Start ACK Timer
-    _timer_service.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
-    _timer_service.start(bridge::scheduler::TIMER_ACK_TIMEOUT, false);
-    
-    _last_command_id = frame.command_id;
-    // NOTE: We do NOT pop here. We pop only when ACK is received.
-  }
+  // [SIL-2] Start ACK Timer
+  _timer_service.set_period(bridge::scheduler::TIMER_ACK_TIMEOUT, _ack_timeout_ms);
+  _timer_service.start(bridge::scheduler::TIMER_ACK_TIMEOUT, false);
+  
+  _last_command_id = frame.command_id;
+  // NOTE: We do NOT pop here. We pop only when ACK is received.
 }
 
 void BridgeClass::_clearPendingTxQueue() { 
@@ -1273,15 +1257,29 @@ void BridgeClass::_applyTimingConfig(const uint8_t* payload, size_t length) {
 }
 
 bool BridgeClass::_isRecentDuplicateRx(const rpc::Frame& frame) const {
-  if (_last_rx_crc == 0 || frame.crc != _last_rx_crc) return false;
-  const unsigned long elapsed = millis() - _last_rx_crc_millis;
-  if (_ack_timeout_ms > 0 && elapsed < static_cast<unsigned long>(_ack_timeout_ms)) return false;
-  return elapsed <= (static_cast<unsigned long>(_ack_timeout_ms) * (_ack_retry_limit + 1));
+  if (frame.crc == 0) return false;
+
+  for (size_t i = 0; i < _rx_history.size(); ++i) {
+    const auto& record = _rx_history[i];
+    if (record.crc == frame.crc) {
+      const unsigned long elapsed = millis() - record.timestamp;
+      // [SIL-2] Deduplication Window:
+      // 1. If too early (before ack_timeout), might be a new frame with same CRC (collision).
+      // 2. If too late (after retry cycle), the sender has given up.
+      if (_ack_timeout_ms > 0 && elapsed < static_cast<unsigned long>(_ack_timeout_ms)) {
+          return false;
+      }
+      if (elapsed > (static_cast<unsigned long>(_ack_timeout_ms) * (_ack_retry_limit + 1))) {
+        return false;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 void BridgeClass::_markRxProcessed(const rpc::Frame& frame) {
-  _last_rx_crc = frame.crc;
-  _last_rx_crc_millis = millis();
+  _rx_history.push(RxHistory{frame.crc, millis()});
 }
 
 // [SIL-2] ETL Error Handler Implementation

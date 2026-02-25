@@ -76,11 +76,9 @@ class TestAccessor {
   uint32_t getResponseTimeoutMs() const      { return _bridge._response_timeout_ms; }
   void     setResponseTimeoutMs(uint32_t ms) { _bridge._response_timeout_ms = ms; }
 
-  uint32_t getLastRxCrc() const        { return _bridge._last_rx_crc; }
-  void     setLastRxCrc(uint32_t crc)  { _bridge._last_rx_crc = crc; }
-
-  unsigned long getLastRxCrcMillis() const          { return _bridge._last_rx_crc_millis; }
-  void          setLastRxCrcMillis(unsigned long ms) { _bridge._last_rx_crc_millis = ms; }
+  size_t   getRxHistorySize() const          { return _bridge._rx_history.size(); }
+  uint32_t getRxHistoryCrc(size_t i) const   { return _bridge._rx_history[i].crc; }
+  void     clearRxHistory()                  { _bridge._rx_history.clear(); }
 
   bool getStartupStabilizing() const  { return _bridge._startup_stabilizing; }
   void setStartupStabilizing(bool v)  { _bridge._startup_stabilizing = v; }

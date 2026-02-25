@@ -296,8 +296,11 @@ class BridgeClass : public bridge::router::ICommandHandler,
   uint32_t _pending_baudrate;
 
   // Incoming deduplication (idempotency for retries)
-  uint32_t _last_rx_crc;
-  unsigned long _last_rx_crc_millis;
+  struct RxHistory {
+    uint32_t crc;
+    unsigned long timestamp;
+  };
+  etl::circular_buffer<RxHistory, BRIDGE_RX_HISTORY_SIZE> _rx_history;
   volatile uint8_t _consecutive_crc_errors;
 
   // Config
@@ -397,6 +400,7 @@ class BridgeClass : public bridge::router::ICommandHandler,
 
   void dispatch(const rpc::Frame& frame);
   bool _sendFrame(uint16_t command_id, const uint8_t* payload, size_t length);
+  void _sendRawFrame(uint16_t command_id, const uint8_t* payload, size_t length);
   bool _requiresAck(uint16_t command_id) const;
   void _retransmitLastFrame();
   void _handleAck(uint16_t command_id);

@@ -213,8 +213,9 @@ void test_bridge_core_timeout_status() {
     // Line 1168-1169: Deduplication window edge
     rpc::Frame f;
     f.crc = 0x12345678;
-    ba.setLastRxCrc(f.crc);
-    ba.setLastRxCrcMillis(1000);
+    g_test_millis = 1000;
+    ba.clearRxHistory();
+    ba.markRxProcessed(f);
     ba.setAckTimeoutMs(500);
     g_test_millis = 1200; // elapsed = 200 < 500
     TEST_ASSERT(ba.isRecentDuplicateRx(f) == false);

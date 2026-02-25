@@ -111,6 +111,11 @@
 #define BRIDGE_RX_DEDUPE_INTERVAL_MS 1000UL
 #endif
 
+// [SIL-2] RX History size for duplicate detection
+#ifndef BRIDGE_RX_HISTORY_SIZE
+#define BRIDGE_RX_HISTORY_SIZE 4U
+#endif
+
 // [SIL-2] HMAC key derivation buffer sizes (SHA256 specific)
 // Buffer holds handshake_key (32 bytes) + digest (32 bytes)
 #ifndef BRIDGE_HKDF_KEY_LENGTH

@@ -46,11 +46,13 @@ inline void write_u32_be(uint8_t* buffer, uint32_t value) {
 constexpr size_t CRC_TRAILER_SIZE = sizeof(uint32_t);
 
 // Define FrameHeader struct before it is used in sizeof()
+#pragma pack(push, 1)
 struct FrameHeader {
   uint8_t version;
   uint16_t payload_length;
   uint16_t command_id;
-} __attribute__((packed));
+};
+#pragma pack(pop)
 
 static_assert(sizeof(FrameHeader) == 5, "FrameHeader must be exactly 5 bytes");
 

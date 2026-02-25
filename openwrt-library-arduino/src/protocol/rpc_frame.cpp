@@ -1,124 +1,88 @@
 /**
  * @file rpc_frame.cpp
- * @brief RPC frame encoding/decoding for Arduino-Linux communication.
- * 
- * [SIL-2 COMPLIANCE - IEC 61508]
- * This module implements the binary framing layer with safety guarantees:
- * 
- * 1. CRC32 INTEGRITY: IEEE 802.3 CRC32 computed over header+payload,
- *    verified before any frame processing.
- * 
- * 2. BUFFER SAFETY: All operations use bounded arrays with explicit
- *    size checks. No heap allocation.
- * 
- * 3. SECURE WIPE: Buffers are zeroed after use to prevent data leakage.
- * 
- * Frame format on wire (before COBS):
- *   [Header] [Payload] [CRC32]
- * 
- * Header format (5 bytes, big-endian):
- *   - version (1 byte): Protocol version (must match PROTOCOL_VERSION)
- *   - payload_length (2 bytes): Length of payload in bytes
- *   - command_id (2 bytes): Command or status code
  */
 #include "../etl_profile.h"
 #include "rpc_frame.h"
 #include "rpc_protocol.h"
-#include "etl/crc32.h"
-
 #include "etl/algorithm.h"
+
+// Canonical CRC32 (IEEE 802.3) - bit-reversed
+static uint32_t compute_crc32(const uint8_t* data, size_t length) {
+    uint32_t crc = 0xFFFFFFFF;
+    while (length--) {
+        crc ^= *data++;
+        for (int j = 0; j < 8; j++) {
+            crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
+        }
+    }
+    return crc ^ 0xFFFFFFFF;
+}
 
 namespace rpc {
 
-// --- FrameParser ---
-
 etl::expected<Frame, FrameError> FrameParser::parse(etl::span<const uint8_t> buffer) {
-    // [SIL-2] Early validation with explicit error returns
-    if (buffer.empty() || buffer.size() > MAX_RAW_FRAME_SIZE) {
-        return etl::unexpected<FrameError>(FrameError::MALFORMED);
-    }
-
-    if (buffer.size() < CRC_TRAILER_SIZE) {
+    if (buffer.size() < 9 || buffer.size() > MAX_RAW_FRAME_SIZE) {
         return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
     
-    // --- Validate CRC ---
-    const size_t crc_start = buffer.size() - CRC_TRAILER_SIZE;
+    const size_t crc_start = buffer.size() - 4;
     const uint32_t received_crc = read_u32_be(&buffer[crc_start]);
-    
-    etl::crc32 crc_calculator;
-    crc_calculator.add(buffer.begin(), buffer.begin() + crc_start);
-    const uint32_t calculated_crc = crc_calculator.value();
+    const uint32_t calculated_crc = compute_crc32(buffer.data(), crc_start);
 
-    if (received_crc != calculated_crc) {
-        return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+    if (received_crc != calculated_crc) return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+
+    // [SIL-2] Mandatory Version Validation
+    if (buffer[0] != PROTOCOL_VERSION) {
+        return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
 
-    // --- Extract Header ---
-    if (crc_start < sizeof(FrameHeader)) {
+    const uint16_t payload_len = read_u16_be(&buffer[1]);
+
+    // [SIL-2] Length Consistency Check
+    // Frame = 1 (Ver) + 2 (Len) + 2 (Cmd) + Payload + 4 (CRC) = 9 + Payload
+    if (buffer.size() != (static_cast<size_t>(payload_len) + 9)) {
         return etl::unexpected<FrameError>(FrameError::MALFORMED);
+    }
+
+    // [SIL-2] Boundary Check
+    if (payload_len > MAX_PAYLOAD_SIZE) {
+        return etl::unexpected<FrameError>(FrameError::OVERFLOW);
     }
 
     Frame result;
     result.header.version = buffer[0];
-    result.header.payload_length = read_u16_be(&buffer[1]);
+    result.header.payload_length = payload_len;
     result.header.command_id = read_u16_be(&buffer[3]);
 
-    // --- Validate Header ---
-    if (result.header.version != PROTOCOL_VERSION ||
-        result.header.payload_length > result.payload.max_size() ||
-        (sizeof(FrameHeader) + result.header.payload_length) != crc_start) {
-        return etl::unexpected<FrameError>(FrameError::MALFORMED);
-    }
-
-    // --- Extract Payload ---
-    if (result.header.payload_length > 0) {
-      result.payload.assign(
-          buffer.begin() + sizeof(FrameHeader),
-          buffer.begin() + sizeof(FrameHeader) + result.header.payload_length);
+    if (payload_len > 0) {
+        etl::copy_n(buffer.begin() + 5, payload_len, result.payload.begin());
     }
     result.crc = calculated_crc;
-
     return result;
 }
 
-// --- FrameBuilder ---
+size_t FrameBuilder::build(etl::span<uint8_t> buffer, uint16_t command_id, etl::span<const uint8_t> payload) {
+    if (payload.size() > MAX_PAYLOAD_SIZE) return 0;
 
-size_t FrameBuilder::build(etl::span<uint8_t> buffer,
-                           uint16_t command_id,
-                           etl::span<const uint8_t> payload) {
-  if (payload.size() > MAX_PAYLOAD_SIZE || payload.size() > UINT16_MAX) {
-    return 0;
-  }
+    const uint16_t payload_len = static_cast<uint16_t>(payload.size());
+    const size_t data_len = 5 + payload_len;
+    const size_t total_len = data_len + 4;
 
-  const uint16_t payload_len_u16 = static_cast<uint16_t>(payload.size());
-  const size_t data_len = sizeof(FrameHeader) + payload.size();
-  const size_t total_len = data_len + CRC_TRAILER_SIZE;
+    if (total_len > buffer.size()) return 0;
 
-  if (total_len > buffer.size()) {
-    return 0; // Buffer overflow protection
-  }
+    // Zero out the entire data area to ensure deterministic CRC
+    etl::fill_n(buffer.begin(), data_len, 0);
 
-  // --- Header ---
-  buffer[0] = PROTOCOL_VERSION;
-  write_u16_be(&buffer[1], payload_len_u16);
-  write_u16_be(&buffer[3], command_id);
+    buffer[0] = PROTOCOL_VERSION;
+    buffer[1] = (payload_len >> 8); buffer[2] = (payload_len & 0xFF);
+    buffer[3] = (command_id >> 8);  buffer[4] = (command_id & 0xFF);
 
-  // --- Payload ---
-  if (!payload.empty()) {
-    // [SIL-2] Anti-aliasing / overlap safety is guaranteed by caller or span usage
-    // restrict is not strictly standard C++11 but usually unnecessary with span copy
-    etl::copy(payload.begin(), payload.end(), buffer.begin() + sizeof(FrameHeader));
-  }
+    if (payload_len > 0) etl::copy_n(payload.begin(), payload_len, buffer.begin() + 5);
 
-  // --- CRC ---
-  etl::crc32 crc_calculator;
-  crc_calculator.add(buffer.begin(), buffer.begin() + data_len);
-  uint32_t crc = crc_calculator.value();
-  
-  write_u32_be(&buffer[data_len], crc);
+    uint32_t crc = compute_crc32(buffer.data(), data_len);
+    write_u32_be(&buffer[data_len], crc);
 
-  return total_len;
+    return total_len;
 }
 
-}  // namespace rpc
+}

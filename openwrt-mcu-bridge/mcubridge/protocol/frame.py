@@ -70,12 +70,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
                             "payload_len": payload_len,
                             "command_id": command_id,
                         },
-                        # [SIL-2] Payload Injection
-                        # We inject raw bytes into the 'payload' RawCopy field.
-                        # This bypasses the 'Switch' builder, allowing us to send
-                        # pre-serialized bytes from the Packet layer while still
-                        # maintaining a schema that *could* build from objects.
-                        "payload": {"data": payload},
+                        # [SIL-2] Pure Byte Payload
+                        "payload": payload,
                     }
                 },
                 # CRC is computed automatically by Checksum field
@@ -116,9 +112,8 @@ class Frame(msgspec.Struct, frozen=True, kw_only=True):
                 f"Invalid version. Expected {protocol.PROTOCOL_VERSION}, got {header.version}"
             )
 
-        # Extract payload bytes directly from RawCopy
-        # This gives us the exact bytes received on wire, even if Switch parsed them into an object.
-        payload_bytes = container.content.value.payload.data
+        # Extract payload bytes directly
+        payload_bytes = container.content.value.payload
 
         # Explicit check for length consistency (Construct usually enforces this via Bytes(payload_len))
         if len(payload_bytes) != header.payload_len:

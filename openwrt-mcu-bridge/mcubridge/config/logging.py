@@ -51,13 +51,17 @@ def configure_logging(config: RuntimeConfig) -> None:
             "address": str(socket_path),
             "facility": "daemon",
             "level": level,
+            "formatter": "syslog_fmt",
         }
 
     dictConfig({
         "version": 1,
         "disable_existing_loggers": False,
         "formatters": {
-            "minimal": {"format": "%(message)s"}
+            "minimal": {"format": "%(message)s"},
+            "syslog_fmt": {
+                "format": "mcubridge[%(process)d]: %(levelname)s %(name)s - %(message)s"
+            },
         },
         "handlers": handlers,
         "root": {

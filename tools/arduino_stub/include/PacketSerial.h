@@ -8,7 +8,9 @@ class PacketSerial {
 public:
     typedef void (*PacketHandler)(const uint8_t* buffer, size_t size);
     
-    PacketSerial() : _stream(nullptr), _handler(nullptr), _read_index(0) {}
+    PacketSerial() : _stream(nullptr), _handler(nullptr), _read_index(0) {
+        memset(_buffer, 0, sizeof(_buffer));
+    }
     
     void setStream(Stream* stream) { _stream = stream; }
     void setPacketHandler(PacketHandler handler) { _handler = handler; }
@@ -28,6 +30,7 @@ public:
                 _read_index = 0;
             } else {
                 if (_read_index < sizeof(_buffer)) _buffer[_read_index++] = val;
+                else _read_index = 0;
             }
         }
     }
@@ -36,47 +39,53 @@ public:
         if (!_stream || len == 0) return 0;
         uint8_t encoded[1024];
         size_t n = encode(buffer, len, encoded);
-        size_t w = _stream->write(encoded, n);
+        _stream->write(encoded, n);
         _stream->write(static_cast<uint8_t>(0));
-        return w + 1;
+        _stream->flush(); 
+        return n + 1;
     }
 
 private:
-    static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
-        uint8_t* start = dst;
-        uint8_t* code_ptr = dst++;
+    static size_t encode(const uint8_t* input, size_t length, uint8_t* output) {
+        size_t read_index = 0;
+        size_t write_index = 1;
+        size_t code_index = 0;
         uint8_t code = 1;
-        for (size_t i = 0; i < len; ++i) {
-            if (src[i] == 0) {
-                *code_ptr = code;
-                code_ptr = dst++;
+
+        while (read_index < length) {
+            if (input[read_index] == 0) {
+                output[code_index] = code;
                 code = 1;
+                code_index = write_index++;
+                read_index++;
             } else {
-                *dst++ = src[i];
-                if (++code == 0xFF) {
-                    *code_ptr = code;
-                    code_ptr = dst++;
+                output[write_index++] = input[read_index++];
+                code++;
+                if (code == 0xFF) {
+                    output[code_index] = code;
                     code = 1;
+                    code_index = write_index++;
                 }
             }
         }
-        *code_ptr = code;
-        return dst - start;
+        output[code_index] = code;
+        return write_index;
     }
 
-    static size_t decode(const uint8_t* src, size_t len, uint8_t* dst) {
-        const uint8_t* end = src + len;
-        uint8_t* out = dst;
-        while (src < end) {
-            uint8_t code = *src++;
-            if (code == 0) return 0;
-            for (uint8_t i = 1; i < code; ++i) {
-                if (src >= end) break;
-                *out++ = *src++;
+    static size_t decode(const uint8_t* input, size_t length, uint8_t* output) {
+        size_t read_index = 0;
+        size_t write_index = 0;
+        while (read_index < length) {
+            uint8_t code = input[read_index++];
+            for (uint8_t i = 1; i < code; i++) {
+                if (read_index >= length) return write_index;
+                output[write_index++] = input[read_index++];
             }
-            if (code < 0xFF && src < end) *out++ = 0;
+            if (code < 0xFF && read_index < length) {
+                output[write_index++] = 0;
+            }
         }
-        return out - dst;
+        return write_index;
     }
 
     Stream* _stream;

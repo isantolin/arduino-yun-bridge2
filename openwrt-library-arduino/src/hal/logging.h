@@ -1,6 +1,7 @@
 /**
  * @file logging.h
  * @brief Standardized binary logging for Arduino MCU Bridge v2.
+ * [SIL-2] Uses standardized [DE AD BE EF] format and avoids blocking IO.
  */
 #ifndef BRIDGE_LOGGING_H
 #define BRIDGE_LOGGING_H
@@ -31,8 +32,11 @@ inline void log_hex(Print& stream, const uint8_t* data, size_t len) {
 
 /**
  * @brief Logs a directional traffic event.
+ * [SIL-2] Standardized directional labels for automated log parsing.
  */
 inline void log_traffic(Print& stream, const char* direction, const char* label, const uint8_t* data, size_t len) {
+    // Avoid recursion if stream is Console and we are logging Console traffic
+    // However, Bridge typically logs to Serial, and Console sends via Bridge.
     stream.print(direction);
     stream.print(' ');
     stream.print(label);

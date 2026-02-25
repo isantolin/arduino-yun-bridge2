@@ -32,7 +32,7 @@ class HKDF:
         salt = self._salt if self._salt else b"\x00" * hash_len
         prk = hmac.new(salt, ikm, hashlib.sha256).digest()
 
-        blocks = []
+        blocks: list[bytes] = []
         previous = b""
         n = ceil(self._length / hash_len)
         for index in range(1, n + 1):

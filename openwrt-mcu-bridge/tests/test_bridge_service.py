@@ -37,7 +37,6 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
     sent_frames: list[tuple[int, bytes]] = []
 
     flow = service._serial_flow  # pyright: ignore[reportPrivateUsage]
-    timing = service._handshake._timing # pyright: ignore[reportPrivateUsage]
 
     async def fake_sender(command_id: int, payload: bytes) -> bool:
         sent_frames.append((command_id, payload))

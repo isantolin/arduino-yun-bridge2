@@ -44,11 +44,6 @@
   // [Compatibility] Polyfill for boards missing SERIAL_PORT_USBVIRTUAL (e.g. Mega 2560)
   #ifndef SERIAL_PORT_USBVIRTUAL
     #define SERIAL_PORT_USBVIRTUAL Serial
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 #else
@@ -66,11 +61,6 @@
   };
   #define BRIDGE_ATOMIC_BLOCK for (int _guard_active = 1; _guard_active; _guard_active = 0) \
                                for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -104,11 +94,6 @@ static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" char __heap_start;
 extern "C" char* __brkval;
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -130,11 +115,6 @@ inline uint16_t getFreeMemory() {
   return static_cast<uint16_t>(free_bytes);
 #else
   return 0;
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 }
@@ -145,29 +125,14 @@ inline uint16_t getFreeMemory() {
 constexpr bool kBridgeEnableWatchdog = true;
 #else
 constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
 #if defined(ARDUINO_ARCH_AVR) && BRIDGE_ENABLE_WATCHDOG
 #ifndef BRIDGE_WATCHDOG_TIMEOUT
 #define BRIDGE_WATCHDOG_TIMEOUT WDTO_2S
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -176,28 +141,13 @@ constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
 #include <esp_task_wdt.h>
 #ifndef BRIDGE_WATCHDOG_TIMEOUT_MS
 #define BRIDGE_WATCHDOG_TIMEOUT_MS 2000
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
 #if defined(ARDUINO_ARCH_ESP8266) && BRIDGE_ENABLE_WATCHDOG
 // ESP8266 uses yield() for watchdog - software WDT
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -205,11 +155,6 @@ constexpr bool kBridgeEnableWatchdog = (BRIDGE_ENABLE_WATCHDOG != 0);
 constexpr uint8_t kDefaultFirmwareVersionMajor = BRIDGE_FIRMWARE_VERSION_MAJOR;
 #else
 constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -217,21 +162,11 @@ constexpr uint8_t kDefaultFirmwareVersionMajor = 2;
 constexpr uint8_t kDefaultFirmwareVersionMinor = BRIDGE_FIRMWARE_VERSION_MINOR;
 #else
 constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
 #ifndef BRIDGE_MAX_OBSERVERS
 #define BRIDGE_MAX_OBSERVERS 4
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -253,11 +188,6 @@ constexpr uint8_t kDefaultFirmwareVersionMinor = 5;
 #else
   // Standard boards (Uno, Pro Mini)
   #define BRIDGE_DEFAULT_SERIAL_PORT Serial
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -272,11 +202,6 @@ namespace test {
   class ProcessTestAccessor;
 }
 }
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -308,47 +233,22 @@ class BridgeClass : public bridge::router::ICommandHandler,
                     public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
   #if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
   #if BRIDGE_ENABLE_MAILBOX
   friend class MailboxClass;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
   #if BRIDGE_ENABLE_FILESYSTEM
   friend class FileSystemClass;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
   #if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::TestAccessor;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
  public:
@@ -361,32 +261,17 @@ class BridgeClass : public bridge::router::ICommandHandler,
 
   #if BRIDGE_ENABLE_DATASTORE
   using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
   #if BRIDGE_ENABLE_MAILBOX
   using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
   #if BRIDGE_ENABLE_FILESYSTEM
   using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
 
@@ -394,11 +279,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
   using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
   using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
-  #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
   
@@ -418,11 +298,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
           BRIDGE_BAUDRATE
 #else
           rpc::RPC_DEFAULT_BAUDRATE
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 
 #endif
       ,
@@ -593,19 +468,18 @@ class BridgeClass : public bridge::router::ICommandHandler,
 extern BridgeClass Bridge;
 
 
-
-
-
-
-
-
-
-
-
 #include "services/Console.h"
+#if BRIDGE_ENABLE_DATASTORE
 #include "services/DataStore.h"
+#endif
+#if BRIDGE_ENABLE_MAILBOX
 #include "services/Mailbox.h"
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
 #include "services/FileSystem.h"
+#endif
+#if BRIDGE_ENABLE_PROCESS
 #include "services/Process.h"
+#endif
 
 #endif

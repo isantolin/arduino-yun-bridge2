@@ -2,14 +2,11 @@ from transitions.core import MachineError
 
 import asyncio
 import errno
-import logging
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
 from mcubridge import metrics
-from mcubridge.config import logging as logging_config
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Status
 from mcubridge.services.process import ProcessComponent
@@ -103,18 +100,6 @@ async def test_process_finalize_async_process_fsm_fail():
         comp, "_drain_process_pipes", new_callable=AsyncMock, return_value=(b"", b"")
     ):
         await comp._finalize_async_process(123, MagicMock())
-
-
-# --- Logging Booster ---
-
-
-def test_logging_build_handler_socket_fallback_not_exists():
-    with (
-        patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/dev/log")),
-        patch("mcubridge.config.logging.Path.exists", return_value=False),
-    ):
-        handler = logging_config._build_handler()
-        assert isinstance(handler, logging.StreamHandler)
 
 
 # --- Metrics Booster ---

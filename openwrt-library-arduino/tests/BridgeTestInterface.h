@@ -40,7 +40,8 @@ class TestAccessor {
   void setUnsynchronized() { _bridge._fsm.resetFsm(); }
   void setIdle() {
     _bridge._fsm.resetFsm();
-    _bridge._fsm.handshakeComplete();
+    _bridge._fsm.handshakeStart();    // Unsynchronized -> Syncing
+    _bridge._fsm.handshakeComplete(); // Syncing -> Idle
   }
   void setAwaitingAck() {
     setIdle();
@@ -53,6 +54,7 @@ class TestAccessor {
 
   // ---- FSM primitive operations (when compound helpers are too coarse) ----
   void fsmResetFsm()          { _bridge._fsm.resetFsm(); }
+  void fsmHandshakeStart()    { _bridge._fsm.handshakeStart(); }
   void fsmHandshakeComplete() { _bridge._fsm.handshakeComplete(); }
   void fsmHandshakeFailed()   { _bridge._fsm.handshakeFailed(); }
   void fsmSendCritical()      { _bridge._fsm.sendCritical(); }
@@ -128,11 +130,11 @@ class TestAccessor {
   void handleAck(uint16_t cmd)                          { _bridge._handleAck(cmd); }
   void handleMalformed(uint16_t cmd)                    { _bridge._handleMalformed(cmd); }
   void handleSystemCommand(const rpc::Frame& f) {
-    bridge::router::CommandContext ctx(&f, f.header.command_id, false, false);
+    bridge::router::CommandContext ctx(&f, f.header.command_id, false, _bridge._requiresAck(f.header.command_id));
     _bridge.onSystemCommand(ctx);
   }
   void handleGpioCommand(const rpc::Frame& f) {
-    bridge::router::CommandContext ctx(&f, f.header.command_id, false, false);
+    bridge::router::CommandContext ctx(&f, f.header.command_id, false, _bridge._requiresAck(f.header.command_id));
     _bridge.onGpioCommand(ctx);
   }
   void computeHandshakeTag(const uint8_t* n, size_t nl,

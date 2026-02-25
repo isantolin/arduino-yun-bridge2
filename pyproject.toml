@@ -74,12 +74,14 @@ extraPaths = ["openwrt-mcu-bridge"]
 include = [
     "openwrt-mcu-bridge/mcubridge",
     "openwrt-mcu-examples-python/mcubridge_client",
-    "openwrt-mcu-core/scripts"
+    "openwrt-mcu-core/scripts",
+    "stubs"
 ]
 strict = [
     "openwrt-mcu-bridge/mcubridge",
     "openwrt-mcu-examples-python/mcubridge_client",
-    "openwrt-mcu-core/scripts"
+    "openwrt-mcu-core/scripts",
+    "stubs"
 ]
 exclude = [
     "openwrt-sdk",

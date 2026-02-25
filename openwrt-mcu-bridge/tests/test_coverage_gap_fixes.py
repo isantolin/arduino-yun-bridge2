@@ -1513,10 +1513,11 @@ async def test_handshake_handle_resp_gaps():
 @pytest.mark.asyncio
 async def test_handshake_other_gaps():
     """Cover miscellaneous handshake gaps."""
+    config = create_fake_config()
     comp = handshake.SerialHandshakeManager(
-        config=create_fake_config(),
+        config=config,
         state=create_fake_state(),
-        serial_timing=MagicMock(),
+        serial_timing=handshake.derive_serial_timing(config),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
         acknowledge_frame=AsyncMock(),
@@ -1554,7 +1555,7 @@ async def test_handshake_send_failures():
     state = create_fake_state()
     sender = AsyncMock(return_value=False)
     enqueue = AsyncMock()
-    timing = MagicMock()
+    timing = handshake.derive_serial_timing(config)
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
@@ -1588,8 +1589,7 @@ async def test_handshake_sync_timeout():
     state.link_is_synchronized = False
     sender = AsyncMock(return_value=True)
     enqueue = AsyncMock()
-    timing = MagicMock()
-    timing.response_timeout_seconds = 0.1
+    timing = handshake.derive_serial_timing(config)
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
@@ -1617,7 +1617,7 @@ async def test_handshake_unexpected_resp():
     state.link_handshake_nonce = None
     sender = AsyncMock()
     enqueue = AsyncMock()
-    timing = MagicMock()
+    timing = handshake.derive_serial_timing(config)
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
@@ -1642,7 +1642,7 @@ async def test_handshake_rate_limit():
     state.handshake_rate_limit_until = time.monotonic() + 10.0
     sender = AsyncMock()
     enqueue = AsyncMock()
-    timing = MagicMock()
+    timing = handshake.derive_serial_timing(config)
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
@@ -1664,8 +1664,7 @@ async def test_handshake_fetch_capabilities_retry_error():
     state = create_fake_state()
     sender = AsyncMock(return_value=True)
     enqueue = AsyncMock()
-    timing = MagicMock()
-    timing.response_timeout_seconds = 0.1
+    timing = handshake.derive_serial_timing(config)
     ack = AsyncMock()
 
     comp = SerialHandshakeManager(
@@ -1691,7 +1690,7 @@ def test_handshake_parse_capabilities_errors():
     comp = SerialHandshakeManager(
         config=config,
         state=state,
-        serial_timing=MagicMock(),
+        serial_timing=handshake.derive_serial_timing(config),
         send_frame=AsyncMock(),
         enqueue_mqtt=AsyncMock(),
         acknowledge_frame=AsyncMock(),

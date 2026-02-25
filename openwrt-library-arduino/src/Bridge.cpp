@@ -341,7 +341,7 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   }
 
   // [SIL-2] Phase 2: Build context
-  bridge::router::CommandContext ctx(&effective_frame, raw_command, _isRecentDuplicateRx(effective_frame), false);
+  bridge::router::CommandContext ctx(&effective_frame, raw_command, _isRecentDuplicateRx(effective_frame), _requiresAck(raw_command));
 
   // [SIL-2] Security/Safety Gate: Only allow handshake commands if not operational.
   if (!_fsm.isSynchronized() && !_isHandshakeCommand(raw_command)) {

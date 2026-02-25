@@ -44,6 +44,9 @@ except ModuleNotFoundError:  # pragma: no cover
 
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
+    SUPERVISOR_DEFAULT_MAX_BACKOFF,
+    SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
 )
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
@@ -77,6 +80,18 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     ValueError,
     msgspec.MsgspecError,
 )
+
+
+class SupervisedTaskSpec(msgspec.Struct):
+    """Specification for a supervised async task (Legacy compatibility)."""
+
+    name: str
+    factory: Callable[[], Awaitable[None]]
+    fatal_exceptions: tuple[type[BaseException], ...] = ()
+    max_restarts: int | None = None
+    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
+    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
+    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
 
 
 def _cleanup_child_processes() -> None:
@@ -146,52 +161,21 @@ class BridgeDaemon:
             async with self.service:
                 async with asyncio.TaskGroup() as tg:
                     # 1. Serial Link (Critical)
-                    tg.create_task(self._supervise(
-                        "serial-link",
-                        SerialTransport(self.config, self.state, self.service).run,
-                        fatal_exceptions=(SerialHandshakeFatal,)
-                    ))
+                    tg.create_task(self._supervise("serial-link", self._run_serial_link, (SerialHandshakeFatal,)))
 
                     # 2. MQTT Link
-                    tg.create_task(self._supervise(
-                        "mqtt-link",
-                        MqttTransport(self.config, self.state, self.service).run
-                    ))
+                    tg.create_task(self._supervise("mqtt-link", self._run_mqtt_link))
 
                     # 3. Status & Metrics (Periodic)
-                    tg.create_task(self._supervise(
-                        "status-writer",
-                        lambda: status_writer(self.state, self.config.status_interval)
-                    ))
-                    tg.create_task(self._supervise(
-                        "metrics-publisher",
-                        lambda: publish_metrics(
-                            self.state,
-                            self.service.enqueue_mqtt,
-                            float(self.config.status_interval)
-                        )
-                    ))
+                    tg.create_task(self._supervise("status-writer", self._run_status_writer))
+                    tg.create_task(self._supervise("metrics-publisher", self._run_metrics_publisher))
 
                     # 4. Optional Features
-                    if (
-                        self.config.bridge_summary_interval > 0.0
-                        or self.config.bridge_handshake_interval > 0.0
-                    ):
-                        tg.create_task(self._supervise(
-                            "bridge-snapshots",
-                            lambda: publish_bridge_snapshots(
-                                self.state,
-                                self.service.enqueue_mqtt,
-                                summary_interval=float(self.config.bridge_summary_interval),
-                                handshake_interval=float(self.config.bridge_handshake_interval)
-                            )
-                        ))
+                    if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
+                        tg.create_task(self._supervise("bridge-snapshots", self._run_bridge_snapshots))
 
                     if self.config.watchdog_enabled:
-                        self.watchdog = WatchdogKeepalive(
-                            interval=self.config.watchdog_interval,
-                            state=self.state
-                        )
+                        self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                         tg.create_task(self._supervise("watchdog", self.watchdog.run))
 
                     if self.config.metrics_enabled:
@@ -200,10 +184,7 @@ class BridgeDaemon:
                             self.config.metrics_host,
                             self.config.metrics_port
                         )
-                        tg.create_task(self._supervise(
-                            "prometheus-exporter",
-                            self.exporter.run
-                        ))
+                        tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
@@ -215,6 +196,28 @@ class BridgeDaemon:
             _cleanup_child_processes()
             cleanup_status_file()
             log.info("MCU Bridge daemon stopped.")
+
+    async def _run_serial_link(self) -> None:
+        transport = SerialTransport(self.config, self.state, self.service)
+        await transport.run()
+
+    async def _run_mqtt_link(self) -> None:
+        transport = MqttTransport(self.config, self.state, self.service)
+        await transport.run()
+
+    async def _run_status_writer(self) -> None:
+        await status_writer(self.state, self.config.status_interval)
+
+    async def _run_metrics_publisher(self) -> None:
+        await publish_metrics(self.state, self.service.enqueue_mqtt, float(self.config.status_interval))
+
+    async def _run_bridge_snapshots(self) -> None:
+        await publish_bridge_snapshots(
+            self.state,
+            self.service.enqueue_mqtt,
+            summary_interval=float(self.config.bridge_summary_interval),
+            handshake_interval=float(self.config.bridge_handshake_interval)
+        )
 
     async def _supervise(
         self,
@@ -236,6 +239,20 @@ class BridgeDaemon:
                 except Exception as exc:
                     self.state.record_supervisor_failure(name, backoff=0.0, exc=exc)
                     raise
+
+    # Legacy compatibility methods for tests
+    async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
+        await self._supervise(spec.name, spec.factory, spec.fatal_exceptions)
+
+    def _setup_supervision(self) -> list[SupervisedTaskSpec]:
+        """Legacy helper for tests."""
+        specs = [
+            SupervisedTaskSpec("serial-link", self._run_serial_link, (SerialHandshakeFatal,)),
+            SupervisedTaskSpec("mqtt-link", self._run_mqtt_link),
+            SupervisedTaskSpec("status-writer", self._run_status_writer),
+            SupervisedTaskSpec("metrics-publisher", self._run_metrics_publisher),
+        ]
+        return specs
 
 
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)

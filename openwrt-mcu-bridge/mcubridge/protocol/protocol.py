@@ -87,6 +87,7 @@ CAPABILITY_FPU: Final[int] = 128
 CAPABILITY_LOGIC_3V3: Final[int] = 256
 CAPABILITY_BIG_BUFFER: Final[int] = 512
 CAPABILITY_I2C: Final[int] = 1024
+CAPABILITY_SPI: Final[int] = 2048
 
 
 ARCH_AVR: Final[int] = 1

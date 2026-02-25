@@ -349,8 +349,9 @@ class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     hw_serial1: bool
     fpu: bool
     logic_3v3: bool
-    large_buffer: bool
+    big_buffer: bool
     i2c: bool
+    spi: bool
 
 
 class CapabilitiesPacket(BaseStruct, frozen=True):
@@ -367,9 +368,10 @@ class CapabilitiesPacket(BaseStruct, frozen=True):
         "ana" / construct.Int8ub,
         "feat"
         / construct.BitStruct(
-            construct.Padding(32 - 11),
+            construct.Padding(32 - 12),
+            "spi" / construct.Flag,
             "i2c" / construct.Flag,
-            "large_buffer" / construct.Flag,
+            "big_buffer" / construct.Flag,
             "logic_3v3" / construct.Flag,
             "fpu" / construct.Flag,
             "hw_serial1" / construct.Flag,
@@ -740,6 +742,16 @@ class SupervisorStats(msgspec.Struct):
         return msgspec.structs.asdict(self)
 
 
+_ARCH_MAPPING: Final[dict[int, str]] = {
+    1: "Atmel AVR",
+    2: "Espressif ESP32",
+    3: "Espressif ESP8266",
+    4: "Microchip SAMD",
+    5: "Microchip SAM",
+    6: "Raspberry Pi RP2040",
+}
+
+
 class McuCapabilities(msgspec.Struct):
     """Hardware capabilities reported by the MCU."""
 
@@ -750,6 +762,10 @@ class McuCapabilities(msgspec.Struct):
     features: CapabilitiesFeatures | None = None
 
     @property
+    def arch_name(self) -> str:
+        return _ARCH_MAPPING.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
+
+    @property
     def has_watchdog(self) -> bool:
         return bool(self.features and self.features.watchdog)
 
@@ -758,11 +774,11 @@ class McuCapabilities(msgspec.Struct):
         return bool(self.features and self.features.rle)
 
     @property
-    def debug_frames(self) -> bool:
+    def has_debug_frames(self) -> bool:
         return bool(self.features and self.features.debug_frames)
 
     @property
-    def debug_io(self) -> bool:
+    def has_debug_io(self) -> bool:
         return bool(self.features and self.features.debug_io)
 
     @property
@@ -786,27 +802,35 @@ class McuCapabilities(msgspec.Struct):
         return bool(self.features and self.features.logic_3v3)
 
     @property
-    def has_large_buffer(self) -> bool:
-        return bool(self.features and self.features.large_buffer)
+    def has_big_buffer(self) -> bool:
+        return bool(self.features and self.features.big_buffer)
 
     @property
     def has_i2c(self) -> bool:
         return bool(self.features and self.features.i2c)
+
+    @property
+    def has_spi(self) -> bool:
+        return bool(self.features and self.features.spi)
 
     def as_dict(self) -> dict[str, Any]:
         """Convert to dictionary including expanded boolean flags."""
         res = msgspec.structs.asdict(self)
         res.update(
             {
+                "arch_name": self.arch_name,
                 "has_watchdog": self.has_watchdog,
                 "has_rle": self.has_rle,
+                "has_debug_frames": self.has_debug_frames,
+                "has_debug_io": self.has_debug_io,
                 "has_eeprom": self.has_eeprom,
                 "has_dac": self.has_dac,
                 "has_hw_serial1": self.has_hw_serial1,
                 "has_fpu": self.has_fpu,
                 "is_3v3_logic": self.is_3v3_logic,
-                "has_large_buffer": self.has_large_buffer,
+                "has_big_buffer": self.has_big_buffer,
                 "has_i2c": self.has_i2c,
+                "has_spi": self.has_spi,
             }
         )
         return res

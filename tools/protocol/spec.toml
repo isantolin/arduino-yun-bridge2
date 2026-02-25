@@ -61,6 +61,7 @@ fpu = 0x00000080
 logic_3v3 = 0x00000100
 big_buffer = 0x00000200
 i2c = 0x00000400
+spi = 0x00000800
 
 [architectures]
 avr = 1

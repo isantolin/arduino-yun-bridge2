@@ -80,6 +80,7 @@ namespace rpc {
     constexpr uint32_t RPC_CAPABILITY_LOGIC_3V3 = 256;
     constexpr uint32_t RPC_CAPABILITY_BIG_BUFFER = 512;
     constexpr uint32_t RPC_CAPABILITY_I2C = 1024;
+    constexpr uint32_t RPC_CAPABILITY_SPI = 2048;
 
     constexpr uint8_t RPC_ARCH_AVR = 1;
     constexpr uint8_t RPC_ARCH_ESP32 = 2;

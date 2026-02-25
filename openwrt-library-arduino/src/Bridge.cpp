@@ -500,16 +500,19 @@ void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& c
         defined(ARDUINO_ARCH_RP2040)
     features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
     #endif
-    #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-    features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
-    #endif
-    #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
-        defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-    features |= rpc::RPC_CAPABILITY_I2C;
-    #endif
-
-    rpc::write_u32_be(&caps[4], features);
-    (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
+            #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
+            features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
+            #endif
+            #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
+                defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+            features |= rpc::RPC_CAPABILITY_I2C;
+            #endif
+            #if defined(SCK) || defined(MOSI) || defined(MISO) || \
+                defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+            features |= rpc::RPC_CAPABILITY_SPI;
+            #endif
+    
+            rpc::write_u32_be(&caps[4], features);    (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
   }
 }
 

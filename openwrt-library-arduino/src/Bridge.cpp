@@ -34,6 +34,7 @@
 #include "protocol/rpc_structs.h"
 #include "protocol/PacketBuilder.h"
 #include "security/security.h"
+#include "hal/logging.h"
 #include "etl/error_handler.h"
 #include "etl/algorithm.h"
 
@@ -193,6 +194,9 @@ void BridgeClass::begin(
 
 void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
     if (g_bridge_instance && g_bridge_instance->_target_frame) {
+#if BRIDGE_DEBUG_IO
+        bridge::logging::log_traffic(Serial, "[MCU -> SERIAL]", "RAW", buffer, size);
+#endif
         auto result = g_bridge_instance->_parser.parse(etl::span<const uint8_t>(buffer, size));
         if (result.has_value()) {
             *g_bridge_instance->_target_frame = result.value();
@@ -930,42 +934,29 @@ bool BridgeClass::sendKeyValCommand(rpc::CommandId command_id, etl::string_view 
 bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
                                   const uint8_t* header, size_t header_len, 
                                   const uint8_t* data, size_t data_len) {
-  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return false; // Header too big to fit any data
+  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return false; 
   
-  // [RAM OPT] Migrate scratch buffer to stack. No init needed as we overwrite.
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
-  
   const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
   size_t offset = 0;
 
-  // Handle empty data case (send at least one frame with just header)
   if (data_len == 0) {
      if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
-     while (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), header_len)) {
-       if (!_fsm.isSynchronized()) return false;
-       process();
-     }
-     return true;
+     return _sendFrame(rpc::to_underlying(command_id), buffer.data(), header_len);
   }
 
   while (offset < data_len) {
     size_t bytes_remaining = data_len - offset;
     size_t chunk_size = (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
 
-    // 1. Copy Header
     if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
-    
-    // 2. Copy Data Chunk
     if (data) etl::copy_n(data + offset, chunk_size, buffer.begin() + header_len);
 
     size_t payload_size = header_len + chunk_size;
 
-    // 3. Send with Back-pressure
-    // If the TX queue is full, we must pump the FSM (process()) to clear it
-    // before we can send the next chunk. This guarantees sequential delivery.
-    while (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), payload_size)) {
-      if (!_fsm.isSynchronized()) return false; // [SAFETY] Don't loop if we lost synchronization
-      process();
+    // [SIL-2] Deterministic Back-pressure: Return false if frame cannot be sent immediately
+    if (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), payload_size)) {
+      return false; 
     }
 
     offset += chunk_size;
@@ -1054,6 +1045,9 @@ bool BridgeClass::_sendFrame(uint16_t command_id, const uint8_t* arg_payload, si
       etl::span<const uint8_t>(final_payload, final_len));
   
   if (raw_len > 0) {
+#if BRIDGE_DEBUG_IO
+    bridge::logging::log_traffic(Serial, "[SERIAL -> MCU]", "RAW", raw_buffer.data(), raw_len);
+#endif
     _packetSerial.send(raw_buffer.data(), raw_len);
     flushStream();
   }

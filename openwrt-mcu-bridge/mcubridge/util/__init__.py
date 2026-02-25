@@ -1,16 +1,20 @@
+"""General-purpose utilities for McuBridge."""
+
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
 
-"""General-purpose utilities for McuBridge."""
-
+from .hex import format_hex, format_hex_short, log_binary_traffic
 
 __all__ = [
     "parse_bool",
     "normalise_allowed_commands",
     "chunk_bytes",
     "log_hexdump",
+    "format_hex",
+    "format_hex_short",
+    "log_binary_traffic",
 ]
 
 

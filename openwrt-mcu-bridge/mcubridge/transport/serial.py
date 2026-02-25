@@ -30,7 +30,7 @@ from mcubridge.protocol.structures import UINT32_STRUCT
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
-from mcubridge.util import log_hexdump
+from mcubridge.util import log_binary_traffic, log_hexdump
 from transitions import Machine
 
 logger = logging.getLogger("mcubridge")
@@ -182,10 +182,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
         except ValueError:
             cmd_name = f"0x{frame.command_id:02X}"
 
-        if frame.payload:
-            log_hexdump(logger, logging.DEBUG, f"{direction} {cmd_name}", frame.payload)
-        else:
-            logger.debug("%s %s (no payload)", direction, cmd_name)
+        log_binary_traffic(logger, logging.DEBUG, direction, cmd_name, frame.payload if frame.payload else b"")
 
     def write_frame(self, command_id: int, payload: bytes) -> bool:
         if self.transport is None or self.transport.is_closing():
@@ -201,10 +198,8 @@ class BridgeSerialProtocol(asyncio.Protocol):
                     cmd_name = protocol.Command(command_id).name
                 except ValueError:
                     cmd_name = f"0x{command_id:02X}"
-                if payload:
-                    log_hexdump(logger, logging.DEBUG, f"[SERIAL -> MCU] {cmd_name}", payload)
-                else:
-                    logger.debug("[SERIAL -> MCU] %s (no payload)", cmd_name)
+
+                log_binary_traffic(logger, logging.DEBUG, "[SERIAL -> MCU]", cmd_name, payload)
             return True
         except (OSError, ValueError) as exc:
             logger.error("Send failed: %s", exc)

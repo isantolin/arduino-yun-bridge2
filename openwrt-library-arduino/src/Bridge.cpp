@@ -106,8 +106,7 @@ BridgeClass::BridgeClass(Stream& arg_stream)
       _fsm(),
       _timer_service(),
       _last_tick_millis(0),
-      _startup_stabilizing(false),
-      _command_router()
+      _startup_stabilizing(false)
 {
     g_bridge_instance = this;
 }
@@ -117,9 +116,6 @@ void BridgeClass::begin(
   
   // [SIL-2] Start the ETL FSM before any other initialization
   _fsm.begin();
-  
-  // [SIL-2] Initialize ETL Message Router
-  _command_router.setHandler(this);
   
   // [SIL-2] Initialize ETL Callback Timer Service
   _timer_service.clear();
@@ -188,6 +184,11 @@ void BridgeClass::begin(
   _last_rx_crc = 0;
   _last_rx_crc_millis = 0;
 
+  // [SIL-2] Register Observers
+  add_observer(Console);
+#if BRIDGE_ENABLE_DATASTORE
+  add_observer(DataStore);
+#endif
 }
 
 void BridgeClass::onPacketReceived(const uint8_t* buffer, size_t size) {
@@ -317,8 +318,6 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
   bool is_compressed = (raw_command & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   raw_command &= ~rpc::RPC_CMD_FLAG_COMPRESSED;
 
-  // [OPTIMIZATION] Construct effective_frame piecewise to avoid copying unused payload bytes.
-  // rpc::Frame contains etl::array (fixed size), so assignment copies MAX_PAYLOAD_SIZE bytes.
   rpc::Frame effective_frame;
   effective_frame.header = frame.header;
   effective_frame.header.command_id = raw_command;
@@ -336,26 +335,42 @@ void BridgeClass::dispatch(const rpc::Frame& frame) {
     etl::copy_n(scratch_payload.data(), decoded_len, effective_frame.payload.data());
     effective_frame.header.payload_length = static_cast<uint16_t>(decoded_len);
   } else {
-    // Zero-copy optimization: If not compressed, we still need 'effective_frame' 
-    // because command_id might have changed (flag stripping).
-    // Copy ONLY valid payload bytes, not the full MAX_PAYLOAD_SIZE array.
     if (frame.header.payload_length > 0) {
         etl::copy_n(frame.payload.data(), frame.header.payload_length, effective_frame.payload.data());
     }
   }
 
-  // [SIL-2] Phase 2: Build context and route via ETL message_router
+  // [SIL-2] Phase 2: Build context
   bridge::router::CommandContext ctx(&effective_frame, raw_command, _isRecentDuplicateRx(effective_frame), false);
 
-  // [SIL-2] Security/Safety Gate: Only allow handshake commands if not synchronized.
+  // [SIL-2] Security/Safety Gate: Only allow handshake commands if not operational.
   if (!_fsm.isSynchronized() && !_isHandshakeCommand(raw_command)) {
-    // We don't use _emitStatus here to avoid potential flood if Linux is out of sync
-    // but we must send a specific error to let Linux know it needs to re-sync.
     sendFrame(rpc::StatusCode::STATUS_ERROR);
     return;
   }
 
-  _command_router.route(ctx);
+  // [SIL-2] Phase 3: O(1) Dispatch via Jump Tables
+  const uint16_t cmd = ctx.raw_command;
+
+  if (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) {
+    onStatusCommand(ctx);
+  } else if (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && cmd <= rpc::RPC_SYSTEM_COMMAND_MAX) {
+    onSystemCommand(ctx);
+  } else if (cmd >= rpc::RPC_GPIO_COMMAND_MIN && cmd <= rpc::RPC_GPIO_COMMAND_MAX) {
+    onGpioCommand(ctx);
+  } else if (cmd >= rpc::RPC_CONSOLE_COMMAND_MIN && cmd <= rpc::RPC_CONSOLE_COMMAND_MAX) {
+    onConsoleCommand(ctx);
+  } else if (cmd >= rpc::RPC_DATASTORE_COMMAND_MIN && cmd <= rpc::RPC_DATASTORE_COMMAND_MAX) {
+    onDataStoreCommand(ctx);
+  } else if (cmd >= rpc::RPC_MAILBOX_COMMAND_MIN && cmd <= rpc::RPC_MAILBOX_COMMAND_MAX) {
+    onMailboxCommand(ctx);
+  } else if (cmd >= rpc::RPC_FILESYSTEM_COMMAND_MIN && cmd <= rpc::RPC_FILESYSTEM_COMMAND_MAX) {
+    onFileSystemCommand(ctx);
+  } else if (cmd >= rpc::RPC_PROCESS_COMMAND_MIN && cmd <= rpc::RPC_PROCESS_COMMAND_MAX) {
+    onProcessCommand(ctx);
+  } else {
+    onUnknownCommand(ctx);
+  }
 }
 
 // ============================================================================
@@ -473,46 +488,48 @@ void BridgeClass::_handleGetCapabilities(const bridge::router::CommandContext& c
     caps[3] = 0;
     #endif
 
-    uint32_t features = 0;
-    if (kBridgeEnableWatchdog) features |= rpc::RPC_CAPABILITY_WATCHDOG;
-    features |= rpc::RPC_CAPABILITY_RLE; 
+    etl::bitset<32> features;
+    if (kBridgeEnableWatchdog) features.set(0); // WATCHDOG
+    features.set(1);                            // RLE
+    
     #if BRIDGE_DEBUG_FRAMES
-    features |= rpc::RPC_CAPABILITY_DEBUG_FRAMES;
+    features.set(2);                            // DEBUG_FRAMES
     #endif
     #if BRIDGE_DEBUG_IO
-    features |= rpc::RPC_CAPABILITY_DEBUG_IO;
+    features.set(3);                            // DEBUG_IO
     #endif
     #if defined(E2END) && (E2END > 0)
-    features |= rpc::RPC_CAPABILITY_EEPROM;
+    features.set(4);                            // EEPROM
     #endif
     #if (defined(DAC_OUTPUT_CHANNELS) && (DAC_OUTPUT_CHANNELS > 0)) || \
         defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || defined(ARDUINO_ARCH_ESP32)
-    features |= rpc::RPC_CAPABILITY_DAC;
+    features.set(5);                            // DAC
     #endif
     #if defined(HAVE_HWSERIAL1)
-    features |= rpc::RPC_CAPABILITY_HW_SERIAL1;
+    features.set(6);                            // HW_SERIAL1
     #endif
     #if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-    features |= rpc::RPC_CAPABILITY_FPU;
+    features.set(7);                            // FPU
     #endif
     #if defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM) || \
         defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || \
         defined(ARDUINO_ARCH_RP2040)
-    features |= rpc::RPC_CAPABILITY_LOGIC_3V3;
+    features.set(8);                            // LOGIC_3V3
     #endif
-            #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
-            features |= rpc::RPC_CAPABILITY_BIG_BUFFER;
-            #endif
-            #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
-                defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-            features |= rpc::RPC_CAPABILITY_I2C;
-            #endif
-            #if defined(SCK) || defined(MOSI) || defined(MISO) || \
-                defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
-            features |= rpc::RPC_CAPABILITY_SPI;
-            #endif
+    #if defined(SERIAL_RX_BUFFER_SIZE) && (SERIAL_RX_BUFFER_SIZE > 64)
+    features.set(9);                            // BIG_BUFFER
+    #endif
+    #if defined(PIN_WIRE_SDA) || defined(SDA) || defined(DT) || \
+        defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+    features.set(10);                           // I2C
+    #endif
+    #if defined(SCK) || defined(MOSI) || defined(MISO) || \
+        defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+    features.set(11);                           // SPI
+    #endif
     
-            rpc::write_u32_be(&caps[4], features);    (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
+    rpc::write_u32_be(&caps[4], static_cast<uint32_t>(features.to_ulong()));
+    (void)sendFrame(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, caps.data(), caps.size());
   }
 }
 
@@ -537,6 +554,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     return;
   }
   
+  enterSafeState();
+  _fsm.handshakeStart();  // Transition to Syncing state
+
   const uint8_t* payload_data = ctx.frame->payload.data();
   if (has_secret) {
     bool bypass = (_shared_secret.size() == 14 && memcmp(_shared_secret.data(), "DEBUG_INSECURE", 14) == 0);
@@ -552,9 +572,6 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     }
   }
 
-  enterSafeState();
-  Console.begin();
-  
   const size_t response_length = nonce_length + (has_secret ? kHandshakeTagSize : 0);
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
   
@@ -579,7 +596,6 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
     if (ctx.frame->header.payload_length == rpc::payload::HandshakeConfig::SIZE) {
         _applyTimingConfig(ctx.frame->payload.data(), ctx.frame->header.payload_length);
     }
-    Console.begin();
     (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
     _markRxProcessed(*ctx.frame);
     _sendAck(ctx.raw_command);
@@ -1158,9 +1174,6 @@ void BridgeClass::enterSafeState() {
   _last_rx_crc_millis = 0;
   _consecutive_crc_errors = 0;
 
-  #if BRIDGE_ENABLE_DATASTORE
-  DataStore.reset();
-  #endif
   #if BRIDGE_ENABLE_PROCESS
   Process.reset();
   #endif

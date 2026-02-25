@@ -20,9 +20,11 @@ namespace test {
 }
 #endif
 
+#include "protocol/BridgeEvents.h"
+
 class BridgeClass;
 
-class DataStoreClass {
+class DataStoreClass : public BridgeObserver {
   friend class BridgeClass;
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::DataStoreTestAccessor;
@@ -32,6 +34,10 @@ class DataStoreClass {
 
   DataStoreClass();
   void reset();
+  
+  // [SIL-2] Observer Interface
+  void notification(MsgBridgeLost) override { reset(); }
+  
   void put(etl::string_view key, etl::string_view value);
   void requestGet(etl::string_view key);
   inline void onDataStoreGetResponse(DataStoreGetHandler handler) {

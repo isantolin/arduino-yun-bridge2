@@ -17,13 +17,19 @@ namespace test {
 }
 #endif
 
-class ConsoleClass : public Stream {
+#include "protocol/BridgeEvents.h"
+
+class ConsoleClass : public Stream, public BridgeObserver {
   #if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::ConsoleTestAccessor;
   #endif
  public:
   ConsoleClass();
   void begin();
+  
+  // [SIL-2] Observer Interface
+  void notification(MsgBridgeSynchronized) override { begin(); }
+  void notification(MsgBridgeLost) override { _begun = false; }
   
   size_t write(uint8_t c) override;
   size_t write(const uint8_t *buffer, size_t size) override;

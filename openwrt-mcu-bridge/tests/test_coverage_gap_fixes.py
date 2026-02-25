@@ -1,7 +1,6 @@
 import asyncio
 import errno
 import logging
-import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -764,51 +763,13 @@ def test_settings_load_raw_config_error():
         assert source == "defaults"
 
 
-def test_logging_gaps():
+def test_logging_gaps(runtime_config):
     """Cover gaps in mcubridge.config.logging."""
-    from mcubridge.config.logging import (
-        StructuredLogFormatter,
-        _build_handler,
-        _serialise_value,
-    )
+    from mcubridge.config.logging import configure_logging
 
-    # Test _serialise_value with unknown type
-    assert _serialise_value(set()) == "set()"
-
-    # Test StructuredLogFormatter with extras and exception
-    formatter = StructuredLogFormatter()
-    record = logging.LogRecord(
-        name="mcubridge.test",
-        level=logging.INFO,
-        pathname="test.py",
-        lineno=1,
-        msg="test message",
-        args=(),
-        exc_info=None,
-    )
-    record.custom_extra = "extra_val"
-
-    res = formatter.format(record)
-    assert "extra_val" in res
-
-    # Test with exception
-    try:
-        raise ValueError("Boom")
-    except ValueError:
-        record.exc_info = sys.exc_info()
-
-    res = formatter.format(record)
-    assert "exception" in res
-    assert "Boom" in res
-
-    # Test _build_handler branch where SYSLOG_SOCKET is NOT /dev/log
-    with patch("mcubridge.config.logging.SYSLOG_SOCKET", Path("/tmp/log")):
-        _build_handler()
-
-    # Test _build_handler branch where /dev/log does not exist
-    with patch("mcubridge.config.logging.Path.exists", return_value=False):
-        handler = _build_handler()
-        assert isinstance(handler, logging.StreamHandler)
+    # Test configuration with stream forced
+    with patch.dict("os.environ", {"MCUBRIDGE_LOG_STREAM": "1"}):
+        configure_logging(runtime_config)
 
 
 # --- mcubridge.security ---

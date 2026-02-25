@@ -29,7 +29,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import time
 from collections.abc import Awaitable, Callable
 from typing import NoReturn
 
@@ -38,20 +37,13 @@ import psutil
 import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
-# Import is deferred-tolerant so test environments can import this module even if
-# python3-uvloop is unavailable; startup still fails fast in main().
 try:
     import uvloop
-except ModuleNotFoundError:  # pragma: no cover - depends on host environment
+except ModuleNotFoundError:  # pragma: no cover
     uvloop = None
+
 from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
-    SUPERVISOR_DEFAULT_MAX_BACKOFF,
-    SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    SUPERVISOR_DEFAULT_RESTART_INTERVAL,
-    SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
-    SUPERVISOR_STATUS_MAX_BACKOFF,
-    SUPERVISOR_STATUS_RESTART_INTERVAL,
 )
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
@@ -85,18 +77,6 @@ SUPERVISOR_RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
     ValueError,
     msgspec.MsgspecError,
 )
-
-
-class SupervisedTaskSpec(msgspec.Struct):
-    """Specification for a supervised async task."""
-
-    name: str
-    factory: Callable[[], Awaitable[None]]
-    fatal_exceptions: tuple[type[BaseException], ...] = ()
-    max_restarts: int | None = None
-    restart_interval: float = SUPERVISOR_DEFAULT_RESTART_INTERVAL
-    min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF
-    max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF
 
 
 def _cleanup_child_processes() -> None:
@@ -158,214 +138,104 @@ class BridgeDaemon:
         if self.config.serial_shared_secret:
             logger.info("Security check passed: Shared secret is configured.")
 
-    async def _run_serial_link(self) -> None:
-        transport = SerialTransport(self.config, self.state, self.service)
-        await transport.run()
-
-    async def _run_mqtt_link(self) -> None:
-        transport = MqttTransport(self.config, self.state, self.service)
-        await transport.run()
-
-    async def _run_status_writer(self) -> None:
-        await status_writer(self.state, self.config.status_interval)
-
-    async def _run_metrics_publisher(self) -> None:
-        await publish_metrics(
-            self.state,
-            self.service.enqueue_mqtt,
-            float(self.config.status_interval),
-        )
-
-    async def _run_bridge_snapshots(self) -> None:
-        await publish_bridge_snapshots(
-            self.state,
-            self.service.enqueue_mqtt,
-            summary_interval=float(self.config.bridge_summary_interval),
-            handshake_interval=float(self.config.bridge_handshake_interval),
-        )
-
-    def _setup_supervision(self) -> list[SupervisedTaskSpec]:
-        """Prepare the list of tasks to be supervised."""
-        # Build Spec List
-        specs: list[SupervisedTaskSpec] = [
-            SupervisedTaskSpec(
-                name="serial-link",
-                factory=self._run_serial_link,
-                fatal_exceptions=(SerialHandshakeFatal,),
-            ),
-            SupervisedTaskSpec(
-                name="mqtt-link",
-                factory=self._run_mqtt_link,
-            ),
-            SupervisedTaskSpec(
-                name="status-writer",
-                factory=self._run_status_writer,
-                max_restarts=5,
-                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
-                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
-            ),
-            SupervisedTaskSpec(
-                name="metrics-publisher",
-                factory=self._run_metrics_publisher,
-                max_restarts=5,
-                restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
-                max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
-            ),
-        ]
-
-        # 3. Optional Features
-        if (
-            self.config.bridge_summary_interval > 0.0
-            or self.config.bridge_handshake_interval > 0.0
-        ):
-            specs.append(
-                SupervisedTaskSpec(
-                    name="bridge-snapshots",
-                    factory=self._run_bridge_snapshots,
-                    max_restarts=5,
-                    restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
-                    max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
-                )
-            )
-
-        if self.config.watchdog_enabled:
-            self.watchdog = WatchdogKeepalive(
-                interval=self.config.watchdog_interval,
-                state=self.state,
-            )
-            logger.info(
-                "Watchdog enabled (interval=%.2fs)", self.config.watchdog_interval
-            )
-            specs.append(
-                SupervisedTaskSpec(
-                    name="watchdog",
-                    factory=self.watchdog.run,
-                    max_restarts=5,
-                    restart_interval=SUPERVISOR_STATUS_RESTART_INTERVAL,
-                    max_backoff=SUPERVISOR_STATUS_MAX_BACKOFF,
-                )
-            )
-
-        if self.config.metrics_enabled:
-            self.exporter = PrometheusExporter(
-                self.state,
-                self.config.metrics_host,
-                self.config.metrics_port,
-            )
-            specs.append(
-                SupervisedTaskSpec(
-                    name="prometheus-exporter",
-                    factory=self.exporter.run,
-                    max_restarts=5,
-                    restart_interval=SUPERVISOR_PROMETHEUS_RESTART_INTERVAL,
-                )
-            )
-
-        return specs
-
-    async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
-        """Run *coro_factory* restarting it on failures using tenacity."""
-        log = logging.getLogger("mcubridge.supervisor")
-
-        # [SIL-2] Use native tenacity statistics for telemetry.
-        retryer = tenacity.AsyncRetrying(
-            wait=tenacity.wait_exponential(
-                multiplier=spec.min_backoff, max=spec.max_backoff
-            ),
-            retry=tenacity.retry_if_not_exception_type(
-                (asyncio.CancelledError, SystemExit, KeyboardInterrupt, GeneratorExit)
-                + spec.fatal_exceptions
-            ),
-            stop=(
-                tenacity.stop_after_attempt(spec.max_restarts + 1)
-                if spec.max_restarts is not None
-                else tenacity.stop_never
-            ),
-            reraise=True,
-        )
-
-        last_start_time = 0.0
-
-        try:
-            while True:
-                try:
-                    async for attempt in retryer:
-                        with attempt:
-                            last_start_time = time.monotonic()
-                            await spec.factory()
-
-                            # If we get here, the task exited cleanly.
-                            log.warning(
-                                "%s task exited cleanly; supervisor exiting", spec.name
-                            )
-                            self.state.mark_supervisor_healthy(spec.name)
-                            return
-                except tenacity.RetryError:
-                    stats = retryer.statistics
-                    log.error(
-                        "%s failed after %d attempts; giving up",
-                        spec.name,
-                        stats.get("attempt_number", 0),
-                    )
-                    raise
-                except spec.fatal_exceptions as exc:
-                    log.critical("%s failed with fatal exception: %s", spec.name, exc)
-                    self.state.record_supervisor_failure(
-                        spec.name, backoff=0.0, exc=exc, fatal=True
-                    )
-                    raise
-                except SUPERVISOR_RECOVERABLE_EXCEPTIONS as exc:
-                    # [SIL-2] Report failure using tenacity statistics
-                    # Derive wait time for next retry if applicable
-                    delay = 0.0
-                    try:
-                        # Extract next wait from retryer if it exists
-                        # Tenacity statistics provide attempt count, but wait is in the retryer
-                        delay = float(retryer.statistics.get("idle_for", 0.0))
-                    except (TypeError, ValueError):
-                        pass
-
-                    self.state.record_supervisor_failure(
-                        spec.name, backoff=delay, exc=exc, fatal=False
-                    )
-
-                    if last_start_time > 0 and (
-                        time.monotonic() - last_start_time
-                    ) > max(10.0, spec.restart_interval):
-                        log.info(
-                            "%s was healthy long enough; resetting backoff", spec.name
-                        )
-                        self.state.mark_supervisor_healthy(spec.name)
-                        continue
-                    raise
-
-        except asyncio.CancelledError:
-            log.debug("%s supervisor cancelled", spec.name)
-            raise
-
     async def run(self) -> None:
-        """Main async entry point."""
-        supervised_tasks = self._setup_supervision()
+        """Main entry point for daemon execution using native TaskGroup orchestration."""
+        log = logging.getLogger("mcubridge.daemon")
 
         try:
             async with self.service:
-                async with asyncio.TaskGroup() as task_group:
-                    for spec in supervised_tasks:
-                        task_group.create_task(self._supervise_task(spec))
+                async with asyncio.TaskGroup() as tg:
+                    # 1. Serial Link (Critical)
+                    tg.create_task(self._supervise(
+                        "serial-link",
+                        SerialTransport(self.config, self.state, self.service).run,
+                        fatal_exceptions=(SerialHandshakeFatal,)
+                    ))
+
+                    # 2. MQTT Link
+                    tg.create_task(self._supervise(
+                        "mqtt-link",
+                        MqttTransport(self.config, self.state, self.service).run
+                    ))
+
+                    # 3. Status & Metrics (Periodic)
+                    tg.create_task(self._supervise(
+                        "status-writer",
+                        lambda: status_writer(self.state, self.config.status_interval)
+                    ))
+                    tg.create_task(self._supervise(
+                        "metrics-publisher",
+                        lambda: publish_metrics(
+                            self.state,
+                            self.service.enqueue_mqtt,
+                            float(self.config.status_interval)
+                        )
+                    ))
+
+                    # 4. Optional Features
+                    if (
+                        self.config.bridge_summary_interval > 0.0
+                        or self.config.bridge_handshake_interval > 0.0
+                    ):
+                        tg.create_task(self._supervise(
+                            "bridge-snapshots",
+                            lambda: publish_bridge_snapshots(
+                                self.state,
+                                self.service.enqueue_mqtt,
+                                summary_interval=float(self.config.bridge_summary_interval),
+                                handshake_interval=float(self.config.bridge_handshake_interval)
+                            )
+                        ))
+
+                    if self.config.watchdog_enabled:
+                        self.watchdog = WatchdogKeepalive(
+                            interval=self.config.watchdog_interval,
+                            state=self.state
+                        )
+                        tg.create_task(self._supervise("watchdog", self.watchdog.run))
+
+                    if self.config.metrics_enabled:
+                        self.exporter = PrometheusExporter(
+                            self.state,
+                            self.config.metrics_host,
+                            self.config.metrics_port
+                        )
+                        tg.create_task(self._supervise(
+                            "prometheus-exporter",
+                            self.exporter.run
+                        ))
+
         except* asyncio.CancelledError:
-            logger.info("Main task cancelled; shutting down.")
+            log.info("Daemon shutdown initiated (Cancelled).")
         except* Exception as exc_group:
-            for group_exc in exc_group.exceptions:
-                logger.critical(
-                    "Unhandled exception in main task group: %s",
-                    group_exc,
-                    exc_info=group_exc,
-                )
+            for exc in exc_group.exceptions:
+                log.critical("Fatal task error: %s", exc, exc_info=exc)
             raise
         finally:
             _cleanup_child_processes()
             cleanup_status_file()
-            logger.info("MCU Bridge daemon stopped.")
+            log.info("MCU Bridge daemon stopped.")
+
+    async def _supervise(
+        self,
+        name: str,
+        factory: Callable[[], Awaitable[None]],
+        fatal_exceptions: tuple[type[BaseException], ...] = ()
+    ) -> None:
+        """Lightweight supervisor for individual tasks using tenacity."""
+        retryer = tenacity.AsyncRetrying(
+            wait=tenacity.wait_exponential(multiplier=1, max=60),
+            retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError,) + fatal_exceptions),
+            reraise=True
+        )
+
+        async for attempt in retryer:
+            with attempt:
+                try:
+                    await factory()
+                except Exception as exc:
+                    self.state.record_supervisor_failure(name, backoff=0.0, exc=exc)
+                    raise
 
 
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)

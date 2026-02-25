@@ -758,8 +758,14 @@ class RuntimeState(msgspec.Struct):
             timestamp if timestamp is not None else time.monotonic()
         )
 
+    def apply_handshake_stats(self, stats: dict[str, Any]) -> None:
+        """Update handshake metrics using Tenacity internal statistics."""
+        self.handshake_attempts = int(stats.get("attempt_number", self.handshake_attempts))
+        # failure_number might not be present if successful
+        if "failure_number" in stats:
+            self.handshake_failures = int(stats["failure_number"])
+
     def record_handshake_attempt(self) -> None:
-        self.handshake_attempts += 1
         self.last_handshake_unix = time.time()
         self._handshake_last_started = time.monotonic()
 

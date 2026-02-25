@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import asyncio
 import errno
-import functools
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Final, Sized, TypeGuard, cast
 
@@ -66,7 +65,7 @@ async def serial_sender_not_ready(command_id: int, _: bytes) -> bool:
 
 
 class BridgeSerialProtocol(asyncio.Protocol):
-    """Zero-Overhead AsyncIO Protocol optimized with C-level searching."""
+    """Zero-Overhead AsyncIO Protocol optimized for OpenWrt."""
 
     def __init__(
         self,
@@ -92,13 +91,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
     def connection_lost(self, exc: Exception | None) -> None:
         logger.warning("Serial connection lost: %s", exc)
         self.transport = None
-        # Replace the current future with a completed one if it was already resolved
-        if self.connected_future.done():
-            # We create a new future to signal the transport run loop that we are done
-            # Actually, if it was done, it means connection_made was successful.
-            # Now we need to signal disconnection.
-            pass
-        else:
+        if not self.connected_future.done():
             self.connected_future.set_exception(exc or ConnectionError("Closed"))
 
     def data_received(self, data: bytes) -> None:
@@ -106,14 +99,12 @@ class BridgeSerialProtocol(asyncio.Protocol):
         self._buffer.extend(data)
 
         while True:
-            # [OPTIMIZATION] find() is implemented in C. Much faster than manual loops.
             sep_idx = self._buffer.find(protocol.FRAME_DELIMITER)
             if sep_idx == -1:
                 break
 
             # Extract the packet (excluding the delimiter)
-            packet = self._buffer[:sep_idx]
-            # Remove the processed part from the buffer
+            packet = bytes(self._buffer[:sep_idx])
             del self._buffer[: sep_idx + 1]
 
             if self._discarding:
@@ -121,7 +112,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 continue
 
             if packet:
-                self._process_packet(bytes(packet))
+                self._process_packet(packet)
 
         # [SIL-2] Resource Protection: Prevent buffer runaway
         if len(self._buffer) > MAX_SERIAL_PACKET_BYTES:
@@ -410,9 +401,9 @@ class SerialTransport:
         # Create a Future that will represent the lifetime of the connection
         lost_future: asyncio.Future[Any] = loop.create_future()
 
-        protocol_factory = functools.partial(
-            SignalLostProtocol, self.service, self.state, loop, lost_future
-        )
+        def protocol_factory() -> SignalLostProtocol:
+            return SignalLostProtocol(self.service, self.state, loop, lost_future)
+
         transport, proto = await serial_asyncio_fast.create_serial_connection(
             loop, protocol_factory, self.config.serial_port, baudrate=start_baud
         )
@@ -436,9 +427,12 @@ class SerialTransport:
                     transport.close()
                     # Re-create lost_future for new connection
                     lost_future = loop.create_future()
-                    protocol_factory = functools.partial(
-                        SignalLostProtocol, self.service, self.state, loop, lost_future
-                    )
+
+                    def protocol_factory() -> SignalLostProtocol:
+                        return SignalLostProtocol(
+                            self.service, self.state, loop, lost_future
+                        )
+
                     transport, proto = (
                         await serial_asyncio_fast.create_serial_connection(
                             loop,

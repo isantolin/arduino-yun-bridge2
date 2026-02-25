@@ -1,6 +1,5 @@
 import asyncio
 import errno
-import logging
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,7 +9,6 @@ import psutil
 import pytest
 import tenacity
 from mcubridge import metrics
-from mcubridge.config import logging as logging_config
 from mcubridge.protocol.protocol import INVALID_ID_SENTINEL, Command, FileAction, Status
 from mcubridge.services.file import FileComponent, _do_write_file
 from mcubridge.services.handshake import (
@@ -169,16 +167,6 @@ async def test_file_handle_mqtt_remove_fail(state):
         comp, "_perform_file_operation", return_value=(False, None, "remove_fail")
     ):
         await comp._handle_mqtt_remove("file", {})
-
-
-# --- Logging Booster ---
-
-
-def test_logging_formatter_no_prefix():
-    formatter = logging_config.StructuredLogFormatter()
-    record = logging.LogRecord("other.logger", logging.INFO, "f", 1, "msg", (), None)
-    res = formatter.format(record)
-    assert '"logger":"other.logger"' in res
 
 
 # --- Metrics Booster ---

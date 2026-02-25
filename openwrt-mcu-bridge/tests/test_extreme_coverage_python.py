@@ -1,10 +1,9 @@
 import asyncio
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import msgspec
 import pytest
-from mcubridge.config.logging import StructuredLogFormatter, configure_logging
+from mcubridge.config.logging import configure_logging
 from mcubridge.protocol.topics import Topic
 from mcubridge.services.handshake import SerialHandshakeManager, SerialTimingWindow
 from mcubridge.services.pin import PinComponent
@@ -150,13 +149,6 @@ async def test_serial_fast_extreme_gaps(runtime_config, runtime_state):
 @pytest.mark.asyncio
 async def test_config_logging_gaps(runtime_config):
     """Cover missing lines in config/logging.py."""
-
-    # Gap: StructuredLogFormatter with bytes and complex objects
-    formatter = StructuredLogFormatter()
-    record = logging.LogRecord("test", logging.INFO, "path", 10, "msg", None, None)
-    record.extra_data = {"bytes": b"\x01\x02", "obj": object()}
-    output = formatter.format(record)
-    assert "msg" in output
 
     # Gap: configure_logging with missing syslog
     with patch("logging.handlers.SysLogHandler", side_effect=ImportError):

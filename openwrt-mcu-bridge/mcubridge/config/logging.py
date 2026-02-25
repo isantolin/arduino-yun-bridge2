@@ -1,149 +1,73 @@
-"""Logging helpers for MCU Bridge daemon."""
+"""Logging configuration for MCU Bridge daemon using Rich."""
 
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
-from logging import Handler
 from logging.config import dictConfig
-from logging.handlers import SysLogHandler
 from pathlib import Path
 from typing import Any
 
-import msgspec
+from rich.logging import RichHandler
 
 from .settings import RuntimeConfig
 
 SYSLOG_SOCKET = Path("/dev/log")
 SYSLOG_SOCKET_FALLBACK = Path("/var/run/log")
 
-_RESERVED_LOG_KEYS = {
-    "args",
-    "asctime",
-    "created",
-    "exc_info",
-    "exc_text",
-    "filename",
-    "funcName",
-    "levelname",
-    "levelno",
-    "lineno",
-    "module",
-    "msecs",
-    "message",
-    "msg",
-    "name",
-    "pathname",
-    "process",
-    "processName",
-    "relativeCreated",
-    "stack_info",
-    "thread",
-    "threadName",
-}
 
-
-def _serialise_value(value: Any) -> Any:
-    """Serialise values for JSON logs with strict type handling."""
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, bytes):
-        # [SIL-2] BINARY OBSERVABILITY:
-        # Never decode bytes as UTF-8 blindly. It destroys binary data (0xFF -> ).
-        # Use uppercase hex representation with brackets for absolute clarity.
-        # Format: [DE AD BE EF]
-        hex_data = value.hex(" ").upper()
-        return f"[{hex_data}]"
-    return str(value)
-
-
-class StructuredLogFormatter(logging.Formatter):
-    """Emit JSON per log line while trimming the shared prefix."""
-
-    PREFIX = "mcubridge."
-
-    def format(self, record: logging.LogRecord) -> str:
-        logger_name = record.name
-        if logger_name.startswith(self.PREFIX):
-            logger_name = logger_name[len(self.PREFIX) :]
-
-        payload: dict[str, Any] = {
-            "ts": datetime.fromtimestamp(record.created, tz=timezone.utc)
-            .isoformat()
-            .replace("+00:00", "Z"),
-            "level": record.levelname,
-            "logger": logger_name,
-            "message": record.getMessage(),
-        }
-
-        extras = {
-            key: _serialise_value(value)
-            for key, value in record.__dict__.items()
-            if key not in _RESERVED_LOG_KEYS and not key.startswith("_")
-        }
-        if extras:
-            payload["extra"] = extras
-
-        if record.exc_info:
-            payload["exception"] = self.formatException(record.exc_info)
-
-        return msgspec.json.encode(payload).decode("utf-8")
-
-
-def _build_handler() -> Handler:
-    if os.environ.get("MCUBRIDGE_LOG_STREAM"):
-        return logging.StreamHandler()
-
-    candidates: tuple[Path, ...]
-    if str(SYSLOG_SOCKET) == "/dev/log":
-        candidates = (SYSLOG_SOCKET, SYSLOG_SOCKET_FALLBACK)
-    else:
-        candidates = (SYSLOG_SOCKET,)
-
-    socket_path: Path | None = None
-    for candidate in candidates:
-        if candidate.exists():
-            socket_path = candidate
-            break
-
-    if socket_path is not None:
-        syslog_handler = SysLogHandler(
-            address=str(socket_path),
-            facility=SysLogHandler.LOG_DAEMON,
-        )
-        syslog_handler.ident = "mcubridge "
-        return syslog_handler
-    return logging.StreamHandler()
+def _get_log_level(config: RuntimeConfig) -> str:
+    """Determine log level from configuration."""
+    return "DEBUG" if getattr(config, "debug_logging", False) else "INFO"
 
 
 def configure_logging(config: RuntimeConfig) -> None:
-    """Configure root logging based on runtime settings."""
+    """Configure root logging using RichHandler for enhanced observability."""
 
-    debug_logging = getattr(config, "debug_logging", False)
-    level_name = "DEBUG" if debug_logging else "INFO"
+    level = _get_log_level(config)
+    force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
 
-    dictConfig(
-        {
-            "version": 1,
-            "disable_existing_loggers": False,
-            "formatters": {
-                "structured": {
-                    "()": "mcubridge.config.logging.StructuredLogFormatter",
-                }
-            },
-            "handlers": {
-                "mcubridge": {
-                    "()": _build_handler,
-                    "level": level_name,
-                    "formatter": "structured",
-                }
-            },
-            "root": {
-                "level": level_name,
-                "handlers": ["mcubridge"],
-            },
+    # Determine if we should use RichHandler (Console) or SysLog (Production)
+    # On OpenWrt, we prefer SysLog for background daemon, but Rich for CLI/Debug.
+    use_syslog = not force_stream and (SYSLOG_SOCKET.exists() or SYSLOG_SOCKET_FALLBACK.exists())
+
+    handlers: dict[str, dict[str, Any]] = {
+        "console": {
+            "class": "rich.logging.RichHandler",
+            "level": level,
+            "rich_tracebacks": True,
+            "markup": True,
+            "show_path": level == "DEBUG",
         }
-    )
+    }
 
-    logging.getLogger("mcubridge").info("Logging configured at level %s", level_name)
+    # Reference RichHandler to satisfy linters (F401)
+    _ = RichHandler
+
+    if use_syslog:
+        socket_path = SYSLOG_SOCKET if SYSLOG_SOCKET.exists() else SYSLOG_SOCKET_FALLBACK
+        handlers["syslog"] = {
+            "class": "logging.handlers.SysLogHandler",
+            "address": str(socket_path),
+            "facility": "daemon",
+            "level": level,
+        }
+
+    dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "minimal": {"format": "%(message)s"}
+        },
+        "handlers": handlers,
+        "root": {
+            "level": level,
+            "handlers": ["syslog" if use_syslog else "console"],
+        },
+    })
+
+    logging.getLogger("mcubridge").info(
+        "Logging established at level [bold]%s[/bold] (Mode: %s)",
+        level,
+        "SysLog" if use_syslog else "RichConsole"
+    )

@@ -159,18 +159,7 @@ namespace test {
 
 #endif
 
-// [SIL-2] Observer Event Types
-struct MsgBridgeSynchronized {};
-struct MsgBridgeLost {};
-struct MsgBridgeError { rpc::StatusCode code; };
-
-// [SIL-2] Observer Interface for System Events
-struct BridgeObserver : public etl::observer<MsgBridgeSynchronized, MsgBridgeLost, MsgBridgeError> {
-  virtual ~BridgeObserver() = default;
-  virtual void notification(MsgBridgeSynchronized) {}
-  virtual void notification(MsgBridgeLost) {}
-  virtual void notification(MsgBridgeError) {}
-};
+#include "protocol/BridgeEvents.h"
 
 class BridgeClass : public bridge::router::ICommandHandler, 
                     public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
@@ -349,7 +338,7 @@ class BridgeClass : public bridge::router::ICommandHandler,
   volatile bool _startup_stabilizing;
 
   // [SIL-2] ETL Message Router for flattened command dispatch
-  bridge::router::CommandRouter _command_router;
+  // Inherited from bridge::router::ICommandHandler which is an etl::imessage_router
 
   // [SIL-2] ICommandHandler interface implementation
   void onStatusCommand(const bridge::router::CommandContext& ctx) override;

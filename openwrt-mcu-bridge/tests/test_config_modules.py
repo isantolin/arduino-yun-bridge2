@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 import pytest
@@ -196,42 +195,3 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     config = settings.load_runtime_config()
     assert config.watchdog_enabled is True
     assert config.watchdog_interval == 0.5
-
-
-def test_structured_formatter_trims_prefix_and_serialises_extra():
-    from mcubridge.config.logging import StructuredLogFormatter
-
-    formatter = StructuredLogFormatter()
-    record = logging.LogRecord(
-        name="mcubridge.service.test",
-        level=logging.INFO,
-        pathname="test.py",
-        lineno=10,
-        msg="hello %s",
-        args=("world",),
-        exc_info=None,
-    )
-    record.extra_field = "data"
-
-    output = formatter.format(record)
-    assert '"logger":"service.test"' in output
-    assert '"extra_field":"data"' in output
-
-
-def test_structured_formatter_handles_bytes():
-    from mcubridge.config.logging import StructuredLogFormatter
-
-    formatter = StructuredLogFormatter()
-    record = logging.LogRecord(
-        name="test",
-        level=logging.INFO,
-        pathname="test.py",
-        lineno=10,
-        msg="data",
-        args=(),
-        exc_info=None,
-    )
-    record.raw_bytes = b"\x01\x02"
-
-    output = formatter.format(record)
-    assert '"raw_bytes":"[01 02]"' in output

@@ -63,6 +63,9 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
+    "${SRC_DIR}/services/DataStore.cpp" \
+    "${SRC_DIR}/services/Mailbox.cpp" \
+    "${SRC_DIR}/services/FileSystem.cpp" \
     "${SRC_DIR}/services/Process.cpp" \
     "${TEST_DIR}/bridge_control_emulator.cpp" \
     "${CRYPTO_PATH}/SHA256.cpp" \

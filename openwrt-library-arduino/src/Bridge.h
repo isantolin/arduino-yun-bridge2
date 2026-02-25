@@ -218,38 +218,22 @@ struct BridgeObserver : public etl::observer<MsgBridgeSynchronized, MsgBridgeLos
   virtual void notification(MsgBridgeError) {}
 };
 
-/**
- * @brief Helper for fragmented transmissions.
- * Encapsulates chunking, flow control, and safety checks.
- */
-class BridgeWriter {
-public:
-    static bool send(rpc::CommandId command_id, 
-                    const uint8_t* header, size_t header_len, 
-                    const uint8_t* data, size_t data_len);
-};
-
 class BridgeClass : public bridge::router::ICommandHandler, 
                     public etl::observable<BridgeObserver, BRIDGE_MAX_OBSERVERS> {
-  #if BRIDGE_ENABLE_DATASTORE
+#if BRIDGE_ENABLE_DATASTORE
   friend class DataStoreClass;
-
 #endif
-  #if BRIDGE_ENABLE_MAILBOX
+#if BRIDGE_ENABLE_MAILBOX
   friend class MailboxClass;
-
 #endif
-  #if BRIDGE_ENABLE_FILESYSTEM
+#if BRIDGE_ENABLE_FILESYSTEM
   friend class FileSystemClass;
-
 #endif
-  #if BRIDGE_ENABLE_PROCESS
+#if BRIDGE_ENABLE_PROCESS
   friend class ProcessClass;
-
 #endif
-  #if defined(BRIDGE_HOST_TEST)
+#if defined(BRIDGE_HOST_TEST)
   friend class bridge::test::TestAccessor;
-
 #endif
  public:
   // Callbacks - [SIL-2] Using etl::delegate for safer, object-oriented callbacks
@@ -259,27 +243,23 @@ class BridgeClass : public bridge::router::ICommandHandler,
   using GetFreeMemoryHandler = etl::delegate<void(uint16_t)>;
   using StatusHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t)>;
 
-  #if BRIDGE_ENABLE_DATASTORE
+#if BRIDGE_ENABLE_DATASTORE
   using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
-
 #endif
 
-  #if BRIDGE_ENABLE_MAILBOX
+#if BRIDGE_ENABLE_MAILBOX
   using MailboxHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
   using MailboxAvailableHandler = etl::delegate<void(uint16_t)>;
-
 #endif
 
-  #if BRIDGE_ENABLE_FILESYSTEM
+#if BRIDGE_ENABLE_FILESYSTEM
   using FileSystemReadHandler = etl::delegate<void(const uint8_t*, uint16_t)>;
-
 #endif
 
-  #if BRIDGE_ENABLE_PROCESS
+#if BRIDGE_ENABLE_PROCESS
   using ProcessRunHandler = etl::delegate<void(rpc::StatusCode, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
   using ProcessPollHandler = etl::delegate<void(rpc::StatusCode, uint8_t, const uint8_t*, uint16_t, const uint8_t*, uint16_t)>;
   using ProcessRunAsyncHandler = etl::delegate<void(int16_t)>;
-
 #endif
   
   explicit BridgeClass(HardwareSerial& serial);

@@ -112,44 +112,6 @@ BridgeClass::BridgeClass(Stream& arg_stream)
     g_bridge_instance = this;
 }
 
-// [SIL-2] BridgeWriter Implementation
-// Centralizes chunky transmissions with back-pressure support.
-bool BridgeWriter::send(rpc::CommandId command_id,
-                        const uint8_t* header, size_t header_len, 
-                        const uint8_t* data, size_t data_len) {
-  if (header_len >= rpc::MAX_PAYLOAD_SIZE) return false;
-  
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
-  const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
-  size_t offset = 0;
-
-  if (data_len == 0) {
-     if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
-     while (!Bridge.sendFrame(command_id, buffer.data(), header_len)) {
-       if (!Bridge.isSynchronized()) return false;
-       Bridge.process();
-     }
-     return true;
-  }
-
-  while (offset < data_len) {
-    size_t bytes_remaining = data_len - offset;
-    size_t chunk_size = (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
-
-    if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
-    if (data) etl::copy_n(data + offset, chunk_size, buffer.begin() + header_len);
-
-    size_t payload_size = header_len + chunk_size;
-
-    while (!Bridge.sendFrame(command_id, buffer.data(), payload_size)) {
-      if (!Bridge.isSynchronized()) return false;
-      Bridge.process();
-    }
-    offset += chunk_size;
-  }
-  return true;
-}
-
 void BridgeClass::begin(
     unsigned long arg_baudrate, etl::string_view arg_secret, size_t arg_secret_len) {
   

@@ -51,9 +51,10 @@ def _serialise_value(value: Any) -> Any:
     if isinstance(value, bytes):
         # [SIL-2] BINARY OBSERVABILITY:
         # Never decode bytes as UTF-8 blindly. It destroys binary data (0xFF -> ).
-        # Use uppercase hex representation for absolute clarity in logs.
+        # Use uppercase hex representation with brackets for absolute clarity.
         # Format: [DE AD BE EF]
-        return f"[{' '.join(f'{b:02X}' for b in value)}]"
+        hex_data = value.hex(" ").upper()
+        return f"[{hex_data}]"
     return str(value)
 
 

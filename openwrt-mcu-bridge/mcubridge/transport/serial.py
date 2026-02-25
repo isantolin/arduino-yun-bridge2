@@ -166,7 +166,7 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 frame = Frame(command_id=new_cmd, payload=new_payload)
 
             if logger.isEnabledFor(logging.DEBUG):
-                self._log_frame(frame, "MCU >")
+                self._log_frame(frame, "[MCU -> SERIAL]")
 
             await self.service.handle_mcu_frame(frame.command_id, frame.payload)
 
@@ -210,9 +210,9 @@ class BridgeSerialProtocol(asyncio.Protocol):
                 except ValueError:
                     cmd_name = f"0x{command_id:02X}"
                 if payload:
-                    log_hexdump(logger, logging.DEBUG, f"LINUX > {cmd_name}", payload)
+                    log_hexdump(logger, logging.DEBUG, f"[SERIAL -> MCU] {cmd_name}", payload)
                 else:
-                    logger.debug("LINUX > %s (no payload)", cmd_name)
+                    logger.debug("[SERIAL -> MCU] %s (no payload)", cmd_name)
             return True
         except (OSError, ValueError) as exc:
             logger.error("Send failed: %s", exc)

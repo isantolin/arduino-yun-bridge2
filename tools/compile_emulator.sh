@@ -38,7 +38,7 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${CRYPTO_PATH}" \
     "${SRC_DIR}/protocol/rpc_frame.cpp" \
     "${SRC_DIR}/security/security.cpp" \
-    "${SRC_DIR}/services/Bridge.cpp" \
+    "${SRC_DIR}/Bridge.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
     "${SRC_DIR}/services/Mailbox.cpp" \
@@ -61,7 +61,7 @@ g++ -std=c++11 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${CRYPTO_PATH}" \
     "${SRC_DIR}/protocol/rpc_frame.cpp" \
     "${SRC_DIR}/security/security.cpp" \
-    "${SRC_DIR}/services/Bridge.cpp" \
+    "${SRC_DIR}/Bridge.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/Process.cpp" \
     "${TEST_DIR}/bridge_control_emulator.cpp" \

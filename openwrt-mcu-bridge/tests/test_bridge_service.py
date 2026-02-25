@@ -532,11 +532,11 @@ async def test_mailbox_push_overflow_returns_error(
     service.register_serial_sender(fake_sender)
 
     # First push OK
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x02aam1")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam1")
     assert len(runtime_state.mailbox_incoming_queue) == 1
 
     # Second push should fail
-    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x02aam2")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, b"\x00\x04aam2")
     assert any(
         frame_id in {Status.ERROR.value, Status.OVERFLOW.value, Status.ACK.value}
         for frame_id, _ in sent_frames

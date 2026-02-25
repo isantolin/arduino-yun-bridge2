@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "openwrt-mcu-bridge"
 version = "2.5.1"
 description = "Arduino MCU Bridge Protocol for OpenWrt (Python 3.13)"
-license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     # Using high-performance pyserial-asyncio-fast for zero-overhead serial I/O

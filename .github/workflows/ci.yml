@@ -230,11 +230,11 @@ jobs:
 
       - name: Generate Summary
         run: |
-          pip install msgspec
+          pip install msgspec typer rich
           python tools/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \
-            --github-step-summary "$GITHUB_STEP_SUMMARY" || true
+            --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage
         uses: actions/upload-artifact@v4

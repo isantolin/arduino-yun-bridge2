@@ -40,8 +40,8 @@ La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/s
 ### Validación Estática (C++)
 La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado. El generador produce automáticamente wrappers `Payload::parse<T>(const rpc::Frame&)` que realizan validación de longitud antes de instanciar la estructura, garantizando robustez SIL-2.
 
-### Despacho de Comandos (Router)
-El MCU utiliza un despacho basado en `etl::message_router` sobre un mapa de rutas estático. Esto elimina la necesidad de `switch/case` manuales gigantes y reduce la profundidad de la pila de llamadas.
+### Despacho de Comandos (O(1) Jump Tables)
+El MCU utiliza un despacho basado en **tablas de salto (jump tables)** de punteros a métodos en lugar de `switch/case` manuales. Esto garantiza un tiempo de despacho constante (O(1)), elimina la redundancia de código y reduce drásticamente la profundidad de la pila de llamadas, cumpliendo con los requisitos más estrictos de SIL-2.
 
 Qué **sí** se centraliza en `spec.toml` (y se genera a Python/C++):
 
@@ -519,6 +519,7 @@ Raw (before COBS):
     | 8 | `256` | 3.3V Logic | Niveles lógicos de 3.3V (vs 5V). |
     | 9 | `512` | Big Buffer | Buffer RX serial extendido (>64 bytes). |
     | 10 | `1024` | I2C | Soporte hardware I2C (Wire/SDA/SCL). |
+    | 11 | `2048` | SPI | Soporte hardware SPI (SCK/MOSI/MISO). |
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.

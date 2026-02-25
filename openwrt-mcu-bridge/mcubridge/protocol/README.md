@@ -6,16 +6,20 @@ This directory contains the **Source of Truth** for the MCU Bridge Protocol.
 
 The system is designed with a strict layering to separate the wire protocol from the application logic.
 
-### 1. The Protocol Contract (`rpc/protocol.py`)
-- **Role:** Source of Truth.
+### 1. The Protocol Contract (`protocol/protocol.py`)
+- **Role:** Low-level Protocol Constants.
 - **Content:** Command IDs, Status Codes, Binary Format definitions, Magic Numbers.
-- **Origin:** Auto-generated from `openwrt-library-arduino/src/protocol/rpc_protocol.h` (or sharing the same generator source).
-- **Modification Policy:** **DO NOT EDIT MANUALLY.** Changes here must be synchronized with the C++ library to ensure binary compatibility.
+- **Origin:** Auto-generated from `tools/protocol/spec.toml` using `tools/protocol/generate.py`.
+- **Modification Policy:** **DO NOT EDIT MANUALLY.**
 
-### 2. The Application Defaults (`mcubridge.const`)
-- **Role:** Application Configuration Defaults & Environment Variables.
-- **Content:** Application-specific defaults (File paths, OS limits, MQTT topics) and Environment Variable names.
-- **Relation to Protocol:** It **does not** mirror protocol constants. Code requiring protocol constants (like Frame Delimiters or Command IDs) must import them directly from `mcubridge.protocol.protocol`.
+### 2. The Data Structures (`protocol/structures.py`)
+- **Role:** Typed Single Source of Truth.
+- **Content:** Msgspec/Construct hybrid structures for all RPC packets.
+- **Benefit:** Provides automatic validation, binary parsing, and high-performance serialization.
+
+### 3. The Application Defaults (`mcubridge.config.const`)
+- **Role:** Application Configuration Defaults.
+- **Content:** OS-specific limits, MQTT topics, and paths.
 
 ### 3. The Runtime Configuration (`mcubridge.config.settings`)
 - **Role:** Operational State.

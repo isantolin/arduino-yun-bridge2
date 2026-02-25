@@ -75,17 +75,17 @@ The project follows modern, best-practice development conventions:
 *   **Linting:** The code is linted with `ruff` and `flake8`.
 *   **Static Type Checking:** Python code is type-checked with `pyright`.
 *   **Protocol as Code:** The communication protocol is defined in `tools/protocol/spec.toml` and the corresponding code is generated using `tools/protocol/generate.py`. This ensures that the protocol is always in sync between the C++ and Python codebases.
-*   **Architecture:** Data structures are centralized in `mcubridge/protocol/structures.py` to serve as a single source of truth, utilizing `construct` for binary schemas and `msgspec` for typed structs. This implementation is synchronized with `tools/protocol/spec.toml`.
+*   **Architecture:** Data structures are centralized in `mcubridge/protocol/structures.py` to serve as a single source of truth, utilizing `construct` for binary schemas and `msgspec` for typed structs. This implementation is 100% synchronized with `tools/protocol/spec.toml`.
     *   **Frame Layer:** Uses full `construct` integration with `Checksum` for automatic CRC32 validation and `Switch` for payload schema resolution.
     *   **Packet Layer:** Uses full `construct` + `msgspec` validation (including `ge=0` checks) to parse payloads into typed objects on demand.
-    *   **C++ Dispatch:** Uses `etl::message_router` with a static route map for O(1) command dispatch, eliminating manual `switch/case` logic and reducing stack depth.
+    *   **C++ Dispatch:** Uses O(1) jump tables of member function pointers for command dispatch, eliminating `switch/case` overhead and reducing stack depth.
     *   **C++ Validation:** Implements static type-safe validation wrappers (`rpc::Payload::parse<T>`) generated automatically from `spec.toml`.
-*   **Observability:** Built-in Prometheus exporter exposes extensive runtime metrics, including task supervisor health (restarts, backoff derived from native `tenacity` statistics), queue depths, serial latency histograms, CPU temperature, and I/O throughput.
+*   **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, and SPI.
+*   **Observability:** Built-in Prometheus exporter exposes extensive runtime metrics, including task supervisor health, queue depths, serial latency histograms, CPU temperature, and I/O throughput. Logs use structured hex format `[DE AD BE EF]` with directional labels `[MCU -> SERIAL]` and `[SERIAL -> MCU]`.
 *   **Robustness:**
     *   **Jitter:** Handshake retries use exponential backoff with jitter to prevent network resonance.
+    *   **Race Condition Guard:** State machine includes guards to prevent invalid transitions during high-speed asynchronous responses.
     *   **Cleanup:** Child processes are robustly terminated using `psutil` traversal on shutdown.
     *   **E2E Testing:** Automated integration testing (`tox -e e2e`) verifies the full stack against a native C++ emulator.
-*   **Refactoring Status:**
-    *   **Python:** Completed Phase 3 "Mechanical Refactoring". All services use typed `BaseStruct` packets.
-    *   **C++ (Arduino):** Completed "Modernization Phase". Architecture migrated to `etl::message_router` and `etl::observable` (native types). Transport layer optimized for `HardwareSerial`. Fragmentation logic centralized in `BridgeWriter`. Protocol version 0x02 is strictly enforced.
+*   **Status:** The ecosystem is fully modernized and synchronized. All services use typed `BaseStruct` packets. The C++ library strictly adheres to SIL-2 standards with O(1) dispatch and ETL integration.
 *   **Automated CI/CD:** The project uses GitHub Actions to automate the build and test process.

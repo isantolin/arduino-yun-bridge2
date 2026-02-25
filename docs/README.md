@@ -20,6 +20,13 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (febrero 2026)
+
+- **Despacho O(1) en MCU:** Implementación de tablas de salto para comandos de sistema, GPIO, Mailbox y Process, optimizando el rendimiento y cumpliendo SIL-2.
+- **Sincronía de Capacidades 100%:** Adición del bit de **SPI** y estandarización del bit de **Big Buffer** en todo el stack.
+- **Observabilidad Refinada:** Logs hexadecimales estructurados `[DE AD BE EF]` con etiquetas direccionales inequívocas `[MCU -> SERIAL]` y `[SERIAL -> MCU]`.
+- **Race Condition Protection:** Handshake robusto que maneja respuestas asíncronas de alta velocidad en emuladores.
+
 ### Novedades (enero 2026)
 
 - **Cryptographic Self-Tests (KAT):** El sistema ahora realiza pruebas de respuesta conocida (Known Answer Tests) para SHA256 y HMAC-SHA256 al iniciar. Si las pruebas fallan, el sistema aborta el arranque (**Fail-Secure**).

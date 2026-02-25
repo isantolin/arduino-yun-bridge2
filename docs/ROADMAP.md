@@ -2,17 +2,30 @@
 
 > **Current Release**: v2.5.1 (OpenWrt 25.12.0 final compatible)
 
-## Pending (Q2-Q3 2026)
+## Completed (Q1 2026)
 
-### 1. OpenWrt Deployment Validation
-- **APK Packaging**: Final validation of `.apk` binaries for OpenWrt 25.12, ensuring all Python 3.13 dependencies (uvloop, msgspec) are correctly bundled.
-- **Production Field Trials**: Extended deployment on real Arduino Yun and compatible OpenWrt hardware to verify long-term stability.
+### 1. OpenWrt 25.12 & SIL-2 Modernization
+- **O(1) C++ Dispatch**: Replaced switch/case with jump tables for deterministic execution.
+- **Python 3.13.9-r2**: Full compatibility and optimization using uvloop and msgspec.
+- **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.
+- **100% Protocol Sync**: Guaranteed consistency between MPU and MCU via automated code generation.
+- **Race Condition Protection**: Hardened FSM to handle high-speed asynchronous responses.
 
-### 2. Hardware & Architecture Expansion
-- **Hardware Validation Matrix**: Comprehensive testing and CI integration for non-AVR architectures: **ESP32**, **ESP8266**, **SAMD** (Zero), and **RP2040**.
-- **HAL Refinement**: Continuous improvement of the Hardware Abstraction Layer to support advanced power management and specialized serial controllers.
+## Future Strategic Goals (2026-2027)
 
-### 3. Observability & Tooling
-- **MCU Logging Utility**: Implementation of `hal::log_hexdump` to allow the MCU to report internal state and parsing errors via the Linux syslog without breaking binary protocol sync.
-- **Documentation Expansion**: Comprehensive user guides, API references, and SIL-2 compliance documentation for third-party integrators.
-- **Web Interface (LuCI)**: Update the LuCI app to support the new real-time metrics and task supervision status provided by the v2 daemon.
+### 1. Lifecycle Management & FOTA
+- **Integrated OTA Service**: Automated firmware detection and flashing using `avrdude`/`esptool`.
+- **Safe-Bootloader Handshake**: Protocol extension to trigger MCU bootloader mode via RPC.
+
+### 2. Deep Observability
+- **Remote Stack Guard**: Real-time reporting of MCU stack high-water mark and static memory usage to Prometheus.
+- **Virtual Oscilloscope**: High-frequency signal streaming from MCU pins to MQTT topics.
+
+### 3. Resilience & Hardware Abstraction
+- **Auto-Baudrate Fallback**: Automatic speed negotiation based on CRC error thresholds.
+- **SPI Support**: Complete implementation of the recently added SPI capability bit across the stack.
+- **Hardware Flow Control**: HAL support for RTS/CTS to prevent buffer overflows under heavy load.
+
+### 4. Zero-Code Experience
+- **Dynamic LuCI UI**: Automated web interface generation based on `spec.toml` definitions.
+- **Pythonic MCU Mocking**: Local development library that transparently uses the emulator when hardware is missing.

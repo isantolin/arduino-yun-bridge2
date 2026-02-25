@@ -266,9 +266,8 @@ void test_router_gaps() {
     router.setHandler(&handler);
 
     rpc::Frame f;
-    CommandContext ctx;
-    ctx.frame = &f;
-    ctx.raw_command = 0xFFFF; // Unknown range
+    f.header.command_id = 0xFFFF; // Unknown range
+    CommandContext ctx(&f, f.header.command_id, false, false);
     router.route(ctx);
     TEST_ASSERT(handler.unknown_called == true);
 }

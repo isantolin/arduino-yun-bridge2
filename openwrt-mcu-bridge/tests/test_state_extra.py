@@ -16,15 +16,16 @@ def test_mcu_capabilities_properties() -> None:
     caps = McuCapabilities()
     assert not caps.has_watchdog
     assert not caps.has_rle
-    assert not caps.debug_frames
-    assert not caps.debug_io
+    assert not caps.has_debug_frames
+    assert not caps.has_debug_io
     assert not caps.has_eeprom
     assert not caps.has_dac
     assert not caps.has_hw_serial1
     assert not caps.has_fpu
     assert not caps.is_3v3_logic
-    assert not caps.has_large_buffer
+    assert not caps.has_big_buffer
     assert not caps.has_i2c
+    assert not caps.has_spi
 
     d = caps.as_dict()
     assert not d["has_watchdog"]

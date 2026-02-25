@@ -3,7 +3,7 @@
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Annotated
 
 import typer
 from mcubridge_client import Bridge, dump_client_env
@@ -42,10 +42,10 @@ async def run_test(
 
 @app.command()
 def main(
-    host: Optional[str] = typer.Option(None, help="MQTT Broker Host"),
-    port: Optional[int] = typer.Option(None, help="MQTT Broker Port"),
-    user: Optional[str] = typer.Option(None, help="MQTT Username"),
-    password: Optional[str] = typer.Option(None, help="MQTT Password"),
+    host: Annotated[Optional[str], typer.Option(help="MQTT Broker Host")] = None,
+    port: Annotated[Optional[int], typer.Option(help="MQTT Broker Port")] = None,
+    user: Annotated[Optional[str], typer.Option(help="MQTT Username")] = None,
+    password: Annotated[Optional[str], typer.Option(help="MQTT Password")] = None,
 ) -> None:
     asyncio.run(run_test(host, port, user, password))
 

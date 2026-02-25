@@ -6,7 +6,7 @@ import sys
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Annotated
 
 import serial  # type: ignore
 import typer
@@ -154,14 +154,26 @@ app = typer.Typer(add_completion=False, help="Inspect and optionally send MCU Br
 
 @app.command()
 def main_cmd(
-    command: str = typer.Option("CMD_GET_FREE_MEMORY", "--command", "-c"),
-    payload: Optional[str] = typer.Option(None, "--payload", "-p"),
-    port: Optional[str] = typer.Option(None, "--port"),
-    baud: int = typer.Option(DEFAULT_BAUDRATE, "--baud"),
-    interval: float = typer.Option(5.0, "--interval"),
-    count: int = typer.Option(1, "--count"),
-    read_response: bool = typer.Option(False, "--read-response"),
-    read_timeout: float = typer.Option(2.0, "--read-timeout"),
+    command: Annotated[
+        str, typer.Option("--command", "-c", help="Command or Status name/value")
+    ] = "CMD_GET_FREE_MEMORY",
+    payload: Annotated[
+        Optional[str], typer.Option("--payload", "-p", help="Payload in hex format")
+    ] = None,
+    port: Annotated[Optional[str], typer.Option(help="Serial port device path")] = None,
+    baud: Annotated[int, typer.Option(help="Serial baud rate")] = DEFAULT_BAUDRATE,
+    interval: Annotated[
+        float, typer.Option(help="Interval between frames in seconds")
+    ] = 5.0,
+    count: Annotated[
+        int, typer.Option(help="Number of frames to send (0 for infinite)")
+    ] = 1,
+    read_response: Annotated[
+        bool, typer.Option(help="Wait for and print the next frame received")
+    ] = False,
+    read_timeout: Annotated[
+        float, typer.Option(help="Timeout for reading responses")
+    ] = 2.0,
 ):
     try:
         cmd_id = _resolve_command(command)

@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import ssl
-from typing import Optional
+from typing import Optional, Annotated
 
 import typer
 import uvloop
@@ -105,11 +105,13 @@ async def run_test(
 
 @app.command()
 def main(
-    host: Optional[str] = typer.Option(None, help="MQTT Broker Host"),
-    port: Optional[int] = typer.Option(None, help="MQTT Broker Port"),
-    user: Optional[str] = typer.Option(None, help="MQTT Username"),
-    password: Optional[str] = typer.Option(None, help="MQTT Password"),
-    tls_insecure: bool = typer.Option(False, help="Disable TLS certificate verification"),
+    host: Annotated[Optional[str], typer.Option(help="MQTT Broker Host")] = None,
+    port: Annotated[Optional[int], typer.Option(help="MQTT Broker Port")] = None,
+    user: Annotated[Optional[str], typer.Option(help="MQTT Username")] = None,
+    password: Annotated[Optional[str], typer.Option(help="MQTT Password")] = None,
+    tls_insecure: Annotated[
+        bool, typer.Option(help="Disable TLS certificate verification")
+    ] = False,
 ) -> None:
     try:
         asyncio.run(run_test(host, port, user, password, tls_insecure))

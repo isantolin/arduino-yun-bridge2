@@ -18,7 +18,7 @@ import textwrap
 import threading
 import time
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Annotated
 
 import typer
 
@@ -422,12 +422,13 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
 
 @app.command()
 def main(
-    run_scripts: Optional[List[str]] = typer.Argument(
-        None, help="List of python scripts to run after handshake"
-    ),
-    firmware: str = typer.Option(
-        "bridge_emulator", help="Name of the emulator binary to run"
-    ),
+    run_scripts: Annotated[
+        Optional[List[str]],
+        typer.Argument(help="List of python scripts to run after handshake"),
+    ] = None,
+    firmware: Annotated[
+        str, typer.Option(help="Name of the emulator binary to run")
+    ] = "bridge_emulator",
 ) -> None:
     logger.info(f"Starting Emulation Runner ({firmware})...")
 

@@ -13,7 +13,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Annotated, Optional
 
 import msgspec
 import typer
@@ -416,60 +416,76 @@ app = typer.Typer(
 
 @app.command("run")
 def run_command(
-    manifest: Path = typer.Option(
-        DEFAULT_MANIFEST,
-        "--manifest",
-        "-m",
-        file_okay=True,
-        dir_okay=False,
-        readable=True,
-        resolve_path=True,
-        help="Path to targets manifest.",
-    ),
-    target: list[str] | None = typer.Option(
-        None,
-        "--target",
-        "-t",
-        help="Limit execution to the specified target name (repeatable).",
-    ),
-    tag: list[str] | None = typer.Option(
-        None,
-        "--tag",
-        help="Only run targets containing the given tag (repeatable).",
-    ),
-    max_parallel: int = typer.Option(
-        2,
-        "--max-parallel",
-        "-p",
-        min=1,
-        help="Maximum concurrent smoke runs.",
-    ),
-    timeout: float | None = typer.Option(
-        None,
-        "--timeout",
-        "-T",
-        min=0.0,
-        help="Override per-target timeout (seconds).",
-    ),
-    json_path: Path | None = typer.Option(
-        None,
-        "--json",
-        file_okay=True,
-        dir_okay=False,
-        writable=True,
-        resolve_path=True,
-        help="Write a JSON report to this path.",
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Print the commands that would run without executing them.",
-    ),
-    list_only: bool = typer.Option(
-        False,
-        "--list",
-        help="List targets that match the current filters and exit.",
-    ),
+    manifest: Annotated[
+        Path,
+        typer.Option(
+            "--manifest",
+            "-m",
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+            help="Path to targets manifest.",
+        ),
+    ] = DEFAULT_MANIFEST,
+    target: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--target",
+            "-t",
+            help="Limit execution to the specified target name (repeatable).",
+        ),
+    ] = None,
+    tag: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--tag",
+            help="Only run targets containing the given tag (repeatable).",
+        ),
+    ] = None,
+    max_parallel: Annotated[
+        int,
+        typer.Option(
+            "--max-parallel",
+            "-p",
+            min=1,
+            help="Maximum concurrent smoke runs.",
+        ),
+    ] = 2,
+    timeout: Annotated[
+        Optional[float],
+        typer.Option(
+            "--timeout",
+            "-T",
+            min=0.0,
+            help="Override per-target timeout (seconds).",
+        ),
+    ] = None,
+    json_path: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--json",
+            file_okay=True,
+            dir_okay=False,
+            writable=True,
+            resolve_path=True,
+            help="Write a JSON report to this path.",
+        ),
+    ] = None,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print the commands that would run without executing them.",
+        ),
+    ] = False,
+    list_only: Annotated[
+        bool,
+        typer.Option(
+            "--list",
+            help="List targets that match the current filters and exit.",
+        ),
+    ] = False,
 ) -> None:
     try:
         exit_code = asyncio.run(

@@ -19,6 +19,7 @@ import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import msgspec
 import typer
@@ -187,15 +188,21 @@ def _print_table(title: str, rows: list[FileGaps], top: int) -> None:
 
 @app.command()
 def main(
-    top: int = typer.Option(20, help="Show top N files with most missing branches/lines."),
-    python_xml: Path = typer.Option(
-        Path("coverage/python/coverage.xml"),
-        help="Path to Python Cobertura coverage XML.",
-    ),
-    arduino_json: Path = typer.Option(
-        Path("coverage/arduino/coverage.json"),
-        help="Path to Arduino gcovr coverage JSON.",
-    ),
+    top: Annotated[
+        int, typer.Option(help="Show top N files with most missing branches/lines.")
+    ] = 20,
+    python_xml: Annotated[
+        Path,
+        typer.Option(
+            help="Path to Python Cobertura coverage XML.",
+        ),
+    ] = Path("coverage/python/coverage.xml"),
+    arduino_json: Annotated[
+        Path,
+        typer.Option(
+            help="Path to Arduino gcovr coverage JSON.",
+        ),
+    ] = Path("coverage/arduino/coverage.json"),
 ) -> None:
     if python_xml.exists():
         python_gaps = load_python_gaps(python_xml)

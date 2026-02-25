@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Annotated
 
 import msgspec
 import typer
@@ -126,15 +127,16 @@ def update_makefile(deps: Sequence[dict], *, dry_run: bool = False) -> bool:
 
 @app.command()
 def main(
-    check: bool = typer.Option(
-        False, "--check", help="Exit with status 1 if running would change any files"
-    ),
-    print_openwrt: bool = typer.Option(
-        False, "--print-openwrt", help="Print OpenWrt package names and exit"
-    ),
-    print_pip: bool = typer.Option(
-        False, "--print-pip", help="Print pip requirement specifiers and exit"
-    ),
+    check: Annotated[
+        bool,
+        typer.Option("--check", help="Exit with status 1 if running would change any files"),
+    ] = False,
+    print_openwrt: Annotated[
+        bool, typer.Option("--print-openwrt", help="Print OpenWrt package names and exit")
+    ] = False,
+    print_pip: Annotated[
+        bool, typer.Option("--print-pip", help="Print pip requirement specifiers and exit")
+    ] = False,
 ) -> None:
     deps = load_manifest()
     if print_openwrt:

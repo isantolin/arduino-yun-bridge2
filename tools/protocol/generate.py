@@ -17,12 +17,13 @@ import textwrap
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator, TextIO, Optional
+from typing import Any, Iterator, TextIO, Optional, Annotated
 
 import msgspec
 import typer
 
 app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
+
 
 # =============================================================================
 # 1. Utility: Code Writer (The "View" Helper)
@@ -996,10 +997,14 @@ class PythonGenerator:
 
 @app.command()
 def main(
-    spec_path: Path = typer.Option(..., "--spec", help="Protocol specification file"),
-    cpp: Optional[Path] = typer.Option(None, "--cpp", help="C++ header output"),
-    cpp_structs: Optional[Path] = typer.Option(None, "--cpp-structs", help="C++ structs output"),
-    py: Optional[Path] = typer.Option(None, "--py", help="Python output"),
+    spec_path: Annotated[
+        Path, typer.Option("--spec", help="Protocol specification file")
+    ],
+    cpp: Annotated[Optional[Path], typer.Option("--cpp", help="C++ header output")] = None,
+    cpp_structs: Annotated[
+        Optional[Path], typer.Option("--cpp-structs", help="C++ structs output")
+    ] = None,
+    py: Annotated[Optional[Path], typer.Option("--py", help="Python output")] = None,
 ) -> None:
     spec = ProtocolSpec.load(spec_path)
 

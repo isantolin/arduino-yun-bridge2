@@ -68,7 +68,8 @@ async def test_on_serial_connected_flushes_console_queue() -> None:
                         "ana": 6,
                         "feat": {
                             "i2c": False,
-                            "large_buffer": False,
+                            "spi": False,
+                            "big_buffer": False,
                             "logic_3v3": False,
                             "fpu": False,
                             "hw_serial1": False,
@@ -190,7 +191,8 @@ async def test_on_serial_connected_falls_back_to_legacy_link_reset_when_rejected
                         "ana": 6,
                         "feat": {
                             "i2c": False,
-                            "large_buffer": False,
+                            "spi": False,
+                            "big_buffer": False,
                             "logic_3v3": False,
                             "fpu": False,
                             "hw_serial1": False,

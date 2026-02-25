@@ -5,7 +5,7 @@ import asyncio
 import logging
 import ssl
 import sys
-from typing import Optional
+from typing import Optional, Annotated
 
 import typer
 from mcubridge_client import Bridge, dump_client_env
@@ -105,13 +105,17 @@ async def run_test(
 
 @app.command()
 def main(
-    host: Optional[str] = typer.Option(None, help="MQTT Broker Host"),
-    port: Optional[int] = typer.Option(None, help="MQTT Broker Port"),
-    user: Optional[str] = typer.Option(None, help="MQTT Username"),
-    password: Optional[str] = typer.Option(None, help="MQTT Password"),
-    pin: str = typer.Option("d13", help="Pin to read (e.g., 'd13' or 'a0')."),
-    interval: float = typer.Option(2.0, help="Read interval in seconds."),
-    tls_insecure: bool = typer.Option(False, help="Disable TLS certificate verification"),
+    host: Annotated[Optional[str], typer.Option(help="MQTT Broker Host")] = None,
+    port: Annotated[Optional[int], typer.Option(help="MQTT Broker Port")] = None,
+    user: Annotated[Optional[str], typer.Option(help="MQTT Username")] = None,
+    password: Annotated[Optional[str], typer.Option(help="MQTT Password")] = None,
+    pin: Annotated[
+        str, typer.Option(help="Pin to read (e.g., 'd13' or 'a0').")
+    ] = "d13",
+    interval: Annotated[float, typer.Option(help="Read interval in seconds.")] = 2.0,
+    tls_insecure: Annotated[
+        bool, typer.Option(help="Disable TLS certificate verification")
+    ] = False,
 ) -> None:
     try:
         asyncio.run(run_test(host, port, user, password, pin, interval, tls_insecure))

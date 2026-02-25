@@ -1200,21 +1200,23 @@ def test_mcu_capabilities_branches():
         hw_serial1=True,
         fpu=True,
         logic_3v3=True,
-        large_buffer=True,
+        big_buffer=True,
         i2c=True,
+        spi=True,
     )
     caps = context.McuCapabilities(features=feat)
     assert caps.has_watchdog is True
     assert caps.has_rle is True
-    assert caps.debug_frames is True
-    assert caps.debug_io is True
+    assert caps.has_debug_frames is True
+    assert caps.has_debug_io is True
     assert caps.has_eeprom is True
     assert caps.has_dac is True
     assert caps.has_hw_serial1 is True
     assert caps.has_fpu is True
     assert caps.is_3v3_logic is True
-    assert caps.has_large_buffer is True
+    assert caps.has_big_buffer is True
     assert caps.has_i2c is True
+    assert caps.has_spi is True
 
     d = caps.as_dict()
     assert d["has_i2c"] is True

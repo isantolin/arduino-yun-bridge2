@@ -7,7 +7,7 @@ import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Annotated
 
 import msgspec
 from rich.console import Console as RichConsole
@@ -241,26 +241,26 @@ def _append_optional(path: str | None, content: str) -> None:
 
 @app.command()
 def main(
-    python_xml: Path = typer.Option(
-        Path("coverage/python/coverage.xml"),
-        help="Path to Python Cobertura coverage XML.",
-    ),
-    arduino_summary: Path = typer.Option(
-        Path("coverage/arduino/summary.json"),
-        help="Path to Arduino gcovr summary JSON.",
-    ),
-    output_markdown: Optional[Path] = typer.Option(
-        None,
-        help="Write the table to the given markdown file.",
-    ),
-    output_json: Optional[Path] = typer.Option(
-        None,
-        help="Write machine-readable metrics to this path.",
-    ),
-    github_step_summary: Optional[Path] = typer.Option(
-        None,
-        help="Append the table to GitHub step summary output.",
-    ),
+    python_xml: Annotated[
+        Path,
+        typer.Option(help="Path to Python Cobertura coverage XML."),
+    ] = Path("coverage/python/coverage.xml"),
+    arduino_summary: Annotated[
+        Path,
+        typer.Option(help="Path to Arduino gcovr summary JSON."),
+    ] = Path("coverage/arduino/summary.json"),
+    output_markdown: Annotated[
+        Optional[Path],
+        typer.Option(help="Write the table to the given markdown file."),
+    ] = None,
+    output_json: Annotated[
+        Optional[Path],
+        typer.Option(help="Write machine-readable metrics to this path."),
+    ] = None,
+    github_step_summary: Annotated[
+        Optional[Path],
+        typer.Option(help="Append the table to GitHub step summary output."),
+    ] = None,
 ) -> None:
     python_metrics = _read_python_metrics(python_xml)
     arduino_metrics = _read_arduino_metrics(arduino_summary)

@@ -347,12 +347,13 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
     # Ensure the client library is in PYTHONPATH
     repo_root = Path(__file__).resolve().parent.parent
     client_lib = repo_root / "openwrt-mcu-examples-python"
+    package_root = repo_root / "openwrt-mcu-bridge"
 
-    python_path = f"{client_lib}"
+    python_path = f"{client_lib}{os.pathsep}{package_root}"
     if uci_stub_dir:
-        python_path = f"{uci_stub_dir}:{python_path}"
+        python_path = f"{uci_stub_dir}{os.pathsep}{python_path}"
 
-    env["PYTHONPATH"] = f"{python_path}:{env.get('PYTHONPATH', '')}"
+    env["PYTHONPATH"] = f"{python_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
 
     # Force unbuffered output for scripts
     env["PYTHONUNBUFFERED"] = "1"
@@ -421,11 +422,11 @@ def run_client_scripts(scripts, mqtt_host, mqtt_port, uci_stub_dir=None):
 
 @app.command()
 def main(
+    run_scripts: Optional[List[str]] = typer.Argument(
+        None, help="List of python scripts to run after handshake"
+    ),
     firmware: str = typer.Option(
         "bridge_emulator", help="Name of the emulator binary to run"
-    ),
-    run_scripts: Optional[List[str]] = typer.Option(
-        None, "--run-scripts", help="List of python scripts to run after handshake"
     ),
 ) -> None:
     logger.info(f"Starting Emulation Runner ({firmware})...")

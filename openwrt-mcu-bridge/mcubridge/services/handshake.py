@@ -287,12 +287,14 @@ class SerialHandshakeManager:
             await self.handle_handshake_failure("link_sync_send_failed")
             return False
 
-        # [SIL-2] Race Condition Guard: check if async response already put us in fault.
+        # [SIL-2] Race Condition Guard: check if async response already put us in fault or success.
         if self.fsm_state == self.STATE_FAULT:
             return False
 
-        # Transition to CONFIRMING
-        self.start_confirm()
+        # Transition to CONFIRMING only if we are still in SYNCING.
+        # High-speed emulators may have already triggered complete_handshake().
+        if self.fsm_state == self.STATE_SYNCING:
+            self.start_confirm()
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
         if not confirmed:

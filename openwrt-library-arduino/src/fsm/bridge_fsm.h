@@ -57,11 +57,12 @@ struct EvReset : public etl::message<EVENT_RESET> {};
 struct EvCryptoFault : public etl::message<EVENT_CRYPTO_FAULT> {};
 
 class StateUnsynchronized : public etl::fsm_state<BridgeFsm, StateUnsynchronized, STATE_UNSYNCHRONIZED,
-                                                   EvHandshakeStart, EvReset, EvCryptoFault>
+                                                   EvHandshakeStart, EvHandshakeFailed, EvReset, EvCryptoFault>
 {
 public:
   etl::fsm_state_id_t on_enter_state() { return STATE_UNSYNCHRONIZED; }
   etl::fsm_state_id_t on_event(const EvHandshakeStart&) { return STATE_SYNCING; }
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) { return STATE_FAULT; }
   etl::fsm_state_id_t on_event(const EvReset&) { return No_State_Change; }
   etl::fsm_state_id_t on_event(const EvCryptoFault&) { return STATE_FAULT; }
   etl::fsm_state_id_t on_event_unknown(const etl::imessage&) { return No_State_Change; }

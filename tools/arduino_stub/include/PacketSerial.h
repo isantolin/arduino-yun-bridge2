@@ -4,92 +4,83 @@
 #include <stdint.h>
 #include <string.h>
 
-/**
- * @brief Minimal COBS stub integrated into PacketSerial for host-side tests.
- */
 class PacketSerial {
- public:
-  using PacketHandler = void (*)(const uint8_t* buffer, size_t size);
-  static constexpr size_t kBufferCapacity = 512;
-
-  PacketSerial() : stream_(nullptr), handler_(nullptr), buffer_len_(0) {}
-  void setStream(Stream* stream) { stream_ = stream; }
-  void setPacketHandler(PacketHandler handler) { handler_ = handler; }
-
-  void update() {
-    if (!stream_) return;
-    while (stream_->available() > 0) {
-      int byte = stream_->read();
-      if (byte < 0) break;
-      uint8_t data = static_cast<uint8_t>(byte);
-      if (data == 0) {
-        if (buffer_len_ > 0 && handler_) {
-          uint8_t decoded[kBufferCapacity];
-          size_t decoded_len = decode(buffer_, buffer_len_, decoded);
-          if (decoded_len > 0) {
-            handler_(decoded, decoded_len);
-          }
+public:
+    typedef void (*PacketHandler)(const uint8_t* buffer, size_t size);
+    
+    PacketSerial() : _stream(nullptr), _handler(nullptr), _read_index(0) {}
+    
+    void setStream(Stream* stream) { _stream = stream; }
+    void setPacketHandler(PacketHandler handler) { _handler = handler; }
+    
+    void update() {
+        if (!_stream) return;
+        while (_stream->available() > 0) {
+            int b = _stream->read();
+            if (b < 0) break;
+            uint8_t val = static_cast<uint8_t>(b);
+            if (val == 0) {
+                if (_read_index > 0) {
+                    uint8_t decoded[1024];
+                    size_t n = decode(_buffer, _read_index, decoded);
+                    if (n > 0 && _handler) _handler(decoded, n);
+                }
+                _read_index = 0;
+            } else {
+                if (_read_index < sizeof(_buffer)) _buffer[_read_index++] = val;
+            }
         }
-        buffer_len_ = 0;
-      } else {
-        if (buffer_len_ < kBufferCapacity) {
-          buffer_[buffer_len_++] = data;
-        } else {
-          buffer_len_ = 0;
-        }
-      }
     }
-  }
+    
+    size_t send(const uint8_t* buffer, size_t len) {
+        if (!_stream || len == 0) return 0;
+        uint8_t encoded[1024];
+        size_t n = encode(buffer, len, encoded);
+        size_t w = _stream->write(encoded, n);
+        _stream->write(static_cast<uint8_t>(0));
+        return w + 1;
+    }
 
-  size_t send(const uint8_t* buffer, size_t len) {
-    if (!stream_ || !buffer || len == 0) return 0;
-    static constexpr size_t kMaxEncodeLen = kBufferCapacity + kBufferCapacity / 254 + 2;
-    uint8_t encoded[kMaxEncodeLen];
-    size_t encoded_len = encode(buffer, len, encoded);
-    size_t written = stream_->write(encoded, encoded_len);
-    stream_->write(static_cast<uint8_t>(0));
-    return written;
-  }
-
- private:
-  static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
-    const uint8_t* start = dst;
-    uint8_t* code_ptr = dst++;
-    uint8_t code = 1;
-    for (size_t i = 0; i < len; ++i) {
-      if (src[i] == 0) {
+private:
+    static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
+        uint8_t* start = dst;
+        uint8_t* code_ptr = dst++;
+        uint8_t code = 1;
+        for (size_t i = 0; i < len; ++i) {
+            if (src[i] == 0) {
+                *code_ptr = code;
+                code_ptr = dst++;
+                code = 1;
+            } else {
+                *dst++ = src[i];
+                if (++code == 0xFF) {
+                    *code_ptr = code;
+                    code_ptr = dst++;
+                    code = 1;
+                }
+            }
+        }
         *code_ptr = code;
-        code_ptr = dst++;
-        code = 1;
-      } else {
-        *dst++ = src[i];
-        if (++code == 0xFF) {
-          *code_ptr = code;
-          code_ptr = dst++;
-          code = 1;
+        return dst - start;
+    }
+
+    static size_t decode(const uint8_t* src, size_t len, uint8_t* dst) {
+        const uint8_t* end = src + len;
+        uint8_t* out = dst;
+        while (src < end) {
+            uint8_t code = *src++;
+            if (code == 0) return 0;
+            for (uint8_t i = 1; i < code; ++i) {
+                if (src >= end) break;
+                *out++ = *src++;
+            }
+            if (code < 0xFF && src < end) *out++ = 0;
         }
-      }
+        return out - dst;
     }
-    *code_ptr = code;
-    return dst - start;
-  }
 
-  static size_t decode(const uint8_t* src, size_t len, uint8_t* dst) {
-    const uint8_t* end = src + len;
-    uint8_t* out = dst;
-    while (src < end) {
-      uint8_t code = *src++;
-      for (uint8_t i = 1; i < code; ++i) {
-        if (src >= end) break;
-        *out++ = *src++;
-      }
-      if (code < 0xFF && src < end) *out++ = 0;
-    }
-    return out - dst;
-  }
-
-  Stream* stream_;
-  PacketHandler handler_;
-  uint8_t buffer_[kBufferCapacity];
-  size_t buffer_len_;
+    Stream* _stream;
+    PacketHandler _handler;
+    uint8_t _buffer[1024];
+    size_t _read_index;
 };

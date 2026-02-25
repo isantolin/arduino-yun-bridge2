@@ -36,33 +36,7 @@
 #include <PacketSerial.h>
 #include "etl/algorithm.h"
 #include "etl/observer.h"
-
-// [SIL-2] ISR Safety: Atomic Blocks
-#if defined(ARDUINO_ARCH_AVR)
-  #include <util/atomic.h>
-  #define BRIDGE_ATOMIC_BLOCK ATOMIC_BLOCK(ATOMIC_RESTORESTATE)
-  // [Compatibility] Polyfill for boards missing SERIAL_PORT_USBVIRTUAL (e.g. Mega 2560)
-  #ifndef SERIAL_PORT_USBVIRTUAL
-    #define SERIAL_PORT_USBVIRTUAL Serial
-
-#endif
-#else
-  // Fallback for non-AVR architectures: use interrupts() / noInterrupts()
-  // This is a simplified version of ATOMIC_BLOCK for portability.
-  struct BridgeAtomicGuard {
-    BridgeAtomicGuard() { 
-      noInterrupts(); 
-      asm volatile("" ::: "memory");
-    }
-    ~BridgeAtomicGuard() { 
-      asm volatile("" ::: "memory");
-      interrupts(); 
-    }
-  };
-  #define BRIDGE_ATOMIC_BLOCK for (int _guard_active = 1; _guard_active; _guard_active = 0) \
-                               for (BridgeAtomicGuard _guard; _guard_active; _guard_active = 0)
-
-#endif
+#include "hal/hal.h"
 
 #include "config/bridge_config.h"
 #include "protocol/rpc_frame.h"
@@ -91,32 +65,12 @@
 // [SIL-2] Static Constraints
 static_assert(rpc::MAX_PAYLOAD_SIZE <= 1024, "Payload size exceeds safety limits for small RAM targets");
 
-#if defined(ARDUINO_ARCH_AVR)
-extern "C" char __heap_start;
-extern "C" char* __brkval;
-
-#endif
-
 /**
- * @brief Get free RAM (AVR specific).
- * @return Bytes free or 0 on non-AVR.
+ * @brief Get free RAM.
+ * @return Bytes free.
  */
 inline uint16_t getFreeMemory() {
-#if defined(ARDUINO_ARCH_AVR)
-  char stack_top;
-  char* heap_end = __brkval ? __brkval : &__heap_start;
-  intptr_t free_bytes = &stack_top - heap_end;
-  if (free_bytes < 0) {
-    free_bytes = 0;
-  }
-  if (free_bytes > UINT16_MAX) {
-    free_bytes = UINT16_MAX;
-  }
-  return static_cast<uint16_t>(free_bytes);
-#else
-  return 0;
-
-#endif
+  return bridge::hal::getFreeMemory();
 }
 
 // --- Configuration ---
@@ -420,20 +374,6 @@ class BridgeClass : public bridge::router::ICommandHandler,
   void _handleMalformed(uint16_t command_id);
   void _sendAck(uint16_t command_id);          // Send ACK without flush
   void _sendAckAndFlush(uint16_t command_id);  // Encapsulates ACK + flush sequence
-  template <typename Handler>
-  void _handleDedupAck(const bridge::router::CommandContext& ctx, Handler handler, bool flush_on_duplicate) {
-    if (ctx.is_duplicate) {
-      if (flush_on_duplicate) {
-        _sendAckAndFlush(ctx.raw_command);
-      } else {
-        _sendAck(ctx.raw_command);
-      }
-      return;
-    }
-    handler();
-    _markRxProcessed(*ctx.frame);
-    _sendAck(ctx.raw_command);
-  }
   void _doEmitStatus(rpc::StatusCode status_code, const uint8_t* payload, uint16_t length);
   void _computeHandshakeTag(const uint8_t* nonce, size_t nonce_len, uint8_t* out_tag);
   void _applyTimingConfig(const uint8_t* payload, size_t length);

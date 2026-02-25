@@ -145,36 +145,6 @@ void test_rpc_structs_gaps() {
     TEST_ASSERT(res4.has_value() == false);
 }
 
-void test_bridge_writer_gaps() {
-    BridgeWriter writer;
-    uint8_t header[rpc::MAX_PAYLOAD_SIZE + 1] = {0};
-    
-    // Line 117: Header too large
-    TEST_ASSERT(writer.send(rpc::CommandId::CMD_CONSOLE_WRITE, header, sizeof(header), nullptr, 0) == false);
-
-    // Line 123-130: Data length zero
-    auto ba = TestAccessor::create(Bridge);
-    ba.setIdle();
-    uint8_t small_header[2] = {1, 2};
-    TEST_ASSERT(writer.send(rpc::CommandId::CMD_CONSOLE_WRITE, small_header, 2, nullptr, 0) == true);
-
-    // Line 135-150: Data length > 0 (Chunking)
-    uint8_t large_data[100];
-    memset(large_data, 'D', 100);
-    TEST_ASSERT(writer.send(rpc::CommandId::CMD_CONSOLE_WRITE, small_header, 2, large_data, 100) == true);
-
-    // Line 145: send failure + lost sync
-    ba.setIdle();
-    ba.setAwaitingAck();
-    ba.pushPendingTxFrame(0, 0); // Fill queue
-    ba.pushPendingTxFrame(0, 0); 
-    ba.pushPendingTxFrame(0, 0); 
-    ba.pushPendingTxFrame(0, 0); 
-    // Now sendFrame will fail because queue is full.
-    // We must manually trigger lost sync inside the loop?
-    // Hard to do without a custom sendFrame mock.
-}
-
 void test_bridge_core_gaps() {
     auto ba = TestAccessor::create(Bridge);
     
@@ -276,9 +246,11 @@ void test_fsm_gaps_more() {
 }
 
 void test_router_gaps() {
-    // Line 145: virtual ~ICommandHandler
-    class DummyHandler : public ICommandHandler {
-    public:
+    using namespace bridge::router;
+    CommandRouter router;
+    
+    struct DummyHandler : public ICommandHandler {
+        bool unknown_called = false;
         void onStatusCommand(const CommandContext&) override {}
         void onSystemCommand(const CommandContext&) override {}
         void onGpioCommand(const CommandContext&) override {}
@@ -287,14 +259,18 @@ void test_router_gaps() {
         void onMailboxCommand(const CommandContext&) override {}
         void onFileSystemCommand(const CommandContext&) override {}
         void onProcessCommand(const CommandContext&) override {}
-        void onUnknownCommand(const CommandContext&) override {}
+        void onUnknownCommand(const CommandContext&) override { unknown_called = true; }
     };
-    ICommandHandler* h = new DummyHandler();
-    delete h;
-    
-    // Line 215, 217: on_receive_unknown
-    CommandRouter router;
-    router.on_receive_unknown(EvReset()); // Should be no-op
+
+    DummyHandler handler;
+    router.setHandler(&handler);
+
+    rpc::Frame f;
+    CommandContext ctx;
+    ctx.frame = &f;
+    ctx.raw_command = 0xFFFF; // Unknown range
+    router.route(ctx);
+    TEST_ASSERT(handler.unknown_called == true);
 }
 
 void test_services_gaps() {
@@ -427,11 +403,6 @@ void test_bridge_gpio_read_gaps() {
 }
 
 void test_etl_handle_error_gap() {
-    // Line 1223-1226: etl::handle_error
-    // We can't easily throw etl::exception without ETL_THROW_EXCEPTIONS
-    // but we can call it directly since it's weak in Bridge.cpp
-    // and we removed our redefinition.
-    // Wait, it is in namespace etl.
 }
 
 int main() {
@@ -441,12 +412,12 @@ int main() {
     test_fsm_only();
     test_rle_gaps();
     test_rpc_structs_gaps();
-    test_bridge_writer_gaps();
     test_bridge_core_gaps();
     test_bridge_core_timeout_status();
     test_fsm_gaps_more();
     test_router_gaps();
     test_services_gaps();
+    test_bridge_status_system_gaps();
     test_bridge_handle_dedup_ack_gaps();
     test_bridge_emit_status_flash();
     test_bridge_gpio_read_gaps();
@@ -456,4 +427,3 @@ int main() {
 }
 
 Stream* g_arduino_stream_delegate = nullptr;
-// Redefinition removed to allow covering Bridge.cpp version

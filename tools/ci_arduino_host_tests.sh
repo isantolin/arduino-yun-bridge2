@@ -18,6 +18,7 @@ DUMMY_ARDUINO_LIBS=$(mktemp -d)
 SOURCES=(
     "${SRC_DIR}/protocol/rpc_frame.cpp"
     "${SRC_DIR}/security/security.cpp"
+    "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/Bridge.cpp"
     "${SRC_DIR}/services/Console.cpp"
     "${SRC_DIR}/services/DataStore.cpp"

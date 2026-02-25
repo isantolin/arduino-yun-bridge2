@@ -308,12 +308,7 @@ void BridgeClass::flushStream() {
 
 // [SIL-2] Pin Validation Helper
 static inline bool _isValidPin(uint8_t pin) {
-#ifdef NUM_DIGITAL_PINS
-  return pin < NUM_DIGITAL_PINS;
-#else
-  (void)pin;
-  return true;
-#endif
+  return bridge::hal::isValidPin(pin);
 }
 
 void BridgeClass::dispatch(const rpc::Frame& frame) {
@@ -545,14 +540,18 @@ void BridgeClass::onSystemCommand(const bridge::router::CommandContext& ctx) {
       }
       break;
     case rpc::CommandId::CMD_LINK_RESET:
-      _handleDedupAck(ctx, [this, &ctx]() {
+      if (ctx.is_duplicate) {
+        _sendAckAndFlush(ctx.raw_command);
+      } else {
         enterSafeState();
         if (ctx.frame->header.payload_length == rpc::payload::HandshakeConfig::SIZE) {
             _applyTimingConfig(ctx.frame->payload.data(), ctx.frame->header.payload_length);
         }
         Console.begin();
         (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP);
-      }, true);
+        _markRxProcessed(*ctx.frame);
+        _sendAck(ctx.raw_command);
+      }
       break;
     default:
       break;
@@ -564,24 +563,36 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
   
   switch(command) {
     case rpc::CommandId::CMD_SET_PIN_MODE:
-      _handleDedupAck(ctx, [this, &ctx]() {
+      if (ctx.is_duplicate) {
+        _sendAckAndFlush(ctx.raw_command);
+      } else {
         auto msg = rpc::Payload::parse<rpc::payload::PinMode>(*ctx.frame);
         if (msg && _isValidPin(msg->pin)) ::pinMode(msg->pin, msg->mode);
-      }, true);
+        _markRxProcessed(*ctx.frame);
+        _sendAck(ctx.raw_command);
+      }
       break;
       
     case rpc::CommandId::CMD_DIGITAL_WRITE:
-      _handleDedupAck(ctx, [this, &ctx]() {
+      if (ctx.is_duplicate) {
+        _sendAckAndFlush(ctx.raw_command);
+      } else {
         auto msg = rpc::Payload::parse<rpc::payload::DigitalWrite>(*ctx.frame);
         if (msg && _isValidPin(msg->pin)) ::digitalWrite(msg->pin, msg->value ? HIGH : LOW);
-      }, true);
+        _markRxProcessed(*ctx.frame);
+        _sendAck(ctx.raw_command);
+      }
       break;
       
     case rpc::CommandId::CMD_ANALOG_WRITE:
-      _handleDedupAck(ctx, [this, &ctx]() {
+      if (ctx.is_duplicate) {
+        _sendAckAndFlush(ctx.raw_command);
+      } else {
         auto msg = rpc::Payload::parse<rpc::payload::AnalogWrite>(*ctx.frame);
         if (msg && _isValidPin(msg->pin)) ::analogWrite(msg->pin, msg->value);
-      }, true);
+        _markRxProcessed(*ctx.frame);
+        _sendAck(ctx.raw_command);
+      }
       break;
       
     case rpc::CommandId::CMD_DIGITAL_READ:
@@ -631,13 +642,14 @@ void BridgeClass::onGpioCommand(const bridge::router::CommandContext& ctx) {
 
 
 void BridgeClass::onConsoleCommand(const bridge::router::CommandContext& ctx) {
-  _handleDedupAck(
-      ctx,
-      [this, &ctx]() {
-        auto msg = rpc::Payload::parse<rpc::payload::ConsoleWrite>(*ctx.frame);
-        if (msg) Console._push(etl::span<const uint8_t>(msg->data, msg->length));
-      },
-      true);
+  if (ctx.is_duplicate) {
+    _sendAckAndFlush(ctx.raw_command);
+  } else {
+    auto msg = rpc::Payload::parse<rpc::payload::ConsoleWrite>(*ctx.frame);
+    if (msg) Console._push(etl::span<const uint8_t>(msg->data, msg->length));
+    _markRxProcessed(*ctx.frame);
+    _sendAck(ctx.raw_command);
+  }
 }
 
 void BridgeClass::onDataStoreCommand(const bridge::router::CommandContext& ctx) {
@@ -659,19 +671,18 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
 
   if (command == rpc::CommandId::CMD_MAILBOX_PUSH) {
-    _handleDedupAck(
-        ctx,
-        [this, &ctx]() {
+    if (ctx.is_duplicate) {
+      _sendAckAndFlush(ctx.raw_command);
+    } else {
 #if BRIDGE_ENABLE_MAILBOX
-          auto msg = rpc::Payload::parse<rpc::payload::MailboxPush>(*ctx.frame);
-          if (msg && Mailbox._mailbox_handler.is_valid()) {
-            Mailbox._mailbox_handler(msg->data, msg->length);
-          }
-#else
-          (void)ctx;
+      auto msg = rpc::Payload::parse<rpc::payload::MailboxPush>(*ctx.frame);
+      if (msg && Mailbox._mailbox_handler.is_valid()) {
+        Mailbox._mailbox_handler(msg->data, msg->length);
+      }
 #endif
-        },
-        true);
+      _markRxProcessed(*ctx.frame);
+      _sendAck(ctx.raw_command);
+    }
   } else if (command == rpc::CommandId::CMD_MAILBOX_READ_RESP) {
 #if BRIDGE_ENABLE_MAILBOX
       auto msg = rpc::Payload::parse<rpc::payload::MailboxReadResponse>(*ctx.frame);
@@ -692,7 +703,12 @@ void BridgeClass::onMailboxCommand(const bridge::router::CommandContext& ctx) {
 void BridgeClass::onFileSystemCommand(const bridge::router::CommandContext& ctx) {
   const rpc::CommandId command = static_cast<rpc::CommandId>(ctx.raw_command);
   if (command == rpc::CommandId::CMD_FILE_WRITE) {
-    _handleDedupAck(ctx, [this, &ctx]() { (void)ctx; }, true);
+    if (ctx.is_duplicate) {
+      _sendAckAndFlush(ctx.raw_command);
+    } else {
+      _markRxProcessed(*ctx.frame);
+      _sendAck(ctx.raw_command);
+    }
   } else if (command == rpc::CommandId::CMD_FILE_READ_RESP) {
 #if BRIDGE_ENABLE_FILESYSTEM
       auto msg = rpc::Payload::parse<rpc::payload::FileReadResponse>(*ctx.frame);

@@ -149,7 +149,17 @@ class TestAccessor {
 
   template <typename Handler>
   void handleDedupAck(const bridge::router::CommandContext& ctx, Handler handler, bool flush_on_duplicate) {
-    _bridge._handleDedupAck(ctx, handler, flush_on_duplicate);
+    if (ctx.is_duplicate) {
+      if (flush_on_duplicate) {
+        _bridge._sendAckAndFlush(ctx.raw_command);
+      } else {
+        _bridge._sendAck(ctx.raw_command);
+      }
+      return;
+    }
+    handler();
+    _bridge._markRxProcessed(*ctx.frame);
+    _bridge._sendAck(ctx.raw_command);
   }
 
   // ---- ICommandHandler overrides (private in BridgeClass) ----

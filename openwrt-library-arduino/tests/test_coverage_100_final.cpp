@@ -134,83 +134,70 @@ void test_duplicate_command_handling() {
     auto ba = bridge::test::TestAccessor::create(Bridge);
     
     rpc::Frame f;
-    bridge::router::CommandContext ctx;
     
     // Testing LINK_RESET duplicate (lines 604-605)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
-    ctx.is_duplicate = true;
-    ctx.frame = &f;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
     f.header.payload_length = 0;
-    ba.routeSystemCommand(ctx);
+    bridge::router::CommandContext ctx1(&f, f.header.command_id, true, false);
+    ba.routeSystemCommand(ctx1);
     
     // GPIO duplicate - write commands (lines 625-626)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
     f.header.payload_length = 2;
     f.payload[0] = 13; f.payload[1] = 1;
-    ba.routeGpioCommand(ctx);
+    bridge::router::CommandContext ctx2(&f, f.header.command_id, true, false);
+    ba.routeGpioCommand(ctx2);
     
     // GPIO duplicate - read commands (lines 640-641)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ);
     f.header.payload_length = 1;
     f.payload[0] = 13;
-    ba.routeGpioCommand(ctx);
+    bridge::router::CommandContext ctx3(&f, f.header.command_id, true, false);
+    ba.routeGpioCommand(ctx3);
     
     // Console duplicate (lines 655, 657)
     Console.begin();
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
     f.header.payload_length = 5;
-    ba.routeConsoleCommand(ctx);
+    bridge::router::CommandContext ctx4(&f, f.header.command_id, true, false);
+    ba.routeConsoleCommand(ctx4);
     
     // Mailbox duplicate - MAILBOX_PUSH (lines 668-669)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     f.header.payload_length = 0;
-    ba.routeMailboxCommand(ctx);
+    bridge::router::CommandContext ctx5(&f, f.header.command_id, true, false);
+    ba.routeMailboxCommand(ctx5);
     
     // FileSystem duplicate - FILE_WRITE (lines 688-689)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE);
     f.header.payload_length = 10;
-    ba.routeFileSystemCommand(ctx);
+    bridge::router::CommandContext ctx6(&f, f.header.command_id, true, false);
+    ba.routeFileSystemCommand(ctx6);
     
     // FileSystem duplicate - FILE_READ (line 698)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ);
-    ba.routeFileSystemCommand(ctx);
+    bridge::router::CommandContext ctx7(&f, f.header.command_id, true, false);
+    ba.routeFileSystemCommand(ctx7);
     
     // FileSystem duplicate - FILE_REMOVE (line 703)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE);
-    ba.routeFileSystemCommand(ctx);
+    bridge::router::CommandContext ctx8(&f, f.header.command_id, true, false);
+    ba.routeFileSystemCommand(ctx8);
     
     // Process duplicate - PROCESS_RUN (line 713)
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN);
-    ba.routeProcessCommand(ctx);
+    bridge::router::CommandContext ctx9(&f, f.header.command_id, true, false);
+    ba.routeProcessCommand(ctx9);
     
     // Process duplicate - PROCESS_RUN_ASYNC
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC);
-    ctx.is_duplicate = true;
     f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC);
-    ba.routeProcessCommand(ctx);
+    bridge::router::CommandContext ctx10(&f, f.header.command_id, true, false);
+    ba.routeProcessCommand(ctx10);
     
     // Unknown command duplicate
-    ctx.raw_command = 0xFFFF;
-    ctx.is_duplicate = true;
     f.header.command_id = 0xFFFF;
-    ba.routeUnknownCommand(ctx);
+    bridge::router::CommandContext ctx11(&f, f.header.command_id, true, false);
+    ba.routeUnknownCommand(ctx11);
 }
 
 // --- CONSOLE.CPP: Buffer full after flush returns 0 (line 34) ---
@@ -338,56 +325,53 @@ void test_command_router_null_handler() {
     bridge::router::CommandRouter router;
     // Don't set handler - leave it null
     
-    // Test routing with null handler - lines 85, 100, 125, 134, 144, 189, 192, 202, 205, 208, 210
-    bridge::router::CommandContext ctx;
+    // Test routing with null handler
     rpc::Frame f;
-    ctx.frame = &f;
-    ctx.is_duplicate = false;
     
     // System command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
+    bridge::router::CommandContext ctx1(&f, f.header.command_id, false, false);
+    router.route(ctx1);
     
     // GPIO command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+    bridge::router::CommandContext ctx2(&f, f.header.command_id, false, false);
+    router.route(ctx2);
     
     // Console command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+    bridge::router::CommandContext ctx3(&f, f.header.command_id, false, false);
+    router.route(ctx3);
     
     // DataStore command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_PUT);
+    bridge::router::CommandContext ctx4(&f, f.header.command_id, false, false);
+    router.route(ctx4);
     
     // Mailbox command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
+    bridge::router::CommandContext ctx5(&f, f.header.command_id, false, false);
+    router.route(ctx5);
     
     // FileSystem command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_FILE_READ);
+    bridge::router::CommandContext ctx6(&f, f.header.command_id, false, false);
+    router.route(ctx6);
     
     // Process command
-    ctx.raw_command = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN);
+    bridge::router::CommandContext ctx7(&f, f.header.command_id, false, false);
+    router.route(ctx7);
     
     // Unknown command
-    ctx.raw_command = 0xFFFF;
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = 0xFFFF;
+    bridge::router::CommandContext ctx8(&f, f.header.command_id, false, false);
+    router.route(ctx8);
     
     // Status command (for complete coverage)
-    ctx.raw_command = rpc::to_underlying(rpc::StatusCode::STATUS_OK);
-    f.header.command_id = ctx.raw_command;
-    router.route(ctx);
+    f.header.command_id = rpc::to_underlying(rpc::StatusCode::STATUS_OK);
+    bridge::router::CommandContext ctx9(&f, f.header.command_id, false, false);
+    router.route(ctx9);
 }
 
 // --- RLE: Decode malformed (lines 148, 188-190) ---

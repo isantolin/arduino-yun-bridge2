@@ -128,19 +128,11 @@ class TestAccessor {
   void handleAck(uint16_t cmd)                          { _bridge._handleAck(cmd); }
   void handleMalformed(uint16_t cmd)                    { _bridge._handleMalformed(cmd); }
   void handleSystemCommand(const rpc::Frame& f) {
-    bridge::router::CommandContext ctx;
-    ctx.frame = &f;
-    ctx.raw_command = f.header.command_id;
-    ctx.is_duplicate = false;
-    ctx.requires_ack = false;
+    bridge::router::CommandContext ctx(&f, f.header.command_id, false, false);
     _bridge.onSystemCommand(ctx);
   }
   void handleGpioCommand(const rpc::Frame& f) {
-    bridge::router::CommandContext ctx;
-    ctx.frame = &f;
-    ctx.raw_command = f.header.command_id;
-    ctx.is_duplicate = false;
-    ctx.requires_ack = false;
+    bridge::router::CommandContext ctx(&f, f.header.command_id, false, false);
     _bridge.onGpioCommand(ctx);
   }
   void computeHandshakeTag(const uint8_t* n, size_t nl,

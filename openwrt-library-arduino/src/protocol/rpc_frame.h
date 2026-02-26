@@ -92,7 +92,7 @@ class FrameParser {
     const uint16_t payload_len = read_u16_be(&buffer[1]);
     if (buffer.size() != (static_cast<size_t>(payload_len) + 9)) return etl::unexpected<FrameError>(FrameError::MALFORMED);
     if (payload_len > MAX_PAYLOAD_SIZE) return etl::unexpected<FrameError>(FrameError::OVERFLOW);
-    Frame result;
+    Frame result{};
     result.header.version = buffer[0];
     result.header.payload_length = payload_len;
     result.header.command_id = read_u16_be(&buffer[3]);

@@ -249,38 +249,6 @@ class BridgeDaemon:
                     self.state.record_supervisor_failure(name, backoff=0.0, exc=exc)
                     raise
 
-    # Legacy compatibility methods for tests
-    async def _supervise_task(self, spec: SupervisedTaskSpec) -> None:
-        await self._supervise(
-            spec.name,
-            spec.factory,
-            spec.fatal_exceptions,
-            max_restarts=spec.max_restarts,
-            min_backoff=spec.min_backoff,
-            max_backoff=spec.max_backoff
-        )
-
-    def _setup_supervision(self) -> list[SupervisedTaskSpec]:
-        """Legacy helper for tests."""
-        specs = [
-            SupervisedTaskSpec("serial-link", self._run_serial_link, (SerialHandshakeFatal,)),
-            SupervisedTaskSpec("mqtt-link", self._run_mqtt_link),
-            SupervisedTaskSpec("status-writer", self._run_status_writer),
-            SupervisedTaskSpec("metrics-publisher", self._run_metrics_publisher),
-        ]
-
-        if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
-            specs.append(SupervisedTaskSpec("bridge-snapshots", self._run_bridge_snapshots))
-
-        if self.config.watchdog_enabled:
-            specs.append(SupervisedTaskSpec("watchdog", _dummy_task))
-
-        if self.config.metrics_enabled:
-            specs.append(SupervisedTaskSpec("prometheus-exporter", _dummy_task))
-
-        return specs
-
-
 def main() -> NoReturn:  # pragma: no cover (Entry point wrapper)
     config = load_runtime_config()
     configure_logging(config)

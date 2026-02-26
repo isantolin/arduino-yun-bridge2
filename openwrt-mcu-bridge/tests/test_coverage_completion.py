@@ -93,10 +93,10 @@ async def test_daemon_supervision_logic(real_config):
     spec.max_backoff = 0.02
     spec.restart_interval = 0.01
     spec.factory = AsyncMock(return_value=None)
-    await daemon._supervise_task(spec)
+    await daemon._supervise(spec.name, spec.factory, spec.fatal_exceptions, max_restarts=spec.max_restarts, min_backoff=spec.min_backoff, max_backoff=spec.max_backoff)
     spec.factory = AsyncMock(side_effect=RuntimeError("Fatal"))
     with pytest.raises(RuntimeError):
-        await daemon._supervise_task(spec)
+        await daemon._supervise(spec.name, spec.factory, spec.fatal_exceptions, max_restarts=spec.max_restarts, min_backoff=spec.min_backoff, max_backoff=spec.max_backoff)
 
 
 @pytest.mark.asyncio
@@ -162,7 +162,7 @@ async def test_daemon_supervision_base_exception(real_config):
     spec.restart_interval = 1.0
     spec.factory = AsyncMock(side_effect=BaseException("Base"))
     with pytest.raises(BaseException):
-        await daemon._supervise_task(spec)
+        await daemon._supervise(spec.name, spec.factory, spec.fatal_exceptions, max_restarts=spec.max_restarts, min_backoff=spec.min_backoff, max_backoff=spec.max_backoff)
 
 
 @pytest.mark.asyncio
@@ -203,7 +203,7 @@ async def test_daemon_supervisor_cancelled(real_config):
     spec.max_restarts = 1
     spec.factory = AsyncMock(side_effect=asyncio.CancelledError())
     with pytest.raises(asyncio.CancelledError):
-        await daemon._supervise_task(spec)
+        await daemon._supervise(spec.name, spec.factory, spec.fatal_exceptions, max_restarts=spec.max_restarts, min_backoff=spec.min_backoff, max_backoff=spec.max_backoff)
 
 
 def test_daemon_main_exception_group(real_config):

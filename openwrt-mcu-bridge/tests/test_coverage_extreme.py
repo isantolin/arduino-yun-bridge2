@@ -28,34 +28,6 @@ from mcubridge.transport.mqtt import MqttTransport  # noqa: E402
 # --- DAEMON TESTS (Refactored) ---
 
 
-def test_daemon_task_setup_logic():
-    """Verifica que se crean las tareas correctas según la config."""
-    mock_config = MagicMock()
-    mock_config.serial_shared_secret = "s_e_c_r_e_t_mock"
-    mock_config.watchdog_enabled = True
-    mock_config.metrics_enabled = True
-
-    # Valores numéricos explícitos para evitar TypeError en comparaciones
-    mock_config.bridge_summary_interval = 10.0
-    mock_config.bridge_handshake_interval = 10.0
-    mock_config.status_interval = 5.0
-    mock_config.watchdog_interval = 10.0
-    mock_config.metrics_host = "localhost"
-    mock_config.metrics_port = 9090
-
-    with (
-        patch("mcubridge.daemon.create_runtime_state"),
-        patch("mcubridge.daemon.BridgeService"),
-    ):
-        daemon = BridgeDaemon(mock_config)
-        specs = daemon._setup_supervision()
-
-        task_names = [s.name for s in specs]
-        assert "serial-link" in task_names
-        assert "mqtt-link" in task_names
-        assert "watchdog" in task_names
-        assert "prometheus-exporter" in task_names
-        assert "bridge-snapshots" in task_names
 
 
 @pytest.mark.asyncio

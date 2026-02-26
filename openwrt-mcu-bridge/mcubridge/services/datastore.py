@@ -75,17 +75,10 @@ class DatastoreComponent:
             return False
 
         key = packet.key
-        cached_value = self.state.datastore.get(key, "")
+        val: Any = self.state.datastore.get(key, "")
 
-        # [SIL-2] Handle potential type drift during testing/injection
-        # Cast to Any to satisfy pyright's 'Unnecessary isinstance call' check
-        # while maintaining runtime safety for non-compliant test injections.
-        val_to_check: Any = cached_value
-        value_bytes = (
-            val_to_check.encode("utf-8")
-            if isinstance(val_to_check, str)
-            else val_to_check
-        )
+        # [SIL-2] Type-safe value coercion
+        value_bytes = val.encode("utf-8") if isinstance(val, str) else bytes(val)
 
         if len(value_bytes) > 255:
             logger.warning(

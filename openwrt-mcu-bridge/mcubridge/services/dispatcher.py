@@ -463,21 +463,14 @@ class BridgeDispatcher:
     def _pin_action_from_segments(segments: tuple[str, ...]) -> str | None:
         if not segments:
             return None
-        if len(segments) == 1:
-            return "write"
-        subtopic = segments[1].strip().lower()
-        return subtopic or None
+        return "write" if len(segments) == 1 else segments[1].strip().lower() or None
 
     @staticmethod
     def _payload_bytes(payload: Any) -> bytes:
+        if payload is None:
+            return b""
         if isinstance(payload, (bytes, bytearray)):
             return bytes(payload)
         if isinstance(payload, memoryview):
             return payload.tobytes()
-        if payload is None:
-            return b""
-        if isinstance(payload, str):
-            return payload.encode("utf-8")
-        if isinstance(payload, (int, float)):
-            return str(payload).encode("utf-8")
-        raise TypeError(f"Unsupported MQTT payload type: {type(payload)!r}")
+        return str(payload).encode("utf-8")

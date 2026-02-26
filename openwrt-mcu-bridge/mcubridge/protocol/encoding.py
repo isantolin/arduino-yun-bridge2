@@ -10,12 +10,5 @@ from mcubridge.protocol import protocol
 
 
 def encode_status_reason(reason: str | None) -> bytes:
-    """Return a UTF-8 encoded payload trimming to MAX frame limits.
-
-    Primary error identification is handled by the Status enum in the frame header.
-    This reason string provides additional human-readable context.
-    """
-    if not reason:
-        return b""
-    payload = reason.encode("utf-8", errors="ignore")
-    return payload[: protocol.MAX_PAYLOAD_SIZE]
+    """Return a UTF-8 encoded payload trimming to MAX frame limits."""
+    return (reason or "").encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]

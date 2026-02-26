@@ -600,7 +600,7 @@ def test_daemon_main_base_exception():
 async def test_daemon_factories():
     """Cover factory methods in BridgeDaemon."""
     config = create_fake_config()
-    daemon_obj = daemon.BridgeDaemon(config)
+    daemon.BridgeDaemon(config)
 
     # Test branch where secret is missing
     config_no_secret = create_fake_config()
@@ -608,21 +608,11 @@ async def test_daemon_factories():
     daemon.BridgeDaemon(config_no_secret)
 
     with (
-        patch(
-            "mcubridge.daemon.SerialTransport.run", new_callable=AsyncMock
-        ) as mock_serial,
-        patch("mcubridge.daemon.MqttTransport") as mock_mqtt_cls,
-        patch("mcubridge.daemon.status_writer", new_callable=AsyncMock) as mock_status,
-        patch(
-            "mcubridge.daemon.publish_metrics", new_callable=AsyncMock
-        ) as mock_metrics,
-        patch(
-            "mcubridge.daemon.publish_bridge_snapshots", new_callable=AsyncMock
-        ) as mock_snapshots,
+        patch("mcubridge.daemon.SerialTransport.run", new_callable=AsyncMock),
+        patch("mcubridge.daemon.MqttTransport"),
+        patch("mcubridge.daemon.publish_metrics", new_callable=AsyncMock),
+        patch("mcubridge.daemon.publish_bridge_snapshots", new_callable=AsyncMock),
     ):
-        mock_mqtt_run = AsyncMock()
-        mock_mqtt_cls.return_value.run = mock_mqtt_run
-
         # Factory methods removed in favor of inline lambdas in run()
         pass
 
@@ -1115,8 +1105,8 @@ async def test_dispatcher_gaps():
     assert disp._payload_bytes(memoryview(b"test")) == b"test"
     assert disp._payload_bytes(None) == b""
     assert disp._payload_bytes(123) == b"123"
-    with pytest.raises(TypeError):
-        disp._payload_bytes({})
+    # Dictionaries/objects are now coerced to string then bytes
+    assert disp._payload_bytes({}) == b"{}"
 
 
 # --- mcubridge.state.context ---

@@ -61,13 +61,5 @@ def parse_bool(value: object) -> bool:
 
 def normalise_allowed_commands(commands: Iterable[str]) -> tuple[str, ...]:
     """Return a deduplicated, lower-cased and sorted allow-list preserving wildcards."""
-    seen: set[str] = set()
-    for item in commands:
-        candidate = item.strip()
-        if not candidate:
-            continue
-        lowered = candidate.lower()
-        if lowered == "*":
-            return ("*",)
-        seen.add(lowered)
-    return tuple(sorted(seen))
+    items = {c.strip().lower() for c in commands if c.strip()}
+    return ("*",) if "*" in items else tuple(sorted(items))

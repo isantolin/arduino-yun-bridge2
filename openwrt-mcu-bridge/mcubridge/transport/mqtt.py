@@ -146,14 +146,10 @@ class MqttTransport:
                 task_group.create_task(self._subscriber_loop(client))
 
     async def _subscribe_topics(self, client: aiomqtt.Client) -> None:
-        topics: list[tuple[str, int]] = []
-        for topic_enum, segments, qos in MQTT_COMMAND_SUBSCRIPTIONS:
-            topics.append(
-                (
-                    topic_path(self.state.mqtt_topic_prefix, topic_enum, *segments),
-                    int(qos),
-                )
-            )
+        topics = [
+            (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q))
+            for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+        ]
 
         for topic, qos in topics:
             await client.subscribe(topic, qos=qos)

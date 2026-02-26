@@ -353,18 +353,12 @@ class FileComponent:
             except ValueError:
                 return None
 
-        cleaned_parts: list[str] = []
-        for part in posix_path.parts:
-            if part in {"", "."}:
-                continue
-            if part == ".." or "\x00" in part:
-                return None
-            cleaned_parts.append(part)
-
-        if not cleaned_parts:
+        # [SECURITY] Filter unsafe segments using list comprehension
+        cleaned = [p for p in posix_path.parts if p not in {"", "."}]
+        if any(p == ".." or "\x00" in p for p in cleaned) or not cleaned:
             return None
 
-        return PurePosixPath(*cleaned_parts)
+        return PurePosixPath(*cleaned)
 
     async def _write_with_quota(
         self,

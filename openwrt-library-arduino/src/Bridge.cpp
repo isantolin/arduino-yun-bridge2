@@ -1052,24 +1052,22 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, const uint8_t* arg_payload,
     uint8_t code = 1;
     uint8_t code_idx = 0;
     etl::array<uint8_t, rpc::MAX_RAW_FRAME_SIZE + 3> cobs_buffer;
-
     size_t write_idx = 1;
 
-    for (size_t read_idx = 0; read_idx < raw_len; read_idx++) {
-      if (raw_buffer[read_idx] == 0) {
+    etl::for_each(raw_buffer.begin(), raw_buffer.begin() + raw_len, [&](uint8_t byte) {
+      if (byte == 0) {
         cobs_buffer[code_idx] = code;
         code = 1;
         code_idx = write_idx++;
       } else {
-        cobs_buffer[write_idx++] = raw_buffer[read_idx];
-        code++;
-        if (code == 0xFF) {
+        cobs_buffer[write_idx++] = byte;
+        if (++code == 0xFF) {
           cobs_buffer[code_idx] = code;
           code = 1;
           code_idx = write_idx++;
         }
       }
-    }
+    });
     cobs_buffer[code_idx] = code;
     cobs_buffer[write_idx++] = 0x00;
 
@@ -1117,35 +1115,18 @@ bool BridgeClass::sendChunkyFrame(rpc::CommandId command_id,
   if (header_len >= rpc::MAX_PAYLOAD_SIZE) return false;
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buffer;
-  const size_t max_chunk_size = rpc::MAX_PAYLOAD_SIZE - header_len;
+  const size_t max_chunk = rpc::MAX_PAYLOAD_SIZE - header_len;
   size_t offset = 0;
 
-  if (data_len == 0) {
+  do {
+    const size_t chunk_size = etl::min(data_len - offset, max_chunk);
     if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
-    return _sendFrame(rpc::to_underlying(command_id), buffer.data(),
-                      header_len);
-  }
+    if (chunk_size > 0 && data) etl::copy_n(data + offset, chunk_size, buffer.begin() + header_len);
 
-  while (offset < data_len) {
-    size_t bytes_remaining = data_len - offset;
-    size_t chunk_size =
-        (bytes_remaining > max_chunk_size) ? max_chunk_size : bytes_remaining;
-
-    if (header_len > 0) etl::copy_n(header, header_len, buffer.begin());
-    if (data)
-      etl::copy_n(data + offset, chunk_size, buffer.begin() + header_len);
-
-    size_t payload_size = header_len + chunk_size;
-
-    // [SIL-2] Deterministic Back-pressure: Return false if frame cannot be sent
-    // immediately
-    if (!_sendFrame(rpc::to_underlying(command_id), buffer.data(),
-                    payload_size)) {
-      return false;
-    }
-
+    if (!_sendFrame(rpc::to_underlying(command_id), buffer.data(), header_len + chunk_size)) return false;
     offset += chunk_size;
-  }
+  } while (offset < data_len);
+
   return true;
 }
 bool BridgeClass::_isHandshakeCommand(uint16_t command_id) const {

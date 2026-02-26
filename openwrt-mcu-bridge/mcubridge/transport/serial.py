@@ -176,13 +176,20 @@ class BridgeSerialProtocol(asyncio.Protocol):
             logger.error("Runtime error during packet processing: %s", exc)
             self.state.record_serial_decode_error()
 
-    def _log_frame(self, frame: Frame, direction: str) -> None:
+    def _get_cmd_label(self, command_id: int) -> str:
         try:
-            cmd_name = protocol.Command(frame.command_id).name
+            return protocol.Command(command_id).name
         except ValueError:
-            cmd_name = f"0x{frame.command_id:02X}"
+            return f"0x{command_id:02X}"
 
-        log_binary_traffic(logger, logging.DEBUG, direction, cmd_name, frame.payload if frame.payload else b"")
+    def _log_frame(self, frame: Frame, direction: str) -> None:
+        log_binary_traffic(
+            logger,
+            logging.DEBUG,
+            direction,
+            self._get_cmd_label(frame.command_id),
+            frame.payload if frame.payload else b"",
+        )
 
     def write_frame(self, command_id: int, payload: bytes) -> bool:
         if self.transport is None or self.transport.is_closing():
@@ -194,12 +201,13 @@ class BridgeSerialProtocol(asyncio.Protocol):
             self.transport.write(encoded)
 
             if logger.isEnabledFor(logging.DEBUG):
-                try:
-                    cmd_name = protocol.Command(command_id).name
-                except ValueError:
-                    cmd_name = f"0x{command_id:02X}"
-
-                log_binary_traffic(logger, logging.DEBUG, "[SERIAL -> MCU]", cmd_name, payload)
+                log_binary_traffic(
+                    logger,
+                    logging.DEBUG,
+                    "[SERIAL -> MCU]",
+                    self._get_cmd_label(command_id),
+                    payload,
+                )
             return True
         except (OSError, ValueError) as exc:
             logger.error("Send failed: %s", exc)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import time
 from collections.abc import Awaitable, Callable, Coroutine
@@ -472,7 +471,7 @@ class BridgeService:
     def _status_handler_factory(
         self, status: Status
     ) -> Callable[[bytes], Awaitable[None]]:
-        return functools.partial(self.handle_status, status)
+        return lambda p: self.handle_status(status, p)
 
     async def handle_status(self, status: Status, payload: bytes) -> None:
         self.state.record_mcu_status(status)

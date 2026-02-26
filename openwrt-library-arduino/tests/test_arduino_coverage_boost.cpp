@@ -226,12 +226,17 @@ void test_fsm_gaps_more() {
     StateUnsynchronized s_un;
     TEST_ASSERT(s_un.on_event_unknown(EvReset()) == etl::ifsm_state::No_State_Change);
     
-    StateSynchronized s_sync;
-    TEST_ASSERT(s_sync.on_enter_state() == STATE_SYNCHRONIZED);
-    TEST_ASSERT(s_sync.on_event(EvReset()) == STATE_UNSYNCHRONIZED);
-    TEST_ASSERT(s_sync.on_event(EvCryptoFault()) == STATE_FAULT);
-    TEST_ASSERT(s_sync.on_event(EvHandshakeComplete()) == etl::ifsm_state::No_State_Change);
-    TEST_ASSERT(s_sync.on_event_unknown(EvReset()) == etl::ifsm_state::No_State_Change);
+    StateSyncing s_syncing;
+    TEST_ASSERT(s_syncing.on_enter_state() == STATE_SYNCING);
+    TEST_ASSERT(s_syncing.on_event(EvHandshakeComplete()) == STATE_IDLE);
+    TEST_ASSERT(s_syncing.on_event(EvReset()) == STATE_UNSYNCHRONIZED);
+
+    StateIdle s_idle;
+    TEST_ASSERT(s_idle.on_enter_state() == STATE_IDLE);
+    TEST_ASSERT(s_idle.on_event(EvReset()) == STATE_UNSYNCHRONIZED);
+    TEST_ASSERT(s_idle.on_event(EvCryptoFault()) == STATE_FAULT);
+    TEST_ASSERT(s_idle.on_event(EvSendCritical()) == STATE_AWAITING_ACK);
+    TEST_ASSERT(s_idle.on_event_unknown(EvReset()) == etl::ifsm_state::No_State_Change);
 
     StateAwaitingAck s_ack;
     TEST_ASSERT(s_ack.on_event_unknown(EvReset()) == etl::ifsm_state::No_State_Change);
@@ -241,14 +246,14 @@ void test_fsm_gaps_more() {
     
     auto ba = TestAccessor::create(Bridge);
     ba.fsmResetFsm();
-    ba.fsmHandshakeComplete(); // Transition to Idle
+    ba.fsmHandshakeStart();    // Unsynchronized -> Syncing
+    ba.fsmHandshakeComplete(); // Syncing -> Idle
     ba.fsmSendCritical();      // Transition to AwaitingAck
     TEST_ASSERT(ba.isAwaitingAck());
 }
 
 void test_router_gaps() {
     using namespace bridge::router;
-    CommandRouter router;
     
     struct DummyHandler : public ICommandHandler {
         bool unknown_called = false;
@@ -264,13 +269,20 @@ void test_router_gaps() {
     };
 
     DummyHandler handler;
-    router.setHandler(&handler);
 
     rpc::Frame f;
     f.header.command_id = 0xFFFF; // Unknown range
     CommandContext ctx(&f, f.header.command_id, false, false);
-    router.route(ctx);
+    
+    // Call receive directly to cover ICommandHandler::receive
+    handler.receive(ctx);
     TEST_ASSERT(handler.unknown_called == true);
+    
+    // Cover accepts and is_null_router
+    TEST_ASSERT(handler.accepts(0) == true);
+    TEST_ASSERT(handler.is_null_router() == false);
+    TEST_ASSERT(handler.is_producer() == true);
+    TEST_ASSERT(handler.is_consumer() == true);
 }
 
 void test_services_gaps() {

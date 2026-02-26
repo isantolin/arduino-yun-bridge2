@@ -599,8 +599,8 @@ def test_payload_bytes_converts_supported_types_and_rejects_others() -> None:
     assert BridgeDispatcher._payload_bytes("hi") == b"hi"
     assert BridgeDispatcher._payload_bytes(12) == b"12"
     assert BridgeDispatcher._payload_bytes(1.5) == b"1.5"
-    with pytest.raises(TypeError):
-        BridgeDispatcher._payload_bytes(object())
+    # Dictionaries/objects are now coerced to string then bytes
+    assert BridgeDispatcher._payload_bytes({}) == b"{}"
 
 
 @pytest.mark.asyncio
